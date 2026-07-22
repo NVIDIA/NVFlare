@@ -130,6 +130,7 @@ SIMULATOR_WORKSPACE_ROOT_ENV_VAR = "NVFLARE_SIMULATOR_WORKSPACE_ROOT"
 SIMULATOR_WORKSPACE_OVERRIDE_MIN_NVFLARE_VERSION = "2.9.0"
 DEFAULT_WORKSPACE_OVERRIDE_PROBE_TIMEOUT = 30
 CAMPAIGN_LOCK_PATH = ".nvflare/autofl/campaign.lock"
+SIMULATOR_ENV_PASSTHROUGH_CONFIG_KEY = "simulator_env_passthrough"
 SIMULATOR_ENV_ALLOWLIST = (
     "PATH",
     "PYTHONPATH",
@@ -145,15 +146,32 @@ SIMULATOR_ENV_ALLOWLIST = (
     "LANG",
     "LC_ALL",
     "LC_CTYPE",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+    "REQUESTS_CA_BUNDLE",
+    "SSL_CERT_FILE",
+    "CURL_CA_BUNDLE",
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
     "CUDA_VISIBLE_DEVICES",
     "NVIDIA_VISIBLE_DEVICES",
     "LD_LIBRARY_PATH",
     "DYLD_LIBRARY_PATH",
+    "USERPROFILE",
+    "APPDATA",
+    "LOCALAPPDATA",
     "SYSTEMROOT",
     "WINDIR",
     "COMSPEC",
     "PATHEXT",
 )
+ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 FIXED_BUDGET_TO_CLI = {
     "num_clients": "n_clients",
@@ -2056,6 +2074,20 @@ def changed_simulator_roots(simulator_base: Path, before: Dict[Path, int]) -> Li
     return sorted(path for path, modified in after.items() if before.get(path) != modified)
 
 
+def last_json_object_line(text: str) -> Optional[Dict[str, Any]]:
+    for line in reversed(text.splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
 def probe_simulator_workspace_override_support(
     python: str, cwd: Path, timeout: int = DEFAULT_WORKSPACE_OVERRIDE_PROBE_TIMEOUT
 ) -> Dict[str, Any]:
@@ -2099,7 +2131,7 @@ def probe_simulator_workspace_override_support(
             )
         if rc != 0:
             return {"version": "", "supported": None}
-        payload = json.loads(stdout.strip().splitlines()[-1])
+        payload = last_json_object_line(stdout)
     except (OSError, subprocess.SubprocessError, ValueError, IndexError):
         return {"version": "", "supported": None}
     if not isinstance(payload, dict):
@@ -2149,9 +2181,32 @@ def unresolved_result_dir_failure_reason(python: str, cwd: Path, config: Dict[st
     return generic_reason
 
 
-def simulator_child_env(simulator_base: Path) -> Dict[str, str]:
+def simulator_env_passthrough_names(config: Dict[str, Any]) -> List[str]:
+    environment = config.get("environment", {})
+    if not isinstance(environment, dict):
+        return []
+    values = environment.get(SIMULATOR_ENV_PASSTHROUGH_CONFIG_KEY, []) or []
+    if not isinstance(values, list):
+        raise ValueError(f"autofl.yaml environment.{SIMULATOR_ENV_PASSTHROUGH_CONFIG_KEY} must be a list")
+    names = []
+    for value in values:
+        if not isinstance(value, str):
+            raise ValueError(
+                f"autofl.yaml environment.{SIMULATOR_ENV_PASSTHROUGH_CONFIG_KEY} must contain only names"
+            )
+        name = value.strip()
+        if not ENV_VAR_NAME_RE.fullmatch(name):
+            raise ValueError(
+                f"autofl.yaml environment.{SIMULATOR_ENV_PASSTHROUGH_CONFIG_KEY} contains invalid name: {value!r}"
+            )
+        if name not in names:
+            names.append(name)
+    return names
+
+
+def simulator_child_env(simulator_base: Path, extra_names: Sequence[str] = ()) -> Dict[str, str]:
     run_env: Dict[str, str] = {}
-    for name in SIMULATOR_ENV_ALLOWLIST:
+    for name in (*SIMULATOR_ENV_ALLOWLIST, *extra_names):
         value = os.environ.get(name)
         if value is not None:
             run_env[name] = value
@@ -2185,7 +2240,7 @@ def run_job(
         simulator_roots = expected_simulator_roots(
             config, run_name if name_args else None, cwd, simulator_base=simulator_base
         )
-        run_env = simulator_child_env(simulator_base)
+        run_env = simulator_child_env(simulator_base, simulator_env_passthrough_names(config))
         unnamed_root_snapshot = simulator_root_snapshot(simulator_base) if not simulator_roots else {}
         rc, stdout, runtime = run(
             command,
