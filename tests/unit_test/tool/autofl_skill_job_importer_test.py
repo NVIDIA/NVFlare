@@ -136,6 +136,7 @@ def test_import_recipe_job_extracts_trust_contract_without_executing_code(tmp_pa
     }
     assert config["environment"]["requested"] == "prod"
     assert config["environment"]["profiles"]["sim"] == {"num_clients": 3}
+    assert config["environment"]["simulator_env_passthrough"] == []
     assert config["search_space"]["suggested"]["lr"]["default"] == 0.01
     assert config["search_space"]["suggested"]["batch_size"]["type"] == "int"
     assert config["trust_contract"]["allowed_edit_paths"] == ["job.py", "client.py", "model.py"]

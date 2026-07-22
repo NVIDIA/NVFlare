@@ -19,7 +19,29 @@ import sys
 
 from nvflare.apis.fl_constant import FLContextKey, SystemVarName
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobProcessArgs
+from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv
+
+# Bootstrap credentials are delivered via the job process environment (JobProcessEnv),
+# never rendered into command lines. See docs/design/job_process_credential_transport_design.md.
+_CREDENTIAL_ARG_ENV_NAMES = {
+    JobProcessArgs.AUTH_TOKEN: JobProcessEnv.AUTH_TOKEN,
+    JobProcessArgs.TOKEN_SIGNATURE: JobProcessEnv.TOKEN_SIGNATURE,
+    JobProcessArgs.SSID: JobProcessEnv.SSID,
+}
+
+
+def get_credential_env(job_args: dict) -> dict:
+    """Map bootstrap credentials in JOB_PROCESS_ARGS to their env var names.
+
+    Empty/None credential values are skipped so the job process parser fails loudly at
+    startup instead of booting with a bogus credential.
+    """
+    result = {}
+    for arg, env in _CREDENTIAL_ARG_ENV_NAMES.items():
+        e = job_args.get(arg)
+        if e and e[1]:
+            result[env] = str(e[1])
+    return result
 
 
 def _job_args_str(job_args, arg_names) -> str:
@@ -44,9 +66,6 @@ def get_client_job_args(include_exe_module=True, include_set_options=True):
         [
             JobProcessArgs.WORKSPACE,
             JobProcessArgs.STARTUP_DIR,
-            JobProcessArgs.AUTH_TOKEN,
-            JobProcessArgs.TOKEN_SIGNATURE,
-            JobProcessArgs.SSID,
             JobProcessArgs.JOB_ID,
             JobProcessArgs.CLIENT_NAME,
             JobProcessArgs.PARENT_URL,
@@ -83,13 +102,11 @@ def get_server_job_args(include_exe_module=True, include_set_options=True):
             JobProcessArgs.STARTUP_CONFIG_FILE,
             JobProcessArgs.APP_ROOT,
             JobProcessArgs.JOB_ID,
-            JobProcessArgs.TOKEN_SIGNATURE,
             JobProcessArgs.PARENT_URL,
             JobProcessArgs.PARENT_CONN_SEC,
             JobProcessArgs.ROOT_URL,
             JobProcessArgs.SERVICE_HOST,
             JobProcessArgs.SERVICE_PORT,
-            JobProcessArgs.SSID,
         ]
     )
 

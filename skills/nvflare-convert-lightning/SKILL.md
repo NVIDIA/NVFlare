@@ -2,7 +2,7 @@
 name: nvflare-convert-lightning
 description: "Convert existing PyTorch Lightning training code into an NVFLARE federated job using the Lightning Client API patch, local validation, and job export; do not use for plain PyTorch, other frameworks, deployment, POC/production lifecycle, or experiment workflows."
 license: Apache-2.0
-version: "0.2.0"
+version: "0.1.0"
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
   min_flare_version: "2.8.0"
@@ -37,8 +37,9 @@ the same recipe `aggregator=` hook, and local validation and export.
 
 Do not use for plain `torch.nn.Module` manual training loops without Lightning
 (route to `nvflare-convert-pytorch`), Hugging Face Trainer, TensorFlow,
-XGBoost, scikit-learn, a failed existing job (route to `nvflare-diagnose-job`),
-or generic Lightning debugging that does not ask for FLARE conversion. Out of
+XGBoost, scikit-learn, a failed job (route to `nvflare-diagnose-job`),
+federated statistics without training (route to `nvflare-fed-stats`), or
+generic Lightning debugging without FLARE intent. Out of
 conversion scope: production deployment, Kubernetes, POC lifecycle, deployment
 privacy/security policy design, custom distributed launch policies not
 expressible by product APIs, experiment tracking redesign, and experiment search

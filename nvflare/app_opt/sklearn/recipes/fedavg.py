@@ -60,7 +60,9 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             ``set_per_site_config(recipe, config)`` immediately after construction. Nested values become
             part of the generated job definition and must not contain secrets.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are
-            a dict, key_metric selects the metric used for global model selection. Defaults to "accuracy".
+            a dict, key_metric selects the metric used for global model selection. Higher values must
+            indicate a better model; for lower-is-better metrics such as a loss, report a negated value
+            from the client (e.g., "neg_loss"). Defaults to "accuracy".
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.

@@ -120,6 +120,13 @@ validation loaders, label mappings, or averaging denominators from scratch
 without source evidence; when evaluation is required but the source has none,
 ask in interactive mode or fail closed in unattended mode.
 
+Use one metric key consistently across `client.py` and `job.py`: the key in
+`FLModel.metrics` must exactly match the selected recipe's `key_metric`. For
+example, if the source metric is macro-F1 and the client sends
+`metrics={"f1": f1}`, `job.py` must construct `FedAvgRecipe(...,
+key_metric="f1", ...)`. For lower-is-better metrics, send a negated scalar
+such as `metrics={"neg_loss": -loss}` and set `key_metric="neg_loss"`.
+
 This template is self-contained packaged guidance; do not depend on NVFLARE
 repository `examples/` being present in the user's environment. The runnable
 form ships at `../assets/client_with_eval.py`; adapt it rather than inventing a
