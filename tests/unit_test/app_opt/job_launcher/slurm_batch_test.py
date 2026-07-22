@@ -167,16 +167,28 @@ def test_multinode_batch_exports_node_group_contract_and_delegates_to_srun(tmp_p
 
     assert 'export NVFL_NNODES="${SLURM_JOB_NUM_NODES:?}"' in script
     assert 'export NVFL_MASTER_ADDR="${SLURMD_NODENAME:?}"' in script
-    assert 'export NVFL_MASTER_PORT="$((29400 + SLURM_JOB_ID % 1000))"' in script
-    assert 'export NVFL_RUN_ID="${SLURM_JOB_ID:?}"' in script
+    assert 'export NVFL_MASTER_PORT="$((29400 + 10#${SLURM_JOB_ID} % 1000))"' in script
+    assert 'export NVFL_RUN_ID="${SLURM_JOB_ID}"' in script
+    assert '[[ "${SLURM_JOB_ID:-}" =~ ^[0-9]+$ ]]' in script
     assert "NVFL_SRUN=srun" in script
     command_line = next(line for line in script.splitlines() if line.startswith("_nvfl_command="))
     assert "--nodes=2" in command_line
     assert "--ntasks-per-node=1" in command_line
     assert "--kill-on-bad-exit=1" in command_line
     assert "--wait=0" in command_line
+    assert "--label" in command_line
     assert f"{job_dir}/node.sh" in command_line
     assert "worker.module" not in command_line
+
+
+def test_site_port_range_overrides_the_default_rendezvous_ports(tmp_path):
+    from dataclasses import replace as dc_replace
+
+    config = dc_replace(_config(tmp_path), multi_node_port_range=(29500, 29599))
+
+    script, _ = _render_batch_script(_multinode_plan(tmp_path), _job_dir(tmp_path), config)
+
+    assert 'export NVFL_MASTER_PORT="$((29500 + 10#${SLURM_JOB_ID} % 100))"' in script
 
 
 def test_apptainer_node_group_containerizes_each_rank_on_its_node(tmp_path):
@@ -202,6 +214,8 @@ def test_apptainer_node_group_containerizes_each_rank_on_its_node(tmp_path):
     assert "python3 -m trainer --epochs 2" in node
     assert "unset NVFLARE_JOB_AUTH_TOKEN" in node
     assert "APPTAINERENV_NVFLARE_JOB_AUTH_TOKEN" in node
+    assert "SINGULARITYENV_NVFLARE_JOB_AUTH_TOKEN" in node
+    assert "node group topology mismatch" in node
 
 
 def test_pyxis_node_group_fans_out_containers_through_one_srun(tmp_path):
@@ -248,7 +262,12 @@ def test_rendered_node_script_executes_by_rank_and_scrubs_worker_credentials(tmp
         [str(node_path)],
         capture_output=True,
         text=True,
-        env={"PATH": "/usr/bin:/bin", "SLURM_NODEID": node_rank, "NVFLARE_JOB_AUTH_TOKEN": "cj-secret"},
+        env={
+            "PATH": "/usr/bin:/bin",
+            "SLURM_NODEID": node_rank,
+            "SLURM_JOB_NUM_NODES": "2",
+            "NVFLARE_JOB_AUTH_TOKEN": "cj-secret",
+        },
     )
 
     assert completed.returncode == 0

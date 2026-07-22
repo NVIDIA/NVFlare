@@ -206,16 +206,17 @@ and delegates to one `srun --nodes=N --ntasks=N --ntasks-per-node=1` invocation 
 | `NVFL_NNODES` | `SLURM_JOB_NUM_NODES` |
 | `NVFL_NODE_RANK` | `SLURM_NODEID`, exported per task by `node.sh` |
 | `NVFL_MASTER_ADDR` | `SLURMD_NODENAME` of the batch node, which is node rank 0 |
-| `NVFL_MASTER_PORT` | `29400 + SLURM_JOB_ID % 1000`, deterministic per allocation |
+| `NVFL_MASTER_PORT` | derived from `SLURM_JOB_ID` within the site-owned `multi_node_port_range` (default `29400-30399`) |
 | `NVFL_RUN_ID` | `SLURM_JOB_ID`; a per-run token suitable as a framework rendezvous ID |
 
 Distinct concurrent jobs that share a node can map to the same port; a collision surfaces as a rendezvous bind
-failure on rank 0. Sites that co-locate allocations with other network services should manage this through
-scheduler policy, for example exclusive nodes.
+failure on rank 0. Sites that co-locate allocations pin `multi_node_port_range` in `slurm.yaml` (it must not
+contain `internal_port`) or use scheduler policy such as exclusive nodes.
 
-`node.sh` dispatches on the rank: rank 0 executes the standard worker command, so the CJ connects to the parent
-and reports the job result exactly as a single-node job; every other rank executes the `node_command` argv in the
-deployed job app directory. Both paths inherit the batch environment (sourced secrets, `PYTHONPATH`, study env,
+`node.sh` validates the task topology (node count and rank bounds) and dispatches on the rank: rank 0 executes
+the standard worker command, so the CJ connects to the parent and reports the job result exactly as a single-node
+job; every other rank executes the `node_command` argv in the deployed job app directory. The fan-out `srun` uses
+`--label`, so each task's output lines carry their node rank. Both paths inherit the batch environment (sourced secrets, `PYTHONPATH`, study env,
 forwarded names) because the script exports `SLURM_EXPORT_ENV=ALL` before the fan-out — except the bootstrap
 credentials: the non-zero branch unsets the `JobProcessEnv` variables (and their Apptainer mirrors) before
 executing user code, preserving the contract that only the job process consumes them. The variable names carry
@@ -227,8 +228,9 @@ worker command for the non-zero node ranks. For jobs built with the FedJob/Recip
 export fills it from the site's `SubprocessLauncher` command whenever a launcher block requests `nodes > 1`, so
 the meta command and the deployed rank-0 command come from one source and `launch_once=True` is enforced at
 export (the training program performs one rendezvous per job). An explicit `node_command` always wins and remains
-available for jobs that do not use `ScriptRunner`; for those the launcher cannot verify the identical-command
-convention or the `launch_once` setting, which stay the job author's responsibility. The command executes as the
+available for jobs that do not use `ScriptRunner`; for those, `SubprocessLauncher` still refuses
+`launch_once=False` at CJ start when the node-group environment is present, while the identical-command
+convention stays the job author's responsibility. The command executes as the
 submitting user under the effective sandbox, with exactly the trust of the BYOC training code the rank-0 CJ
 launches itself. It is rejected for server jobs, for `nodes: 1`, and when the deployed job app directory is
 missing.

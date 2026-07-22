@@ -257,6 +257,7 @@ class SlurmJobLauncher(JobLauncherSpec):
         parent_host: Optional[str] = None,
         poll_interval: float = 10.0,
         pending_timeout: float = 600.0,
+        multi_node_port_range=None,
     ):
         super().__init__()
         if not self.EXE_MODULE:
@@ -276,6 +277,7 @@ class SlurmJobLauncher(JobLauncherSpec):
                 parent_host=parent_host,
                 poll_interval=poll_interval,
                 pending_timeout=pending_timeout,
+                multi_node_port_range=multi_node_port_range,
             ),
         )
         self.manager = None

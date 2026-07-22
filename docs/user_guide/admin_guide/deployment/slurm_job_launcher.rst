@@ -141,6 +141,10 @@ Important keys are:
    * - ``pending_timeout``
      - Time limit starting at the first observed pending state; default ``600``
        seconds. A job may lower it.
+   * - ``multi_node_port_range``
+     - Optional ``"START-END"`` port range for the multi-node rendezvous
+       endpoint (``NVFL_MASTER_PORT``); default ``29400-30399``. Must not
+       contain ``internal_port``.
 
 ``setup`` starts with the minimal environment from ``sbatch --export=NIL``.
 Source module initialization explicitly. Put fixed values in study ``env``;

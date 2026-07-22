@@ -110,6 +110,7 @@ class SlurmConfig:
     parent_host: Optional[str] = None
     poll_interval: float = 10.0
     pending_timeout: float = 600.0
+    multi_node_port_range: Optional[tuple] = None
 
 
 @dataclass(frozen=True)
@@ -321,6 +322,25 @@ def normalize_slurm_image(
     return real_path
 
 
+def normalize_multi_node_port_range(value, internal_port: int) -> tuple:
+    """Normalize a site-owned rendezvous port range ('START-END' or a 2-item pair)."""
+    if isinstance(value, str):
+        parts = value.split("-", maxsplit=1)
+        if len(parts) != 2 or any(not part.isascii() or not part.isdigit() for part in parts):
+            raise SlurmLauncherError("multi_node_port_range must have the form 'START-END'")
+        start, end = map(int, parts)
+    elif isinstance(value, (list, tuple)) and len(value) == 2:
+        start = _require_int(value[0], "multi_node_port_range start", 1024)
+        end = _require_int(value[1], "multi_node_port_range end", 1024)
+    else:
+        raise SlurmLauncherError("multi_node_port_range must have the form 'START-END'")
+    if start < 1024 or end > 65535 or start > end:
+        raise SlurmLauncherError("multi_node_port_range must be within 1024..65535 with START <= END")
+    if start <= internal_port <= end:
+        raise SlurmLauncherError("multi_node_port_range must not contain internal_port")
+    return start, end
+
+
 def normalize_slurm_workspace_path(value: str) -> str:
     value = os.path.normpath(_validate_absolute_path(value, "workspace_path"))
     if os.pathsep in value:
@@ -344,6 +364,7 @@ def normalize_slurm_launcher_settings(
     poll_interval: float,
     pending_timeout: float,
     require_image_file: bool = False,
+    multi_node_port_range=None,
 ) -> dict:
     sandbox = _require_string(sandbox, "sandbox")
     python_path = _validate_absolute_path(python_path, "python_path")
@@ -358,7 +379,7 @@ def normalize_slurm_launcher_settings(
     if not isinstance(forward_env, (list, tuple)):
         raise SlurmLauncherError("forward_env must be a list")
     validated_forward = tuple(_validate_env_name(name, "forward_env entry") for name in forward_env)
-    return {
+    result = {
         "sandbox": sandbox,
         "python_path": python_path,
         "executables": normalize_slurm_executables(executables),
@@ -371,6 +392,11 @@ def normalize_slurm_launcher_settings(
         "poll_interval": poll_interval,
         "pending_timeout": pending_timeout,
     }
+    if multi_node_port_range is not None:
+        result["multi_node_port_range"] = normalize_multi_node_port_range(
+            multi_node_port_range, internal_port=internal_port
+        )
+    return result
 
 
 @dataclass(frozen=True)

@@ -24,6 +24,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.launcher import Launcher, LauncherRunStatus
+from nvflare.app_common.multinode import ENV_NNODES
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.secret_utils import has_secret_refs, resolve_secret_refs, split_command_preserving_secret_refs
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
@@ -233,6 +234,9 @@ class SubprocessLauncher(Launcher):
         self.logger = get_obj_logger(self)
 
     def initialize(self, fl_ctx: FLContext):
+        nnodes = os.environ.get(ENV_NNODES)
+        if nnodes and nnodes != "1" and not self._launch_once:
+            raise RuntimeError("multi-node node groups require launch_once=True")
         self._app_dir = self.get_app_dir(fl_ctx)
         if self._launch_once:
             self._start_external_process(fl_ctx)

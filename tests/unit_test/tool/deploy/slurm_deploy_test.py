@@ -405,3 +405,18 @@ def test_prepare_slurm_rejects_legacy_workspace_path_and_unsafe_output(tmp_path,
     with pytest.raises(SystemExit):
         _run_prepare(kit, tmp_path / "unsafe:path-list-slurm", _slurm_config(tmp_path))
     assert "must not contain the path-list separator ':'" in capsys.readouterr().err
+
+
+def test_prepare_slurm_preserves_multi_node_port_range(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-slurm"
+    config = _slurm_config(tmp_path, multi_node_port_range="29400-29499")
+
+    _run_prepare(kit, output, config)
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    launcher_args = _component(resources, "slurm_launcher")["args"]
+    assert launcher_args["multi_node_port_range"] == [29400, 29499]
+    launcher = ClientSlurmJobLauncher(**launcher_args)
+    assert launcher.config.multi_node_port_range == (29400, 29499)

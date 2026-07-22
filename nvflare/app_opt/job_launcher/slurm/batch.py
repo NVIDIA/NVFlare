@@ -134,17 +134,24 @@ def _multinode_srun_words(plan: LaunchPlan) -> list[str]:
         # finished worker never kills a still-running rank 0.
         shlex.quote("--kill-on-bad-exit=1"),
         shlex.quote("--wait=0"),
+        shlex.quote("--label"),
     ]
 
 
 def _multinode_parts(plan: LaunchPlan, job_dir: str, config: SlurmConfig) -> tuple[list[str], list[str]]:
+    if config.multi_node_port_range:
+        port_start, port_end = config.multi_node_port_range
+        port_count = port_end - port_start + 1
+    else:
+        port_start, port_count = MULTINODE_PORT_BASE, MULTINODE_PORT_SPAN
     environment = [
         _tool_assignment("NVFL_SRUN", config.executables.get("srun"), "srun"),
+        '[[ "${SLURM_JOB_ID:-}" =~ ^[0-9]+$ ]] || { echo "invalid SLURM_JOB_ID" >&2; exit 102; }',
         f'export {MULTINODE_ENV_NNODES}="${{SLURM_JOB_NUM_NODES:?}}"',
         # The batch script always executes on the first node of the allocation.
         f'export {MULTINODE_ENV_MASTER_ADDR}="${{SLURMD_NODENAME:?}}"',
-        f'export {MULTINODE_ENV_MASTER_PORT}="$(({MULTINODE_PORT_BASE} + SLURM_JOB_ID % {MULTINODE_PORT_SPAN}))"',
-        f'export {MULTINODE_ENV_RUN_ID}="${{SLURM_JOB_ID:?}}"',
+        f'export {MULTINODE_ENV_MASTER_PORT}="$(({port_start} + 10#${{SLURM_JOB_ID}} % {port_count}))"',
+        f'export {MULTINODE_ENV_RUN_ID}="${{SLURM_JOB_ID}}"',
     ]
     node_script = shlex.quote(os.path.join(job_dir, NODE_FILE))
     if plan.sandbox == "apptainer":
@@ -168,13 +175,19 @@ def _render_node_script(plan: LaunchPlan, config: SlurmConfig) -> str:
     """
     worker_words = _build_worker_words(plan)
     node_words = [shlex.quote(word) for word in plan.node_command]
+    nodes = plan.resources.nodes
     lines = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
-        f'export {MULTINODE_ENV_NODE_RANK}="${{SLURM_NODEID:?}}"',
+        f'[[ "${{SLURM_JOB_NUM_NODES:-}}" == "{nodes}" && "${{SLURM_NODEID:-}}" =~ ^[0-9]+$ ]] '
+        '|| { echo "node group topology mismatch" >&2; exit 103; }',
+        f'(( 10#${{SLURM_NODEID}} < {nodes} )) || {{ echo "node rank outside node group" >&2; exit 103; }}',
+        f'export {MULTINODE_ENV_NODE_RANK}="${{SLURM_NODEID}}"',
     ]
     if plan.sandbox == "apptainer":
-        unset_names = _CREDENTIAL_ENV + tuple(f"APPTAINERENV_{name}" for name in _CREDENTIAL_ENV)
+        unset_names = _CREDENTIAL_ENV + tuple(
+            f"{prefix}{name}" for prefix in ("APPTAINERENV_", "SINGULARITYENV_") for name in _CREDENTIAL_ENV
+        )
         lines.extend(
             [
                 _tool_assignment("NVFL_APPTAINER", config.executables.get("apptainer"), "apptainer"),

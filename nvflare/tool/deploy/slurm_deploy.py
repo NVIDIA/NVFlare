@@ -137,6 +137,7 @@ def validate_config(config: dict[str, Any]) -> None:
             "parent_host",
             "poll_interval",
             "pending_timeout",
+            "multi_node_port_range",
         },
         "job_launcher",
     )
@@ -179,6 +180,7 @@ def _normalize_job_launcher(job_launcher: dict[str, Any]) -> dict:
             poll_interval=job_launcher.get("poll_interval", 10),
             pending_timeout=job_launcher.get("pending_timeout", 600),
             require_image_file=True,
+            multi_node_port_range=job_launcher.get("multi_node_port_range"),
         )
     except SlurmLauncherError as ex:
         _fail("INVALID_CONFIG", str(ex), "Fix slurm config.job_launcher.")
