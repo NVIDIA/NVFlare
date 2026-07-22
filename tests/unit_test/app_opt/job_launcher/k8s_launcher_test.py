@@ -58,7 +58,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobReturnCode
 from nvflare.app_opt.job_launcher.k8s_launcher import (
-    DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT,
     JOB_RETURN_CODE_MAPPING,
     POD_STATE_MAPPING,
     WORKSPACE_MOUNT_PATH,
@@ -456,14 +455,7 @@ class TestK8sJobHandle:
         assert "42" in args
         assert all(isinstance(a, str) for a in args), "all container args must be str"
 
-    def test_manifest_default_module_args_copies_dict(self):
-        cfg = _make_job_config()
-        cfg["module_args"] = None
-        handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
-        assert handle.container_args_module_args_dict is not DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT
-        assert handle.container_args_module_args_dict == DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT
-
-    def test_manifest_default_module_args_all_none_produces_empty_args_list(self):
+    def test_manifest_missing_module_args_produces_empty_args_list(self):
         cfg = _make_job_config()
         cfg["module_args"] = None
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
@@ -1463,19 +1455,15 @@ class TestK8sJobLauncherInit:
             timeout=60,
             namespace="test-ns",
             image_pull_secrets=["job-regcred"],
-            study_job_spec_file_path="/fake/study_job_spec.yaml",
         )
 
         assert launcher.study_data_pvc_file_path == "/fake/study_data.yaml"
-        assert launcher.study_job_spec_file_path == "/fake/study_job_spec.yaml"
         assert launcher.timeout == 60
         assert launcher.namespace == "test-ns"
         assert launcher.workspace_mount_path == WORKSPACE_MOUNT_PATH
         assert launcher.image_pull_secrets == ["job-regcred"]
         # study_data.yaml is populated lazily
         assert launcher.study_data_pvc_dict is None
-        assert launcher.study_job_spec_dict is None
-        assert launcher.pod_manifest_template_dict == {}
 
     def test_init_stores_custom_workspace_mount_path(self):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
@@ -1506,17 +1494,6 @@ class TestK8sJobLauncherInit:
                 config_file_path="/fake/kube/config",
                 study_data_pvc_file_path="/fake/study_data.yaml",
                 workspace_mount_path=1,
-            )
-
-    @pytest.mark.parametrize("study_job_spec_file_path", ["", 1, False])
-    def test_init_rejects_invalid_study_job_spec_file_path(self, study_job_spec_file_path):
-        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
-
-        with pytest.raises(ValueError, match="study_job_spec_file_path"):
-            ClientK8sJobLauncher(
-                config_file_path="/fake/kube/config",
-                study_data_pvc_file_path="/fake/study_data.yaml",
-                study_job_spec_file_path=study_job_spec_file_path,
             )
 
     @pytest.mark.parametrize("study_data_pvc_file_path", ["", 1, False])
@@ -1684,6 +1661,7 @@ def _make_launch_fl_ctx(
     set_items=None,
     app_custom_folder="",
     workspace_arg="/var/tmp/nvflare/workspace",
+    workspace="/fake/workspace",
 ):
     fl_ctx = FLContext()
     fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, site_name, private=False, sticky=True)
@@ -1694,7 +1672,7 @@ def _make_launch_fl_ctx(
     }
     fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args, private=True, sticky=False)
     args_obj = Mock()
-    args_obj.workspace = "/fake/workspace"
+    args_obj.workspace = workspace
     args_obj.set = set_items
     fl_ctx.set_prop(FLContextKey.ARGS, args_obj, private=False, sticky=False)
     workspace_obj = Mock()
@@ -1989,11 +1967,11 @@ class TestK8sJobLauncherLaunchJob:
         finally:
             _exit_patches(patches)
 
-    def test_pod_manifest_uses_study_specific_pod_template(self, tmp_path, caplog):
+    def test_pod_manifest_uses_study_runtime_pod_template(self, tmp_path):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
-        pod_dir = tmp_path / "pod_specs"
-        pod_dir.mkdir()
+        pod_dir = tmp_path / "local" / "pod_specs"
+        pod_dir.mkdir(parents=True)
         pod_file = pod_dir / "study-a-pod.yaml"
         pod_file.write_text(
             """
@@ -2020,7 +1998,7 @@ spec:
       secret:
         secretName: old-startup-secret
   containers:
-    - name: trainer
+    - name: nvflare_job
       image: template-image
       imagePullPolicy: IfNotPresent
       env:
@@ -2044,17 +2022,21 @@ spec:
 """,
             encoding="utf-8",
         )
-        study_job_spec_file = tmp_path / "study_job_spec.yaml"
-        study_job_spec_file.write_text("study-a: pod_specs/study-a-pod.yaml\n", encoding="utf-8")
-        study_data_file = tmp_path / "study_data.yaml"
-        study_data_file.write_text("study-a: {}\n", encoding="utf-8")
+        (tmp_path / "local" / "study_runtime.yaml").write_text(
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    pod_template: pod_specs/study-a-pod.yaml\n"
+            "    datasets:\n"
+            "      training:\n"
+            "        source: study-train-pvc\n"
+            "        mode: ro\n",
+            encoding="utf-8",
+        )
 
         patches = _make_k8s_launcher_patches(patch_open=False)
         _mock_study_data_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
         try:
-            _mock_study_data_yaml.safe_load.return_value = {
-                "study-a": {"training": {"source": "study-train-pvc", "mode": "ro"}}
-            }
             mock_api = MagicMock()
             mock_core_cls.return_value = mock_api
             mock_transfer = MagicMock()
@@ -2065,17 +2047,14 @@ spec:
 
             launcher = ClientK8sJobLauncher(
                 config_file_path="/fake/kube/config",
-                study_data_pvc_file_path=str(study_data_file),
                 namespace="test-ns",
                 default_python_path="/usr/bin/python3",
                 image_pull_secrets=["job-regcred"],
-                study_job_spec_file_path=str(study_job_spec_file),
             )
             meta = _make_launch_job_meta(image="repo/nvflare-job:v2", study="study-a", ephemeral_storage="8Gi")
             meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"].update({"cpu": "2", "memory": "8Gi"})
 
-            with caplog.at_level(logging.WARNING):
-                launcher.launch_job(meta, _make_launch_fl_ctx())
+            launcher.launch_job(meta, _make_launch_fl_ctx(workspace=str(tmp_path)))
 
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             assert manifest["metadata"]["name"] == _EXPECTED_POD_NAME
@@ -2114,108 +2093,100 @@ spec:
                 "readOnly": True,
             }
 
-            env_map = {e["name"]: e["value"] for e in job_container["env"]}
+            env_map = {e["name"]: e.get("value") for e in job_container["env"]}
             assert env_map["KEEP_ME"] == "yes"
-            assert env_map[ENV_WORKSPACE_TRANSFER_TOKEN] == "transfer-token"
             assert env_map[ENV_WORKSPACE_OWNER_FQCN] == "site-1.parent"
+            # the template's literal transfer-token env is replaced by the credential-Secret ref
+            token_entry = next(e for e in job_container["env"] if e["name"] == ENV_WORKSPACE_TRANSFER_TOKEN)
+            assert "value" not in token_entry
+            assert token_entry["valueFrom"]["secretKeyRef"]["key"] == ENV_WORKSPACE_TRANSFER_TOKEN
 
             resources = job_container["resources"]
             assert resources["limits"]["cpu"] == "2"
             assert resources["limits"]["memory"] == "8Gi"
             assert resources["requests"]["ephemeral-storage"] == "8Gi"
-            assert "study_job_spec_file_path" in caplog.text
-            assert "study_data_pvc_file_path" in caplog.text
-        finally:
-            _exit_patches(patches)
-
-    def test_pod_manifest_uses_study_template_without_study_data_path(self, tmp_path):
-        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
-
-        pod_file = tmp_path / "study-a-pod.yaml"
-        pod_file.write_text(
-            """
-apiVersion: v1
-kind: Pod
-spec:
-  serviceAccountName: custom-sa
-  containers:
-    - name: nvflare_job
-      image: template-image
-""",
-            encoding="utf-8",
-        )
-        study_job_spec_file = tmp_path / "study_job_spec.yaml"
-        study_job_spec_file.write_text(f"study-a: {pod_file}\n", encoding="utf-8")
-
-        patches = _make_k8s_launcher_patches(patch_open=False)
-        _mock_study_data_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
-        try:
-            mock_api = MagicMock()
-            mock_core_cls.return_value = mock_api
-            mock_transfer = MagicMock()
-            mock_transfer_cls.get_or_create.return_value = mock_transfer
-            mock_transfer.owner_fqcn = "site-1.parent"
-            mock_transfer.add_job.return_value = "transfer-token"
-            self._prime_running(mock_api)
-
-            launcher = ClientK8sJobLauncher(
-                config_file_path="/fake/kube/config",
-                study_data_pvc_file_path=None,
-                namespace="test-ns",
-                study_job_spec_file_path=str(study_job_spec_file),
-            )
-
-            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
-
-            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            volume_names = {v["name"] for v in manifest["spec"]["volumes"]}
-            mount_names = {m["name"] for m in manifest["spec"]["containers"][0]["volumeMounts"]}
-            assert volume_names == {"workspace-job", "startup-kit"}
-            assert mount_names == {"workspace-job", "startup-kit"}
             _mock_study_data_yaml.safe_load.assert_not_called()
         finally:
             _exit_patches(patches)
 
-    def test_pod_manifest_template_namespace_mismatch_uses_launcher_namespace(self, tmp_path, caplog):
+    def _setup_v2(self, patches, tmp_path, study_runtime_text, pod_templates=None):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
-        pod_file = tmp_path / "study-a-pod.yaml"
-        pod_file.write_text(
-            """
-apiVersion: v1
-kind: Pod
-metadata:
-  namespace: template-ns
-spec:
-  containers:
-    - name: nvflare_job
-      image: template-image
-""",
-            encoding="utf-8",
-        )
-        study_job_spec_file = tmp_path / "study_job_spec.yaml"
-        study_job_spec_file.write_text(f"study-a: {pod_file}\n", encoding="utf-8")
+        local_dir = tmp_path / "local"
+        local_dir.mkdir(parents=True, exist_ok=True)
+        (local_dir / "study_runtime.yaml").write_text(study_runtime_text, encoding="utf-8")
+        for rel_path, text in (pod_templates or {}).items():
+            template_path = local_dir / rel_path
+            template_path.parent.mkdir(parents=True, exist_ok=True)
+            template_path.write_text(text, encoding="utf-8")
+        self._mock_study_data_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
+        mock_api = MagicMock()
+        mock_core_cls.return_value = mock_api
+        self.mock_transfer_cls = mock_transfer_cls
+        mock_transfer = MagicMock()
+        mock_transfer_cls.get_or_create.return_value = mock_transfer
+        mock_transfer.owner_fqcn = "site-1.parent"
+        mock_transfer.add_job.return_value = "transfer-token"
+        self.mock_transfer = mock_transfer
+        launcher = ClientK8sJobLauncher(config_file_path="/fake/kube/config", namespace="test-ns")
+        self._prime_running(mock_api)
+        return launcher, mock_api
 
+    def test_pod_manifest_uses_study_runtime_template_without_datasets(self, tmp_path):
         patches = _make_k8s_launcher_patches(patch_open=False)
-        _mock_study_data_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    pod_template: study-a-pod.yaml\n",
+            pod_templates={
+                "study-a-pod.yaml": (
+                    "apiVersion: v1\n"
+                    "kind: Pod\n"
+                    "spec:\n"
+                    "  serviceAccountName: custom-sa\n"
+                    "  containers:\n"
+                    "    - name: nvflare_job\n"
+                    "      image: template-image\n"
+                )
+            },
+        )
         try:
-            mock_api = MagicMock()
-            mock_core_cls.return_value = mock_api
-            mock_transfer = MagicMock()
-            mock_transfer_cls.get_or_create.return_value = mock_transfer
-            mock_transfer.owner_fqcn = "site-1.parent"
-            mock_transfer.add_job.return_value = "transfer-token"
-            self._prime_running(mock_api)
+            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path)))
 
-            launcher = ClientK8sJobLauncher(
-                config_file_path="/fake/kube/config",
-                study_data_pvc_file_path=None,
-                namespace="test-ns",
-                study_job_spec_file_path=str(study_job_spec_file),
-            )
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["spec"]["serviceAccountName"] == "custom-sa"
+            volume_names = {v["name"] for v in manifest["spec"]["volumes"]}
+            mount_names = {m["name"] for m in manifest["spec"]["containers"][0]["volumeMounts"]}
+            assert volume_names == {"workspace-job", "startup-kit"}
+            assert mount_names == {"workspace-job", "startup-kit"}
+            self._mock_study_data_yaml.safe_load.assert_not_called()
+        finally:
+            _exit_patches(patches)
 
+    def test_pod_template_namespace_mismatch_uses_launcher_namespace(self, tmp_path, caplog):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    pod_template: study-a-pod.yaml\n",
+            pod_templates={
+                "study-a-pod.yaml": (
+                    "apiVersion: v1\n"
+                    "kind: Pod\n"
+                    "metadata:\n"
+                    "  namespace: template-ns\n"
+                    "spec:\n"
+                    "  containers:\n"
+                    "    - name: nvflare_job\n"
+                    "      image: template-image\n"
+                )
+            },
+        )
+        try:
             with caplog.at_level(logging.WARNING):
-                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
+                launcher.launch_job(
+                    _make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
+                )
 
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             assert manifest["metadata"]["namespace"] == "test-ns"
@@ -2223,110 +2194,61 @@ spec:
             assert (
                 "job pod is launched in namespace 'test-ns' instead of metadata.namespace 'template-ns'" in caplog.text
             )
-            _mock_study_data_yaml.safe_load.assert_not_called()
         finally:
             _exit_patches(patches)
 
-    def test_pod_manifest_template_is_cached_per_launcher(self, tmp_path):
-        from nvflare.app_opt.job_launcher import k8s_launcher as k8s_launcher_module
-        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
-
-        pod_file = tmp_path / "study-a-pod.yaml"
-        pod_file.write_text(
-            """
-apiVersion: v1
-kind: Pod
-spec:
-  serviceAccountName: first-sa
-  containers:
-    - name: nvflare_job
-      image: template-image
-""",
-            encoding="utf-8",
-        )
-        study_job_spec_file = tmp_path / "study_job_spec.yaml"
-        study_job_spec_file.write_text(f"study-a: {pod_file}\n", encoding="utf-8")
-
+    def test_pod_template_edits_take_effect_on_next_launch(self, tmp_path):
         patches = _make_k8s_launcher_patches(patch_open=False)
-        _mock_study_data_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
+        first_template = (
+            "apiVersion: v1\n"
+            "kind: Pod\n"
+            "spec:\n"
+            "  serviceAccountName: first-sa\n"
+            "  containers:\n"
+            "    - name: nvflare_job\n"
+            "      image: template-image\n"
+        )
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    pod_template: study-a-pod.yaml\n",
+            pod_templates={"study-a-pod.yaml": first_template},
+        )
         try:
-            mock_api = MagicMock()
-            mock_core_cls.return_value = mock_api
-            mock_transfer = MagicMock()
-            mock_transfer_cls.get_or_create.return_value = mock_transfer
-            mock_transfer.owner_fqcn = "site-1.parent"
-            mock_transfer.add_job.return_value = "transfer-token"
-            self._prime_running(mock_api)
-
-            launcher = ClientK8sJobLauncher(
-                config_file_path="/fake/kube/config",
-                study_data_pvc_file_path=None,
-                namespace="test-ns",
-                study_job_spec_file_path=str(study_job_spec_file),
+            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path)))
+            (tmp_path / "local" / "study-a-pod.yaml").write_text(
+                first_template.replace("first-sa", "second-sa"), encoding="utf-8"
             )
+            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path)))
 
-            with patch.object(
-                k8s_launcher_module, "load_pod_spec_file", wraps=k8s_launcher_module.load_pod_spec_file
-            ) as mock_load_pod_spec:
-                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
-                pod_file.write_text(
-                    """
-apiVersion: v1
-kind: Pod
-spec:
-  serviceAccountName: second-sa
-  containers:
-    - name: nvflare_job
-      image: template-image
-""",
-                    encoding="utf-8",
-                )
-                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
-
-            assert mock_load_pod_spec.call_count == 1
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            assert manifest["spec"]["serviceAccountName"] == "first-sa"
+            assert manifest["spec"]["serviceAccountName"] == "second-sa"
         finally:
             _exit_patches(patches)
 
-    def test_pod_manifest_uses_builtin_template_when_study_job_spec_missing_study(self, tmp_path, caplog):
-        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
-
-        pod_file = tmp_path / "other-pod.yaml"
-        pod_file.write_text(
-            """
-apiVersion: v1
-kind: Pod
-spec:
-  serviceAccountName: custom-sa
-  containers:
-    - name: trainer
-      image: template-image
-""",
-            encoding="utf-8",
-        )
-        study_job_spec_file = tmp_path / "study_job_spec.yaml"
-        study_job_spec_file.write_text(f"other-study: {pod_file}\n", encoding="utf-8")
-
+    def test_pod_manifest_uses_builtin_template_when_study_runtime_missing_study(self, tmp_path, caplog):
         patches = _make_k8s_launcher_patches(patch_open=False)
-        _mock_study_data_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\nstudies:\n  other-study:\n    pod_template: other-pod.yaml\n",
+            pod_templates={
+                "other-pod.yaml": (
+                    "apiVersion: v1\n"
+                    "kind: Pod\n"
+                    "spec:\n"
+                    "  serviceAccountName: custom-sa\n"
+                    "  containers:\n"
+                    "    - name: nvflare_job\n"
+                    "      image: template-image\n"
+                )
+            },
+        )
         try:
-            mock_api = MagicMock()
-            mock_core_cls.return_value = mock_api
-            mock_transfer = MagicMock()
-            mock_transfer_cls.get_or_create.return_value = mock_transfer
-            mock_transfer.owner_fqcn = "site-1.parent"
-            mock_transfer.add_job.return_value = "transfer-token"
-            self._prime_running(mock_api)
-
-            launcher = ClientK8sJobLauncher(
-                config_file_path="/fake/kube/config",
-                study_data_pvc_file_path="/fake/study_data.yaml",
-                namespace="test-ns",
-                study_job_spec_file_path=str(study_job_spec_file),
-            )
             with caplog.at_level(logging.WARNING):
-                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
+                launcher.launch_job(
+                    _make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
+                )
 
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             assert "serviceAccountName" not in manifest["spec"]
@@ -2335,38 +2257,409 @@ spec:
         finally:
             _exit_patches(patches)
 
-    def test_pod_manifest_rejects_non_pod_study_job_spec(self, tmp_path):
-        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
-
-        pod_file = tmp_path / "job.yaml"
-        pod_file.write_text(
-            """
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: not-a-pod
-""",
-            encoding="utf-8",
+    def test_pod_manifest_rejects_non_pod_template(self, tmp_path):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    pod_template: job.yaml\n",
+            pod_templates={"job.yaml": "apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: not-a-pod\n"},
         )
-        study_job_spec_file = tmp_path / "study_job_spec.yaml"
-        study_job_spec_file.write_text(f"study-a: {pod_file}\n", encoding="utf-8")
+        try:
+            with pytest.raises(ValueError, match="kind: Pod"):
+                launcher.launch_job(
+                    _make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
+                )
+            mock_api.create_namespaced_pod.assert_not_called()
+            self.mock_transfer_cls.get_or_create.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_inline_pod_template(self, tmp_path):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    pod_template:\n"
+            "      spec:\n"
+            "        serviceAccountName: inline-sa\n"
+            "        nodeSelector:\n"
+            "          accelerator: gpu\n",
+        )
+        try:
+            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path)))
+
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["spec"]["serviceAccountName"] == "inline-sa"
+            assert manifest["spec"]["nodeSelector"] == {"accelerator": "gpu"}
+            assert manifest["spec"]["restartPolicy"] == "Never"
+        finally:
+            _exit_patches(patches)
+
+    def test_study_runtime_env_and_secret_env_emitted(self, tmp_path):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    env:\n"
+            "      DB_HOST: postgres.svc\n"
+            "    secret_env:\n"
+            "      DB_PASSWORD: {source: study-db, key: password}\n",
+        )
+        try:
+            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path)))
+
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            env_items = {e["name"]: e for e in manifest["spec"]["containers"][0]["env"]}
+            assert env_items["DB_HOST"]["value"] == "postgres.svc"
+            # launcher-owned transfer token rides the credential Secret alongside the study entries
+            token_ref = env_items[ENV_WORKSPACE_TRANSFER_TOKEN]["valueFrom"]["secretKeyRef"]
+            assert token_ref["key"] == ENV_WORKSPACE_TRANSFER_TOKEN
+            assert env_items["DB_PASSWORD"]["valueFrom"] == {"secretKeyRef": {"name": "study-db", "key": "password"}}
+            assert "value" not in env_items["DB_PASSWORD"]
+        finally:
+            _exit_patches(patches)
+
+    def test_study_runtime_secret_mounts_add_secret_volumes(self, tmp_path):
+        from nvflare.app_opt.job_launcher.k8s_launcher import study_secret_volume_name
 
         patches = _make_k8s_launcher_patches(patch_open=False)
-        _mock_study_data_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    secret_mounts:\n"
+            "      db-ca:\n"
+            "        source: study-db-ca\n"
+            "        mount_path: /var/run/nvflare/secrets/db-ca\n"
+            "        mode: ro\n"
+            "        items:\n"
+            "          ca.crt: ca.crt\n"
+            "      api-token:\n"
+            "        source: study-api-token\n"
+            "        mount_path: /var/run/nvflare/secrets/api\n",
+        )
         try:
-            mock_api = MagicMock()
-            mock_core_cls.return_value = mock_api
-            launcher = ClientK8sJobLauncher(
-                config_file_path="/fake/kube/config",
-                study_data_pvc_file_path="/fake/study_data.yaml",
-                namespace="test-ns",
-                study_job_spec_file_path=str(study_job_spec_file),
+            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path)))
+
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            volume_map = {v["name"]: v for v in manifest["spec"]["volumes"]}
+            mount_map = {m["name"]: m for m in manifest["spec"]["containers"][0]["volumeMounts"]}
+            ca_volume = study_secret_volume_name("study-a", "db-ca")
+            token_volume = study_secret_volume_name("study-a", "api-token")
+            assert volume_map[ca_volume]["secret"] == {
+                "secretName": "study-db-ca",
+                "items": [{"key": "ca.crt", "path": "ca.crt"}],
+            }
+            assert volume_map[token_volume]["secret"] == {"secretName": "study-api-token"}
+            assert mount_map[ca_volume] == {
+                "name": ca_volume,
+                "mountPath": "/var/run/nvflare/secrets/db-ca",
+                "readOnly": True,
+            }
+            assert mount_map[token_volume]["readOnly"] is True
+        finally:
+            _exit_patches(patches)
+
+    def test_study_container_image_used_when_job_meta_has_none(self, tmp_path):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    container:\n      image: registry.example.com/study:v9\n",
+        )
+        try:
+            launcher.launch_job(
+                _make_launch_job_meta(image=None, study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
             )
 
-            with pytest.raises(ValueError, match="kind: Pod"):
-                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["spec"]["containers"][0]["image"] == "registry.example.com/study:v9"
+        finally:
+            _exit_patches(patches)
+
+    def test_job_meta_image_wins_over_study_container_image(self, tmp_path):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    container:\n      image: registry.example.com/study:v9\n",
+        )
+        try:
+            launcher.launch_job(
+                _make_launch_job_meta(image="repo/job-image:v1", study="study-a"),
+                _make_launch_fl_ctx(workspace=str(tmp_path)),
+            )
+
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["spec"]["containers"][0]["image"] == "repo/job-image:v1"
+        finally:
+            _exit_patches(patches)
+
+    def test_missing_image_error_mentions_study_runtime(self, tmp_path):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(patches, tmp_path, "format_version: 2\nstudies: {}\n")
+        try:
+            with pytest.raises(RuntimeError, match="container.image"):
+                launcher.launch_job(
+                    _make_launch_job_meta(image=None, study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
+                )
             mock_api.create_namespaced_pod.assert_not_called()
-            mock_transfer_cls.get_or_create.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_study_runtime_datasets_without_template_add_pvc_volumes(self, tmp_path):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    datasets:\n"
+            "      training:\n"
+            "        source: study-train-pvc\n"
+            "        mode: ro\n",
+        )
+        try:
+            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path)))
+
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            training_volume = study_dataset_volume_name("study-a", "training")
+            volume_map = {v["name"]: v for v in manifest["spec"]["volumes"]}
+            mount_map = {m["name"]: m for m in manifest["spec"]["containers"][0]["volumeMounts"]}
+            assert volume_map[training_volume]["persistentVolumeClaim"]["claimName"] == "study-train-pvc"
+            assert mount_map[training_volume] == {
+                "name": training_volume,
+                "mountPath": "/data/study-a/training",
+                "readOnly": True,
+            }
+            self._mock_study_data_yaml.safe_load.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_study_runtime_conflicts_with_v1_file(self, tmp_path):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(patches, tmp_path, "format_version: 2\nstudies: {}\n")
+        (tmp_path / "local" / "study_data.yaml").write_text("study-a: {}\n", encoding="utf-8")
+        try:
+            with pytest.raises(RuntimeError, match="cannot be combined"):
+                launcher.launch_job(
+                    _make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
+                )
+            mock_api.create_namespaced_pod.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_study_runtime_conflicts_with_existing_pvc_file_arg(self, tmp_path):
+        legacy_file = tmp_path / "pvc_map.yaml"
+        legacy_file.write_text("study-a: {}\n", encoding="utf-8")
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(patches, tmp_path, "format_version: 2\nstudies: {}\n")
+        launcher.study_data_pvc_file_path = str(legacy_file)
+        try:
+            with pytest.raises(RuntimeError, match="cannot be combined"):
+                launcher.launch_job(
+                    _make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
+                )
+            mock_api.create_namespaced_pod.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_study_runtime_allows_pvc_file_arg_pointing_to_missing_file(self, tmp_path):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(patches, tmp_path, "format_version: 2\nstudies: {}\n")
+        launcher.study_data_pvc_file_path = str(tmp_path / "does-not-exist.yaml")
+        try:
+            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path)))
+            mock_api.create_namespaced_pod.assert_called_once()
+        finally:
+            _exit_patches(patches)
+
+    def test_multi_container_template_without_main_marker_fails(self, tmp_path):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    pod_template: multi.yaml\n"
+            "    env:\n"
+            "      DB_HOST: postgres.svc\n",
+            pod_templates={
+                "multi.yaml": (
+                    "apiVersion: v1\n"
+                    "kind: Pod\n"
+                    "spec:\n"
+                    "  containers:\n"
+                    "    - name: trainer\n"
+                    "      image: a\n"
+                    "    - name: sidecar\n"
+                    "      image: b\n"
+                )
+            },
+        )
+        try:
+            with pytest.raises(ValueError, match="mark the main container"):
+                launcher.launch_job(
+                    _make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
+                )
+            mock_api.create_namespaced_pod.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_container_image_with_unmarked_multi_container_template_fails(self, tmp_path):
+        # the site-default image must not land on a fallback-selected sidecar
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    container:\n"
+            "      image: registry.example.com/study:v9\n"
+            "    pod_template: multi.yaml\n",
+            pod_templates={
+                "multi.yaml": (
+                    "apiVersion: v1\n"
+                    "kind: Pod\n"
+                    "spec:\n"
+                    "  containers:\n"
+                    "    - name: log-forwarder\n"
+                    "      image: a\n"
+                    "    - name: trainer\n"
+                    "      image: b\n"
+                )
+            },
+        )
+        try:
+            with pytest.raises(ValueError, match="mark the main container"):
+                launcher.launch_job(
+                    _make_launch_job_meta(image=None, study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
+                )
+            mock_api.create_namespaced_pod.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_docker_kwargs_rejected_on_k8s(self, tmp_path):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    docker_kwargs:\n      shm_size: 8g\n",
+        )
+        try:
+            with pytest.raises(ValueError, match="Docker-only"):
+                launcher.launch_job(
+                    _make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
+                )
+            mock_api.create_namespaced_pod.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_multi_container_template_without_main_container_fails(self, tmp_path):
+        # Credential secret_env refs are attached to every job, so a multi-container
+        # template must name its main container instead of silently repurposing
+        # containers[0] (a sidecar) as the job+credential container.
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    pod_template: multi.yaml\n",
+            pod_templates={
+                "multi.yaml": (
+                    "apiVersion: v1\n"
+                    "kind: Pod\n"
+                    "spec:\n"
+                    "  containers:\n"
+                    "    - name: trainer\n"
+                    "      image: a\n"
+                    "    - name: sidecar\n"
+                    "      image: b\n"
+                )
+            },
+        )
+        try:
+            with pytest.raises(ValueError, match="mark the main container"):
+                launcher.launch_job(
+                    _make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
+                )
+            mock_api.create_namespaced_pod.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_secret_env_merges_onto_template_main_container(self, tmp_path):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    pod_template: multi.yaml\n"
+            "    secret_env:\n"
+            "      DB_PASSWORD: {source: study-db, key: password}\n",
+            pod_templates={
+                "multi.yaml": (
+                    "apiVersion: v1\n"
+                    "kind: Pod\n"
+                    "spec:\n"
+                    "  containers:\n"
+                    "    - name: nvflare_job\n"
+                    "      image: a\n"
+                    "      env:\n"
+                    "        - name: KEEP_ME\n"
+                    "          value: 'yes'\n"
+                    "        - name: DB_PASSWORD\n"
+                    "          value: template-plaintext\n"
+                    "    - name: sidecar\n"
+                    "      image: b\n"
+                )
+            },
+        )
+        try:
+            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path)))
+
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            trainer = manifest["spec"]["containers"][0]
+            assert trainer["name"] == f"container-{_EXPECTED_JOB_ID}"
+            env_items = {e["name"]: e for e in trainer["env"]}
+            assert env_items["KEEP_ME"]["value"] == "yes"
+            # the typed secret_env entry replaces the template's plaintext entry by name
+            assert env_items["DB_PASSWORD"]["valueFrom"] == {"secretKeyRef": {"name": "study-db", "key": "password"}}
+            assert "value" not in env_items["DB_PASSWORD"]
+            sidecar = manifest["spec"]["containers"][1]
+            assert "env" not in sidecar
+        finally:
+            _exit_patches(patches)
+
+    def test_secret_env_must_not_override_launcher_owned_env(self, tmp_path):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    secret_env:\n"
+            "      NVFL_WORKSPACE_TRANSFER_TOKEN: {source: study-db, key: token}\n",
+        )
+        try:
+            with pytest.raises(ValueError, match="launcher-owned"):
+                launcher.launch_job(
+                    _make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
+                )
+            mock_api.create_namespaced_pod.assert_not_called()
         finally:
             _exit_patches(patches)
 
@@ -2445,7 +2738,7 @@ metadata:
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             container = manifest["spec"]["containers"][0]
             mount_map = {m["name"]: m for m in container["volumeMounts"]}
-            env_map = {e["name"]: e["value"] for e in container["env"]}
+            env_map = {e["name"]: e.get("value") for e in container["env"]}
 
             assert mount_map["workspace-job"]["mountPath"] == workspace_mount_path
             assert mount_map["startup-kit"] == {
@@ -2890,7 +3183,7 @@ metadata:
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             container = manifest["spec"]["containers"][0]
             assert "env" in container
-            env_map = {e["name"]: e["value"] for e in container["env"]}
+            env_map = {e["name"]: e.get("value") for e in container["env"]}
             assert env_map["PYTHONPATH"] == f"{WORKSPACE_MOUNT_PATH}/{_JOB_UUID}/app_site-1/custom"
         finally:
             _exit_patches(patches)
@@ -2914,7 +3207,7 @@ metadata:
             launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx(app_custom_folder=""))
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             container = manifest["spec"]["containers"][0]
-            env_map = {e["name"]: e["value"] for e in container.get("env", [])}
+            env_map = {e["name"]: e.get("value") for e in container.get("env", [])}
             assert "PYTHONPATH" not in env_map
         finally:
             _exit_patches(patches)
@@ -2926,9 +3219,12 @@ metadata:
         try:
             launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            env_map = {e["name"]: e["value"] for e in manifest["spec"]["containers"][0].get("env", [])}
-            assert env_map[ENV_WORKSPACE_OWNER_FQCN] == "site-1.parent"
-            assert env_map[ENV_WORKSPACE_TRANSFER_TOKEN] == "transfer-token"
+            env_entries = {e["name"]: e for e in manifest["spec"]["containers"][0].get("env", [])}
+            assert env_entries[ENV_WORKSPACE_OWNER_FQCN]["value"] == "site-1.parent"
+            # the transfer token rides the credential Secret, never a literal pod env value
+            token_entry = env_entries[ENV_WORKSPACE_TRANSFER_TOKEN]
+            assert "value" not in token_entry
+            assert token_entry["valueFrom"]["secretKeyRef"]["key"] == ENV_WORKSPACE_TRANSFER_TOKEN
         finally:
             _exit_patches(patches)
 
@@ -3106,3 +3402,176 @@ class TestJobHandleSecurityContext:
         handle = self._make_handle_with_sec(security_context={})
         manifest = handle.get_manifest()
         assert "securityContext" not in manifest["spec"]
+
+
+# ---------------------------------------------------------------------------
+# Credential transport — per-job Secret + env valueFrom secretKeyRef
+# ---------------------------------------------------------------------------
+
+_CREDENTIAL_ENV = {
+    "NVFLARE_JOB_AUTH_TOKEN": "secret-token",
+    "NVFLARE_JOB_TOKEN_SIGNATURE": "secret-signature",
+    "NVFLARE_JOB_SSID": "secret-ssid",
+}
+
+_EXPECTED_CRED_SECRET_NAME = f"nvflare-cred-{_EXPECTED_POD_NAME}"
+
+
+def _make_cred_fl_ctx():
+    fl_ctx = _make_launch_fl_ctx()
+    fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS).update(
+        {
+            JobProcessArgs.AUTH_TOKEN: ("-t", "secret-token"),
+            JobProcessArgs.TOKEN_SIGNATURE: ("-ts", "secret-signature"),
+            JobProcessArgs.SSID: ("-d", "secret-ssid"),
+        }
+    )
+    return fl_ctx
+
+
+def _cred_secret_bodies(mock_api):
+    return [
+        c.kwargs["body"]
+        for c in mock_api.create_namespaced_secret.call_args_list
+        if c.kwargs["body"]["metadata"]["name"].startswith("nvflare-cred-")
+    ]
+
+
+class TestK8sCredentialTransport:
+    def _setup(self, patches):
+        launcher, mock_api = TestK8sJobLauncherLaunchJob._setup(self, patches)
+        TestK8sJobLauncherLaunchJob._prime_running(self, mock_api)
+        created_pod = Mock()
+        created_pod.metadata.uid = "pod-uid-123"
+        mock_api.create_namespaced_pod.return_value = created_pod
+        return launcher, mock_api
+
+    def test_secret_created_and_pod_references_it_without_values(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
+
+            (body,) = _cred_secret_bodies(mock_api)
+            assert body["metadata"] == {"name": _EXPECTED_CRED_SECRET_NAME, "namespace": "test-ns"}
+            assert body["type"] == "Opaque"
+            assert body["stringData"] == {**_CREDENTIAL_ENV, ENV_WORKSPACE_TRANSFER_TOKEN: "transfer-token"}
+
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            env_by_name = {item["name"]: item for item in manifest["spec"]["containers"][0]["env"]}
+            for env_name in list(_CREDENTIAL_ENV) + [ENV_WORKSPACE_TRANSFER_TOKEN]:
+                ref = env_by_name[env_name]["valueFrom"]["secretKeyRef"]
+                assert ref == {"name": _EXPECTED_CRED_SECRET_NAME, "key": env_name}
+            assert "secret-" not in str(manifest)
+            assert "transfer-token" not in str(manifest)
+            assert not {"-t", "-ts", "-d"} & set(manifest["spec"]["containers"][0]["args"])
+        finally:
+            _exit_patches(patches)
+
+    def test_secret_owner_reference_patched_after_pod_create(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
+
+            patch_call = mock_api.patch_namespaced_secret.call_args
+            assert patch_call.kwargs["name"] == _EXPECTED_CRED_SECRET_NAME
+            assert patch_call.kwargs["body"]["metadata"]["ownerReferences"] == [
+                {"apiVersion": "v1", "kind": "Pod", "name": _EXPECTED_POD_NAME, "uid": "pod-uid-123"}
+            ]
+            call_names = [name for name, _args, _kwargs in mock_api.mock_calls]
+            assert call_names.index("create_namespaced_pod") < call_names.index("patch_namespaced_secret")
+        finally:
+            _exit_patches(patches)
+
+    def test_no_bootstrap_credentials_secret_carries_only_transfer_token(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+
+            (body,) = _cred_secret_bodies(mock_api)
+            assert body["stringData"] == {ENV_WORKSPACE_TRANSFER_TOKEN: "transfer-token"}
+        finally:
+            _exit_patches(patches)
+
+    def test_handle_deletes_secret_at_terminal_state(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            handle = launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
+            assert handle.credential_secret_name == _EXPECTED_CRED_SECRET_NAME
+            mock_api.delete_namespaced_secret.assert_not_called()
+
+            succeeded = Mock()
+            succeeded.status.phase = PodPhase.SUCCEEDED.value
+            mock_api.read_namespaced_pod.return_value = succeeded
+            assert handle.poll() == JobReturnCode.SUCCESS
+
+            mock_api.delete_namespaced_secret.assert_called_once_with(
+                name=_EXPECTED_CRED_SECRET_NAME, namespace="test-ns"
+            )
+            assert handle.credential_secret_name is None
+            handle.poll()
+            mock_api.delete_namespaced_secret.assert_called_once()
+        finally:
+            _exit_patches(patches)
+
+    def test_terminate_deletes_secret(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            handle = launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
+            handle.terminate()
+            mock_api.delete_namespaced_secret.assert_called_once_with(
+                name=_EXPECTED_CRED_SECRET_NAME, namespace="test-ns"
+            )
+        finally:
+            _exit_patches(patches)
+
+    def test_launch_failure_before_pod_create_deletes_secret(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            mock_api.create_namespaced_pod.side_effect = _FakeApiException(status=403, reason="quota")
+            handle = launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
+            assert handle.terminal_state is JobState.TERMINATED
+            mock_api.delete_namespaced_secret.assert_called_once_with(
+                name=_EXPECTED_CRED_SECRET_NAME, namespace="test-ns"
+            )
+        finally:
+            _exit_patches(patches)
+
+    def test_replace_404_falls_back_to_create(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            launcher.core_v1 = mock_api
+            mock_api.create_namespaced_secret.side_effect = [
+                _FakeApiException(status=409, reason="Conflict"),
+                None,
+            ]
+            mock_api.replace_namespaced_secret.side_effect = _FakeApiException(status=404, reason="Gone")
+
+            name = launcher._create_or_replace_secret("nvflare-cred-x", {"stringData": {"k": "v"}})
+
+            assert name == "nvflare-cred-x"
+            assert mock_api.create_namespaced_secret.call_count == 2
+        finally:
+            _exit_patches(patches)
+
+    def test_secret_replaced_on_conflict_and_owner_patch_failure_is_non_fatal(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            mock_api.create_namespaced_secret.side_effect = _FakeApiException(status=409, reason="Conflict")
+            mock_api.patch_namespaced_secret.side_effect = _FakeApiException(status=403, reason="Forbidden")
+
+            handle = launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
+
+            replaced = [c.kwargs["name"] for c in mock_api.replace_namespaced_secret.call_args_list]
+            assert _EXPECTED_CRED_SECRET_NAME in replaced
+            assert isinstance(handle, K8sJobHandle)
+            assert handle.terminal_state is None
+        finally:
+            _exit_patches(patches)

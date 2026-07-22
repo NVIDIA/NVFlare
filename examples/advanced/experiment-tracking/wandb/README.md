@@ -12,6 +12,7 @@ This example demonstrates Weights & Biases tracking with flexible options for se
 
 ```python
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
 from nvflare.recipe.utils import add_experiment_tracking
 
 # Create FedAvg recipe
@@ -42,7 +43,8 @@ wandb_config = {
 # Server-side tracking (centralized)
 add_experiment_tracking(recipe, "wandb", tracking_config=wandb_config)
 
-recipe.run()
+env = SimEnv(num_clients=2)
+run = recipe.execute(env)
 ```
 
 ## Setup and Running
@@ -150,9 +152,13 @@ add_experiment_tracking(recipe, "wandb", tracking_config=wandb_config)
 
 ```python
 # Each client logs to its own WandB run
-for site_name in ["site-1", "site-2"]:
-    receiver = WandBReceiver(**client_config)
-    recipe.job.to(receiver, site_name, id="wandb_receiver")
+add_experiment_tracking(
+    recipe,
+    "wandb",
+    tracking_config=client_config,
+    client_side=True,
+    server_side=False,
+)
 ```
 
 **Event Flow**:

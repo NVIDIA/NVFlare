@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,10 +19,11 @@ import shutil
 
 from setuptools import find_packages, setup
 
+ROOT_DIR = os.path.abspath(os.path.dirname(__file__)) if "__file__" in globals() else os.getcwd()
+
 
 def load_local_versioneer():
-    root = os.path.abspath(os.path.dirname(__file__)) if "__file__" in globals() else os.getcwd()
-    versioneer_path = os.path.join(root, "versioneer.py")
+    versioneer_path = os.path.join(ROOT_DIR, "versioneer.py")
     spec = importlib.util.spec_from_file_location("nvflare_local_versioneer", versioneer_path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Failed to load versioneer from {versioneer_path}")
@@ -89,18 +90,20 @@ copy_package(src_dir="job_templates", dst_dir=tmp_job_template_folder)
 job_templates = package_files(root="nvflare/tool/job", starting="templates")
 deploy_templates = package_files(root="nvflare/tool/deploy", starting="templates")
 
+cmdclass = versioneer.get_cmdclass()
+
 
 setup(
     name=package_name,
     version=version,
-    cmdclass=versioneer.get_cmdclass(),
+    cmdclass=cmdclass,
     package_dir={"nvflare": "nvflare"},
     packages=find_packages(
         where=".",
         include=[
             "*",
         ],
-        exclude=["tests", "tests.*"],
+        exclude=["tests", "tests.*", "dev_tools", "dev_tools.*"],
     ),
     package_data={
         "": ["*.yml", "*.yaml", "*.tpl", "*.html", "*.js", "poc.zip", "*.config", "*.conf"],

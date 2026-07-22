@@ -169,7 +169,7 @@ def main():
     )
 
     # Export job
-    recipe.job.export_job(args.job_dir)
+    recipe.export(args.job_dir)
 
     # Run recipe
     if args.startup_kit_location:

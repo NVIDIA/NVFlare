@@ -21,6 +21,8 @@ import uuid
 from contextlib import suppress
 from typing import Optional
 
+from cryptography.x509.oid import ExtendedKeyUsageOID
+
 from nvflare.apis.client import Client, ClientPropKey
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
@@ -30,7 +32,7 @@ from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellMessageHeaderKeys, ClientRegSession, ClientType, InternalFLContextKey
 from nvflare.private.fed.server.cred_keeper import CredKeeper
-from nvflare.private.fed.utils.identity_utils import get_org_from_cert, load_crt_bytes
+from nvflare.private.fed.utils.identity_utils import get_org_from_cert, load_crt_bytes, load_crt_chain_bytes
 from nvflare.security.logging import secure_format_exception
 
 
@@ -134,7 +136,7 @@ class ClientManager:
                 self.logger.error(f"failed to persist disabled-client state for {client_name}: {ex}")
                 raise
         removed_tokens = [token for token, _client in removed_clients]
-        self.logger.info(f"Client {client_name} disabled. Removed active tokens: {removed_tokens}")
+        self.logger.info(f"Client {client_name} disabled. Removed {len(removed_tokens)} active token(s).")
         return removed_tokens
 
     def enable_client(self, client_name: str) -> bool:
@@ -180,9 +182,10 @@ class ClientManager:
                 # do not update self.clients for non-regular clients
                 client_kind = client_type
 
+            # Never log the token value: it is a bearer credential (see #4858).
             self.logger.info(
-                "Client: New {} {} joined. Sent token: {}.  Total clients: {}".format(
-                    client_kind, client.name + "@" + client_ip, client.token, len(self.clients)
+                "Client: New {} {} joined. Sent token.  Total clients: {}".format(
+                    client_kind, client.name + "@" + client_ip, len(self.clients)
                 )
             )
         return client
@@ -200,11 +203,9 @@ class ClientManager:
             client = self.clients.pop(token, None)
             if client:
                 self.name_to_clients.pop(client.name, None)
-                self.logger.info(
-                    "Client Name:{} \tToken: {} left.  Total clients: {}".format(client.name, token, len(self.clients))
-                )
+                self.logger.info("Client Name:{} left.  Total clients: {}".format(client.name, len(self.clients)))
             else:
-                self.logger.warning("remove_client: unknown token %s", token)
+                self.logger.warning("remove_client: unknown token")
             return client
 
     def login_client(self, client_login, fl_ctx: FLContext, client_type):
@@ -287,7 +288,8 @@ class ClientManager:
                 self.logger.error("missing signature in register request")
                 return None
 
-            asserter_cert = load_crt_bytes(asserter_cert_data)
+            asserter_cert_chain = load_crt_chain_bytes(asserter_cert_data)
+            asserter_cert = asserter_cert_chain[0]
             id_verifier = self._get_id_verifier(fl_ctx)
             reg = fl_ctx.get_prop(InternalFLContextKey.CLIENT_REG_SESSION)
             if not reg:
@@ -304,6 +306,8 @@ class ClientManager:
                     asserter_cert=asserter_cert,
                     signature=signature,
                     nonce=reg.nonce,
+                    intermediate_certs=asserter_cert_chain[1:],
+                    expected_eku=ExtendedKeyUsageOID.CLIENT_AUTH,
                 )
             except Exception as ex:
                 self.logger.error(f"failed to verify client identity: {secure_format_exception(ex)}")
@@ -390,7 +394,7 @@ class ClientManager:
             client = self.clients.get(token)
             if client:
                 client.last_connect_time = time.time()
-                self.logger.debug(f"Receive heartbeat from Client:{token}")
+                self.logger.debug(f"Receive heartbeat from Client:{client_name}")
                 return False
             else:
                 for _token, _client in self.clients.items():
@@ -401,8 +405,7 @@ class ClientManager:
                             sticky=False,
                         )
                         self.logger.info(
-                            f"Failed to re-activate the client:{client_name} with token: {token}. "
-                            f"Client already exist with token: {_token}."
+                            f"Failed to re-activate the client:{client_name}: already registered with another token."
                         )
                         return False
 
@@ -410,7 +413,7 @@ class ClientManager:
                 self._set_client_props(client, client_fqcn, fl_ctx)
                 self.clients.update({token: client})
                 self.name_to_clients[client.name] = client
-                self.logger.info(f"Re-activate the client: {client_name} at {client_fqcn} with token: {token}")
+                self.logger.info(f"Re-activate the client: {client_name} at {client_fqcn}")
                 return True
 
     @staticmethod

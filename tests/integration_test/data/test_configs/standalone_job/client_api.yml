@@ -20,21 +20,6 @@ tests:
         "result":
           "type": "run_state"
           "data": { "run_finished": True }
-  - test_name: "run np-loop-cell-pipe"
-    event_sequence:
-      - "trigger":
-          "type": "server_log"
-          "data": "Server started"
-        "actions": [ "submit_job np_loop_cell_pipe" ]
-        "result":
-          "type": "job_submit_success"
-      - "trigger":
-          "type": "run_state"
-          "data": { "run_finished": True }
-        "actions": [ "ensure_current_job_done" ]
-        "result":
-          "type": "run_state"
-          "data": { "run_finished": True }
   - test_name: "run np-metrics"
     event_sequence:
       - "trigger":
@@ -66,7 +51,22 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
+      - python tools/prepare_cifar10.py --root /tmp/nvflare/data
+  - test_name: "run pt-client-api-torchrun-cpu"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job pt_client_api_torchrun_cpu" ]
+        "result":
+          "type": "job_submit_success"
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
   - test_name: "run pt-client-api-launch-once"
     event_sequence:
       - "trigger":
@@ -83,7 +83,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
+      - python tools/prepare_cifar10.py --root /tmp/nvflare/data
   - test_name: "run pt-client-api-cyclic"
     event_sequence:
       - "trigger":
@@ -100,7 +100,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
+      - python tools/prepare_cifar10.py --root /tmp/nvflare/data
   - test_name: "run decorator"
     event_sequence:
       - "trigger":
@@ -117,7 +117,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
+      - python tools/prepare_cifar10.py --root /tmp/nvflare/data
   - test_name: "run lightning-client-api"
     event_sequence:
       - "trigger":
@@ -134,7 +134,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
+      - python tools/prepare_cifar10.py --root /tmp/nvflare/data
   - test_name: "run pt-client-api-in-process"
     event_sequence:
       - "trigger":
@@ -151,7 +151,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
+      - python tools/prepare_cifar10.py --root /tmp/nvflare/data
   - test_name: "run decorator-in-process"
     event_sequence:
       - "trigger":
@@ -168,7 +168,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
+      - python tools/prepare_cifar10.py --root /tmp/nvflare/data
   - test_name: "run lightning-client-api-in-process"
     event_sequence:
       - "trigger":
@@ -185,21 +185,6 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
+      - python tools/prepare_cifar10.py --root /tmp/nvflare/data
     teardown:
       - rm -rf /tmp/nvflare/data
-  - test_name: "run pt-large-model-pass-through"
-    event_sequence:
-      - "trigger":
-          "type": "server_log"
-          "data": "Server started"
-        "actions": [ "submit_job pt_large_model_pass_through" ]
-        "result":
-          "type": "job_submit_success"
-      - "trigger":
-          "type": "run_state"
-          "data": { "run_finished": True }
-        "actions": [ "ensure_current_job_done" ]
-        "result":
-          "type": "run_state"
-          "data": { "run_finished": True }

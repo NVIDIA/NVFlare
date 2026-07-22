@@ -155,7 +155,6 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | Example                                                                             | Framework | Summary                                                                                                               |
 |-------------------------------------------------------------------------------------|-----------|-----------------------------------------------------------------------------------------------------------------------|
 | [Parameter Efficient Fine Turning](../integration/nemo/examples/peft)               | NeMo      | Example utilizing NeMo's PEFT methods to adapt a LLM to a downstream task. |
-| [Prompt-Tuning Example](../integration/nemo/examples/prompt_learning)               | NeMo      | Example for using FLARE with NeMo for prompt learning.|
 | [Supervised Fine Tuning (SFT)](../integration/nemo/examples/supervised_fine_tuning) | NeMo      | Example to fine-tune all parameters of a LLM on supervised data. |
 | [LLM Tuning via HuggingFace SFT Trainer](./advanced/llm_hf)                         | NeMo      | Example for using FLARE with a HuggingFace trainer for LLM tuning tasks. |
 
@@ -186,6 +185,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | Example                                                     | Framework | Summary                                                                                                                  |
 |-------------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------|
 | [Docker Job Launcher](./docker/README.md)                   | NA        | End-to-end Docker runtime example using `nvflare deploy prepare` and per-job Docker containers. |
+| [Recipe Job on Kubernetes Clients](./advanced/recipe-k8s/README.md) | PyTorch | Train CIFAR-10 through the Recipe API on two NVFlare clients in separate Kubernetes clusters with per-site resource and launcher metadata. |
 | [OpenShift Deployment](./devops/openshift/README.md)        | NA        | OpenShift-specific deployment guide and helper scripts using the Kubernetes runtime support. |
 | [DevOps Deployment Examples](./devops/README.md)            | NA        | Test-only helper scripts for trying NVFlare deployment flows on Kubernetes and managed cloud clusters; not production deployment guidance. |
 | [Monitoring](./advanced/monitoring/README.md)               | NA        | FLARE Monitoring provides an initial solution for tracking system metrics of your federated learning jobs. |

@@ -8,6 +8,7 @@ These examples use the Recipe API with the `add_experiment_tracking()` utility f
 
 ```python
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
 from nvflare.recipe.utils import add_experiment_tracking
 
 # Create your training recipe
@@ -25,7 +26,8 @@ recipe = FedAvgRecipe(
 # Add experiment tracking with ONE line!
 add_experiment_tracking(recipe, "mlflow")  # or "tensorboard" or "wandb"
 
-recipe.run()
+env = SimEnv(num_clients=2)
+run = recipe.execute(env)
 ```
 
 ## How Metric Tracking Works
@@ -211,16 +213,26 @@ add_experiment_tracking(recipe, "mlflow", tracking_config={
 ### Client-Side Tracking (Decentralized)
 
 ```python
-from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
-
-# Add tracking to specific clients
-for site_name in ["site-1", "site-2"]:
-    receiver = MLflowReceiver(
-        tracking_uri=f"file:///tmp/{site_name}/mlruns",
-        kw_args={"experiment_name": f"{site_name}-experiment"}
-    )
-    recipe.job.to(receiver, site_name, id="mlflow_receiver")
+# Add the receiver to every client, with no server-side receiver.
+# tracking_uri=None creates a local MLflow store in each site's job workspace.
+add_experiment_tracking(
+    recipe,
+    "mlflow",
+    tracking_config={
+        "tracking_uri": None,
+        "kw_args": {"experiment_name": "local-client-experiment"},
+    },
+    client_side=True,
+    server_side=False,
+)
 ```
+
+If sites need different tracking URIs, credentials, or experiment names, call
+`set_per_site_config(recipe, {"site-1": {}, "site-2": {}})` immediately
+after recipe construction to create per-site client apps, then call
+`add_experiment_tracking()` once per configuration with `clients=[site_name]`.
+The `clients` argument requires that per-site topology; it intentionally rejects a
+recipe whose client app is deployed through the default `@ALL` target.
 
 ---
 

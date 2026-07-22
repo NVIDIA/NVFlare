@@ -654,15 +654,21 @@ def _make_agent(pipe, download_complete_timeout=0.01):
     return agent
 
 
-def _start_result_upload_submit_client(index, idle_timeout=0.2, receiver_id="server"):
+def _start_result_upload_submit_client(
+    index, idle_timeout=0.2, receiver_id="server", emit_initial_progress=False, clock=None
+):
     pipe = _make_cell_pipe()
     agent = _make_agent(pipe, download_complete_timeout=0.001)
     agent._streaming_idle_timeout = idle_timeout
     agent._result_upload_poll_interval = 0.001
+    if clock is not None:
+        agent._make_reverse_result_upload_tracker = lambda: _ReverseResultUploadProgressTracker(
+            idle_timeout=idle_timeout, clock=clock, logger=agent.logger
+        )
     transaction = DownloadTransactionInfo(
         f"tx-{index}",
         ((f"ref-{index}", receiver_id),),
-        time.time(),
+        clock() if clock is not None else time.time(),
     )
     callbacks_ready = threading.Event()
     callbacks = {}
@@ -673,6 +679,17 @@ def _start_result_upload_submit_client(index, idle_timeout=0.2, receiver_id="ser
         callbacks["progress"] = ctx[fobs.FOBSContextKey.STREAM_PROGRESS_CB]
         callbacks["complete"] = ctx[fobs.FOBSContextKey.DOWNLOAD_COMPLETE_CB]
         ctx[RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](transaction)
+        if emit_initial_progress:
+            callbacks["progress"](
+                direction=DIRECTION_RESULT_UPLOAD,
+                tx_id=transaction.tx_id,
+                transfer_id=f"ref-{index}",
+                receiver_id=receiver_id,
+                sequence=1,
+                bytes_done=0,
+                state=TransferProgressState.ACTIVE,
+                timestamp=clock() if clock is not None else time.time(),
+            )
         _tls.download_initiated = True
         _tls.download_transactions = [transaction]
         callbacks_ready.set()
@@ -851,6 +868,15 @@ def test_do_submit_result_non_swarm_without_receiver_ids_stalls_at_streaming_idl
         callbacks["progress"] = ctx[fobs.FOBSContextKey.STREAM_PROGRESS_CB]
         callbacks["complete"] = ctx[fobs.FOBSContextKey.DOWNLOAD_COMPLETE_CB]
         ctx[RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](transaction)
+        callbacks["progress"](
+            direction=DIRECTION_RESULT_UPLOAD,
+            tx_id="tx-non-swarm",
+            transfer_id="ref-non-swarm",
+            sequence=1,
+            bytes_done=0,
+            state=TransferProgressState.ACTIVE,
+            timestamp=time.time(),
+        )
         _tls.download_initiated = True
         _tls.download_transactions = [transaction]
         callbacks_ready.set()
@@ -865,16 +891,6 @@ def test_do_submit_result_non_swarm_without_receiver_ids_stalls_at_streaming_idl
     start = time.time()
     thread.start()
     assert callbacks_ready.wait(timeout=1.0)
-
-    callbacks["progress"](
-        direction=DIRECTION_RESULT_UPLOAD,
-        tx_id="tx-non-swarm",
-        transfer_id="ref-non-swarm",
-        sequence=1,
-        bytes_done=0,
-        state=TransferProgressState.ACTIVE,
-        timestamp=time.time(),
-    )
 
     thread.join(timeout=1.0)
     if thread.is_alive():
@@ -940,26 +956,23 @@ def test_simulated_many_clients_large_result_upload_delayed_complete_cb_uses_pro
         )
 
 
-def test_simulated_many_clients_large_result_upload_delayed_complete_cb_stalled_client_fails(monkeypatch):
+def test_simulated_result_upload_stalled_client_fails_without_affecting_healthy_client(monkeypatch):
     deleted = []
     monkeypatch.setattr(
         "nvflare.client.flare_agent.DownloadService.delete_transaction", lambda tx_id: deleted.append(tx_id)
     )
-    clients = [_start_result_upload_submit_client(index, idle_timeout=0.3) for index in range(16)]
-    stalled_index = 11
-    stalled_client = clients[stalled_index]
-
-    for client in clients:
-        client["callbacks"]["progress"](
-            direction=DIRECTION_RESULT_UPLOAD,
-            tx_id=client["tx_id"],
-            transfer_id=client["ref_id"],
-            receiver_id=client["receiver_id"],
-            sequence=1,
-            bytes_done=0,
-            state=TransferProgressState.ACTIVE,
-            timestamp=time.time(),
+    stalled_index = 1
+    clock = FakeClock()
+    clients = [
+        _start_result_upload_submit_client(
+            index,
+            idle_timeout=0.3,
+            emit_initial_progress=True,
+            clock=clock,
         )
+        for index in range(2)
+    ]
+    stalled_client = clients[stalled_index]
 
     for sequence in range(2, 5):
         for index, client in enumerate(clients):
@@ -973,9 +986,8 @@ def test_simulated_many_clients_large_result_upload_delayed_complete_cb_stalled_
                 sequence=sequence,
                 bytes_done=sequence * 1024 * 1024,
                 state=TransferProgressState.ACTIVE,
-                timestamp=time.time(),
+                timestamp=clock(),
             )
-        time.sleep(0.01)
 
     for index, client in enumerate(clients):
         if index == stalled_index:
@@ -988,13 +1000,13 @@ def test_simulated_many_clients_large_result_upload_delayed_complete_cb_stalled_
             sequence=5,
             bytes_done=5 * 1024 * 1024,
             state=TransferProgressState.COMPLETED,
-            timestamp=time.time(),
+            timestamp=clock(),
         )
         client["callbacks"]["complete"](client["tx_id"], TransactionDoneStatus.FINISHED, None)
 
+    clock.advance(0.31)
     for client in clients:
-        # The stalled client uses a short idle timeout, but CI runners can still
-        # pause Python threads. Keep the join budget comfortably above it.
+        # The join timeout is only a deadlock guard; fake time drives the idle decision.
         client["thread"].join(timeout=5.0)
         assert not client["thread"].is_alive()
 

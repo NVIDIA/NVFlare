@@ -1,0 +1,40 @@
+# Orientation Routing Reference
+
+`nvflare-orient` is the lead skill for ambiguous NVFLARE requests. It should
+turn project evidence and user intent into one narrow next action.
+
+## Evidence Sources
+
+- `nvflare agent inspect <path> --format json` for framework routing, FLARE
+  usage, conversion state, safety findings, local readiness, and recommended
+  skills.
+- User-provided target files, job folders, logs, or stated deployment context.
+
+## Routing Rules
+
+- Existing PyTorch training loop needing FLARE conversion:
+  `nvflare-convert-pytorch`.
+- Statistics, data summaries, histograms, or quantiles across sites, or an
+  inspect result with `target_type` `tabular_dataset`/`image_dataset`
+  (data-only targets recommend `nvflare-fed-stats` directly):
+  `nvflare-fed-stats`.
+- Generic "help me use FLARE here" with no clear workflow: inspect first, then
+  recommend the narrowest skill.
+- Existing FLARE job that fails or produces suspicious logs:
+  `nvflare-diagnose-job`, not conversion.
+- POC startup, production submission, Kubernetes deployment, or identity setup:
+  route to the corresponding operations or deployment skill when available.
+- Non-FLARE Python, web, data science, or generic ML questions: no FLARE skill.
+
+## Output Shape
+
+Summaries should name:
+
+- target path inspected;
+- strongest evidence found;
+- recommended next skill or no-skill decision;
+- unresolved semantic prerequisites and the validation expected in the next
+  workflow.
+
+Do not turn routing into implementation. Once the next skill is clear, hand off
+instead of continuing with broad advice.

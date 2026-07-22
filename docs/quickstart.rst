@@ -55,15 +55,19 @@ Converting existing training code to federated learning requires just 3 changes:
 
 .. code-block:: python
 
+    from model import MyModel
     from nvflare.app_opt.pt.recipes import FedAvgRecipe
+    from nvflare.recipe import SimEnv
 
     recipe = FedAvgRecipe(
         name="my-fedavg-job",
         min_clients=2,
         num_rounds=5,
+        model=MyModel(),
         train_script="train.py",
     )
-    recipe.execute()
+    env = SimEnv(num_clients=2)
+    run = recipe.execute(env)
 
 That's it. Your training logic stays the same -- FLARE handles the communication, aggregation, and orchestration.
 For the full Client API reference, see :ref:`Client API <client_api>`. For pre-built recipes, see :ref:`Available Recipes <available_recipes>`.

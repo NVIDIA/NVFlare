@@ -106,13 +106,13 @@ job.to_server(JobLogReceiver(idle_timeout=15.0))
 
 ### Using the Recipe API
 
-When using a recipe (e.g. `NumpyFedAvgRecipe`), access the underlying job via
-`recipe.job`:
+When using a recipe (e.g. `NumpyFedAvgRecipe`), enable log streaming through
+the recipe helper. Pass `"log.txt"` explicitly to stream the standard text log;
+without arguments, the helper streams `log.json`.
 
 ```python
 recipe = NumpyFedAvgRecipe(...)
-recipe.job.to_clients(JobLogStreamer())
-recipe.job.to_server(JobLogReceiver())
+recipe.enable_log_streaming("log.txt")
 ```
 
 ## How It Works

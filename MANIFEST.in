@@ -2,5 +2,7 @@ include versioneer.py
 include nvflare/_version.py
 include nvflare/libs/*.so
 include nvflare/fuel/utils/*.json
+global-exclude *.py[co]
+global-exclude __pycache__
 recursive-include nvflare/lighter/templates *
 recursive-include nvflare/tool/deploy/templates *

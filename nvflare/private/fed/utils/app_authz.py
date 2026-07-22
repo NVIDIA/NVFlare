@@ -12,9 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
+
 from nvflare.apis.app_validation import AppValidationKey, AppValidator
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
+from nvflare.utils.job_launcher_utils import get_job_launcher_spec
 
 _RIGHT_BYOC = "byoc"
 _RIGHT_FLOWER_PREDEPLOYED = "server-predeployed-flwr"
@@ -31,20 +34,34 @@ class AppAuthzService(object):
         AppAuthzService.app_validator = app_validator
 
     @staticmethod
-    def authorize(
-        app_path: str,
+    def validate_app(app_path: str) -> (str, dict):
+        if not AppAuthzService.app_validator:
+            return "", {}
+
+        err, app_info = AppAuthzService.app_validator.validate(app_path)
+        if err:
+            return err, {}
+
+        return "", app_info
+
+    @staticmethod
+    def derive_local_app_info(app_info: dict, job_meta: dict, site_name: str) -> dict:
+        for mode in ("docker", "k8s"):
+            spec = get_job_launcher_spec(job_meta, site_name, mode)
+            if "image" in spec or "python_path" in spec:
+                app_info = copy.deepcopy(app_info)
+                app_info[AppValidationKey.BYOC] = True
+                break
+        return app_info
+
+    @staticmethod
+    def authorize_app_info(
+        app_info: dict,
         submitter_name: str,
         submitter_org: str,
         submitter_role: str,
         job_meta: dict = None,
     ) -> (bool, str):
-        if not AppAuthzService.app_validator:
-            return True, ""
-
-        err, app_info = AppAuthzService.app_validator.validate(app_path)
-        if err:
-            return False, err
-
         app_has_custom_code = app_info.get(AppValidationKey.BYOC, False)
         if app_has_custom_code:
             ctx = AuthzContext(
@@ -75,3 +92,23 @@ class AppAuthzService(object):
                 )
 
         return True, ""
+
+    @staticmethod
+    def authorize(
+        app_path: str,
+        submitter_name: str,
+        submitter_org: str,
+        submitter_role: str,
+        job_meta: dict = None,
+    ) -> (bool, str):
+        err, app_info = AppAuthzService.validate_app(app_path)
+        if err:
+            return False, err
+
+        return AppAuthzService.authorize_app_info(
+            app_info=app_info,
+            submitter_name=submitter_name,
+            submitter_org=submitter_org,
+            submitter_role=submitter_role,
+            job_meta=job_meta,
+        )

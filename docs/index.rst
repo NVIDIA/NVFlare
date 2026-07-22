@@ -30,6 +30,7 @@ NVIDIA FLARE
 
    user_guide/data_scientist_guide/client_api_usage
    user_guide/data_scientist_guide/job_recipe
+   user_guide/data_scientist_guide/recipe_api
    user_guide/data_scientist_guide/available_recipes
    user_guide/data_scientist_guide/flare_api
    API Evolution & Recommendations <programming_guide/flare_api_evolution>
@@ -37,6 +38,7 @@ NVIDIA FLARE
    programming_guide/experiment_tracking
    Federated XGBoost <user_guide/data_scientist_guide/federated_xgboost/federated_xgboost>
    user_guide/data_scientist_guide/data_preparation
+   Agent Skills <user_guide/agent_skills/index>
    CLI Tools <user_guide/nvflare_cli/nvflare_cli>
 
 .. toctree::

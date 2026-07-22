@@ -14,6 +14,7 @@ This example uses the `FedAvgRecipe` with the `add_experiment_tracking()` utilit
 
 ```python
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
 from nvflare.recipe.utils import add_experiment_tracking
 
 # Create training recipe
@@ -32,7 +33,8 @@ recipe = FedAvgRecipe(
 add_experiment_tracking(recipe, "tensorboard", tracking_config={"tb_folder": "tb_events"})
 
 # Run
-recipe.run()
+env = SimEnv(num_clients=2)
+run = recipe.execute(env)
 ```
 
 ## Setup

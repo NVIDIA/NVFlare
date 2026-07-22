@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import copy
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -135,8 +135,6 @@ def test_get_streaming_idle_timeout_default_and_explicit():
 
 def test_ex_process_api_passes_submit_result_timeout_to_agent(monkeypatch):
     """ExProcessClientAPI.init() must pass task-exchange timeouts from config to FlareAgentWithFLModel."""
-    from unittest.mock import MagicMock
-
     from nvflare.client.config import ConfigKey
     from nvflare.client.ex_process.api import ExProcessClientAPI
 
@@ -263,6 +261,65 @@ def test_ex_process_send_failure_raises_and_preserves_params():
     assert sent_model.params == {"x": 2}
     assert received_model.params == {"x": 1}
     assert api.receive_called is True
+
+
+def test_ex_process_api_uses_rank_env_for_default_rank(monkeypatch):
+    """RANK, not LOCAL_RANK, determines the default Client API rank."""
+    from nvflare.client.ex_process.api import ExProcessClientAPI
+
+    captured = {}
+
+    def _capture_model_registry(client_config, rank, flare_agent):
+        captured["rank"] = rank
+        captured["flare_agent"] = flare_agent
+        return MagicMock()
+
+    monkeypatch.setenv("RANK", "1")
+    monkeypatch.setenv("LOCAL_RANK", "0")
+    monkeypatch.setattr("nvflare.client.ex_process.api._create_client_config", lambda config: ClientConfig({}))
+    monkeypatch.setattr("nvflare.client.ex_process.api.ModelRegistry", _capture_model_registry)
+
+    api = ExProcessClientAPI(config_file="fake_config.json")
+    api._configure_subprocess_logging = lambda client_config: None
+    api.init()
+
+    assert captured["rank"] == "1"
+    assert captured["flare_agent"] is None
+    assert api.flare_agent is None
+
+
+def test_ex_process_api_defaults_to_rank0_when_rank_env_missing(monkeypatch):
+    """LOCAL_RANK alone must not make the process a non-control Client API rank."""
+    from nvflare.client.ex_process.api import ExProcessClientAPI
+
+    captured = {}
+
+    class _CapturingAgent:
+        def __init__(self, *args, **kwargs):
+            captured["agent_created"] = True
+
+        def start(self):
+            captured["agent_started"] = True
+
+    def _capture_model_registry(client_config, rank, flare_agent):
+        captured["rank"] = rank
+        captured["flare_agent"] = flare_agent
+        return MagicMock()
+
+    monkeypatch.delenv("RANK", raising=False)
+    monkeypatch.setenv("LOCAL_RANK", "1")
+    monkeypatch.setattr("nvflare.client.ex_process.api._create_client_config", lambda config: ClientConfig({}))
+    monkeypatch.setattr("nvflare.client.ex_process.api.FlareAgentWithFLModel", _CapturingAgent)
+    monkeypatch.setattr("nvflare.client.ex_process.api.ModelRegistry", _capture_model_registry)
+
+    api = ExProcessClientAPI(config_file="fake_config.json")
+    api._configure_subprocess_logging = lambda client_config: None
+    api.init()
+
+    assert captured["rank"] == "0"
+    assert captured["agent_created"] is True
+    assert captured["agent_started"] is True
+    assert captured["flare_agent"] is not None
 
 
 # ── _downgrade_rotating_handlers tests ────────────────────────────────────────

@@ -116,8 +116,8 @@ Prepare each server or client startup kit that should run in Docker:
     --output workspace/<project>/prepared/site-1
 
 The prepared kits contain ``startup/start_docker.sh``, patched launcher
-configuration, and a ``local/study_data.yaml`` template. Admin startup kits are
-not prepared because they do not run parent server or client processes.
+configuration, and a ``local/study_runtime.yaml`` template. Admin startup kits
+are not prepared because they do not run parent server or client processes.
 
 Start prepared parent processes with:
 

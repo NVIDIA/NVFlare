@@ -24,8 +24,6 @@ from abc import abstractmethod
 from datetime import datetime
 from enum import Enum
 
-import yaml
-
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
@@ -36,12 +34,22 @@ from nvflare.app_opt.job_launcher.study_data import (
     resolve_study_dataset_mounts,
     should_mount_study_data,
 )
+from nvflare.app_opt.job_launcher.study_runtime import (
+    load_study_runtime_file,
+    resolve_study_runtime,
+    study_runtime_file_path,
+)
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     ENV_WORKSPACE_OWNER_FQCN,
     ENV_WORKSPACE_TRANSFER_TOKEN,
     WorkspaceTransferManager,
 )
-from nvflare.utils.job_launcher_utils import get_client_job_args, get_job_launcher_spec, get_server_job_args
+from nvflare.utils.job_launcher_utils import (
+    get_client_job_args,
+    get_credential_env,
+    get_job_launcher_spec,
+    get_server_job_args,
+)
 
 
 class JobState(Enum):
@@ -80,19 +88,6 @@ JOB_RETURN_CODE_MAPPING = {
     JobState.RUNNING: JobReturnCode.UNKNOWN,
     JobState.TERMINATED: JobReturnCode.ABORTED,
     JobState.UNKNOWN: JobReturnCode.UNKNOWN,
-}
-
-DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT = {
-    "-m": None,
-    "-w": None,
-    "-t": None,
-    "-d": None,
-    "-n": None,
-    "-c": None,
-    "-p": None,
-    "-g": None,
-    "-scheme": None,
-    "-s": None,
 }
 
 DEFAULT_NAMESPACE = "default"
@@ -253,63 +248,8 @@ def study_dataset_volume_name(study: str, dataset: str) -> str:
     return site_name_to_rfc1123(f"data-{study}-{dataset}", max_length=63)
 
 
-def _load_yaml_file(file_path: str, label: str):
-    try:
-        with open(file_path, "rt") as f:
-            return yaml.safe_load(f)
-    except FileNotFoundError as e:
-        raise ValueError(f"{label} file '{file_path}' was not found") from e
-    except OSError as e:
-        raise ValueError(f"Could not read {label} file '{file_path}': {e}") from e
-    except yaml.YAMLError as e:
-        raise ValueError(f"Could not parse {label} file '{file_path}': {e}") from e
-
-
-def load_study_job_spec_file(file_path: str, logger: logging.Logger = None) -> dict:
-    study_job_spec = _load_yaml_file(file_path, "study job spec")
-    if study_job_spec is None:
-        study_job_spec = {}
-    if not isinstance(study_job_spec, dict):
-        raise ValueError(f"file at study_job_spec_file_path '{file_path}' does not contain a dictionary.")
-    if not study_job_spec and logger:
-        logger.warning("study job spec file '%s' has no study entries; built-in pod manifests will be used", file_path)
-    for study, pod_spec_file in study_job_spec.items():
-        if not isinstance(study, str) or not study:
-            raise ValueError(f"study name {study!r} in '{file_path}' must be a non-empty string.")
-        if not isinstance(pod_spec_file, str) or not pod_spec_file:
-            raise ValueError(
-                f"study job spec entry for study '{study}' in '{file_path}' must be a non-empty pod YAML file path."
-            )
-    return study_job_spec
-
-
-def resolve_study_job_spec_path(
-    study_job_spec: dict, study: str, file_path: str, logger: logging.Logger = None
-) -> str | None:
-    if not study or not study_job_spec:
-        return None
-    pod_spec_file = study_job_spec.get(study)
-    if pod_spec_file is None:
-        if logger:
-            logger.warning(
-                "study job spec file '%s' has no entry for study '%s'; built-in pod manifest will be used",
-                file_path,
-                study,
-            )
-        return None
-    if os.path.isabs(pod_spec_file):
-        return pod_spec_file
-    return os.path.join(os.path.dirname(file_path), pod_spec_file)
-
-
-def load_pod_spec_file(file_path: str) -> dict:
-    pod_spec = _load_yaml_file(file_path, "pod spec")
-    if not isinstance(pod_spec, dict):
-        raise ValueError(f"pod spec file '{file_path}' must contain a Kubernetes Pod dictionary.")
-    kind = pod_spec.get("kind")
-    if kind and kind != "Pod":
-        raise ValueError(f"pod spec file '{file_path}' must define kind: Pod.")
-    return pod_spec
+def study_secret_volume_name(study: str, name: str) -> str:
+    return site_name_to_rfc1123(f"secret-{study}-{name}", max_length=63)
 
 
 def _ensure_manifest_mapping(parent: dict, key: str, label: str) -> dict:
@@ -390,11 +330,16 @@ def _merge_named_items(template_items, job_items, label: str) -> list:
     return result
 
 
-def _select_job_container(containers: list[dict], container_name: str) -> dict:
+def _select_job_container(containers: list[dict], container_name: str, require_main_container: bool = False) -> dict:
     target_names = {name for name in (container_name, "nvflare_job") if isinstance(name, str) and name}
     for container in containers:
         if container.get("name") in target_names:
             return container
+    if require_main_container and len(containers) > 1:
+        raise ValueError(
+            f"pod_template has multiple containers and none is named one of {sorted(target_names)}; "
+            "mark the main container so study env/secret entries cannot land on a sidecar."
+        )
     return containers[0]
 
 
@@ -412,6 +357,7 @@ class K8sJobHandle(JobHandleSpec):
         workspace_job_id: str = "",
         pod_name: str = None,
         pod_manifest_template: dict = None,
+        credential_secret_name: str = None,
     ):
         super().__init__()
         self.job_id = job_id
@@ -421,6 +367,7 @@ class K8sJobHandle(JobHandleSpec):
         self.terminal_return_code = None
         self.workspace_transfer = workspace_transfer
         self.workspace_job_id = workspace_job_id
+        self.credential_secret_name = credential_secret_name
         self.api_instance = api_instance
         self.namespace = namespace
         self.pending_timeout = _normalize_pending_timeout(pending_timeout)
@@ -444,7 +391,9 @@ class K8sJobHandle(JobHandleSpec):
         if self.uses_pod_manifest_template:
             spec = self.pod_manifest["spec"]
             self.container_list = spec["containers"]
-            self.job_container = _select_job_container(self.container_list, job_config.get("container_name"))
+            self.job_container = _select_job_container(
+                self.container_list, job_config.get("container_name"), job_config.get("require_main_container", False)
+            )
         else:
             self.container_list = [
                 {
@@ -478,10 +427,7 @@ class K8sJobHandle(JobHandleSpec):
             self.container_args_module_args_sets = list()
         else:
             self.container_args_module_args_sets = ["--set"] + set_list
-        if job_config.get("module_args") is None:
-            self.container_args_module_args_dict = DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT.copy()
-        else:
-            self.container_args_module_args_dict = job_config.get("module_args")
+        self.container_args_module_args_dict = job_config.get("module_args") or {}
         self.container_args_module_args_dict_as_list = list()
         for k, v in self.container_args_module_args_dict.items():
             if v is None:
@@ -536,8 +482,12 @@ class K8sJobHandle(JobHandleSpec):
         if job_config.get("resources"):
             container["resources"] = job_config["resources"]
         env_vars = {k: v for k, v in job_config.get("env", {}).items() if str(v)}
-        if env_vars:
-            env_items = [{"name": k, "value": str(v)} for k, v in env_vars.items()]
+        env_items = [{"name": k, "value": str(v)} for k, v in env_vars.items()]
+        env_items.extend(
+            {"name": ref["name"], "valueFrom": {"secretKeyRef": {"name": ref["source"], "key": ref["key"]}}}
+            for ref in job_config.get("secret_env", [])
+        )
+        if env_items:
             if self.uses_pod_manifest_template:
                 container["env"] = _merge_named_items(container.get("env"), env_items, "container env")
             else:
@@ -567,17 +517,38 @@ class K8sJobHandle(JobHandleSpec):
                 return True
             elif pod_phase in [PodPhase.FAILED.value, PodPhase.SUCCEEDED.value]:  # terminal state
                 self.terminal_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
-                self._remove_workspace_job()
+                self._release_job_resources()
                 return False
             elif self.timeout is not None and now - starting_time >= self.timeout:
                 self._terminate_for_timeout(f"timed out waiting for pod to enter {job_states_to_enter}")
                 return False
             time.sleep(POLL_INTERVAL)
 
-    def _remove_workspace_job(self) -> None:
+    def _release_job_resources(self) -> None:
         if self.workspace_transfer and self.workspace_job_id:
             self.workspace_transfer.remove_job(self.workspace_job_id)
             self.workspace_job_id = ""
+        self._delete_credential_secret()
+
+    def _delete_credential_secret(self) -> None:
+        """Delete the per-job credential Secret once the job is terminal.
+
+        Completed pods are not deleted, so ownerReference GC alone would leave the
+        Secret alive after a successful job; GC remains the backstop for paths where
+        the handle never observes a terminal state (e.g. parent crash).
+        """
+        if not self.credential_secret_name:
+            return
+        from kubernetes.client.rest import ApiException
+
+        try:
+            self.api_instance.delete_namespaced_secret(name=self.credential_secret_name, namespace=self.namespace)
+        except ApiException as e:
+            if getattr(e, "status", None) != 404:
+                self.logger.warning(f"failed to delete credential Secret {self.credential_secret_name}: {e}")
+        except Exception as e:
+            self.logger.warning(f"failed to delete credential Secret {self.credential_secret_name}: {e}")
+        self.credential_secret_name = None
 
     def terminate(self):
         from kubernetes.client.rest import ApiException
@@ -602,7 +573,7 @@ class K8sJobHandle(JobHandleSpec):
         except Exception as e:
             self.logger.error(f"unexpected error terminating job {self.job_id} pod {self.pod_name}: {e}")
             self.terminal_state = JobState.TERMINATED
-        self._remove_workspace_job()
+        self._release_job_resources()
         return None
 
     def _terminate_for_timeout(self, reason: str):
@@ -630,7 +601,7 @@ class K8sJobHandle(JobHandleSpec):
         job_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
         if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
             self.terminal_state = job_state
-            self._remove_workspace_job()
+            self._release_job_resources()
         return self._get_return_code(job_state)
 
     def _query_pod(self):
@@ -644,7 +615,7 @@ class K8sJobHandle(JobHandleSpec):
                     f"job {self.job_id} pod {self.pod_name} not found during querying; assuming terminated"
                 )
                 self.terminal_state = JobState.TERMINATED
-                self._remove_workspace_job()
+                self._release_job_resources()
             else:
                 self.logger.warning(f"failed to query pod for job {self.job_id} pod {self.pod_name}: {e}")
             return None
@@ -871,7 +842,7 @@ class K8sJobHandle(JobHandleSpec):
             job_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
             if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
                 self.terminal_state = job_state  # persist so poll() stays accurate
-                self._remove_workspace_job()
+                self._release_job_resources()
                 return
             time.sleep(POLL_INTERVAL)
 
@@ -890,7 +861,6 @@ class K8sJobLauncher(JobLauncherSpec):
         default_python_path: str = None,
         workspace_mount_path: str = WORKSPACE_MOUNT_PATH,
         image_pull_secrets: list[str] = None,
-        study_job_spec_file_path: str = None,
     ):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -900,11 +870,6 @@ class K8sJobLauncher(JobLauncherSpec):
         ):
             raise ValueError("study_data_pvc_file_path must be a non-empty string or None")
         self.study_data_pvc_file_path = study_data_pvc_file_path
-        if study_job_spec_file_path is not None and (
-            not isinstance(study_job_spec_file_path, str) or not study_job_spec_file_path
-        ):
-            raise ValueError("study_job_spec_file_path must be a non-empty string or None")
-        self.study_job_spec_file_path = study_job_spec_file_path
         self.timeout = timeout
         self.namespace = namespace
         self.pending_timeout = _normalize_pending_timeout(pending_timeout)
@@ -922,32 +887,60 @@ class K8sJobLauncher(JobLauncherSpec):
         self.workspace_mount_path = workspace_mount_path
         self.image_pull_secrets = _normalize_image_pull_secrets(image_pull_secrets)
         self.study_data_pvc_dict = None
-        self.study_job_spec_dict = None
-        self.pod_manifest_template_dict = {}
         self.core_v1 = None
 
-    def _get_pod_manifest_template(self, study: str):
-        if not self.study_job_spec_file_path or not study:
+    def _resolve_study_runtime(self, workspace_root: str, study):
+        runtime_file = study_runtime_file_path(workspace_root)
+        if not os.path.exists(runtime_file):
             return None
-        if self.study_job_spec_dict is None:
-            self.study_job_spec_dict = load_study_job_spec_file(self.study_job_spec_file_path, logger=self.logger)
-        pod_spec_file_path = resolve_study_job_spec_path(
-            self.study_job_spec_dict, study, self.study_job_spec_file_path, logger=self.logger
-        )
-        if not pod_spec_file_path:
-            return None
-        if pod_spec_file_path not in self.pod_manifest_template_dict:
-            self.pod_manifest_template_dict[pod_spec_file_path] = load_pod_spec_file(pod_spec_file_path)
-        return self.pod_manifest_template_dict[pod_spec_file_path]
+        legacy_files = {os.path.join(workspace_root, "local", "study_data.yaml")}
+        if self.study_data_pvc_file_path:
+            legacy_files.add(self.study_data_pvc_file_path)
+        conflicts = sorted(path for path in legacy_files if os.path.exists(path))
+        if conflicts:
+            raise RuntimeError(
+                f"study runtime file '{runtime_file}' cannot be combined with the legacy study data "
+                f"file(s) {conflicts}; migrate all studies to study_runtime.yaml and delete the v1 file."
+            )
+        runtime_map = load_study_runtime_file(runtime_file, allow_docker_kwargs=False, logger=self.logger)
+        return resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
+
+    def _create_or_replace_secret(self, secret_name: str, contents: dict) -> str:
+        """Upsert an Opaque Secret; replaces any existing Secret of the same name.
+
+        contents must be the Secret payload mapping only: {"data": ...} or {"stringData": ...}.
+        """
+        from kubernetes.client.rest import ApiException
+
+        secret_body = {
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {"name": secret_name, "namespace": self.namespace},
+            "type": "Opaque",
+            **contents,
+        }
+        try:
+            self.core_v1.create_namespaced_secret(namespace=self.namespace, body=secret_body)
+            self.logger.debug("created Secret %s", secret_name)
+        except ApiException as e:
+            if getattr(e, "status", None) != 409:
+                raise
+            try:
+                self.core_v1.replace_namespaced_secret(name=secret_name, namespace=self.namespace, body=secret_body)
+                self.logger.debug("replaced Secret %s", secret_name)
+            except ApiException as e2:
+                # 409 -> (GC deletes the old Secret) -> replace 404: recreate.
+                if getattr(e2, "status", None) != 404:
+                    raise
+                self.core_v1.create_namespaced_secret(namespace=self.namespace, body=secret_body)
+                self.logger.debug("recreated Secret %s after concurrent deletion", secret_name)
+        return secret_name
 
     def _ensure_startup_secret(self, site_name: str, startup_dir: str) -> str:
         """Create or update a k8s Secret containing the site startup kit.
 
         Returns the Secret name.
         """
-        from kubernetes.client.rest import ApiException
-
-        secret_name = f"nvflare-startup-{site_name_to_rfc1123(site_name)}"
         data = {}
         if os.path.isdir(startup_dir):
             for fname in os.listdir(startup_dir):
@@ -958,23 +951,40 @@ class K8sJobLauncher(JobLauncherSpec):
                     with open(fpath, "rb") as f:
                         data[fname] = base64.b64encode(f.read()).decode()
 
-        secret_body = {
-            "apiVersion": "v1",
-            "kind": "Secret",
-            "metadata": {"name": secret_name, "namespace": self.namespace},
-            "type": "Opaque",
-            "data": data,
-        }
+        return self._create_or_replace_secret(f"nvflare-startup-{site_name_to_rfc1123(site_name)}", {"data": data})
+
+    def _ensure_job_credential_secret(self, pod_name: str, credential_env: dict) -> str:
+        """Create (or replace) the per-job Secret carrying bootstrap credentials.
+
+        Lifecycle: the job handle deletes it when the job reaches a terminal state; a
+        launch failure before pod creation deletes it immediately; the pod ownerReference
+        set after pod creation makes Kubernetes GC the backstop if the parent dies first.
+        """
+        return self._create_or_replace_secret(f"nvflare-cred-{pod_name}", {"stringData": credential_env})
+
+    def _delete_secret(self, secret_name: str) -> None:
+        from kubernetes.client.rest import ApiException
+
         try:
-            self.core_v1.create_namespaced_secret(namespace=self.namespace, body=secret_body)
-            self.logger.debug("Created startup Secret %s", secret_name)
+            self.core_v1.delete_namespaced_secret(name=secret_name, namespace=self.namespace)
         except ApiException as e:
-            if getattr(e, "status", None) == 409:
-                self.core_v1.replace_namespaced_secret(name=secret_name, namespace=self.namespace, body=secret_body)
-                self.logger.debug("Updated startup Secret %s", secret_name)
-            else:
-                raise
-        return secret_name
+            if getattr(e, "status", None) != 404:
+                self.logger.warning(f"failed to delete Secret {secret_name}: {e}")
+        except Exception as e:
+            self.logger.warning(f"failed to delete Secret {secret_name}: {e}")
+
+    def _own_credential_secret(self, secret_name: str, pod_name: str, pod) -> None:
+        """Patch the credential Secret with an ownerReference to its pod so K8s GC deletes it."""
+        try:
+            owner = {"apiVersion": "v1", "kind": "Pod", "name": pod_name, "uid": pod.metadata.uid}
+            self.core_v1.patch_namespaced_secret(
+                name=secret_name, namespace=self.namespace, body={"metadata": {"ownerReferences": [owner]}}
+            )
+        except Exception as e:
+            self.logger.warning(
+                f"failed to set ownerReference on Secret {secret_name}: {e}; "
+                f"it will be deleted when the job handle reaches a terminal state"
+            )
 
     def _replace_pod_manifest_template_namespace(self, pod_manifest: dict) -> None:
         metadata = _ensure_manifest_mapping(pod_manifest, "metadata", "pod manifest metadata")
@@ -1036,30 +1046,32 @@ class K8sJobLauncher(JobLauncherSpec):
             job_ephemeral_storage = self.ephemeral_storage
         if not isinstance(job_ephemeral_storage, str) or not job_ephemeral_storage:
             raise RuntimeError(f"launcher_spec['{site_name}']['k8s']['ephemeral_storage'] must be a non-empty string")
+        study = job_meta.get(JobMetaKey.STUDY.value)
+        workspace_root = args.workspace
+        study_runtime = self._resolve_study_runtime(workspace_root, study)
+        if not job_image and study_runtime is not None:
+            # job-supplied image wins; the study's container.image is the site default
+            job_image = study_runtime.container_image
         if not job_image:
             raise RuntimeError(
                 f"K8sJobLauncher is configured for site '{site_name}' but no job image "
                 f"was specified in meta.json for this site. "
                 f"Set launcher_spec['{site_name}']['k8s']['image'] (preferred), "
                 f"launcher_spec['default']['k8s']['image'] (shared default), "
-                f"or resource_spec['{site_name}']['k8s']['image'] (legacy)."
+                f"resource_spec['{site_name}']['k8s']['image'] (legacy), "
+                f"or studies.<study>.container.image in local/study_runtime.yaml (site default)."
             )
-        study = job_meta.get(JobMetaKey.STUDY.value)
-        pod_manifest_template = self._get_pod_manifest_template(study)
-        data_mounts = []
-        if should_mount_study_data(study) and self.study_data_pvc_file_path:
-            if self.study_data_pvc_dict is None:
-                self.study_data_pvc_dict = load_study_data_file(self.study_data_pvc_file_path, logger=self.logger)
-            data_mounts = resolve_study_dataset_mounts(
-                self.study_data_pvc_dict, study, self.study_data_pvc_file_path, logger=self.logger
-            )
-            if pod_manifest_template is not None and data_mounts:
-                self.logger.warning(
-                    "study_job_spec_file_path '%s' is used for study '%s'; matching entries from "
-                    "study_data_pvc_file_path '%s' will be added as extra volume mounts",
-                    self.study_job_spec_file_path,
-                    study,
-                    self.study_data_pvc_file_path,
+        if study_runtime is not None:
+            pod_manifest_template = study_runtime.pod_template
+            data_mounts = study_runtime.datasets
+        else:
+            pod_manifest_template = None
+            data_mounts = []
+            if should_mount_study_data(study) and self.study_data_pvc_file_path:
+                if self.study_data_pvc_dict is None:
+                    self.study_data_pvc_dict = load_study_data_file(self.study_data_pvc_file_path, logger=self.logger)
+                data_mounts = resolve_study_dataset_mounts(
+                    self.study_data_pvc_dict, study, self.study_data_pvc_file_path, logger=self.logger
                 )
         site_resources = (job_meta.get(JobMetaKey.RESOURCE_SPEC.value) or {}).get(site_name) or {}
         flat_gpu_count = (
@@ -1077,8 +1089,7 @@ class K8sJobLauncher(JobLauncherSpec):
             raise RuntimeError(f"missing {JobProcessArgs.EXE_MODULE} in {FLContextKey.JOB_PROCESS_ARGS}")
         _, job_cmd = exe_module_entry
 
-        workspace_root = args.workspace
-        env = {}
+        env = dict(study_runtime.env) if study_runtime is not None else {}
         if app_custom_folder:
             workspace_root_abs = os.path.abspath(workspace_root)
             custom_folder_abs = os.path.abspath(app_custom_folder)
@@ -1096,11 +1107,18 @@ class K8sJobLauncher(JobLauncherSpec):
 
         workspace_transfer = WorkspaceTransferManager.get_or_create(owner_cell)
         workspace_transfer_token = workspace_transfer.add_job(raw_job_id, workspace_root)
+        credential_secret_name = None
+        created_pod = None
         try:
             startup_secret_name = self._ensure_startup_secret(site_name, startup_dir)
 
+            # The transfer token rides the credential Secret too: a literal env value
+            # would be readable in the pod object by anyone with pods/get.
+            credential_env = get_credential_env(job_args)
+            credential_env[ENV_WORKSPACE_TRANSFER_TOKEN] = workspace_transfer_token
+            credential_secret_name = self._ensure_job_credential_secret(pod_name, credential_env)
+
             env[ENV_WORKSPACE_OWNER_FQCN] = workspace_transfer.owner_fqcn
-            env[ENV_WORKSPACE_TRANSFER_TOKEN] = workspace_transfer_token
 
             volume_list = [
                 {"name": "workspace-job", "emptyDir": {"sizeLimit": job_ephemeral_storage}},
@@ -1124,6 +1142,14 @@ class K8sJobLauncher(JobLauncherSpec):
                         "readOnly": dataset_mount.read_only,
                     }
                 )
+            secret_mounts = study_runtime.secret_mounts if study_runtime is not None else []
+            for secret_mount in secret_mounts:
+                volume_name = study_secret_volume_name(secret_mount.study, secret_mount.name)
+                secret_source = {"secretName": secret_mount.source}
+                if secret_mount.items:
+                    secret_source["items"] = [{"key": key, "path": path} for key, path in secret_mount.items]
+                volume_list.append({"name": volume_name, "secret": secret_source})
+                volume_mount_list.append({"name": volume_name, "mountPath": secret_mount.mount_path, "readOnly": True})
 
             job_config = {
                 "name": pod_name,
@@ -1135,6 +1161,18 @@ class K8sJobLauncher(JobLauncherSpec):
                 "module_args": self.get_module_args(job_id, fl_ctx),
                 "env": env,
             }
+            secret_env_refs = [{"name": name, "source": credential_secret_name, "key": name} for name in credential_env]
+            if study_runtime is not None:
+                if study_runtime.secret_env:
+                    secret_env_refs.extend(
+                        {"name": ref.name, "source": ref.source, "key": ref.key} for ref in study_runtime.secret_env
+                    )
+                if pod_manifest_template is not None:
+                    # Credential secretKeyRefs attach to every job, so a multi-container
+                    # template must always name its main container.
+                    job_config["require_main_container"] = True
+            if secret_env_refs:
+                job_config["secret_env"] = secret_env_refs
             if self.image_pull_secrets:
                 job_config["image_pull_secrets"] = self.image_pull_secrets
             if args is not None and getattr(args, "set", None) is not None:
@@ -1174,6 +1212,7 @@ class K8sJobLauncher(JobLauncherSpec):
                 workspace_job_id=raw_job_id,
                 pod_name=pod_name,
                 pod_manifest_template=pod_manifest_template,
+                credential_secret_name=credential_secret_name,
             )
             pod_manifest = job_handle.get_manifest()
             if pod_manifest_template is not None:
@@ -1184,9 +1223,14 @@ class K8sJobLauncher(JobLauncherSpec):
                 self.namespace,
                 job_image,
             )
-            self.core_v1.create_namespaced_pod(body=pod_manifest, namespace=self.namespace)
+            created_pod = self.core_v1.create_namespaced_pod(body=pod_manifest, namespace=self.namespace)
+            if credential_secret_name:
+                self._own_credential_secret(credential_secret_name, pod_name, created_pod)
         except Exception as e:
             workspace_transfer.remove_job(raw_job_id)
+            if credential_secret_name and created_pod is None:
+                # No pod means no ownerReference, so GC would never collect the Secret.
+                self._delete_secret(credential_secret_name)
             if "job_handle" in locals():
                 self.logger.error(f"failed to launch job {job_id}: {e}")
                 job_handle.terminal_state = JobState.TERMINATED

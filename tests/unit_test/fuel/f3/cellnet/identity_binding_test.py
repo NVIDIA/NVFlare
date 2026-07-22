@@ -23,6 +23,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from nvflare.apis.fl_constant import ConnectionSecurity
+from nvflare.fuel.f3.cellnet.cell_cipher import InvalidCertChain, SimpleCellCipher
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.credential_manager import CERT_CONTENT, CredentialManager
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
@@ -36,6 +37,7 @@ from nvflare.fuel.f3.sfm.conn_manager import ConnManager
 from nvflare.fuel.f3.sfm.constants import HandshakeKeys
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
 from nvflare.fuel.utils.constants import Mode
+from nvflare.lighter.utils import Identity, generate_cert, generate_keys
 
 
 class _FakeConnection:
@@ -77,6 +79,33 @@ def _cert_pem(common_name: str):
         .sign(key, hashes.SHA256())
     )
     return cert.public_bytes(serialization.Encoding.PEM)
+
+
+def _make_chained_cell_cipher_cert():
+    root_key, root_pub_key = generate_keys()
+    root_cert = generate_cert(
+        subject=Identity("root"),
+        issuer=Identity("root"),
+        signing_pri_key=root_key,
+        subject_pub_key=root_pub_key,
+        ca=True,
+    )
+    intermediate_key, intermediate_pub_key = generate_keys()
+    intermediate_cert = generate_cert(
+        subject=Identity("intermediate"),
+        issuer=Identity("root"),
+        signing_pri_key=root_key,
+        subject_pub_key=intermediate_pub_key,
+        ca=True,
+    )
+    leaf_key, leaf_pub_key = generate_keys()
+    leaf_cert = generate_cert(
+        subject=Identity("admin@nvidia.com"),
+        issuer=Identity("intermediate"),
+        signing_pri_key=intermediate_key,
+        subject_pub_key=leaf_pub_key,
+    )
+    return root_cert, leaf_key, leaf_cert, intermediate_cert
 
 
 def _conn_manager(local_fqcn="server", identity_map=None):
@@ -170,6 +199,129 @@ def test_identity_resolver_rejects_admin_like_endpoint_without_authenticated_ide
         resolver.require_match("_admin_not-a-uuid", "admin@nvidia.com", "connection admin")
 
 
+def test_identity_resolver_maps_topology_cell_pipe_cell_to_owner_identity():
+    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
+
+    assert resolver.resolve("site-1.cellpipe~plain~8cb50f16-8158-46f6-a8d7-ec85b1f06c53~active") == "site-1"
+    assert resolver.resolve("site-1.cellpipe~plain~8cb50f16-8158-46f6-a8d7-ec85b1f06c53~passive") == "site-1"
+
+
+def test_identity_resolver_maps_underscore_token_pipe_cell_to_site_identity():
+    # A root-connected pipe cell may carry "_" in its user-chosen token (e.g.
+    # FlareAgentWithCellPipe agent_id="ext_trainer"). The cellpipe~plain~ leaf
+    # is never alias-parsed: with a sparse identity map (provisioning omits
+    # identities equal to the name), the cell must resolve to its site, not to
+    # a fabricated alias owner such as "ext".
+    resolver = CellIdentityResolver(local_fqcn="server")
+
+    assert resolver.resolve("site-1.cellpipe~plain~ext_trainer~active") == "site-1"
+    assert resolver.resolve("site-1.cellpipe~plain~simulate_job~passive") == "site-1"
+
+
+def test_identity_resolver_cp_resolves_own_underscore_token_child_to_site_identity():
+    # The explicit leaf prefixes remove the old ambiguity: a CP resolving its
+    # own pipe child with an underscore token sees a plain (non-alias) leaf
+    # and resolves it to the site's identity, never to a fabricated alias
+    # owner such as "simulate".
+    resolver = CellIdentityResolver(local_fqcn="site-1")
+
+    assert resolver.resolve("site-1.cellpipe~plain~simulate_job~active") == "site-1"
+
+
+def test_identity_resolver_maps_relay_cell_pipe_cell_to_owner_identity():
+    resolver = CellIdentityResolver(local_fqcn="relay-1", exact_identity_map={"relay-1": "relay-1"})
+
+    assert resolver.resolve("relay-1.cellpipe~alias~site-1~job-123~active") == "site-1"
+    assert resolver.resolve("relay-1.site-1.cellpipe~plain~job-123~active") == "site-1"
+
+
+def test_identity_resolver_maps_relay_cell_pipe_alias_from_a_distant_cell():
+    # The explicit alias marker is authoritative at any depth, so a cell that
+    # is not the connected relay (e.g. the server during cert exchange) also
+    # resolves the alias to the owning site.
+    resolver = CellIdentityResolver(local_fqcn="server")
+
+    assert resolver.resolve("relay-1.cellpipe~alias~site-1~job-123~active") == "site-1"
+
+
+def test_identity_resolver_maps_nested_relay_alias_before_parent_identity():
+    # The server carries identity mappings for both a nested relay and its
+    # client. The explicit alias belongs to the client and must not inherit the
+    # first matching ancestor relay identity.
+    resolver = CellIdentityResolver(
+        local_fqcn="server",
+        prefix_identity_map={
+            "relay-1.relay-2": "relay-2",
+            "relay-1.relay-2.site-1": "site-1",
+        },
+    )
+
+    assert resolver.resolve("relay-1.relay-2.cellpipe~alias~site-1~job-123~active") == "site-1"
+
+
+def test_identity_resolver_maps_relay_alias_to_configured_owner_identity():
+    resolver = CellIdentityResolver(
+        local_fqcn="relay-1",
+        prefix_identity_map={"relay-1.site-1": "custom-site-cn"},
+        exact_identity_map={"relay-1": "relay-1"},
+    )
+
+    fqcn = "relay-1.cellpipe~alias~site-1~job-123~active"
+    assert resolver.resolve(fqcn) == "custom-site-cn"
+    resolver.require_match(fqcn, "custom-site-cn", "connection site-1 pipe")
+
+
+def test_identity_resolver_rejects_malformed_marked_alias():
+    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"relay-1": "relay-1"})
+    fqcn = "relay-1.cellpipe~alias~malformed"
+
+    assert resolver.resolve(fqcn) is None
+    with pytest.raises(ValueError, match="does not resolve"):
+        resolver.require_match(fqcn, "relay-1", "connection malformed pipe")
+
+
+def test_identity_resolver_maps_legacy_cell_pipe_alias_to_owner_identity():
+    # CellPipe cells from older NVFlare versions use underscore alias names
+    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
+
+    assert resolver.resolve("site-1_8cb50f16-8158-46f6-a8d7-ec85b1f06c53_active") == "site-1"
+    assert resolver.resolve("site-1_8cb50f16-8158-46f6-a8d7-ec85b1f06c53_passive") == "site-1"
+
+
+def test_identity_resolver_does_not_map_nested_legacy_alias_to_owner_identity():
+    resolver = CellIdentityResolver(local_fqcn="server")
+
+    assert resolver.resolve("relay-1.site-1_job-123_active") == "relay-1"
+
+
+def test_identity_resolver_maps_cell_pipe_alias_to_configured_owner_identity():
+    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "custom-site-cn"})
+
+    assert resolver.resolve("site-1_job-123_active") == "custom-site-cn"
+
+
+def test_identity_resolver_maps_cell_pipe_alias_owner_with_underscores_from_the_right():
+    resolver = CellIdentityResolver(local_fqcn="server")
+
+    # The runtime id cannot contain "_", so the only valid owner is "site-a_x"
+    assert resolver.resolve("site-a_x_job-123_active") == "site-a_x"
+
+
+def test_identity_resolver_maps_dotted_cell_pipe_alias_to_owner_identity():
+    resolver = CellIdentityResolver(local_fqcn="site-1")
+
+    assert resolver.resolve("site-1.cellpipe~alias~site-1~job-123~passive") == "site-1"
+
+
+def test_identity_resolver_does_not_treat_unconstrained_names_as_cell_pipe_aliases():
+    resolver = CellIdentityResolver(local_fqcn="server")
+
+    # Too few segments, empty runtime id, or an unknown mode are not aliases
+    assert resolver.resolve("site-1_active") == "site-1_active"
+    assert resolver.resolve("site-1__active") == "site-1__active"
+    assert resolver.resolve("site-1_job-123_idle") == "site-1_job-123_idle"
+
+
 def test_mtls_handshake_accepts_job_cell_with_parent_cert_identity():
     manager = _conn_manager(identity_map={"site-1": "site-1"})
     conn = _FakeConnection(peer_cn="site-1")
@@ -202,6 +354,49 @@ def test_mtls_handshake_rejects_spoofed_endpoint_identity():
 
     assert ex.value.code == CommError.BAD_DATA
     assert "site-1.job-123" not in manager.sfm_endpoints
+    assert conn.closed
+
+
+def test_mtls_handshake_accepts_topology_cell_pipe_cell_with_site_cert_identity():
+    manager = _conn_manager(identity_map={"site-1": "site-1"})
+    conn = _FakeConnection(peer_cn="site-1")
+    sfm_conn = SfmConnection(conn, Endpoint("server"))
+
+    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1.cellpipe~plain~job-123~active"})
+
+    assert "site-1.cellpipe~plain~job-123~active" in manager.sfm_endpoints
+    assert not conn.closed
+
+
+def test_mtls_handshake_accepts_legacy_cell_pipe_alias_with_site_cert_identity():
+    manager = _conn_manager(identity_map={"site-1": "site-1"})
+    conn = _FakeConnection(peer_cn="site-1")
+    sfm_conn = SfmConnection(conn, Endpoint("server"))
+
+    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1_job-123_active"})
+
+    assert "site-1_job-123_active" in manager.sfm_endpoints
+    assert not conn.closed
+
+
+def test_mtls_handshake_rejects_spoofed_cell_pipe_alias_identity():
+    manager = _conn_manager(identity_map={"site-1": "site-1", "site-a": "site-a"})
+    conn = _FakeConnection(peer_cn="attacker")
+    sfm_conn = SfmConnection(conn, Endpoint("server"))
+
+    with pytest.raises(CommError) as ex:
+        manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1_job-123_active"})
+
+    assert ex.value.code == CommError.BAD_DATA
+    assert conn.closed
+
+    # An ambiguous alias resolves only to its right-anchored owner, never a shorter site
+    conn = _FakeConnection(peer_cn="site-a")
+    sfm_conn = SfmConnection(conn, Endpoint("server"))
+    with pytest.raises(CommError) as ex:
+        manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-a_x_job-123_active"})
+
+    assert ex.value.code == CommError.BAD_DATA
     assert conn.closed
 
 
@@ -339,6 +534,51 @@ def test_mtls_certificate_cache_accepts_configured_auth_identity_for_site_cert_c
 
     assert manager.process_response(message) == cert
     assert manager.cert_cache["site-1.job-123"] == cert
+
+
+def test_cell_cipher_accepts_leaf_certificate_with_intermediate_chain():
+    root_cert, leaf_key, leaf_cert, intermediate_cert = _make_chained_cell_cipher_cert()
+
+    cipher = SimpleCellCipher(root_cert, leaf_key, [leaf_cert, intermediate_cert])
+    encrypted = cipher.encrypt(b"hello", [leaf_cert, intermediate_cert])
+
+    assert cipher.decrypt(encrypted, [leaf_cert, intermediate_cert]) == b"hello"
+
+
+def test_cell_cipher_encrypt_rejects_empty_peer_cert_chain():
+    root_cert, leaf_key, leaf_cert, intermediate_cert = _make_chained_cell_cipher_cert()
+    cipher = SimpleCellCipher(root_cert, leaf_key, [leaf_cert, intermediate_cert])
+
+    with pytest.raises(InvalidCertChain, match="cert chain must contain at least one certificate"):
+        cipher.encrypt(b"hello", [])
+
+
+def test_cell_cipher_encrypt_rejects_untrusted_peer_cert_chain():
+    root_cert, leaf_key, leaf_cert, intermediate_cert = _make_chained_cell_cipher_cert()
+    _other_root_cert, _other_leaf_key, other_leaf_cert, other_intermediate_cert = _make_chained_cell_cipher_cert()
+    cipher = SimpleCellCipher(root_cert, leaf_key, [leaf_cert, intermediate_cert])
+
+    with pytest.raises(InvalidCertChain, match="validation failed"):
+        cipher.encrypt(b"hello", [other_leaf_cert, other_intermediate_cert])
+
+
+def test_cell_cipher_encrypt_validates_peer_chain_only_on_cache_miss(monkeypatch):
+    root_cert, leaf_key, leaf_cert, intermediate_cert = _make_chained_cell_cipher_cert()
+    cipher = SimpleCellCipher(root_cert, leaf_key, [leaf_cert, intermediate_cert])
+    validate_count = 0
+    original_validate = cipher._validate_cert_chain
+
+    def _tracking_validate(cert):
+        nonlocal validate_count
+        validate_count += 1
+        return original_validate(cert)
+
+    monkeypatch.setattr(cipher, "_validate_cert_chain", _tracking_validate)
+
+    cipher.encrypt(b"first", [leaf_cert, intermediate_cert])
+    cipher.encrypt(b"second", [leaf_cert, intermediate_cert])
+
+    assert validate_count == 1
 
 
 def test_certificate_cache_access_uses_lock():

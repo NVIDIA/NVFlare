@@ -26,9 +26,11 @@ import yaml
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, padding, rsa
 from cryptography.x509.oid import ExtensionOID, NameOID
+from cryptography.x509.verification import ExtensionPolicy, PolicyBuilder, Store
 
+from nvflare.fuel.sec.admin_cert import validate_admin_leaf_cert
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE
 
 _GENERATE_CERT_RESERVED_EXTENSION_OIDS = {
@@ -186,6 +188,18 @@ def load_crt_bytes(data: bytes):
     return x509.load_pem_x509_certificate(data, default_backend())
 
 
+def load_crt_chain(path):
+    with open(path, "rb") as f:
+        return load_crt_chain_bytes(f.read())
+
+
+def load_crt_chain_bytes(data: bytes):
+    certs = x509.load_pem_x509_certificates(data)
+    if not certs:
+        raise ValueError("no PEM certificate found")
+    return certs
+
+
 def cert_to_dict(cert):
     return {
         "subject": {attr.oid._name: attr.value for attr in cert.subject},
@@ -196,6 +210,18 @@ def cert_to_dict(cert):
         # "not_valid_after": cert.not_valid_after.isoformat(),
         # "signature_algorithm": cert.signature_algorithm.name,
     }
+
+
+def _cert_to_submitter(cert):
+    def _get_subject_attr(oid):
+        attrs = cert.subject.get_attributes_for_oid(oid)
+        return attrs[0].value if attrs else ""
+
+    return (
+        _get_subject_attr(NameOID.COMMON_NAME),
+        _get_subject_attr(NameOID.ORGANIZATION_NAME),
+        _get_subject_attr(NameOID.UNSTRUCTURED_NAME),
+    )
 
 
 def generate_password(passlen=16):
@@ -241,13 +267,59 @@ def verify_content(content, signature, public_key):
     )
 
 
+def _utc_now():
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
 def verify_cert(cert_to_be_verified, root_ca_public_key):
-    root_ca_public_key.verify(
-        cert_to_be_verified.signature,
-        cert_to_be_verified.tbs_certificate_bytes,
-        padding.PKCS1v15(),
-        cert_to_be_verified.signature_hash_algorithm,
+    _verify_cert_signature(cert_to_be_verified, root_ca_public_key)
+
+
+def verify_cert_chain(leaf_cert, intermediate_certs, root_ca_cert, now=None):
+    """Validate a FLARE certificate chain against the pinned project root.
+
+    FLARE uses this helper for admin, site, and server certificates, so leaf
+    purpose checks stay with the caller. The chain validation itself is handled
+    by cryptography's path verifier, with the project root as the pinned trust
+    store and normal CA constraints required for intermediates.
+    """
+    if leaf_cert is None:
+        raise ValueError("leaf_cert is required")
+    now = now or _utc_now()
+    verifier = (
+        PolicyBuilder()
+        .store(Store([root_ca_cert]))
+        .time(now)
+        .extension_policies(ca_policy=ExtensionPolicy.webpki_defaults_ca(), ee_policy=ExtensionPolicy.permit_all())
+        .build_client_verifier()
     )
+    verifier.verify(leaf_cert, intermediate_certs or [])
+
+
+def _verify_cert_signature(cert, issuer_public_key):
+    if isinstance(issuer_public_key, rsa.RSAPublicKey):
+        issuer_public_key.verify(
+            cert.signature,
+            cert.tbs_certificate_bytes,
+            padding.PKCS1v15(),
+            cert.signature_hash_algorithm,
+        )
+    elif isinstance(issuer_public_key, ec.EllipticCurvePublicKey):
+        issuer_public_key.verify(
+            cert.signature,
+            cert.tbs_certificate_bytes,
+            ec.ECDSA(cert.signature_hash_algorithm),
+        )
+    elif isinstance(issuer_public_key, dsa.DSAPublicKey):
+        issuer_public_key.verify(
+            cert.signature,
+            cert.tbs_certificate_bytes,
+            cert.signature_hash_algorithm,
+        )
+    elif isinstance(issuer_public_key, (ed25519.Ed25519PublicKey, ed448.Ed448PublicKey)):
+        issuer_public_key.verify(cert.signature, cert.tbs_certificate_bytes)
+    else:
+        raise ValueError(f"unsupported certificate issuer public key type: {type(issuer_public_key)}")
 
 
 def load_private_key(data: str):
@@ -259,9 +331,20 @@ def load_private_key_file(file_path):
         return serialization.load_pem_private_key(f.read(), password=None, backend=default_backend())
 
 
+def _check_for_symlinks(root, folders, files):
+    for name in folders + files:
+        path = os.path.join(root, name)
+        if os.path.islink(path):
+            raise ValueError(f"symbolic links are not allowed in signed folders: {path}")
+
+
 def sign_folders(folder, signing_pri_key, crt_path=None, max_depth=9999, signature_file=NVFLARE_SIG_FILE):
+    if os.path.islink(folder):
+        raise ValueError(f"signed folder must not be a symbolic link: {folder}")
+
     depth = 0
     for root, folders, files in os.walk(folder):
+        _check_for_symlinks(root, folders, files)
         depth = depth + 1
         signatures = dict()
         for file in files:
@@ -286,7 +369,9 @@ def sign_folders(folder, signing_pri_key, crt_path=None, max_depth=9999, signatu
             break
 
 
-def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signature_file=NVFLARE_SIG_FILE):
+def verify_folder_signature_and_get_signers(
+    src_folder, root_ca_path, single_signer=False, signature_file=NVFLARE_SIG_FILE
+):
     """Verify the signature of each file in one folder recursively.
 
     This function iterates over all files in one folder verifying its signature stored in the signature_file
@@ -304,26 +389,43 @@ def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signa
         signature_file (str): The file name to store signature.  Defaults to NVFLARE_SIG_FILE.
 
     Returns:
-        True if all files have valid signatures.
-        False if any file fails signature check.
+        A tuple of (verified, signers).
+        verified is True if all files have valid signatures.
+        verified is False if any file fails signature check.
+        signers contains unique (name, org, role) tuples from verified certificates.
 
     """
 
     try:
+        if os.path.islink(src_folder):
+            return False, []
+
         root_ca_cert = load_crt(root_ca_path)
         root_ca_public_key = root_ca_cert.public_key()
+        root_submitter = _cert_to_submitter(root_ca_cert)
+        signers = {}
         for root, folders, files in os.walk(src_folder):
+            _check_for_symlinks(root, folders, files)
             try:
                 with open(os.path.join(root, signature_file), "rt") as f:
                     signatures = json.load(f)
                 if single_signer:
                     public_key = root_ca_public_key
+                    signer = root_submitter
                 else:
-                    cert = load_crt(os.path.join(root, NVFLARE_SUBMITTER_CRT_FILE))
+                    cert_chain = load_crt_chain(os.path.join(root, NVFLARE_SUBMITTER_CRT_FILE))
+                    cert = cert_chain[0]
                     public_key = cert.public_key()
-                    verify_cert(cert_to_be_verified=cert, root_ca_public_key=root_ca_public_key)
+                    verify_cert_chain(
+                        leaf_cert=cert,
+                        intermediate_certs=cert_chain[1:],
+                        root_ca_cert=root_ca_cert,
+                    )
+                    validate_admin_leaf_cert(cert)
+                    signer = _cert_to_submitter(cert)
+                signers[signer] = signer
             except Exception:
-                return False
+                return False, []
 
             for file in files:
                 if file == signature_file or file == NVFLARE_SUBMITTER_CRT_FILE:
@@ -337,7 +439,7 @@ def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signa
                             public_key=public_key,
                         )
                 else:
-                    return False
+                    return False, []
             for folder in folders:
                 signature = signatures.get(folder)
                 if signature:
@@ -347,10 +449,18 @@ def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signa
                         public_key=public_key,
                     )
                 else:
-                    return False
-        return True
+                    return False, []
+        return True, list(signers.values())
     except Exception:
-        return False
+        return False, []
+
+
+def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signature_file=NVFLARE_SIG_FILE):
+    """Verify folder signatures and preserve the legacy boolean return contract."""
+    verified, _signers = verify_folder_signature_and_get_signers(
+        src_folder, root_ca_path, single_signer, signature_file
+    )
+    return verified
 
 
 def sign_all(content_folder, signing_pri_key):

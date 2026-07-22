@@ -27,6 +27,11 @@ class ObjectDownloader:
         transaction_done_cb=None,
         progress_cb=None,
         progress_interval: float = 30.0,
+        outcome_cb=None,
+        receiver_ids=None,
+        min_receivers=None,
+        receiver_acquire_timeout=None,
+        receiver_idle_timeout=None,
         **cb_kwargs,
     ):
         """Constructor of ObjectDownloader.
@@ -40,6 +45,9 @@ class ObjectDownloader:
             transaction_done_cb: the callback to be called when the transaction is done.
             progress_cb: optional callback for source-side per-ref/per-receiver progress.
             progress_interval: minimum seconds between active progress callback events for advancing counters.
+            outcome_cb: optional callback called with the aggregate TransferOutcome after transaction_done_cb.
+                Unlike the transaction done status, the outcome distinguishes all-receivers-success (COMPLETED)
+                from termination with a receiver failure (FAILED). Signature: outcome_cb(outcome: TransferOutcome).
             **cb_kwargs: kwargs to be passed to transaction_done_cb.
 
         Notes: the CB signature is:
@@ -62,6 +70,11 @@ class ObjectDownloader:
             transaction_done_cb=transaction_done_cb,
             progress_cb=progress_cb,
             progress_interval=progress_interval,
+            outcome_cb=outcome_cb,
+            receiver_ids=receiver_ids,
+            min_receivers=min_receivers,
+            receiver_acquire_timeout=receiver_acquire_timeout,
+            receiver_idle_timeout=receiver_idle_timeout,
             **cb_kwargs,
         )
 
@@ -81,6 +94,15 @@ class ObjectDownloader:
             ref_id=ref_id,
         )
         return rid
+
+    def get_waiter(self):
+        """Returns the awaitable facade (TransferWaiter) over this transaction's terminal outcome.
+
+        waiter.wait(timeout) blocks until the aggregate TransferOutcome is recorded --
+        COMPLETED only when every expected receiver succeeded. This is the primitive
+        upper layers use to guarantee "send returns only when the payload is delivered".
+        """
+        return DownloadService.get_transfer_waiter(self.tx_id)
 
     def delete_transaction(self):
         """Delete the download transaction forcefully.

@@ -46,18 +46,11 @@ if __name__ == "__main__":
         train_script="client.py",
     )
 
-    # Add MLflow tracking to all clients (client-side only, no server aggregation)
-    # Each client will track its own local metrics independently
+    # Add MLflow tracking to all clients (client-side only, no server aggregation).
+    # With no tracking_config, each client uses a local store and recipe-derived names.
     add_experiment_tracking(
         recipe,
         "mlflow",
-        tracking_config={
-            "tracking_uri": None,  # Will auto-configure per site
-            "kw_args": {
-                "experiment_name": "nvflare-fedavg-experiment",
-                "run_name": "nvflare-fedavg-client",
-            },
-        },
         client_side=True,
         server_side=False,
     )

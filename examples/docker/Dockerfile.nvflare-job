@@ -4,9 +4,9 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y install zip
 WORKDIR /opt/NVFlare
 
 # Install heavy dependencies first using only the manifest files.
-# This layer is cached until setup.py/setup.cfg changes — PyTorch won't
-# re-download on every source edit.
-COPY setup.py setup.cfg versioneer.py README.md ./
+# This layer is cached until packaging metadata or setup helpers change — PyTorch
+# won't re-download on every source edit.
+COPY pyproject.toml setup.py setup.cfg versioneer.py README.md ./
 RUN mkdir -p nvflare && touch nvflare/__init__.py
 RUN pip install -U pip && pip install -e ".[dev,MONITORING,PT]"
 

@@ -28,6 +28,8 @@ from nvflare.fuel.f3.cellnet.credential_manager import CredentialManager
 from nvflare.fuel.f3.cellnet.defs import (
     AbortRun,
     AuthenticationError,
+    CellChannel,
+    CellChannelTopic,
     CellPropertyKey,
     InvalidRequest,
     InvalidSession,
@@ -38,7 +40,7 @@ from nvflare.fuel.f3.cellnet.defs import (
     ReturnReason,
     ServiceUnavailable,
 )
-from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo, same_family
+from nvflare.fuel.f3.cellnet.fqcn import CELL_PIPE_LEAF_PREFIX, FQCN, FqcnInfo, same_family
 from nvflare.fuel.f3.cellnet.identity import (
     CellIdentityResolver,
     get_cert_common_name_from_file,
@@ -60,9 +62,7 @@ from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
-_CHANNEL = "cellnet.channel"
 _TOPIC_BULK = "bulk"
-_TOPIC_BYE = "bye"
 _SM_CHANNEL = "credential_manager"
 _SM_TOPIC = "key_exchange"
 
@@ -197,7 +197,7 @@ class _BulkSender:
         tms = [m.to_dict() for m in messages_to_send]
         bulk_msg = Message(None, tms)
         send_errs = self.cell.fire_and_forget(
-            channel=_CHANNEL, topic=_TOPIC_BULK, targets=[self.target], message=bulk_msg
+            channel=CellChannel.CELLNET, topic=_TOPIC_BULK, targets=[self.target], message=bulk_msg
         )
         if send_errs[self.target]:
             log_messaging_error(
@@ -497,8 +497,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         self.adhoc_connector_lock = threading.Lock()
         self.root_change_lock = threading.Lock()
 
-        self.register_request_cb(channel=_CHANNEL, topic=_TOPIC_BULK, cb=self._receive_bulk_message)
-        self.register_request_cb(channel=_CHANNEL, topic=_TOPIC_BYE, cb=self._peer_goodbye)
+        self.register_request_cb(channel=CellChannel.CELLNET, topic=_TOPIC_BULK, cb=self._receive_bulk_message)
+        self.register_request_cb(channel=CellChannel.CELLNET, topic=CellChannelTopic.Bye, cb=self._peer_goodbye)
 
         self.cleanup_waiter = None
         self.msg_stats_pool = StatsPoolManager.add_time_hist_pool(
@@ -644,6 +644,11 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             self._create_internal_listener()
 
         if self.connector_manager.should_connect_to_server(self.my_info):
+            self._create_bb_external_connector()
+        elif not parent_url and self.root_url:
+            # A cell configured with only a root URL (e.g. a CellPipe cell named
+            # <site>.cellpipe~plain~<token>~<mode> that joins the cellnet at the root) has no
+            # other way to connect, regardless of its generation.
             self._create_bb_external_connector()
 
     def _set_bb_for_server_root(self):
@@ -969,8 +974,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 targets = [peer_name for peer_name in self.agents.keys()]
                 self.logger.debug(f"broadcasting goodbye to {targets}")
                 self.broadcast_request(
-                    channel=_CHANNEL,
-                    topic=_TOPIC_BYE,
+                    channel=CellChannel.CELLNET,
+                    topic=CellChannelTopic.Bye,
                     targets=targets,
                     request=Message(),
                     timeout=0.5,
@@ -1134,10 +1139,33 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             ep = self._try_find_ep(target_fqcn, for_msg)
             if not ep:
                 return ReturnCode.TARGET_UNREACHABLE, None
+            if ep.name != target_fqcn and self._already_visited(ep.name, for_msg):
+                # Deterministic resolution means a revisited cell would pick the
+                # same next leg again - refuse the hop so the message fails
+                # cleanly instead of bouncing between cells that cannot reach
+                # the target. Delivery to the final destination is never
+                # refused (a reply legitimately goes back to a cell on the
+                # route).
+                self.log_warning(
+                    msg=for_msg,
+                    log_text=f"routing loop: next leg {ep.name} for target {target_fqcn} is already on the route",
+                )
+                return ReturnCode.TARGET_UNREACHABLE, None
             return "", ep
         except:
             self.log_error(msg=for_msg, log_text=f"Error when finding {target_fqcn}", log_except=True)
             return ReturnCode.TARGET_UNREACHABLE, None
+
+    @staticmethod
+    def _already_visited(fqcn: str, msg: Union[None, Message]) -> bool:
+        if not msg:
+            return False
+        route = msg.get_header(MessageHeaderKey.ROUTE, None)
+        if not isinstance(route, list):
+            return False
+        # route entries are (fqcn, timestamp) pairs; they may arrive as lists
+        # after decoding
+        return any(isinstance(hop, (list, tuple)) and len(hop) > 0 and hop[0] == fqcn for hop in route)
 
     def _try_find_ep(self, target_fqcn: str, for_msg: Message) -> Union[None, Endpoint]:
         self.logger.debug(f"{self.my_info.fqcn}: finding path to {target_fqcn}")
@@ -1155,9 +1183,24 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             return agent.endpoint
 
         if same_family(self.my_info, target_info):
+            unconnected_pipe_descendant = False
+            if FQCN.is_ancestor(self.my_info.fqcn, target_fqcn):
+                first_descendant = target_info.path[self.my_info.gen]
+                unconnected_pipe_descendant = first_descendant.startswith(CELL_PIPE_LEAF_PREFIX)
             if FQCN.is_parent(self.my_info.fqcn, target_fqcn):
-                self.log_warning(msg=for_msg, log_text=f"no connection to child {target_fqcn}")
-                return None
+                if unconnected_pipe_descendant:
+                    # A topology-named CellPipe child may connect to the server
+                    # root instead of its FQCN parent when using VIA_ROOT. Let
+                    # this specific topology fall through to root resolution;
+                    # the routing-loop guard in _find_endpoint handles a pipe
+                    # target that is not connected anywhere.
+                    self.logger.debug(f"{self.my_info.fqcn}: no connection to CellPipe child {target_fqcn}")
+                else:
+                    # Preserve the original behavior for every other direct
+                    # child. Only CellPipe has a supported topology in which a
+                    # child intentionally bypasses its FQCN parent.
+                    self.log_warning(msg=for_msg, log_text=f"no connection to child {target_fqcn}")
+                    return None
             elif FQCN.is_parent(target_fqcn, self.my_info.fqcn):
                 self.log_warning(f"no connection to parent {target_fqcn}", for_msg)
 
@@ -1165,18 +1208,27 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             if FQCN.is_ancestor(self.my_info.fqcn, target_fqcn):
                 # I am the ancestor of the target
                 self.logger.debug(f"{self.my_info.fqcn}: I'm ancestor of the target {target_fqcn}")
-                return self._try_path(target_info.path)
+                ep = self._try_path(target_info.path)
+                if ep or not unconnected_pipe_descendant:
+                    return ep
+                self.logger.debug(f"{self.my_info.fqcn}: trying server root for CellPipe descendant {target_fqcn}")
             else:
                 # target is my ancestor, or we share the same ancestor - go to my parent!
                 self.logger.debug(f"{self.my_info.fqcn}: target {target_fqcn} is or share my ancestor")
                 parent_fqcn = FQCN.get_parent(self.my_info.fqcn)
                 agent = self.agents.get(parent_fqcn)
-                if not agent:
-                    self.log_warning(f"no connection to parent {parent_fqcn}", for_msg)
-                    return None
-                return agent.endpoint
+                if agent:
+                    return agent.endpoint
+                # I'm not connected to my FQCN parent: some hierarchical cells
+                # connect to an ancestor or to the root instead (e.g. CellPipe
+                # cells named <site>.cellpipe~plain~<token>~<mode> that connect to
+                # the server root). This fall-through is load-bearing for such cells - see
+                # test_pipe_cell_reaches_peer_through_server_root in
+                # core_cell_routing_test.py. Fall through to the generic
+                # resolution below.
+                self.logger.debug(f"{self.my_info.fqcn}: no connection to parent {parent_fqcn}")
 
-        # not the same family
+        # not the same family, or no direct path within the family
         ep = self._try_path(target_info.path)
         if ep:
             return ep

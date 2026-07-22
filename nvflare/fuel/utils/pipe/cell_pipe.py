@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import queue
 import threading
 import time
@@ -22,7 +23,7 @@ from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.fqcn import CELL_PIPE_SEPARATOR, FQCN, make_cell_pipe_alias, make_cell_pipe_leaf
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
@@ -44,17 +45,84 @@ _HEADER_REQ_ID = _PREFIX + "req_id"
 _HEADER_START_TIME = _PREFIX + "start"
 _HEADER_HB_SEQ = _PREFIX + "hb_seq"
 
+_logger = logging.getLogger(__name__)
+
 
 def _cell_fqcn(mode, site_name, token, parent_fqcn):
     # The FQCN of the cell must be unique in the whole cellnet.
-    # We use the combination of mode, site_name, and token to derive the value of FQCN
-    # Since the token is usually used across all sites, the "site_name" differentiate cell on one site from another.
-    # The two peer pipes on the same site share the same site_name and token, but are differentiated by their modes.
-    base = f"{site_name}_{token}_{mode}"
+    # The runtime token and pipe mode are kept in one leaf segment to avoid
+    # introducing an unconnected FQCN parent such as <site>.<token>.
+    # When connecting to the site's own CP or to a relay, the FQCN parent is
+    # the actually connected cell, so normal parent routing applies. When
+    # connecting to the server root (e.g. simulator, or pipes configured with
+    # a root url), the cell is named <site>.<leaf> while physically connected
+    # to the root: its FQCN parent <site> is NOT connected, and routing relies
+    # on the fall-through in CoreCell._try_find_ep() that resolves the next
+    # leg through the root when the FQCN parent is absent. That fall-through
+    # is load-bearing for these cells (covered by
+    # test_pipe_cell_reaches_peer_through_server_root in
+    # core_cell_routing_test.py).
+    # The two peer pipes on the same site share the same site_name and token,
+    # but are differentiated by their modes.
+    if not token:
+        # The configured token (e.g. "{JOB_ID}") resolved to an empty string.
+        # An empty token cannot uniquely name the cell (all such pipes on the
+        # site would collide), so fail fast. A generated fallback is not an
+        # option: the two ends of a pipe pair derive each other's names
+        # independently, so any per-process unique value would break the
+        # pair's rendezvous.
+        raise ValueError("invalid CellPipe token: token must be a non-empty string")
+    if CELL_PIPE_SEPARATOR in token:
+        raise ValueError(
+            f"invalid CellPipe token '{token}': '{CELL_PIPE_SEPARATOR}' is reserved as the cell name separator"
+        )
+
+    cell_name = make_cell_pipe_leaf(token, mode)
     if parent_fqcn == FQCN.ROOT_SERVER:
-        return base
+        # A "." in the token adds phantom FQCN segments, but root-connected
+        # cells route through the root fall-through regardless of depth, so
+        # dotted user-chosen tokens (e.g. agent ids) keep working as they did
+        # before the topology naming.
+        prefix = site_name
+    elif parent_fqcn and FQCN.split(parent_fqcn)[-1] == site_name:
+        # connecting to the site's own CP: the site is already the last segment
+        if "." in token:
+            # a "." would put an unconnected FQCN parent between the CP and
+            # the cell, making the cell unreachable
+            raise ValueError(
+                f"invalid CellPipe token '{token}': '.' would split the cell name into extra FQCN segments"
+            )
+        prefix = parent_fqcn
+    elif parent_fqcn:
+        # Connecting to another cell (e.g. a relay): use the alias leaf
+        # cellpipe~alias~<site>~<token>~<mode> so mTLS identity resolution and
+        # stream auth map the cell to the owning site (see
+        # parse_cell_pipe_alias). A dot would split the token into another FQCN
+        # segment and the site name cannot contain the reserved field separator.
+        if CELL_PIPE_SEPARATOR in site_name:
+            raise ValueError(
+                f"invalid CellPipe site name '{site_name}': "
+                f"'{CELL_PIPE_SEPARATOR}' is reserved as the cell name separator"
+            )
+        if "." in token:
+            raise ValueError(
+                f"invalid CellPipe token '{token}': must not contain '.' "
+                f"when connected through another cell ({parent_fqcn})"
+            )
+        prefix = parent_fqcn
+        cell_name = make_cell_pipe_alias(site_name, token, mode)
     else:
-        return FQCN.join([parent_fqcn, base])
+        # Missing parent FQCN: intentionally mirror the root-server placement
+        # and keep the cell under the owning site, so routing still has a
+        # topology-shaped parent instead of creating <site>.<token>.
+        # No in-tree caller hits this today; warn so a misconfiguration that
+        # produces a correct-looking name is still diagnosable.
+        _logger.warning(
+            f"CellPipe conn props have no parent FQCN; naming cell under site '{site_name}' "
+            f"and relying on root routing"
+        )
+        prefix = site_name
+    return FQCN.join([prefix, cell_name])
 
 
 def _to_cell_message(msg: Message, extra=None) -> CellMessage:
@@ -162,14 +230,15 @@ class CellPipe(Pipe):
 
                 parent_url = parent_conn_props.get(ConnPropKey.URL)
 
-                if FQCN.get_parent(fqcn):
-                    # the cell has a parent: connect to the parent
-                    cell_root = None
-                    cell_parent_url = parent_url
-                else:
-                    # the cell has no parent: the parent_url is the root of the cellnet
+                if parent_conn_props.get(ConnPropKey.FQCN) == FQCN.ROOT_SERVER:
+                    # joining the cellnet at the root: use the backbone external
+                    # connector so the secure (TLS) connection settings apply
                     cell_root = parent_url
                     cell_parent_url = None
+                else:
+                    # joining at a non-root cell (CP or relay): connect to it as parent
+                    cell_root = None
+                    cell_parent_url = parent_url
 
                 cell = Cell(
                     fqcn=fqcn,

@@ -32,19 +32,26 @@ CHECK_SESSION_CMD_NAME = InternalCommands.CHECK_SESSION
 
 
 class Session(object):
-    def __init__(self, sess_id, user_name, org, role, origin_fqcn, active_study=DEFAULT_STUDY):
+    def __init__(self, sess_id, user_name, org, role, origin_fqcn, active_study=DEFAULT_STUDY, cert_exp=None):
         """Object keeping track of an admin client session with token and time data."""
         self.sess_id = sess_id
         self.user_name = user_name
         self.user_org = org
         self.user_role = role
         self.active_study = active_study
+        self.cert_exp = cert_exp
         self.origin_fqcn = origin_fqcn
         self.start_time = time.time()
         self.last_active_time = time.time()
 
     def mark_active(self):
         self.last_active_time = time.time()
+
+    def is_cert_expired(self, now=None):
+        if not self.cert_exp:
+            return False
+        now = time.time() if now is None else now
+        return now >= self.cert_exp
 
     def make_token(self, id_asserter: IdentityAsserter):
         user = {
@@ -54,6 +61,8 @@ class Session(object):
             "s": self.sess_id,
             "study": self.active_study,
         }
+        if self.cert_exp:
+            user["ce"] = self.cert_exp
         ds = json.dumps(user)
         bds = str_to_b64str(ds)
         signature = id_asserter.sign(ds, return_str=True)
@@ -87,6 +96,7 @@ class Session(object):
             sess_id=user.get("s"),
             origin_fqcn="",
             active_study=user.get("study", user.get("t", DEFAULT_STUDY)),
+            cert_exp=user.get("ce"),
         )
 
 
@@ -125,10 +135,13 @@ class SessionManager(CommandModule):
                 if time_passed > self.idle_timeout:
                     dead_sess = sess
                     break
+                if sess.is_cert_expired():
+                    dead_sess = sess
+                    break
 
             if dead_sess:
                 # print('ending dead session {}'.format(dead_sess.token))
-                self.end_session_by_id(dead_sess.sess_id, "Your session is closed due to inactivity.")
+                self.end_session_by_id(dead_sess.sess_id, "Your session is closed due to inactivity or cert expiry.")
             else:
                 # print('no dead sessions found')
                 pass
@@ -138,7 +151,7 @@ class SessionManager(CommandModule):
     def shutdown(self):
         self.asked_to_stop = True
 
-    def create_session(self, user_name, user_org, user_role, origin_fqcn, active_study=DEFAULT_STUDY):
+    def create_session(self, user_name, user_org, user_role, origin_fqcn, active_study=DEFAULT_STUDY, cert_exp=None):
         """Creates new session with a new session token.
 
         Args:
@@ -159,6 +172,7 @@ class SessionManager(CommandModule):
             role=user_role,
             origin_fqcn=origin_fqcn,
             active_study=active_study,
+            cert_exp=cert_exp,
         )
         with self.sess_update_lock:
             self.sessions[sess_id] = sess
@@ -166,6 +180,8 @@ class SessionManager(CommandModule):
 
     def recreate_session(self, token: str, origin_fqcn, id_asserter: IdentityAsserter):
         sess = Session.decode_token(token, id_asserter)
+        if sess.is_cert_expired():
+            raise ValueError("admin certificate for session token is expired")
         sess.origin_fqcn = origin_fqcn
         with self.sess_update_lock:
             self.sessions[sess.sess_id] = sess
@@ -180,7 +196,11 @@ class SessionManager(CommandModule):
             return None
 
         with self.sess_update_lock:
-            return self.sessions.get(sess.sess_id)
+            stored_session = self.sessions.get(sess.sess_id)
+            if stored_session and stored_session.is_cert_expired():
+                self.sessions.pop(sess.sess_id, None)
+                return None
+            return stored_session
 
     def get_sessions(self):
         result = []

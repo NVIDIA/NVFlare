@@ -13,11 +13,11 @@
 # limitations under the License.
 
 import ast
+import importlib
 import inspect
 import pkgutil
 import sys
 from enum import Enum
-from importlib import import_module
 from pathlib import Path
 
 from nvflare.tool.cli_output import output_usage_error
@@ -34,6 +34,7 @@ _JSON_OUTPUT_MODES = ["json"]
 _NO_RETRY_TOKEN_SCHEMA = {"supported": False}
 _LIST_METADATA_KEYS = {"privacy"}
 _CATALOG_RECIPE_CLASS_KEY = "_recipe_cls"
+_RECIPE_BASE_CLASS = None
 _CORE_FRAMEWORK_SUPPORT = {
     "cyclic": ["pytorch", "tensorflow", "numpy", "raw"],
     "fedavg": ["pytorch", "tensorflow", "sklearn", "numpy", "raw"],
@@ -299,6 +300,10 @@ def _module_source_path(module_name: str):
     return _NVFLARE_PACKAGE_ROOT.joinpath(*parts[1:]).with_suffix(".py")
 
 
+def _import_module(module_name: str):
+    return importlib.import_module(module_name)
+
+
 def _ast_default_value(node):
     if node is None:
         return None
@@ -377,7 +382,7 @@ def _static_recipe_parameters(module_name: str, class_name: str) -> list:
 
 def _try_import_recipe_class(module_name: str, class_name: str):
     try:
-        module = import_module(module_name)
+        module = _import_module(module_name)
     except (ImportError, SyntaxError):
         return None
     return getattr(module, class_name, None)
@@ -765,15 +770,23 @@ def _recipe_description(recipe_cls) -> str:
     return next((line.strip() for line in doc.splitlines() if line.strip()), f"{recipe_cls.__name__} recipe")
 
 
-def _iter_recipe_classes(module):
-    from nvflare.recipe.spec import Recipe
+def _recipe_base_class():
+    global _RECIPE_BASE_CLASS
+    if _RECIPE_BASE_CLASS is None:
+        from nvflare.recipe.spec import Recipe
 
+        _RECIPE_BASE_CLASS = Recipe
+    return _RECIPE_BASE_CLASS
+
+
+def _iter_recipe_classes(module):
+    recipe_base = _recipe_base_class()
     for _name, obj in inspect.getmembers(module, inspect.isclass):
         if obj.__module__ != module.__name__:
             continue
-        if obj is Recipe:
+        if obj is recipe_base:
             continue
-        if issubclass(obj, Recipe):
+        if issubclass(obj, recipe_base):
             yield obj
 
 
@@ -807,7 +820,7 @@ def _load_catalog(framework: str = None, include_recipe_class: bool = False) -> 
         if framework and root["framework"] != framework:
             continue
         try:
-            package = import_module(root["package"])
+            package = _import_module(root["package"])
         except (ImportError, SyntaxError):
             pass
 
@@ -816,7 +829,7 @@ def _load_catalog(framework: str = None, include_recipe_class: bool = False) -> 
                 if module_name.endswith(".__init__"):
                     continue
                 try:
-                    mod = import_module(module_name)
+                    mod = _import_module(module_name)
                 except (ImportError, SyntaxError):
                     continue
 
