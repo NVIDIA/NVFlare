@@ -42,11 +42,32 @@ def test_diagnose_job_catalog_pins_recovery_categories():
     assert "copying the category from the matched" in skill_text
     assert "Do not infer or override the category" in skill_text
     assert "copy the `Recovery Category` value from that same row exactly" in normalized_catalog
+    assert "set `matched_pattern` to `UNKNOWN` and `recovery_category` to `UNKNOWN`" in normalized_catalog
 
     round_timeout = rows["ROUND_TIMEOUT"]
     assert round_timeout["Recovery Category"] == "`ENVIRONMENT_FAILURE`"
     assert "timeout configuration" not in round_timeout["Next Action"]
     assert "temporary mitigation, not the primary fix" in round_timeout["Next Action"]
+
+    resource_capacity = rows["RESOURCE_EXCEEDS_HOST_CAPACITY"]
+    assert resource_capacity["Recovery Category"] == "`FIXABLE_BY_CONFIG`"
+    assert "`num_of_gpus specified` exceeds available GPUs" in resource_capacity["Evidence Signals"]
+    assert "`Memory per GPU specified` exceeds available GPU memory" in resource_capacity["Evidence Signals"]
+    assert "resource requirements in the job or site resource config" in resource_capacity["Next Action"]
+
+    config_validation = rows["CONFIG_FILE_VALIDATION_ERROR"]
+    assert config_validation["Recovery Category"] == "`FIXABLE_BY_CONFIG`"
+    assert "`config_fed_server.json`" in config_validation["Evidence Signals"]
+    assert "`privacy.json`" in config_validation["Evidence Signals"]
+    assert "default scope/filter does not exist" in config_validation["Evidence Signals"]
+    assert "Correct the referenced server/site config file" in config_validation["Next Action"]
+
+    infrastructure = rows["INFRASTRUCTURE_DEPLOYMENT_FAILURE"]
+    assert infrastructure["Recovery Category"] == "`ENVIRONMENT_FAILURE`"
+    assert "Kubernetes/Helm cluster unreachable" in infrastructure["Evidence Signals"]
+    assert "Docker port already in use" in infrastructure["Evidence Signals"]
+    assert "service readiness timeout" in infrastructure["Evidence Signals"]
+    assert "Repair the deployment runtime first" in infrastructure["Next Action"]
 
     partial_logs = rows["PARTIAL_LOG_VISIBILITY"]
     assert partial_logs["Recovery Category"] == "`UNKNOWN`"
