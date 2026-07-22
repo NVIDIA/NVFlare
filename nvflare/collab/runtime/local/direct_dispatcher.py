@@ -130,7 +130,8 @@ class DirectDispatcher(InvocationDispatcher):
         try:
             target_name = gcc.target_name
             result = self._call_target(gcc.context, target_name, gcc.call_opt, func_name, *args, **kwargs)
-            gcc.send_completed()
             gcc.set_result(result)
         except Exception as ex:
             gcc.set_exception(ex)
+        finally:
+            gcc.send_completed()

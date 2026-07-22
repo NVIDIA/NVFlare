@@ -66,16 +66,21 @@ class ResultQueue:
         return self
 
     def __next__(self):
-        if not self.q.empty():
-            return self.q.get()
+        # Check the queue and completion count atomically with append(). This
+        # prevents the last item from being inserted between an empty check and
+        # the completion check, which would otherwise terminate iteration early.
+        with self.update_lock:
+            try:
+                return self.q.get_nowait()
+            except queue.Empty:
+                all_received = self.num_whole_items_received >= self.limit
 
-        # queue is empty: do we expect more?
-        if self.num_whole_items_received < self.limit:
-            # there will be more items - wait until more item is received
-            return self.q.get(block=True)
-        else:
-            # no more items
+        if all_received:
             raise StopIteration()
+
+        # More items are expected. Do not hold update_lock while waiting,
+        # because append() needs it to enqueue the next item.
+        return self.q.get(block=True)
 
     def __len__(self):
         """Return the number of whole items that have been received.
