@@ -169,7 +169,8 @@ The Slurm job block accepts ``image``, ``nodes``, ``gpus_per_node``,
 sandbox, setup command, or raw scheduler flags; those are site-owned and may
 be overridden per study. A job image requires BYOC authorization and overrides
 study/site image defaults. It must be an absolute site-visible existing file.
-``pending_timeout`` may only reduce the site's configured value. Multi-node
+A job may override ``pending_timeout`` only with a smaller positive value than
+the site's configured timeout; it cannot increase the site limit. Multi-node
 jobs require effective ``sandbox: none`` and must omit ``image``. A positive
 multi-node ``num_of_gpus`` requires explicit ``gpus_per_node``; whenever both
 are supplied, ``num_of_gpus`` must equal ``nodes * gpus_per_node``. See

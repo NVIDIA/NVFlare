@@ -4,10 +4,17 @@
 Slurm Job Launcher
 ##################
 
-The Slurm job launcher submits every NVFlare client job process (CJ) and server
-job process (SJ) as a Slurm batch job. Slurm selects nodes and enforces the
+In this guide, the *parent* is the long-running NVFlare client parent process
+(CP) or server parent process (SP). It launches a separate client job process
+(CJ) or server job process (SJ) for each federated job. The Slurm job launcher
+submits each CJ or SJ as a Slurm batch job. Slurm selects nodes and enforces the
 allocation; NVFlare submits, monitors, and cancels jobs owned by the current
-parent process.
+parent.
+
+The *prepare host* runs ``nvflare deploy prepare``. The optional *submission
+host* runs ``sbatch`` to place a client parent in Slurm. The *runtime parent
+host* runs the CP or SP, and the *compute nodes* run its CJ or SJ allocations.
+A login or service host is a runtime parent host outside a Slurm allocation.
 
 Choose an execution backend with ``job_launcher.sandbox``:
 
@@ -307,9 +314,11 @@ To change the workspace, stop the parent and prepare to a new ``--output``.
 Preparing to an existing output replaces it, so copy any data that must survive
 before running prepare.
 
-Server-job queue and startup time must fit within the client runner-sync timeout
-(60 seconds by default). Provide prompt server capacity or increase
-``max_runner_sync_timeout`` when the site cannot meet that bound.
+After a server job starts, clients wait for its SJ to become available. The
+SJ's Slurm queue and startup time must fit within the client-side
+``max_runner_sync_timeout`` (60 seconds by default). Configure this value in
+the job's client ``config_fed_client.json`` when the site needs a longer bound;
+see :ref:`timeout_troubleshooting`.
 
 Before production use, test on the target cluster:
 

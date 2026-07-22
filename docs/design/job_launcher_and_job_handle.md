@@ -170,7 +170,7 @@ Resolution model for new job metadata:
 decide if the site has the required hardware. Docker, K8s, and Slurm use flat
 `resource_spec[site]["num_of_gpus"]` as the portable GPU total. Slurm permits only `nodes`, `gpus_per_node`,
 `image`, `cpus_per_node`, `mem_per_node`, `time`, and reduce-only `pending_timeout` in its job block. A job image
-requires BYOC authorization and overrides study/site image defaults. Routing, billing, sandbox, setup, and raw
+requires BYOC authorization and overrides study/site image defaults. Routing, account, QOS, sandbox, setup, and raw
 Slurm flags remain site/study-owned.
 
 ### 3.3 Server Side (`ServerEngine`)
