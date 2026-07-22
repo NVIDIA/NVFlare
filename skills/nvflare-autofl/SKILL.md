@@ -2,7 +2,7 @@
 name: nvflare-autofl
 description: "Optimize an existing NVFLARE job.py through an agent-assisted Auto-FL campaign that preserves FLARE execution, policy, artifacts, and reproducibility."
 license: Apache-2.0
-version: "0.1.1"
+version: "0.1.0" # NVSkills CI bootstrap: no behavior change.
 compatibility: "Requires NVFLARE 2.8.0+, Python, and permission to run NVFLARE jobs in the selected environment."
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
@@ -14,18 +14,22 @@ metadata:
 # NVFLARE Auto-FL
 
 ## Use When
-Use when optimizing an existing NVFLARE `job.py` for accuracy, AUC, loss, runtime, robustness, or another metric.
+Use this skill when the user asks to optimize an existing NVFLARE `job.py` for accuracy,
+AUC, loss, runtime, robustness, or another metric in simulation, POC, or production.
 
 ## Do Not Use When
-Do not use for converting non-FL training code, diagnosing jobs without an optimization goal, production setup,
-evaluation/statistics-only recipes, or generic tuning outside an NVFLARE job.
+Do not use for converting non-FL training code into NVFLARE, diagnosing failed jobs without an optimization goal,
+production deployment setup, evaluation/statistics-only recipes, or generic tuning outside an NVFLARE job.
 
 ## Workflow
-Use this skill to optimize an existing NVFLARE `job.py` without a new Auto-FL command tree. The user provides a job,
-objective, environment, and optional budget; NVFLARE provides deterministic import/execution, policy boundaries,
-artifacts, and contracts. The coding agent owns hypotheses, source edits, new algorithms, and candidate choice.
+Use this skill to optimize an existing NVFLARE `job.py` without asking the user to learn
+a new Auto-FL command tree. The user selects this skill, points to a job, and states the
+objective, environment, and optional budget. NVFLARE provides the deterministic campaign
+import, execution substrate, policy boundaries, artifacts, and machine-readable
+contracts. The coding agent owns hypotheses, source edits, new algorithm
+implementations, and candidate choice.
 
-Resolve [run_job_campaign.py](scripts/run_job_campaign.py) as `RUNNER`, then initialize:
+Resolve [run_job_campaign.py](scripts/run_job_campaign.py) relative to this `SKILL.md`, store its absolute path as `RUNNER`, and initialize the campaign:
 
 ```bash
 python "$RUNNER" initialize ./job.py [--metric <metric>] --mode <max|min> --env <sim|poc|prod> [--max-candidates <n>]
@@ -110,9 +114,6 @@ candidate comparability, or production submission before running candidates.
   import, validation, execution, metric extraction, plotting, and reporting.
   Do not search for alternate interpreters or install dependencies unless the
   user explicitly asks you to prepare the environment.
-- Simulator child processes receive only the default runtime environment
-  allowlist. For job-specific variables such as `DATASET_DIR`, add names, not
-  values, to `environment.simulator_env_passthrough`.
 - Treat generated `autofl.yaml`, task-local `mutation_schema.yaml`, and
   existing NVFLARE job/runtime configuration as authoritative; the default
   simulation flow needs no prose profiles, branch setup, or harness

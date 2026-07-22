@@ -2132,7 +2132,7 @@ def probe_simulator_workspace_override_support(
         if rc != 0:
             return {"version": "", "supported": None}
         payload = last_json_object_line(stdout)
-    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+    except (OSError, subprocess.SubprocessError, ValueError):
         return {"version": "", "supported": None}
     if not isinstance(payload, dict):
         return {"version": "", "supported": None}
@@ -2191,9 +2191,7 @@ def simulator_env_passthrough_names(config: Dict[str, Any]) -> List[str]:
     names = []
     for value in values:
         if not isinstance(value, str):
-            raise ValueError(
-                f"autofl.yaml environment.{SIMULATOR_ENV_PASSTHROUGH_CONFIG_KEY} must contain only names"
-            )
+            raise ValueError(f"autofl.yaml environment.{SIMULATOR_ENV_PASSTHROUGH_CONFIG_KEY} must contain only names")
         name = value.strip()
         if not ENV_VAR_NAME_RE.fullmatch(name):
             raise ValueError(

@@ -68,3 +68,28 @@ def _failure_pattern_rows(catalog_text):
             continue
         rows[cells[0].strip("`")] = dict(zip(headers, cells))
     return rows
+
+
+def test_pytorch_conversion_pins_recipe_key_metric_to_client_metric():
+    repo_root = Path(__file__).resolve().parents[4]
+    skill_root = repo_root / "skills" / "nvflare-convert-pytorch"
+    skill_text = skill_root.joinpath("SKILL.md").read_text(encoding="utf-8")
+    recipe_text = skill_root.joinpath("references/recipe-selection.md").read_text(encoding="utf-8")
+    client_text = skill_root.joinpath("references/pytorch-client-api-conversion.md").read_text(encoding="utf-8")
+    normalized_client = " ".join(client_text.split())
+    validation_text = skill_root.joinpath("references/job-validation.md").read_text(encoding="utf-8")
+
+    assert "`FedAvgRecipe.key_metric`" in skill_text
+    assert "must exactly match the metric key sent in `FLModel.metrics`" in skill_text
+    assert "`val_loss`" not in skill_text
+    assert "`neg_loss`" in skill_text
+    assert "unprotected recipe or adding only a disclaimer" in skill_text
+    assert "key_metric=metric_name" in recipe_text
+    assert 'metrics={"f1": f1}' in recipe_text
+    assert 'key_metric="f1"' in recipe_text
+    assert 'metrics={"neg_loss": -loss}' in recipe_text
+    assert 'key_metric="neg_loss"' in recipe_text
+    assert "`FLModel.metrics` must exactly match the selected recipe's `key_metric`" in normalized_client
+    assert 'metrics={"neg_loss": -loss}' in normalized_client
+    assert "recipe's `key_metric` exactly matches one key sent in" in validation_text
+    assert "higher-is-better" in validation_text

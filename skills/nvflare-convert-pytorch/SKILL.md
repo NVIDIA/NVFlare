@@ -2,7 +2,7 @@
 name: nvflare-convert-pytorch
 description: "Convert existing PyTorch training code into an NVFLARE federated job using Client API model exchange, local validation, and job export; do not use for other frameworks, deployment, POC/production lifecycle, or experiment workflows."
 license: Apache-2.0
-version: "0.2.0" # NVSkills CI bootstrap: no behavior change.
+version: "0.1.0"
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
   min_flare_version: "2.8.0"
@@ -25,27 +25,21 @@ metadata:
 
 ## Use When
 
-Use when the user asks to convert an existing plain PyTorch training script,
-`torch.nn.Module`, manual training loop, `state_dict` workflow, data loader,
-checkpoint, or metric loop into an NVFLARE federated training job. Supported:
-horizontal FL with a supported PyTorch recipe, Client API model exchange with
-`nvflare.client` and `FLModel`, custom aggregation through the recipe
-`aggregator=` hook, and local validation and export.
+Use when converting an existing plain PyTorch training script, `torch.nn.Module`, manual training loop,
+`state_dict` workflow, data loader, checkpoint, or metric loop into an NVFLARE federated training job. Supports
+horizontal FL, Client API model exchange with `FLModel`, recipe `aggregator=` hooks, validation, and export.
 
 ## Do Not Use When
 
-Do not use for PyTorch Lightning (route to `nvflare-convert-lightning`),
-Hugging Face Trainer, TensorFlow, XGBoost, scikit-learn, a failed job (route
-to `nvflare-diagnose-job`), federated statistics without training (route to
-`nvflare-fed-stats`), or generic PyTorch debugging without FLARE intent. Out of conversion scope: production deployment,
-Kubernetes, POC lifecycle, deployment privacy/security policy design, controller
-or workflow rewrites outside product recipe or Job APIs, experiment search across
-recipes, and data distribution experiments beyond minimal local validation setup.
-Privacy-protection requests — homomorphic encryption (HE) / encrypted
-aggregation, differential privacy, and privacy filters — are not supported:
-they require provisioning or deployment policy beyond conversion scope, so
-report such a request as unsupported and route it to provisioning/deployment
-rather than substituting an unprotected recipe or adding only a disclaimer.
+Do not use for PyTorch Lightning (route to `nvflare-convert-lightning`), Hugging Face Trainer, TensorFlow, XGBoost,
+scikit-learn, failed jobs (route to
+`nvflare-diagnose-job`), federated statistics without training (route to
+`nvflare-fed-stats`), or generic PyTorch debugging without FLARE intent. Out of
+scope: production deployment, Kubernetes, POC lifecycle, privacy/security policy design,
+controller/workflow rewrites outside recipe or Job APIs, experiment search, and
+data distribution experiments beyond minimal validation setup. Privacy-protection
+requests — HE/encrypted aggregation, differential privacy, and privacy filters — need provisioning/deployment
+policy; route onward rather than substituting an unprotected recipe or adding only a disclaimer.
 
 ## Workflow
 
@@ -98,7 +92,8 @@ rather than substituting an unprotected recipe or adding only a disclaimer.
    source has site data or the user explicitly asks for shared training data.
 6. Add or update `job.py` with the selected recipe: explicit model config
    `{"class_path": ..., "args": ...}` (never a live model instance), custom
-   aggregator wiring through `aggregator=` when requested, and
+   aggregator wiring through `aggregator=` when requested, `key_metric` set to
+   the same metric key reported in `FLModel.metrics`, and
    `enable_tensor_disk_offload=True` when the recipe exposes it.
 7. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`:
    compile checks, recipe construction, one final full-run path chosen by the
@@ -128,6 +123,11 @@ rather than substituting an unprotected recipe or adding only a disclaimer.
 - Must convert source evaluation alongside training and return metrics through
   `FLModel.metrics`; must not synthesize metric semantics without source
   evidence.
+- Must align model selection with client metrics: `FedAvgRecipe.key_metric`
+  must exactly match the metric key sent in `FLModel.metrics`. If the source
+  reports a higher-is-better metric such as `f1` or `auc`, pass that name as
+  `key_metric`. For loss-like metrics, report a negated client metric such as
+  `neg_loss` and use it as `key_metric`; if direction is unclear, ask or fail closed.
 - Must train each site on its local partition for multi-site single-node-source
   conversion. Preserve existing site splits; otherwise use deterministic seeded
   split, stratified when labels exist. Shared validation/test is allowed only
