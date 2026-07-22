@@ -1608,6 +1608,42 @@ def test_runner_state_infrastructure_retry_keeps_capped_budget_consistent_with_g
     assert persisted["remaining_candidates"] == 2
 
 
+def test_remaining_candidates_clamped_to_zero_when_cap_lowered_below_attempts(tmp_path):
+    runner = _load_runner()
+    records = [
+        runner.RunRecord("baseline", "baseline", 0.5, 1.0, "none", "baseline", "run", "/tmp/baseline"),
+        runner.RunRecord("keep", "candidate_1", 0.6, 1.0, "none", "candidate", "run", "/tmp/c1"),
+        runner.RunRecord("discard", "candidate_2", 0.4, 1.0, "none", "candidate", "run", "/tmp/c2"),
+        runner.RunRecord("crash", "candidate_3", None, 1.0, "none", "candidate", "run", "/tmp/c3"),
+        runner.RunRecord(
+            runner.INFRASTRUCTURE_RETRY,
+            "candidate_4",
+            None,
+            1.0,
+            "none",
+            "candidate",
+            "python job.py",
+            "/tmp/c4",
+        ),
+    ]
+    results_path = tmp_path / "results.tsv"
+    state_path = tmp_path / "state.json"
+    runner.write_results(results_path, records)
+
+    # A cap lowered below the recorded attempts must not report budget debt:
+    # remaining_candidates means "candidates still available", never negative.
+    state = runner.write_state(state_path, results_path, records, 2)
+    guard_state = runner.load_campaign_guard().guard_state(results_path, max_candidates=2)
+
+    assert state["candidate_attempts"] == 3
+    assert state["remaining_candidates"] == 0
+    assert guard_state["candidate_attempts"] == 3
+    assert guard_state["remaining_candidates"] == 0
+    assert state["remaining_candidates"] == guard_state["remaining_candidates"]
+    persisted = json.loads(state_path.read_text(encoding="utf-8"))
+    assert persisted["remaining_candidates"] == 0
+
+
 def test_initialize_socket_failure_returns_75_without_counting_candidate(tmp_path, monkeypatch):
     runner = _load_runner()
     job = tmp_path / "job.py"

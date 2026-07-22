@@ -2479,7 +2479,7 @@ def write_state(
         state.update(
             {
                 "candidate_attempts": attempts,
-                "remaining_candidates": max_candidates - attempts if max_candidates is not None else None,
+                "remaining_candidates": max(0, max_candidates - attempts) if max_candidates is not None else None,
                 "decision": "retry_infrastructure",
                 "reason": "infrastructure_retry",
                 "next_action": SIMULATION_APPROVAL_ACTION,

@@ -416,7 +416,7 @@ def guard_state_for_rows(
         "candidate_cap": cap,
         "candidate_cap_source": cap_source,
         "candidate_attempts": len(attempts),
-        "remaining_candidates": cap - len(attempts) if cap is not None else None,
+        "remaining_candidates": max(0, cap - len(attempts)) if cap is not None else None,
         "pending_candidates": pending_count,
         "scored_attempts": len(scored_attempts_with_index(rows)),
         "best_score": retained_best,
