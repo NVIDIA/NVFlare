@@ -275,22 +275,13 @@ The command requires Kubernetes CLI access to the target cluster. It uses
 ``kubectl`` by default; set ``--kubectl oc`` or ``KUBECTL=oc`` when staging into
 OpenShift with ``oc``. It:
 
-- creates a ConfigMap containing every file under prepared ``local/``, or
-  resource-version-replaces it only when it has this prepared kit's owner token
-- creates a Secret containing every file under prepared ``startup/``, with the
-  same ownership check
+- creates or updates a ConfigMap containing every file under prepared ``local/``
+- creates or updates a Secret containing every file under prepared ``startup/``
 - patches ``helm_chart/values.yaml`` so the parent pod mounts the ConfigMap at
   ``workspace_mount_path/local`` and the Secret at
   ``workspace_mount_path/startup``
-- patches the prepared ``K8sJobLauncher`` to the effective stage namespace so
-  its child Pods use the same namespace as the parent and Helm RBAC
 - records the resolved namespace and object names so they can be removed by
   ``nvflare deploy k8s unstage``
-
-Each prepared chart has a random staging-owner token. Both objects carry it as
-a label and annotation. Stage refuses to modify a same-named object owned by
-another prepared kit, including when a concurrent change invalidates the
-resource version.
 
 The resource names default to ``nvflare-local-<site>`` and
 ``nvflare-startup-<site>``. Override them with ``--local-configmap`` and
@@ -321,19 +312,24 @@ not left in the cluster:
    nvflare deploy k8s unstage ./site-1-k8s
 
 ``unstage`` reads the exact namespace and resource names recorded by the most
-recent ``stage`` command, verifies both owner tokens before deleting either
-object, deletes only objects matching the recorded name and owner, and clears
-their references from ``helm_chart/values.yaml``. It is safe when either object
-has already been removed and refuses to delete a foreign replacement.
+recent ``stage`` command, deletes the Secret and ConfigMap, and
+clears their references from ``helm_chart/values.yaml``. Deletion uses exact
+names and is safe when either object has already been removed.
 
 Run ``unstage`` before replacing the same prepared output with another
 ``nvflare deploy prepare`` command. Prepare refuses to overwrite a chart that
 still records staged resources because doing so would lose their cleanup
 targets.
 
-For a current prepared kit, you can pass ``--namespace``,
-``--local-configmap``, and ``--startup-secret`` to clean up partially staged
-resources from the same owner whose targets are not recorded. Use
+For a kit staged by an older NVFlare version that did not record its namespace,
+pass the original namespace explicitly:
+
+.. code-block:: shell
+
+   nvflare deploy k8s unstage ./site-1-k8s --namespace nvflare
+
+You can also pass ``--local-configmap`` and ``--startup-secret`` to clean up
+legacy or partially staged resources whose names are not recorded. Use
 ``--kubectl oc`` or ``KUBECTL=oc`` for OpenShift. Run ``unstage`` only after
 the Helm release has been uninstalled; an installed parent pod still depends
 on these volumes.
