@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse
 import json
 import os
 import shlex
@@ -23,7 +22,6 @@ import pytest
 
 from nvflare.app_opt.job_launcher.slurm import ClientSlurmJobLauncher
 from nvflare.tool.deploy import slurm_deploy
-from nvflare.tool.deploy.slurm_stage import stage_slurm_deployment
 from tests.unit_test.tool.deploy.deploy_commands_test import (
     _add_server_storage,
     _component,
@@ -53,7 +51,6 @@ def _slurm_config(tmp_path, **launcher_overrides):
     launcher.update(launcher_overrides)
     return {
         "runtime": "slurm",
-        "workspace_path": str(tmp_path / "shared" / "site-1"),
         "job_launcher": launcher,
     }
 
@@ -106,8 +103,7 @@ def test_prepare_slurm_generates_runtime_artifacts(tmp_path, capsys):
     launcher = _component(resources, "slurm_launcher")
     assert launcher["path"].endswith("ClientSlurmJobLauncher")
     assert launcher["args"] == {
-        "workspace_path": config["workspace_path"],
-        "prepared_path": str(output),
+        "workspace_path": str(output),
         "sandbox": "none",
         "image": None,
         "internal_port": 9210,
@@ -141,13 +137,17 @@ def test_prepare_slurm_generates_runtime_artifacts(tmp_path, capsys):
     assert start_script.stat().st_mode & 0o777 == 0o700
     assert not (output / "startup" / "start.sh").exists()
     assert not (output / "startup" / "parent.slurm").exists()
+    assert output.stat().st_mode & 0o777 == 0o700
+    assert (output / "startup").is_dir() and not (output / "startup").is_symlink()
+    assert (output / "local").is_dir() and not (output / "local").is_symlink()
+    assert not (output / "kit").exists()
+    assert not (output / "local" / "slurm_stage.json").exists()
 
+    runtime_marker = output / "runtime-marker"
+    runtime_marker.write_text("old workspace", encoding="utf-8")
     _run_prepare(kit, output, config)
     capsys.readouterr()
-
-    with pytest.raises(SystemExit):
-        _run_prepare(output, tmp_path / "copied-slurm", config)
-    assert "already a prepared Slurm kit" in capsys.readouterr().err
+    assert not runtime_marker.exists()
 
 
 def test_prepare_slurm_does_not_require_scheduler_commands_on_prepare_host(tmp_path, capsys, monkeypatch):
@@ -196,7 +196,7 @@ def test_prepare_slurm_preserves_explicit_stable_executable_paths(tmp_path, caps
     assert {name: persisted[name] for name in configured} == configured
 
 
-def test_stage_slurm_installs_kit_and_start_script_uses_workspace_entrypoint(tmp_path, capsys):
+def test_prepare_slurm_start_script_uses_output_as_workspace(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
     marker = tmp_path / "parent-started"
     sub_start = kit / "startup" / "sub_start.sh"
@@ -212,19 +212,11 @@ def test_stage_slurm_installs_kit_and_start_script_uses_workspace_entrypoint(tmp
     config = _slurm_config(tmp_path)
     _run_prepare(kit, output, config)
     prepare_output = capsys.readouterr().out
-    assert "deploy slurm stage" in prepare_output
-
-    stage_slurm_deployment(argparse.Namespace(kit=str(output), kit_flag=None))
-    stage_output = capsys.readouterr().out
-    workspace = tmp_path / "shared" / "site-1"
-    assert "stop every parent using this workspace" in stage_output
-    assert "staged" in stage_output
-    assert (workspace / "kit" / "startup" / "sub_start.sh").is_file()
-    assert os.readlink(workspace / "startup") == "kit/startup"
-    assert os.readlink(workspace / "local") == "kit/local"
+    assert "deploy slurm stage" not in prepare_output
+    assert (output / "startup" / "sub_start.sh").is_file()
 
     subprocess.run([str(output / "startup" / "start_slurm.sh")], check=True)
-    assert marker.read_text(encoding="utf-8") == f"{workspace}|{workspace}|--once"
+    assert marker.read_text(encoding="utf-8") == f"{output}|{output}|--once"
 
 
 def test_prepare_slurm_rejects_configurable_connection_security(tmp_path, capsys):
@@ -254,8 +246,8 @@ def test_prepare_slurm_client_parent_scripts_use_validated_values(tmp_path, caps
     assert "#SBATCH --partition=batch" in parent
     assert "#SBATCH --time=1-00:00:00" in parent
     assert "source /opt/nvflare/activate" in parent
-    assert f"PREPARED_ROOT={shlex.quote(str(output))}" in parent
-    assert 'exec "$PREPARED_ROOT/startup/start_slurm.sh"' in parent
+    assert f"WORKSPACE_ROOT={shlex.quote(str(output))}" in parent
+    assert 'exec "$WORKSPACE_ROOT/startup/start_slurm.sh"' in parent
     assert (output / "startup" / "parent.slurm").stat().st_mode & 0o777 == 0o700
 
     submit = output / "startup" / "submit_parent.sh"
@@ -279,7 +271,7 @@ def test_prepare_slurm_client_parent_scripts_use_validated_values(tmp_path, caps
     assert "must not contain whitespace" in capsys.readouterr().err
 
 
-def test_parent_script_uses_prepared_path_after_sbatch_relocation(tmp_path, capsys):
+def test_parent_script_uses_workspace_path_after_sbatch_relocation(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
     output = tmp_path / "site-1-slurm"
     config = _slurm_config(tmp_path)
@@ -345,10 +337,8 @@ def test_prepare_slurm_server_relocates_storage_and_rejects_parent(tmp_path, cap
     capsys.readouterr()
     resources = json.loads((output / "local" / "resources.json.default").read_text())
     assert _component(resources, "slurm_launcher")["path"].endswith("ServerSlurmJobLauncher")
-    assert resources["snapshot_persistor"]["args"]["storage"]["args"]["root_dir"] == (
-        f"{config['workspace_path']}/snapshot-storage"
-    )
-    assert _component(resources, "job_manager")["args"]["uri_root"] == f"{config['workspace_path']}/jobs-storage"
+    assert resources["snapshot_persistor"]["args"]["storage"]["args"]["root_dir"] == (f"{output}/snapshot-storage")
+    assert _component(resources, "job_manager")["args"]["uri_root"] == f"{output}/jobs-storage"
 
     config["parent"] = {}
     with pytest.raises(SystemExit):
@@ -364,17 +354,14 @@ def test_prepare_slurm_server_relocates_storage_and_rejects_parent(tmp_path, cap
     assert "could not relocate snapshot storage" in capsys.readouterr().out
 
 
-def test_prepare_slurm_rejects_workspace_overlap_and_unsafe_path_list(tmp_path, capsys):
+def test_prepare_slurm_rejects_legacy_workspace_path_and_unsafe_output(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
-    output = tmp_path / "site-1-slurm"
-    overlap = _slurm_config(tmp_path)
-    overlap["workspace_path"] = str(output / "runtime")
+    legacy = _slurm_config(tmp_path)
+    legacy["workspace_path"] = str(tmp_path / "shared" / "site-1")
     with pytest.raises(SystemExit):
-        _run_prepare(kit, output, overlap)
-    assert "overlaps the prepared output" in capsys.readouterr().err
+        _run_prepare(kit, tmp_path / "site-1-slurm", legacy)
+    assert "Unknown keys" in capsys.readouterr().err
 
-    unsafe_path_list = _slurm_config(tmp_path)
-    unsafe_path_list["workspace_path"] = f"{tmp_path}/shared:other/site-1"
     with pytest.raises(SystemExit):
-        _run_prepare(kit, tmp_path / "unsafe-path-list-slurm", unsafe_path_list)
+        _run_prepare(kit, tmp_path / "unsafe:path-list-slurm", _slurm_config(tmp_path))
     assert "must not contain the path-list separator ':'" in capsys.readouterr().err

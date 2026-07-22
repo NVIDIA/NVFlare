@@ -30,7 +30,6 @@ from nvflare.app_opt.job_launcher.study_runtime import (
     SLURM_SANDBOXES,
 )
 
-SCHEMA_VERSION = 1
 CONTROL_DIR = ".nvflare_slurm"
 SECRET_FILE = "secret.env"
 BATCH_FILE = "batch.sh"
@@ -84,7 +83,6 @@ class LookupStatus(str, Enum):
 @dataclass(frozen=True)
 class SlurmConfig:
     workspace_path: str
-    prepared_path: str
     sandbox: str
     python_path: str
     executables: dict
@@ -218,12 +216,12 @@ def _validate_mount_destination(value: str, label: str) -> str:
     return normalized
 
 
-def _validate_mount_source(source: str, workspace: str, prepared_path: str, label: str) -> str:
+def _validate_mount_source(source: str, workspace: str, label: str) -> str:
     source = _validate_mount_operand(_validate_absolute_path(source, label), label)
     real = os.path.realpath(source)
     _validate_mount_operand(real, f"{label} canonical path")
-    if _paths_overlap(real, workspace) or _paths_overlap(real, prepared_path):
-        raise SlurmLauncherError(f"{label} must be outside workspace_path and prepared_path")
+    if _paths_overlap(real, workspace):
+        raise SlurmLauncherError(f"{label} must be outside workspace_path")
     return real
 
 
@@ -318,7 +316,6 @@ def normalize_slurm_workspace_path(value: str) -> str:
 
 def normalize_slurm_launcher_settings(
     *,
-    workspace_path: str,
     sandbox: str,
     python_path: str,
     executables: dict,
@@ -332,7 +329,6 @@ def normalize_slurm_launcher_settings(
     pending_timeout: float,
     require_image_file: bool = False,
 ) -> dict:
-    workspace_path = normalize_slurm_workspace_path(workspace_path)
     sandbox = _require_string(sandbox, "sandbox")
     python_path = _validate_absolute_path(python_path, "python_path")
     internal_port = _require_int(internal_port, "internal_port")
@@ -347,7 +343,6 @@ def normalize_slurm_launcher_settings(
         raise SlurmLauncherError("forward_env must be a list")
     validated_forward = tuple(_validate_env_name(name, "forward_env entry") for name in forward_env)
     return {
-        "workspace_path": workspace_path,
         "sandbox": sandbox,
         "python_path": python_path,
         "executables": normalize_slurm_executables(executables),

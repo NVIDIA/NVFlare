@@ -111,7 +111,6 @@ def _record(job_id="42", state="RUNNING", **kwargs):
 def _config(tmp_path):
     return SlurmConfig(
         workspace_path=str(tmp_path),
-        prepared_path=str(tmp_path / "prepared"),
         sandbox="none",
         python_path="/usr/bin/python3",
         executables={name: f"/usr/bin/{name}" for name in ("sbatch", "squeue", "sacct", "scancel")},
@@ -160,11 +159,9 @@ def _plan(tmp_path, pending_timeout=5, setup="", sandbox="none"):
 
 def _runtime_workspace(tmp_path):
     workspace = tmp_path / "workspace"
-    kit = workspace / "kit"
-    (kit / "startup").mkdir(parents=True)
-    (kit / "local").mkdir()
-    (workspace / "startup").symlink_to("kit/startup")
-    (workspace / "local").symlink_to("kit/local")
+    (workspace / "startup").mkdir(parents=True)
+    (workspace / "local").mkdir()
+    workspace.chmod(0o700)
     return workspace
 
 
@@ -182,7 +179,6 @@ def _make_slurm_commands(path):
 def _runtime_config(workspace, executables):
     return SlurmConfig(
         workspace_path=str(workspace),
-        prepared_path=str(workspace / "prepared"),
         sandbox="none",
         python_path="/usr/bin/python3",
         executables=executables,
@@ -227,6 +223,56 @@ def test_initialize_rejects_missing_or_non_executable_runtime_command(tmp_path, 
 
     message = "not found on the parent runtime PATH" if configured is None else "not an executable regular file"
     with pytest.raises(UnsafeComponentError, match=message):
+        manager.initialize()
+
+
+def test_initialize_rejects_insecure_workspace(tmp_path):
+    workspace = _runtime_workspace(tmp_path)
+    workspace.chmod(0o750)
+    manager = SlurmJobManager(_runtime_config(workspace, {}), logging.getLogger("workspace-permissions"))
+
+    with pytest.raises(UnsafeComponentError, match="must not grant group/world permissions"):
+        manager.initialize()
+
+
+def test_initialize_rejects_noncanonical_workspace(tmp_path):
+    workspace = _runtime_workspace(tmp_path)
+    link = tmp_path / "workspace-link"
+    link.symlink_to(workspace, target_is_directory=True)
+    manager = SlurmJobManager(_runtime_config(link, {}), logging.getLogger("workspace-path"))
+
+    with pytest.raises(UnsafeComponentError, match="must be a canonical real directory"):
+        manager.initialize()
+
+
+def test_initialize_rejects_workspace_owned_by_another_user(tmp_path, monkeypatch):
+    workspace = _runtime_workspace(tmp_path)
+    current_uid = os.geteuid()
+    monkeypatch.setattr(manager_module.os, "geteuid", lambda: current_uid + 1)
+    manager = SlurmJobManager(_runtime_config(workspace, {}), logging.getLogger("workspace-owner"))
+
+    with pytest.raises(UnsafeComponentError, match="must be owned by current uid"):
+        manager.initialize()
+
+
+def test_initialize_rejects_symlinked_runtime_directory(tmp_path):
+    workspace = _runtime_workspace(tmp_path)
+    (workspace / "startup").rmdir()
+    real_startup = tmp_path / "startup"
+    real_startup.mkdir()
+    (workspace / "startup").symlink_to(real_startup)
+    manager = SlurmJobManager(_runtime_config(workspace, {}), logging.getLogger("workspace-layout"))
+
+    with pytest.raises(UnsafeComponentError, match="runtime startup must be a real directory"):
+        manager.initialize()
+
+
+def test_initialize_rejects_missing_runtime_directory(tmp_path):
+    workspace = _runtime_workspace(tmp_path)
+    (workspace / "local").rmdir()
+    manager = SlurmJobManager(_runtime_config(workspace, {}), logging.getLogger("workspace-layout"))
+
+    with pytest.raises(UnsafeComponentError, match="runtime local must be a real directory"):
         manager.initialize()
 
 

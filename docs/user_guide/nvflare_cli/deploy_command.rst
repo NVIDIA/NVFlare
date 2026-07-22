@@ -348,26 +348,24 @@ minimal ``slurm.yaml`` is:
 .. code-block:: yaml
 
    runtime: slurm
-   workspace_path: /lustre/proj123/nvflare/site-1
    job_launcher:
      sandbox: apptainer
      image: /lustre/images/nvflare-prod.sif
      python_path: /usr/bin/python3
      parent_host: nvflare-site1.internal
 
-Prepare, stage, and start the parent:
+Prepare directly into the shared runtime workspace, then start the parent:
 
 .. code-block:: shell
 
-   nvflare deploy prepare ./site-1 --config slurm.yaml --output ./site-1-slurm
-   nvflare deploy slurm stage ./site-1-slurm
-   ./site-1-slurm/startup/start_slurm.sh
+   nvflare deploy prepare ./site-1 --config slurm.yaml --output /lustre/proj123/nvflare/site-1
+   /lustre/proj123/nvflare/site-1/startup/start_slurm.sh
 
-Staging installs the prepared kit in ``workspace_path`` and binds that workspace
-to one site. A client kit can optionally generate ``startup/parent.slurm``;
-prepare prints the direct ``sbatch`` command that runs it in an allocation. See
-:ref:`slurm_job_launcher` for the complete configuration, prerequisites, and
-operations guide.
+The output is the live workspace and must be visible at the same absolute path
+on the parent and compute nodes. Preparing to the same output again replaces
+the complete workspace. A client kit can optionally generate
+``startup/parent.slurm``; prepare prints the direct ``sbatch`` command that runs
+it in an allocation. See :ref:`slurm_job_launcher` for the complete guide.
 
 **********
 Job Images
@@ -419,6 +417,6 @@ causes include:
 - invalid ``resources.json.default``
 - reserved Docker launcher kwargs
 - ``--output`` pointing at or inside the input kit
-- a Slurm ``workspace_path`` that overlaps the input or output kit
+- a Slurm ``--output`` path that is not valid as a runtime workspace
 - a missing/non-executable Slurm parent CLI, invalid sandbox/image, or
   unsupported Slurm ``connection_security`` or server ``parent`` configuration

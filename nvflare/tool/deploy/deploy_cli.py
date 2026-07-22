@@ -26,8 +26,6 @@ _deploy_prepare_parser: Optional[argparse.ArgumentParser] = None
 _deploy_k8_parser: Optional[argparse.ArgumentParser] = None
 _deploy_k8_stage_parser: Optional[argparse.ArgumentParser] = None
 _deploy_k8_unstage_parser: Optional[argparse.ArgumentParser] = None
-_deploy_slurm_parser: Optional[argparse.ArgumentParser] = None
-_deploy_slurm_stage_parser: Optional[argparse.ArgumentParser] = None
 
 _DEPLOY_PREPARE_EXAMPLES = [
     "nvflare deploy prepare ./site-1",
@@ -47,17 +45,12 @@ _DEPLOY_K8_UNSTAGE_EXAMPLES = [
     "nvflare deploy k8 unstage ./site-1-k8s --kubectl oc",
 ]
 _DEPLOY_K8_KUBECTL_CHOICES = ("kubectl", "oc")
-_DEPLOY_SLURM_STAGE_EXAMPLES = [
-    "nvflare deploy slurm stage ./site-1-slurm",
-    "nvflare deploy slurm stage --kit ./server-slurm",
-]
 
 
 def def_deploy_cli_parser(sub_cmd) -> dict:
     """Register 'nvflare deploy' with the top-level sub_cmd parser."""
     global _deploy_root_parser, _deploy_prepare_parser, _deploy_k8_parser
     global _deploy_k8_stage_parser, _deploy_k8_unstage_parser
-    global _deploy_slurm_parser, _deploy_slurm_stage_parser
 
     cmd = "deploy"
     parser = sub_cmd.add_parser(cmd, help="prepare startup kits and manage deployment resources")
@@ -156,24 +149,6 @@ def def_deploy_cli_parser(sub_cmd) -> dict:
     unstage_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _deploy_k8_unstage_parser = unstage_parser
 
-    slurm_parser = deploy_subparser.add_parser(
-        "slurm",
-        description="Slurm deployment helper commands.",
-        help="Slurm deployment helpers",
-    )
-    _deploy_slurm_parser = slurm_parser
-    slurm_subparser = slurm_parser.add_subparsers(title="slurm subcommands", metavar="", dest="deploy_slurm_sub_cmd")
-
-    slurm_stage_parser = slurm_subparser.add_parser(
-        "stage",
-        description="Install a prepared Slurm kit into its configured shared workspace.",
-        help="stage a prepared kit into its Slurm workspace",
-    )
-    slurm_stage_parser.add_argument("kit", nargs="?", help="Prepared Slurm startup kit directory.")
-    slurm_stage_parser.add_argument("--kit", dest="kit_flag", help="Prepared Slurm startup kit directory.")
-    slurm_stage_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
-    _deploy_slurm_stage_parser = slurm_stage_parser
-
     return {cmd: parser}
 
 
@@ -215,23 +190,6 @@ def handle_deploy_cmd(args):
             return
 
         output_usage_error(_deploy_k8_parser, "deploy k8 subcommand required", exit_code=4)
-        raise SystemExit(4)
-
-    if sub_cmd == "slurm":
-        if getattr(args, "deploy_slurm_sub_cmd", None) == "stage":
-            handle_schema_flag(
-                _deploy_slurm_stage_parser,
-                "nvflare deploy slurm stage",
-                _DEPLOY_SLURM_STAGE_EXAMPLES,
-                sys.argv[1:],
-            )
-
-            from nvflare.tool.deploy.deploy_commands import stage_slurm_deployment
-
-            stage_slurm_deployment(args)
-            return
-
-        output_usage_error(_deploy_slurm_parser, "deploy slurm subcommand required", exit_code=4)
         raise SystemExit(4)
 
     output_usage_error(_deploy_root_parser, "deploy subcommand required", exit_code=4)

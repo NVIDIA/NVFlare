@@ -447,8 +447,8 @@ parent submits, monitors, and cancels scheduler allocations. Its live-handle map
 within that parent. A launch succeeds only when `sbatch --parsable` returns exactly one job ID; otherwise it removes
 the transient job artifacts and reports failure.
 
-The deploy tool prepares the appropriate client or server launcher and stages it into a stable shared workspace.
-Bootstrap validates the workspace and required Slurm accounting service. Apptainer and Pyxis are single-node;
+The deploy tool prepares the appropriate client or server launcher directly in the shared workspace selected by
+`--output`. Bootstrap validates the workspace and required Slurm accounting service. Apptainer and Pyxis are single-node;
 multi-node allocations require bare mode and application-owned fan-out.
 
 See [`slurm_job_launcher_design.md`](slurm_job_launcher_design.md) for the design and
@@ -641,8 +641,8 @@ For K8s, each dataset `source` is a trusted PVC claim name that is inserted into
 ### 9.4 Slurm Launcher
 
 Do not hand-author the Slurm launcher component. `nvflare deploy prepare` writes the client or server launcher and
-`PassthroughResourceManager`; `nvflare deploy slurm stage` installs the prepared kit into its stable runtime
-workspace. See `docs/user_guide/admin_guide/deployment/slurm_job_launcher.rst` for public configuration.
+`PassthroughResourceManager` directly into the runtime workspace selected by `--output`. See
+`docs/user_guide/admin_guide/deployment/slurm_job_launcher.rst` for public configuration.
 
 ---
 

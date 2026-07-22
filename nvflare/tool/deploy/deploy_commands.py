@@ -26,9 +26,8 @@ import yaml
 from nvflare.tool.cli_output import output_ok
 from nvflare.tool.deploy import deploy_common, docker_deploy, k8s_deploy, slurm_deploy
 from nvflare.tool.deploy.k8s_stage import reject_replacing_staged_k8_output, stage_k8_deployment, unstage_k8_deployment
-from nvflare.tool.deploy.slurm_stage import stage_slurm_deployment
 
-__all__ = ["prepare_deployment", "stage_k8_deployment", "stage_slurm_deployment", "unstage_k8_deployment"]
+__all__ = ["prepare_deployment", "stage_k8_deployment", "unstage_k8_deployment"]
 
 
 class _DeployBackend(Protocol):

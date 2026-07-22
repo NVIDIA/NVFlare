@@ -41,10 +41,8 @@ allocation is terminal, cleans the job artifacts, and returns control to normal 
 
 ## Deployment and workspace
 
-Prepare and stage create the runtime workspace:
-
-1. `nvflare deploy prepare` creates a Slurm-configured startup kit and staging manifest.
-2. `nvflare deploy slurm stage` copies that kit into its stable shared workspace.
+`nvflare deploy prepare --output <workspace>` creates the complete runtime workspace directly. The output must be a
+stable shared-filesystem path visible to the parent and eligible compute nodes.
 
 The generated `start_slurm.sh` is an optional convenience wrapper. It sets the runtime workspace and starts the
 parent in the foreground. An external service manager may perform the same operations.
@@ -52,16 +50,15 @@ parent in the foreground. An external service manager may perform the same opera
 Prepare can also create an optional `parent.slurm` script for running a client parent in a Slurm allocation. Server
 parents run on a service or login host with a stable public endpoint.
 
-The prepare host does not resolve scheduler commands. It preserves optional configured absolute paths in the kit,
+The prepare host does not resolve scheduler commands. It preserves optional configured absolute paths in the workspace,
 and generated parent-submission guidance uses `sbatch` from the submission host's `PATH`. After the parent reaches
 its actual runtime host and trusted environment setup has run, bootstrap resolves `sbatch`, `squeue`, `sacct`, and
 `scancel`, verifies Slurm 23.02 or later, and freezes canonical paths in memory for that parent process. A restart
 therefore follows changes to a cluster-managed stable symlink without requiring a new prepare.
 
-Staging copies the prepared output to `kit.next`, installs it as `kit`, and maintains the relative links
-`startup -> kit/startup` and `local -> kit/local`. Operators use a separate workspace for each NVFlare site or
-federation, run one parent per workspace, and stop it before staging an update. Rerunning stage completes an
-interrupted replacement.
+Operators use a separate output for each NVFlare site or federation and run one parent per workspace. Preparing
+again with the same output replaces the complete workspace, including runtime data. Stop the parent and preserve
+required runs, snapshots, and server job data before replacement.
 
 The workspace and all configured images or mounts must be visible at the same absolute paths from the submit host
 and eligible compute nodes. The filesystem must support coherent exclusive create and atomic rename.
@@ -70,7 +67,7 @@ and eligible compute nodes. The filesystem must support coherent exclusive creat
 
 | Owner | Source | Controls |
 | --- | --- | --- |
-| Site | `slurm.yaml` | workspace, default sandbox/image, scheduler policy, setup, commands, timeouts |
+| Site | `slurm.yaml` and prepare `--output` | workspace, default sandbox/image, scheduler policy, setup, commands, timeouts |
 | Site study policy | `local/study_runtime.yaml` | study image, mounts, environment, sandbox/setup/routing overrides |
 | Job | `launcher_spec` and `resource_spec` | BYOC-authorized image, topology, CPU, memory, time, GPU total |
 
@@ -152,7 +149,7 @@ cancellation. Every cancellation repeats live ownership verification before call
 current-parent user abort maps scheduler `CANCELLED` or `COMPLETED` to `ABORTED`, so abort intent wins a race with
 normal completion.
 
-At startup, the manager validates the staged workspace and briefly retries the required accounting probe.
+At startup, the manager validates the private runtime workspace and briefly retries the required accounting probe.
 
 During normal shutdown, the framework starts running-job termination before firing `SYSTEM_END`; captured handles
 are terminated through that framework abort path. The Slurm `SYSTEM_END` handler only closes launch admission after

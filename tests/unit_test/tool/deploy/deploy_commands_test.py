@@ -1124,23 +1124,15 @@ def test_deploy_cli_routes_k8_unstage(alias, monkeypatch):
     assert calls == [args]
 
 
-def test_deploy_cli_routes_slurm_stage(monkeypatch):
-    from nvflare.tool.deploy import deploy_commands
-    from nvflare.tool.deploy.deploy_cli import def_deploy_cli_parser, handle_deploy_cmd
+def test_deploy_cli_does_not_register_slurm_stage():
+    from nvflare.tool.deploy.deploy_cli import def_deploy_cli_parser
 
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="sub_command")
     def_deploy_cli_parser(subparsers)
-    args = parser.parse_args(["deploy", "slurm", "stage", "/tmp/prepared-kit"])
-    calls = []
-    monkeypatch.setattr(deploy_commands, "stage_slurm_deployment", lambda actual_args: calls.append(actual_args))
 
-    handle_deploy_cmd(args)
-
-    assert args.deploy_sub_cmd == "slurm"
-    assert args.deploy_slurm_sub_cmd == "stage"
-    assert args.kit == "/tmp/prepared-kit"
-    assert calls == [args]
+    with pytest.raises(SystemExit):
+        parser.parse_args(["deploy", "slurm", "stage", "/tmp/prepared-kit"])
 
 
 def test_stage_k8_reports_kubectl_failure(tmp_path, capsys, monkeypatch):

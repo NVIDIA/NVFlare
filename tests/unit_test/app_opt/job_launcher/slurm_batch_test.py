@@ -32,7 +32,6 @@ def _job_dir(tmp_path):
 def _config(tmp_path, sandbox="none"):
     return SlurmConfig(
         workspace_path=str(tmp_path / "workspace"),
-        prepared_path=str(tmp_path / "prepared"),
         sandbox=sandbox,
         python_path="/usr/bin/python3",
         executables={

@@ -42,11 +42,11 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     _require_int,
     _require_positive_number,
     _require_string,
-    _validate_absolute_path,
     _validate_mount_destination,
     _validate_mount_source,
     normalize_slurm_image,
     normalize_slurm_launcher_settings,
+    normalize_slurm_workspace_path,
 )
 from nvflare.app_opt.job_launcher.slurm.manager import SlurmJobManager
 from nvflare.app_opt.job_launcher.study_runtime import (
@@ -185,7 +185,6 @@ class SlurmJobLauncher(JobLauncherSpec):
         self,
         *,
         workspace_path: str,
-        prepared_path: str,
         sandbox: str,
         python_path: str,
         executables: dict,
@@ -203,9 +202,8 @@ class SlurmJobLauncher(JobLauncherSpec):
             raise TypeError("SlurmJobLauncher must be instantiated through a concrete subclass")
         self._child_process = os.environ.get(SLURM_CHILD_PROCESS_ENV) == "1"
         self.config = SlurmConfig(
-            prepared_path=os.path.realpath(_validate_absolute_path(prepared_path, "prepared_path")),
+            workspace_path=normalize_slurm_workspace_path(workspace_path),
             **normalize_slurm_launcher_settings(
-                workspace_path=workspace_path,
                 sandbox=sandbox,
                 python_path=python_path,
                 executables=executables,
@@ -313,7 +311,6 @@ class SlurmJobLauncher(JobLauncherSpec):
             source = _validate_mount_source(
                 item.source,
                 workspace,
-                self.config.prepared_path,
                 f"{label} source",
             )
             mounts.append(BindMount(source, destination, mode))

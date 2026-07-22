@@ -52,11 +52,9 @@ Before starting a parent, verify:
 - Slurm partition, association, QOS, reservation, cgroup, and device policies
   enforce the site's resource limits.
 
-Worker allocations use the staged workspace and do not need the prepared output.
-When ``parent.slurm`` starts a client parent in an allocation, that allocation
-must also see the prepared output at its configured absolute path. Every
-workspace must be private, owned by the runtime account, and dedicated to one
-NVFlare site or federation.
+The prepare output is the runtime workspace. The parent and worker allocations
+must see it at the same absolute path. Every workspace must be private, owned
+by the runtime account, and dedicated to one NVFlare site or federation.
 
 For Apptainer, enable unprivileged user namespaces and install Apptainer on all
 eligible nodes. Validate its filesystem, process, cgroup, and GPU isolation on
@@ -83,8 +81,6 @@ login or service host:
 .. code-block:: yaml
 
    runtime: slurm
-   workspace_path: /lustre/proj123/nvflare/site-1
-
    job_launcher:
      sandbox: apptainer
      image: /lustre/images/nvflare-prod.sif
@@ -107,9 +103,6 @@ Important keys are:
 
    * - Key
      - Meaning
-   * - ``workspace_path``
-     - Required stable runtime root, outside the provisioned and prepared kits.
-       One site deployment owns the path.
    * - ``sandbox``
      - Required: ``apptainer``, ``pyxis``, or ``none``.
    * - ``image``
@@ -130,7 +123,7 @@ Important keys are:
      - Environment names whose post-``setup`` values should reach the worker.
    * - ``executables``
      - Optional explicit paths for Slurm and backend commands. Parent-side
-       paths are preserved in the kit, then resolved and validated on the
+       paths are preserved in the workspace, then resolved and validated on the
        runtime parent host.
    * - ``internal_port``
      - Worker-to-parent port; default ``8102``.
@@ -144,28 +137,26 @@ Important keys are:
 Source module initialization explicitly. Put fixed values in study ``env``;
 use ``forward_env`` only for values created by setup.
 
-Prepare, Stage, and Start
-=========================
+Prepare and Start
+=================
 
-Prepare and stage the kit:
+Prepare directly into the shared runtime workspace:
 
 .. code-block:: shell
 
    nvflare deploy prepare ./site-1 \
        --config ./slurm.yaml \
-       --output /opt/nvflare/prepared/site-1-slurm
+       --output /lustre/proj123/nvflare/site-1
 
-   nvflare deploy slurm stage /opt/nvflare/prepared/site-1-slurm
-
-Staging installs the prepared kit in the runtime workspace. Run one parent per
-workspace and stop it before staging an update. Re-run prepare and stage to
-update kit content; runs, snapshots, and server job storage remain in place.
+Run one parent per workspace. Re-running prepare with the same output replaces
+the complete workspace. Stop the parent and preserve required runs, snapshots,
+and server job storage before updating it.
 
 Start a parent on a login or service host:
 
 .. code-block:: shell
 
-   /opt/nvflare/prepared/site-1-slurm/startup/start_slurm.sh
+   /lustre/proj123/nvflare/site-1/startup/start_slurm.sh
 
 To run a client parent in a Slurm allocation, add a client-only ``parent``
 block and omit ``job_launcher.parent_host``:
@@ -180,21 +171,21 @@ block and omit ``job_launcher.parent_host``:
      environment_setup: |
        source /lustre/proj123/venv/bin/activate
 
-Then stage normally and run the ``submit_command`` printed by prepare on a
-submission host where ``sbatch`` is on ``PATH``. It has this form:
+Then run the ``submit_command`` printed by prepare on a submission host where
+``sbatch`` is on ``PATH``. It has this form:
 
 .. code-block:: shell
 
    sbatch --parsable \
-       --output=/opt/nvflare/prepared/site-1-slurm/parent-slurm-%j.out \
-       /opt/nvflare/prepared/site-1-slurm/startup/parent.slurm
+       --output=/lustre/proj123/nvflare/site-1/parent-slurm-%j.out \
+       /lustre/proj123/nvflare/site-1/startup/parent.slurm
 
 The parent script runs ``parent.environment_setup`` before starting NVFlare.
 Parent bootstrap then resolves ``sbatch``, ``squeue``, ``sacct``, and
 ``scancel`` once and keeps their canonical paths in memory for that process.
 An explicitly configured path may therefore point to a cluster-managed stable
 symlink such as ``.../slurm/current/bin/sbatch``; a restarted parent resolves a
-new target after a cluster upgrade without re-preparing the kit.
+new target after a cluster upgrade without re-preparing the workspace.
 
 An explicit ``parent_host`` always wins. Otherwise an allocated parent uses
 ``SLURMD_NODENAME``. A parent outside an allocation without ``parent_host``
@@ -238,8 +229,8 @@ read-only secret mounts. A Slurm ``secret_env`` source names a variable in the
 parent environment; its value is passed through a temporary private file and is
 not written to the batch script or scheduler command.
 
-Mount sources must be absolute paths outside the prepared kit and runtime
-workspace, and must exist on the compute nodes that can run the job. Bare mode
+Mount sources must be absolute paths outside the runtime workspace and must
+exist on the compute nodes that can run the job. Bare mode
 rejects container, dataset, and secret-mount settings because it has no mount
 namespace. Migrate legacy
 ``local/study_data.yaml`` files to ``study_runtime.yaml`` before using Slurm.
@@ -293,7 +284,7 @@ unavailable. A later scheduler or accounting outage leaves affected jobs
 non-terminal and retries; it never assumes that a missing observation means a
 job has stopped.
 
-NVFlare stores transient launch artifacts under ``workspace_path/.nvflare_slurm``.
+NVFlare stores transient launch artifacts under ``<prepare-output>/.nvflare_slurm``.
 The live parent removes a job's artifacts after launch failure or terminal
 completion. User abort and pending timeout verify ownership before ``scancel``;
 normal framework shutdown terminates running handles through the same path
@@ -312,9 +303,9 @@ An ``sbatch`` timeout fails the FL dispatch even if Slurm accepted the job.
 Artifact removal prevents a pending allocation from starting unless the same
 job ID is relaunched before it starts.
 
-To change ``workspace_path``, stop the parent and use a new empty path. To keep
-existing data, move the complete workspace, prepare again with the new path,
-and stage the newly prepared kit there.
+To change the workspace, stop the parent and prepare to a new ``--output``.
+Preparing to an existing output replaces it, so copy any data that must survive
+before running prepare.
 
 Server-job queue and startup time must fit within the client runner-sync timeout
 (60 seconds by default). Provide prompt server capacity or increase
@@ -323,7 +314,7 @@ Server-job queue and startup time must fit within the client runner-sync timeout
 Before production use, test on the target cluster:
 
 #. Successful, failed, timed-out, pending-aborted, and running-aborted jobs.
-#. Parent restart with a live job and re-prepare/re-stage data preservation.
+#. Parent restart with a live job and workspace replacement behavior.
 #. Compute-node connectivity to the parent and multi-node collectives when used.
 #. Slurm accounting, association, QOS, partition, cgroup, and GPU enforcement.
 #. The selected backend's filesystem view, environment, secret handling, exit

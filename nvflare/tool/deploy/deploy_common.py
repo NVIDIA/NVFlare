@@ -48,7 +48,6 @@ LEGACY_DOCKER_SH = "docker.sh"
 DOCKER_START_SH = "start_docker.sh"
 SLURM_START_SH = "start_slurm.sh"
 SLURM_PARENT_SH = "parent.slurm"
-SLURM_STAGE_MANIFEST = "slurm_stage.json"
 WORKSPACE_MOUNT_PATH = "/var/tmp/nvflare/workspace"
 PASSTHROUGH_RESOURCE_MANAGER = (
     "nvflare.app_common.resource_managers.passthrough_resource_manager.PassthroughResourceManager"

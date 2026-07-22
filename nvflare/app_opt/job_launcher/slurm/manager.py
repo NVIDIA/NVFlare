@@ -20,6 +20,7 @@ import logging
 import os
 import re
 import shutil
+import stat
 import threading
 import time
 from dataclasses import replace
@@ -128,16 +129,20 @@ class SlurmJobManager:
 
     def _validate_workspace(self) -> str:
         workspace = self.config.workspace_path
-        if not os.path.isdir(workspace) or os.path.realpath(workspace) != workspace:
+        try:
+            info = os.lstat(workspace)
+        except OSError as e:
+            raise UnsafeComponentError(f"cannot inspect workspace_path: {workspace}") from e
+        if not stat.S_ISDIR(info.st_mode) or os.path.realpath(workspace) != workspace:
             raise UnsafeComponentError(f"workspace_path must be a canonical real directory: {workspace}")
-        kit = os.path.join(workspace, "kit")
-        if os.path.islink(kit) or not os.path.isdir(kit):
-            raise UnsafeComponentError(f"staged kit must be a real directory: {kit}")
+        if info.st_uid != os.geteuid():
+            raise UnsafeComponentError(f"workspace_path must be owned by current uid {os.geteuid()}: {workspace}")
+        if stat.S_IMODE(info.st_mode) & 0o077:
+            raise UnsafeComponentError(f"workspace_path must not grant group/world permissions: {workspace}")
         for name in ("startup", "local"):
-            link = os.path.join(workspace, name)
-            expected = os.path.join("kit", name)
-            if not os.path.islink(link) or os.readlink(link) != expected or not os.path.isdir(os.path.realpath(link)):
-                raise UnsafeComponentError(f"runtime {name} must be the relative symlink '{expected}'")
+            path = os.path.join(workspace, name)
+            if os.path.islink(path) or not os.path.isdir(path):
+                raise UnsafeComponentError(f"runtime {name} must be a real directory: {path}")
         return workspace
 
     def initialize(self) -> None:

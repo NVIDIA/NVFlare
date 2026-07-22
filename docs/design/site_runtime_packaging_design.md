@@ -659,10 +659,8 @@ contract. A possible internal structure:
 - `nvflare.tool.deploy.k8s_deploy`: K8s validation, resource/config mutation,
   and Helm chart generation from the checked-in chart templates.
 - `nvflare.tool.deploy.k8s_stage`: K8s ConfigMap/Secret staging and cleanup.
-- `nvflare.tool.deploy.slurm_deploy`: Slurm validation, workspace isolation,
+- `nvflare.tool.deploy.slurm_deploy`: Slurm validation, direct-workspace
   resource/config mutation, and rendering of checked-in Slurm templates.
-- `nvflare.tool.deploy.slurm_stage`: explicit installation of a prepared Slurm
-  kit into the configured workspace.
 
 Shared helpers can handle:
 

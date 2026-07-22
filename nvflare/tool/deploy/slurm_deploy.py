@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import Any
 
 from nvflare.app_opt.job_launcher.slurm.config import (
-    SCHEMA_VERSION,
     SlurmLauncherError,
     normalize_slurm_directives,
     normalize_slurm_launcher_settings,
@@ -36,7 +35,6 @@ from nvflare.tool.deploy.deploy_common import (
     SLURM_CLIENT_LAUNCHER,
     SLURM_PARENT_SH,
     SLURM_SERVER_LAUNCHER,
-    SLURM_STAGE_MANIFEST,
     SLURM_START_SH,
     SUB_START_SH,
     KitInfo,
@@ -46,10 +44,8 @@ from nvflare.tool.deploy.deploy_common import (
     _load_or_default_comm_config,
     _mapping,
     _patch_resources,
-    _paths_overlap,
     _relocate_server_storage_to_workspace,
     _remove_start_scripts,
-    _required_str,
     _validate_allowed_keys,
     _write_json,
 )
@@ -60,38 +56,22 @@ TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
 def prepare(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) -> dict[str, Any]:
     """Generate the Slurm launcher configuration and startup artifacts."""
-    if (kit_info.kit_dir / "local" / SLURM_STAGE_MANIFEST).exists():
-        _fail(
-            "INVALID_KIT",
-            "The input is already a prepared Slurm kit.",
-            "Prepare from the original provisioned startup kit.",
-        )
     _validate_role_config(config, kit_info.role)
-    config["workspace_path"] = _validate_workspace_location(config["workspace_path"], kit_info.kit_dir, final_output)
-    workspace_path = config["workspace_path"]
+    workspace_path = _workspace_path(final_output)
     job_launcher = config["job_launcher"]
 
     launcher_path = SLURM_SERVER_LAUNCHER if kit_info.role == ROLE_SERVER else SLURM_CLIENT_LAUNCHER
-    launcher_args = _normalize_job_launcher(job_launcher, workspace_path)
-    launcher_args["prepared_path"] = str(final_output)
+    launcher_args = _normalize_job_launcher(job_launcher)
+    launcher_args["workspace_path"] = workspace_path
     _patch_resources(kit_info.kit_dir, "slurm_launcher", launcher_path, launcher_args)
     _patch_comm_config(kit_info.kit_dir, port=launcher_args["internal_port"])
     _ensure_study_runtime_template(kit_info.kit_dir)
     if kit_info.role == ROLE_SERVER:
         _relocate_server_storage_to_workspace(kit_info.kit_dir, workspace_path)
 
-    _write_json(
-        kit_info.kit_dir / "local" / SLURM_STAGE_MANIFEST,
-        {
-            "schema_version": SCHEMA_VERSION,
-            "site": kit_info.name,
-            "prepared_path": str(final_output),
-            "workspace_path": workspace_path,
-        },
-    )
-
     _remove_start_scripts(kit_info.kit_dir, {SUB_START_SH})
     _write_start_script(kit_info.kit_dir, workspace_path)
+    kit_info.kit_dir.chmod(0o700)
 
     if config.get("parent") is not None:
         parent = config["parent"]
@@ -102,10 +82,7 @@ def prepare(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) -> di
         "runtime": RUNTIME_SLURM,
         "role": kit_info.role,
         "name": kit_info.name,
-        "workspace_path": workspace_path,
         "output": str(final_output),
-        "next_step": "Stage the prepared kit with the stage_command before starting the parent.",
-        "stage_command": f"nvflare deploy slurm stage {shlex.quote(str(final_output))}",
         "start_command": f"cd {shlex.quote(str(final_output))} && ./startup/{SLURM_START_SH}",
         "start_script": str(final_start_script),
         "resources": str(final_output / "local" / RESOURCES_JSON_DEFAULT),
@@ -122,34 +99,16 @@ def prepare(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) -> di
     return result
 
 
-def _validate_workspace_location(workspace_text: str, kit: Path, output: Path) -> str:
+def _workspace_path(output: Path) -> str:
     try:
-        workspace_text = normalize_slurm_workspace_path(workspace_text)
+        return normalize_slurm_workspace_path(str(output))
     except SlurmLauncherError as ex:
-        _fail("INVALID_CONFIG", f"Invalid slurm config.workspace_path: {ex}", "Fix the workspace path.")
-    try:
-        workspace = Path(workspace_text).resolve(strict=False)
-    except (OSError, RuntimeError) as ex:
-        _fail(
-            "INVALID_CONFIG",
-            f"Cannot resolve slurm config.workspace_path: {ex}",
-            "Fix the workspace path and any symlink loop.",
-        )
-    for label, protected in (("input kit", kit), ("prepared output", output)):
-        if _paths_overlap(workspace, protected.resolve(strict=False)):
-            _fail(
-                "INVALID_CONFIG",
-                f"slurm config.workspace_path overlaps the {label}: {protected}",
-                "Use an exclusive shared workspace outside both the provisioned kit and prepared output.",
-            )
-    return str(workspace)
+        _fail("INVALID_ARGS", f"Invalid Slurm output workspace: {ex}", "Choose a different --output path.")
 
 
 def validate_config(config: dict[str, Any]) -> None:
     """Validate the complete Slurm deployment configuration."""
-    _validate_allowed_keys(config, {"runtime", "workspace_path", "parent", "job_launcher"}, "slurm config")
-    _required_str(config, "workspace_path", "slurm config")
-    workspace_path = config["workspace_path"]
+    _validate_allowed_keys(config, {"runtime", "parent", "job_launcher"}, "slurm config")
 
     if "parent" in config and config["parent"] is not None:
         parent = _mapping(config["parent"], "parent")
@@ -181,7 +140,7 @@ def validate_config(config: dict[str, Any]) -> None:
         "job_launcher",
     )
 
-    _normalize_job_launcher(job_launcher, workspace_path)
+    _normalize_job_launcher(job_launcher)
 
 
 def _validate_role_config(config: dict[str, Any], role: str) -> None:
@@ -204,13 +163,9 @@ def _optional_shell_text(data: dict[str, Any], key: str, where: str) -> str | No
     return value
 
 
-def _normalize_job_launcher(
-    job_launcher: dict[str, Any],
-    workspace_path: str,
-) -> dict:
+def _normalize_job_launcher(job_launcher: dict[str, Any]) -> dict:
     try:
         return normalize_slurm_launcher_settings(
-            workspace_path=workspace_path,
             sandbox=job_launcher.get("sandbox"),
             python_path=job_launcher.get("python_path"),
             executables=job_launcher.get("executables") or {},
@@ -292,7 +247,7 @@ def _write_parent_script(kit_dir: Path, final_output: Path, parent: dict[str, An
         {
             "@@NVFLARE_SBATCH_DIRECTIVES@@": directive_lines,
             "@@NVFLARE_ENVIRONMENT_SETUP@@": environment_setup,
-            "@@NVFLARE_PREPARED_ROOT@@": shlex.quote(str(final_output)),
+            "@@NVFLARE_WORKSPACE_ROOT@@": shlex.quote(str(final_output)),
         },
         mode=0o700,
     )

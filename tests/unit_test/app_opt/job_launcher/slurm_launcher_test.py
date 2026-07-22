@@ -50,7 +50,6 @@ def _workspace(tmp_path):
 def _launcher(tmp_path, workspace, sandbox="none", image=None, launcher_class=ClientSlurmJobLauncher):
     return launcher_class(
         workspace_path=str(workspace),
-        prepared_path=str(tmp_path / "prepared"),
         sandbox=sandbox,
         image=image,
         python_path="/usr/bin/python3",
@@ -364,11 +363,9 @@ def test_child_process_is_inert_and_cannot_nest_slurm(monkeypatch, tmp_path):
 
 def test_manager_bootstrap_keeps_existing_job_artifacts(tmp_path):
     workspace = tmp_path / "workspace"
-    kit = workspace / "kit"
-    (kit / "startup").mkdir(parents=True)
-    (kit / "local").mkdir()
-    (workspace / "startup").symlink_to("kit/startup")
-    (workspace / "local").symlink_to("kit/local")
+    (workspace / "startup").mkdir(parents=True)
+    (workspace / "local").mkdir()
+    workspace.chmod(0o700)
     control = workspace / ".nvflare_slurm"
     control.mkdir()
     old_job = control / "jobs" / _job_key("stale-job")

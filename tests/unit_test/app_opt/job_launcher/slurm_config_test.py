@@ -24,17 +24,14 @@ from nvflare.app_opt.job_launcher.slurm.config import (
 )
 
 
-@pytest.mark.parametrize("owned_root", ["workspace", "prepared"])
-def test_mount_source_rejects_launcher_owned_path(tmp_path, owned_root):
+def test_mount_source_rejects_launcher_owned_path(tmp_path):
     workspace = tmp_path / "workspace"
-    prepared = tmp_path / "prepared"
     workspace.mkdir()
-    prepared.mkdir()
-    source = (workspace if owned_root == "workspace" else prepared) / "data"
+    source = workspace / "data"
     source.mkdir()
 
-    with pytest.raises(SlurmLauncherError, match="outside workspace_path and prepared_path"):
-        _validate_mount_source(str(source), str(workspace), str(prepared), "mount source")
+    with pytest.raises(SlurmLauncherError, match="outside workspace_path"):
+        _validate_mount_source(str(source), str(workspace), "mount source")
 
 
 def test_executables_reject_unknown_key():
