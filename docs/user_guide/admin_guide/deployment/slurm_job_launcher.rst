@@ -67,7 +67,8 @@ by the runtime account, and dedicated to one NVFlare site or federation.
 For Apptainer, enable unprivileged user namespaces and install Apptainer on all
 eligible nodes. Validate its filesystem, process, cgroup, and GPU isolation on
 the production cluster. For Pyxis, install and configure Pyxis/Enroot on all
-eligible nodes and ensure ``srun`` is available after ``setup``.
+eligible nodes and ensure ``srun`` is available after ``setup``. Launcher-owned
+multi-node fan-out (``node_command``) also requires ``srun`` after ``setup``.
 
 The environment selected by ``python_path`` must contain a compatible NVFlare
 installation and the job dependencies. This applies to the host environment in
@@ -316,8 +317,8 @@ Jobs put portable GPU totals in ``resource_spec`` and Slurm-only settings in
    }
 
 Supported job keys are ``image``, ``nodes``, ``gpus_per_node``,
-``cpus_per_node``, ``mem_per_node`` (MiB), ``time``, and
-``pending_timeout``. A job image requires normal BYOC authorization and takes
+``cpus_per_node``, ``mem_per_node`` (MiB), ``time``, ``pending_timeout``, and
+``node_command``. A job image requires normal BYOC authorization and takes
 precedence over the study and site images. Job and study images are rejected on
 any site whose effective sandbox is ``none``.
 
@@ -325,7 +326,38 @@ Multi-node jobs require effective ``sandbox: none`` and must not specify an
 image. A positive multi-node ``num_of_gpus`` requires ``gpus_per_node``;
 whenever both are supplied, ``num_of_gpus`` must equal
 ``nodes * gpus_per_node``.
-The application owns any multi-node process fan-out.
+
+A multi-node client job that also sets ``node_command`` requests a
+launcher-owned node group: the launcher starts one task per allocated node,
+runs the normal client job process on node rank 0, and runs ``node_command``
+on every other node with the node-group environment
+(``NVFL_NNODES``, ``NVFL_NODE_RANK``, ``NVFL_MASTER_ADDR``,
+``NVFL_MASTER_PORT``) exported to all tasks. ``node_command`` executes in the
+deployed job app directory as the submitting user, with the same trust as the
+job's own training code. For PyTorch jobs,
+``python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=<G> -- <script> <args>``
+maps this environment onto torchrun rendezvous arguments and is intended to be
+both the job's training command and its ``node_command``:
+
+.. code-block:: json
+
+   {
+     "resource_spec": {
+       "site-1": {"num_of_gpus": 16}
+     },
+     "launcher_spec": {
+       "site-1": {
+         "slurm": {
+           "nodes": 2,
+           "gpus_per_node": 8,
+           "node_command": "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 -- custom/client.py"
+         }
+       }
+     }
+   }
+
+Without ``node_command``, a multi-node allocation keeps the client job process
+alone on the first node and the application owns any fan-out.
 
 Security and Operations
 =======================

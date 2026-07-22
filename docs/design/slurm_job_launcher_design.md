@@ -14,7 +14,7 @@ through the existing `JobLauncherSpec` and `JobHandleSpec` interfaces.
 Supported execution modes are:
 
 - one-node bare, Apptainer, and Pyxis jobs;
-- trusted bare multi-node jobs, with application-owned fan-out.
+- trusted bare multi-node jobs, with launcher-owned node groups or application-owned fan-out.
 
 The deployment targets one Slurm cluster, with scheduler routing controlled by trusted site policy. The internal
 worker-to-parent connection is clear TCP and runs on a trusted site network.
@@ -69,7 +69,7 @@ and eligible compute nodes. The filesystem must support coherent exclusive creat
 | --- | --- | --- |
 | Site | `slurm.yaml` and prepare `--output` | workspace, default sandbox/image, scheduler policy, setup, commands, timeouts |
 | Site study policy | `local/study_runtime.yaml` | study image, mounts, environment, sandbox/setup/routing overrides |
-| Job | `launcher_spec` and `resource_spec` | BYOC-authorized image, topology, CPU, memory, time, GPU total |
+| Job | `launcher_spec` and `resource_spec` | BYOC-authorized image, topology, node command, CPU, memory, time, GPU total |
 
 The effective image is job, then study, then site. A job image uses the same BYOC authorization as Docker and
 Kubernetes. Container images must be absolute files visible on the compute nodes. Partition, account, QOS, sandbox,
@@ -89,6 +89,7 @@ Each launched job uses one transient directory:
 ```text
 .nvflare_slurm/jobs/<sha256-job-id>/
   batch.sh
+  node.sh        # multi-node node groups only
   secret.env
   sandbox_root/  # container modes only
 ```
@@ -171,7 +172,7 @@ any in-progress submission boundary; it does not perform a second cancellation s
 
 | Sandbox | Execution | Trust model | Multi-node |
 | --- | --- | --- | --- |
-| `none` | worker directly in the allocation | trusted site workload | yes; application-owned fan-out |
+| `none` | worker directly in the allocation | trusted site workload | yes; launcher-owned node group or application-owned fan-out |
 | `apptainer` | contained unprivileged `apptainer exec` | cluster-accepted isolation | no |
 | `pyxis` | read-only Pyxis/Enroot `srun` step | trusted container packaging | no |
 
@@ -185,13 +186,76 @@ mounts are read-only. Apptainer uses the accepted containment and mount restrict
 no home mount, and no image entrypoint. Backend isolation still depends on cluster configuration and must be
 accepted by the site.
 
+## Multi-node node groups
+
+A client job opts into a launcher-owned node group by combining `nodes > 1` with a `node_command` in its effective
+Slurm launcher block. The launcher then owns the multi-node fan-out: the single allocation starts one task per
+node, node rank 0 runs the normal CJ worker unchanged, and every other node runs the job's `node_command`. Without
+`node_command`, a multi-node allocation keeps the previous behavior: the CJ runs alone on the first node and the
+application owns any fan-out.
+
+The model keeps one CJ per site per job. Extra nodes never register with the server and carry no FL identity; they
+exist only to run additional ranks of the training program that the rank-0 CJ launches through its configured
+launcher component. Cross-node coordination (rendezvous, collectives) belongs to the training framework, not to
+NVFlare.
+
+### Environment contract
+
+The batch script, which always executes on the first node of the allocation, exports a scheduler-neutral contract
+and then delegates to one `srun --nodes=N --ntasks=N --ntasks-per-node=1` invocation of the generated `node.sh`:
+
+| Variable | Value |
+| --- | --- |
+| `NVFL_NNODES` | `SLURM_JOB_NUM_NODES` |
+| `NVFL_NODE_RANK` | `SLURM_NODEID`, exported per task by `node.sh` |
+| `NVFL_MASTER_ADDR` | `SLURMD_NODENAME` of the batch node, which is node rank 0 |
+| `NVFL_MASTER_PORT` | `29400 + SLURM_JOB_ID % 1000`, deterministic per allocation and collision-safe on shared nodes |
+
+`node.sh` dispatches on the rank. Rank 0 executes the standard worker command, so the CJ connects to the parent
+and reports the job result exactly as a single-node job. Every other rank changes into the deployed job app
+directory and executes the validated `node_command` argv. Both paths inherit the batch environment (sourced
+secrets, `PYTHONPATH`, study env, forwarded names) because the script exports `SLURM_EXPORT_ENV=ALL` before the
+fan-out. The variable names carry no scheduler meaning, so the same `node_command` can run under any launcher
+that adopts the contract.
+
+### Node command ownership and trust
+
+`node_command` is job-owned and validated at the launch boundary: a single-line, shell-lexable, non-empty string,
+split once into argv and rendered fully quoted, never re-parsed by a shell. It executes as the submitting user
+with exactly the trust of the BYOC training code the rank-0 CJ launches itself. It is rejected for server jobs,
+for `nodes: 1`, and when the deployed job app directory is missing. Multi-node jobs still require effective
+sandbox `none`. Because scheduler fan-out now happens before any worker starts, container node groups are a
+possible future extension of this contract rather than a redesign.
+
+### Lifecycle and results
+
+The fan-out uses `--kill-on-bad-exit=0`: a failing worker node must not kill rank 0 before the CJ reports the
+training failure through the normal task path, and surviving ranks observe the loss through the training
+framework's own failure detection. Rank 0 remains authoritative for the application result via `_process_rc.txt`;
+the scheduler fallback still uses allocation `State` and `ExitCode`, which reflect the highest task exit code.
+Cancellation, monitoring, and pending-timeout handling are unchanged because the node group is one allocation
+with one scheduler identity; a single verified `scancel` ends every task. Between training rounds the non-zero
+ranks hold their nodes idle, which is inherent to a static allocation.
+
+### Typical training command
+
+The `nvflare.app_opt.pt.torchrun_node` helper completes the contract for PyTorch jobs. It maps the `NVFL_*`
+variables onto torchrun rendezvous arguments (c10d, endpoint on rank 0, configurable join timeout for the window
+before the CJ starts training) and degrades to standalone single-node torchrun when the contract is absent. The
+same command line therefore serves as the job's rank-0 training command and as its `node_command`:
+
+```text
+python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 -- custom/client.py --epochs 2
+```
+
 ## Required environment
 
 The runtime parent requires Slurm 23.02 or later because the launcher uses `sbatch --export=NIL`. Parent bootstrap
 requires working `sbatch`, `squeue`, `sacct`, and `scancel` commands and working `slurmdbd` accounting. Default
 `AccountingStoreFlags` is sufficient. It targets a single, non-federated cluster, and site plugins must preserve
-local submission routing. Apptainer or Pyxis/Enroot must be installed on eligible nodes when selected; Pyxis also
-requires `srun`. Production sites should use a Slurm release that is still supported by SchedMD.
+local submission routing. Apptainer or Pyxis/Enroot must be installed on eligible nodes when selected; Pyxis and
+launcher-owned multi-node fan-out also require `srun`. Production sites should use a Slurm release that is still
+supported by SchedMD.
 
 The environment selected by `python_path` must contain a compatible NVFlare installation. The launcher sets the
 worker `PYTHONPATH` to the resolved job and site custom directories, so a source overlay used only by the parent is

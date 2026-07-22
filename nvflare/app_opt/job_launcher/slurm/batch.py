@@ -20,6 +20,13 @@ import shlex
 
 from nvflare.app_opt.job_launcher.slurm.config import (
     BATCH_FILE,
+    MULTINODE_ENV_MASTER_ADDR,
+    MULTINODE_ENV_MASTER_PORT,
+    MULTINODE_ENV_NNODES,
+    MULTINODE_ENV_NODE_RANK,
+    MULTINODE_PORT_BASE,
+    MULTINODE_PORT_SPAN,
+    NODE_FILE,
     SECRET_FILE,
     SLURM_CHILD_PROCESS_ENV,
     SLURM_SBATCH_DIRECTIVES,
@@ -95,6 +102,45 @@ def _apptainer_parts(plan: LaunchPlan, config: SlurmConfig, worker_words: list[s
     return environment, command + [shlex.quote(plan.image), *worker_words]
 
 
+def _multinode_parts(plan: LaunchPlan, job_dir: str, config: SlurmConfig) -> tuple[list[str], list[str]]:
+    environment = [
+        _tool_assignment("NVFL_SRUN", config.executables.get("srun"), "srun"),
+        f'export {MULTINODE_ENV_NNODES}="${{SLURM_JOB_NUM_NODES:?}}"',
+        # The batch script always executes on the first node of the allocation.
+        f'export {MULTINODE_ENV_MASTER_ADDR}="${{SLURMD_NODENAME:?}}"',
+        f'export {MULTINODE_ENV_MASTER_PORT}="$(({MULTINODE_PORT_BASE} + SLURM_JOB_ID % {MULTINODE_PORT_SPAN}))"',
+    ]
+    command = [
+        '"${NVFL_SRUN}"',
+        shlex.quote(f"--nodes={plan.resources.nodes}"),
+        shlex.quote(f"--ntasks={plan.resources.nodes}"),
+        shlex.quote("--ntasks-per-node=1"),
+        # A worker-node failure must not kill rank 0 before it reports the result.
+        shlex.quote("--kill-on-bad-exit=0"),
+        shlex.quote(os.path.join(job_dir, NODE_FILE)),
+    ]
+    return environment, command
+
+
+def _render_node_script(plan: LaunchPlan) -> str:
+    worker_words = _build_worker_words(plan)
+    node_words = [shlex.quote(word) for word in plan.node_command]
+    lines = [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        f'export {MULTINODE_ENV_NODE_RANK}="${{SLURM_NODEID:?}}"',
+        f'if [[ "${{{MULTINODE_ENV_NODE_RANK}}}" == "0" ]]; then',
+        f"  _nvfl_command=({' '.join(worker_words)})",
+        "else",
+        f"  cd {shlex.quote(plan.node_app_dir)}",
+        f"  _nvfl_command=({' '.join(node_words)})",
+        "fi",
+        'exec "${_nvfl_command[@]}"',
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def _pyxis_parts(plan: LaunchPlan, worker_words: list[str]) -> tuple[list[str], list[str]]:
     fixed_names = sorted({"PYTHONPATH", SLURM_CHILD_PROCESS_ENV} | set(plan.study_env) | set(plan.study_secret_env))
     environment = [f"_nvfl_container_env={shlex.quote(','.join(fixed_names))}"]
@@ -136,7 +182,9 @@ def _render_batch_script(
         "[[ \"${SLURM_RESTART_COUNT:-0}\" == 0 ]] || { echo 'requeued NVFlare job refused' >&2; exit 101; }",
     ]
     lines.extend(_common_environment(plan, config))
-    if plan.sandbox == "apptainer":
+    if plan.node_command:
+        environment, command_words = _multinode_parts(plan, job_dir, config)
+    elif plan.sandbox == "apptainer":
         environment, command_words = _apptainer_parts(plan, config, worker_words)
     elif plan.sandbox == "pyxis":
         environment, command_words = _pyxis_parts(plan, worker_words)

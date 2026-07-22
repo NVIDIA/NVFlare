@@ -74,7 +74,18 @@ _RESERVED_ENV_NAMES = frozenset(
     }
 )
 SLURM_RESERVED_ENV_NAMES = _RESERVED_ENV_NAMES.union(
-    {"BASHOPTS", "EUID", "SHELLOPTS", "UID", "NVFL_APPTAINER", "NVFL_SRUN"}
+    {
+        "BASHOPTS",
+        "EUID",
+        "SHELLOPTS",
+        "UID",
+        "NVFL_APPTAINER",
+        "NVFL_SRUN",
+        "NVFL_NNODES",
+        "NVFL_NODE_RANK",
+        "NVFL_MASTER_ADDR",
+        "NVFL_MASTER_PORT",
+    }
 )
 SLURM_RESERVED_ENV_PREFIXES = (
     "SLURM_",

@@ -33,9 +33,20 @@ from nvflare.app_opt.job_launcher.study_runtime import (
 CONTROL_DIR = ".nvflare_slurm"
 SECRET_FILE = "secret.env"
 BATCH_FILE = "batch.sh"
+NODE_FILE = "node.sh"
 SANDBOX_ROOT = "sandbox_root"
 SLURM_CHILD_PROCESS_ENV = "NVFLARE_SLURM_CHILD_PROCESS"
 CONTAINER_RESOLV_CONF = "/etc/resolv.conf"
+
+# Node-group environment contract exported to every task of a launcher-owned
+# multi-node job. The names are scheduler-neutral so the same node command can
+# run under other launchers that adopt the contract.
+MULTINODE_ENV_NNODES = "NVFL_NNODES"
+MULTINODE_ENV_NODE_RANK = "NVFL_NODE_RANK"
+MULTINODE_ENV_MASTER_ADDR = "NVFL_MASTER_ADDR"
+MULTINODE_ENV_MASTER_PORT = "NVFL_MASTER_PORT"
+MULTINODE_PORT_BASE = 29400
+MULTINODE_PORT_SPAN = 1000
 
 SQUEUE_FORMAT = "%i|%T|%U|%k|%j"
 SACCT_FORMAT = "JobIDRaw%32,JobName%128,User%64,State%64,ExitCode%32"
@@ -49,7 +60,16 @@ SLURM_SBATCH_DIRECTIVES = ("partition", "account", "qos", "time", "constraint", 
 SLURM_PARENT_EXECUTABLES = ("sbatch", "squeue", "sacct", "scancel")
 SLURM_COMPUTE_EXECUTABLES = ("apptainer", "srun")
 
-_JOB_SLURM_KEYS = {"image", "nodes", "gpus_per_node", "cpus_per_node", "mem_per_node", "time", "pending_timeout"}
+_JOB_SLURM_KEYS = {
+    "image",
+    "nodes",
+    "gpus_per_node",
+    "cpus_per_node",
+    "mem_per_node",
+    "time",
+    "pending_timeout",
+    "node_command",
+}
 
 _PENDING_STATES = {"PENDING", "CONFIGURING", "REQUEUE_HOLD", "RESV_DEL_HOLD", "SPECIAL_EXIT"}
 _APPLICATION_TERMINAL_STATES = {"COMPLETED", "FAILED"}
@@ -375,3 +395,5 @@ class LaunchPlan:
     python_path: str
     python_env: str
     forward_env: tuple
+    node_command: tuple = ()
+    node_app_dir: Optional[str] = None
