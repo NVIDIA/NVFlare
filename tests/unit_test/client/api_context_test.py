@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.client import api as public_api
 from nvflare.client.api_context import APIContext, ClientAPIType
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.client.cell.bootstrap import (
@@ -37,6 +38,12 @@ def _typed_bootstrap():
     return {
         BootstrapKey.SCHEMA_VERSION: BOOTSTRAP_SCHEMA_VERSION,
         BootstrapKey.EXECUTION_MODE: EXTERNAL_PROCESS_EXECUTION_MODE,
+        BootstrapKey.CJ_FQCN: "site-1.job-1",
+        BootstrapKey.TRAINER_FQCN: "site-1.job-1.client_api_trainer_1",
+        BootstrapKey.JOB_ID: "job-1",
+        BootstrapKey.SITE_NAME: "site-1",
+        BootstrapKey.CONNECT_URL: "tcp://127.0.0.1:56789",
+        BootstrapKey.LAUNCH_TOKEN: "secret-token",
     }
 
 
@@ -150,3 +157,30 @@ class TestAPIContextSelection:
                 pass
 
         cell_api_cls.return_value.shutdown.assert_called_once_with()
+
+
+class TestPublicAPIInit:
+    @pytest.mark.parametrize(
+        "env_rank, explicit_rank, expected_rank",
+        [
+            (None, "0", "0"),
+            ("1", 1, "1"),
+        ],
+    )
+    def test_explicit_then_implicit_effective_rank_reuses_context(
+        self, monkeypatch, env_rank, explicit_rank, expected_rank
+    ):
+        if env_rank is None:
+            monkeypatch.delenv("RANK", raising=False)
+        else:
+            monkeypatch.setenv("RANK", env_rank)
+        monkeypatch.setattr(public_api, "context_dict", {})
+        monkeypatch.setattr(public_api, "default_context", None)
+
+        with patch.object(public_api, "APIContext") as context_cls:
+            explicit_context = public_api.init(rank=explicit_rank)
+            implicit_context = public_api.init()
+
+        assert implicit_context is explicit_context
+        context_cls.assert_called_once_with(rank=expected_rank, config_file=None)
+        assert list(public_api.context_dict) == [(expected_rank, None)]

@@ -104,6 +104,42 @@ class TestBootstrapConfig:
         assert get_bootstrap_client_api_type({"TASK_EXCHANGE": {}}, "legacy.json") is None
 
     @pytest.mark.parametrize(
+        "field",
+        [
+            BootstrapKey.CJ_FQCN,
+            BootstrapKey.TRAINER_FQCN,
+            BootstrapKey.JOB_ID,
+            BootstrapKey.SITE_NAME,
+            BootstrapKey.CONNECT_URL,
+            BootstrapKey.LAUNCH_TOKEN,
+        ],
+    )
+    def test_typed_bootstrap_rejects_missing_required_string_field(self, field):
+        config = dict(CONFIG)
+        del config[field]
+
+        with pytest.raises(ValueError, match=f"missing required field '{field}'"):
+            get_bootstrap_client_api_type(config, "bootstrap.json")
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            BootstrapKey.CJ_FQCN,
+            BootstrapKey.TRAINER_FQCN,
+            BootstrapKey.JOB_ID,
+            BootstrapKey.SITE_NAME,
+            BootstrapKey.CONNECT_URL,
+            BootstrapKey.LAUNCH_TOKEN,
+        ],
+    )
+    @pytest.mark.parametrize("invalid_value", [None, "", "   ", 123])
+    def test_typed_bootstrap_rejects_invalid_required_string_field(self, field, invalid_value):
+        config = {**CONFIG, field: invalid_value}
+
+        with pytest.raises(ValueError, match=f"field '{field}' must be a non-empty string"):
+            get_bootstrap_client_api_type(config, "bootstrap.json")
+
+    @pytest.mark.parametrize(
         "config,match",
         [
             (

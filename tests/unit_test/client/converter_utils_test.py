@@ -97,6 +97,18 @@ def test_pytorch_conversion_requires_parameter_dict():
         convert_params([np.asarray([1.0])], ExchangeFormat.NUMPY, ExchangeFormat.PYTORCH, {})
 
 
+@pytest.mark.parametrize(
+    "source_format,target_format",
+    [
+        (ExchangeFormat.NUMPY, ExchangeFormat.KERAS_LAYER_WEIGHTS),
+        (ExchangeFormat.KERAS_LAYER_WEIGHTS, ExchangeFormat.NUMPY),
+    ],
+)
+def test_keras_layer_weight_conversion_requires_parameter_dict(source_format, target_format):
+    with pytest.raises(TypeError, match="Keras layer-weight conversion expects a parameter dict"):
+        convert_params([np.asarray([1.0])], source_format, target_format, {})
+
+
 def test_keras_layer_weight_round_trip():
     native = {"dense": [np.asarray([[1.0, 2.0]]), np.asarray([3.0])]}
 

@@ -455,6 +455,19 @@ class TestExecute:
         finally:
             backend.finalize(FLContext())
 
+    def test_late_result_after_timeout_cannot_satisfy_next_task(self, clean_databus, custom_dir):
+        backend, fl_ctx = _initialized_backend(custom_dir, result_wait_timeout=0.05)
+        try:
+            first = backend.execute("train", Shareable(), fl_ctx, Signal())
+            assert first.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+
+            clean_databus.publish([TOPIC_LOCAL_RESULT], _result_shareable())
+            second = backend.execute("evaluate", Shareable(), fl_ctx, Signal())
+
+            assert second.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+        finally:
+            backend.finalize(FLContext())
+
     def test_trainer_abort_mid_task_returns_task_aborted(self, clean_databus, custom_dir):
         """TOPIC_ABORT arriving mid-wait (what TaskScriptRunner fires when the script raises)
         aborts the current task well before the result-wait bound -- legacy parity."""

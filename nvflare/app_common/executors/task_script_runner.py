@@ -54,7 +54,8 @@ class TaskScriptRunner:
         """Call the task_fn with any required arguments."""
         self.logger.info(f"start task run() with full path: {self.script_full_path}")
         try:
-            self._activate_runtime(self.get_sys_argv())
+            if not self._activate_runtime():
+                return
             runpy.run_path(self.script_full_path, run_name="__main__")
         except ImportError as ie:
             msg = "attempted relative import with no known parent package"
@@ -75,18 +76,19 @@ class TaskScriptRunner:
         finally:
             self.release_runtime()
 
-    def _activate_runtime(self, task_argv):
+    def _activate_runtime(self) -> bool:
         with self._runtime_lock:
             # finalize() can release a trainer before its thread reaches this point.
             if self._runtime_released:
-                return
+                return False
             self._original_argv = sys.argv
             self._original_argv_values = list(sys.argv)
-            self._task_argv = task_argv
+            self._task_argv = self.get_sys_argv()
             sys.argv = self._task_argv
             if self.redirect_print_to_log:
                 self._original_print = builtins.print
                 builtins.print = log_print
+            return True
 
     def release_runtime(self):
         """Restore globals owned by this runner, even when its thread must be abandoned."""

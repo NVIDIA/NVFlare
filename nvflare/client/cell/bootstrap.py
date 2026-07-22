@@ -59,6 +59,16 @@ class BootstrapKey:
     CUDA_EMPTY_CACHE = "cuda_empty_cache"
 
 
+_REQUIRED_STRING_FIELDS = (
+    BootstrapKey.CJ_FQCN,
+    BootstrapKey.TRAINER_FQCN,
+    BootstrapKey.JOB_ID,
+    BootstrapKey.SITE_NAME,
+    BootstrapKey.CONNECT_URL,
+    BootstrapKey.LAUNCH_TOKEN,
+)
+
+
 def get_bootstrap_client_api_type(config: dict, path: str = "<bootstrap config>") -> str | None:
     """Return ``CELL_API_TYPE`` for a typed config or ``None`` for a legacy config.
 
@@ -86,6 +96,12 @@ def get_bootstrap_client_api_type(config: dict, path: str = "<bootstrap config>"
             f"unsupported Client API bootstrap execution_mode {execution_mode!r} in {path}; "
             f"supported mode is {EXTERNAL_PROCESS_EXECUTION_MODE!r}"
         )
+
+    for field in _REQUIRED_STRING_FIELDS:
+        if field not in config:
+            raise ValueError(f"invalid Client API bootstrap config {path}: missing required field {field!r}")
+        if not isinstance(config[field], str) or not config[field].strip():
+            raise ValueError(f"invalid Client API bootstrap config {path}: field {field!r} must be a non-empty string")
     return CELL_API_TYPE
 
 

@@ -191,11 +191,11 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         )
 
     def _validate_client_api_executors(self):
-        """Reject multiple ClientAPIExecutors in a hand-written client configuration.
+        """Reject multiple ClientAPIExecutors that would share Client API runtime state.
 
-        ClientAppConfig performs the equivalent job-authoring check, but runtime validation
-        remains authoritative because client apps may be supplied directly as JSON/HOCON.
-        Other Executor implementations remain unrestricted.
+        Job authoring treats executor types generically. Runtime validation is authoritative
+        because client apps may also be supplied directly as JSON/HOCON. Other Executor
+        implementations remain unrestricted.
         """
         # Deferred import keeps the normal client configurator import path light for jobs
         # that do not use the Client API executor.
@@ -206,5 +206,6 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             modes = [e.execution_mode for e in client_api_executors]
             raise ConfigError(
                 "only one ClientAPIExecutor is supported per client job, regardless of execution mode; "
-                f"configured modes: {modes}. Route all Client API tasks through a single executor"
+                f"configured modes: {modes}. Configure one executor for all Client API task names and "
+                "dispatch by task name in the trainer entry point"
             )

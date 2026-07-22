@@ -154,13 +154,14 @@ class CellClientAPI(APISpec):
         self._stopped = False
         self._closed = False
         self._lock = threading.Lock()
-        self._shutdown_lock = threading.Lock()
+        self._lifecycle_lock = threading.Lock()
         self._liveness_lock = threading.Lock()
         self._heartbeat_interval = 0.0
         self._heartbeat_timeout = 0.0
         self._last_cj_activity: Optional[float] = None
         self._heartbeat_stop = threading.Event()
         self._heartbeat_thread: Optional[threading.Thread] = None
+        self._initialized = False
         # send() owns transaction metadata; heartbeat only observes stable transfer handles.
         self._result_transfer_waiters = ()
         # Under _lock, this tells SHUTDOWN whether send() still owns a live result source.
@@ -170,46 +171,66 @@ class CellClientAPI(APISpec):
     # ------------------------------------------------------------------ lifecycle
 
     def init(self, rank: Optional[str] = None):
-        self._rank = rank if rank is not None else os.environ.get("RANK", "0")
-        self._is_control_rank = str(self._rank) == "0"
-        if not self._is_control_rank:
-            # Non-control ranks receive the model through framework collectives.
-            self.logger.info(f"rank {self._rank}: no Client API session (non-control rank)")
-            return
+        effective_rank = rank if rank is not None else os.environ.get("RANK", "0")
+        with self._lifecycle_lock:
+            if self._closed:
+                self.logger.warning("called CellClientAPI.init() after shutdown; call is ignored")
+                return
+            if self._initialized:
+                self.logger.warning("called CellClientAPI.init() more than once; subsequent calls are ignored")
+                return
 
-        # A bare trainer must register payload decomposers normally installed by the FL process.
-        from nvflare.apis.utils.decomposers import flare_decomposers
-        from nvflare.app_common.decomposers import common_decomposers
+            self._rank = effective_rank
+            self._is_control_rank = str(self._rank) == "0"
+            if not self._is_control_rank:
+                # Non-control ranks receive the model through framework collectives.
+                self._initialized = True
+                self.logger.info(f"rank {self._rank}: no Client API session (non-control rank)")
+                return
 
-        flare_decomposers.register()
-        common_decomposers.register()
-        register_framework_decomposers(
-            self._task_exchange.get(ConfigKey.EXCHANGE_FORMAT, ExchangeFormat.RAW),
-            self._task_exchange.get(ConfigKey.SERVER_EXPECTED_FORMAT, ExchangeFormat.NUMPY),
-            self.logger,
-        )
+            # A bare trainer must register payload decomposers normally installed by the FL process.
+            from nvflare.apis.utils.decomposers import flare_decomposers
+            from nvflare.app_common.decomposers import common_decomposers
 
-        connect_url = self._config[BootstrapKey.CONNECT_URL]
-        self._cell = Cell(
-            fqcn=self._trainer_fqcn,
-            root_url=None,
-            secure=False,  # V1 trusted-host: the CJ's internal listener is a local connection
-            credentials={},
-            parent_url=connect_url,
-            create_internal_listener=False,
-        )
-        # Propagate concurrent ABORT/SHUTDOWN into nested task-payload downloads.
-        self._cell.update_fobs_context({FOBSContextKey.ABORT_SIGNAL: self._abort_signal})
-        self._register_control_cbs(self._cell)
-        self._cell.start()
-        try:
-            self._hello()
-            self._start_heartbeat()
-        except Exception:
-            self._stop_heartbeat()
-            self._stop_cell()
-            raise
-        self.logger.info(f"trainer session established: fqcn={self._trainer_fqcn} session_id={self._session_id}")
+            flare_decomposers.register()
+            common_decomposers.register()
+            register_framework_decomposers(
+                self._task_exchange.get(ConfigKey.EXCHANGE_FORMAT, ExchangeFormat.RAW),
+                self._task_exchange.get(ConfigKey.SERVER_EXPECTED_FORMAT, ExchangeFormat.NUMPY),
+                self.logger,
+            )
+
+            # A failed attempt may be retried on the same API object.
+            self._session_id = None
+            self._heartbeat_interval = 0.0
+            self._heartbeat_timeout = 0.0
+            self._heartbeat_stop.clear()
+            self._heartbeat_cancel = Signal()
+            with self._liveness_lock:
+                self._last_cj_activity = None
+
+            connect_url = self._config[BootstrapKey.CONNECT_URL]
+            self._cell = Cell(
+                fqcn=self._trainer_fqcn,
+                root_url=None,
+                secure=False,  # V1 trusted-host: the CJ's internal listener is a local connection
+                credentials={},
+                parent_url=connect_url,
+                create_internal_listener=False,
+            )
+            try:
+                # Propagate concurrent ABORT/SHUTDOWN into nested task-payload downloads.
+                self._cell.update_fobs_context({FOBSContextKey.ABORT_SIGNAL: self._abort_signal})
+                self._register_control_cbs(self._cell)
+                self._cell.start()
+                self._hello()
+                self._start_heartbeat()
+            except Exception:
+                self._stop_heartbeat()
+                self._stop_cell()
+                raise
+            self._initialized = True
+            self.logger.info(f"trainer session established: fqcn={self._trainer_fqcn} session_id={self._session_id}")
 
     def _register_control_cbs(self, cell: Cell) -> None:
         cell.register_request_cb(channel=CHANNEL, topic=Topic.TASK_READY, cb=self._handle_task_ready)
@@ -403,24 +424,31 @@ class CellClientAPI(APISpec):
             result_accepted = True
             self._note_cj_activity()
             self._wait_for_result_transfers(self._snapshot_result_transfer_waiters())
+            if clear_cache:
+                # Acceptance and all downstream transfers succeeded; submitted and
+                # received parameters plus task-scoped state can now be released.
+                model.params = None
+                model.optimizer_params = None
+                received_model = self._fl_model
+                self._fl_model = None
+                if received_model is not None:
+                    received_model.params = None
+                    received_model.optimizer_params = None
+                self._receive_called = False
+                self._current_task = None
+                self._result_receiver_ids = None
         except BaseException:
             self._delete_result_transfers(self._snapshot_result_transfer_waiters())
+            if result_accepted:
+                # RESULT_ACCEPTED is the commit point: preserve model data for
+                # inspection, but do not admit a duplicate submission.
+                self._receive_called = False
+                self._current_task = None
+                self._result_receiver_ids = None
             raise
         finally:
             try:
                 self._clear_result_transfer_waiters()
-                if clear_cache:
-                    # Transfer is complete; neither submitted nor received parameters are needed.
-                    model.params = None
-                    model.optimizer_params = None
-                    received_model = self._fl_model
-                    self._fl_model = None
-                    if received_model is not None:
-                        received_model.params = None
-                        received_model.optimizer_params = None
-                    self._receive_called = False
-                    self._current_task = None
-                    self._result_receiver_ids = None
                 self._maybe_cleanup_memory()
             finally:
                 # Clear ownership under the lock read by SHUTDOWN. If SHUTDOWN won, this
@@ -573,7 +601,7 @@ class CellClientAPI(APISpec):
 
     def shutdown(self):
         """Stop this one-session trainer and its process-global F3 runtime."""
-        with self._shutdown_lock:
+        with self._lifecycle_lock:
             with self._lock:
                 close_resources = not self._closed
                 if close_resources:

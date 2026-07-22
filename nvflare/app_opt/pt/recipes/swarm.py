@@ -173,13 +173,12 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             ``min_responses_required``) cannot be replaced through this dictionary; use
             ``BaseSwarmLearningRecipe`` for custom components or quorum settings.
             This dictionary is stored in the job definition and must not contain secrets.
-        pipe_type: Pipe used for communication between the NVFlare client process
-            and the external training process when ``launch_external_process=True``.
-            Accepted values:
+        pipe_type: Transport used between the NVFlare client process and the external
+            training process when ``launch_external_process=True``. Accepted values:
 
-            - ``"cell_pipe"`` *(default)*: ``CellPipe`` with zero-copy tensor
-              forwarding — the NVFlare client process relays model tensors without
-              loading them into memory (~1 GB RAM for large models).
+            - ``"cell_pipe"`` *(default)*: Direct Cell transport through
+              ``ClientAPIExecutor`` with zero-copy tensor forwarding. Despite the option
+              name, this mode does not create a ``CellPipe`` component.
             - ``"file_pipe"``: ``FilePipe`` backed by a shared directory. The NVFlare
               client process fully loads and re-serializes the model (~2× model size
               in RAM). Use when cell networking is unavailable or for third-party

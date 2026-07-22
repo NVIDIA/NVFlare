@@ -384,6 +384,32 @@ class TestSubprocessLauncher:
         logged = [call.args[0] for call in logger.info.call_args_list]
         assert logged == ["line1", "line2", "partial"]
 
+    def test_log_subprocess_output_replaces_malformed_utf8_and_continues_draining(self):
+        class _Proc:
+            pass
+
+        p = _Proc()
+        p.stdout = BufferedReader(BytesIO(b"malformed \xff line\nlater line\nmalformed tail \xfe"))
+        logger = Mock()
+
+        log_subprocess_output(p, logger)
+
+        logged = [call.args[0] for call in logger.info.call_args_list]
+        assert logged == ["malformed \ufffd line", "later line", "malformed tail \ufffd"]
+
+    def test_log_subprocess_output_continues_draining_after_logger_failure(self):
+        class _Proc:
+            pass
+
+        p = _Proc()
+        p.stdout = BufferedReader(BytesIO(b"first\nsecond\n"))
+        logger = Mock()
+        logger.info.side_effect = [RuntimeError("logger failed"), None]
+
+        log_subprocess_output(p, logger)
+
+        assert [call.args[0] for call in logger.info.call_args_list] == ["first", "second"]
+
     def test_log_subprocess_output_formatted_lines_not_double_logged(self):
         """Formatted NVFlare log lines must NOT be re-logged via logger.info().
 

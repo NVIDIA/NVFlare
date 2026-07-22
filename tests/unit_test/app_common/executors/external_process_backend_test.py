@@ -1440,6 +1440,30 @@ class TestExecute:
         finally:
             backend.finalize(FLContext())
 
+    def test_task_ready_rejection_deletes_tracked_transactions(self, env, monkeypatch):
+        waiter = SimpleNamespace(transaction_id="task-payload-tx", done=lambda: False)
+        deleted = []
+        monkeypatch.setattr(ebp.DownloadService, "get_transfer_waiter", lambda _tx_id: waiter)
+        monkeypatch.setattr(ebp.DownloadService, "delete_transaction", deleted.append)
+        backend, fl_ctx = _initialized_backend(env)
+        try:
+
+            def reject_task(topic, target, request):
+                tx_created = env.cell.sent_kwargs[-1]["fobs_ctx_props"][ebp.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY]
+                tx_created(SimpleNamespace(tx_id="task-payload-tx"))
+                return make_cell_reply(
+                    CellReturnCode.OK,
+                    body={MsgKey.REPLY_TOPIC: Topic.TASK_FAILED, MsgKey.REASON: "trainer rejected task"},
+                )
+
+            env.cell.on_request = reject_task
+            result = backend.execute("train", Shareable(), fl_ctx, Signal())
+
+            assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+            assert deleted == ["task-payload-tx"]
+        finally:
+            backend.finalize(FLContext())
+
     def test_task_ready_send_detects_backend_close(self, env):
         """Backend closure must cancel an in-flight TASK_READY send."""
         backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
@@ -1610,6 +1634,47 @@ class TestExecute:
 
         assert env.harness.processes == [], "no trainer process may be started after finalize set _closed"
         assert box["r"].get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+
+    def test_finalize_stops_process_returned_after_launch_cleanup(self, env, monkeypatch):
+        """A process whose Popen returns after finalize cleanup must not be orphaned."""
+        backend, fl_ctx = _initialized_backend(
+            env,
+            launch_once=False,
+            shutdown_timeout=0.0,
+            stop_grace_period=0.0,
+        )
+        env.harness.auto_hello = False
+        process_started = threading.Event()
+        let_popen_return = threading.Event()
+        real_popen = env.harness.popen
+
+        def blocked_popen(*args, **kwargs):
+            process = real_popen(*args, **kwargs)
+            process_started.set()
+            let_popen_return.wait(5.0)
+            return process
+
+        monkeypatch.setattr(ebp.subprocess, "Popen", blocked_popen)
+
+        box = {}
+        execute_thread = threading.Thread(
+            target=lambda: box.__setitem__("result", backend.execute("train", Shareable(), fl_ctx, Signal()))
+        )
+        execute_thread.start()
+        assert process_started.wait(5.0), "execute did not enter the Popen-in-flight window"
+
+        trainer = backend._active_launch
+        process = env.harness.processes[0]
+        backend.finalize(FLContext())
+        assert trainer._cleaned
+        assert process.returncode is None, "finalize cannot stop a process whose handle Popen has not returned"
+
+        let_popen_return.set()
+        execute_thread.join(5.0)
+
+        assert not execute_thread.is_alive()
+        assert box["result"].get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+        assert process.returncode is not None, "the process returned after cleanup must be terminated"
 
     def test_abort_signal_mid_wait_returns_task_aborted(self, env):
         backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)

@@ -1241,7 +1241,11 @@ class DownloadService:
 
     @classmethod
     def _submit_finished_settlement(cls, tx: _Transaction) -> None:
-        """Run callbacks/release off the Cell request thread after atomic retirement."""
+        """Run callbacks/release off the Cell request thread after atomic retirement.
+
+        FINISHED callbacks use the shared streaming callback pool. They must not block:
+        a blocking callback consumes capacity used by the streaming data path.
+        """
         try:
             future = callback_thread_pool.submit(cls._settle_finished_transaction, tx)
         except RuntimeError:

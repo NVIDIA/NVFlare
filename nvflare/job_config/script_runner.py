@@ -45,14 +45,27 @@ _PIPE_CONNECT_URL = {
     PipeConnectType.VIA_ROOT: "{" + SystemVarName.ROOT_URL + "}",
 }
 
+_CommandArg = Union[str, list[str]]
+
+
+def _to_external_process_argv(value: _CommandArg, arg_name: str) -> list[str]:
+    """Return shell-free argv while preserving pre-tokenized values exactly."""
+    if isinstance(value, str):
+        return split_command_preserving_secret_refs(value, posix=True)
+    if not isinstance(value, list):
+        raise ValueError(f"{arg_name} must be a string or list of strings, but got {type(value).__name__}")
+    if not all(isinstance(arg, str) for arg in value):
+        raise ValueError(f"{arg_name} argv must contain only strings")
+    return list(value)
+
 
 class BaseScriptRunner:
     def __init__(
         self,
         script: str,
-        script_args: str = "",
+        script_args: _CommandArg = "",
         launch_external_process: bool = False,
-        command: str = "python3 -u",
+        command: _CommandArg = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         framework: FrameworkType = FrameworkType.PYTORCH,
         params_transfer_type: TransferType = TransferType.FULL,
@@ -81,13 +94,17 @@ class BaseScriptRunner:
 
         Args:
             script (str): Script to run. For in-process must be a python script path. For ex-process can be any script support by `command`.
-            script_args (str): Optional arguments for script (appended to script). The string is written in
-                clear text into the generated job config, so it must never contain actual secret values;
-                use :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
-                :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The
-                executing site resolves the placeholder at runtime.
+            script_args (Union[str, list[str]]): Optional arguments appended to the script. External-process
+                runners also accept pre-tokenized argv; use it when Windows paths or exact argument boundaries
+                must be preserved across platforms. Values are written in clear text into the generated job
+                config, so they must never contain actual secrets; use
+                :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
+                :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The executing site
+                resolves the placeholder at runtime.
             launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
-            command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
+            command (Union[str, list[str]]): If launch_external_process=True, command prepended to the script.
+                Pass pre-tokenized argv to preserve Windows paths and exact argument boundaries. Defaults to
+                "python3 -u".
             framework (str): Framework is used to determine the `params_exchange_format`. Defaults to FrameworkType.PYTORCH.
             server_expected_format (str): What format to exchange the parameters between server and client.
             params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
@@ -275,9 +292,9 @@ class BaseScriptRunner:
                 # shell-free argv, not by an in-CJ-process task_script_path. Parse the
                 # user-authored strings once here so the exported config carries stable
                 # argv boundaries to every target platform.
-                command = split_command_preserving_secret_refs(self._command, posix=True)
+                command = _to_external_process_argv(self._command, "command")
                 command.append(f"custom/{self._script}")
-                command.extend(split_command_preserving_secret_refs(self._script_args, posix=True))
+                command.extend(_to_external_process_argv(self._script_args, "script_args"))
                 executor = ClientAPIExecutor(
                     execution_mode=self._execution_mode,
                     command=command,
@@ -312,9 +329,9 @@ class BaseScriptRunner:
             if self._launcher:
                 launcher = self._launcher
             else:
-                command = split_command_preserving_secret_refs(self._command, posix=True)
+                command = _to_external_process_argv(self._command, "command")
                 command.append(f"custom/{self._script}")
-                command.extend(split_command_preserving_secret_refs(self._script_args, posix=True))
+                command.extend(_to_external_process_argv(self._script_args, "script_args"))
                 launcher = SubprocessLauncher(
                     script=command,
                     launch_once=self._launch_once,
@@ -406,9 +423,9 @@ class ScriptRunner(BaseScriptRunner):
     def __init__(
         self,
         script: str,
-        script_args: str = "",
+        script_args: _CommandArg = "",
         launch_external_process: bool = False,
-        command: str = "python3 -u",
+        command: _CommandArg = "python3 -u",
         framework: FrameworkType = FrameworkType.PYTORCH,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
@@ -427,13 +444,17 @@ class ScriptRunner(BaseScriptRunner):
 
         Args:
             script (str): Script to run. For in-process must be a python script path. For ex-process can be any script support by `command`.
-            script_args (str): Optional arguments for script (appended to script). The string is written in
-                clear text into the generated job config, so it must never contain actual secret values;
-                use :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
-                :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The
-                executing site resolves the placeholder at runtime.
+            script_args (Union[str, list[str]]): Optional arguments appended to the script. External-process
+                runners also accept pre-tokenized argv; use it when Windows paths or exact argument boundaries
+                must be preserved across platforms. Values are written in clear text into the generated job
+                config, so they must never contain actual secrets; use
+                :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
+                :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The executing site
+                resolves the placeholder at runtime.
             launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
-            command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
+            command (Union[str, list[str]]): If launch_external_process=True, command prepended to the script.
+                Pass pre-tokenized argv to preserve Windows paths and exact argument boundaries. Defaults to
+                "python3 -u".
             framework (str): Framework is used to determine the `params_exchange_format`. Defaults to FrameworkType.PYTORCH.
             server_expected_format (str): What format to exchange the parameters between server and client.
             params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.

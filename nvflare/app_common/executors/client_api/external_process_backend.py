@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""CJ-side external-process backend for ClientAPIExecutor.
+"""External-process backend for ClientAPIExecutor.
 
-The backend owns the launched trainer process tree and its authenticated Cell session.
-Task and result Shareables use Cell/F3 directly, including lazy payload transfer. See
+The backend owns the launched trainer process tree and its authenticated session with the
+Client Job (CJ) Cell. Task and result Shareables use Cell/F3 directly, including lazy payload transfer. See
 ``docs/design/client_api_execution_modes.md`` and the trainer counterpart in
 ``nvflare/client/cell/api.py``.
 """
@@ -281,13 +281,24 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             )
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
+        try:
+            return self._execute_admitted_task(task_name, shareable, fl_ctx, abort_signal)
+        finally:
+            self._execute_gate.release()
+
+    def _execute_admitted_task(
+        self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
+    ) -> Shareable:
+        """Execute a task after admission, translating expected lifecycle failures to task replies."""
+        context = self._context
+        executor = context.executor
+
         if abort_signal.triggered:
             if context.launch_once:
-                aborted_trainer = self._active_launch
-                self._send_abort(aborted_trainer, f"'{task_name}' is aborted, abort_signal_triggered")
-                if aborted_trainer is not None:
+                trainer = self._active_launch
+                self._send_abort(trainer, f"'{task_name}' is aborted, abort_signal_triggered")
+                if trainer is not None:
                     self._latch_abort(f"'{task_name}' aborted at entry, abort_signal_triggered")
-            self._execute_gate.release()
             return make_reply(ReturnCode.TASK_ABORTED)
 
         launch_once = context.launch_once
@@ -326,18 +337,19 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             executor.log_error(fl_ctx, secure_format_traceback())
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         finally:
-            try:
-                if not launch_once:
-                    completed_trainer = trainer
-                    if completed_trainer is not None:
-                        if completed_trainer.result_source_live.is_set():
-                            self._reap_trainer_after_result(completed_trainer)
-                        else:
-                            self._stop_trainer(completed_trainer, natural_exit_wait=self._shutdown_wait_bound())
-            except Exception:
-                self.logger.error(secure_format_traceback())
-            finally:
-                self._execute_gate.release()
+            self._finish_task_trainer(trainer, launch_once)
+
+    def _finish_task_trainer(self, trainer: Optional[_TrainerSession], launch_once: bool) -> None:
+        """Retire a per-task trainer without letting cleanup failure mask the task result."""
+        if launch_once or trainer is None:
+            return
+        try:
+            if trainer.result_source_live.is_set():
+                self._reap_trainer_after_result(trainer)
+            else:
+                self._stop_trainer(trainer, natural_exit_wait=self._shutdown_wait_bound())
+        except Exception:
+            self.logger.error(secure_format_traceback())
 
     def finalize(self, fl_ctx: FLContext) -> None:
         if self._finalized:
@@ -411,7 +423,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             # Never log the configured command: legacy/hand-written jobs may contain literal
             # credentials rather than site-resolved secret references.
             self.logger.info(f"launching external trainer (launch {seq})")
-            trainer.process = subprocess.Popen(
+            process = subprocess.Popen(
                 self._split_command(self._context.command),
                 shell=False,
                 stdout=subprocess.PIPE,
@@ -421,12 +433,20 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 # own process group so orderly stop can signal the whole tree
                 start_new_session=(os.name == "posix"),
             )
-            if os.name == "posix":
-                # start_new_session made the child its own group leader (pgid == pid)
-                trainer.pgid = trainer.process.pid
+            with trainer._stop_lock:
+                trainer.process = process
+                if os.name == "posix":
+                    # start_new_session made the child its own group leader (pgid == pid)
+                    trainer.pgid = process.pid
+                cleaned_during_launch = trainer._cleaned
+            if cleaned_during_launch:
+                # finalize() may have timed out on the execute gate and cleaned the
+                # session while Popen was in flight, before it could see this handle.
+                self._terminate_process_tree(trainer, grace=self._context.stop_grace_period)
+                raise RuntimeError("backend closed during trainer launch")
             trainer.log_thread = threading.Thread(
                 target=log_subprocess_output,
-                args=(trainer.process, self.logger),
+                args=(process, self.logger),
                 name=f"client_api_trainer_log_{seq}",
                 daemon=True,
             )
@@ -948,6 +968,10 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         if cause is not None:
             self._delete_task_transfers(transfer_waiters)
             return cause
+        if self._check_task_accepted(reply) is not None:
+            # A rejected task has no future consumer for its payload. Receiver
+            # confirmation is asynchronous, so retire the source deterministically.
+            self._delete_task_transfers(transfer_waiters)
         return _SEND_OK, reply
 
     @staticmethod

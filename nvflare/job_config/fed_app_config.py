@@ -36,39 +36,23 @@ class ClientAppConfig(BaseAppConfig):
             raise RuntimeError(f"workflow must be type of Executor, but got {executor.__class__}")
 
         task_set = set(tasks)
+        existing_def = None
         for item in self.executors:
             b_set = set(item.tasks)
             dup_tasks = task_set.intersection(b_set)
             if len(dup_tasks) > 0:
                 raise RuntimeError(f"executor for tasks {dup_tasks} already exist.")
+            if item.executor is executor:
+                existing_def = item
 
-        self._check_one_client_api_executor(executor)
+        if existing_def is not None:
+            existing_def.tasks.extend(tasks)
+            return
 
         e = _ExecutorDef()
         e.tasks = tasks
         e.executor = executor
         self.executors.append(e)
-
-    def _check_one_client_api_executor(self, executor: Executor):
-        """A client job supports one ClientAPIExecutor total, regardless of execution mode.
-
-        One executor can route all Client API task names. Reject a second one while the
-        generated job configuration is still in the user's hands; the runtime configurator
-        performs the same validation for hand-written JSON/HOCON jobs.
-        """
-        # deferred import: keep job authoring import-light for jobs that never use the Client API
-        from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
-
-        if not isinstance(executor, ClientAPIExecutor):
-            return
-        for item in self.executors:
-            other = item.executor
-            if isinstance(other, ClientAPIExecutor):
-                raise RuntimeError(
-                    "a ClientAPIExecutor is already configured for this client app: only one "
-                    "ClientAPIExecutor is supported per client job, regardless of execution mode — "
-                    "route all Client API tasks through that single executor"
-                )
 
 
 class ServerAppConfig(BaseAppConfig):

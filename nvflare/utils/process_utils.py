@@ -199,7 +199,7 @@ def _get_line(buffer: bytearray):
     if abs(r - n) == 1:
         index += 1
 
-    line = buffer[:index].decode().rstrip()
+    line = buffer[:index].decode(errors="replace").rstrip()
     remaining = bytearray() if index >= size - 1 else buffer[index + 1 :]
     return line, remaining
 
@@ -211,6 +211,14 @@ def _route_subprocess_line(line: str, logger) -> None:
         print(line)
     else:
         logger.info(line)
+
+
+def _safe_route_subprocess_line(line: str, logger) -> None:
+    try:
+        _route_subprocess_line(line, logger)
+    except Exception:
+        # Output routing must not stop the pipe drain and deadlock the child.
+        pass
 
 
 def log_subprocess_output(process, logger) -> None:
@@ -227,10 +235,10 @@ def log_subprocess_output(process, logger) -> None:
             if line is None:
                 break
             if line:
-                _route_subprocess_line(line, logger)
+                _safe_route_subprocess_line(line, logger)
 
     if buffer:
-        _route_subprocess_line(buffer.decode(), logger)
+        _safe_route_subprocess_line(buffer.decode(errors="replace"), logger)
 
 
 class ProcessAdapter:

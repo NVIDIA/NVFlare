@@ -199,8 +199,8 @@ Example:
 
 For more details on how ScriptRunner configures ``ClientAPIExecutor`` with an in-process or external-process backend, refer to its
 :func:`add_to_fed_job<nvflare.job_config.script_runner.ScriptRunner.add_to_fed_job>` implementation.
-Jobs that explicitly require the legacy Pipe/Launcher stack can use ``BaseScriptRunner`` during
-the migration period.
+Code that passes ``pipe_connect_type`` explicitly or supplies a custom ``task_pipe`` must use
+``BaseScriptRunner``; ``ScriptRunner`` rejects these arguments.
 
 
 Executor

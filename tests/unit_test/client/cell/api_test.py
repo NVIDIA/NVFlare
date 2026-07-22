@@ -286,6 +286,138 @@ class TestInit:
             api.init(rank="0")
         assert env.stopped, "a failed HELLO must stop the cell"
 
+    def test_init_stops_retrying_hello_at_overall_deadline(self, bootstrap_path, env, monkeypatch):
+        monkeypatch.setattr(cell_api, "_HELLO_TIMEOUT", 0.03)
+        monkeypatch.setattr(cell_api, "_HELLO_RETRY_INTERVAL", 0.005)
+        clock = [0.0]
+
+        def monotonic():
+            now = clock[0]
+            clock[0] += 0.005
+            return now
+
+        monkeypatch.setattr(cell_api, "time", SimpleNamespace(monotonic=monotonic, sleep=MagicMock()))
+        env.on_request = lambda topic, target, request: make_cell_reply(CellReturnCode.TIMEOUT)
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        try:
+            with pytest.raises(TrainerSessionError, match="no HELLO reply"):
+                api.init(rank="0")
+
+            assert len([request for request in env.requests if request[0] == Topic.HELLO]) > 1
+            assert env.stopped
+        finally:
+            api.shutdown()
+
+    def test_init_can_retry_after_failed_hello(self, bootstrap_path, monkeypatch):
+        first_cell = FakeCell()
+        first_cell.on_request = lambda topic, target, request: make_cell_reply(
+            CellReturnCode.OK, body={MsgKey.REPLY_TOPIC: Topic.HELLO_REJECTED, MsgKey.REASON: "bad token"}
+        )
+        second_cell = FakeCell()
+        second_cell.heartbeat_interval = 0.01
+        second_cell.heartbeat_timeout = 0.2
+        monkeypatch.setattr(cell_api, "Cell", MagicMock(side_effect=[first_cell, second_cell]))
+        monkeypatch.setattr(cell_api, "_shutdown_f3_streaming", MagicMock())
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        try:
+            with pytest.raises(TrainerSessionError, match="bad token"):
+                api.init(rank="0")
+
+            api.init(rank="0")
+
+            assert first_cell.stopped
+            assert second_cell.started
+            assert api._heartbeat_thread is not None and api._heartbeat_thread.is_alive()
+        finally:
+            api.shutdown()
+
+    def test_shutdown_before_init_keeps_api_closed(self, bootstrap_path, env):
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+
+        api.shutdown()
+        api.init(rank="0")
+
+        cell_api.Cell.assert_not_called()
+        assert api._closed is True
+
+    def test_shutdown_waits_for_in_flight_init_then_stops_cell(self, bootstrap_path, monkeypatch):
+        cell = FakeCell()
+        start_entered = threading.Event()
+        allow_start = threading.Event()
+
+        def blocked_start():
+            start_entered.set()
+            assert allow_start.wait(1.0)
+            cell.started = True
+
+        cell.start = blocked_start
+        monkeypatch.setattr(cell_api, "Cell", MagicMock(return_value=cell))
+        monkeypatch.setattr(cell_api, "_shutdown_f3_streaming", MagicMock())
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        init_thread = threading.Thread(target=api.init, kwargs={"rank": "0"})
+        shutdown_thread = threading.Thread(target=api.shutdown)
+
+        init_thread.start()
+        assert start_entered.wait(0.5)
+        shutdown_thread.start()
+        assert shutdown_thread.is_alive()
+        allow_start.set()
+        init_thread.join(timeout=1.0)
+        shutdown_thread.join(timeout=1.0)
+
+        assert not init_thread.is_alive()
+        assert not shutdown_thread.is_alive()
+        assert cell.stopped
+        assert api._closed is True
+
+    def test_init_stops_partially_started_cell_before_retry(self, bootstrap_path, monkeypatch):
+        first_cell = FakeCell()
+        first_cell.start = MagicMock(side_effect=RuntimeError("start failed"))
+        second_cell = FakeCell()
+        monkeypatch.setattr(cell_api, "Cell", MagicMock(side_effect=[first_cell, second_cell]))
+        monkeypatch.setattr(cell_api, "_shutdown_f3_streaming", MagicMock())
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        try:
+            with pytest.raises(RuntimeError, match="start failed"):
+                api.init(rank="0")
+
+            api.init(rank="0")
+
+            assert first_cell.stopped
+            assert second_cell.started
+        finally:
+            api.shutdown()
+
+    def test_repeated_control_rank_init_reuses_session_and_heartbeat(self, bootstrap_path, env):
+        env.heartbeat_interval = 0.01
+        env.heartbeat_timeout = 0.2
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        try:
+            api.init(rank="0")
+            heartbeat_thread = api._heartbeat_thread
+
+            api.init(rank="0")
+
+            cell_api.Cell.assert_called_once()
+            assert len([request for request in env.requests if request[0] == Topic.HELLO]) == 1
+            assert api._heartbeat_thread is heartbeat_thread
+            assert heartbeat_thread is not None and heartbeat_thread.is_alive()
+        finally:
+            api.shutdown()
+
+    def test_repeated_passive_rank_init_does_not_open_control_session(self, bootstrap_path, env):
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        try:
+            api.init(rank="1")
+            api.init(rank="0")
+
+            assert api._rank == "1"
+            assert api._is_control_rank is False
+            cell_api.Cell.assert_not_called()
+            assert not env.started
+        finally:
+            api.shutdown()
+
     def test_non_control_rank_has_passive_api(self, bootstrap_path, env):
         api = CellClientAPI(bootstrap_file=bootstrap_path)
         try:
@@ -296,6 +428,20 @@ class TestInit:
             assert api.is_running() is False
             with pytest.raises(RuntimeError, match="only rank 0 can call log"):
                 api.log("accuracy", 0.9, AnalyticsDataType.SCALAR)
+        finally:
+            api.shutdown()
+
+    def test_non_control_rank_send_is_noop(self, bootstrap_path, env):
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        model = FLModel(params={"w": [1.0]})
+        try:
+            api.init(rank="1")
+
+            api.send(model)
+
+            assert model.params == {"w": [1.0]}
+            cell_api.Cell.assert_not_called()
+            assert env.requests == []
         finally:
             api.shutdown()
 
@@ -511,12 +657,21 @@ class TestReceiveSend:
         api = _init_api(bootstrap_path, env)
         errors = []
         try:
-            _deliver_task(env)
-            api.receive()
+            _deliver_task(
+                env,
+                model=FLModel(params={"w": [1.0]}, optimizer_params={"momentum": [0.5]}, params_type=ParamsType.FULL),
+            )
+            received_model = api.receive()
+            # FLModelUtils does not carry optimizer_params through Shareable; populate
+            # task-local optimizer state directly so cache release covers it too.
+            received_model.optimizer_params = {"momentum": [0.5]}
+            sent_model = FLModel(
+                params={"w": [2.0]}, optimizer_params={"momentum": [0.75]}, params_type=ParamsType.FULL
+            )
 
             def send_result():
                 try:
-                    api.send(FLModel(params={"w": [2.0]}, params_type=ParamsType.FULL))
+                    api.send(sent_model)
                 except BaseException as e:
                     errors.append(e)
 
@@ -526,12 +681,25 @@ class TestReceiveSend:
             time.sleep(0.05)
             assert sender.is_alive()
             assert env.stopped is False
+            assert sent_model.params == {"w": [2.0]}
+            assert sent_model.optimizer_params == {"momentum": [0.75]}
+            assert received_model.params == {"w": [1.0]}
+            assert received_model.optimizer_params == {"momentum": [0.5]}
+            assert api._fl_model is received_model
 
             transfer_completed.set()
             sender.join(timeout=0.5)
             assert not sender.is_alive()
             assert errors == []
             assert env.stopped is True
+            assert sent_model.params is None
+            assert sent_model.optimizer_params is None
+            assert received_model.params is None
+            assert received_model.optimizer_params is None
+            assert api._fl_model is None
+            assert api._receive_called is False
+            assert api._current_task is None
+            assert api._result_receiver_ids is None
         finally:
             transfer_completed.set()
             api.shutdown()
@@ -591,7 +759,6 @@ class TestReceiveSend:
             api.shutdown()
 
     def test_send_rejects_non_successful_terminal_result_transfer(self, bootstrap_path, env, monkeypatch):
-        _set_launch_once(bootstrap_path, False)
         waiter = MagicMock()
         waiter.wait.return_value = SimpleNamespace(status=TransferProgressState.FAILED, reason="receiver_failed")
         monkeypatch.setattr(cell_api.DownloadService, "get_transfer_waiter", lambda _tx_id: waiter)
@@ -610,13 +777,31 @@ class TestReceiveSend:
         env.on_request = on_request
         api = _init_api(bootstrap_path, env)
         try:
-            _deliver_task(env)
-            api.receive()
+            _deliver_task(
+                env,
+                model=FLModel(params={"w": [1.0]}, optimizer_params={"momentum": [0.5]}, params_type=ParamsType.FULL),
+                result_receiver_ids=("server.job",),
+            )
+            received_model = api.receive()
+            received_model.optimizer_params = {"momentum": [0.5]}
+            sent_model = FLModel(
+                params={"w": [2.0]}, optimizer_params={"momentum": [0.75]}, params_type=ParamsType.FULL
+            )
 
             with pytest.raises(TrainerSessionError, match="status=failed.*receiver_failed"):
-                api.send(FLModel(params={"w": [2.0]}, params_type=ParamsType.FULL))
+                api.send(sent_model)
 
-            assert env.stopped is True
+            assert env.stopped is False
+            assert sent_model.params == {"w": [2.0]}
+            assert sent_model.optimizer_params == {"momentum": [0.75]}
+            assert received_model.params == {"w": [1.0]}
+            assert received_model.optimizer_params == {"momentum": [0.5]}
+            assert api._fl_model is received_model
+            assert api._receive_called is False
+            assert api._current_task is None
+            assert api._result_receiver_ids is None
+            with pytest.raises(RuntimeError, match='"receive" needs to be called'):
+                api.send(sent_model)
         finally:
             api.shutdown()
 
@@ -669,8 +854,16 @@ class TestReceiveSend:
         _set_launch_once(bootstrap_path, False)
         api = _init_api(bootstrap_path, env)
         try:
-            _deliver_task(env)
-            api.receive()
+            task_id, _ = _deliver_task(
+                env,
+                model=FLModel(params={"w": [1.0]}, optimizer_params={"momentum": [0.5]}, params_type=ParamsType.FULL),
+                result_receiver_ids=("server.job",),
+            )
+            received_model = api.receive()
+            received_model.optimizer_params = {"momentum": [0.5]}
+            sent_model = FLModel(
+                params={"w": [2.0]}, optimizer_params={"momentum": [0.75]}, params_type=ParamsType.FULL
+            )
 
             def reject(topic, target, request):
                 if topic == Topic.RESULT_READY:
@@ -681,9 +874,45 @@ class TestReceiveSend:
 
             env.on_request = reject
             with pytest.raises(TrainerSessionError, match="rejected"):
-                api.send(FLModel(params={"w": [2.0]}))
+                api.send(sent_model)
             assert api._closed is False, "only an accepted per-task result ends the session"
             assert env.stopped is False
+            assert sent_model.params == {"w": [2.0]}
+            assert sent_model.optimizer_params == {"momentum": [0.75]}
+            assert received_model.params == {"w": [1.0]}
+            assert received_model.optimizer_params == {"momentum": [0.5]}
+            assert api._fl_model is received_model
+            assert api._receive_called is True
+            assert api._current_task[MsgKey.TASK_ID] == task_id
+            assert api._result_receiver_ids == ("server.job",)
+        finally:
+            api.shutdown()
+
+    def test_send_preserves_model_and_task_state_when_result_has_no_reply(self, bootstrap_path, env):
+        api = _init_api(bootstrap_path, env)
+        try:
+            task_id, _ = _deliver_task(env, result_receiver_ids=("server.job",))
+            received_model = api.receive()
+            sent_model = FLModel(
+                params={"w": [2.0]}, optimizer_params={"momentum": [0.75]}, params_type=ParamsType.FULL
+            )
+
+            def no_result_reply(topic, target, request):
+                if topic == Topic.RESULT_READY:
+                    return None
+                return _hello_accepted_reply()
+
+            env.on_request = no_result_reply
+            with pytest.raises(TrainerSessionError, match="no reply"):
+                api.send(sent_model)
+
+            assert sent_model.params == {"w": [2.0]}
+            assert sent_model.optimizer_params == {"momentum": [0.75]}
+            assert received_model.params == {"w": [1.0]}
+            assert api._fl_model is received_model
+            assert api._receive_called is True
+            assert api._current_task[MsgKey.TASK_ID] == task_id
+            assert api._result_receiver_ids == ("server.job",)
         finally:
             api.shutdown()
 

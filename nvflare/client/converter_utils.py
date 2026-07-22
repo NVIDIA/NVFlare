@@ -102,6 +102,8 @@ def convert_params(
 
     if ExchangeFormat.PYTORCH in (source, target) and not isinstance(params, dict):
         raise TypeError(f"PyTorch parameter conversion expects a parameter dict, got {type(params)}")
+    if ExchangeFormat.KERAS_LAYER_WEIGHTS in (source, target) and not isinstance(params, dict):
+        raise TypeError(f"Keras layer-weight conversion expects a parameter dict, got {type(params)}")
 
     converter = _create_converter(source, target)
     if logger is not None:

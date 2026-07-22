@@ -158,6 +158,21 @@ class TestTaskScriptRunner(unittest.TestCase):
 
         assert sys.argv is original_argv
 
+    def test_run_skips_script_when_runtime_was_already_released(self):
+        wrapper = TaskScriptRunner(
+            custom_dir=self.nvflare_root,
+            script_path="nvflare/cli.py",
+            script_args="--api_key ${secret:TEST_UNSET_SECRET_VAR}",
+            redirect_print_to_log=False,
+        )
+        wrapper.release_runtime()
+        os.environ.pop("TEST_UNSET_SECRET_VAR", None)
+
+        with patch("nvflare.app_common.executors.task_script_runner.runpy.run_path") as mock_run_path:
+            wrapper.run()
+
+        mock_run_path.assert_not_called()
+
     def test_app_scripts_with_sub_dirs1(self):
         # curr_dir = os.getcwd()
         script_path = "nvflare/__init__.py"

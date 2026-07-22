@@ -283,6 +283,42 @@ class TestScriptRunner:
             "",
         ]
 
+    def test_legacy_external_process_windows_argv_is_preserved_and_serialized(self, tmp_path, monkeypatch):
+        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+        from nvflare.job_config.api import FedJob
+
+        monkeypatch.chdir(tmp_path)
+        script = tmp_path / "train.py"
+        script.write_text("# test trainer\n")
+        command = [r"C:\Program Files\Python311\python.exe", "-u"]
+        script_args = ["--output-dir", r"C:\training runs\site-1", "--api-key", "${secret:API_TOKEN}"]
+        expected = [*command, "custom/train.py", *script_args]
+
+        job = FedJob(name="legacy-windows-command-export")
+        job.to_server(ScatterAndGather(min_clients=1, num_rounds=1, wait_time_after_min_received=0))
+        job.to_clients(
+            BaseScriptRunner(
+                script=script.name,
+                script_args=script_args,
+                launch_external_process=True,
+                command=command,
+                framework=FrameworkType.NUMPY,
+                execution_mode=None,
+            )
+        )
+
+        # Building the command must not mutate caller-owned argv lists.
+        assert command == [r"C:\Program Files\Python311\python.exe", "-u"]
+        assert script_args == ["--output-dir", r"C:\training runs\site-1", "--api-key", "${secret:API_TOKEN}"]
+
+        export_dir = tmp_path / "export"
+        job.export_job(str(export_dir))
+        config_path = export_dir / job.name / "app" / "config" / "config_fed_client.json"
+        config = json.loads(config_path.read_text())
+        launcher = next(component for component in config["components"] if component["id"] == "launcher")
+
+        assert launcher["args"]["script"] == expected
+
 
 class TestScriptRunnerMemoryManagement:
     """Test cases for ScriptRunner memory management parameters."""
@@ -510,6 +546,40 @@ class TestExecutionModeSelection:
             "--label",
             "two words",
         ]
+
+    def test_external_process_windows_argv_is_preserved_and_serialized(self, tmp_path, monkeypatch):
+        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+        from nvflare.job_config.api import FedJob
+
+        monkeypatch.chdir(tmp_path)
+        script = tmp_path / "train.py"
+        script.write_text("# test trainer\n")
+        command = [r"C:\Program Files\Python311\python.exe", "-u"]
+        script_args = ["--output-dir", r"C:\training runs\site-1", "--api-key", "${secret:API_TOKEN}"]
+        expected = [*command, "custom/train.py", *script_args]
+
+        job = FedJob(name="windows-command-export")
+        job.to_server(ScatterAndGather(min_clients=1, num_rounds=1, wait_time_after_min_received=0))
+        job.to_clients(
+            ScriptRunner(
+                script=script.name,
+                script_args=script_args,
+                execution_mode="external_process",
+                command=command,
+                framework=FrameworkType.NUMPY,
+            )
+        )
+
+        # Building the command must not mutate caller-owned argv lists.
+        assert command == [r"C:\Program Files\Python311\python.exe", "-u"]
+        assert script_args == ["--output-dir", r"C:\training runs\site-1", "--api-key", "${secret:API_TOKEN}"]
+
+        export_dir = tmp_path / "export"
+        job.export_job(str(export_dir))
+        config_path = export_dir / job.name / "app" / "config" / "config_fed_client.json"
+        config = json.loads(config_path.read_text())
+
+        assert config["executors"][0]["executor"]["args"]["command"] == expected
 
     def test_conflicts_with_legacy_stack_args(self):
         with pytest.raises(ValueError, match="launch_external_process=True requires"):

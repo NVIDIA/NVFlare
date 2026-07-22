@@ -2,11 +2,9 @@
 
 ## Status
 
-**Implemented migration architecture, updated 2026-07-14.**
+**Implemented architecture, updated 2026-07-14.**
 
-This document records the architecture implemented for `ClientAPIExecutor`. It intentionally
-separates the new migration path from the legacy subprocess stack that remains available while
-compatibility coverage is completed.
+This document records the architecture implemented for `ClientAPIExecutor`.
 
 The currently available modes are:
 
@@ -37,8 +35,8 @@ The implemented architecture has these boundaries:
 - `ClientAPIExecutor` selects one internal backend and drives only its
   `initialize` / `execute` / `finalize` lifecycle.
 - `InProcessBackend` uses DataBus and runs the training script in the CJ process.
-- `ExternalProcessBackend` is the migration path for subprocess-based Client API jobs. It
-  launches the configured command and communicates with the trainer directly over Cell.
+- `ExternalProcessBackend` runs Client API jobs in a launched subprocess and communicates
+  with the trainer directly over Cell.
 - Cell, FOBS, `ViaDownloader`, and `DownloadService` provide serialization, large-object
   transfer, progress, and terminal transfer status. The Client API does not add another
   payload wrapper or streaming protocol.
@@ -47,14 +45,7 @@ The implemented architecture has these boundaries:
 - Job runtime placement remains the responsibility of `JobLauncherSpec`. Training-process
   launch inside the CJ is a separate lifecycle owned by `ExternalProcessBackend`.
 
-This work does **not** remove the legacy Launcher/Executor/Pipe implementation. Existing jobs
-can continue using it during migration.
-
-## Migration Boundary
-
-The new and legacy paths coexist deliberately.
-
-### New path
+## Execution Mode Selection
 
 `ScriptRunner` constructs `ClientAPIExecutor` by default. The existing
 `launch_external_process` flag selects the backend:
@@ -80,20 +71,6 @@ ClientAPIExecutor
   -> Cell request/reply + FOBS/ViaDownloader
   -> CellClientAPI (trainer)
 ```
-
-It does not instantiate `LauncherExecutor`, `SubprocessLauncher`, `PipeHandler`, `CellPipe`,
-`FilePipe`, `FlareAgent`, `MetricRelay`, or `ParamsConverter`.
-
-### Legacy path retained during migration
-
-`BaseScriptRunner` remains the explicit compatibility surface for jobs that inject legacy
-executors, launchers, or pipes. For example, Swarm's optional `FilePipe` configuration continues
-to use this path. `ScriptRunner` does not silently fall back to legacy components.
-
-The legacy stack must remain until the existing subprocess examples and integration jobs have
-been validated on `ClientAPIExecutor(external_process)`. Removing those
-classes is a separate follow-up after the compatibility matrix is green; it is not part of this
-architecture change.
 
 ## External Process Architecture
 
@@ -143,6 +120,11 @@ used for ongoing communication.
 The launched trainer reads the bootstrap, creates `CellClientAPI`, and sends `HELLO`. The backend
 validates the launch identity, rank, protocol version, origin FQCN, job/site scope, and current
 launch token before returning `HELLO_ACCEPTED` with the session and heartbeat policy.
+
+V1 assumes a trusted host for launch availability. A same-host process that can claim the
+prescribed trainer FQCN can race the real trainer with a bogus token and cause that launch to fail.
+The process cannot authenticate the session or access task/result data; this is a bounded launch
+denial-of-service risk, not an authentication or data-disclosure bypass.
 
 The implemented per-task exchange is:
 
@@ -197,23 +179,22 @@ Result direction:
 2. Cell/FOBS invokes the CJ handler with inline values and/or lazy `ViaDownloader` references.
 3. The CJ validates and stores that result, then returns `RESULT_ACCEPTED`; this acknowledges the
    envelope, not completion of every downstream tensor download.
-4. `ClientRunner` retains the legacy filter behavior: events and filters receive the result as
-   delivered by the transport. It adds no automatic materialization or receiver rewrite. When
-   lazy references remain unchanged, the server/workflow downloads directly from the trainer.
+4. `ClientRunner` passes the transport-delivered result to events, filters, and the workflow
+   without adding automatic materialization or receiver rewriting. When lazy references remain
+   unchanged, the server/workflow downloads directly from the trainer.
 5. The trainer waits for the strict terminal outcome of every created `DownloadService`
    transaction before releasing its result resources or allowing a one-task process to exit.
    The last accepted receiver confirmation settles a completed transaction immediately; the
-   waiter does not depend on the periodic expiration monitor noticing it. A legacy or
-   confirmation-disabled receiver has no acknowledgement after its terminal serve, so that
-   path remains monitor-settled: this preserves a post-reply interval before a one-shot
-   producer can observe completion and tear down its Cell.
+   waiter does not depend on the periodic expiration monitor noticing it. A receiver that does
+   not provide terminal confirmation has no acknowledgement after its terminal serve, so that
+   path remains monitor-settled: this preserves a post-reply interval before a one-shot producer
+   can observe completion and tear down its Cell.
 
 In the task direction at the CJ entry point, the CJ decodes only the
 `(SERVER_COMMAND, GET_TASK)` route lazily for the external-process executor. `ClientRunner`
-retains its legacy behavior and passes that representation through its existing event/filter/
-executor sequence without adding a materialization policy. Other topics on `SERVER_COMMAND`
-keep ordinary decoding. The trainer Cell always materializes the task before its Client API
-handler runs.
+passes that representation through its event/filter/executor sequence without adding a
+materialization policy. Other topics on `SERVER_COMMAND` keep ordinary decoding. The trainer Cell
+always materializes the task before its Client API handler runs.
 
 ### Process and session lifecycle
 
@@ -235,10 +216,9 @@ past that bound, the backend force-stops its owned process tree rather than hang
 Other failure/teardown paths use the bounded SHUTDOWN/TERM/KILL sequence immediately.
 
 Startup waits at most `launch_timeout` for the trainer to complete its HELLO handshake. The
-default is 300 seconds, matching the legacy Client API subprocess readiness budget; callers may
-explicitly use `None` when an unbounded wait is required. For ordinary shutdown, a
-`shutdown_timeout` of zero is kept as zero and starts process-tree termination immediately after
-the orderly SHUTDOWN notification. An accepted result whose publication is still active is
+default is 300 seconds; callers may explicitly use `None` when an unbounded wait is required. For
+ordinary shutdown, a `shutdown_timeout` of zero is kept as zero and starts process-tree termination
+immediately after the orderly SHUTDOWN notification. An accepted result whose publication is
 different: its truthful terminal barrier takes precedence over ordinary process-shutdown timing,
 so historical `ScriptRunner` defaults cannot erase the source-lifetime contract.
 
@@ -259,9 +239,9 @@ uses `taskkill /T` for tree termination. Because a directly launched trainer doe
 `MainProcessMonitor`, its Cell Client API shutdown also retires process-global DownloadService
 state, the reliable retry scheduler, and the shared streaming executors; otherwise their non-daemon
 pools can keep a completed one-shot or distributed worker process alive. That irreversible runtime
-shutdown is specific to the dedicated Cell trainer process. In-process and legacy external-process
-Client API contexts do not retire those process-global services; a stopped context is evicted so a
-later job/session in the same process can initialize a fresh one.
+shutdown is specific to the dedicated Cell trainer process. In-process Client API contexts do not
+retire those process-global services; a stopped context is evicted so a later job/session in the
+same process can initialize a fresh one.
 
 `flare.init()` also binds its returned context to the calling thread. Client API calls without an
 explicit `ctx` prefer that binding; an old stopped binding is retained as a tombstone rather than
@@ -280,7 +260,7 @@ calls rather than leaving the trainer waiting indefinitely.
 
 ## Parameter Representation and FULL/DIFF
 
-The new execution-mode path does not use `ParamsConverter` or a ParamsConverter adapter.
+The execution-mode architecture does not use `ParamsConverter` or a ParamsConverter adapter.
 
 `ScriptRunner` maps its framework setting to an explicit `params_exchange_format` and carries
 that declaration, plus `server_expected_format`, through `ClientAPIExecutor` into
@@ -293,7 +273,7 @@ The trainer-side Client API honors the declaration at its API boundary:
 - send: framework-native `FLModel.params` -> server representation.
 
 The implementation is a small functional adapter with caller-owned state for PyTorch tensor
-shapes and non-tensor entries; it does not recreate the legacy `ParamsConverter` component
+shapes and non-tensor entries; it does not recreate the `ParamsConverter` component
 hierarchy. `RAW` explicitly means no representation adaptation. If either side of a declared pair
 is `RAW`, conversion is a no-op and the payload passes unchanged; `RAW` is an adaptation off-switch,
 not a concrete representation guarantee.
@@ -303,10 +283,10 @@ not a concrete representation guarantee.
 trainer's task-exchange metadata, and is applied by the trainer-side Client API when preparing a
 result. A DIFF is computed in the trainer-native representation before outgoing conversion.
 
-CJ task-data/task-result filter ordering is unchanged. As in the legacy subprocess path, filters
-receive the payload representation delivered by the transport, which can contain lazy references
-when pass-through is active. This execution-mode change does not make filter presence imply CJ
-materialization and does not add an executor or filter capability contract.
+CJ task-data/task-result filter ordering is unchanged. Filters receive the payload representation
+delivered by the transport, which can contain lazy references when pass-through is active. This
+execution-mode change does not make filter presence imply CJ materialization and does not add an
+executor or filter capability contract.
 
 Relocating content transformations from CJ filters to explicit send/receive endpoints is deferred
 to a separate design and change. That work must first inventory the existing privacy, HE,
@@ -338,13 +318,11 @@ the conversion to NVFlare analytics events:
 - in-process logs arrive through DataBus;
 - external-process logs arrive over the session Cell.
 
-The new external path therefore does not require the legacy metrics Pipe or `MetricRelay`.
+The external-process backend delivers analytics without a separate metrics transport.
 
-## Compatibility and Validation Gate
+## Validation
 
-Trainer scripts should not need changes when moving from the legacy subprocess path to
-`execution_mode="external_process"`, but implementation removal is gated on evidence rather than
-API similarity. Before deleting the legacy classes, validate at least:
+Validate at least:
 
 - existing subprocess Client API examples;
 - Python and `torchrun` launch commands;
@@ -353,17 +331,12 @@ API similarity. Before deleting the legacy classes, validate at least:
 - LOG/analytics delivery;
 - large tensor streaming and tensor disk offload;
 - abort, timeout, trainer exit, CJ loss, and process-tree cleanup;
-- both `launch_once` policies;
-
-Until this matrix runs successfully in the target integration environments, the legacy path is a
-supported fallback and must not be removed.
+- both `launch_once` policies.
 
 ## Deferred Work
 
 - `attach` remains reserved and unimplemented. Its external ownership, credential delivery, and
   reconnect policy require a separate implemented contract.
-- Removal of the legacy Launcher/Executor/Pipe classes follows migration validation; it is not
-  implied by landing `ExternalProcessBackend`.
 
 ## Implementation References
 
@@ -373,7 +346,7 @@ supported fallback and must not be removed.
 - `nvflare/client/cell/api.py`
 - `nvflare/client/cell/bootstrap.py`
 - `nvflare/client/cell/defs.py`
-- `nvflare/client/params_conversion.py`
+- `nvflare/client/converter_utils.py`
 - `nvflare/job_config/script_runner.py`
 - `nvflare/fuel/f3/cellnet/cell.py`
 - `nvflare/fuel/utils/fobs/decomposers/via_downloader.py`
