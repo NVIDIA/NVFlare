@@ -33,6 +33,15 @@ SPECIAL_CHARACTERS = '"!@#$%^&*()+?=,<>/'
 _ADD_TO_JOB_METHOD_NAME = "add_to_fed_job"
 
 
+def validate_target_name(target: str) -> None:
+    """Validate a target name accepted by :class:`FedJob`."""
+    if not target:
+        raise ValueError("Must provide a valid target name")
+
+    if any(c in SPECIAL_CHARACTERS for c in target) and target != ALL_SITES:
+        raise ValueError(f"target {target} name contains invalid character")
+
+
 class FedApp:
     def __init__(self, app_config: Union[ClientAppConfig, ServerAppConfig]):
         """FedApp handles `ClientAppConfig` and `ServerAppConfig` and allows setting task result or task data filters."""
@@ -568,11 +577,7 @@ class FedJob:
         self.add_file_to(src_path, ALL_SITES, dest_dir, app_folder_type)
 
     def _validate_target(self, target):
-        if not target:
-            raise ValueError("Must provide a valid target name")
-
-        if any(c in SPECIAL_CHARACTERS for c in target) and target != ALL_SITES:
-            raise ValueError(f"target {target} name contains invalid character")
+        validate_target_name(target)
 
     def _apply_fail_fast(self, server_config: ServerAppConfig):
         """Inject fail_fast configuration into the server app config.

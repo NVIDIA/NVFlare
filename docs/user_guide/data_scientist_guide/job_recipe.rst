@@ -10,6 +10,8 @@ Job Recipes provide a simplified abstraction that hides the complexity of low-le
 .. note::
    This is a technical preview. Not all algorithms are currently implemented with recipes.
 
+For the stable public Recipe surface, see :ref:`recipe_api`.
+
 
 Motivation for Using JobRecipe
 ------------------------------
@@ -166,16 +168,16 @@ Metrics Artifacts
 
 Training aggregation recipes write standard metrics artifacts when their server
 workflow reports round-level aggregation metrics. See
-:ref:`recipe_metrics_artifacts` for the schema, security behavior, and artifact
-discovery contract.
+:ref:`recipe_metrics_artifacts` for the schema, security behavior, and how
+tools locate the artifacts.
 
 Per-Site Configuration
 ----------------------
 
 Some recipes accept site-keyed configuration so that each site can use different
-arguments, scripts, data loaders, or validators. For recipes that implement this
-helper contract, use ``set_per_site_config`` to attach the site-keyed input after
-creating the recipe:
+arguments, scripts, or data loaders. Call ``set_per_site_config`` immediately
+after constructing the recipe, before adding client configuration, files,
+filters, components, or tracking:
 
 .. code-block:: python
 
@@ -191,35 +193,142 @@ creating the recipe:
 
    env = SimEnv(clients=recipe.configured_sites())
 
-``configured_sites()`` returns the top-level site names from
-``set_per_site_config`` when helper-provided configuration exists. Otherwise, for
-backward compatibility, it returns site names from a recipe's constructor
-``per_site_config`` when available. It does not infer sites from recipe metadata
-such as resource specs, launcher specs, or mandatory clients. It also does not
-mean those sites are currently connected, validate production enrollment, or
-replace the execution environment.
+The helper validates and stores the mapping; it does not build and then replace
+client apps. The recipe materializes its client topology once, before the first
+client-targeted customization or before export or execution. Built-in FedAvg
+recipes and ``FedEvalRecipe`` create one app per configured site directly. If
+per-site configuration is omitted, they create the default ``@ALL`` app at that
+same preparation point. XGBoost bagging, horizontal, and vertical recipes add
+the required data loader and executor components to each configured site and
+must be configured before client customization, export, or execution. The
+mapping must be non-empty and define at least ``min_clients`` sites. Reserved
+targets such as ``server`` and ``@ALL`` are not site names.
 
-``set_per_site_config`` stores the mapping and calls the recipe's per-site
-configuration hook. It does not by itself create client targets or rebuild an
-already generated job. A recipe must implement the hook for helper-provided
-per-site fields to affect generated app configuration, command-line arguments,
-data loaders, validators, or other recipe behavior.
+``configured_sites()`` returns the configured top-level site names. It does not
+infer sites from recipe metadata, indicate which clients are connected, validate
+production enrollment, or replace the execution environment.
 
 .. important::
 
-   The second argument to ``set_per_site_config`` is recipe-specific. The helper
-   validates only that it is a dictionary whose top-level keys are site names and
-   whose values are dictionaries. Users must ensure each per-site dictionary uses
-   fields that the selected recipe understands and can convert into generated app
-   configuration, command-line arguments, data loaders, validators, or other
-   recipe-specific settings.
+   Each site's dictionary is recipe-specific. FedAvg recipes support
+   ``train_script``, ``train_args``, ``launch_external_process``, ``command``,
+   ``framework``, ``server_expected_format``, ``params_transfer_type``,
+   ``launch_once``, and ``shutdown_timeout``. ``FedEvalRecipe`` supports the
+   corresponding ``eval_script`` and ``eval_args`` fields plus its launch,
+   command, and exchange-format overrides. XGBoost recipes require a
+   ``data_loader`` for every site; bagging also accepts ``lr_scale``.
 
-   For example, FedAvg's current per-site support is through the legacy
-   ``FedAvgRecipe(per_site_config=...)`` constructor argument. That constructor
-   path understands per-site values such as ``train_args``, ``train_script``,
-   and ``command``. It does not automatically interpret arbitrary keys such as
-   ``data_path`` or ``batch_size``. For FedAvg, pass those values through
-   ``train_args`` unless your recipe explicitly documents another shape.
+   The older ``per_site_config=...`` constructor argument remains temporarily
+   available for compatibility, emits ``FutureWarning``, and delegates to this
+   helper behavior. New code should use ``set_per_site_config``.
+
+No Secrets In Recipe Parameters
+-------------------------------
+
+Recipe parameters are job definition, not secret storage. Values such as
+``train_args``, ``task_args``, ``eval_args``, ``per_site_config``, config
+override dictionaries, execution parameters, and dictionaries passed to
+``add_client_config`` or ``add_server_config`` can be serialized in clear text
+into the generated job. They must never contain actual passwords, API keys,
+tokens, private keys, or other credentials.
+
+Recipes emit ``PotentialSecretWarning`` when a supplied value looks like an
+actual secret, but this heuristic check cannot prove that a value is safe.
+Keep the value at the executing site. Use ``secret_ref`` for a site environment
+variable or ``secret_file_ref`` for a mounted secret file only at a supported
+runtime boundary. See :ref:`recipe_secrets` for the supported locations,
+examples, and deployment guidance.
+
+Recipe Metadata
+---------------
+
+Use ``set_recipe_meta`` to add generated job metadata from a recipe without
+mutating nested generated-job metadata directly. The helper sets one ``JobMetaKey``
+metadata entry at a time:
+
+.. code-block:: python
+
+   from nvflare.apis.job_def import JobMetaKey
+   from nvflare.recipe import set_recipe_meta
+
+   set_recipe_meta(
+       recipe,
+       JobMetaKey.SCOPE,
+       "private",
+   )
+   set_recipe_meta(
+       recipe,
+       JobMetaKey.RESOURCE_SPEC,
+       {
+           "site-1": {"num_of_gpus": 1, "mem_per_gpu_in_GiB": 4},
+           "site-2": {"num_of_gpus": 1, "mem_per_gpu_in_GiB": 2},
+       },
+   )
+   set_recipe_meta(
+       recipe,
+       JobMetaKey.JOB_LAUNCHER_SPEC,
+       {
+           "site-1": {"docker": {"image": "nvflare-site1:latest"}},
+           "site-2": {"docker": {"image": "nvflare-site2:latest"}},
+       },
+   )
+
+The settable keys are exactly the members of
+:data:`nvflare.apis.job_def.USER_SETTABLE_JOB_META_KEYS`; other enum members
+and raw strings are not accepted. Each key expects a specific value shape:
+
+* ``JobMetaKey.RESOURCE_SPEC`` (``resource_spec``): per-site resource
+  requirements -- a dict keyed by site name with dict values.
+* ``JobMetaKey.JOB_LAUNCHER_SPEC`` (``launcher_spec``): per-site launcher
+  requirements -- a dict keyed by site name with dict values.
+* ``JobMetaKey.SCOPE`` (``scope``): job scope name -- a string.
+* ``JobMetaKey.CUSTOM_PROPS`` (``custom_props``): nested custom metadata -- a
+  dict.
+
+Two groups of keys are intentionally **not** settable through this helper:
+
+* Keys with dedicated ``FedJob`` constructor fields -- ``min_clients`` and
+  ``mandatory_clients``. Set them when constructing the recipe/``FedJob``
+  (e.g. ``FedJob(..., min_clients=2, mandatory_clients=[...])``) so the
+  controller, scheduler, and generated metadata all use the same value;
+  setting them through ``meta_props`` would only change the metadata and
+  diverge from the value the recipe already used to build its controller.
+* ``study``: the server assigns it from the admin session's active study at
+  job submission, so a recipe-set value would be silently overwritten. Select
+  the study through the execution environment instead (e.g.
+  ``PocEnv(study=...)`` or ``ProdEnv(study=...)``, described below).
+
+Dict values, including all nested dictionary and list contents, must be
+JSON-serializable; dictionary keys are coerced to strings as they will appear
+in ``meta.json``, and non-finite floating-point values such as ``NaN`` and
+``Infinity`` are rejected. The helper writes the key/value pair through
+``meta_props``. If the generated ``meta.json`` also contains that key, the
+``meta_props`` value is written last by the job generator.
+
+.. note::
+
+   Per-site resource specs may also exist on the underlying generated job
+   (registered through the lower-level job object's ``add_resource_spec``,
+   an internal path -- prefer ``set_recipe_meta`` in recipe scripts; see
+   :ref:`recipe_api`). If you set ``RESOURCE_SPEC`` through
+   ``set_recipe_meta``, the ``meta_props`` value replaces those per-site
+   specs in the generated ``meta.json``; a warning is emitted for specs
+   already registered when the helper is called, but specs added afterwards
+   are overridden without one.
+
+If the same key already exists in ``meta_props``, ``set_recipe_meta`` replaces
+that value.
+
+The helper does not validate runtime resource availability, production
+enrollment, or whether sites named in metadata are present for a run. The
+execution environment and deployment still determine which sites are present.
+
+For a complete production example, see the
+:github_nvflare_link:`Recipe job on Kubernetes clients <examples/advanced/recipe-k8s>`.
+It uses ``ProdEnv`` to submit a PyTorch CIFAR-10 job to ``site-1`` and
+``site-2`` in separate Kubernetes clusters, keeps GPU requirements in
+``resource_spec``, and places the per-cluster job images and container
+settings in ``launcher_spec``.
 
 Execution Environments
 ----------------------
@@ -253,6 +362,17 @@ concurrency. Best suited for:
 * ``num_threads``: Number of concurrent simulated client worker processes
 * ``gpu_config`` (str): List of GPU device IDs, comma separated
 * ``log_config`` (str): Log config mode (``'concise'``, ``'full'``, ``'verbose'``), filepath, or level
+* ``workspace_root`` (str): Root directory for simulation artifacts; defaults to ``/tmp/nvflare/simulation``
+
+.. note::
+
+   ``NVFLARE_SIMULATOR_WORKSPACE_ROOT`` is a process-level orchestration
+   override. When it is set, ``SimEnv`` uses it instead of ``workspace_root``,
+   including an explicitly supplied constructor value. Auto-FL uses this
+   override only in each trial's child process to prevent concurrent simulator
+   runs from sharing artifacts. ``SimEnv`` emits a ``RuntimeWarning`` when the
+   override changes the configured path. Normal Recipe applications should
+   leave it unset and configure ``workspace_root`` directly.
 
 Now let's test running the prepared recipe with ``SimEnv``:
 

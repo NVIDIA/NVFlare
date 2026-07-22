@@ -36,7 +36,7 @@ import argparse
 
 from nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader import CSVDataLoader
 from nvflare.app_opt.xgboost.recipes import XGBVerticalRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, set_per_site_config
 
 
 def define_parser():
@@ -110,8 +110,8 @@ def main():
         secure=args.secure,
         client_ranks=client_ranks,
         xgb_params=xgb_params,
-        per_site_config=per_site_config,
     )
+    set_per_site_config(recipe, per_site_config)
 
     # Export and run
     env = SimEnv(num_clients=args.site_num)

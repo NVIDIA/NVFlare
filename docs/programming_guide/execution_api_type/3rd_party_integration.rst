@@ -305,6 +305,14 @@ setup the trainer process on each client site:
     - For the Client API pattern, point ``flare.init()`` to the generated client
       API config in the job workspace and use ``receive/send`` in your trainer loop.
 
+    .. note::
+       The generated client API config carries live authentication material and,
+       on POSIX systems, is written owner-only (mode ``0600``). An externally
+       started trainer must therefore run as the **same OS user** as the FL client
+       process, or the operator must explicitly re-permission the file for the
+       trainer's account. On Windows the file mode does not restrict NTFS ACLs;
+       protect the workspace directory via ACLs instead.
+
 Verification
 ============
 

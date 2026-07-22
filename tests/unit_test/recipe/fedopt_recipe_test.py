@@ -90,7 +90,27 @@ class TestPTFedOptRecipe:
 
         assert recipe.name == "test_fedopt"
         assert recipe.model == simple_model
-        assert recipe.job is not None
+        assert recipe._job is not None
+
+    def test_custom_aggregator_must_support_weight_diff(self, mock_file_system, base_recipe_params, simple_model):
+        from nvflare.apis.dxo import DataKind
+        from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
+        from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
+
+        aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
+
+        with pytest.raises(ValueError) as exc_info:
+            FedOptRecipe(
+                name="test_fedopt_aggregator_kind",
+                model=simple_model,
+                aggregator=aggregator,
+                **base_recipe_params,
+            )
+
+        message = str(exc_info.value)
+        assert "requires a custom aggregator configured with expected_data_kind=DataKind.WEIGHT_DIFF" in message
+        assert "omit it to use the built-in aggregator" in message
+        assert "params_transfer_type" not in message
 
     def test_enable_tensor_disk_offload_configures_controller(self, mock_file_system, base_recipe_params, simple_model):
         """Test PT FedOptRecipe passes tensor disk offload settings to ScatterAndGather."""
@@ -108,7 +128,7 @@ class TestPTFedOptRecipe:
         )
 
         assert recipe.enable_tensor_disk_offload is True
-        server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+        server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
         controller = server_app.app_config.workflows[0].controller
         assert isinstance(controller, ScatterAndGather)
         assert controller.enable_tensor_disk_offload is True
@@ -279,7 +299,7 @@ class TestPTFedOptRecipe:
 
             # Verify instantiate_class was called with correct arguments
             mock_instantiate.assert_called_once_with("mymodule.MyModel", {"input_size": 10})
-            assert recipe.job is not None
+            assert recipe._job is not None
 
     def test_model_none_raises_error(self, mock_file_system, base_recipe_params):
         """Test that model=None raises ValueError."""
@@ -311,7 +331,7 @@ class TestTFFedOptRecipe:
         )
 
         assert recipe.name == "test_tf_fedopt"
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_initial_ckpt_parameter_accepted(self, mock_file_system, base_recipe_params):
         """Test that initial_ckpt parameter is accepted (TF can load without model)."""

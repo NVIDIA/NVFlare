@@ -22,7 +22,7 @@ Run with the NVFlare simulator (single machine):
 import argparse
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, set_per_site_config
 
 
 def _parse_args():
@@ -102,10 +102,10 @@ def main() -> None:
         min_clients=args.num_clients,
         num_rounds=args.num_rounds,
         train_script="client.py",
-        per_site_config=per_site_config,
         launch_external_process=False,
         key_metric="val_accuracy",
     )
+    set_per_site_config(recipe, per_site_config)
 
     env = SimEnv(
         clients=client_names,

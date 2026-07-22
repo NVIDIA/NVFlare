@@ -37,11 +37,8 @@ from model import (
 )
 
 from nvflare.apis.dxo import DataKind
-from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
-from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
-from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import SimEnv, add_experiment_tracking
+from nvflare.recipe import SimEnv, add_experiment_tracking, add_final_global_evaluation
 
 
 def define_parser():
@@ -137,26 +134,6 @@ def parse_final_eval_clients(client_spec: str, n_clients: int):
     if not clients:
         raise ValueError("final_eval_clients must name at least one client or be 'all'")
     return clients
-
-
-def add_final_global_evaluation(recipe, participating_clients):
-    comp_ids = getattr(recipe.job, "comp_ids", {})
-    model_locator_id = comp_ids.get("locator_id", "")
-
-    if not model_locator_id:
-        persistor_id = comp_ids.get("persistor_id", "")
-        if not persistor_id:
-            raise ValueError("Final evaluation requires a PyTorch model persistor, but no persistor_id was found")
-        model_locator_id = recipe.job.to_server(PTFileModelLocator(pt_persistor_id=persistor_id))
-
-    recipe.job.to_server(ValidationJsonGenerator())
-    recipe.job.to_server(
-        CrossSiteModelEval(
-            model_locator_id=model_locator_id,
-            submit_model_task_name="",
-            participating_clients=participating_clients,
-        )
-    )
 
 
 def write_result_dir_sidecar(result_dir: str):

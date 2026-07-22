@@ -28,7 +28,7 @@ from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.fqcn import CELL_PIPE_ALIAS_PREFIX, FQCN, parse_cell_pipe_alias
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL
@@ -322,25 +322,32 @@ def _origin_matches_fqcn(origin: str, fqcn: str, channel: Optional[str] = None) 
     if origin == fqcn or FQCN.is_ancestor(fqcn, origin):
         return True
 
-    # CellPipe stream cells from older NVFlare versions use sibling names such
-    # as "site-1_<job-id>_active" and "site-1_<job-id>_passive", but their auth
-    # token is issued to the registered site FQCN ("site-1"). Current versions
-    # name these cells <site>.<token>.<mode>, which the descendant check above
-    # already covers. Treat only the legacy stream aliases as the owning site;
-    # normal server-command origins remain bound to the exact registered
-    # FQCN/descendant relationship above.
-    if channel != STREAM_CHANNEL or not origin.startswith(f"{fqcn}_"):
+    # CellPipe stream cells can use an alias leaf such as
+    # "cellpipe~alias~site-1~<job-id>~active" when connected through another
+    # cell, but their auth token is issued to the owning site FQCN. Treat only stream aliases
+    # under the same FQCN parent as the owning site; normal server-command
+    # origins remain bound to the exact registered FQCN/descendant relationship.
+    if channel != STREAM_CHANNEL:
         return False
 
-    runtime_id, sep, mode = origin[len(fqcn) + 1 :].rpartition("_")
-    if not sep or mode not in {"active", "passive"}:
+    origin_parent = FQCN.get_parent(origin)
+    fqcn_parent = FQCN.get_parent(fqcn)
+    if origin_parent != fqcn_parent:
         return False
 
-    # Deployed CellPipe aliases use the job UUID as the runtime id. Do not allow
-    # FQCN separators or alias separators inside this portion: otherwise a token
-    # for "site" could validate an origin such as "site_x_<job>_active" when
-    # "site_x" is also a valid client FQCN.
-    return bool(runtime_id) and "." not in runtime_id and "_" not in runtime_id
+    # The bare alias grammar is only valid for single-segment origins (the legacy
+    # flat CellPipe names used in 2.8 and earlier); at any depth the alias must carry the
+    # explicit cellpipe~alias~ marker, so an unmarked leaf
+    # can never be misread as an alias.
+    origin_leaf = FQCN.split(origin)[-1]
+    if origin_parent and not origin_leaf.startswith(CELL_PIPE_ALIAS_PREFIX):
+        return False
+
+    # parse_cell_pipe_alias returns exact "~"-delimited fields, so hyphens and
+    # underscores in an owner cannot be confused with field separators.
+    owner = FQCN.split(fqcn)[-1]
+    parsed = parse_cell_pipe_alias(origin_leaf)
+    return parsed is not None and parsed[0] == owner
 
 
 def validate_auth_headers(
@@ -348,6 +355,7 @@ def validate_auth_headers(
     token_verifier: TokenVerifier,
     logger,
     client_fqcn_resolver: Optional[Callable[[str, str], Optional[str]]] = None,
+    local_cell_fqcn: Optional[str] = None,
 ):
     """Validate auth headers from messages that go through the server.
 
@@ -357,6 +365,9 @@ def validate_auth_headers(
         client_fqcn_resolver: optional resolver used to bind a client token to its registered CellNet origin.
             Return None only when the token/name cannot be resolved; return MISSING_CLIENT_FQCN for a registered
             client with no stored origin so validation fails closed.
+        local_cell_fqcn: the FQCN of the cell that owns this auth filter. Used to bypass auth ONLY for a
+            cellnet ``bye`` that actually terminates at this cell (DESTINATION == local_cell_fqcn). When None,
+            the bye bypass never triggers and byes fall through to the normal auth check.
 
     Returns:
     """
@@ -370,6 +381,29 @@ def validate_auth_headers(
     if topic in [CellChannelTopic.Register, CellChannelTopic.Challenge] and channel == CellChannel.SERVER_MAIN:
         # skip: client not registered yet
         logger.debug(f"skip special message {topic=} {channel=}")
+        return None
+
+    # Cellnet protocol-level goodbye is broadcast by Cell.stop() with an empty
+    # Message() that carries no FL-level auth headers. Only bypass auth when the
+    # bye actually TERMINATES at this cell, i.e. DESTINATION == this cell's own
+    # FQCN. This is the true "direct-neighbor" property: the in-filter runs
+    # before CoreCell's forward decision (``if destination != my_fqcn: forward``),
+    # so a bye whose DESTINATION is this cell is handled locally by
+    # _peer_goodbye and never forwarded. A crafted bye that names some OTHER
+    # cell as DESTINATION (to have this cell forward it and evict that cell's
+    # upstream agent) has DESTINATION != local_cell_fqcn and falls through to the
+    # normal auth check. Comparing DESTINATION to a sender-controlled TO_CELL
+    # header would NOT give this guarantee, since both are attacker-controlled;
+    # only comparing against the receiver's own FQCN does. When local_cell_fqcn
+    # is unknown (None), the bypass never triggers (byes get normal auth).
+    destination = message.get_header(MessageHeaderKey.DESTINATION)
+    if (
+        topic == CellChannelTopic.Bye
+        and channel == CellChannel.CELLNET
+        and local_cell_fqcn is not None
+        and destination == local_cell_fqcn
+    ):
+        logger.debug(f"skip direct-neighbor cellnet bye {topic=} {channel=} {destination=}")
         return None
 
     client_name = message.get_header(CellMessageHeaderKeys.CLIENT_NAME)

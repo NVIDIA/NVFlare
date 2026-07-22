@@ -80,18 +80,16 @@ def _make_fl_ctx():
 
 
 def _call_scatter(ctrl, task_data, for_round=0, clients=("client1", "client2"), aggr="client2"):
-    """Call _scatter() with mocked get_config_prop."""
+    """Call _scatter() with resolved client lists."""
     fl_ctx = _make_fl_ctx()
+    ctrl.trainers = list(clients)
+    ctrl.aggrs = [aggr]
 
     def get_config_prop(key, default=None):
-        if key == Constant.TRAIN_CLIENTS:
-            return list(clients)
-        if key == Constant.AGGR_CLIENTS:
-            return [aggr]
         return default
 
     ctrl.get_config_prop = get_config_prop
-    ctrl._scatter(task_data, for_round, fl_ctx)
+    assert ctrl._scatter(task_data, for_round, fl_ctx)
     return fl_ctx
 
 
@@ -102,6 +100,42 @@ def _call_scatter(ctrl, task_data, for_round=0, clients=("client1", "client2"), 
 
 class TestScatterMsgRootTtl:
     """SwarmClientController._scatter() stamps MSG_ROOT_TTL when learn_task_timeout is set."""
+
+    def test_scatter_uses_resolved_default_client_lists(self):
+        """_scatter() must use the resolved lists from process_config(), not raw config props."""
+        ctrl = _make_swarm_controller(learn_task_timeout=None)
+        task_data = _make_task_data()
+        ctrl.trainers = ["client1", "client2"]
+        ctrl.aggrs = ["client2"]
+        ctrl.get_config_prop = MagicMock(return_value=None)
+
+        assert ctrl._scatter(task_data, 0, _make_fl_ctx())
+
+        assert task_data.get_header(Constant.AGGREGATOR) == "client2"
+        ctrl.set_learn_task.assert_called_once()
+        ctrl.send_learn_task.assert_called_once()
+
+    def test_scatter_returns_false_without_resolved_trainers(self):
+        """_scatter() should fail cleanly if no resolved training clients are available."""
+        ctrl = _make_swarm_controller(learn_task_timeout=None)
+        ctrl.trainers = []
+        ctrl.aggrs = ["client2"]
+
+        assert not ctrl._scatter(_make_task_data(), 0, _make_fl_ctx())
+        ctrl.log_error.assert_called_once()
+        ctrl.set_learn_task.assert_not_called()
+        ctrl.send_learn_task.assert_not_called()
+
+    def test_scatter_returns_false_without_resolved_aggregators(self):
+        """_scatter() should fail cleanly if no resolved aggregator candidates are available."""
+        ctrl = _make_swarm_controller(learn_task_timeout=None)
+        ctrl.trainers = ["client1", "client2"]
+        ctrl.aggrs = []
+
+        assert not ctrl._scatter(_make_task_data(), 0, _make_fl_ctx())
+        ctrl.log_error.assert_called_once()
+        ctrl.set_learn_task.assert_not_called()
+        ctrl.send_learn_task.assert_not_called()
 
     def test_learn_task_timeout_set_stamps_msg_root_ttl(self):
         """When learn_task_timeout is configured, MSG_ROOT_TTL = learn_task_timeout is set on task_data."""

@@ -12,17 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import tempfile
+from datetime import datetime
+from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
+from nvflare.apis.dxo import DataKind
+from nvflare.apis.job_def import JobMetaKey
+from nvflare.fuel.utils.secret_utils import PotentialSecretWarning, UnsupportedSecretRefWarning
+from nvflare.job_config.api import FedJob
+from nvflare.recipe import secret_ref
+from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import (
     extract_persistor_id,
     prepare_initial_ckpt,
     resolve_initial_ckpt,
+    set_recipe_meta,
     setup_custom_persistor,
+    validate_aggregator_data_kind,
     validate_ckpt,
 )
 
@@ -79,6 +91,65 @@ class TestValidateCkpt:
         """Relative path in subdirectory that doesn't exist should raise."""
         with pytest.raises(ValueError, match="does not exist locally"):
             validate_ckpt("checkpoints/non_existent.pt")
+
+
+class TestValidateAggregatorDataKind:
+    class DeclaredAggregator:
+        def __init__(self, expected_data_kind):
+            self.expected_data_kind = expected_data_kind
+
+    def test_single_entry_declared_kind_is_normalized(self):
+        aggregator = self.DeclaredAggregator({"model": "WEIGHT_DIFF"})
+
+        validate_aggregator_data_kind(
+            data_kind=None,
+            recipe_name="TestRecipe",
+            aggregator=aggregator,
+        )
+
+    @pytest.mark.parametrize("declared_kind", [{}, {"model": DataKind.WEIGHTS, "metrics": DataKind.METRICS}])
+    def test_non_single_declared_kind_has_targeted_error(self, declared_kind):
+        aggregator = self.DeclaredAggregator(declared_kind)
+
+        with pytest.raises(ValueError, match="recipe expects a single model-update DataKind"):
+            validate_aggregator_data_kind(
+                data_kind=DataKind.WEIGHTS,
+                recipe_name="TestRecipe",
+                aggregator=aggregator,
+            )
+
+    def test_declared_kind_can_come_from_assembler(self):
+        assembler = MagicMock()
+        assembler.get_expected_data_kind.return_value = DataKind.WEIGHT_DIFF
+        aggregator = MagicMock(spec=["assembler"])
+        aggregator.assembler = assembler
+
+        validate_aggregator_data_kind(
+            data_kind=DataKind.WEIGHT_DIFF,
+            recipe_name="TestRecipe",
+            aggregator=aggregator,
+        )
+
+    def test_required_data_kind_rejects_none(self):
+        with pytest.raises(ValueError, match="requires aggregator_data_kind"):
+            validate_aggregator_data_kind(
+                data_kind=None,
+                recipe_name="TestRecipe",
+                require_data_kind=True,
+            )
+
+    def test_optional_data_kind_allows_none(self):
+        validate_aggregator_data_kind(
+            data_kind=None,
+            recipe_name="TestRecipe",
+        )
+
+    def test_unsupported_data_kind_is_rejected(self):
+        with pytest.raises(ValueError, match="does not support aggregator_data_kind=DataKind.METRICS"):
+            validate_aggregator_data_kind(
+                data_kind=DataKind.METRICS,
+                recipe_name="TestRecipe",
+            )
 
 
 class TestPrepareInitialCkpt:
@@ -236,11 +307,216 @@ class TestRecipePackageExports:
 
         assert callable(add_cross_site_evaluation)
 
+    def test_add_final_global_evaluation_importable_from_recipe(self):
+        from nvflare.recipe import add_final_global_evaluation
+
+        assert callable(add_final_global_evaluation)
+
     def test_set_per_site_config_importable_from_recipe(self):
         """set_per_site_config must be importable from the top-level nvflare.recipe package."""
         from nvflare.recipe import set_per_site_config
 
         assert callable(set_per_site_config)
+
+    def test_set_per_site_config_delegates_validation_to_recipe(self):
+        from nvflare.recipe import set_per_site_config
+
+        recipe = MagicMock(spec=Recipe)
+        config = {"site-1": {}}
+
+        set_per_site_config(recipe, config)
+
+        recipe.set_per_site_config.assert_called_once_with(config)
+
+    def test_set_recipe_meta_importable_from_recipe(self):
+        """set_recipe_meta must be importable from the top-level nvflare.recipe package."""
+        from nvflare.recipe import set_recipe_meta
+
+        assert callable(set_recipe_meta)
+
+
+class TestRecipeMetaHelper:
+    """Test generic helper-provided recipe metadata."""
+
+    def _make_recipe(self, name, **fed_job_kwargs):
+        return Recipe(FedJob(name=name, **fed_job_kwargs))
+
+    def _export_meta(self, recipe, tmp_path):
+        recipe._job.export_job(str(tmp_path))
+        with open(tmp_path / recipe._job.name / "meta.json") as f:
+            return json.load(f)
+
+    def test_set_recipe_meta_sets_recognized_top_level_meta_props(self, tmp_path):
+        recipe = self._make_recipe("test_recipe_meta", min_clients=1, meta_props={"owner": "alice"})
+        recipe._job.to_server({"server_arg": True})
+
+        resource_spec = {
+            "site-1": {"num_of_gpus": 1, "mem_per_gpu_in_GiB": 4},
+            "site-2": {"num_of_gpus": 1, "mem_per_gpu_in_GiB": 2},
+        }
+        launcher_spec = {
+            "site-1": {"docker": {"image": "nvflare-site1:latest"}},
+            "site-2": {"docker": {"image": "nvflare-site2:latest"}},
+        }
+
+        set_recipe_meta(recipe, JobMetaKey.RESOURCE_SPEC, resource_spec)
+        set_recipe_meta(recipe, JobMetaKey.JOB_LAUNCHER_SPEC, launcher_spec)
+        set_recipe_meta(recipe, JobMetaKey.SCOPE, "private")
+        set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, {"team": "research"})
+
+        job_config = recipe._job.job
+        # Dedicated FedJobConfig fields are untouched by the helper.
+        assert job_config.min_clients == 1
+        assert job_config.mandatory_clients is None
+        assert job_config.resource_specs == {}
+        assert job_config.meta_props == {
+            "owner": "alice",
+            "resource_spec": resource_spec,
+            "launcher_spec": launcher_spec,
+            "scope": "private",
+            "custom_props": {"team": "research"},
+        }
+
+        exported_meta = self._export_meta(recipe, tmp_path)
+        assert exported_meta["min_clients"] == 1
+        assert exported_meta["resource_spec"] == resource_spec
+        assert exported_meta["launcher_spec"] == launcher_spec
+        assert exported_meta["scope"] == "private"
+        assert exported_meta["custom_props"] == {"team": "research"}
+        assert exported_meta["owner"] == "alice"
+
+    def test_set_recipe_meta_warns_for_secret_and_unsupported_ref(self):
+        recipe = self._make_recipe("test_recipe_meta_secret", min_clients=1)
+        with pytest.warns(PotentialSecretWarning, match="custom_props"):
+            set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, {"password": "hunter22x"})
+        with pytest.warns(UnsupportedSecretRefWarning, match="custom_props"):
+            set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, {"token": secret_ref("API_TOKEN")})
+
+    def test_set_recipe_meta_warns_and_overrides_registered_resource_specs(self, tmp_path):
+        recipe = self._make_recipe("test_recipe_meta_resource_conflict", min_clients=2)
+        recipe._job.job.add_resource_spec("base-site", {"num_of_gpus": 0})
+        recipe._job.to_server({"server_arg": True})
+
+        resource_spec = {"site-1": {"num_of_gpus": 1}}
+        with pytest.warns(UserWarning, match="overrides the per-site resource specs"):
+            set_recipe_meta(recipe, JobMetaKey.RESOURCE_SPEC, resource_spec)
+
+        assert recipe._job.job.meta_props["resource_spec"] == resource_spec
+        # The dedicated FedJobConfig field is never mutated by the helper.
+        assert recipe._job.job.resource_specs == {"base-site": {"num_of_gpus": 0}}
+
+        # meta_props is merged last, so the registered per-site spec is overridden.
+        exported_meta = self._export_meta(recipe, tmp_path)
+        assert exported_meta["resource_spec"] == resource_spec
+
+    def test_set_recipe_meta_replaces_different_value_from_existing_meta_props(self):
+        recipe = self._make_recipe("test_recipe_meta_props_conflict", min_clients=1, meta_props={"scope": "a"})
+        original_meta_props = recipe._job.job.meta_props
+        set_recipe_meta(recipe, JobMetaKey.SCOPE, "b")
+
+        assert recipe._job.job.meta_props is original_meta_props
+        assert recipe._job.job.meta_props["scope"] == "b"
+
+    def test_set_recipe_meta_allows_existing_meta_props_that_differ_from_generated_values(self):
+        recipe = self._make_recipe("test_recipe_meta_generated_conflict", min_clients=2, meta_props={"min_clients": 5})
+        set_recipe_meta(recipe, JobMetaKey.SCOPE, "private")
+
+        assert recipe._job.job.meta_props["min_clients"] == 5
+        assert recipe._job.job.meta_props["scope"] == "private"
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            JobMetaKey.DEPLOY_MAP,
+            JobMetaKey.JOB_NAME,
+            # Keys with dedicated FedJob constructor fields are rejected to keep a single
+            # source of truth (set them via FedJob(min_clients=..., mandatory_clients=...)).
+            JobMetaKey.MIN_CLIENTS,
+            JobMetaKey.MANDATORY_CLIENTS,
+            # STUDY is rejected because the server assigns it from the admin session's
+            # active study at job submission, silently overwriting a recipe-set value.
+            JobMetaKey.STUDY,
+        ],
+    )
+    def test_set_recipe_meta_rejects_non_user_settable_keys(self, key):
+        recipe = self._make_recipe("test_recipe_meta_restricted_key", min_clients=1)
+        with pytest.raises(ValueError, match=rf"{key.value}.*cannot be set through set_recipe_meta"):
+            set_recipe_meta(recipe, key, "value")
+
+    def test_set_recipe_meta_stores_caller_independent_copy(self):
+        recipe = self._make_recipe("test_recipe_meta_copy", min_clients=1)
+        launcher_spec = {"site-1": {"docker": {"image": "nvflare:latest"}}}
+        custom_props = {"clients": ["site-1"]}
+
+        set_recipe_meta(recipe, JobMetaKey.JOB_LAUNCHER_SPEC, launcher_spec)
+        set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, custom_props)
+        launcher_spec["site-1"]["docker"]["image"] = "changed"
+        custom_props["clients"].append("site-2")
+
+        assert recipe._job.job.meta_props["launcher_spec"] == {"site-1": {"docker": {"image": "nvflare:latest"}}}
+        assert recipe._job.job.meta_props["custom_props"] == {"clients": ["site-1"]}
+
+    def test_set_recipe_meta_accepts_nested_booleans(self):
+        recipe = self._make_recipe("test_recipe_meta_nested_bool", min_clients=1)
+        set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, {"enabled": True, "flags": [False, True]})
+
+        assert recipe._job.job.meta_props["custom_props"] == {"enabled": True, "flags": [False, True]}
+
+    def test_set_recipe_meta_normalizes_non_string_dict_keys(self):
+        recipe = self._make_recipe("test_recipe_meta_key_coercion", min_clients=1)
+        set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, {1: "a"})
+
+        # Stored value matches what meta.json will contain (keys coerced to strings),
+        # so in-process consumers and reloaded-meta consumers agree.
+        assert recipe._job.job.meta_props["custom_props"] == {"1": "a"}
+
+    def test_set_recipe_meta_requires_recipe_with_fed_job(self):
+        with pytest.raises(TypeError, match="recipe must be backed by a FedJob"):
+            set_recipe_meta(object(), JobMetaKey.SCOPE, "private")
+
+    def test_set_recipe_meta_rejects_wrong_typed_job_config(self):
+        from types import SimpleNamespace
+
+        recipe = SimpleNamespace(_job=SimpleNamespace(job=object()))
+        with pytest.raises(TypeError, match="recipe must be backed by a FedJob"):
+            set_recipe_meta(recipe, JobMetaKey.SCOPE, "private")
+
+    @pytest.mark.parametrize(
+        "key, value, error_type, match",
+        [
+            (1, "value", TypeError, "key must be a JobMetaKey"),
+            ("scope", "private", TypeError, "key must be a JobMetaKey"),
+            (JobMetaKey.SCOPE, True, TypeError, "must be a str"),
+            (JobMetaKey.SCOPE, None, TypeError, "must be a str"),
+            (JobMetaKey.SCOPE, {"site-1": "public"}, TypeError, "must be a str"),
+            (JobMetaKey.CUSTOM_PROPS, "not-a-dict", TypeError, "must be a dict"),
+            (JobMetaKey.CUSTOM_PROPS, [1, 2], TypeError, "must be a dict"),
+            (JobMetaKey.CUSTOM_PROPS, Decimal("1.5"), TypeError, "must be a dict"),
+            (JobMetaKey.RESOURCE_SPEC, "2gpus", TypeError, "resource_spec.*must be a dict"),
+            (JobMetaKey.RESOURCE_SPEC, {"site-1": "2gpus"}, TypeError, "site.*must be a dict"),
+            (JobMetaKey.RESOURCE_SPEC, {1: {"num_of_gpus": 1}}, TypeError, "must be a str"),
+            (JobMetaKey.JOB_LAUNCHER_SPEC, {"site-1": ["docker"]}, TypeError, "site.*must be a dict"),
+        ],
+    )
+    def test_set_recipe_meta_validates_key_and_value_shapes(self, key, value, error_type, match):
+        recipe = self._make_recipe("test_recipe_meta_validation", min_clients=1)
+        with pytest.raises(error_type, match=match):
+            set_recipe_meta(recipe, key, value)
+
+    @pytest.mark.parametrize(
+        "value, error_type",
+        [
+            ({"score": float("inf")}, ValueError),
+            ({"score": float("-inf")}, ValueError),
+            ({"score": float("nan")}, ValueError),
+            ({"key": object()}, TypeError),
+            ({"when": [datetime.now()]}, TypeError),
+        ],
+    )
+    def test_set_recipe_meta_rejects_non_json_serializable_values(self, value, error_type):
+        recipe = self._make_recipe("test_recipe_meta_json_validation", min_clients=1)
+        with pytest.raises(error_type, match="must be JSON-serializable"):
+            set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, value)
 
 
 class TestCrossSiteEvalIdempotency:
@@ -333,3 +609,392 @@ class TestCrossSiteEvalIdempotency:
         add_cross_site_evaluation(recipe, participating_clients=participating_clients)
 
         assert captured_kwargs["participating_clients"] == participating_clients
+
+
+class TestFinalGlobalEvaluation:
+    def _make_recipe(self, comp_ids=None, framework=None):
+        from nvflare.job_config.script_runner import FrameworkType
+
+        job = MagicMock()
+        job._deploy_map = {}
+        job.comp_ids = comp_ids
+        return SimpleNamespace(_job=job, framework=framework or FrameworkType.PYTORCH)
+
+    @pytest.fixture
+    def recording_cross_site_eval(self, monkeypatch):
+        from nvflare.app_common.workflows import cross_site_model_eval
+        from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+
+        captured_kwargs = []
+
+        class RecordingCrossSiteModelEval(CrossSiteModelEval):
+            def __init__(self, *args, **kwargs):
+                captured_kwargs.append(dict(kwargs))
+                super().__init__(*args, **kwargs)
+
+        monkeypatch.setattr(cross_site_model_eval, "CrossSiteModelEval", RecordingCrossSiteModelEval)
+        return captured_kwargs, RecordingCrossSiteModelEval
+
+    def test_default_validation_timeout_matches_controller(self):
+        import inspect
+
+        from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+        from nvflare.recipe import add_final_global_evaluation
+
+        helper_default = inspect.signature(add_final_global_evaluation).parameters["validation_timeout"].default
+        controller_default = inspect.signature(CrossSiteModelEval).parameters["validation_timeout"].default
+        assert helper_default == controller_default == 6000
+
+    def test_adds_locator_generator_and_final_eval_controller(self, recording_cross_site_eval):
+        from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
+        from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
+        from nvflare.recipe import add_final_global_evaluation
+
+        captured_kwargs, controller_type = recording_cross_site_eval
+        recipe = self._make_recipe({"persistor_id": "persistor"})
+        recipe._job.to_server.side_effect = ["final_model_locator", None, None]
+
+        add_final_global_evaluation(recipe, participating_clients=["site-1"], validation_timeout=42)
+
+        calls = recipe._job.to_server.call_args_list
+        assert isinstance(calls[0].args[0], PTFileModelLocator)
+        assert calls[0].kwargs == {"id": "final_model_locator"}
+        assert isinstance(calls[1].args[0], ValidationJsonGenerator)
+        controller = calls[2].args[0]
+        assert isinstance(controller, controller_type)
+        assert captured_kwargs == [
+            {
+                "model_locator_id": "final_model_locator",
+                "submit_model_task_name": "",
+                "validation_timeout": 42,
+                "participating_clients": ["site-1"],
+            }
+        ]
+        assert recipe._job.comp_ids["locator_id"] == "final_model_locator"
+        assert recipe._cse_added is True
+
+    def test_reuses_existing_model_locator(self, recording_cross_site_eval):
+        from nvflare.recipe import add_final_global_evaluation
+
+        captured_kwargs, controller_type = recording_cross_site_eval
+        recipe = self._make_recipe({"persistor_id": "persistor", "locator_id": "existing_locator"})
+
+        add_final_global_evaluation(recipe)
+
+        assert recipe._job.to_server.call_count == 2
+        controller = recipe._job.to_server.call_args_list[-1].args[0]
+        assert isinstance(controller, controller_type)
+        assert captured_kwargs == [
+            {
+                "model_locator_id": "existing_locator",
+                "submit_model_task_name": "",
+                "validation_timeout": 6000,
+                "participating_clients": None,
+            }
+        ]
+
+    @pytest.mark.parametrize(
+        "participating_clients, error_type",
+        [
+            ("site-1", TypeError),
+            (("site-1",), TypeError),
+            ([1], TypeError),
+            ([], ValueError),
+        ],
+    )
+    def test_validates_participating_clients(self, participating_clients, error_type):
+        from nvflare.recipe import add_final_global_evaluation
+
+        recipe = self._make_recipe({"persistor_id": "persistor"})
+
+        with pytest.raises(error_type, match="participating_clients must"):
+            add_final_global_evaluation(recipe, participating_clients=participating_clients)
+
+        recipe._job.to_server.assert_not_called()
+
+    def test_rejects_duplicate_configuration(self):
+        from nvflare.recipe import add_final_global_evaluation
+
+        recipe = self._make_recipe({"persistor_id": "persistor"})
+        recipe._cse_added = True
+
+        with pytest.raises(RuntimeError, match="already configured"):
+            add_final_global_evaluation(recipe)
+
+    def test_requires_pytorch_recipe(self):
+        from nvflare.job_config.script_runner import FrameworkType
+        from nvflare.recipe import add_final_global_evaluation
+
+        recipe = self._make_recipe({"persistor_id": "persistor"}, framework=FrameworkType.NUMPY)
+
+        with pytest.raises(ValueError, match="supports PyTorch"):
+            add_final_global_evaluation(recipe)
+
+    @pytest.mark.parametrize("comp_ids", [None, [], "persistor"])
+    def test_requires_component_id_mapping(self, comp_ids):
+        from nvflare.recipe import add_final_global_evaluation
+
+        recipe = self._make_recipe(comp_ids)
+
+        with pytest.raises(ValueError, match="tracks component IDs"):
+            add_final_global_evaluation(recipe)
+
+    def test_requires_model_persistor(self):
+        from nvflare.recipe import add_final_global_evaluation
+
+        recipe = self._make_recipe({})
+
+        with pytest.raises(ValueError, match="requires a PyTorch model persistor"):
+            add_final_global_evaluation(recipe)
+
+    def test_rejects_failed_model_locator_registration(self):
+        from nvflare.recipe import add_final_global_evaluation
+
+        recipe = self._make_recipe({"persistor_id": "persistor"})
+        recipe._job.to_server.return_value = None
+
+        with pytest.raises(RuntimeError, match="failed to register"):
+            add_final_global_evaluation(recipe)
+
+
+class TestAddExperimentTrackingClients:
+    """Test client targeting and per-site configs in add_experiment_tracking."""
+
+    @pytest.fixture
+    def dummy_tracking(self, monkeypatch):
+        """Register a dependency-free tracking type backed by types.SimpleNamespace."""
+        import nvflare.recipe.utils as utils_mod
+
+        monkeypatch.setitem(
+            utils_mod.TRACKING_REGISTRY,
+            "dummy",
+            # json is always importable; argparse.Namespace(**config) acts as the receiver
+            # (unlike types.SimpleNamespace it exposes __module__, so it also survives export).
+            {"package": "json", "receiver_module": "argparse", "receiver_class": "Namespace"},
+        )
+        return "dummy"
+
+    def _make_recipe(self, name="test_tracking_clients"):
+        return Recipe(FedJob(name=name, min_clients=1))
+
+    @pytest.fixture
+    def dummy_mlflow(self, monkeypatch):
+        """Replace MLflow with a dependency-free receiver while retaining MLflow defaults."""
+        import nvflare.recipe.utils as utils_mod
+
+        monkeypatch.setitem(
+            utils_mod.TRACKING_REGISTRY,
+            "mlflow",
+            {"package": "json", "receiver_module": "argparse", "receiver_class": "Namespace"},
+        )
+
+    def test_mlflow_defaults_derive_from_recipe_name(self, dummy_mlflow):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe("named_job")
+
+        add_experiment_tracking(recipe, "mlflow")
+
+        receiver = recipe._job._deploy_map["server"].app_config.components["receiver"]
+        assert receiver.kw_args == {
+            "experiment_name": "named_job-experiment",
+            "run_name": "named_job-Server",
+        }
+
+    def test_mlflow_client_tracking_can_omit_config(self, dummy_mlflow):
+        from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
+        from nvflare.apis.job_def import ALL_SITES
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe("client_job")
+
+        add_experiment_tracking(recipe, "mlflow", client_side=True, server_side=False)
+
+        receiver = recipe._job._deploy_map[ALL_SITES].app_config.components["client_receiver"]
+        assert receiver.kw_args == {
+            "experiment_name": "client_job-experiment",
+            "run_name": "client_job-Client",
+        }
+        assert receiver.events == [ANALYTIC_EVENT_TYPE]
+
+    def test_mlflow_defaults_preserve_explicit_values_and_input(self, dummy_mlflow):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe("named_job")
+        config = {"kw_args": {"experiment_name": "custom-experiment"}}
+
+        add_experiment_tracking(recipe, "mlflow", config)
+
+        receiver = recipe._job._deploy_map["server"].app_config.components["receiver"]
+        assert receiver.kw_args == {
+            "experiment_name": "custom-experiment",
+            "run_name": "named_job-Server",
+        }
+        assert config == {"kw_args": {"experiment_name": "custom-experiment"}}
+
+    def test_mlflow_both_sides_use_side_specific_default_run_names(self, dummy_mlflow):
+        from nvflare.apis.job_def import ALL_SITES
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe("both_sides")
+
+        add_experiment_tracking(recipe, "mlflow", client_side=True)
+
+        server_receiver = recipe._job._deploy_map["server"].app_config.components["receiver"]
+        client_receiver = recipe._job._deploy_map[ALL_SITES].app_config.components["client_receiver"]
+        assert server_receiver.kw_args["run_name"] == "both_sides-Server"
+        assert client_receiver.kw_args["run_name"] == "both_sides-Client"
+
+    def test_tracking_config_warns_for_secret_and_unsupported_ref(self, dummy_tracking):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        with pytest.warns(PotentialSecretWarning, match="tracking_config"):
+            add_experiment_tracking(recipe, dummy_tracking, {"password": "hunter22x"})
+
+        recipe = self._make_recipe()
+        with pytest.warns(UnsupportedSecretRefWarning, match="tracking_config"):
+            add_experiment_tracking(recipe, dummy_tracking, {"token": secret_ref("API_TOKEN")})
+
+    def test_client_side_tracking_specific_clients(self, dummy_tracking):
+        from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
+        from nvflare.apis.job_def import ALL_SITES
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        add_experiment_tracking(
+            recipe,
+            dummy_tracking,
+            {"tracking_uri": "file:///tmp/site-1/mlruns"},
+            client_side=True,
+            server_side=False,
+            clients=["site-1"],
+        )
+
+        receiver = recipe._job._deploy_map["site-1"].app_config.components["client_receiver"]
+        assert receiver.tracking_uri == "file:///tmp/site-1/mlruns"
+        # Local (non-federated) analytics events are configured by default.
+        assert receiver.events == [ANALYTIC_EVENT_TYPE]
+        assert ALL_SITES not in recipe._job._deploy_map
+
+    def test_client_side_tracking_per_site_configs(self, dummy_tracking):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        # Real recipes have per-site client apps (e.g. from per_site_config) before
+        # tracking is added; targeting only existing sites is enforced.
+        for site in ("site-1", "site-2"):
+            recipe._job.to({"site_arg": site}, site)
+        for site in ("site-1", "site-2"):
+            add_experiment_tracking(
+                recipe,
+                dummy_tracking,
+                {"tracking_uri": f"file:///tmp/{site}/mlruns"},
+                client_side=True,
+                server_side=False,
+                clients=[site],
+            )
+
+        for site in ("site-1", "site-2"):
+            receiver = recipe._job._deploy_map[site].app_config.components["client_receiver"]
+            assert receiver.tracking_uri == f"file:///tmp/{site}/mlruns"
+
+    def test_client_side_tracking_all_clients_by_default(self, dummy_tracking):
+        from nvflare.apis.job_def import ALL_SITES
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        add_experiment_tracking(recipe, dummy_tracking, {"tracking_uri": "u"}, client_side=True, server_side=False)
+
+        receiver = recipe._job._deploy_map[ALL_SITES].app_config.components["client_receiver"]
+        assert receiver.tracking_uri == "u"
+
+    def test_server_side_tracking_unaffected_by_clients_feature(self, dummy_tracking):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        add_experiment_tracking(recipe, dummy_tracking, {"tracking_uri": "u"})
+
+        components = recipe._job._deploy_map["server"].app_config.components
+        assert components["receiver"].tracking_uri == "u"
+        # Server receiver keeps federated (default) events.
+        assert not hasattr(components["receiver"], "events")
+
+    def test_clients_without_client_side_raises(self, dummy_tracking):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        with pytest.raises(ValueError, match="client_side=True"):
+            add_experiment_tracking(recipe, dummy_tracking, {"tracking_uri": "u"}, clients=["site-1"])
+
+    @pytest.mark.parametrize("bad_clients", ["site-1", [1, 2], [None]])
+    def test_clients_must_be_list_of_str(self, dummy_tracking, bad_clients):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        with pytest.raises(TypeError, match="clients must be a list of str"):
+            add_experiment_tracking(
+                recipe, dummy_tracking, {"tracking_uri": "u"}, client_side=True, clients=bad_clients
+            )
+
+    def test_clients_empty_list_raises(self, dummy_tracking):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        with pytest.raises(ValueError, match="must not be empty"):
+            add_experiment_tracking(recipe, dummy_tracking, {"tracking_uri": "u"}, client_side=True, clients=[])
+
+    def test_clients_targeting_rejects_unknown_site(self, dummy_tracking):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        recipe._job.to({"site_arg": 1}, "site-1")
+        recipe._job.to({"site_arg": 2}, "site-2")
+
+        with pytest.raises(ValueError, match="unknown client site"):
+            add_experiment_tracking(
+                recipe,
+                dummy_tracking,
+                {"tracking_uri": "u"},
+                client_side=True,
+                server_side=False,
+                clients=["site-3"],
+            )
+
+    def test_clients_targeting_rejects_all_sites_topology(self, dummy_tracking):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        # Default recipe topology: one client app for all clients.
+        recipe._job.to_clients({"executor_standin": True})
+
+        with pytest.raises(ValueError, match="applies to all clients"):
+            add_experiment_tracking(
+                recipe,
+                dummy_tracking,
+                {"tracking_uri": "u"},
+                client_side=True,
+                server_side=False,
+                clients=["site-1"],
+            )
+
+    def test_per_site_client_receiver_survives_export(self, dummy_tracking, tmp_path):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe("test_tracking_export")
+        recipe._job.to_server({"server_arg": True})
+        add_experiment_tracking(
+            recipe,
+            dummy_tracking,
+            {"tracking_uri": "file:///tmp/site-1/mlruns"},
+            client_side=True,
+            server_side=False,
+            clients=["site-1"],
+        )
+
+        recipe._job.export_job(str(tmp_path))
+        with open(tmp_path / "test_tracking_export" / "app_site-1" / "config" / "config_fed_client.json") as f:
+            client_cfg = json.load(f)
+
+        entry = next(c for c in client_cfg["components"] if c["id"] == "client_receiver")
+        assert entry["path"].endswith("Namespace")

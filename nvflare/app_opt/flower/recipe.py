@@ -21,6 +21,7 @@ from packaging.version import InvalidVersion, Version
 from nvflare.app_common.tie.defs import Constant
 from nvflare.client.api import ClientAPIType
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
+from nvflare.fuel.utils.secret_utils import warn_on_potential_secrets, warn_on_unsupported_secret_refs
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.recipe.spec import Recipe
 
@@ -59,6 +60,10 @@ def _create_flower_job(**kwargs):
 
 class FlowerRecipe(Recipe):
     """Recipe class for Flower federated learning using NVFlare.
+
+    Recipe parameters become part of the generated job definition and must never
+    contain actual secret values. Read secrets from the site environment or mounted files in
+    Flower code; ``extra_env`` and ``run_config`` do not resolve secret references.
 
     This class provides a high-level interface for configuring Flower
     federated learning jobs. It wraps the FlowerJob and provides
@@ -137,6 +142,13 @@ class FlowerRecipe(Recipe):
             check_object_type("run_config", run_config, dict)
         if extra_env is not None:
             check_object_type("extra_env", extra_env, dict)
+
+        if extra_env:
+            warn_on_potential_secrets(extra_env, context="recipe parameter 'extra_env'")
+            warn_on_unsupported_secret_refs(extra_env, context="recipe parameter 'extra_env'")
+        if run_config:
+            warn_on_potential_secrets(run_config, context="recipe parameter 'run_config'")
+            warn_on_unsupported_secret_refs(run_config, context="recipe parameter 'run_config'")
 
         # needs to init client api to stream metrics
         # only external client api works with the current flower integration

@@ -24,7 +24,7 @@ from nvflare.app_opt.pt.quantization.dequantizer import ModelDequantizer
 from nvflare.app_opt.pt.quantization.quantizer import ModelQuantizer
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.private.fed.utils.fed_utils import split_gpus
-from nvflare.recipe import ProdEnv, SimEnv, add_experiment_tracking
+from nvflare.recipe import ProdEnv, SimEnv, add_experiment_tracking, set_per_site_config
 
 
 def define_parser():
@@ -176,9 +176,9 @@ def main():
         train_script="client.py",
         server_expected_format=server_expected_format,
         launch_external_process=True,  # Always use external process for LLM training
-        per_site_config=per_site_config,
         key_metric="neg_eval_loss",
     )
+    set_per_site_config(recipe, per_site_config)
 
     # Add client params to reduce timeout failures for longer LLM runs
     recipe.add_client_config({"get_task_timeout": 300, "submit_task_result_timeout": 300})

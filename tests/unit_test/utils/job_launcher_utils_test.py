@@ -16,11 +16,55 @@ import importlib.util
 import logging
 import sys
 
+import pytest
+
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv
 from nvflare.utils.job_launcher_utils import (
     _validate_launcher_spec,
+    generate_client_command,
+    generate_server_command,
+    get_credential_env,
     get_job_launcher_spec,
     refresh_custom_dir_import_path,
 )
+
+_CREDENTIAL_JOB_ARGS = {
+    JobProcessArgs.AUTH_TOKEN: ("-t", "secret-token"),
+    JobProcessArgs.TOKEN_SIGNATURE: ("-ts", "secret-signature"),
+    JobProcessArgs.SSID: ("-d", "secret-ssid"),
+}
+
+
+class TestCredentialEnv:
+    def test_maps_credentials_to_env_names(self):
+        assert get_credential_env(_CREDENTIAL_JOB_ARGS) == {
+            JobProcessEnv.AUTH_TOKEN: "secret-token",
+            JobProcessEnv.TOKEN_SIGNATURE: "secret-signature",
+            JobProcessEnv.SSID: "secret-ssid",
+        }
+
+    def test_missing_credentials_skipped_and_values_stringified(self):
+        assert get_credential_env({JobProcessArgs.SSID: ("-d", 12345)}) == {JobProcessEnv.SSID: "12345"}
+
+    def test_empty_and_none_credential_values_skipped(self):
+        # empty creds must stay missing so the job process parser fails at startup
+        job_args = {JobProcessArgs.AUTH_TOKEN: ("-t", ""), JobProcessArgs.SSID: ("-d", None)}
+        assert get_credential_env(job_args) == {}
+
+    @pytest.mark.parametrize("generate", [generate_client_command, generate_server_command])
+    def test_generated_commands_exclude_credential_values(self, generate):
+        fl_ctx = FLContext()
+        job_args = {
+            JobProcessArgs.EXE_MODULE: ("-m", "some.module"),
+            JobProcessArgs.WORKSPACE: ("-w", "/ws"),
+            **_CREDENTIAL_JOB_ARGS,
+        }
+        fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args, private=True, sticky=False)
+        command = generate(fl_ctx)
+        assert "secret-" not in command
+        assert "/ws" in command
 
 
 class TestGetJobLauncherSpec:

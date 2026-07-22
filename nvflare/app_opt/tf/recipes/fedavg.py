@@ -25,6 +25,10 @@ from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 class FedAvgRecipe(UnifiedFedAvgRecipe):
     """A recipe for implementing Federated Averaging (FedAvg) for TensorFlow.
 
+    Recipe parameters, including ``train_args`` and nested ``per_site_config`` values,
+    must never contain actual secrets. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
+
     FedAvg is a fundamental federated learning algorithm that aggregates model updates
     from multiple clients by computing a weighted average based on the amount of local
     training data. This recipe sets up a complete federated learning workflow with
@@ -51,18 +55,22 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         train_args: Command line arguments to pass to the training script.
         aggregator: Aggregator for combining client updates. If None,
             uses InTimeAccumulateWeightedAggregator with aggregator_data_kind.
-        aggregator_data_kind: Data kind to use for the aggregator. Defaults to DataKind.WEIGHTS.
+        aggregator_data_kind: Data kind to use for the aggregator. When a custom aggregator
+            declares expected_data_kind, the declaration must match. Defaults to DataKind.WEIGHTS.
         launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
         command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
         framework (str): The framework to use for the training script. Defaults to FrameworkType.TENSORFLOW.
         server_expected_format (str): What format to exchange the parameters between server and client.
-        params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
-            DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+        params_transfer_type (str): How to transfer the parameters. DIFF enables automatic difference
+            calculation for full-model client results. A client's FLModel.params_type remains authoritative.
+            Defaults to TransferType.FULL.
         model_persistor: Custom model persistor. If None, TFModelPersistor will be used.
-        per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
-            site names to configuration dicts. Each config dict can contain optional overrides:
+        per_site_config: Deprecated constructor form. New code should call
+            ``set_per_site_config(recipe, config)`` immediately after construction. Each config dict can
+            contain optional overrides:
             train_script, train_args, launch_external_process, command, framework,
             server_expected_format, params_transfer_type, launch_once, shutdown_timeout.
+            Nested values become part of the generated job definition and must not contain secrets.
             If not provided, the same configuration will be used for all clients.
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
@@ -70,7 +78,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             Only used if `launch_external_process` is True. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
             key_metric selects the metric used for global model selection by the IntimeModelSelector.
-            Defaults to "accuracy".
+            Higher values must indicate a better model; for lower-is-better metrics such as a loss,
+            report a negated value from the client (e.g., "neg_loss"). Defaults to "accuracy".
         best_model_filename: Filename for saving the best model. Accepted for API compatibility.
             The default TensorFlow persistor does not currently create a separate best-model artifact.
         save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.
