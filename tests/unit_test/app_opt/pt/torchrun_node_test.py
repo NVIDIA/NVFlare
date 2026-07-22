@@ -23,7 +23,7 @@ _GROUP_ENV = {
     "NVFL_NODE_RANK": "1",
     "NVFL_MASTER_ADDR": "node-0",
     "NVFL_MASTER_PORT": "29512",
-    "SLURM_JOB_ID": "4242",
+    "NVFL_RUN_ID": "4242",
 }
 
 

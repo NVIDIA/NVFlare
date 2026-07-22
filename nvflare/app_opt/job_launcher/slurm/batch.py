@@ -23,6 +23,7 @@ from nvflare.app_common.multinode import ENV_MASTER_ADDR as MULTINODE_ENV_MASTER
 from nvflare.app_common.multinode import ENV_MASTER_PORT as MULTINODE_ENV_MASTER_PORT
 from nvflare.app_common.multinode import ENV_NNODES as MULTINODE_ENV_NNODES
 from nvflare.app_common.multinode import ENV_NODE_RANK as MULTINODE_ENV_NODE_RANK
+from nvflare.app_common.multinode import ENV_RUN_ID as MULTINODE_ENV_RUN_ID
 from nvflare.app_opt.job_launcher.slurm.config import (
     BATCH_FILE,
     MULTINODE_PORT_BASE,
@@ -111,7 +112,12 @@ def _apptainer_parts(plan: LaunchPlan, config: SlurmConfig, worker_words: list[s
     return _apptainer_environment(plan, config), _apptainer_exec_words(plan, plan.run_dir) + worker_words
 
 
-_MULTINODE_BATCH_ENV = (MULTINODE_ENV_NNODES, MULTINODE_ENV_MASTER_ADDR, MULTINODE_ENV_MASTER_PORT)
+_MULTINODE_BATCH_ENV = (
+    MULTINODE_ENV_NNODES,
+    MULTINODE_ENV_MASTER_ADDR,
+    MULTINODE_ENV_MASTER_PORT,
+    MULTINODE_ENV_RUN_ID,
+)
 # Bootstrap credentials are for the rank-0 CJ only (JobProcessEnv contract); the
 # non-zero branch of node.sh unsets them before executing user code.
 _CREDENTIAL_ENV = (JobProcessEnv.AUTH_TOKEN, JobProcessEnv.TOKEN_SIGNATURE, JobProcessEnv.SSID)
@@ -138,6 +144,7 @@ def _multinode_parts(plan: LaunchPlan, job_dir: str, config: SlurmConfig) -> tup
         # The batch script always executes on the first node of the allocation.
         f'export {MULTINODE_ENV_MASTER_ADDR}="${{SLURMD_NODENAME:?}}"',
         f'export {MULTINODE_ENV_MASTER_PORT}="$(({MULTINODE_PORT_BASE} + SLURM_JOB_ID % {MULTINODE_PORT_SPAN}))"',
+        f'export {MULTINODE_ENV_RUN_ID}="${{SLURM_JOB_ID:?}}"',
     ]
     node_script = shlex.quote(os.path.join(job_dir, NODE_FILE))
     if plan.sandbox == "apptainer":

@@ -34,10 +34,11 @@ def test_full_contract_is_parsed_and_validated():
             "NVFL_NODE_RANK": "3",
             "NVFL_MASTER_ADDR": "node-0",
             "NVFL_MASTER_PORT": "29512",
+            "NVFL_RUN_ID": "run-7",
         }
     )
 
-    assert group == NodeGroup(nnodes=4, node_rank=3, master_addr="node-0", master_port=29512)
+    assert group == NodeGroup(nnodes=4, node_rank=3, master_addr="node-0", master_port=29512, run_id="run-7")
     assert group.is_multi_node
 
 

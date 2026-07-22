@@ -207,6 +207,7 @@ and delegates to one `srun --nodes=N --ntasks=N --ntasks-per-node=1` invocation 
 | `NVFL_NODE_RANK` | `SLURM_NODEID`, exported per task by `node.sh` |
 | `NVFL_MASTER_ADDR` | `SLURMD_NODENAME` of the batch node, which is node rank 0 |
 | `NVFL_MASTER_PORT` | `29400 + SLURM_JOB_ID % 1000`, deterministic per allocation |
+| `NVFL_RUN_ID` | `SLURM_JOB_ID`; a per-run token suitable as a framework rendezvous ID |
 
 Distinct concurrent jobs that share a node can map to the same port; a collision surfaces as a rendezvous bind
 failure on rank 0. Sites that co-locate allocations with other network services should manage this through

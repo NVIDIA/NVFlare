@@ -168,6 +168,7 @@ def test_multinode_batch_exports_node_group_contract_and_delegates_to_srun(tmp_p
     assert 'export NVFL_NNODES="${SLURM_JOB_NUM_NODES:?}"' in script
     assert 'export NVFL_MASTER_ADDR="${SLURMD_NODENAME:?}"' in script
     assert 'export NVFL_MASTER_PORT="$((29400 + SLURM_JOB_ID % 1000))"' in script
+    assert 'export NVFL_RUN_ID="${SLURM_JOB_ID:?}"' in script
     assert "NVFL_SRUN=srun" in script
     command_line = next(line for line in script.splitlines() if line.startswith("_nvfl_command="))
     assert "--nodes=2" in command_line
@@ -211,7 +212,7 @@ def test_pyxis_node_group_fans_out_containers_through_one_srun(tmp_path):
     node = _render_node_script(plan, _config(tmp_path, "pyxis"))
 
     env_line = next(line for line in batch.splitlines() if line.startswith("_nvfl_container_env="))
-    for name in ("NVFL_NNODES", "NVFL_MASTER_ADDR", "NVFL_MASTER_PORT"):
+    for name in ("NVFL_NNODES", "NVFL_MASTER_ADDR", "NVFL_MASTER_PORT", "NVFL_RUN_ID"):
         assert name in env_line
     batch_command = next(line for line in batch.splitlines() if line.startswith("_nvfl_command="))
     assert "--nodes=2" in batch_command

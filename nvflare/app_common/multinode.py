@@ -28,6 +28,7 @@ ENV_NNODES = "NVFL_NNODES"
 ENV_NODE_RANK = "NVFL_NODE_RANK"
 ENV_MASTER_ADDR = "NVFL_MASTER_ADDR"
 ENV_MASTER_PORT = "NVFL_MASTER_PORT"
+ENV_RUN_ID = "NVFL_RUN_ID"
 
 DEFAULT_MASTER_PORT = 29400
 
@@ -60,6 +61,7 @@ class NodeGroup:
     node_rank: int
     master_addr: Optional[str]
     master_port: int
+    run_id: Optional[str] = None
 
     @property
     def is_multi_node(self) -> bool:
@@ -78,7 +80,13 @@ class NodeGroup:
         if nnodes > 1 and not master_addr:
             raise NodeGroupError(f"{ENV_MASTER_ADDR} must be set for a multi-node group")
         master_port = _positive_int(environ.get(ENV_MASTER_PORT), ENV_MASTER_PORT, default_master_port)
-        return cls(nnodes=nnodes, node_rank=node_rank, master_addr=master_addr, master_port=master_port)
+        return cls(
+            nnodes=nnodes,
+            node_rank=node_rank,
+            master_addr=master_addr,
+            master_port=master_port,
+            run_id=environ.get(ENV_RUN_ID) or None,
+        )
 
 
 def split_training_argv(argv: Sequence[str]) -> tuple:

@@ -58,7 +58,7 @@ def build_torchrun_argv(argv: Sequence[str], environ: dict) -> list:
     if not group.is_multi_node:
         result.append("--standalone")
     else:
-        rdzv_id = environ.get("SLURM_JOB_ID") or "nvflare"
+        rdzv_id = group.run_id or "nvflare"
         result.extend(
             [
                 f"--nnodes={group.nnodes}",
