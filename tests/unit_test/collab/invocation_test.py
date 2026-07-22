@@ -12,10 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from unittest.mock import MagicMock
+
 from nvflare.apis.signal import Signal
 from nvflare.collab.api._invocation import InvocationDispatcher
 from nvflare.collab.api.call_opt import CallOption
 from nvflare.collab.api.context import Context
+from nvflare.collab.api.group_call_context import GroupCallContext, ResultWaiter
 
 
 class _GroupOnlyDispatcher(InvocationDispatcher):
@@ -59,3 +62,23 @@ def test_call_target_returns_immediately_when_no_result_is_expected():
     )
 
     assert result is None
+
+
+def test_group_send_completion_is_idempotent():
+    callback = MagicMock()
+    gcc = GroupCallContext(
+        app=MagicMock(),
+        target_name="site-1",
+        call_opt=CallOption(),
+        func_name="train",
+        process_cb=None,
+        cb_kwargs={},
+        context=MagicMock(),
+        waiter=ResultWaiter(["site-1"]),
+    )
+    gcc.set_send_complete_cb(callback, target="site-1")
+
+    gcc.send_completed()
+    gcc.send_completed()
+
+    callback.assert_called_once_with(target="site-1")

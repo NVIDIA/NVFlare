@@ -125,6 +125,12 @@ class CellDispatcher(InvocationDispatcher):
             gcc.set_result(result)
         except Exception as ex:
             gcc.set_exception(ex)
+        finally:
+            # Cell.send_request normally invokes the completion callback as
+            # soon as transmission finishes. Guarantee completion here too for
+            # pre-transmission failures and fire-and-forget calls. The context
+            # makes this idempotent when CellNet already invoked the callback.
+            gcc.send_completed()
 
     def _msg_sent(self, gcc: GroupCallContext):
         gcc.send_completed()

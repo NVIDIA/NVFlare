@@ -1,0 +1,82 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from unittest.mock import MagicMock
+
+import pytest
+
+from nvflare.collab.api.call_opt import CallOption
+from nvflare.collab.api.group_call_context import GroupCallContext, ResultWaiter
+from nvflare.collab.runtime.flare.cell_dispatcher import CellDispatcher
+
+
+@pytest.mark.parametrize("error", [None, ValueError("cannot encode")])
+def test_group_call_always_completes_send_slot(error):
+    dispatcher = CellDispatcher(
+        manager=MagicMock(),
+        engine=MagicMock(),
+        caller="server",
+        cell=MagicMock(),
+        target_fqcn="site-1/job",
+        abort_signal=MagicMock(),
+        thread_executor=MagicMock(),
+    )
+    result = object()
+    if error:
+        dispatcher._call_target = MagicMock(side_effect=error)
+    else:
+        dispatcher._call_target = MagicMock(return_value=result)
+    gcc = MagicMock()
+
+    dispatcher._run_func(gcc, "train", (), {})
+
+    gcc.send_completed.assert_called_once_with()
+    if error:
+        gcc.set_exception.assert_called_once_with(error)
+        gcc.set_result.assert_not_called()
+    else:
+        gcc.set_result.assert_called_once_with(result)
+        gcc.set_exception.assert_not_called()
+
+
+def test_pretransmission_error_releases_bounded_parallel_slot():
+    dispatcher = CellDispatcher(
+        manager=MagicMock(),
+        engine=MagicMock(),
+        caller="server",
+        cell=MagicMock(),
+        target_fqcn="site-1/job",
+        abort_signal=MagicMock(),
+        thread_executor=MagicMock(),
+    )
+    error = ValueError("cannot encode")
+    dispatcher._call_target = MagicMock(side_effect=error)
+    waiter = ResultWaiter(["site-1"])
+    waiter.inc_call_count()
+    gcc = GroupCallContext(
+        app=MagicMock(),
+        target_name="site-1",
+        call_opt=CallOption(parallel=1),
+        func_name="train",
+        process_cb=None,
+        cb_kwargs={},
+        context=MagicMock(),
+        waiter=waiter,
+    )
+    gcc.set_send_complete_cb(waiter.dec_call_count)
+
+    dispatcher._run_func(gcc, "train", (), {})
+
+    assert waiter.standing_call_count == 0
+    assert next(iter(waiter.results)) == ("site-1", error)

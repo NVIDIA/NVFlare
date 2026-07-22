@@ -18,6 +18,7 @@ import pytest
 
 from nvflare.collab import CollabRecipe, collab
 from nvflare.collab.api import ClientApp, ModuleWrapper, ServerApp
+from nvflare.collab.api.constants import PER_SITE_CONFIG_PROP
 from nvflare.collab.runtime.local.runner import InProcessRunner
 
 
@@ -175,3 +176,21 @@ def test_recipe_accepts_modules_for_all_collab_objects():
     assert isinstance(recipe.client, ModuleWrapper)
     assert isinstance(recipe.server_objects["extra"], ModuleWrapper)
     assert isinstance(recipe.client_objects["extra"], ModuleWrapper)
+
+
+def test_recipe_public_per_site_config_reaches_executor_props():
+    module = _make_module("per_site_config_module")
+    recipe = CollabRecipe(job_name="per_site_config_test", server=module, client=module)
+    config = {
+        "site-1": {"learning_rate": 0.01},
+        "site-2": {"learning_rate": 0.02},
+    }
+
+    recipe.set_per_site_config(config)
+    config["site-1"]["learning_rate"] = 1.0
+
+    props = recipe._client_props_with_per_site_config()
+    assert props[PER_SITE_CONFIG_PROP] == {
+        "site-1": {"learning_rate": 0.01},
+        "site-2": {"learning_rate": 0.02},
+    }
