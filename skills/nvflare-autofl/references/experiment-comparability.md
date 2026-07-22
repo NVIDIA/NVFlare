@@ -41,6 +41,12 @@ When a job is noisy, re-run the unmodified baseline a few times to measure the
 observed run-to-run spread, and treat candidate score differences within that
 spread as noise rather than real improvement when reporting results.
 
+Host environment drift is not a variance source: simulator child processes
+receive a sanitized environment built from a fixed runtime allowlist plus the
+variable names declared in `environment.simulator_env_passthrough` (see the
+[job import contract](job-import-contract.md)). Jobs that need variables such
+as `DATASET_DIR` must declare them there explicitly.
+
 ## Data Distribution Experiments
 
 When the user asks to compare IID and heterogeneous data splits, define the split
