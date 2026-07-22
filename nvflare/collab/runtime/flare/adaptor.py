@@ -41,7 +41,8 @@ class CollabAdaptor:
 
     def process_config(self, app: App, fl_ctx: FLContext):
         app.update_props(self.props)
-        app.set_resource_dirs(self.resource_dirs)
+        if self.resource_dirs is not None:
+            app.set_resource_dirs(self.resource_dirs)
 
         engine = fl_ctx.get_engine()
         if self.publish_obj_ids:
