@@ -7,9 +7,13 @@ data distribution, synthetic data, and site heterogeneity requests.
 
 The per-run ledger score, extracted with the objective's
 `metric_extraction_order`, is the canonical selection surface for baseline,
-keep/discard, and best-candidate comparisons. Cross-site server-final
-global-model scores from `cross_val_results.json` are diagnostic unless the
-user explicitly requests selection on them.
+keep/discard, and best-candidate comparisons. When extraction falls back to
+`cross_val_results.json`, the score is the unweighted mean of the server
+global model's metric across the evaluating sites, preferring final-checkpoint
+entries over `best_`-checkpoint entries; per-site sample counts are not
+recorded in the payload, so a weighted mean is not computable. Cross-site
+server-final global-model scores are diagnostic unless the user explicitly
+requests selection on them.
 
 ## Iterative Reruns
 
