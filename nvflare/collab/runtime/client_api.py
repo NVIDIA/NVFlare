@@ -181,6 +181,10 @@ class CollabClientAPI(APISpec):
         self._current_model = fl_model
         self._current_task_name = task_name
         self._result = None
+        # receive-before-send is a per-task invariant. send(clear_cache=False)
+        # may preserve the cached model, but must not carry this guard into the
+        # next execute() call.
+        self._receive_called = False
 
         # Scope module-level Client API calls to this embedded API instance.
         with use_api(self):

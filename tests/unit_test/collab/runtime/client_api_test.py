@@ -89,6 +89,28 @@ def test_training_function_flare_log_forwards_to_runtime_handler():
     handler.assert_called_once_with("loss", 0.5, AnalyticsDataType.SCALAR, global_step=3)
 
 
+def test_execute_resets_receive_before_send_guard_between_rounds():
+    api = CollabClientAPI()
+    round_number = 0
+
+    def train():
+        nonlocal round_number
+        round_number += 1
+        flare.init()
+        if round_number == 1:
+            model = flare.receive()
+            flare.send(model, clear_cache=False)
+        else:
+            flare.send(FLModel(params={"round": round_number}), clear_cache=False)
+
+    api.set_training_func(train)
+    first_result = api.execute(FLModel(params={"round": 1}))
+
+    assert first_result.params == {"round": 1}
+    with pytest.raises(RuntimeError, match='"receive" must be called before "send"'):
+        api.execute(FLModel(params={"round": 2}))
+
+
 def test_executor_configures_collab_client_api_logging():
     api = CollabClientAPI()
     app = ClientApp(api)
