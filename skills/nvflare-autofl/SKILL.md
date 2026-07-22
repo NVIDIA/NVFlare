@@ -80,8 +80,10 @@ long-running behavior read [continuous campaigns](references/continuous-campaign
 read [experiment comparability](references/experiment-comparability.md).
 
 The ledger score extracted per the objective `metric_extraction_order` is the canonical selection surface for
-keep/discard and best-candidate decisions. Cross-site server-final scores are diagnostic unless the user explicitly
-requests selection on them.
+keep/discard and best-candidate decisions. The `cross_val_results.json` fallback score is the unweighted mean of the
+server global model's metric across evaluating sites (final checkpoint preferred over `best_`; per-site weights are
+not recorded in the payload). Cross-site server-final scores are diagnostic unless the user explicitly requests
+selection on them.
 
 Read `autofl.yaml` and show the user a concise campaign summary:
 
