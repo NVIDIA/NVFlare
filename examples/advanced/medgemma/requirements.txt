@@ -1,6 +1,6 @@
 nvflare~=2.7.2rc
 torch==2.12.0
-torchvision==0.23.0
+torchvision==0.27.0
 accelerate>=1.7.0
 bitsandbytes>=0.46.0
 datasets>=2.18.0
