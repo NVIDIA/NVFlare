@@ -783,6 +783,23 @@ def test_import_classifies_hello_world_release_gate_examples(example, expected_s
     assert config["job"]["recipe"] == expected_recipe
 
 
+def test_import_selects_hello_lightning_scaffold_mode():
+    repo_root = Path(__file__).parents[3]
+    example_root = repo_root / "examples" / "hello-world" / "hello-lightning"
+
+    config = import_job_to_autofl_config(
+        str(example_root / "job.py"),
+        workspace_root=str(example_root),
+        metric="accuracy",
+        max_candidates=12,
+        job_args=["--algorithm", "scaffold"],
+    )
+
+    assert config["import"]["support"]["status"] == "supported"
+    assert config["job"]["recipe"] == "ScaffoldRecipe"
+    assert config["job"]["train_script"] == "client.py"
+
+
 def test_import_selects_hello_numpy_cross_val_training_mode():
     repo_root = Path(__file__).parents[3]
     example_root = repo_root / "examples" / "hello-world" / "hello-numpy-cross-val"

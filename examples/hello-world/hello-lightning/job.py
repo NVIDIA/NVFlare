@@ -18,6 +18,7 @@ import torchvision.datasets as datasets
 from model import LitNet
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
 from nvflare.recipe.sim_env import SimEnv
 
 DATASET_ROOT = "/tmp/nvflare/data"
@@ -28,6 +29,7 @@ def define_parser():
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=2)
     parser.add_argument("--batch_size", type=int, default=24)
+    parser.add_argument("--algorithm", choices=("fedavg", "scaffold"), default="fedavg")
 
     return parser.parse_args()
 
@@ -43,17 +45,27 @@ def main():
     n_clients = args.n_clients
     num_rounds = args.num_rounds
     batch_size = args.batch_size
-
-    recipe = FedAvgRecipe(
-        min_clients=n_clients,
-        num_rounds=num_rounds,
-        # Model can be specified as class instance or dict config:
-        model=LitNet(),
-        # Alternative: model={"class_path": "model.LitNet", "args": {}},
-        # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
-        train_script="client.py",
-        train_args=f"--batch_size {batch_size}",
-    )
+    if args.algorithm == "fedavg":
+        recipe = FedAvgRecipe(
+            name="hello-lightning-fedavg",
+            min_clients=n_clients,
+            num_rounds=num_rounds,
+            # Model can be specified as class instance or dict config:
+            model=LitNet(),
+            # Alternative: model={"class_path": "model.LitNet", "args": {}},
+            # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
+            train_script="client.py",
+            train_args=f"--batch_size {batch_size}",
+        )
+    else:
+        recipe = ScaffoldRecipe(
+            name="hello-lightning-scaffold",
+            min_clients=n_clients,
+            num_rounds=num_rounds,
+            model=LitNet(),
+            train_script="client.py",
+            train_args=f"--batch_size {batch_size}",
+        )
 
     env = SimEnv(num_clients=n_clients, num_threads=n_clients)
     recipe.execute(env=env)
