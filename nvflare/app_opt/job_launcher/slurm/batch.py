@@ -18,12 +18,12 @@ from __future__ import annotations
 import os
 import shlex
 
+from nvflare.app_common.multinode import ENV_MASTER_ADDR as MULTINODE_ENV_MASTER_ADDR
+from nvflare.app_common.multinode import ENV_MASTER_PORT as MULTINODE_ENV_MASTER_PORT
+from nvflare.app_common.multinode import ENV_NNODES as MULTINODE_ENV_NNODES
+from nvflare.app_common.multinode import ENV_NODE_RANK as MULTINODE_ENV_NODE_RANK
 from nvflare.app_opt.job_launcher.slurm.config import (
     BATCH_FILE,
-    MULTINODE_ENV_MASTER_ADDR,
-    MULTINODE_ENV_MASTER_PORT,
-    MULTINODE_ENV_NNODES,
-    MULTINODE_ENV_NODE_RANK,
     MULTINODE_PORT_BASE,
     MULTINODE_PORT_SPAN,
     NODE_FILE,

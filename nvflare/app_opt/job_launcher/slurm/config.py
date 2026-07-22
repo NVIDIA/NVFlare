@@ -38,13 +38,9 @@ SANDBOX_ROOT = "sandbox_root"
 SLURM_CHILD_PROCESS_ENV = "NVFLARE_SLURM_CHILD_PROCESS"
 CONTAINER_RESOLV_CONF = "/etc/resolv.conf"
 
-# Node-group environment contract exported to every task of a launcher-owned
-# multi-node job. The names are scheduler-neutral so the same node command can
-# run under other launchers that adopt the contract.
-MULTINODE_ENV_NNODES = "NVFL_NNODES"
-MULTINODE_ENV_NODE_RANK = "NVFL_NODE_RANK"
-MULTINODE_ENV_MASTER_ADDR = "NVFL_MASTER_ADDR"
-MULTINODE_ENV_MASTER_PORT = "NVFL_MASTER_PORT"
+# The node-group environment contract (nvflare.app_common.multinode) is
+# exported to every task of a launcher-owned multi-node job. How the port is
+# derived within the allocation is Slurm-launcher policy.
 MULTINODE_PORT_BASE = 29400
 MULTINODE_PORT_SPAN = 1000
 

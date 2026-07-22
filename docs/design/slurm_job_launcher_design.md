@@ -257,16 +257,26 @@ Cancellation, monitoring, and pending-timeout handling are unchanged because the
 with one scheduler identity; a single verified `scancel` ends every task. Between training rounds the non-zero
 ranks hold their nodes idle, which is inherent to a static allocation.
 
-### Typical training command
+### Framework helpers
 
-The `nvflare.app_opt.pt.torchrun_node` helper completes the contract for PyTorch jobs. It maps the `NVFL_*`
-variables onto torchrun rendezvous arguments (c10d, endpoint on rank 0, configurable join timeout for the window
-before the CJ starts training) and degrades to standalone single-node torchrun when the contract is absent. The
-same command line therefore serves as the job's rank-0 training command and as its `node_command`:
+The contract is framework-neutral: it is the minimal "single-coordinator rendezvous" set that PyTorch, DeepSpeed,
+XGBoost trackers, Ray, and JAX all self-assemble from, and `node_command` may be any executable, including a
+plain shell wrapper that reads the variables itself. `nvflare.app_common.multinode` provides the shared parsing
+(`NodeGroup.from_env` and the `--` command boundary) for framework helper commands; each helper is a thin
+translation of a `NodeGroup` into framework-specific arguments.
+
+The first consumer is the PyTorch helper `nvflare.app_opt.pt.torchrun_node`. It maps the contract onto torchrun
+rendezvous arguments (c10d, endpoint on rank 0, configurable join timeout for the window before the CJ starts
+training) and degrades to standalone single-node torchrun when the contract is absent. The same command line
+therefore serves as the job's rank-0 training command and as its `node_command`:
 
 ```text
 python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 -- custom/client.py --epochs 2
 ```
+
+Known contract limits: frameworks that need every member's address up front (for example `TF_CONFIG`) would need
+an additive node-list variable, and PMI-launched MPI does not fit the per-node-exec model because PMI expects the
+scheduler to start the ranks themselves.
 
 ## Required environment
 

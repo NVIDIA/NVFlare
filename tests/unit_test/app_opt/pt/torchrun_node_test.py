@@ -16,6 +16,7 @@ import sys
 
 import pytest
 
+from nvflare.app_common.multinode import NodeGroupError
 from nvflare.app_opt.pt.torchrun_node import TorchrunNodeError, build_torchrun_argv
 
 _GROUP_ENV = {
@@ -64,14 +65,14 @@ def test_node_group_environment_maps_to_rendezvous_arguments():
     ],
 )
 def test_invalid_node_group_environment_is_rejected(environ, message):
-    with pytest.raises(TorchrunNodeError, match=message):
+    with pytest.raises(NodeGroupError, match=message):
         build_torchrun_argv(["--", "custom/client.py"], environ)
 
 
 def test_training_script_boundary_is_required():
-    with pytest.raises(TorchrunNodeError, match="'--' is required"):
+    with pytest.raises(NodeGroupError, match="'--' is required"):
         build_torchrun_argv(["custom/client.py"], {})
-    with pytest.raises(TorchrunNodeError, match="training script"):
+    with pytest.raises(NodeGroupError, match="training script"):
         build_torchrun_argv(["--"], {})
 
 
