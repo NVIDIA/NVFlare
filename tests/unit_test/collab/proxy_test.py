@@ -16,11 +16,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nvflare.collab.api.exceptions import CollabCallError
 from nvflare.collab.api.proxy import Proxy
 
 
-@pytest.mark.parametrize("optional, expected_handle_count", [(False, 1), (True, 0)])
-def test_optional_call_failure_does_not_invoke_backend_exception_handler(optional, expected_handle_count):
+def _make_failing_proxy(error):
     app = MagicMock()
     app.name = "server"
     context = MagicMock()
@@ -28,7 +28,6 @@ def test_optional_call_failure_does_not_invoke_backend_exception_handler(optiona
     app.new_context.return_value = context
     app.apply_outgoing_call_filters.side_effect = lambda _target, _func, kwargs, _ctx: kwargs
     backend = MagicMock()
-    error = RuntimeError("remote call failed")
     backend.call_target.return_value = error
     proxy = Proxy(
         app=app,
@@ -37,8 +36,27 @@ def test_optional_call_failure_does_not_invoke_backend_exception_handler(optiona
         backend=backend,
         target_interface={"train": []},
     )
+    return proxy, backend
 
-    result = proxy(optional=optional).train()
 
-    assert result is error
-    assert backend.handle_exception.call_count == expected_handle_count
+def test_required_call_failure_raises_without_panicking_immediately():
+    error = RuntimeError("remote call failed")
+    proxy, backend = _make_failing_proxy(error)
+
+    with pytest.raises(CollabCallError, match="remote call failed") as exc_info:
+        proxy.train()
+
+    assert exc_info.value.site == "site-1"
+    assert exc_info.value.func_name == "train"
+    assert exc_info.value.cause is error
+    backend.handle_exception.assert_not_called()
+
+
+def test_optional_call_failure_returns_none_without_panicking():
+    error = RuntimeError("remote call failed")
+    proxy, backend = _make_failing_proxy(error)
+
+    result = proxy(optional=True).train()
+
+    assert result is None
+    backend.handle_exception.assert_not_called()

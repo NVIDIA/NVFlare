@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from .collab_workspace import CollabWorkspace
     from .constants import ContextKey
     from .context import Context
+    from .exceptions import CollabCallError
     from .group_call_context import GroupCallContext
     from .module_wrapper import ModuleWrapper
     from .publish_interface import PublishInterface
@@ -35,6 +36,7 @@ __all__ = [
     "CallOption",
     "ClientApp",
     "CollabWorkspace",
+    "CollabCallError",
     "Context",
     "ContextKey",
     "GroupCallContext",
@@ -51,6 +53,7 @@ _EXPORTS = {
     "CollabWorkspace": ".collab_workspace",
     "ContextKey": ".constants",
     "Context": ".context",
+    "CollabCallError": ".exceptions",
     "GroupCallContext": ".group_call_context",
     "ModuleWrapper": ".module_wrapper",
     "PublishInterface": ".publish_interface",

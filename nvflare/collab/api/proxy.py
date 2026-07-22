@@ -16,6 +16,7 @@ from collections.abc import Mapping, Sequence
 
 from nvflare.collab.api._invocation import InvocationDispatcher
 from nvflare.collab.api.call_utils import check_call_args
+from nvflare.collab.api.exceptions import CollabCallError
 from nvflare.collab.api.publish_interface import PublishInterface
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -207,10 +208,9 @@ class Proxy:
             args: args to be passed to the func.
             kwargs: kwargs to be passed to the func.
 
-        Returns: result of the function, or exception.
+        Returns: result of the function, or None when an optional call fails.
 
         """
-        backend = self.backend
         try:
             if call_opt.target:
                 p = self.get_child(call_opt.target)
@@ -223,8 +223,6 @@ class Proxy:
                 p = self
 
             p, func_itf, call_args, call_kwargs = p.adjust_func_args(func_name, args, kwargs)
-            backend = p.backend
-
             with p.app.new_context(self.caller_name, self.name) as ctx:
                 # apply outgoing call filters
                 call_kwargs = self.app.apply_outgoing_call_filters(p.target_name, func_name, call_kwargs, ctx)
@@ -239,18 +237,16 @@ class Proxy:
                     result = self.app.apply_incoming_result_filters(p.target_name, func_name, result, ctx)
                 return result
         except Exception as ex:
-            # Optional calls are allowed to fail without aborting the run. The
-            # exception remains the call result so the caller can recover.
-            if backend and not call_opt.optional:
-                try:
-                    backend.handle_exception(ex)
-                except Exception as ex2:
-                    # ignore exception from backend handling
-                    self.logger.error(f"ignored backend's exception {type(ex2)}")
-
-            # Must return the exception as the result of the func call.
-            # Do NOT raise it!
-            return ex
+            if isinstance(ex, CollabCallError):
+                call_error = ex
+            else:
+                call_error = CollabCallError(self.name, func_name, ex)
+            if call_opt.optional:
+                self.logger.warning(f"optional {call_error}")
+                return None
+            if call_error is ex:
+                raise
+            raise call_error from ex
 
     def __getattr__(self, func_name):
         """

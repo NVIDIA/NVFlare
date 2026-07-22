@@ -18,7 +18,7 @@ from nvflare.collab.api.decorators import adjust_kwargs
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
-from nvflare.security.logging import secure_format_exception, secure_log_traceback
+from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 from .defs import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
 
@@ -29,10 +29,16 @@ def prepare_for_remote_call(cell, app, logger):
     logger.info(f"registered request CB for {MSG_CHANNEL}/{MSG_TOPIC}")
 
 
-def _error_reply(error: str, logger) -> Message:
+def _error_reply(error: str, logger, error_type: str = None, traceback_text: str = None) -> Message:
     logger.error(error)
+    payload = {CallReplyKey.ERROR: error}
+    if error_type:
+        payload[CallReplyKey.ERROR_TYPE] = error_type
+    if traceback_text:
+        payload[CallReplyKey.ERROR_TRACEBACK] = traceback_text
     return new_cell_message(
-        headers={MessageHeaderKey.RETURN_CODE: ReturnCode.PROCESS_EXCEPTION}, payload={CallReplyKey.ERROR: error}
+        headers={MessageHeaderKey.RETURN_CODE: ReturnCode.PROCESS_EXCEPTION},
+        payload=payload,
     )
 
 
@@ -127,5 +133,11 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
             headers={MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, payload={CallReplyKey.RESULT: result}
         )
     except Exception as ex:
-        secure_log_traceback(logger)
-        return _error_reply(secure_format_exception(ex), logger)
+        traceback_text = secure_format_traceback()
+        logger.error(traceback_text)
+        return _error_reply(
+            secure_format_exception(ex),
+            logger,
+            error_type=type(ex).__name__,
+            traceback_text=traceback_text,
+        )

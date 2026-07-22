@@ -19,6 +19,7 @@ from nvflare.collab.api.app import App
 from nvflare.collab.api.call_opt import CallOption
 from nvflare.collab.api.call_utils import check_call_args
 from nvflare.collab.api.constants import CollabMethodArgName
+from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.decorators import adjust_kwargs
 from nvflare.collab.api.exceptions import RunAborted
 from nvflare.collab.api.group_call_context import GroupCallContext
@@ -100,6 +101,7 @@ class DirectDispatcher(InvocationDispatcher):
         return my_ctx, kwargs
 
     def _run_func(self, waiter: _Waiter, context, target_name, func_name, func, args, kwargs):
+        previous_ctx = get_call_context()
         try:
             result = self._invoke(context, target_name, func_name, func, args, kwargs)
             if waiter:
@@ -108,6 +110,7 @@ class DirectDispatcher(InvocationDispatcher):
             if waiter:
                 waiter.result = ex
         finally:
+            set_call_context(previous_ctx)
             if waiter:
                 waiter.set()
 
@@ -125,9 +128,21 @@ class DirectDispatcher(InvocationDispatcher):
         if not callable(func):
             raise AttributeError(f"the method '{func_name}' of {target_name} is not callable")
 
-        self.executor.submit(self._run_func_in_group, gcc, func_name, func, args, kwargs)
+        future = self.executor.submit(self._run_func_in_group, gcc, func_name, func, args, kwargs)
+        timeout = gcc.call_opt.timeout
+        if gcc.call_opt.expect_result and isinstance(timeout, (int, float)) and timeout > 0:
+            timer = threading.Timer(timeout, self._group_call_timed_out, args=(gcc, func_name, timeout))
+            timer.daemon = True
+            timer.start()
+            future.add_done_callback(lambda _future: timer.cancel())
+
+    @staticmethod
+    def _group_call_timed_out(gcc: GroupCallContext, func_name: str, timeout: float):
+        gcc.set_exception(TimeoutError(f"function {func_name} timed out after {timeout} seconds"))
+        gcc.send_completed()
 
     def _run_func_in_group(self, gcc: GroupCallContext, func_name, func, args, kwargs):
+        previous_ctx = get_call_context()
         try:
             target_name = gcc.target_name
             # Execute directly in this worker. Calling _call_target here would
@@ -138,4 +153,5 @@ class DirectDispatcher(InvocationDispatcher):
         except Exception as ex:
             gcc.set_exception(ex)
         finally:
+            set_call_context(previous_ctx)
             gcc.send_completed()

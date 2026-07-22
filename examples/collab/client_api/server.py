@@ -72,10 +72,9 @@ class FedAvg:
     def _aggregate(self, client_results):
         """Aggregate client results using FedAvg."""
         valid_results = {}
+        for client_id, error in client_results.failures.items():
+            print(f"  Warning: {client_id} failed: {error}")
         for client_id, result in client_results:
-            if isinstance(result, Exception):
-                print(f"  Warning: {client_id} failed: {result}")
-                continue
             if result is None:
                 continue
             valid_results[client_id] = result

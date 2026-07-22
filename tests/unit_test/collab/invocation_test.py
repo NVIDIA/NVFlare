@@ -14,12 +14,14 @@
 
 import queue
 import threading
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from nvflare.apis.signal import Signal
 from nvflare.collab.api._invocation import InvocationDispatcher
 from nvflare.collab.api.call_opt import CallOption
-from nvflare.collab.api.context import Context
+from nvflare.collab.api.constants import CollabMethodArgName
+from nvflare.collab.api.context import Context, get_call_context, set_call_context
+from nvflare.collab.api.exceptions import CollabCallError
 from nvflare.collab.api.group_call_context import GroupCallContext, ResultQueue, ResultWaiter
 
 
@@ -84,6 +86,110 @@ def test_group_send_completion_is_idempotent():
     gcc.send_completed()
 
     callback.assert_called_once_with(target="site-1")
+
+
+def test_group_result_callback_has_isolated_kwargs_and_restores_thread_context():
+    app = MagicMock()
+    app.apply_incoming_result_filters.return_value = "filtered"
+    previous_ctx = Context(app=app, caller="previous", callee="previous", abort_signal=Signal())
+    call_ctx = Context(app=app, caller="server", callee="site-1", abort_signal=Signal())
+    callback_contexts = []
+    shared_kwargs = {"marker": "value"}
+
+    def process_result(_gcc, result, marker, context=None):
+        assert marker == "value"
+        assert get_call_context() is context
+        callback_contexts.append(context)
+        return f"processed {result}"
+
+    waiter = ResultWaiter(["site-1"])
+    gcc = GroupCallContext(
+        app=app,
+        target_name="site-1",
+        call_opt=CallOption(),
+        func_name="train",
+        process_cb=process_result,
+        cb_kwargs=shared_kwargs,
+        context=call_ctx,
+        waiter=waiter,
+    )
+
+    set_call_context(previous_ctx)
+    try:
+        gcc.set_result("raw")
+        assert get_call_context() is previous_ctx
+    finally:
+        set_call_context(None)
+
+    assert gcc.cb_kwargs is not shared_kwargs
+    assert CollabMethodArgName.CONTEXT not in shared_kwargs
+    assert len(callback_contexts) == 1
+    assert next(iter(waiter.results)) == ("site-1", "processed filtered")
+
+
+def test_group_result_callback_exception_is_logged_and_returned():
+    app = MagicMock()
+    app.apply_incoming_result_filters.return_value = "filtered"
+
+    def fail_callback(_gcc, _result):
+        raise ValueError("callback failed")
+
+    waiter = ResultWaiter(["site-1"])
+    gcc = GroupCallContext(
+        app=app,
+        target_name="site-1",
+        call_opt=CallOption(),
+        func_name="train",
+        process_cb=fail_callback,
+        cb_kwargs={},
+        context=Context(app=app, caller="server", callee="site-1", abort_signal=Signal()),
+        waiter=waiter,
+    )
+
+    with patch("nvflare.collab.api.group_call_context.secure_log_traceback") as log_traceback:
+        gcc.set_result("raw")
+
+    assert list(waiter.results) == []
+    error = waiter.results.failures["site-1"]
+    assert isinstance(error, CollabCallError)
+    assert isinstance(error.cause, ValueError)
+    log_traceback.assert_called_once_with(gcc.logger)
+
+
+def test_result_waiter_ignores_duplicate_and_unexpected_results():
+    waiter = ResultWaiter(["site-1", "site-2"])
+
+    assert waiter.set_result("site-1", "first") is True
+    assert waiter.set_result("site-1", "duplicate") is False
+    assert waiter.set_result("site-3", "unexpected") is False
+    assert len(waiter.results) == 1
+    assert not waiter.is_set()
+
+    assert waiter.set_result("site-2.trainer", "second") is True
+    assert waiter.is_set()
+    assert list(waiter.results) == [("site-1", "first"), ("site-2", "second")]
+
+
+def test_result_queue_failure_wakes_waiting_iterator():
+    result_queue = ResultQueue(limit=1)
+    outcome = []
+
+    def consume():
+        try:
+            outcome.append(next(result_queue))
+        except StopIteration:
+            outcome.append("complete")
+
+    consumer = threading.Thread(target=consume, daemon=True)
+    consumer.start()
+    error = CollabCallError("site-1", "train", TimeoutError("timed out"))
+    result_queue.append_failure("site-1", error)
+    consumer.join(timeout=1.0)
+
+    assert not consumer.is_alive()
+    assert outcome == ["complete"]
+    assert result_queue.failures == {"site-1": error}
+    assert len(result_queue) == 0
 
 
 def test_result_queue_does_not_drop_last_concurrent_item():

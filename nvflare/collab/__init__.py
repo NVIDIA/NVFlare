@@ -17,11 +17,13 @@ from typing import TYPE_CHECKING
 from .api.facade import Facade as collab
 
 if TYPE_CHECKING:
+    from .api.exceptions import CollabCallError
     from .core.recipe import CollabRecipe
     from .runtime.client_api import CollabClientAPI
 
 __all__ = [
     "collab",
+    "CollabCallError",
     "CollabClientAPI",
     "CollabRecipe",
     "simple_logging",
@@ -38,6 +40,7 @@ def simple_logging(level=logging.INFO):
 # recipe pulls in FLARE job/runtime machinery, which client-side
 # training scripts that only need the `collab` facade should not pay for.
 _EXPORTS = {
+    "CollabCallError": ".api.exceptions",
     "CollabRecipe": ".core.recipe",
     "CollabClientAPI": ".runtime.client_api",
 }

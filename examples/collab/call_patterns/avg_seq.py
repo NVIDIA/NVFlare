@@ -68,5 +68,8 @@ class NPFedAvgSequential:
             self.logger.info(
                 f"[{collab.call_info}] round {current_round}: got result from client {client.name}: {result}"
             )
+            if result is None:
+                self.logger.warning(f"skipping failed optional call to client {client.name}")
+                continue
             total += result * self.client_weights[client.name]
         return total

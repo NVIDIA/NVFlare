@@ -17,3 +17,22 @@ class RunAborted(Exception):
     """Raised when a Collab run is aborted."""
 
     pass
+
+
+class CollabCallError(Exception):
+    """Raised when a call to a Collab function fails."""
+
+    def __init__(
+        self,
+        site: str,
+        func_name: str,
+        cause,
+        cause_type: str = None,
+        remote_traceback: str = None,
+    ):
+        self.site = site.split(".", 1)[0]
+        self.func_name = func_name
+        self.cause = cause
+        self.cause_type = cause_type or type(cause).__name__
+        self.remote_traceback = remote_traceback
+        super().__init__(f"call to {self.site}.{func_name} failed: {cause}")

@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import math
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import List
@@ -58,7 +59,7 @@ class CollabController(Controller, CollabAdaptor):
         outgoing_result_filters=None,
         props=None,
         resource_dirs=None,
-        sync_task_timeout=5,
+        sync_task_timeout=60,
         max_call_threads=100,
     ):
         Controller.__init__(self)
@@ -190,7 +191,7 @@ class CollabController(Controller, CollabAdaptor):
         task = Task(
             name=SYNC_TASK_NAME,
             data=task_data,
-            timeout=int(self.sync_task_timeout),
+            timeout=math.ceil(self.sync_task_timeout),
             result_received_cb=self._process_sync_reply,
         )
 

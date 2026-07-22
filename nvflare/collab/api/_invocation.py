@@ -25,7 +25,10 @@ class _SingleTargetCallContext(GroupCallContext):
     """Group call context that leaves direct-call result filtering to Proxy."""
 
     def set_result(self, result):
-        self.waiter.set_result(self.target_name, result)
+        if isinstance(result, Exception):
+            self.set_exception(result)
+        else:
+            self.waiter.set_result(self.target_name, result)
 
 
 class InvocationDispatcher(ABC):
@@ -68,6 +71,8 @@ class InvocationDispatcher(ABC):
             return None
 
         waiter.wait_for_responses(self.abort_signal)
+        if waiter.results.failures:
+            return next(iter(waiter.results.failures.values()))
         _, result = next(iter(waiter.results))
         return result
 

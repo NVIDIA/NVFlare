@@ -19,6 +19,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from nvflare.collab.api.call_opt import CallOption
+from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.runtime.local.direct_dispatcher import DirectDispatcher
 
 
@@ -80,3 +81,59 @@ def test_group_call_does_not_nest_work_in_same_executor():
         assert completed.wait(timeout=1.0)
         gcc.set_result.assert_called_once_with("result")
         gcc.set_exception.assert_not_called()
+
+
+def test_group_call_timeout_completes_hung_site():
+    target_app = MagicMock()
+    release_call = threading.Event()
+    completed = threading.Event()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        dispatcher = DirectDispatcher(
+            target_obj_name="",
+            target_app=target_app,
+            target_obj=MagicMock(),
+            abort_signal=MagicMock(triggered=False),
+            thread_executor=executor,
+        )
+        dispatcher._get_func = MagicMock(return_value=lambda: release_call.wait(timeout=1.0))
+        dispatcher._preprocess = MagicMock(return_value=(MagicMock(), {}))
+        gcc = MagicMock()
+        gcc.target_name = "site-1"
+        gcc.context = MagicMock()
+        gcc.call_opt = CallOption(timeout=0.05)
+        gcc.send_completed.side_effect = completed.set
+
+        dispatcher.call_target_in_group(gcc, "train")
+
+        assert completed.wait(timeout=1.0)
+        timeout_error = gcc.set_exception.call_args.args[0]
+        assert isinstance(timeout_error, TimeoutError)
+        release_call.set()
+
+
+def test_group_worker_restores_previous_context():
+    dispatcher = DirectDispatcher(
+        target_obj_name="",
+        target_app=MagicMock(),
+        target_obj=MagicMock(),
+        abort_signal=MagicMock(),
+        thread_executor=MagicMock(),
+    )
+    previous_ctx = MagicMock()
+    call_ctx = MagicMock()
+
+    def invoke(*_args, **_kwargs):
+        set_call_context(call_ctx)
+        return "result"
+
+    dispatcher._invoke = invoke
+    gcc = MagicMock()
+    gcc.target_name = "site-1"
+
+    set_call_context(previous_ctx)
+    try:
+        dispatcher._run_func_in_group(gcc, "train", MagicMock(), (), {})
+        assert get_call_context() is previous_ctx
+    finally:
+        set_call_context(None)

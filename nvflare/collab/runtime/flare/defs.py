@@ -33,4 +33,6 @@ class ObjectCallKey:
 
 class CallReplyKey:
     ERROR = "error"
+    ERROR_TYPE = "error_type"
+    ERROR_TRACEBACK = "error_traceback"
     RESULT = "result"

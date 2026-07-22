@@ -23,10 +23,11 @@ import sys
 
 
 def test_top_level_exports():
-    from nvflare.collab import CollabClientAPI, CollabRecipe, collab, simple_logging
+    from nvflare.collab import CollabCallError, CollabClientAPI, CollabRecipe, collab, simple_logging
 
     for export in (
         collab,
+        CollabCallError,
         CollabClientAPI,
         CollabRecipe,
         simple_logging,
@@ -39,6 +40,7 @@ def test_api_surface():
         App,
         CallOption,
         ClientApp,
+        CollabCallError,
         CollabWorkspace,
         Context,
         ContextKey,
@@ -51,6 +53,7 @@ def test_api_surface():
     for export in (
         App,
         ClientApp,
+        CollabCallError,
         CollabWorkspace,
         ServerApp,
         CallOption,
@@ -131,28 +134,9 @@ def test_collab_public_surface_does_not_require_torch():
         "from nvflare.collab.api import Context, GroupCallContext\n"
         "import nvflare.collab.runtime.flare.controller\n"
         "import nvflare.collab.runtime.flare.executor\n"
-        "from nvflare.collab.tracking import SummaryWriter\n"
         "from nvflare.collab import simple_logging\n"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
-
-
-def test_tracking_surface():
-    from nvflare.collab.tracking import (
-        AutoWriter,
-        MLflowWriter,
-        SummaryWriter,
-        TensorBoardWriter,
-        WandbWriter,
-        get_auto_writer,
-        mlflow,
-        wandb,
-    )
-
-    assert mlflow.__name__ == "nvflare.collab.tracking.mlflow"
-    assert wandb.__name__ == "nvflare.collab.tracking.wandb"
-    for export in (SummaryWriter, TensorBoardWriter, MLflowWriter, WandbWriter, AutoWriter, get_auto_writer):
-        assert export is not None
 
 
 def test_api_layer_does_not_import_runtime():

@@ -36,7 +36,7 @@ class CollabRecipe(Recipe):
         client: Optional[object] = None,
         server_objects: Optional[Dict[str, object]] = None,
         client_objects: Optional[Dict[str, object]] = None,
-        sync_task_timeout=5,
+        sync_task_timeout=60,
         max_call_threads_for_server=100,
         max_call_threads_for_client=100,
         min_clients: int = 1,

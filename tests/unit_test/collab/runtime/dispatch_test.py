@@ -35,20 +35,28 @@ def test_remote_call_returns_secure_exception_detail():
         {},
         {
             ObjectCallKey.CALLER: "server",
-            ObjectCallKey.TARGET_NAME: "site-1",
+            ObjectCallKey.TARGET_NAME: "site-1.client",
             ObjectCallKey.METHOD_NAME: "fail",
         },
     )
     logger = MagicMock()
 
-    with patch(
-        "nvflare.collab.runtime.flare.dispatch.secure_format_exception",
-        return_value="ValueError: invalid input",
-    ) as format_exception:
+    with (
+        patch(
+            "nvflare.collab.runtime.flare.dispatch.secure_format_exception",
+            return_value="ValueError: invalid input",
+        ) as format_exception,
+        patch(
+            "nvflare.collab.runtime.flare.dispatch.secure_format_traceback",
+            return_value="remote traceback",
+        ),
+    ):
         reply = _call_app_method(request, app, logger)
 
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.PROCESS_EXCEPTION
     assert reply.payload[CallReplyKey.ERROR] == "ValueError: invalid input"
+    assert reply.payload[CallReplyKey.ERROR_TYPE] == "ValueError"
+    assert reply.payload[CallReplyKey.ERROR_TRACEBACK] == "remote traceback"
     format_exception.assert_called_once()
 
 

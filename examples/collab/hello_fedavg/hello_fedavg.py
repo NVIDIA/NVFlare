@@ -84,14 +84,11 @@ class Trainer:
 
 
 def weighted_avg(client_results):
-    valid = {}
-    for client_id, result in client_results:
-        if isinstance(result, Exception):
-            print(f"  Warning: {client_id} failed: {result}")
-            continue
-        valid[client_id] = result
+    valid = dict(client_results)
+    for client_id, error in client_results.failures.items():
+        print(f"  Warning: {client_id} failed: {error}")
     if not valid:
-        raise RuntimeError(f"all {len(client_results)} client calls failed")
+        raise RuntimeError(f"all {len(client_results.failures)} client calls failed")
 
     all_weights = [result[0] for result in valid.values()]
     avg_weights = {k: torch.stack([w[k] for w in all_weights]).mean(dim=0) for k in all_weights[0]}

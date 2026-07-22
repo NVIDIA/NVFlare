@@ -16,14 +16,16 @@ import queue
 import threading
 
 from nvflare.collab.api.call_utils import check_context_support
-from nvflare.collab.api.exceptions import RunAborted
+from nvflare.collab.api.exceptions import CollabCallError, RunAborted
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.security.logging import secure_log_traceback
 
 from .call_opt import CallOption
 from .constants import CollabMethodArgName
-from .context import Context, set_call_context
+from .context import Context, get_call_context, set_call_context
 
 _SHORT_WAIT = 1.0
+_FAILURE_MARKER = object()
 
 
 class ResultQueue:
@@ -37,6 +39,8 @@ class ResultQueue:
         # num_whole_items_received is the number of WHOLE items received.
         # the queue could contain partial results.
         self.num_whole_items_received = 0
+        self.num_successes = 0
+        self.failures = {}
         self.update_lock = threading.Lock()
 
     def append(self, item, is_whole=True):
@@ -56,40 +60,58 @@ class ResultQueue:
                     # note: num_whole_items_received is not the number of all items received.
                     # partial items could be added to the queue but do not count as whole items.
                     self.num_whole_items_received += 1
+                    self.num_successes += 1
                 return self.num_whole_items_received == self.limit
             else:
                 # do not allow any items (partial or whole) to be added to the queue if the queue
                 # has already received all expected whole items.
                 raise RuntimeError(f"queue is full: {self.limit} whole items are already appended")
 
+    def append_failure(self, site_name: str, error: CollabCallError):
+        """Record a terminal failure without yielding it as a successful result."""
+        with self.update_lock:
+            if self.num_whole_items_received >= self.limit:
+                raise RuntimeError(f"queue is full: {self.limit} whole items are already appended")
+            self.failures[site_name] = error
+            self.num_whole_items_received += 1
+            # Wake an iterator that may be waiting for the final site. The
+            # marker is consumed internally and is never yielded to users.
+            self.q.put_nowait(_FAILURE_MARKER)
+            return self.num_whole_items_received == self.limit
+
     def __iter__(self):
         return self
 
     def __next__(self):
-        # Check the queue and completion count atomically with append(). This
-        # prevents the last item from being inserted between an empty check and
-        # the completion check, which would otherwise terminate iteration early.
-        with self.update_lock:
-            try:
-                return self.q.get_nowait()
-            except queue.Empty:
-                all_received = self.num_whole_items_received >= self.limit
+        while True:
+            # Check the queue and completion count atomically with append().
+            with self.update_lock:
+                try:
+                    item = self.q.get_nowait()
+                except queue.Empty:
+                    item = None
+                    all_received = self.num_whole_items_received >= self.limit
 
-        if all_received:
-            raise StopIteration()
+            if item is _FAILURE_MARKER:
+                continue
+            if item is not None:
+                return item
+            if all_received:
+                raise StopIteration()
 
-        # More items are expected. Do not hold update_lock while waiting,
-        # because append() needs it to enqueue the next item.
-        return self.q.get(block=True)
+            # More outcomes are expected. Do not hold update_lock while
+            # waiting, because append() needs it to enqueue the next item.
+            item = self.q.get(block=True)
+            if item is not _FAILURE_MARKER:
+                return item
 
     def __len__(self):
-        """Return the number of whole items that have been received.
-        Note that this is NOT the current number of items in the queue!
+        """Return the number of successful whole results received.
 
-        Returns: the number of whole items that have been received
+        Returns: the number of successful results
 
         """
-        return self.num_whole_items_received
+        return self.num_successes
 
 
 class ResultWaiter(threading.Event):
@@ -97,9 +119,15 @@ class ResultWaiter(threading.Event):
     def __init__(self, sites: list[str]):
         super().__init__()
         self.sites = sites
-        self.results = ResultQueue(len(sites))
+        self._expected_sites = {self._get_site_name(site) for site in sites}
+        if len(self._expected_sites) != len(sites):
+            raise ValueError(f"sites must be unique but got {sites}")
+        self._received_sites = set()
+        self._result_lock = threading.Lock()
+        self.results = ResultQueue(len(self._expected_sites))
         self.standing_call_count = 0
         self.call_count_decreased = threading.Condition(threading.Lock())
+        self.logger = get_obj_logger(self)
 
     def inc_call_count(self):
         """Increment standing call count by 1.
@@ -157,10 +185,29 @@ class ResultWaiter(threading.Event):
         return parts[0]
 
     def set_result(self, target_name: str, result):
+        return self._set_outcome(target_name, result=result)
+
+    def set_failure(self, target_name: str, error: CollabCallError):
+        return self._set_outcome(target_name, error=error)
+
+    def _set_outcome(self, target_name: str, result=None, error: CollabCallError = None):
         site_name = self._get_site_name(target_name)
-        all_received = self.results.append((site_name, result))
-        if all_received:
-            self.set()
+        with self._result_lock:
+            if site_name not in self._expected_sites:
+                self.logger.warning(f"ignored result from unexpected site '{site_name}'")
+                return False
+            if site_name in self._received_sites:
+                self.logger.warning(f"ignored duplicate result from site '{site_name}'")
+                return False
+
+            if error:
+                all_received = self.results.append_failure(site_name, error)
+            else:
+                all_received = self.results.append((site_name, result))
+            self._received_sites.add(site_name)
+            if all_received:
+                self.set()
+            return True
 
     def add_partial_result(self, target_name: str, partial_result):
         site_name = self._get_site_name(target_name)
@@ -197,7 +244,7 @@ class GroupCallContext:
         self.target_name = target_name
         self.func_name = func_name
         self.process_cb = process_cb
-        self.cb_kwargs = cb_kwargs
+        self.cb_kwargs = copy.copy(cb_kwargs) if cb_kwargs else {}
         self.context = context
         self.waiter = waiter
         self.send_complete_cb = None
@@ -243,20 +290,25 @@ class GroupCallContext:
             ctx.callee = original_caller
 
             if not isinstance(result, Exception):
+                previous_ctx = get_call_context()
                 set_call_context(ctx)
                 try:
                     result = self.app.apply_incoming_result_filters(self.target_name, self.func_name, result, ctx)
                     if self.process_cb:
-                        self.cb_kwargs[CollabMethodArgName.CONTEXT] = ctx
-                        check_context_support(self.process_cb, self.cb_kwargs)
-                        result = self.process_cb(self, result, **self.cb_kwargs)
+                        callback_kwargs = copy.copy(self.cb_kwargs)
+                        callback_kwargs[CollabMethodArgName.CONTEXT] = ctx
+                        check_context_support(self.process_cb, callback_kwargs)
+                        result = self.process_cb(self, result, **callback_kwargs)
                 finally:
-                    # set back to original context
-                    set_call_context(self.context)
+                    set_call_context(previous_ctx)
         except Exception as ex:
+            secure_log_traceback(self.logger)
             result = ex
         finally:
-            self.waiter.set_result(self.target_name, result)
+            if isinstance(result, Exception):
+                self.waiter.set_failure(self.target_name, self._make_call_error(result))
+            else:
+                self.waiter.set_result(self.target_name, result)
 
     def set_exception(self, ex):
         """This is called by the backend to set the exception received from the remote app.
@@ -268,7 +320,12 @@ class GroupCallContext:
         Returns:
 
         """
-        self.waiter.set_result(self.target_name, ex)
+        self.waiter.set_failure(self.target_name, self._make_call_error(ex))
+
+    def _make_call_error(self, ex) -> CollabCallError:
+        if isinstance(ex, CollabCallError):
+            return ex
+        return CollabCallError(self.target_name, self.func_name, ex)
 
     def add_partial_result(self, partial_result):
         self.waiter.add_partial_result(self.target_name, partial_result)

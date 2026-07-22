@@ -96,9 +96,9 @@ class Group:
 
         If expect_result is False, then the call immediately returns None.
 
-        If expect_result is True, a ResultQueue object is returned. Results from each site will be appended to
-        the queue when they become available. If a site does not return result before timeout, the site's result
-        is TimeoutError exception. Each item in the queue is a tuple of (site_name, result).
+        If expect_result is True, a ResultQueue object is returned. Successful results are appended to the queue
+        as (site_name, result) tuples when they become available. Per-site failures are available in
+        ResultQueue.failures as a mapping from site name to CollabCallError.
 
         The blocking flag is only meaningful when expect_result is True. If blocking is True, the call does not
         return until results are received from all sites (or timed out). If blocking is False, the call immediately
@@ -108,7 +108,6 @@ class Group:
         """
 
         def method(*args, **kwargs):
-            the_backend = None
             try:
                 # filter once for all targets
                 p = self._get_work_proxy(self._proxies[0], func_name)
@@ -116,8 +115,6 @@ class Group:
                 # func_proxy is the proxy that actually has the func.
                 # the func_proxy is either "p" or a child of "p".
                 func_proxy, func_itf, adj_args, adj_kwargs = p.adjust_func_args(func_name, args, kwargs)
-                the_backend = p.backend
-
                 with func_proxy.app.new_context(func_proxy.caller_name, func_proxy.name, target_group=self) as ctx:
                     self._logger.info(
                         f"[{ctx}] calling {func_name} {self._call_opt} of group {[p.name for p in self._proxies]}"
@@ -151,7 +148,7 @@ class Group:
                             call_opt=self._call_opt,
                             func_name=func_name,
                             process_cb=self._process_resp_cb,
-                            cb_kwargs=self._cb_kwargs,
+                            cb_kwargs=copy.copy(self._cb_kwargs),
                             context=ctx,
                             waiter=waiter,
                         )
@@ -177,9 +174,7 @@ class Group:
                     return waiter.results
             except Exception as ex:
                 self._logger.error(f"exception {type(ex)} occurred: {ex}")
-                if the_backend and not self._call_opt.optional:
-                    the_backend.handle_exception(ex)
-                raise ex
+                raise
 
         return method
 

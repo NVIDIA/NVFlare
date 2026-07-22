@@ -46,6 +46,8 @@ class NPFedAvgParallel:
         for client_name, value in results:
             self.logger.info(f"[{collab.call_info}]: got eval result from client {client_name}: {value}")
             total += value
+        for client_name, error in results.failures.items():
+            self.logger.warning(f"[{collab.call_info}]: eval failed on client {client_name}: {error}")
 
         num_results = len(results)
         return total / num_results if num_results > 0 else 0.0
@@ -54,15 +56,11 @@ class NPFedAvgParallel:
         total = 0
         results = collab.clients(timeout=4, blocking=False, target="client").train(current_round, current_model)
         for client_name, value in results:
-            if isinstance(value, Exception):
-                self.logger.error(
-                    f"[{collab.call_info}] round {current_round}: got exception from client {client_name}: {value}"
-                )
-                raise value
-
             self.logger.info(
                 f"[{collab.call_info}] round {current_round}: got group result from client {client_name}: {value}"
             )
             total += value
+        for client_name, error in results.failures.items():
+            self.logger.warning(f"[{collab.call_info}] round {current_round}: client {client_name} failed: {error}")
         num_results = len(results)
         return total / num_results if num_results > 0 else None

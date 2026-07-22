@@ -13,7 +13,8 @@
 # limitations under the License.
 from nvflare.collab.api._invocation import InvocationDispatcher
 from nvflare.collab.api.call_opt import CallOption
-from nvflare.collab.api.context import set_call_context
+from nvflare.collab.api.context import get_call_context, set_call_context
+from nvflare.collab.api.exceptions import CollabCallError
 from nvflare.collab.api.group_call_context import GroupCallContext
 from nvflare.collab.runtime.flare.defs import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
@@ -77,19 +78,37 @@ class CellDispatcher(InvocationDispatcher):
 
             rc = reply.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
             if rc == ReturnCode.TIMEOUT:
-                raise TimeoutError(f"function {func_name} timed out after {timeout} seconds")
+                cause = TimeoutError(f"function {func_name} timed out after {timeout} seconds")
+                raise CollabCallError(target_name, func_name, cause)
             elif rc != ReturnCode.OK:
                 error = None
+                error_type = None
+                error_traceback = None
                 if isinstance(reply.payload, dict):
                     error = reply.payload.get(CallReplyKey.ERROR)
-                raise RuntimeError(f"function {func_name} failed: {rc=} {error=}")
+                    error_type = reply.payload.get(CallReplyKey.ERROR_TYPE)
+                    error_traceback = reply.payload.get(CallReplyKey.ERROR_TRACEBACK)
+                cause = error or f"remote call returned {rc=}"
+                raise CollabCallError(
+                    target_name,
+                    func_name,
+                    cause,
+                    cause_type=error_type,
+                    remote_traceback=error_traceback,
+                )
 
             if not isinstance(reply.payload, dict):
                 raise RuntimeError(f"function {func_name} failed: reply must be dict but got {type(reply.payload)}")
 
             error = reply.payload.get(CallReplyKey.ERROR)
             if error:
-                raise RuntimeError(f"function {func_name} failed: {error}")
+                raise CollabCallError(
+                    target_name,
+                    func_name,
+                    error,
+                    cause_type=reply.payload.get(CallReplyKey.ERROR_TYPE),
+                    remote_traceback=reply.payload.get(CallReplyKey.ERROR_TRACEBACK),
+                )
 
             result = reply.payload.get(CallReplyKey.RESULT)
             self.logger.info(f"got result from {self.target_fqcn} {func_name=}")
@@ -111,6 +130,7 @@ class CellDispatcher(InvocationDispatcher):
         self.thread_executor.submit(self._run_func, gcc, func_name, args, kwargs)
 
     def _run_func(self, gcc: GroupCallContext, func_name: str, args, kwargs):
+        previous_ctx = get_call_context()
         try:
             result = self._call_target(
                 context=gcc.context,
@@ -130,6 +150,7 @@ class CellDispatcher(InvocationDispatcher):
             # soon as transmission finishes. Guarantee completion here too for
             # pre-transmission failures and fire-and-forget calls. The context
             # makes this idempotent when CellNet already invoked the callback.
+            set_call_context(previous_ctx)
             gcc.send_completed()
 
     def _msg_sent(self, gcc: GroupCallContext):
