@@ -275,7 +275,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     cap_group.add_argument(
         "--max-candidates",
         type=int,
-        help="optional candidate cap; omit to continue until interrupted or blocked",
+        help=(
+            "optional cap on comparable candidate attempts (evaluated candidates: keep/discard/crash), "
+            "counted after and excluding the baseline; omit to run an uncapped continuous campaign "
+            "until interrupted or blocked"
+        ),
     )
     cap_group.add_argument("--uncapped", action="store_true", help="remove a previously configured candidate cap")
     parser.add_argument("--autofl-yaml", default="autofl.yaml")
@@ -2439,6 +2443,7 @@ def write_state(
     exploration_batch_size: Optional[int] = None,
     family_repeat_limit: Optional[int] = None,
     pending_manifest_count: int = 0,
+    abandoned_candidate_count: int = 0,
     persist: bool = True,
 ) -> Dict[str, Any]:
     guard = load_campaign_guard()
@@ -2461,6 +2466,8 @@ def write_state(
         exploration_batch_size=exploration_batch_size,
         family_repeat_limit=family_repeat_limit,
     )
+    # Abandoned manifests are workspace-derived; the ledger-only guard cannot count them.
+    state["abandoned_candidates"] = abandoned_candidate_count
     if records and records[-1].status == INFRASTRUCTURE_RETRY:
         attempts = len(
             [
@@ -2472,6 +2479,7 @@ def write_state(
         state.update(
             {
                 "candidate_attempts": attempts,
+                "remaining_candidates": max(0, max_candidates - attempts) if max_candidates is not None else None,
                 "decision": "retry_infrastructure",
                 "reason": "infrastructure_retry",
                 "next_action": SIMULATION_APPROVAL_ACTION,
@@ -2650,6 +2658,11 @@ def campaign_summary(
             "final_response_allowed",
             "candidate_cap",
             "candidate_cap_source",
+            "remaining_candidates",
+            "baseline_status",
+            "baseline_score",
+            "improvement",
+            "abandoned_candidates",
             "agent_instruction",
             "required_exploration",
         ]:
@@ -2728,6 +2741,16 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
             requested = getattr(args, name)
             if name in MUTABLE_CAMPAIGN_SETTING_NAMES:
                 if settings.get(name) != requested:
+                    if name == "max_candidates":
+                        # Audit trail: mid-campaign budget changes must stay detectable by external judges.
+                        metadata.setdefault("cap_changes", []).append(
+                            {
+                                "changed_at": utc_now(),
+                                "old": settings.get(name),
+                                "new": requested,
+                                "source": "uncapped" if requested is None else "explicit",
+                            }
+                        )
                     settings[name] = requested
                     changed = True
                 continue
@@ -2868,6 +2891,7 @@ def refresh_campaign_artifacts(
         exploration_batch_size=args.exploration_batch_size,
         family_repeat_limit=args.family_repeat_limit,
         pending_manifest_count=len(pending_manifests),
+        abandoned_candidate_count=count_abandoned_candidates(paths["workspace"]),
     )
     if state.get("next_action") == "abandon_candidate":
         next_action = "abandon_candidate"
@@ -3053,6 +3077,19 @@ def pending_candidate_manifests(workspace: Path) -> List[Path]:
         if status in {"prepared", "ready_for_external_execution"}:
             pending.append(path)
     return pending
+
+
+def count_abandoned_candidates(workspace: Path) -> int:
+    root = workspace / CANDIDATE_ROOT
+    if not root.exists():
+        return 0
+    count = 0
+    for path in sorted(root.glob("*/candidate_manifest.json")):
+        manifest = read_json(path)
+        validate_candidate_manifest_identity(path, manifest)
+        if manifest.get("status") == "abandoned":
+            count += 1
+    return count
 
 
 def prepare_candidate(args: argparse.Namespace, job: Path) -> int:
@@ -3731,6 +3768,7 @@ def show_campaign_status(args: argparse.Namespace, job: Path) -> int:
         exploration_batch_size=args.exploration_batch_size,
         family_repeat_limit=args.family_repeat_limit,
         pending_manifest_count=len(pending),
+        abandoned_candidate_count=count_abandoned_candidates(job.parent),
         persist=False,
     )
     state.update(

@@ -161,12 +161,12 @@ invent a replacement campaign or new objective after a recoverable failure;
 keep the campaign identity and artifacts coherent unless the human explicitly
 requests a new campaign.
 
-If the user provides an `N`-candidate budget, pass it only through the runner's
-explicit `--max-candidates` argument and count up to `N` comparable attempts
-after baseline. Never infer a cap from an inherited environment variable. Do
-not count import, validation, smoke runs, plotting, reporting, baseline, or
-infrastructure-only retries; count a real candidate crash after execution
-starts. State must report `candidate_cap_source=explicit` or `uncapped`.
+If the user provides an `N`-candidate budget, pass it only through the runner's explicit `--max-candidates`
+argument; the cap counts comparable evaluated candidate attempts (keep/discard/crash) after and excluding the
+baseline. Never infer a cap from an inherited environment variable. Do not count import, validation, smoke
+runs, plotting, reporting, baseline, or infrastructure-only retries; count a real candidate crash after
+execution starts. Runner state must report `candidate_cap_source=explicit` or `uncapped`, plus `remaining_candidates`,
+`baseline_status`, `baseline_score`, `improvement`, and `abandoned_candidates`; cap changes append to `cap_changes` in campaign metadata.
 
 Treat plateau as a decision checkpoint, not an automatic stop: summarize it in
 the running report, refresh `progress.png`, run the runner's `status` action to
