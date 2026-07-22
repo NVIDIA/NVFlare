@@ -139,8 +139,13 @@ The facade provides shorter access when passing the context is unnecessary:
 site_name = collab.site_name
 caller = collab.caller
 workspace = collab.workspace
+fl_ctx = collab.fl_ctx
 learning_rate = collab.get_app_prop("learning_rate", 0.01)
 ```
+
+`collab.fl_ctx` is the live `FLContext` for the current site. Because it is a
+runtime object, `CollabRecipe` adds it to the site's application properties
+when the server or client app starts rather than serializing it into the job.
 
 Per-site values use the standard Recipe configuration mechanism:
 

@@ -22,6 +22,7 @@ from nvflare.collab.api.context import set_call_context
     "accessor",
     [
         lambda: collab.context,
+        lambda: collab.fl_ctx,
         lambda: collab.caller,
         lambda: collab.get_prop("missing"),
     ],

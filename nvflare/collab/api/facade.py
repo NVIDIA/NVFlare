@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from .constants import ContextKey
+from .constants import FL_CONTEXT_PROP, ContextKey
 from .context import get_call_context as _get_call_context
 from .decorators import classproperty
 from .decorators import final as dec_final
@@ -44,6 +44,12 @@ class Facade:
 
         """
         return get_call_context()
+
+    @classproperty
+    def fl_ctx(cls):
+        """Get the site's live FLContext."""
+        ctx = get_call_context()
+        return ctx.app.get_prop(FL_CONTEXT_PROP)
 
     @classproperty
     def caller(cls):

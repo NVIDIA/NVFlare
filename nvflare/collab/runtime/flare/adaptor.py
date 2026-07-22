@@ -15,6 +15,7 @@ from typing import Any, Dict, List
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.collab.api.app import App
+from nvflare.collab.api.constants import FL_CONTEXT_PROP
 
 
 class CollabAdaptor:
@@ -41,6 +42,10 @@ class CollabAdaptor:
 
     def process_config(self, app: App, fl_ctx: FLContext):
         app.update_props(self.props)
+        # FLContext is a live runtime object and cannot be serialized into the
+        # recipe config. Add it after the site app is created so every Collab
+        # function at this site can access it through the facade.
+        app.set_prop(FL_CONTEXT_PROP, fl_ctx)
         if self.resource_dirs is not None:
             app.set_resource_dirs(self.resource_dirs)
 
