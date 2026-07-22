@@ -47,7 +47,7 @@ def test_node_group_environment_maps_to_rendezvous_arguments():
         "--rdzv_backend=c10d",
         "--rdzv_endpoint=node-0:29512",
         "--rdzv_id=4242",
-        "--rdzv_conf=join_timeout=600",
+        "--rdzv_conf=join_timeout=600,read_timeout=600",
     ):
         assert expected in argv
     assert "--standalone" not in argv

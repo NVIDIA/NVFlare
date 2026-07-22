@@ -268,6 +268,10 @@ class SubprocessLauncher(Launcher):
     def _start_external_process(self, fl_ctx: FLContext):
         with self._lock:
             if self._process is None:
+                # Re-checked here because LauncherExecutor downgrades an initialize()
+                # raise to a warning; this raise fails the task visibly instead.
+                if not self._launch_once and is_multi_node_env(os.environ):
+                    raise RuntimeError("multi-node node groups require launch_once=True")
                 self.logger.info("_start_external_process: launching new subprocess")
                 command = self._script
                 env = os.environ.copy()

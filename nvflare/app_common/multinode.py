@@ -38,6 +38,9 @@ CONTRACT_ENV_NAMES = (ENV_NNODES, ENV_NODE_RANK, ENV_MASTER_ADDR, ENV_MASTER_POR
 JOB_SPEC_NODES = "nodes"
 JOB_SPEC_NODE_COMMAND = "node_command"
 
+# Launcher modes that implement node groups; adopting launchers add themselves.
+NODE_GROUP_MODES = ("slurm",)
+
 DEFAULT_MASTER_PORT = 29400
 
 
@@ -45,24 +48,24 @@ class NodeGroupError(RuntimeError):
     """A deterministic node-group configuration failure."""
 
 
-def is_multi_node_env(environ: dict) -> bool:
-    """Cheap presence check for a multi-node contract; full validation is from_env's job."""
+def is_multi_node_env(environ) -> bool:
+    """Cheap multi-node predicate matching from_env semantics; garbage counts as absent."""
     value = environ.get(ENV_NNODES)
-    return bool(value) and value != "1"
+    return isinstance(value, str) and value.isascii() and value.isdigit() and int(value) > 1
 
 
-def _positive_int(value: Optional[str], name: str, default: int) -> int:
+def _positive_int(value, name: str, default: int) -> int:
     if value is None or value == "":
         return default
-    if not value.isascii() or not value.isdigit() or int(value) <= 0:
+    if not isinstance(value, str) or not value.isascii() or not value.isdigit() or int(value) <= 0:
         raise NodeGroupError(f"{name} must be a positive integer")
     return int(value)
 
 
-def _node_rank(value: Optional[str], nnodes: int) -> int:
+def _node_rank(value, nnodes: int) -> int:
     if value is None or value == "":
         return 0
-    if not value.isascii() or not value.isdigit() or int(value) >= nnodes:
+    if not isinstance(value, str) or not value.isascii() or not value.isdigit() or int(value) >= nnodes:
         raise NodeGroupError(f"{ENV_NODE_RANK} must be an integer in 0..{nnodes - 1}")
     return int(value)
 
@@ -82,7 +85,7 @@ class NodeGroup:
         return self.nnodes > 1
 
     @classmethod
-    def from_env(cls, environ: dict, default_master_port: int = DEFAULT_MASTER_PORT) -> "NodeGroup":
+    def from_env(cls, environ) -> "NodeGroup":
         """Parse the contract from an environment mapping.
 
         Absent variables mean a plain single-node run: ``nnodes=1``, rank 0.
@@ -93,7 +96,9 @@ class NodeGroup:
         master_addr = environ.get(ENV_MASTER_ADDR) or None
         if nnodes > 1 and not master_addr:
             raise NodeGroupError(f"{ENV_MASTER_ADDR} must be set for a multi-node group")
-        master_port = _positive_int(environ.get(ENV_MASTER_PORT), ENV_MASTER_PORT, default_master_port)
+        master_port = _positive_int(environ.get(ENV_MASTER_PORT), ENV_MASTER_PORT, DEFAULT_MASTER_PORT)
+        if master_port > 65535:
+            raise NodeGroupError(f"{ENV_MASTER_PORT} must be at most 65535")
         return cls(
             nnodes=nnodes,
             node_rank=node_rank,

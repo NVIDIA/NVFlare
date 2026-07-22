@@ -216,6 +216,7 @@ def test_apptainer_node_group_containerizes_each_rank_on_its_node(tmp_path):
     assert "APPTAINERENV_NVFLARE_JOB_AUTH_TOKEN" in node
     assert "SINGULARITYENV_NVFLARE_JOB_AUTH_TOKEN" in node
     assert "node group topology mismatch" in node
+    assert "export CLIENT_API_TYPE=EX_PROCESS_API APPTAINERENV_CLIENT_API_TYPE=EX_PROCESS_API" in node
 
 
 def test_pyxis_node_group_fans_out_containers_through_one_srun(tmp_path):
@@ -238,9 +239,13 @@ def test_pyxis_node_group_fans_out_containers_through_one_srun(tmp_path):
     assert "apptainer" not in node
     assert f"cd {plan.node_app_dir}" in node
     assert "worker.module" in node
+    assert "export CLIENT_API_TYPE=EX_PROCESS_API" in node
 
 
-@pytest.mark.parametrize("node_rank, expected", [("0", "worker-ran token=cj-secret"), ("1", "rank=1 token=scrubbed")])
+@pytest.mark.parametrize(
+    "node_rank, expected",
+    [("0", "worker-ran token=cj-secret"), ("00", "worker-ran token=cj-secret"), ("1", "rank=1 token=scrubbed")],
+)
 def test_rendered_node_script_executes_by_rank_and_scrubs_worker_credentials(tmp_path, node_rank, expected):
     worker = tmp_path / "worker"
     worker.write_text(

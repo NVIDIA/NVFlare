@@ -159,7 +159,6 @@ def test_prepare_slurm_generates_runtime_artifacts(tmp_path, capsys):
         "parent_host": None,
         "poll_interval": 10,
         "pending_timeout": 600,
-        "multi_node_port_range": [29400, 30399],
     }
     ClientSlurmJobLauncher(**launcher["args"])
     assert _component(resources, "resource_manager")["path"].endswith("PassthroughResourceManager")

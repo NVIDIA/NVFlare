@@ -374,7 +374,9 @@ both the job's training command and its ``node_command``:
 Without ``node_command``, a multi-node allocation keeps the client job process
 alone on the first node and the application owns any fan-out; this mode
 requires effective ``sandbox: none`` because only a bare client job process
-can reach ``srun``.
+can reach ``srun``. To keep application-owned fan-out for a job that would
+otherwise get a generated ``node_command``, set ``"node_command": null``
+explicitly in the launcher block.
 
 Security and Operations
 =======================

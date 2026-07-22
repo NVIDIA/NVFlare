@@ -391,10 +391,11 @@ def normalize_slurm_launcher_settings(
         "parent_host": None if parent_host is None else _require_string(parent_host, "parent_host"),
         "poll_interval": poll_interval,
         "pending_timeout": pending_timeout,
-        "multi_node_port_range": (
-            DEFAULT_MULTINODE_PORT_RANGE
-            if multi_node_port_range is None
-            else normalize_multi_node_port_range(multi_node_port_range, internal_port=internal_port)
+        # The default range is validated too: the internal_port exclusion is
+        # unconditional, however the range was chosen.
+        "multi_node_port_range": normalize_multi_node_port_range(
+            DEFAULT_MULTINODE_PORT_RANGE if multi_node_port_range is None else multi_node_port_range,
+            internal_port=internal_port,
         ),
     }
 

@@ -329,13 +329,69 @@ class TestFillNodeCommands:
         with pytest.raises(RuntimeError, match="launch_once=True"):
             job_config._fill_node_commands(meta)
 
-    def test_reserved_default_key_is_not_treated_as_a_site(self):
-        job_config = self._job_config()
+    def test_default_block_is_filled_through_the_all_sites_app(self):
+        job_config = self._job_config(site="@ALL")
+        meta = {"launcher_spec": {"default": {"slurm": {"nodes": 2}}}}
+
+        job_config._fill_node_commands(meta)
+
+        assert meta["launcher_spec"]["default"]["slurm"]["node_command"] == self._SCRIPT
+
+    def test_default_block_without_all_sites_app_is_left_alone(self):
+        job_config = self._job_config(site="site-1")
         meta = {"launcher_spec": {"default": {"slurm": {"nodes": 2}}}}
 
         job_config._fill_node_commands(meta)
 
         assert "node_command" not in meta["launcher_spec"]["default"]["slurm"]
+
+    def test_site_inheriting_nodes_from_default_block_is_filled(self):
+        job_config = self._job_config(site="site-1")
+        meta = {
+            "launcher_spec": {
+                "default": {"slurm": {"nodes": 2}},
+                "site-1": {"slurm": {"gpus_per_node": 4}},
+            }
+        }
+
+        job_config._fill_node_commands(meta)
+
+        assert meta["launcher_spec"]["site-1"]["slurm"]["node_command"] == self._SCRIPT
+
+    def test_sites_sharing_one_authored_block_get_their_own_commands(self):
+        from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
+        from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig
+
+        job_config = FedJobConfig(job_name="job", min_clients=2)
+        for site, script in (("site-1", "python3 one.py"), ("site-2", "python3 two.py")):
+            client_app = ClientAppConfig()
+            client_app.add_component("launcher", SubprocessLauncher(script=script, launch_once=True))
+            job_config.add_fed_app(f"app_{site}", FedAppConfig(client_app=client_app))
+            job_config.set_site_app(site, f"app_{site}")
+        shared_block = {"slurm": {"nodes": 2}}
+        meta = {"launcher_spec": {"site-1": shared_block, "site-2": shared_block}}
+
+        job_config._fill_node_commands(meta)
+
+        assert meta["launcher_spec"]["site-1"]["slurm"]["node_command"] == "python3 one.py"
+        assert meta["launcher_spec"]["site-2"]["slurm"]["node_command"] == "python3 two.py"
+
+    def test_secret_refs_in_the_training_command_are_not_copied(self):
+        from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
+        from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig
+
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        client_app = ClientAppConfig()
+        client_app.add_component(
+            "launcher", SubprocessLauncher(script="python3 t.py --token ${secret:TOK}", launch_once=True)
+        )
+        job_config.add_fed_app("app", FedAppConfig(client_app=client_app))
+        job_config.set_site_app("site-1", "app")
+        meta = {"launcher_spec": {"site-1": {"slurm": {"nodes": 2}}}}
+
+        job_config._fill_node_commands(meta)
+
+        assert "node_command" not in meta["launcher_spec"]["site-1"]["slurm"]
 
     def test_site_without_subprocess_launcher_is_left_alone(self):
         job_config = self._job_config(with_launcher=False)

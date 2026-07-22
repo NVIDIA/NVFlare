@@ -66,7 +66,9 @@ def build_torchrun_argv(argv: Sequence[str], environ: dict) -> list:
                 "--rdzv_backend=c10d",
                 f"--rdzv_endpoint={group.master_addr}:{group.master_port}",
                 f"--rdzv_id={rdzv_id}",
-                f"--rdzv_conf=join_timeout={options.join_timeout}",
+                # read_timeout bounds the wait for rank 0's store to come up (torch
+                # default 60s); join_timeout only applies after the store connects.
+                f"--rdzv_conf=join_timeout={options.join_timeout},read_timeout={options.join_timeout}",
             ]
         )
     result.extend(training_argv)
@@ -75,7 +77,7 @@ def build_torchrun_argv(argv: Sequence[str], environ: dict) -> list:
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
     try:
-        torchrun_argv = build_torchrun_argv(sys.argv[1:] if argv is None else argv, dict(os.environ))
+        torchrun_argv = build_torchrun_argv(sys.argv[1:] if argv is None else argv, os.environ)
     except NodeGroupError as e:
         print(f"torchrun_node: {e}", file=sys.stderr)
         raise SystemExit(2) from e

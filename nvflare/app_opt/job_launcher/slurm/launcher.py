@@ -28,6 +28,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, add_launcher
 from nvflare.apis.utils.format_check import check_job_id
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.multinode import JOB_SPEC_NODE_COMMAND, JOB_SPEC_NODES
 from nvflare.app_opt.job_launcher.slurm.config import (
     _JOB_SLURM_KEYS,
     CONTAINER_RESOLV_CONF,
@@ -67,14 +68,17 @@ from nvflare.utils.job_launcher_utils import (
 )
 
 
+def _validate_child_dir(parent_real: str, path: str, what: str, parent_desc: str) -> str:
+    if os.path.islink(path) or not os.path.isdir(path):
+        raise SlurmLauncherError(f"{what} must be an existing non-symlink directory: {path}")
+    real = os.path.realpath(path)
+    if os.path.dirname(real) != parent_real:
+        raise SlurmLauncherError(f"{what} must be an immediate child of {parent_desc}: {path}")
+    return real
+
+
 def _validate_run_dir(workspace_path: str, run_dir: str) -> str:
-    if os.path.islink(run_dir) or not os.path.isdir(run_dir):
-        raise SlurmLauncherError(f"job run directory must be an existing non-symlink directory: {run_dir}")
-    workspace_real = os.path.realpath(workspace_path)
-    run_real = os.path.realpath(run_dir)
-    if os.path.dirname(run_real) != workspace_real:
-        raise SlurmLauncherError(f"job run directory must be an immediate child of workspace_path: {run_dir}")
-    return run_real
+    return _validate_child_dir(os.path.realpath(workspace_path), run_dir, "job run directory", "workspace_path")
 
 
 def _resolve_resources(
@@ -89,8 +93,8 @@ def _resolve_resources(
     if unknown:
         raise SlurmLauncherError(f"unsupported job-owned Slurm key(s): {sorted(unknown)}")
 
-    nodes = _require_int(spec.get("nodes", 1), "nodes")
-    if nodes > 1 and sandbox != "none" and spec.get("node_command") is None:
+    nodes = _require_int(spec.get(JOB_SPEC_NODES, 1), "nodes")
+    if nodes > 1 and sandbox != "none" and spec.get(JOB_SPEC_NODE_COMMAND) is None:
         raise SlurmLauncherError(
             "multi-node Slurm jobs require effective sandbox 'none' unless node_command requests "
             "a launcher-owned node group"
@@ -134,7 +138,7 @@ def _resolve_resources(
 def _resolve_node_command(
     job_spec: dict, nodes: int, workspace: Workspace, job_id: str, run_dir: str, supported: bool
 ) -> tuple[tuple, Optional[str]]:
-    raw = job_spec.get("node_command")
+    raw = job_spec.get(JOB_SPEC_NODE_COMMAND)
     if raw is None:
         return (), None
     if not supported:
@@ -152,10 +156,7 @@ def _resolve_node_command(
         raise SlurmLauncherError("malformed node_command") from e
     if not tokens:
         raise SlurmLauncherError("node_command must contain at least one word")
-    app_dir = workspace.get_app_dir(job_id)
-    app_real = os.path.realpath(app_dir)
-    if os.path.islink(app_dir) or not os.path.isdir(app_real) or os.path.dirname(app_real) != run_dir:
-        raise SlurmLauncherError(f"job app directory must be an existing non-symlink child of the run dir: {app_dir}")
+    app_real = _validate_child_dir(run_dir, workspace.get_app_dir(job_id), "job app directory", "the run dir")
     return tuple(tokens), app_real
 
 

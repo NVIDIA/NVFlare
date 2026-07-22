@@ -217,9 +217,12 @@ contain `internal_port`) or use scheduler policy such as exclusive nodes.
 the standard worker command, so the CJ connects to the parent and reports the job result exactly as a single-node
 job; every other rank executes the `node_command` argv in the deployed job app directory. The fan-out `srun` uses
 `--label`, so each task's output lines carry their node rank. Both paths inherit the batch environment (sourced secrets, `PYTHONPATH`, study env,
-forwarded names) because the script exports `SLURM_EXPORT_ENV=ALL` before the fan-out — except the bootstrap
-credentials: the non-zero branch unsets the `JobProcessEnv` variables (and their Apptainer mirrors) before
-executing user code, preserving the contract that only the job process consumes them. The variable names carry
+forwarded names) because the script exports `SLURM_EXPORT_ENV=ALL` before the fan-out; Pyxis tasks are the
+exception — they receive the explicit `--export` list, so `setup`-created variables reach bare and Apptainer
+node groups but not Pyxis ranks (use study env or `forward_env` there). The non-zero branch unsets the
+bootstrap-credential `JobProcessEnv` variables (and their container mirrors) and exports
+`CLIENT_API_TYPE=EX_PROCESS_API` for parity with the rank-0 training subprocess, so `flare.init()` behaves
+identically on every rank. The variable names carry
 no scheduler meaning, so the same `node_command` can run under any launcher that adopts the contract.
 
 `node_command` is job-owned and validated at the launch boundary: a single-line, shell-lexable, non-empty string
@@ -228,7 +231,8 @@ worker command for the non-zero node ranks. For jobs built with the FedJob/Recip
 export fills it from the site's `SubprocessLauncher` command whenever a launcher block requests `nodes > 1`, so
 the meta command and the deployed rank-0 command come from one source and `launch_once=True` is enforced at
 export (the training program performs one rendezvous per job). An explicit `node_command` always wins and remains
-available for jobs that do not use `ScriptRunner`; for those, `SubprocessLauncher` still refuses
+available for jobs that do not use `ScriptRunner`; an explicit `null` opts a multi-node job out of generation
+and keeps application-owned fan-out; for those, `SubprocessLauncher` still refuses
 `launch_once=False` at CJ start when the node-group environment is present, while the identical-command
 convention stays the job author's responsibility. The command executes as the
 submitting user under the effective sandbox, with exactly the trust of the BYOC training code the rank-0 CJ
@@ -271,8 +275,9 @@ The contract is the minimal "single-coordinator rendezvous" set that PyTorch, De
 and JAX all self-assemble from; `node_command` may be any executable, including a plain shell wrapper reading the
 variables itself. `nvflare.app_common.multinode` provides the shared parsing (`NodeGroup.from_env`, the `--`
 command boundary); a framework helper is a thin translation of a `NodeGroup` into framework arguments. The first
-consumer, `nvflare.app_opt.pt.torchrun_node`, maps the contract onto torchrun c10d rendezvous arguments (with a
-configurable join timeout for the window before the CJ starts training) and degrades to standalone single-node
+consumer, `nvflare.app_opt.pt.torchrun_node`, maps the contract onto torchrun c10d rendezvous arguments — its
+`--join-timeout` sets both the rendezvous join timeout and the store-connection (`read_timeout`) bound, covering
+the window before the CJ starts training — and degrades to standalone single-node
 torchrun when the contract is absent, so the same command line serves as the job's rank-0 training command and as
 its `node_command`:
 
@@ -298,4 +303,7 @@ worker `PYTHONPATH` to the resolved job and site custom directories, so a source
 not a worker installation.
 
 The parent address comes from explicit `parent_host`, which always wins, or `SLURMD_NODENAME` when the parent itself
-runs inside a Slurm allocation. A parent outside an allocation therefore requires `parent_host`.
+runs inside a Slurm allocation. A parent outside an allocation therefore requires `parent_host`. Node groups
+additionally require the Slurm NodeName of rank 0 (`SLURMD_NODENAME`) to be DNS-resolvable from the other
+allocated nodes, since it becomes `NVFL_MASTER_ADDR`; clusters whose NodeName differs from a resolvable hostname
+must fix name resolution or use exclusive-node policies compatible with their fabric.

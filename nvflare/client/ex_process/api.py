@@ -22,6 +22,7 @@ from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey, WorkspaceConstants
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.multinode import ENV_NODE_RANK
 from nvflare.client.api_spec import APISpec
 from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat, from_file
 from nvflare.client.converter_utils import create_default_params_converters
@@ -191,7 +192,9 @@ class ExProcessClientAPI(APISpec):
         """
 
         if rank is None:
-            rank = os.environ.get("RANK", "0")
+            # Torchrun sets RANK per process; a node-group worker without RANK must
+            # not act as global rank 0, so fall back to the node-group contract.
+            rank = os.environ.get("RANK", os.environ.get(ENV_NODE_RANK, "0"))
 
         if self.model_registry:
             self.logger.warning("Warning: called init() more than once. The subsequence calls are ignored")
