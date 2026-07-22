@@ -1,11 +1,12 @@
 ---
 name: nvflare-autofl
-description: "Improve or optimize an existing NVFLARE job or project through an agent-assisted Auto-FL campaign: fix low accuracy or an underperforming metric, or try a bounded number of approaches (for example 'try two approaches') while keeping the data and evaluation setup unchanged; preserves FLARE execution, policy, artifacts, and reproducibility and produces a results report."
+description: "Use for agent-assisted Auto-FL optimization of an existing NVFLARE job in simulation, POC, or production. Do not use for code conversion, diagnosis-only work, or deployment setup."
 license: Apache-2.0
 version: "0.1.0"
 compatibility: "Requires NVFLARE 2.8.0+, Python, and permission to run NVFLARE jobs in the selected environment."
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
+  tags: [nvflare, federated-learning, optimization]
   min_flare_version: "2.8.0"
   blast_radius: submits_production
   category: Optimization
@@ -15,13 +16,19 @@ metadata:
 
 **All optimization must go through the official campaign runner (`run_job_campaign.py`): never optimize or edit the user's project directly outside a prepared candidate.**
 
-## Use When
-Use this skill when the user asks to optimize an existing NVFLARE `job.py` for accuracy, AUC, loss, runtime,
-robustness, or another metric in simulation, POC, or production.
+## Purpose
+Use this skill when the user asks to optimize an existing NVFLARE `job.py` for accuracy, AUC, loss, runtime, robustness, or another metric in simulation, POC, or production.
 
-## Do Not Use When
-Do not use for converting non-FL training code into NVFLARE, diagnosing failed jobs without an optimization goal,
-production deployment setup, evaluation/statistics-only recipes, or generic tuning outside an NVFLARE job.
+## Limitations
+Do not use for converting non-FL training code into NVFLARE, diagnosing failed jobs without an optimization goal, production deployment setup, evaluation/statistics-only recipes, or generic tuning outside an NVFLARE job.
+
+## Available Scripts
+| Script | Purpose | Arguments |
+| --- | --- | --- |
+| `scripts/run_job_campaign.py` | Authoritative campaign lifecycle runner | `ACTION JOB` plus action-specific flags |
+| `scripts/campaign_guard.py` | Read-only ledger diagnostics | `[RESULTS]` and diagnostic thresholds |
+| `scripts/plot_progress.py` | Render campaign progress | `[RESULTS]`, `--output`, `--mode`, `--metric` |
+| `scripts/job_importer.py` | Import library used by the campaign runner | Not a standalone CLI |
 
 ## Workflow
 Use this skill to optimize an existing NVFLARE `job.py` without asking the user to learn a new Auto-FL command tree.
@@ -181,6 +188,9 @@ argument-only linked candidates are rejected at evaluate time. After the first r
 workload-appropriate ideas — client optimizer, loss, schedule, and architecture qualify; avoid Byzantine-robust
 aggregation for benign campaigns. If no source-backed exploration is compatible, record why in the event. Flags, env
 vars, and full semantics: [continuous-campaigns.md](references/continuous-campaigns.md).
+
+## Troubleshooting
+On import or validation failure, fix the reported contract issue without bypassing the runner. On exit 75, reuse the exact approved prefix or wait for the human. For noisy scores, follow [experiment comparability](references/experiment-comparability.md).
 
 ## Stop Handling
 
