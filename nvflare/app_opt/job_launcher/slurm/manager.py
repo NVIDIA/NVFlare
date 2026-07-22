@@ -234,7 +234,7 @@ class SlurmJobManager:
             if plan.sandbox == "apptainer":
                 launcher_mounts += (
                     BindMount(
-                        os.path.realpath(CONTAINER_RESOLV_CONF),
+                        CONTAINER_RESOLV_CONF,
                         CONTAINER_RESOLV_CONF,
                         "ro",
                     ),

@@ -51,7 +51,7 @@ SLURM_COMPUTE_EXECUTABLES = ("apptainer", "srun")
 
 _JOB_SLURM_KEYS = {"image", "nodes", "gpus_per_node", "cpus_per_node", "mem_per_node", "time", "pending_timeout"}
 
-_PENDING_STATES = {"PENDING", "CONFIGURING", "RESV_DEL_HOLD"}
+_PENDING_STATES = {"PENDING", "CONFIGURING", "REQUEUE_HOLD", "RESV_DEL_HOLD", "SPECIAL_EXIT"}
 _APPLICATION_TERMINAL_STATES = {"COMPLETED", "FAILED"}
 _INFRASTRUCTURE_TERMINAL_STATES = {
     "BOOT_FAIL",

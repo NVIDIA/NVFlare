@@ -135,9 +135,9 @@ An accounting outage leaves the handle non-terminal. If five successful `sacct` 
 all return no record for a known job, the launcher reports an infrastructure exception. It does not infer a worker
 result from the missing record.
 
-`pending_timeout` starts when the scheduler first reports `PENDING`, `CONFIGURING`, or `RESV_DEL_HOLD`. Other
-ordinary live states remain active. Submission disables requeue, and the batch script refuses a restarted
-allocation before starting the worker.
+`pending_timeout` starts when the scheduler first reports `PENDING`, `CONFIGURING`, `REQUEUE_HOLD`,
+`RESV_DEL_HOLD`, or `SPECIAL_EXIT`. Other ordinary live states remain active. Submission disables requeue, and the
+batch script refuses a restarted allocation before starting the worker.
 
 Slurm `State` and `ExitCode` determine the scheduler fallback result. The generic NVFlare
 `_process_rc.txt` handling may refine the application result after `wait()`.

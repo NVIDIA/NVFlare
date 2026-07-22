@@ -26,6 +26,7 @@ from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.app_opt.job_launcher.slurm import manager as manager_module
 from nvflare.app_opt.job_launcher.slurm.config import (
+    CONTAINER_RESOLV_CONF,
     SANDBOX_ROOT,
     CommandResult,
     JobResources,
@@ -135,7 +136,7 @@ def _manager(tmp_path, adapter=None, monotonic=None):
     return manager
 
 
-def _plan(tmp_path, pending_timeout=5, setup="", sandbox="none"):
+def _plan(tmp_path, pending_timeout=5, setup="", sandbox="none", image=None):
     run_dir = tmp_path / "job-1"
     run_dir.mkdir(exist_ok=True)
     return LaunchPlan(
@@ -146,7 +147,7 @@ def _plan(tmp_path, pending_timeout=5, setup="", sandbox="none"):
         resources=JobResources(pending_timeout=pending_timeout),
         directives={},
         sandbox=sandbox,
-        image=None,
+        image=image,
         setup=setup,
         study_env={},
         study_secret_env={},
@@ -486,6 +487,23 @@ def test_terminal_cleanup_restores_access_to_pyxis_mount_directories(tmp_path):
     assert not os.path.exists(handle.job_dir)
 
 
+def test_apptainer_resolver_mount_uses_compute_node_path(tmp_path, monkeypatch):
+    parent_target = "/run/parent-specific/resolv.conf"
+    realpath = os.path.realpath
+
+    def parent_realpath(path):
+        return parent_target if path == CONTAINER_RESOLV_CONF else realpath(path)
+
+    monkeypatch.setattr(manager_module.os.path, "realpath", parent_realpath)
+    adapter = Adapter()
+    manager = _manager(tmp_path, adapter)
+
+    manager.launch(_plan(tmp_path, sandbox="apptainer", image="/image.sif"))
+
+    assert f"{CONTAINER_RESOLV_CONF}:{CONTAINER_RESOLV_CONF}:ro" in adapter.submitted_batch
+    assert parent_target not in adapter.submitted_batch
+
+
 def test_terminal_squeue_row_moves_directly_to_accounting(tmp_path):
     adapter = Adapter()
     adapter.live = _query(LookupStatus.FOUND, _record(state="CANCELLED"))
@@ -534,10 +552,11 @@ def test_user_abort_is_the_only_cancelled_result_mapped_to_aborted(tmp_path):
     assert handle.poll() == JobReturnCode.ABORTED
 
 
-def test_pending_timeout_starts_with_first_live_pending_observation(tmp_path):
+@pytest.mark.parametrize("state", ["PENDING", "REQUEUE_HOLD", "SPECIAL_EXIT"])
+def test_pending_timeout_starts_with_first_live_pending_observation(tmp_path, state):
     clock = Clock()
     adapter = Adapter()
-    adapter.live = _query(LookupStatus.FOUND, _record(state="PENDING"))
+    adapter.live = _query(LookupStatus.FOUND, _record(state=state))
     manager = _manager(tmp_path, adapter, monotonic=clock)
     handle = manager.launch(_plan(tmp_path, pending_timeout=5))
 
