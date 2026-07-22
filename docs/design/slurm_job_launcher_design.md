@@ -190,20 +190,16 @@ accepted by the site.
 ## Multi-node node groups
 
 A client job opts into a launcher-owned node group by combining `nodes > 1` with a `node_command` in its effective
-Slurm launcher block. The launcher then owns the multi-node fan-out: the single allocation starts one task per
-node, node rank 0 runs the normal CJ worker unchanged, and every other node runs the job's `node_command`. Without
+Slurm launcher block. The single allocation starts one task per node: node rank 0 runs the normal CJ worker
+unchanged, every other node runs the job's `node_command`. Extra nodes never register with the server and carry no
+FL identity; cross-node coordination (rendezvous, collectives) belongs to the training framework. Without
 `node_command`, a multi-node allocation keeps the previous behavior: the CJ runs alone on the first node and the
 application owns any fan-out.
-
-The model keeps one CJ per site per job. Extra nodes never register with the server and carry no FL identity; they
-exist only to run additional ranks of the training program that the rank-0 CJ launches through its configured
-launcher component. Cross-node coordination (rendezvous, collectives) belongs to the training framework, not to
-NVFlare.
 
 ### Environment contract
 
 The batch script, which always executes on the first node of the allocation, exports a scheduler-neutral contract
-and then delegates to one `srun --nodes=N --ntasks=N --ntasks-per-node=1` invocation of the generated `node.sh`:
+and delegates to one `srun --nodes=N --ntasks=N --ntasks-per-node=1` invocation of the generated `node.sh`:
 
 | Variable | Value |
 | --- | --- |
@@ -212,17 +208,23 @@ and then delegates to one `srun --nodes=N --ntasks=N --ntasks-per-node=1` invoca
 | `NVFL_MASTER_ADDR` | `SLURMD_NODENAME` of the batch node, which is node rank 0 |
 | `NVFL_MASTER_PORT` | `29400 + SLURM_JOB_ID % 1000`, deterministic per allocation and collision-safe on shared nodes |
 
-`node.sh` dispatches on the rank. Rank 0 executes the standard worker command, so the CJ connects to the parent
-and reports the job result exactly as a single-node job. Every other rank runs in the deployed job app directory
-and executes the validated `node_command` argv. Both paths inherit the batch environment (sourced secrets,
-`PYTHONPATH`, study env, forwarded names) because the script exports `SLURM_EXPORT_ENV=ALL` before the fan-out.
-The variable names carry no scheduler meaning, so the same `node_command` can run under any launcher that adopts
-the contract.
+`node.sh` dispatches on the rank: rank 0 executes the standard worker command, so the CJ connects to the parent
+and reports the job result exactly as a single-node job; every other rank executes the `node_command` argv in the
+deployed job app directory. Both paths inherit the batch environment (sourced secrets, `PYTHONPATH`, study env,
+forwarded names) because the script exports `SLURM_EXPORT_ENV=ALL` before the fan-out. The variable names carry
+no scheduler meaning, so the same `node_command` can run under any launcher that adopts the contract.
+
+`node_command` is job-owned and validated at the launch boundary: a single-line, shell-lexable, non-empty string,
+split once into argv and rendered fully quoted, never re-parsed by a shell. It executes as the submitting user
+under the effective sandbox, with exactly the trust of the BYOC training code the rank-0 CJ launches itself. It
+is rejected for server jobs, for `nodes: 1`, and when the deployed job app directory is missing.
 
 ### Sandboxed node groups
 
 Node groups compose with every sandbox because the ordering is fixed: scheduler fan-out first, on the bare
-allocation, containers second, as per-node leaves. All user code, on every rank, runs under the effective sandbox.
+allocation, containers second, as per-node leaves. All user code, on every rank, runs under the effective sandbox
+with the launcher-standard isolation flags. Application-owned fan-out (multi-node without `node_command`) still
+requires effective sandbox `none`, since only a bare CJ can reach `srun`.
 
 | Sandbox | Fan-out | Containerization |
 | --- | --- | --- |
@@ -231,44 +233,32 @@ allocation, containers second, as per-node leaves. All user code, on every rank,
 | `pyxis` | one `srun` carrying the usual container flags | Pyxis creates the per-task container; `node.sh` dispatches inside it |
 
 Environment delivery follows each backend's existing mechanism: bare tasks inherit the exported batch environment;
-Apptainer receives the contract through `APPTAINERENV_*` mirrors (`NVFL_NODE_RANK` is mirrored per task inside
-`node.sh`); Pyxis adds the contract names to the shared `--export`/`--container-env` list, and `SLURM_NODEID` is
-provided per task by Slurm itself. For Pyxis the job artifact directory is bind-mounted read-only into the
-container because `srun` starts `node.sh` inside it; the secret file is already deleted before any task starts.
-Container node groups require an image that provides `bash` for `node.sh` (Pyxis) and the launcher-standard
-isolation flags are identical to single-node container jobs.
-
-### Node command ownership and trust
-
-`node_command` is job-owned and validated at the launch boundary: a single-line, shell-lexable, non-empty string,
-split once into argv and rendered fully quoted, never re-parsed by a shell. It executes as the submitting user
-under the effective sandbox, with exactly the trust of the BYOC training code the rank-0 CJ launches itself. It
-is rejected for server jobs, for `nodes: 1`, and when the deployed job app directory is missing. Application-owned
-fan-out (multi-node without `node_command`) still requires effective sandbox `none`, since only a bare CJ can
-reach `srun`.
+Apptainer receives the contract through `APPTAINERENV_*` mirrors (`NVFL_NODE_RANK` per task inside `node.sh`);
+Pyxis adds the contract names to the shared `--export`/`--container-env` list, with `SLURM_NODEID` provided per
+task by Slurm. For Pyxis the job artifact directory is bind-mounted read-only because `srun` starts `node.sh`
+inside the container; the secret file is already deleted before any task starts, and the image must provide
+`bash`.
 
 ### Lifecycle and results
 
 The fan-out uses `--kill-on-bad-exit=0`: a failing worker node must not kill rank 0 before the CJ reports the
-training failure through the normal task path, and surviving ranks observe the loss through the training
-framework's own failure detection. Rank 0 remains authoritative for the application result via `_process_rc.txt`;
-the scheduler fallback still uses allocation `State` and `ExitCode`, which reflect the highest task exit code.
+training failure through the normal task path; surviving ranks observe the loss through the training framework's
+own failure detection. Rank 0 remains authoritative for the application result via `_process_rc.txt`; the
+scheduler fallback still uses allocation `State` and `ExitCode`, which reflect the highest task exit code.
 Cancellation, monitoring, and pending-timeout handling are unchanged because the node group is one allocation
-with one scheduler identity; a single verified `scancel` ends every task. Between training rounds the non-zero
-ranks hold their nodes idle, which is inherent to a static allocation.
+with one scheduler identity. Between training rounds the non-zero ranks hold their nodes idle, which is inherent
+to a static allocation.
 
 ### Framework helpers
 
-The contract is framework-neutral: it is the minimal "single-coordinator rendezvous" set that PyTorch, DeepSpeed,
-XGBoost trackers, Ray, and JAX all self-assemble from, and `node_command` may be any executable, including a
-plain shell wrapper that reads the variables itself. `nvflare.app_common.multinode` provides the shared parsing
-(`NodeGroup.from_env` and the `--` command boundary) for framework helper commands; each helper is a thin
-translation of a `NodeGroup` into framework-specific arguments.
-
-The first consumer is the PyTorch helper `nvflare.app_opt.pt.torchrun_node`. It maps the contract onto torchrun
-rendezvous arguments (c10d, endpoint on rank 0, configurable join timeout for the window before the CJ starts
-training) and degrades to standalone single-node torchrun when the contract is absent. The same command line
-therefore serves as the job's rank-0 training command and as its `node_command`:
+The contract is the minimal "single-coordinator rendezvous" set that PyTorch, DeepSpeed, XGBoost trackers, Ray,
+and JAX all self-assemble from; `node_command` may be any executable, including a plain shell wrapper reading the
+variables itself. `nvflare.app_common.multinode` provides the shared parsing (`NodeGroup.from_env`, the `--`
+command boundary); a framework helper is a thin translation of a `NodeGroup` into framework arguments. The first
+consumer, `nvflare.app_opt.pt.torchrun_node`, maps the contract onto torchrun c10d rendezvous arguments (with a
+configurable join timeout for the window before the CJ starts training) and degrades to standalone single-node
+torchrun when the contract is absent, so the same command line serves as the job's rank-0 training command and as
+its `node_command`:
 
 ```text
 python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 -- custom/client.py --epochs 2

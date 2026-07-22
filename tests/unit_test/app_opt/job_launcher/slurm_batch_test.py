@@ -177,18 +177,6 @@ def test_multinode_batch_exports_node_group_contract_and_delegates_to_srun(tmp_p
     assert "worker.module" not in command_line
 
 
-def test_node_script_dispatches_worker_on_rank_zero_and_node_command_elsewhere(tmp_path):
-    plan = _multinode_plan(tmp_path)
-
-    script = _render_node_script(plan, _config(tmp_path))
-
-    assert 'export NVFL_NODE_RANK="${SLURM_NODEID:?}"' in script
-    assert "worker.module" in script
-    assert f"cd {plan.node_app_dir}" in script
-    assert "python3 -m trainer --epochs 2" in script
-    assert 'exec "${_nvfl_command[@]}"' in script
-
-
 def test_apptainer_node_group_containerizes_each_rank_on_its_node(tmp_path):
     plan = _multinode_plan(tmp_path, sandbox="apptainer")
     job_dir = _job_dir(tmp_path)
@@ -234,13 +222,13 @@ def test_pyxis_node_group_fans_out_containers_through_one_srun(tmp_path):
     assert "worker.module" in node
 
 
-@pytest.mark.parametrize("node_rank, expected", [("0", "worker-ran"), ("1", "app-dir")])
+@pytest.mark.parametrize("node_rank, expected", [("0", "worker-ran"), ("1", "rank=1")])
 def test_rendered_node_script_executes_by_rank(tmp_path, node_rank, expected):
     worker = tmp_path / "worker"
     worker.write_text("#!/usr/bin/env bash\necho worker-ran\n", encoding="utf-8")
     worker.chmod(0o700)
     plan = replace(
-        _multinode_plan(tmp_path, node_command=("bash", "-c", "echo app-dir; pwd")),
+        _multinode_plan(tmp_path, node_command=("bash", "-c", 'echo "rank=${NVFL_NODE_RANK}"; pwd')),
         python_path=str(worker),
     )
     node_path = Path(_job_dir(tmp_path)) / "node.sh"
