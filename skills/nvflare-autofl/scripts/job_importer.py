@@ -428,7 +428,7 @@ class DeterministicJobImporter:
         source_text: str,
     ) -> Dict[str, Any]:
         requested = target_env or (_env_name_to_profile(env_call.name) if env_call else "sim")
-        environment: Dict[str, Any] = {"requested": requested, "profiles": {}}
+        environment: Dict[str, Any] = {"requested": requested, "profiles": {}, "simulator_env_passthrough": []}
         if env_call and env_call.name == "SimEnv":
             sim_profile: Dict[str, Any] = {}
             if "num_clients" in env_call.keywords:
