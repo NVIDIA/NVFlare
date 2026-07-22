@@ -2,7 +2,7 @@
 name: nvflare-orient
 description: "Route open-ended or ambiguous NVFLARE requests by inspecting the local project and recommending one specific workflow skill without editing files; do not use for an explicit conversion request, even when its framework still needs detection."
 license: Apache-2.0
-version: "0.1.0" # NVSkills CI bootstrap: no behavior change.
+version: "0.1.0"
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
   min_flare_version: "2.8.0"
@@ -57,7 +57,8 @@ directly rather than invoking orient first.
 - Must report the evidence used for routing.
 - Must prefer a specific workflow skill over broad FLARE advice.
 - Must say when no FLARE skill should trigger.
-- Must not edit files, start POC systems, submit jobs, or read private keys.
+- Must not edit files, start POC systems, submit jobs, or inspect credential
+  material.
 
 Load `references/orientation-routing.md` when routing is ambiguous or when the
 inspect output names multiple possible workflow families.
