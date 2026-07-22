@@ -13,12 +13,12 @@
 # limitations under the License.
 
 from nvflare.apis.signal import Signal
-from nvflare.collab.api.backend import Backend
+from nvflare.collab.api._invocation import InvocationDispatcher
 from nvflare.collab.api.call_opt import CallOption
 from nvflare.collab.api.context import Context
 
 
-class _GroupOnlyBackend(Backend):
+class _GroupOnlyDispatcher(InvocationDispatcher):
     def __init__(self, result):
         super().__init__(Signal())
         self.result = result
@@ -30,10 +30,10 @@ class _GroupOnlyBackend(Backend):
 
 
 def test_call_target_uses_single_member_group():
-    backend = _GroupOnlyBackend(result="result")
-    context = Context(app=object(), caller="server", callee="site-1", abort_signal=backend.abort_signal)
+    dispatcher = _GroupOnlyDispatcher(result="result")
+    context = Context(app=object(), caller="server", callee="site-1", abort_signal=dispatcher.abort_signal)
 
-    result = backend.call_target(
+    result = dispatcher.call_target(
         context=context,
         target_name="site-1.trainer",
         call_opt=CallOption(),
@@ -42,16 +42,16 @@ def test_call_target_uses_single_member_group():
     )
 
     assert result == "result"
-    assert backend.group_context.target_name == "site-1.trainer"
-    assert backend.group_context.context is context
-    assert backend.group_context.waiter.sites == ["site-1.trainer"]
+    assert dispatcher.group_context.target_name == "site-1.trainer"
+    assert dispatcher.group_context.context is context
+    assert dispatcher.group_context.waiter.sites == ["site-1.trainer"]
 
 
 def test_call_target_returns_immediately_when_no_result_is_expected():
-    backend = _GroupOnlyBackend(result="ignored")
-    context = Context(app=object(), caller="server", callee="site-1", abort_signal=backend.abort_signal)
+    dispatcher = _GroupOnlyDispatcher(result="ignored")
+    context = Context(app=object(), caller="server", callee="site-1", abort_signal=dispatcher.abort_signal)
 
-    result = backend.call_target(
+    result = dispatcher.call_target(
         context=context,
         target_name="site-1.trainer",
         call_opt=CallOption(expect_result=False),

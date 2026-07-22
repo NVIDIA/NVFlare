@@ -12,13 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Base writer class for Collab tracking in subprocess mode.
+"""Base writer class for Collab tracking."""
 
-This provides a similar interface to nvflare.client.tracking._BaseWriter
-but designed for subprocess execution where metrics are sent via CellNet.
-"""
-
-import os
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
@@ -26,31 +21,19 @@ from nvflare.apis.analytix import AnalyticsDataType
 
 
 class BaseWriter(ABC):
-    """Abstract base class for tracking writers in Collab subprocess mode.
+    """Abstract base class for Collab tracking writers.
 
-    Writers are used in the subprocess (CollabWorker) to log metrics during
-    training. The metrics are sent via CellNet to CollabExecutor, which then
-    forwards them to the configured tracking receiver (MLflow, TensorBoard, etc.).
-
-    Subclasses should implement the `log` method to send metrics appropriately.
+    Subclasses implement the `log` method to emit metrics appropriately.
 
     Example usage in training code:
-        writer = SubprocessWriter()  # or TensorBoardWriter, MLflowWriter, etc.
+        writer = TensorBoardWriter()
         writer.log("loss", 0.5, AnalyticsDataType.SCALAR)
         writer.log("accuracy", 0.95, AnalyticsDataType.SCALAR, step=100)
     """
 
     def __init__(self):
         """Initialize the writer."""
-        # Get rank for DDP - only rank 0 should log
-        self.rank = os.environ.get("RANK", "0")
-        self.local_rank = os.environ.get("LOCAL_RANK", "0")
-        self.site_name = os.environ.get("COLLAB_SITE_NAME", "unknown")
-
-    def _check_rank(self):
-        """Check if this is rank 0 (only rank 0 should log in DDP)."""
-        if self.rank != "0":
-            raise RuntimeError("Only rank 0 can log metrics in DDP mode!")
+        pass
 
     @abstractmethod
     def log(

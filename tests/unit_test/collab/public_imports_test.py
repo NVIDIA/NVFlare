@@ -23,23 +23,12 @@ import sys
 
 
 def test_top_level_exports():
-    from nvflare.collab import (
-        CollabClientAPI,
-        CollabRecipe,
-        InProcessEnv,
-        InProcessRunner,
-        MultiProcessEnv,
-        collab,
-        simple_logging,
-    )
+    from nvflare.collab import CollabClientAPI, CollabRecipe, collab, simple_logging
 
     for export in (
         collab,
         CollabClientAPI,
         CollabRecipe,
-        InProcessEnv,
-        MultiProcessEnv,
-        InProcessRunner,
         simple_logging,
     ):
         assert export is not None
@@ -48,8 +37,6 @@ def test_top_level_exports():
 def test_api_surface():
     from nvflare.collab.api import (
         App,
-        Backend,
-        BackendType,
         CallFilter,
         CallOption,
         ClientApp,
@@ -68,8 +55,6 @@ def test_api_surface():
         ClientApp,
         CollabWorkspace,
         ServerApp,
-        Backend,
-        BackendType,
         CallFilter,
         CallOption,
         Context,
@@ -83,18 +68,27 @@ def test_api_surface():
 
 
 def test_runtime_surface():
-    from nvflare.collab.runtime import FlareBackend, LocalBackend, SubprocessBackend
     from nvflare.collab.runtime.client_api import CollabClientAPI
     from nvflare.collab.runtime.lifecycle import run_server
 
     for export in (
-        LocalBackend,
-        SubprocessBackend,
-        FlareBackend,
         CollabClientAPI,
         run_server,
     ):
         assert export is not None
+
+
+def test_execution_details_are_not_public():
+    import nvflare.collab as collab_package
+    import nvflare.collab.api as collab_api
+    import nvflare.collab.runtime as collab_runtime
+
+    for name in ("InProcessEnv", "MultiProcessEnv", "InProcessRunner"):
+        assert not hasattr(collab_package, name)
+    for name in ("Backend", "BackendType"):
+        assert not hasattr(collab_api, name)
+    for name in ("LocalBackend", "FlareBackend", "SubprocessBackend"):
+        assert not hasattr(collab_runtime, name)
 
 
 def test_collab_public_surface_does_not_require_torch():
@@ -112,7 +106,6 @@ def test_collab_public_surface_does_not_require_torch():
         "import nvflare.collab.runtime.flare.controller\n"
         "import nvflare.collab.runtime.flare.executor\n"
         "import nvflare.collab.runtime.local.app_runner\n"
-        "import nvflare.collab.runtime.worker.worker\n"
         "from nvflare.collab.tracking import SummaryWriter\n"
         "from nvflare.collab import simple_logging\n"
     )
@@ -145,7 +138,7 @@ def test_api_layer_does_not_import_runtime():
         "import nvflare.collab\n"
         "import nvflare.collab.api\n"
         "import nvflare.collab.api.app\n"
-        "import nvflare.collab.api.backend\n"
+        "import nvflare.collab.api._invocation\n"
         "import nvflare.collab.api.facade\n"
         "import nvflare.collab.api.filter\n"
         "import nvflare.collab.api.group\n"

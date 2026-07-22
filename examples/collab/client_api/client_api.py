@@ -15,15 +15,11 @@
 """Client API under collab: the client side is standard Client API code
 (``import nvflare.client as flare``; receive/train/send) while the server is
 a collab ``@collab.main`` workflow. The framework routes the flare calls to
-``CollabClientAPI``. Select the client execution style with --mode:
-
-    in_process  the training loop runs as a function in the client process
-    subprocess  a self-contained training script (train_script.py) runs in a
-                separate process managed by the collab worker
+``CollabClientAPI``. The training loop runs as a function in each client's
+FLARE process.
 
 Run:
-    python -m collab.client_api.client_api --mode in_process
-    python -m collab.client_api.client_api --mode subprocess
+    python -m collab.client_api.client_api
 """
 
 from collab.client_api.in_process_client import training_loop
@@ -37,31 +33,18 @@ def make_recipe(args):
     server = FedAvg(num_rounds=args.num_rounds)
     client = CollabClientAPI()
 
-    if args.mode == "in_process":
-        client.set_training_func(training_loop)
-        return CollabRecipe(
-            job_name="collab_client_api_inprocess",
-            server=server,
-            client=client,
-            min_clients=args.num_clients,
-            inprocess=True,
-            sync_task_timeout=60,
-        )
-
+    client.set_training_func(training_loop)
     return CollabRecipe(
-        job_name="collab_client_api_subprocess",
+        job_name="collab_client_api",
         server=server,
         client=client,
         min_clients=args.num_clients,
-        inprocess=False,
-        training_module="collab.client_api.train_script",
         sync_task_timeout=60,
     )
 
 
 def main():
-    parser = make_parser("Client API under collab: in_process | subprocess")
-    parser.add_argument("--mode", choices=("in_process", "subprocess"), default="in_process")
+    parser = make_parser("Client API under collab")
     parser.add_argument("--num-rounds", type=int, default=3)
     args = parser.parse_args()
     run_recipe(make_recipe(args), args)

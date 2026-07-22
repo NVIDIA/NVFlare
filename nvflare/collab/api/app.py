@@ -22,7 +22,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.tree_utils import Forest, Node, build_forest
 
 from .collab_workspace import CollabWorkspace
-from .constants import BackendType, CollabMethodArgName, ContextKey, FilterDirection
+from .constants import CollabMethodArgName, ContextKey, FilterDirection
 from .context import Context, set_call_context
 from .decorators import (
     get_object_final_funcs,
@@ -48,7 +48,6 @@ class App:
         self._server_proxy = None
         self._client_proxies = None
         self._client_hierarchy = None
-        self._backend_type = None
         self._me = None
         self._collab_objs = {}
         self._abort_signal = None
@@ -92,16 +91,6 @@ class App:
             return None
         else:
             return self._me.backend
-
-    @property
-    def backend_type(self):
-        return self._backend_type
-
-    def set_backend_type(self, t: str):
-        valid_types = [BackendType.LOCAL, BackendType.FLARE]
-        if t not in valid_types:
-            raise ValueError(f"bad backend type: {t}: must be one of {valid_types}")
-        self._backend_type = t
 
     @property
     def workspace(self):

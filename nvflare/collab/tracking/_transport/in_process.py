@@ -14,8 +14,8 @@
 
 """In-process writer that fires events directly to the event manager.
 
-This writer is used when training runs in-process (inprocess=True) within
-CollabExecutor. It fires log events directly without needing CellNet relay.
+This writer is used when training runs within CollabExecutor. It fires log
+events directly through the site's event manager.
 
 Architecture (In-Process Mode):
     ┌─────────────────────────────────────────────────────────────────────────┐

@@ -254,9 +254,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
-from nvflare.collab import collab                       # + Add Collab imports
-from nvflare.collab import InProcessEnv                # +
-from nvflare.collab import CollabRecipe      # +
+from nvflare.collab import CollabRecipe, collab         # + Add Collab imports
+from nvflare.recipe import SimEnv                       # + Standard environment
 ```
 
 **Changes:**
@@ -430,7 +429,7 @@ if __name__ == "__main__":
         client=client,
         min_clients=5,
     )
-    env = InProcessEnv(num_clients=5)                   # + Environment
+    env = SimEnv(num_clients=5)                         # + Environment
 
     run = recipe.execute(env)                     # + Execute via recipe
 
@@ -441,7 +440,7 @@ if __name__ == "__main__":
 **Changes:**
 1. Create `FedAvg` and `Trainer` class instances
 2. Configure via `CollabRecipe`
-3. Create `InProcessEnv` for execution environment
+3. Create the standard `SimEnv` execution environment
 4. Execute via `recipe.execute(env)`
 
 ---
@@ -487,9 +486,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
-from nvflare.collab import collab                       # + Add Collab imports
-from nvflare.collab import InProcessEnv                # +
-from nvflare.collab import CollabRecipe      # +
+from nvflare.collab import CollabRecipe, collab         # + Add Collab imports
+from nvflare.recipe import SimEnv                       # + Standard environment
 ```
 
 **Changes:**
@@ -652,7 +650,7 @@ if __name__ == "__main__":
 ```python
 if __name__ == "__main__":
     recipe = CollabRecipe(job_name="fedavg", min_clients=5)
-    env = InProcessEnv(num_clients=5)
+    env = SimEnv(num_clients=5)
     run = recipe.execute(env)
 
     print("Job Status:", run.get_status())
@@ -660,7 +658,7 @@ if __name__ == "__main__":
 ```
 
 **Changes:**
-1. Replace direct `fed_avg()` call with `CollabRecipe` + `InProcessEnv`
+1. Replace direct `fed_avg()` call with `CollabRecipe` + standard `SimEnv`
 2. `CollabRecipe` auto-detects the module containing `@collab.main` and `@collab.publish`
 
 ---

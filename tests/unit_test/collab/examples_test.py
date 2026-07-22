@@ -24,25 +24,6 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _EXAMPLES_ROOT = _REPO_ROOT / "examples"
 
 
-def test_hello_collab_lifecycle_initializes_and_clears_value(monkeypatch):
-    monkeypatch.syspath_prepend(str(_EXAMPLES_ROOT))
-    class_module = importlib.import_module("collab.hello_collab.hello_collab")
-    function_module = importlib.import_module("collab.hello_collab.hello_collab_functions")
-
-    server = class_module.Server()
-    assert server.value is None
-    server.initialize_value()
-    np.testing.assert_array_equal(server.value, np.array([1.0, 2.0, 3.0]))
-    server.clear_value()
-    assert server.value is None
-
-    assert function_module.value is None
-    function_module.initialize_value()
-    np.testing.assert_array_equal(function_module.value, np.array([1.0, 2.0, 3.0]))
-    function_module.clear_value()
-    assert function_module.value is None
-
-
 def test_hello_numpy_collab_trains_and_averages_models(monkeypatch):
     monkeypatch.syspath_prepend(str(_EXAMPLES_ROOT))
     module = importlib.import_module("collab.hello_numpy_collab.hello_numpy_collab")

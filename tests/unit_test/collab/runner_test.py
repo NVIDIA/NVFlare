@@ -14,8 +14,9 @@
 
 from types import ModuleType
 
-from nvflare.collab import CollabRecipe, InProcessRunner, collab
+from nvflare.collab import CollabRecipe, collab
 from nvflare.collab.api import ClientApp, ModuleWrapper, ServerApp
+from nvflare.collab.runtime.local.runner import InProcessRunner
 
 
 @collab.main

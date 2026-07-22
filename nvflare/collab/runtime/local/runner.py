@@ -19,11 +19,7 @@ from nvflare.collab.runtime.local.app_runner import AppRunner
 
 
 class InProcessRunner:
-    """High-level Collab simulation runner.
-
-    Provides a simple API to run Collab simulations with server and client objects or modules.
-    Supports both in-process and subprocess execution modes.
-    """
+    """Internal direct-call runner for Collab tests."""
 
     def __init__(
         self,
@@ -36,11 +32,6 @@ class InProcessRunner:
         max_workers: int = 100,
         num_clients: Union[int, Tuple[int, int]] = 2,
         per_site_props: Optional[Dict[str, dict]] = None,
-        # Subprocess execution options
-        inprocess: bool = True,
-        run_cmd: Optional[str] = None,
-        training_module: Optional[str] = None,
-        subprocess_timeout: float = 300.0,
     ):
         """Initialize InProcessRunner.
 
@@ -53,11 +44,6 @@ class InProcessRunner:
             client_objects: Additional client collab objects or modules.
             max_workers: Maximum worker threads.
             num_clients: Number of clients or (height, width) tuple.
-            inprocess: If True, execute in-process. If False, use subprocess.
-            run_cmd: Command prefix for subprocess (e.g., "torchrun --nproc_per_node=4").
-            training_module: Python module containing @collab.publish methods
-                            (required when inprocess=False).
-            subprocess_timeout: Timeout for subprocess operations.
         """
         server, client = resolve_server_client(server, client)
 
@@ -72,12 +58,6 @@ class InProcessRunner:
         self.max_workers = max_workers
         self.num_clients = num_clients
         self.per_site_props = per_site_props
-
-        # Subprocess options
-        self.inprocess = inprocess
-        self.run_cmd = run_cmd
-        self.training_module = training_module
-        self.subprocess_timeout = subprocess_timeout
 
         if server_objects:
             for name, obj in server_objects.items():
@@ -135,10 +115,5 @@ class InProcessRunner:
             max_workers=self.max_workers,
             num_clients=self.num_clients,
             per_site_props=self.per_site_props,
-            # Pass subprocess options
-            inprocess=self.inprocess,
-            run_cmd=self.run_cmd,
-            training_module=self.training_module,
-            subprocess_timeout=self.subprocess_timeout,
         )
         return runner.run()

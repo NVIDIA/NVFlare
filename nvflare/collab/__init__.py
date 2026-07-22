@@ -17,19 +17,13 @@ from typing import TYPE_CHECKING
 from .api.facade import Facade as collab
 
 if TYPE_CHECKING:
-    from .core.in_process_env import InProcessEnv
-    from .core.multi_process_env import MultiProcessEnv
     from .core.recipe import CollabRecipe
     from .runtime.client_api import CollabClientAPI
-    from .runtime.local.runner import InProcessRunner
 
 __all__ = [
     "collab",
     "CollabClientAPI",
     "CollabRecipe",
-    "InProcessEnv",
-    "InProcessRunner",
-    "MultiProcessEnv",
     "simple_logging",
 ]
 
@@ -41,14 +35,11 @@ def simple_logging(level=logging.INFO):
 
 # The user-facing classes are exported here so users never need the core or
 # runtime package paths. Resolution is lazy (PEP 562): CollabRecipe and the
-# execution environments pull in FLARE job/runtime machinery, which client-side
+# recipe pulls in FLARE job/runtime machinery, which client-side
 # training scripts that only need the `collab` facade should not pay for.
 _EXPORTS = {
     "CollabRecipe": ".core.recipe",
     "CollabClientAPI": ".runtime.client_api",
-    "InProcessEnv": ".core.in_process_env",
-    "MultiProcessEnv": ".core.multi_process_env",
-    "InProcessRunner": ".runtime.local.runner",
 }
 
 

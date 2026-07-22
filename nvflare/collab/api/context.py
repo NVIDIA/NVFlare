@@ -40,10 +40,6 @@ class Context:
         return self.app.backend
 
     @property
-    def backend_type(self):
-        return self.app.backend_type
-
-    @property
     def clients(self):
         return self.app.client_proxies
 

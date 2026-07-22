@@ -27,11 +27,6 @@ class FilterDirection:
     OUTGOING = "outgoing"
 
 
-class BackendType:
-    LOCAL = "local"
-    FLARE = "flare"
-
-
 MAKE_CLIENT_APP_METHOD = "make_client_app"
 
 

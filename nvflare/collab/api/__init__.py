@@ -14,7 +14,7 @@
 
 """Public programming surface of the collab API layer.
 
-User code (filters, custom apps, backend implementers) should import these
+User code (filters and custom apps) should import these
 names from this package rather than from the implementation modules.
 Exports are resolved lazily (PEP 562).
 """
@@ -23,10 +23,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .app import App, ClientApp, ServerApp
-    from .backend import Backend
     from .call_opt import CallOption
     from .collab_workspace import CollabWorkspace
-    from .constants import BackendType, ContextKey
+    from .constants import ContextKey
     from .context import Context
     from .filter import CallFilter, ResultFilter
     from .group_call_context import GroupCallContext
@@ -35,8 +34,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "App",
-    "Backend",
-    "BackendType",
     "CallFilter",
     "CallOption",
     "ClientApp",
@@ -54,10 +51,8 @@ _EXPORTS = {
     "App": ".app",
     "ClientApp": ".app",
     "ServerApp": ".app",
-    "Backend": ".backend",
     "CallOption": ".call_opt",
     "CollabWorkspace": ".collab_workspace",
-    "BackendType": ".constants",
     "ContextKey": ".constants",
     "Context": ".context",
     "CallFilter": ".filter",

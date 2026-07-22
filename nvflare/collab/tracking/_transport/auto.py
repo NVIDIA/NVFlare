@@ -12,26 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Auto-detecting writer that works in both in-process and subprocess modes.
+"""Writer that delegates to the Collab writer in the current site process.
 
-This module provides a unified writer interface that automatically detects
-the execution mode and uses the appropriate underlying writer:
-- In-process mode: Uses InProcessWriter (direct event firing)
-- Subprocess mode: Uses SubprocessWriter (CellNet relay)
-
-Users just use the writer without worrying about the execution mode.
+Users can use the compatibility writer without depending on its event transport.
 """
 
-import os
 from typing import Any, Optional
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .base import BaseWriter
-
-# Environment variable to detect subprocess mode
-ENV_SUBPROCESS_MODE = "COLLAB_PARENT_URL"  # Set by SubprocessLauncher
 
 # Global auto writer instance
 _auto_writer: Optional["AutoWriter"] = None
@@ -48,18 +39,8 @@ def set_auto_writer(writer: "AutoWriter"):
     _auto_writer = writer
 
 
-def is_subprocess_mode() -> bool:
-    """Check if running in subprocess mode."""
-    return os.environ.get(ENV_SUBPROCESS_MODE) is not None
-
-
 class AutoWriter(BaseWriter):
-    """Auto-detecting writer that works in both in-process and subprocess modes.
-
-    This writer automatically detects the execution mode and delegates to
-    the appropriate underlying writer:
-    - In-process: Fires events directly via event_manager
-    - Subprocess: Sends metrics via CellNet to parent
+    """Writer that delegates to the site process's event writer.
 
     Example:
         from nvflare.collab.tracking import AutoWriter
@@ -78,28 +59,17 @@ class AutoWriter(BaseWriter):
         set_auto_writer(self)
 
     def _ensure_initialized(self):
-        """Lazily initialize the delegate writer based on execution mode."""
+        """Lazily initialize the site-local delegate writer."""
         if self._initialized:
             return
 
-        if is_subprocess_mode():
-            # Subprocess mode - use SubprocessWriter
-            from .subprocess import get_writer
+        from .in_process import get_inprocess_writer
 
-            self._delegate = get_writer()
-            if self._delegate:
-                self.logger.debug("AutoWriter using SubprocessWriter")
-            else:
-                self.logger.warning("SubprocessWriter not available in subprocess mode")
+        self._delegate = get_inprocess_writer()
+        if self._delegate:
+            self.logger.debug("AutoWriter using InProcessWriter")
         else:
-            # In-process mode - use InProcessWriter
-            from .in_process import get_inprocess_writer
-
-            self._delegate = get_inprocess_writer()
-            if self._delegate:
-                self.logger.debug("AutoWriter using InProcessWriter")
-            else:
-                self.logger.debug("InProcessWriter not available - metrics may not be logged")
+            self.logger.debug("InProcessWriter not available - metrics may not be logged")
 
         self._initialized = True
 

@@ -14,8 +14,8 @@
 import threading
 import time
 
+from nvflare.collab.api._invocation import InvocationDispatcher
 from nvflare.collab.api.app import App
-from nvflare.collab.api.backend import Backend
 from nvflare.collab.api.call_opt import CallOption
 from nvflare.collab.api.call_utils import check_call_args
 from nvflare.collab.api.constants import CollabMethodArgName
@@ -31,10 +31,10 @@ class _Waiter(threading.Event):
         self.result = None
 
 
-class LocalBackend(Backend):
+class DirectDispatcher(InvocationDispatcher):
 
     def __init__(self, target_obj_name: str, target_app: App, target_obj, abort_signal, thread_executor):
-        Backend.__init__(self, abort_signal)
+        InvocationDispatcher.__init__(self, abort_signal)
         self.target_obj_name = target_obj_name
         self.target_app = target_app
         self.target_obj = target_obj

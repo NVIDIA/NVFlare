@@ -178,7 +178,7 @@ class ModuleWrapper:
 
         recipe = CollabRecipe(server=my_module, client=my_module, ...)
 
-    Note: For FlareBackend (real distributed deployment), the module must be
+    For a distributed deployment, the module must be
     importable on all client machines (i.e., part of the installed package
     or included in job resources).
     """
@@ -193,7 +193,7 @@ class ModuleWrapper:
                     state and will be set up by __setstate__ during unpickling.
 
         Note:
-            For JSON config serialization (MultiProcessEnv), we store the module name as
+            For job config serialization, we store the module name as
             self._module which matches the 'module' parameter. FLARE's _get_args()
             looks for param or _param in __dict__, so _module matches 'module'.
 
@@ -206,12 +206,12 @@ class ModuleWrapper:
             return
 
         if isinstance(module, ModuleType):
-            # Direct module object (InProcessEnv, in-process usage)
+            # Direct module object.
             # Use get_importable_module_name to handle __main__ case
             self._module = get_importable_module_name(module)
             self._setup_methods(module)
         elif isinstance(module, str):
-            # Module name string (MultiProcessEnv, JSON config reconstruction)
+            # Module name string from job-config reconstruction.
             self._module = module
             actual_module = importlib.import_module(module)
             self._setup_methods(actual_module)
@@ -301,16 +301,16 @@ class ModuleWrapper:
         return method.__get__(self, type(self))
 
     def __deepcopy__(self, memo):
-        """Support deepcopy for LocalBackend."""
+        """Support direct-runner deepcopy."""
         module = importlib.import_module(self._module)
         return ModuleWrapper(module)
 
     def __getstate__(self):
-        """Pickle support for FlareBackend - store only module name."""
+        """Store only the importable module name when pickled."""
         return {"_module": self._module}
 
     def __setstate__(self, state):
-        """Unpickle support for FlareBackend - re-import and setup."""
+        """Re-import and set up the module when unpickled."""
         self._module = state["_module"]
         module = importlib.import_module(self._module)
         self._setup_methods(module)

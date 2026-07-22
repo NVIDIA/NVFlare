@@ -192,16 +192,6 @@ class Facade:
         return ProxyList(result)
 
     @classproperty
-    def backend_type(cls):
-        """Get the backend type of the current site.
-
-        Returns: the backend type of the current site
-
-        """
-        ctx = get_call_context()
-        return ctx.backend_type
-
-    @classproperty
     def is_aborted(cls):
         """Check whether the job/experiment has been aborted.
 

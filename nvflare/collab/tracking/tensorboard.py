@@ -88,7 +88,6 @@ class TensorBoardWriter(BaseWriter):
         **kwargs,
     ):
         """Log a metric (internal method)."""
-        # Skip rank check in in-process mode (no DDP)
         delegate = self._get_delegate()
         if delegate:
             delegate.log(key, value, data_type, step=step, **kwargs)

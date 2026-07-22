@@ -14,7 +14,7 @@
 import copy
 from collections.abc import Mapping, Sequence
 
-from nvflare.collab.api.backend import Backend
+from nvflare.collab.api._invocation import InvocationDispatcher
 from nvflare.collab.api.call_utils import check_call_args
 from nvflare.collab.api.publish_interface import PublishInterface
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -57,7 +57,7 @@ class Proxy:
         app,
         target_name,
         target_fqn: str,
-        backend: Backend,
+        backend: InvocationDispatcher,
         target_interface: PublishInterface | Mapping[str, Sequence[str]] | None,
     ):
         """The Proxy represents a target in the App."""

@@ -15,14 +15,8 @@
 """Collab tracking module for experiment metrics.
 
 This module provides tracking writers that mimic the APIs of popular
-experiment tracking libraries (TensorBoard, MLflow, W&B). The writers
-work in BOTH in-process and subprocess execution modes:
-
-- In-process mode: Fires events directly to event_manager
-- Subprocess mode: Sends metrics via CellNet to parent CollabExecutor
-
-Users just change the import statement - the execution mode is
-automatically detected.
+experiment tracking libraries (TensorBoard, MLflow, W&B). The writers fire
+analytics events in the current client process.
 
 Example - TensorBoard:
     # Original:
@@ -30,7 +24,7 @@ Example - TensorBoard:
     writer = SummaryWriter()
     writer.add_scalar("loss", 0.5, global_step=100)
 
-    # Collab (same API, works in both modes):
+    # Collab (same API):
     from nvflare.collab.tracking import SummaryWriter
     writer = SummaryWriter()
     writer.add_scalar("loss", 0.5, global_step=100)
@@ -55,8 +49,8 @@ Example - W&B:
     wandb.init(project="my-project")
     wandb.log({"loss": 0.5})
 
-The public surface is the compat writers above; the mode-detection and
-CellNet relay machinery lives in the private ``_transport`` subpackage.
+The public surface is the compat writers above; the event transport lives in
+the private ``_transport`` subpackage.
 Exports are resolved lazily (PEP 562) so importing this package stays
 cheap and does not pull in the transport stack.
 """
@@ -68,8 +62,6 @@ if TYPE_CHECKING:
     from ._transport.auto import get_writer as get_auto_writer
     from ._transport.base import BaseWriter
     from ._transport.in_process import InProcessWriter, get_inprocess_writer, set_inprocess_writer
-    from ._transport.relay import MetricsRelay, setup_metrics_handler
-    from ._transport.subprocess import SubprocessWriter, get_writer, set_writer
     from .mlflow import MLflowWriter
     from .tensorboard import SummaryWriter, TensorBoardWriter
     from .wandb import WandbWriter
@@ -79,18 +71,13 @@ __all__ = [
     "BaseWriter",
     "InProcessWriter",
     "MLflowWriter",
-    "MetricsRelay",
-    "SubprocessWriter",
     "SummaryWriter",
     "TensorBoardWriter",
     "WandbWriter",
     "get_auto_writer",
     "get_inprocess_writer",
-    "get_writer",
     "mlflow",
     "set_inprocess_writer",
-    "set_writer",
-    "setup_metrics_handler",
     "wandb",
 ]
 
@@ -105,12 +92,7 @@ _EXPORTS = {
     "InProcessWriter": ("._transport.in_process", "InProcessWriter"),
     "get_inprocess_writer": ("._transport.in_process", "get_inprocess_writer"),
     "set_inprocess_writer": ("._transport.in_process", "set_inprocess_writer"),
-    "MetricsRelay": ("._transport.relay", "MetricsRelay"),
-    "setup_metrics_handler": ("._transport.relay", "setup_metrics_handler"),
     "MLflowWriter": (".mlflow", "MLflowWriter"),
-    "SubprocessWriter": ("._transport.subprocess", "SubprocessWriter"),
-    "get_writer": ("._transport.subprocess", "get_writer"),
-    "set_writer": ("._transport.subprocess", "set_writer"),
     "SummaryWriter": (".tensorboard", "SummaryWriter"),
     "TensorBoardWriter": (".tensorboard", "TensorBoardWriter"),
     "WandbWriter": (".wandb", "WandbWriter"),

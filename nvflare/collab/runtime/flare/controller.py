@@ -22,9 +22,8 @@ from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.signal import Signal
 from nvflare.collab.api.app import ServerApp
-from nvflare.collab.api.constants import BackendType
 from nvflare.collab.api.proxy import Proxy
-from nvflare.collab.runtime.flare.flare_backend import FlareBackend
+from nvflare.collab.runtime.flare.cell_dispatcher import CellDispatcher
 from nvflare.collab.runtime.lifecycle import run_server
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils import fobs
@@ -95,8 +94,6 @@ class CollabController(Controller, CollabAdaptor):
         app = ServerApp(server_obj)
 
         app.name = "server"
-        app.set_backend_type(BackendType.FLARE)
-
         err = self.process_config(app, fl_ctx)
         if err:
             self.system_panic(err, fl_ctx)
@@ -104,7 +101,7 @@ class CollabController(Controller, CollabAdaptor):
         self.server_app = app
 
     def _prepare_client_backend(self, job_id, client: ClientSite, abort_signal: Signal, fl_ctx: FLContext):
-        return FlareBackend(
+        return CellDispatcher(
             manager=self,
             engine=fl_ctx.get_engine(),
             caller=self.server_app.name,
@@ -115,7 +112,7 @@ class CollabController(Controller, CollabAdaptor):
         )
 
     def _prepare_server_backend(self, job_id: str, abort_signal: Signal, fl_ctx: FLContext):
-        return FlareBackend(
+        return CellDispatcher(
             manager=self,
             engine=fl_ctx.get_engine(),
             caller=self.server_app.name,

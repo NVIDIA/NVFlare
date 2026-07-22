@@ -19,9 +19,9 @@ between AppRunner (simulation path) and CollabExecutor (FLARE path).
 """
 
 from collections.abc import Mapping, Sequence
-from typing import Dict, Optional
+from typing import Dict
 
-from nvflare.collab.api.backend import Backend
+from nvflare.collab.api._invocation import InvocationDispatcher
 from nvflare.collab.api.proxy import Proxy
 from nvflare.collab.api.publish_interface import PublishInterface
 
@@ -30,7 +30,7 @@ def create_proxy_with_children(
     app,
     target_name: str,
     target_fqn: str,
-    main_backend: Backend,
+    main_backend: InvocationDispatcher,
     main_interface: PublishInterface | Mapping[str, Sequence[str]],
     child_specs: Dict[str, dict],
 ) -> Proxy:
@@ -45,7 +45,7 @@ def create_proxy_with_children(
         target_fqn: Fully qualified name for CellNet routing.
         main_backend: The backend to use for main target calls.
         main_interface: Interface dict for the main target object.
-        child_specs: Dict mapping child names to {"interface": dict, "backend": Backend}.
+        child_specs: Dict mapping child names to an interface and optional dispatcher.
                     If "backend" is not provided, main_backend is used.
 
     Returns:
@@ -76,18 +76,3 @@ def create_proxy_with_children(
         proxy.add_child(name, child_proxy)
 
     return proxy
-
-
-def get_worker_fqcn(site_name: str, worker_id: Optional[str] = None) -> str:
-    """Get the CellNet FQCN for a subprocess worker.
-
-    Args:
-        site_name: Name of the site (e.g., "site-1").
-        worker_id: Worker ID (defaults to site_name if not provided).
-
-    Returns:
-        Worker FQCN string (e.g., "site-1.worker.site-1").
-    """
-    if worker_id is None:
-        worker_id = site_name
-    return f"{site_name}.worker.{worker_id}"

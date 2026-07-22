@@ -28,10 +28,8 @@ class _SingleTargetCallContext(GroupCallContext):
         self.waiter.set_result(self.target_name, result)
 
 
-class Backend(ABC):
-    """A Collab Backend implements remote object calls. This interface defines the required methods that a Backend
-    must implement.
-    """
+class InvocationDispatcher(ABC):
+    """Internal strategy for dispatching calls to a logical Collab target."""
 
     def __init__(self, abort_signal: Signal):
         self.abort_signal = abort_signal

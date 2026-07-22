@@ -12,75 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
-import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Optional, Tuple, Union
 
 from nvflare.apis.signal import Signal
 from nvflare.collab.api.app import App, ClientApp, ServerApp
-from nvflare.collab.api.constants import MAKE_CLIENT_APP_METHOD, BackendType
+from nvflare.collab.api.constants import MAKE_CLIENT_APP_METHOD
 from nvflare.collab.api.decorators import get_object_publish_interface
 from nvflare.collab.api.proxy_utils import create_proxy_with_children
 from nvflare.collab.runtime.lifecycle import run_server
-from nvflare.collab.runtime.local.local_backend import LocalBackend
+from nvflare.collab.runtime.local.direct_dispatcher import DirectDispatcher
 from nvflare.collab.runtime.local.local_workspace import LocalWorkspace
-from nvflare.collab.runtime.worker.launcher import SubprocessLauncher
-from nvflare.collab.runtime.worker.subprocess_backend import SubprocessBackend
-from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class AppRunner:
-    """Runner for Collab simulation that manages server and client apps.
-
-    This is the simulation equivalent of CollabExecutor - it manages client-side
-    execution and supports both in-process and subprocess modes.
-
-    When inprocess=False, it creates a CoreCell for IPC and SubprocessLauncher
-    for each client site to run training in separate processes (e.g., for torchrun).
-    """
+    """Internal direct-call runner used by focused Collab tests."""
 
     def _prepare_app_backends(self, app: App, site_name: str = None):
-        """Create backend instances for an app.
-
-        For in-process mode, creates LocalBackend instances.
-        For subprocess mode, creates SubprocessBackend instances that route
-        calls to the worker subprocess via CellNet.
-
-        Args:
-            app: The app to create backends for.
-            site_name: The site name (used to look up subprocess launcher).
-
-        Returns:
-            Dictionary of Backend instances keyed by object name.
-        """
-        # Get subprocess launcher for this site if running in subprocess mode
-        launcher = self._subprocess_launchers.get(site_name) if site_name else None
-
-        if launcher:
-            # Subprocess mode: use SubprocessBackend that forwards to worker
-            bes = {"": SubprocessBackend(launcher, self.abort_signal, self.thread_executor, target_name="")}
-            targets = app.get_collab_objects()
-            for name, obj in targets.items():
-                bes[name] = SubprocessBackend(launcher, self.abort_signal, self.thread_executor, target_name=name)
-        else:
-            # In-process mode: use LocalBackend for direct execution
-            bes = {"": LocalBackend("", app, app, self.abort_signal, self.thread_executor)}
-            targets = app.get_collab_objects()
-            for name, obj in targets.items():
-                bes[name] = LocalBackend(name, app, obj, self.abort_signal, self.thread_executor)
-        return bes
+        """Create direct invocation dispatchers for an app."""
+        dispatchers = {"": DirectDispatcher("", app, app, self.abort_signal, self.thread_executor)}
+        for name, obj in app.get_collab_objects().items():
+            dispatchers[name] = DirectDispatcher(name, app, obj, self.abort_signal, self.thread_executor)
+        return dispatchers
 
     def _prepare_proxy(self, for_app: App, target_app: App, backends: dict):
-        """Prepare proxy for a target app.
-
-        For both in-process and subprocess modes, uses logical FQN (e.g., "site-1")
-        for proxy identification. The SubprocessBackend handles the actual routing
-        to workers via the launcher - it doesn't use the proxy FQN for CellNet.
-        """
-        # Use logical FQN for all modes (app's own FQN)
-        # SubprocessBackend uses launcher.call() which handles CellNet routing internally
+        """Prepare a direct-call proxy for a target app."""
         target_fqn = target_app.fqn
 
         # Build child specs with backends and interfaces
@@ -102,27 +60,6 @@ class AppRunner:
             child_specs=child_specs,
         )
 
-    def _detect_client_class(self, client_app: ClientApp) -> Optional[str]:
-        """Detect the client class name for class-based clients.
-
-        Args:
-            client_app: The ClientApp containing the client object.
-
-        Returns:
-            The class name if using a class-based client, None for module-based.
-        """
-        from nvflare.collab.api.module_wrapper import ModuleWrapper
-
-        # Get the underlying client object from ClientApp
-        client_obj = client_app.obj
-
-        # ModuleWrapper means module-based, no class name needed
-        if isinstance(client_obj, ModuleWrapper):
-            return None
-
-        # Get class name for class-based clients
-        return client_obj.__class__.__name__
-
     def _make_app(self, site_name, fqn):
         """Make a new client app instance for the specified site
 
@@ -142,7 +79,7 @@ class AppRunner:
             # Check the underlying object
             make_client_app_f = getattr(self.client_app.obj, MAKE_CLIENT_APP_METHOD, None)
         if make_client_app_f and callable(make_client_app_f):
-            app = make_client_app_f(site_name, BackendType.LOCAL)
+            app = make_client_app_f(site_name)
             if not isinstance(app, ClientApp):
                 raise RuntimeError(f"result returned by {MAKE_CLIENT_APP_METHOD} must be ClientApp but got {type(app)}")
         else:
@@ -157,7 +94,6 @@ class AppRunner:
 
         app.name = site_name
         app.set_fqn(fqn)
-        app.set_backend_type(BackendType.LOCAL)
 
         # Apply this site's entries from the recipe's per-site config as app
         # props (readable via collab.get_app_prop).
@@ -185,11 +121,6 @@ class AppRunner:
         max_workers: int = 100,
         num_clients: Union[int, Tuple[int, int]] = 2,
         per_site_props: Optional[Dict[str, dict]] = None,
-        # Subprocess execution options (like CollabExecutor)
-        inprocess: bool = True,
-        run_cmd: Optional[str] = None,
-        training_module: Optional[str] = None,
-        subprocess_timeout: float = 300.0,
     ):
         """Initialize AppRunner.
 
@@ -200,10 +131,6 @@ class AppRunner:
             client_app: Template for client applications.
             max_workers: Maximum worker threads.
             num_clients: Number of clients or (height, width) tuple for hierarchy.
-            inprocess: If True, execute in-process. If False, use subprocess.
-            run_cmd: Command prefix for subprocess (e.g., "torchrun --nproc_per_node=4").
-            training_module: Python module containing @collab.publish methods (required when inprocess=False).
-            subprocess_timeout: Timeout for subprocess operations.
         """
         if not isinstance(server_app, ServerApp):
             raise ValueError(f"server_app must be ServerApp but got {type(server_app)}")
@@ -211,44 +138,24 @@ class AppRunner:
         if not isinstance(client_app, ClientApp):
             raise ValueError(f"client_app must be ClientApp but got {type(client_app)}")
 
-        # Validate subprocess options
-        if not inprocess and not training_module:
-            raise ValueError("training_module is required when inprocess=False")
-
         self.logger = get_obj_logger(self)
         self.abort_signal = Signal()
         server_app.name = "server"
         server_app.set_fqn(server_app.name)
-        server_app.set_backend_type(BackendType.LOCAL)
         self.server_app = server_app
         self.client_app = client_app
         self.per_site_props = per_site_props or {}
         self.thread_executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="collab_call")
-
-        # Subprocess options
-        self.inprocess = inprocess
-        self.run_cmd = run_cmd
-        self.training_module = training_module
-        self.subprocess_timeout = subprocess_timeout
-
-        # Detect client class name for class-based clients
-        self.client_class = self._detect_client_class(client_app)
-
-        # Subprocess management
-        self._subprocess_launchers: Dict[str, SubprocessLauncher] = {}
-        self._server_cell: Optional[CoreCell] = None
-        self._client_cells: Dict[str, CoreCell] = {}
 
         # Store config for deferred setup
         self.root_dir = root_dir
         self.experiment_name = experiment_name
         self.num_clients = num_clients
 
-        # Build client apps (but defer backend/proxy setup until run())
+        # Build client apps (but defer dispatcher/proxy setup until run()).
         self.client_apps = self._build_client_apps(num_clients)
         self.logger.info(f"created client apps: {self.client_apps.keys()}")
 
-        # These will be set up in run() after subprocesses are started
         self.exp_dir = None
 
     def _build_client_apps(self, num_clients: Union[int, Tuple[int, int]]) -> Dict[str, ClientApp]:
@@ -279,14 +186,10 @@ class AppRunner:
         return client_apps
 
     def _setup_backends_and_proxies(self):
-        """Set up backends and proxies after subprocesses are started.
-
-        This must be called after _start_subprocesses() so that launchers are available.
-        """
-        # Create backends for server (no subprocess launcher for server)
+        """Set up direct dispatchers and proxies."""
         backends = {self.server_app.name: self._prepare_app_backends(self.server_app)}
 
-        # Create backends for clients (with subprocess launchers if subprocess mode)
+        # Create dispatchers for clients.
         for name, app in self.client_apps.items():
             backends[name] = self._prepare_app_backends(app, site_name=name)
 
@@ -341,149 +244,18 @@ class AppRunner:
             current_client_fqns = {}
         return client_apps
 
-    def _setup_ipc_cell(self):
-        """Create CoreCells for subprocess IPC communication.
-
-        Follows CellNet established pattern:
-        1. Create a local server cell (so client cells don't try external connection)
-        2. Create client cells with internal listeners for subprocess workers
-        """
-        from nvflare.fuel.f3.cellnet.fqcn import FQCN
-        from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
-        from nvflare.fuel.utils import fobs
-        from nvflare.fuel.utils.import_utils import optional_import
-
-        tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
-        if ok:
-            fobs.register(tensor_decomposer)
-
-        # Get an available port
-        port = get_open_tcp_port(resources={})
-
-        # Create a local server cell first
-        # This registers in ALL_CELLS so client cells won't try to connect externally
-        self._server_cell = CoreCell(
-            fqcn=FQCN.ROOT_SERVER,
-            root_url=f"tcp://127.0.0.1:{port}",
-            secure=False,
-            credentials={},
-            create_internal_listener=True,
-        )
-        self._server_cell.start()
-        self.logger.info(f"Server cell started at {self._server_cell.get_internal_listener_url()}")
-
-    def _start_subprocesses(self):
-        """Start subprocess workers for all client sites.
-
-        Follows CellNet established pattern:
-        1. Create server cell (so clients don't try external connection)
-        2. Create client cell for each site with internal listener
-        3. Subprocess workers connect via parent_url
-        """
-        if self.inprocess:
-            return
-
-        self.logger.info("Starting subprocess workers...")
-
-        # Create server cell first (establishes local CellNet)
-        self._setup_ipc_cell()
-
-        # Get server's internal listener URL for client cells
-        server_url = self._server_cell.get_internal_listener_url()
-
-        # Create and start subprocess launcher for each client site
-        for site_index, site_name in enumerate(self.client_apps.keys()):
-            self.logger.info(f"Starting subprocess for {site_name}...")
-
-            # Create client cell for this site with internal listener
-            from nvflare.fuel.f3.cellnet.fqcn import FQCN
-
-            client_fqcn = FQCN.join([site_name, "app"])
-            client_cell = CoreCell(
-                fqcn=client_fqcn,
-                root_url=self._server_cell.get_root_url_for_child(),
-                secure=False,
-                credentials={},
-                create_internal_listener=True,  # Workers connect here
-                parent_url=server_url,
-            )
-            client_cell.start()
-            self._client_cells[site_name] = client_cell
-
-            self.logger.info(f"Client cell {client_fqcn} started at {client_cell.get_internal_listener_url()}")
-
-            # Create subprocess launcher with client cell
-            launcher = SubprocessLauncher(
-                site_name=site_name,
-                training_module=self.training_module,
-                parent_cell=client_cell,
-                run_cmd=self.run_cmd,
-                subprocess_timeout=self.subprocess_timeout,
-                worker_id="0",
-                site_index=site_index,
-                client_class=self.client_class,
-            )
-
-            if not launcher.start():
-                raise RuntimeError(f"Failed to start subprocess for {site_name}")
-
-            self._subprocess_launchers[site_name] = launcher
-
-        self.logger.info(f"All {len(self._subprocess_launchers)} subprocess workers started")
-
-    def _stop_subprocesses(self):
-        """Stop all subprocess workers and cells."""
-        if not self._subprocess_launchers:
-            return
-
-        self.logger.info("Stopping subprocess workers...")
-
-        # Stop subprocess launchers
-        for site_name, launcher in self._subprocess_launchers.items():
-            self.logger.info(f"Stopping subprocess for {site_name}...")
-            launcher.stop()
-
-        self._subprocess_launchers.clear()
-
-        # Brief pause to allow CellNet to finish pending operations
-        time.sleep(0.5)
-
-        # Stop client cells
-        for site_name, cell in self._client_cells.items():
-            self.logger.debug(f"Stopping client cell for {site_name}...")
-            cell.stop()
-        self._client_cells.clear()
-
-        # Stop server cell
-        if self._server_cell:
-            self._server_cell.stop()
-            self._server_cell = None
-
-        self.logger.info("All subprocess workers stopped")
-
     def run(self):
         self.logger.debug(f"Server Collab Interface: {self.server_app.get_collab_interface()}")
         self.logger.debug(f"Client Collab Interface: {self.client_app.get_collab_interface()}")
 
         try:
-            # Start subprocesses if needed (before setting up backends/proxies)
-            if not self.inprocess:
-                self._start_subprocesses()
-
-            # Set up backends and proxies (after subprocesses are started)
-            # This ensures subprocess launchers are available for SubprocessBackend
             self._setup_backends_and_proxies()
-
             result = self._try_run()
         except KeyboardInterrupt:
             self.logger.info("execution is aborted by user")
             self.abort_signal.trigger(True)
             result = None
         finally:
-            # Stop subprocesses
-            if not self.inprocess:
-                self._stop_subprocesses()
-
             self.thread_executor.shutdown(wait=True, cancel_futures=True)
         self.logger.info(f"Experiment results are in {self.exp_dir}")
         return result

@@ -18,8 +18,8 @@ Every example builds its job with a ``make_recipe()`` function and hands the
 result to :func:`run_recipe`. The execution environment is an option, never a
 separate example:
 
-    --runtime in_process     threads in this process (default, fastest iteration)
-    --runtime multi_process  real FLARE processes via a local POC deployment
+    --runtime in_process     standard SimEnv (default, fastest iteration)
+    --runtime multi_process  standard PocEnv (local FLARE deployment)
     --runtime prod           submit to a provisioned deployment (--startup-kit)
     --runtime export         write the job definition to disk (--job-root)
 
@@ -29,8 +29,8 @@ The recipe is identical in all four cases; only the environment changes.
 import argparse
 import logging
 
-from nvflare.collab import InProcessEnv, MultiProcessEnv, simple_logging
-from nvflare.recipe import ProdEnv
+from nvflare.collab import simple_logging
+from nvflare.recipe import PocEnv, ProdEnv, SimEnv
 
 RUNTIMES = ("in_process", "multi_process", "prod", "export")
 
@@ -56,7 +56,7 @@ def run_recipe(recipe, args):
         return None
 
     if args.runtime == "in_process":
-        env = InProcessEnv(num_clients=args.num_clients)
+        env = SimEnv(num_clients=args.num_clients)
         run = recipe.execute(env)
         print()
         print("Job Status:", run.get_status())
@@ -64,7 +64,7 @@ def run_recipe(recipe, args):
         return run
 
     if args.runtime == "multi_process":
-        env = MultiProcessEnv(num_clients=args.num_clients)
+        env = PocEnv(num_clients=args.num_clients)
         try:
             run = recipe.execute(env)
             print()
