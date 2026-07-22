@@ -2641,6 +2641,103 @@ def test_effective_cap_changes_append_audit_records_to_campaign_metadata(tmp_pat
     assert all(entry["changed_at"] for entry in cap_changes)
 
 
+def test_raising_cap_reopens_exhausted_campaign_with_consistent_state(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    results_path = tmp_path / "results.tsv"
+    records = runner.load_results(results_path)
+    records.append(runner.RunRecord("discard", "candidate_1", 0.4, 1.0, "none", "candidate", "python job.py", ""))
+    runner.write_results(results_path, records)
+    assert runner.main(["status", str(job), "--max-candidates", "1"]) == 0
+
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["candidate_cap"] == 1
+    assert state["final_response_allowed"] is True
+    assert state["reason"] == "candidate_cap_exhausted"
+
+    assert (
+        runner.main(
+            ["prepare", str(job), "--name", "reopened", "--hypothesis", "resume search", "--max-candidates", "2"]
+        )
+        == 0
+    )
+
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    assert metadata["settings"]["max_candidates"] == 2
+    assert [(entry["old"], entry["new"]) for entry in metadata["cap_changes"]] == [(None, 1), (1, 2)]
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["candidate_cap"] == 2
+    assert state["final_response_allowed"] is False
+    assert state["remaining_candidates"] == 1
+    assert tmp_path.joinpath(".nvflare/autofl/candidates/reopened/candidate_manifest.json").exists()
+
+
+def test_cap_change_with_unrelated_preflight_rejection_keeps_files_consistent(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "draft", "--hypothesis", "draft candidate"]) == 0
+
+    rc = runner.main(
+        ["prepare", str(job), "--name", "second", "--hypothesis", "second candidate", "--max-candidates", "5"]
+    )
+
+    assert rc == 2
+    assert "pending candidate" in capsys.readouterr().err
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    assert metadata["settings"]["max_candidates"] == 5
+    assert [(entry["old"], entry["new"]) for entry in metadata["cap_changes"]] == [(None, 5)]
+    assert state["candidate_cap"] == 5
+    assert state["final_response_allowed"] is False
+    assert not tmp_path.joinpath(".nvflare/autofl/candidates/second").exists()
+
+
+def test_preflight_rejection_without_settings_change_is_write_free(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "draft", "--hypothesis", "draft candidate"]) == 0
+    watched = [
+        tmp_path / ".nvflare/autofl/campaign.json",
+        tmp_path / ".nvflare/autofl/campaign_state.json",
+        tmp_path / "results.tsv",
+    ]
+    before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in watched}
+
+    rc = runner.main(["prepare", str(job), "--name", "second", "--hypothesis", "second candidate"])
+
+    assert rc == 2
+    assert "pending candidate" in capsys.readouterr().err
+    for path in watched:
+        assert (path.read_bytes(), path.stat().st_mtime_ns) == before[path]
+
+
+def test_lowering_cap_below_attempts_clamps_remaining_and_keeps_state_consistent(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    results_path = tmp_path / "results.tsv"
+    records = runner.load_results(results_path)
+    records.append(runner.RunRecord("discard", "candidate_1", 0.4, 1.0, "none", "candidate", "python job.py", ""))
+    records.append(runner.RunRecord("discard", "candidate_2", 0.3, 1.0, "none", "candidate", "python job.py", ""))
+    runner.write_results(results_path, records)
+    assert runner.main(["status", str(job), "--max-candidates", "3"]) == 0
+
+    rc = runner.main(["prepare", str(job), "--name", "late", "--hypothesis", "late candidate", "--max-candidates", "1"])
+
+    assert rc == 2
+    assert "campaign is already final: candidate_cap_exhausted" in capsys.readouterr().err
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    assert metadata["settings"]["max_candidates"] == 1
+    assert [(entry["old"], entry["new"]) for entry in metadata["cap_changes"]] == [(None, 3), (3, 1)]
+    assert state["candidate_cap"] == 1
+    assert state["candidate_attempts"] == 2
+    assert state["remaining_candidates"] == 0
+    assert state["final_response_allowed"] is True
+    assert state["reason"] == "candidate_cap_exhausted"
+    assert not tmp_path.joinpath(".nvflare/autofl/candidates/late").exists()
+
+
 def test_runner_state_reports_budget_and_baseline_accounting(tmp_path, monkeypatch):
     runner = _load_runner()
     job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=1.0, mode="min")
