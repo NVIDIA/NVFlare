@@ -80,6 +80,11 @@ RESULT_FIELDS = [
     "literature_event_id",
 ]
 
+# Marker shared by every server-side global-model entry in cross_val_results.json: the legacy
+# CrossSiteModelEval workflow prefixes SRV_ (SRV_FL_global_model, SRV_best_FL_global_model.pt)
+# while the ModelController CrossSiteEval records the raw checkpoint name (FL_global_model.pt).
+SERVER_GLOBAL_MODEL_KEY_MARKER = "FL_global_model"
+
 CANDIDATE_MANIFEST_SCHEMA_VERSION = "nvflare.autofl.candidate.v1"
 CANDIDATE_MANIFEST_STATUSES = {"prepared", "ready_for_external_execution", "keep", "discard", "crash", "abandoned"}
 CAMPAIGN_METADATA_SCHEMA_VERSION = "nvflare.autofl.campaign.v1"
@@ -1348,6 +1353,27 @@ def metric_from_list(items: Any, metric: str) -> Optional[float]:
     return None
 
 
+def server_final_metric_values(payload: Any, metric: str) -> List[float]:
+    """Collect the metric values recorded for server-side global-model entries in a cross-site payload."""
+    values: List[float] = []
+    if isinstance(payload, dict):
+        for key, entry in payload.items():
+            if isinstance(key, str) and SERVER_GLOBAL_MODEL_KEY_MARKER in key:
+                value = find_metric_value(entry, [metric])
+                if value is not None:
+                    values.append(value)
+            else:
+                values.extend(server_final_metric_values(entry, metric))
+    elif isinstance(payload, list):
+        for item in payload:
+            values.extend(server_final_metric_values(item, metric))
+    return values
+
+
+def best_metric_value(values: Sequence[float], mode: str) -> float:
+    return min(values) if mode == "min" else max(values)
+
+
 def text_metric_matches(text: str, metric: str) -> List[Tuple[int, float]]:
     number = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
     context = r"(?:(?:final|test|validation|cross[-_ ]site)\s+)*"
@@ -1399,7 +1425,9 @@ def text_metric_matches(text: str, metric: str) -> List[Tuple[int, float]]:
     return evaluation_matches or direct_matches or mapping_matches or framework_matches
 
 
-def extract_metric_evidence(artifact_root: Path, metrics: Sequence[str] | str) -> Optional[MetricEvidence]:
+def extract_metric_evidence(
+    artifact_root: Path, metrics: Sequence[str] | str, mode: str = "max"
+) -> Optional[MetricEvidence]:
     metric_order = normalize_metric_order(metrics)
     metric_files = sorted(artifact_root.glob("**/metrics_summary.json")) + sorted(
         artifact_root.glob("**/cross_val_results.json")
@@ -1413,6 +1441,17 @@ def extract_metric_evidence(artifact_root: Path, metrics: Sequence[str] | str) -
         payloads.append((path, payload))
     for metric in metric_order:
         for path, payload in payloads:
+            if path.name == "cross_val_results.json":
+                # Cross-site payloads score every site/model pair; prefer the server-final
+                # global model over whichever entry happens to appear first.
+                server_final = server_final_metric_values(payload, metric)
+                if server_final:
+                    return MetricEvidence(
+                        score=best_metric_value(server_final, mode),
+                        metric_name=metric,
+                        source=f"structured:{path.name}#server_final",
+                        artifact=str(path.resolve()),
+                    )
             score = find_metric_value(payload, [metric])
             if score is not None:
                 return MetricEvidence(
@@ -1443,8 +1482,8 @@ def extract_metric_evidence(artifact_root: Path, metrics: Sequence[str] | str) -
     return None
 
 
-def extract_score(artifact_root: Path, metrics: Sequence[str] | str) -> Optional[float]:
-    evidence = extract_metric_evidence(artifact_root, metrics)
+def extract_score(artifact_root: Path, metrics: Sequence[str] | str, mode: str = "max") -> Optional[float]:
+    evidence = extract_metric_evidence(artifact_root, metrics, mode)
     return evidence.score if evidence else None
 
 
@@ -2136,6 +2175,7 @@ def run_job(
     simulator_no_progress_timeout: int,
     metrics: Sequence[str],
     config: Dict[str, Any],
+    mode: str = "max",
 ) -> RunRecord:
     baseline_run = run_def.status == "baseline"
     log_path = output_root / run_def.name / "run.log"
@@ -2202,7 +2242,7 @@ def run_job(
         run_def.failure_reason = unresolved_result_dir_failure_reason(python, cwd, config)
     else:
         artifact_root = artifact_dir.parent
-        evidence = extract_metric_evidence(artifact_root, metrics)
+        evidence = extract_metric_evidence(artifact_root, metrics, mode)
         if evidence is None:
             run_def.status = "crash"
             run_def.failure_reason = f"matching metric not found; {metric_search_description(artifact_root, metrics)}"
@@ -2807,6 +2847,7 @@ def execute_sim_baseline(
         simulator_no_progress_timeout=no_progress_timeout,
         metrics=metric_extraction_order(config, args.metric),
         config=config,
+        mode=args.mode,
     )
 
 
@@ -3287,6 +3328,7 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
             simulator_no_progress_timeout=no_progress_timeout,
             metrics=metric_extraction_order(config, args.metric),
             config=config,
+            mode=args.mode,
         )
     except BaseException as error:
         try:
@@ -3437,7 +3479,7 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
         raise ValueError("--score must be a finite number")
     evidence = None
     if score is None and artifact_path:
-        evidence = extract_metric_evidence(artifact_path, metric_extraction_order(config, args.metric))
+        evidence = extract_metric_evidence(artifact_path, metric_extraction_order(config, args.metric), args.mode)
         score = evidence.score if evidence else None
     elif score is not None:
         evidence = MetricEvidence(
