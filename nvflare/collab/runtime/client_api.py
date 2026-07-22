@@ -28,7 +28,7 @@ multi-rank execution are intentionally outside this initial contract.
 """
 
 import threading
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -72,6 +72,7 @@ class CollabClientAPI(APISpec):
 
         self._training_func = None  # User's training function
         self._result: Optional[FLModel] = None
+        self._log_handler: Optional[Callable[..., Any]] = None
 
     def set_training_func(self, func):
         """Set the training function executed in the client site's process.
@@ -101,6 +102,12 @@ class CollabClientAPI(APISpec):
             api.set_training_func(training_loop)
         """
         self._training_func = func
+
+    def set_log_handler(self, handler: Optional[Callable[..., Any]]):
+        """Set the site-runtime callback used to emit Client API analytics."""
+        if handler is not None and not callable(handler):
+            raise TypeError(f"log handler must be callable but got {type(handler)}")
+        self._log_handler = handler
 
     def make_client_app(self, site_name: str):
         """Create a new CollabClientAPI instance for a client site.
@@ -359,8 +366,9 @@ class CollabClientAPI(APISpec):
             data_type: The data type of the value.
             **kwargs: Additional arguments.
         """
-        # TODO: Implement metric logging via collab call to server
-        self.logger.debug(f"Log metric: {key}={value} (type={data_type})")
+        if self._log_handler is None:
+            raise RuntimeError("CollabClientAPI metric logging is unavailable before the site runtime is initialized")
+        return self._log_handler(key, value, data_type, **kwargs)
 
     def clear(self):
         """Clear the cached model."""

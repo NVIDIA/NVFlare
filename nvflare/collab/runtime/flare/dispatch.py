@@ -18,7 +18,7 @@ from nvflare.collab.api.decorators import adjust_kwargs
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
-from nvflare.security.logging import secure_log_traceback
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .defs import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
 
@@ -123,4 +123,4 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
         )
     except Exception as ex:
         secure_log_traceback(logger)
-        return _error_reply(f"exception {type(ex)}", logger)
+        return _error_reply(secure_format_exception(ex), logger)

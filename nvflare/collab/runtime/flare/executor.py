@@ -14,6 +14,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List
 
+from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE, AnalyticsDataType
 from nvflare.apis.client import Client, from_dict
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -22,9 +23,11 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.apis.utils.analytix_utils import create_analytic_dxo, send_analytic_dxo
 from nvflare.collab.api.app import ClientApp
 from nvflare.collab.api.constants import MAKE_CLIENT_APP_METHOD, PER_SITE_CONFIG_PROP
 from nvflare.collab.api.proxy import Proxy
+from nvflare.collab.runtime.client_api import CollabClientAPI
 from nvflare.collab.runtime.flare.cell_dispatcher import CellDispatcher
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils import fobs
@@ -67,7 +70,26 @@ class CollabExecutor(Executor, CollabAdaptor):
         self.register_event_handler(EventType.END_RUN, self._handle_end_run)
         self.client_app = None
         self.client_ctx = None
+        self._engine = None
         self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads, thread_name_prefix="collab_call")
+
+    def _log_analytic_data(self, key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
+        if self._engine is None:
+            raise RuntimeError("CollabExecutor is not initialized")
+
+        dxo = create_analytic_dxo(tag=key, value=value, data_type=data_type, **kwargs)
+        with self._engine.new_context() as fl_ctx:
+            send_analytic_dxo(
+                self,
+                dxo=dxo,
+                fl_ctx=fl_ctx,
+                event_type=ANALYTIC_EVENT_TYPE,
+                fire_fed_event=False,
+            )
+
+    def _configure_client_api_logging(self, app: ClientApp):
+        if isinstance(app.obj, CollabClientAPI):
+            app.obj.set_log_handler(self._log_analytic_data)
 
     def _handle_start_run(self, event_type: str, fl_ctx: FLContext):
         tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
@@ -76,6 +98,7 @@ class CollabExecutor(Executor, CollabAdaptor):
         fl_ctx.set_prop(FLContextKey.TASK_ROUTING_TARGET, FQCN.ROOT_SERVER, private=True, sticky=True)
 
         engine = fl_ctx.get_engine()
+        self._engine = engine
         client_obj = engine.get_component(self.client_obj_id)
         if not client_obj:
             self.system_panic(f"cannot get client component {self.client_obj_id}", fl_ctx)
@@ -94,6 +117,7 @@ class CollabExecutor(Executor, CollabAdaptor):
             if not isinstance(app, ClientApp):
                 raise RuntimeError(f"result returned by {MAKE_CLIENT_APP_METHOD} must be ClientApp but got {type(app)}")
 
+        self._configure_client_api_logging(app)
         app.name = client_name
         self.client_app = app
 
@@ -113,6 +137,8 @@ class CollabExecutor(Executor, CollabAdaptor):
         if self.client_ctx:
             self.logger.info(f"finalizing client app {self.client_app.name}")
             self.client_app.finalize(self.client_ctx)
+        if self.client_app and isinstance(self.client_app.obj, CollabClientAPI):
+            self.client_app.obj.set_log_handler(None)
         self.thread_executor.shutdown(wait=True, cancel_futures=True)
 
     def _prepare_server_proxy(self, job_id, cell, collab_interface: dict, abort_signal, fl_ctx: FLContext):
