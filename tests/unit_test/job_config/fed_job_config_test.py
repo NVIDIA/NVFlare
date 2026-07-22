@@ -273,3 +273,66 @@ class TestFedJobConfig:
                 result = job_config.simulator_run(workspace=str(tmp_path), clients="site-1", threads=1)
 
         assert result == 2
+
+
+class TestFillNodeCommands:
+    _SCRIPT = "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 -- custom/client.py --epochs 2"
+
+    def _job_config(self, launch_once=True, site="site-1", with_launcher=True):
+        from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
+        from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig
+
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        client_app = ClientAppConfig()
+        if with_launcher:
+            client_app.add_component("launcher", SubprocessLauncher(script=self._SCRIPT, launch_once=launch_once))
+        job_config.add_fed_app("app", FedAppConfig(client_app=client_app))
+        job_config.set_site_app(site, "app")
+        return job_config
+
+    def test_multinode_site_gets_launcher_script_as_node_command(self):
+        job_config = self._job_config()
+        launcher_spec = {"site-1": {"slurm": {"nodes": 2, "gpus_per_node": 8}}}
+        meta = {"launcher_spec": launcher_spec}
+
+        job_config._fill_node_commands(meta)
+
+        assert meta["launcher_spec"]["site-1"]["slurm"]["node_command"] == self._SCRIPT
+        assert "node_command" not in launcher_spec["site-1"]["slurm"]  # input never mutated
+
+    def test_all_sites_deployment_resolves_the_shared_app(self):
+        job_config = self._job_config(site="@ALL")
+        meta = {"launcher_spec": {"site-1": {"slurm": {"nodes": 2}}}}
+
+        job_config._fill_node_commands(meta)
+
+        assert meta["launcher_spec"]["site-1"]["slurm"]["node_command"] == self._SCRIPT
+
+    def test_explicit_node_command_and_single_node_blocks_are_untouched(self):
+        job_config = self._job_config()
+        meta = {
+            "launcher_spec": {
+                "site-1": {"slurm": {"nodes": 2, "node_command": "custom command"}},
+                "site-2": {"slurm": {"nodes": 1}},
+            }
+        }
+
+        job_config._fill_node_commands(meta)
+
+        assert meta["launcher_spec"]["site-1"]["slurm"]["node_command"] == "custom command"
+        assert "node_command" not in meta["launcher_spec"]["site-2"]["slurm"]
+
+    def test_multinode_requires_launch_once(self):
+        job_config = self._job_config(launch_once=False)
+        meta = {"launcher_spec": {"site-1": {"slurm": {"nodes": 2}}}}
+
+        with pytest.raises(RuntimeError, match="launch_once=True"):
+            job_config._fill_node_commands(meta)
+
+    def test_site_without_subprocess_launcher_is_left_alone(self):
+        job_config = self._job_config(with_launcher=False)
+        meta = {"launcher_spec": {"site-1": {"slurm": {"nodes": 2}}}}
+
+        job_config._fill_node_commands(meta)
+
+        assert "node_command" not in meta["launcher_spec"]["site-1"]["slurm"]

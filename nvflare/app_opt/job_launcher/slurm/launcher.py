@@ -58,6 +58,7 @@ from nvflare.app_opt.job_launcher.study_runtime import (
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.fuel.f3.drivers.file_driver import parse_file_url
+from nvflare.fuel.utils.secret_utils import has_secret_refs
 from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
     get_credential_env,
@@ -141,6 +142,8 @@ def _resolve_node_command(
     raw = _require_string(raw, "node_command")
     if "\n" in raw or "\r" in raw:
         raise SlurmLauncherError("node_command must be a single line")
+    if has_secret_refs(raw):
+        raise SlurmLauncherError("node_command does not support secret references")
     if nodes < 2:
         raise SlurmLauncherError("node_command requires nodes > 1")
     try:

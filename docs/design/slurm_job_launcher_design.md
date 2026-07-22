@@ -220,14 +220,16 @@ credentials: the non-zero branch unsets the `JobProcessEnv` variables (and their
 executing user code, preserving the contract that only the job process consumes them. The variable names carry
 no scheduler meaning, so the same `node_command` can run under any launcher that adopts the contract.
 
-`node_command` is job-owned and validated at the launch boundary: a single-line, shell-lexable, non-empty string,
-split once into argv and rendered fully quoted, never re-parsed by a shell. It is the worker command for the
-non-zero node ranks; the launcher does not verify that it matches the rank-0 training command, and frameworks
-such as torchrun that need identical commands on every node rely on the job author using the same helper command
-for both. Node groups assume the rank-0 launcher component uses `launch_once=True`, so the training program
-performs one rendezvous per job; the Slurm launcher cannot verify this client-side setting. The command executes
-as the submitting user under the effective sandbox, with exactly the trust of the BYOC training code the rank-0
-CJ launches itself. It is rejected for server jobs, for `nodes: 1`, and when the deployed job app directory is
+`node_command` is job-owned and validated at the launch boundary: a single-line, shell-lexable, non-empty string
+without secret references, split once into argv and rendered fully quoted, never re-parsed by a shell. It is the
+worker command for the non-zero node ranks. For jobs built with the FedJob/Recipe API it is not authored by hand:
+export fills it from the site's `SubprocessLauncher` command whenever a launcher block requests `nodes > 1`, so
+the meta command and the deployed rank-0 command come from one source and `launch_once=True` is enforced at
+export (the training program performs one rendezvous per job). An explicit `node_command` always wins and remains
+available for jobs that do not use `ScriptRunner`; for those the launcher cannot verify the identical-command
+convention or the `launch_once` setting, which stay the job author's responsibility. The command executes as the
+submitting user under the effective sandbox, with exactly the trust of the BYOC training code the rank-0 CJ
+launches itself. It is rejected for server jobs, for `nodes: 1`, and when the deployed job app directory is
 missing.
 
 ### Sandboxed node groups

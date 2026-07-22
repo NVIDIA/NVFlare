@@ -336,9 +336,15 @@ groups work under every sandbox: with ``apptainer`` or ``pyxis``, all user
 code on every node runs inside the configured container, exactly as in a
 single-node container job. ``node_command`` executes in the deployed job app
 directory as the submitting user, with the same trust as the job's own
-training code; the platform does not verify that it matches the rank-0
-training command. Node groups require the job's launcher component to use
-``launch_once=True`` (the ScriptRunner default). For PyTorch jobs,
+training code; secret references are not supported in it.
+
+Jobs built with the FedJob/Recipe API do not write ``node_command`` by hand:
+job export fills it from the site's external training command
+(``ScriptRunner``'s resolved ``command``) whenever a launcher block requests
+``nodes > 1``, and enforces ``launch_once=True`` (the ScriptRunner default).
+An explicit ``node_command`` always wins; for jobs that set it directly, the
+platform does not verify that it matches the rank-0 training command. For
+PyTorch jobs,
 ``python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=<G> -- <script> <args>``
 maps this environment onto torchrun rendezvous arguments and is intended to be
 both the job's training command and its ``node_command``:

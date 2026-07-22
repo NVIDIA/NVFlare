@@ -282,6 +282,7 @@ def test_launch_plan_resolves_node_command_and_app_dir(tmp_path):
     "meta_kwargs, message",
     [
         ({"nodes": 1}, "node_command requires nodes > 1"),
+        ({"node_command": "python3 -m trainer --token ${secret:MY_TOKEN}"}, "secret references"),
         ({"node_command": "unbalanced 'quote"}, "malformed node_command"),
         ({"node_command": "python3\n-m trainer"}, "single line"),
         ({"node_command": ""}, "non-empty string"),

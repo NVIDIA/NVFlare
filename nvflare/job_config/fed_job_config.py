@@ -13,6 +13,7 @@
 # limitations under the License.
 import ast
 import builtins
+import copy
 import inspect
 import json
 import os
@@ -24,6 +25,7 @@ from enum import Enum
 from tempfile import TemporaryDirectory
 from typing import Dict, List
 
+from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -138,9 +140,64 @@ class FedJobConfig:
         if self.meta_props:
             meta_json.update(self.meta_props)
 
+        self._fill_node_commands(meta_json)
+
         with open(meta_file, "w") as outfile:
             json_dump = json.dumps(meta_json, indent=4)
             outfile.write(json_dump)
+
+    def _fill_node_commands(self, meta_json):
+        """Fill launcher_spec node_command for multi-node sites from the site's SubprocessLauncher.
+
+        The deployed launcher command is the single source the job author writes; copying
+        it here at export keeps meta.json and the client config from drifting. An explicit
+        node_command always wins, and sites without a resolvable external command are left
+        untouched (the launcher rejects unsupported combinations at launch time).
+        """
+        launcher_spec = meta_json.get(JobMetaKey.JOB_LAUNCHER_SPEC.value)
+        if not isinstance(launcher_spec, dict):
+            return
+        filled = copy.deepcopy(launcher_spec)
+        changed = False
+        for site_name, site_spec in filled.items():
+            if not isinstance(site_spec, dict):
+                continue
+            blocks = [
+                block
+                for block in site_spec.values()
+                if isinstance(block, dict)
+                and isinstance(block.get("nodes"), int)
+                and block["nodes"] > 1
+                and "node_command" not in block
+            ]
+            if not blocks:
+                continue
+            script = self._site_external_launch_script(site_name)
+            if not script:
+                continue
+            for block in blocks:
+                block["node_command"] = script
+            changed = True
+        if changed:
+            meta_json[JobMetaKey.JOB_LAUNCHER_SPEC.value] = filled
+
+    def _site_external_launch_script(self, site_name):
+        from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
+
+        app_name = self.deploy_map.get(site_name, self.deploy_map.get(ALL_SITES))
+        fed_app = self.fed_apps.get(app_name)
+        client_app = fed_app.client_app if fed_app else None
+        if client_app is None:
+            return None
+        launchers = [comp for comp in client_app.components.values() if isinstance(comp, SubprocessLauncher)]
+        scripts = {launcher._script for launcher in launchers}
+        if len(scripts) != 1:
+            return None
+        if not all(launcher._launch_once for launcher in launchers):
+            raise RuntimeError(
+                f"multi-node job for site '{site_name}' requires the external launcher to use launch_once=True"
+            )
+        return scripts.pop()
 
     def generate_job_config(self, job_root):
         """generate the job config
