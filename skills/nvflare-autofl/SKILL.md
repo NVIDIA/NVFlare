@@ -16,10 +16,10 @@ metadata:
 
 **All optimization must go through the official campaign runner (`run_job_campaign.py`): never optimize or edit the user's project directly outside a prepared candidate.**
 
-## Purpose
+## Use When
 Use this skill when the user asks to optimize an existing NVFLARE `job.py` for accuracy, AUC, loss, runtime, robustness, or another metric in simulation, POC, or production.
 
-## Limitations
+## Do Not Use When
 Do not use for converting non-FL training code into NVFLARE, diagnosing failed jobs without an optimization goal, production deployment setup, evaluation/statistics-only recipes, or generic tuning outside an NVFLARE job.
 
 ## Available Scripts
