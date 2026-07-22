@@ -162,6 +162,8 @@ infer a cap from an inherited environment variable. Do not count import, validat
 baseline, or infrastructure-only retries; count a real candidate crash after execution starts. Runner state must
 report `candidate_cap_source=explicit` or `uncapped`, plus `remaining_candidates`, `baseline_status`,
 `baseline_score`, `improvement`, and `abandoned_candidates`; cap changes append to `cap_changes` in campaign metadata.
+A persisted cap change refreshes `campaign_state.json` before action gating, so raising `--max-candidates` reopens a
+cap-exhausted campaign.
 
 Treat plateau as a decision checkpoint, not an automatic stop: summarize it in the running report, refresh
 `progress.png`, run the runner's `status` action to refresh `.nvflare/autofl/campaign_state.json`, choose the returned
