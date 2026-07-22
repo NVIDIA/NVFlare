@@ -82,6 +82,11 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
         method_args = []
     elif not isinstance(method_args, (list, tuple)):
         return _error_reply(f"bad method args: should be list/tuple but got {type(method_args)}", logger)
+    elif method_args:
+        # Proxy.adjust_func_args normalizes all positional arguments to named
+        # arguments before transport so filters and validation can identify
+        # them reliably. Reject malformed callers that bypass that invariant.
+        return _error_reply("bad method args: positional arguments must be normalized to kwargs", logger)
 
     method_kwargs = payload.get(ObjectCallKey.KWARGS)
     if not method_kwargs:

@@ -177,7 +177,7 @@ class Group:
                     return waiter.results
             except Exception as ex:
                 self._logger.error(f"exception {type(ex)} occurred: {ex}")
-                if the_backend:
+                if the_backend and not self._call_opt.optional:
                     the_backend.handle_exception(ex)
                 raise ex
 

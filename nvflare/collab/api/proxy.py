@@ -210,6 +210,7 @@ class Proxy:
         Returns: result of the function, or exception.
 
         """
+        backend = self.backend
         try:
             if call_opt.target:
                 p = self.get_child(call_opt.target)
@@ -222,6 +223,7 @@ class Proxy:
                 p = self
 
             p, func_itf, call_args, call_kwargs = p.adjust_func_args(func_name, args, kwargs)
+            backend = p.backend
 
             with p.app.new_context(self.caller_name, self.name) as ctx:
                 # apply outgoing call filters
@@ -237,9 +239,11 @@ class Proxy:
                     result = self.app.apply_incoming_result_filters(p.target_name, func_name, result, ctx)
                 return result
         except Exception as ex:
-            if self.backend:
+            # Optional calls are allowed to fail without aborting the run. The
+            # exception remains the call result so the caller can recover.
+            if backend and not call_opt.optional:
                 try:
-                    self.backend.handle_exception(ex)
+                    backend.handle_exception(ex)
                 except Exception as ex2:
                     # ignore exception from backend handling
                     self.logger.error(f"ignored backend's exception {type(ex2)}")

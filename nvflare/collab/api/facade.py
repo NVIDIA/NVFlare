@@ -12,13 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from .constants import ContextKey
-from .context import get_call_context
+from .context import get_call_context as _get_call_context
 from .decorators import classproperty
 from .decorators import final as dec_final
 from .decorators import init as dec_init
 from .decorators import main as dec_main
 from .decorators import publish as dec_publish
 from .proxy_list import ProxyList
+
+
+def get_call_context():
+    """Return the active Collab context with a clear lifecycle error."""
+    ctx = _get_call_context()
+    if ctx is None:
+        raise RuntimeError("Collab context is only available while a Collab function is running")
+    return ctx
 
 
 class Facade:

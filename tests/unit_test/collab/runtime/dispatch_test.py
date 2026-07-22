@@ -50,3 +50,22 @@ def test_remote_call_returns_secure_exception_detail():
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.PROCESS_EXCEPTION
     assert reply.payload[CallReplyKey.ERROR] == "ValueError: invalid input"
     format_exception.assert_called_once()
+
+
+def test_remote_call_rejects_unnormalized_positional_args():
+    app = ClientApp(_FailingClient())
+    app.name = "site-1"
+    request = new_cell_message(
+        {},
+        {
+            ObjectCallKey.CALLER: "server",
+            ObjectCallKey.TARGET_NAME: "site-1",
+            ObjectCallKey.METHOD_NAME: "fail",
+            ObjectCallKey.ARGS: ["unexpected"],
+        },
+    )
+
+    reply = _call_app_method(request, app, MagicMock())
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.PROCESS_EXCEPTION
+    assert reply.payload[CallReplyKey.ERROR] == "bad method args: positional arguments must be normalized to kwargs"
