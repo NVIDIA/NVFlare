@@ -21,7 +21,7 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat
 from nvflare.client.converter_utils import create_default_params_converters
-from nvflare.client.ex_process.api import _downgrade_rotating_handlers
+from nvflare.client.ex_process.api import _downgrade_rotating_handlers, _remove_file_handlers
 
 
 class _DummyConverter(ParamsConverter):
@@ -185,7 +185,7 @@ def test_ex_process_api_passes_submit_result_timeout_to_agent(monkeypatch):
     )
 
     api = ExProcessClientAPI(config_file="fake_config.json")
-    api._configure_subprocess_logging = lambda client_config: None
+    api._configure_subprocess_logging = lambda client_config, rank: None
     api.init(rank="0")
 
     assert "submit_result_timeout" in captured_kwargs, "submit_result_timeout was not passed to FlareAgentWithFLModel"
@@ -280,7 +280,7 @@ def test_ex_process_api_uses_rank_env_for_default_rank(monkeypatch):
     monkeypatch.setattr("nvflare.client.ex_process.api.ModelRegistry", _capture_model_registry)
 
     api = ExProcessClientAPI(config_file="fake_config.json")
-    api._configure_subprocess_logging = lambda client_config: None
+    api._configure_subprocess_logging = lambda client_config, rank: None
     api.init()
 
     assert captured["rank"] == "1"
@@ -313,7 +313,7 @@ def test_ex_process_api_defaults_to_rank0_when_rank_env_missing(monkeypatch):
     monkeypatch.setattr("nvflare.client.ex_process.api.ModelRegistry", _capture_model_registry)
 
     api = ExProcessClientAPI(config_file="fake_config.json")
-    api._configure_subprocess_logging = lambda client_config: None
+    api._configure_subprocess_logging = lambda client_config, rank: None
     api.init()
 
     assert captured["rank"] == "0"
@@ -400,3 +400,19 @@ class TestDowngradeRotatingHandlers:
     def test_no_handlers_key(self):
         cfg = {}
         _downgrade_rotating_handlers(cfg)  # must not raise
+
+
+class TestRemoveFileHandlers:
+    def test_only_rank_zero_keeps_shared_file_handlers(self):
+        cfg = copy.deepcopy(_ROTATING_CONFIG)
+        cfg["root"] = {"level": "INFO", "handlers": ["logFileHandler", "consoleHandler"]}
+        cfg["loggers"] = {"nvflare": {"handlers": ["timedHandler", "consoleHandler"]}}
+
+        _remove_file_handlers(cfg)
+
+        assert set(cfg["handlers"]) == {"consoleHandler"}
+        assert cfg["root"]["handlers"] == ["consoleHandler"]
+        assert cfg["loggers"]["nvflare"]["handlers"] == ["consoleHandler"]
+
+    def test_no_handlers_key(self):
+        _remove_file_handlers({})  # must not raise

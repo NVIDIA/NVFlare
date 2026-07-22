@@ -206,18 +206,29 @@ and delegates to one `srun --nodes=N --ntasks=N --ntasks-per-node=1` invocation 
 | `NVFL_NNODES` | `SLURM_JOB_NUM_NODES` |
 | `NVFL_NODE_RANK` | `SLURM_NODEID`, exported per task by `node.sh` |
 | `NVFL_MASTER_ADDR` | `SLURMD_NODENAME` of the batch node, which is node rank 0 |
-| `NVFL_MASTER_PORT` | `29400 + SLURM_JOB_ID % 1000`, deterministic per allocation and collision-safe on shared nodes |
+| `NVFL_MASTER_PORT` | `29400 + SLURM_JOB_ID % 1000`, deterministic per allocation |
+
+Distinct concurrent jobs that share a node can map to the same port; a collision surfaces as a rendezvous bind
+failure on rank 0. Sites that co-locate allocations with other network services should manage this through
+scheduler policy, for example exclusive nodes.
 
 `node.sh` dispatches on the rank: rank 0 executes the standard worker command, so the CJ connects to the parent
 and reports the job result exactly as a single-node job; every other rank executes the `node_command` argv in the
 deployed job app directory. Both paths inherit the batch environment (sourced secrets, `PYTHONPATH`, study env,
-forwarded names) because the script exports `SLURM_EXPORT_ENV=ALL` before the fan-out. The variable names carry
+forwarded names) because the script exports `SLURM_EXPORT_ENV=ALL` before the fan-out — except the bootstrap
+credentials: the non-zero branch unsets the `JobProcessEnv` variables (and their Apptainer mirrors) before
+executing user code, preserving the contract that only the job process consumes them. The variable names carry
 no scheduler meaning, so the same `node_command` can run under any launcher that adopts the contract.
 
 `node_command` is job-owned and validated at the launch boundary: a single-line, shell-lexable, non-empty string,
-split once into argv and rendered fully quoted, never re-parsed by a shell. It executes as the submitting user
-under the effective sandbox, with exactly the trust of the BYOC training code the rank-0 CJ launches itself. It
-is rejected for server jobs, for `nodes: 1`, and when the deployed job app directory is missing.
+split once into argv and rendered fully quoted, never re-parsed by a shell. It is the worker command for the
+non-zero node ranks; the launcher does not verify that it matches the rank-0 training command, and frameworks
+such as torchrun that need identical commands on every node rely on the job author using the same helper command
+for both. Node groups assume the rank-0 launcher component uses `launch_once=True`, so the training program
+performs one rendezvous per job; the Slurm launcher cannot verify this client-side setting. The command executes
+as the submitting user under the effective sandbox, with exactly the trust of the BYOC training code the rank-0
+CJ launches itself. It is rejected for server jobs, for `nodes: 1`, and when the deployed job app directory is
+missing.
 
 ### Sandboxed node groups
 
@@ -241,13 +252,13 @@ inside the container; the secret file is already deleted before any task starts,
 
 ### Lifecycle and results
 
-The fan-out uses `--kill-on-bad-exit=0`: a failing worker node must not kill rank 0 before the CJ reports the
-training failure through the normal task path; surviving ranks observe the loss through the training framework's
-own failure detection. Rank 0 remains authoritative for the application result via `_process_rc.txt`; the
-scheduler fallback still uses allocation `State` and `ExitCode`, which reflect the highest task exit code.
-Cancellation, monitoring, and pending-timeout handling are unchanged because the node group is one allocation
-with one scheduler identity. Between training rounds the non-zero ranks hold their nodes idle, which is inherent
-to a static allocation.
+The fan-out uses `--kill-on-bad-exit=1 --wait=0`: any task that exits non-zero terminates the whole step,
+including rank 0, so a failed worker node ends the allocation deterministically instead of idling until wall
+time; `--wait=0` waits indefinitely after clean task exits, so a worker that finishes training never kills a
+still-running CJ. When rank 0 is killed before writing `_process_rc.txt`, the existing scheduler fallback
+attributes the failure from allocation `State` and `ExitCode`. Cancellation, monitoring, and pending-timeout
+handling are unchanged because the node group is one allocation with one scheduler identity. Between training
+rounds the non-zero ranks hold their nodes idle, which is inherent to a static allocation.
 
 ### Framework helpers
 

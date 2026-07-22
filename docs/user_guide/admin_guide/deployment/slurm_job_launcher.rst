@@ -329,13 +329,16 @@ whenever both are supplied, ``num_of_gpus`` must equal
 A multi-node client job that also sets ``node_command`` requests a
 launcher-owned node group: the launcher starts one task per allocated node,
 runs the normal client job process on node rank 0, and runs ``node_command``
-on every other node with the node-group environment
-(``NVFL_NNODES``, ``NVFL_NODE_RANK``, ``NVFL_MASTER_ADDR``,
-``NVFL_MASTER_PORT``) exported to all tasks. Node groups work under every
-sandbox: with ``apptainer`` or ``pyxis``, all user code on every node runs
-inside the configured container, exactly as in a single-node container job.
-``node_command`` executes in the deployed job app directory as the submitting
-user, with the same trust as the job's own training code. For PyTorch jobs,
+— the worker command for the non-zero node ranks — on every other node with
+the node-group environment (``NVFL_NNODES``, ``NVFL_NODE_RANK``,
+``NVFL_MASTER_ADDR``, ``NVFL_MASTER_PORT``) exported to all tasks. Node
+groups work under every sandbox: with ``apptainer`` or ``pyxis``, all user
+code on every node runs inside the configured container, exactly as in a
+single-node container job. ``node_command`` executes in the deployed job app
+directory as the submitting user, with the same trust as the job's own
+training code; the platform does not verify that it matches the rank-0
+training command. Node groups require the job's launcher component to use
+``launch_once=True`` (the ScriptRunner default). For PyTorch jobs,
 ``python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=<G> -- <script> <args>``
 maps this environment onto torchrun rendezvous arguments and is intended to be
 both the job's training command and its ``node_command``:

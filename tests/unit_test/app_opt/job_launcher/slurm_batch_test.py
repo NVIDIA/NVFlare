@@ -172,7 +172,8 @@ def test_multinode_batch_exports_node_group_contract_and_delegates_to_srun(tmp_p
     command_line = next(line for line in script.splitlines() if line.startswith("_nvfl_command="))
     assert "--nodes=2" in command_line
     assert "--ntasks-per-node=1" in command_line
-    assert "--kill-on-bad-exit=0" in command_line
+    assert "--kill-on-bad-exit=1" in command_line
+    assert "--wait=0" in command_line
     assert f"{job_dir}/node.sh" in command_line
     assert "worker.module" not in command_line
 
@@ -198,6 +199,8 @@ def test_apptainer_node_group_containerizes_each_rank_on_its_node(tmp_path):
     assert "cd " not in node
     assert "worker.module" in node
     assert "python3 -m trainer --epochs 2" in node
+    assert "unset NVFLARE_JOB_AUTH_TOKEN" in node
+    assert "APPTAINERENV_NVFLARE_JOB_AUTH_TOKEN" in node
 
 
 def test_pyxis_node_group_fans_out_containers_through_one_srun(tmp_path):
@@ -212,7 +215,7 @@ def test_pyxis_node_group_fans_out_containers_through_one_srun(tmp_path):
         assert name in env_line
     batch_command = next(line for line in batch.splitlines() if line.startswith("_nvfl_command="))
     assert "--nodes=2" in batch_command
-    assert "--kill-on-bad-exit=0" in batch_command
+    assert "--kill-on-bad-exit=1" in batch_command
     assert "--container-image=/images/python.sif" in batch_command
     assert batch_command.rstrip(")").endswith(f"{job_dir}/node.sh")
     assert "worker.module" not in batch_command
@@ -222,13 +225,18 @@ def test_pyxis_node_group_fans_out_containers_through_one_srun(tmp_path):
     assert "worker.module" in node
 
 
-@pytest.mark.parametrize("node_rank, expected", [("0", "worker-ran"), ("1", "rank=1")])
-def test_rendered_node_script_executes_by_rank(tmp_path, node_rank, expected):
+@pytest.mark.parametrize("node_rank, expected", [("0", "worker-ran token=cj-secret"), ("1", "rank=1 token=scrubbed")])
+def test_rendered_node_script_executes_by_rank_and_scrubs_worker_credentials(tmp_path, node_rank, expected):
     worker = tmp_path / "worker"
-    worker.write_text("#!/usr/bin/env bash\necho worker-ran\n", encoding="utf-8")
+    worker.write_text(
+        '#!/usr/bin/env bash\necho "worker-ran token=${NVFLARE_JOB_AUTH_TOKEN:-missing}"\n', encoding="utf-8"
+    )
     worker.chmod(0o700)
     plan = replace(
-        _multinode_plan(tmp_path, node_command=("bash", "-c", 'echo "rank=${NVFL_NODE_RANK}"; pwd')),
+        _multinode_plan(
+            tmp_path,
+            node_command=("bash", "-c", 'echo "rank=${NVFL_NODE_RANK} token=${NVFLARE_JOB_AUTH_TOKEN:-scrubbed}"; pwd'),
+        ),
         python_path=str(worker),
     )
     node_path = Path(_job_dir(tmp_path)) / "node.sh"
@@ -239,7 +247,7 @@ def test_rendered_node_script_executes_by_rank(tmp_path, node_rank, expected):
         [str(node_path)],
         capture_output=True,
         text=True,
-        env={"PATH": "/usr/bin:/bin", "SLURM_NODEID": node_rank},
+        env={"PATH": "/usr/bin:/bin", "SLURM_NODEID": node_rank, "NVFLARE_JOB_AUTH_TOKEN": "cj-secret"},
     )
 
     assert completed.returncode == 0

@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import shlex
 
+from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.app_common.multinode import ENV_MASTER_ADDR as MULTINODE_ENV_MASTER_ADDR
 from nvflare.app_common.multinode import ENV_MASTER_PORT as MULTINODE_ENV_MASTER_PORT
 from nvflare.app_common.multinode import ENV_NNODES as MULTINODE_ENV_NNODES
@@ -111,6 +112,9 @@ def _apptainer_parts(plan: LaunchPlan, config: SlurmConfig, worker_words: list[s
 
 
 _MULTINODE_BATCH_ENV = (MULTINODE_ENV_NNODES, MULTINODE_ENV_MASTER_ADDR, MULTINODE_ENV_MASTER_PORT)
+# Bootstrap credentials are for the rank-0 CJ only (JobProcessEnv contract); the
+# non-zero branch of node.sh unsets them before executing user code.
+_CREDENTIAL_ENV = (JobProcessEnv.AUTH_TOKEN, JobProcessEnv.TOKEN_SIGNATURE, JobProcessEnv.SSID)
 
 
 def _multinode_srun_words(plan: LaunchPlan) -> list[str]:
@@ -119,8 +123,11 @@ def _multinode_srun_words(plan: LaunchPlan) -> list[str]:
         shlex.quote(f"--nodes={plan.resources.nodes}"),
         shlex.quote(f"--ntasks={plan.resources.nodes}"),
         shlex.quote("--ntasks-per-node=1"),
-        # A worker-node failure must not kill rank 0 before it reports the result.
-        shlex.quote("--kill-on-bad-exit=0"),
+        # Any failing task terminates the whole step so the allocation cannot idle
+        # until wall time; --wait=0 waits indefinitely after clean task exits so a
+        # finished worker never kills a still-running rank 0.
+        shlex.quote("--kill-on-bad-exit=1"),
+        shlex.quote("--wait=0"),
     ]
 
 
@@ -160,6 +167,7 @@ def _render_node_script(plan: LaunchPlan, config: SlurmConfig) -> str:
         f'export {MULTINODE_ENV_NODE_RANK}="${{SLURM_NODEID:?}}"',
     ]
     if plan.sandbox == "apptainer":
+        unset_names = _CREDENTIAL_ENV + tuple(f"APPTAINERENV_{name}" for name in _CREDENTIAL_ENV)
         lines.extend(
             [
                 _tool_assignment("NVFL_APPTAINER", config.executables.get("apptainer"), "apptainer"),
@@ -167,6 +175,7 @@ def _render_node_script(plan: LaunchPlan, config: SlurmConfig) -> str:
                 f'if [[ "${{{MULTINODE_ENV_NODE_RANK}}}" == "0" ]]; then',
                 f"  _nvfl_command=({' '.join(_apptainer_exec_words(plan, plan.run_dir) + worker_words)})",
                 "else",
+                f"  unset {' '.join(unset_names)}",
                 f"  _nvfl_command=({' '.join(_apptainer_exec_words(plan, plan.node_app_dir) + node_words)})",
                 "fi",
             ]
@@ -177,6 +186,7 @@ def _render_node_script(plan: LaunchPlan, config: SlurmConfig) -> str:
                 f'if [[ "${{{MULTINODE_ENV_NODE_RANK}}}" == "0" ]]; then',
                 f"  _nvfl_command=({' '.join(worker_words)})",
                 "else",
+                f"  unset {' '.join(_CREDENTIAL_ENV)}",
                 f"  cd {shlex.quote(plan.node_app_dir)}",
                 f"  _nvfl_command=({' '.join(node_words)})",
                 "fi",
