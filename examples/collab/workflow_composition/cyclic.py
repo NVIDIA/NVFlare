@@ -17,7 +17,7 @@ import random
 
 from collab.workflow_composition.np_utils import load_np_model, parse_array_def, save_np_model
 
-from nvflare.collab import collab
+from nvflare.collab import CollabCallError, collab
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -42,10 +42,11 @@ class NPCyclic:
     def execute(self):
         current_model = self._initial_model
         for current_round in range(self.num_rounds):
-            current_model = self._do_one_round(current_round, current_model)
-            if current_model is None:
-                self.logger.error(f"training failed on round {current_round}")
-                break
+            try:
+                current_model = self._do_one_round(current_round, current_model)
+            except CollabCallError as error:
+                self.logger.error(f"round {current_round} failed on {error.site}: {error.cause}")
+                return None
         self.logger.info(f"[{collab.call_info}] final result: {current_model}")
         self.final_model = current_model
         return current_model
@@ -62,8 +63,5 @@ class NPCyclic:
         random.shuffle(clients)
         for client in clients:
             current_model = client.train(current_round, current_model)
-            if current_model is None:
-                self.logger.error(f"training failed on client {client.name} at round {current_round}")
-                return None
             self.logger.info(f"[{collab.call_info}] result from {client.name}: {current_model}")
         return current_model

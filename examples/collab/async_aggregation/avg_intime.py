@@ -11,6 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+"""In-time aggregation with callbacks that process results as they arrive.
+
+Response callbacks can run concurrently on backend result-delivery threads, so
+callbacks that mutate shared state must synchronize access to that state.
+"""
+
 import threading
 
 from collab.async_aggregation.np_utils import parse_array_def

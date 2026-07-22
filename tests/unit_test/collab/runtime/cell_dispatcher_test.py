@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 from unittest.mock import MagicMock
 
 import pytest
@@ -88,6 +90,44 @@ def test_pretransmission_error_releases_bounded_parallel_slot():
     call_error = waiter.results.failures["site-1"]
     assert isinstance(call_error, CollabCallError)
     assert call_error.cause is error
+
+
+def test_cancelled_group_future_completes_site():
+    executor = ThreadPoolExecutor(max_workers=1)
+    release_worker = threading.Event()
+    worker_started = threading.Event()
+    completed = threading.Event()
+
+    def occupy_worker():
+        worker_started.set()
+        release_worker.wait(timeout=5.0)
+
+    try:
+        executor.submit(occupy_worker)
+        assert worker_started.wait(timeout=1.0)
+
+        dispatcher = CellDispatcher(
+            manager=MagicMock(),
+            engine=MagicMock(),
+            caller="server",
+            cell=MagicMock(),
+            target_fqcn="site-1/job",
+            abort_signal=MagicMock(),
+            thread_executor=executor,
+        )
+        gcc = MagicMock()
+        gcc.send_completed.side_effect = completed.set
+
+        dispatcher.call_target_in_group(gcc, "train")
+        executor.shutdown(wait=False, cancel_futures=True)
+
+        assert completed.wait(timeout=1.0)
+        cancellation = gcc.set_exception.call_args.args[0]
+        assert isinstance(cancellation, CancelledError)
+        gcc.set_result.assert_not_called()
+    finally:
+        release_worker.set()
+        executor.shutdown(wait=True, cancel_futures=True)
 
 
 def test_remote_error_preserves_type_and_traceback():

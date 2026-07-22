@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from concurrent.futures import CancelledError
+
 from nvflare.collab.api._invocation import InvocationDispatcher
 from nvflare.collab.api.call_opt import CallOption
 from nvflare.collab.api.context import get_call_context, set_call_context
@@ -127,7 +129,14 @@ class CellDispatcher(InvocationDispatcher):
             return None
 
     def call_target_in_group(self, gcc: GroupCallContext, func_name: str, *args, **kwargs):
-        self.thread_executor.submit(self._run_func, gcc, func_name, args, kwargs)
+        future = self.thread_executor.submit(self._run_func, gcc, func_name, args, kwargs)
+        future.add_done_callback(lambda done: self._group_call_done(done, gcc, func_name))
+
+    @staticmethod
+    def _group_call_done(future, gcc: GroupCallContext, func_name: str):
+        if future.cancelled():
+            gcc.set_exception(CancelledError(f"function {func_name} was cancelled before execution"))
+            gcc.send_completed()
 
     def _run_func(self, gcc: GroupCallContext, func_name: str, args, kwargs):
         previous_ctx = get_call_context()

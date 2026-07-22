@@ -68,6 +68,8 @@ request/response transport:
   workspace access, application properties, and group information.
 - Calls support options such as timeout, optional delivery, result expectation,
   security, and maximum parallelism.
+- Group response callbacks can run concurrently on backend result-delivery
+  threads. Callbacks that mutate shared state must synchronize that access.
 - A failed single-site call raises by default so workflow code can recover with
   `try`/`except CollabCallError`. An `optional=True` call logs a warning and
   returns `None` instead. Group iteration yields successful results only;

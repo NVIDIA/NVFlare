@@ -23,10 +23,10 @@ Server and client do not have to be classes: ``@collab.main`` and
 ``CollabRecipe`` picks up the current module automatically when ``server``/
 ``client`` are omitted.
 
-Per-site configuration: ``recipe.set_client_prop(name, {site: value})`` ships
-a per-site value that each site reads at run time with
-``collab.get_app_prop(name)`` (sites not listed fall back to a default). Here
-each site trains for a different number of local epochs.
+Per-site configuration: ``recipe.set_per_site_config({site: {name: value}})``
+resolves values for each site before execution, so a client receives only its
+own values and reads them with ``collab.get_app_prop(name)``. Here each site
+trains for a different number of local epochs.
 
 Every recipe example also takes a ``--runtime`` option (in_process |
 multi_process | prod | export); the recipe itself is identical across them.
@@ -57,9 +57,8 @@ class SimpleModel(nn.Module):
 class Trainer:
     @collab.publish
     def train(self, weights=None):
-        # Per-site config: local epochs are configured per site on the recipe
-        # and read here at run time (default 5 if this site isn't configured).
-        local_epochs = collab.get_app_prop("local_epochs", {}).get(collab.site_name, 5)
+        # The recipe resolves this site's value before the client starts.
+        local_epochs = collab.get_app_prop("local_epochs", 5)
 
         inputs = torch.randn(100, 10)
         labels = torch.randn(100, 1)
@@ -120,7 +119,9 @@ def make_recipe(args):
         sync_task_timeout=60,
     )
     # Per-site configuration: site-1 trains fewer local epochs than site-2.
-    recipe.set_client_prop("local_epochs", {"site-1": 2, "site-2": 5})
+    recipe.set_per_site_config(
+        {f"site-{site_num}": {"local_epochs": 2 if site_num == 1 else 5} for site_num in range(1, args.num_clients + 1)}
+    )
     return recipe
 
 
