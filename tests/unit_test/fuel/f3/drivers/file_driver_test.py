@@ -1,0 +1,226 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+import os
+import struct
+import time
+from threading import Event
+
+import pytest
+
+from nvflare.fuel.f3.comm_error import CommError
+from nvflare.fuel.f3.communicator import Communicator
+from nvflare.fuel.f3.connection import Connection
+from nvflare.fuel.f3.drivers.connector_info import Mode
+from nvflare.fuel.f3.drivers.file_driver import _ConnConfig, _LogReader, _LogWriter
+from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
+from nvflare.fuel.f3.message import Message, MessageReceiver
+
+APP_ID = 321
+NODE_A = "file-comm-a"
+NODE_B = "file-comm-b"
+
+FAST_PARAMS = {"poll_interval": "0.005", "lease_interval": "0.2", "lease_timeout": "2"}
+
+
+class _State:
+    def __init__(self):
+        self.ready = {NODE_A: Event(), NODE_B: Event()}
+        self.disconnected = {NODE_A: Event(), NODE_B: Event()}
+        self.received_from = {NODE_A: [], NODE_B: []}
+
+
+class _Monitor(EndpointMonitor):
+    def __init__(self, state: _State):
+        self.state = state
+
+    def state_change(self, endpoint: Endpoint):
+        if endpoint.state == EndpointState.READY:
+            self.state.ready[endpoint.name].set()
+        elif endpoint.state == EndpointState.DISCONNECTED:
+            self.state.disconnected[endpoint.name].set()
+
+
+class _Receiver(MessageReceiver):
+    def __init__(self, state: _State):
+        self.state = state
+
+    def process_message(self, endpoint: Endpoint, connection: Connection, app_id: int, message: Message):
+        self.state.received_from[endpoint.name].append(message.payload)
+
+
+def _make_comm(name: str, state: _State) -> Communicator:
+    comm = Communicator(Endpoint(name, {}))
+    comm.register_monitor(_Monitor(state))
+    comm.register_message_receiver(APP_ID, _Receiver(state))
+    return comm
+
+
+def _wait_until(condition, timeout=15.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if condition():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def _frame(payload: bytes) -> bytes:
+    length = 16 + len(payload)
+    return struct.pack(">I", length) + bytes(12) + payload
+
+
+class TestLogRoundtrip:
+    def test_rotation_and_cleanup(self, tmp_path):
+        cfg = _ConnConfig({"max_log_size": 100})
+        writer = _LogWriter(str(tmp_path), "a2p", cfg)
+        reader = _LogReader(str(tmp_path), "a2p", cfg)
+
+        frames = [_frame(f"payload-{i}".encode()) for i in range(20)]
+        received = []
+        for frame in frames:
+            writer.append(frame)
+            received.extend(reader.read_frames())
+        received.extend(reader.read_frames())
+        writer.close()
+        reader.close()
+
+        assert received == frames
+        logs = [f for f in os.listdir(tmp_path) if f.endswith(".log")]
+        assert len(logs) <= 2
+
+    def test_frame_larger_than_log_cap(self, tmp_path):
+        cfg = _ConnConfig({"max_log_size": 64})
+        writer = _LogWriter(str(tmp_path), "a2p", cfg)
+        reader = _LogReader(str(tmp_path), "a2p", cfg)
+
+        frames = [_frame(bytes(1000)), _frame(b"small"), _frame(bytes(2000))]
+        received = []
+        for frame in frames:
+            writer.append(frame)
+            received.extend(reader.read_frames())
+        received.extend(reader.read_frames())
+
+        assert received == frames
+
+    def test_partial_frame_visibility(self, tmp_path):
+        cfg = _ConnConfig({})
+        reader = _LogReader(str(tmp_path), "a2p", cfg)
+        frame = _frame(b"split-delivery")
+
+        with open(os.path.join(tmp_path, "a2p.0.log"), "ab") as f:
+            f.write(frame[:10])
+            f.flush()
+            assert reader.read_frames() == []
+            f.write(frame[10:])
+            f.flush()
+        assert reader.read_frames() == [frame]
+
+
+class TestFileDriver:
+    def test_message_exchange_and_close(self, tmp_path):
+        state = _State()
+        comm_a = _make_comm(NODE_A, state)
+        comm_b = _make_comm(NODE_B, state)
+
+        try:
+            resources = {"root_dir": str(tmp_path), **FAST_PARAMS}
+            _, url, _ = comm_a.start_listener("file", resources)
+            assert url.startswith("file://0/")
+            comm_a.start()
+
+            comm_b.add_connector(url, Mode.ACTIVE)
+            comm_b.start()
+
+            assert state.ready[NODE_A].wait(15)
+            assert state.ready[NODE_B].wait(15)
+
+            comm_a.send(Endpoint(NODE_B), APP_ID, Message({}, b"hello-from-a"))
+            comm_b.send(Endpoint(NODE_A), APP_ID, Message({}, b"hello-from-b"))
+
+            assert _wait_until(lambda: state.received_from[NODE_A] and state.received_from[NODE_B])
+            assert state.received_from[NODE_A] == [b"hello-from-a"]
+            assert state.received_from[NODE_B] == [b"hello-from-b"]
+
+            comm_b.stop()
+            assert state.disconnected[NODE_B].wait(15)
+        finally:
+            comm_b.stop()
+            comm_a.stop()
+
+    def test_many_messages_with_rotation(self, tmp_path):
+        state = _State()
+        comm_a = _make_comm(NODE_A, state)
+        comm_b = _make_comm(NODE_B, state)
+
+        try:
+            resources = {"root_dir": str(tmp_path), "max_log_size": "300", **FAST_PARAMS}
+            _, url, _ = comm_a.start_listener("file", resources)
+            comm_a.start()
+            comm_b.add_connector(url, Mode.ACTIVE)
+            comm_b.start()
+
+            assert state.ready[NODE_A].wait(15) and state.ready[NODE_B].wait(15)
+
+            expected = [f"msg-{i}".encode() for i in range(40)] + [bytes(100 * 1024)]
+            for payload in expected:
+                comm_b.send(Endpoint(NODE_A), APP_ID, Message({}, payload))
+
+            assert _wait_until(lambda: len(state.received_from[NODE_B]) == len(expected))
+            assert sorted(state.received_from[NODE_B]) == sorted(expected)
+
+            conn_dirs = list((tmp_path / next(p for p in os.listdir(tmp_path)) / "conns").iterdir())
+            assert len(conn_dirs) == 1
+            logs = [f for f in os.listdir(conn_dirs[0]) if f.startswith("a2p") and f.endswith(".log")]
+            assert len(logs) <= 2
+        finally:
+            comm_b.stop()
+            comm_a.stop()
+
+    def test_reconnect(self, tmp_path):
+        state = _State()
+        comm_a = _make_comm(NODE_A, state)
+        comm_b = _make_comm(NODE_B, state)
+
+        comm_b2 = None
+        try:
+            resources = {"root_dir": str(tmp_path), **FAST_PARAMS}
+            _, url, _ = comm_a.start_listener("file", resources)
+            comm_a.start()
+            comm_b.add_connector(url, Mode.ACTIVE)
+            comm_b.start()
+
+            assert state.ready[NODE_B].wait(15)
+            comm_b.stop()
+            assert state.disconnected[NODE_B].wait(15)
+
+            state.ready[NODE_A].clear()
+            state.ready[NODE_B].clear()
+            comm_b2 = _make_comm(NODE_B, state)
+            comm_b2.add_connector(url, Mode.ACTIVE)
+            comm_b2.start()
+
+            assert state.ready[NODE_B].wait(15)
+            assert state.ready[NODE_A].wait(15)
+            comm_b2.send(Endpoint(NODE_A), APP_ID, Message({}, b"after-reconnect"))
+            assert _wait_until(lambda: b"after-reconnect" in state.received_from[NODE_B])
+        finally:
+            comm_b.stop()
+            if comm_b2:
+                comm_b2.stop()
+            comm_a.stop()
+
+    def test_missing_root_dir(self):
+        comm = _make_comm(NODE_A, _State())
+        with pytest.raises(CommError):
+            comm.start_listener("file", {})
