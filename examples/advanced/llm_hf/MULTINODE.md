@@ -188,8 +188,8 @@ SLURM Job (2 nodes allocated)
 
 7. **Training proceeds**:
    - All 16 processes train together using PyTorch DDP
-   - Only rank 0 calls `flare.receive()` and `flare.send()`
-   - Model updates synchronized across all processes
+   - `nvflare.client.hf.patch()` keeps Client API communication on global rank 0
+   - Model updates are distributed across all training ranks through the HF wrapper
 
 ## Job Configuration Arguments
 
@@ -336,5 +336,16 @@ In total X params to be sent to server.
 5. **Local Rank for GPU Selection**: Use local_rank (0-7) for `cuda:X` device mapping
 6. **Global Rank for FL Communication**: Use rank (0-15) for NVFlare API calls
 7. **Broadcast Coordination**: Rank 0 broadcasts FL state to all other ranks
-8. **Shared Filesystem**: Only rank 0 saves checkpoints (avoid conflicts)
+8. **Shared Filesystem**: Only rank 0 saves checkpoints (avoid conflicts). For large DDP model payloads, the
+   HuggingFace Client API also stages rank-0 parameters under `<output_dir>/_fl_exchange` by default, so every rank
+   must be able to read that path.
 9. **Wrapper Script Pattern**: Separate job creation from execution environment via `client_wrapper.sh`
+
+If the multi-node job cannot use shared storage for `output_dir`, force object broadcast instead of file handoff:
+
+```bash
+export NVFLARE_HF_PARAMS_EXCHANGE_STRATEGY=object
+```
+
+The object strategy avoids shared-file reads, but it broadcasts the full parameter object through
+`torch.distributed.broadcast_object_list`, so it can use more memory for very large models.

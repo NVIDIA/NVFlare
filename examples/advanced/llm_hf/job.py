@@ -109,6 +109,7 @@ def main():
         job_name = "llm_hf_sft"
         output_path = "sft"
     elif train_mode == "peft":
+        # This model definition exposes adapter-only state_dict keys to match nvflare.client.hf params_scope="auto".
         model = {
             "class_path": "hf_peft_model.CausalLMPEFTModel",
             "args": {"model_name_or_path": args.model_name_or_path},
@@ -145,7 +146,6 @@ def main():
             f"--data_path_valid {data_path_valid} "
             f"--output_path {output_path} "
             f"--train_mode {train_mode} "
-            f"--message_mode {message_mode} "
             f"--num_rounds {args.num_rounds} "
             f"--local_epoch {args.local_epoch} "
             f"--lr_scheduler {args.lr_scheduler}"
@@ -176,7 +176,8 @@ def main():
         train_script="client.py",
         server_expected_format=server_expected_format,
         launch_external_process=True,  # Always use external process for LLM training
-        key_metric="neg_eval_loss",
+        key_metric="eval_loss",
+        negate_key_metric=True,
     )
     set_per_site_config(recipe, per_site_config)
 

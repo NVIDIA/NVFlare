@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import torch
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict
 from transformers import AutoModelForCausalLM
 
 
@@ -45,3 +45,9 @@ class CausalLMPEFTModel(torch.nn.Module):
     def forward(self, input_id):
         output = self.model(input_ids=input_id, return_dict=False)
         return output
+
+    def state_dict(self, *args, **kwargs):
+        return get_peft_model_state_dict(self.model)
+
+    def load_state_dict(self, state_dict, strict=True, assign=False):
+        return set_peft_model_state_dict(self.model, state_dict)
