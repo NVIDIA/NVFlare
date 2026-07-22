@@ -14,7 +14,8 @@ through the existing `JobLauncherSpec` and `JobHandleSpec` interfaces.
 Supported execution modes are:
 
 - one-node bare, Apptainer, and Pyxis jobs;
-- trusted bare multi-node jobs, with launcher-owned node groups or application-owned fan-out.
+- multi-node client jobs as launcher-owned node groups, bare or containerized;
+- trusted bare multi-node jobs with application-owned fan-out.
 
 The deployment targets one Slurm cluster, with scheduler routing controlled by trusted site policy. The internal
 worker-to-parent connection is clear TCP and runs on a trusted site network.
@@ -173,8 +174,8 @@ any in-progress submission boundary; it does not perform a second cancellation s
 | Sandbox | Execution | Trust model | Multi-node |
 | --- | --- | --- | --- |
 | `none` | worker directly in the allocation | trusted site workload | yes; launcher-owned node group or application-owned fan-out |
-| `apptainer` | contained unprivileged `apptainer exec` | cluster-accepted isolation | no |
-| `pyxis` | read-only Pyxis/Enroot `srun` step | trusted container packaging | no |
+| `apptainer` | contained unprivileged `apptainer exec` | cluster-accepted isolation | yes; launcher-owned node group only |
+| `pyxis` | read-only Pyxis/Enroot `srun` step | trusted container packaging | yes; launcher-owned node group only |
 
 Every backend uses `--export=NIL`, refuses requeue, and passes the standard NVFlare worker arguments without shell
 re-parsing. Bootstrap credentials and study `secret_env` values are written to a mode-0600 file, sourced with tracing
@@ -212,20 +213,39 @@ and then delegates to one `srun --nodes=N --ntasks=N --ntasks-per-node=1` invoca
 | `NVFL_MASTER_PORT` | `29400 + SLURM_JOB_ID % 1000`, deterministic per allocation and collision-safe on shared nodes |
 
 `node.sh` dispatches on the rank. Rank 0 executes the standard worker command, so the CJ connects to the parent
-and reports the job result exactly as a single-node job. Every other rank changes into the deployed job app
-directory and executes the validated `node_command` argv. Both paths inherit the batch environment (sourced
-secrets, `PYTHONPATH`, study env, forwarded names) because the script exports `SLURM_EXPORT_ENV=ALL` before the
-fan-out. The variable names carry no scheduler meaning, so the same `node_command` can run under any launcher
-that adopts the contract.
+and reports the job result exactly as a single-node job. Every other rank runs in the deployed job app directory
+and executes the validated `node_command` argv. Both paths inherit the batch environment (sourced secrets,
+`PYTHONPATH`, study env, forwarded names) because the script exports `SLURM_EXPORT_ENV=ALL` before the fan-out.
+The variable names carry no scheduler meaning, so the same `node_command` can run under any launcher that adopts
+the contract.
+
+### Sandboxed node groups
+
+Node groups compose with every sandbox because the ordering is fixed: scheduler fan-out first, on the bare
+allocation, containers second, as per-node leaves. All user code, on every rank, runs under the effective sandbox.
+
+| Sandbox | Fan-out | Containerization |
+| --- | --- | --- |
+| `none` | bare `srun` of `node.sh` | none |
+| `apptainer` | bare `srun` of `node.sh` on each node | `node.sh` starts one `apptainer exec` per rank, `--pwd` run dir (rank 0) or app dir (others) |
+| `pyxis` | one `srun` carrying the usual container flags | Pyxis creates the per-task container; `node.sh` dispatches inside it |
+
+Environment delivery follows each backend's existing mechanism: bare tasks inherit the exported batch environment;
+Apptainer receives the contract through `APPTAINERENV_*` mirrors (`NVFL_NODE_RANK` is mirrored per task inside
+`node.sh`); Pyxis adds the contract names to the shared `--export`/`--container-env` list, and `SLURM_NODEID` is
+provided per task by Slurm itself. For Pyxis the job artifact directory is bind-mounted read-only into the
+container because `srun` starts `node.sh` inside it; the secret file is already deleted before any task starts.
+Container node groups require an image that provides `bash` for `node.sh` (Pyxis) and the launcher-standard
+isolation flags are identical to single-node container jobs.
 
 ### Node command ownership and trust
 
 `node_command` is job-owned and validated at the launch boundary: a single-line, shell-lexable, non-empty string,
 split once into argv and rendered fully quoted, never re-parsed by a shell. It executes as the submitting user
-with exactly the trust of the BYOC training code the rank-0 CJ launches itself. It is rejected for server jobs,
-for `nodes: 1`, and when the deployed job app directory is missing. Multi-node jobs still require effective
-sandbox `none`. Because scheduler fan-out now happens before any worker starts, container node groups are a
-possible future extension of this contract rather than a redesign.
+under the effective sandbox, with exactly the trust of the BYOC training code the rank-0 CJ launches itself. It
+is rejected for server jobs, for `nodes: 1`, and when the deployed job app directory is missing. Application-owned
+fan-out (multi-node without `node_command`) still requires effective sandbox `none`, since only a bare CJ can
+reach `srun`.
 
 ### Lifecycle and results
 

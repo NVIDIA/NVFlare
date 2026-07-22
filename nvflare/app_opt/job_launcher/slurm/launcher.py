@@ -89,8 +89,11 @@ def _resolve_resources(
         raise SlurmLauncherError(f"unsupported job-owned Slurm key(s): {sorted(unknown)}")
 
     nodes = _require_int(spec.get("nodes", 1), "nodes")
-    if nodes > 1 and sandbox != "none":
-        raise SlurmLauncherError("multi-node Slurm jobs require effective sandbox 'none'")
+    if nodes > 1 and sandbox != "none" and spec.get("node_command") is None:
+        raise SlurmLauncherError(
+            "multi-node Slurm jobs require effective sandbox 'none' unless node_command requests "
+            "a launcher-owned node group"
+        )
 
     def optional_int(name: str) -> Optional[int]:
         value = spec.get(name)

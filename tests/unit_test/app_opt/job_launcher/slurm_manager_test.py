@@ -360,6 +360,23 @@ def test_launch_writes_node_script_only_for_node_groups(tmp_path):
     assert not Path(single_handle.job_dir, "node.sh").exists()
 
 
+def test_pyxis_node_group_mounts_job_artifacts_read_only(tmp_path):
+    manager = _manager(tmp_path)
+    plan = replace(
+        _plan(tmp_path, sandbox="pyxis"),
+        image="/images/python.sqsh",
+        resources=JobResources(nodes=2, pending_timeout=5),
+        node_command=("python3", "-m", "trainer"),
+        node_app_dir=str(tmp_path / "job-1" / "app_site-1"),
+    )
+
+    handle = manager.launch(plan)
+
+    batch = Path(handle.job_dir, "batch.sh").read_text(encoding="utf-8")
+    assert f"{handle.job_dir}:{handle.job_dir}:ro" in batch
+    assert Path(handle.job_dir, "node.sh").is_file()
+
+
 def test_stale_job_artifacts_block_relaunch(tmp_path):
     manager = _manager(tmp_path)
     stale = Path(manager.jobs_dir, _job_key("job-1"))

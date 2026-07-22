@@ -32,7 +32,7 @@ Choose an execution backend with ``job_launcher.sandbox``:
      - Trusted container packaging
    * - ``none``
      - Python directly in the allocation
-     - Site-trusted code; required for multi-node jobs
+     - Site-trusted code; required for application-owned multi-node fan-out
 
 Prerequisites
 =============
@@ -322,8 +322,7 @@ Supported job keys are ``image``, ``nodes``, ``gpus_per_node``,
 precedence over the study and site images. Job and study images are rejected on
 any site whose effective sandbox is ``none``.
 
-Multi-node jobs require effective ``sandbox: none`` and must not specify an
-image. A positive multi-node ``num_of_gpus`` requires ``gpus_per_node``;
+A positive multi-node ``num_of_gpus`` requires ``gpus_per_node``;
 whenever both are supplied, ``num_of_gpus`` must equal
 ``nodes * gpus_per_node``.
 
@@ -332,9 +331,11 @@ launcher-owned node group: the launcher starts one task per allocated node,
 runs the normal client job process on node rank 0, and runs ``node_command``
 on every other node with the node-group environment
 (``NVFL_NNODES``, ``NVFL_NODE_RANK``, ``NVFL_MASTER_ADDR``,
-``NVFL_MASTER_PORT``) exported to all tasks. ``node_command`` executes in the
-deployed job app directory as the submitting user, with the same trust as the
-job's own training code. For PyTorch jobs,
+``NVFL_MASTER_PORT``) exported to all tasks. Node groups work under every
+sandbox: with ``apptainer`` or ``pyxis``, all user code on every node runs
+inside the configured container, exactly as in a single-node container job.
+``node_command`` executes in the deployed job app directory as the submitting
+user, with the same trust as the job's own training code. For PyTorch jobs,
 ``python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=<G> -- <script> <args>``
 maps this environment onto torchrun rendezvous arguments and is intended to be
 both the job's training command and its ``node_command``:
@@ -357,7 +358,9 @@ both the job's training command and its ``node_command``:
    }
 
 Without ``node_command``, a multi-node allocation keeps the client job process
-alone on the first node and the application owns any fan-out.
+alone on the first node and the application owns any fan-out; this mode
+requires effective ``sandbox: none`` because only a bare client job process
+can reach ``srun``.
 
 Security and Operations
 =======================

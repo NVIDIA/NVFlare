@@ -297,6 +297,29 @@ def test_launch_plan_rejects_invalid_node_command(tmp_path, meta_kwargs, message
         launcher._build_launch_plan(_multinode_meta(**meta_kwargs), _fl_ctx(workspace))
 
 
+def test_launch_plan_allows_container_node_group(tmp_path):
+    workspace = _workspace(tmp_path)
+    (workspace / "job-1" / "app_site-1").mkdir()
+    image = tmp_path / "python.sif"
+    image.write_bytes(b"sif")
+    launcher = _launcher(tmp_path, workspace, sandbox="apptainer", image=str(image))
+
+    plan = launcher._build_launch_plan(_multinode_meta(), _fl_ctx(workspace))
+
+    assert plan.sandbox == "apptainer"
+    assert plan.image.endswith("python.sif")
+    assert plan.resources.nodes == 2
+    assert plan.node_command[0] == "python3"
+
+
+def test_multinode_without_node_command_still_requires_bare_sandbox(tmp_path):
+    with pytest.raises(SlurmLauncherError, match="unless node_command"):
+        _resolve_resources({}, "site-1", "pyxis", 600, spec={"nodes": 2})
+
+    resources = _resolve_resources({}, "site-1", "pyxis", 600, spec={"nodes": 2, "node_command": "python3 -m t"})
+    assert resources.nodes == 2
+
+
 def test_launch_plan_rejects_node_command_without_deployed_app_dir(tmp_path):
     workspace = _workspace(tmp_path)
     launcher = _launcher(tmp_path, workspace)
@@ -390,8 +413,7 @@ studies:
       image: %s
     slurm:
       sandbox: apptainer
-"""
-        % (tmp_path / "study.sif"),
+""" % (tmp_path / "study.sif"),
         encoding="utf-8",
     )
     launcher = _launcher(tmp_path, workspace, sandbox="apptainer", image=str(tmp_path / "site.sif"))

@@ -80,11 +80,12 @@ def _plan(tmp_path, sandbox="none", resources=None, mounts=(), forward_env=(), n
     )
 
 
-def _multinode_plan(tmp_path, node_command=("python3", "-m", "trainer", "--epochs", "2")):
+def _multinode_plan(tmp_path, sandbox="none", node_command=("python3", "-m", "trainer", "--epochs", "2")):
     app_dir = tmp_path / "workspace" / "job-1" / "app_site-1"
     app_dir.mkdir(parents=True, exist_ok=True)
     return _plan(
         tmp_path,
+        sandbox=sandbox,
         resources=JobResources(nodes=2, gpus_per_node=1),
         node_command=node_command,
         node_app_dir=str(app_dir),
@@ -179,13 +180,58 @@ def test_multinode_batch_exports_node_group_contract_and_delegates_to_srun(tmp_p
 def test_node_script_dispatches_worker_on_rank_zero_and_node_command_elsewhere(tmp_path):
     plan = _multinode_plan(tmp_path)
 
-    script = _render_node_script(plan)
+    script = _render_node_script(plan, _config(tmp_path))
 
     assert 'export NVFL_NODE_RANK="${SLURM_NODEID:?}"' in script
     assert "worker.module" in script
     assert f"cd {plan.node_app_dir}" in script
     assert "python3 -m trainer --epochs 2" in script
     assert 'exec "${_nvfl_command[@]}"' in script
+
+
+def test_apptainer_node_group_containerizes_each_rank_on_its_node(tmp_path):
+    plan = _multinode_plan(tmp_path, sandbox="apptainer")
+    job_dir = _job_dir(tmp_path)
+
+    batch, _ = _render_batch_script(plan, job_dir, _config(tmp_path, "apptainer"))
+    node = _render_node_script(plan, _config(tmp_path, "apptainer"))
+
+    batch_command = next(line for line in batch.splitlines() if line.startswith("_nvfl_command="))
+    assert "--ntasks-per-node=1" in batch_command
+    assert f"{job_dir}/node.sh" in batch_command
+    assert "NVFL_APPTAINER" not in batch_command
+    assert 'export APPTAINERENV_NVFL_NNODES="${NVFL_NNODES}"' in batch
+    assert 'export APPTAINERENV_NVFL_MASTER_ADDR="${NVFL_MASTER_ADDR}"' in batch
+
+    assert 'export APPTAINERENV_NVFL_NODE_RANK="${NVFL_NODE_RANK}"' in node
+    assert node.count('"${NVFL_APPTAINER}"') == 2
+    assert f"--pwd {plan.run_dir}" in node
+    assert f"--pwd {plan.node_app_dir}" in node
+    assert "cd " not in node
+    assert "worker.module" in node
+    assert "python3 -m trainer --epochs 2" in node
+
+
+def test_pyxis_node_group_fans_out_containers_through_one_srun(tmp_path):
+    plan = _multinode_plan(tmp_path, sandbox="pyxis")
+    job_dir = _job_dir(tmp_path)
+
+    batch, _ = _render_batch_script(plan, job_dir, _config(tmp_path, "pyxis"))
+    node = _render_node_script(plan, _config(tmp_path, "pyxis"))
+
+    env_line = next(line for line in batch.splitlines() if line.startswith("_nvfl_container_env="))
+    for name in ("NVFL_NNODES", "NVFL_MASTER_ADDR", "NVFL_MASTER_PORT"):
+        assert name in env_line
+    batch_command = next(line for line in batch.splitlines() if line.startswith("_nvfl_command="))
+    assert "--nodes=2" in batch_command
+    assert "--kill-on-bad-exit=0" in batch_command
+    assert "--container-image=/images/python.sif" in batch_command
+    assert batch_command.rstrip(")").endswith(f"{job_dir}/node.sh")
+    assert "worker.module" not in batch_command
+
+    assert "apptainer" not in node
+    assert f"cd {plan.node_app_dir}" in node
+    assert "worker.module" in node
 
 
 @pytest.mark.parametrize("node_rank, expected", [("0", "worker-ran"), ("1", "app-dir")])
@@ -198,7 +244,7 @@ def test_rendered_node_script_executes_by_rank(tmp_path, node_rank, expected):
         python_path=str(worker),
     )
     node_path = Path(_job_dir(tmp_path)) / "node.sh"
-    node_path.write_text(_render_node_script(plan), encoding="utf-8")
+    node_path.write_text(_render_node_script(plan, _config(tmp_path)), encoding="utf-8")
     node_path.chmod(0o700)
 
     completed = subprocess.run(
