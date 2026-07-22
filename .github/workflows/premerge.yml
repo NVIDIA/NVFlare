@@ -62,6 +62,25 @@ jobs:
         run: |
           ./runtest.sh --torch-backend=cpu -p
           uv pip install --system --no-deps "flwr>=1.16,<1.26"
+      - name: Install SkillEvaluator CLI
+        if: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.13' }}
+        env:
+          SKILL_EVALUATOR_REPO_TOKEN: ${{ secrets.SKILL_EVALUATOR_REPO_TOKEN }}
+        run: |
+          if [ -z "$SKILL_EVALUATOR_REPO_TOKEN" ]; then
+            echo "SKILL_EVALUATOR_REPO_TOKEN is not configured; SkillEvaluator command tests will skip."
+            exit 0
+          fi
+          trap 'rm -f "$HOME/.netrc"' EXIT
+          printf "machine github.com\n  login x-access-token\n  password %s\n" "$SKILL_EVALUATOR_REPO_TOKEN" > "$HOME/.netrc"
+          chmod 600 "$HOME/.netrc"
+          python3 -m venv "$RUNNER_TEMP/skillevaluator"
+          "$RUNNER_TEMP/skillevaluator/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/skillevaluator/bin/python" -m pip install \
+            "skillevaluator @ git+https://github.com/NVIDIA/SkillEvaluator.git@84bc44bfb17df63e43d0ba1ffb47b494512c8319"
+          mkdir -p "$HOME/.local/bin"
+          ln -sf "$RUNNER_TEMP/skillevaluator/bin/skillevaluator" "$HOME/.local/bin/skillevaluator"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Run unit test
         run: ./runtest.sh --skip-install --numprocesses=auto -u
 
