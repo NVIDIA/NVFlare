@@ -39,7 +39,8 @@ def test_autofl_evals_include_natural_phrasing_positive_trigger():
     phrasing and was missed for natural requests like 'accuracy is low, try two approaches'.
     """
     evals = _load_autofl_evals()
-    case = next(item for item in evals if item["id"] == NATURAL_PHRASING_EVAL_ID)
+    case = next((item for item in evals if item["id"] == NATURAL_PHRASING_EVAL_ID), None)
+    assert case is not None, f"Eval {NATURAL_PHRASING_EVAL_ID!r} not found in evals.json"
 
     assert _is_positive_eval(case, "nvflare-autofl")
     assert case["nvflare"]["expected_skill"] == "nvflare-autofl"
@@ -55,7 +56,8 @@ def test_autofl_evals_include_natural_phrasing_positive_trigger():
 
 def test_autofl_natural_phrasing_eval_keeps_runner_and_cap_contract():
     evals = _load_autofl_evals()
-    case = next(item for item in evals if item["id"] == NATURAL_PHRASING_EVAL_ID)
+    case = next((item for item in evals if item["id"] == NATURAL_PHRASING_EVAL_ID), None)
+    assert case is not None, f"Eval {NATURAL_PHRASING_EVAL_ID!r} not found in evals.json"
 
     mandatory_ids = {item["id"] for item in case["nvflare"]["mandatory_behavior"]}
     prohibited_ids = {item["id"] for item in case["nvflare"]["prohibited_behavior"]}
