@@ -22,27 +22,24 @@ def run_server(server_app: ServerApp, logger):
     logger.info("initializing server app")
     server_app.initialize(server_ctx)
 
-    if not server_app.mains:
-        raise RuntimeError("server app does not have any main functions!")
+    if len(server_app.mains) != 1:
+        raise RuntimeError(f"server app must have exactly one main function but got {len(server_app.mains)}")
 
+    name, main_func = server_app.mains[0]
     result = None
-    for name, f in server_app.mains:
-        if server_ctx.is_aborted():
-            break
-
+    if not server_ctx.is_aborted():
         try:
             logger.info(f"Running main {name}")
             kwargs = {CollabMethodArgName.CONTEXT: server_ctx}
-            if not supports_context(f):
+            if not supports_context(main_func):
                 kwargs = {}
-            result = f(**kwargs)
+            result = main_func(**kwargs)
             server_ctx.set_prop(ContextKey.RESULT, result)
         except Exception as ex:
             secure_log_traceback(logger)
             backend = server_app.backend
             if backend:
                 backend.handle_exception(ex)
-            break
 
     logger.info("finalizing server app")
     server_app.finalize(server_ctx)

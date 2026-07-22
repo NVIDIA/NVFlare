@@ -39,7 +39,7 @@ Run:
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from collab.common.runner import make_parser, run_recipe
+from collab.hello_fedavg.runner import make_parser, run_recipe
 from torch.utils.data import DataLoader, TensorDataset
 
 from nvflare.collab import CollabRecipe, collab

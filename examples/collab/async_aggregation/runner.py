@@ -12,19 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Shared runtime selector for the collab examples.
-
-Every example builds its job with a ``make_recipe()`` function and hands the
-result to :func:`run_recipe`. The execution environment is an option, never a
-separate example:
-
-    --runtime in_process     standard SimEnv (default, fastest iteration)
-    --runtime multi_process  standard PocEnv (local FLARE deployment)
-    --runtime prod           submit to a provisioned deployment (--startup-kit)
-    --runtime export         write the job definition to disk (--job-root)
-
-The recipe is identical in all four cases; only the environment changes.
-"""
+"""Execution-environment helper for this example."""
 
 import argparse
 import logging
@@ -36,7 +24,6 @@ RUNTIMES = ("in_process", "multi_process", "prod", "export")
 
 
 def make_parser(description: str) -> argparse.ArgumentParser:
-    """Create an argument parser preloaded with the shared runtime options."""
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--runtime", "-r", choices=RUNTIMES, default="in_process", help="execution environment")
     parser.add_argument("--num-clients", "-n", type=int, default=2, help="client count")
@@ -47,7 +34,6 @@ def make_parser(description: str) -> argparse.ArgumentParser:
 
 
 def run_recipe(recipe, args):
-    """Run (or export) a recipe in the environment selected by --runtime."""
     simple_logging(getattr(logging, args.log_level.upper(), logging.INFO))
 
     if args.runtime == "export":

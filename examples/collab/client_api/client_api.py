@@ -23,8 +23,8 @@ Run:
 """
 
 from collab.client_api.in_process_client import training_loop
+from collab.client_api.runner import make_parser, run_recipe
 from collab.client_api.server import FedAvg
-from collab.common.runner import make_parser, run_recipe
 
 from nvflare.collab import CollabClientAPI, CollabRecipe
 

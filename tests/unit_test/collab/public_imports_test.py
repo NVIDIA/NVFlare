@@ -37,7 +37,6 @@ def test_top_level_exports():
 def test_api_surface():
     from nvflare.collab.api import (
         App,
-        CallFilter,
         CallOption,
         ClientApp,
         CollabWorkspace,
@@ -46,7 +45,6 @@ def test_api_surface():
         GroupCallContext,
         ModuleWrapper,
         PublishInterface,
-        ResultFilter,
         ServerApp,
     )
 
@@ -55,14 +53,12 @@ def test_api_surface():
         ClientApp,
         CollabWorkspace,
         ServerApp,
-        CallFilter,
         CallOption,
         Context,
         ContextKey,
         GroupCallContext,
         ModuleWrapper,
         PublishInterface,
-        ResultFilter,
     ):
         assert export is not None
 
@@ -82,13 +78,43 @@ def test_execution_details_are_not_public():
     import nvflare.collab as collab_package
     import nvflare.collab.api as collab_api
     import nvflare.collab.runtime as collab_runtime
+    from nvflare.collab import CollabRecipe, collab
 
     for name in ("InProcessEnv", "MultiProcessEnv", "InProcessRunner"):
         assert not hasattr(collab_package, name)
-    for name in ("Backend", "BackendType"):
+    for name in ("Backend", "BackendType", "CallFilter", "ResultFilter"):
         assert not hasattr(collab_api, name)
     for name in ("LocalBackend", "FlareBackend", "SubprocessBackend"):
         assert not hasattr(collab_runtime, name)
+    for name in (
+        "call_filter",
+        "in_call_filter",
+        "out_call_filter",
+        "result_filter",
+        "in_result_filter",
+        "out_result_filter",
+        "filter_direction",
+        "qual_func_name",
+    ):
+        assert not hasattr(collab, name)
+    for name in (
+        "add_server_outgoing_call_filters",
+        "add_server_incoming_call_filters",
+        "add_server_outgoing_result_filters",
+        "add_server_incoming_result_filters",
+        "add_client_outgoing_call_filters",
+        "add_client_incoming_call_filters",
+        "add_client_outgoing_result_filters",
+        "add_client_incoming_result_filters",
+    ):
+        assert not hasattr(CollabRecipe, name)
+
+
+def test_filter_implementation_remains_internal():
+    from nvflare.collab.api.filter import CallFilter, ResultFilter
+
+    assert CallFilter is not None
+    assert ResultFilter is not None
 
 
 def test_collab_public_surface_does_not_require_torch():
@@ -102,10 +128,9 @@ def test_collab_public_surface_does_not_require_torch():
         "            raise ImportError('torch is blocked for this test')\n"
         "sys.meta_path.insert(0, _BlockTorch())\n"
         "import nvflare.collab\n"
-        "from nvflare.collab.api import CallFilter, Context, GroupCallContext, ResultFilter\n"
+        "from nvflare.collab.api import Context, GroupCallContext\n"
         "import nvflare.collab.runtime.flare.controller\n"
         "import nvflare.collab.runtime.flare.executor\n"
-        "import nvflare.collab.runtime.local.app_runner\n"
         "from nvflare.collab.tracking import SummaryWriter\n"
         "from nvflare.collab import simple_logging\n"
     )

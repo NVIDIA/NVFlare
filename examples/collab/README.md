@@ -8,11 +8,11 @@ examples. `hello_numpy_collab` mirrors the Recipe API and `SimEnv` flow of
 example — the recipe is identical across all of them:
 
 ```bash
-cd examples   # the examples import each other via the collab.* package path
+cd examples   # makes the collab package available to module imports
 
 python -m collab.hello_numpy_collab.hello_numpy_collab                # same Recipe API as hello-numpy, less client plumbing
 python -m collab.hello_fedavg.hello_fedavg                            # threads in this process
-python -m collab.split_learning.split_learning                          # CIFAR-10 split learning
+python -m collab.async_aggregation.async_aggregation                  # aggregate responses as they arrive
 python -m collab.hello_fedavg.hello_fedavg --runtime multi_process   # real FLARE processes (local POC)
 python -m collab.hello_fedavg.hello_fedavg --runtime prod \
     --startup-kit /path/to/prod_00/admin@example.com                  # provisioned deployment
@@ -26,10 +26,13 @@ python -m collab.hello_fedavg.hello_fedavg --runtime export --job-root /tmp/jobs
 | `hello_numpy_collab` | Same Recipe API/`SimEnv` flow as `hello-world/hello-numpy`, using direct calls instead of Client API messaging |
 | `hello_fedavg` | The Collab API in one file: `@collab.main`, `@collab.publish`, `collab.clients.train(...)`, per-site config |
 | `call_patterns` | `--pattern seq \| cyclic` server-to-client invocation styles (parallel group call is in `hello_fedavg`) |
-| `async_filters_metrics` | In-time (asynchronous) aggregation, call/result filter chains, metrics tracking |
+| `async_aggregation` | In-time aggregation with a response callback |
 | `swarm_events` | Decentralized swarm learning with client-to-client calls and events |
 | `workflow_composition` | Chaining workflows in one `@collab.main`; resource dirs, artifacts, `@collab.final` |
-| `split_learning` | Computation-equivalent CIFAR-10 SplitNN using direct function calls |
+
+Every server object or module must define exactly one `@collab.main` entry
+point. `workflow_composition` demonstrates how to call multiple workflow stages
+from that single entry point.
 
 ## Advanced and integration examples
 
@@ -40,15 +43,21 @@ distributed execution rather than the core Pythonic Collab programming model.
 |---|---|
 | `client_api` | Standard Client API training code running in each client's FLARE process |
 
-Shared support code lives in `common/` (numpy trainer and strategies, torch
-helpers, and the `--runtime` selector). Support modules
-used by a single example live in that example's directory.
+Each example is self-contained. Its entry point and any runner, trainer,
+strategy, widget, or utility modules that it needs live together in that
+example's directory; there is no shared `common` package. A helper used by more
+than one example is intentionally kept with each consumer so an example can be
+copied or adapted on its own.
 
-The NumPy core examples run in a base installation; `hello_fedavg`,
-`async_filters_metrics --flavor pt`, and `split_learning` need PyTorch
-(`split_learning` also needs torchvision). In the
-advanced/integration section, `client_api` needs PyTorch.
+The example-local `runner.py` files only provide the `--runtime` command-line
+convenience shown above. They are not part of the public Collab API. Application
+code should execute `CollabRecipe` with `SimEnv`, `PocEnv`, or `ProdEnv` from
+`nvflare.recipe`.
 
-For the design behind the API see `docs/design/collab_api_design.md`; for a
-step-by-step migration from local training to collab see
-`docs/design/collab_api_migration_tutorial.md`.
+The NumPy core examples run in a base installation; `hello_fedavg` needs
+PyTorch. In the advanced/integration section, `client_api` needs PyTorch.
+
+For the design behind the API see the
+[Collab API design](../../docs/design/collab_api_design.md). For a step-by-step
+migration from local training to Collab see the
+[migration tutorial](../../docs/design/collab_api_migration_tutorial.md).

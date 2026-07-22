@@ -22,7 +22,7 @@ Run:
     python -m collab.swarm_events.swarm_events --num-clients 3
 """
 
-from collab.common.runner import make_parser, run_recipe
+from collab.swarm_events.runner import make_parser, run_recipe
 from collab.swarm_events.swarm_algo import NPSwarm, NPSwarmClient
 
 from nvflare.collab import CollabRecipe

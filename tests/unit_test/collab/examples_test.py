@@ -49,7 +49,7 @@ def test_hello_numpy_collab_recipe_finalizes_with_module_functions(monkeypatch):
     assert recipe.finalize() is job
 
 
-def test_async_numpy_example_imports_without_torch():
+def test_async_aggregation_example_imports_without_torch():
     script = f"""
 import importlib.abc
 import sys
@@ -63,9 +63,19 @@ class BlockTorch(importlib.abc.MetaPathFinder):
         return None
 
 sys.meta_path.insert(0, BlockTorch())
-import collab.async_filters_metrics.async_filters_metrics
+import collab.async_aggregation.async_aggregation
 """
 
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=False)
 
     assert result.returncode == 0, result.stderr
+
+
+def test_async_aggregation_recipe_finalizes(monkeypatch):
+    monkeypatch.syspath_prepend(str(_EXAMPLES_ROOT))
+    module = importlib.import_module("collab.async_aggregation.async_aggregation")
+    recipe = module.make_recipe(SimpleNamespace(num_clients=2, num_rounds=2))
+
+    job = recipe.finalize()
+
+    assert recipe.finalize() is job

@@ -29,6 +29,10 @@ The decorators describe which code runs on the server and clients. The
 training and aggregation code remains regular Python, so it can be read,
 called, and tested without learning a messaging API.
 
+This example is self-contained: the module defines its published client
+function and its single server `@collab.main` workflow, without importing
+support code from another example package.
+
 The complete client interaction is a normal function call:
 
 ```python

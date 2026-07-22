@@ -16,7 +16,7 @@ import random
 import threading
 import traceback
 
-from collab.common.np_utils import parse_array_def, save_np_model
+from collab.swarm_events.np_utils import parse_array_def, save_np_model
 
 from nvflare.collab import collab
 from nvflare.fuel.utils.log_utils import get_obj_logger

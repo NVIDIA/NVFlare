@@ -396,8 +396,8 @@ class ServerApp(App):
             raise ValueError("server object must be specified")
         super().__init__(obj, name)
         self.mains = get_object_main_funcs(self.obj)
-        if not self.mains:
-            raise ValueError("server object must have at least one @collab.main function")
+        if len(self.mains) != 1:
+            raise ValueError(f"server object must have exactly one @collab.main function but got {len(self.mains)}")
 
     def get_children(self):
         if not isinstance(self._client_hierarchy, Forest):

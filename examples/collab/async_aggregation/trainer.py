@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import random
 import time
 
@@ -40,10 +41,8 @@ class NPTrainer:
         if collab.is_aborted:
             self.logger.debug("training aborted")
             return 0
-        self.logger.info(f"[{collab.call_info}] training round {current_round=} {weights=}")
-        # result = collab.server(expect_result=True).fire_event("metrics", {"round": current_round, "y": 10})
-        # self.logger.info(f"[{collab.call_info}] got event result: {result}")
 
+        self.logger.info(f"[{collab.call_info}] training round {current_round=} {weights=}")
         if self.delay > 0:
             time.sleep(self.delay)
         return weights + self.delta

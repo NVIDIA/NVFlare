@@ -30,11 +30,11 @@ Run:
     python -m collab.call_patterns.call_patterns --pattern cyclic --runtime multi_process
 """
 
-from collab.common.np_trainer import NPTrainer
-from collab.common.runner import make_parser, run_recipe
-from collab.common.strategies.avg_seq import NPFedAvgSequential
-from collab.common.strategies.cyclic import NPCyclic
-from collab.common.widgets import MetricReceiver
+from collab.call_patterns.avg_seq import NPFedAvgSequential
+from collab.call_patterns.cyclic import NPCyclic
+from collab.call_patterns.runner import make_parser, run_recipe
+from collab.call_patterns.trainer import NPTrainer
+from collab.call_patterns.widgets import MetricReceiver
 
 from nvflare.collab import CollabRecipe
 

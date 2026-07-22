@@ -43,7 +43,7 @@ def run():
 
 
 recipe = CollabRecipe(
-    job_name="hello_collab",
+    job_name="collab_quickstart",
     min_clients=2,
 )
 recipe.execute(SimEnv(num_clients=2))
@@ -103,8 +103,11 @@ properties, but before normal calls are handled.
 
 ### `@collab.main`
 
-Defines the server workflow. The workflow can call `collab.clients`,
-`collab.server`, named child objects, or selected groups.
+Defines the server workflow. A server application must define exactly one
+`@collab.main` function or method. The workflow can call `collab.clients`,
+`collab.server`, named child objects, or selected groups. Applications with
+multiple stages should use one wrapper `@collab.main` and invoke those stages
+explicitly in the required order.
 
 ### `@collab.final`
 
@@ -164,12 +167,13 @@ User workflow and published functions
                  |
                  v
      private invocation dispatcher
-          /                    \
- direct dispatcher        Cell dispatcher
- (internal tests)         (FLARE CellNet)
-                              |
-                              v
-                target App + lifecycle
+                 |
+                 v
+         Cell dispatcher
+          (FLARE CellNet)
+                 |
+                 v
+       target App + lifecycle
 ```
 
 ### Application layer
@@ -192,11 +196,8 @@ targets, including concurrency limits and target-attributed results.
 
 `InvocationDispatcher` is an internal strategy used by proxies. It is private
 because applications should not choose transport or branch on transport type.
-
-- `DirectDispatcher` invokes the target Python object using a thread executor.
-  It is used only by the internal direct-call runner for focused tests.
-- `CellDispatcher` serializes a logical invocation onto CellNet and is used by
-  `CollabController` and `CollabExecutor` in every standard environment.
+`CellDispatcher` serializes a logical invocation onto CellNet and is used by
+`CollabController` and `CollabExecutor` in every standard environment.
 
 Invocation dispatch is separate from execution placement. The current execution
 placement is always the FLARE site process.
@@ -264,14 +265,20 @@ nvflare/collab/
 ├── core/recipe.py       CollabRecipe -> FedJob
 ├── runtime/
 │   ├── flare/           controller, executor, CellNet dispatch
-│   ├── local/           internal direct-call test runner
 │   ├── client_api.py    Client API adapter
 │   └── lifecycle.py     init/main/final orchestration
 └── tracking/            site-local tracking compatibility writers
 ```
 
-Examples are under `examples/collab`. The shared example runner selects
-`SimEnv`, `PocEnv`, `ProdEnv`, or job export without changing the recipe.
+Examples are under [`examples/collab`](../../examples/collab/README.md). Each
+example owns the runner, trainer, strategy, and utility modules that it uses;
+there is no shared `examples/collab/common` package. This keeps every example
+self-contained and makes its dependencies visible in one directory.
+
+The repeated example-local `runner.py` modules are command-line conveniences,
+not part of the public Collab API. They select `SimEnv`, `PocEnv`, `ProdEnv`, or
+job export without changing the recipe. Applications should use the standard
+environment classes from `nvflare.recipe` directly.
 
 ## Deferred Work
 

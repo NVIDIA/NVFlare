@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # limitations under the License.
 import threading
 
-from collab.common.np_utils import parse_array_def
+from collab.async_aggregation.np_utils import parse_array_def
 
 from nvflare.collab import collab
 from nvflare.collab.api import ContextKey
@@ -55,31 +55,32 @@ class NPFedAvgInTime:
     def _do_eval(self, model):
         results = collab.clients.evaluate(model)
         total = 0.0
-        for n, v in results:
-            self.logger.info(f"[{collab.call_info}]: got eval result from client {n}: {v}")
-            total += v
+        for name, value in results:
+            self.logger.info(f"[{collab.call_info}]: got eval result from client {name}: {value}")
+            total += value
 
         num_results = len(results)
         return total / num_results if num_results > 0 else 0.0
 
-    def _do_one_round(self, r, current_model):
+    def _do_one_round(self, current_round, current_model):
         aggr_result = _AggrResult()
 
-        # try to get the configured timeout value
         timeout = collab.get_app_prop("default_timeout", self.timeout)
         self.logger.info(f"got timeout: {timeout}")
         collab.clients(
             timeout=timeout,
             process_resp_cb=self._accept_train_result,
             aggr_result=aggr_result,
-        ).train(r, current_model)
+        ).train(current_round, current_model)
 
         if aggr_result.count == 0:
             return None
-        else:
-            result = aggr_result.total / aggr_result.count
-            self.logger.info(f"[{collab.call_info}] round {r}: aggr result from {aggr_result.count} clients: {result}")
-            return result
+
+        result = aggr_result.total / aggr_result.count
+        self.logger.info(
+            f"[{collab.call_info}] round {current_round}: " f"aggr result from {aggr_result.count} clients: {result}"
+        )
+        return result
 
     def _accept_train_result(self, gcc, result, aggr_result: _AggrResult):
         self.logger.info(f"[{collab.call_info}] got train result from {collab.caller} {result}")

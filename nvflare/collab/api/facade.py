@@ -13,17 +13,11 @@
 # limitations under the License.
 from .constants import ContextKey
 from .context import get_call_context
-from .decorators import call_filter as dec_call_filter
 from .decorators import classproperty
 from .decorators import final as dec_final
-from .decorators import in_call_filter as dec_in_call_filter
-from .decorators import in_result_filter as dec_in_result_filter
 from .decorators import init as dec_init
 from .decorators import main as dec_main
-from .decorators import out_call_filter as dec_out_call_filter
-from .decorators import out_result_filter as dec_out_result_filter
 from .decorators import publish as dec_publish
-from .decorators import result_filter as dec_result_filter
 from .proxy_list import ProxyList
 
 
@@ -33,12 +27,6 @@ class Facade:
     init = dec_init
     final = dec_final
     main = dec_main
-    call_filter = dec_call_filter
-    in_call_filter = dec_in_call_filter
-    out_call_filter = dec_out_call_filter
-    result_filter = dec_result_filter
-    in_result_filter = dec_in_result_filter
-    out_result_filter = dec_out_result_filter
 
     @classproperty
     def context(cls):
@@ -210,26 +198,6 @@ class Facade:
         """
         ctx = get_call_context()
         return ctx.workspace
-
-    @classproperty
-    def filter_direction(cls):
-        """Get the direction of filter call (incoming or outgoing). Only available to filter functions.
-
-        Returns: the direction of filter call
-
-        """
-        ctx = get_call_context()
-        return ctx.get_prop(ContextKey.DIRECTION)
-
-    @classproperty
-    def qual_func_name(cls):
-        """Get the filter's qualified function name. Only available to filter functions.
-
-        Returns: the filter's qualified function name
-
-        """
-        ctx = get_call_context()
-        return ctx.get_prop(ContextKey.QUALIFIED_FUNC_NAME)
 
     @staticmethod
     def fire_event(event_type: str, data):

@@ -14,6 +14,8 @@
 
 from types import ModuleType
 
+import pytest
+
 from nvflare.collab import CollabRecipe, collab
 from nvflare.collab.api import ClientApp, ModuleWrapper, ServerApp
 from nvflare.collab.runtime.local.runner import InProcessRunner
@@ -139,6 +141,22 @@ def test_apps_automatically_wrap_primary_and_named_modules():
     assert main_module.value == "initialized"
     server_app.finalize(context)
     assert main_module.value is None
+
+
+def test_server_app_requires_exactly_one_main_function():
+    no_main_module = ModuleType("no_main_module")
+    with pytest.raises(ValueError, match=r"exactly one @collab\.main function but got 0"):
+        ServerApp(no_main_module)
+
+    multiple_main_module = _make_module("multiple_main_module")
+
+    @collab.main
+    def run_again():
+        return None
+
+    multiple_main_module.run_again = run_again
+    with pytest.raises(ValueError, match=r"exactly one @collab\.main function but got 2"):
+        ServerApp(multiple_main_module)
 
 
 def test_recipe_accepts_modules_for_all_collab_objects():

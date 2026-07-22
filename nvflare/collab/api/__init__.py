@@ -14,9 +14,8 @@
 
 """Public programming surface of the collab API layer.
 
-User code (filters and custom apps) should import these
-names from this package rather than from the implementation modules.
-Exports are resolved lazily (PEP 562).
+User code should import these names from this package rather than from the
+implementation modules. Exports are resolved lazily (PEP 562).
 """
 
 from typing import TYPE_CHECKING
@@ -27,14 +26,12 @@ if TYPE_CHECKING:
     from .collab_workspace import CollabWorkspace
     from .constants import ContextKey
     from .context import Context
-    from .filter import CallFilter, ResultFilter
     from .group_call_context import GroupCallContext
     from .module_wrapper import ModuleWrapper
     from .publish_interface import PublishInterface
 
 __all__ = [
     "App",
-    "CallFilter",
     "CallOption",
     "ClientApp",
     "CollabWorkspace",
@@ -43,7 +40,6 @@ __all__ = [
     "GroupCallContext",
     "ModuleWrapper",
     "PublishInterface",
-    "ResultFilter",
     "ServerApp",
 ]
 
@@ -55,8 +51,6 @@ _EXPORTS = {
     "CollabWorkspace": ".collab_workspace",
     "ContextKey": ".constants",
     "Context": ".context",
-    "CallFilter": ".filter",
-    "ResultFilter": ".filter",
     "GroupCallContext": ".group_call_context",
     "ModuleWrapper": ".module_wrapper",
     "PublishInterface": ".publish_interface",

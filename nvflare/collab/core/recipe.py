@@ -83,10 +83,9 @@ class CollabRecipe(Recipe):
         """Deliver per-site config values as per-site client app properties.
 
         The values become app props for the matching site only, readable in
-        client code via ``collab.get_app_prop(name)``. Delivery is handled by
-        each execution path: the in-process runner applies them when creating
-        each site's app, and CollabExecutor applies its own site's entries at
-        start-run in FLARE deployments.
+        client code via ``collab.get_app_prop(name)``. ``CollabExecutor``
+        applies each site's entries at start-run in every standard execution
+        environment.
         """
         self._per_site_config = {site: dict(values) for site, values in config.items()}
 
@@ -95,30 +94,6 @@ class CollabRecipe(Recipe):
 
     def set_server_resource_dirs(self, resource_dirs):
         self.server_app.set_resource_dirs(resource_dirs)
-
-    def add_server_outgoing_call_filters(self, pattern: str, filters: List[object]):
-        self.server_app.add_outgoing_call_filters(pattern, filters)
-
-    def add_server_incoming_call_filters(self, pattern: str, filters: List[object]):
-        self.server_app.add_incoming_call_filters(pattern, filters)
-
-    def add_server_outgoing_result_filters(self, pattern: str, filters: List[object]):
-        self.server_app.add_outgoing_result_filters(pattern, filters)
-
-    def add_server_incoming_result_filters(self, pattern: str, filters: List[object]):
-        self.server_app.add_incoming_result_filters(pattern, filters)
-
-    def add_client_outgoing_call_filters(self, pattern: str, filters: List[object]):
-        self.client_app.add_outgoing_call_filters(pattern, filters)
-
-    def add_client_incoming_call_filters(self, pattern: str, filters: List[object]):
-        self.client_app.add_incoming_call_filters(pattern, filters)
-
-    def add_client_outgoing_result_filters(self, pattern: str, filters: List[object]):
-        self.client_app.add_outgoing_result_filters(pattern, filters)
-
-    def add_client_incoming_result_filters(self, pattern: str, filters: List[object]):
-        self.client_app.add_incoming_result_filters(pattern, filters)
 
     def set_client_prop(self, name: str, value):
         self.client_app.set_prop(name, value)

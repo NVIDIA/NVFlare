@@ -31,11 +31,11 @@ Run:
 import os
 
 import numpy as np
-from collab.common.np_trainer import NPTrainer
-from collab.common.np_utils import load_np_model, save_np_model
-from collab.common.runner import make_parser, run_recipe
-from collab.common.strategies.avg_para import NPFedAvgParallel
-from collab.common.strategies.cyclic import NPCyclic
+from collab.workflow_composition.avg_para import NPFedAvgParallel
+from collab.workflow_composition.cyclic import NPCyclic
+from collab.workflow_composition.np_utils import load_np_model, save_np_model
+from collab.workflow_composition.runner import make_parser, run_recipe
+from collab.workflow_composition.trainer import NPTrainer
 
 from nvflare.collab import CollabRecipe, collab
 from nvflare.fuel.utils.log_utils import get_obj_logger
