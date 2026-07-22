@@ -13,6 +13,7 @@
 # limitations under the License.
 import threading
 import time
+from concurrent.futures import CancelledError
 
 from nvflare.collab.api._invocation import InvocationDispatcher
 from nvflare.collab.api.app import App
@@ -134,7 +135,14 @@ class DirectDispatcher(InvocationDispatcher):
             timer = threading.Timer(timeout, self._group_call_timed_out, args=(gcc, func_name, timeout))
             timer.daemon = True
             timer.start()
-            future.add_done_callback(lambda _future: timer.cancel())
+            future.add_done_callback(lambda done: self._group_call_done(done, timer, gcc, func_name))
+
+    @staticmethod
+    def _group_call_done(future, timer: threading.Timer, gcc: GroupCallContext, func_name: str):
+        timer.cancel()
+        if future.cancelled():
+            gcc.set_exception(CancelledError(f"function {func_name} was cancelled before execution"))
+            gcc.send_completed()
 
     @staticmethod
     def _group_call_timed_out(gcc: GroupCallContext, func_name: str, timeout: float):

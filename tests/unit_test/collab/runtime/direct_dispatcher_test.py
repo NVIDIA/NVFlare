@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 from unittest.mock import MagicMock
 
 import pytest
@@ -110,6 +110,45 @@ def test_group_call_timeout_completes_hung_site():
         timeout_error = gcc.set_exception.call_args.args[0]
         assert isinstance(timeout_error, TimeoutError)
         release_call.set()
+
+
+def test_cancelled_group_future_completes_site():
+    executor = ThreadPoolExecutor(max_workers=1)
+    release_worker = threading.Event()
+    worker_started = threading.Event()
+    completed = threading.Event()
+
+    def occupy_worker():
+        worker_started.set()
+        release_worker.wait(timeout=5.0)
+
+    try:
+        executor.submit(occupy_worker)
+        assert worker_started.wait(timeout=1.0)
+
+        dispatcher = DirectDispatcher(
+            target_obj_name="",
+            target_app=MagicMock(),
+            target_obj=MagicMock(),
+            abort_signal=MagicMock(triggered=False),
+            thread_executor=executor,
+        )
+        dispatcher._get_func = MagicMock(return_value=MagicMock())
+        gcc = MagicMock()
+        gcc.target_name = "site-1"
+        gcc.call_opt = CallOption(timeout=5.0)
+        gcc.send_completed.side_effect = completed.set
+
+        dispatcher.call_target_in_group(gcc, "train")
+        executor.shutdown(wait=False, cancel_futures=True)
+
+        assert completed.wait(timeout=1.0)
+        cancellation = gcc.set_exception.call_args.args[0]
+        assert isinstance(cancellation, CancelledError)
+        gcc.set_result.assert_not_called()
+    finally:
+        release_worker.set()
+        executor.shutdown(wait=True, cancel_futures=True)
 
 
 def test_group_worker_restores_previous_context():

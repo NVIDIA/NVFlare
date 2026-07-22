@@ -70,10 +70,21 @@ def get_context(ctx: Optional[APIContext] = None) -> APIContext:
     local_context = _current_context.get()
     if local_context:
         return local_context
-    elif default_context:
+
+    api_override = _api_override.get()
+    if api_override is not None:
+        # An embedded runtime may wrap existing Client API code that initialized
+        # a process-wide default context before entering use_api(). The scoped
+        # override must win over that stale default even when the wrapped code
+        # does not call init() again.
+        local_context = APIContext(api=api_override)
+        _current_context.set(local_context)
+        return local_context
+
+    if default_context:
         return default_context
-    else:
-        raise RuntimeError("APIContext is None. Did you call flare.init() before using the Client API?")
+
+    raise RuntimeError("APIContext is None. Did you call flare.init() before using the Client API?")
 
 
 def init(rank: Optional[Union[str, int]] = None, config_file: Optional[str] = None) -> APIContext:

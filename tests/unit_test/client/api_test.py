@@ -36,3 +36,22 @@ def test_use_api_creates_context_local_context_without_global_cache():
     api.init.assert_called_once_with(rank="1")
     assert client_api._current_context.get() is previous_context
     assert client_api._api_override.get() is previous_override
+
+
+def test_use_api_lazily_overrides_existing_default_context():
+    api = MagicMock(spec=APISpec)
+    existing_default = MagicMock()
+    previous_default = client_api.default_context
+    client_api.default_context = existing_default
+
+    try:
+        with client_api.use_api(api):
+            context = client_api.get_context()
+
+            assert context is client_api.get_context()
+            assert context is not existing_default
+            assert context.api is api
+    finally:
+        client_api.default_context = previous_default
+
+    api.init.assert_called_once_with(rank=None)
