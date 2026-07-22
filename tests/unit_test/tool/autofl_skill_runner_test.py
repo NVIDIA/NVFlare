@@ -2829,3 +2829,120 @@ if __name__ == "__main__":
     )
     assert manifest["status"] == "keep"
     assert manifest["changed_files"] == ["job.py"]
+
+
+def test_cross_val_extraction_prefers_best_server_final_global_model_entry(tmp_path):
+    runner = _load_runner()
+    result_path = tmp_path / "cross_val_results.json"
+    result_path.write_text(
+        json.dumps(
+            {
+                "site-1": {
+                    "site-1": {"accuracy": 0.99},
+                    "SRV_FL_global_model.pt": {"accuracy": 0.71},
+                },
+                "site-2": {
+                    "site-2": {"accuracy": 0.95},
+                    "SRV_FL_global_model.pt": {"accuracy": 0.74},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    evidence = runner.extract_metric_evidence(tmp_path, ["accuracy"])
+
+    assert evidence.score == pytest.approx(0.74)
+    assert evidence.metric_name == "accuracy"
+    assert evidence.source == "structured:cross_val_results.json#server_final"
+    assert evidence.artifact == str(result_path.resolve())
+
+
+def test_cross_val_extraction_resolves_modern_unprefixed_global_model_entries(tmp_path):
+    runner = _load_runner()
+    tmp_path.joinpath("cross_val_results.json").write_text(
+        json.dumps(
+            {
+                "site-1": {
+                    "site-1": {"accuracy": 0.99},
+                    "FL_global_model.pt": {"accuracy": 0.71},
+                },
+                "site-2": {
+                    "site-2": {"accuracy": 0.95},
+                    "FL_global_model.pt": {"accuracy": 0.74},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    evidence = runner.extract_metric_evidence(tmp_path, ["accuracy"])
+
+    assert evidence.score == pytest.approx(0.74)
+    assert evidence.source == "structured:cross_val_results.json#server_final"
+
+
+def test_cross_val_extraction_resolves_srv_best_only_global_model_entries(tmp_path):
+    runner = _load_runner()
+    tmp_path.joinpath("cross_val_results.json").write_text(
+        json.dumps(
+            {
+                "site-1": {
+                    "site-1": {"accuracy": 0.99},
+                    "SRV_best_FL_global_model.pt": {"accuracy": 0.66},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    evidence = runner.extract_metric_evidence(tmp_path, ["accuracy"])
+
+    assert evidence.score == pytest.approx(0.66)
+    assert evidence.source == "structured:cross_val_results.json#server_final"
+
+
+def test_cross_val_extraction_uses_min_over_server_final_entries_in_min_mode(tmp_path):
+    runner = _load_runner()
+    tmp_path.joinpath("cross_val_results.json").write_text(
+        json.dumps(
+            {
+                "site-1": {
+                    "site-1": {"loss": 0.10},
+                    "SRV_FL_global_model.pt": {"loss": 0.42},
+                },
+                "site-2": {"SRV_FL_global_model.pt": {"loss": 0.37}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert runner.extract_score(tmp_path, ["loss"], mode="min") == pytest.approx(0.37)
+
+
+def test_cross_val_extraction_falls_back_to_first_match_without_server_final_entries(tmp_path):
+    runner = _load_runner()
+    tmp_path.joinpath("cross_val_results.json").write_text(
+        json.dumps({"site-1": {"site-1": {"accuracy": 0.9}, "site-2": {"accuracy": 0.6}}}),
+        encoding="utf-8",
+    )
+
+    evidence = runner.extract_metric_evidence(tmp_path, ["accuracy"])
+    assert evidence.score == pytest.approx(0.9)
+    assert evidence.source == "structured:cross_val_results.json"
+
+    tmp_path.joinpath("cross_val_results.json").write_text(
+        json.dumps(
+            {
+                "site-1": {
+                    "site-1": {"accuracy": 0.9},
+                    "SRV_FL_global_model.pt": {"loss": 0.4},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    evidence = runner.extract_metric_evidence(tmp_path, ["accuracy"])
+    assert evidence.score == pytest.approx(0.9)
+    assert evidence.source == "structured:cross_val_results.json"

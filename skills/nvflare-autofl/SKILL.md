@@ -14,20 +14,17 @@ metadata:
 # NVFLARE Auto-FL
 
 ## Use When
-Use this skill when the user asks to optimize an existing NVFLARE `job.py` for accuracy,
-AUC, loss, runtime, robustness, or another metric in simulation, POC, or production.
+Use this skill when the user asks to optimize an existing NVFLARE `job.py` for accuracy, AUC, loss, runtime, robustness, or another metric in simulation, POC, or production.
 
 ## Do Not Use When
-Do not use for converting non-FL training code into NVFLARE, diagnosing failed jobs without an optimization goal,
-production deployment setup, evaluation/statistics-only recipes, or generic tuning outside an NVFLARE job.
+Do not use for converting non-FL training code into NVFLARE, diagnosing failed jobs without an optimization goal, production deployment setup, evaluation/statistics-only recipes, or generic tuning outside an NVFLARE job.
 
 ## Workflow
 Use this skill to optimize an existing NVFLARE `job.py` without asking the user to learn
 a new Auto-FL command tree. The user selects this skill, points to a job, and states the
 objective, environment, and optional budget. NVFLARE provides the deterministic campaign
 import, execution substrate, policy boundaries, artifacts, and machine-readable
-contracts. The coding agent owns hypotheses, source edits, new algorithm
-implementations, and candidate choice.
+contracts. The coding agent owns hypotheses, source edits, new algorithm implementations, and candidate choice.
 
 Resolve [run_job_campaign.py](scripts/run_job_campaign.py) relative to this `SKILL.md`, store its absolute path as `RUNNER`, and initialize the campaign:
 
@@ -43,11 +40,9 @@ Read `autofl.yaml` and the JSON response, then prepare an agent-authored candida
 python "$RUNNER" prepare ./job.py --name <candidate> --hypothesis "<expected improvement>" [--run-args "<args>"] [--family <slug>] [--literature-event <id>]
 ```
 
-Pass `--family <slug>` and `--literature-event <id>` when the candidate develops a
-recorded literature review; both persist in the manifest and as ledger columns.
+Pass `--family <slug>` and `--literature-event <id>` when the candidate develops a recorded literature review; both persist in the manifest and as ledger columns.
 
-Edit only the returned candidate source directory. Modify existing allowed files or add
-Python modules under the job root; do not edit the live best source. Then evaluate:
+Edit only the returned candidate source directory. Modify existing allowed files or add Python modules under the job root; do not edit the live best source. Then evaluate:
 
 ```bash
 python "$RUNNER" evaluate ./job.py --manifest <candidate_manifest.json>
@@ -81,6 +76,10 @@ state, artifacts, and reports. After each action, read `.nvflare/autofl/campaign
 and finalize only when `final_response_allowed=true`. For long-running behavior read
 [continuous campaigns](references/continuous-campaigns.md); for budgets and rerun
 evidence read [experiment comparability](references/experiment-comparability.md).
+
+The ledger score extracted per the objective `metric_extraction_order` is the canonical selection surface
+for keep/discard and best-candidate decisions. Cross-site server-final scores are diagnostic unless the
+user explicitly requests selection on them.
 
 Read `autofl.yaml` and show the user a concise campaign summary:
 

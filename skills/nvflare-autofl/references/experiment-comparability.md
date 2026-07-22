@@ -3,6 +3,14 @@
 Use this reference for Auto-FL reruns, recipe comparisons, data replacement,
 data distribution, synthetic data, and site heterogeneity requests.
 
+## Canonical Selection Metric
+
+The per-run ledger score, extracted with the objective's
+`metric_extraction_order`, is the canonical selection surface for baseline,
+keep/discard, and best-candidate comparisons. Cross-site server-final
+global-model scores from `cross_val_results.json` are diagnostic unless the
+user explicitly requests selection on them.
+
 ## Iterative Reruns
 
 When the user asks to change batch size, train args, number of rounds,
