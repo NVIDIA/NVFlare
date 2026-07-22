@@ -12,9 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
-import os
-import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -27,7 +24,6 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.slurm.config import (
-    DEPLOYMENT_FILE,
     SLURM_CHILD_PROCESS_ENV,
     SlurmLauncherError,
     _validate_mount_destination,
@@ -343,7 +339,7 @@ def test_public_events_only_initialize_register_and_shutdown(tmp_path):
     launcher = _launcher(tmp_path, workspace)
     calls = []
     launcher.manager = SimpleNamespace(
-        initialize=lambda context: calls.append(("initialize", context)),
+        initialize=lambda: calls.append(("initialize", None)),
         shutdown=lambda: calls.append(("shutdown", None)),
     )
     context = FLContext()
@@ -366,7 +362,7 @@ def test_child_process_is_inert_and_cannot_nest_slurm(monkeypatch, tmp_path):
         launcher.launch_job({}, FLContext())
 
 
-def test_manager_bootstrap_keeps_identity_and_existing_job_artifacts(tmp_path):
+def test_manager_bootstrap_keeps_existing_job_artifacts(tmp_path):
     workspace = tmp_path / "workspace"
     kit = workspace / "kit"
     (kit / "startup").mkdir(parents=True)
@@ -375,29 +371,15 @@ def test_manager_bootstrap_keeps_identity_and_existing_job_artifacts(tmp_path):
     (workspace / "local").symlink_to("kit/local")
     control = workspace / ".nvflare_slurm"
     control.mkdir()
-    deployment_uuid = str(uuid.uuid4())
-    (control / DEPLOYMENT_FILE).write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "deployment_uuid": deployment_uuid,
-                "site": "site-1",
-            }
-        ),
-        encoding="utf-8",
-    )
-    old_job = control / deployment_uuid / "jobs" / _job_key("stale-job")
+    old_job = control / "jobs" / _job_key("stale-job")
     old_job.mkdir(parents=True)
     secret = old_job / "secret.env"
     secret.write_text("export TEST_SECRET=value\n", encoding="utf-8")
     launcher = _launcher(tmp_path, workspace)
     launcher.manager._require_accounting = lambda: None
     launcher.manager.adapter = SimpleNamespace()
-    context = FLContext()
-    context.set_prop(ReservedKey.IDENTITY_NAME, "site-1", private=False, sticky=True)
 
-    launcher.manager.initialize(context)
+    launcher.manager.initialize()
 
-    assert launcher.manager.deployment_uuid == deployment_uuid
-    assert os.path.isdir(launcher.manager.jobs_dir)
+    assert launcher.manager.jobs_dir == str(control / "jobs")
     assert secret.read_text(encoding="utf-8") == "export TEST_SECRET=value\n"

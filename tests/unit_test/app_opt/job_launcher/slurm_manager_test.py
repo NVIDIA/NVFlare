@@ -15,7 +15,6 @@
 import logging
 import os
 import subprocess
-import uuid
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -27,7 +26,6 @@ from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.app_opt.job_launcher.slurm import manager as manager_module
 from nvflare.app_opt.job_launcher.slurm.config import (
-    DEPLOYMENT_FILE,
     SANDBOX_ROOT,
     CommandResult,
     JobResources,
@@ -39,7 +37,6 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     SlurmProtocolError,
     SlurmRecord,
     SubmissionResult,
-    _validate_uuid,
 )
 from nvflare.app_opt.job_launcher.slurm.manager import SlurmJobManager, _ensure_dir, _job_key
 from nvflare.app_opt.job_launcher.slurm.scheduler_client import _SlurmCliAdapter
@@ -132,10 +129,8 @@ def _manager(tmp_path, adapter=None, monotonic=None):
         adapter=adapter,
         monotonic_clock=monotonic,
     )
-    manager.deployment_uuid = str(uuid.uuid4())
-    deployment_root = tmp_path / ".nvflare_slurm" / manager.deployment_uuid
-    manager.jobs_dir = str(deployment_root / "jobs")
-    for path in (tmp_path / ".nvflare_slurm", deployment_root, Path(manager.jobs_dir)):
+    manager.jobs_dir = str(tmp_path / ".nvflare_slurm" / "jobs")
+    for path in (tmp_path / ".nvflare_slurm", Path(manager.jobs_dir)):
         _ensure_dir(str(path))
     manager._initialized = True
     return manager
@@ -170,12 +165,6 @@ def _runtime_workspace(tmp_path):
     (kit / "local").mkdir()
     (workspace / "startup").symlink_to("kit/startup")
     (workspace / "local").symlink_to("kit/local")
-    control = workspace / ".nvflare_slurm"
-    control.mkdir()
-    (control / DEPLOYMENT_FILE).write_text(
-        '{"schema_version": 1, "deployment_uuid": "%s", "site": "site-1"}' % uuid.uuid4(),
-        encoding="utf-8",
-    )
     return workspace
 
 
@@ -222,6 +211,7 @@ def test_initialize_resolves_runtime_path_once(tmp_path, monkeypatch):
 
     factory.assert_called_once()
     assert manager.config.executables == commands
+    assert Path(manager.jobs_dir) == workspace / ".nvflare_slurm" / "jobs"
 
 
 @pytest.mark.parametrize("configured", [None, "not_executable"])
@@ -262,48 +252,6 @@ def test_parent_restart_reresolves_cluster_managed_symlink(tmp_path, monkeypatch
     assert factory.call_count == 2
 
 
-def test_deployment_identity_requires_uuid4():
-    with pytest.raises(SlurmLauncherError, match="UUIDv4"):
-        _validate_uuid(str(uuid.uuid1()))
-
-
-def test_deployment_identity_rejects_site_mismatch(tmp_path):
-    identity = tmp_path / DEPLOYMENT_FILE
-    identity.write_text(
-        '{"schema_version": 1, "deployment_uuid": "%s", "site": "site-1"}' % uuid.uuid4(),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(UnsafeComponentError, match="site mismatch"):
-        SlurmJobManager._read_identity(str(identity), expected_site="site-2")
-
-
-def test_deployment_identity_rejects_oversize_file(tmp_path):
-    identity = tmp_path / DEPLOYMENT_FILE
-    identity.write_text("x" * 4097, encoding="utf-8")
-
-    with pytest.raises(UnsafeComponentError, match="too large"):
-        SlurmJobManager._read_identity(str(identity))
-
-
-def test_deployment_identity_rejects_symlink(tmp_path):
-    target = tmp_path / "identity-target.json"
-    target.write_text("{}", encoding="utf-8")
-    identity = tmp_path / DEPLOYMENT_FILE
-    identity.symlink_to(target)
-
-    with pytest.raises(UnsafeComponentError, match="regular file"):
-        SlurmJobManager._read_identity(str(identity))
-
-
-def test_deployment_identity_rejects_malformed_json(tmp_path):
-    identity = tmp_path / DEPLOYMENT_FILE
-    identity.write_text("{", encoding="utf-8")
-
-    with pytest.raises(UnsafeComponentError, match="malformed"):
-        SlurmJobManager._read_identity(str(identity))
-
-
 def test_launch_returns_handle_with_deterministic_identity(tmp_path):
     adapter = Adapter()
     manager = _manager(tmp_path, adapter)
@@ -313,8 +261,8 @@ def test_launch_returns_handle_with_deterministic_identity(tmp_path):
     assert handle.job_id == "42"
     assert handle.nvflare_job_id == "job-1"
     assert manager._handles[handle.nvflare_job_id] is handle
-    assert manager._marker(handle.nvflare_job_id) == f"nvfl:{manager.deployment_uuid}:job-1"
-    assert Path(manager.jobs_dir) == tmp_path / ".nvflare_slurm" / manager.deployment_uuid / "jobs"
+    assert manager._marker(handle.nvflare_job_id) == "nvfl:job-1"
+    assert Path(manager.jobs_dir) == tmp_path / ".nvflare_slurm" / "jobs"
     assert Path(handle.job_dir).name == _job_key("job-1")
     assert Path(handle.job_dir).parent == Path(manager.jobs_dir)
     assert Path(handle.job_dir, "batch.sh").is_file()
@@ -428,7 +376,7 @@ def test_handle_monitors_only_its_returned_id_when_job_name_is_shared(tmp_path):
     )
     manager = _manager(tmp_path, scheduler)
     job_name = f"nvfl-{_job_key('job-1')[:8]}"
-    marker = f"nvfl:{manager.deployment_uuid}:job-1"
+    marker = "nvfl:job-1"
     results.extend(
         [
             _command(stdout="42\n"),

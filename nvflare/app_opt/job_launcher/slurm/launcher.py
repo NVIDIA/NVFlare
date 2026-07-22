@@ -406,7 +406,7 @@ class SlurmJobLauncher(JobLauncherSpec):
         if self.manager is None:
             return
         if event_type == EventType.SYSTEM_BOOTSTRAP:
-            self.manager.initialize(fl_ctx)
+            self.manager.initialize()
         elif event_type == EventType.BEFORE_JOB_LAUNCH:
             add_launcher(self, fl_ctx)
         elif event_type == EventType.SYSTEM_END:

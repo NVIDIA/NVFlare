@@ -662,7 +662,7 @@ contract. A possible internal structure:
 - `nvflare.tool.deploy.slurm_deploy`: Slurm validation, workspace isolation,
   resource/config mutation, and rendering of checked-in Slurm templates.
 - `nvflare.tool.deploy.slurm_stage`: explicit installation of a prepared Slurm
-  kit and its runtime deployment identity into the configured workspace.
+  kit into the configured workspace.
 
 Shared helpers can handle:
 

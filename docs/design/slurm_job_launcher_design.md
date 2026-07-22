@@ -58,14 +58,10 @@ its actual runtime host and trusted environment setup has run, bootstrap resolve
 `scancel`, verifies Slurm 23.02 or later, and freezes canonical paths in memory for that parent process. A restart
 therefore follows changes to a cluster-managed stable symlink without requiring a new prepare.
 
-Staging binds the workspace to one site. On first staging it creates a deployment UUID that remains stable across
-updates. The UUID namespaces scheduler comments and job artifacts. Separate NVFlare deployments that use the same
-Slurm user and cluster therefore retain distinct live-job ownership markers.
-
 Staging copies the prepared output to `kit.next`, installs it as `kit`, and maintains the relative links
-`startup -> kit/startup` and `local -> kit/local`. Staging another prepared kit for the same site preserves the
-deployment UUID and runtime data. Operators run one parent per workspace and stop it before staging an update.
-Rerunning stage completes an interrupted replacement.
+`startup -> kit/startup` and `local -> kit/local`. Operators use a separate workspace for each NVFlare site or
+federation, run one parent per workspace, and stop it before staging an update. Rerunning stage completes an
+interrupted replacement.
 
 The workspace and all configured images or mounts must be visible at the same absolute paths from the submit host
 and eligible compute nodes. The filesystem must support coherent exclusive create and atomic rename.
@@ -89,23 +85,22 @@ Site files are trusted policy. They are checked for structure and for mistakes t
 workspace or credential paths, but are not treated as hostile input. Job values and scheduler output remain
 untrusted and are validated at their boundaries.
 
-## Job artifacts and ownership identity
+## Job artifacts and scheduler identity
 
 Each launched job uses one transient directory:
 
 ```text
-.nvflare_slurm/<deployment-uuid>/
-  jobs/<sha256-job-id>/
-    batch.sh
-    secret.env
-    sandbox_root/  # container modes only
+.nvflare_slurm/jobs/<sha256-job-id>/
+  batch.sh
+  secret.env
+  sandbox_root/  # container modes only
 ```
 
 The job key is the SHA-256 digest of the NVFlare job ID. Runtime identity is deterministic:
 
 ```text
 job name = nvfl-<first-8-job-key>
-comment  = nvfl:<deployment-uuid>:<job-id>
+comment  = nvfl:<job-id>
 ```
 
 The scheduler ID exists only in the live handle. The launcher removes job artifacts after submission failure or
@@ -157,8 +152,7 @@ cancellation. Every cancellation repeats live ownership verification before call
 current-parent user abort maps scheduler `CANCELLED` or `COMPLETED` to `ABORTED`, so abort intent wins a race with
 normal completion.
 
-At startup, the manager validates the staged workspace and deployment identity and briefly retries the required
-accounting probe.
+At startup, the manager validates the staged workspace and briefly retries the required accounting probe.
 
 During normal shutdown, the framework starts running-job termination before firing `SYSTEM_END`; captured handles
 are terminated through that framework abort path. The Slurm `SYSTEM_END` handler only closes launch admission after

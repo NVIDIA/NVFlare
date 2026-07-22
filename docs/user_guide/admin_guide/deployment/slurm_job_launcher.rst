@@ -55,9 +55,8 @@ Before starting a parent, verify:
 Worker allocations use the staged workspace and do not need the prepared output.
 When ``parent.slurm`` starts a client parent in an allocation, that allocation
 must also see the prepared output at its configured absolute path. Every
-workspace must be private and owned by the runtime account. One without a Slurm
-runtime identity must also be empty; a previously staged workspace may contain
-runtime data but must have a valid identity for the same site.
+workspace must be private, owned by the runtime account, and dedicated to one
+NVFlare site or federation.
 
 For Apptainer, enable unprivileged user namespaces and install Apptainer on all
 eligible nodes. Validate its filesystem, process, cgroup, and GPU isolation on
@@ -158,10 +157,9 @@ Prepare and stage the kit:
 
    nvflare deploy slurm stage /opt/nvflare/prepared/site-1-slurm
 
-Staging creates or verifies the runtime workspace identity and installs the
-prepared kit. Run one parent per workspace and stop it before staging an update.
-Re-run prepare and stage to update kit content; the runtime identity, runs,
-snapshots, and server job storage remain in place.
+Staging installs the prepared kit in the runtime workspace. Run one parent per
+workspace and stop it before staging an update. Re-run prepare and stage to
+update kit content; runs, snapshots, and server job storage remain in place.
 
 Start a parent on a login or service host:
 
@@ -295,12 +293,11 @@ unavailable. A later scheduler or accounting outage leaves affected jobs
 non-terminal and retries; it never assumes that a missing observation means a
 job has stopped.
 
-NVFlare stores the deployment identity and transient launch artifacts under
-``workspace_path/.nvflare_slurm``. The live parent removes a job's artifacts
-after launch failure or terminal completion. User abort and pending timeout
-verify ownership before ``scancel``; normal framework shutdown terminates
-running handles through the same path before the Slurm launcher closes launch
-admission.
+NVFlare stores transient launch artifacts under ``workspace_path/.nvflare_slurm``.
+The live parent removes a job's artifacts after launch failure or terminal
+completion. User abort and pending timeout verify ownership before ``scancel``;
+normal framework shutdown terminates running handles through the same path
+before the Slurm launcher closes launch admission.
 
 Job output is ``<run-dir>/slurm-<slurm-job-id>.out``. Use ``squeue`` for live
 state and ``sacct`` for completed jobs. Preserve the complete workspace and
@@ -317,8 +314,7 @@ job ID is relaunched before it starts.
 
 To change ``workspace_path``, stop the parent and use a new empty path. To keep
 existing data, move the complete workspace, prepare again with the new path,
-and stage the newly prepared kit there. Moving only run directories or only the
-``.nvflare_slurm`` control data breaks the deployment identity.
+and stage the newly prepared kit there.
 
 Server-job queue and startup time must fit within the client runner-sync timeout
 (60 seconds by default). Provide prompt server capacity or increase

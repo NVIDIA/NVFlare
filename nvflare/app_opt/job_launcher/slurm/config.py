@@ -19,7 +19,6 @@ import math
 import os
 import re
 import shutil
-import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import PurePosixPath
@@ -32,7 +31,6 @@ from nvflare.app_opt.job_launcher.study_runtime import (
 )
 
 SCHEMA_VERSION = 1
-DEPLOYMENT_FILE = "deployment.json"
 CONTROL_DIR = ".nvflare_slurm"
 SECRET_FILE = "secret.env"
 BATCH_FILE = "batch.sh"
@@ -227,16 +225,6 @@ def _validate_mount_source(source: str, workspace: str, prepared_path: str, labe
     if _paths_overlap(real, workspace) or _paths_overlap(real, prepared_path):
         raise SlurmLauncherError(f"{label} must be outside workspace_path and prepared_path")
     return real
-
-
-def _validate_uuid(value: str, label: str = "deployment_uuid") -> str:
-    try:
-        parsed = uuid.UUID(value)
-        if parsed.version != 4 or str(parsed) != value:
-            raise ValueError
-    except (ValueError, TypeError, AttributeError) as e:
-        raise SlurmLauncherError(f"{label} must be a canonical UUIDv4 string") from e
-    return value
 
 
 def _mapping_or_empty(value, label: str) -> dict:

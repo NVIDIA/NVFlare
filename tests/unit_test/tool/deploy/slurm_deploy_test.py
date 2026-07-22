@@ -94,7 +94,7 @@ def test_render_template_rejects_unresolved_placeholder(tmp_path, monkeypatch):
     assert not output.exists()
 
 
-def test_prepare_slurm_generates_identity_free_runtime_artifacts(tmp_path, capsys):
+def test_prepare_slurm_generates_runtime_artifacts(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
     output = tmp_path / "site-1-slurm"
     config = _slurm_config(tmp_path, internal_port=9210, forward_env=["HTTP_PROXY"])
@@ -127,7 +127,6 @@ def test_prepare_slurm_generates_identity_free_runtime_artifacts(tmp_path, capsy
     ClientSlurmJobLauncher(**launcher["args"])
     assert _component(resources, "resource_manager")["path"].endswith("PassthroughResourceManager")
     assert not (output / "local" / "resources.json").exists()
-    assert not any(path.name.endswith("deployment.json") for path in (output / "local").iterdir())
 
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"] == {
@@ -145,7 +144,6 @@ def test_prepare_slurm_generates_identity_free_runtime_artifacts(tmp_path, capsy
 
     _run_prepare(kit, output, config)
     capsys.readouterr()
-    assert not any(path.name.endswith("deployment.json") for path in (output / "local").iterdir())
 
     with pytest.raises(SystemExit):
         _run_prepare(output, tmp_path / "copied-slurm", config)

@@ -21,11 +21,9 @@ import os
 import shlex
 import shutil
 import stat
-import tempfile
-import uuid
 from pathlib import Path
 
-from nvflare.app_opt.job_launcher.slurm.config import CONTROL_DIR, DEPLOYMENT_FILE, SCHEMA_VERSION
+from nvflare.app_opt.job_launcher.slurm.config import SCHEMA_VERSION
 from nvflare.tool.cli_output import output_ok
 from nvflare.tool.deploy.deploy_common import SLURM_STAGE_MANIFEST, SLURM_START_SH, _fail, _paths_overlap, _warn
 
@@ -46,7 +44,7 @@ def stage_slurm_deployment(args) -> None:
             "staging replaces the runtime kit; stop every parent using this workspace before continuing because "
             "this command does not detect a running parent"
         )
-        prepared, workspace, identity = stage_prepared_kit(prepared)
+        prepared, workspace = stage_prepared_kit(prepared)
     except (OSError, SlurmStageError) as ex:
         _fail(
             "SLURM_STAGE_FAILED",
@@ -60,23 +58,21 @@ def stage_slurm_deployment(args) -> None:
             "status": "staged",
             "prepared_kit": str(prepared),
             "workspace_path": str(workspace),
-            "deployment_uuid": identity["deployment_uuid"],
             "next_step": "Start the server/client parent with the start_command.",
             "start_command": shlex.quote(str(start_script)),
         }
     )
 
 
-def stage_prepared_kit(prepared_root: str | os.PathLike) -> tuple[Path, Path, dict]:
-    """Install a prepared kit and return the canonical kit, workspace, and identity."""
+def stage_prepared_kit(prepared_root: str | os.PathLike) -> tuple[Path, Path]:
+    """Install a prepared kit and return the canonical kit and workspace."""
 
-    prepared, workspace, site = _read_prepared_kit(Path(prepared_root))
+    prepared, workspace = _read_prepared_kit(Path(prepared_root))
     _create_or_validate_workspace(workspace)
-    identity = _establish_identity(workspace, site)
     _validate_runtime_links(workspace)
     _replace_kit(prepared, workspace)
     _ensure_runtime_links(workspace)
-    return prepared, workspace, identity
+    return prepared, workspace
 
 
 def _resolve_prepared_kit(args) -> Path:
@@ -94,7 +90,7 @@ def _resolve_prepared_kit(args) -> Path:
     return Path(kit_arg).expanduser()
 
 
-def _read_prepared_kit(prepared_root: Path) -> tuple[Path, Path, str]:
+def _read_prepared_kit(prepared_root: Path) -> tuple[Path, Path]:
     try:
         prepared = prepared_root.expanduser().resolve(strict=True)
     except (OSError, RuntimeError) as ex:
@@ -123,7 +119,7 @@ def _read_prepared_kit(prepared_root: Path) -> tuple[Path, Path, str]:
         raise SlurmStageError(f"cannot resolve slurm_launcher workspace_path: {workspace}") from ex
     if _paths_overlap(prepared, workspace):
         raise SlurmStageError("prepared kit and runtime workspace must not overlap")
-    return prepared, workspace, site
+    return prepared, workspace
 
 
 def _read_json(path: Path) -> dict:
@@ -147,50 +143,6 @@ def _create_or_validate_workspace(workspace: Path) -> None:
         raise SlurmStageError(f"workspace must be owned by current uid {os.geteuid()}: {workspace}")
     if stat.S_IMODE(info.st_mode) & 0o077:
         raise SlurmStageError(f"workspace must not grant group/world permissions: {workspace}")
-
-
-def _establish_identity(workspace: Path, site: str) -> dict:
-    control = workspace / CONTROL_DIR
-    control.mkdir(mode=0o700, exist_ok=True)
-    if control.is_symlink() or not control.is_dir():
-        raise SlurmStageError(f"Slurm control path must be a real directory: {control}")
-    identity_path = control / DEPLOYMENT_FILE
-    if identity_path.exists():
-        identity = _read_json(identity_path)
-        if (
-            set(identity) != {"schema_version", "deployment_uuid", "site"}
-            or type(identity.get("schema_version")) is not int
-            or identity["schema_version"] != SCHEMA_VERSION
-        ):
-            raise SlurmStageError(f"invalid workspace deployment identity: {identity_path}")
-        if identity.get("site") != site:
-            raise SlurmStageError("prepared kit site does not match the workspace identity")
-        try:
-            parsed_uuid = uuid.UUID(identity["deployment_uuid"])
-        except (KeyError, TypeError, ValueError, AttributeError) as ex:
-            raise SlurmStageError(f"invalid workspace deployment identity: {identity_path}") from ex
-        if parsed_uuid.version != 4 or str(parsed_uuid) != identity["deployment_uuid"]:
-            raise SlurmStageError(f"invalid workspace deployment identity: {identity_path}")
-        return identity
-
-    for path in control.glob(f".{DEPLOYMENT_FILE}.*"):
-        path.unlink()
-    if set(os.listdir(workspace)) - {CONTROL_DIR} or os.listdir(control):
-        raise SlurmStageError("workspace contains deployment data but has no identity")
-    identity = {
-        "schema_version": SCHEMA_VERSION,
-        "deployment_uuid": str(uuid.uuid4()),
-        "site": site,
-    }
-    fd, temp_name = tempfile.mkstemp(prefix=f".{DEPLOYMENT_FILE}.", dir=control)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(identity, stream)
-            stream.write("\n")
-        os.replace(temp_name, identity_path)
-    finally:
-        Path(temp_name).unlink(missing_ok=True)
-    return identity
 
 
 def _validate_runtime_links(workspace: Path) -> None:

@@ -14,7 +14,6 @@
 
 import json
 import os
-import uuid
 
 import pytest
 
@@ -43,14 +42,6 @@ def _make_prepared(tmp_path, marker="first", role="client", site="site-1"):
     return prepared
 
 
-def _runtime_identity(workspace):
-    return json.loads((workspace / ".nvflare_slurm" / "deployment.json").read_text())
-
-
-def _identity_value(site="site-1"):
-    return {"schema_version": 1, "deployment_uuid": str(uuid.uuid4()), "site": site}
-
-
 def stage_runtime(prepared, workspace):
     if (prepared / "startup" / "fed_client.json").is_file():
         site = json.loads((prepared / "startup" / "fed_client.json").read_text())["client"]["fqsn"]
@@ -71,32 +62,26 @@ def stage_runtime(prepared, workspace):
     return workspace / "kit" / "startup" / "sub_start.sh"
 
 
-def test_stage_runtime_establishes_identity_kit_and_exact_links(tmp_path):
+def test_stage_runtime_installs_kit_and_exact_links(tmp_path):
     prepared = _make_prepared(tmp_path)
     workspace = tmp_path / "shared" / "site-1"
 
     sub_start = stage_runtime(prepared, workspace)
 
     assert sub_start == workspace.resolve() / "kit" / "startup" / "sub_start.sh"
-    identity = _runtime_identity(workspace)
-    assert set(identity) == {"schema_version", "deployment_uuid", "site"}
-    assert identity["schema_version"] == 1
-    assert identity["site"] == "site-1"
-    assert uuid.UUID(identity["deployment_uuid"]).version == 4
+    assert not (workspace / ".nvflare_slurm").exists()
     assert (workspace / "kit" / "local" / "marker").read_text() == "first"
     assert os.readlink(workspace / "startup") == "kit/startup"
     assert os.readlink(workspace / "local") == "kit/local"
 
 
-def test_stage_runtime_reprepared_kit_keeps_identity_and_replaces_kit(tmp_path):
+def test_stage_runtime_reprepared_kit_replaces_kit(tmp_path):
     prepared = _make_prepared(tmp_path, marker="first")
     workspace = tmp_path / "workspace"
     stage_runtime(prepared, workspace)
-    original_uuid = _runtime_identity(workspace)["deployment_uuid"]
 
     replacement = _make_prepared(tmp_path, marker="second")
     stage_runtime(replacement, workspace)
-    assert _runtime_identity(workspace)["deployment_uuid"] == original_uuid
     assert (workspace / "kit" / "local" / "marker").read_text() == "second"
     assert not (workspace / "kit.previous").exists()
 
@@ -127,15 +112,15 @@ def test_stage_reports_unresolvable_manifest_workspace_path(tmp_path):
         stage_prepared_kit(prepared)
 
 
-def test_site_mismatch_does_not_modify_existing_kit(tmp_path):
+def test_stage_runtime_can_replace_kit_for_another_site(tmp_path):
     prepared = _make_prepared(tmp_path, marker="first")
     workspace = tmp_path / "workspace"
     stage_runtime(prepared, workspace)
 
     other = _make_prepared(tmp_path, marker="other", site="site-2")
-    with pytest.raises(ParentStagingError, match="does not match the workspace identity"):
-        stage_runtime(other, workspace)
-    assert (workspace / "kit" / "local" / "marker").read_text() == "first"
+    stage_runtime(other, workspace)
+
+    assert (workspace / "kit" / "local" / "marker").read_text() == "other"
     assert not (workspace / "kit.next").exists()
 
 
@@ -143,58 +128,26 @@ def test_stage_runtime_can_replace_client_with_server_kit_for_same_site(tmp_path
     prepared = _make_prepared(tmp_path, marker="client")
     workspace = tmp_path / "workspace"
     stage_runtime(prepared, workspace)
-    original_uuid = _runtime_identity(workspace)["deployment_uuid"]
 
     replacement = _make_prepared(tmp_path, marker="server", role="server")
     stage_runtime(replacement, workspace)
 
-    assert _runtime_identity(workspace)["deployment_uuid"] == original_uuid
     assert (workspace / "kit" / "startup" / "fed_server.json").is_file()
     assert not (workspace / "kit" / "startup" / "fed_client.json").exists()
     assert (workspace / "kit" / "local" / "marker").read_text() == "server"
-
-
-def test_stage_runtime_rejects_malformed_runtime_identity_before_kit_mutation(tmp_path):
-    prepared = _make_prepared(tmp_path)
-    identity = _identity_value()
-    workspace = tmp_path / "workspace"
-    control = workspace / ".nvflare_slurm"
-    workspace.mkdir(mode=0o700)
-    control.mkdir(mode=0o700)
-    identity["deployment_uuid"] = 1
-    (control / "deployment.json").write_text(json.dumps(identity), encoding="utf-8")
-    existing_kit = workspace / "kit"
-    existing_kit.mkdir()
-    marker = existing_kit / "untouched"
-    marker.write_text("original", encoding="utf-8")
-
-    with pytest.raises(ParentStagingError, match="invalid workspace deployment identity"):
-        stage_runtime(prepared, workspace)
-    assert marker.read_text() == "original"
-    assert not (workspace / "kit.next").exists()
 
 
 def test_stage_runtime_rejects_unsafe_workspace_entries(tmp_path):
     prepared = _make_prepared(tmp_path)
     workspace = tmp_path / "safe-workspace"
     workspace.mkdir(mode=0o700)
-    control = workspace / ".nvflare_slurm"
-    control.mkdir(mode=0o700)
-    (control / "deployment.json").write_text(json.dumps(_identity_value()), encoding="utf-8")
     (workspace / "startup").mkdir()
     with pytest.raises(ParentStagingError, match="relative symlink"):
         stage_runtime(prepared, workspace)
     assert not (workspace / "kit").exists()
 
-    unidentified = tmp_path / "unidentified-workspace"
-    unidentified.mkdir(mode=0o700)
-    (unidentified / "old-run").mkdir()
-    with pytest.raises(ParentStagingError, match="deployment data but has no identity"):
-        stage_runtime(prepared, unidentified)
-    assert not (unidentified / "kit").exists()
 
-
-def test_stage_runtime_rejects_insecure_existing_workspace_and_control(tmp_path, monkeypatch):
+def test_stage_runtime_rejects_insecure_existing_workspace(tmp_path, monkeypatch):
     prepared = _make_prepared(tmp_path)
 
     workspace = tmp_path / "insecure-workspace"

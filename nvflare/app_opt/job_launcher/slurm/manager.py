@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 import re
@@ -36,9 +35,7 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     BATCH_FILE,
     CONTAINER_RESOLV_CONF,
     CONTROL_DIR,
-    DEPLOYMENT_FILE,
     SANDBOX_ROOT,
-    SCHEMA_VERSION,
     SECRET_FILE,
     BindMount,
     LaunchPlan,
@@ -47,7 +44,6 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     SlurmLauncherError,
     SlurmProtocolError,
     SlurmRecord,
-    _validate_uuid,
     resolve_slurm_parent_executables,
 )
 from nvflare.app_opt.job_launcher.slurm.scheduler_client import _command_diagnostic, _SlurmCliAdapter
@@ -123,7 +119,6 @@ class SlurmJobManager:
         self.logger = logger
         self.adapter = adapter
         self._monotonic = monotonic_clock
-        self.deployment_uuid = None
         self.jobs_dir = None
         self._lock = threading.Lock()
         self._submission_gate = threading.Lock()
@@ -131,44 +126,11 @@ class SlurmJobManager:
         self._reject_launches = False
         self._initialized = False
 
-    @staticmethod
-    def _read_identity(path: str, expected_site: Optional[str] = None) -> str:
-        if os.path.islink(path) or not os.path.isfile(path):
-            raise UnsafeComponentError(f"Slurm deployment identity must be a regular file: {path}")
-        try:
-            if os.path.getsize(path) > 4096:
-                raise UnsafeComponentError(f"Slurm deployment identity is too large: {path}")
-            with open(path, "r", encoding="utf-8") as stream:
-                value = json.load(stream)
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
-            raise UnsafeComponentError(f"malformed Slurm deployment identity: {path}") from e
-        if not isinstance(value, dict):
-            raise UnsafeComponentError(f"Slurm deployment identity must be a JSON object: {path}")
-        if (
-            set(value) != {"schema_version", "deployment_uuid", "site"}
-            or type(value.get("schema_version")) is not int
-            or value["schema_version"] != SCHEMA_VERSION
-            or not isinstance(value.get("site"), str)
-            or not value["site"]
-        ):
-            raise UnsafeComponentError(f"invalid Slurm deployment identity schema: {path}")
-        if expected_site is not None and value["site"] != expected_site:
-            raise UnsafeComponentError(
-                f"Slurm deployment identity site mismatch: expected {expected_site!r}, got {value['site']!r}"
-            )
-        try:
-            return _validate_uuid(value.get("deployment_uuid"), "deployment identity UUID")
-        except SlurmLauncherError as e:
-            raise UnsafeComponentError(str(e)) from e
-
     def _validate_workspace(self) -> str:
         workspace = self.config.workspace_path
         if not os.path.isdir(workspace) or os.path.realpath(workspace) != workspace:
             raise UnsafeComponentError(f"workspace_path must be a canonical real directory: {workspace}")
-        control = os.path.join(workspace, CONTROL_DIR)
         kit = os.path.join(workspace, "kit")
-        if os.path.islink(control) or not os.path.isdir(control):
-            raise UnsafeComponentError(f"Slurm control root must be a real directory: {control}")
         if os.path.islink(kit) or not os.path.isdir(kit):
             raise UnsafeComponentError(f"staged kit must be a real directory: {kit}")
         for name in ("startup", "local"):
@@ -178,17 +140,14 @@ class SlurmJobManager:
                 raise UnsafeComponentError(f"runtime {name} must be the relative symlink '{expected}'")
         return workspace
 
-    def initialize(self, fl_ctx=None) -> None:
+    def initialize(self) -> None:
         with self._lock:
             if self._initialized:
                 return
             workspace = self._validate_workspace()
-            expected_site = fl_ctx.get_identity_name() if fl_ctx is not None else None
-            identity_path = os.path.join(workspace, CONTROL_DIR, DEPLOYMENT_FILE)
-            deployment_uuid = self._read_identity(identity_path, expected_site)
-            deployment_root = os.path.join(workspace, CONTROL_DIR, deployment_uuid)
-            jobs_dir = os.path.join(deployment_root, "jobs")
-            for path in (deployment_root, jobs_dir):
+            control = os.path.join(workspace, CONTROL_DIR)
+            jobs_dir = os.path.join(control, "jobs")
+            for path in (control, jobs_dir):
                 _ensure_dir(path)
             if self.adapter is None:
                 try:
@@ -200,7 +159,6 @@ class SlurmJobManager:
                 self.config = replace(self.config, executables=executables)
                 self.adapter = adapter
             self._require_accounting()
-            self.deployment_uuid = deployment_uuid
             self.jobs_dir = jobs_dir
             self._initialized = True
 
@@ -231,7 +189,7 @@ class SlurmJobManager:
             raise SlurmLauncherError("Slurm launcher has not completed SYSTEM_BOOTSTRAP")
 
     def _marker(self, nvflare_job_id: str) -> str:
-        return f"nvfl:{self.deployment_uuid}:{nvflare_job_id}"
+        return f"nvfl:{nvflare_job_id}"
 
     def _prepare_job_dir(self, job_id: str, needs_sandbox_root: bool) -> tuple[str, str]:
         job_key = _job_key(job_id)
