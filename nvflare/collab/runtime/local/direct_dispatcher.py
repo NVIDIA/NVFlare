@@ -101,11 +101,7 @@ class DirectDispatcher(InvocationDispatcher):
 
     def _run_func(self, waiter: _Waiter, context, target_name, func_name, func, args, kwargs):
         try:
-            ctx, kwargs = self._preprocess(context, target_name, func_name, func, kwargs)
-            result = func(*args, **kwargs)
-
-            # apply result filter
-            result = self.target_app.apply_outgoing_result_filters(target_name, func_name, result, ctx)
+            result = self._invoke(context, target_name, func_name, func, args, kwargs)
             if waiter:
                 waiter.result = result
         except Exception as ex:
@@ -114,6 +110,11 @@ class DirectDispatcher(InvocationDispatcher):
         finally:
             if waiter:
                 waiter.set()
+
+    def _invoke(self, context, target_name, func_name, func, args, kwargs):
+        ctx, kwargs = self._preprocess(context, target_name, func_name, func, kwargs)
+        result = func(*args, **kwargs)
+        return self.target_app.apply_outgoing_result_filters(target_name, func_name, result, ctx)
 
     def call_target_in_group(self, gcc: GroupCallContext, func_name: str, *args, **kwargs):
         target_name = gcc.target_name
@@ -124,12 +125,15 @@ class DirectDispatcher(InvocationDispatcher):
         if not callable(func):
             raise AttributeError(f"the method '{func_name}' of {target_name} is not callable")
 
-        self.executor.submit(self._run_func_in_group, gcc, func_name, args, kwargs)
+        self.executor.submit(self._run_func_in_group, gcc, func_name, func, args, kwargs)
 
-    def _run_func_in_group(self, gcc: GroupCallContext, func_name, args, kwargs):
+    def _run_func_in_group(self, gcc: GroupCallContext, func_name, func, args, kwargs):
         try:
             target_name = gcc.target_name
-            result = self._call_target(gcc.context, target_name, gcc.call_opt, func_name, *args, **kwargs)
+            # Execute directly in this worker. Calling _call_target here would
+            # submit another task to the same pool and block this worker while
+            # waiting, starving the pool for sufficiently large groups.
+            result = self._invoke(gcc.context, target_name, func_name, func, args, kwargs)
             gcc.set_result(result)
         except Exception as ex:
             gcc.set_exception(ex)
