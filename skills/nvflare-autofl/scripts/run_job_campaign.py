@@ -2728,7 +2728,13 @@ def campaign_settings(args: argparse.Namespace) -> Dict[str, Any]:
     return {name: getattr(args, name) for name in CAMPAIGN_SETTING_NAMES}
 
 
-def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]) -> None:
+def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]) -> bool:
+    """Restore persisted settings onto args; persist explicit mutable changes.
+
+    Returns True when a mutable-settings change was persisted to campaign.json, so
+    callers can refresh the authoritative campaign state under the new settings
+    before any preflight gate reads it.
+    """
     settings = metadata.get("settings")
     if not isinstance(settings, dict):
         raise ValueError("campaign metadata is missing settings")
@@ -2767,6 +2773,7 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
             raise ValueError("campaign metadata is missing workspace_root")
         workspace = Path(workspace_value)
         write_json(campaign_metadata_path(workspace), metadata)
+    return changed
 
 
 def campaign_timeout(args: argparse.Namespace, schema: Dict[str, Any]) -> Tuple[int, int]:
@@ -2969,8 +2976,10 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
     metadata_path = campaign_metadata_path(workspace)
     if metadata_path.exists():
         metadata = load_campaign_metadata(workspace, job)
-        restore_campaign_settings(args, metadata)
+        settings_changed = restore_campaign_settings(args, metadata)
         paths = campaign_paths(args, job)
+        if settings_changed:
+            refresh_campaign_state(args, job, metadata, paths)
         records = load_results(paths["results"])
         if args.target_env == "sim" and not any(
             record.status == "baseline" and record.score is not None for record in records
@@ -3092,12 +3101,47 @@ def count_abandoned_candidates(workspace: Path) -> int:
     return count
 
 
+def refresh_campaign_state(
+    args: argparse.Namespace, job: Path, metadata: Dict[str, Any], paths: Dict[str, Path]
+) -> Tuple[List[RunRecord], Dict[str, Any]]:
+    """Recompute and persist campaign_state.json under the current effective settings without running a job."""
+    records = load_results(paths["results"])
+    pending = pending_candidate_manifests(job.parent)
+    state = write_state(
+        paths["state"],
+        paths["results"],
+        records,
+        args.max_candidates,
+        mode=args.mode,
+        stop_files=resolve_stop_files(job.parent, args.stop_file),
+        plateau_threshold=args.plateau_threshold,
+        plateau_min_delta=args.plateau_min_delta,
+        hard_crash_threshold=args.hard_crash_threshold,
+        exploration_batch_size=args.exploration_batch_size,
+        family_repeat_limit=args.family_repeat_limit,
+        pending_manifest_count=len(pending),
+        abandoned_candidate_count=count_abandoned_candidates(job.parent),
+        persist=False,
+    )
+    state.update(
+        {
+            "best_candidate": metadata.get("best_candidate"),
+            "best_source_sha256": metadata.get("best_source_sha256"),
+            "pending_candidate_manifest": str(pending[0].resolve()) if pending else None,
+        }
+    )
+    write_state_if_changed(paths["state"], state)
+    return records, state
+
+
 def prepare_candidate(args: argparse.Namespace, job: Path) -> int:
     workspace = job.parent
     metadata = load_campaign_metadata(workspace, job)
-    restore_campaign_settings(args, metadata)
-    ensure_campaign_not_stopped(workspace, args, action="prepare a candidate")
+    settings_changed = restore_campaign_settings(args, metadata)
     paths = campaign_paths(args, job)
+    if settings_changed:
+        refresh_campaign_state(args, job, metadata, paths)
+    ensure_campaign_not_stopped(workspace, args, action="prepare a candidate")
     records = load_results(paths["results"])
     if not any(record.status == "baseline" and record.score is not None for record in records):
         raise ValueError("a scored baseline is required before preparing candidates")
@@ -3359,9 +3403,11 @@ def finalize_candidate_result(
 def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
     workspace = job.parent
     metadata = load_campaign_metadata(workspace, job)
-    restore_campaign_settings(args, metadata)
-    ensure_campaign_not_stopped(workspace, args, action="evaluate a candidate")
+    settings_changed = restore_campaign_settings(args, metadata)
     paths = campaign_paths(args, job)
+    if settings_changed:
+        refresh_campaign_state(args, job, metadata, paths)
+    ensure_campaign_not_stopped(workspace, args, action="evaluate a candidate")
     manifest_path = Path(args.manifest).resolve() if args.manifest else None
     if manifest_path is None:
         pending = pending_candidate_manifests(workspace)
@@ -3526,8 +3572,10 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
 def abandon_candidate(args: argparse.Namespace, job: Path) -> int:
     workspace = job.parent
     metadata = load_campaign_metadata(workspace, job)
-    restore_campaign_settings(args, metadata)
+    settings_changed = restore_campaign_settings(args, metadata)
     paths = campaign_paths(args, job)
+    if settings_changed:
+        refresh_campaign_state(args, job, metadata, paths)
     manifest_path = Path(args.manifest).resolve() if args.manifest else None
     if manifest_path is None:
         pending = pending_candidate_manifests(workspace)
@@ -3575,10 +3623,13 @@ def abandon_candidate(args: argparse.Namespace, job: Path) -> int:
 
 def suggest_candidates(args: argparse.Namespace, job: Path) -> int:
     metadata = load_campaign_metadata(job.parent, job)
-    restore_campaign_settings(args, metadata)
+    settings_changed = restore_campaign_settings(args, metadata)
+    paths = campaign_paths(args, job)
+    if settings_changed:
+        refresh_campaign_state(args, job, metadata, paths)
     if args.limit < 1:
         raise ValueError("--limit must be positive")
-    config = read_yaml(campaign_paths(args, job)["autofl_yaml"])
+    config = read_yaml(paths["autofl_yaml"])
     help_text = job_help(args.python, job, job.parent)
     suggestions = [
         {"name": candidate.name, "run_args": candidate.args, "hypothesis": candidate.description}
@@ -3596,8 +3647,10 @@ def suggest_candidates(args: argparse.Namespace, job: Path) -> int:
 def record_external_result(args: argparse.Namespace, job: Path) -> int:
     workspace = job.parent
     metadata = load_campaign_metadata(workspace, job)
-    restore_campaign_settings(args, metadata)
+    settings_changed = restore_campaign_settings(args, metadata)
     paths = campaign_paths(args, job)
+    if settings_changed:
+        refresh_campaign_state(args, job, metadata, paths)
     config = read_yaml(paths["autofl_yaml"])
     artifact_path = Path(args.external_artifacts).resolve() if args.external_artifacts else None
     score = parse_finite_metric_value(args.score) if args.score is not None else None
@@ -3753,32 +3806,7 @@ def show_campaign_status(args: argparse.Namespace, job: Path) -> int:
     metadata = load_campaign_metadata(job.parent, job)
     restore_campaign_settings(args, metadata)
     paths = campaign_paths(args, job)
-    records = load_results(paths["results"])
-    pending = pending_candidate_manifests(job.parent)
-    state = write_state(
-        paths["state"],
-        paths["results"],
-        records,
-        args.max_candidates,
-        mode=args.mode,
-        stop_files=resolve_stop_files(job.parent, args.stop_file),
-        plateau_threshold=args.plateau_threshold,
-        plateau_min_delta=args.plateau_min_delta,
-        hard_crash_threshold=args.hard_crash_threshold,
-        exploration_batch_size=args.exploration_batch_size,
-        family_repeat_limit=args.family_repeat_limit,
-        pending_manifest_count=len(pending),
-        abandoned_candidate_count=count_abandoned_candidates(job.parent),
-        persist=False,
-    )
-    state.update(
-        {
-            "best_candidate": metadata.get("best_candidate"),
-            "best_source_sha256": metadata.get("best_source_sha256"),
-            "pending_candidate_manifest": str(pending[0].resolve()) if pending else None,
-        }
-    )
-    write_state_if_changed(paths["state"], state)
+    records, state = refresh_campaign_state(args, job, metadata, paths)
     print_campaign_result(paths, records, state, campaign=metadata)
     return 0
 
