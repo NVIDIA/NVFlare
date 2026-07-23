@@ -248,6 +248,7 @@ def test_launch_plan_uses_fixed_worker_and_one_resolved_job_spec(tmp_path):
     plan = launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _fl_ctx(workspace))
 
     assert plan.exe_module == ClientSlurmJobLauncher.EXE_MODULE
+    assert plan.site_name == "site-1"
     parent_url_index = plan.module_args.index("-p") + 1
     assert plan.module_args[parent_url_index] == "tcp://compute.example:8102"
     assert "secret-token" not in plan.module_args

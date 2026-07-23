@@ -360,6 +360,7 @@ def normalize_slurm_launcher_settings(
 @dataclass(frozen=True)
 class LaunchPlan:
     job_id: str
+    site_name: str
     run_dir: str
     exe_module: str
     module_args: tuple

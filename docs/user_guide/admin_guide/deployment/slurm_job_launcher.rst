@@ -347,9 +347,11 @@ completion. User abort and pending timeout verify ownership before ``scancel``;
 normal framework shutdown terminates running handles through the same path
 before the Slurm launcher closes launch admission.
 
-Job output is ``<run-dir>/slurm-<slurm-job-id>.out``. Use ``squeue`` for live
-state and ``sacct`` for completed jobs. Preserve the complete workspace and
-relevant scheduler records for investigation.
+Slurm job names include the first 32 characters of the NVFlare site name and a
+short job hash, so operators can distinguish sites sharing one Slurm user. Job output is
+``<run-dir>/slurm-<slurm-job-id>.out``. Use ``squeue`` for live state and
+``sacct`` for completed jobs. Preserve the complete workspace and relevant
+scheduler records for investigation.
 
 After a parent crash, the launcher does not cancel surviving allocations or
 remove their job artifacts; this matches the Docker and Kubernetes launchers.

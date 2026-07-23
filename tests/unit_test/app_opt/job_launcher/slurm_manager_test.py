@@ -39,7 +39,7 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     SlurmRecord,
     SubmissionResult,
 )
-from nvflare.app_opt.job_launcher.slurm.manager import SlurmJobManager, _ensure_dir, _job_key
+from nvflare.app_opt.job_launcher.slurm.manager import SlurmJobManager, _ensure_dir, _job_key, _job_name
 from nvflare.app_opt.job_launcher.slurm.scheduler_client import _SlurmCliAdapter
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.private.fed.server.fed_server import FederatedServer
@@ -141,6 +141,7 @@ def _plan(tmp_path, pending_timeout=5, setup="", sandbox="none", image=None):
     run_dir.mkdir(exist_ok=True)
     return LaunchPlan(
         job_id="job-1",
+        site_name="site-1",
         run_dir=str(run_dir),
         exe_module="worker.module",
         module_args=("-n", "job-1"),
@@ -315,9 +316,25 @@ def test_launch_returns_handle_with_deterministic_identity(tmp_path):
     assert Path(handle.job_dir, "batch.sh").is_file()
     assert not Path(handle.job_dir, SANDBOX_ROOT).exists()
     submit_argv = adapter.calls[0][1]
-    assert f"--job-name=nvfl-{handle.job_key[:8]}" in submit_argv
+    assert f"--job-name={handle.job_name}" in submit_argv
+    assert handle.job_name == _job_name("site-1", _job_key("job-1"))
     assert f"--output={_plan(tmp_path).run_dir}/slurm-%j.out" in submit_argv
     assert adapter.calls[0][0] == "submit"
+
+
+def test_job_name_distinguishes_sites_running_the_same_job():
+    job_key = _job_key("job-1")
+    first = _job_name("site-1", job_key)
+    second = _job_name("site-2", job_key)
+
+    assert first == f"nvfl-site-1-{job_key[:8]}"
+    assert first != second
+
+
+def test_job_name_limits_site_name_length():
+    job_name = _job_name("s" * 100, _job_key("job-1"))
+
+    assert job_name == f"nvfl-{'s' * 32}-{_job_key('job-1')[:8]}"
 
 
 def test_stale_job_artifacts_block_relaunch(tmp_path):
@@ -422,7 +439,7 @@ def test_handle_monitors_only_its_returned_id_when_job_name_is_shared(tmp_path):
         runner=run_command,
     )
     manager = _manager(tmp_path, scheduler)
-    job_name = f"nvfl-{_job_key('job-1')[:8]}"
+    job_name = _job_name("site-1", _job_key("job-1"))
     marker = "nvfl:job-1"
     results.extend(
         [

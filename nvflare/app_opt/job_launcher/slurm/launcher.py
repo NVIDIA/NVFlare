@@ -411,6 +411,7 @@ class SlurmJobLauncher(JobLauncherSpec):
                 mounts.append(parent_mount)
         return LaunchPlan(
             job_id=job_id,
+            site_name=site_name,
             run_dir=run_dir,
             exe_module=self.EXE_MODULE,
             module_args=self.get_module_args(job_args),
