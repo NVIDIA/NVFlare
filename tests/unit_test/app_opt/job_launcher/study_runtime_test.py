@@ -15,17 +15,19 @@ import logging
 
 import pytest
 
-from nvflare.app_opt.job_launcher.study_runtime import (
-    load_study_runtime_file,
-    resolve_study_runtime,
-    study_runtime_file_path,
-)
+from nvflare.app_opt.job_launcher.study_runtime import load_study_runtime_file as _load_study_runtime_file
+from nvflare.app_opt.job_launcher.study_runtime import resolve_study_runtime, study_runtime_file_path
 
 
 def _write(tmp_path, text):
     file_path = tmp_path / "study_runtime.yaml"
     file_path.write_text(text, encoding="utf-8")
     return str(file_path)
+
+
+def load_study_runtime_file(file_path, launcher_mode="k8s", logger=None):
+    """Keep individual parser tests concise while selecting their normal K8s context."""
+    return _load_study_runtime_file(file_path, launcher_mode=launcher_mode, logger=logger)
 
 
 FULL_EXAMPLE = """
@@ -64,6 +66,35 @@ studies:
           ca.crt: ca.crt
 """
 
+SLURM_EXAMPLE = """
+format_version: 2
+studies:
+  pathology:
+    container:
+      image: /lustre/images/pathology.sif
+    datasets:
+      training: {source: /lustre/data/pathology, mode: ro}
+    env:
+      EMPTY_VALUE: ""
+      MULTILINE: |-
+        first line
+        second line
+    secret_env:
+      DB_PASSWORD: {source: PATH_DB_PASSWORD}
+      LEGACY_SECRET: {source: PATH_LEGACY_SECRET, key: ignored-on-slurm}
+    secret_mounts:
+      tls:
+        source: /lustre/secrets/pathology
+        mount_path: /run/secrets/pathology
+    slurm:
+      sandbox: apptainer
+      setup: |
+        module load cuda
+      partition: gpu
+      account: 1234
+      qos: normal
+"""
+
 
 class TestLoadStudyRuntimeFile:
     def test_parses_full_example(self, tmp_path):
@@ -89,6 +120,72 @@ class TestLoadStudyRuntimeFile:
         assert mount.mount_path == "/var/run/nvflare/secrets/db-ca"
         assert mount.items == (("ca.crt", "ca.crt"),)
 
+    def test_parses_slurm_example(self, tmp_path):
+        runtime = load_study_runtime_file(_write(tmp_path, SLURM_EXAMPLE), launcher_mode="slurm")["pathology"]
+
+        assert runtime.container_image == "/lustre/images/pathology.sif"
+        assert runtime.datasets[0].source == "/lustre/data/pathology"
+        assert runtime.env == {"EMPTY_VALUE": "", "MULTILINE": "first line\nsecond line"}
+        secret_env = {ref.name: ref for ref in runtime.secret_env}
+        assert secret_env["DB_PASSWORD"].key is None
+        assert secret_env["LEGACY_SECRET"].key == "ignored-on-slurm"
+        assert runtime.secret_mounts[0].source == "/lustre/secrets/pathology"
+        assert runtime.slurm == {
+            "sandbox": "apptainer",
+            "setup": "module load cuda\n",
+            "partition": "gpu",
+            "account": 1234,
+            "qos": "normal",
+        }
+
+    @pytest.mark.parametrize(
+        "body, error",
+        [
+            ("pod_template:\n      spec: {}", "Kubernetes-only"),
+            ("docker_kwargs:\n      shm_size: 8g", "Docker-only"),
+            (
+                "secret_mounts:\n"
+                "      tls:\n"
+                "        source: /secrets/tls\n"
+                "        mount_path: /run/secrets/tls\n"
+                "        items: {cert: cert}",
+                "Kubernetes-only",
+            ),
+        ],
+    )
+    def test_slurm_rejects_other_launcher_fields(self, tmp_path, body, error):
+        with pytest.raises(ValueError, match=error):
+            load_study_runtime_file(
+                _write(tmp_path, f"format_version: 2\nstudies:\n  study-a:\n    {body}\n"),
+                launcher_mode="slurm",
+            )
+
+    @pytest.mark.parametrize("launcher_mode", ["k8s", "docker"])
+    def test_existing_launchers_still_require_secret_key(self, tmp_path, launcher_mode):
+        with pytest.raises(ValueError, match=r"secret_env\.PASSWORD\.key"):
+            load_study_runtime_file(
+                _write(
+                    tmp_path,
+                    "format_version: 2\n"
+                    "studies:\n"
+                    "  study-a:\n"
+                    "    secret_env:\n"
+                    "      PASSWORD: {source: PASSWORD_SOURCE}\n",
+                ),
+                launcher_mode=launcher_mode,
+            )
+
+    @pytest.mark.parametrize("launcher_mode", ["process", "k8s", "docker"])
+    def test_slurm_block_rejected_by_other_launchers(self, tmp_path, launcher_mode):
+        with pytest.raises(ValueError, match="Slurm-only"):
+            load_study_runtime_file(
+                _write(
+                    tmp_path,
+                    "format_version: 2\nstudies:\n  study-a:\n    slurm:\n      partition: gpu\n",
+                ),
+                launcher_mode=launcher_mode,
+            )
+
     def test_inline_pod_template(self, tmp_path):
         runtime_map = load_study_runtime_file(
             _write(
@@ -102,6 +199,10 @@ class TestLoadStudyRuntimeFile:
             )
         )
         assert runtime_map["study-a"].pod_template == {"spec": {"nodeSelector": {"workload": "gpu"}}}
+
+    def test_launcher_mode_is_required(self, tmp_path):
+        with pytest.raises(TypeError):
+            _load_study_runtime_file(_write(tmp_path, "format_version: 2\nstudies: {}\n"))
 
     def test_missing_format_version_rejected(self, tmp_path):
         with pytest.raises(ValueError, match="format_version"):
@@ -208,7 +309,8 @@ class TestLoadStudyRuntimeFile:
                 "      device_requests:\n"
                 "        - Count: 1\n"
                 "          Capabilities: [[gpu]]\n",
-            )
+            ),
+            launcher_mode="docker",
         )
         assert runtime_map["study-a"].docker_kwargs == {
             "shm_size": "8g",
@@ -221,14 +323,15 @@ class TestLoadStudyRuntimeFile:
                 _write(
                     tmp_path,
                     "format_version: 2\nstudies:\n  study-a:\n    docker_kwargs:\n      image: sneaky:v1\n",
-                )
+                ),
+                launcher_mode="docker",
             )
 
-    def test_docker_kwargs_rejected_when_not_allowed(self, tmp_path):
+    def test_docker_kwargs_rejected_by_other_launcher(self, tmp_path):
         with pytest.raises(ValueError, match="Docker-only"):
             load_study_runtime_file(
                 _write(tmp_path, "format_version: 2\nstudies:\n  study-a:\n    docker_kwargs:\n      shm_size: 8g\n"),
-                allow_docker_kwargs=False,
+                launcher_mode="k8s",
             )
 
     def test_env_value_must_be_scalar(self, tmp_path):
@@ -241,6 +344,115 @@ class TestLoadStudyRuntimeFile:
         with pytest.raises(ValueError, match="must not be empty"):
             load_study_runtime_file(
                 _write(tmp_path, 'format_version: 2\nstudies:\n  study-a:\n    env:\n      FOO: ""\n')
+            )
+
+    @pytest.mark.parametrize(
+        "section, entry, error",
+        [
+            ("env", "BAD-NAME: value", "POSIX environment variable"),
+            ("env", "_nvfl_secret: value", "launcher-owned"),
+            ("env", "SLURM_EXPORT_ENV: value", "launcher-owned"),
+            ("env", "NVFLARE_SLURM_HELPER_MASTER_PORT: value", "launcher-owned"),
+            ("secret_env", "PASSWORD: {source: BAD-SOURCE}", "POSIX environment variable"),
+            ("secret_env", "NVFL_APPTAINER: {source: SOURCE}", "launcher-owned"),
+            ("secret_env", "NVFLARE_SLURM_CHILD_PROCESS: {source: SOURCE}", "launcher-owned"),
+        ],
+    )
+    def test_slurm_env_names_are_validated(self, tmp_path, section, entry, error):
+        with pytest.raises(ValueError, match=error):
+            load_study_runtime_file(
+                _write(
+                    tmp_path,
+                    "format_version: 2\n" "studies:\n" "  study-a:\n" f"    {section}:\n" f"      {entry}\n",
+                ),
+                launcher_mode="slurm",
+            )
+
+    @pytest.mark.parametrize("name", ["SLURM_JOB_ID", "APPTAINER_BIND", "NVFLARE_SLURM_CHILD_PROCESS", "UID"])
+    def test_slurm_rejects_runtime_owned_environment_names(self, tmp_path, name):
+        with pytest.raises(ValueError, match="launcher-owned"):
+            load_study_runtime_file(
+                _write(
+                    tmp_path,
+                    "format_version: 2\nstudies:\n  study-a:\n    env:\n" f"      {name}: site-value\n",
+                ),
+                launcher_mode="slurm",
+            )
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "container: {image: relative/image.sif}",
+            "datasets:\n      training: {source: relative/data, mode: ro}",
+            (
+                "secret_mounts:\n"
+                "      tls:\n"
+                "        source: relative/secret\n"
+                "        mount_path: /run/secrets/tls"
+            ),
+        ],
+    )
+    def test_slurm_sources_must_be_absolute(self, tmp_path, body):
+        with pytest.raises(ValueError, match="absolute path"):
+            load_study_runtime_file(
+                _write(tmp_path, f"format_version: 2\nstudies:\n  study-a:\n    {body}\n"),
+                launcher_mode="slurm",
+            )
+
+    @pytest.mark.parametrize(
+        "slurm_entry, error",
+        [
+            ("backend: apptainer", "unknown key"),
+            ("sandbox: docker", "must be one of"),
+            ("sandbox: {name: none}", "must be one of"),
+            ("partition: true", "non-empty string or integer"),
+            ('partition: "gpu debug"', "must not contain whitespace"),
+            ("partition: |\n        gpu\n        debug", "must not contain whitespace"),
+        ],
+    )
+    def test_slurm_overrides_are_strict(self, tmp_path, slurm_entry, error):
+        with pytest.raises(ValueError, match=error):
+            load_study_runtime_file(
+                _write(
+                    tmp_path,
+                    f"format_version: 2\nstudies:\n  study-a:\n    slurm:\n      {slurm_entry}\n",
+                ),
+                launcher_mode="slurm",
+            )
+
+    @pytest.mark.parametrize(
+        "value, error",
+        [
+            ('"\\0"', "NUL"),
+            ('"\\uD800"', "UTF-8"),
+        ],
+    )
+    def test_slurm_env_values_must_be_utf8_text_without_nul(self, tmp_path, value, error):
+        with pytest.raises(ValueError, match=error):
+            load_study_runtime_file(
+                _write(
+                    tmp_path,
+                    f"format_version: 2\nstudies:\n  study-a:\n    env:\n      VALUE: {value}\n",
+                ),
+                launcher_mode="slurm",
+            )
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "container: {image: /images/study.sif}",
+            "datasets:\n      training: {source: /data/training, mode: ro}",
+            ("secret_mounts:\n" "      tls:\n" "        source: /secrets/tls\n" "        mount_path: /run/secrets/tls"),
+        ],
+    )
+    def test_explicit_slurm_sandbox_none_rejects_mount_bearing_fields(self, tmp_path, body):
+        with pytest.raises(ValueError, match="sandbox 'none' does not support"):
+            load_study_runtime_file(
+                _write(
+                    tmp_path,
+                    f"format_version: 2\nstudies:\n  study-a:\n    {body}\n    slurm:\n      sandbox: none\n",
+                ),
+                launcher_mode="slurm",
             )
 
     def test_container_name_key_rejected(self, tmp_path):
@@ -285,11 +497,11 @@ class TestLoadStudyRuntimeFile:
                 )
             )
 
-    def test_pod_template_rejected_when_not_allowed(self, tmp_path):
+    def test_pod_template_rejected_by_other_launcher(self, tmp_path):
         with pytest.raises(ValueError, match="Kubernetes-only"):
             load_study_runtime_file(
                 _write(tmp_path, "format_version: 2\nstudies:\n  study-a:\n    pod_template:\n      spec: {}\n"),
-                allow_pod_template=False,
+                launcher_mode="docker",
             )
 
     def test_pod_template_path_escape_rejected(self, tmp_path):
