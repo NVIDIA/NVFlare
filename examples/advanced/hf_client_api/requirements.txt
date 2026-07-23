@@ -1,0 +1,8 @@
+nvflare~=2.9.0rc1
+torch
+transformers
+accelerate
+datasets
+peft
+trl
+safetensors

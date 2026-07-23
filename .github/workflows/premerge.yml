@@ -81,10 +81,10 @@ jobs:
             test_command: python3 -m pytest -q tests/unit_test/app_opt/hf/real_transformers_contract_test.py
           - name: trl-018-example
             extra_deps: '"trl>=0.18,<0.19" datasets peft'
-            test_command: python3 -m py_compile examples/advanced/llm_hf/client.py examples/advanced/llm_hf/hf_peft_model.py examples/advanced/llm_hf/job.py && python3 examples/advanced/llm_hf/client.py --help && python3 -m pytest -q tests/unit_test/app_opt/hf/real_trl_contract_test.py
+            test_command: python3 -m py_compile examples/advanced/hf_client_api/client.py examples/advanced/hf_client_api/model.py examples/advanced/hf_client_api/job.py && python3 examples/advanced/hf_client_api/client.py --help && python3 examples/advanced/hf_client_api/job.py --help && python3 -m pytest -q tests/unit_test/app_opt/hf/real_trl_contract_test.py
           - name: trl-latest-example
             extra_deps: 'trl datasets peft'
-            test_command: python3 -m py_compile examples/advanced/llm_hf/client.py examples/advanced/llm_hf/hf_peft_model.py examples/advanced/llm_hf/job.py && python3 examples/advanced/llm_hf/client.py --help && python3 -m pytest -q tests/unit_test/app_opt/hf/real_trl_contract_test.py
+            test_command: python3 -m py_compile examples/advanced/hf_client_api/client.py examples/advanced/hf_client_api/model.py examples/advanced/hf_client_api/job.py && python3 examples/advanced/hf_client_api/client.py --help && python3 examples/advanced/hf_client_api/job.py --help && python3 -m pytest -q tests/unit_test/app_opt/hf/real_trl_contract_test.py
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python 3.10

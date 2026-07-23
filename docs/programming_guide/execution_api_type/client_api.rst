@@ -428,7 +428,7 @@ For complete working examples of using Client API with Job Recipes across differ
 
 **Advanced Examples:**
 
-- HuggingFace Transformers: :github_nvflare_link:`llm_hf <examples/advanced/llm_hf>` - Large language model training
+- HuggingFace Transformers: :github_nvflare_link:`hf_client_api <examples/advanced/hf_client_api>` - Qwen SFT/PEFT with HuggingFace Client API
 - XGBoost: :github_nvflare_link:`xgboost examples <examples/advanced/xgboost>` - Tree-based federated learning
 - Scikit-learn: :github_nvflare_link:`sklearn-linear <examples/advanced/sklearn-linear>`, :github_nvflare_link:`sklearn-kmeans <examples/advanced/sklearn-kmeans>`, :github_nvflare_link:`sklearn-svm <examples/advanced/sklearn-svm>` - Traditional ML algorithms
 

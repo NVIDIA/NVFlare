@@ -294,6 +294,6 @@ Complete Example
 
 See the full HuggingFace SFT/PEFT example:
 
-* :github_nvflare_link:`examples/advanced/llm_hf <examples/advanced/llm_hf>`
+* :github_nvflare_link:`examples/advanced/hf_client_api <examples/advanced/hf_client_api>`
 
 For the general Client API concepts, see :ref:`client_api_usage`.

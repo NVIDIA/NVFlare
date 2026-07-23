@@ -41,7 +41,7 @@ communication costs -- ideal for large models where transmitting full weights is
 
 See the complete examples:
 
-- `HuggingFace SFT & PEFT Examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/llm_hf>`_
+- `HuggingFace Client API Qwen Example <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/hf_client_api>`_
 - :ref:`hf_client_api`
 
 NVIDIA NeMo Integration

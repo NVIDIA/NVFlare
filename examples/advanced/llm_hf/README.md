@@ -21,9 +21,6 @@ Install additional requirements (if you already have a specific version of nvfla
 ```
 python3 -m pip install -r requirements.txt
 ```
-
-> **NVFlare version note:** this example uses `nvflare.client.hf`, introduced for the 2.8 release line. Until the required NVFlare package is published, install NVFlare from this repository before running the example.
-
 Git LFS is also necessary for downloads, please follow the steps in this [link](https://github.com/git-lfs/git-lfs/blob/main/INSTALLING.md).
 
 ## Data Preparation
@@ -71,31 +68,26 @@ class CausalLMPEFTModel(torch.nn.Module):
                                  bias="none", task_type="CAUSAL_LM")
         full_model = AutoModelForCausalLM.from_pretrained(model_name_or_path)
         self.model = get_peft_model(full_model, peft_config)
-
-    def state_dict(self, *args, **kwargs):
-        return get_peft_model_state_dict(self.model)
 ```
-The PEFT server model exposes adapter-only weights so it matches the HuggingFace Client API's automatic adapter parameter scope.
 
 ### Client-Side Code
 **`client.py`** - Federated client using HuggingFace SFTTrainer with DDP support
 
-The minimal HuggingFace Client API adaptation is:
-```diff
-+ import nvflare.client.hf as flare
-+ flare.patch(trainer, server_key_prefix="model.")
-+ while flare.is_running():
-      trainer.evaluate()
-      trainer.train()
-```
-For PEFT, use `server_key_prefix=None` because the adapter model already exposes adapter-shaped keys.
-
 Key features:
 - **Multi-GPU Support**: Automatic DDP setup via `torch.distributed`
-- **Rank Management**: `nvflare.client.hf.patch()` initializes the Client API rank and keeps server communication on global rank 0
-- **Model Synchronization**: The HF wrapper distributes task/model parameters from rank 0 to the other ranks
-- **Federated Training Loop**: Evaluate global-model metrics, then call `trainer.train()` once per FL round.
-- **Trainer Integration**: The wrapper loads global weights, aligns the learning-rate schedule, restores Trainer state, and sends the result from rank 0.
+- **Rank Management**: Only rank 0 communicates with NVFlare server
+- **Model Synchronization**: Broadcasts global model from rank 0 to all ranks
+- **Federated Training Loop**: Integrates with NVFlare using numbered steps:
+  1. Import nvflare client API
+  2. Initialize NVFlare client API (`flare.init()`)
+  3. Federated training rounds loop (`while flare.is_running()`)
+  4. Receive global model from NVFlare (`flare.receive()`)
+  5. Load global model state dict
+  6. Evaluate global model for server-side model selection
+  7. Train locally using SFTTrainer
+  8. Compose output model parameters
+  9. Construct trained FL model with metrics
+  10. Send model back to NVFlare (`flare.send()`)
 
 **Launch Modes:**
 - Single GPU: `python client.py [args]`
@@ -120,8 +112,7 @@ recipe = FedAvgRecipe(
     train_script="client.py",
     server_expected_format=server_expected_format,  # "pytorch" or "numpy"
     launch_external_process=True,
-    key_metric="eval_loss",
-    negate_key_metric=True,
+    key_metric="neg_eval_loss",
 )
 ```
 
@@ -288,17 +279,11 @@ We can see the three curves align well.
 ### Adaptation Step 2: federated with NVFlare
 Once we have the iterative training script ready with "starting model" loading capability, scheduler alignment, and mult-gpu support, it can be easily adapted to a NVFlare trainer by using the [Client API](../../../docs/programming_guide/execution_api_type/client_api.rst).
 
-The federated client uses the HuggingFace Client API facade instead of manual `flare.receive()` / `flare.send()` calls. The script imports `nvflare.client.hf`, patches the `SFTTrainer`, evaluates before each train task for server-side model selection, and lets the wrapper load global weights, align the learning-rate schedule, restore Trainer state, and submit the trained model from rank 0.
+The major code modifications are for replacing the fixed model reloading processing with 
+receiving and returning the global model, as shown below:
 
-```python
-import nvflare.client.hf as flare
-
-flare.patch(trainer, server_key_prefix="model.")
-
-while flare.is_running():
-    trainer.evaluate()
-    trainer.train()
-```
+![diff](./figs/diff_fl_1.png)
+![diff](./figs/diff_fl_2.png)
 
 We run the federated training on a single client with single GPU using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html).
 ```

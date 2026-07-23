@@ -691,21 +691,20 @@ No new components required:
 - PEFT jobs (`params_scope="adapter"`): the server's initial model must be
   **adapter-shaped** — the persistor/model definition contains only the adapter
   keys, since that is what round 0 sends and what the aggregator averages. The
-  migrated example must show the PEFT-mode server model alongside the SFT one.
+  clean example must show the PEFT-mode server model alongside the SFT one.
 - The `server_key_prefix` option removes the example's hand-rolled `"model."`
   renames; sites that prefer executor-side conversion can keep using a
   `ParamsConverter` instead — the two mechanisms are alternatives, and the doc for
   the API must say "pick one".
 
-## Example Migration
+## Example
 
-`examples/advanced/llm_hf/client.py` shrinks to: dataset/model/`SFTConfig`/`SFTTrainer`
-setup + `flare.patch(...)` + the standard loop. SFT uses
-`server_key_prefix="model."`; PEFT omits the prefix because the server model is
-adapter-shaped. The
-`StopCallback`, manual broadcast block, checkpoint-injection block, PEFT branching,
-and dtype-cast block are all deleted (~150 lines). The example becomes the
-integration test for the API and stays in the repo as the multi-node reference.
+A clean `examples/advanced/hf_client_api` example demonstrates the API without
+carrying the legacy `llm_hf` comparison scripts and figures. Its `client.py`
+contains ordinary dataset/model/`SFTConfig`/`SFTTrainer` setup, one
+`flare.patch(...)` call, and the standard `while flare.is_running(): evaluate();
+train()` loop. SFT uses `server_key_prefix="model."`; PEFT omits the prefix
+because the server model is adapter-shaped.
 
 ## Testing Plan
 
@@ -737,8 +736,8 @@ integration test for the API and stays in the repo as the multi-node reference.
 - Version matrix in CI: `transformers` min supported pin + latest (the Trainer
   callback/resume internals are the main drift risk), and `trl` 0.18 + latest
   (integration test only).
-- Integration: `llm_hf` example under simulator (single GPU) per release; multi-node
-  remains a manual/HPC run.
+- Integration: `hf_client_api` example under simulator (single GPU) per release;
+  multi-node remains a manual/HPC run.
 
 ## Phasing
 
@@ -752,7 +751,7 @@ integration test for the API and stays in the repo as the multi-node reference.
   runtime version check. (The strategy decision itself is made: in-memory override
   primary, checkpoint-injection as automatic fallback — see Round-Loop Semantics.)
 - **Phase 1:** `patch()` + `FLCallback`; SFT + PEFT; single-GPU + DDP; train /
-  evaluate / submit_model; unit tests; migrate `llm_hf` example.
+  evaluate / submit_model; unit tests; add the clean `hf_client_api` example.
 - **Phase 2 (HF-specific; primarily validation):** exercise the Phase 1 code paths
   under DeepSpeed (ZeRO-1/2/3) and FSDP — `accelerator.get_state_dict()` extraction
   and the resume/override path are designed to be backend-agnostic, so the bulk of
