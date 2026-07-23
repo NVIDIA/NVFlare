@@ -82,19 +82,22 @@ class CollabExecutor(Executor, CollabAdaptor):
                 raise RuntimeError(f"result returned by {MAKE_CLIENT_APP_METHOD} must be ClientApp but got {type(app)}")
 
         app.name = client_name
-        self.client_app = app
 
-        err = self.process_config(self.client_app, fl_ctx)
+        err = self.process_config(app, fl_ctx)
         if err:
             self.system_panic(err, fl_ctx)
             return
 
         # Resolve this site's entries from the recipe's per-site config into
         # plain app props (readable via collab.get_app_prop).
-        per_site = self.client_app.get_prop(PER_SITE_CONFIG_PROP)
+        per_site = app.get_prop(PER_SITE_CONFIG_PROP)
         if per_site:
             for name, value in (per_site.get(client_name) or {}).items():
-                self.client_app.set_prop(name, value)
+                app.set_prop(name, value)
+
+        # Publish the app only after start-run initialization succeeds. This
+        # keeps execute() from using a partially configured app.
+        self.client_app = app
 
     def _handle_end_run(self, event_type: str, fl_ctx: FLContext):
         if self.client_ctx:
@@ -170,6 +173,10 @@ class CollabExecutor(Executor, CollabAdaptor):
         if task_name != SYNC_TASK_NAME:
             self.log_error(fl_ctx, f"received unsupported task {task_name}")
             return make_reply(ReturnCode.TASK_UNKNOWN)
+
+        if self.client_app is None:
+            self.log_error(fl_ctx, "client app is unavailable because start-run initialization did not complete")
+            return make_reply(ReturnCode.ERROR)
 
         server_collab_interface = shareable.get(SyncKey.COLLAB_INTERFACE)
         server_fqcn = shareable.get(SyncKey.SERVER_FQCN)
