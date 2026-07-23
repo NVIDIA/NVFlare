@@ -2759,8 +2759,9 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
     if persisted_mode != "max":
         raise ValueError(
             f"campaign was initialized with mode={persisted_mode!r}, which is no longer supported. "
-            f"{load_campaign_guard().MODE_MAX_ONLY_MESSAGE} Re-initialize the campaign with a metric "
-            "whose higher values are better."
+            f"{load_campaign_guard().MODE_MAX_ONLY_MESSAGE} Delete the campaign's .nvflare/autofl "
+            "directory (or start in a fresh workspace) and initialize again with a metric whose "
+            "higher values are better."
         )
     explicit = getattr(args, "_explicit_settings", set())
     changed = False

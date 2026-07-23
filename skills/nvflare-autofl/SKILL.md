@@ -27,7 +27,7 @@ Do not use for converting non-FL training code into NVFLARE, diagnosing failed j
 | --- | --- | --- |
 | `scripts/run_job_campaign.py` | Authoritative campaign lifecycle runner | `ACTION JOB` plus action-specific flags |
 | `scripts/campaign_guard.py` | Read-only ledger diagnostics | `[RESULTS]` and diagnostic thresholds |
-| `scripts/plot_progress.py` | Render campaign progress | `[RESULTS]`, `--output`, `--mode`, `--metric` |
+| `scripts/plot_progress.py` | Render campaign progress | `[RESULTS]`, `--output`, `--metric` |
 | `scripts/job_importer.py` | Import library used by the campaign runner | Not a standalone CLI |
 
 ## Workflow

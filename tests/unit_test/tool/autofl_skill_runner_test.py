@@ -2880,12 +2880,21 @@ def test_resuming_legacy_minimization_campaign_is_rejected_with_guidance(tmp_pat
     state_before = tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_bytes()
     capsys.readouterr()
 
-    for action in ("status", "prepare", "evaluate"):
+    # Every lifecycle action routes through the same restore_campaign_settings gate.
+    for action in ("status", "prepare", "evaluate", "abandon", "record", "suggest"):
         assert runner.main([action, str(job)]) == 2
         stderr = capsys.readouterr().err
         assert "mode='min'" in stderr
         assert "minimization is not supported" in stderr
         assert "neg_val_loss" in stderr
+
+    # The recommended recovery must not be circular: initialize on the legacy campaign
+    # is rejected too, but its message names the concrete escape hatch.
+    assert runner.main(["initialize", str(job)]) == 2
+    stderr = capsys.readouterr().err
+    assert "minimization is not supported" in stderr
+    assert ".nvflare/autofl" in stderr
+    assert "fresh workspace" in stderr
 
     # The campaign never silently flips to maximization: no state was rewritten.
     assert tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_bytes() == state_before
