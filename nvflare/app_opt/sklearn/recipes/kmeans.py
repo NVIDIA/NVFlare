@@ -86,6 +86,8 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
             a dict, key_metric selects the metric used for global model selection. Higher values must
             indicate a better model. Defaults to "metrics"
             (which corresponds to the homogeneity score sent by the K-Means client).
+        negate_key_metric: Whether the model selector should invert key_metric before comparing models.
+            Use this for lower-is-better metrics such as losses. Defaults to False.
 
     Example:
         Basic usage with same config for all clients:
@@ -149,6 +151,7 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
         command: str = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "metrics",  # Matches client's metric key
+        negate_key_metric: bool = False,
     ):
         v = _KMeansValidator(n_clusters=n_clusters, model_path=model_path)
         self.n_clusters = v.n_clusters
@@ -183,5 +186,6 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
             model_persistor=persistor,
             per_site_config=per_site_config,
             key_metric=key_metric,
+            negate_key_metric=negate_key_metric,
         )
         self._job.to_server(assembler, id=assembler_id)

@@ -79,7 +79,10 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
             key_metric selects the metric used for global model selection by the IntimeModelSelector.
             Higher values must indicate a better model; for lower-is-better metrics such as a loss,
-            report a negated value from the client (e.g., "neg_loss"). Defaults to "accuracy".
+            set negate_key_metric=True or report a negated value from the client (e.g., "neg_loss").
+            Defaults to "accuracy".
+        negate_key_metric: Whether the model selector should invert key_metric before comparing models.
+            Use this for lower-is-better metrics such as losses. Defaults to False.
         best_model_filename: Filename for saving the best model. Accepted for API compatibility.
             The default TensorFlow persistor does not currently create a separate best-model artifact.
         save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.
@@ -129,6 +132,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
+        negate_key_metric: bool = False,
         best_model_filename: Optional[str] = None,
         save_filename: Optional[str] = None,
         server_memory_gc_rounds: int = 0,
@@ -155,6 +159,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
+            negate_key_metric=negate_key_metric,
             best_model_filename=best_model_filename,
             save_filename=save_filename,
             server_memory_gc_rounds=server_memory_gc_rounds,
