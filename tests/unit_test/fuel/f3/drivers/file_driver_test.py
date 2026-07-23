@@ -22,7 +22,7 @@ from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.communicator import Communicator
 from nvflare.fuel.f3.connection import Connection
 from nvflare.fuel.f3.drivers.connector_info import Mode
-from nvflare.fuel.f3.drivers.file_driver import _ConnConfig, _LogReader, _LogWriter
+from nvflare.fuel.f3.drivers.file_driver import _ConnConfig, _LogReader, _LogWriter, parse_file_url
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message, MessageReceiver
 
@@ -78,6 +78,36 @@ def _wait_until(condition, timeout=15.0) -> bool:
 def _frame(payload: bytes) -> bytes:
     length = 16 + len(payload)
     return struct.pack(">I", length) + bytes(12) + payload
+
+
+class TestParseFileUrl:
+    @pytest.mark.parametrize(
+        "url, expected",
+        [
+            ("file://0/lustre/proj/cellnet", "/lustre/proj/cellnet"),
+            ("file://0/lustre/proj/cellnet/", "/lustre/proj/cellnet"),
+            ("file://0/a/b?poll_interval=0.05&fsync=False", "/a/b"),
+            ("file://0/a#frag", "/a"),
+        ],
+    )
+    def test_valid_urls(self, url, expected):
+        assert parse_file_url(url) == expected
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "file://lustre/proj/cellnet",  # non-0 authority, path would be silently wrong
+            "file:///lustre/proj/cellnet",  # empty authority
+            "file://0",  # no path
+            "file://0/",  # root path
+            "file://localhost/a/b",
+            "tcp://host:1234",
+            "file:relative/path",
+        ],
+    )
+    def test_invalid_urls(self, url):
+        with pytest.raises(CommError):
+            parse_file_url(url)
 
 
 class TestLogRoundtrip:

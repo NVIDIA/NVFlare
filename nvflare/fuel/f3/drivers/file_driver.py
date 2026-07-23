@@ -18,7 +18,7 @@ import threading
 import time
 import uuid
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import BytesAlike, Connection
@@ -54,6 +54,33 @@ A2P = "a2p"  # active-to-passive log prefix
 P2A = "p2a"  # passive-to-active log prefix
 
 LISTENER_STALE_TIME = 600.0
+
+
+def parse_file_url(url: str) -> str:
+    """Parse and validate a file transport URL of the form file://0/absolute/dir.
+
+    The authority must be the empty-host placeholder "0" and the path must be an absolute
+    directory. This is the single source of truth for file URL semantics; launchers and deploy
+    tools that need the directory (e.g. to bind-mount it into a container) should use this
+    instead of parsing the URL themselves.
+
+    Returns:
+        The absolute directory path (query parameters excluded).
+
+    Raises:
+        CommError: If the URL is not a valid file transport URL.
+    """
+    parsed = urlsplit(url)
+    if parsed.scheme != "file":
+        raise CommError(CommError.BAD_CONFIG, f"Not a file transport URL: {url}")
+    if parsed.netloc != "0":
+        raise CommError(
+            CommError.BAD_CONFIG, f"Invalid file URL {url}: authority must be the placeholder '0' (file://0/abs/dir)"
+        )
+    path = parsed.path.rstrip("/")
+    if not path or not os.path.isabs(path):
+        raise CommError(CommError.BAD_CONFIG, f"Invalid file URL {url}: an absolute directory path is required")
+    return path
 
 
 def _touch(path: str):
@@ -344,6 +371,29 @@ class FileDriver(BaseDriver):
     ("0" is the empty-host placeholder). The passive side owns the directory; each active peer
     creates a connection subdirectory with one append log per direction. There is no transport
     security: directory permissions are the trust boundary.
+
+    Typical use is job-cell to client-parent communication, configured in the client's
+    comm_config.json. connect_generation 1 routes job-cell traffic through the client parent
+    instead of dialing the server directly:
+
+        {
+            "backbone": {"connect_generation": 1},
+            "internal": {
+                "scheme": "file",
+                "resources": {
+                    "root_dir": "/absolute/shared/path/cellnet",
+                    "connection_security": "clear",
+                    "poll_interval": 0.05,
+                    "max_poll_interval": 0.5,
+                    "lease_interval": 5,
+                    "lease_timeout": 30,
+                    "fsync": false
+                }
+            }
+        }
+
+    The tuning resources are optional (defaults shown in _ConnConfig) and are propagated to the
+    child cell through the query string of the generated connect URL.
     """
 
     def __init__(self):
@@ -440,10 +490,12 @@ class FileDriver(BaseDriver):
 
     @staticmethod
     def _get_dir_from_params(params: dict) -> str:
+        url = params.get(DriverParams.URL.value)
+        if url:
+            return parse_file_url(url)
         path = params.get(DriverParams.PATH.value)
         if not path or path == "/":
-            url = params.get(DriverParams.URL.value)
-            raise CommError(CommError.BAD_CONFIG, f"Missing directory path in URL {url}, expected file://0/abs/dir")
+            raise CommError(CommError.BAD_CONFIG, "Missing directory path, expected URL of form file://0/abs/dir")
         return path
 
     def _scan_for_connections(self, conns_dir: str, connector: ConnectorInfo, cfg: _ConnConfig) -> int:
