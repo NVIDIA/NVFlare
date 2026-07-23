@@ -451,19 +451,3 @@ class TestRouteSubprocessLine:
 
         logger.info.assert_called_once_with(line)
         mock_print.assert_not_called()
-
-
-def test_multinode_environment_requires_launch_once(monkeypatch):
-    monkeypatch.setenv("NVFL_NNODES", "2")
-    launcher = SubprocessLauncher(script="echo x", launch_once=False)
-
-    with pytest.raises(RuntimeError, match="launch_once=True"):
-        launcher.initialize(Mock())
-
-
-def test_multinode_environment_blocks_subprocess_start_for_per_task_launch(monkeypatch):
-    monkeypatch.setenv("NVFL_NNODES", "2")
-    launcher = SubprocessLauncher(script="echo x", launch_once=False)
-
-    with pytest.raises(RuntimeError, match="launch_once=True"):
-        launcher._start_external_process(Mock())

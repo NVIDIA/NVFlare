@@ -48,12 +48,6 @@ class NodeGroupError(RuntimeError):
     """A deterministic node-group configuration failure."""
 
 
-def is_multi_node_env(environ) -> bool:
-    """Cheap multi-node predicate matching from_env semantics; garbage counts as absent."""
-    value = environ.get(ENV_NNODES)
-    return isinstance(value, str) and value.isascii() and value.isdigit() and int(value) > 1
-
-
 def _positive_int(value, name: str, default: int) -> int:
     if value is None or value == "":
         return default

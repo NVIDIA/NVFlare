@@ -232,9 +232,8 @@ export fills it from the site's `SubprocessLauncher` command whenever a launcher
 the meta command and the deployed rank-0 command come from one source and `launch_once=True` is enforced at
 export (the training program performs one rendezvous per job). An explicit `node_command` always wins and remains
 available for jobs that do not use `ScriptRunner`; an explicit `null` opts a multi-node job out of generation
-and keeps application-owned fan-out; for those, `SubprocessLauncher` still refuses
-`launch_once=False` at CJ start when the node-group environment is present, while the identical-command
-convention stays the job author's responsibility. The command executes as the
+and keeps application-owned fan-out. For hand-authored node commands the `launch_once=True` requirement and the
+identical-command convention stay the job author's responsibility. The command executes as the
 submitting user under the effective sandbox, with exactly the trust of the BYOC training code the rank-0 CJ
 launches itself. It is rejected for server jobs, for `nodes: 1`, and when the deployed job app directory is
 missing.

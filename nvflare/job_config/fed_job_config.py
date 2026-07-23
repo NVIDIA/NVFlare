@@ -225,10 +225,10 @@ class FedJobConfig:
         if client_app is None:
             return None
         launchers = [comp for comp in client_app.components.values() if isinstance(comp, SubprocessLauncher)]
-        scripts = {launcher.script for launcher in launchers}
+        scripts = {launcher._script for launcher in launchers}
         if len(scripts) != 1:
             return None
-        if not all(launcher.launch_once for launcher in launchers):
+        if not all(launcher._launch_once for launcher in launchers):
             raise RuntimeError(
                 f"multi-node job for site '{site_name}' requires the external launcher to use launch_once=True"
             )
