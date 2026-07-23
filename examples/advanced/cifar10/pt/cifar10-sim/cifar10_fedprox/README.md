@@ -2,10 +2,6 @@
 
 This directory implements [FedProx](https://arxiv.org/abs/1812.06127) for CIFAR-10 classification using NVFlare's FL simulator.
 
-> **Main branch note:** `FedProxRecipe` is introduced for NVFlare 2.9.0. Until that package is published, install
-> NVFlare from this repository with `python -m pip install -e .` from the repository root, then install the
-> remaining simulator requirements separately.
-
 ## Overview
 
 FedProx extends FedAvg by adding a **proximal regularization term** to the local training objective. This prevents client models from drifting too far from the global model, which is particularly beneficial when:

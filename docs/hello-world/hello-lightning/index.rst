@@ -7,34 +7,14 @@ federated averaging (FedAvg), FedProx, SCAFFOLD, or SCAFFOLD combined with FedPr
 works with all four configurations. The complete example code can be found in the
 :github_nvflare_link:`hello-lightning directory <examples/hello-world/hello-lightning>`.
 
-.. note::
-
-   Automatic Lightning FedProx and SCAFFOLD support is introduced for NVFlare 2.9.0. Until that package is
-   published, install NVFlare from this repository and install the remaining example dependencies separately.
-
 It is recommended to create a virtual environment and run everything within a virtualenv.
 
 
 NVIDIA FLARE Installation
 -------------------------
 
-For the complete installation instructions, see :doc:`Installation </installation>`. On a released branch:
-
-.. code-block:: text
-
-    pip install nvflare
-
-For the current ``main`` branch, install from the repository root so automatic FedProx and SCAFFOLD support is
-available:
-
-.. code-block:: text
-
-    python -m pip install -e .
-    python -m pip install torch torchvision "jsonargparse[signatures]>=4.17.0" pytorch_lightning tensorboard
-
-
-The ``nvflare~=2.9.0rc`` entry in ``requirements.txt`` intentionally records the first compatible release.
-After NVFlare 2.9.0 is published, install the complete environment with:
+For the complete installation instructions, see :doc:`Installation </installation>`. Install the example
+dependencies with:
 
 .. code-block:: bash
 

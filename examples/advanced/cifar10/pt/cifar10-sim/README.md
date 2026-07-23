@@ -9,13 +9,7 @@ see the example on ["Real-world Federated Learning with CIFAR-10"](../cifar10-re
 
 ## 1. Install requirements
 
-> **Main branch note:** This example uses `FedProxRecipe`, introduced for NVFlare 2.9.0. Until that package is
-> published, install NVFlare from this repository with `python -m pip install -e .` from the repository root,
-> then install the remaining packages with
-> `python -m pip install torch torchvision tensorboard matplotlib seaborn "pandas~=2.3" tbparse`.
-> The `nvflare~=2.9.0rc` pin records the first compatible release.
-
-After NVFlare 2.9.0 is published, install all training requirements together:
+Install required packages for training:
 ```
 pip install --upgrade pip
 pip install -r ./requirements.txt
