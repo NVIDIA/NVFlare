@@ -36,6 +36,12 @@ DEFAULT_PLATEAU_THRESHOLD = 8
 DEFAULT_EXPLORATION_BATCH_SIZE = 3
 DEFAULT_FAMILY_REPEAT_LIMIT = 6
 DEFAULT_STOP_FILES = ("STOP_AUTOFL", ".nvflare/autofl/STOP")
+MODE_MAX_ONLY_MESSAGE = (
+    "Auto-FL campaigns only support mode 'max'; minimization is not supported because NVFLARE "
+    "best-model selection treats higher key_metric values as better. Report a negated metric "
+    "from the job (for example neg_val_loss) so that higher is better, matching the "
+    "IntimeModelSelector negate_key_metric guidance."
+)
 ATTEMPT_STATUSES = {"candidate", "keep", "discard", "crash"}
 SCORED_ATTEMPT_STATUSES = {"keep", "discard"}
 LITERATURE_EVENT_STATUSES = {"event", "literature", "checkpoint"}
@@ -43,6 +49,13 @@ LITERATURE_EVENT_STATUSES = {"event", "literature", "checkpoint"}
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def parse_mode_arg(value: str) -> str:
+    """Argparse type for legacy ``--mode`` flags: only score maximization is supported."""
+    if value != "max":
+        raise argparse.ArgumentTypeError(MODE_MAX_ONLY_MESSAGE)
+    return value
 
 
 def parse_score(value: Any) -> Optional[float]:
@@ -178,22 +191,20 @@ def family_repeat_stalled(rows: List[Dict[str, str]], limit: int) -> bool:
     return all(candidate_kind(row) == "argument_only" for row in recent)
 
 
-def better(new_score: Optional[float], old_score: Optional[float], mode: str, min_delta: float = 0.0) -> bool:
+def better(new_score: Optional[float], old_score: Optional[float], min_delta: float = 0.0) -> bool:
     new_score = parse_score(new_score)
     old_score = parse_score(old_score)
     if new_score is None:
         return False
     if old_score is None:
         return True
-    if mode == "min":
-        return new_score < old_score - min_delta
     return new_score > old_score + min_delta
 
 
-def best_score(rows: List[Dict[str, str]], mode: str) -> Optional[float]:
+def best_score(rows: List[Dict[str, str]]) -> Optional[float]:
     best = None
     for _, _, score in scored_rows_with_index(rows, is_retained):
-        if better(score, best, mode):
+        if better(score, best):
             best = score
     return best
 
@@ -208,18 +219,17 @@ def scored_baseline_score(rows: List[Dict[str, str]]) -> Optional[float]:
     return None
 
 
-def improvement_over_baseline(baseline: Optional[float], best: Optional[float], mode: str) -> Optional[float]:
-    """Best-vs-baseline delta, sign-adjusted so a positive value always means better for the campaign mode."""
+def improvement_over_baseline(baseline: Optional[float], best: Optional[float]) -> Optional[float]:
+    """Best-minus-baseline delta; campaigns always maximize, so a positive value always means better."""
     if baseline is None or best is None:
         return None
-    return baseline - best if mode == "min" else best - baseline
+    return best - baseline
 
 
 def plateau_status(
     rows: List[Dict[str, str]],
     threshold: int,
     min_delta: float,
-    mode: str,
     exploration_batch_size: int = DEFAULT_EXPLORATION_BATCH_SIZE,
 ) -> Dict[str, Any]:
     retained = scored_rows_with_index(rows, is_retained)
@@ -238,7 +248,7 @@ def plateau_status(
     best_scored_idx = -1
     best_name = ""
     for scored_idx, (row_idx, row, score) in enumerate(retained):
-        if better(score, best, mode, min_delta):
+        if better(score, best, min_delta):
             best = score
             best_row_idx = row_idx
             best_scored_idx = scored_idx
@@ -308,7 +318,6 @@ def guard_state_for_rows(
     plateau_threshold: int = DEFAULT_PLATEAU_THRESHOLD,
     min_delta: float = DEFAULT_MIN_DELTA,
     hard_crash_threshold: int = DEFAULT_HARD_CRASH_THRESHOLD,
-    mode: str = "max",
     pending_manifest_count: int = 0,
     exploration_batch_size: int = DEFAULT_EXPLORATION_BATCH_SIZE,
     family_repeat_limit: int = DEFAULT_FAMILY_REPEAT_LIMIT,
@@ -326,7 +335,7 @@ def guard_state_for_rows(
     stop_file_hits = existing_stop_files(stop_files or list(DEFAULT_STOP_FILES))
     batches = exploration_batches(rows, exploration_batch_size)
     active_batch = next((batch for batch in batches if batch["completion_index"] is None), None)
-    plateau = plateau_status(rows, plateau_threshold, min_delta, mode, exploration_batch_size)
+    plateau = plateau_status(rows, plateau_threshold, min_delta, exploration_batch_size)
 
     decision = "continue"
     reason = "continue"
@@ -403,7 +412,7 @@ def guard_state_for_rows(
     else:
         instruction = "Do not produce a final answer. Propose and prepare the next same-budget candidate now."
 
-    retained_best = best_score(rows, mode)
+    retained_best = best_score(rows)
     baseline = scored_baseline_score(rows)
     return {
         "schema_version": "nvflare.autofl.campaign_state.v1",
@@ -422,7 +431,7 @@ def guard_state_for_rows(
         "best_score": retained_best,
         "baseline_status": "complete" if baseline is not None else "pending",
         "baseline_score": baseline,
-        "improvement": improvement_over_baseline(baseline, retained_best, mode),
+        "improvement": improvement_over_baseline(baseline, retained_best),
         "stop_files": stop_file_hits,
         "plateau": plateau,
         "exploration_batch": active_batch or (batches[-1] if batches else None),
@@ -441,7 +450,6 @@ def guard_state(
     plateau_threshold: int = DEFAULT_PLATEAU_THRESHOLD,
     min_delta: float = DEFAULT_MIN_DELTA,
     hard_crash_threshold: int = DEFAULT_HARD_CRASH_THRESHOLD,
-    mode: str = "max",
     pending_manifest_count: int = 0,
     exploration_batch_size: int = DEFAULT_EXPLORATION_BATCH_SIZE,
     family_repeat_limit: int = DEFAULT_FAMILY_REPEAT_LIMIT,
@@ -454,7 +462,6 @@ def guard_state(
         plateau_threshold=plateau_threshold,
         min_delta=min_delta,
         hard_crash_threshold=hard_crash_threshold,
-        mode=mode,
         pending_manifest_count=pending_manifest_count,
         exploration_batch_size=exploration_batch_size,
         family_repeat_limit=family_repeat_limit,
@@ -497,7 +504,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--hard-crash-threshold", type=int, default=DEFAULT_HARD_CRASH_THRESHOLD)
     parser.add_argument("--exploration-batch-size", type=int, default=DEFAULT_EXPLORATION_BATCH_SIZE)
     parser.add_argument("--family-repeat-limit", type=int, default=DEFAULT_FAMILY_REPEAT_LIMIT)
-    parser.add_argument("--mode", choices=["max", "min"], default="max")
+    parser.add_argument(
+        "--mode",
+        type=parse_mode_arg,
+        default="max",
+        help="objective direction; only 'max' is supported (report negated metrics to minimize a loss)",
+    )
     parser.add_argument("--format", choices=["text", "json"], default="text")
     args = parser.parse_args(argv)
 
@@ -524,7 +536,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         plateau_threshold=args.plateau_threshold,
         min_delta=args.min_delta,
         hard_crash_threshold=args.hard_crash_threshold,
-        mode=args.mode,
         exploration_batch_size=args.exploration_batch_size,
         family_repeat_limit=args.family_repeat_limit,
     )
