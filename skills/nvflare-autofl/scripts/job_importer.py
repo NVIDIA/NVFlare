@@ -34,6 +34,13 @@ import yaml
 AUTOFL_CONFIG_SCHEMA_VERSION = "nvflare.autofl.config.v1"
 IMPORTER_VERSION = "nvflare-autofl-job-importer/v1"
 ALLOWED_CREATE_PATTERNS = ["**/*.py"]
+# Keep this text aligned with campaign_guard.MODE_MAX_ONLY_MESSAGE; the importer stays standalone.
+MODE_MAX_ONLY_MESSAGE = (
+    "Auto-FL campaigns only support mode 'max'; minimization is not supported because NVFLARE "
+    "best-model selection treats higher key_metric values as better. Report a negated metric "
+    "from the job (for example neg_val_loss) so that higher is better, matching the "
+    "IntimeModelSelector negate_key_metric guidance."
+)
 
 SUPPORTED_ENV_NAMES = {"PocEnv", "ProdEnv", "SimEnv"}
 NON_OPTIMIZATION_RECIPE_NAMES = {"FedEvalRecipe", "FedStatsRecipe", "NumpyCrossSiteEvalRecipe"}
@@ -151,7 +158,8 @@ class DeterministicJobImporter:
         Args:
             job_path: Path to ``job.py`` or a directory containing ``job.py``.
             metric: Optional optimization metric requested by the user.
-            mode: ``max`` or ``min`` objective direction.
+            mode: Objective direction; only ``max`` is supported. Kept for command-shape
+                compatibility so callers report negated metrics instead of minimizing.
             target_env: Optional target environment, such as ``sim`` or ``prod``.
             max_candidates: Optional fixed candidate budget.
             job_args: Optional job CLI arguments used to resolve argparse defaults
@@ -161,8 +169,8 @@ class DeterministicJobImporter:
             A deterministic, YAML-serializable mapping.
         """
 
-        if mode not in {"max", "min"}:
-            raise JobImportError("mode must be 'max' or 'min'")
+        if mode != "max":
+            raise JobImportError(MODE_MAX_ONLY_MESSAGE)
 
         source_path = self._resolve_job_path(job_path)
         try:
@@ -197,7 +205,7 @@ class DeterministicJobImporter:
             unresolved.append(_unresolved("job.train_script", "no train_script was found or resolved"))
 
         metric_name, metric_source, metric_issue = self._resolve_metric(metric, job_call, parser_args)
-        objective = _objective_contract(metric_name, mode, metric_source)
+        objective = _objective_contract(metric_name, metric_source)
         if metric_issue:
             unresolved.append(metric_issue)
 
@@ -1232,13 +1240,14 @@ def _trust_extracted(
     return extracted
 
 
-def _objective_contract(metric_name: str, mode: str, source: str) -> Dict[str, Any]:
+def _objective_contract(metric_name: str, source: str) -> Dict[str, Any]:
     return {
         "metric": metric_name,
         "requested_metric": metric_name,
         "optimization_metric": metric_name,
         "metric_extraction_order": [metric_name],
-        "mode": mode,
+        # Constant for schema stability: campaigns always maximize the optimization metric.
+        "mode": "max",
         "metric_contract_source": source,
     }
 

@@ -147,6 +147,26 @@ def test_import_recipe_job_extracts_trust_contract_without_executing_code(tmp_pa
     assert config["unresolved"] == []
 
 
+def test_import_rejects_minimization_mode(tmp_path):
+    job_path = _write_recipe_job(tmp_path)
+
+    with pytest.raises(job_importer.JobImportError, match="minimization is not supported") as excinfo:
+        import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path), mode="min")
+
+    assert "neg_val_loss" in str(excinfo.value)
+
+
+def test_importer_mode_guidance_matches_campaign_guard():
+    repo_root = Path(__file__).parents[3]
+    guard_path = repo_root / "skills" / "nvflare-autofl" / "scripts" / "campaign_guard.py"
+    spec = importlib.util.spec_from_file_location("nvflare_autofl_skill_campaign_guard_for_importer", guard_path)
+    guard = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = guard
+    spec.loader.exec_module(guard)
+
+    assert job_importer.MODE_MAX_ONLY_MESSAGE == guard.MODE_MAX_ONLY_MESSAGE
+
+
 def test_import_is_repeatable_and_yaml_round_trips(tmp_path):
     job_path = _write_recipe_job(tmp_path)
     importer = DeterministicJobImporter(workspace_root=str(tmp_path))

@@ -155,13 +155,28 @@ def test_guard_reports_baseline_status_transition_and_baseline_score():
     assert complete["improvement"] == pytest.approx(0.0)
 
 
-def test_guard_improvement_is_sign_adjusted_for_each_mode():
+def test_guard_improvement_is_best_minus_baseline():
     guard = _load_guard()
-    max_rows = [_row("baseline", "baseline", "0.85"), _row("keep", "higher_accuracy", "0.9")]
-    min_rows = [_row("baseline", "baseline", "1.0"), _row("keep", "lower_loss", "0.8")]
+    improved = [_row("baseline", "baseline", "0.85"), _row("keep", "higher_accuracy", "0.9")]
+    regressed = [_row("baseline", "baseline", "0.9"), _row("discard", "lower_accuracy", "0.8")]
 
-    assert guard.guard_state_for_rows(max_rows, mode="max")["improvement"] == pytest.approx(0.05)
-    assert guard.guard_state_for_rows(min_rows, mode="min")["improvement"] == pytest.approx(0.2)
+    assert guard.guard_state_for_rows(improved)["improvement"] == pytest.approx(0.05)
+    # Discarded candidates never lower the retained best, so improvement floors at 0 rather than going negative.
+    assert guard.guard_state_for_rows(regressed)["improvement"] == pytest.approx(0.0)
+
+
+def test_guard_cli_has_no_mode_flag(tmp_path, capsys):
+    guard = _load_guard()
+    results = tmp_path / "results.tsv"
+    _write_results(results, [_row("baseline", "baseline", "0.85")])
+
+    with pytest.raises(SystemExit) as excinfo:
+        guard.main([str(results), "--mode", "min"])
+
+    assert excinfo.value.code == 2
+    assert "unrecognized arguments: --mode" in capsys.readouterr().err
+
+    assert guard.main([str(results)]) == 0
 
 
 def test_guard_finalization_instruction_enumerates_report_artifacts():
