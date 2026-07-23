@@ -1910,6 +1910,30 @@ def test_inspect_classifies_flare_job_source(tmp_path):
     assert data["job"]["job_py"] == "job.py"
     assert data["job"]["sim_env_used"] is True
     assert data["job"]["export_support"] is True
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-autofl"]
+
+
+def test_inspect_flare_job_source_recommends_autofl_not_conversion(tmp_path):
+    # An existing FLARE job source routes optimization requests to the Auto-FL
+    # skill; the conversion skill must not be recommended for an already
+    # converted job even though the framework is detected.
+    (tmp_path / "job.py").write_text(
+        "import torch\n"
+        "from nvflare.recipe import SimEnv\n"
+        "\n"
+        "class Net(torch.nn.Module):\n"
+        "    pass\n"
+        "\n"
+        "def main():\n"
+        "    env = SimEnv(num_clients=2)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["conversion_state"] == "flare_job"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-autofl"]
+    assert "nvflare-convert-pytorch" not in data["skill_selection"]["recommended_skills"]
 
 
 def test_inspect_does_not_treat_pytorch_to_call_as_export_support(tmp_path):

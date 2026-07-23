@@ -4,6 +4,8 @@
 
 This document describes how to run NVIDIA FLARE in an SLURM-managed cluster environment for testing and development purposes. Both the NVFlare server and client run together in a single SLURM job.
 
+This standalone development workflow does not use the NVFlare Slurm job launcher.
+
 **Note**: This approach is designed for testing/development on a single cluster. For production deployments with multiple sites, consider deploying the NVFlare server on standalone infrastructure.
 
 ## Quick Reference

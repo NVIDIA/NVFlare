@@ -2,7 +2,7 @@
 name: nvflare-diagnose-job
 description: "Diagnose failed, stalled, or suspicious NVFLARE jobs in simulation, POC, or production by collecting bounded evidence and mapping failure patterns to recovery actions."
 license: Apache-2.0
-version: "0.1.0" # NVSkills CI bootstrap: no behavior change.
+version: "0.1.0"
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
   min_flare_version: "2.8.0"
@@ -79,8 +79,11 @@ Python debugging without NVFLARE job context.
   or model paths.
 - Must keep log evidence bounded and report truncation or missing site logs.
 - Must avoid confident root-cause claims when required site evidence is missing.
-- Must not read private key contents, mutate jobs/configs/runtime state, or run
-  unbounded scans.
+- Must select `recovery_category` by copying the category from the matched
+  failure-pattern catalog row exactly. Do not infer or override the category
+  from the next-action wording.
+- Must not inspect credential material, mutate jobs/configs/runtime state, or
+  run unbounded scans.
 
 ## Output Shape
 

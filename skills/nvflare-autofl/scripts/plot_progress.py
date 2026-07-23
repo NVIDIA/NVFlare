@@ -167,15 +167,15 @@ def normalize_records(records: Iterable[Any]) -> List[ProgressRecord]:
     return normalized
 
 
-def better(value: float, incumbent: Optional[float], mode: str) -> bool:
-    return load_campaign_guard().better(value, incumbent, mode)
+def better(value: float, incumbent: Optional[float]) -> bool:
+    return load_campaign_guard().better(value, incumbent)
 
 
-def cumulative_best(values: Sequence[float], mode: str) -> List[float]:
+def cumulative_best(values: Sequence[float]) -> List[float]:
     incumbent = None
     result = []
     for value in values:
-        if better(value, incumbent, mode):
+        if better(value, incumbent):
             incumbent = value
         result.append(incumbent)
     return result
@@ -196,45 +196,31 @@ def percentile(values: Sequence[float], fraction: float) -> float:
     return ordered[lower_index] + (ordered[upper_index] - ordered[lower_index]) * weight
 
 
-def default_y_limits(
-    scores: Sequence[float], baseline: float, mode: str, full_y_range: bool = False
-) -> Tuple[float, float]:
+def default_y_limits(scores: Sequence[float], baseline: float, full_y_range: bool = False) -> Tuple[float, float]:
     score_min = min(scores)
     score_max = max(scores)
     if full_y_range:
         span = max(score_max - score_min, 0.01)
         return score_min - max(0.01, span * 0.08), score_max + max(0.01, span * 0.16)
 
-    if mode == "max":
-        useful_min = min(baseline, percentile(scores, 0.20))
-        useful_span = max(score_max - useful_min, 0.01)
-        lower = useful_min - max(0.01, useful_span * 0.20)
-        upper = score_max + max(0.015, useful_span * 0.35)
-        if score_min >= lower:
-            full_span = max(score_max - score_min, 0.01)
-            lower = score_min - max(0.01, full_span * 0.08)
-        return lower, upper
-
-    useful_max = max(baseline, percentile(scores, 0.80))
-    useful_span = max(useful_max - score_min, 0.01)
-    lower = score_min - max(0.015, useful_span * 0.35)
-    upper = useful_max + max(0.01, useful_span * 0.20)
-    if score_max <= upper:
+    useful_min = min(baseline, percentile(scores, 0.20))
+    useful_span = max(score_max - useful_min, 0.01)
+    lower = useful_min - max(0.01, useful_span * 0.20)
+    upper = score_max + max(0.015, useful_span * 0.35)
+    if score_min >= lower:
         full_span = max(score_max - score_min, 0.01)
-        upper = score_max + max(0.01, full_span * 0.08)
+        lower = score_min - max(0.01, full_span * 0.08)
     return lower, upper
 
 
-def select_observed_milestones(
-    valid: Sequence[ProgressRecord], mode: str, max_labels: int
-) -> List[Tuple[float, ProgressRecord]]:
+def select_observed_milestones(valid: Sequence[ProgressRecord], max_labels: int) -> List[Tuple[float, ProgressRecord]]:
     if max_labels <= 0:
         return []
     incumbent = None
     milestones = []
     final_running_best = None
     for record in valid:
-        if record.score is None or not better(record.score, incumbent, mode):
+        if record.score is None or not better(record.score, incumbent):
             continue
         delta = 0.0 if incumbent is None else abs(record.score - incumbent)
         final_running_best = (delta, record)
@@ -295,7 +281,6 @@ def label_placement(
 def plot_progress(
     records: Iterable[Any],
     output: Path,
-    mode: str,
     metric_label: str,
     max_labels: int = 6,
     max_literature_labels: int = 4,
@@ -319,7 +304,7 @@ def plot_progress(
     baseline = baseline_row.score
     best_row = valid[0]
     for record in valid[1:]:
-        if better(record.score, best_row.score, mode):
+        if better(record.score, best_row.score):
             best_row = record
     best_score = best_row.score
 
@@ -381,7 +366,7 @@ def plot_progress(
     observed_scores = [record.score for record in valid]
     ax.step(
         [record.index for record in valid],
-        cumulative_best(observed_scores, mode),
+        cumulative_best(observed_scores),
         where="post",
         color="#27ae60",
         linewidth=2.2,
@@ -402,9 +387,8 @@ def plot_progress(
         if literature_runtime:
             runtime_title += f" ({format_runtime(literature_runtime)})"
 
-    direction = "higher" if mode == "max" else "lower"
     ax.set_xlabel("Experiment #", fontsize=12)
-    ax.set_ylabel(f"{metric_label} ({direction} is better)", fontsize=12)
+    ax.set_ylabel(f"{metric_label} (higher is better)", fontsize=12)
     ax.set_title(
         f"Auto-FL Progress ({metric_label}): {len(rows)} rows, {len(valid)} scored, "
         f"{sum(record.status == 'keep' for record in rows)} kept, "
@@ -423,7 +407,7 @@ def plot_progress(
     )
     ax.grid(True, alpha=0.2)
 
-    y_limits = default_y_limits(observed_scores, baseline, mode, full_y_range=full_y_range)
+    y_limits = default_y_limits(observed_scores, baseline, full_y_range=full_y_range)
     ax.set_ylim(*y_limits)
     ax.set_xlim(-0.5, max(len(rows) - 0.5, max(record.index for record in valid) + 0.5))
 
@@ -464,7 +448,7 @@ def plot_progress(
             )
             annotation.set_clip_on(True)
 
-    for label_number, (_, record) in enumerate(select_observed_milestones(valid, mode, max_labels)):
+    for label_number, (_, record) in enumerate(select_observed_milestones(valid, max_labels)):
         offset, horizontal_align, vertical_align = label_placement(label_number, record, ax.get_xlim(), ax.get_ylim())
         milestone_text = f"#{record.index} {record.score:.4f}: {record_label(record, 28)}"
         if record.literature_event_id:
@@ -557,7 +541,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("path", nargs="?", default="results.tsv", help="path to the Auto-FL TSV ledger")
     parser.add_argument("--output", default="progress.png", help="output PNG path")
-    parser.add_argument("--mode", choices=["max", "min"], default="max")
     parser.add_argument("--metric", default="score", help="metric label shown in the plot")
     parser.add_argument("--max-labels", type=int, default=6)
     parser.add_argument("--max-literature-labels", type=int, default=4)
@@ -568,7 +551,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     baseline, best = plot_progress(
         records,
         Path(args.output),
-        args.mode,
         args.metric,
         max_labels=args.max_labels,
         max_literature_labels=args.max_literature_labels,

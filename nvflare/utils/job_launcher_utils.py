@@ -125,7 +125,7 @@ def generate_server_command(fl_ctx) -> str:
     return f"{sys.executable} {args_str}"
 
 
-_LAUNCHER_MODE_KEYS = {"process", "docker", "k8s"}
+_LAUNCHER_MODE_KEYS = {"process", "docker", "k8s", "slurm"}
 
 
 def get_site_launcher_spec(site_spec, mode):
@@ -133,7 +133,7 @@ def get_site_launcher_spec(site_spec, mode):
 
     New nested format: ``{mode: {...}}`` — returns the inner dict for *mode*.
     Legacy flat format: ``{num_of_gpus: ...}`` — treated as process mode for
-    backward compatibility; Docker and K8s modes receive an empty spec.
+    backward compatibility; Docker, K8s, and Slurm modes receive an empty spec.
     """
     site_spec = site_spec or {}
     if any(k in site_spec for k in _LAUNCHER_MODE_KEYS):

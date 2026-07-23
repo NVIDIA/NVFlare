@@ -5,8 +5,8 @@ FLARE-2972
 ## Overview
 
 A single site-owned file, `local/study_runtime.yaml`, defines everything a study gets at runtime: data mounts, env
-vars, secret-backed env vars and file mounts, an optional pod template, and (reserved) provider-prepared datasets
-such as Databricks.
+vars, secret-backed env vars and file mounts, an optional pod template, Slurm execution-policy overrides, and
+(reserved) provider-prepared datasets such as Databricks.
 
 Trust boundary:
 
@@ -16,8 +16,9 @@ Trust boundary:
   human user, never the job package.
 
 Goals: secrets as references only (never values in `local/` files); zero-configuration discovery (no launcher
-arguments, no `resources.json` edits); Docker and Kubernetes conceptually aligned; FLARE-owned launch behavior
-untouchable; datasets extensible by `type` so new providers need no format change; v1 deployments keep working.
+arguments, no `resources.json` edits); Docker, Kubernetes, and Slurm conceptually aligned; FLARE-owned launch
+behavior untouchable; datasets extensible by `type` so new providers need no format change; v1 deployments keep
+working.
 
 Non-goals: job-requested Secrets; job-side runtime wiring; replacing `launcher_spec`/`resource_spec`; changing the
 pod template merge machinery; implementing the Databricks provider (schema shape only).
@@ -38,7 +39,8 @@ The unreleased `study_job_spec_file_path` pod-template mechanism (PR #4804) is r
 
 ## v2 Schema: `local/study_runtime.yaml`
 
-- Auto-discovered at a fixed workspace-relative path by both launchers. No launcher argument, no deploy-config key.
+- Auto-discovered at a fixed workspace-relative path by the Docker, Kubernetes, and Slurm launchers. No launcher
+  argument or deploy-config key selects the file.
 - Filename = format: `study_runtime.yaml` is v2 strict, `study_data.yaml` is v1 frozen. No content sniffing.
 - Job side unchanged: the job still submits only `{"study": "..."}`.
 
@@ -76,11 +78,18 @@ studies:
         mode: ro
         items:                           # optional; omitted = full Secret projection
           ca.crt: ca.crt
+
+    slurm:                              # Slurm only; site-owned study override
+      sandbox: apptainer                # apptainer | pyxis | none
+      setup: "source /opt/studies/lung-cancer.sh"
+      partition: fl-gpu
+      account: lung-cancer-project
+      qos: normal
 ```
 
 The schema is common across launchers but values are launcher-specific (`source`: PVC claim vs host path;
-`secret_env.*.source`: Secret name vs env var; `pod_template`: K8s-only). A file is authored per deployment, not
-portable across launcher types.
+`secret_env.*.source`: Secret name vs parent environment variable; `pod_template`: K8s-only; `slurm`: Slurm-only).
+A file is authored per deployment, not portable across launcher types.
 
 Inline `pod_template` example — pinning a study to H100 nodes needs only this file:
 
@@ -162,6 +171,21 @@ Docker:
   errors; remaining keys are validated against the installed Docker SDK's accepted kwargs at launch, so a typo
   fails with a config error instead of a TypeError from `containers.run`.
 
+Slurm:
+
+- Dataset and secret-mount sources are absolute host paths. Datasets mount below `/data/<study>/<dataset>`; secret
+  mounts use their configured absolute destination and are read-only. Kubernetes-style `items` projection is not
+  supported.
+- `secret_env.*.source` names a variable in the parent environment. Its value travels through the private transient
+  secret-environment file, not the batch script or scheduler command.
+- `container.image` overrides the site launcher image; a BYOC-authorized job image overrides both.
+- `slurm` can override site-owned `sandbox`, `setup`, `partition`, `account`, and `qos` policy for the study.
+- `pod_template` and `docker_kwargs` are invalid. Bare mode also rejects container, dataset, and secret-mount
+  settings because it has no mount namespace.
+
+The launcher validates paths and environment names and re-reads the file before each submission. The Slurm
+architecture and configuration ownership rules are in `slurm_job_launcher_design.md`.
+
 ## Pod Templates
 
 Merge order (later wins):
@@ -192,12 +216,15 @@ Merge order (later wins):
 
 ## Future: Image Enforce Mode
 
-`container.image` (implemented) is the site default job image; resolution is job-supplied image → study
-`container.image` → error. FLARE-3027 tracks the follow-up enforce/pin mode for sites that want to forbid
-job-supplied images entirely; BYOC gating of job-supplied images belongs to the separate launcher BYOC
-enforcement work.
+For Docker and Kubernetes, `container.image` (implemented) is the site default job image; resolution is
+job-supplied image → study `container.image` → error. FLARE-3027 tracks the follow-up enforce/pin mode for those
+launchers. Slurm follows the same override principle, with an additional site launcher fallback:
+job-supplied image → study `container.image` → site `job_launcher.image` → error for a container backend.
+Job-supplied images use the existing BYOC authorization on all three container launchers.
 
 ## Parsing, Compatibility, Migration
+
+For Docker and Kubernetes:
 
 ```text
 local/study_runtime.yaml present  → v2 strict parser (format_version: 2 required)
@@ -205,11 +232,13 @@ local/study_data.yaml only        → v1 frozen parser, behavior unchanged
 both present (or v2 + legacy launcher args) → hard error
 ```
 
+Slurm requires the v2 file; a legacy-only file or coexistence of both files is a hard error.
+
 - `format_version: 2` required — the gate for future format evolution.
 - Hard errors: unknown top-level keys, unknown per-study keys, unknown dataset `type`, a key in both `env` and
   `secret_env`, an `env` or `secret_env` name that is launcher-owned (`PYTHONPATH`, the workspace-transfer
-  variables), launcher-owned keys in `docker_kwargs`, launcher-mismatched keys (`pod_template` on Docker,
-  `docker_kwargs` on Kubernetes), v1/v2 coexistence.
+  variables), launcher-owned keys in `docker_kwargs`, launcher-mismatched keys (`pod_template` on Docker/Slurm,
+  `docker_kwargs` on Kubernetes/Slurm, `slurm` on Docker/Kubernetes), v1/v2 coexistence.
 - Missing referenced Secrets are not validated pre-launch (the launcher holds no Secret-read RBAC); the pending-pod
   failure classification already fails the job fast (`CreateContainerConfigError`, `FailedMount`).
 - Migration is wholesale: move all studies to `study_runtime.yaml`, delete `study_data.yaml` and any
@@ -275,3 +304,6 @@ Trainer reads a fixed cohort     → dataset provider (future; requires material
    cleanup on completion/cancel/pod failure.
 5. Future: `delivery: materialize` + init-container hook (enables Docker), SQL snapshot providers
    (`type: postgres`).
+
+The Slurm extension adds launcher-gated `slurm` parsing, source-only `secret_env`, empty environment values,
+host-path validation, and hot-reloaded study policy without changing the v2 format number.

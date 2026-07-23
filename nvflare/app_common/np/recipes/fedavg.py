@@ -69,7 +69,9 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
             ``set_per_site_config(recipe, config)`` immediately after construction.
         launch_once: Whether external process is launched once or per task. Defaults to True.
         shutdown_timeout: Seconds to wait before shutdown. Defaults to 0.0.
-        key_metric: Metric used to determine if the model is globally best. Defaults to "accuracy".
+        key_metric: Metric used to determine if the model is globally best. Higher values must indicate
+            a better model; for lower-is-better metrics such as a loss, report a negated value from the
+            client (e.g., "neg_loss"). Defaults to "accuracy".
         stop_cond: Early stopping condition based on metric. String literal in the format of
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
