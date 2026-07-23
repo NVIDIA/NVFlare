@@ -300,7 +300,7 @@ python job.py --algorithm scaffold_fedprox --fedprox_mu 0.01 --num_rounds 2 --ba
 For a quick simulator smoke test without downloading CIFAR-10, add
 `--synthetic_data --limit_batches 1`. Normal runs use CIFAR-10, and the default batch limit `0` runs every batch.
 
-`FedAvgRecipe(fedprox_mu=...)` sends the proximal coefficient each round. `flare.patch(trainer)` snapshots the
+`FedProxRecipe(fedprox_mu=...)` sends the proximal coefficient each round. `flare.patch(trainer)` snapshots the
 received global trainable parameters and injects `mu * (local - global)` after gradient accumulation and AMP
 unscaling but before gradient clipping. The loss returned or logged by `training_step` therefore excludes the
 automatically injected proximal term, while optimization includes its exact gradient.
@@ -309,8 +309,7 @@ Automatic injection requires `flare.patch(trainer)`. Setting `fedprox_mu` does n
 PyTorch client; integrate `PTFedProxLoss` explicitly in that case. While a positive coefficient is active, the
 patch keeps an additional device-resident snapshot of every optimizer-owned trainable parameter for the round.
 Custom controllers may change the coefficient between rounds and must keep sending `FEDPROX_MU`: use an explicit
-`0.0` to disable a scheduled round. Omitting the key after the schedule has started raises an error. The recipe's
-fixed `None`/`0.0` values continue to disable FedProx and omit its metadata.
+`0.0` to disable a scheduled round. Omitting the key after the schedule has started raises an error.
 
 `flare.patch(trainer)` also detects the controls sent by `ScaffoldRecipe`, applies the required
 `PTScaffoldHelper` updates after optimizer steps, and returns the control difference to the server. Setting

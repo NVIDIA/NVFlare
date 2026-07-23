@@ -2,6 +2,10 @@
 
 This directory implements [FedProx](https://arxiv.org/abs/1812.06127) for CIFAR-10 classification using NVFlare's FL simulator.
 
+> **Main branch note:** `FedProxRecipe` is introduced for NVFlare 2.9.0. Until that package is published, install
+> NVFlare from this repository with `python -m pip install -e .` from the repository root, then install the
+> remaining simulator requirements separately.
+
 ## Overview
 
 FedProx extends FedAvg by adding a **proximal regularization term** to the local training objective. This prevents client models from drifting too far from the global model, which is particularly beneficial when:
@@ -23,16 +27,16 @@ where μ controls the strength of the proximal term.
 Run FedProx with 8 clients, 50 rounds, and high data heterogeneity (α=0.1):
 
 ```bash
-python job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedproxloss_mu 1e-5
+python job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedprox_mu 0.01
 ```
 
 ### Command-line Arguments
 
 #### FedProx-Specific Parameters
-- `--fedproxloss_mu` - Proximal term coefficient μ (default: `0.0`)
-  - Typical values: `1e-5` to `1e-3`
+- `--fedprox_mu` - Proximal term coefficient μ (default: `0.01`)
+  - Useful values are task-dependent and may span several orders of magnitude
   - Higher values = stronger regularization (less client drift)
-  - Set to `0.0` to disable (equivalent to FedAvg)
+  - Must be finite and positive; use the sibling FedAvg example for no proximal regularization
 
 #### Federated Learning Parameters
 - `--n_clients` - Number of FL clients (default: `8`)
@@ -60,51 +64,52 @@ python job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedproxloss_mu 1e-5
 ### Standard FedProx with High Heterogeneity
 
 ```bash
-python job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedproxloss_mu 1e-5
+python job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedprox_mu 0.01
 ```
-
-**Expected Result:** ~80.5% validation accuracy
 
 ### Stronger Proximal Regularization
 
 ```bash
-python job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedproxloss_mu 1e-4
+python job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedprox_mu 0.1
 ```
 
-### Compare with FedAvg (μ=0)
+### Compare with FedAvg
 
 ```bash
-# FedProx with μ=0 is equivalent to FedAvg
-python job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedproxloss_mu 0.0
+# Run from the cifar10_fedprox directory
+python ../cifar10_fedavg/job.py --n_clients 8 --num_rounds 50 --alpha 0.1
 ```
 
 ### Different Heterogeneity Levels
 
 ```bash
 # Moderate heterogeneity
-python job.py --n_clients 8 --num_rounds 50 --alpha 0.5 --fedproxloss_mu 1e-5
+python job.py --n_clients 8 --num_rounds 50 --alpha 0.5 --fedprox_mu 0.01
 
 # Very high heterogeneity
-python job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedproxloss_mu 1e-5
+python job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedprox_mu 0.01
 ```
 
 ## Implementation Details
 
 ### Proximal Loss
 
-The implementation in `client.py` adds the proximal term during training:
+`FedProxRecipe` sends the configured coefficient in every received model. The raw PyTorch client reads and
+validates that metadata, snapshots the newly received global model, and creates `PTFedProxLoss` for that round:
 
 ```python
-# Standard cross-entropy loss
-loss = criterion(outputs, labels)
+input_model = flare.receive()
+mu = input_model.meta[AlgorithmConstants.FEDPROX_MU]
+model.load_state_dict(input_model.params)
+global_model = copy.deepcopy(model)
+fedprox_loss = PTFedProxLoss(mu=mu)
 
-# Add FedProx proximal term
-if fedproxloss_mu > 0:
-    proximal_loss = (μ/2) * ||w_local - w_global||²
-    loss += proximal_loss
+loss = criterion(outputs, labels)
+loss += fedprox_loss(model, global_model)
 ```
 
-The `PTFedProxLoss` class computes the L2 distance between local and global model parameters.
+Reading μ on every round honors controller-side coefficient changes. Missing, invalid, or non-positive metadata
+is a client-contract error: a raw client that ignores the metadata is not FedProx-compatible.
 
 ### When to Use FedProx
 
@@ -115,11 +120,8 @@ FedProx is most beneficial when:
 
 ### Tuning the μ Parameter
 
-- **Too small (μ < 1e-6)**: Minimal effect, similar to FedAvg
-- **Optimal range (μ = 1e-5 to 1e-4)**: Balances local adaptation and global consistency
-- **Too large (μ > 1e-3)**: Over-constrains local training, may hurt performance
-
-Start with μ = 1e-5 and adjust based on your data heterogeneity.
+Start with the recipe default of μ = 0.01, then tune over several orders of magnitude. Smaller values approach
+FedAvg behavior, while larger values constrain client drift more strongly and may eventually limit local learning.
 
 ## Performance Comparison
 
@@ -161,4 +163,3 @@ See the [main README](../README.md) for detailed comparisons with other federate
 - [FedProx Paper](https://arxiv.org/abs/1812.06127) - Li et al., 2020
 - [NVFlare Documentation](https://nvflare.readthedocs.io/)
 - [PTFedProxLoss API](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_opt.pt.fedproxloss.html)
-

@@ -33,6 +33,30 @@ def normalize_fedprox_mu(fedprox_mu: Optional[float]) -> Optional[float]:
     return fedprox_mu or None
 
 
+def validate_fedprox_mu(fedprox_mu: float) -> float:
+    """Validate the strictly positive FedProx coefficient required by a FedProx recipe or client."""
+    if isinstance(fedprox_mu, bool) or not isinstance(fedprox_mu, Real):
+        raise TypeError("fedprox_mu must be a finite positive number.")
+
+    fedprox_mu = float(fedprox_mu)
+    if not math.isfinite(fedprox_mu) or fedprox_mu <= 0.0:
+        raise ValueError("fedprox_mu must be a finite positive number.")
+    return fedprox_mu
+
+
+def get_fedprox_mu(model: FLModel) -> float:
+    """Read and validate the required positive FedProx coefficient from model metadata."""
+    meta = model.meta or {}
+    if AlgorithmConstants.FEDPROX_MU not in meta:
+        raise ValueError(
+            f"FedProx client requires positive {AlgorithmConstants.FEDPROX_MU!r} metadata on every training round."
+        )
+    try:
+        return validate_fedprox_mu(meta[AlgorithmConstants.FEDPROX_MU])
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"FedProx client received invalid {AlgorithmConstants.FEDPROX_MU!r} metadata: {e}") from e
+
+
 def set_fedprox_metadata(model: FLModel, fedprox_mu: Optional[float]) -> None:
     """Set the reserved FedProx contract metadata without retaining stale values."""
     meta = dict(model.meta or {})

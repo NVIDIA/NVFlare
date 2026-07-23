@@ -9,7 +9,13 @@ see the example on ["Real-world Federated Learning with CIFAR-10"](../cifar10-re
 
 ## 1. Install requirements
 
-Install required packages for training
+> **Main branch note:** This example uses `FedProxRecipe`, introduced for NVFlare 2.9.0. Until that package is
+> published, install NVFlare from this repository with `python -m pip install -e .` from the repository root,
+> then install the remaining packages with
+> `python -m pip install torch torchvision tensorboard matplotlib seaborn "pandas~=2.3" tbparse`.
+> The `nvflare~=2.9.0rc` pin records the first compatible release.
+
+After NVFlare 2.9.0 is published, install all training requirements together:
 ```
 pip install --upgrade pip
 pip install -r ./requirements.txt
@@ -102,12 +108,14 @@ Next, let's try some different FL algorithms on a more heterogeneous split. Each
 [FedProx](https://arxiv.org/abs/1812.06127) adds a proximal regularization term to the loss function to prevent client models from drifting too far from the global model during local training. This is particularly effective when clients have heterogeneous data or varying computational capabilities.
 
 **Implementation in client.py**:
+- `FedProxRecipe` sends μ as `fedprox_mu` metadata on every training round
+- The raw PyTorch client reads and validates that metadata after receiving the global model
 - During training, FedProx adds a proximal loss term: `L_total = L_task + (μ/2) * ||w - w_global||²`
-- The `fedproxloss_mu` parameter controls the strength of the regularization
+- The job's `fedprox_mu` parameter controls the strength of the regularization
 - The `PTFedProxLoss` class computes the L2 distance between local and global model parameters
 
 ```python
-python cifar10_fedprox/job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedproxloss_mu 1e-5
+python cifar10_fedprox/job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedprox_mu 0.01
 ```
 
 #### 3.4.2 FedOpt: Server-Side Adaptive Optimization
@@ -347,4 +355,3 @@ As expected, the **default** and **weighted** aggregators perform nearly identic
 The **median** aggregator significantly underperforms (~66%), converging much more slowly. This is because the coordinate-wise median is overly conservative and can discard useful gradient information, especially in early training rounds (steps 0-15) before stabilizing.
 
 This shows you how to provide your own custom aggregators with NVFlare! 
-

@@ -18,7 +18,6 @@ from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.app_common.utils.fedprox_utils import normalize_fedprox_mu
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
@@ -84,10 +83,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
         enable_tensor_disk_offload: Enable disk-backed tensor offload for incoming streamed payloads.
-        fedprox_mu: Positive FedProx proximal coefficient. Patched PyTorch Lightning clients apply
-            the proximal gradient automatically. ``None`` or ``0.0`` preserves FedAvg behavior.
-            Defaults to None.
-
     Example:
         Basic usage with early stopping:
 
@@ -143,11 +138,9 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         enable_tensor_disk_offload: bool = False,
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
-        fedprox_mu: Optional[float] = None,
     ):
         # Store PyTorch-specific model_locator before calling parent
         self._pt_model_locator = model_locator
-        self.fedprox_mu = normalize_fedprox_mu(fedprox_mu)
 
         # Call the unified FedAvgRecipe with PyTorch-specific settings
         super().__init__(
@@ -181,11 +174,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
         )
-
-    def _get_controller_kwargs(self) -> dict[str, Any]:
-        kwargs = super()._get_controller_kwargs()
-        kwargs["fedprox_mu"] = self.fedprox_mu
-        return kwargs
 
     def _setup_model_and_persistor(self, job) -> str:
         """Override to handle PyTorch-specific model setup."""

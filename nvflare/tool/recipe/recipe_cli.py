@@ -92,29 +92,17 @@ _DOCUMENTED_RECIPE_SPECS = {
         "optional_dependencies": ["pip install nvflare[PT]", "pip install torch", "pip install tenseal"],
     },
     "fedprox-pt": {
-        "module": "nvflare.app_opt.pt.recipes.fedavg",
-        "class": "FedAvgRecipe",
-        "description": "FedProx pattern using the PyTorch FedAvg recipe with a FedProx client loss.",
+        "module": "nvflare.app_opt.pt.recipes.fedprox",
+        "class": "FedProxRecipe",
+        "description": "A recipe for implementing FedProx with PyTorch.",
         "framework": "pytorch",
         "algorithm": "fedprox",
         "aggregation": "weighted_average",
         "state_exchange": "full_model",
         "heterogeneity_support": ["non_iid"],
         "notes": [
-            "FedProx uses the same recipe constructor as fedavg-pt; FedProx behavior is configured through the client-side loss component."
-        ],
-    },
-    "fedprox-tf": {
-        "module": "nvflare.app_opt.tf.recipes.fedavg",
-        "class": "FedAvgRecipe",
-        "description": "FedProx pattern using the TensorFlow FedAvg recipe with a FedProx client loss.",
-        "framework": "tensorflow",
-        "algorithm": "fedprox",
-        "aggregation": "weighted_average",
-        "state_exchange": "full_model",
-        "heterogeneity_support": ["non_iid"],
-        "notes": [
-            "FedProx uses the same recipe constructor as fedavg-tf; FedProx behavior is configured through the client-side loss component."
+            "Patched PyTorch Lightning clients apply FedProx automatically; raw PyTorch clients must consume "
+            "FEDPROX_MU metadata and integrate PTFedProxLoss."
         ],
     },
     "fedopt-pt": {
@@ -393,6 +381,7 @@ def _infer_algorithm(cli_name: str, recipe_cls) -> str:
     algorithm_markers = [
         ("kmeans", "kmeans"),
         ("svm", "svm"),
+        ("fedprox", "fedprox"),
         ("fedavg", "fedavg"),
         ("fedopt", "fedopt"),
         ("scaffold", "scaffold"),
@@ -415,7 +404,7 @@ def _infer_algorithm(cli_name: str, recipe_cls) -> str:
 
 
 def _infer_aggregation(algorithm: str) -> str:
-    if algorithm in {"fedavg", "scaffold"}:
+    if algorithm in {"fedavg", "fedprox", "scaffold"}:
         return "weighted_average"
     if algorithm == "fedopt":
         return "server_optimizer"
@@ -431,7 +420,7 @@ def _infer_aggregation(algorithm: str) -> str:
 def _infer_state_exchange(algorithm: str) -> str:
     if algorithm == "fedopt":
         return "weight_diff"
-    if algorithm in {"fedavg", "scaffold", "cyclic", "swarm", "fedeval"}:
+    if algorithm in {"fedavg", "fedprox", "scaffold", "cyclic", "swarm", "fedeval"}:
         return "full_model"
     if algorithm == "kmeans":
         return "cluster_centers"

@@ -206,7 +206,7 @@ such as supported data kinds and a custom aggregator's declared ``expected_data_
      - Server aggregation path
      - Support
      - Required configuration
-   * - Unified, PyTorch, TensorFlow, and NumPy ``FedAvgRecipe``; PyTorch FedProx
+   * - Unified, PyTorch, TensorFlow, and NumPy ``FedAvgRecipe``; ``FedProxRecipe``
      - Built-in ``FedAvg`` streaming aggregation
      - Yes
      - Set ``aggregator_data_kind=DataKind.WEIGHT_DIFF`` and return
@@ -281,26 +281,25 @@ FedProx
 =======
 
 FedProx is FedAvg with a proximal term added to client optimization to handle data heterogeneity.
-It uses the standard PyTorch ``FedAvgRecipe`` with a positive ``fedprox_mu``. Patched PyTorch Lightning
-clients apply the term automatically; other client loops can continue to use the FedProx loss helper directly.
-Because PyTorch FedProx uses ``FedAvgRecipe``, it also supports ``enable_tensor_disk_offload=True`` for
-streamed PyTorch tensor updates, with the same behavior and constraints as PyTorch FedAvg.
+PyTorch provides a concrete ``FedProxRecipe`` with a finite positive ``fedprox_mu`` (default ``0.01``).
+It inherits the aggregation, persistence, transfer, and memory options of PyTorch ``FedAvgRecipe``.
 
 .. warning::
 
-    Setting ``fedprox_mu`` configures server metadata; it does not modify an unpatched or raw PyTorch client.
-    Such clients must integrate ``PTFedProxLoss`` explicitly or they will continue to optimize the ordinary
-    local loss as FedAvg clients.
+    ``FedProxRecipe`` requires a compatible client. Patched Lightning clients consume ``fedprox_mu``
+    automatically. Raw PyTorch clients must read ``FLModel.meta[FEDPROX_MU]``, snapshot the received global
+    model, and integrate ``PTFedProxLoss``. A client that ignores the metadata performs ordinary local training
+    and is not FedProx-compatible.
 
 PyTorch FedProx
 ---------------
 
 .. code-block:: python
 
-    from nvflare.app_opt.pt.recipes import FedAvgRecipe
+    from nvflare.app_opt.pt.recipes import FedProxRecipe
     from nvflare.recipe import SimEnv
 
-    recipe = FedAvgRecipe(
+    recipe = FedProxRecipe(
         name="fedprox-pt",
         min_clients=2,
         num_rounds=5,
@@ -321,11 +320,12 @@ While a positive coefficient is active, the patch keeps an additional device-res
 optimizer-owned trainable parameter for the duration of the round. Account for this extra memory when sizing
 large models.
 
-Custom controllers can schedule the coefficient by sending ``FEDPROX_MU`` on every training round after the
-schedule starts. Positive values activate FedProx and may change between rounds; an explicit ``0.0`` disables it
+Custom controllers that use the lower-level ``FedAvg(fedprox_mu=...)`` workflow can schedule the coefficient by
+sending ``FEDPROX_MU`` on every training round after the schedule starts. Positive values activate FedProx and
+may change between rounds; an explicit ``0.0`` disables it
 for that round without allocating the snapshot. Omitting the key after it has been observed raises a contract
-error instead of silently falling back to FedAvg. The fixed recipe interface remains unchanged: constructor-level
-``None`` or ``0.0`` disables FedProx and omits the metadata.
+error instead of silently falling back to FedAvg. ``FedProxRecipe`` itself always represents active FedProx and
+therefore accepts only finite positive values.
 
 The automatic path supports Lightning automatic optimization with one optimizer and ``precision="32-true"``
 or ``precision="bf16-mixed"``. It rejects scaler-backed precision, closure-based LBFGS, sparse gradients, and
@@ -333,17 +333,27 @@ mid-round trainability changes. For an unpatched or manual client loop, use ``PT
 
 .. code-block:: python
 
+    import copy
+
+    import nvflare.client as flare
+    from nvflare.app_common.app_constant import AlgorithmConstants
     from nvflare.app_opt.pt import PTFedProxLoss
 
-    fedprox_loss = PTFedProxLoss(mu=fedproxloss_mu)
-    for data, target in train_loader:
-        optimizer.zero_grad()
-        output = model(data)
-        ce_loss = criterion(output, target)
-        prox_loss = fedprox_loss(model, global_model)
-        loss = ce_loss + prox_loss
-        loss.backward()
-        optimizer.step()
+    while flare.is_running():
+        input_model = flare.receive()
+        mu = input_model.meta[AlgorithmConstants.FEDPROX_MU]
+        model.load_state_dict(input_model.params)
+        global_model = copy.deepcopy(model)
+        fedprox_loss = PTFedProxLoss(mu=mu)
+
+        for data, target in train_loader:
+            optimizer.zero_grad()
+            output = model(data)
+            ce_loss = criterion(output, target)
+            prox_loss = fedprox_loss(model, global_model)
+            loss = ce_loss + prox_loss
+            loss.backward()
+            optimizer.step()
 
 **Examples:**
 
@@ -352,29 +362,15 @@ mid-round trainability changes. For an unpatched or manual client loop, use ``PT
 TensorFlow FedProx
 ------------------
 
-.. code-block:: python
-
-    from nvflare.app_opt.tf.recipes import FedAvgRecipe
-    from nvflare.recipe import SimEnv
-
-    recipe = FedAvgRecipe(
-        name="fedprox-tf",
-        min_clients=2,
-        num_rounds=5,
-        model=MyTFModel(),
-        train_script="client.py",
-        train_args="--fedproxloss_mu 0.01",
-    )
-    env = SimEnv(num_clients=2)
-    run = recipe.execute(env)
-
-In your client training script, use the TensorFlow FedProxLoss:
+TensorFlow does not currently provide a concrete FedProx recipe or an automatic metadata contract. To implement
+FedProx manually with a TensorFlow ``FedAvgRecipe``, configure the coefficient for your own client training script
+and use ``TFFedProxLoss``:
 
 .. code-block:: python
 
     from nvflare.app_opt.tf.fedprox_loss import TFFedProxLoss
 
-    fedprox_loss = TFFedProxLoss(mu=fedproxloss_mu)
+    fedprox_loss = TFFedProxLoss(mu=0.01)
     # Use in training loop
 
 **Examples:**

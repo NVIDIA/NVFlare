@@ -18,6 +18,7 @@ import torchvision.datasets as datasets
 from model import LitNet
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.app_opt.pt.recipes.fedprox import FedProxRecipe
 from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
 from nvflare.recipe.sim_env import SimEnv
 
@@ -70,7 +71,7 @@ def main():
             train_args=train_args,
         )
     elif args.algorithm == "fedprox":
-        recipe = FedAvgRecipe(
+        recipe = FedProxRecipe(
             name="hello-lightning-fedprox",
             min_clients=n_clients,
             num_rounds=num_rounds,

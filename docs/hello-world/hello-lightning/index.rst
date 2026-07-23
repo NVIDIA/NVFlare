@@ -306,7 +306,7 @@ For a quick simulator smoke test without downloading CIFAR-10, add
 ``--synthetic_data --limit_batches 1``. Normal runs use CIFAR-10, and the default batch limit ``0`` runs every
 batch.
 
-``FedAvgRecipe(fedprox_mu=...)`` sends the coefficient on every training round. The patch snapshots the global
+``FedProxRecipe(fedprox_mu=...)`` sends the coefficient on every training round. The patch snapshots the global
 optimizer-owned trainable parameters and injects ``mu * (local - global)`` after gradient accumulation and AMP
 unscaling but before gradient clipping. The loss returned or logged by ``training_step`` excludes the injected
 proximal term, while optimization includes its exact gradient. Setting ``fedprox_mu`` on ``ScaffoldRecipe``
@@ -316,8 +316,7 @@ Automatic injection requires ``flare.patch(trainer)``. Setting ``fedprox_mu`` do
 PyTorch client; integrate ``PTFedProxLoss`` explicitly in that case. While a positive coefficient is active, the
 patch keeps an additional device-resident snapshot of every optimizer-owned trainable parameter for the round.
 Custom controllers may change the coefficient between rounds and must keep sending ``FEDPROX_MU``: use an explicit
-``0.0`` to disable a scheduled round. Omitting the key after the schedule has started raises an error. The recipe's
-fixed ``None``/``0.0`` values continue to disable FedProx and omit its metadata.
+``0.0`` to disable a scheduled round. Omitting the key after the schedule has started raises an error.
 
 For manual Lightning optimization, use an explicit receive/train/send loop without ``flare.patch(trainer)``
 and integrate the selected algorithms directly.
