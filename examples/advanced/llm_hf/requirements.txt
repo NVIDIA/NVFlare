@@ -5,7 +5,7 @@
 # peft==0.18.1
 # trl==0.27.2
 
-nvflare>=2.8.0rc1
+nvflare~=2.9.0rc1
 torch
 torchvision
 datasets

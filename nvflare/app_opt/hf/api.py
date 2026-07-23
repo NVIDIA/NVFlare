@@ -20,8 +20,6 @@ import weakref
 from importlib import metadata
 from typing import Mapping, Optional
 
-from packaging.version import InvalidVersion, Version
-
 from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
 from nvflare.client import api as flare_api
 from nvflare.client.config import ConfigKey, ExchangeFormat
@@ -227,10 +225,18 @@ def _transformers_version_is_verified() -> bool:
     if not version:
         return False
     try:
+        from packaging.version import InvalidVersion, Version
+
         parsed = Version(version)
         return (
             Version(VERIFIED_TRANSFORMERS_VERSION_MIN) <= parsed < Version(VERIFIED_TRANSFORMERS_VERSION_MAX_EXCLUSIVE)
         )
+    except ImportError:
+        logging.getLogger(__name__).warning(
+            "Python package 'packaging' is not installed; cannot verify transformers version for the HuggingFace "
+            "in-memory restore strategy. Using checkpoint injection fallback."
+        )
+        return False
     except InvalidVersion:
         return False
 
