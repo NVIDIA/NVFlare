@@ -12,6 +12,7 @@ Deployment Guide
    overview
    operation
    containerized_deployment
+   slurm_job_launcher
    helm_chart
    openshift
    brev_scripted_deployment

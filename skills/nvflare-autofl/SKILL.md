@@ -27,7 +27,7 @@ Do not use for converting non-FL training code into NVFLARE, diagnosing failed j
 | --- | --- | --- |
 | `scripts/run_job_campaign.py` | Authoritative campaign lifecycle runner | `ACTION JOB` plus action-specific flags |
 | `scripts/campaign_guard.py` | Read-only ledger diagnostics | `[RESULTS]` and diagnostic thresholds |
-| `scripts/plot_progress.py` | Render campaign progress | `[RESULTS]`, `--output`, `--mode`, `--metric` |
+| `scripts/plot_progress.py` | Render campaign progress | `[RESULTS]`, `--output`, `--metric` |
 | `scripts/job_importer.py` | Import library used by the campaign runner | Not a standalone CLI |
 
 ## Workflow
@@ -40,11 +40,12 @@ Resolve [run_job_campaign.py](scripts/run_job_campaign.py) relative to this `SKI
 `RUNNER`, and initialize the campaign:
 
 ```bash
-python "$RUNNER" initialize ./job.py [--metric <metric>] --mode <max|min> --env <sim|poc|prod> [--max-candidates <n>]
+python "$RUNNER" initialize ./job.py [--metric <metric>] --env <sim|poc|prod> [--max-candidates <n>]
 ```
 
-For conditional recipes, safe refusals, and unnamed simulator roots, read the [job import
-contract](references/job-import-contract.md).
+Campaigns always maximize the optimization metric — matching NVFLARE best-model selection — so loss-like objectives
+must be reported by the job as negated metrics (for example `neg_val_loss`) where higher is better. For conditional
+recipes, safe refusals, and unnamed simulator roots, read the [job import contract](references/job-import-contract.md).
 
 Read `autofl.yaml` and the JSON response, then prepare an agent-authored candidate with a short hypothesis and
 optional candidate-only arguments:
@@ -178,8 +179,7 @@ Treat plateau as a decision checkpoint, not an automatic stop: summarize it in t
 `progress.png`, run the runner's `status` action to refresh `.nvflare/autofl/campaign_state.json`, choose the returned
 next mode, and continue unless the state reports `final_response_allowed=true`. Use `campaign_guard.py` only for
 read-only ledger diagnostics; it never updates authoritative campaign state. After a source-backed review, record it
-with `record --literature
---hypothesis "<sources and decision>"`. Each review gets a persistent
+with `record --literature --hypothesis "<sources and decision>"`. Each review gets a persistent
 `literature_event_id` and requires an exploration batch before normal flow resumes: `exploration_batch_size` (default
 3) scored source-backed candidates linked via `prepare --literature-event <id>` — a faithful implementation, a tuned
 variant, and an ablation. The plateau clock resets when that batch completes, not when the review is recorded;
