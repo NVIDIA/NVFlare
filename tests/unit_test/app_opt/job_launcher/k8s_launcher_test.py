@@ -58,7 +58,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobReturnCode
 from nvflare.app_opt.job_launcher.k8s_launcher import (
-    DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT,
     JOB_RETURN_CODE_MAPPING,
     POD_STATE_MAPPING,
     WORKSPACE_MOUNT_PATH,
@@ -456,14 +455,7 @@ class TestK8sJobHandle:
         assert "42" in args
         assert all(isinstance(a, str) for a in args), "all container args must be str"
 
-    def test_manifest_default_module_args_copies_dict(self):
-        cfg = _make_job_config()
-        cfg["module_args"] = None
-        handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
-        assert handle.container_args_module_args_dict is not DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT
-        assert handle.container_args_module_args_dict == DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT
-
-    def test_manifest_default_module_args_all_none_produces_empty_args_list(self):
+    def test_manifest_missing_module_args_produces_empty_args_list(self):
         cfg = _make_job_config()
         cfg["module_args"] = None
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
@@ -2101,10 +2093,13 @@ spec:
                 "readOnly": True,
             }
 
-            env_map = {e["name"]: e["value"] for e in job_container["env"]}
+            env_map = {e["name"]: e.get("value") for e in job_container["env"]}
             assert env_map["KEEP_ME"] == "yes"
-            assert env_map[ENV_WORKSPACE_TRANSFER_TOKEN] == "transfer-token"
             assert env_map[ENV_WORKSPACE_OWNER_FQCN] == "site-1.parent"
+            # the template's literal transfer-token env is replaced by the credential-Secret ref
+            token_entry = next(e for e in job_container["env"] if e["name"] == ENV_WORKSPACE_TRANSFER_TOKEN)
+            assert "value" not in token_entry
+            assert token_entry["valueFrom"]["secretKeyRef"]["key"] == ENV_WORKSPACE_TRANSFER_TOKEN
 
             resources = job_container["resources"]
             assert resources["limits"]["cpu"] == "2"
@@ -2323,8 +2318,9 @@ spec:
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             env_items = {e["name"]: e for e in manifest["spec"]["containers"][0]["env"]}
             assert env_items["DB_HOST"]["value"] == "postgres.svc"
-            # launcher-owned transfer env is present alongside the study entries
-            assert env_items[ENV_WORKSPACE_TRANSFER_TOKEN]["value"] == "transfer-token"
+            # launcher-owned transfer token rides the credential Secret alongside the study entries
+            token_ref = env_items[ENV_WORKSPACE_TRANSFER_TOKEN]["valueFrom"]["secretKeyRef"]
+            assert token_ref["key"] == ENV_WORKSPACE_TRANSFER_TOKEN
             assert env_items["DB_PASSWORD"]["valueFrom"] == {"secretKeyRef": {"name": "study-db", "key": "password"}}
             assert "value" not in env_items["DB_PASSWORD"]
         finally:
@@ -2571,7 +2567,10 @@ spec:
         finally:
             _exit_patches(patches)
 
-    def test_multi_container_template_without_typed_entries_uses_first_container(self, tmp_path):
+    def test_multi_container_template_without_main_container_fails(self, tmp_path):
+        # Credential secret_env refs are attached to every job, so a multi-container
+        # template must name its main container instead of silently repurposing
+        # containers[0] (a sidecar) as the job+credential container.
         patches = _make_k8s_launcher_patches(patch_open=False)
         launcher, mock_api = self._setup_v2(
             patches,
@@ -2591,11 +2590,11 @@ spec:
             },
         )
         try:
-            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path)))
-
-            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            assert manifest["spec"]["containers"][0]["name"] == f"container-{_EXPECTED_JOB_ID}"
-            assert manifest["spec"]["containers"][1] == {"name": "sidecar", "image": "b"}
+            with pytest.raises(ValueError, match="mark the main container"):
+                launcher.launch_job(
+                    _make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
+                )
+            mock_api.create_namespaced_pod.assert_not_called()
         finally:
             _exit_patches(patches)
 
@@ -2739,7 +2738,7 @@ spec:
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             container = manifest["spec"]["containers"][0]
             mount_map = {m["name"]: m for m in container["volumeMounts"]}
-            env_map = {e["name"]: e["value"] for e in container["env"]}
+            env_map = {e["name"]: e.get("value") for e in container["env"]}
 
             assert mount_map["workspace-job"]["mountPath"] == workspace_mount_path
             assert mount_map["startup-kit"] == {
@@ -3184,7 +3183,7 @@ spec:
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             container = manifest["spec"]["containers"][0]
             assert "env" in container
-            env_map = {e["name"]: e["value"] for e in container["env"]}
+            env_map = {e["name"]: e.get("value") for e in container["env"]}
             assert env_map["PYTHONPATH"] == f"{WORKSPACE_MOUNT_PATH}/{_JOB_UUID}/app_site-1/custom"
         finally:
             _exit_patches(patches)
@@ -3208,7 +3207,7 @@ spec:
             launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx(app_custom_folder=""))
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             container = manifest["spec"]["containers"][0]
-            env_map = {e["name"]: e["value"] for e in container.get("env", [])}
+            env_map = {e["name"]: e.get("value") for e in container.get("env", [])}
             assert "PYTHONPATH" not in env_map
         finally:
             _exit_patches(patches)
@@ -3220,9 +3219,12 @@ spec:
         try:
             launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            env_map = {e["name"]: e["value"] for e in manifest["spec"]["containers"][0].get("env", [])}
-            assert env_map[ENV_WORKSPACE_OWNER_FQCN] == "site-1.parent"
-            assert env_map[ENV_WORKSPACE_TRANSFER_TOKEN] == "transfer-token"
+            env_entries = {e["name"]: e for e in manifest["spec"]["containers"][0].get("env", [])}
+            assert env_entries[ENV_WORKSPACE_OWNER_FQCN]["value"] == "site-1.parent"
+            # the transfer token rides the credential Secret, never a literal pod env value
+            token_entry = env_entries[ENV_WORKSPACE_TRANSFER_TOKEN]
+            assert "value" not in token_entry
+            assert token_entry["valueFrom"]["secretKeyRef"]["key"] == ENV_WORKSPACE_TRANSFER_TOKEN
         finally:
             _exit_patches(patches)
 
@@ -3400,3 +3402,176 @@ class TestJobHandleSecurityContext:
         handle = self._make_handle_with_sec(security_context={})
         manifest = handle.get_manifest()
         assert "securityContext" not in manifest["spec"]
+
+
+# ---------------------------------------------------------------------------
+# Credential transport — per-job Secret + env valueFrom secretKeyRef
+# ---------------------------------------------------------------------------
+
+_CREDENTIAL_ENV = {
+    "NVFLARE_JOB_AUTH_TOKEN": "secret-token",
+    "NVFLARE_JOB_TOKEN_SIGNATURE": "secret-signature",
+    "NVFLARE_JOB_SSID": "secret-ssid",
+}
+
+_EXPECTED_CRED_SECRET_NAME = f"nvflare-cred-{_EXPECTED_POD_NAME}"
+
+
+def _make_cred_fl_ctx():
+    fl_ctx = _make_launch_fl_ctx()
+    fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS).update(
+        {
+            JobProcessArgs.AUTH_TOKEN: ("-t", "secret-token"),
+            JobProcessArgs.TOKEN_SIGNATURE: ("-ts", "secret-signature"),
+            JobProcessArgs.SSID: ("-d", "secret-ssid"),
+        }
+    )
+    return fl_ctx
+
+
+def _cred_secret_bodies(mock_api):
+    return [
+        c.kwargs["body"]
+        for c in mock_api.create_namespaced_secret.call_args_list
+        if c.kwargs["body"]["metadata"]["name"].startswith("nvflare-cred-")
+    ]
+
+
+class TestK8sCredentialTransport:
+    def _setup(self, patches):
+        launcher, mock_api = TestK8sJobLauncherLaunchJob._setup(self, patches)
+        TestK8sJobLauncherLaunchJob._prime_running(self, mock_api)
+        created_pod = Mock()
+        created_pod.metadata.uid = "pod-uid-123"
+        mock_api.create_namespaced_pod.return_value = created_pod
+        return launcher, mock_api
+
+    def test_secret_created_and_pod_references_it_without_values(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
+
+            (body,) = _cred_secret_bodies(mock_api)
+            assert body["metadata"] == {"name": _EXPECTED_CRED_SECRET_NAME, "namespace": "test-ns"}
+            assert body["type"] == "Opaque"
+            assert body["stringData"] == {**_CREDENTIAL_ENV, ENV_WORKSPACE_TRANSFER_TOKEN: "transfer-token"}
+
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            env_by_name = {item["name"]: item for item in manifest["spec"]["containers"][0]["env"]}
+            for env_name in list(_CREDENTIAL_ENV) + [ENV_WORKSPACE_TRANSFER_TOKEN]:
+                ref = env_by_name[env_name]["valueFrom"]["secretKeyRef"]
+                assert ref == {"name": _EXPECTED_CRED_SECRET_NAME, "key": env_name}
+            assert "secret-" not in str(manifest)
+            assert "transfer-token" not in str(manifest)
+            assert not {"-t", "-ts", "-d"} & set(manifest["spec"]["containers"][0]["args"])
+        finally:
+            _exit_patches(patches)
+
+    def test_secret_owner_reference_patched_after_pod_create(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
+
+            patch_call = mock_api.patch_namespaced_secret.call_args
+            assert patch_call.kwargs["name"] == _EXPECTED_CRED_SECRET_NAME
+            assert patch_call.kwargs["body"]["metadata"]["ownerReferences"] == [
+                {"apiVersion": "v1", "kind": "Pod", "name": _EXPECTED_POD_NAME, "uid": "pod-uid-123"}
+            ]
+            call_names = [name for name, _args, _kwargs in mock_api.mock_calls]
+            assert call_names.index("create_namespaced_pod") < call_names.index("patch_namespaced_secret")
+        finally:
+            _exit_patches(patches)
+
+    def test_no_bootstrap_credentials_secret_carries_only_transfer_token(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+
+            (body,) = _cred_secret_bodies(mock_api)
+            assert body["stringData"] == {ENV_WORKSPACE_TRANSFER_TOKEN: "transfer-token"}
+        finally:
+            _exit_patches(patches)
+
+    def test_handle_deletes_secret_at_terminal_state(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            handle = launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
+            assert handle.credential_secret_name == _EXPECTED_CRED_SECRET_NAME
+            mock_api.delete_namespaced_secret.assert_not_called()
+
+            succeeded = Mock()
+            succeeded.status.phase = PodPhase.SUCCEEDED.value
+            mock_api.read_namespaced_pod.return_value = succeeded
+            assert handle.poll() == JobReturnCode.SUCCESS
+
+            mock_api.delete_namespaced_secret.assert_called_once_with(
+                name=_EXPECTED_CRED_SECRET_NAME, namespace="test-ns"
+            )
+            assert handle.credential_secret_name is None
+            handle.poll()
+            mock_api.delete_namespaced_secret.assert_called_once()
+        finally:
+            _exit_patches(patches)
+
+    def test_terminate_deletes_secret(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            handle = launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
+            handle.terminate()
+            mock_api.delete_namespaced_secret.assert_called_once_with(
+                name=_EXPECTED_CRED_SECRET_NAME, namespace="test-ns"
+            )
+        finally:
+            _exit_patches(patches)
+
+    def test_launch_failure_before_pod_create_deletes_secret(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            mock_api.create_namespaced_pod.side_effect = _FakeApiException(status=403, reason="quota")
+            handle = launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
+            assert handle.terminal_state is JobState.TERMINATED
+            mock_api.delete_namespaced_secret.assert_called_once_with(
+                name=_EXPECTED_CRED_SECRET_NAME, namespace="test-ns"
+            )
+        finally:
+            _exit_patches(patches)
+
+    def test_replace_404_falls_back_to_create(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            launcher.core_v1 = mock_api
+            mock_api.create_namespaced_secret.side_effect = [
+                _FakeApiException(status=409, reason="Conflict"),
+                None,
+            ]
+            mock_api.replace_namespaced_secret.side_effect = _FakeApiException(status=404, reason="Gone")
+
+            name = launcher._create_or_replace_secret("nvflare-cred-x", {"stringData": {"k": "v"}})
+
+            assert name == "nvflare-cred-x"
+            assert mock_api.create_namespaced_secret.call_count == 2
+        finally:
+            _exit_patches(patches)
+
+    def test_secret_replaced_on_conflict_and_owner_patch_failure_is_non_fatal(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            mock_api.create_namespaced_secret.side_effect = _FakeApiException(status=409, reason="Conflict")
+            mock_api.patch_namespaced_secret.side_effect = _FakeApiException(status=403, reason="Forbidden")
+
+            handle = launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
+
+            replaced = [c.kwargs["name"] for c in mock_api.replace_namespaced_secret.call_args_list]
+            assert _EXPECTED_CRED_SECRET_NAME in replaced
+            assert isinstance(handle, K8sJobHandle)
+            assert handle.terminal_state is None
+        finally:
+            _exit_patches(patches)

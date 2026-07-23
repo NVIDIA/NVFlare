@@ -7,6 +7,27 @@ What's New in FLARE v2.9.0
 Compatibility and Migration Notes
 =================================
 
+- Job-process bootstrap credentials (auth token, token signature, session ID)
+  are no longer passed as command-line arguments. Launchers deliver them
+  through the job process environment; on Kubernetes they ride a per-job
+  Secret referenced via ``env[].valueFrom.secretKeyRef``. There is no fallback
+  machinery, so Docker and Kubernetes job images must run NVFlare 2.9 or
+  newer: a job image pinned to 2.8 or earlier fails immediately at argument
+  parsing when launched by a 2.9 CP/SP. The CLI path is retained, so an older
+  parent launching a newer job image is unaffected. Custom launchers that
+  render worker commands from ``generate_client_command`` /
+  ``generate_server_command`` and implement ``launch_job`` directly must also
+  export ``get_credential_env(job_args)`` into the child environment. Launcher
+  Kubernetes RBAC now needs the ``patch`` and ``delete`` verbs on Secrets
+  (included in the generated Helm role templates).
+- Patched PyTorch Lightning clients now report ``NUM_STEPS_CURRENT_ROUND`` as
+  the actual per-round change in ``trainer.global_step`` instead of
+  ``trainer.estimated_stepping_batches``. This corrects cumulative aggregation
+  over-weighting in later rounds when ``update_fit_loop=True``. Because
+  ``global_step`` counts completed optimizer steps across optimizers, a
+  multi-optimizer FedAvg client reports their combined step count unless it
+  supplies ``NUM_STEPS_CURRENT_ROUND`` explicitly; explicit client metadata is
+  still preserved.
 - CellPipe cell names now keep the runtime token and pipe mode in one
   explicitly marked, ``~``-delimited FQCN leaf segment
   (``site-1.cellpipe~plain~<job-id>~active``, or

@@ -48,6 +48,9 @@ class FedAvg(BaseFedAvg):
 
     Uses InTime (streaming) aggregation for memory efficiency - each client result is
     aggregated immediately upon receipt rather than collecting all results first.
+    Streaming accumulation applies contributions in result-arrival order; floating-point
+    addition is non-associative, so identical inputs can produce ulp-level differences
+    between runs and bitwise reproducibility is not guaranteed for >=2 clients.
 
     Supports custom aggregators via the ModelAggregator interface.
 

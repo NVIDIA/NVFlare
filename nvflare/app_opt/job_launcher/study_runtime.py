@@ -30,6 +30,7 @@ from typing import Optional
 
 import yaml
 
+from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.app_opt.job_launcher.study_data import MODE_RO, MODE_RW, StudyDatasetMount
 
 STUDY_RUNTIME_FILE = "local/study_runtime.yaml"
@@ -38,17 +39,52 @@ SUPPORTED_FORMAT_VERSION = 2
 DATASET_TYPE_MOUNT = "mount"
 _RESERVED_DATASET_TYPES = {"databricks"}
 
-_STUDY_KEYS = {"container", "pod_template", "docker_kwargs", "datasets", "env", "secret_env", "secret_mounts"}
+_STUDY_KEYS = {
+    "container",
+    "pod_template",
+    "docker_kwargs",
+    "datasets",
+    "env",
+    "secret_env",
+    "secret_mounts",
+    "slurm",
+}
 _MOUNT_DATASET_KEYS = {"type", "source", "mode"}
 _SECRET_ENV_KEYS = {"source", "key"}
 _SECRET_MOUNT_KEYS = {"source", "mount_path", "mode", "items"}
+_SLURM_KEYS = {"sandbox", "setup", "partition", "account", "qos"}
+SLURM_SANDBOXES = frozenset({"apptainer", "pyxis", "none"})
+_VALID_LAUNCHER_MODES = {"process", "docker", "k8s", "slurm"}
 
 _VALID_NAME = re.compile(r"^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$")
+_VALID_POSIX_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
-# Env names the launchers own at job launch (PYTHONPATH and the workspace-transfer
-# variables from workspace_cell_transfer). A study value would be silently overridden
-# or break workspace transfer, so both env and secret_env reject them up front.
-_RESERVED_ENV_NAMES = frozenset({"PYTHONPATH", "NVFL_WORKSPACE_OWNER_FQCN", "NVFL_WORKSPACE_TRANSFER_TOKEN"})
+# Env names the launchers own at job launch (PYTHONPATH, the workspace-transfer
+# variables from workspace_cell_transfer, and the job bootstrap credentials). A study
+# value would silently override or be overridden by the launcher-supplied one, so both
+# env and secret_env reject them up front.
+_RESERVED_ENV_NAMES = frozenset(
+    {
+        "PYTHONPATH",
+        "NVFL_WORKSPACE_OWNER_FQCN",
+        "NVFL_WORKSPACE_TRANSFER_TOKEN",
+        JobProcessEnv.AUTH_TOKEN,
+        JobProcessEnv.TOKEN_SIGNATURE,
+        JobProcessEnv.SSID,
+    }
+)
+SLURM_RESERVED_ENV_NAMES = _RESERVED_ENV_NAMES.union(
+    {"BASHOPTS", "EUID", "SHELLOPTS", "UID", "NVFL_APPTAINER", "NVFL_SRUN"}
+)
+SLURM_RESERVED_ENV_PREFIXES = (
+    "SLURM_",
+    "APPTAINER_",
+    "APPTAINERENV_",
+    "SINGULARITY_",
+    "SINGULARITYENV_",
+    "NVFLARE_SLURM_",
+    "_nvfl_",
+)
 
 # Docker containers.run kwargs owned by the launcher (the docker launcher and deploy
 # validation enforce the same set for site-level default_job_container_kwargs).
@@ -73,7 +109,7 @@ RESERVED_DOCKER_KWARGS = frozenset(
 class SecretEnvRef:
     name: str
     source: str
-    key: str
+    key: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -95,6 +131,7 @@ class StudyRuntime:
     container_image: Optional[str] = None
     pod_template: Optional[dict] = None
     docker_kwargs: dict = field(default_factory=dict)
+    slurm: dict = field(default_factory=dict)
 
 
 def study_runtime_file_path(workspace_root: str) -> str:
@@ -129,6 +166,42 @@ def _require_str(value, label: str, file_path: str) -> str:
     return value
 
 
+def _require_utf8_text(value, label: str, file_path: str, allow_empty: bool = False) -> str:
+    if not isinstance(value, str) or (not value and not allow_empty):
+        requirement = "a string" if allow_empty else "a non-empty string"
+        raise _error(file_path, f"{label} must be {requirement}.")
+    if "\x00" in value:
+        raise _error(file_path, f"{label} must not contain NUL.")
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as e:
+        raise _error(file_path, f"{label} must be valid Unicode text encodable as UTF-8.") from e
+    return value
+
+
+def _require_env_name(value, label: str, file_path: str, launcher_mode: str) -> str:
+    if launcher_mode == "slurm":
+        if not isinstance(value, str) or not _VALID_POSIX_ENV_NAME.fullmatch(value):
+            raise _error(file_path, f"{label} {value!r} must be a valid POSIX environment variable name.")
+        reserved = value in SLURM_RESERVED_ENV_NAMES or value.startswith(SLURM_RESERVED_ENV_PREFIXES)
+    else:
+        _require_str(value, label, file_path)
+        reserved = value in _RESERVED_ENV_NAMES
+    if reserved:
+        raise _error(file_path, f"{label} {value!r} is launcher-owned and cannot be set in study config.")
+    return value
+
+
+def _require_slurm_absolute_path(value, label: str, file_path: str, mount_operand: bool = False) -> str:
+    value = _require_utf8_text(value, label, file_path)
+    if not posixpath.isabs(value):
+        raise _error(file_path, f"{label} must be an absolute path.")
+    if "\n" in value or "\r" in value or (mount_operand and any(c in value for c in (":", ","))):
+        forbidden = "newline, ':' or ','" if mount_operand else "newline"
+        raise _error(file_path, f"{label} must not contain {forbidden}.")
+    return value
+
+
 def _safe_relative_path(value: str, label: str, file_path: str) -> str:
     normalized = posixpath.normpath(value.replace(os.sep, "/"))
     parts = PurePosixPath(normalized)
@@ -158,8 +231,8 @@ def _validate_pod_template(pod_template, label: str, file_path: str) -> dict:
     return pod_template
 
 
-def _parse_pod_template(value, file_path: str, allow_pod_template: bool) -> dict:
-    if not allow_pod_template:
+def _parse_pod_template(value, file_path: str, launcher_mode: str) -> dict:
+    if launcher_mode != "k8s":
         raise _error(file_path, "pod_template is Kubernetes-only and is not supported by this launcher.")
     if isinstance(value, str):
         rel_path = _safe_relative_path(_require_str(value, "pod_template", file_path), "pod_template", file_path)
@@ -168,9 +241,9 @@ def _parse_pod_template(value, file_path: str, allow_pod_template: bool) -> dict
     return _validate_pod_template(value, "inline pod_template", file_path)
 
 
-def _parse_docker_kwargs(study: str, entry, file_path: str, allow_docker_kwargs: bool) -> dict:
+def _parse_docker_kwargs(study: str, entry, file_path: str, launcher_mode: str) -> dict:
     label = f"studies.{study}.docker_kwargs"
-    if not allow_docker_kwargs:
+    if launcher_mode != "docker":
         raise _error(file_path, "docker_kwargs is Docker-only and is not supported by this launcher.")
     entry = _require_dict(entry, label, file_path)
     reserved = sorted(RESERVED_DOCKER_KWARGS & set(entry))
@@ -181,14 +254,17 @@ def _parse_docker_kwargs(study: str, entry, file_path: str, allow_docker_kwargs:
     return dict(entry)
 
 
-def _parse_container(study: str, entry, file_path: str) -> str:
+def _parse_container(study: str, entry, file_path: str, launcher_mode: str) -> str:
     label = f"studies.{study}.container"
     entry = _require_dict(entry, label, file_path)
     _require_known_keys(entry, {"image"}, label, file_path)
-    return _require_str(entry.get("image"), f"{label}.image", file_path)
+    image = entry.get("image")
+    if launcher_mode == "slurm":
+        return _require_slurm_absolute_path(image, f"{label}.image", file_path)
+    return _require_str(image, f"{label}.image", file_path)
 
 
-def _parse_dataset(study: str, dataset: str, entry, file_path: str) -> StudyDatasetMount:
+def _parse_dataset(study: str, dataset: str, entry, file_path: str, launcher_mode: str) -> StudyDatasetMount:
     label = f"studies.{study}.datasets.{dataset}"
     _require_name(dataset, f"{label} dataset name", file_path)
     entry = _require_dict(entry, label, file_path)
@@ -198,27 +274,31 @@ def _parse_dataset(study: str, dataset: str, entry, file_path: str) -> StudyData
     if dataset_type != DATASET_TYPE_MOUNT:
         raise _error(file_path, f"{label} has unknown type {dataset_type!r}; allowed: '{DATASET_TYPE_MOUNT}'.")
     _require_known_keys(entry, _MOUNT_DATASET_KEYS, label, file_path)
-    source = _require_str(entry.get("source"), f"{label}.source", file_path)
+    source = entry.get("source")
+    if launcher_mode == "slurm":
+        source = _require_slurm_absolute_path(source, f"{label}.source", file_path, mount_operand=True)
+    else:
+        source = _require_str(source, f"{label}.source", file_path)
     mode = entry.get("mode")
     if mode not in (MODE_RO, MODE_RW):
         raise _error(file_path, f"{label}.mode must be '{MODE_RO}' or '{MODE_RW}'.")
     return StudyDatasetMount(study=study, dataset=dataset, source=source, mode=mode)
 
 
-def _parse_env(study: str, entry, file_path: str) -> dict:
+def _parse_env(study: str, entry, file_path: str, launcher_mode: str) -> dict:
     entry = _require_dict(entry, f"studies.{study}.env", file_path)
     env = {}
     for name, value in entry.items():
-        _require_str(name, f"studies.{study}.env variable name", file_path)
-        if name in _RESERVED_ENV_NAMES:
-            raise _error(file_path, f"studies.{study}.env.{name} is launcher-owned and cannot be set in study config.")
+        _require_env_name(name, f"studies.{study}.env variable name", file_path, launcher_mode)
         if isinstance(value, (dict, list)) or value is None:
             raise _error(file_path, f"studies.{study}.env.{name} must be a scalar value.")
         if isinstance(value, bool):
             # str(True) is "True"; YAML users writing `true` expect "true"
             value = "true" if value else "false"
         value = str(value)
-        if not value:
+        if launcher_mode == "slurm":
+            value = _require_utf8_text(value, f"studies.{study}.env.{name}", file_path, allow_empty=True)
+        elif not value:
             # empty values behave differently per launcher and can silently lose
             # against pod-template entries in the manifest merge
             raise _error(file_path, f"studies.{study}.env.{name} must not be empty; set a value or remove the key.")
@@ -226,27 +306,39 @@ def _parse_env(study: str, entry, file_path: str) -> dict:
     return env
 
 
-def _parse_secret_env(study: str, entry, file_path: str) -> list:
+def _parse_secret_env(study: str, entry, file_path: str, launcher_mode: str) -> list:
     entry = _require_dict(entry, f"studies.{study}.secret_env", file_path)
     refs = []
     for name, ref in entry.items():
         label = f"studies.{study}.secret_env.{name}"
-        _require_str(name, f"{label} variable name", file_path)
-        if name in _RESERVED_ENV_NAMES:
-            raise _error(file_path, f"{label} is launcher-owned and cannot be set in study config.")
+        _require_env_name(name, f"{label} variable name", file_path, launcher_mode)
         ref = _require_dict(ref, label, file_path)
         _require_known_keys(ref, _SECRET_ENV_KEYS, label, file_path)
+        source = ref.get("source")
+        if launcher_mode == "slurm":
+            source = _require_env_name(source, f"{label}.source", file_path, launcher_mode)
+            key = ref.get("key")
+            if key is not None:
+                key = _require_str(key, f"{label}.key", file_path)
+        else:
+            source = _require_str(source, f"{label}.source", file_path)
+            key = _require_str(ref.get("key"), f"{label}.key", file_path)
         refs.append(
             SecretEnvRef(
                 name=name,
-                source=_require_str(ref.get("source"), f"{label}.source", file_path),
-                key=_require_str(ref.get("key"), f"{label}.key", file_path),
+                source=source,
+                key=key,
             )
         )
     return refs
 
 
-def _parse_secret_mounts(study: str, entry, file_path: str, allow_secret_mount_items: bool) -> list:
+def _parse_secret_mounts(
+    study: str,
+    entry,
+    file_path: str,
+    launcher_mode: str,
+) -> list:
     entry = _require_dict(entry, f"studies.{study}.secret_mounts", file_path)
     mounts = []
     for name, mount in entry.items():
@@ -257,12 +349,16 @@ def _parse_secret_mounts(study: str, entry, file_path: str, allow_secret_mount_i
         mode = mount.get("mode", MODE_RO)
         if mode != MODE_RO:
             raise _error(file_path, f"{label}.mode must be '{MODE_RO}'; secret mounts are always read-only.")
-        mount_path = _require_str(mount.get("mount_path"), f"{label}.mount_path", file_path)
-        if not posixpath.isabs(mount_path):
-            raise _error(file_path, f"{label}.mount_path must be an absolute path.")
+        mount_path = mount.get("mount_path")
+        if launcher_mode == "slurm":
+            mount_path = _require_slurm_absolute_path(mount_path, f"{label}.mount_path", file_path, mount_operand=True)
+        else:
+            mount_path = _require_str(mount_path, f"{label}.mount_path", file_path)
+            if not posixpath.isabs(mount_path):
+                raise _error(file_path, f"{label}.mount_path must be an absolute path.")
         items = mount.get("items")
         if items is not None:
-            if not allow_secret_mount_items:
+            if launcher_mode != "k8s":
                 raise _error(
                     file_path,
                     f"{label}.items is Kubernetes-only and is not supported by this launcher; "
@@ -278,11 +374,16 @@ def _parse_secret_mounts(study: str, entry, file_path: str, allow_secret_mount_i
                 )
                 for key, path in items.items()
             )
+        source = mount.get("source")
+        if launcher_mode == "slurm":
+            source = _require_slurm_absolute_path(source, f"{label}.source", file_path, mount_operand=True)
+        else:
+            source = _require_str(source, f"{label}.source", file_path)
         mounts.append(
             SecretMount(
                 study=study,
                 name=name,
-                source=_require_str(mount.get("source"), f"{label}.source", file_path),
+                source=source,
                 mount_path=mount_path,
                 items=items,
             )
@@ -290,50 +391,82 @@ def _parse_secret_mounts(study: str, entry, file_path: str, allow_secret_mount_i
     return mounts
 
 
+def _parse_slurm(study: str, entry, file_path: str) -> dict:
+    label = f"studies.{study}.slurm"
+    entry = _require_dict(entry, label, file_path)
+    _require_known_keys(entry, _SLURM_KEYS, label, file_path)
+    result = {}
+    for key, value in entry.items():
+        key_label = f"{label}.{key}"
+        if key == "sandbox":
+            if not isinstance(value, str) or value not in SLURM_SANDBOXES:
+                raise _error(file_path, f"{key_label} must be one of {sorted(SLURM_SANDBOXES)}.")
+        elif key == "setup":
+            value = _require_utf8_text(value, key_label, file_path, allow_empty=True)
+        else:
+            if isinstance(value, bool) or not isinstance(value, (str, int)) or value == "":
+                raise _error(file_path, f"{key_label} must be a non-empty string or integer.")
+            if isinstance(value, str):
+                value = _require_utf8_text(value, key_label, file_path)
+                if any(character.isspace() for character in value):
+                    raise _error(file_path, f"{key_label} must not contain whitespace.")
+        result[key] = value
+    return result
+
+
 def _parse_study(
     study: str,
     entry,
     file_path: str,
-    allow_pod_template: bool,
-    allow_secret_mount_items: bool,
-    allow_docker_kwargs: bool,
+    launcher_mode: str,
 ) -> StudyRuntime:
     _require_name(study, "study name", file_path)
     entry = _require_dict(entry, f"studies.{study}", file_path)
     _require_known_keys(entry, _STUDY_KEYS, f"studies.{study}", file_path)
+    if "slurm" in entry and launcher_mode != "slurm":
+        raise _error(file_path, "slurm is Slurm-only and is not supported by this launcher.")
 
     runtime = StudyRuntime(study=study)
     if "container" in entry:
-        runtime.container_image = _parse_container(study, entry["container"], file_path)
+        runtime.container_image = _parse_container(study, entry["container"], file_path, launcher_mode)
     if "pod_template" in entry:
-        runtime.pod_template = _parse_pod_template(entry["pod_template"], file_path, allow_pod_template)
+        runtime.pod_template = _parse_pod_template(entry["pod_template"], file_path, launcher_mode)
     if "docker_kwargs" in entry:
-        runtime.docker_kwargs = _parse_docker_kwargs(study, entry["docker_kwargs"], file_path, allow_docker_kwargs)
+        runtime.docker_kwargs = _parse_docker_kwargs(study, entry["docker_kwargs"], file_path, launcher_mode)
     if "datasets" in entry:
         datasets = _require_dict(entry["datasets"], f"studies.{study}.datasets", file_path)
         runtime.datasets = [
-            _parse_dataset(study, dataset, ds_entry, file_path) for dataset, ds_entry in datasets.items()
+            _parse_dataset(study, dataset, ds_entry, file_path, launcher_mode) for dataset, ds_entry in datasets.items()
         ]
     if "env" in entry:
-        runtime.env = _parse_env(study, entry["env"], file_path)
+        runtime.env = _parse_env(study, entry["env"], file_path, launcher_mode)
     if "secret_env" in entry:
-        runtime.secret_env = _parse_secret_env(study, entry["secret_env"], file_path)
+        runtime.secret_env = _parse_secret_env(study, entry["secret_env"], file_path, launcher_mode)
     duplicated = set(runtime.env) & {ref.name for ref in runtime.secret_env}
     if duplicated:
         raise _error(file_path, f"studies.{study} defines {sorted(duplicated)} in both env and secret_env.")
     if "secret_mounts" in entry:
-        runtime.secret_mounts = _parse_secret_mounts(study, entry["secret_mounts"], file_path, allow_secret_mount_items)
+        runtime.secret_mounts = _parse_secret_mounts(study, entry["secret_mounts"], file_path, launcher_mode)
+    if "slurm" in entry:
+        runtime.slurm = _parse_slurm(study, entry["slurm"], file_path)
+        if runtime.slurm.get("sandbox") == "none":
+            incompatible = [key for key in ("container", "datasets", "secret_mounts") if key in entry]
+            if incompatible:
+                raise _error(
+                    file_path,
+                    f"studies.{study}.slurm.sandbox 'none' does not support {sorted(incompatible)}.",
+                )
     return runtime
 
 
 def load_study_runtime_file(
     file_path: str,
-    allow_pod_template: bool = True,
-    allow_secret_mount_items: bool = True,
-    allow_docker_kwargs: bool = True,
+    launcher_mode: str,
     logger: Optional[logging.Logger] = None,
 ) -> dict:
-    """Parse local/study_runtime.yaml (strict v2). Returns {study: StudyRuntime}."""
+    """Parse local/study_runtime.yaml (strict v2) for one launcher mode."""
+    if launcher_mode not in _VALID_LAUNCHER_MODES:
+        raise _error(file_path, f"unknown launcher mode {launcher_mode!r}.")
     try:
         with open(file_path, "rt") as f:
             config = yaml.safe_load(f)
@@ -359,9 +492,7 @@ def load_study_runtime_file(
             study,
             entry,
             file_path,
-            allow_pod_template=allow_pod_template,
-            allow_secret_mount_items=allow_secret_mount_items,
-            allow_docker_kwargs=allow_docker_kwargs,
+            launcher_mode=launcher_mode,
         )
         for study, entry in studies.items()
     }

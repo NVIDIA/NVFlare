@@ -24,6 +24,42 @@ from nvflare.fuel.data_event.event_manager import EventManager
 from nvflare.fuel.utils.log_utils import get_module_logger
 from nvflare.fuel.utils.secret_utils import resolve_secret_refs, split_command_preserving_secret_refs
 
+print_fn = builtins.print
+_print_redirect_state = threading.local()
+_print_redirect_lock = threading.Lock()
+_print_redirect_count = 0
+
+
+def _thread_aware_print(*args, **kwargs):
+    if getattr(_print_redirect_state, "depth", 0):
+        log_print(*args, **kwargs)
+    else:
+        print_fn(*args, **kwargs)
+
+
+def _enable_print_redirect():
+    global _print_redirect_count
+
+    _print_redirect_state.depth = getattr(_print_redirect_state, "depth", 0) + 1
+    with _print_redirect_lock:
+        _print_redirect_count += 1
+        builtins.print = _thread_aware_print
+
+
+def _disable_print_redirect():
+    global _print_redirect_count
+
+    depth = getattr(_print_redirect_state, "depth", 0)
+    if depth <= 1:
+        _print_redirect_state.depth = 0
+    else:
+        _print_redirect_state.depth = depth - 1
+
+    with _print_redirect_lock:
+        _print_redirect_count -= 1
+        if _print_redirect_count == 0 and builtins.print is _thread_aware_print:
+            builtins.print = print_fn
+
 
 class TaskScriptRunner:
     logger = get_module_logger(__module__, __qualname__)
@@ -45,10 +81,10 @@ class TaskScriptRunner:
         self.script_full_path = self.get_script_full_path(self.custom_dir, self.script_path)
         self._runtime_lock = threading.Lock()
         self._runtime_released = False
-        self._original_print = None
         self._original_argv = None
         self._original_argv_values = None
         self._task_argv = None
+        self._print_redirect_enabled = False
 
     def run(self):
         """Call the task_fn with any required arguments."""
@@ -86,8 +122,8 @@ class TaskScriptRunner:
             self._task_argv = self.get_sys_argv()
             sys.argv = self._task_argv
             if self.redirect_print_to_log:
-                self._original_print = builtins.print
-                builtins.print = log_print
+                _enable_print_redirect()
+                self._print_redirect_enabled = True
             return True
 
     def release_runtime(self):
@@ -95,8 +131,9 @@ class TaskScriptRunner:
         with self._runtime_lock:
             first_release = not self._runtime_released
             self._runtime_released = True
-            if first_release and self._original_print is not None:
-                builtins.print = self._original_print
+            if first_release and self._print_redirect_enabled:
+                _disable_print_redirect()
+                self._print_redirect_enabled = False
             if self._original_argv is not None:
                 self._original_argv[:] = self._original_argv_values
                 if first_release and sys.argv is self._task_argv:

@@ -151,7 +151,14 @@ class WeightedAggregationHelper(object):
         return hasattr(tensor, "add_") and hasattr(tensor, "mul_") and hasattr(tensor, "clone")
 
     def add(self, data, weight, contributor_name, contribution_round):
-        """Compute weighted sum and sum of weights."""
+        """Compute weighted sum and sum of weights.
+
+        Note:
+            Contributions accumulate in call (result-arrival) order: each weighted contribution is
+            added into a running per-key total (in place on backends that support it). Floating-point
+            rounding is therefore order dependent (non-associative), so identical inputs can yield
+            ulp-level differences between runs; bitwise reproducibility is not guaranteed for >=2 clients.
+        """
         with self.lock:
             for k, v in data.items():
                 if self.exclude_vars is not None and self.exclude_vars.search(k):
