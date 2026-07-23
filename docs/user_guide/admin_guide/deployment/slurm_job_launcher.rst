@@ -54,8 +54,9 @@ Before starting a parent, verify:
 - The runtime workspace, images, datasets, and secret-mount sources are visible
   at the same absolute paths on all participating nodes. The shared filesystem
   supports ``O_EXCL`` and atomic rename.
-- Compute nodes can reach ``parent_host:internal_port``. Multi-node jobs also
-  require connectivity among their allocated nodes.
+- Compute nodes can reach ``parent_host:internal_port``, or the site uses the
+  shared-file worker channel instead (see :ref:`slurm_shared_file_channel`).
+  Multi-node jobs also require connectivity among their allocated nodes.
 - Slurm partition, association, QOS, reservation, cgroup, and device policies
   enforce the site's resource limits.
 
@@ -201,6 +202,53 @@ cannot launch jobs. NVFlare does not guess or resolve a host name.
 Server kits reject ``parent``. Run the server parent on a stable host with a
 stable external NVFlare federation endpoint.
 
+.. _slurm_shared_file_channel:
+
+Shared-File Worker Channel
+==========================
+
+When compute nodes cannot open a TCP connection to the parent host but share a
+POSIX-coherent filesystem such as Lustre with it, the worker-to-parent channel
+can run over shared files instead of TCP. Configure the client kit's
+``local/comm_config.json`` before running prepare:
+
+.. code-block:: json
+
+   {
+     "backbone": {"connect_generation": 1},
+     "internal": {
+       "scheme": "file",
+       "resources": {
+         "root_dir": "/lustre/proj123/nvflare/site-1-cellnet",
+         "connection_security": "clear"
+       }
+     }
+   }
+
+``root_dir`` must be an absolute path visible at the same path on the parent
+host and all compute nodes. ``connect_generation: 1`` routes all job traffic
+through the parent, so workers need no network connectivity at all.
+``nvflare deploy prepare`` preserves a file-based comm config as-is and does
+not apply the TCP host and port patch; ``internal_port`` and ``parent_host``
+are then not used for the worker channel.
+
+At runtime the parent creates a listener directory under ``root_dir`` and
+passes its ``file://0/...`` URL to each worker unchanged. Apptainer and Pyxis
+jobs bind-mount the listener directory read-write at the same path inside the
+container automatically; bare jobs use it directly. Directories are created
+with mode ``0o770`` and log files with ``0o660`` regardless of umask.
+Directory permissions are the only access control on this channel, so keep
+``root_dir`` owned by the dedicated site account with no wider group access
+than required.
+
+Polling intervals, lease timing, and fsync behavior are tunable through the
+``internal.resources`` map; see the ``FileDriver`` documentation in
+``nvflare.fuel.f3.drivers.file_driver`` for the parameters and their
+filesystem metadata cost. At the defaults an idle connection issues roughly
+1.4 client-side metadata syscalls per second; raising ``max_poll_interval``
+reduces idle load proportionally at the cost of first-message latency, and
+data transfers are unaffected by the poll settings.
+
 Study Settings
 ==============
 
@@ -283,8 +331,10 @@ Security and Operations
 =======================
 
 The worker-to-parent internal channel is clear TCP, matching the Kubernetes
-launcher. Use it only on a trusted or isolated site network. This does not
-change the configured security of the external NVFlare federation channel.
+launcher, or clear shared-file I/O when the file transport is configured (see
+:ref:`slurm_shared_file_channel`). Use it only on a trusted or isolated site
+network or filesystem. This does not change the configured security of the
+external NVFlare federation channel.
 
 Working accounting is mandatory. The parent refuses to start if ``sacct`` is
 unavailable. A later scheduler or accounting outage leaves affected jobs
