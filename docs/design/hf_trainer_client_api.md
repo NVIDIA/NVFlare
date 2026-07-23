@@ -1,8 +1,8 @@
 # HuggingFace Trainer Client API
 
-Status: Proposal
-Author: (draft)
-Date: 2026-07-22
+Status: Implemented (PR #4948)
+Author: NVFlare Team
+Date: 2026-07-23
 
 ## Objective
 
