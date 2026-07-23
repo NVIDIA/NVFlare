@@ -821,7 +821,8 @@ class _HFTaskState:
             if user_resume_checkpoint_supplied:
                 self.global_params_loaded = False
             elif self.weight_override_strategy == STRATEGY_CHECKPOINT_INJECTION:
-                if self.rank == 0:
+
+                def write_checkpoint_params():
                     utils.write_params_to_checkpoint(
                         self.trainer,
                         checkpoint_path,
@@ -829,6 +830,8 @@ class _HFTaskState:
                         params_scope=self.params_scope,
                         strict=self.load_state_dict_strict,
                     )
+
+                self._run_rank_zero_operation("checkpoint injection", write_checkpoint_params)
                 _barrier()
                 self.global_params_loaded = True
             elif self.weight_override_strategy == STRATEGY_IN_MEMORY:
@@ -1037,7 +1040,10 @@ class _HFTaskState:
 
     def _persist_state(self):
         output_dir = self._output_dir()
-        if self.rank == 0 and output_dir:
+
+        def write_state():
+            if not output_dir:
+                return
             utils.write_checkpoint_state(
                 output_dir,
                 {
@@ -1052,7 +1058,29 @@ class _HFTaskState:
                     "metric_step_offset": self.metric_step_offset,
                 },
             )
+
+        self._run_rank_zero_operation("checkpoint state persistence", write_state)
         _barrier()
+
+    def _run_rank_zero_operation(self, operation_name: str, operation):
+        rank_zero_error = None
+        status = {"ok": True, "operation": operation_name, "error": None}
+        if self.rank == 0:
+            try:
+                operation()
+            except Exception as e:
+                rank_zero_error = e
+                status = {"ok": False, "operation": operation_name, "error": f"{type(e).__name__}: {e}"}
+
+        status = _broadcast_object(status, src=0) or {}
+        if not status.get("ok", False):
+            message = (
+                f"HuggingFace distributed {status.get('operation', operation_name)} failed on rank 0: "
+                f"{status.get('error', 'unknown error')}"
+            )
+            if rank_zero_error is not None:
+                raise RuntimeError(message) from rank_zero_error
+            raise RuntimeError(message)
 
     def _build_meta(self, end_global_step: int, end_tokens: Optional[int]):
         model = utils.unwrap_model(self.trainer)

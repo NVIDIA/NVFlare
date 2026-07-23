@@ -78,6 +78,7 @@ class _RecordingDist:
         self.rank = rank
         self.world_size = world_size
         self.incoming_payload = incoming_payload
+        self.incoming_payloads = list(incoming_payload) if isinstance(incoming_payload, list) else None
         self.broadcast_payloads = []
         self.barrier_calls = 0
 
@@ -91,10 +92,17 @@ class _RecordingDist:
         if self.rank == src:
             self.broadcast_payloads.append(dict(payload[0] or {}))
         else:
-            payload[0] = self.incoming_payload
+            if self.incoming_payloads is not None:
+                payload[0] = self.incoming_payloads.pop(0)
+            else:
+                payload[0] = self.incoming_payload
 
     def barrier(self):
         self.barrier_calls += 1
+
+
+def _rank_zero_failure(operation: str, error: str):
+    return {"ok": False, "operation": operation, "error": error}
 
 
 def test_train_task_receives_once_captures_pre_train_eval_and_sends_after_train(monkeypatch, tmp_path):
@@ -447,6 +455,65 @@ def test_checkpoint_injection_writes_global_params_before_resume_on_later_round(
     assert torch.equal(sent_params["fc.weight"], torch.full_like(sent_params["fc.weight"], 6.0))
 
 
+def test_checkpoint_injection_failure_broadcasts_before_barrier_on_rank_zero(monkeypatch, tmp_path):
+    monkeypatch.setenv("NVFLARE_HF_WEIGHT_OVERRIDE_STRATEGY", "checkpoint_injection")
+    initial_model = TinyModel()
+    incoming_model = FLModel(params=_model_params(initial_model, 5.0), current_round=1, total_rounds=2)
+    hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model)
+    dist = _RecordingDist(rank=0, world_size=2)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
+    trainer = _make_trainer(trainer_cls, tmp_path)
+    checkpoint_dir = tmp_path / "checkpoint-1"
+    checkpoint_dir.mkdir()
+
+    def write_params_to_checkpoint(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(hf_api.utils, "write_params_to_checkpoint", write_params_to_checkpoint)
+
+    hf_api.patch(trainer, restore_state=True, local_steps=1)
+    trainer._nvflare_hf_task_state.last_checkpoint_path = str(checkpoint_dir)
+
+    with pytest.raises(RuntimeError, match="checkpoint injection failed on rank 0.*disk full"):
+        trainer.train()
+
+    status_payloads = [
+        payload for payload in dist.broadcast_payloads if payload.get("operation") == "checkpoint injection"
+    ]
+    assert status_payloads[-1]["ok"] is False
+    assert dist.barrier_calls == 0
+
+
+def test_checkpoint_injection_failure_raises_on_nonzero_rank_before_barrier(monkeypatch, tmp_path):
+    monkeypatch.setenv("NVFLARE_HF_WEIGHT_OVERRIDE_STRATEGY", "checkpoint_injection")
+    task_payload = {
+        "task_kind": "train",
+        "call_name": "train",
+        "fl_model": None,
+        "params": {},
+        "current_round": 1,
+        "total_rounds": 2,
+    }
+    dist = _RecordingDist(
+        rank=1,
+        world_size=2,
+        incoming_payload=[{}, task_payload, _rank_zero_failure("checkpoint injection", "OSError: disk full")],
+    )
+    hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model=None)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
+    trainer = _make_trainer(trainer_cls, tmp_path)
+    checkpoint_dir = tmp_path / "checkpoint-1"
+    checkpoint_dir.mkdir()
+
+    hf_api.patch(trainer, restore_state=True, local_steps=1)
+    trainer._nvflare_hf_task_state.last_checkpoint_path = str(checkpoint_dir)
+
+    with pytest.raises(RuntimeError, match="checkpoint injection failed on rank 0.*disk full"):
+        trainer.train()
+
+    assert dist.barrier_calls == 0
+
+
 def test_user_resume_checkpoint_uses_in_memory_override_without_mutating_checkpoint(monkeypatch, tmp_path):
     monkeypatch.setenv("NVFLARE_HF_WEIGHT_OVERRIDE_STRATEGY", "checkpoint_injection")
     initial_model = TinyModel()
@@ -606,6 +673,48 @@ def test_checkpoint_provenance_round_trips_on_repatch(monkeypatch, tmp_path):
     assert restored.last_completed_global_step == 7
     assert restored.last_completed_round == 2
     assert restored.metric_step_offset == 19
+
+
+def test_checkpoint_state_persistence_failure_broadcasts_before_barrier_on_rank_zero(monkeypatch, tmp_path):
+    incoming_model = FLModel(params=_model_params(TinyModel(), 5.0), current_round=1, total_rounds=3)
+    hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model)
+    dist = _RecordingDist(rank=0, world_size=2)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
+    trainer = _make_trainer(trainer_cls, tmp_path)
+
+    def write_checkpoint_state(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(hf_api.utils, "write_checkpoint_state", write_checkpoint_state)
+
+    hf_api.patch(trainer, restore_state=True, local_steps=1)
+
+    with pytest.raises(RuntimeError, match="checkpoint state persistence failed on rank 0.*disk full"):
+        trainer._nvflare_hf_task_state._persist_state()
+
+    status_payloads = [
+        payload for payload in dist.broadcast_payloads if payload.get("operation") == "checkpoint state persistence"
+    ]
+    assert status_payloads[-1]["ok"] is False
+    assert dist.barrier_calls == 0
+
+
+def test_checkpoint_state_persistence_failure_raises_on_nonzero_rank_before_barrier(monkeypatch, tmp_path):
+    dist = _RecordingDist(
+        rank=1,
+        world_size=2,
+        incoming_payload=[{}, _rank_zero_failure("checkpoint state persistence", "OSError: disk full")],
+    )
+    hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model=None)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
+    trainer = _make_trainer(trainer_cls, tmp_path)
+
+    hf_api.patch(trainer, restore_state=True, local_steps=1)
+
+    with pytest.raises(RuntimeError, match="checkpoint state persistence failed on rank 0.*disk full"):
+        trainer._nvflare_hf_task_state._persist_state()
+
+    assert dist.barrier_calls == 0
 
 
 def test_divergent_trainer_call_across_ranks_fails(monkeypatch, tmp_path):
