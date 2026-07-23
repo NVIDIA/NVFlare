@@ -20,14 +20,12 @@ python -m collab.swarm.swarm --num-clients 3
 |---|---|
 | `hello_numpy_collab` | Same Recipe API/`SimEnv` flow as `hello-world/hello-numpy`, using direct calls instead of Client API messaging |
 | `hello_fedavg` | The Collab API in one file: `@collab.main`, `@collab.publish`, `collab.clients.train(...)`, per-site config |
-| `call_patterns` | `--pattern seq \| cyclic` server-to-client invocation styles (parallel group call is in `hello_fedavg`) |
 | `async_aggregation` | In-time aggregation with a response callback |
 | `swarm` | Decentralized swarm learning with client-to-client calls |
-| `workflow_composition` | Chaining workflows in one `@collab.main`; standard workspace artifacts and `@collab.final` |
 
 Every server object or module must define exactly one `@collab.main` entry
-point. `workflow_composition` demonstrates how to call multiple workflow stages
-from that single entry point.
+point. A workflow with multiple stages should call them from that single entry
+point.
 
 Each example is self-contained. Its entry point and any trainer,
 strategy, widget, or utility modules that it needs live together in that

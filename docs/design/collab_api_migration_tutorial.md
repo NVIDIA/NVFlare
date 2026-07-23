@@ -708,7 +708,7 @@ recipe = CollabRecipe(
 
 The server object or module must contain exactly one `@collab.main` method or
 function. If a workflow has several stages, call them from that one main entry
-point, as shown by the `workflow_composition` example.
+point.
 
 Keep support code beside the entry point that consumes it. The runnable
 examples under `examples/collab` are self-contained and do not import trainers,
