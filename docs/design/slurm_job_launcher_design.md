@@ -96,7 +96,7 @@ Each launched job uses one transient directory:
 The job key is the SHA-256 digest of the NVFlare job ID. Runtime identity is deterministic:
 
 ```text
-job name = nvfl-<first-8-job-key>
+job name = nvfl-<first-32-site-name-characters>-<first-8-job-key>
 comment  = nvfl:<job-id>
 ```
 
@@ -125,8 +125,9 @@ infrastructure launch failure.
 ## Monitoring and results
 
 Live lookup uses `squeue --name=<job-name>` for the submitting user and selects the row with the handle's job ID.
-The job name contains only an eight-character hash prefix, so rows with other IDs can share the same name and are
-ignored. The selected row must match the numeric UID, full name, and derived comment.
+The site-qualified name avoids collisions when several NVFlare sites share a Slurm user and run the same federated
+job. Rows with other IDs are still ignored, and the selected row must match the numeric UID, full name, and derived
+comment.
 
 When a job is absent from `squeue`, `sacct --jobs=<job-id>` is authoritative. The returned allocation must match the
 exact ID, deterministic job name, and submitting user.

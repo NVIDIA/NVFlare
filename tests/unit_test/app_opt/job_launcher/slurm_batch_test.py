@@ -50,6 +50,7 @@ def _plan(tmp_path, sandbox="none", resources=None, mounts=(), forward_env=()):
     run_dir.mkdir(parents=True, exist_ok=True)
     return LaunchPlan(
         job_id="job-1",
+        site_name="site-1",
         run_dir=str(run_dir),
         exe_module="worker.module",
         module_args=("-n", "job-1"),
