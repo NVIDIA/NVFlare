@@ -707,7 +707,9 @@ evaluate(); train()` loop. The example server model wrappers expose state-dict
 keys that match the trainer model, so first-time users do not need
 `params_scope`, `server_key_prefix`, `local_epochs`, or metrics-streaming options
 on the main path. Those knobs stay documented and are shown as comments in the
-example for users who need them.
+example for users who need them. Synthetic data generation is kept in the
+standard example helper `prepare_data.py`; `job.py` only consumes prepared
+per-site data paths.
 
 ## Testing Plan
 

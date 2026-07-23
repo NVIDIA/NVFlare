@@ -42,14 +42,15 @@ hf_client_api
 |
 |-- client.py             # HuggingFace/TRL local training script
 |-- model.py              # Qwen server-side model definitions
+|-- prepare_data.py       # helper that writes synthetic per-site JSONL data
 |-- job.py                # job recipe that defines client and server configurations
 |-- requirements.txt      # dependencies
 |-- README.md
 ```
 
 ## Data
-This example uses small JSONL instruction datasets. By default, `job.py`
-generates synthetic per-site data under:
+This example uses small JSONL instruction datasets. The `prepare_data.py` script
+writes synthetic per-site data under:
 
 ```
 /tmp/nvflare/hf_client_api_qwen/data
@@ -59,8 +60,11 @@ Each row can contain either a single `text` field or the instruction-tuning
 fields `instruction`, `input`, and `output`. In a real FL experiment, each site
 would point `--train_data` and `--eval_data` to its own local data.
 
-To use pre-prepared data, pass `--skip_data_prepare` and set `--data_root` to a
-directory with this layout:
+`job.py` does not generate or download data. It expects `train.jsonl` and
+`valid.jsonl` to exist for each simulated site and reports a clear error if they
+are missing.
+
+To use pre-prepared data, set `--data_root` to a directory with this layout:
 
 ```bash
 data
@@ -141,11 +145,47 @@ The default `peft` mode uses an adapter-shaped server model so the trainer and
 server exchange the same state-dict keys with the default `flare.patch(trainer)`
 call. Full-model SFT can be enabled with `--train_mode sft`.
 
+## Prepare Data
+Prepare the default two-client synthetic dataset:
+
+```
+python prepare_data.py
+```
+
+You can also prepare data for a custom number of clients or a custom output
+directory:
+
+```
+python prepare_data.py --n_clients 4 --data_root /path/to/qwen_jsonl_data
+```
+
+The generated data uses this layout:
+
+```bash
+qwen_jsonl_data
+|
+|-- site-1
+|   |-- train.jsonl
+|   |-- valid.jsonl
+|-- site-2
+|   |-- train.jsonl
+|   |-- valid.jsonl
+|-- site-N
+|   |-- train.jsonl
+|   |-- valid.jsonl
+```
+
 ## Run Job
-From the terminal, run:
+After the data is prepared, run:
 
 ```
 python job.py
+```
+
+If you prepared data in a non-default location, pass it explicitly:
+
+```
+python job.py --data_root /path/to/qwen_jsonl_data
 ```
 
 To export the job folder without running simulation:
@@ -153,6 +193,9 @@ To export the job folder without running simulation:
 ```
 python job.py --export_config --job_dir /tmp/nvflare/jobs/qwen_hf_client_api
 ```
+
+Export only writes the job configuration. The client sites still need the
+configured `--data_root` available when the job runs.
 
 To run full-model SFT instead of the default LoRA mode:
 

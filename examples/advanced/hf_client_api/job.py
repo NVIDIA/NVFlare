@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import argparse
-import json
 import os
 import shlex
 from pathlib import Path
@@ -45,55 +44,29 @@ def define_parser():
     parser.add_argument("--lora_alpha", type=int, default=DEFAULT_LORA_ALPHA)
     parser.add_argument("--lora_dropout", type=float, default=DEFAULT_LORA_DROPOUT)
     parser.add_argument("--export_config", action="store_true")
-    parser.add_argument("--skip_data_prepare", action="store_true")
     return parser.parse_args()
-
-
-def write_jsonl(path: Path, rows: list[dict]):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        for row in rows:
-            f.write(json.dumps(row))
-            f.write("\n")
-
-
-def prepare_site_data(data_root: Path, client_names: list[str]):
-    for idx, site_name in enumerate(client_names, start=1):
-        rows = [
-            {
-                "instruction": "Summarize the site signal in one sentence.",
-                "input": f"Site {idx} observed stable local training loss over two batches.",
-                "output": f"Site {idx} reports stable local training loss.",
-            },
-            {
-                "instruction": "Rewrite the sentence in a concise technical style.",
-                "input": f"Client {site_name} has four synthetic records for this demonstration.",
-                "output": f"{site_name} uses four synthetic demonstration records.",
-            },
-            {
-                "instruction": "Classify the deployment mode.",
-                "input": "The FL client exchanges model weights through NVFlare and trains locally with Qwen.",
-                "output": "This is federated fine-tuning.",
-            },
-            {
-                "instruction": "Extract the relevant framework.",
-                "input": "The trainer is patched with nvflare.client.hf before the round loop.",
-                "output": "The relevant framework is HuggingFace Trainer.",
-            },
-        ]
-        valid_rows = [
-            {
-                "instruction": "Summarize the evaluation setup.",
-                "input": f"{site_name} evaluates the global Qwen model before local training.",
-                "output": f"{site_name} runs pre-train global-model evaluation.",
-            }
-        ]
-        write_jsonl(data_root / site_name / "train.jsonl", rows)
-        write_jsonl(data_root / site_name / "valid.jsonl", valid_rows)
 
 
 def join_args(*args: object) -> str:
     return " ".join(shlex.quote(str(arg)) for arg in args)
+
+
+def validate_site_data(data_root: Path, client_names: list[str]):
+    missing = []
+    for site_name in client_names:
+        for file_name in ("train.jsonl", "valid.jsonl"):
+            path = data_root / site_name / file_name
+            if not path.is_file():
+                missing.append(str(path))
+
+    if missing:
+        prepare_data_path = shlex.quote(str(SCRIPT_DIR / "prepare_data.py"))
+        data_root_arg = shlex.quote(str(data_root))
+        raise FileNotFoundError(
+            "Missing prepared data files:\n"
+            + "\n".join(f"- {path}" for path in missing)
+            + f"\nRun `python {prepare_data_path} --data_root {data_root_arg}` first."
+        )
 
 
 def model_config(args):
@@ -118,9 +91,8 @@ def main():
     args = define_parser()
     client_names = [f"site-{idx}" for idx in range(1, args.n_clients + 1)]
     data_root = Path(args.data_root).expanduser().resolve()
-
-    if not args.skip_data_prepare:
-        prepare_site_data(data_root, client_names)
+    if not args.export_config:
+        validate_site_data(data_root, client_names)
 
     per_site_config = {}
     for site_name in client_names:
