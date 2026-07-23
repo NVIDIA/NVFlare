@@ -80,7 +80,7 @@ def _initialize_fake_campaign(runner, tmp_path, monkeypatch, *, target_env="sim"
         )
 
     monkeypatch.setattr(runner, "run_job", fake_run)
-    argv = ["initialize", str(job), "--env", target_env, "--no-prefer-synthetic"]
+    argv = ["initialize", str(job), "--env", target_env]
     if mode is not None:
         argv.extend(["--mode", mode])
     assert runner.main(argv) == 0
@@ -195,7 +195,7 @@ def test_initialize_merges_existing_mutation_schema_preferred_targets_into_autof
         ),
     )
 
-    assert runner.main(["initialize", str(job), "--no-prefer-synthetic"]) == 0
+    assert runner.main(["initialize", str(job)]) == 0
 
     config = runner.read_yaml(tmp_path / "autofl.yaml")
     assert "custom_aggregators.py" in config["trust_contract"]["allowed_edit_paths"]
@@ -412,8 +412,58 @@ def test_comparison_budget_suppresses_duplicate_imported_fixed_budget_args():
 
     assert runner.build_fixed_args(config, help_text, schema) == []
 
-    args = SimpleNamespace(base_args="", prefer_synthetic=False, synthetic_train_size=1, synthetic_test_size=1)
+    args = SimpleNamespace(base_args="")
     assert runner.build_base_args(args, help_text, schema) == ["--n_clients", "8", "--num_rounds", "20"]
+
+
+def test_build_base_args_never_injects_dataset_flags_for_synthetic_capable_jobs():
+    runner = _load_runner()
+    help_text = "usage: job.py [--synthetic_data] [--train_size TRAIN_SIZE] [--test_size TEST_SIZE]"
+
+    assert runner.build_base_args(SimpleNamespace(base_args=""), help_text, {}) == []
+
+    schema = {"comparison_budget_args": {"default_candidate_budget": {"num_rounds": 5}}}
+    help_text_with_budget = f"{help_text} [--num_rounds NUM_ROUNDS]"
+    assert runner.build_base_args(SimpleNamespace(base_args=""), help_text_with_budget, schema) == [
+        "--num_rounds",
+        "5",
+    ]
+
+
+def test_explicit_base_args_pass_through_verbatim():
+    runner = _load_runner()
+    help_text = "usage: job.py [--synthetic_data] [--train_size TRAIN_SIZE] [--test_size TEST_SIZE]"
+
+    args = SimpleNamespace(base_args="--synthetic_data --train_size 64")
+    assert runner.build_base_args(args, help_text, {}) == ["--synthetic_data", "--train_size", "64"]
+
+
+def test_restore_campaign_settings_ignores_legacy_synthetic_settings(tmp_path, capsys):
+    runner = _load_runner()
+    args = runner.parse_args(["status", "job.py"])
+    settings = runner.campaign_settings(args)
+    settings.update({"prefer_synthetic": True, "synthetic_train_size": 2048, "synthetic_test_size": 256})
+    metadata = {"settings": settings, "workspace_root": str(tmp_path)}
+
+    assert runner.restore_campaign_settings(args, metadata) is False
+
+    assert not hasattr(args, "prefer_synthetic")
+    help_text = "usage: job.py [--synthetic_data] [--train_size TRAIN_SIZE] [--test_size TEST_SIZE]"
+    assert runner.build_base_args(args, help_text, {}) == []
+    # The prior baseline/candidates were scored on injected synthetic data; new runs use
+    # real data, so the ledger crosses a data regime — warn instead of staying silent.
+    stderr = capsys.readouterr().err
+    assert "computed on synthetic data" in stderr
+    assert "re-initializing" in stderr
+
+
+def test_restore_campaign_settings_does_not_warn_without_legacy_synthetic_setting(tmp_path, capsys):
+    runner = _load_runner()
+    args = runner.parse_args(["status", "job.py"])
+    metadata = {"settings": runner.campaign_settings(args), "workspace_root": str(tmp_path)}
+
+    assert runner.restore_campaign_settings(args, metadata) is False
+    assert "synthetic" not in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -1668,7 +1718,7 @@ def test_initialize_socket_failure_returns_75_without_counting_candidate(tmp_pat
         ),
     )
 
-    assert runner.main(["initialize", str(job), "--env", "sim", "--no-prefer-synthetic"]) == 75
+    assert runner.main(["initialize", str(job), "--env", "sim"]) == 75
 
     records = runner.load_results(tmp_path / "results.tsv")
     state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
@@ -2421,7 +2471,7 @@ def test_initialize_retries_an_unscored_baseline(tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr(runner, "run_job", fake_run)
-    command = ["initialize", str(job), "--no-prefer-synthetic"]
+    command = ["initialize", str(job)]
     assert runner.main(command) == 1
     assert runner.main(command) == 0
     records = runner.load_results(tmp_path / "results.tsv")
@@ -2601,7 +2651,7 @@ def test_omitted_metric_uses_imported_job_metric(tmp_path, monkeypatch):
 
     monkeypatch.setattr(runner, "run_job", fake_run)
 
-    assert runner.main(["initialize", str(job), "--no-prefer-synthetic"]) == 0
+    assert runner.main(["initialize", str(job)]) == 0
     metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
     assert metadata["settings"]["metric"] == "auc"
 
@@ -3019,7 +3069,6 @@ if __name__ == "__main__":
             str(job),
             "--metric",
             "accuracy",
-            "--no-prefer-synthetic",
         ],
         cwd=tmp_path,
         env=env,
