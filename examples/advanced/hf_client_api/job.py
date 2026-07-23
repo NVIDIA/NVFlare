@@ -130,22 +130,27 @@ def main():
             )
         per_site_config[site_name] = {"train_args": script_args}
 
-    recipe = FedAvgRecipe(
-        name=f"qwen-hf-client-api-{args.train_mode}",
-        model=model_config(args),
-        min_clients=args.n_clients,
-        num_rounds=args.num_rounds,
-        train_script=str(SCRIPT_DIR / "client.py"),
-        launch_external_process=True,
-        server_expected_format=ExchangeFormat.PYTORCH,
-        key_metric="eval_loss",
-        negate_key_metric=True,
-        enable_tensor_disk_offload=True,
-    )
-    set_per_site_config(recipe, per_site_config)
-    recipe.add_client_file(str(SCRIPT_DIR / "model.py"))
+    original_cwd = Path.cwd()
+    os.chdir(SCRIPT_DIR)
+    try:
+        recipe = FedAvgRecipe(
+            name=f"qwen-hf-client-api-{args.train_mode}",
+            model=model_config(args),
+            min_clients=args.n_clients,
+            num_rounds=args.num_rounds,
+            train_script="client.py",
+            launch_external_process=True,
+            server_expected_format=ExchangeFormat.PYTORCH,
+            key_metric="eval_loss",
+            negate_key_metric=True,
+            enable_tensor_disk_offload=True,
+        )
+        set_per_site_config(recipe, per_site_config)
+        recipe.add_client_file("model.py")
 
-    recipe.export(args.job_dir)
+        recipe.export(args.job_dir)
+    finally:
+        os.chdir(original_cwd)
     print(f"Exported job to {args.job_dir}")
     if args.export_config:
         return
