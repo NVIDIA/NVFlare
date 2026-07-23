@@ -1209,6 +1209,10 @@ def _skill_selection(
         # Lifecycle skills are out of scope and not planned; exported jobs are
         # handled with product APIs directly, so no skill is recommended.
         pass
+    elif conversion_state == "flare_job":
+        # An existing FLARE job source: optimization requests (improve a metric,
+        # fix low accuracy, explore hyperparameters/algorithms) route to Auto-FL.
+        recommended.append("nvflare-autofl")
     elif dataset and dataset.get("modality") in ("tabular", "image"):
         # A dataset target routes to federated statistics; when a dataset
         # block exists, code classification found no converter route.

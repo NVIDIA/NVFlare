@@ -7,9 +7,13 @@ data distribution, synthetic data, and site heterogeneity requests.
 
 The per-run ledger score, extracted with the objective's
 `metric_extraction_order`, is the canonical selection surface for baseline,
-keep/discard, and best-candidate comparisons. Cross-site server-final
-global-model scores from `cross_val_results.json` are diagnostic unless the
-user explicitly requests selection on them.
+keep/discard, and best-candidate comparisons. When extraction falls back to
+`cross_val_results.json`, the score is the unweighted mean of the server
+global model's metric across the evaluating sites, preferring final-checkpoint
+entries over `best_`-checkpoint entries; per-site sample counts are not
+recorded in the payload, so a weighted mean is not computable. Cross-site
+server-final global-model scores are diagnostic unless the user explicitly
+requests selection on them.
 
 ## Iterative Reruns
 
@@ -50,10 +54,9 @@ observed run-to-run spread, and treat candidate score differences within that
 spread as noise rather than real improvement when reporting results.
 
 Host environment drift is not a variance source: simulator child processes
-receive a sanitized environment built from a fixed runtime allowlist plus the
-variable names declared in `environment.simulator_env_passthrough` (see the
-[job import contract](job-import-contract.md)). Jobs that need variables such
-as `DATASET_DIR` must declare them there explicitly.
+receive a sanitized environment built from a fixed runtime allowlist plus only
+the variable names declared in `environment.simulator_env_passthrough`. Jobs
+that need variables such as `DATASET_DIR` must declare them there explicitly.
 
 ## Data Distribution Experiments
 

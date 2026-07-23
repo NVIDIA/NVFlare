@@ -2641,6 +2641,103 @@ def test_effective_cap_changes_append_audit_records_to_campaign_metadata(tmp_pat
     assert all(entry["changed_at"] for entry in cap_changes)
 
 
+def test_raising_cap_reopens_exhausted_campaign_with_consistent_state(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    results_path = tmp_path / "results.tsv"
+    records = runner.load_results(results_path)
+    records.append(runner.RunRecord("discard", "candidate_1", 0.4, 1.0, "none", "candidate", "python job.py", ""))
+    runner.write_results(results_path, records)
+    assert runner.main(["status", str(job), "--max-candidates", "1"]) == 0
+
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["candidate_cap"] == 1
+    assert state["final_response_allowed"] is True
+    assert state["reason"] == "candidate_cap_exhausted"
+
+    assert (
+        runner.main(
+            ["prepare", str(job), "--name", "reopened", "--hypothesis", "resume search", "--max-candidates", "2"]
+        )
+        == 0
+    )
+
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    assert metadata["settings"]["max_candidates"] == 2
+    assert [(entry["old"], entry["new"]) for entry in metadata["cap_changes"]] == [(None, 1), (1, 2)]
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["candidate_cap"] == 2
+    assert state["final_response_allowed"] is False
+    assert state["remaining_candidates"] == 1
+    assert tmp_path.joinpath(".nvflare/autofl/candidates/reopened/candidate_manifest.json").exists()
+
+
+def test_cap_change_with_unrelated_preflight_rejection_keeps_files_consistent(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "draft", "--hypothesis", "draft candidate"]) == 0
+
+    rc = runner.main(
+        ["prepare", str(job), "--name", "second", "--hypothesis", "second candidate", "--max-candidates", "5"]
+    )
+
+    assert rc == 2
+    assert "pending candidate" in capsys.readouterr().err
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    assert metadata["settings"]["max_candidates"] == 5
+    assert [(entry["old"], entry["new"]) for entry in metadata["cap_changes"]] == [(None, 5)]
+    assert state["candidate_cap"] == 5
+    assert state["final_response_allowed"] is False
+    assert not tmp_path.joinpath(".nvflare/autofl/candidates/second").exists()
+
+
+def test_preflight_rejection_without_settings_change_is_write_free(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "draft", "--hypothesis", "draft candidate"]) == 0
+    watched = [
+        tmp_path / ".nvflare/autofl/campaign.json",
+        tmp_path / ".nvflare/autofl/campaign_state.json",
+        tmp_path / "results.tsv",
+    ]
+    before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in watched}
+
+    rc = runner.main(["prepare", str(job), "--name", "second", "--hypothesis", "second candidate"])
+
+    assert rc == 2
+    assert "pending candidate" in capsys.readouterr().err
+    for path in watched:
+        assert (path.read_bytes(), path.stat().st_mtime_ns) == before[path]
+
+
+def test_lowering_cap_below_attempts_clamps_remaining_and_keeps_state_consistent(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    results_path = tmp_path / "results.tsv"
+    records = runner.load_results(results_path)
+    records.append(runner.RunRecord("discard", "candidate_1", 0.4, 1.0, "none", "candidate", "python job.py", ""))
+    records.append(runner.RunRecord("discard", "candidate_2", 0.3, 1.0, "none", "candidate", "python job.py", ""))
+    runner.write_results(results_path, records)
+    assert runner.main(["status", str(job), "--max-candidates", "3"]) == 0
+
+    rc = runner.main(["prepare", str(job), "--name", "late", "--hypothesis", "late candidate", "--max-candidates", "1"])
+
+    assert rc == 2
+    assert "campaign is already final: candidate_cap_exhausted" in capsys.readouterr().err
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    assert metadata["settings"]["max_candidates"] == 1
+    assert [(entry["old"], entry["new"]) for entry in metadata["cap_changes"]] == [(None, 3), (3, 1)]
+    assert state["candidate_cap"] == 1
+    assert state["candidate_attempts"] == 2
+    assert state["remaining_candidates"] == 0
+    assert state["final_response_allowed"] is True
+    assert state["reason"] == "candidate_cap_exhausted"
+    assert not tmp_path.joinpath(".nvflare/autofl/candidates/late").exists()
+
+
 def test_runner_state_reports_budget_and_baseline_accounting(tmp_path, monkeypatch):
     runner = _load_runner()
     job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=1.0, mode="min")
@@ -2971,7 +3068,7 @@ if __name__ == "__main__":
     assert manifest["changed_files"] == ["job.py"]
 
 
-def test_cross_val_extraction_prefers_best_server_final_global_model_entry(tmp_path):
+def test_cross_val_extraction_averages_server_final_global_model_entries(tmp_path):
     runner = _load_runner()
     result_path = tmp_path / "cross_val_results.json"
     result_path.write_text(
@@ -2992,7 +3089,8 @@ def test_cross_val_extraction_prefers_best_server_final_global_model_entry(tmp_p
 
     evidence = runner.extract_metric_evidence(tmp_path, ["accuracy"])
 
-    assert evidence.score == pytest.approx(0.74)
+    # Unweighted mean over the global model's per-site scores; site-local entries never count.
+    assert evidence.score == pytest.approx((0.71 + 0.74) / 2)
     assert evidence.metric_name == "accuracy"
     assert evidence.source == "structured:cross_val_results.json#server_final"
     assert evidence.artifact == str(result_path.resolve())
@@ -3018,7 +3116,67 @@ def test_cross_val_extraction_resolves_modern_unprefixed_global_model_entries(tm
 
     evidence = runner.extract_metric_evidence(tmp_path, ["accuracy"])
 
-    assert evidence.score == pytest.approx(0.74)
+    assert evidence.score == pytest.approx((0.71 + 0.74) / 2)
+    assert evidence.source == "structured:cross_val_results.json#server_final"
+
+
+def test_cross_val_extraction_mean_penalizes_easiest_site_bias(tmp_path):
+    # Reviewer counterexample: a max reduction would score [0.90, 0.50] as 0.90 and rank it above
+    # a uniformly better [0.80, 0.80]; the unweighted mean ranks the uniform candidate higher.
+    runner = _load_runner()
+    skewed = tmp_path / "skewed"
+    uniform = tmp_path / "uniform"
+    skewed.mkdir()
+    uniform.mkdir()
+    skewed.joinpath("cross_val_results.json").write_text(
+        json.dumps(
+            {
+                "site-1": {"SRV_FL_global_model.pt": {"accuracy": 0.90}},
+                "site-2": {"SRV_FL_global_model.pt": {"accuracy": 0.50}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    uniform.joinpath("cross_val_results.json").write_text(
+        json.dumps(
+            {
+                "site-1": {"SRV_FL_global_model.pt": {"accuracy": 0.80}},
+                "site-2": {"SRV_FL_global_model.pt": {"accuracy": 0.80}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    skewed_score = runner.extract_score(skewed, ["accuracy"])
+    uniform_score = runner.extract_score(uniform, ["accuracy"])
+
+    assert skewed_score == pytest.approx(0.70)
+    assert uniform_score == pytest.approx(0.80)
+    assert runner.better(uniform_score, skewed_score, "max")
+
+
+def test_cross_val_extraction_prefers_final_checkpoint_entries_over_best(tmp_path):
+    runner = _load_runner()
+    tmp_path.joinpath("cross_val_results.json").write_text(
+        json.dumps(
+            {
+                "site-1": {
+                    "SRV_FL_global_model.pt": {"accuracy": 0.60},
+                    "SRV_best_FL_global_model.pt": {"accuracy": 0.90},
+                },
+                "site-2": {
+                    "SRV_FL_global_model.pt": {"accuracy": 0.80},
+                    "SRV_best_FL_global_model.pt": {"accuracy": 0.95},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    evidence = runner.extract_metric_evidence(tmp_path, ["accuracy"])
+
+    # Only the final-checkpoint class is averaged; best_-checkpoint entries are excluded.
+    assert evidence.score == pytest.approx((0.60 + 0.80) / 2)
     assert evidence.source == "structured:cross_val_results.json#server_final"
 
 
@@ -3030,7 +3188,8 @@ def test_cross_val_extraction_resolves_srv_best_only_global_model_entries(tmp_pa
                 "site-1": {
                     "site-1": {"accuracy": 0.99},
                     "SRV_best_FL_global_model.pt": {"accuracy": 0.66},
-                }
+                },
+                "site-2": {"SRV_best_FL_global_model.pt": {"accuracy": 0.70}},
             }
         ),
         encoding="utf-8",
@@ -3038,11 +3197,12 @@ def test_cross_val_extraction_resolves_srv_best_only_global_model_entries(tmp_pa
 
     evidence = runner.extract_metric_evidence(tmp_path, ["accuracy"])
 
-    assert evidence.score == pytest.approx(0.66)
+    # Without any final-checkpoint entries the best_-checkpoint class is averaged instead.
+    assert evidence.score == pytest.approx((0.66 + 0.70) / 2)
     assert evidence.source == "structured:cross_val_results.json#server_final"
 
 
-def test_cross_val_extraction_uses_min_over_server_final_entries_in_min_mode(tmp_path):
+def test_cross_val_extraction_single_site_mean_is_the_value_itself(tmp_path):
     runner = _load_runner()
     tmp_path.joinpath("cross_val_results.json").write_text(
         json.dumps(
@@ -3050,14 +3210,13 @@ def test_cross_val_extraction_uses_min_over_server_final_entries_in_min_mode(tmp
                 "site-1": {
                     "site-1": {"loss": 0.10},
                     "SRV_FL_global_model.pt": {"loss": 0.42},
-                },
-                "site-2": {"SRV_FL_global_model.pt": {"loss": 0.37}},
+                }
             }
         ),
         encoding="utf-8",
     )
 
-    assert runner.extract_score(tmp_path, ["loss"], mode="min") == pytest.approx(0.37)
+    assert runner.extract_score(tmp_path, ["loss"]) == pytest.approx(0.42)
 
 
 def test_cross_val_extraction_falls_back_to_first_match_without_server_final_entries(tmp_path):

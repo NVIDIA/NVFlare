@@ -84,6 +84,9 @@ RESULT_FIELDS = [
 # CrossSiteModelEval workflow prefixes SRV_ (SRV_FL_global_model, SRV_best_FL_global_model.pt)
 # while the ModelController CrossSiteEval records the raw checkpoint name (FL_global_model.pt).
 SERVER_GLOBAL_MODEL_KEY_MARKER = "FL_global_model"
+# Sub-marker for best-checkpoint global-model entries (SRV_best_FL_global_model.pt,
+# best_FL_global_model.pt) as opposed to final-checkpoint entries.
+SERVER_BEST_GLOBAL_MODEL_KEY_MARKER = "best_FL_global_model"
 
 CANDIDATE_MANIFEST_SCHEMA_VERSION = "nvflare.autofl.candidate.v1"
 CANDIDATE_MANIFEST_STATUSES = {"prepared", "ready_for_external_execution", "keep", "discard", "crash", "abandoned"}
@@ -1399,25 +1402,32 @@ def metric_from_list(items: Any, metric: str) -> Optional[float]:
     return None
 
 
-def server_final_metric_values(payload: Any, metric: str) -> List[float]:
-    """Collect the metric values recorded for server-side global-model entries in a cross-site payload."""
-    values: List[float] = []
+def server_global_model_metric_values(payload: Any, metric: str) -> Tuple[List[float], List[float]]:
+    """Collect per-site metric values for server-side global-model entries in a cross-site payload.
+
+    Returns (final_values, best_values): entries whose key contains the best-checkpoint marker
+    (SRV_best_FL_global_model.pt, best_FL_global_model.pt) land in best_values; the remaining
+    global-model entries are final-checkpoint values.
+    """
+    final_values: List[float] = []
+    best_values: List[float] = []
     if isinstance(payload, dict):
         for key, entry in payload.items():
             if isinstance(key, str) and SERVER_GLOBAL_MODEL_KEY_MARKER in key:
                 value = find_metric_value(entry, [metric])
                 if value is not None:
-                    values.append(value)
+                    target = best_values if SERVER_BEST_GLOBAL_MODEL_KEY_MARKER in key else final_values
+                    target.append(value)
             else:
-                values.extend(server_final_metric_values(entry, metric))
+                nested_final, nested_best = server_global_model_metric_values(entry, metric)
+                final_values.extend(nested_final)
+                best_values.extend(nested_best)
     elif isinstance(payload, list):
         for item in payload:
-            values.extend(server_final_metric_values(item, metric))
-    return values
-
-
-def best_metric_value(values: Sequence[float], mode: str) -> float:
-    return min(values) if mode == "min" else max(values)
+            nested_final, nested_best = server_global_model_metric_values(item, metric)
+            final_values.extend(nested_final)
+            best_values.extend(nested_best)
+    return final_values, best_values
 
 
 def text_metric_matches(text: str, metric: str) -> List[Tuple[int, float]]:
@@ -1471,9 +1481,7 @@ def text_metric_matches(text: str, metric: str) -> List[Tuple[int, float]]:
     return evaluation_matches or direct_matches or mapping_matches or framework_matches
 
 
-def extract_metric_evidence(
-    artifact_root: Path, metrics: Sequence[str] | str, mode: str = "max"
-) -> Optional[MetricEvidence]:
+def extract_metric_evidence(artifact_root: Path, metrics: Sequence[str] | str) -> Optional[MetricEvidence]:
     metric_order = normalize_metric_order(metrics)
     metric_files = sorted(artifact_root.glob("**/metrics_summary.json")) + sorted(
         artifact_root.glob("**/cross_val_results.json")
@@ -1488,12 +1496,16 @@ def extract_metric_evidence(
     for metric in metric_order:
         for path, payload in payloads:
             if path.name == "cross_val_results.json":
-                # Cross-site payloads score every site/model pair; prefer the server-final
-                # global model over whichever entry happens to appear first.
-                server_final = server_final_metric_values(payload, metric)
-                if server_final:
+                # Cross-site payloads score every site/model pair; prefer the server global
+                # model over whichever entry happens to appear first, and final-checkpoint
+                # entries over best_-checkpoint entries. Per-site sample counts are not
+                # recorded in the payload, so the defined reducer is the unweighted mean
+                # across evaluating sites (a max/min would just pick the easiest site).
+                final_values, best_values = server_global_model_metric_values(payload, metric)
+                server_values = final_values or best_values
+                if server_values:
                     return MetricEvidence(
-                        score=best_metric_value(server_final, mode),
+                        score=sum(server_values) / len(server_values),
                         metric_name=metric,
                         source=f"structured:{path.name}#server_final",
                         artifact=str(path.resolve()),
@@ -1528,8 +1540,8 @@ def extract_metric_evidence(
     return None
 
 
-def extract_score(artifact_root: Path, metrics: Sequence[str] | str, mode: str = "max") -> Optional[float]:
-    evidence = extract_metric_evidence(artifact_root, metrics, mode)
+def extract_score(artifact_root: Path, metrics: Sequence[str] | str) -> Optional[float]:
+    evidence = extract_metric_evidence(artifact_root, metrics)
     return evidence.score if evidence else None
 
 
@@ -2269,7 +2281,6 @@ def run_job(
     simulator_no_progress_timeout: int,
     metrics: Sequence[str],
     config: Dict[str, Any],
-    mode: str = "max",
 ) -> RunRecord:
     baseline_run = run_def.status == "baseline"
     log_path = output_root / run_def.name / "run.log"
@@ -2335,7 +2346,7 @@ def run_job(
         run_def.failure_reason = unresolved_result_dir_failure_reason(python, cwd, config)
     else:
         artifact_root = artifact_dir.parent
-        evidence = extract_metric_evidence(artifact_root, metrics, mode)
+        evidence = extract_metric_evidence(artifact_root, metrics)
         if evidence is None:
             run_def.status = "crash"
             run_def.failure_reason = f"matching metric not found; {metric_search_description(artifact_root, metrics)}"
@@ -2728,7 +2739,13 @@ def campaign_settings(args: argparse.Namespace) -> Dict[str, Any]:
     return {name: getattr(args, name) for name in CAMPAIGN_SETTING_NAMES}
 
 
-def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]) -> None:
+def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]) -> bool:
+    """Restore persisted settings onto args; persist explicit mutable changes.
+
+    Returns True when a mutable-settings change was persisted to campaign.json, so
+    callers can refresh the authoritative campaign state under the new settings
+    before any preflight gate reads it.
+    """
     settings = metadata.get("settings")
     if not isinstance(settings, dict):
         raise ValueError("campaign metadata is missing settings")
@@ -2767,6 +2784,7 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
             raise ValueError("campaign metadata is missing workspace_root")
         workspace = Path(workspace_value)
         write_json(campaign_metadata_path(workspace), metadata)
+    return changed
 
 
 def campaign_timeout(args: argparse.Namespace, schema: Dict[str, Any]) -> Tuple[int, int]:
@@ -2960,7 +2978,6 @@ def execute_sim_baseline(
         simulator_no_progress_timeout=no_progress_timeout,
         metrics=metric_extraction_order(config, args.metric),
         config=config,
-        mode=args.mode,
     )
 
 
@@ -2969,8 +2986,10 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
     metadata_path = campaign_metadata_path(workspace)
     if metadata_path.exists():
         metadata = load_campaign_metadata(workspace, job)
-        restore_campaign_settings(args, metadata)
+        settings_changed = restore_campaign_settings(args, metadata)
         paths = campaign_paths(args, job)
+        if settings_changed:
+            refresh_campaign_state(args, job, metadata, paths)
         records = load_results(paths["results"])
         if args.target_env == "sim" and not any(
             record.status == "baseline" and record.score is not None for record in records
@@ -3092,12 +3111,47 @@ def count_abandoned_candidates(workspace: Path) -> int:
     return count
 
 
+def refresh_campaign_state(
+    args: argparse.Namespace, job: Path, metadata: Dict[str, Any], paths: Dict[str, Path]
+) -> Tuple[List[RunRecord], Dict[str, Any]]:
+    """Recompute and persist campaign_state.json under the current effective settings without running a job."""
+    records = load_results(paths["results"])
+    pending = pending_candidate_manifests(job.parent)
+    state = write_state(
+        paths["state"],
+        paths["results"],
+        records,
+        args.max_candidates,
+        mode=args.mode,
+        stop_files=resolve_stop_files(job.parent, args.stop_file),
+        plateau_threshold=args.plateau_threshold,
+        plateau_min_delta=args.plateau_min_delta,
+        hard_crash_threshold=args.hard_crash_threshold,
+        exploration_batch_size=args.exploration_batch_size,
+        family_repeat_limit=args.family_repeat_limit,
+        pending_manifest_count=len(pending),
+        abandoned_candidate_count=count_abandoned_candidates(job.parent),
+        persist=False,
+    )
+    state.update(
+        {
+            "best_candidate": metadata.get("best_candidate"),
+            "best_source_sha256": metadata.get("best_source_sha256"),
+            "pending_candidate_manifest": str(pending[0].resolve()) if pending else None,
+        }
+    )
+    write_state_if_changed(paths["state"], state)
+    return records, state
+
+
 def prepare_candidate(args: argparse.Namespace, job: Path) -> int:
     workspace = job.parent
     metadata = load_campaign_metadata(workspace, job)
-    restore_campaign_settings(args, metadata)
-    ensure_campaign_not_stopped(workspace, args, action="prepare a candidate")
+    settings_changed = restore_campaign_settings(args, metadata)
     paths = campaign_paths(args, job)
+    if settings_changed:
+        refresh_campaign_state(args, job, metadata, paths)
+    ensure_campaign_not_stopped(workspace, args, action="prepare a candidate")
     records = load_results(paths["results"])
     if not any(record.status == "baseline" and record.score is not None for record in records):
         raise ValueError("a scored baseline is required before preparing candidates")
@@ -3359,9 +3413,11 @@ def finalize_candidate_result(
 def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
     workspace = job.parent
     metadata = load_campaign_metadata(workspace, job)
-    restore_campaign_settings(args, metadata)
-    ensure_campaign_not_stopped(workspace, args, action="evaluate a candidate")
+    settings_changed = restore_campaign_settings(args, metadata)
     paths = campaign_paths(args, job)
+    if settings_changed:
+        refresh_campaign_state(args, job, metadata, paths)
+    ensure_campaign_not_stopped(workspace, args, action="evaluate a candidate")
     manifest_path = Path(args.manifest).resolve() if args.manifest else None
     if manifest_path is None:
         pending = pending_candidate_manifests(workspace)
@@ -3454,7 +3510,6 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
             simulator_no_progress_timeout=no_progress_timeout,
             metrics=metric_extraction_order(config, args.metric),
             config=config,
-            mode=args.mode,
         )
     except BaseException as error:
         try:
@@ -3526,8 +3581,10 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
 def abandon_candidate(args: argparse.Namespace, job: Path) -> int:
     workspace = job.parent
     metadata = load_campaign_metadata(workspace, job)
-    restore_campaign_settings(args, metadata)
+    settings_changed = restore_campaign_settings(args, metadata)
     paths = campaign_paths(args, job)
+    if settings_changed:
+        refresh_campaign_state(args, job, metadata, paths)
     manifest_path = Path(args.manifest).resolve() if args.manifest else None
     if manifest_path is None:
         pending = pending_candidate_manifests(workspace)
@@ -3575,10 +3632,13 @@ def abandon_candidate(args: argparse.Namespace, job: Path) -> int:
 
 def suggest_candidates(args: argparse.Namespace, job: Path) -> int:
     metadata = load_campaign_metadata(job.parent, job)
-    restore_campaign_settings(args, metadata)
+    settings_changed = restore_campaign_settings(args, metadata)
+    paths = campaign_paths(args, job)
+    if settings_changed:
+        refresh_campaign_state(args, job, metadata, paths)
     if args.limit < 1:
         raise ValueError("--limit must be positive")
-    config = read_yaml(campaign_paths(args, job)["autofl_yaml"])
+    config = read_yaml(paths["autofl_yaml"])
     help_text = job_help(args.python, job, job.parent)
     suggestions = [
         {"name": candidate.name, "run_args": candidate.args, "hypothesis": candidate.description}
@@ -3596,8 +3656,10 @@ def suggest_candidates(args: argparse.Namespace, job: Path) -> int:
 def record_external_result(args: argparse.Namespace, job: Path) -> int:
     workspace = job.parent
     metadata = load_campaign_metadata(workspace, job)
-    restore_campaign_settings(args, metadata)
+    settings_changed = restore_campaign_settings(args, metadata)
     paths = campaign_paths(args, job)
+    if settings_changed:
+        refresh_campaign_state(args, job, metadata, paths)
     config = read_yaml(paths["autofl_yaml"])
     artifact_path = Path(args.external_artifacts).resolve() if args.external_artifacts else None
     score = parse_finite_metric_value(args.score) if args.score is not None else None
@@ -3605,7 +3667,7 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
         raise ValueError("--score must be a finite number")
     evidence = None
     if score is None and artifact_path:
-        evidence = extract_metric_evidence(artifact_path, metric_extraction_order(config, args.metric), args.mode)
+        evidence = extract_metric_evidence(artifact_path, metric_extraction_order(config, args.metric))
         score = evidence.score if evidence else None
     elif score is not None:
         evidence = MetricEvidence(
@@ -3753,32 +3815,7 @@ def show_campaign_status(args: argparse.Namespace, job: Path) -> int:
     metadata = load_campaign_metadata(job.parent, job)
     restore_campaign_settings(args, metadata)
     paths = campaign_paths(args, job)
-    records = load_results(paths["results"])
-    pending = pending_candidate_manifests(job.parent)
-    state = write_state(
-        paths["state"],
-        paths["results"],
-        records,
-        args.max_candidates,
-        mode=args.mode,
-        stop_files=resolve_stop_files(job.parent, args.stop_file),
-        plateau_threshold=args.plateau_threshold,
-        plateau_min_delta=args.plateau_min_delta,
-        hard_crash_threshold=args.hard_crash_threshold,
-        exploration_batch_size=args.exploration_batch_size,
-        family_repeat_limit=args.family_repeat_limit,
-        pending_manifest_count=len(pending),
-        abandoned_candidate_count=count_abandoned_candidates(job.parent),
-        persist=False,
-    )
-    state.update(
-        {
-            "best_candidate": metadata.get("best_candidate"),
-            "best_source_sha256": metadata.get("best_source_sha256"),
-            "pending_candidate_manifest": str(pending[0].resolve()) if pending else None,
-        }
-    )
-    write_state_if_changed(paths["state"], state)
+    records, state = refresh_campaign_state(args, job, metadata, paths)
     print_campaign_result(paths, records, state, campaign=metadata)
     return 0
 

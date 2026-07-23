@@ -22,6 +22,9 @@ turn project evidence and user intent into one narrow next action.
   recommend the narrowest skill.
 - Existing FLARE job that fails or produces suspicious logs:
   `nvflare-diagnose-job`, not conversion.
+- Existing FLARE job or project to optimize or improve — low accuracy, an
+  underperforming metric, or hyperparameter/algorithm exploration:
+  `nvflare-autofl`, not diagnosis.
 - POC startup, production submission, Kubernetes deployment, or identity setup:
   route to the corresponding operations or deployment skill when available.
 - Non-FLARE Python, web, data science, or generic ML questions: no FLARE skill.
