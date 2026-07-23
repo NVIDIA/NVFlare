@@ -189,6 +189,10 @@ def _patch_comm_config(kit_dir: Path, port: int) -> None:
     internal = comm_config.setdefault("internal", {})
     if not isinstance(internal, dict):
         _fail("INVALID_KIT", "comm_config.json internal must be a mapping.", "Fix the startup kit comm config.")
+    if internal.get("scheme") == "file":
+        _validate_file_comm_config(comm_config)
+        _write_json(comm_config_path, comm_config)
+        return
     internal["scheme"] = "tcp"
     resources = _internal_resources(comm_config)
     resources.update(
@@ -199,6 +203,25 @@ def _patch_comm_config(kit_dir: Path, port: int) -> None:
         }
     )
     _write_json(comm_config_path, comm_config)
+
+
+def _validate_file_comm_config(comm_config: dict) -> None:
+    """A kit configured for the shared-file transport is preserved as-is; only validate it.
+    TCP host/port fields are deliberately not added to file resources."""
+    resources = _internal_resources(comm_config)
+    root_dir = resources.get("root_dir")
+    if not isinstance(root_dir, str) or not Path(root_dir).is_absolute():
+        _fail(
+            "INVALID_KIT",
+            "file transport requires an absolute internal.resources.root_dir.",
+            "Fix the startup kit comm config.",
+        )
+    if resources.setdefault("connection_security", "clear") != "clear":
+        _fail(
+            "INVALID_KIT",
+            "file transport supports only clear connection security.",
+            "Fix the startup kit comm config.",
+        )
 
 
 def _render_template(

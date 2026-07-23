@@ -551,10 +551,15 @@ class DockerJobLauncher(JobLauncherSpec):
         # resources.json at provision time.
         if JobProcessArgs.PARENT_URL in job_args:
             flag, original_url = job_args[JobProcessArgs.PARENT_URL]
-            port = original_url.rsplit(":", 1)[-1]
-            parent_url = f"tcp://{site_name}:{port}"
-            job_args = dict(job_args)
-            job_args[JobProcessArgs.PARENT_URL] = (flag, parent_url)
+            if str(original_url).startswith("file:"):
+                # Shared-file transport URLs are location-independent; pass through unchanged
+                # (the listener directory must be volume-mounted into the container)
+                pass
+            else:
+                port = original_url.rsplit(":", 1)[-1]
+                parent_url = f"tcp://{site_name}:{port}"
+                job_args = dict(job_args)
+                job_args[JobProcessArgs.PARENT_URL] = (flag, parent_url)
 
         module_args = self.get_module_args(job_args)
         module_args_list = []

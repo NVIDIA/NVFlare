@@ -25,6 +25,7 @@ from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.slurm.config import (
     SLURM_CHILD_PROCESS_ENV,
+    BindMount,
     SlurmLauncherError,
     _validate_mount_destination,
 )
@@ -152,13 +153,25 @@ def test_parent_url_rewrite_formats_ipv6_host():
     assert rewritten[JobProcessArgs.PARENT_URL][1] == "tcp://[2001:db8::2]:8102"
 
 
+def test_shared_file_parent_url_is_preserved_without_parent_host():
+    parent_url = "file://0/lustre/nvflare/cellnet/lst_12345678?poll_interval=0.05&lease_timeout=30"
+    args = {JobProcessArgs.PARENT_URL: ("-p", parent_url)}
+
+    rewritten = _rewrite_parent_url(args, None, 8102)
+
+    assert rewritten[JobProcessArgs.PARENT_URL][1] == parent_url
+    assert args[JobProcessArgs.PARENT_URL][1] == parent_url
+
+
 @pytest.mark.parametrize(
     "entry, message",
     [
         (None, "missing or malformed"),
         (("-p", "tcp://old:not-a-port"), "malformed parent URL"),
-        (("-p", "http://old:8102"), "must use tcp"),
+        (("-p", "http://old:8102"), "must use file or tcp"),
         (("-p", "tcp://old:9000"), "configured internal_port"),
+        (("-p", "file://host/not-placeholder"), "malformed shared-file"),
+        (("-p", "file://0"), "malformed shared-file"),
     ],
 )
 def test_parent_url_rewrite_rejects_malformed_or_incompatible_value(entry, message):
@@ -166,6 +179,56 @@ def test_parent_url_rewrite_rejects_malformed_or_incompatible_value(entry, messa
 
     with pytest.raises(SlurmLauncherError, match=message):
         _rewrite_parent_url(args, "new-host", 8102)
+
+
+def _file_parent_context(workspace, listener):
+    context = _fl_ctx(workspace)
+    context.get_prop(FLContextKey.JOB_PROCESS_ARGS)[JobProcessArgs.PARENT_URL] = (
+        "-p",
+        f"file://0{listener}?poll_interval=0.05",
+    )
+    return context
+
+
+@pytest.mark.parametrize("sandbox", ["pyxis", "apptainer"])
+def test_containerized_slurm_mounts_shared_file_parent_directory_read_write(tmp_path, sandbox):
+    workspace = _workspace(tmp_path)
+    image = tmp_path / ("image.sqsh" if sandbox == "pyxis" else "image.sif")
+    image.write_text("image", encoding="utf-8")
+    listener = tmp_path / "cellnet" / "lst_12345678"
+    listener.mkdir(parents=True)
+    launcher = _launcher(tmp_path, workspace, sandbox=sandbox, image=str(image))
+
+    plan = launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _file_parent_context(workspace, listener))
+
+    assert len(plan.mounts) == 1
+    assert plan.mounts[0].source == str(listener)
+    assert plan.mounts[0].destination == str(listener)
+    assert plan.mounts[0].mode == "rw"
+
+
+def test_bare_slurm_does_not_mount_shared_file_parent_directory(tmp_path):
+    workspace = _workspace(tmp_path)
+    listener = tmp_path / "cellnet" / "lst_12345678"
+    listener.mkdir(parents=True)
+    launcher = _launcher(tmp_path, workspace, sandbox="none")
+
+    plan = launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _file_parent_context(workspace, listener))
+
+    assert plan.mounts == ()
+
+
+def test_shared_file_parent_overlapping_study_mount_is_rejected(tmp_path, monkeypatch):
+    workspace = _workspace(tmp_path)
+    image = tmp_path / "image.sqsh"
+    image.write_text("image", encoding="utf-8")
+    listener = tmp_path / "cellnet" / "lst_12345678"
+    listener.mkdir(parents=True)
+    launcher = _launcher(tmp_path, workspace, sandbox="pyxis", image=str(image))
+    monkeypatch.setattr(launcher, "_study_mounts", lambda runtime: (BindMount(str(listener), str(listener), "ro"),))
+
+    with pytest.raises(SlurmLauncherError, match="overlaps a study mount"):
+        launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _file_parent_context(workspace, listener))
 
 
 @pytest.mark.parametrize("path", ["relative", "//double", "/tmp/../bad", "/proc/value", "/sys"])
@@ -270,8 +333,7 @@ studies:
       image: %s
     slurm:
       sandbox: apptainer
-"""
-        % (tmp_path / "study.sif"),
+""" % (tmp_path / "study.sif"),
         encoding="utf-8",
     )
     launcher = _launcher(tmp_path, workspace, sandbox="apptainer", image=str(tmp_path / "site.sif"))

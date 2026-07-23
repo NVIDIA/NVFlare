@@ -55,6 +55,46 @@ def _slurm_config(tmp_path, **launcher_overrides):
     }
 
 
+def test_prepare_slurm_preserves_file_transport_comm_config(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    file_internal = {
+        "scheme": "file",
+        "resources": {
+            "root_dir": "/lustre/proj/cellnet",
+            "poll_interval": 0.05,
+            "lease_timeout": 30,
+        },
+    }
+    (kit / "local" / "comm_config.json").write_text(
+        json.dumps({"backbone": {"connect_generation": 1}, "internal": file_internal}), encoding="utf-8"
+    )
+    output = tmp_path / "site-1-slurm"
+
+    _run_prepare(kit, output, _slurm_config(tmp_path, internal_port=9210))
+    capsys.readouterr()
+
+    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
+    assert comm_config["backbone"] == {"connect_generation": 1}
+    resources = comm_config["internal"]["resources"]
+    assert comm_config["internal"]["scheme"] == "file"
+    assert resources["root_dir"] == "/lustre/proj/cellnet"
+    assert resources["connection_security"] == "clear"
+    assert "host" not in resources and "port" not in resources
+
+
+def test_prepare_slurm_rejects_relative_file_transport_root_dir(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    (kit / "local" / "comm_config.json").write_text(
+        json.dumps({"internal": {"scheme": "file", "resources": {"root_dir": "relative/cellnet"}}}),
+        encoding="utf-8",
+    )
+    output = tmp_path / "site-1-slurm"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(kit, output, _slurm_config(tmp_path))
+    assert "absolute internal.resources.root_dir" in capsys.readouterr().err
+
+
 def test_render_template_is_one_pass(tmp_path, monkeypatch):
     template = tmp_path / "test.sh"
     template.write_text("@@NVFLARE_FIRST@@\n@@NVFLARE_SECOND@@\n", encoding="utf-8")
