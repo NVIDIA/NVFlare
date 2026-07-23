@@ -161,6 +161,7 @@ def test_guard_improvement_is_best_minus_baseline():
     regressed = [_row("baseline", "baseline", "0.9"), _row("discard", "lower_accuracy", "0.8")]
 
     assert guard.guard_state_for_rows(improved)["improvement"] == pytest.approx(0.05)
+    # Discarded candidates never lower the retained best, so improvement floors at 0 rather than going negative.
     assert guard.guard_state_for_rows(regressed)["improvement"] == pytest.approx(0.0)
 
 

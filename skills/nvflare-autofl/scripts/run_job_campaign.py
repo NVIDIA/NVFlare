@@ -1331,6 +1331,7 @@ def apply_metric_contract(
     schema_objective = (schema or {}).get("objective", {})
     if isinstance(schema_objective, dict):
         schema_mode = schema_objective.get("mode")
+        # Deliberate leniency: an explicit `mode: null` is tolerated and treated as max.
         if schema_mode is not None and schema_mode != "max":
             raise ValueError(
                 f"mutation_schema.yaml declares objective.mode={schema_mode!r}, which is not supported. "
