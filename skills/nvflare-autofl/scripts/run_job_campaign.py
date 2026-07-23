@@ -347,9 +347,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--python", default=os.environ.get("PYTHON") or sys.executable)
-    parser.add_argument("--prefer-synthetic", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--synthetic-train-size", type=int, default=2048)
-    parser.add_argument("--synthetic-test-size", type=int, default=256)
     parser.add_argument("--name", help="candidate name for prepare")
     parser.add_argument("--hypothesis", help="candidate hypothesis for prepare")
     parser.add_argument("--family", help="algorithm family slug for prepare or record --literature")
@@ -1804,13 +1801,6 @@ def build_base_args(args: argparse.Namespace, help_text: str, schema: Dict[str, 
     budget_args = build_comparison_budget_args(schema, help_text)
     if budget_args:
         base.extend(budget_args)
-    if args.prefer_synthetic and supports_flag(help_text, "--synthetic_data"):
-        if "--synthetic_data" not in base:
-            base.append("--synthetic_data")
-        if supports_flag(help_text, "--train_size") and "--train_size" not in base:
-            base.extend(["--train_size", str(args.synthetic_train_size)])
-        if supports_flag(help_text, "--test_size") and "--test_size" not in base:
-            base.extend(["--test_size", str(args.synthetic_test_size)])
     return base
 
 
@@ -2717,9 +2707,6 @@ CAMPAIGN_SETTING_NAMES = (
     "timeout",
     "simulator_no_progress_timeout",
     "python",
-    "prefer_synthetic",
-    "synthetic_train_size",
-    "synthetic_test_size",
 )
 
 MUTABLE_CAMPAIGN_SETTING_NAMES = {
