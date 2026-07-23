@@ -115,7 +115,7 @@ Metrics And Model Selection
 ===========================
 
 Call ``trainer.evaluate()`` before ``trainer.train()`` when the server should
-select the best global model from validation metrics:
+receive validation metrics before local training:
 
 .. code-block:: python
 
@@ -123,8 +123,9 @@ select the best global model from validation metrics:
         metrics = trainer.evaluate()
         trainer.train()
 
-For a lower-is-better metric such as ``eval_loss``, configure the recipe with
-``negate_key_metric=True``:
+The HuggingFace Client API reports the metrics returned by the trainer. Configure
+the server-side recipe or selector with a higher-is-better metric key. If you do
+not want the recipe to select a best model, set ``key_metric=""``:
 
 .. code-block:: python
 
@@ -137,8 +138,7 @@ For a lower-is-better metric such as ``eval_loss``, configure the recipe with
         num_rounds=3,
         train_script="client.py",
         launch_external_process=True,
-        key_metric="eval_loss",
-        negate_key_metric=True,
+        key_metric="",
     )
 
 If the server sends an evaluation task, ``trainer.evaluate()`` sends metrics
@@ -193,8 +193,7 @@ the FLARE client job process.
         train_args="--model_name_or_path gpt2 --local_epoch 1",
         server_expected_format=ExchangeFormat.PYTORCH,
         launch_external_process=True,
-        key_metric="eval_loss",
-        negate_key_metric=True,
+        key_metric="",
     )
 
     env = SimEnv(num_clients=2)

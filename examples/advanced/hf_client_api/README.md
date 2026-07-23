@@ -135,15 +135,15 @@ recipe = FedAvgRecipe(
     train_script="client.py",
     launch_external_process=True,
     server_expected_format=ExchangeFormat.PYTORCH,
-    key_metric="eval_loss",
-    negate_key_metric=True,
+    key_metric="",  # Disable best-model selection for this API-focused example.
     enable_tensor_disk_offload=True,
 )
 ```
 
 The default `peft` mode uses an adapter-shaped server model so the trainer and
 server exchange the same state-dict keys with the default `flare.patch(trainer)`
-call. Full-model SFT can be enabled with `--train_mode sft`.
+call. The example still reports evaluation metrics from `trainer.evaluate()`;
+full-model SFT can be enabled with `--train_mode sft`.
 
 ## Prepare Data
 Prepare the default two-client synthetic dataset:

@@ -40,7 +40,6 @@ class BaseFedJob(FedJob):
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
         key_metric: str = "accuracy",
-        negate_key_metric: bool = False,
         validation_json_generator: Optional[ValidationJsonGenerator] = None,
         model_selector: Optional[FLComponent] = None,
         convert_to_fed_event: Optional[ConvertToFedEvent] = None,
@@ -61,10 +60,8 @@ class BaseFedJob(FedJob):
             key_metric: Metric used to determine if the model is globally best.
                 If metrics are a dict, key_metric can select the metric used for global model selection.
                 Higher values must indicate a better model; for lower-is-better metrics such as a loss,
-                set negate_key_metric=True or report a negated value from the client (e.g., "neg_loss").
+                report a negated value from the client (e.g., "neg_loss").
                 Defaults to "accuracy". Only used if model_selector is not provided.
-            negate_key_metric: Whether the model selector should invert key_metric before comparing models.
-                Use this for lower-is-better metrics such as losses. Defaults to False.
             validation_json_generator: A component for generating validation results.
                 If not provided, a ValidationJsonGenerator will be configured.
             model_selector: A component for selecting the best model during training.
@@ -106,10 +103,7 @@ class BaseFedJob(FedJob):
             # Default to IntimeModelSelector if key_metric is provided
             from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 
-            self.to_server(
-                id="model_selector",
-                obj=IntimeModelSelector(key_metric=key_metric, negate_key_metric=negate_key_metric),
-            )
+            self.to_server(id="model_selector", obj=IntimeModelSelector(key_metric=key_metric))
 
         # Metrics artifact writer
         if metrics_artifact_writer is not None:

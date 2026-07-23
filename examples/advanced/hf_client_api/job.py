@@ -141,8 +141,7 @@ def main():
             train_script="client.py",
             launch_external_process=True,
             server_expected_format=ExchangeFormat.PYTORCH,
-            key_metric="eval_loss",
-            negate_key_metric=True,
+            key_metric="",
             enable_tensor_disk_offload=True,
         )
         set_per_site_config(recipe, per_site_config)

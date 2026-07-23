@@ -361,21 +361,6 @@ class TestFedAvgRecipe:
         assert isinstance(metrics_writer, MetricsArtifactWriter)
         assert not hasattr(metrics_writer, "key_metric")
 
-    def test_negate_key_metric_passthrough_pt(self, mock_file_system, base_recipe_params, simple_model):
-        recipe = FedAvgRecipe(
-            name="test_fedavg_negate_key_metric",
-            model=simple_model,
-            key_metric="eval_loss",
-            negate_key_metric=True,
-            **base_recipe_params,
-        )
-
-        model_selector = get_model_selector(recipe)
-        assert isinstance(model_selector, IntimeModelSelector)
-        assert model_selector.key_metric == "eval_loss"
-        assert model_selector.negate_key_metric is True
-        assert recipe.negate_key_metric is True
-
     def test_metrics_writer_does_not_copy_policy_from_custom_selector(self):
         key_metric = "custom_score"
         job = BaseFedJob(
@@ -516,22 +501,6 @@ class TestFedAvgRecipeKeyMetricVariants:
         model_selector = get_model_selector(recipe)
         assert isinstance(model_selector, IntimeModelSelector)
         assert model_selector.key_metric == key_metric
-
-    def test_negate_key_metric_passthrough_numpy(self, mock_file_system):
-        recipe = NumpyFedAvgRecipe(
-            name="test_numpy_negate_key_metric",
-            model=[1.0, 2.0, 3.0],
-            min_clients=2,
-            train_script="mock_train_script.py",
-            key_metric="val_loss",
-            negate_key_metric=True,
-        )
-
-        model_selector = get_model_selector(recipe)
-        assert isinstance(model_selector, IntimeModelSelector)
-        assert model_selector.key_metric == "val_loss"
-        assert model_selector.negate_key_metric is True
-        assert recipe.negate_key_metric is True
 
 
 class TestNumpyFedAvgRecipe:

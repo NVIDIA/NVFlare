@@ -61,10 +61,8 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             part of the generated job definition and must not contain secrets.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are
             a dict, key_metric selects the metric used for global model selection. Higher values must
-            indicate a better model; for lower-is-better metrics such as a loss, set negate_key_metric=True
-            or report a negated value from the client (e.g., "neg_loss"). Defaults to "accuracy".
-        negate_key_metric: Whether the model selector should invert key_metric before comparing models.
-            Use this for lower-is-better metrics such as losses. Defaults to False.
+            indicate a better model; for lower-is-better metrics such as a loss, report a negated value
+            from the client (e.g., "neg_loss"). Defaults to "accuracy".
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
@@ -144,7 +142,6 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         command: str = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "accuracy",
-        negate_key_metric: bool = False,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
     ):
@@ -173,7 +170,6 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             model_persistor=persistor,  # Pass sklearn-specific persistor
             per_site_config=per_site_config,
             key_metric=key_metric,
-            negate_key_metric=negate_key_metric,
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
         )
