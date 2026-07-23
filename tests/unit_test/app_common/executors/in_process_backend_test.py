@@ -200,7 +200,7 @@ class TestInitializeAndFinalize:
         assert not _backend_callbacks_subscribed(clean_databus, backend)
         assert not backend._task_fn_thread.is_alive()
 
-    def test_finalize_bounded_when_trainer_stuck_in_user_code(self, tmp_path, caplog):
+    def test_finalize_bounded_when_trainer_stuck_in_user_code(self, tmp_path, caplog, capsys):
         """A trainer wedged in user code never observes TOPIC_STOP: with result_wait_timeout,
         execute() returns while the thread still runs, so finalize() must join with a bound
         and abandon (daemon thread) instead of hanging CJ/simulator teardown forever."""
@@ -218,6 +218,8 @@ class TestInitializeAndFinalize:
                 elapsed = time.monotonic() - start
         assert elapsed < 5.0, "finalize must not hang on a stuck trainer"
         assert "did not stop within" in caplog.text
+        print("main-thread output remains available")
+        assert "main-thread output remains available" in capsys.readouterr().out
 
     def test_initialize_configures_memory_management(self, custom_dir):
         backend, _ = _initialized_backend(custom_dir, memory_gc_rounds=3, cuda_empty_cache=True)
