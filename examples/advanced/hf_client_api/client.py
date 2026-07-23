@@ -44,7 +44,6 @@ def define_parser():
     parser.add_argument("--lora_r", type=int, default=DEFAULT_LORA_R)
     parser.add_argument("--lora_alpha", type=int, default=DEFAULT_LORA_ALPHA)
     parser.add_argument("--lora_dropout", type=float, default=DEFAULT_LORA_DROPOUT)
-    parser.add_argument("--stream_metrics", action="store_true")
     return parser.parse_args()
 
 
@@ -190,13 +189,12 @@ def main():
         if not isinstance(trainer.model, PeftModel):
             raise RuntimeError("PEFT mode is enabled, but SFTTrainer did not wrap the model as a PeftModel.")
 
-    flare.patch(
-        trainer,
-        params_scope="auto",
-        server_key_prefix=None if args.train_mode == "peft" else "model.",
-        local_epochs=args.local_epochs,
-        stream_metrics=args.stream_metrics,
-    )
+    flare.patch(trainer)
+    # Defaults are enough for this example. If needed, replace the line above with
+    # optional settings such as:
+    # flare.patch(trainer, local_epochs=args.local_epochs, stream_metrics=True)
+    # flare.patch(trainer, local_steps=100)
+    # flare.patch(trainer, params_scope="adapter", server_key_prefix="model.")
 
     while flare.is_running():
         metrics = trainer.evaluate()

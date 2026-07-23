@@ -31,6 +31,15 @@ class QwenCausalLMModel(torch.nn.Module):
     def forward(self, input_ids=None, attention_mask=None, labels=None):
         return self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
 
+    def state_dict(self, *args, **kwargs):
+        return self.model.state_dict(*args, **kwargs)
+
+    def load_state_dict(self, state_dict, strict=True, assign=False):
+        try:
+            return self.model.load_state_dict(state_dict, strict=strict, assign=assign)
+        except TypeError:
+            return self.model.load_state_dict(state_dict, strict=strict)
+
 
 class QwenLoRAModel(torch.nn.Module):
     def __init__(

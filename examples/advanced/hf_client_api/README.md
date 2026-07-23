@@ -1,32 +1,21 @@
 # Qwen HuggingFace Client API
+This example demonstrates how to use NVIDIA FLARE with the HuggingFace Client API
+to run federated supervised fine-tuning with a Qwen causal language model. The
+complete example code can be found in the `hf_client_api` directory. It is
+recommended to create a virtual environment and run everything within a
+virtualenv.
 
-This example shows the `nvflare.client.hf` API with a Qwen causal language model.
-It keeps the example layout intentionally small:
+## NVIDIA FLARE Installation
+For the complete installation instructions, see
+[Installation](https://nvflare.readthedocs.io/en/main/installation.html).
 
-```text
-hf_client_api/
-|-- client.py
-|-- job.py
-|-- model.py
-|-- requirements.txt
-`-- README.md
+```
+pip install nvflare
 ```
 
-`client.py` is a regular HuggingFace/TRL `SFTTrainer` script. The federated
-change is the import of `nvflare.client.hf`, one `flare.patch(trainer)` call,
-and a normal `while flare.is_running(): trainer.evaluate(); trainer.train()`
-round loop.
+Install the example dependencies:
 
-By default, `job.py` prepares tiny synthetic JSONL files under
-`/tmp/nvflare/hf_client_api_qwen/data` and runs LoRA fine-tuning with
-`Qwen/Qwen2.5-0.5B-Instruct`. Override `--model_name_or_path` to use another
-Qwen causal-LM checkpoint.
-
-## Run
-
-Install dependencies:
-
-```bash
+```
 pip install -r requirements.txt
 ```
 
@@ -34,24 +23,157 @@ pip install -r requirements.txt
 with `nvflare.client.hf`. Until that package is published, install NVFlare from
 this repository before running the example.
 
-Run a two-client simulation:
+## Code Structure
+First get the example code from GitHub:
+
+```
+git clone https://github.com/NVIDIA/NVFlare.git
+```
+
+Then navigate to the `hf_client_api` directory:
+
+```
+git switch <release branch>
+cd examples/advanced/hf_client_api
+```
 
 ```bash
+hf_client_api
+|
+|-- client.py             # HuggingFace/TRL local training script
+|-- model.py              # Qwen server-side model definitions
+|-- job.py                # job recipe that defines client and server configurations
+|-- requirements.txt      # dependencies
+|-- README.md
+```
+
+## Data
+This example uses small JSONL instruction datasets. By default, `job.py`
+generates synthetic per-site data under:
+
+```
+/tmp/nvflare/hf_client_api_qwen/data
+```
+
+Each row can contain either a single `text` field or the instruction-tuning
+fields `instruction`, `input`, and `output`. In a real FL experiment, each site
+would point `--train_data` and `--eval_data` to its own local data.
+
+To use pre-prepared data, pass `--skip_data_prepare` and set `--data_root` to a
+directory with this layout:
+
+```bash
+data
+|
+|-- site-1
+|   |-- train.jsonl
+|   |-- valid.jsonl
+|-- site-2
+|   |-- train.jsonl
+|   |-- valid.jsonl
+```
+
+## Model
+The default model is `Qwen/Qwen2.5-0.5B-Instruct`. Override
+`--model_name_or_path` to use another Qwen causal-LM checkpoint.
+
+The implementation can be found in [model.py](model.py). It provides two
+server-side model definitions:
+
+1. `QwenCausalLMModel` for full-model SFT.
+2. `QwenLoRAModel` for PEFT/LoRA. This is the default mode and exchanges only
+   adapter weights.
+
+## Client Code
+The client code [client.py](client.py) is a standard HuggingFace/TRL
+`SFTTrainer` script. The federated adaptation is intentionally small:
+
+```python
+import nvflare.client.hf as flare
+
+flare.patch(trainer)
+
+while flare.is_running():
+    trainer.evaluate()
+    trainer.train()
+```
+
+`flare.patch(trainer)` wraps the trainer methods so the script can receive the
+global model, evaluate it, run the local training budget, and send the result
+back to the FL server. Optional settings such as `local_epochs`,
+`stream_metrics`, `params_scope`, and `server_key_prefix` are shown as comments
+near the `patch()` call in [client.py](client.py), but the default call is enough
+for this example.
+
+## Server-Side Workflow
+This example uses the
+[`FedAvgRecipe`](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_opt.pt.recipes.fedavg.html),
+which implements the FedAvg workflow:
+
+1. Initialize the global model.
+2. For each training round:
+   - Send the global model to selected clients.
+   - Wait for client updates.
+   - Aggregate client models into a new global model.
+
+With the Recipe API, there is no need to write custom server code.
+
+## Job Recipe Code
+The `FedAvgRecipe` combines the client training script with the built-in
+federated averaging workflow:
+
+```python
+recipe = FedAvgRecipe(
+    name=f"qwen-hf-client-api-{args.train_mode}",
+    model=model_config(args),
+    min_clients=args.n_clients,
+    num_rounds=args.num_rounds,
+    train_script=str(SCRIPT_DIR / "client.py"),
+    launch_external_process=True,
+    server_expected_format=ExchangeFormat.PYTORCH,
+    key_metric="eval_loss",
+    negate_key_metric=True,
+    enable_tensor_disk_offload=True,
+)
+```
+
+The default `peft` mode uses an adapter-shaped server model so the trainer and
+server exchange the same state-dict keys with the default `flare.patch(trainer)`
+call. Full-model SFT can be enabled with `--train_mode sft`.
+
+## Run Job
+From the terminal, run:
+
+```
 python job.py
 ```
 
-Export the job without running it:
+To export the job folder without running simulation:
 
-```bash
+```
 python job.py --export_config --job_dir /tmp/nvflare/jobs/qwen_hf_client_api
 ```
 
-Run full-model SFT instead of LoRA:
+To run full-model SFT instead of the default LoRA mode:
 
-```bash
+```
 python job.py --train_mode sft
 ```
 
-For large Qwen models, use `--train_mode peft` and keep
-`server_expected_format=ExchangeFormat.PYTORCH` so bfloat16 tensors are not
-converted through NumPy.
+> **Note:** Qwen checkpoints are downloaded from HuggingFace when the example
+> runs. For large Qwen models, prefer `--train_mode peft` and keep
+> `server_expected_format=ExchangeFormat.PYTORCH` so bfloat16 tensors are not
+> converted through NumPy.
+
+## Output Summary
+The simulation creates a workspace under:
+
+```
+/tmp/nvflare/hf_client_api_qwen/workspace
+```
+
+The exported job configuration is written to:
+
+```
+/tmp/nvflare/hf_client_api_qwen/jobs/qwen_hf_client_api
+```

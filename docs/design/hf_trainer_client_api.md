@@ -701,10 +701,13 @@ No new components required:
 
 A clean `examples/advanced/hf_client_api` example demonstrates the API without
 carrying the legacy `llm_hf` comparison scripts and figures. Its `client.py`
-contains ordinary dataset/model/`SFTConfig`/`SFTTrainer` setup, one
-`flare.patch(...)` call, and the standard `while flare.is_running(): evaluate();
-train()` loop. SFT uses `server_key_prefix="model."`; PEFT omits the prefix
-because the server model is adapter-shaped.
+contains ordinary dataset/model/`SFTConfig`/`SFTTrainer` setup, one default
+`flare.patch(trainer)` call, and the standard `while flare.is_running():
+evaluate(); train()` loop. The example server model wrappers expose state-dict
+keys that match the trainer model, so first-time users do not need
+`params_scope`, `server_key_prefix`, `local_epochs`, or metrics-streaming options
+on the main path. Those knobs stay documented and are shown as comments in the
+example for users who need them.
 
 ## Testing Plan
 

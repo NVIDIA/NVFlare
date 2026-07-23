@@ -46,7 +46,6 @@ def define_parser():
     parser.add_argument("--lora_dropout", type=float, default=DEFAULT_LORA_DROPOUT)
     parser.add_argument("--export_config", action="store_true")
     parser.add_argument("--skip_data_prepare", action="store_true")
-    parser.add_argument("--stream_metrics", action="store_true")
     return parser.parse_args()
 
 
@@ -148,8 +147,6 @@ def main():
             "--learning_rate",
             args.learning_rate,
         )
-        if args.stream_metrics:
-            script_args += " --stream_metrics"
         if args.train_mode == "peft":
             script_args += " " + join_args(
                 "--lora_r",
