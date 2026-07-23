@@ -22,7 +22,7 @@ transformers = pytest.importorskip("transformers")
 
 from transformers import Trainer, TrainerCallback, TrainingArguments  # noqa: E402
 
-from nvflare.app_common.abstract.fl_model import FLModel  # noqa: E402
+from nvflare.app_common.abstract.fl_model import FLModel, MetaKey  # noqa: E402
 from nvflare.client.config import ConfigKey, ExchangeFormat  # noqa: E402
 
 
@@ -198,5 +198,54 @@ def test_public_hf_patch_real_trainer_casts_bf16_for_numpy_server(monkeypatch, t
 
     assert sent_models
     assert {param.dtype for param in sent_models[0].params.values()} == {torch.float32}
+
+    hf_api._reset_global_state_for_test()
+
+
+def test_public_hf_patch_restore_state_false_reports_positive_steps_after_state_reset(monkeypatch, tmp_path):
+    hf_api, flare = _import_real_hf_api_modules()
+
+    hf_api._reset_global_state_for_test()
+    sent_models = []
+    model = TinyRegressionModel()
+    incoming_models = [
+        FLModel(params={name: param.detach().clone() for name, param in model.state_dict().items()}, current_round=0),
+        FLModel(params={name: param.detach().clone() for name, param in model.state_dict().items()}, current_round=1),
+    ]
+
+    def get_config(ctx=None):
+        return {
+            ConfigKey.TASK_EXCHANGE: {
+                ConfigKey.EXCHANGE_FORMAT: ExchangeFormat.PYTORCH,
+                ConfigKey.SERVER_EXPECTED_FORMAT: ExchangeFormat.NUMPY,
+                ConfigKey.TRAIN_WITH_EVAL: False,
+            }
+        }
+
+    monkeypatch.setattr(hf_api.flare_api, "default_context", None, raising=False)
+    monkeypatch.setattr(hf_api.flare_api, "init", lambda rank=None, config_file=None: None)
+    monkeypatch.setattr(hf_api.flare_api, "is_running", lambda ctx=None: True)
+    monkeypatch.setattr(hf_api.flare_api, "is_train", lambda ctx=None: True)
+    monkeypatch.setattr(hf_api.flare_api, "is_evaluate", lambda ctx=None: False)
+    monkeypatch.setattr(hf_api.flare_api, "is_submit_model", lambda ctx=None: False)
+    monkeypatch.setattr(hf_api.flare_api, "receive", lambda timeout=None, ctx=None: incoming_models.pop(0))
+    monkeypatch.setattr(hf_api.flare_api, "send", lambda model, clear_cache=True, ctx=None: sent_models.append(model))
+    monkeypatch.setattr(hf_api.flare_api, "get_config", get_config)
+    monkeypatch.setattr(hf_api.flare_api, "get_job_id", lambda ctx=None: "hf-real-two-round-job")
+
+    trainer = Trainer(
+        model=model,
+        args=_training_args(tmp_path / "two-round-no-restore", max_steps=1, save_strategy="no"),
+        train_dataset=TinyRegressionDataset(),
+    )
+
+    flare.patch(trainer, restore_state=False, local_steps=1)
+    assert flare.is_running()
+    trainer.train()
+    assert flare.is_running()
+    trainer.train()
+
+    assert len(sent_models) == 2
+    assert sent_models[1].meta[MetaKey.NUM_STEPS_CURRENT_ROUND] > 0
 
     hf_api._reset_global_state_for_test()

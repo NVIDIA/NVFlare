@@ -591,10 +591,11 @@ class _HFTaskState:
     def on_train_begin(self, hf_train_state):
         if self.task_kind != TASK_TRAIN or not self.pending:
             return
-        self.train_start_global_step = max(
-            int(getattr(hf_train_state, "global_step", self.train_start_global_step) or 0),
-            int(self.train_start_global_step or 0),
-        )
+        global_step = int(getattr(hf_train_state, "global_step", self.train_start_global_step) or 0)
+        if self.restore_state:
+            self.train_start_global_step = max(global_step, int(self.train_start_global_step or 0))
+        else:
+            self.train_start_global_step = global_step
         self.train_start_num_input_tokens_seen = _optional_int(getattr(hf_train_state, "num_input_tokens_seen", None))
         self.round_stop_step = self.train_start_global_step + int(self.per_round_budget_steps or 0)
         if self.weight_override_strategy != STRATEGY_CHECKPOINT_INJECTION or not self.global_params_loaded:
@@ -797,10 +798,11 @@ class _HFTaskState:
 
     def _prepare_train_call(self, train_kwargs: dict):
         self._capture_budget_if_needed()
-        self.train_start_global_step = max(
-            int(getattr(getattr(self.trainer, "state", None), "global_step", 0) or 0),
-            int(self.last_completed_global_step or 0),
-        )
+        current_global_step = int(getattr(getattr(self.trainer, "state", None), "global_step", 0) or 0)
+        if self.restore_state:
+            self.train_start_global_step = max(current_global_step, int(self.last_completed_global_step or 0))
+        else:
+            self.train_start_global_step = current_global_step
         self._apply_cumulative_max_steps()
         self.round_stop_step = self.train_start_global_step + int(self.per_round_budget_steps)
 

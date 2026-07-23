@@ -123,6 +123,42 @@ def test_train_task_receives_once_captures_pre_train_eval_and_sends_after_train(
     assert client_api_mock.sent_models[0].meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == 8
 
 
+def test_restore_state_false_uses_fresh_trainer_state_each_round(monkeypatch, tmp_path):
+    initial_model = TinyModel()
+    first_round = FLModel(params=_model_params(initial_model, 5.0), current_round=0, total_rounds=2)
+    second_round = FLModel(params=_model_params(initial_model, 7.0), current_round=1, total_rounds=2)
+    hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch, first_round)
+    client_api_mock.incoming_models.append(second_round)
+    trainer = _make_trainer(trainer_cls, tmp_path)
+    trainer_state_cls = type(trainer.state)
+
+    def train_resetting_state(*args, **kwargs):
+        trainer.train_call_count += 1
+        trainer.last_train_args = args
+        trainer.last_train_kwargs = dict(kwargs)
+        if trainer.train_call_count > 1:
+            trainer.state = trainer_state_cls()
+        for callback in list(trainer.callbacks):
+            call_hf_callback(callback, "on_train_begin", trainer)
+        trainer.state.global_step += 1
+        for callback in list(trainer.callbacks):
+            call_hf_callback(callback, "on_train_end", trainer)
+        return SimpleNamespace(global_step=trainer.state.global_step)
+
+    hf_api.patch(trainer, restore_state=False, local_steps=1)
+    setattr(trainer, hf_api.ORIGINAL_TRAIN_ATTR, train_resetting_state)
+
+    assert hf_api.hf_is_running()
+    trainer.train()
+    assert hf_api.hf_is_running()
+    trainer.train()
+
+    assert len(client_api_mock.sent_models) == 2
+    assert client_api_mock.sent_models[0].meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == 8
+    assert client_api_mock.sent_models[1].meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == 8
+    assert trainer._nvflare_hf_task_state.metric_step_offset == 2
+
+
 def test_train_task_uses_token_delta_for_weight_only_when_enabled(monkeypatch, tmp_path):
     initial_model = TinyModel()
     incoming_model = FLModel(params=_model_params(initial_model, 5.0), current_round=1, total_rounds=3)
