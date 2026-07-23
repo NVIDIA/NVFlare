@@ -206,8 +206,8 @@ def _patch_comm_config(kit_dir: Path, port: int) -> None:
 
 
 def _validate_file_comm_config(comm_config: dict) -> None:
-    """A kit configured for the shared-file transport is preserved as-is; only validate it.
-    TCP host/port fields are deliberately not added to file resources."""
+    """Validate a kit configured for the shared-file transport, defaulting connection_security
+    to "clear" when absent. TCP host/port fields are deliberately not added to file resources."""
     resources = _internal_resources(comm_config)
     root_dir = resources.get("root_dir")
     if not isinstance(root_dir, str) or not Path(root_dir).is_absolute():

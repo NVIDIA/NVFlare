@@ -120,7 +120,8 @@ def _touch(path: str, mode: Optional[int] = None):
         os.utime(path, None)
     except FileNotFoundError:
         try:
-            open(path, "ab").close()
+            with open(path, "ab"):
+                pass
             if mode is not None:
                 os.chmod(path, mode)
         except OSError as ex:
@@ -142,7 +143,8 @@ def _make_new_dir(path: str, mode: int):
 
 
 def _create_file(path: str, mode: int):
-    open(path, "ab").close()
+    with open(path, "ab"):
+        pass
     os.chmod(path, mode)
 
 
@@ -420,7 +422,7 @@ class FileConnection(Connection):
         peer_active = False
 
         try:
-            while not self.closing and not stopped.is_set():
+            while not self.closing and not stopped.is_set() and not self.connector.stopped.is_set():
                 now = time.monotonic()
                 if now - last_housekeeping >= self.cfg.lease_interval:
                     last_housekeeping = now
@@ -586,7 +588,13 @@ class FileDriver(BaseDriver):
             try:
                 entries = sorted(os.listdir(conns_dir))
             except OSError as ex:
-                raise CommError(CommError.ERROR, f"Cannot list {conns_dir}: {secure_format_exception(ex)}")
+                if not os.path.isdir(conns_dir):
+                    raise CommError(CommError.ERROR, f"Listener dir is gone: {conns_dir}")
+                # Transient shared-FS error (e.g. ESTALE, brief server blip): keep the accept
+                # loop alive and retry after a poll interval
+                self.logger.debug(f"Cannot list {conns_dir}: {secure_format_exception(ex)}")
+                connector.stopped.wait(cfg.max_poll_interval)
+                continue
 
             now = time.monotonic()
             if now - last_housekeeping >= cfg.lease_interval:
