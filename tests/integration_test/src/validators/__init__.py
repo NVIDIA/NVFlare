@@ -18,6 +18,7 @@ from .cross_val_result_validator import (
     CrossValSingleClientResultValidator,
     GlobalModelEvalValidator,
 )
+from .job_log_result_validator import JobLogResultValidator
 from .log_pattern_validator import LogPatternValidator
 from .np_model_validator import NumpyModelValidator
 from .np_sag_result_validator import NumpySAGResultValidator
