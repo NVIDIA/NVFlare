@@ -15,6 +15,7 @@ import builtins
 import os
 import runpy
 import sys
+import threading
 import traceback
 
 from nvflare.client.in_process.api import TOPIC_ABORT
@@ -24,6 +25,40 @@ from nvflare.fuel.utils.log_utils import get_module_logger
 from nvflare.fuel.utils.secret_utils import resolve_secret_refs, split_command_preserving_secret_refs
 
 print_fn = builtins.print
+_print_redirect_state = threading.local()
+_print_redirect_lock = threading.Lock()
+_print_redirect_count = 0
+
+
+def _thread_aware_print(*args, **kwargs):
+    if getattr(_print_redirect_state, "depth", 0):
+        log_print(*args, **kwargs)
+    else:
+        print_fn(*args, **kwargs)
+
+
+def _enable_print_redirect():
+    global _print_redirect_count
+
+    _print_redirect_state.depth = getattr(_print_redirect_state, "depth", 0) + 1
+    with _print_redirect_lock:
+        _print_redirect_count += 1
+        builtins.print = _thread_aware_print
+
+
+def _disable_print_redirect():
+    global _print_redirect_count
+
+    depth = getattr(_print_redirect_state, "depth", 0)
+    if depth <= 1:
+        _print_redirect_state.depth = 0
+    else:
+        _print_redirect_state.depth = depth - 1
+
+    with _print_redirect_lock:
+        _print_redirect_count -= 1
+        if _print_redirect_count == 0 and builtins.print is _thread_aware_print:
+            builtins.print = print_fn
 
 
 class TaskScriptRunner:
@@ -50,7 +85,8 @@ class TaskScriptRunner:
         self.logger.info(f"start task run() with full path: {self.script_full_path}")
         curr_argv = sys.argv
         try:
-            builtins.print = log_print if self.redirect_print_to_log else print_fn
+            if self.redirect_print_to_log:
+                _enable_print_redirect()
             sys.argv = self.get_sys_argv()
             runpy.run_path(self.script_full_path, run_name="__main__")
         except ImportError as ie:
@@ -71,7 +107,8 @@ class TaskScriptRunner:
             raise e
         finally:
             sys.argv = curr_argv
-            builtins.print = print_fn
+            if self.redirect_print_to_log:
+                _disable_print_redirect()
 
     def get_sys_argv(self):
         # Preserve the runner's legacy whitespace splitting for existing arguments. Only quoted
