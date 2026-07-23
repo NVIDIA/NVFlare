@@ -12,8 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib.util
 import json
+import sys
 import warnings
+from pathlib import Path
+from types import ModuleType
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -34,6 +38,7 @@ from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.app_opt.sklearn.recipes import KMeansFedAvgRecipe, SklearnFedAvgRecipe, SVMFedAvgRecipe
 from nvflare.client.config import ConfigKey, TransferType
 from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.fuel.utils.class_utils import instantiate_class
@@ -41,6 +46,8 @@ from nvflare.fuel.utils.secret_utils import UnsupportedSecretRefWarning
 from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.recipe import set_per_site_config
 from nvflare.recipe.fedavg import FedAvgRecipe as BaseFedAvgRecipe
+
+_TF_FEDAVG_RECIPE_MODULE = "_nvflare_tf_fedavg_recipe_for_test"
 
 
 class SimpleTestModel(nn.Module):
@@ -187,6 +194,20 @@ def get_server_controller(recipe):
 def get_client_executor(recipe, site_name):
     client_app = recipe._job._deploy_map[site_name]
     return client_app.app_config.executors[0].executor
+
+
+def load_tf_fedavg_recipe(monkeypatch):
+    """Load only tf/recipes/fedavg.py so this unit test does not require TensorFlow."""
+    fake_tf_model_module = ModuleType("nvflare.app_opt.tf.job_config.model")
+    fake_tf_model_module.TFModel = object
+    monkeypatch.setitem(sys.modules, "nvflare.app_opt.tf.job_config.model", fake_tf_model_module)
+
+    module_path = Path(__file__).parents[3] / "nvflare" / "app_opt" / "tf" / "recipes" / "fedavg.py"
+    spec = importlib.util.spec_from_file_location(_TF_FEDAVG_RECIPE_MODULE, module_path)
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, _TF_FEDAVG_RECIPE_MODULE, module)
+    spec.loader.exec_module(module)
+    return module.FedAvgRecipe
 
 
 def _get_train_executor_config(client_config):
@@ -501,7 +522,7 @@ class TestFedAvgRecipe:
 
 
 class TestFedAvgRecipeKeyMetricVariants:
-    """Test key_metric passthrough for NumPy FedAvg recipes."""
+    """Test key_metric passthrough for framework recipe variants."""
 
     def test_key_metric_passthrough_numpy(self, mock_file_system):
         key_metric = "val_loss"
@@ -523,6 +544,70 @@ class TestFedAvgRecipeKeyMetricVariants:
             model=[1.0, 2.0, 3.0],
             min_clients=2,
             train_script="mock_train_script.py",
+            key_metric="val_loss",
+            negate_key_metric=True,
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == "val_loss"
+        assert model_selector.negate_key_metric is True
+        assert recipe.negate_key_metric is True
+
+    def test_negate_key_metric_passthrough_sklearn(self, mock_file_system):
+        recipe = SklearnFedAvgRecipe(
+            name="test_sklearn_negate_key_metric",
+            min_clients=2,
+            model_params={"n_classes": 2},
+            train_script="mock_train_script.py",
+            key_metric="val_loss",
+            negate_key_metric=True,
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == "val_loss"
+        assert model_selector.negate_key_metric is True
+        assert recipe.negate_key_metric is True
+
+    def test_negate_key_metric_passthrough_kmeans(self, mock_file_system):
+        recipe = KMeansFedAvgRecipe(
+            name="test_kmeans_negate_key_metric",
+            min_clients=2,
+            n_clusters=3,
+            train_script="mock_train_script.py",
+            key_metric="inertia",
+            negate_key_metric=True,
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == "inertia"
+        assert model_selector.negate_key_metric is True
+        assert recipe.negate_key_metric is True
+
+    def test_negate_key_metric_passthrough_svm(self, mock_file_system):
+        recipe = SVMFedAvgRecipe(
+            name="test_svm_negate_key_metric",
+            min_clients=2,
+            train_script="mock_train_script.py",
+            key_metric="hinge_loss",
+            negate_key_metric=True,
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == "hinge_loss"
+        assert model_selector.negate_key_metric is True
+        assert recipe.negate_key_metric is True
+
+    def test_negate_key_metric_passthrough_tf(self, mock_file_system, monkeypatch):
+        TFFedAvgRecipe = load_tf_fedavg_recipe(monkeypatch)
+        recipe = TFFedAvgRecipe(
+            name="test_tf_negate_key_metric",
+            min_clients=2,
+            train_script="mock_train_script.py",
+            model_persistor=DummyPersistor(),
             key_metric="val_loss",
             negate_key_metric=True,
         )
