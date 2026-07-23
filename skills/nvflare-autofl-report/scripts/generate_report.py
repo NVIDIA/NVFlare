@@ -29,10 +29,16 @@ import sys
 import tempfile
 import textwrap
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows uses the exclusive-create fallback
+    fcntl = None
 
 try:
     import yaml
@@ -47,6 +53,7 @@ FINALIZED_SCORE_STATUSES = {"baseline", "keep", "discard"}
 RETAINED_STATUSES = {"baseline", "keep"}
 LITERATURE_STATUSES = {"literature", "checkpoint", "event"}
 PENDING_MANIFEST_STATUSES = {"prepared", "ready_for_external_execution"}
+CAMPAIGN_LOCK_PATH = ".nvflare/autofl/campaign.lock"
 TRAINING_BUDGET_ARGS = {
     "aggregation_epochs",
     "alpha",
@@ -121,6 +128,86 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 def resolve_path(root: Path, value: str) -> Path:
     path = Path(value).expanduser()
     return path if path.is_absolute() else root / path
+
+
+def canonical_path(path: Path) -> Path:
+    try:
+        return path.resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(f"cannot canonicalize report path {path}: {exc}") from exc
+
+
+def paths_alias(left: Path, right: Path) -> bool:
+    if canonical_path(left) == canonical_path(right):
+        return True
+    try:
+        return left.exists() and right.exists() and os.path.samefile(left, right)
+    except OSError:
+        return False
+
+
+def validate_output_paths(outputs: Dict[str, Path], protected: Dict[str, Path]) -> None:
+    output_items = list(outputs.items())
+    for index, (left_name, left_path) in enumerate(output_items):
+        for right_name, right_path in output_items[index + 1 :]:
+            if paths_alias(left_path, right_path):
+                raise ValueError(
+                    f"report outputs --{left_name} and --{right_name} must be distinct: {canonical_path(left_path)}"
+                )
+        for protected_name, protected_path in protected.items():
+            if paths_alias(left_path, protected_path):
+                raise ValueError(
+                    f"report output --{left_name} aliases protected campaign input {protected_name}: "
+                    f"{canonical_path(left_path)}"
+                )
+
+
+@contextmanager
+def locked_campaign_workspace(workspace: Path, action: str) -> Iterator[None]:
+    """Serialize report generation with Auto-FL lifecycle actions."""
+
+    lock_path = workspace / CAMPAIGN_LOCK_PATH
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fallback = fcntl is None
+    descriptor = None
+    acquired = False
+    fallback_created = False
+    try:
+        if fallback:
+            try:
+                descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                acquired = True
+                fallback_created = True
+            except FileExistsError as exc:
+                raise ValueError(
+                    f"Auto-FL campaign workspace is already in use: {workspace}; "
+                    "wait for the active lifecycle action to finish, then retry"
+                ) from exc
+        else:
+            descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+            except BlockingIOError as exc:
+                raise ValueError(
+                    f"Auto-FL campaign workspace is already in use: {workspace}; "
+                    "wait for the active lifecycle action to finish, then retry"
+                ) from exc
+            os.ftruncate(descriptor, 0)
+        os.write(
+            descriptor,
+            (json.dumps({"pid": os.getpid(), "action": action, "workspace": str(workspace.resolve())}) + "\n").encode(
+                "utf-8"
+            ),
+        )
+        yield
+    finally:
+        if descriptor is not None:
+            if not fallback and acquired:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
+        if fallback_created:
+            lock_path.unlink(missing_ok=True)
 
 
 def finite_float(value: Any) -> Optional[float]:
@@ -267,17 +354,21 @@ def is_finalized_scored_record(record: RunRecord) -> bool:
     return record.score is not None and record.status in FINALIZED_SCORE_STATUSES
 
 
-def candidate_manifest_evidence(
-    campaign_root: Path, records: Sequence[RunRecord]
-) -> Tuple[List[Path], List[Tuple[Path, str]]]:
+def candidate_manifest_paths(campaign_root: Path, records: Sequence[RunRecord]) -> List[Path]:
     candidates_root = campaign_root / ".nvflare" / "autofl" / "candidates"
     paths = set(candidates_root.glob("*/candidate_manifest.json")) if candidates_root.is_dir() else set()
     paths.update(
         resolve_path(campaign_root, record.candidate_manifest) for record in records if record.candidate_manifest
     )
+    return sorted(paths)
+
+
+def candidate_manifest_evidence(
+    campaign_root: Path, records: Sequence[RunRecord]
+) -> Tuple[List[Path], List[Tuple[Path, str]]]:
     pending = []
     unreadable = []
-    for path in sorted(paths):
+    for path in candidate_manifest_paths(campaign_root, records):
         if not path.is_file():
             continue
         try:
@@ -1393,8 +1484,7 @@ def record_payload(record: Optional[RunRecord]) -> Optional[Dict[str, Any]]:
     return asdict(record) if record else None
 
 
-def generate(args: argparse.Namespace) -> Dict[str, Any]:
-    root = Path(args.campaign_dir).expanduser().resolve()
+def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
     results_path = resolve_path(root, args.results)
     state_path = resolve_path(root, args.state)
     config_path = resolve_path(root, args.autofl_yaml)
@@ -1402,9 +1492,32 @@ def generate(args: argparse.Namespace) -> Dict[str, Any]:
     report_path = resolve_path(root, args.output)
     summary_path = resolve_path(root, args.summary_json)
     agent_context_path = resolve_path(root, args.agent_context) if args.agent_context else None
+    plotter_path = resolve_path(root, args.plotter).resolve() if args.plotter else default_plotter_path()
 
     records = load_results(results_path)
     state, termination_reason, warnings = verify_stopped(state_path, args.confirm_interrupted)
+    protected_paths = {
+        "results ledger": results_path,
+        "campaign state": state_path,
+        "Auto-FL config": config_path,
+        "campaign lock": root / CAMPAIGN_LOCK_PATH,
+        "progress plotter": plotter_path,
+    }
+    if agent_context_path:
+        protected_paths["agent context"] = agent_context_path
+    for index, manifest_path in enumerate(candidate_manifest_paths(root, records), start=1):
+        protected_paths[f"candidate manifest {index}"] = manifest_path
+    pending_manifest = state.get("pending_candidate_manifest")
+    if isinstance(pending_manifest, str) and pending_manifest:
+        protected_paths["state pending-candidate manifest"] = resolve_path(root, pending_manifest)
+    validate_output_paths(
+        {
+            "progress": progress_path,
+            "output": report_path,
+            "summary-json": summary_path,
+        },
+        protected_paths,
+    )
     verify_no_pending_candidates(root, state, records)
     config = load_config(config_path)
     config, config_warnings = normalize_contract_sections(config)
@@ -1428,7 +1541,7 @@ def generate(args: argparse.Namespace) -> Dict[str, Any]:
         progress_path,
         mode,
         metric,
-        resolve_path(root, args.plotter).resolve() if args.plotter else default_plotter_path(),
+        plotter_path,
     )
     if plot_warning:
         warnings.append(plot_warning)
@@ -1507,6 +1620,12 @@ def generate(args: argparse.Namespace) -> Dict[str, Any]:
     atomic_write_text(report_path, report_markdown(summary, records))
     atomic_write_text(summary_path, json.dumps(summary, indent=2, sort_keys=True) + "\n")
     return summary
+
+
+def generate(args: argparse.Namespace) -> Dict[str, Any]:
+    root = Path(args.campaign_dir).expanduser().resolve()
+    with locked_campaign_workspace(root, "report"):
+        return generate_locked(args, root)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

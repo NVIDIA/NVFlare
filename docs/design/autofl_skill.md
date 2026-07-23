@@ -279,6 +279,13 @@ only stale stop state. Pending state, `candidate` ledger rows, or manifests in
 active skill finalizes or abandons them. Unreadable manifests block as well,
 because report generation cannot prove that their candidates were finalized.
 
+Report finalization acquires the same nonblocking campaign lifecycle lock as
+the active runner and holds it across evidence reads, plotting, and report
+writes. A concurrent lifecycle action therefore causes a clean refusal rather
+than a stale or mixed report. Before any artifact write, the helper also rejects
+canonical or filesystem aliases between writable outputs and campaign evidence,
+and requires the plot, Markdown, and JSON destinations to be distinct.
+
 Relative report-helper paths, including an overridden plotter, resolve from
 the campaign directory so agent execution is independent of shell location.
 

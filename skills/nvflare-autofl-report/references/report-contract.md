@@ -31,6 +31,12 @@ blocks finalization because the helper cannot prove that its candidate is
 complete. Finalize or abandon such candidates before generating an
 authoritative report.
 
+The reporter acquires the same nonblocking
+`.nvflare/autofl/campaign.lock` used by runner lifecycle actions before reading
+campaign evidence and holds it through plotting and report writes. If another
+action owns the lock, reporting fails cleanly rather than publishing a mixed
+snapshot.
+
 ## Candidate Lineage
 
 Candidates are based on the current best source snapshot. A retained candidate
@@ -141,6 +147,11 @@ in Markdown.
 
 All relative helper path arguments, including `--plotter`, resolve from the
 campaign directory rather than the invoking shell's current working directory.
+Before plotting or writing, the helper canonicalizes the three writable output
+paths and rejects aliases with the ledger, state, config, agent context,
+plotter, campaign lock, or candidate manifests. The progress, Markdown, and
+JSON outputs must also be mutually distinct. Existing symlink and hard-link
+aliases are treated as collisions.
 
 Report generation must be independent of Git and must not edit campaign source,
 the ledger, manifests, or state.

@@ -70,6 +70,9 @@ Markdown and JSON reports without embedding the broken image. It does not
 modify source, candidate manifests, `results.tsv`, or campaign state.
 All relative helper path options, including `--plotter`, resolve from the
 campaign job directory rather than the shell's current working directory.
+The helper holds the campaign lifecycle lock from evidence loading through
+artifact writes. It refuses a busy campaign and rejects writable output paths
+that alias campaign evidence or another output, including filesystem aliases.
 
 ## Interrupted Campaigns
 
@@ -134,6 +137,7 @@ lineage, literature outcomes, budget warnings, or interrupted state.
 - Treat `results.tsv` as recorded evidence; never repair scores by guessing.
 - Work without Git. Do not commit or push unless the user separately asks.
 - Preserve the campaign and job sources exactly as found.
+- Never bypass campaign-lock contention or output-path collision checks.
 - Use candidate manifests when available, but still report partial provenance
   when copied artifacts make old absolute manifest paths unavailable.
 - Keep conclusions proportional to the evidence. A single run is a candidate,

@@ -142,6 +142,10 @@ abrupt interruption, the human must first confirm that no campaign process is
 running; this confirmation bypasses stale stop state only and never unfinished
 candidate evidence.
 
+Report generation holds the same campaign lifecycle lock as the active Auto-FL
+runner. It refuses concurrent lifecycle activity and rejects custom plot,
+Markdown, or JSON output paths that alias campaign evidence or one another.
+
 The skill refreshes ``progress.png`` when plotting is available and generates:
 
 - ``autofl_final_report.md`` with a selected-candidate rationale, concise

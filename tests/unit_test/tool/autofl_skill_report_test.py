@@ -229,6 +229,97 @@ def test_atomic_write_text_removes_temp_file_after_write_failure(tmp_path, monke
     assert all(not path.exists() for path in created_paths)
 
 
+def test_report_rejects_output_paths_that_alias_campaign_evidence_before_plotting(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    manifest_path = tmp_path / ".nvflare/autofl/candidates/finalized/candidate_manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(json.dumps({"candidate_id": "finalized", "status": "keep"}), encoding="utf-8")
+    agent_context_path = tmp_path / "agent_context.json"
+    agent_context_path.write_text(json.dumps({"model": "test-agent"}), encoding="utf-8")
+    protected_paths = [
+        tmp_path / "results.tsv",
+        tmp_path / ".nvflare/autofl/campaign_state.json",
+        tmp_path / "autofl.yaml",
+        manifest_path,
+        agent_context_path,
+    ]
+    original_contents = {path: path.read_bytes() for path in protected_paths}
+
+    def unexpected_plot(*args, **kwargs):
+        pytest.fail("path validation must run before plotting")
+
+    monkeypatch.setattr(reporter, "refresh_plot", unexpected_plot)
+    cases = [
+        ["--output", "results.tsv"],
+        ["--summary-json", ".nvflare/autofl/campaign_state.json"],
+        ["--progress", "autofl.yaml"],
+        ["--output", str(manifest_path.relative_to(tmp_path))],
+        ["--output", "agent_context.json", "--agent-context", "agent_context.json"],
+        ["--output", ".nvflare/autofl/campaign.lock"],
+    ]
+
+    for extra_args in cases:
+        with pytest.raises(ValueError, match="aliases protected campaign input"):
+            reporter.generate(reporter.parse_args([str(tmp_path), *extra_args]))
+
+    assert {path: path.read_bytes() for path in protected_paths} == original_contents
+    assert not tmp_path.joinpath("autofl_final_report.md").exists()
+    assert not tmp_path.joinpath("autofl_report_summary.json").exists()
+
+
+def test_report_rejects_mutually_aliased_output_paths(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+
+    def unexpected_plot(*args, **kwargs):
+        pytest.fail("path validation must run before plotting")
+
+    monkeypatch.setattr(reporter, "refresh_plot", unexpected_plot)
+
+    with pytest.raises(ValueError, match="--output and --summary-json must be distinct"):
+        reporter.generate(
+            reporter.parse_args([str(tmp_path), "--output", "combined-report", "--summary-json", "combined-report"])
+        )
+
+    assert not tmp_path.joinpath("combined-report").exists()
+
+
+@pytest.mark.parametrize("link_kind", ["symlink", "hardlink"])
+def test_report_rejects_filesystem_aliases_to_campaign_evidence(tmp_path, monkeypatch, link_kind):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    results_path = tmp_path / "results.tsv"
+    original_results = results_path.read_bytes()
+    alias_path = tmp_path / f"{link_kind}-report.md"
+    if link_kind == "symlink":
+        alias_path.symlink_to(results_path)
+    else:
+        reporter.os.link(results_path, alias_path)
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: pytest.fail("plot must not run"))
+
+    with pytest.raises(ValueError, match="aliases protected campaign input results ledger"):
+        reporter.generate(reporter.parse_args([str(tmp_path), "--output", alias_path.name]))
+
+    assert results_path.read_bytes() == original_results
+    assert alias_path.exists()
+
+
+def test_report_refuses_while_campaign_workspace_lock_is_held(tmp_path, monkeypatch, capsys):
+    reporter = _load_reporter()
+    runner = _load_autofl_script("run_job_campaign")
+    _write_campaign(tmp_path)
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: pytest.fail("plot must not run"))
+
+    assert reporter.CAMPAIGN_LOCK_PATH == runner.CAMPAIGN_LOCK_PATH
+    with runner.locked_campaign_workspace(tmp_path, "prepare"):
+        assert reporter.main([str(tmp_path)]) == 2
+
+    assert "campaign workspace is already in use" in capsys.readouterr().err
+    assert not tmp_path.joinpath("autofl_final_report.md").exists()
+    assert not tmp_path.joinpath("autofl_report_summary.json").exists()
+
+
 def test_report_refuses_active_campaign_without_confirmation(tmp_path, monkeypatch):
     reporter = _load_reporter()
     _write_campaign(tmp_path, active=True)
