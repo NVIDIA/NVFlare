@@ -11,15 +11,30 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from .call_opt import CallOption
+from .call_opt import DEFAULT_CALL_TIMEOUT, CallOption
 from .context import get_call_context
 from .group import group
 
 
-class ProxyList(list):
+class ProxyList:
 
     def __init__(self, proxies: list):
-        super().__init__(proxies)
+        self._proxies = list(proxies)
+
+    def __iter__(self):
+        return iter(self._proxies)
+
+    def __len__(self):
+        return len(self._proxies)
+
+    def __getitem__(self, index):
+        return self._proxies[index]
+
+    def __contains__(self, item):
+        return item in self._proxies
+
+    def __repr__(self):
+        return repr(self._proxies)
 
     def __getattr__(self, func_name):
         """This is called to invoke the specified func without specifying call option.
@@ -31,6 +46,9 @@ class ProxyList(list):
         Returns:
 
         """
+
+        if func_name.startswith("_"):
+            raise AttributeError(func_name)
 
         def method(*args, **kwargs):
             grp = group(
@@ -45,7 +63,7 @@ class ProxyList(list):
         self,
         blocking: bool = True,
         expect_result: bool = True,
-        timeout: float = 5.0,
+        timeout: float = DEFAULT_CALL_TIMEOUT,
         optional: bool = False,
         secure: bool = False,
         target=None,
@@ -62,7 +80,7 @@ class ProxyList(list):
             optional:
             secure:
             target:
-            parallel:
+            parallel: maximum number of calls that may remain in flight at once.
             process_resp_cb:
             **cb_kwargs:
 

@@ -13,11 +13,13 @@
 # limitations under the License.
 from nvflare.collab.api.app import ServerApp
 from nvflare.collab.api.constants import CollabMethodArgName, ContextKey
+from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.decorators import supports_context
 from nvflare.security.logging import secure_log_traceback
 
 
 def run_server(server_app: ServerApp, logger):
+    previous_ctx = get_call_context()
     server_ctx = server_app.new_context(caller=server_app.name, callee=server_app.name)
     result = None
     try:
@@ -42,7 +44,10 @@ def run_server(server_app: ServerApp, logger):
                 if backend:
                     backend.handle_exception(ex)
     finally:
-        logger.info("finalizing server app")
-        server_app.finalize(server_ctx)
+        try:
+            logger.info("finalizing server app")
+            server_app.finalize(server_ctx)
+        finally:
+            set_call_context(previous_ctx)
 
     return result

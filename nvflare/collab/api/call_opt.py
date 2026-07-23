@@ -11,13 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+DEFAULT_CALL_TIMEOUT = 60.0
+
+
 class CallOption:
 
     def __init__(
         self,
         expect_result: bool = True,
         blocking: bool = True,
-        timeout: float = 60.0,
+        timeout: float = DEFAULT_CALL_TIMEOUT,
         secure: bool = False,
         optional: bool = False,
         target=None,
@@ -32,7 +35,7 @@ class CallOption:
             secure: whether to use P2P secure messaging.
             optional: whether the call is optional.
             target: name of the collab object to be called.
-            parallel: number of parallel outgoing messages.
+            parallel: maximum number of calls that may remain in flight at once.
         """
         self.expect_result = expect_result
         self.blocking = blocking

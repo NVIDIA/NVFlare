@@ -31,7 +31,7 @@ from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
 
 from .adaptor import CollabAdaptor
-from .defs import SYNC_TASK_NAME, SyncKey
+from .defs import SETUP_TASK_NAME, SYNC_TASK_NAME, SyncKey
 from .dispatch import prepare_for_remote_call
 
 
@@ -170,7 +170,7 @@ class CollabExecutor(Executor, CollabAdaptor):
         return proxy
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        if task_name != SYNC_TASK_NAME:
+        if task_name not in (SYNC_TASK_NAME, SETUP_TASK_NAME):
             self.log_error(fl_ctx, f"received unsupported task {task_name}")
             return make_reply(ReturnCode.TASK_UNKNOWN)
 
@@ -178,12 +178,21 @@ class CollabExecutor(Executor, CollabAdaptor):
             self.log_error(fl_ctx, "client app is unavailable because start-run initialization did not complete")
             return make_reply(ReturnCode.ERROR)
 
+        client_collab_interface = self.client_app.get_collab_interface()
+        if task_name == SYNC_TASK_NAME:
+            reply = make_reply(ReturnCode.OK)
+            reply[SyncKey.COLLAB_INTERFACE] = client_collab_interface
+            return reply
+
         server_collab_interface = shareable.get(SyncKey.COLLAB_INTERFACE)
         server_fqcn = shareable.get(SyncKey.SERVER_FQCN)
+        client_interfaces = shareable.get(SyncKey.CLIENT_INTERFACES)
         if not isinstance(server_fqcn, str) or not server_fqcn:
-            self.log_error(fl_ctx, "missing server FQCN in sync task")
+            self.log_error(fl_ctx, "missing server FQCN in setup task")
             return make_reply(ReturnCode.BAD_TASK_DATA)
-        client_collab_interface = self.client_app.get_collab_interface()
+        if not isinstance(server_collab_interface, dict) or not isinstance(client_interfaces, dict):
+            self.log_error(fl_ctx, "missing collab interfaces in setup task")
+            return make_reply(ReturnCode.BAD_TASK_DATA)
         self.log_info(fl_ctx, f"{client_collab_interface=} {server_collab_interface=}")
 
         engine = fl_ctx.get_engine()
@@ -197,6 +206,7 @@ class CollabExecutor(Executor, CollabAdaptor):
             cell=cell,
             app=self.client_app,
             logger=self.logger,
+            executor=self.thread_executor,
         )
 
         # build proxies
@@ -205,16 +215,18 @@ class CollabExecutor(Executor, CollabAdaptor):
 
         client_proxies = []
         for c in all_clients:
-            p = self._prepare_client_proxy(job_id, cell, c, abort_signal, client_collab_interface, fl_ctx)
+            remote_interface = client_interfaces.get(c.name)
+            if not isinstance(remote_interface, dict):
+                self.log_error(fl_ctx, f"missing collab interface for client {c.name}")
+                return make_reply(ReturnCode.BAD_TASK_DATA)
+            p = self._prepare_client_proxy(job_id, cell, c, abort_signal, remote_interface, fl_ctx)
             client_proxies.append(p)
 
         ws = fl_ctx.get_workspace()
         self.client_app.setup(ws, server_proxy, client_proxies, abort_signal)
 
-        self.client_ctx = self.client_app.new_context(self.client_app.name, self.client_app.name)
+        self.client_ctx = self.client_app.new_context(self.client_app.name, self.client_app.name, set_call_ctx=False)
         self.logger.info(f"initializing client app {self.client_app.name}")
         self.client_app.initialize(self.client_ctx)
 
-        reply = make_reply(ReturnCode.OK)
-        reply[SyncKey.COLLAB_INTERFACE] = client_collab_interface
-        return reply
+        return make_reply(ReturnCode.OK)

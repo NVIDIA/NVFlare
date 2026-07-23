@@ -128,12 +128,34 @@ class Adapter:
         optional = request.get_header(MessageHeaderKey.OPTIONAL, False)
         self.logger.debug(f"{stream_req_id=}: on {channel=}, {topic=}")
         response = self.cb(request, *args, **kwargs)
-        self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
+        if isinstance(response, concurrent.futures.Future):
+            response.add_done_callback(
+                lambda done: self._send_async_response(
+                    done, stream_req_id, req_id, channel, topic, origin, secure, optional
+                )
+            )
+            return
 
+        self._send_response(response, stream_req_id, req_id, channel, topic, origin, secure, optional)
+
+    def _send_async_response(self, response_future, *reply_args):
+        try:
+            response = response_future.result()
+        except Exception as ex:
+            self.logger.error(f"async request callback failed: {secure_format_exception(ex)}")
+            response = make_reply(ReturnCode.PROCESS_EXCEPTION)
+        self._send_response(response, *reply_args)
+
+    def _send_response(self, response, stream_req_id, req_id, channel, topic, origin, secure, optional):
+        self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
         if not stream_req_id:
             # no need to reply!
             self.logger.debug("Do not send reply because there is no stream_req_id!")
             return
+
+        if not isinstance(response, Message):
+            self.logger.error(f"request callback must return Message but got {type(response)}")
+            response = make_reply(ReturnCode.PROCESS_EXCEPTION)
 
         response.add_headers(
             {
@@ -363,8 +385,6 @@ class Cell(StreamCell):
         progress_wait_cb=None,
         num_receivers=1,
         receiver_ids=None,
-        send_complete_cb=None,
-        **cb_kwargs,
     ):
         """Stream one request to the target
 
@@ -383,17 +403,7 @@ class Cell(StreamCell):
         """
         self._encode_message(request, abort_signal, num_receivers=num_receivers, receiver_ids=receiver_ids)
         return self._send_one_request(
-            channel,
-            target,
-            topic,
-            request,
-            timeout,
-            secure,
-            optional,
-            abort_signal,
-            progress_wait_cb,
-            send_complete_cb,
-            **cb_kwargs,
+            channel, target, topic, request, timeout, secure, optional, abort_signal, progress_wait_cb
         )
 
     def _send_one_request(
@@ -407,8 +417,6 @@ class Cell(StreamCell):
         optional=False,
         abort_signal=None,
         progress_wait_cb=None,
-        send_complete_cb=None,
-        **cb_kwargs,
     ):
         req_id = str(uuid.uuid4())
         request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
@@ -430,10 +438,6 @@ class Cell(StreamCell):
             # sending with progress timeout
             self.logger.debug(f"{req_id=}: entering sending wait {timeout=}")
             sending_complete = self._future_wait(future, timeout, abort_signal)
-
-            if send_complete_cb:
-                send_complete_cb(**cb_kwargs)
-
             if not sending_complete:
                 self.logger.debug(f"{req_id=}: sending timeout {timeout=}")
                 return self._get_result(req_id)

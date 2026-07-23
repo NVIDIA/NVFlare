@@ -25,7 +25,7 @@ from .._direct_dispatcher import _DirectDispatcher
 
 
 @pytest.mark.parametrize("error", [None, ValueError("local call failed")])
-def test_group_call_always_completes_send_slot(error):
+def test_group_call_always_completes_parallel_slot(error):
     target_app = MagicMock()
     dispatcher = _DirectDispatcher(
         target_obj_name="",
@@ -45,7 +45,7 @@ def test_group_call_always_completes_send_slot(error):
 
     dispatcher._run_func_in_group(gcc, "train", func, (), {})
 
-    gcc.send_completed.assert_called_once_with()
+    gcc.call_completed.assert_called_once_with()
     if error:
         gcc.set_exception.assert_called_once_with(error)
         gcc.set_result.assert_not_called()
@@ -73,7 +73,7 @@ def test_group_call_does_not_nest_work_in_same_executor():
         gcc.target_name = "site-1"
         gcc.context = MagicMock()
         gcc.call_opt = CallOption(timeout=0.05)
-        gcc.send_completed.side_effect = completed.set
+        gcc.call_completed.side_effect = completed.set
 
         dispatcher.call_target_in_group(gcc, "train")
 
@@ -101,7 +101,7 @@ def test_group_call_timeout_completes_hung_site():
         gcc.target_name = "site-1"
         gcc.context = MagicMock()
         gcc.call_opt = CallOption(timeout=0.05)
-        gcc.send_completed.side_effect = completed.set
+        gcc.call_completed.side_effect = completed.set
 
         dispatcher.call_target_in_group(gcc, "train")
 
@@ -137,7 +137,7 @@ def test_cancelled_group_future_completes_site(expect_result):
         gcc = MagicMock()
         gcc.target_name = "site-1"
         gcc.call_opt = CallOption(expect_result=expect_result, timeout=5.0)
-        gcc.send_completed.side_effect = completed.set
+        gcc.call_completed.side_effect = completed.set
 
         dispatcher.call_target_in_group(gcc, "train")
         executor.shutdown(wait=False, cancel_futures=True)

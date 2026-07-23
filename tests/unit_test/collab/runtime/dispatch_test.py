@@ -12,15 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 
 from nvflare.collab.api.app import ClientApp
 from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.decorators import publish
 from nvflare.collab.runtime.defs import CallReplyKey, ObjectCallKey
-from nvflare.collab.runtime.dispatch import _call_app_method
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.collab.runtime.dispatch import _call_app_method, _submit_app_method
+from nvflare.fuel.f3.cellnet.cell import Adapter
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 
 
 class _FailingClient:
@@ -32,6 +36,16 @@ class _FailingClient:
 class _SuccessfulClient:
     @publish
     def succeed(self):
+        return "result"
+
+
+class _ThreadCapturingClient:
+    def __init__(self):
+        self.thread_name = None
+
+    @publish
+    def run(self):
+        self.thread_name = threading.current_thread().name
         return "result"
 
 
@@ -114,3 +128,53 @@ def test_remote_call_rejects_unnormalized_positional_args():
 
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.PROCESS_EXCEPTION
     assert reply.payload[CallReplyKey.ERROR] == "bad method args: positional arguments must be normalized to kwargs"
+
+
+def test_remote_user_function_is_submitted_to_collab_executor():
+    client = _ThreadCapturingClient()
+    app = ClientApp(client)
+    app.name = "site-1"
+    request = new_cell_message(
+        {},
+        {
+            ObjectCallKey.CALLER: "server",
+            ObjectCallKey.TARGET_NAME: "site-1.client",
+            ObjectCallKey.METHOD_NAME: "run",
+        },
+    )
+
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="collab_call") as executor:
+        result = _submit_app_method(request, app, MagicMock(), executor)
+        assert isinstance(result, Future)
+        reply = result.result(timeout=1.0)
+
+    assert reply.payload[CallReplyKey.RESULT] == "result"
+    assert client.thread_name.startswith("collab_call")
+
+
+def test_stream_adapter_sends_future_response_asynchronously():
+    response_future = Future()
+    cell = MagicMock()
+    cell.get_fobs_context.return_value = {}
+    adapter = Adapter(lambda _request: response_future, MagicMock(), cell)
+    incoming = MagicMock()
+    incoming.headers = {
+        StreamHeaderKey.STREAM_REQ_ID: "stream-1",
+        StreamHeaderKey.CHANNEL: "collab",
+        StreamHeaderKey.TOPIC: "call",
+        MessageHeaderKey.ORIGIN: "server",
+        MessageHeaderKey.REQ_ID: "request-1",
+    }
+    incoming.result.return_value = {}
+
+    with (
+        patch("nvflare.fuel.f3.cellnet.cell.decode_payload"),
+        patch("nvflare.fuel.f3.cellnet.cell.encode_payload"),
+    ):
+        adapter.call(incoming)
+        cell.send_blob.assert_not_called()
+
+        response_future.set_result(new_cell_message({}, {"result": "done"}))
+
+    cell.send_blob.assert_called_once()
+    assert cell.send_blob.call_args.args[0] == CellChannel.RETURN_ONLY

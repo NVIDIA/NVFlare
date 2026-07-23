@@ -20,7 +20,7 @@ from nvflare.collab.api.exceptions import CollabCallError, RunAborted
 from nvflare.collab.api.publish_interface import PublishInterface
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
-from .call_opt import CallOption
+from .call_opt import DEFAULT_CALL_TIMEOUT, CallOption
 
 
 class _ProxyCall:
@@ -29,7 +29,7 @@ class _ProxyCall:
         self,
         proxy,
         expect_result: bool = True,
-        timeout: float = 5.0,
+        timeout: float = DEFAULT_CALL_TIMEOUT,
         optional: bool = False,
         secure: bool = False,
         target: str = None,
@@ -45,6 +45,9 @@ class _ProxyCall:
         )
 
     def __getattr__(self, func_name):
+        if func_name.startswith("_"):
+            raise AttributeError(func_name)
+
         def method(*args, **kwargs):
             return self.proxy.call_func(self.call_opt, func_name, args, kwargs)
 
@@ -74,7 +77,7 @@ class Proxy:
     def __call__(
         self,
         expect_result: bool = True,
-        timeout: float = 5.0,
+        timeout: float = DEFAULT_CALL_TIMEOUT,
         optional: bool = False,
         secure: bool = False,
         target: str = None,
@@ -252,6 +255,9 @@ class Proxy:
         This method is called when the proxy is invoked to perform the specified func without any call options.
         In this case, we use a CallOpt with default values.
         """
+
+        if func_name.startswith("_"):
+            raise AttributeError(func_name)
 
         def method(*args, **kwargs):
             return self.call_func(CallOption(), func_name, args, kwargs)

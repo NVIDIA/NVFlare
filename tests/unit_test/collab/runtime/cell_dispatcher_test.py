@@ -29,7 +29,7 @@ from nvflare.fuel.f3.cellnet.utils import new_cell_message
 
 
 @pytest.mark.parametrize("error", [None, ValueError("cannot encode")])
-def test_group_call_always_completes_send_slot(error):
+def test_group_call_always_completes_parallel_slot(error):
     dispatcher = CellDispatcher(
         manager=MagicMock(),
         engine=MagicMock(),
@@ -48,7 +48,7 @@ def test_group_call_always_completes_send_slot(error):
 
     dispatcher._run_func(gcc, "train", (), {})
 
-    gcc.send_completed.assert_called_once_with()
+    gcc.call_completed.assert_called_once_with()
     if error:
         gcc.set_exception.assert_called_once_with(error)
         gcc.set_result.assert_not_called()
@@ -81,7 +81,7 @@ def test_pretransmission_error_releases_bounded_parallel_slot():
         context=MagicMock(),
         waiter=waiter,
     )
-    gcc.set_send_complete_cb(waiter.dec_call_count)
+    gcc.set_completion_cb(waiter.dec_call_count)
 
     dispatcher._run_func(gcc, "train", (), {})
 
@@ -116,7 +116,7 @@ def test_cancelled_group_future_completes_site():
             thread_executor=executor,
         )
         gcc = MagicMock()
-        gcc.send_completed.side_effect = completed.set
+        gcc.call_completed.side_effect = completed.set
 
         dispatcher.call_target_in_group(gcc, "train")
         executor.shutdown(wait=False, cancel_futures=True)
@@ -156,8 +156,6 @@ def test_remote_error_preserves_type_and_traceback():
                 context=MagicMock(),
                 target_name="site-1.trainer",
                 call_opt=CallOption(),
-                send_complete_cb=None,
-                cb_kwargs={},
                 func_name="train",
             )
     finally:

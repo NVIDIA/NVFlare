@@ -16,6 +16,7 @@ from nvflare.collab.api.call_utils import check_call_args
 from nvflare.collab.api.constants import CollabMethodArgName
 from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.decorators import adjust_kwargs
+from nvflare.fuel.f3.cellnet.cell import Adapter
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
@@ -24,10 +25,23 @@ from nvflare.security.logging import secure_format_exception, secure_format_trac
 from .defs import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
 
 
-def prepare_for_remote_call(cell, app, logger):
+def prepare_for_remote_call(cell, app, logger, executor):
     logger.info(f"register cb for cell {cell.get_fqcn()}: {type(cell)}")
-    cell.register_request_cb(channel=MSG_CHANNEL, topic=MSG_TOPIC, cb=_call_app_method, app=app, logger=logger)
+    adapter = Adapter(_submit_app_method, cell.core_cell.my_info, cell)
+    cell.register_blob_cb(
+        channel=MSG_CHANNEL,
+        topic=MSG_TOPIC,
+        cb=adapter.call,
+        app=app,
+        logger=logger,
+        executor=executor,
+    )
     logger.info(f"registered request CB for {MSG_CHANNEL}/{MSG_TOPIC}")
+
+
+def _submit_app_method(request: Message, app: App, logger, executor):
+    """Move user code off the shared Cell/stream callback executor."""
+    return executor.submit(_call_app_method, request, app, logger)
 
 
 def _error_reply(error: str, logger, error_type: str = None, traceback_text: str = None) -> Message:

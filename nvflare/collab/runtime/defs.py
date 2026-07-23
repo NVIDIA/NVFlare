@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 SYNC_TASK_NAME = "sync"
+SETUP_TASK_NAME = "setup"
 
 MSG_CHANNEL = "collab"
 MSG_TOPIC = "call"
@@ -19,6 +20,7 @@ MSG_TOPIC = "call"
 
 class SyncKey:
     COLLAB_INTERFACE = "collab_interface"
+    CLIENT_INTERFACES = "client_interfaces"
     SERVER_FQCN = "server_fqcn"
 
 

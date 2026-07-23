@@ -31,7 +31,7 @@ from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
 
 from .adaptor import CollabAdaptor
-from .defs import SYNC_TASK_NAME, SyncKey
+from .defs import SETUP_TASK_NAME, SYNC_TASK_NAME, SyncKey
 from .dispatch import prepare_for_remote_call
 
 
@@ -66,6 +66,7 @@ class CollabController(Controller, CollabAdaptor):
         self.sync_task_timeout = sync_task_timeout
         self.server_app = None
         self.client_info = {}  # client name => _ClientInfo
+        self.client_setup_status = {}
         self.cell = None
         self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads, thread_name_prefix="collab_call")
 
@@ -182,15 +183,9 @@ class CollabController(Controller, CollabAdaptor):
         engine = fl_ctx.get_engine()
         self.cell = engine.get_cell()
         server_collab_interface = self.server_app.get_collab_interface()
-        task_data = Shareable(
-            {
-                SyncKey.COLLAB_INTERFACE: server_collab_interface,
-                SyncKey.SERVER_FQCN: self.cell.get_fqcn(),
-            }
-        )
         task = Task(
             name=SYNC_TASK_NAME,
-            data=task_data,
+            data=Shareable(),
             timeout=math.ceil(self.sync_task_timeout),
             result_received_cb=self._process_sync_reply,
         )
@@ -200,6 +195,7 @@ class CollabController(Controller, CollabAdaptor):
         num_clients = len(all_clients)
         for c in all_clients:
             self.client_info[c.name] = None
+            self.client_setup_status[c.name] = False
 
         start_time = time.time()
         self.broadcast_and_wait(
@@ -225,8 +221,32 @@ class CollabController(Controller, CollabAdaptor):
 
         self.log_info(fl_ctx, f"successfully synced clients {self.client_info.keys()}")
 
+        client_interfaces = {name: info.publish_interface for name, info in self.client_info.items()}
+        setup_task = Task(
+            name=SETUP_TASK_NAME,
+            data=Shareable(
+                {
+                    SyncKey.COLLAB_INTERFACE: server_collab_interface,
+                    SyncKey.CLIENT_INTERFACES: client_interfaces,
+                    SyncKey.SERVER_FQCN: self.cell.get_fqcn(),
+                }
+            ),
+            timeout=math.ceil(self.sync_task_timeout),
+            result_received_cb=self._process_setup_reply,
+        )
+        self.broadcast_and_wait(
+            task=setup_task,
+            min_responses=num_clients,
+            abort_signal=abort_signal,
+            fl_ctx=fl_ctx,
+        )
+        failed_setup = [name for name, ok in self.client_setup_status.items() if not ok]
+        if failed_setup:
+            self.system_panic(f"failed to set up clients {failed_setup}", fl_ctx)
+            return
+
         # register msg CB for processing object calls
-        prepare_for_remote_call(self.cell, self.server_app, self.logger)
+        prepare_for_remote_call(self.cell, self.server_app, self.logger, self.thread_executor)
 
         # prepare proxies and backends
         job_id = fl_ctx.get_job_id()
@@ -253,6 +273,16 @@ class CollabController(Controller, CollabAdaptor):
         else:
             self.log_error(fl_ctx, f"client {client_task.client.name} failed to sync: {rc}")
             self.client_info[client_name] = None
+
+    def _process_setup_reply(self, client_task: ClientTask, fl_ctx: FLContext):
+        client_name = client_task.client.name
+        rc = client_task.result.get_return_code()
+        if rc == ReturnCode.OK:
+            self.log_info(fl_ctx, f"successfully set up client {client_name}")
+            self.client_setup_status[client_name] = True
+        else:
+            self.log_error(fl_ctx, f"client {client_name} failed setup: {rc}")
+            self.client_setup_status[client_name] = False
 
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext

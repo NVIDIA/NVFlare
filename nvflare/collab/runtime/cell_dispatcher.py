@@ -41,8 +41,6 @@ class CellDispatcher(_InvocationDispatcher):
         context,
         target_name: str,
         call_opt: CallOption,
-        send_complete_cb,
-        cb_kwargs,
         func_name: str,
         *args,
         **kwargs,
@@ -71,8 +69,6 @@ class CellDispatcher(_InvocationDispatcher):
                 secure=call_opt.secure,
                 optional=call_opt.optional,
                 abort_signal=self.abort_signal,
-                send_complete_cb=send_complete_cb,
-                **cb_kwargs,
             )
             if not isinstance(reply, Message):
                 self.logger.error(f"cell message reply must be Message but got {type(reply)}")
@@ -136,7 +132,7 @@ class CellDispatcher(_InvocationDispatcher):
     def _group_call_done(future, gcc: GroupCallContext, func_name: str):
         if future.cancelled():
             gcc.set_exception(CancelledError(f"function {func_name} was cancelled before execution"))
-            gcc.send_completed()
+            gcc.call_completed()
 
     def _run_func(self, gcc: GroupCallContext, func_name: str, args, kwargs):
         previous_ctx = get_call_context()
@@ -146,8 +142,6 @@ class CellDispatcher(_InvocationDispatcher):
                 target_name=gcc.target_name,
                 call_opt=gcc.call_opt,
                 func_name=func_name,
-                send_complete_cb=self._msg_sent,
-                cb_kwargs={"gcc": gcc},
                 *args,
                 **kwargs,
             )
@@ -155,15 +149,8 @@ class CellDispatcher(_InvocationDispatcher):
         except Exception as ex:
             gcc.set_exception(ex)
         finally:
-            # Cell.send_request normally invokes the completion callback as
-            # soon as transmission finishes. Guarantee completion here too for
-            # pre-transmission failures and fire-and-forget calls. The context
-            # makes this idempotent when CellNet already invoked the callback.
             set_call_context(previous_ctx)
-            gcc.send_completed()
-
-    def _msg_sent(self, gcc: GroupCallContext):
-        gcc.send_completed()
+            gcc.call_completed()
 
     def handle_exception(self, exception: Exception):
         fl_ctx = self.engine.new_context()

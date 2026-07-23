@@ -275,11 +275,13 @@ class ModuleWrapper:
         """
 
         # Create a simple wrapper that forwards to the original decorated function
-        def method(self):
-            return original_func()
+        def method(self, *args, **kwargs):
+            return original_func(*args, **kwargs)
 
         # Copy the main flag from the original
         setattr(method, _FLAG_MAIN, True)
+        if hasattr(original_func, _FLAG_SUPPORT_CTX):
+            setattr(method, _FLAG_SUPPORT_CTX, getattr(original_func, _FLAG_SUPPORT_CTX))
 
         original_params = get_param_names(original_func) or []
         setattr(method, _ATTR_PARAM_NAMES, original_params)

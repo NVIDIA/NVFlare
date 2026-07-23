@@ -19,7 +19,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.tree_utils import Forest, Node, build_forest
 
 from .constants import CollabMethodArgName
-from .context import Context, set_call_context
+from .context import Context, get_call_context, set_call_context
 from .decorators import (
     get_object_final_funcs,
     get_object_init_funcs,
@@ -187,11 +187,16 @@ class App:
             f(**kwargs)
 
     def initialize(self, context: Context):
-        self._collab_init(self, context)
+        previous_ctx = get_call_context()
+        set_call_context(context)
+        try:
+            self._collab_init(self, context)
 
-        # initialize target objects
-        for obj in self._managed_objects.values():
-            self._collab_init(obj, context)
+            # initialize target objects
+            for obj in self._managed_objects.values():
+                self._collab_init(obj, context)
+        finally:
+            set_call_context(previous_ctx)
 
     def _collab_finalize(self, obj, ctx: Context):
         funcs = get_object_final_funcs(obj)
@@ -204,11 +209,16 @@ class App:
             f(**kwargs)
 
     def finalize(self, context: Context):
-        self._collab_finalize(self, context)
+        previous_ctx = get_call_context()
+        set_call_context(context)
+        try:
+            self._collab_finalize(self, context)
 
-        # finalize target objects
-        for obj in self._managed_objects.values():
-            self._collab_finalize(obj, context)
+            # finalize target objects
+            for obj in self._managed_objects.values():
+                self._collab_finalize(obj, context)
+        finally:
+            set_call_context(previous_ctx)
 
     def new_context(self, caller: str, callee: str, target_group=None, set_call_ctx=True):
         ctx = Context(self, caller, callee, self._abort_signal, target_group=target_group)

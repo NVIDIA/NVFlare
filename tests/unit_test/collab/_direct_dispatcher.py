@@ -142,12 +142,12 @@ class _DirectDispatcher(_InvocationDispatcher):
             timer.cancel()
         if future.cancelled():
             gcc.set_exception(CancelledError(f"function {func_name} was cancelled before execution"))
-            gcc.send_completed()
+            gcc.call_completed()
 
     @staticmethod
     def _group_call_timed_out(gcc: GroupCallContext, func_name: str, timeout: float):
         gcc.set_exception(TimeoutError(f"function {func_name} timed out after {timeout} seconds"))
-        gcc.send_completed()
+        gcc.call_completed()
 
     def _run_func_in_group(self, gcc: GroupCallContext, func_name, func, args, kwargs):
         previous_ctx = get_call_context()
@@ -162,4 +162,4 @@ class _DirectDispatcher(_InvocationDispatcher):
             gcc.set_exception(ex)
         finally:
             set_call_context(previous_ctx)
-            gcc.send_completed()
+            gcc.call_completed()

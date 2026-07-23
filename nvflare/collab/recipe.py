@@ -14,6 +14,7 @@
 import importlib
 import inspect
 import os
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from nvflare.collab.api.app import App, ClientApp, ServerApp
@@ -100,7 +101,6 @@ class CollabRecipe(Recipe):
         # components must only happen once.
         if self._finalized:
             return self._job
-        self._finalized = True
 
         server_obj_id = self._job.to_server(self.server_app.obj, "_server")
         job = self._job
@@ -134,10 +134,13 @@ class CollabRecipe(Recipe):
         # travel with the job, and the job is authorized via the BYOC right rather
         # than the site class allow-list (which cannot enumerate arbitrary user
         # classes). Adding a custom folder is what marks the job as BYOC.
-        for src in self._user_source_files([self.server_app.obj] + list((self.server_objects or {}).values())):
-            job.add_file_to_server(src, app_folder_type="custom")
-        for src in self._user_source_files([self.client_app.obj] + list((self.client_objects or {}).values())):
-            job.add_file_to_clients(src, app_folder_type="custom")
+        server_sources = [self.server_app.obj] + list((self.server_objects or {}).values())
+        for src, dest_dir in self._user_source_entries(server_sources):
+            job.add_file_to_server(src, dest_dir=dest_dir, app_folder_type="custom")
+        client_sources = [self.client_app.obj] + list((self.client_objects or {}).values())
+        for src, dest_dir in self._user_source_entries(client_sources):
+            job.add_file_to_clients(src, dest_dir=dest_dir, app_folder_type="custom")
+        self._finalized = True
         return job
 
     def _client_props_with_per_site_config(self) -> Dict[str, object]:
@@ -152,27 +155,60 @@ class CollabRecipe(Recipe):
         return props
 
     @staticmethod
-    def _user_source_files(objs) -> List[str]:
-        """Resolve the source .py files backing the given user objects (deduplicated).
+    def _user_source_entries(objs) -> List[tuple[str, Optional[str]]]:
+        """Resolve source paths and custom-folder destinations (deduplicated).
 
         Objects whose source cannot be located (e.g. built-ins or C extensions) are
-        skipped.
+        skipped. Module wrappers ship their top-level package's Python sources so
+        relative imports and sibling modules remain available after job export.
         """
-        files = []
+        entries = []
         for obj in objs:
             if obj is None:
                 continue
             try:
                 if isinstance(obj, ModuleWrapper):
                     target = importlib.import_module(obj.module_name)
+                    src = inspect.getfile(target)
+                    source_entries = CollabRecipe._module_source_entries(obj.module_name, src)
                 else:
                     target = type(obj)
-                src = inspect.getfile(target)
+                    src = inspect.getfile(target)
+                    source_entries = [(src, None)]
             except (TypeError, OSError, ImportError, ValueError):
                 continue
-            if src and os.path.isfile(src) and src not in files:
-                files.append(src)
-        return files
+            for entry in source_entries:
+                if entry not in entries:
+                    entries.append(entry)
+        return entries
+
+    @staticmethod
+    def _module_source_entries(module_name: str, src: str) -> List[tuple[str, Optional[str]]]:
+        """Return package files and import-preserving custom destinations."""
+        if not src or not os.path.isfile(src):
+            return []
+
+        parts = module_name.split(".")
+        if len(parts) == 1:
+            return [(src, None)]
+
+        package_dir = Path(src).resolve().parent
+        ascents = len(parts) - 1 if Path(src).name == "__init__.py" else len(parts) - 2
+        for _ in range(ascents):
+            package_dir = package_dir.parent
+        if package_dir.is_dir() and package_dir.name == parts[0]:
+            entries = []
+            for path in sorted(package_dir.rglob("*")):
+                if not path.is_file() or path.suffix not in (".py", ".pyi") or "__pycache__" in path.parts:
+                    continue
+                relative_parent = path.relative_to(package_dir).parent
+                dest = Path(parts[0]) / relative_parent
+                entries.append((str(path), dest.as_posix()))
+            return entries
+
+        # Unusual import loaders may not map the module name to the filesystem
+        # hierarchy. Preserve the old single-file behavior in that case.
+        return [(src, None)]
 
     @staticmethod
     def _add_collab_objects(app: App, to_f):

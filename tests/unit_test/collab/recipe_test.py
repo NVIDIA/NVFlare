@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
+import subprocess
+import sys
+from pathlib import Path
 from types import ModuleType
 
 import pytest
@@ -19,6 +23,7 @@ import pytest
 from nvflare.collab import CollabRecipe, collab
 from nvflare.collab.api import ClientApp, ModuleWrapper, ServerApp
 from nvflare.collab.api.constants import PER_SITE_CONFIG_PROP
+from nvflare.collab.api.decorators import supports_context
 
 
 @collab.main
@@ -113,6 +118,24 @@ def test_server_app_requires_exactly_one_main_function():
         ServerApp(multiple_main_module)
 
 
+def test_module_main_wrapper_forwards_context():
+    module = ModuleType("context_main_module")
+    received = []
+
+    @collab.main
+    def run(context):
+        received.append(context)
+
+    module.run = run
+    app = ServerApp(module)
+    _, main_func = app.mains[0]
+    context = object()
+
+    assert supports_context(main_func)
+    main_func(context=context)
+    assert received == [context]
+
+
 def test_app_runs_multiple_init_functions_in_name_order():
     calls = []
     module = ModuleType("multiple_init_module")
@@ -168,3 +191,48 @@ def test_recipe_public_per_site_config_reaches_executor_props():
         "site-1": {"learning_rate": 0.01},
         "site-2": {"learning_rate": 0.02},
     }
+
+
+def test_exported_module_package_imports_in_clean_process(tmp_path, monkeypatch):
+    source_root = tmp_path / "source"
+    package = source_root / "collab_export_pkg"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "helper.py").write_text("VALUE = 42\n", encoding="utf-8")
+    (package / "app.py").write_text(
+        "from nvflare.collab import collab\n"
+        "from .helper import VALUE\n"
+        "@collab.main\n"
+        "def run():\n"
+        "    return VALUE\n"
+        "@collab.publish\n"
+        "def train():\n"
+        "    return VALUE\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(source_root))
+    module = importlib.import_module("collab_export_pkg.app")
+    export_root = tmp_path / "export"
+
+    CollabRecipe("package_export_test", server=module, client=module).export(str(export_root))
+
+    custom_dir = export_root / "package_export_test" / "app" / "custom"
+    assert (custom_dir / "collab_export_pkg" / "__init__.py").is_file()
+    assert (custom_dir / "collab_export_pkg" / "helper.py").is_file()
+    assert (custom_dir / "collab_export_pkg" / "app.py").is_file()
+    repo_root = Path(__file__).resolve().parents[3]
+    code = (
+        "import pathlib, sys; "
+        "sys.path.insert(0, sys.argv[1]); "
+        "sys.path.insert(0, sys.argv[2]); "
+        "import collab_export_pkg.app as app; "
+        "assert app.VALUE == 42; "
+        "assert pathlib.Path(app.__file__).is_relative_to(pathlib.Path(sys.argv[1]))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", code, str(custom_dir), str(repo_root)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr

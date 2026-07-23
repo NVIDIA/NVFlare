@@ -109,32 +109,28 @@ class Group:
 
         def method(*args, **kwargs):
             try:
-                # filter once for all targets
-                p = self._get_work_proxy(self._proxies[0], func_name)
-
-                # func_proxy is the proxy that actually has the func.
-                # the func_proxy is either "p" or a child of "p".
-                func_proxy, func_itf, adj_args, adj_kwargs = p.adjust_func_args(func_name, args, kwargs)
-                with func_proxy.app.new_context(func_proxy.caller_name, func_proxy.name, target_group=self) as ctx:
+                first_proxy = self._get_work_proxy(self._proxies[0], func_name)
+                with first_proxy.app.new_context(first_proxy.caller_name, first_proxy.name, target_group=self) as ctx:
                     self._logger.info(
                         f"[{ctx}] calling {func_name} {self._call_opt} of group {[p.name for p in self._proxies]}"
                     )
 
                     assert isinstance(self._app, App)
-                    check_call_args(func_name, func_itf, adj_args, adj_kwargs)
-
                     waiter = ResultWaiter([p.name for p in self._proxies])
                     max_parallel = self._call_opt.parallel
                     if max_parallel <= 0:
                         max_parallel = len(self._proxies)
 
+                    # Validate and normalize every target before dispatching any
+                    # work. A malformed or heterogeneous member therefore
+                    # cannot leave the group partially invoked.
+                    work_items = []
                     for p in self._proxies:
                         p = self._get_work_proxy(p, func_name)
-                        func_proxy, func_itf, call_args, call_kwargs = p.adjust_func_args(
-                            func_name, adj_args, adj_kwargs
-                        )
+                        func_proxy, func_itf, call_args, call_kwargs = p.adjust_func_args(func_name, args, kwargs)
+                        check_call_args(func_name, func_itf, call_args, call_kwargs)
                         call_kwargs = copy.copy(call_kwargs)
-                        ctx = self._app.new_context(
+                        call_ctx = self._app.new_context(
                             func_proxy.caller_name, func_proxy.name, target_group=self, set_call_ctx=False
                         )
 
@@ -145,15 +141,16 @@ class Group:
                             func_name=func_name,
                             process_cb=self._process_resp_cb,
                             cb_kwargs=copy.copy(self._cb_kwargs),
-                            context=ctx,
+                            context=call_ctx,
                             waiter=waiter,
                         )
+                        gcc.set_completion_cb(self._call_completed, gcc=gcc, proxy=func_proxy)
+                        work_items.append((func_proxy, gcc, call_args, call_kwargs))
 
-                        # try to get permission to make next call
-                        gcc.set_send_complete_cb(self._request_sent, gcc=gcc, proxy=func_proxy)
+                    for func_proxy, gcc, call_args, call_kwargs in work_items:
+                        # Limit calls that are still in flight, including remote
+                        # execution and response transfer.
                         waiter.wait_for_call_permission(max_parallel, self._abort_signal)
-
-                        # make next call
                         waiter.inc_call_count()
                         func_proxy.backend.call_target_in_group(gcc, func_name, *call_args, **call_kwargs)
 
@@ -174,8 +171,8 @@ class Group:
 
         return method
 
-    def _request_sent(self, gcc: GroupCallContext, proxy: Proxy):
-        self._logger.debug(f"[{gcc.context}] call has been sent to '{proxy.name}' for func '{gcc.func_name}'")
+    def _call_completed(self, gcc: GroupCallContext, proxy: Proxy):
+        self._logger.debug(f"[{gcc.context}] call to '{proxy.name}' completed for func '{gcc.func_name}'")
         gcc.waiter.dec_call_count()
 
 

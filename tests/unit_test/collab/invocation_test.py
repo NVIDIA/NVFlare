@@ -80,10 +80,10 @@ def test_group_send_completion_is_idempotent():
         context=MagicMock(),
         waiter=ResultWaiter(["site-1"]),
     )
-    gcc.set_send_complete_cb(callback, target="site-1")
+    gcc.set_completion_cb(callback, target="site-1")
 
-    gcc.send_completed()
-    gcc.send_completed()
+    gcc.call_completed()
+    gcc.call_completed()
 
     callback.assert_called_once_with(target="site-1")
 

@@ -247,25 +247,25 @@ class GroupCallContext:
         self.cb_kwargs = copy.copy(cb_kwargs) if cb_kwargs else {}
         self.context = context
         self.waiter = waiter
-        self.send_complete_cb = None
-        self.send_complete_cb_kwargs = {}
-        self._send_completed = False
-        self._send_complete_lock = threading.Lock()
+        self.completion_cb = None
+        self.completion_cb_kwargs = {}
+        self._completed = False
+        self._completion_lock = threading.Lock()
         self.logger = get_obj_logger(self)
 
-    def set_send_complete_cb(self, cb, **cb_kwargs):
+    def set_completion_cb(self, cb, **cb_kwargs):
         if not callable(cb):
-            raise ValueError("send_complete_cb must be callable")
-        self.send_complete_cb = cb
-        self.send_complete_cb_kwargs = cb_kwargs
+            raise ValueError("completion_cb must be callable")
+        self.completion_cb = cb
+        self.completion_cb_kwargs = cb_kwargs
 
-    def send_completed(self):
-        with self._send_complete_lock:
-            if self._send_completed:
+    def call_completed(self):
+        with self._completion_lock:
+            if self._completed:
                 return
-            self._send_completed = True
-            cb = self.send_complete_cb
-            cb_kwargs = self.send_complete_cb_kwargs
+            self._completed = True
+            cb = self.completion_cb
+            cb_kwargs = self.completion_cb_kwargs
 
         if cb:
             cb(**cb_kwargs)
