@@ -19,28 +19,30 @@ from nvflare.security.logging import secure_log_traceback
 
 def run_server(server_app: ServerApp, logger):
     server_ctx = server_app.new_context(caller=server_app.name, callee=server_app.name)
-    logger.info("initializing server app")
-    server_app.initialize(server_ctx)
-
-    if len(server_app.mains) != 1:
-        raise RuntimeError(f"server app must have exactly one main function but got {len(server_app.mains)}")
-
-    name, main_func = server_app.mains[0]
     result = None
-    if not server_ctx.is_aborted():
-        try:
-            logger.info(f"Running main {name}")
-            kwargs = {CollabMethodArgName.CONTEXT: server_ctx}
-            if not supports_context(main_func):
-                kwargs = {}
-            result = main_func(**kwargs)
-            server_ctx.set_prop(ContextKey.RESULT, result)
-        except Exception as ex:
-            secure_log_traceback(logger)
-            backend = server_app.backend
-            if backend:
-                backend.handle_exception(ex)
+    try:
+        logger.info("initializing server app")
+        server_app.initialize(server_ctx)
 
-    logger.info("finalizing server app")
-    server_app.finalize(server_ctx)
+        if len(server_app.mains) != 1:
+            raise RuntimeError(f"server app must have exactly one main function but got {len(server_app.mains)}")
+
+        name, main_func = server_app.mains[0]
+        if not server_ctx.is_aborted():
+            try:
+                logger.info(f"Running main {name}")
+                kwargs = {CollabMethodArgName.CONTEXT: server_ctx}
+                if not supports_context(main_func):
+                    kwargs = {}
+                result = main_func(**kwargs)
+                server_ctx.set_prop(ContextKey.RESULT, result)
+            except Exception as ex:
+                secure_log_traceback(logger)
+                backend = server_app.backend
+                if backend:
+                    backend.handle_exception(ex)
+    finally:
+        logger.info("finalizing server app")
+        server_app.finalize(server_ctx)
+
     return result
