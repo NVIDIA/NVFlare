@@ -272,7 +272,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument("job", help="NVFlare job.py to optimize")
     parser.add_argument("--metric", help="optimization metric; omit to use job.py key_metric")
-    parser.add_argument("--mode", choices=["max", "min"], default="max")
     parser.add_argument("--env", dest="target_env", choices=["sim", "poc", "prod"], default="sim")
     cap_group = parser.add_mutually_exclusive_group()
     cap_group.add_argument(
@@ -347,9 +346,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--python", default=os.environ.get("PYTHON") or sys.executable)
-    parser.add_argument("--prefer-synthetic", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--synthetic-train-size", type=int, default=2048)
-    parser.add_argument("--synthetic-test-size", type=int, default=256)
     parser.add_argument("--name", help="candidate name for prepare")
     parser.add_argument("--hypothesis", help="candidate hypothesis for prepare")
     parser.add_argument("--family", help="algorithm family slug for prepare or record --literature")
@@ -375,6 +371,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     if args.uncapped:
         args.max_candidates = None
         args._explicit_settings.add("max_candidates")
+    # No CLI surface: campaigns always maximize. The constant keeps the persisted
+    # settings/state schema stable and lets the legacy-campaign gate compare against it.
+    args.mode = "max"
     return args
 
 
@@ -1328,6 +1327,13 @@ def apply_metric_contract(
     objective = objective_contract(config, requested_metric)
     schema_objective = (schema or {}).get("objective", {})
     if isinstance(schema_objective, dict):
+        schema_mode = schema_objective.get("mode")
+        # Deliberate leniency: an explicit `mode: null` is tolerated and treated as max.
+        if schema_mode is not None and schema_mode != "max":
+            raise ValueError(
+                f"mutation_schema.yaml declares objective.mode={schema_mode!r}, which is not supported. "
+                f"{load_campaign_guard().MODE_MAX_ONLY_MESSAGE}"
+            )
         schema_requested = schema_objective.get("requested_metric") or schema_objective.get("metric")
         if not schema_requested or schema_requested == objective["requested_metric"]:
             for key in ("optimization_metric", "metric_extraction_order", "metric_source"):
@@ -1804,13 +1810,6 @@ def build_base_args(args: argparse.Namespace, help_text: str, schema: Dict[str, 
     budget_args = build_comparison_budget_args(schema, help_text)
     if budget_args:
         base.extend(budget_args)
-    if args.prefer_synthetic and supports_flag(help_text, "--synthetic_data"):
-        if "--synthetic_data" not in base:
-            base.append("--synthetic_data")
-        if supports_flag(help_text, "--train_size") and "--train_size" not in base:
-            base.extend(["--train_size", str(args.synthetic_train_size)])
-        if supports_flag(help_text, "--test_size") and "--test_size" not in base:
-            base.extend(["--test_size", str(args.synthetic_test_size)])
     return base
 
 
@@ -2436,8 +2435,8 @@ def load_results(path: Path) -> List[RunRecord]:
     return records
 
 
-def better(new_score: Optional[float], old_score: Optional[float], mode: str) -> bool:
-    return load_campaign_guard().better(new_score, old_score, mode)
+def better(new_score: Optional[float], old_score: Optional[float]) -> bool:
+    return load_campaign_guard().better(new_score, old_score)
 
 
 def write_state(
@@ -2446,7 +2445,6 @@ def write_state(
     records: List[RunRecord],
     max_candidates: Optional[int],
     *,
-    mode: str = "max",
     stop_files: Optional[List[str]] = None,
     plateau_threshold: Optional[int] = None,
     plateau_min_delta: Optional[float] = None,
@@ -2472,7 +2470,6 @@ def write_state(
         plateau_threshold=plateau_threshold,
         min_delta=plateau_min_delta,
         hard_crash_threshold=hard_crash_threshold,
-        mode=mode,
         pending_manifest_count=pending_manifest_count,
         exploration_batch_size=exploration_batch_size,
         family_repeat_limit=family_repeat_limit,
@@ -2521,7 +2518,7 @@ def load_progress_plotter():
     return load_sibling_module("plot_progress.py", "nvflare_autofl_plot_progress")
 
 
-def write_progress_fallback(path: Path, records: List[RunRecord], mode: str, metric_label: str) -> None:
+def write_progress_fallback(path: Path, records: List[RunRecord], metric_label: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         from PIL import Image, ImageDraw, ImageFont
@@ -2561,7 +2558,7 @@ def write_progress_fallback(path: Path, records: List[RunRecord], mode: str, met
             color = (40, 160, 90) if record.status in {"baseline", "keep"} else (150, 150, 150)
             draw.ellipse((x - 5, y - 5, x + 5, y + 5), fill=color, outline="black")
             draw.text((x + 6, y - 14), f"{record.name}: {record.score:.3f}", fill=color, font=font)
-            if better(record.score, running_best, mode):
+            if better(record.score, running_best):
                 running_best = record.score
             if running_best == record.score:
                 if last_point:
@@ -2570,19 +2567,19 @@ def write_progress_fallback(path: Path, records: List[RunRecord], mode: str, met
     image.save(path)
 
 
-def write_progress(path: Path, records: List[RunRecord], mode: str, metric_label: str) -> None:
+def write_progress(path: Path, records: List[RunRecord], metric_label: str) -> None:
     plotter = load_progress_plotter()
     try:
-        plotter.plot_progress(records, path, mode, metric_label)
+        plotter.plot_progress(records, path, metric_label)
     except (plotter.NoScoredResultsError, plotter.PlotDependencyError):
-        write_progress_fallback(path, records, mode, metric_label)
+        write_progress_fallback(path, records, metric_label)
 
 
 def write_report(path: Path, config: Dict[str, Any], records: List[RunRecord], args: argparse.Namespace) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     best = None
     for record in records:
-        if record.status in {"baseline", "keep"} and better(record.score, best.score if best else None, args.mode):
+        if record.status in {"baseline", "keep"} and better(record.score, best.score if best else None):
             best = record
     candidate_budget = (
         str(args.max_candidates) if args.max_candidates is not None else "uncapped; runs until manual interruption"
@@ -2717,9 +2714,6 @@ CAMPAIGN_SETTING_NAMES = (
     "timeout",
     "simulator_no_progress_timeout",
     "python",
-    "prefer_synthetic",
-    "synthetic_train_size",
-    "synthetic_test_size",
 )
 
 MUTABLE_CAMPAIGN_SETTING_NAMES = {
@@ -2749,6 +2743,23 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
     settings = metadata.get("settings")
     if not isinstance(settings, dict):
         raise ValueError("campaign metadata is missing settings")
+    if settings.get("prefer_synthetic"):
+        # Pre-removal campaigns scored their baseline and prior candidates on injected
+        # synthetic data; new runs use real data, so ledger comparisons cross a data regime.
+        print(
+            "Warning: prior scores in this campaign were computed on synthetic data "
+            "(legacy prefer_synthetic setting); new runs use the job's real data, so ledger "
+            "comparisons mix data regimes. Consider re-initializing the campaign.",
+            file=sys.stderr,
+        )
+    persisted_mode = settings.get("mode", "max")
+    if persisted_mode != "max":
+        raise ValueError(
+            f"campaign was initialized with mode={persisted_mode!r}, which is no longer supported. "
+            f"{load_campaign_guard().MODE_MAX_ONLY_MESSAGE} Delete the campaign's .nvflare/autofl "
+            "directory (or start in a fresh workspace) and initialize again with a metric whose "
+            "higher values are better."
+        )
     explicit = getattr(args, "_explicit_settings", set())
     changed = False
     for name in CAMPAIGN_SETTING_NAMES:
@@ -2827,7 +2838,6 @@ def import_job_config(
         str(job),
         workspace_root=str(job.parent),
         metric=args.metric,
-        mode=args.mode,
         target_env=args.target_env,
         max_candidates=args.max_candidates,
         job_args=shlex.split(args.base_args),
@@ -2873,10 +2883,10 @@ def campaign_admission_errors(config: Dict[str, Any]) -> List[str]:
     return errors
 
 
-def best_retained_record(records: Sequence[RunRecord], mode: str) -> Optional[RunRecord]:
+def best_retained_record(records: Sequence[RunRecord]) -> Optional[RunRecord]:
     best = None
     for record in records:
-        if record.status in {"baseline", "keep"} and better(record.score, best.score if best else None, mode):
+        if record.status in {"baseline", "keep"} and better(record.score, best.score if best else None):
             best = record
     return best
 
@@ -2901,7 +2911,6 @@ def refresh_campaign_artifacts(
         paths["results"],
         records,
         args.max_candidates,
-        mode=args.mode,
         stop_files=resolve_stop_files(paths["workspace"], args.stop_file),
         plateau_threshold=args.plateau_threshold,
         plateau_min_delta=args.plateau_min_delta,
@@ -2934,7 +2943,7 @@ def refresh_campaign_artifacts(
         }
     )
     write_json(paths["state"], state)
-    write_progress(paths["progress"], records, args.mode, optimization_metric(config, args.metric))
+    write_progress(paths["progress"], records, optimization_metric(config, args.metric))
     write_report(paths["report"], config, records, args)
     return state
 
@@ -3122,7 +3131,6 @@ def refresh_campaign_state(
         paths["results"],
         records,
         args.max_candidates,
-        mode=args.mode,
         stop_files=resolve_stop_files(job.parent, args.stop_file),
         plateau_threshold=args.plateau_threshold,
         plateau_min_delta=args.plateau_min_delta,
@@ -3197,7 +3205,8 @@ def prepare_candidate(args: argparse.Namespace, job: Path) -> int:
         "base_candidate": metadata.get("best_candidate"),
         "base_source_sha256": source_hash(best_files),
         "fixed_budget_sha256": metadata.get("fixed_budget_sha256"),
-        "objective": {"metric": args.metric, "mode": args.mode},
+        # mode is a constant for schema stability: campaigns always maximize the metric.
+        "objective": {"metric": args.metric, "mode": "max"},
         "environment": args.target_env,
         "run_args": shlex.split(args.run_args),
         "changed_files": [],
@@ -3318,10 +3327,10 @@ def finalize_candidate_result(
     previous_snapshot = None
     try:
         records = load_results(paths["results"])
-        previous_best = best_retained_record(records, args.mode)
+        previous_best = best_retained_record(records)
         if record.status == "candidate":
             record.status = (
-                "keep" if better(record.score, previous_best.score if previous_best else None, args.mode) else "discard"
+                "keep" if better(record.score, previous_best.score if previous_best else None) else "discard"
             )
         patch_path = manifest_path.parent / "candidate.patch"
         rollback_files = capture_file_versions(

@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Helpers shared by the Docker and Kubernetes deploy backends."""
+"""Helpers shared by deployment backends."""
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -29,6 +29,7 @@ from nvflare.tool.cli_output import output_error_message, print_human
 
 RUNTIME_DOCKER = "docker"
 RUNTIME_K8S = "k8s"
+RUNTIME_SLURM = "slurm"
 ROLE_SERVER = "server"
 ROLE_CLIENT = "client"
 ROLE_ADMIN = "admin"
@@ -45,6 +46,8 @@ SUB_START_SH = "sub_start.sh"
 STOP_FL_SH = "stop_fl.sh"
 LEGACY_DOCKER_SH = "docker.sh"
 DOCKER_START_SH = "start_docker.sh"
+SLURM_START_SH = "start_slurm.sh"
+SLURM_PARENT_SH = "parent.slurm"
 WORKSPACE_MOUNT_PATH = "/var/tmp/nvflare/workspace"
 PASSTHROUGH_RESOURCE_MANAGER = (
     "nvflare.app_common.resource_managers.passthrough_resource_manager.PassthroughResourceManager"
@@ -54,15 +57,19 @@ DOCKER_CLIENT_LAUNCHER = "nvflare.app_opt.job_launcher.docker_launcher.ClientDoc
 DOCKER_SERVER_LAUNCHER = "nvflare.app_opt.job_launcher.docker_launcher.ServerDockerJobLauncher"
 K8S_CLIENT_LAUNCHER = "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
 K8S_SERVER_LAUNCHER = "nvflare.app_opt.job_launcher.k8s_launcher.ServerK8sJobLauncher"
+SLURM_CLIENT_LAUNCHER = "nvflare.app_opt.job_launcher.slurm.ClientSlurmJobLauncher"
+SLURM_SERVER_LAUNCHER = "nvflare.app_opt.job_launcher.slurm.ServerSlurmJobLauncher"
 PROCESS_CLIENT_LAUNCHER = "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher"
 PROCESS_SERVER_LAUNCHER = "nvflare.app_common.job_launcher.server_process_launcher.ServerProcessJobLauncher"
 GPU_RESOURCE_CONSUMER = "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer"
-LAUNCHER_IDS = {"process_launcher", "docker_launcher", "k8s_launcher"}
+LAUNCHER_IDS = {"process_launcher", "docker_launcher", "k8s_launcher", "slurm_launcher"}
 BUILTIN_LAUNCHER_PATHS = {
     DOCKER_CLIENT_LAUNCHER,
     DOCKER_SERVER_LAUNCHER,
     K8S_CLIENT_LAUNCHER,
     K8S_SERVER_LAUNCHER,
+    SLURM_CLIENT_LAUNCHER,
+    SLURM_SERVER_LAUNCHER,
     PROCESS_CLIENT_LAUNCHER,
     PROCESS_SERVER_LAUNCHER,
 }
@@ -70,6 +77,10 @@ BUILTIN_RESOURCE_MANAGER_PATHS = {GPU_RESOURCE_MANAGER, PASSTHROUGH_RESOURCE_MAN
 BUILTIN_RESOURCE_CONSUMER_PATHS = {GPU_RESOURCE_CONSUMER}
 RESOURCE_CONSUMER_IDS = {"resource_consumer"}
 _STUDY_RUNTIME_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / STUDY_RUNTIME_YAML
+
+
+def _paths_overlap(first: Path, second: Path) -> bool:
+    return first == second or first.is_relative_to(second) or second.is_relative_to(first)
 
 
 @dataclass
@@ -115,7 +126,14 @@ def validate_kit(kit_dir: Path) -> KitInfo:
     name = _detect_name(kit_dir, role, role_config)
     org = _detect_org(startup_dir, role) if role != ROLE_ADMIN else name
     fed_learn_port, admin_port = _detect_ports(role, role_config)
-    return KitInfo(kit_dir=kit_dir, role=role, name=name, org=org, fed_learn_port=fed_learn_port, admin_port=admin_port)
+    return KitInfo(
+        kit_dir=kit_dir,
+        role=role,
+        name=name,
+        org=org,
+        fed_learn_port=fed_learn_port,
+        admin_port=admin_port,
+    )
 
 
 def _validate_identity_files(startup_dir: Path, role: str) -> None:
@@ -293,7 +311,15 @@ def _ensure_study_runtime_template(kit_dir: Path) -> None:
 
 def _remove_start_scripts(kit_dir: Path, keep: set[str]) -> None:
     startup_dir = kit_dir / "startup"
-    for filename in (START_SH, SUB_START_SH, STOP_FL_SH, LEGACY_DOCKER_SH, DOCKER_START_SH):
+    for filename in (
+        START_SH,
+        SUB_START_SH,
+        STOP_FL_SH,
+        LEGACY_DOCKER_SH,
+        DOCKER_START_SH,
+        SLURM_START_SH,
+        SLURM_PARENT_SH,
+    ):
         if filename in keep:
             continue
         path = startup_dir / filename
@@ -371,5 +397,5 @@ def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=4) + "\n", encoding="utf-8")
 
 
-def _fail(error_code: str, message: str, hint: str = "") -> None:
+def _fail(error_code: str, message: str, hint: str = "") -> NoReturn:
     output_error_message(error_code, message, hint, None, exit_code=4)

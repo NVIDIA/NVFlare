@@ -4,7 +4,7 @@ When the user asks for a bounded number of approaches, for example "try two appr
 `--max-candidates 2`; the baseline run does not count toward the cap:
 
 ```bash
-python "$RUNNER" initialize ./job.py --metric accuracy --mode max --env sim --max-candidates 2
+python "$RUNNER" initialize ./job.py --metric accuracy --env sim --max-candidates 2
 python "$RUNNER" prepare ./job.py --name <candidate-1> --hypothesis "<expected improvement>"
 python "$RUNNER" evaluate ./job.py --manifest <candidate_manifest.json>
 python "$RUNNER" prepare ./job.py --name <candidate-2> --hypothesis "<expected improvement>"

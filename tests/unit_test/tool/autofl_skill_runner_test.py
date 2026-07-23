@@ -56,7 +56,7 @@ def _campaign_config():
     }
 
 
-def _initialize_fake_campaign(runner, tmp_path, monkeypatch, *, target_env="sim", baseline_score=0.5, mode=None):
+def _initialize_fake_campaign(runner, tmp_path, monkeypatch, *, target_env="sim", baseline_score=0.5):
     job = tmp_path / "job.py"
     client = tmp_path / "client.py"
     job.write_text("print('job')\n", encoding="utf-8")
@@ -80,9 +80,7 @@ def _initialize_fake_campaign(runner, tmp_path, monkeypatch, *, target_env="sim"
         )
 
     monkeypatch.setattr(runner, "run_job", fake_run)
-    argv = ["initialize", str(job), "--env", target_env, "--no-prefer-synthetic"]
-    if mode is not None:
-        argv.extend(["--mode", mode])
+    argv = ["initialize", str(job), "--env", target_env]
     assert runner.main(argv) == 0
     return job, client, config
 
@@ -195,7 +193,7 @@ def test_initialize_merges_existing_mutation_schema_preferred_targets_into_autof
         ),
     )
 
-    assert runner.main(["initialize", str(job), "--no-prefer-synthetic"]) == 0
+    assert runner.main(["initialize", str(job)]) == 0
 
     config = runner.read_yaml(tmp_path / "autofl.yaml")
     assert "custom_aggregators.py" in config["trust_contract"]["allowed_edit_paths"]
@@ -292,8 +290,8 @@ def test_metric_paths_reject_non_finite_values(tmp_path, value):
 
     assert runner.find_metric_value({"accuracy": value}, ["accuracy"]) is None
     assert runner.find_metric_value({"metrics": [{"name": "accuracy", "value": value}]}, ["accuracy"]) is None
-    assert runner.better(value, 0.5, "max") is False
-    assert runner.better(0.6, value, "max") is True
+    assert runner.better(value, 0.5) is False
+    assert runner.better(0.6, value) is True
     with pytest.raises(ValueError, match="non-finite score"):
         runner.write_results(
             tmp_path / "results.tsv",
@@ -397,6 +395,17 @@ def test_runner_applies_schema_metric_contract():
     assert updated["objective"]["metric_source"] == "held-out CIFAR-10 test set"
 
 
+def test_schema_metric_contract_rejects_minimization_objective():
+    runner = _load_runner()
+    config = {"objective": {"metric": "val_loss"}}
+    schema = {"objective": {"metric": "val_loss", "mode": "min"}}
+
+    with pytest.raises(ValueError, match="minimization is not supported") as excinfo:
+        runner.apply_metric_contract(config, "val_loss", schema)
+
+    assert "neg_val_loss" in str(excinfo.value)
+
+
 def test_comparison_budget_suppresses_duplicate_imported_fixed_budget_args():
     runner = _load_runner()
     config = {"budget": {"fixed_training_budget": {"num_clients": 8, "num_rounds": 10}}}
@@ -412,8 +421,58 @@ def test_comparison_budget_suppresses_duplicate_imported_fixed_budget_args():
 
     assert runner.build_fixed_args(config, help_text, schema) == []
 
-    args = SimpleNamespace(base_args="", prefer_synthetic=False, synthetic_train_size=1, synthetic_test_size=1)
+    args = SimpleNamespace(base_args="")
     assert runner.build_base_args(args, help_text, schema) == ["--n_clients", "8", "--num_rounds", "20"]
+
+
+def test_build_base_args_never_injects_dataset_flags_for_synthetic_capable_jobs():
+    runner = _load_runner()
+    help_text = "usage: job.py [--synthetic_data] [--train_size TRAIN_SIZE] [--test_size TEST_SIZE]"
+
+    assert runner.build_base_args(SimpleNamespace(base_args=""), help_text, {}) == []
+
+    schema = {"comparison_budget_args": {"default_candidate_budget": {"num_rounds": 5}}}
+    help_text_with_budget = f"{help_text} [--num_rounds NUM_ROUNDS]"
+    assert runner.build_base_args(SimpleNamespace(base_args=""), help_text_with_budget, schema) == [
+        "--num_rounds",
+        "5",
+    ]
+
+
+def test_explicit_base_args_pass_through_verbatim():
+    runner = _load_runner()
+    help_text = "usage: job.py [--synthetic_data] [--train_size TRAIN_SIZE] [--test_size TEST_SIZE]"
+
+    args = SimpleNamespace(base_args="--synthetic_data --train_size 64")
+    assert runner.build_base_args(args, help_text, {}) == ["--synthetic_data", "--train_size", "64"]
+
+
+def test_restore_campaign_settings_ignores_legacy_synthetic_settings(tmp_path, capsys):
+    runner = _load_runner()
+    args = runner.parse_args(["status", "job.py"])
+    settings = runner.campaign_settings(args)
+    settings.update({"prefer_synthetic": True, "synthetic_train_size": 2048, "synthetic_test_size": 256})
+    metadata = {"settings": settings, "workspace_root": str(tmp_path)}
+
+    assert runner.restore_campaign_settings(args, metadata) is False
+
+    assert not hasattr(args, "prefer_synthetic")
+    help_text = "usage: job.py [--synthetic_data] [--train_size TRAIN_SIZE] [--test_size TEST_SIZE]"
+    assert runner.build_base_args(args, help_text, {}) == []
+    # The prior baseline/candidates were scored on injected synthetic data; new runs use
+    # real data, so the ledger crosses a data regime — warn instead of staying silent.
+    stderr = capsys.readouterr().err
+    assert "computed on synthetic data" in stderr
+    assert "re-initializing" in stderr
+
+
+def test_restore_campaign_settings_does_not_warn_without_legacy_synthetic_setting(tmp_path, capsys):
+    runner = _load_runner()
+    args = runner.parse_args(["status", "job.py"])
+    metadata = {"settings": runner.campaign_settings(args), "workspace_root": str(tmp_path)}
+
+    assert runner.restore_campaign_settings(args, metadata) is False
+    assert "synthetic" not in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -1492,7 +1551,7 @@ def test_small_retained_improvement_does_not_reset_plateau_clock(tmp_path):
         plateau_min_delta=0.0005,
     )
 
-    assert runner.best_retained_record(records, "max").name == "candidate_1"
+    assert runner.best_retained_record(records).name == "candidate_1"
     assert state["best_score"] == pytest.approx(0.8503)
     assert state["plateau"]["best_score"] == pytest.approx(0.85)
     assert state["reason"] == "plateau_literature"
@@ -1668,7 +1727,7 @@ def test_initialize_socket_failure_returns_75_without_counting_candidate(tmp_pat
         ),
     )
 
-    assert runner.main(["initialize", str(job), "--env", "sim", "--no-prefer-synthetic"]) == 75
+    assert runner.main(["initialize", str(job), "--env", "sim"]) == 75
 
     records = runner.load_results(tmp_path / "results.tsv")
     state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
@@ -2421,7 +2480,7 @@ def test_initialize_retries_an_unscored_baseline(tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr(runner, "run_job", fake_run)
-    command = ["initialize", str(job), "--no-prefer-synthetic"]
+    command = ["initialize", str(job)]
     assert runner.main(command) == 1
     assert runner.main(command) == 0
     records = runner.load_results(tmp_path / "results.tsv")
@@ -2601,7 +2660,7 @@ def test_omitted_metric_uses_imported_job_metric(tmp_path, monkeypatch):
 
     monkeypatch.setattr(runner, "run_job", fake_run)
 
-    assert runner.main(["initialize", str(job), "--no-prefer-synthetic"]) == 0
+    assert runner.main(["initialize", str(job)]) == 0
     metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
     assert metadata["settings"]["metric"] == "auc"
 
@@ -2740,26 +2799,28 @@ def test_lowering_cap_below_attempts_clamps_remaining_and_keeps_state_consistent
 
 def test_runner_state_reports_budget_and_baseline_accounting(tmp_path, monkeypatch):
     runner = _load_runner()
-    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=1.0, mode="min")
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.5)
     state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
 
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["remaining_candidates"] is None
     assert state["baseline_status"] == "complete"
-    assert state["baseline_score"] == pytest.approx(1.0)
+    assert state["baseline_score"] == pytest.approx(0.5)
     assert state["improvement"] == pytest.approx(0.0)
     assert state["abandoned_candidates"] == 0
 
     results_path = tmp_path / "results.tsv"
     records = runner.load_results(results_path)
-    records.append(runner.RunRecord("keep", "lower_loss", 0.8, 1.0, "none", "lower loss", "python job.py", ""))
+    records.append(
+        runner.RunRecord("keep", "higher_accuracy", 0.8, 1.0, "none", "higher accuracy", "python job.py", "")
+    )
     runner.write_results(results_path, records)
 
     assert runner.main(["status", str(job), "--max-candidates", "3"]) == 0
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["remaining_candidates"] == 2
-    # mode=min: positive improvement means the loss went down against the baseline.
-    assert state["improvement"] == pytest.approx(0.2)
+    # improvement is best minus baseline; campaigns always maximize the metric.
+    assert state["improvement"] == pytest.approx(0.3)
 
 
 def test_status_reuses_persisted_guard_settings(tmp_path, monkeypatch):
@@ -2793,21 +2854,49 @@ def test_status_reuses_persisted_guard_settings(tmp_path, monkeypatch):
     assert observed["family_repeat_limit"] == 9
 
 
-def test_status_restores_persisted_minimization_mode(tmp_path, monkeypatch):
+def test_initialize_has_no_mode_flag(tmp_path, capsys):
     runner = _load_runner()
-    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=1.0, mode="min")
-    results_path = tmp_path / "results.tsv"
-    records = runner.load_results(results_path)
-    records.append(runner.RunRecord("keep", "lower_loss", 0.8, 1.0, "none", "lower loss", "python job.py", ""))
-    runner.write_results(results_path, records)
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
 
-    assert runner.main(["status", str(job)]) == 0
+    # Campaigns always maximize; the direction flag is gone rather than vestigial.
+    with pytest.raises(SystemExit) as excinfo:
+        runner.main(["initialize", str(job), "--mode", "min"])
 
-    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
-    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
-    assert metadata["settings"]["mode"] == "min"
-    assert state["best_score"] == pytest.approx(0.8)
-    assert runner.main(["status", str(job), "--mode", "max"]) == 2
+    assert excinfo.value.code == 2
+    assert "unrecognized arguments: --mode" in capsys.readouterr().err
+    assert not tmp_path.joinpath(".nvflare").exists()
+
+
+def test_resuming_legacy_minimization_campaign_is_rejected_with_guidance(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    metadata_path = tmp_path / ".nvflare/autofl/campaign.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["settings"]["mode"] == "max"
+    metadata["settings"]["mode"] = "min"
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    state_before = tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_bytes()
+    capsys.readouterr()
+
+    # Every lifecycle action routes through the same restore_campaign_settings gate.
+    for action in ("status", "prepare", "evaluate", "abandon", "record", "suggest"):
+        assert runner.main([action, str(job)]) == 2
+        stderr = capsys.readouterr().err
+        assert "mode='min'" in stderr
+        assert "minimization is not supported" in stderr
+        assert "neg_val_loss" in stderr
+
+    # The recommended recovery must not be circular: initialize on the legacy campaign
+    # is rejected too, but its message names the concrete escape hatch.
+    assert runner.main(["initialize", str(job)]) == 2
+    stderr = capsys.readouterr().err
+    assert "minimization is not supported" in stderr
+    assert ".nvflare/autofl" in stderr
+    assert "fresh workspace" in stderr
+
+    # The campaign never silently flips to maximization: no state was rewritten.
+    assert tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_bytes() == state_before
 
 
 def test_explicit_immutable_campaign_setting_change_is_rejected(tmp_path, monkeypatch):
@@ -2898,7 +2987,7 @@ def test_suggest_returns_fallbacks_without_executing_them(tmp_path, monkeypatch,
     assert all(item["run_args"] for item in payload["suggestions"])
 
 
-def test_import_job_config_forwards_minimization_mode(tmp_path, monkeypatch):
+def test_import_job_config_forwards_job_args_without_direction_plumbing(tmp_path, monkeypatch):
     runner = _load_runner()
     job = tmp_path / "job.py"
     job.write_text("print('job')\n", encoding="utf-8")
@@ -2918,10 +3007,11 @@ def test_import_job_config_forwards_minimization_mode(tmp_path, monkeypatch):
             return runner.yaml.safe_dump(config)
 
     monkeypatch.setattr(runner, "load_job_importer", lambda: FakeImporter)
-    args = runner.parse_args(["initialize", str(job), "--mode", "min", "--base-args", "--mode training"])
+    # A job-owned "--mode" flag in --base-args is unrelated to the removed objective direction.
+    args = runner.parse_args(["initialize", str(job), "--base-args", "--mode training"])
     runner.import_job_config(args, job, output, tmp_path / "import.log", 10)
 
-    assert captured["mode"] == "min"
+    assert "mode" not in captured
     assert captured["job_args"] == ["--mode", "training"]
 
 
@@ -3019,7 +3109,6 @@ if __name__ == "__main__":
             str(job),
             "--metric",
             "accuracy",
-            "--no-prefer-synthetic",
         ],
         cwd=tmp_path,
         env=env,
@@ -3152,7 +3241,7 @@ def test_cross_val_extraction_mean_penalizes_easiest_site_bias(tmp_path):
 
     assert skewed_score == pytest.approx(0.70)
     assert uniform_score == pytest.approx(0.80)
-    assert runner.better(uniform_score, skewed_score, "max")
+    assert runner.better(uniform_score, skewed_score)
 
 
 def test_cross_val_extraction_prefers_final_checkpoint_entries_over_best(tmp_path):

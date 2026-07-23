@@ -16,9 +16,9 @@ tunable sweep is a checkpoint only. Execute `next_action` while
 Budget and baseline accounting is explicit in the state payload:
 `remaining_candidates` is `candidate_cap - candidate_attempts` (null when
 uncapped), `baseline_status` stays `pending` until a scored baseline ledger row
-exists, `baseline_score` and `improvement` (sign-adjusted so a positive value
-always means better for the campaign `--mode`) report baseline-versus-best
-progress, and `abandoned_candidates` counts abandoned candidate manifests,
+exists, `baseline_score` and `improvement` (best minus baseline; campaigns
+always maximize the metric, so positive always means better) report
+baseline-versus-best progress, and `abandoned_candidates` counts abandoned candidate manifests,
 which never count as candidate attempts. Changing the effective candidate cap
 between invocations appends `{changed_at, old, new, source}` to `cap_changes`
 in `.nvflare/autofl/campaign.json` so budget changes stay auditable. External
