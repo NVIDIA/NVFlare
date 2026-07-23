@@ -2,21 +2,16 @@
 
 The catalog contains self-contained examples of the core Collab programming
 model. `hello_numpy_collab` mirrors the Recipe API and `SimEnv` flow of
-`hello-world/hello-numpy`. The remaining examples are built around a
-`make_recipe()` function; their execution environment is an option
-(`--runtime in_process | multi_process | prod | export`), never a separate
-example — the recipe is identical across all of them:
+`hello-world/hello-numpy`. Every entry point builds a `CollabRecipe` and runs it
+directly with the standard `SimEnv`:
 
 ```bash
 cd examples   # makes the collab package available to module imports
 
-python -m collab.hello_numpy_collab.hello_numpy_collab                # same Recipe API as hello-numpy, less client plumbing
-python -m collab.hello_fedavg.hello_fedavg                            # threads in this process
-python -m collab.async_aggregation.async_aggregation                  # aggregate responses as they arrive
-python -m collab.hello_fedavg.hello_fedavg --runtime multi_process   # real FLARE processes (local POC)
-python -m collab.hello_fedavg.hello_fedavg --runtime prod \
-    --startup-kit /path/to/prod_00/admin@example.com                  # provisioned deployment
-python -m collab.hello_fedavg.hello_fedavg --runtime export --job-root /tmp/jobs
+python -m collab.hello_numpy_collab.hello_numpy_collab
+python -m collab.hello_fedavg.hello_fedavg
+python -m collab.async_aggregation.async_aggregation
+python -m collab.swarm.swarm --num-clients 3
 ```
 
 ## Examples
@@ -27,23 +22,22 @@ python -m collab.hello_fedavg.hello_fedavg --runtime export --job-root /tmp/jobs
 | `hello_fedavg` | The Collab API in one file: `@collab.main`, `@collab.publish`, `collab.clients.train(...)`, per-site config |
 | `call_patterns` | `--pattern seq \| cyclic` server-to-client invocation styles (parallel group call is in `hello_fedavg`) |
 | `async_aggregation` | In-time aggregation with a response callback |
-| `swarm_events` | Decentralized swarm learning with client-to-client calls and events |
-| `workflow_composition` | Chaining workflows in one `@collab.main`; resource dirs, artifacts, `@collab.final` |
+| `swarm` | Decentralized swarm learning with client-to-client calls |
+| `workflow_composition` | Chaining workflows in one `@collab.main`; standard workspace artifacts and `@collab.final` |
 
 Every server object or module must define exactly one `@collab.main` entry
 point. `workflow_composition` demonstrates how to call multiple workflow stages
 from that single entry point.
 
-Each example is self-contained. Its entry point and any runner, trainer,
+Each example is self-contained. Its entry point and any trainer,
 strategy, widget, or utility modules that it needs live together in that
 example's directory; there is no shared `common` package. A helper used by more
 than one example is intentionally kept with each consumer so an example can be
 copied or adapted on its own.
 
-The example-local `runner.py` files only provide the `--runtime` command-line
-convenience shown above. They are not part of the public Collab API. Application
-code should execute `CollabRecipe` with `SimEnv`, `PocEnv`, or `ProdEnv` from
-`nvflare.recipe`.
+To use another deployment mode, execute the same recipe with `PocEnv` or
+`ProdEnv` from `nvflare.recipe`; Collab has no separate runner or environment
+abstraction.
 
 The NumPy examples run in a base installation; `hello_fedavg` needs PyTorch.
 

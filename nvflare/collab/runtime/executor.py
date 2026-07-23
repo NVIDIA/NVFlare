@@ -14,7 +14,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List
 
-from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE, AnalyticsDataType
 from nvflare.apis.client import Client, from_dict
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -23,12 +22,10 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.apis.utils.analytix_utils import create_analytic_dxo, send_analytic_dxo
 from nvflare.collab.api.app import ClientApp
 from nvflare.collab.api.constants import MAKE_CLIENT_APP_METHOD, PER_SITE_CONFIG_PROP
 from nvflare.collab.api.proxy import Proxy
-from nvflare.collab.runtime.client_api import CollabClientAPI
-from nvflare.collab.runtime.flare.cell_dispatcher import CellDispatcher
+from nvflare.collab.runtime.cell_dispatcher import CellDispatcher
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
@@ -36,7 +33,6 @@ from nvflare.fuel.utils.import_utils import optional_import
 from .adaptor import CollabAdaptor
 from .defs import SYNC_TASK_NAME, SyncKey
 from .dispatch import prepare_for_remote_call
-from .flare_workspace import FlareWorkspace
 
 
 class CollabExecutor(Executor, CollabAdaptor):
@@ -46,12 +42,7 @@ class CollabExecutor(Executor, CollabAdaptor):
         self,
         client_obj_id: str,
         collab_obj_ids: List[str] = None,
-        incoming_call_filters=None,
-        outgoing_call_filters=None,
-        incoming_result_filters=None,
-        outgoing_result_filters=None,
         props: Dict[str, Any] = None,
-        resource_dirs: Dict[str, str] = None,
         max_call_threads=100,
     ):
         Executor.__init__(self)
@@ -59,46 +50,19 @@ class CollabExecutor(Executor, CollabAdaptor):
             self,
             collab_obj_ids=collab_obj_ids,
             props=props,
-            resource_dirs=resource_dirs,
-            incoming_call_filters=incoming_call_filters,
-            outgoing_call_filters=outgoing_call_filters,
-            incoming_result_filters=incoming_result_filters,
-            outgoing_result_filters=outgoing_result_filters,
         )
         self.client_obj_id = client_obj_id
         self.register_event_handler(EventType.START_RUN, self._handle_start_run)
         self.register_event_handler(EventType.END_RUN, self._handle_end_run)
         self.client_app = None
         self.client_ctx = None
-        self._engine = None
         self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads, thread_name_prefix="collab_call")
-
-    def _log_analytic_data(self, key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
-        if self._engine is None:
-            raise RuntimeError("CollabExecutor is not initialized")
-
-        dxo = create_analytic_dxo(tag=key, value=value, data_type=data_type, **kwargs)
-        with self._engine.new_context() as fl_ctx:
-            send_analytic_dxo(
-                self,
-                dxo=dxo,
-                fl_ctx=fl_ctx,
-                event_type=ANALYTIC_EVENT_TYPE,
-                fire_fed_event=False,
-            )
-
-    def _configure_client_api_logging(self, app: ClientApp):
-        if isinstance(app.obj, CollabClientAPI):
-            app.obj.set_log_handler(self._log_analytic_data)
 
     def _handle_start_run(self, event_type: str, fl_ctx: FLContext):
         tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
         if ok:
             fobs.register(tensor_decomposer)
-        fl_ctx.set_prop(FLContextKey.TASK_ROUTING_TARGET, FQCN.ROOT_SERVER, private=True, sticky=True)
-
         engine = fl_ctx.get_engine()
-        self._engine = engine
         client_obj = engine.get_component(self.client_obj_id)
         if not client_obj:
             self.system_panic(f"cannot get client component {self.client_obj_id}", fl_ctx)
@@ -117,7 +81,6 @@ class CollabExecutor(Executor, CollabAdaptor):
             if not isinstance(app, ClientApp):
                 raise RuntimeError(f"result returned by {MAKE_CLIENT_APP_METHOD} must be ClientApp but got {type(app)}")
 
-        self._configure_client_api_logging(app)
         app.name = client_name
         self.client_app = app
 
@@ -137,18 +100,16 @@ class CollabExecutor(Executor, CollabAdaptor):
         if self.client_ctx:
             self.logger.info(f"finalizing client app {self.client_app.name}")
             self.client_app.finalize(self.client_ctx)
-        if self.client_app and isinstance(self.client_app.obj, CollabClientAPI):
-            self.client_app.obj.set_log_handler(None)
         self.thread_executor.shutdown(wait=True, cancel_futures=True)
 
-    def _prepare_server_proxy(self, job_id, cell, collab_interface: dict, abort_signal, fl_ctx: FLContext):
+    def _prepare_server_proxy(self, server_fqcn, cell, collab_interface: dict, abort_signal, fl_ctx: FLContext):
         server_name = "server"
         backend = CellDispatcher(
             manager=self,
             engine=fl_ctx.get_engine(),
             caller=self.client_app.name,
             cell=cell,
-            target_fqcn=FQCN.join([FQCN.ROOT_SERVER, job_id]),
+            target_fqcn=server_fqcn,
             abort_signal=abort_signal,
             thread_executor=self.thread_executor,
         )
@@ -211,6 +172,10 @@ class CollabExecutor(Executor, CollabAdaptor):
             return make_reply(ReturnCode.TASK_UNKNOWN)
 
         server_collab_interface = shareable.get(SyncKey.COLLAB_INTERFACE)
+        server_fqcn = shareable.get(SyncKey.SERVER_FQCN)
+        if not isinstance(server_fqcn, str) or not server_fqcn:
+            self.log_error(fl_ctx, "missing server FQCN in sync task")
+            return make_reply(ReturnCode.BAD_TASK_DATA)
         client_collab_interface = self.client_app.get_collab_interface()
         self.log_info(fl_ctx, f"{client_collab_interface=} {server_collab_interface=}")
 
@@ -229,14 +194,14 @@ class CollabExecutor(Executor, CollabAdaptor):
 
         # build proxies
         job_id = fl_ctx.get_job_id()
-        server_proxy = self._prepare_server_proxy(job_id, cell, server_collab_interface, abort_signal, fl_ctx)
+        server_proxy = self._prepare_server_proxy(server_fqcn, cell, server_collab_interface, abort_signal, fl_ctx)
 
         client_proxies = []
         for c in all_clients:
             p = self._prepare_client_proxy(job_id, cell, c, abort_signal, client_collab_interface, fl_ctx)
             client_proxies.append(p)
 
-        ws = FlareWorkspace(fl_ctx)
+        ws = fl_ctx.get_workspace()
         self.client_app.setup(ws, server_proxy, client_proxies, abort_signal)
 
         self.client_ctx = self.client_app.new_context(self.client_app.name, self.client_app.name)

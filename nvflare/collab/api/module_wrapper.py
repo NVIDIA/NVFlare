@@ -301,7 +301,7 @@ class ModuleWrapper:
         return method.__get__(self, type(self))
 
     def __deepcopy__(self, memo):
-        """Support direct-runner deepcopy."""
+        """Reconstruct the wrapper from its importable module."""
         module = importlib.import_module(self._module)
         return ModuleWrapper(module)
 

@@ -24,7 +24,7 @@ from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.signal import Signal
 from nvflare.collab.api.app import ServerApp
 from nvflare.collab.api.proxy import Proxy
-from nvflare.collab.runtime.flare.cell_dispatcher import CellDispatcher
+from nvflare.collab.runtime.cell_dispatcher import CellDispatcher
 from nvflare.collab.runtime.lifecycle import run_server
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils import fobs
@@ -33,7 +33,6 @@ from nvflare.fuel.utils.import_utils import optional_import
 from .adaptor import CollabAdaptor
 from .defs import SYNC_TASK_NAME, SyncKey
 from .dispatch import prepare_for_remote_call
-from .flare_workspace import FlareWorkspace
 
 
 class _ClientInfo:
@@ -53,12 +52,7 @@ class CollabController(Controller, CollabAdaptor):
         self,
         server_obj_id: str = None,
         collab_obj_ids: List[str] = None,
-        incoming_call_filters=None,
-        outgoing_call_filters=None,
-        incoming_result_filters=None,
-        outgoing_result_filters=None,
         props=None,
-        resource_dirs=None,
         sync_task_timeout=60,
         max_call_threads=100,
     ):
@@ -66,12 +60,7 @@ class CollabController(Controller, CollabAdaptor):
         CollabAdaptor.__init__(
             self,
             props=props,
-            resource_dirs=resource_dirs,
             collab_obj_ids=collab_obj_ids,
-            incoming_call_filters=incoming_call_filters,
-            outgoing_call_filters=outgoing_call_filters,
-            incoming_result_filters=incoming_result_filters,
-            outgoing_result_filters=outgoing_result_filters,
         )
         self.server_obj_id = server_obj_id  # component name
         self.sync_task_timeout = sync_task_timeout
@@ -186,8 +175,15 @@ class CollabController(Controller, CollabAdaptor):
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         # configure all sites
+        engine = fl_ctx.get_engine()
+        self.cell = engine.get_cell()
         server_collab_interface = self.server_app.get_collab_interface()
-        task_data = Shareable({SyncKey.COLLAB_INTERFACE: server_collab_interface})
+        task_data = Shareable(
+            {
+                SyncKey.COLLAB_INTERFACE: server_collab_interface,
+                SyncKey.SERVER_FQCN: self.cell.get_fqcn(),
+            }
+        )
         task = Task(
             name=SYNC_TASK_NAME,
             data=task_data,
@@ -195,7 +191,6 @@ class CollabController(Controller, CollabAdaptor):
             result_received_cb=self._process_sync_reply,
         )
 
-        engine = fl_ctx.get_engine()
         self.logger.info(f"server engine {type(engine)}")
         all_clients = engine.get_clients()
         num_clients = len(all_clients)
@@ -227,7 +222,6 @@ class CollabController(Controller, CollabAdaptor):
         self.log_info(fl_ctx, f"successfully synced clients {self.client_info.keys()}")
 
         # register msg CB for processing object calls
-        self.cell = engine.get_cell()
         prepare_for_remote_call(self.cell, self.server_app, self.logger)
 
         # prepare proxies and backends
@@ -239,7 +233,7 @@ class CollabController(Controller, CollabAdaptor):
             # assert isinstance(info, _ClientInfo)
             client_proxies.append(self._prepare_client_proxy(job_id, c, info.publish_interface, abort_signal, fl_ctx))
 
-        ws = FlareWorkspace(fl_ctx)
+        ws = fl_ctx.get_workspace()
         self.server_app.setup(ws, server_proxy, client_proxies, abort_signal)
         run_server(self.server_app, self.logger)
 

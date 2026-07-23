@@ -16,16 +16,18 @@
 
 After a server kick-off, control moves around the clients themselves: each
 round one client aggregates its peers' results and hands the model to the
-next, exercising client-to-client collab calls and events.
+next, exercising client-to-client Collab calls.
 
 Run:
-    python -m collab.swarm_events.swarm_events --num-clients 3
+    python -m collab.swarm.swarm --num-clients 3
 """
 
-from collab.swarm_events.runner import make_parser, run_recipe
-from collab.swarm_events.swarm_algo import NPSwarm, NPSwarmClient
+import argparse
+
+from collab.swarm.swarm_algo import NPSwarm, NPSwarmClient
 
 from nvflare.collab import CollabRecipe
+from nvflare.recipe import SimEnv
 
 
 def make_recipe(args):
@@ -39,11 +41,13 @@ def make_recipe(args):
 
 
 def main():
-    parser = make_parser("Decentralized swarm learning")
+    parser = argparse.ArgumentParser(description="Decentralized swarm learning")
+    parser.add_argument("--num-clients", type=int, default=3)
     parser.add_argument("--num-rounds", type=int, default=5)
-    parser.set_defaults(num_clients=3)
     args = parser.parse_args()
-    run_recipe(make_recipe(args), args)
+    run = make_recipe(args).execute(SimEnv(num_clients=args.num_clients))
+    print("Job Status:", run.get_status())
+    print("Results at:", run.get_result())
 
 
 if __name__ == "__main__":

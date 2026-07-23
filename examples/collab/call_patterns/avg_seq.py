@@ -54,7 +54,8 @@ class NPFedAvgSequential:
         for current_round in range(self.num_rounds):
             current_model = self._do_one_round(current_round, current_model)
 
-        file_name = os.path.join(collab.workspace.get_work_dir(), "model.npy")
+        run_dir = collab.workspace.get_run_dir(collab.fl_ctx.get_job_id())
+        file_name = os.path.join(run_dir, "model.npy")
         save_np_model(current_model, file_name)
         self.logger.info(f"FINAL RESULT: {current_model}")
         return current_model

@@ -19,7 +19,6 @@ import pytest
 from nvflare.collab import CollabRecipe, collab
 from nvflare.collab.api import ClientApp, ModuleWrapper, ServerApp
 from nvflare.collab.api.constants import PER_SITE_CONFIG_PROP
-from nvflare.collab.runtime.local.runner import InProcessRunner
 
 
 @collab.main
@@ -57,52 +56,6 @@ def _make_module(name):
     module.run = run
     module.train = train
     return module
-
-
-def test_in_process_runner_automatically_wraps_modules(tmp_path):
-    main_module = _make_module("main_module")
-    extra_module = _make_module("extra_module")
-
-    runner = InProcessRunner(
-        root_dir=str(tmp_path),
-        experiment_name="module_wrapper_test",
-        server=main_module,
-        client=main_module,
-        server_objects={"extra": extra_module},
-        client_objects={"extra": extra_module},
-    )
-
-    assert isinstance(runner.server_app.obj, ModuleWrapper)
-    assert isinstance(runner.client_app.obj, ModuleWrapper)
-    assert isinstance(runner.server_app.get_collab_objects()["extra"], ModuleWrapper)
-    assert isinstance(runner.client_app.get_collab_objects()["extra"], ModuleWrapper)
-
-
-def test_in_process_runner_uses_caller_module_for_missing_server_and_client(tmp_path):
-    explicit_module = _make_module("explicit_module")
-
-    runner = InProcessRunner(
-        root_dir=str(tmp_path),
-        experiment_name="default_apps_test",
-    )
-    assert runner.server_app.obj.module_name == __name__
-    assert runner.client_app.obj.module_name == __name__
-
-    runner = InProcessRunner(
-        root_dir=str(tmp_path),
-        experiment_name="default_server_test",
-        client=explicit_module,
-    )
-    assert runner.server_app.obj.module_name == __name__
-    assert runner.client_app.obj.module_name == "explicit_module"
-
-    runner = InProcessRunner(
-        root_dir=str(tmp_path),
-        experiment_name="default_client_test",
-        server=explicit_module,
-    )
-    assert runner.server_app.obj.module_name == "explicit_module"
-    assert runner.client_app.obj.module_name == __name__
 
 
 def test_recipe_uses_caller_module_for_missing_server_and_client():
@@ -158,6 +111,27 @@ def test_server_app_requires_exactly_one_main_function():
     multiple_main_module.run_again = run_again
     with pytest.raises(ValueError, match=r"exactly one @collab\.main function but got 2"):
         ServerApp(multiple_main_module)
+
+
+def test_app_runs_multiple_init_functions_in_name_order():
+    calls = []
+    module = ModuleType("multiple_init_module")
+
+    @collab.init
+    def init_second():
+        calls.append("second")
+
+    @collab.init
+    def init_first():
+        calls.append("first")
+
+    module.init_second = init_second
+    module.init_first = init_first
+
+    app = ClientApp(module)
+    app.initialize(app.new_context("site-1", "site-1"))
+
+    assert calls == ["first", "second"]
 
 
 def test_recipe_accepts_modules_for_all_collab_objects():

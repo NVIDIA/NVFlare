@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -44,7 +44,6 @@ def _error_reply(error: str, logger, error_type: str = None, traceback_text: str
 
 def _preprocess(app: App, caller, target_obj_name, target_name, func_name, func, args, kwargs):
     ctx = app.new_context(caller=caller, callee=app.name)
-    kwargs = app.apply_incoming_call_filters(target_name, func_name, kwargs, ctx)
 
     # make sure the final kwargs conforms to func interface
     obj_itf = app.get_target_object_publish_interface(target_obj_name)
@@ -125,9 +124,6 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
     try:
         ctx, method_kwargs = _preprocess(app, caller, obj_name, target_name, method_name, m, method_args, method_kwargs)
         result = m(*method_args, **method_kwargs)
-
-        # apply result filters
-        result = app.apply_outgoing_result_filters(target_name, method_name, result, ctx)
 
         return new_cell_message(
             headers={MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, payload={CallReplyKey.RESULT: result}

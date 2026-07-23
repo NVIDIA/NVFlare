@@ -28,21 +28,19 @@ resolves values for each site before execution, so a client receives only its
 own values and reads them with ``collab.get_app_prop(name)``. Here each site
 trains for a different number of local epochs.
 
-Every recipe example also takes a ``--runtime`` option (in_process |
-multi_process | prod | export); the recipe itself is identical across them.
-
 Run:
     python -m collab.hello_fedavg.hello_fedavg
-    python -m collab.hello_fedavg.hello_fedavg --runtime multi_process
 """
+
+import argparse
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from collab.hello_fedavg.runner import make_parser, run_recipe
 from torch.utils.data import DataLoader, TensorDataset
 
-from nvflare.collab import CollabRecipe, collab
+from nvflare.collab import CollabRecipe, collab, simple_logging
+from nvflare.recipe import SimEnv
 
 
 class SimpleModel(nn.Module):
@@ -126,10 +124,14 @@ def make_recipe(args):
 
 
 def main():
-    parser = make_parser("Hello-world FedAvg with the Collab API")
+    parser = argparse.ArgumentParser(description="Hello-world FedAvg with the Collab API")
+    parser.add_argument("--num-clients", type=int, default=2)
     parser.add_argument("--num-rounds", type=int, default=3)
     args = parser.parse_args()
-    run_recipe(make_recipe(args), args)
+    simple_logging()
+    run = make_recipe(args).execute(SimEnv(num_clients=args.num_clients))
+    print("Job Status:", run.get_status())
+    print("Results at:", run.get_result())
 
 
 if __name__ == "__main__":

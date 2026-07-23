@@ -18,13 +18,6 @@ class CollabMethodArgName:
 
 class ContextKey:
     RESULT = "result"
-    QUALIFIED_FUNC_NAME = "qualified_func_name"
-    DIRECTION = "direction"
-
-
-class FilterDirection:
-    INCOMING = "incoming"
-    OUTGOING = "outgoing"
 
 
 MAKE_CLIENT_APP_METHOD = "make_client_app"

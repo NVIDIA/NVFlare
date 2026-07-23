@@ -15,7 +15,7 @@
 import os
 import random
 
-from collab.call_patterns.np_utils import load_np_model, parse_array_def, save_np_model
+from collab.call_patterns.np_utils import parse_array_def, save_np_model
 
 from nvflare.collab import CollabCallError, collab
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -29,14 +29,6 @@ class NPCyclic:
         self._initial_model = parse_array_def(initial_model)
         self.final_model = None
         self.logger = get_obj_logger(self)
-
-    @collab.init
-    def check_initial_model(self):
-        if isinstance(self._initial_model, str):
-            resource_dir = collab.workspace.get_resource_dir("data")
-            file_name = os.path.join(resource_dir, self._initial_model)
-            self._initial_model = load_np_model(file_name)
-            self.logger.info(f"loaded initial model from {file_name}: {self._initial_model}")
 
     @collab.main
     def execute(self):
@@ -54,7 +46,8 @@ class NPCyclic:
     @collab.final
     def save_result(self):
         final_result = collab.get_result()
-        file_name = os.path.join(collab.workspace.get_work_dir(), "final_model.npy")
+        run_dir = collab.workspace.get_run_dir(collab.fl_ctx.get_job_id())
+        file_name = os.path.join(run_dir, "final_model.npy")
         save_np_model(final_result, file_name)
         self.logger.info(f"[{collab.call_info}]: saved final model {final_result} to {file_name}")
 

@@ -18,13 +18,11 @@ from .api.facade import Facade as collab
 
 if TYPE_CHECKING:
     from .api.exceptions import CollabCallError
-    from .core.recipe import CollabRecipe
-    from .runtime.client_api import CollabClientAPI
+    from .recipe import CollabRecipe
 
 __all__ = [
     "collab",
     "CollabCallError",
-    "CollabClientAPI",
     "CollabRecipe",
     "simple_logging",
 ]
@@ -35,14 +33,13 @@ def simple_logging(level=logging.INFO):
     logging.basicConfig(level=level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
-# The user-facing classes are exported here so users never need the core or
-# runtime package paths. Resolution is lazy (PEP 562): CollabRecipe and the
+# The user-facing classes are exported here so users never need implementation
+# package paths. Resolution is lazy (PEP 562): CollabRecipe and the
 # recipe pulls in FLARE job/runtime machinery, which client-side
 # training scripts that only need the `collab` facade should not pay for.
 _EXPORTS = {
     "CollabCallError": ".api.exceptions",
-    "CollabRecipe": ".core.recipe",
-    "CollabClientAPI": ".runtime.client_api",
+    "CollabRecipe": ".recipe",
 }
 
 

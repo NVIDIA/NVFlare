@@ -13,22 +13,22 @@
 # limitations under the License.
 from concurrent.futures import CancelledError
 
-from nvflare.collab.api._invocation import InvocationDispatcher
+from nvflare.collab.api._invocation import _InvocationDispatcher
 from nvflare.collab.api.call_opt import CallOption
 from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.exceptions import CollabCallError
 from nvflare.collab.api.group_call_context import GroupCallContext
-from nvflare.collab.runtime.flare.defs import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
+from nvflare.collab.runtime.defs import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
 from nvflare.security.logging import secure_log_traceback
 
 
-class CellDispatcher(InvocationDispatcher):
+class CellDispatcher(_InvocationDispatcher):
 
     def __init__(self, manager, engine, caller, cell, target_fqcn, abort_signal, thread_executor):
-        InvocationDispatcher.__init__(self, abort_signal)
+        _InvocationDispatcher.__init__(self, abort_signal)
         self.manager = manager
         self.engine = engine
         self.caller = caller

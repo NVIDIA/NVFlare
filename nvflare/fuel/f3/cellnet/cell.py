@@ -545,6 +545,6 @@ class Cell(StreamCell):
         # through the core_cell, even if the channel may be a stream channel (e.g. aux channel).
         self.core_cell.register_request_cb(channel, topic, cb, *args, **kwargs)
         if _is_stream_channel(channel):
-            self.logger.debug(f"Register blob CB for {channel=}, {topic=}")
+            self.logger.info(f"Register blob CB for {channel=}, {topic=}")
             adapter = Adapter(cb, self.core_cell.my_info, self)
             self.register_blob_cb(channel, topic, adapter.call, *args, **kwargs)

@@ -20,12 +20,6 @@ _FLAG_PUBLISH = "_collab_is_publish"
 _FLAG_INIT = "_collab_is_init"
 _FLAG_FINAL = "_collab_is_final"
 _FLAG_MAIN = "_collab_is_main"
-_FLAG_CALL_FILTER = "_collab_is_call_filter"
-_FLAG_IN_CALL_FILTER = "_collab_is_in_call_filter"
-_FLAG_OUT_CALL_FILTER = "_collab_is_out_call_filter"
-_FLAG_RESULT_FILTER = "_collab_is_result_filter"
-_FLAG_IN_RESULT_FILTER = "_collab_is_in_result_filter"
-_FLAG_OUT_RESULT_FILTER = "_collab_is_out_result_filter"
 _FLAG_SUPPORT_CTX = "_collab_supports_ctx"
 _ATTR_PARAM_NAMES = "_collab_param_names"
 
@@ -109,84 +103,6 @@ def get_object_main_funcs(obj):
     return _get_object_funcs(obj, _FLAG_MAIN, "main")
 
 
-def call_filter(func):
-    def wrapper(*args, **kwargs):
-        return func(*args, **kwargs)
-
-    _set_attrs(func, wrapper)
-    setattr(wrapper, _FLAG_CALL_FILTER, True)
-    return wrapper
-
-
-def get_object_call_filter_funcs(obj):
-    return _get_object_funcs(obj, _FLAG_CALL_FILTER, "call_filter")
-
-
-def in_call_filter(func):
-    def wrapper(*args, **kwargs):
-        return func(*args, **kwargs)
-
-    _set_attrs(func, wrapper)
-    setattr(wrapper, _FLAG_IN_CALL_FILTER, True)
-    return wrapper
-
-
-def get_object_in_call_filter_funcs(obj):
-    return _get_object_funcs(obj, _FLAG_IN_CALL_FILTER, "in_call_filter")
-
-
-def out_call_filter(func):
-    def wrapper(*args, **kwargs):
-        return func(*args, **kwargs)
-
-    _set_attrs(func, wrapper)
-    setattr(wrapper, _FLAG_OUT_CALL_FILTER, True)
-    return wrapper
-
-
-def get_object_out_call_filter_funcs(obj):
-    return _get_object_funcs(obj, _FLAG_OUT_CALL_FILTER, "out_call_filter")
-
-
-def result_filter(func):
-    def wrapper(*args, **kwargs):
-        return func(*args, **kwargs)
-
-    _set_attrs(func, wrapper)
-    setattr(wrapper, _FLAG_RESULT_FILTER, True)
-    return wrapper
-
-
-def get_object_result_filter_funcs(obj):
-    return _get_object_funcs(obj, _FLAG_RESULT_FILTER, "result_filter")
-
-
-def in_result_filter(func):
-    def wrapper(*args, **kwargs):
-        return func(*args, **kwargs)
-
-    _set_attrs(func, wrapper)
-    setattr(wrapper, _FLAG_IN_RESULT_FILTER, True)
-    return wrapper
-
-
-def get_object_in_result_filter_funcs(obj):
-    return _get_object_funcs(obj, _FLAG_IN_RESULT_FILTER, "in_result_filter")
-
-
-def out_result_filter(func):
-    def wrapper(*args, **kwargs):
-        return func(*args, **kwargs)
-
-    _set_attrs(func, wrapper)
-    setattr(wrapper, _FLAG_OUT_RESULT_FILTER, True)
-    return wrapper
-
-
-def get_object_out_result_filter_funcs(obj):
-    return _get_object_funcs(obj, _FLAG_OUT_RESULT_FILTER, "out_result_filter")
-
-
 def get_param_names(func):
     return getattr(func, _ATTR_PARAM_NAMES, None)
 
@@ -198,7 +114,7 @@ def _has_flag(func, flag: str) -> bool:
 
 def _get_object_funcs(obj, flag, func_type):
     result = []
-    for name in dir(obj):
+    for name in sorted(dir(obj)):
         func = getattr(obj, name)
         if callable(func) and _has_flag(func, flag):
             # print(f"found {func_type} func of object {obj.__class__.__name__}.{name}")

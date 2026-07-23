@@ -18,10 +18,9 @@ from typing import Dict, List, Optional
 
 from nvflare.collab.api.app import App, ClientApp, ServerApp
 from nvflare.collab.api.constants import PER_SITE_CONFIG_PROP
-from nvflare.collab.api.filter import FilterChain
 from nvflare.collab.api.module_wrapper import ModuleWrapper, resolve_server_client, wrap_if_module
-from nvflare.collab.runtime.flare.controller import CollabController
-from nvflare.collab.runtime.flare.executor import CollabExecutor
+from nvflare.collab.runtime.controller import CollabController
+from nvflare.collab.runtime.executor import CollabExecutor
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number, check_str
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import Recipe
@@ -92,14 +91,8 @@ class CollabRecipe(Recipe):
     def set_server_prop(self, name: str, value):
         self.server_app.set_prop(name, value)
 
-    def set_server_resource_dirs(self, resource_dirs):
-        self.server_app.set_resource_dirs(resource_dirs)
-
     def set_client_prop(self, name: str, value):
         self.client_app.set_prop(name, value)
-
-    def set_client_resource_dirs(self, resource_dirs):
-        self.client_app.set_resource_dirs(resource_dirs)
 
     def finalize(self) -> FedJob:
         # finalize() is invoked by both Recipe.run() and Recipe.export(); a recipe
@@ -112,40 +105,26 @@ class CollabRecipe(Recipe):
         server_obj_id = self._job.to_server(self.server_app.obj, "_server")
         job = self._job
 
-        collab_obj_ids, in_cf_arg, out_cf_arg, in_rf_arg, out_rf_arg = self._create_app_args(
-            self.server_app, job.to_server
-        )
+        collab_obj_ids = self._add_collab_objects(self.server_app, job.to_server)
 
         controller = CollabController(
             server_obj_id=server_obj_id,
             collab_obj_ids=collab_obj_ids,
-            incoming_call_filters=in_cf_arg,
-            outgoing_call_filters=out_cf_arg,
-            incoming_result_filters=in_rf_arg,
-            outgoing_result_filters=out_rf_arg,
             sync_task_timeout=self.sync_task_timeout,
             max_call_threads=self.max_call_threads_for_server,
             props=self.server_app.get_props(),
-            resource_dirs=self.server_app.get_resource_dirs(),
         )
 
         job.to_server(controller, id="controller")
 
         # add client config
         client_obj_id = job.to_clients(self.client_app.obj, "_client")
-        c_collab_obj_ids, c_in_cf_arg, c_out_cf_arg, c_in_rf_arg, c_out_rf_arg = self._create_app_args(
-            self.client_app, job.to_clients
-        )
+        c_collab_obj_ids = self._add_collab_objects(self.client_app, job.to_clients)
         executor = CollabExecutor(
             client_obj_id=client_obj_id,
             collab_obj_ids=c_collab_obj_ids,
-            incoming_call_filters=c_in_cf_arg,
-            outgoing_call_filters=c_out_cf_arg,
-            incoming_result_filters=c_in_rf_arg,
-            outgoing_result_filters=c_out_rf_arg,
             max_call_threads=self.max_call_threads_for_client,
             props=self._client_props_with_per_site_config(),
-            resource_dirs=self.client_app.get_resource_dirs(),
         )
         job.to_clients(executor, id="executor", tasks=["*"])
 
@@ -195,8 +174,8 @@ class CollabRecipe(Recipe):
                 files.append(src)
         return files
 
-    def _create_app_args(self, app: App, to_f):
-        # collab objs
+    @staticmethod
+    def _add_collab_objects(app: App, to_f):
         collab_obj_ids = []
         collab_objs = app.get_collab_objects()
         for name, obj in collab_objs.items():
@@ -205,50 +184,4 @@ class CollabRecipe(Recipe):
                 continue
             comp_id = to_f(obj, id=name)
             collab_obj_ids.append(comp_id)
-
-        # build filter components
-        # since a filter object could be used multiple times, we must make sure that only one component is created
-        # for the same object!
-        filter_comp_table = {}
-        incoming_call_filters = app.get_incoming_call_filters()
-        outgoing_call_filters = app.get_outgoing_call_filters()
-        incoming_result_filters = app.get_incoming_result_filters()
-        outgoing_result_filters = app.get_outgoing_result_filters()
-
-        self._create_filter_components(to_f, incoming_call_filters, filter_comp_table)
-        self._create_filter_components(to_f, outgoing_call_filters, filter_comp_table)
-        self._create_filter_components(to_f, incoming_result_filters, filter_comp_table)
-        self._create_filter_components(to_f, outgoing_result_filters, filter_comp_table)
-
-        # filters
-        in_cf_arg = self._create_filter_chain_arg(incoming_call_filters, filter_comp_table)
-        out_cf_arg = self._create_filter_chain_arg(outgoing_call_filters, filter_comp_table)
-        in_rf_arg = self._create_filter_chain_arg(incoming_result_filters, filter_comp_table)
-        out_rf_arg = self._create_filter_chain_arg(outgoing_result_filters, filter_comp_table)
-        return collab_obj_ids, in_cf_arg, out_cf_arg, in_rf_arg, out_rf_arg
-
-    @staticmethod
-    def _create_filter_chain_arg(filter_chains: list, comp_table: dict):
-        result = []
-        for chain in filter_chains:
-            assert isinstance(chain, FilterChain)
-            filter_ids = []
-            for f in chain.filters:
-                f = f.get_impl_object()
-                comp_id = comp_table[id(f)]
-                filter_ids.append(comp_id)
-            d = {"pattern": chain.pattern, "filters": filter_ids}
-            result.append(d)
-        return result
-
-    @staticmethod
-    def _create_filter_components(to_f, filter_chains: list, comp_table: dict):
-        for chain in filter_chains:
-            assert isinstance(chain, FilterChain)
-            for f in chain.filters:
-                f = f.get_impl_object()
-                fid = id(f)
-                comp_id = comp_table.get(fid)
-                if not comp_id:
-                    comp_id = to_f(f, id="_filter")
-                    comp_table[fid] = comp_id
+        return collab_obj_ids

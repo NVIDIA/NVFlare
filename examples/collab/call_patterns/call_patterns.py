@@ -27,16 +27,18 @@ client at once) is shown in the hello_fedavg example.
 
 Run:
     python -m collab.call_patterns.call_patterns --pattern seq
-    python -m collab.call_patterns.call_patterns --pattern cyclic --runtime multi_process
+    python -m collab.call_patterns.call_patterns --pattern cyclic
 """
+
+import argparse
 
 from collab.call_patterns.avg_seq import NPFedAvgSequential
 from collab.call_patterns.cyclic import NPCyclic
-from collab.call_patterns.runner import make_parser, run_recipe
 from collab.call_patterns.trainer import NPTrainer
 from collab.call_patterns.widgets import MetricReceiver
 
-from nvflare.collab import CollabRecipe
+from nvflare.collab import CollabRecipe, simple_logging
+from nvflare.recipe import SimEnv
 
 INITIAL_MODEL = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
 
@@ -61,11 +63,15 @@ def make_recipe(args):
 
 
 def main():
-    parser = make_parser("Collab call patterns: seq | cyclic")
+    parser = argparse.ArgumentParser(description="Collab call patterns: seq | cyclic")
+    parser.add_argument("--num-clients", type=int, default=2)
     parser.add_argument("--pattern", choices=("seq", "cyclic"), default="seq")
     parser.add_argument("--num-rounds", type=int, default=2)
     args = parser.parse_args()
-    run_recipe(make_recipe(args), args)
+    simple_logging()
+    run = make_recipe(args).execute(SimEnv(num_clients=args.num_clients))
+    print("Job Status:", run.get_status())
+    print("Results at:", run.get_result())
 
 
 if __name__ == "__main__":

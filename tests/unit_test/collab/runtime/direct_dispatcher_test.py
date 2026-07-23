@@ -20,13 +20,14 @@ import pytest
 
 from nvflare.collab.api.call_opt import CallOption
 from nvflare.collab.api.context import get_call_context, set_call_context
-from nvflare.collab.runtime.local.direct_dispatcher import DirectDispatcher
+
+from .._direct_dispatcher import _DirectDispatcher
 
 
 @pytest.mark.parametrize("error", [None, ValueError("local call failed")])
 def test_group_call_always_completes_send_slot(error):
     target_app = MagicMock()
-    dispatcher = DirectDispatcher(
+    dispatcher = _DirectDispatcher(
         target_obj_name="",
         target_app=target_app,
         target_obj=MagicMock(),
@@ -39,7 +40,6 @@ def test_group_call_always_completes_send_slot(error):
     else:
         func = MagicMock(return_value=result)
     dispatcher._preprocess = MagicMock(return_value=(MagicMock(), {}))
-    target_app.apply_outgoing_result_filters.side_effect = lambda _target, _func, value, _ctx: value
     gcc = MagicMock()
     gcc.target_name = "site-1"
 
@@ -58,11 +58,10 @@ def test_group_call_does_not_nest_work_in_same_executor():
     target_app = MagicMock()
     target_func = MagicMock(return_value="result")
     target_app.find_collab_method.return_value = target_func
-    target_app.apply_outgoing_result_filters.side_effect = lambda _target, _func, value, _ctx: value
     completed = threading.Event()
 
     with ThreadPoolExecutor(max_workers=1) as executor:
-        dispatcher = DirectDispatcher(
+        dispatcher = _DirectDispatcher(
             target_obj_name="",
             target_app=target_app,
             target_obj=MagicMock(),
@@ -89,7 +88,7 @@ def test_group_call_timeout_completes_hung_site():
     completed = threading.Event()
 
     with ThreadPoolExecutor(max_workers=1) as executor:
-        dispatcher = DirectDispatcher(
+        dispatcher = _DirectDispatcher(
             target_obj_name="",
             target_app=target_app,
             target_obj=MagicMock(),
@@ -126,7 +125,7 @@ def test_cancelled_group_future_completes_site():
         executor.submit(occupy_worker)
         assert worker_started.wait(timeout=1.0)
 
-        dispatcher = DirectDispatcher(
+        dispatcher = _DirectDispatcher(
             target_obj_name="",
             target_app=MagicMock(),
             target_obj=MagicMock(),
@@ -152,7 +151,7 @@ def test_cancelled_group_future_completes_site():
 
 
 def test_group_worker_restores_previous_context():
-    dispatcher = DirectDispatcher(
+    dispatcher = _DirectDispatcher(
         target_obj_name="",
         target_app=MagicMock(),
         target_obj=MagicMock(),

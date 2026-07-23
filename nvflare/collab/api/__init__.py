@@ -23,7 +23,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .app import App, ClientApp, ServerApp
     from .call_opt import CallOption
-    from .collab_workspace import CollabWorkspace
     from .constants import ContextKey
     from .context import Context
     from .exceptions import CollabCallError
@@ -35,7 +34,6 @@ __all__ = [
     "App",
     "CallOption",
     "ClientApp",
-    "CollabWorkspace",
     "CollabCallError",
     "Context",
     "ContextKey",
@@ -50,7 +48,6 @@ _EXPORTS = {
     "ClientApp": ".app",
     "ServerApp": ".app",
     "CallOption": ".call_opt",
-    "CollabWorkspace": ".collab_workspace",
     "ContextKey": ".constants",
     "Context": ".context",
     "CollabCallError": ".exceptions",

@@ -31,7 +31,7 @@ class _SingleTargetCallContext(GroupCallContext):
             self.waiter.set_result(self.target_name, result)
 
 
-class InvocationDispatcher(ABC):
+class _InvocationDispatcher(ABC):
     """Internal strategy for dispatching calls to a logical Collab target."""
 
     def __init__(self, abort_signal: Signal):

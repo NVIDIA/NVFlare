@@ -22,8 +22,8 @@ from nvflare.collab.api.call_opt import CallOption
 from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.exceptions import CollabCallError
 from nvflare.collab.api.group_call_context import GroupCallContext, ResultWaiter
-from nvflare.collab.runtime.flare.cell_dispatcher import CellDispatcher
-from nvflare.collab.runtime.flare.defs import CallReplyKey
+from nvflare.collab.runtime.cell_dispatcher import CellDispatcher
+from nvflare.collab.runtime.defs import CallReplyKey
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 

@@ -712,7 +712,7 @@ point, as shown by the `workflow_composition` example.
 
 Keep support code beside the entry point that consumes it. The runnable
 examples under `examples/collab` are self-contained and do not import trainers,
-strategies, runners, or utilities from a shared example package.
+strategies, or utilities from a shared example package.
 
 ---
 
@@ -729,7 +729,6 @@ python -m collab.hello_fedavg.hello_fedavg
 
 See the [Collab examples](../../examples/collab/README.md) for the full example
 set, including the no-class (standalone function) pattern noted in
-`hello_fedavg`. Its example-local runner exposes
-`--runtime in_process | multi_process | prod | export` as a command-line
-convenience; production code uses the standard environments from
-`nvflare.recipe` directly.
+`hello_fedavg`. Each entry point executes its recipe directly with `SimEnv`;
+production code can execute the same recipe with `PocEnv` or `ProdEnv` from
+`nvflare.recipe`.

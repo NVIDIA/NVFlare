@@ -214,35 +214,6 @@ class Facade:
         return ctx.workspace
 
     @staticmethod
-    def fire_event(event_type: str, data):
-        """Fire an event to listening objects within the site.
-
-        Args:
-            event_type: type of the event
-            data: data of the event
-
-        Returns: results from event handlers.
-
-        """
-        ctx = get_call_context()
-        return ctx.app.fire_event(event_type, data, ctx)
-
-    @staticmethod
-    def register_event_handler(event_type: str, handler, **handler_kwargs):
-        """Register an event handler for a specified event type
-
-        Args:
-            event_type: type of the event
-            handler: the handler function to be registered
-            **handler_kwargs: kwargs to be passed to the handler
-
-        Returns: None
-
-        """
-        ctx = get_call_context()
-        ctx.app.register_event_handler(event_type, handler, **handler_kwargs)
-
-    @staticmethod
     def get_app_prop(name: str, default=None):
         """Get a specified property from the site's app (usually for configuration properties).
 

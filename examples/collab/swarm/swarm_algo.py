@@ -16,7 +16,7 @@ import random
 import threading
 import traceback
 
-from collab.swarm_events.np_utils import parse_array_def, save_np_model
+from collab.swarm.np_utils import parse_array_def, save_np_model
 
 from nvflare.collab import collab
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -33,8 +33,6 @@ class NPSwarm:
 
     @collab.main
     def execute(self):
-        collab.register_event_handler("all_done", self._all_done)
-
         # randomly pick a client to start
         start_client_idx = random.randint(0, len(collab.clients) - 1)
         start_client = collab.clients[start_client_idx]
@@ -42,10 +40,6 @@ class NPSwarm:
         while not collab.is_aborted:
             if self.waiter.wait(timeout=0.5):
                 break
-
-    def _all_done(self, event_type: str, data):
-        self.logger.info(f"received {event_type} from client {collab.caller}: {data}")
-        self.all_done(data)
 
     @collab.publish
     def all_done(self, reason: str):
@@ -58,12 +52,6 @@ class NPSwarmClient:
     def __init__(self, delta: float):
         self.delta = delta
         self.logger = get_obj_logger(self)
-
-    @collab.init
-    def init(self):
-        # This example shows that there could be multiple listeners for the same event
-        collab.register_event_handler("final_model", self._accept_final_model)
-        collab.register_event_handler("final_model", self._save_final_model)
 
     @collab.publish
     def train(self, weights, current_round):
@@ -86,7 +74,7 @@ class NPSwarmClient:
         self.logger.info(f"trained model {new_model=}")
         if current_round == num_rounds - 1:
             # all done
-            result = collab.clients(expect_result=True).fire_event("final_model", new_model)
+            result = collab.clients(expect_result=True).accept_final_model(new_model)
             for n, v in result:
                 self.logger.info(f"final_model reply from {n}: {v}")
             self.logger.info("notify server all done!")
@@ -110,16 +98,10 @@ class NPSwarmClient:
         self.logger.info("starting swarm learning")
         self.swarm_learn(num_rounds, initial_model, 0)
 
-    def _accept_final_model(self, event_type: str, model):
-        # accept the final model
-        # write model to disk
-        self.logger.info(f"received event '{event_type}' from {collab.caller}: {model}")
-        return "received"
-
-    def _save_final_model(self, event_type: str, model):
-        # accept the final model
-        # write model to disk
-        file_name = os.path.join(collab.workspace.get_work_dir(), "final_model.npy")
+    @collab.publish
+    def accept_final_model(self, model):
+        run_dir = collab.workspace.get_run_dir(collab.fl_ctx.get_job_id())
+        file_name = os.path.join(run_dir, "final_model.npy")
         save_np_model(model, file_name)
         self.logger.info(f"saved model {model} to {file_name}")
         return "saved"

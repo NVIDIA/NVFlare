@@ -18,16 +18,15 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.collab import collab
 from nvflare.collab.api.app import App
 from nvflare.collab.api.constants import FL_CONTEXT_PROP
-from nvflare.collab.runtime.flare.adaptor import CollabAdaptor
+from nvflare.collab.runtime.adaptor import CollabAdaptor
 
 
-def test_process_config_with_default_resource_dirs():
+def test_process_config_adds_fl_context_to_app_properties():
     adaptor = CollabAdaptor()
     app = App(object(), "app")
     fl_ctx = MagicMock(spec=FLContext)
 
     assert adaptor.process_config(app, fl_ctx) is None
-    assert app.get_resource_dirs() == {}
     assert app.get_prop(FL_CONTEXT_PROP) is fl_ctx
 
     with app.new_context(caller="app", callee="app"):

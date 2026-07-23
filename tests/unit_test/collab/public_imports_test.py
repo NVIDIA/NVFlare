@@ -23,12 +23,11 @@ import sys
 
 
 def test_top_level_exports():
-    from nvflare.collab import CollabCallError, CollabClientAPI, CollabRecipe, collab, simple_logging
+    from nvflare.collab import CollabCallError, CollabRecipe, collab, simple_logging
 
     for export in (
         collab,
         CollabCallError,
-        CollabClientAPI,
         CollabRecipe,
         simple_logging,
     ):
@@ -41,7 +40,6 @@ def test_api_surface():
         CallOption,
         ClientApp,
         CollabCallError,
-        CollabWorkspace,
         Context,
         ContextKey,
         GroupCallContext,
@@ -54,7 +52,6 @@ def test_api_surface():
         App,
         ClientApp,
         CollabCallError,
-        CollabWorkspace,
         ServerApp,
         CallOption,
         Context,
@@ -67,11 +64,13 @@ def test_api_surface():
 
 
 def test_runtime_surface():
-    from nvflare.collab.runtime.client_api import CollabClientAPI
+    from nvflare.collab.runtime.controller import CollabController
+    from nvflare.collab.runtime.executor import CollabExecutor
     from nvflare.collab.runtime.lifecycle import run_server
 
     for export in (
-        CollabClientAPI,
+        CollabController,
+        CollabExecutor,
         run_server,
     ):
         assert export is not None
@@ -113,13 +112,6 @@ def test_execution_details_are_not_public():
         assert not hasattr(CollabRecipe, name)
 
 
-def test_filter_implementation_remains_internal():
-    from nvflare.collab.api.filter import CallFilter, ResultFilter
-
-    assert CallFilter is not None
-    assert ResultFilter is not None
-
-
 def test_collab_public_surface_does_not_require_torch():
     """The collab public surface must work in a base installation without
     the PT extra; torch belongs only to app-level code built on top of it."""
@@ -132,8 +124,8 @@ def test_collab_public_surface_does_not_require_torch():
         "sys.meta_path.insert(0, _BlockTorch())\n"
         "import nvflare.collab\n"
         "from nvflare.collab.api import Context, GroupCallContext\n"
-        "import nvflare.collab.runtime.flare.controller\n"
-        "import nvflare.collab.runtime.flare.executor\n"
+        "import nvflare.collab.runtime.controller\n"
+        "import nvflare.collab.runtime.executor\n"
         "from nvflare.collab import simple_logging\n"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
@@ -149,7 +141,6 @@ def test_api_layer_does_not_import_runtime():
         "import nvflare.collab.api.app\n"
         "import nvflare.collab.api._invocation\n"
         "import nvflare.collab.api.facade\n"
-        "import nvflare.collab.api.filter\n"
         "import nvflare.collab.api.group\n"
         "import nvflare.collab.api.module_wrapper\n"
         "import nvflare.collab.api.proxy\n"

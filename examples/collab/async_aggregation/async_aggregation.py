@@ -22,11 +22,13 @@ Run from the ``examples`` directory:
     python -m collab.async_aggregation.async_aggregation
 """
 
+import argparse
+
 from collab.async_aggregation.avg_intime import NPFedAvgInTime
-from collab.async_aggregation.runner import make_parser, run_recipe
 from collab.async_aggregation.trainer import NPTrainer
 
-from nvflare.collab import CollabRecipe
+from nvflare.collab import CollabRecipe, simple_logging
+from nvflare.recipe import SimEnv
 
 
 def make_recipe(args):
@@ -43,10 +45,14 @@ def make_recipe(args):
 
 
 def main():
-    parser = make_parser("In-time aggregation with response callbacks")
+    parser = argparse.ArgumentParser(description="In-time aggregation with response callbacks")
+    parser.add_argument("--num-clients", type=int, default=2)
     parser.add_argument("--num-rounds", type=int, default=2)
     args = parser.parse_args()
-    run_recipe(make_recipe(args), args)
+    simple_logging()
+    run = make_recipe(args).execute(SimEnv(num_clients=args.num_clients))
+    print("Job Status:", run.get_status())
+    print("Results at:", run.get_result())
 
 
 if __name__ == "__main__":

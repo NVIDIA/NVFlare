@@ -24,12 +24,3 @@ class MetricReceiver:
     @collab.publish
     def accept_metric(self, metrics: dict):
         self.logger.info(f"[{collab.callee}] received metric report from {collab.caller}: {metrics}")
-
-    @collab.init
-    def init(self):
-        collab.register_event_handler("metrics", self._accept_metric)
-        self.logger.info("MetricReceiver initialized!")
-
-    def _accept_metric(self, event_type: str, data):
-        self.logger.info(f"[{collab.callee}] received metrics event '{event_type}' from {collab.caller}: {data}")
-        return "OK"

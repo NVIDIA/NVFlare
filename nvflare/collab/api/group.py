@@ -120,11 +120,7 @@ class Group:
                         f"[{ctx}] calling {func_name} {self._call_opt} of group {[p.name for p in self._proxies]}"
                     )
 
-                    # apply outgoing call filters
                     assert isinstance(self._app, App)
-                    adj_kwargs = self._app.apply_outgoing_call_filters(
-                        func_proxy.target_name, func_name, adj_kwargs, ctx
-                    )
                     check_call_args(func_name, func_itf, adj_args, adj_kwargs)
 
                     waiter = ResultWaiter([p.name for p in self._proxies])

@@ -12,17 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
-import fnmatch
-import os
 import re
-from typing import List
 
-from nvflare.collab.api.call_utils import check_context_support, get_collab_object_name
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.tree_utils import Forest, Node, build_forest
 
-from .collab_workspace import CollabWorkspace
-from .constants import CollabMethodArgName, ContextKey, FilterDirection
+from .constants import CollabMethodArgName
 from .context import Context, set_call_context
 from .decorators import (
     get_object_final_funcs,
@@ -30,10 +26,8 @@ from .decorators import (
     get_object_main_funcs,
     get_object_publish_interface,
     is_publish,
-    publish,
     supports_context,
 )
-from .filter import CallFilter, FilterChain, ResultFilter
 from .module_wrapper import wrap_if_module
 from .proxy import Proxy
 
@@ -52,28 +46,11 @@ class App:
         self._collab_objs = {}
         self._abort_signal = None
         self._props = {}
-        self._event_handlers = {}  # event type => list of (cb, kwargs)
-        self._incoming_call_filter_chains = []
-        self._outgoing_call_filter_chains = []
-        self._incoming_result_filter_chains = []
-        self._outgoing_result_filter_chains = []
         self._workspace = None
-        self._resource_dirs = {}
         self._managed_objects = {}  # id => obj
         self.logger = get_obj_logger(self)
         self._collab_interface = {"": get_object_publish_interface(self)}
         self.add_collab_object(name, obj)
-
-    def set_resource_dirs(self, resource_dirs: dict[str, str]):
-        if not isinstance(resource_dirs, dict):
-            raise TypeError(f"resource_dirs must be a dict but got {type(resource_dirs)}")
-        for name, resource_dir in resource_dirs.items():
-            if not os.path.isdir(resource_dir):
-                raise ValueError(f"Resource dir {resource_dir} does not exist for {name}")
-        self._resource_dirs = resource_dirs
-
-    def get_resource_dirs(self):
-        return self._resource_dirs
 
     def _add_managed_object(self, obj):
         self._managed_objects[id(obj)] = obj
@@ -107,115 +84,6 @@ class App:
     @property
     def client_hierarchy(self):
         return self._client_hierarchy
-
-    def _add_filters(self, pattern: str, filters, to_list: list, filter_type, incoming):
-        if not filters:
-            return
-
-        if not isinstance(filters, list):
-            raise ValueError(f"filters must be a list but got {type(filters)}")
-
-        filter_objs = []
-        for f in filters:
-            if not isinstance(f, filter_type):
-                # convert to proper filter type
-                filter_obj = filter_type(f, incoming)
-            else:
-                filter_obj = f
-
-            filter_objs.append(filter_obj)
-
-            # f is a managed object, but the filter_obj (if wrapped) is not!
-            self._add_managed_object(f)
-
-        chain = FilterChain(pattern, filter_type)
-        chain.add_filters(filter_objs)
-        to_list.append(chain)
-
-    def add_incoming_call_filters(self, pattern: str, filters: List[object]):
-        self._add_filters(pattern, filters, self._incoming_call_filter_chains, CallFilter, True)
-
-    def get_incoming_call_filters(self):
-        return self._incoming_call_filter_chains
-
-    def add_outgoing_call_filters(self, pattern: str, filters: List[object]):
-        self._add_filters(pattern, filters, self._outgoing_call_filter_chains, CallFilter, False)
-
-    def get_outgoing_call_filters(self):
-        return self._outgoing_call_filter_chains
-
-    def add_incoming_result_filters(self, pattern: str, filters: List[object]):
-        self._add_filters(pattern, filters, self._incoming_result_filter_chains, ResultFilter, True)
-
-    def get_incoming_result_filters(self):
-        return self._incoming_result_filter_chains
-
-    def add_outgoing_result_filters(self, pattern: str, filters: List[object]):
-        self._add_filters(pattern, filters, self._outgoing_result_filter_chains, ResultFilter, False)
-
-    def get_outgoing_result_filters(self):
-        return self._outgoing_result_filter_chains
-
-    @staticmethod
-    def _find_filter_chain(direction, chains: List[FilterChain], target_name: str, func_name: str, ctx: Context):
-        """
-
-        Args:
-            chains:
-            target_name:
-            func_name:
-
-        Returns:
-
-        """
-        collab_obj_name = get_collab_object_name(target_name)
-        qualified_func_name = f"{collab_obj_name}.{func_name}"
-        ctx.set_prop(ContextKey.QUALIFIED_FUNC_NAME, qualified_func_name)
-        ctx.set_prop(ContextKey.DIRECTION, direction)
-
-        if not chains:
-            return None
-
-        for c in chains:
-            if fnmatch.fnmatch(qualified_func_name, c.pattern):
-                return c
-        return None
-
-    def apply_incoming_call_filters(self, target_name: str, func_name: str, func_kwargs, context: Context):
-        filter_chain = self._find_filter_chain(
-            FilterDirection.INCOMING, self._incoming_call_filter_chains, target_name, func_name, context
-        )
-        if filter_chain:
-            return filter_chain.apply_filters(func_kwargs, context)
-        else:
-            return func_kwargs
-
-    def apply_outgoing_call_filters(self, target_name: str, func_name: str, func_kwargs, context: Context):
-        filter_chain = self._find_filter_chain(
-            FilterDirection.OUTGOING, self._outgoing_call_filter_chains, target_name, func_name, context
-        )
-        if filter_chain:
-            return filter_chain.apply_filters(func_kwargs, context)
-        else:
-            return func_kwargs
-
-    def apply_incoming_result_filters(self, target_name: str, func_name: str, result, context: Context):
-        filter_chain = self._find_filter_chain(
-            FilterDirection.INCOMING, self._incoming_result_filter_chains, target_name, func_name, context
-        )
-        if filter_chain:
-            return filter_chain.apply_filters(result, context)
-        else:
-            return result
-
-    def apply_outgoing_result_filters(self, target_name: str, func_name: str, result, context: Context):
-        filter_chain = self._find_filter_chain(
-            FilterDirection.OUTGOING, self._outgoing_result_filter_chains, target_name, func_name, context
-        )
-        if filter_chain:
-            return filter_chain.apply_filters(result, context)
-        else:
-            return result
 
     def set_prop(self, name: str, value):
         self._props[name] = value
@@ -255,9 +123,10 @@ class App:
     def get_collab_objects(self):
         return self._collab_objs
 
-    def setup(self, workspace: CollabWorkspace, server: Proxy, clients: List[Proxy], abort_signal):
+    def setup(self, workspace: Workspace, server: Proxy, clients: list[Proxy], abort_signal):
+        if not isinstance(workspace, Workspace):
+            raise TypeError(f"workspace must be a Workspace but got {type(workspace)}")
         self._workspace = workspace
-        workspace.resource_dirs = self._resource_dirs
 
         self._server_proxy = server
         self._abort_signal = abort_signal
@@ -347,14 +216,6 @@ class App:
             set_call_context(ctx)
         return ctx
 
-    def register_event_handler(self, event_type: str, handler, **handler_kwargs):
-        handlers = self._event_handlers.get(event_type)
-        if not handlers:
-            handlers = []
-            self._event_handlers[event_type] = handlers
-        handlers.append((handler, handler_kwargs))
-        self.logger.debug(f"registered event handler {handler.__qualname__} for {event_type=}")
-
     def get_collab_interface(self) -> dict[str, dict[str, list[str]]]:
         return {name: publish_interface.to_dict() for name, publish_interface in self._collab_interface.items()}
 
@@ -363,18 +224,6 @@ class App:
             return self._collab_interface.get("")
         else:
             return self._collab_interface.get(target_name)
-
-    @publish
-    def fire_event(self, event_type: str, data, context: Context):
-        result = {}
-        for e, handlers in self._event_handlers.items():
-            if e == event_type:
-                for h, kwargs in handlers:
-                    kwargs = copy.copy(kwargs)
-                    kwargs.update({CollabMethodArgName.CONTEXT: context})
-                    check_context_support(h, kwargs)
-                    result[h.__qualname__] = h(event_type, data, **kwargs)
-        return result
 
     def get_children(self):
         return []

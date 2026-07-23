@@ -14,7 +14,7 @@
 import copy
 from collections.abc import Mapping, Sequence
 
-from nvflare.collab.api._invocation import InvocationDispatcher
+from nvflare.collab.api._invocation import _InvocationDispatcher
 from nvflare.collab.api.call_utils import check_call_args
 from nvflare.collab.api.exceptions import CollabCallError
 from nvflare.collab.api.publish_interface import PublishInterface
@@ -58,7 +58,7 @@ class Proxy:
         app,
         target_name,
         target_fqn: str,
-        backend: InvocationDispatcher,
+        backend: _InvocationDispatcher,
         target_interface: PublishInterface | Mapping[str, Sequence[str]] | None,
     ):
         """The Proxy represents a target in the App."""
@@ -224,17 +224,12 @@ class Proxy:
 
             p, func_itf, call_args, call_kwargs = p.adjust_func_args(func_name, args, kwargs)
             with p.app.new_context(self.caller_name, self.name) as ctx:
-                # apply outgoing call filters
-                call_kwargs = self.app.apply_outgoing_call_filters(p.target_name, func_name, call_kwargs, ctx)
                 check_call_args(func_name, func_itf, call_args, call_kwargs)
 
                 result = p.backend.call_target(ctx, p.target_name, call_opt, func_name, *call_args, **call_kwargs)
                 if isinstance(result, Exception):
                     raise result
 
-                if result is not None:
-                    # filter incoming result filters
-                    result = self.app.apply_incoming_result_filters(p.target_name, func_name, result, ctx)
                 return result
         except Exception as ex:
             if isinstance(ex, CollabCallError):

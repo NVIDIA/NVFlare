@@ -21,7 +21,7 @@ between AppRunner (simulation path) and CollabExecutor (FLARE path).
 from collections.abc import Mapping, Sequence
 from typing import Dict
 
-from nvflare.collab.api._invocation import InvocationDispatcher
+from nvflare.collab.api._invocation import _InvocationDispatcher
 from nvflare.collab.api.proxy import Proxy
 from nvflare.collab.api.publish_interface import PublishInterface
 
@@ -30,7 +30,7 @@ def create_proxy_with_children(
     app,
     target_name: str,
     target_fqn: str,
-    main_backend: InvocationDispatcher,
+    main_backend: _InvocationDispatcher,
     main_interface: PublishInterface | Mapping[str, Sequence[str]],
     child_specs: Dict[str, dict],
 ) -> Proxy:

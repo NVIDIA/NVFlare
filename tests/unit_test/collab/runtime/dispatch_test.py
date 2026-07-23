@@ -16,8 +16,8 @@ from unittest.mock import MagicMock, patch
 
 from nvflare.collab.api.app import ClientApp
 from nvflare.collab.api.decorators import publish
-from nvflare.collab.runtime.flare.defs import CallReplyKey, ObjectCallKey
-from nvflare.collab.runtime.flare.dispatch import _call_app_method
+from nvflare.collab.runtime.defs import CallReplyKey, ObjectCallKey
+from nvflare.collab.runtime.dispatch import _call_app_method
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 
@@ -43,11 +43,11 @@ def test_remote_call_returns_secure_exception_detail():
 
     with (
         patch(
-            "nvflare.collab.runtime.flare.dispatch.secure_format_exception",
+            "nvflare.collab.runtime.dispatch.secure_format_exception",
             return_value="ValueError: invalid input",
         ) as format_exception,
         patch(
-            "nvflare.collab.runtime.flare.dispatch.secure_format_traceback",
+            "nvflare.collab.runtime.dispatch.secure_format_traceback",
             return_value="remote traceback",
         ),
     ):

@@ -82,7 +82,6 @@ The top-level `nvflare.collab` package exports:
 - `collab`: decorators, context accessors, proxies, and application properties.
 - `CollabCallError`: structured site/function/cause details for failed calls.
 - `CollabRecipe`: creates the normal NVFlare job.
-- `CollabClientAPI`: embeds Client API-style training in a Collab client.
 - `simple_logging`: convenience logging setup for examples.
 
 Execution environments come from `nvflare.recipe`, not `nvflare.collab`:
@@ -106,7 +105,8 @@ job starts.
 ### `@collab.init`
 
 Runs after a site app is set up with its workspace, proxies, abort signal, and
-properties, but before normal calls are handled.
+properties, but before normal calls are handled. An object may define multiple
+initializers; all of them run once in method-name order.
 
 ### `@collab.main`
 
@@ -149,6 +149,10 @@ workspace = collab.workspace
 fl_ctx = collab.fl_ctx
 learning_rate = collab.get_app_prop("learning_rate", 0.01)
 ```
+
+`collab.workspace` is the site's standard `nvflare.apis.workspace.Workspace`.
+For example, the current job's run directory is
+`collab.workspace.get_run_dir(collab.fl_ctx.get_job_id())`.
 
 `collab.fl_ctx` is the live `FLContext` for the current site. Because it is a
 runtime object, `CollabRecipe` adds it to the site's application properties
@@ -195,7 +199,7 @@ User workflow and published functions
 - the primary user object and named Collab objects;
 - publish interfaces;
 - lifecycle functions;
-- application properties and resource directories;
+- application properties;
 - site proxies, workspace, and abort signal.
 
 ### Proxy layer
@@ -203,10 +207,12 @@ User workflow and published functions
 `Proxy` validates calls against the target publish interface and represents a
 single logical target. `ProxyList` and `Group` coordinate calls to multiple
 targets, including concurrency limits and target-attributed results.
+`collab.other_clients` returns the client group with the current client removed,
+which is useful for decentralized client-to-client workflows.
 
 ### Private invocation layer
 
-`InvocationDispatcher` is an internal strategy used by proxies. It is private
+`_InvocationDispatcher` is an internal strategy used by proxies. It is private
 because applications should not choose transport or branch on transport type.
 `CellDispatcher` serializes a logical invocation onto CellNet and is used by
 `CollabController` and `CollabExecutor` in every standard environment.
@@ -248,50 +254,43 @@ recipe.execute(ProdEnv(startup_kit_location="/path/to/admin/startup-kit"))
 All three paths deploy the same finalized `FedJob`. There are no Collab-specific
 environment classes and no recipe-wide subprocess command fields.
 
-## CollabClientAPI
-
-`CollabClientAPI` adapts the standard Client API receive/train/send pattern to a
-published Collab call. The registered training function runs in the client site's
-FLARE process:
-
-```python
-client_api = CollabClientAPI()
-client_api.set_training_func(training_loop)
-
-recipe = CollabRecipe(
-    job_name="client_api_collab",
-    server=server_workflow,
-    client=client_api,
-)
-```
-
-Each site receives a fresh `CollabClientAPI` instance so locks, cached models,
-and module-level Client API context cannot leak between simulated
-clients. Only single-process client execution is supported by this adapter.
-
 ## Source Layout
 
 ```text
 nvflare/collab/
-├── api/                 public programming model and private dispatcher contract
-├── core/recipe.py       CollabRecipe -> FedJob
+├── api/                 programming model and private dispatcher contract
+├── recipe.py            CollabRecipe -> FedJob
 └── runtime/
-    ├── flare/           controller, executor, CellNet dispatch
-    ├── client_api.py    Client API adapter
+    ├── controller.py    server workflow integration
+    ├── executor.py      client site integration
+    ├── cell_dispatcher.py / dispatch.py
     └── lifecycle.py     init/main/final orchestration
 ```
 
 Examples are under [`examples/collab`](../../examples/collab/README.md). Each
-example owns the runner, trainer, strategy, and utility modules that it uses;
+example owns the trainer, strategy, and utility modules that it uses;
 there is no shared `examples/collab/common` package. This keeps every example
 self-contained and makes its dependencies visible in one directory.
 
-The repeated example-local `runner.py` modules are command-line conveniences,
-not part of the public Collab API. They select `SimEnv`, `PocEnv`, `ProdEnv`, or
-job export without changing the recipe. Applications should use the standard
-environment classes from `nvflare.recipe` directly.
+Each example executes its recipe with `SimEnv` directly. Applications select
+`SimEnv`, `PocEnv`, or `ProdEnv` from `nvflare.recipe`; there is no additional
+Collab runner.
 
 ## Deferred Work
+
+Application-supplied call/result middleware is not a security filter boundary.
+A future direct-call filter design must make policy site-owned and enforce it
+consistently for native Collab calls and task-plane Executor clients before any
+`CallFilter` or `ResultFilter` API is published.
+
+Bridging Collab to the Client API is also deferred. The bridge should schedule a
+normal NVFlare `Task` whose configured `Shareable -> Shareable` Executor runs
+through `ClientRunner`, preserving site filters, lifecycle, abort handling,
+accounting, external-process execution, and DDP. It must not host an Executor or
+a callback behind a client-side Collab RPC.
+
+Collab-specific events are deferred; published functions provide the current
+notification mechanism without introducing a second event system.
 
 External-process execution is intentionally deferred. Before it can become a
 public feature, its design must specify:

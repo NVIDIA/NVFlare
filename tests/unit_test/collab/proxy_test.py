@@ -26,7 +26,6 @@ def _make_failing_proxy(error):
     context = MagicMock()
     context.__enter__.return_value = context
     app.new_context.return_value = context
-    app.apply_outgoing_call_filters.side_effect = lambda _target, _func, kwargs, _ctx: kwargs
     backend = MagicMock()
     backend.call_target.return_value = error
     proxy = Proxy(

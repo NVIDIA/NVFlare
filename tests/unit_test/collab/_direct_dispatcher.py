@@ -15,7 +15,7 @@ import threading
 import time
 from concurrent.futures import CancelledError
 
-from nvflare.collab.api._invocation import InvocationDispatcher
+from nvflare.collab.api._invocation import _InvocationDispatcher
 from nvflare.collab.api.app import App
 from nvflare.collab.api.call_opt import CallOption
 from nvflare.collab.api.call_utils import check_call_args
@@ -33,10 +33,10 @@ class _Waiter(threading.Event):
         self.result = None
 
 
-class DirectDispatcher(InvocationDispatcher):
+class _DirectDispatcher(_InvocationDispatcher):
 
     def __init__(self, target_obj_name: str, target_app: App, target_obj, abort_signal, thread_executor):
-        InvocationDispatcher.__init__(self, abort_signal)
+        _InvocationDispatcher.__init__(self, abort_signal)
         self.target_obj_name = target_obj_name
         self.target_app = target_app
         self.target_obj = target_obj
@@ -85,7 +85,6 @@ class DirectDispatcher(InvocationDispatcher):
     def _preprocess(self, context, target_name, func_name, func, kwargs):
         caller_ctx = context
         my_ctx = self.target_app.new_context(caller_ctx.caller, caller_ctx.callee)
-        kwargs = self.target_app.apply_incoming_call_filters(target_name, func_name, kwargs, my_ctx)
 
         # make sure the final kwargs conforms to func interface
         obj_itf = self.target_app.get_target_object_publish_interface(self.target_obj_name)
@@ -117,8 +116,7 @@ class DirectDispatcher(InvocationDispatcher):
 
     def _invoke(self, context, target_name, func_name, func, args, kwargs):
         ctx, kwargs = self._preprocess(context, target_name, func_name, func, kwargs)
-        result = func(*args, **kwargs)
-        return self.target_app.apply_outgoing_result_filters(target_name, func_name, result, ctx)
+        return func(*args, **kwargs)
 
     def call_target_in_group(self, gcc: GroupCallContext, func_name: str, *args, **kwargs):
         target_name = gcc.target_name

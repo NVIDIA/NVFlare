@@ -17,7 +17,7 @@ import threading
 from unittest.mock import MagicMock, patch
 
 from nvflare.apis.signal import Signal
-from nvflare.collab.api._invocation import InvocationDispatcher
+from nvflare.collab.api._invocation import _InvocationDispatcher
 from nvflare.collab.api.call_opt import CallOption
 from nvflare.collab.api.constants import CollabMethodArgName
 from nvflare.collab.api.context import Context, get_call_context, set_call_context
@@ -25,7 +25,7 @@ from nvflare.collab.api.exceptions import CollabCallError
 from nvflare.collab.api.group_call_context import GroupCallContext, ResultQueue, ResultWaiter
 
 
-class _GroupOnlyDispatcher(InvocationDispatcher):
+class _GroupOnlyDispatcher(_InvocationDispatcher):
     def __init__(self, result):
         super().__init__(Signal())
         self.result = result
@@ -90,7 +90,6 @@ def test_group_send_completion_is_idempotent():
 
 def test_group_result_callback_has_isolated_kwargs_and_restores_thread_context():
     app = MagicMock()
-    app.apply_incoming_result_filters.return_value = "filtered"
     previous_ctx = Context(app=app, caller="previous", callee="previous", abort_signal=Signal())
     call_ctx = Context(app=app, caller="server", callee="site-1", abort_signal=Signal())
     callback_contexts = []
@@ -124,12 +123,11 @@ def test_group_result_callback_has_isolated_kwargs_and_restores_thread_context()
     assert gcc.cb_kwargs is not shared_kwargs
     assert CollabMethodArgName.CONTEXT not in shared_kwargs
     assert len(callback_contexts) == 1
-    assert next(iter(waiter.results)) == ("site-1", "processed filtered")
+    assert next(iter(waiter.results)) == ("site-1", "processed raw")
 
 
 def test_group_result_callback_exception_is_logged_and_returned():
     app = MagicMock()
-    app.apply_incoming_result_filters.return_value = "filtered"
 
     def fail_callback(_gcc, _result):
         raise ValueError("callback failed")

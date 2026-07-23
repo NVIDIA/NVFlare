@@ -281,7 +281,6 @@ class GroupCallContext:
 
         """
         try:
-            # filter incoming result
             ctx = copy.copy(self.context)
 
             # swap caller/callee
@@ -293,7 +292,6 @@ class GroupCallContext:
                 previous_ctx = get_call_context()
                 set_call_context(ctx)
                 try:
-                    result = self.app.apply_incoming_result_filters(self.target_name, self.func_name, result, ctx)
                     if self.process_cb:
                         callback_kwargs = copy.copy(self.cb_kwargs)
                         callback_kwargs[CollabMethodArgName.CONTEXT] = ctx

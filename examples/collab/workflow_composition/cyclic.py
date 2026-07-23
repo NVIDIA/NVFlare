@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import random
 
-from collab.workflow_composition.np_utils import load_np_model, parse_array_def, save_np_model
+from collab.workflow_composition.np_utils import parse_array_def
 
 from nvflare.collab import CollabCallError, collab
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -30,14 +29,6 @@ class NPCyclic:
         self.final_model = None
         self.logger = get_obj_logger(self)
 
-    @collab.init
-    def check_initial_model(self):
-        if isinstance(self._initial_model, str):
-            resource_dir = collab.workspace.get_resource_dir("data")
-            file_name = os.path.join(resource_dir, self._initial_model)
-            self._initial_model = load_np_model(file_name)
-            self.logger.info(f"loaded initial model from {file_name}: {self._initial_model}")
-
     @collab.main
     def execute(self):
         current_model = self._initial_model
@@ -50,13 +41,6 @@ class NPCyclic:
         self.logger.info(f"[{collab.call_info}] final result: {current_model}")
         self.final_model = current_model
         return current_model
-
-    @collab.final
-    def save_result(self):
-        final_result = collab.get_result()
-        file_name = os.path.join(collab.workspace.get_work_dir(), "final_model.npy")
-        save_np_model(final_result, file_name)
-        self.logger.info(f"[{collab.call_info}]: saved final model {final_result} to {file_name}")
 
     def _do_one_round(self, current_round, current_model):
         clients = collab.clients
