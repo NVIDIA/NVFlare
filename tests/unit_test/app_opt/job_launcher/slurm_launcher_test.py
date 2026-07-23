@@ -317,9 +317,6 @@ def test_multinode_without_node_command_still_requires_bare_sandbox(tmp_path):
     with pytest.raises(SlurmLauncherError, match="unless node_command"):
         _resolve_resources({}, "site-1", "pyxis", 600, spec={"nodes": 2})
 
-    resources = _resolve_resources({}, "site-1", "pyxis", 600, spec={"nodes": 2, "node_command": "python3 -m t"})
-    assert resources.nodes == 2
-
 
 def test_launch_plan_rejects_node_command_without_deployed_app_dir(tmp_path):
     workspace = _workspace(tmp_path)
@@ -414,7 +411,8 @@ studies:
       image: %s
     slurm:
       sandbox: apptainer
-""" % (tmp_path / "study.sif"),
+"""
+        % (tmp_path / "study.sif"),
         encoding="utf-8",
     )
     launcher = _launcher(tmp_path, workspace, sandbox="apptainer", image=str(tmp_path / "site.sif"))

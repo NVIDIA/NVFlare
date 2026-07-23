@@ -136,7 +136,6 @@ def _multinode_parts(plan: LaunchPlan, job_dir: str, config: SlurmConfig) -> tup
     port_start, port_end = config.multi_node_port_range
     port_count = port_end - port_start + 1
     environment = [
-        '[[ "${SLURM_JOB_ID:-}" =~ ^[0-9]+$ ]] || { echo "invalid SLURM_JOB_ID" >&2; exit 102; }',
         f'export {ENV_NNODES}="${{SLURM_JOB_NUM_NODES:?}}"',
         # The batch script always executes on the first node of the allocation.
         f'export {ENV_MASTER_ADDR}="${{SLURMD_NODENAME:?}}"',

@@ -16,7 +16,8 @@ import sys
 
 import pytest
 
-from nvflare.app_opt.pt.torchrun_node import TorchrunNodeError, build_torchrun_argv
+from nvflare.app_common.multinode import NodeGroupError
+from nvflare.app_opt.pt.torchrun_node import build_torchrun_argv
 
 _GROUP_ENV = {
     "NVFL_NNODES": "2",
@@ -55,5 +56,5 @@ def test_node_group_environment_maps_to_rendezvous_arguments():
 
 
 def test_join_timeout_must_be_positive():
-    with pytest.raises(TorchrunNodeError, match="join-timeout"):
+    with pytest.raises(NodeGroupError, match="join-timeout"):
         build_torchrun_argv(["--join-timeout=0", "--", "custom/client.py"], dict(_GROUP_ENV))

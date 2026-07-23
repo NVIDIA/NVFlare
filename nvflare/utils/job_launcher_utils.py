@@ -125,7 +125,7 @@ def generate_server_command(fl_ctx) -> str:
     return f"{sys.executable} {args_str}"
 
 
-LAUNCHER_MODE_KEYS = {"process", "docker", "k8s", "slurm"}
+_LAUNCHER_MODE_KEYS = {"process", "docker", "k8s", "slurm"}
 
 
 def get_site_launcher_spec(site_spec, mode):
@@ -136,7 +136,7 @@ def get_site_launcher_spec(site_spec, mode):
     backward compatibility; Docker, K8s, and Slurm modes receive an empty spec.
     """
     site_spec = site_spec or {}
-    if any(k in site_spec for k in LAUNCHER_MODE_KEYS):
+    if any(k in site_spec for k in _LAUNCHER_MODE_KEYS):
         return site_spec.get(mode, {})
     return site_spec if mode == "process" else {}
 
@@ -172,7 +172,7 @@ def _validate_launcher_spec(launcher_spec: dict) -> list:
             continue
         # Flag keys whose sub-keys look like launcher modes (i.e. look like a
         # site block) but whose name is a near-match for a reserved token.
-        if set(value.keys()) <= LAUNCHER_MODE_KEYS:
+        if set(value.keys()) <= _LAUNCHER_MODE_KEYS:
             for reserved in _LAUNCHER_SPEC_RESERVED_KEYS:
                 if key != reserved and (key.startswith(reserved) or reserved.startswith(key)):
                     suspicious.append(key)

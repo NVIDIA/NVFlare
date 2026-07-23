@@ -333,8 +333,7 @@ whenever both are supplied, ``num_of_gpus`` must equal
 A multi-node client job that also sets ``node_command`` requests a
 launcher-owned node group: the launcher starts one task per allocated node,
 runs the normal client job process on node rank 0, and runs ``node_command``
-— the worker command for the non-zero node ranks — on every other node with
-the node-group environment (``NVFL_NNODES``, ``NVFL_NODE_RANK``,
+on every other node with the node-group environment (``NVFL_NNODES``, ``NVFL_NODE_RANK``,
 ``NVFL_MASTER_ADDR``, ``NVFL_MASTER_PORT``, ``NVFL_RUN_ID``) exported to all
 tasks. Node
 groups work under every sandbox: with ``apptainer`` or ``pyxis``, all user

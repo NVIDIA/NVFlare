@@ -27,31 +27,21 @@ torchrun, so one command also covers plain single-node runs.
 import argparse
 import os
 import sys
-from typing import Optional, Sequence
+from typing import Sequence
 
 from nvflare.app_common.multinode import NodeGroup, NodeGroupError, split_training_argv
 
 _DEFAULT_JOIN_TIMEOUT = 600
 
 
-class TorchrunNodeError(NodeGroupError):
-    """A deterministic helper configuration failure."""
-
-
-def _parse_nproc_per_node(value: str) -> str:
-    if value == "auto" or (value.isascii() and value.isdigit() and int(value) > 0):
-        return value
-    raise argparse.ArgumentTypeError("must be 'auto' or a positive integer")
-
-
 def build_torchrun_argv(argv: Sequence[str], environ: dict) -> list:
     option_argv, training_argv = split_training_argv(argv)
     parser = argparse.ArgumentParser(prog=f"{sys.executable} -m {__spec__.name if __spec__ else __name__}")
-    parser.add_argument("--nproc-per-node", type=_parse_nproc_per_node, default="auto")
+    parser.add_argument("--nproc-per-node", default="auto")
     parser.add_argument("--join-timeout", type=int, default=_DEFAULT_JOIN_TIMEOUT)
     options = parser.parse_args(option_argv)
     if options.join_timeout <= 0:
-        raise TorchrunNodeError("--join-timeout must be a positive integer")
+        raise NodeGroupError("--join-timeout must be a positive integer")
 
     group = NodeGroup.from_env(environ)
     result = [sys.executable, "-u", "-m", "torch.distributed.run", f"--nproc_per_node={options.nproc_per_node}"]
@@ -75,9 +65,9 @@ def build_torchrun_argv(argv: Sequence[str], environ: dict) -> list:
     return result
 
 
-def main(argv: Optional[Sequence[str]] = None) -> None:
+def main() -> None:
     try:
-        torchrun_argv = build_torchrun_argv(sys.argv[1:] if argv is None else argv, os.environ)
+        torchrun_argv = build_torchrun_argv(sys.argv[1:], os.environ)
     except NodeGroupError as e:
         print(f"torchrun_node: {e}", file=sys.stderr)
         raise SystemExit(2) from e

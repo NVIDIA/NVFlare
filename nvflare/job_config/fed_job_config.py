@@ -149,8 +149,8 @@ class FedJobConfig:
             outfile.write(json_dump)
 
     @staticmethod
-    def _mode_block(site_spec, mode):
-        block = site_spec.get(mode) if isinstance(site_spec, dict) else None
+    def _mode_block(site_spec: dict, mode):
+        block = site_spec.get(mode)
         return block if isinstance(block, dict) else {}
 
     @staticmethod

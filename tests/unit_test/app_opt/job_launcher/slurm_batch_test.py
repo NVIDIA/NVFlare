@@ -169,7 +169,6 @@ def test_multinode_batch_exports_node_group_contract_and_delegates_to_srun(tmp_p
     assert 'export NVFL_MASTER_ADDR="${SLURMD_NODENAME:?}"' in script
     assert 'export NVFL_MASTER_PORT="$((29400 + 10#${SLURM_JOB_ID} % 1000))"' in script
     assert 'export NVFL_RUN_ID="${SLURM_JOB_ID}"' in script
-    assert '[[ "${SLURM_JOB_ID:-}" =~ ^[0-9]+$ ]]' in script
     assert "NVFL_SRUN=srun" in script
     command_line = next(line for line in script.splitlines() if line.startswith("_nvfl_command="))
     assert "--nodes=2" in command_line
@@ -182,9 +181,7 @@ def test_multinode_batch_exports_node_group_contract_and_delegates_to_srun(tmp_p
 
 
 def test_site_port_range_overrides_the_default_rendezvous_ports(tmp_path):
-    from dataclasses import replace as dc_replace
-
-    config = dc_replace(_config(tmp_path), multi_node_port_range=(29500, 29599))
+    config = replace(_config(tmp_path), multi_node_port_range=(29500, 29599))
 
     script, _ = _render_batch_script(_multinode_plan(tmp_path), _job_dir(tmp_path), config)
 

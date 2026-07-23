@@ -226,8 +226,8 @@ identically on every rank. The variable names carry
 no scheduler meaning, so the same `node_command` can run under any launcher that adopts the contract.
 
 `node_command` is job-owned and validated at the launch boundary: a single-line, shell-lexable, non-empty string
-without secret references, split once into argv and rendered fully quoted, never re-parsed by a shell. It is the
-worker command for the non-zero node ranks. For jobs built with the FedJob/Recipe API it is not authored by hand:
+without secret references, split once into argv and rendered fully quoted, never re-parsed by a shell. For jobs
+built with the FedJob/Recipe API it is not authored by hand:
 export fills it from the site's `SubprocessLauncher` command whenever a launcher block requests `nodes > 1`, so
 the meta command and the deployed rank-0 command come from one source and `launch_once=True` is enforced at
 export (the training program performs one rendezvous per job). An explicit `node_command` always wins and remains
