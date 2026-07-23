@@ -14,7 +14,9 @@
 
 import importlib
 import os
+import platform
 import queue
+import socket
 import sys
 import types
 from types import SimpleNamespace
@@ -25,6 +27,12 @@ torch = pytest.importorskip("torch")
 
 dist_available = torch.distributed.is_available()
 gloo_available = dist_available and torch.distributed.is_gloo_available()
+GLOO_INIT_ERROR_MARKERS = (
+    "Cannot resolve 127.0.0.1 to a (local) address",
+    "Unable to resolve hostname",
+    "makeDeviceForInterface(): unsupported gloo device",
+    "uv_bind: operation not permitted",
+)
 
 
 class TinyModel(torch.nn.Module):
@@ -173,10 +181,31 @@ def _configure_client_api(hf_api, rank, task, result_queue):
     return sent_models
 
 
+def _set_gloo_loopback_if_needed():
+    if os.environ.get("GLOO_SOCKET_IFNAME"):
+        return
+    if platform.system() != "Linux":
+        return
+
+    try:
+        interface_names = {name for _, name in socket.if_nameindex()}
+    except (AttributeError, OSError):
+        return
+
+    if "lo" in interface_names:
+        os.environ["GLOO_SOCKET_IFNAME"] = "lo"
+
+
+def _is_gloo_init_error(result):
+    error = result.get("error", "")
+    return any(marker in error for marker in GLOO_INIT_ERROR_MARKERS)
+
+
 def _worker(rank, init_path, output_dir, strategy, scenario, result_queue):
     import torch.distributed as dist
 
     try:
+        _set_gloo_loopback_if_needed()
         dist.init_process_group("gloo", init_method=f"file://{init_path}", rank=rank, world_size=2)
         _install_fake_transformers()
         for loaded_name in list(sys.modules):
@@ -192,14 +221,23 @@ def _worker(rank, init_path, output_dir, strategy, scenario, result_queue):
         if scenario == "divergent":
             if rank == 0:
                 trainer._nvflare_hf_task_state._ensure_task(hf_api.CALL_TRAIN)
+                dist.barrier()
                 result_queue.put({"rank": rank, "ok": True, "sent_count": 0})
             else:
+                ok = False
+                error = None
                 try:
                     trainer.evaluate()
                 except RuntimeError as e:
-                    result_queue.put({"rank": rank, "ok": "Divergent HuggingFace Trainer call" in str(e)})
+                    ok = "Divergent HuggingFace Trainer call" in str(e)
+                    error = str(e)
                 else:
-                    result_queue.put({"rank": rank, "ok": False, "error": "expected divergent-call failure"})
+                    error = "expected divergent-call failure"
+                dist.barrier()
+                result = {"rank": rank, "ok": ok}
+                if error:
+                    result["error"] = error
+                result_queue.put(result)
         else:
             trainer.train()
             first_weight = float(trainer.model.fc.weight.detach().cpu().reshape(-1)[0].item())
@@ -243,6 +281,8 @@ def _run_2process_scenario(tmp_path, strategy, scenario):
             results.append(result_queue.get(timeout=5))
         except queue.Empty:
             pytest.fail("timed out waiting for distributed HF worker result")
+    if results and all(_is_gloo_init_error(result) for result in results):
+        pytest.skip(f"torch.distributed gloo could not initialize on this runner: {results}")
     return sorted(results, key=lambda result: result["rank"])
 
 
@@ -259,5 +299,5 @@ def test_two_process_gloo_file_exchange_dispatch_and_rank_zero_send(tmp_path):
 def test_two_process_gloo_detects_divergent_trainer_calls(tmp_path):
     results = _run_2process_scenario(tmp_path, strategy="object", scenario="divergent")
 
-    assert all(result["ok"] for result in results)
+    assert all(result["ok"] for result in results), results
     assert [result["sent_count"] for result in results if result["rank"] == 0] == [0]
