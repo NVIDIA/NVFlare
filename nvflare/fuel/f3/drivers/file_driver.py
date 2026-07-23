@@ -74,6 +74,10 @@ LISTENER_STALE_TIME = 3600.0
 TMP_DIR_STALE_TIME = 3600.0
 MIN_POLL_INTERVAL = 0.001
 READ_CHUNK = 8 * 1024 * 1024
+# After the peer's closed marker, keep draining until this many consecutive quiet polls; covers
+# chunked reads of a large final frame and short cross-file visibility lag on networked FS
+DRAIN_GRACE_POLLS = 20
+DRAIN_POLL_INTERVAL = 0.05
 
 
 def parse_file_url(url: str) -> str:
@@ -177,10 +181,10 @@ class _ConnConfig:
                     merged[key] = value
 
         self.poll_interval = max(float(merged.get(POLL_INTERVAL, 0.01)), MIN_POLL_INTERVAL)
-        self.max_poll_interval = max(float(merged.get(MAX_POLL_INTERVAL, 0.5)), self.poll_interval)
+        self.max_poll_interval = max(float(merged.get(MAX_POLL_INTERVAL, 2.0)), self.poll_interval)
         self.max_log_size = int(float(params.get(MAX_LOG_SIZE, 1024 * 1024 * 1024)))
-        self.lease_interval = float(merged.get(LEASE_INTERVAL, 5.0))
-        self.lease_timeout = float(merged.get(LEASE_TIMEOUT, 30.0))
+        self.lease_interval = float(merged.get(LEASE_INTERVAL, 15.0))
+        self.lease_timeout = float(merged.get(LEASE_TIMEOUT, 60.0))
         self.fsync = bool(str2bool(merged.get(FSYNC, False)))
         self.dir_mode = _parse_mode(merged.get(DIR_MODE), 0o770)
         self.file_mode = _parse_mode(merged.get(FILE_MODE), 0o660)
@@ -413,6 +417,7 @@ class FileConnection(Connection):
         last_housekeeping = now
         peer_seen = now
         peer_mtime = None
+        peer_active = False
 
         try:
             while not self.closing and not stopped.is_set():
@@ -420,22 +425,31 @@ class FileConnection(Connection):
                 if now - last_housekeeping >= self.cfg.lease_interval:
                     last_housekeeping = now
                     _touch(self.my_lease, self.cfg.file_mode)
-                    if os.path.exists(self.closed_file):
-                        self.logger.debug(f"{self}: closed by peer")
-                        self._drain()
-                        break
-                    mtime = _mtime(self.peer_lease)
-                    if mtime is not None and mtime != peer_mtime:
-                        peer_mtime = mtime
+                    if peer_active:
+                        # Frames arrived since the last housekeeping, so the peer is alive; skip
+                        # the peer-lease and closed-marker stats. A close mid-traffic is caught
+                        # once the stream goes quiet (the marker follows all data anyway).
+                        peer_active = False
                         peer_seen = now
-                    elif now - peer_seen > self.cfg.lease_timeout:
-                        self.logger.info(f"{self}: peer lease is stale, closing")
+                        peer_mtime = None
+                    elif os.path.exists(self.closed_file):
+                        self.logger.debug(f"{self}: closed by peer")
+                        self._drain(stopped)
                         break
+                    else:
+                        mtime = _mtime(self.peer_lease)
+                        if mtime is not None and mtime != peer_mtime:
+                            peer_mtime = mtime
+                            peer_seen = now
+                        elif now - peer_seen > self.cfg.lease_timeout:
+                            self.logger.info(f"{self}: peer lease is stale, closing")
+                            break
 
                 frames = self.reader.read_frames()
                 if frames:
                     self.received_anything = True
                     peer_seen = now
+                    peer_active = True
                     for frame in frames:
                         self.process_frame(frame)
                 if frames or self.reader.progressed:
@@ -447,15 +461,24 @@ class FileConnection(Connection):
         finally:
             self.reader.close()
 
-    def _drain(self):
-        """Deliver frames still in the log after the peer's closed marker (which follows all data)"""
-        while True:
+    def _drain(self, stopped: threading.Event):
+        """Deliver frames still in the log after the peer's closed marker (which follows all
+        data). Reads are chunked, so a large final frame spans several read calls that return no
+        complete frame yet — keep going while bytes are being consumed, and only give up after
+        DRAIN_GRACE_POLLS consecutive quiet polls (grace for delayed visibility on networked FS).
+        """
+        quiet_polls = 0
+        while quiet_polls < DRAIN_GRACE_POLLS:
             frames = self.reader.read_frames()
-            if not frames:
-                return
-            self.received_anything = True
-            for frame in frames:
-                self.process_frame(frame)
+            if frames:
+                self.received_anything = True
+                for frame in frames:
+                    self.process_frame(frame)
+            if frames or self.reader.progressed:
+                quiet_polls = 0
+            else:
+                quiet_polls += 1
+                stopped.wait(min(self.cfg.poll_interval, DRAIN_POLL_INTERVAL))
 
 
 class FileDriver(BaseDriver):
@@ -492,14 +515,19 @@ class FileDriver(BaseDriver):
     The tuning resources are optional (defaults in _ConnConfig) and are propagated to the child
     cell through the query string of the generated connect URL; a cell can locally override them
     (except max_log_size, which must match on both sides) via a "file" section in its own
-    comm_config.json. Filesystem metadata load: an idle connection costs one stat per poll tick
-    per direction plus one lease utime per lease_interval per side, so defaults cost roughly 4-5
-    metadata ops/sec per idle connection; raise max_poll_interval (e.g. to 1-2s) to shrink it
-    proportionally at the cost of first-message latency. Data bursts are read without sleeping,
-    so throughput is unaffected by the poll settings. Note for NFS: attribute caching (actimeo)
-    can delay lease-change and size visibility; mount with a low actimeo or raise lease_timeout
-    well above the attribute-cache window. fsync=true is recommended on filesystems without
-    close-to-open or POSIX coherence.
+    comm_config.json. The example above pins lower-latency polling than the defaults.
+
+    Filesystem metadata load: an idle connection costs one log stat per poll tick per direction
+    (2/max_poll_interval per second) plus roughly 3 lease/marker ops per lease_interval per side,
+    about 1.4 client-side metadata syscalls/sec per idle connection at the defaults
+    (max_poll_interval=2, lease_interval=15) — these are client syscall counts; caching may or
+    may not absorb them server-side. A listener adds ~0.5 listdir/sec. Costs shrink
+    proportionally as max_poll_interval grows, at the price of first-message-after-idle latency.
+    During traffic the peer-lease and closed-marker checks are skipped, data is read in 8MB
+    chunks without sleeping, and stat frequency tracks frame arrival, so throughput is unaffected
+    by poll settings. Note for NFS: attribute caching (actimeo) can delay lease-change and size
+    visibility; mount with a low actimeo or raise lease_timeout well above the attribute-cache
+    window. fsync=true is recommended on filesystems without close-to-open or POSIX coherence.
     """
 
     def __init__(self):

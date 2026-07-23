@@ -16,15 +16,18 @@ import stat
 import struct
 import time
 from threading import Event
+from types import SimpleNamespace
 
 import pytest
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.communicator import Communicator
 from nvflare.fuel.f3.connection import Connection
-from nvflare.fuel.f3.drivers.connector_info import Mode
+from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
 from nvflare.fuel.f3.drivers.file_driver import (
     OWNER_MARKER,
+    READ_CHUNK,
+    FileConnection,
     FileDriver,
     _ConnConfig,
     _LogReader,
@@ -286,6 +289,22 @@ class TestFileDriver:
         finally:
             comm_b.stop()
             comm_a.stop()
+
+    def test_drain_delivers_final_frame_larger_than_read_chunk(self, tmp_path):
+        conn_dir = tmp_path / "conn"
+        conn_dir.mkdir()
+        frame = _frame(bytes(READ_CHUNK + 1040))
+        (conn_dir / "a2p.0.log").write_bytes(frame)
+        (conn_dir / "closed").touch()
+
+        connector = ConnectorInfo("test", None, {}, Mode.PASSIVE, 0, 0, False, Event())
+        conn = FileConnection(str(conn_dir), connector, _ConnConfig({"poll_interval": "0.005"}))
+        received = []
+        conn.register_frame_receiver(SimpleNamespace(process_frame=received.append))
+
+        conn._drain(Event())
+
+        assert received == [frame]
 
     def test_permissions_ignore_umask(self, tmp_path):
         old_umask = os.umask(0o022)
