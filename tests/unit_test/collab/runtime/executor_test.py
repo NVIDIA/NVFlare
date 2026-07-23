@@ -133,3 +133,41 @@ def test_setup_uses_each_remote_clients_reported_interface(monkeypatch):
     calls = executor._prepare_client_proxy.call_args_list
     assert calls[0].args[4] == {"": {"first": []}}
     assert calls[1].args[4] == {"": {"second": []}}
+
+
+def test_setup_returns_error_without_publishing_context_when_initialize_fails(monkeypatch):
+    client = MagicMock()
+    client.name = "site-1"
+    monkeypatch.setattr(executor_module, "from_dict", lambda client: client)
+    monkeypatch.setattr(executor_module, "prepare_for_remote_call", MagicMock())
+
+    executor = CollabExecutor(client_obj_id="client")
+    executor.client_app = MagicMock()
+    executor.client_app.name = "site-1"
+    executor.client_app.get_collab_interface.return_value = {"": {"local": []}}
+    executor.client_app.initialize.side_effect = RuntimeError("initialize failed")
+    executor.log_info = MagicMock()
+    executor.log_exception = MagicMock()
+    executor._prepare_server_proxy = MagicMock(return_value=MagicMock())
+    executor._prepare_client_proxy = MagicMock(return_value=MagicMock())
+
+    fl_ctx = MagicMock()
+    fl_ctx.get_prop.side_effect = lambda key, default=None: {
+        FLContextKey.JOB_META: {JobMetaKey.JOB_CLIENTS: [client]}
+    }.get(key, default)
+    shareable = Shareable(
+        {
+            SyncKey.COLLAB_INTERFACE: {"": {"server": []}},
+            SyncKey.CLIENT_INTERFACES: {"site-1": {"": {"local": []}}},
+            SyncKey.SERVER_FQCN: "server/job",
+        }
+    )
+
+    try:
+        reply = executor.execute(SETUP_TASK_NAME, shareable, fl_ctx, MagicMock())
+    finally:
+        executor.thread_executor.shutdown()
+
+    assert reply.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+    assert executor.client_ctx is None
+    executor.log_exception.assert_called_once()
