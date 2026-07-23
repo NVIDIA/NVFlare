@@ -51,13 +51,6 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def parse_mode_arg(value: str) -> str:
-    """Argparse type for legacy ``--mode`` flags: only score maximization is supported."""
-    if value != "max":
-        raise argparse.ArgumentTypeError(MODE_MAX_ONLY_MESSAGE)
-    return value
-
-
 def parse_score(value: Any) -> Optional[float]:
     if isinstance(value, bool):
         return None
@@ -504,12 +497,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--hard-crash-threshold", type=int, default=DEFAULT_HARD_CRASH_THRESHOLD)
     parser.add_argument("--exploration-batch-size", type=int, default=DEFAULT_EXPLORATION_BATCH_SIZE)
     parser.add_argument("--family-repeat-limit", type=int, default=DEFAULT_FAMILY_REPEAT_LIMIT)
-    parser.add_argument(
-        "--mode",
-        type=parse_mode_arg,
-        default="max",
-        help="objective direction; only 'max' is supported (report negated metrics to minimize a loss)",
-    )
     parser.add_argument("--format", choices=["text", "json"], default="text")
     args = parser.parse_args(argv)
 

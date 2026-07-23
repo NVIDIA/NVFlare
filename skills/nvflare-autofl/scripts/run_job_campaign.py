@@ -272,12 +272,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument("job", help="NVFlare job.py to optimize")
     parser.add_argument("--metric", help="optimization metric; omit to use job.py key_metric")
-    parser.add_argument(
-        "--mode",
-        type=guard.parse_mode_arg,
-        default="max",
-        help="objective direction; only 'max' is supported (report negated metrics to minimize a loss)",
-    )
     parser.add_argument("--env", dest="target_env", choices=["sim", "poc", "prod"], default="sim")
     cap_group = parser.add_mutually_exclusive_group()
     cap_group.add_argument(
@@ -377,6 +371,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     if args.uncapped:
         args.max_candidates = None
         args._explicit_settings.add("max_candidates")
+    # No CLI surface: campaigns always maximize. The constant keeps the persisted
+    # settings/state schema stable and lets the legacy-campaign gate compare against it.
+    args.mode = "max"
     return args
 
 

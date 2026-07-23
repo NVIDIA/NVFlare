@@ -171,10 +171,6 @@ def better(value: float, incumbent: Optional[float]) -> bool:
     return load_campaign_guard().better(value, incumbent)
 
 
-def parse_mode_arg(value: str) -> str:
-    return load_campaign_guard().parse_mode_arg(value)
-
-
 def cumulative_best(values: Sequence[float]) -> List[float]:
     incumbent = None
     result = []
@@ -545,12 +541,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("path", nargs="?", default="results.tsv", help="path to the Auto-FL TSV ledger")
     parser.add_argument("--output", default="progress.png", help="output PNG path")
-    parser.add_argument(
-        "--mode",
-        type=parse_mode_arg,
-        default="max",
-        help="objective direction; only 'max' is supported (report negated metrics to minimize a loss)",
-    )
     parser.add_argument("--metric", default="score", help="metric label shown in the plot")
     parser.add_argument("--max-labels", type=int, default=6)
     parser.add_argument("--max-literature-labels", type=int, default=4)

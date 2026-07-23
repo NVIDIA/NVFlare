@@ -165,7 +165,7 @@ def test_guard_improvement_is_best_minus_baseline():
     assert guard.guard_state_for_rows(regressed)["improvement"] == pytest.approx(0.0)
 
 
-def test_guard_cli_rejects_minimization_mode(tmp_path, capsys):
+def test_guard_cli_has_no_mode_flag(tmp_path, capsys):
     guard = _load_guard()
     results = tmp_path / "results.tsv"
     _write_results(results, [_row("baseline", "baseline", "0.85")])
@@ -174,11 +174,9 @@ def test_guard_cli_rejects_minimization_mode(tmp_path, capsys):
         guard.main([str(results), "--mode", "min"])
 
     assert excinfo.value.code == 2
-    stderr = capsys.readouterr().err
-    assert "minimization is not supported" in stderr
-    assert "neg_val_loss" in stderr
+    assert "unrecognized arguments: --mode" in capsys.readouterr().err
 
-    assert guard.main([str(results), "--mode", "max"]) == 0
+    assert guard.main([str(results)]) == 0
 
 
 def test_guard_finalization_instruction_enumerates_report_artifacts():

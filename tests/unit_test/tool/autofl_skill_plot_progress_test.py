@@ -235,7 +235,7 @@ def test_progress_plot_distinguishes_candidate_kinds(tmp_path):
     assert output.stat().st_size > 20_000
 
 
-def test_plot_cli_rejects_minimization_mode(tmp_path, capsys):
+def test_plot_cli_has_no_mode_flag(tmp_path, capsys):
     plotter = _load_plotter()
     ledger = tmp_path / "results.tsv"
     ledger.write_text("status\tname\tscore\nbaseline\tbaseline\t0.5\n", encoding="utf-8")
@@ -244,6 +244,4 @@ def test_plot_cli_rejects_minimization_mode(tmp_path, capsys):
         plotter.main([str(ledger), "--output", str(tmp_path / "progress.png"), "--mode", "min"])
 
     assert excinfo.value.code == 2
-    stderr = capsys.readouterr().err
-    assert "minimization is not supported" in stderr
-    assert "neg_val_loss" in stderr
+    assert "unrecognized arguments: --mode" in capsys.readouterr().err

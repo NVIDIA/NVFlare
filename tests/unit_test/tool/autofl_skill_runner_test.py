@@ -2854,18 +2854,17 @@ def test_status_reuses_persisted_guard_settings(tmp_path, monkeypatch):
     assert observed["family_repeat_limit"] == 9
 
 
-def test_initialize_rejects_minimization_mode_with_negated_metric_guidance(tmp_path, capsys):
+def test_initialize_has_no_mode_flag(tmp_path, capsys):
     runner = _load_runner()
     job = tmp_path / "job.py"
     job.write_text("print('job')\n", encoding="utf-8")
 
+    # Campaigns always maximize; the direction flag is gone rather than vestigial.
     with pytest.raises(SystemExit) as excinfo:
         runner.main(["initialize", str(job), "--mode", "min"])
 
     assert excinfo.value.code == 2
-    stderr = capsys.readouterr().err
-    assert "minimization is not supported" in stderr
-    assert "neg_val_loss" in stderr
+    assert "unrecognized arguments: --mode" in capsys.readouterr().err
     assert not tmp_path.joinpath(".nvflare").exists()
 
 
