@@ -377,6 +377,7 @@ class SlurmJobLauncher(JobLauncherSpec):
         mounts = self._study_mounts(runtime) if sandbox != "none" else ()
         return LaunchPlan(
             job_id=job_id,
+            site_name=site_name,
             run_dir=run_dir,
             exe_module=self.EXE_MODULE,
             module_args=self.get_module_args(job_args),
