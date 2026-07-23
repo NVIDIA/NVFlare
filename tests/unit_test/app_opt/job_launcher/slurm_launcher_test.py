@@ -333,7 +333,8 @@ studies:
       image: %s
     slurm:
       sandbox: apptainer
-""" % (tmp_path / "study.sif"),
+"""
+        % (tmp_path / "study.sif"),
         encoding="utf-8",
     )
     launcher = _launcher(tmp_path, workspace, sandbox="apptainer", image=str(tmp_path / "site.sif"))
