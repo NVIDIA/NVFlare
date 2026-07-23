@@ -27,6 +27,7 @@ torch = pytest.importorskip("torch")
 
 dist_available = torch.distributed.is_available()
 gloo_available = dist_available and torch.distributed.is_gloo_available()
+running_under_xdist = bool(os.environ.get("PYTEST_XDIST_WORKER"))
 GLOO_INIT_ERROR_MARKERS = (
     "Cannot resolve 127.0.0.1 to a (local) address",
     "Unable to resolve hostname",
@@ -287,6 +288,7 @@ def _run_2process_scenario(tmp_path, strategy, scenario):
 
 
 @pytest.mark.skipif(not gloo_available, reason="torch.distributed gloo is required for distributed HF contract tests")
+@pytest.mark.skipif(running_under_xdist, reason="nested torch.multiprocessing gloo tests are unstable under xdist")
 def test_two_process_gloo_file_exchange_dispatch_and_rank_zero_send(tmp_path):
     results = _run_2process_scenario(tmp_path, strategy="file", scenario="train")
 
@@ -296,6 +298,7 @@ def test_two_process_gloo_file_exchange_dispatch_and_rank_zero_send(tmp_path):
 
 
 @pytest.mark.skipif(not gloo_available, reason="torch.distributed gloo is required for distributed HF contract tests")
+@pytest.mark.skipif(running_under_xdist, reason="nested torch.multiprocessing gloo tests are unstable under xdist")
 def test_two_process_gloo_detects_divergent_trainer_calls(tmp_path):
     results = _run_2process_scenario(tmp_path, strategy="object", scenario="divergent")
 
