@@ -128,6 +128,10 @@ class TestGetJobLauncherSpec:
         }
         assert get_job_launcher_spec(meta, "site-1", "docker") == {"image": "legacy/img:v1"}
 
+    def test_slurm_falls_back_to_resource_spec(self):
+        meta = {"resource_spec": {"site-1": {"slurm": {"nodes": 2}}}}
+        assert get_job_launcher_spec(meta, "site-1", "slurm") == {"nodes": 2}
+
 
 class TestValidateLauncherSpec:
     def test_clean_spec_returns_empty(self):
@@ -144,6 +148,10 @@ class TestValidateLauncherSpec:
     def test_typo_defaul_flagged(self):
         spec = {"defaul": {"docker": {"image": "repo/img:v1"}}}
         assert "defaul" in _validate_launcher_spec(spec)
+
+    def test_typo_defaults_with_slurm_flagged(self):
+        spec = {"defaults": {"slurm": {"nodes": 2}}}
+        assert "defaults" in _validate_launcher_spec(spec)
 
     def test_exact_reserved_key_not_flagged(self):
         spec = {"default": {"docker": {"image": "repo/img:v1"}}}

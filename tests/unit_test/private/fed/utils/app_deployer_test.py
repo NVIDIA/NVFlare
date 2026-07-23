@@ -187,9 +187,18 @@ def test_deploy_detects_custom_dir_as_local_byoc_for_allow_list(tmp_path):
     )
 
 
-@pytest.mark.parametrize("mode", ["docker", "k8s"])
+@pytest.mark.parametrize(
+    "mode,field",
+    [
+        ("docker", "image"),
+        ("docker", "python_path"),
+        ("k8s", "image"),
+        ("k8s", "python_path"),
+        ("slurm", "image"),
+        ("slurm", "python_path"),
+    ],
+)
 @pytest.mark.parametrize("source", ["default", "site", "legacy"])
-@pytest.mark.parametrize("field", ["image", "python_path"])
 def test_deploy_requires_byoc_for_job_selected_launcher_content(tmp_path, monkeypatch, mode, source, field):
     workspace = _make_workspace(str(tmp_path / "workspace"))
     monkeypatch.setattr(AppAuthzService, "app_validator", DefaultAppValidator(site_type=SiteType.CLIENT))
