@@ -35,7 +35,11 @@ The reporter acquires the same nonblocking
 `.nvflare/autofl/campaign.lock` used by runner lifecycle actions before reading
 campaign evidence and holds it through plotting and report writes. If another
 action owns the lock, reporting fails cleanly rather than publishing a mixed
-snapshot.
+snapshot. On POSIX, the persisted lock file is a stable lock target rather than
+proof of a live owner. The reporter can therefore read a read-only campaign
+archive when the lock file already exists and the three outputs point to a
+writable location. The exclusive-create fallback reclaims only lock metadata
+that is demonstrably stale for the current workspace.
 
 ## Candidate Lineage
 
@@ -117,13 +121,23 @@ The objective contract records two distinct provenance fields. `metric_source`
 describes where measurements came from and defaults to `NVFlare metric
 artifacts`. `metric_contract_source` records how the importer selected the
 metric, for example `user_request`, `arg:key_metric`, or `default`.
+Product Auto-FL campaigns maximize their objective. A report refuses a legacy
+or malformed minimization contract instead of interpreting it differently from
+the campaign runner.
 
 ## Comparability
 
 `autofl.yaml` describes the imported/declarative contract; exact commands in
 `results.tsv` describe what executed. Report both. Compare baseline and best
 command options and flag changes to clients, rounds, local epochs/steps, batch
-sizes, data partitioning, seed, model architecture, or model-size limits.
+sizes, data partitioning, seed, model architecture, model-size limits,
+aggregation, or final-evaluation clients.
+
+The report derives candidate attempts, baseline score, and improvement from
+the ledger and cross-checks those values against authoritative campaign state.
+It exposes state/ledger disagreements as warnings rather than silently choosing
+one account. The state-derived `abandoned_candidates` count remains visible
+because abandoned manifests do not necessarily have ledger rows.
 
 When a test-like metric guided multiple candidate decisions, state that the
 selected candidate needs one final evaluation on an untouched holdout. Do not
@@ -139,7 +153,8 @@ silently present repeated test-set selection as an unbiased final estimate.
 
 The JSON summary remains `nvflare.autofl.report.v1` and includes
 `artifacts.progress_plot_available` and `objective.metric_contract_source`,
-plus `selection` and `outcome_summary` for the concise evidence synthesis.
+plus `selection`, `outcome_summary`, `abandoned_candidates`, and
+`state_accounting` for the concise evidence synthesis and consistency check.
 Missing plotting dependencies or an invalid existing PNG produce warnings and
 `progress_plot_available=false`, but do not suppress the Markdown or JSON
 report. The invalid or failed plot artifact is preserved and is not embedded
@@ -150,8 +165,9 @@ campaign directory rather than the invoking shell's current working directory.
 Before plotting or writing, the helper canonicalizes the three writable output
 paths and rejects aliases with the ledger, state, config, agent context,
 plotter, campaign lock, or candidate manifests. The progress, Markdown, and
-JSON outputs must also be mutually distinct. Existing symlink and hard-link
-aliases are treated as collisions.
+JSON outputs must also be mutually distinct. Case-folded paths and existing
+symlink or hard-link aliases are treated as collisions so a configuration is
+portable to case-insensitive filesystems.
 
 Report generation must be independent of Git and must not edit campaign source,
 the ledger, manifests, or state.

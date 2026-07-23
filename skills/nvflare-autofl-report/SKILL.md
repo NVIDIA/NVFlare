@@ -55,8 +55,8 @@ user asks for a status snapshot.
    provider-specific skill installation directory or `$CODEX_HOME`.
 
 4. Read both **autofl_final_report.md** and `autofl_report_summary.json`. Check
-   warnings about metric use, executed budget changes, missing provenance, and
-   incomplete interruption state.
+   warnings about metric use, executed budget changes, campaign-state/ledger
+   disagreement, missing provenance, and incomplete interruption state.
 5. Give the user the baseline, best score, delta, strongest candidate lineage,
    concise "what helped" and "what did not help" findings, literature ideas
    that helped or failed, selection rationale, reliability caveats, and
@@ -73,6 +73,8 @@ campaign job directory rather than the shell's current working directory.
 The helper holds the campaign lifecycle lock from evidence loading through
 artifact writes. It refuses a busy campaign and rejects writable output paths
 that alias campaign evidence or another output, including filesystem aliases.
+An archived campaign may be read-only when writable output paths are supplied;
+the persisted lock file alone does not imply live contention.
 
 ## Interrupted Campaigns
 
@@ -97,7 +99,7 @@ first.
 The final report must include:
 
 - campaign termination reason, objective, metric source, direction,
-  environment, cap, and declared fixed budget;
+  environment, cap, abandoned-candidate count, and declared fixed budget;
 - baseline, best retained result, score delta, runtime, failures, and status
   counts;
 - selected-candidate rationale, strict retained improvements, representative
@@ -119,8 +121,11 @@ The final report must include:
 
 The report must distinguish imported/declared budget from executed command
 arguments. It must warn when the best candidate changed training compute or
-when repeated selection used a test-like metric. It must not add PR-specific
-sections such as "Product Findings" unless the user explicitly requests them.
+comparison population, when authoritative state disagrees with ledger-derived
+accounting, or when repeated selection used a test-like metric. Product Auto-FL
+campaigns maximize their metric; the report rejects obsolete minimization
+contracts. It must not add PR-specific sections such as "Product Findings"
+unless the user explicitly requests them.
 `best` means a scored retained baseline or `keep` row; an unretained scored
 `discard` may appear only as `best_observed`. Candidate and crash rows never
 become retained best results, milestones, or literature improvements.

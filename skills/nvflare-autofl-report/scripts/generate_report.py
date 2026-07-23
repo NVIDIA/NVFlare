@@ -51,14 +51,16 @@ PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 ATTEMPT_STATUSES = {"candidate", "keep", "discard", "crash"}
 FINALIZED_SCORE_STATUSES = {"baseline", "keep", "discard"}
 RETAINED_STATUSES = {"baseline", "keep"}
-LITERATURE_STATUSES = {"literature", "checkpoint", "event"}
 PENDING_MANIFEST_STATUSES = {"prepared", "ready_for_external_execution"}
 CAMPAIGN_LOCK_PATH = ".nvflare/autofl/campaign.lock"
 TRAINING_BUDGET_ARGS = {
     "aggregation_epochs",
+    "aggregator",
+    "aggregator_data_kind",
     "alpha",
     "batch_size",
     "eval_batch_size",
+    "final_eval_clients",
     "local_train_steps",
     "max_model_params",
     "min_clients",
@@ -113,7 +115,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--plotter",
         help="override path to nvflare-autofl plot_progress.py; relative paths resolve from campaign_dir",
     )
-    parser.add_argument("--mode", choices=["max", "min"], help="override objective direction")
     parser.add_argument("--metric", help="override optimization metric label")
     parser.add_argument("--confirm-interrupted", action="store_true", help="confirm an abruptly interrupted campaign")
     parser.add_argument("--agent-model")
@@ -137,8 +138,14 @@ def canonical_path(path: Path) -> Path:
         raise ValueError(f"cannot canonicalize report path {path}: {exc}") from exc
 
 
+def path_comparison_key(path: Path) -> str:
+    """Return a portable key that also catches aliases on case-insensitive filesystems."""
+
+    return os.path.normcase(str(canonical_path(path))).casefold()
+
+
 def paths_alias(left: Path, right: Path) -> bool:
-    if canonical_path(left) == canonical_path(right):
+    if path_comparison_key(left) == path_comparison_key(right):
         return True
     try:
         return left.exists() and right.exists() and os.path.samefile(left, right)
@@ -162,29 +169,76 @@ def validate_output_paths(outputs: Dict[str, Path], protected: Dict[str, Path]) 
                 )
 
 
+def process_is_running(pid: Any) -> bool:
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def fallback_lock_is_live(lock_path: Path, workspace: Path) -> bool:
+    """Conservatively distinguish an active fallback lock from a stale POSIX lock artifact."""
+
+    try:
+        metadata = json.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return True
+    if not isinstance(metadata, dict) or metadata.get("workspace") != str(workspace.resolve()):
+        return False
+    return process_is_running(metadata.get("pid"))
+
+
 @contextmanager
 def locked_campaign_workspace(workspace: Path, action: str) -> Iterator[None]:
     """Serialize report generation with Auto-FL lifecycle actions."""
 
     lock_path = workspace / CAMPAIGN_LOCK_PATH
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ValueError(f"cannot access Auto-FL campaign lock directory {lock_path.parent}: {exc}") from exc
     fallback = fcntl is None
     descriptor = None
     acquired = False
     fallback_created = False
+    lock_created = False
+    acquisition_complete = False
     try:
         if fallback:
-            try:
-                descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-                acquired = True
-                fallback_created = True
-            except FileExistsError as exc:
-                raise ValueError(
-                    f"Auto-FL campaign workspace is already in use: {workspace}; "
-                    "wait for the active lifecycle action to finish, then retry"
-                ) from exc
+            for _ in range(2):
+                try:
+                    descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                    acquired = True
+                    fallback_created = True
+                    break
+                except FileExistsError as exc:
+                    if fallback_lock_is_live(lock_path, workspace):
+                        raise ValueError(
+                            f"Auto-FL campaign workspace is already in use: {workspace}; "
+                            "wait for the active lifecycle action to finish, then retry"
+                        ) from exc
+                    try:
+                        lock_path.unlink()
+                    except OSError as unlink_exc:
+                        raise ValueError(
+                            f"cannot remove stale Auto-FL campaign lock {lock_path}: {unlink_exc}"
+                        ) from exc
+            if descriptor is None:
+                raise ValueError(f"could not acquire Auto-FL campaign lock: {lock_path}")
         else:
-            descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+            try:
+                descriptor = os.open(lock_path, os.O_RDONLY)
+            except FileNotFoundError:
+                try:
+                    descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+                    lock_created = True
+                except FileExistsError:
+                    descriptor = os.open(lock_path, os.O_RDONLY)
             try:
                 fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 acquired = True
@@ -193,14 +247,19 @@ def locked_campaign_workspace(workspace: Path, action: str) -> Iterator[None]:
                     f"Auto-FL campaign workspace is already in use: {workspace}; "
                     "wait for the active lifecycle action to finish, then retry"
                 ) from exc
-            os.ftruncate(descriptor, 0)
-        os.write(
-            descriptor,
-            (json.dumps({"pid": os.getpid(), "action": action, "workspace": str(workspace.resolve())}) + "\n").encode(
-                "utf-8"
-            ),
-        )
+        if fallback_created or lock_created:
+            os.write(
+                descriptor,
+                (
+                    json.dumps({"pid": os.getpid(), "action": action, "workspace": str(workspace.resolve())}) + "\n"
+                ).encode("utf-8"),
+            )
+        acquisition_complete = True
         yield
+    except OSError as exc:
+        if acquisition_complete:
+            raise
+        raise ValueError(f"cannot acquire Auto-FL campaign lock {lock_path}: {exc}") from exc
     finally:
         if descriptor is not None:
             if not fallback and acquired:
@@ -279,12 +338,12 @@ def load_config(path: Path) -> Dict[str, Any]:
     return value
 
 
-def better(score: Optional[float], incumbent: Optional[float], mode: str) -> bool:
+def better(score: Optional[float], incumbent: Optional[float]) -> bool:
     if score is None:
         return False
     if incumbent is None:
         return True
-    return score > incumbent if mode == "max" else score < incumbent
+    return score > incumbent
 
 
 def normalize_contract_sections(config: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
@@ -316,12 +375,17 @@ def metric_contract(
     return str(metric), str(requested), str(measurement_source), str(contract_source)
 
 
-def infer_mode(config: Dict[str, Any], state: Dict[str, Any], requested: Optional[str]) -> str:
-    if requested:
-        return requested
+def validate_maximization(config: Dict[str, Any], state: Dict[str, Any]) -> str:
     objective = config.get("objective") if isinstance(config.get("objective"), dict) else {}
-    value = objective.get("mode") or objective.get("direction") or state.get("mode") or "max"
-    return str(value).lower() if str(value).lower() in {"max", "min"} else "max"
+    declared = [
+        ("autofl.yaml objective.mode", objective.get("mode")),
+        ("autofl.yaml objective.direction", objective.get("direction")),
+        ("campaign state mode", state.get("mode")),
+    ]
+    for source, value in declared:
+        if value is not None and str(value).strip().lower() != "max":
+            raise ValueError(f"{source}={value!r} is unsupported; product Auto-FL campaigns maximize their metric")
+    return "max"
 
 
 def verify_stopped(state_path: Path, confirm_interrupted: bool) -> Tuple[Dict[str, Any], str, List[str]]:
@@ -426,7 +490,7 @@ def select_baseline(records: Sequence[RunRecord]) -> Optional[RunRecord]:
     )
 
 
-def select_best(records: Sequence[RunRecord], mode: str, retained_only: bool = False) -> Optional[RunRecord]:
+def select_best(records: Sequence[RunRecord], retained_only: bool = False) -> Optional[RunRecord]:
     candidates = [
         record
         for record in records
@@ -435,14 +499,14 @@ def select_best(records: Sequence[RunRecord], mode: str, retained_only: bool = F
     ]
     if not candidates:
         return None
-    return (max if mode == "max" else min)(candidates, key=lambda record: record.score)
+    return max(candidates, key=lambda record: record.score)
 
 
-def running_best_milestones(records: Sequence[RunRecord], mode: str, limit: int) -> List[Dict[str, Any]]:
+def running_best_milestones(records: Sequence[RunRecord], limit: int) -> List[Dict[str, Any]]:
     milestones = []
     incumbent = None
     for record in records:
-        if not is_finalized_scored_record(record) or not better(record.score, incumbent, mode):
+        if not is_finalized_scored_record(record) or not better(record.score, incumbent):
             continue
         previous = incumbent
         incumbent = record.score
@@ -454,7 +518,7 @@ def running_best_milestones(records: Sequence[RunRecord], mode: str, limit: int)
                 "score": record.score,
                 "delta_from_previous_best": None if previous is None else record.score - previous,
                 "improvement_from_previous_best": (
-                    None if previous is None else improvement_amount(record.score, previous, mode)
+                    None if previous is None else improvement_amount(record.score, previous)
                 ),
                 "hypothesis": record.diff_summary,
                 "changed_files": split_files(record.changed_files),
@@ -481,9 +545,8 @@ def running_best_milestones(records: Sequence[RunRecord], mode: str, limit: int)
     return milestones
 
 
-def improvement_amount(score: float, incumbent: float, mode: str) -> float:
-    delta = score - incumbent
-    return delta if mode == "max" else -delta
+def improvement_amount(score: float, incumbent: float) -> float:
+    return score - incumbent
 
 
 def split_files(value: str) -> List[str]:
@@ -507,7 +570,7 @@ def candidate_lineage(best: Optional[RunRecord], records: Sequence[RunRecord]) -
         chain.append(current.name)
         changed_files.extend(split_files(current.changed_files))
         if not current.base_candidate:
-            complete = current.status == "baseline" or current.name == "baseline"
+            complete = current.status == "baseline"
             break
         base_candidate = current.base_candidate
         current = by_name.get(base_candidate)
@@ -536,10 +599,7 @@ def parse_sources(text: str) -> List[str]:
 
 
 def is_literature_event(record: RunRecord) -> bool:
-    text = " ".join(
-        [record.name, record.diff_summary, record.run_command, record.artifacts, record.failure_reason]
-    ).lower()
-    return record.status in LITERATURE_STATUSES and (record.status == "literature" or "literature" in text)
+    return record.status == "literature"
 
 
 def inferred_candidate_kind(record: RunRecord) -> str:
@@ -632,14 +692,14 @@ def manifest_summary(record: Optional[RunRecord], campaign_root: Path) -> Dict[s
     }
 
 
-def literature_outcomes(records: Sequence[RunRecord], mode: str) -> List[Dict[str, Any]]:
+def literature_outcomes(records: Sequence[RunRecord]) -> List[Dict[str, Any]]:
     events = []
     for index, record in enumerate(records):
         if is_literature_event(record):
             events.append((index, record, record.literature_event_id))
     outcomes = []
     for start, event, event_id in events:
-        before = select_best(records[:start], mode, retained_only=True)
+        before = select_best(records[:start], retained_only=True)
         attempts = [
             record
             for index, record in enumerate(records)
@@ -650,11 +710,11 @@ def literature_outcomes(records: Sequence[RunRecord], mode: str) -> List[Dict[st
             and record.literature_event_id == event_id
         ]
         scored = [record for record in attempts if is_finalized_scored_record(record)]
-        segment_best = select_best(scored, mode)
+        segment_best = select_best(scored)
         if segment_best is None:
             outcome = "failed" if attempts else "not_evaluated"
             delta = None
-        elif before is None or better(segment_best.score, before.score, mode):
+        elif before is None or better(segment_best.score, before.score):
             outcome = "helped"
             delta = None if before is None else segment_best.score - before.score
         elif segment_best.score == before.score:
@@ -695,7 +755,7 @@ def literature_outcomes(records: Sequence[RunRecord], mode: str) -> List[Dict[st
     return outcomes
 
 
-def candidate_outcome_payload(record: RunRecord, incumbent: Optional[RunRecord], mode: str) -> Dict[str, Any]:
+def candidate_outcome_payload(record: RunRecord, incumbent: Optional[RunRecord]) -> Dict[str, Any]:
     delta = None if incumbent is None or record.score is None else record.score - incumbent.score
     return {
         "row": record.index + 1,
@@ -706,9 +766,7 @@ def candidate_outcome_payload(record: RunRecord, incumbent: Optional[RunRecord],
         "incumbent_score": None if incumbent is None else incumbent.score,
         "delta_from_incumbent": delta,
         "improvement_from_incumbent": (
-            None
-            if incumbent is None or record.score is None
-            else improvement_amount(record.score, incumbent.score, mode)
+            None if incumbent is None or record.score is None else improvement_amount(record.score, incumbent.score)
         ),
         "hypothesis": record.diff_summary,
         "changed_files": split_files(record.changed_files),
@@ -793,7 +851,7 @@ def failure_outcomes(items: Sequence[Dict[str, Any]], limit: int) -> List[Dict[s
     return outcomes[: max(0, limit)]
 
 
-def family_outcomes(records: Sequence[RunRecord], mode: str, helped_rows: set[int]) -> List[Dict[str, Any]]:
+def family_outcomes(records: Sequence[RunRecord], helped_rows: set[int]) -> List[Dict[str, Any]]:
     families: Dict[str, List[RunRecord]] = {}
     for record in records:
         if record.status not in {"keep", "discard", "crash"}:
@@ -809,7 +867,8 @@ def family_outcomes(records: Sequence[RunRecord], mode: str, helped_rows: set[in
             for record in attempts
             if record.status == "keep" and record.score is not None and record.index not in helped_rows
         ]
-        if helped and (counts.get("discard", 0) or counts.get("crash", 0)):
+        unscored_keeps = [record for record in attempts if record.status == "keep" and record.score is None]
+        if helped and (counts.get("discard", 0) or counts.get("crash", 0) or unscored_keeps):
             outcome = "mixed"
         elif helped:
             outcome = "helped"
@@ -817,8 +876,8 @@ def family_outcomes(records: Sequence[RunRecord], mode: str, helped_rows: set[in
             outcome = "not_confirmed"
         else:
             outcome = "failed"
-        retained = select_best([record for record in attempts if record.status == "keep"], mode, retained_only=True)
-        observed = select_best(attempts, mode)
+        retained = select_best([record for record in attempts if record.status == "keep"], retained_only=True)
+        observed = select_best(attempts)
         outcomes.append(
             {
                 "algorithm_family": family,
@@ -839,7 +898,7 @@ def family_outcomes(records: Sequence[RunRecord], mode: str, helped_rows: set[in
     return sorted(outcomes, key=lambda item: (order[item["outcome"]], item["algorithm_family"]))
 
 
-def literature_digest(reviews: Sequence[Dict[str, Any]], mode: str) -> Dict[str, Any]:
+def literature_digest(reviews: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     counts = dict(sorted(Counter(review["outcome"] for review in reviews).items()))
     helped = [review for review in reviews if review["outcome"] == "helped"]
     strongest = None
@@ -848,7 +907,7 @@ def literature_digest(reviews: Sequence[Dict[str, Any]], mode: str) -> Dict[str,
         def improvement(review: Dict[str, Any]) -> float:
             if review["best_score"] is None or review["incumbent_score"] is None:
                 return -math.inf
-            return improvement_amount(review["best_score"], review["incumbent_score"], mode)
+            return improvement_amount(review["best_score"], review["incumbent_score"])
 
         strongest = max(
             helped,
@@ -867,7 +926,6 @@ def literature_digest(reviews: Sequence[Dict[str, Any]], mode: str) -> Dict[str,
 
 def outcome_summary(
     records: Sequence[RunRecord],
-    mode: str,
     reviews: Sequence[Dict[str, Any]],
     max_milestones: int,
     max_non_improvements: int,
@@ -878,34 +936,34 @@ def outcome_summary(
     failures = []
     for record in records:
         if record.status in RETAINED_STATUSES and record.score is not None:
-            if record.status == "keep" and incumbent is not None and better(record.score, incumbent.score, mode):
-                helped.append(candidate_outcome_payload(record, incumbent, mode))
-            if incumbent is None or better(record.score, incumbent.score, mode):
+            if record.status == "keep" and incumbent is not None and better(record.score, incumbent.score):
+                helped.append(candidate_outcome_payload(record, incumbent))
+            if incumbent is None or better(record.score, incumbent.score):
                 incumbent = record
             continue
         if record.status == "discard":
-            payload = candidate_outcome_payload(record, incumbent, mode)
+            payload = candidate_outcome_payload(record, incumbent)
             (non_improvements if record.score is not None else failures).append(payload)
         elif record.status == "crash":
-            failures.append(candidate_outcome_payload(record, incumbent, mode))
+            failures.append(candidate_outcome_payload(record, incumbent))
     helped_rows = {item["row"] - 1 for item in helped}
     return {
         "helped": helped,
         "major_helped": select_major_improvements(helped, max_milestones),
         "not_confirmed": representative_non_improvements(non_improvements, max_non_improvements),
         "failures": failure_outcomes(failures, max_non_improvements),
-        "families": family_outcomes(records, mode, helped_rows),
-        "literature": literature_digest(reviews, mode),
+        "families": family_outcomes(records, helped_rows),
+        "literature": literature_digest(reviews),
     }
 
 
 def selection_summary(
-    best: Optional[RunRecord], baseline: Optional[RunRecord], lineage: Dict[str, Any], mode: str
+    best: Optional[RunRecord], baseline: Optional[RunRecord], lineage: Dict[str, Any]
 ) -> Optional[Dict[str, Any]]:
     if best is None:
         return None
     delta = None if baseline is None else best.score - baseline.score
-    improvement = None if baseline is None else improvement_amount(best.score, baseline.score, mode)
+    improvement = None if baseline is None else improvement_amount(best.score, baseline.score)
     return {
         "candidate": best.name,
         "score": best.score,
@@ -918,7 +976,7 @@ def selection_summary(
         "literature_event_id": best.literature_event_id,
         "lineage": lineage,
         "reason": (
-            "It is the best scored retained result under the " + mode + " objective."
+            "It is the best scored retained result under the maximization objective."
             if best.status != "baseline"
             else "No retained candidate improved on the scored baseline."
         ),
@@ -1025,11 +1083,72 @@ def comparability_warnings(
     return warnings, changes
 
 
+def state_accounting(
+    state: Dict[str, Any],
+    candidate_attempts: int,
+    baseline: Optional[RunRecord],
+    best: Optional[RunRecord],
+) -> Tuple[Dict[str, Any], List[str]]:
+    ledger_baseline = None if baseline is None else baseline.score
+    ledger_improvement = None if baseline is None or best is None else best.score - baseline.score
+    ledger_values = {
+        "candidate_attempts": candidate_attempts,
+        "baseline_score": ledger_baseline,
+        "improvement": ledger_improvement,
+    }
+    state_values = {key: state.get(key) for key in ledger_values}
+    state_values["abandoned_candidates"] = state.get("abandoned_candidates")
+    warnings = []
+
+    if "candidate_attempts" in state:
+        state_attempts = finite_float(state.get("candidate_attempts"))
+        if state_attempts is None or not state_attempts.is_integer() or int(state_attempts) != candidate_attempts:
+            warnings.append(
+                "Campaign state candidate_attempts disagrees with the ledger "
+                f"(state={state.get('candidate_attempts')!r}, ledger={candidate_attempts})."
+            )
+
+    for field, ledger_value in (("baseline_score", ledger_baseline), ("improvement", ledger_improvement)):
+        if field not in state:
+            continue
+        state_value = finite_float(state.get(field))
+        agrees = (
+            state_value is None
+            and ledger_value is None
+            or state_value is not None
+            and ledger_value is not None
+            and math.isclose(state_value, ledger_value, rel_tol=1e-9, abs_tol=1e-12)
+        )
+        if not agrees:
+            warnings.append(
+                f"Campaign state {field} disagrees with the ledger "
+                f"(state={state.get(field)!r}, ledger={ledger_value!r})."
+            )
+
+    abandoned_candidates = state.get("abandoned_candidates")
+    if abandoned_candidates is not None:
+        parsed_abandoned = finite_float(abandoned_candidates)
+        if parsed_abandoned is None or not parsed_abandoned.is_integer() or parsed_abandoned < 0:
+            warnings.append(
+                f"Campaign state abandoned_candidates is invalid: {abandoned_candidates!r}; it was not reported."
+            )
+            abandoned_candidates = None
+        else:
+            abandoned_candidates = int(parsed_abandoned)
+
+    return {
+        "consistent": not warnings,
+        "ledger": ledger_values,
+        "campaign_state": state_values,
+        "abandoned_candidates": abandoned_candidates,
+    }, warnings
+
+
 def default_plotter_path() -> Path:
     return Path(__file__).resolve().parents[2] / "nvflare-autofl" / "scripts" / "plot_progress.py"
 
 
-def refresh_plot(results: Path, output: Path, mode: str, metric: str, plotter_path: Path) -> Optional[str]:
+def refresh_plot(results: Path, output: Path, metric: str, plotter_path: Path) -> Optional[str]:
     if not plotter_path.is_file():
         return f"Auto-FL progress plotter not found at {plotter_path}; existing plot was preserved."
     spec = importlib.util.spec_from_file_location("nvflare_autofl_report_plotter", plotter_path)
@@ -1040,7 +1159,7 @@ def refresh_plot(results: Path, output: Path, mode: str, metric: str, plotter_pa
     sys.modules[spec.name] = module
     try:
         spec.loader.exec_module(module)
-        module.plot_progress(module.load_results(results), output, mode, metric)
+        module.plot_progress(module.load_results(results), output, metric_label=metric)
     except Exception as exc:  # plotting should not destroy an otherwise useful stopped-campaign report
         return f"Could not refresh progress plot ({type(exc).__name__}: {exc}); existing plot was preserved."
     finally:
@@ -1431,6 +1550,8 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord]) -> st
             f"- Status counts: `{json.dumps(counts, sort_keys=True)}`",
             f"- Scored comparable runs: `{summary['scored_runs']}`",
             f"- Crashes: `{counts.get('crash', 0)}`",
+            f"- Abandoned candidates: "
+            f"`{summary['abandoned_candidates'] if summary['abandoned_candidates'] is not None else 'not recorded'}`",
         ]
     )
 
@@ -1522,11 +1643,11 @@ def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
     config = load_config(config_path)
     config, config_warnings = normalize_contract_sections(config)
     warnings.extend(config_warnings)
-    mode = infer_mode(config, state, args.mode)
+    mode = validate_maximization(config, state)
     metric, requested_metric, metric_source, metric_contract_source = metric_contract(config, state, args)
     baseline = select_baseline(records)
-    best = select_best(records, mode, retained_only=True)
-    observed_best = select_best(records, mode)
+    best = select_best(records, retained_only=True)
+    observed_best = select_best(records)
     if best is None and observed_best is not None:
         warnings.append(
             f"Best observed row {observed_best.name} was not retained; no scored baseline or kept candidate is available."
@@ -1539,7 +1660,6 @@ def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
     plot_warning = refresh_plot(
         results_path,
         progress_path,
-        mode,
         metric,
         plotter_path,
     )
@@ -1559,13 +1679,15 @@ def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
     candidate_attempts = len(
         [record for record in records if record.status in ATTEMPT_STATUSES and not is_baseline(record)]
     )
+    accounting, accounting_warnings = state_accounting(state, candidate_attempts, baseline, best)
+    warnings.extend(accounting_warnings)
     environment = config.get("environment") if isinstance(config.get("environment"), dict) else {}
     budget = config.get("budget") if isinstance(config.get("budget"), dict) else {}
     fixed_budget = budget.get("fixed_training_budget", {})
     cap = state.get("candidate_cap")
     cap_label = "uncapped" if cap in {None, "", 0} else cap
     lineage = candidate_lineage(best, records)
-    reviews = literature_outcomes(records, mode)
+    reviews = literature_outcomes(records)
     summary = {
         "schema_version": SUMMARY_SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -1584,8 +1706,10 @@ def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
         "environment": str(environment.get("requested") or state.get("environment") or "not declared"),
         "candidate_cap": cap_label,
         "candidate_cap_source": state.get("candidate_cap_source") or "not recorded",
+        "abandoned_candidates": accounting["abandoned_candidates"],
         "declared_fixed_budget": fixed_budget if isinstance(fixed_budget, dict) else {},
         "candidate_attempts": candidate_attempts,
+        "state_accounting": accounting,
         "scored_runs": len(scored),
         "runtime_seconds": sum(record.runtime_seconds for record in records),
         "status_counts": status_counts,
@@ -1595,11 +1719,10 @@ def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
         "best_lineage": lineage,
         "best_manifest": manifest_summary(best, root),
         "best_command_changes": changes,
-        "milestones": running_best_milestones(records, mode, args.max_milestones),
-        "selection": selection_summary(best, baseline, lineage, mode),
+        "milestones": running_best_milestones(records, args.max_milestones),
+        "selection": selection_summary(best, baseline, lineage),
         "outcome_summary": outcome_summary(
             records,
-            mode,
             reviews,
             args.max_milestones,
             args.max_non_improvements,
@@ -1624,6 +1747,11 @@ def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
 
 def generate(args: argparse.Namespace) -> Dict[str, Any]:
     root = Path(args.campaign_dir).expanduser().resolve()
+    if not root.is_dir():
+        raise ValueError(f"Auto-FL campaign directory not found: {root}")
+    results_path = resolve_path(root, args.results)
+    if not results_path.is_file():
+        raise ValueError(f"Auto-FL ledger not found: {results_path}")
     with locked_campaign_workspace(root, "report"):
         return generate_locked(args, root)
 
@@ -1632,7 +1760,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     try:
         summary = generate(args)
-    except ValueError as exc:
+    except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     print(json.dumps({"status": "ok", "artifacts": summary["artifacts"], "best": summary["best"]}, sort_keys=True))

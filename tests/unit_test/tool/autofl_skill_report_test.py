@@ -87,7 +87,7 @@ def _write_rows(tmp_path, rows):
         writer.writerows(rows)
 
 
-def _write_campaign(tmp_path, *, active=False, mode="max"):
+def _write_campaign(tmp_path, *, active=False):
     rows = [
         _row(
             "baseline",
@@ -106,7 +106,7 @@ def _write_campaign(tmp_path, *, active=False, mode="max"):
             literature_event_id="lit-0001",
         ),
         _row(
-            "keep" if mode == "min" else "discard",
+            "discard",
             "weak_prox",
             "0.490000",
             base_candidate="baseline",
@@ -114,7 +114,7 @@ def _write_campaign(tmp_path, *, active=False, mode="max"):
             literature_event_id="lit-0001",
         ),
         _row(
-            "discard" if mode == "min" else "keep",
+            "keep",
             "algorithm_code",
             "0.600000",
             changed_files="client.py,job.py",
@@ -133,7 +133,7 @@ def _write_campaign(tmp_path, *, active=False, mode="max"):
             ),
         ),
         _row(
-            "discard" if mode == "min" else "keep",
+            "keep",
             "inherited_tuning",
             "0.650000",
             changed_files="none",
@@ -169,7 +169,7 @@ def _write_campaign(tmp_path, *, active=False, mode="max"):
         "  requested_metric: accuracy\n"
         "  optimization_metric: test_accuracy\n"
         "  metric_source: held-out test set\n"
-        f"  mode: {mode}\n"
+        "  mode: max\n"
         "environment:\n"
         "  requested: sim\n"
         "budget:\n"
@@ -183,7 +183,7 @@ def _write_campaign(tmp_path, *, active=False, mode="max"):
         "final_response_allowed": not active,
         "candidate_cap": None,
         "candidate_cap_source": "uncapped",
-        "mode": mode,
+        "mode": "max",
     }
     tmp_path.joinpath(".nvflare/autofl").mkdir(parents=True)
     tmp_path.joinpath(".nvflare/autofl/campaign_state.json").write_text(json.dumps(state), encoding="utf-8")
@@ -268,7 +268,15 @@ def test_report_rejects_output_paths_that_alias_campaign_evidence_before_plottin
     assert not tmp_path.joinpath("autofl_report_summary.json").exists()
 
 
-def test_report_rejects_mutually_aliased_output_paths(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "left_flag,right_flag",
+    [
+        ("--progress", "--output"),
+        ("--progress", "--summary-json"),
+        ("--output", "--summary-json"),
+    ],
+)
+def test_report_rejects_mutually_aliased_output_paths(tmp_path, monkeypatch, left_flag, right_flag):
     reporter = _load_reporter()
     _write_campaign(tmp_path)
 
@@ -277,12 +285,49 @@ def test_report_rejects_mutually_aliased_output_paths(tmp_path, monkeypatch):
 
     monkeypatch.setattr(reporter, "refresh_plot", unexpected_plot)
 
-    with pytest.raises(ValueError, match="--output and --summary-json must be distinct"):
+    with pytest.raises(ValueError, match="must be distinct"):
         reporter.generate(
-            reporter.parse_args([str(tmp_path), "--output", "combined-report", "--summary-json", "combined-report"])
+            reporter.parse_args([str(tmp_path), left_flag, "combined-report", right_flag, "combined-report"])
         )
 
     assert not tmp_path.joinpath("combined-report").exists()
+
+
+def test_report_rejects_case_folded_output_aliases(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: pytest.fail("plot must not run"))
+
+    with pytest.raises(ValueError, match="must be distinct"):
+        reporter.generate(
+            reporter.parse_args([str(tmp_path), "--output", "Combined.MD", "--summary-json", "combined.md"])
+        )
+
+    assert not tmp_path.joinpath("Combined.MD").exists()
+    assert not tmp_path.joinpath("combined.md").exists()
+
+
+def test_report_rejects_output_alias_to_plotter_before_loading_it(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    plotter_path = tmp_path / "tools/plot_progress.py"
+    plotter_path.parent.mkdir()
+    plotter_path.write_text("raise AssertionError('plotter must not load')\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="aliases protected campaign input progress plotter"):
+        reporter.generate(
+            reporter.parse_args(
+                [
+                    str(tmp_path),
+                    "--plotter",
+                    str(plotter_path.relative_to(tmp_path)),
+                    "--output",
+                    str(plotter_path.relative_to(tmp_path)),
+                ]
+            )
+        )
+
+    assert plotter_path.read_text(encoding="utf-8") == "raise AssertionError('plotter must not load')\n"
 
 
 @pytest.mark.parametrize("link_kind", ["symlink", "hardlink"])
@@ -318,6 +363,80 @@ def test_report_refuses_while_campaign_workspace_lock_is_held(tmp_path, monkeypa
     assert "campaign workspace is already in use" in capsys.readouterr().err
     assert not tmp_path.joinpath("autofl_final_report.md").exists()
     assert not tmp_path.joinpath("autofl_report_summary.json").exists()
+
+
+def test_report_does_not_create_lock_tree_for_invalid_campaign_path(tmp_path):
+    reporter = _load_reporter()
+    missing_campaign = tmp_path / "missing-campaign"
+
+    with pytest.raises(ValueError, match="campaign directory not found"):
+        reporter.generate(reporter.parse_args([str(missing_campaign)]))
+
+    assert not missing_campaign.exists()
+
+    empty_campaign = tmp_path / "empty-campaign"
+    empty_campaign.mkdir()
+    with pytest.raises(ValueError, match="ledger not found"):
+        reporter.generate(reporter.parse_args([str(empty_campaign)]))
+
+    assert not empty_campaign.joinpath(".nvflare").exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX read-only flock behavior")
+def test_report_can_lock_read_only_campaign_evidence(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    campaign = tmp_path / "campaign"
+    campaign.mkdir()
+    _write_campaign(campaign)
+    lock_path = campaign / reporter.CAMPAIGN_LOCK_PATH
+    lock_path.write_text(
+        json.dumps({"pid": 1, "action": "status", "workspace": str(campaign.resolve())}) + "\n",
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "outputs"
+    output_dir.mkdir()
+    lock_path.chmod(0o400)
+    campaign.chmod(0o500)
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: None)
+
+    try:
+        summary = reporter.generate(
+            reporter.parse_args(
+                [
+                    str(campaign),
+                    "--progress",
+                    str(output_dir / "progress.png"),
+                    "--output",
+                    str(output_dir / "report.md"),
+                    "--summary-json",
+                    str(output_dir / "summary.json"),
+                ]
+            )
+        )
+    finally:
+        campaign.chmod(0o700)
+        lock_path.chmod(0o600)
+
+    assert summary["best"]["name"] == "inherited_tuning"
+    assert output_dir.joinpath("report.md").is_file()
+    assert output_dir.joinpath("summary.json").is_file()
+
+
+def test_fallback_lock_reclaims_stale_lock_from_other_workspace(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    lock_path = tmp_path / reporter.CAMPAIGN_LOCK_PATH
+    lock_path.write_text(
+        json.dumps({"pid": reporter.os.getpid(), "action": "status", "workspace": "/copied/from/linux"}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(reporter, "fcntl", None)
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: None)
+
+    summary = reporter.generate(reporter.parse_args([str(tmp_path)]))
+
+    assert summary["best"]["name"] == "inherited_tuning"
+    assert not lock_path.exists()
 
 
 def test_report_refuses_active_campaign_without_confirmation(tmp_path, monkeypatch):
@@ -596,6 +715,35 @@ def test_report_summarizes_helped_mixed_unconfirmed_and_failed_families(tmp_path
     assert "**2 attempt(s):** exit_code=1" in report
 
 
+def test_unscored_keep_makes_otherwise_helpful_family_mixed(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    _write_rows(
+        tmp_path,
+        [
+            _row("baseline", "baseline", "0.500000"),
+            _row("keep", "gain", "0.600000", algorithm_family="fedavgm"),
+            _row("keep", "unscored_followup", "", algorithm_family="fedavgm"),
+        ],
+    )
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+
+    assert summary["outcome_summary"]["families"][0]["outcome"] == "mixed"
+
+
+def test_first_keep_without_baseline_is_not_claimed_as_helped(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    _write_rows(tmp_path, [_row("keep", "first_retained", "0.600000", algorithm_family="new_algorithm")])
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+
+    assert summary["best"]["name"] == "first_retained"
+    assert summary["outcome_summary"]["helped"] == []
+    assert summary["outcome_summary"]["families"][0]["outcome"] == "not_confirmed"
+
+
 def test_report_uses_explicit_literature_links_across_later_events(tmp_path, monkeypatch):
     reporter = _load_reporter()
     rows = [
@@ -671,6 +819,25 @@ def test_candidate_name_containing_literature_is_not_a_checkpoint(tmp_path, monk
         "literature_review_based_init",
         "fedprox_followup",
     ]
+
+
+@pytest.mark.parametrize("status", ["checkpoint", "event", "keep", "discard", "crash"])
+def test_only_literal_literature_status_opens_a_checkpoint(tmp_path, monkeypatch, status):
+    reporter = _load_reporter()
+    rows = [
+        _row("baseline", "baseline", "0.500000"),
+        _row(status, "literature_review_like_name", "0.600000", literature_event_id="lit-false"),
+    ]
+    _write_rows(tmp_path, rows)
+    tmp_path.joinpath("autofl.yaml").write_text("objective:\n  metric: accuracy\n", encoding="utf-8")
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state_path.parent.mkdir(parents=True)
+    state_path.write_text(json.dumps({"final_response_allowed": True}), encoding="utf-8")
+    tmp_path.joinpath("progress.png").write_bytes(b"\x89PNG\r\n\x1a\nplot")
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+
+    assert summary["literature_reviews"] == []
 
 
 def test_literature_evidence_preserves_crash_and_blank_discard_status(tmp_path, monkeypatch):
@@ -762,9 +929,93 @@ def test_report_warns_about_executed_budget_and_test_metric(tmp_path, monkeypatc
     assert summary["best_command_changes"]["aggregation_epochs"] == {"baseline": "1", "best": "2"}
 
 
-def test_report_supports_minimization_and_agent_context_without_git(tmp_path, monkeypatch):
+def test_report_warns_when_aggregation_or_evaluation_population_changes(tmp_path, monkeypatch):
     reporter = _load_reporter()
-    _write_campaign(tmp_path, mode="min")
+    _write_campaign(tmp_path)
+    _write_rows(
+        tmp_path,
+        [
+            _row(
+                "baseline",
+                "baseline",
+                "0.500000",
+                run_command="python job.py --aggregator weighted --final_eval_clients site-1",
+            ),
+            _row(
+                "keep",
+                "changed_comparison",
+                "0.700000",
+                base_candidate="baseline",
+                run_command="python job.py --aggregator median --final_eval_clients all",
+            ),
+        ],
+    )
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+    warnings = "\n".join(summary["warnings"])
+
+    assert "aggregator" in warnings
+    assert "final_eval_clients" in warnings
+    assert summary["best_command_changes"]["aggregator"] == {"baseline": "weighted", "best": "median"}
+    assert summary["best_command_changes"]["final_eval_clients"] == {"baseline": "site-1", "best": "all"}
+
+
+def test_report_surfaces_abandoned_candidates_and_state_ledger_disagreements(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state.update(
+        {
+            "abandoned_candidates": 3,
+            "candidate_attempts": 99,
+            "baseline_score": 0.4,
+            "improvement": 0.1,
+        }
+    )
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+    report = tmp_path.joinpath("autofl_final_report.md").read_text(encoding="utf-8")
+    warnings = "\n".join(summary["warnings"])
+
+    assert summary["abandoned_candidates"] == 3
+    assert summary["state_accounting"]["consistent"] is False
+    assert summary["state_accounting"]["ledger"] == {
+        "candidate_attempts": 4,
+        "baseline_score": 0.5,
+        "improvement": pytest.approx(0.15),
+    }
+    assert "candidate_attempts disagrees" in warnings
+    assert "baseline_score disagrees" in warnings
+    assert "improvement disagrees" in warnings
+    assert "- Abandoned candidates: `3`" in report
+
+
+def test_report_state_accounting_matches_authoritative_state(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state.update(
+        {
+            "abandoned_candidates": 0,
+            "candidate_attempts": 4,
+            "baseline_score": 0.5,
+            "improvement": 0.15,
+        }
+    )
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+
+    assert summary["state_accounting"]["consistent"] is True
+    assert not any("disagrees with the ledger" in warning for warning in summary["warnings"])
+
+
+def test_report_records_agent_context_without_git(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
     context = tmp_path / "agent.json"
     context.write_text(json.dumps({"provider": "codex", "notes": "stopped by user"}), encoding="utf-8")
 
@@ -783,17 +1034,35 @@ def test_report_supports_minimization_and_agent_context_without_git(tmp_path, mo
     )
 
     assert not tmp_path.joinpath(".git").exists()
-    assert summary["objective"]["mode"] == "min"
-    assert summary["best"]["name"] == "weak_prox"
-    assert summary["selection"]["delta_from_baseline"] == pytest.approx(-0.01)
-    assert summary["selection"]["improvement_from_baseline"] == pytest.approx(0.01)
-    assert summary["outcome_summary"]["helped"][0]["name"] == "weak_prox"
+    assert summary["objective"]["mode"] == "max"
+    assert summary["best"]["name"] == "inherited_tuning"
     assert summary["agent_context"] == {
         "model": "gpt-test",
         "notes": "stopped by user",
         "provider": "codex",
         "reasoning_effort": "high",
     }
+
+
+@pytest.mark.parametrize(
+    "config_text,state_update",
+    [
+        ("objective:\n  metric: loss\n  mode: min\n", {}),
+        ("objective:\n  metric: accuracy\n", {"mode": "min"}),
+    ],
+)
+def test_report_rejects_minimization_contracts(tmp_path, monkeypatch, config_text, state_update):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    tmp_path.joinpath("autofl.yaml").write_text(config_text, encoding="utf-8")
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state.update(state_update)
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: pytest.fail("plot must not run"))
+
+    with pytest.raises(ValueError, match="campaigns maximize their metric"):
+        reporter.generate(reporter.parse_args([str(tmp_path)]))
 
 
 def test_report_keeps_existing_plot_when_refresh_fails(tmp_path, monkeypatch):
@@ -1016,14 +1285,32 @@ def test_refresh_plot_reloads_plotter_without_leaking_module(tmp_path):
             "from pathlib import Path\n"
             "def load_results(path):\n"
             "    return []\n"
-            "def plot_progress(records, output, mode, metric):\n"
+            "def plot_progress(records, output, metric_label, max_labels=6):\n"
+            "    assert metric_label == 'accuracy'\n"
             f"    Path(output).write_text('{marker}', encoding='utf-8')\n",
             encoding="utf-8",
         )
 
-        assert reporter.refresh_plot(results_path, output_path, "max", "accuracy", plotter_path) is None
+        assert reporter.refresh_plot(results_path, output_path, "accuracy", plotter_path) is None
         assert output_path.read_text(encoding="utf-8") == marker
         assert module_name not in sys.modules
+
+
+def test_refresh_plot_uses_merged_product_plotter_contract(tmp_path):
+    reporter = _load_reporter()
+    plotter_path = Path(__file__).parents[3] / "skills/nvflare-autofl/scripts/plot_progress.py"
+    results_path = tmp_path / "results.tsv"
+    _write_rows(
+        tmp_path,
+        [
+            _row("baseline", "baseline", "0.5"),
+            _row("keep", "candidate", "0.6"),
+        ],
+    )
+    output_path = tmp_path / "progress.png"
+
+    assert reporter.refresh_plot(results_path, output_path, "test_accuracy", plotter_path) is None
+    assert reporter.is_png(output_path)
 
 
 def test_candidate_lineage_marks_cycles_incomplete():
@@ -1043,6 +1330,37 @@ def test_candidate_lineage_marks_cycles_incomplete():
     second = reporter.RunRecord(index=1, status="keep", name="second", base_candidate="first", **fields)
 
     assert reporter.candidate_lineage(second, [first, second])["complete"] is False
+
+
+def test_candidate_lineage_requires_baseline_status_not_name():
+    reporter = _load_reporter()
+    fields = {
+        "score": 0.5,
+        "runtime_seconds": 1.0,
+        "changed_files": "none",
+        "diff_summary": "candidate",
+        "run_command": "python job.py",
+        "artifacts": "runs/candidate",
+        "failure_reason": "",
+        "candidate_manifest": "",
+        "patch_sha256": "",
+    }
+    named_baseline = reporter.RunRecord(
+        index=0,
+        status="keep",
+        name="baseline",
+        base_candidate="",
+        **fields,
+    )
+
+    assert reporter.candidate_lineage(named_baseline, [named_baseline])["complete"] is False
+
+
+def test_campaign_local_manifest_path_rejects_traversal_identifiers(tmp_path):
+    reporter = _load_reporter()
+
+    for candidate_id in ("../outside", "/tmp/outside", r"..\outside", ".", ".."):
+        assert reporter.campaign_local_manifest_path(tmp_path, candidate_id) is None
 
 
 def test_budget_comparison_accepts_numeric_equivalence():

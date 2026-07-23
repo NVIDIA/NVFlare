@@ -284,7 +284,11 @@ the active runner and holds it across evidence reads, plotting, and report
 writes. A concurrent lifecycle action therefore causes a clean refusal rather
 than a stale or mixed report. Before any artifact write, the helper also rejects
 canonical or filesystem aliases between writable outputs and campaign evidence,
-and requires the plot, Markdown, and JSON destinations to be distinct.
+and requires the plot, Markdown, and JSON destinations to be distinct. A
+persisted POSIX lock file is a stable lock target, not proof of a live owner;
+read-only archives remain reportable when outputs point to writable locations.
+Case-folded collision checks keep output configurations safe on
+case-insensitive filesystems.
 
 Relative report-helper paths, including an overridden plotter, resolve from
 the campaign directory so agent execution is independent of shell location.
@@ -328,9 +332,15 @@ metric name, extraction source and artifact, candidate kind, algorithm family,
 and literature event linkage flow from the final `results.tsv` contract into
 the JSON summary and best-candidate report.
 
+The merged Auto-FL producer supports maximization only, so the report rejects
+obsolete minimization contracts. It derives candidate attempts, baseline, and
+improvement from the ledger, cross-checks those values against authoritative
+campaign state, and preserves the state-derived abandoned-candidate count.
+
 Finally, the report compares the declarative/imported budget with exact
 baseline and best-candidate commands. It highlights changed compute or data
-arguments, incomplete lineage, and repeated selection on test-like metrics.
+arguments, aggregation or final-evaluation populations, incomplete lineage,
+and repeated selection on test-like metrics.
 This makes the report a trust artifact rather than a polished restatement of
 the agent's conclusions.
 

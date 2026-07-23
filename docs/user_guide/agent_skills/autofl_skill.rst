@@ -145,6 +145,9 @@ candidate evidence.
 Report generation holds the same campaign lifecycle lock as the active Auto-FL
 runner. It refuses concurrent lifecycle activity and rejects custom plot,
 Markdown, or JSON output paths that alias campaign evidence or one another.
+The persisted POSIX lock file does not by itself mean a campaign is active, so
+a read-only campaign archive can be reported to explicitly writable output
+paths.
 
 The skill refreshes ``progress.png`` when plotting is available and generates:
 
@@ -169,6 +172,11 @@ literature event, plus grouped crashes. Missing family metadata stays
 ``unclassified``; the report does not guess mechanisms from candidate names.
 The trajectory keeps the first and final running best and the largest measured
 objective improvements rather than evenly sampling the campaign.
+
+The product campaign and report contracts support metric maximization only.
+The report also surfaces abandoned-candidate state and warns if the state's
+candidate-attempt, baseline, or improvement accounting disagrees with the
+ledger.
 
 As with active Auto-FL, users invoke the skill through their coding agent and
 do not run scripts from the installed skill directory themselves.
