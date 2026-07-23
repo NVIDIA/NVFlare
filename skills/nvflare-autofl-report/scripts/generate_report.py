@@ -32,7 +32,7 @@ from collections import Counter
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
 try:
@@ -167,6 +167,55 @@ def validate_output_paths(outputs: Dict[str, Path], protected: Dict[str, Path]) 
                     f"report output --{left_name} aliases protected campaign input {protected_name}: "
                     f"{canonical_path(left_path)}"
                 )
+
+
+def campaign_source_contract(root: Path, config: Dict[str, Any]) -> Tuple[Dict[str, Path], List[str]]:
+    protected = {"job source": root / "job.py"}
+    trust_contract = config.get("trust_contract", {})
+    if trust_contract is None:
+        trust_contract = {}
+    if not isinstance(trust_contract, dict):
+        raise ValueError("autofl.yaml trust_contract must be a mapping")
+
+    allowed_edit_paths = trust_contract.get("allowed_edit_paths") or []
+    if not isinstance(allowed_edit_paths, list):
+        raise ValueError("autofl.yaml trust_contract.allowed_edit_paths must be a list")
+    root_resolved = root.resolve()
+    for index, value in enumerate(allowed_edit_paths, start=1):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("autofl.yaml trust_contract.allowed_edit_paths must contain non-empty strings")
+        candidate = canonical_path(resolve_path(root, value))
+        try:
+            relative = candidate.relative_to(root_resolved)
+        except ValueError as exc:
+            raise ValueError(f"trust-contract source path escapes the campaign directory: {value}") from exc
+        if not relative.parts:
+            raise ValueError(f"trust-contract source path must name a file: {value}")
+        protected[f"managed source {index} ({relative.as_posix()})"] = candidate
+
+    allowed_create_patterns = trust_contract.get("allowed_create_patterns") or []
+    if not isinstance(allowed_create_patterns, list) or not all(
+        isinstance(pattern, str) and pattern for pattern in allowed_create_patterns
+    ):
+        raise ValueError("autofl.yaml trust_contract.allowed_create_patterns must be a list of patterns")
+    return protected, list(dict.fromkeys(allowed_create_patterns))
+
+
+def validate_output_create_patterns(outputs: Dict[str, Path], root: Path, patterns: Sequence[str]) -> None:
+    root_resolved = root.resolve()
+    for output_name, output_path in outputs.items():
+        try:
+            relative = canonical_path(output_path).relative_to(root_resolved)
+        except ValueError:
+            continue
+        posix_path = PurePosixPath(relative.as_posix())
+        if any(
+            posix_path.match(pattern) or (pattern.startswith("**/") and posix_path.match(pattern[3:]))
+            for pattern in patterns
+        ):
+            raise ValueError(
+                f"report output --{output_name} matches trust_contract.allowed_create_patterns: {relative.as_posix()}"
+            )
 
 
 def process_is_running(pid: Any) -> bool:
@@ -1617,6 +1666,10 @@ def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
 
     records = load_results(results_path)
     state, termination_reason, warnings = verify_stopped(state_path, args.confirm_interrupted)
+    config = load_config(config_path)
+    config, config_warnings = normalize_contract_sections(config)
+    warnings.extend(config_warnings)
+    protected_sources, allowed_create_patterns = campaign_source_contract(root, config)
     protected_paths = {
         "results ledger": results_path,
         "campaign state": state_path,
@@ -1624,6 +1677,7 @@ def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
         "campaign lock": root / CAMPAIGN_LOCK_PATH,
         "progress plotter": plotter_path,
     }
+    protected_paths.update(protected_sources)
     if agent_context_path:
         protected_paths["agent context"] = agent_context_path
     for index, manifest_path in enumerate(candidate_manifest_paths(root, records), start=1):
@@ -1631,18 +1685,14 @@ def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
     pending_manifest = state.get("pending_candidate_manifest")
     if isinstance(pending_manifest, str) and pending_manifest:
         protected_paths["state pending-candidate manifest"] = resolve_path(root, pending_manifest)
-    validate_output_paths(
-        {
-            "progress": progress_path,
-            "output": report_path,
-            "summary-json": summary_path,
-        },
-        protected_paths,
-    )
+    outputs = {
+        "progress": progress_path,
+        "output": report_path,
+        "summary-json": summary_path,
+    }
+    validate_output_paths(outputs, protected_paths)
+    validate_output_create_patterns(outputs, root, allowed_create_patterns)
     verify_no_pending_candidates(root, state, records)
-    config = load_config(config_path)
-    config, config_warnings = normalize_contract_sections(config)
-    warnings.extend(config_warnings)
     mode = validate_maximization(config, state)
     metric, requested_metric, metric_source, metric_contract_source = metric_contract(config, state, args)
     baseline = select_baseline(records)

@@ -284,11 +284,12 @@ the active runner and holds it across evidence reads, plotting, and report
 writes. A concurrent lifecycle action therefore causes a clean refusal rather
 than a stale or mixed report. Before any artifact write, the helper also rejects
 canonical or filesystem aliases between writable outputs and campaign evidence,
-and requires the plot, Markdown, and JSON destinations to be distinct. A
-persisted POSIX lock file is a stable lock target, not proof of a live owner;
-read-only archives remain reportable when outputs point to writable locations.
-Case-folded collision checks keep output configurations safe on
-case-insensitive filesystems.
+`job.py`, or trust-contract source paths; outputs may not match the trust
+contract's allowed source-creation patterns. It also requires the plot,
+Markdown, and JSON destinations to be distinct. A persisted POSIX lock file is
+a stable lock target, not proof of a live owner; read-only archives remain
+reportable when outputs point to writable locations. Case-folded collision
+checks keep output configurations safe on case-insensitive filesystems.
 
 Relative report-helper paths, including an overridden plotter, resolve from
 the campaign directory so agent execution is independent of shell location.

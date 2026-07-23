@@ -164,10 +164,12 @@ All relative helper path arguments, including `--plotter`, resolve from the
 campaign directory rather than the invoking shell's current working directory.
 Before plotting or writing, the helper canonicalizes the three writable output
 paths and rejects aliases with the ledger, state, config, agent context,
-plotter, campaign lock, or candidate manifests. The progress, Markdown, and
-JSON outputs must also be mutually distinct. Case-folded paths and existing
-symlink or hard-link aliases are treated as collisions so a configuration is
-portable to case-insensitive filesystems.
+plotter, campaign lock, candidate manifests, `job.py`, or files listed in
+`trust_contract.allowed_edit_paths`. Outputs within the campaign directory
+must not match `trust_contract.allowed_create_patterns`. The progress,
+Markdown, and JSON outputs must also be mutually distinct. Case-folded paths
+and existing symlink or hard-link aliases are treated as collisions so a
+configuration is portable to case-insensitive filesystems.
 
 Report generation must be independent of Git and must not edit campaign source,
 the ledger, manifests, or state.

@@ -144,7 +144,9 @@ candidate evidence.
 
 Report generation holds the same campaign lifecycle lock as the active Auto-FL
 runner. It refuses concurrent lifecycle activity and rejects custom plot,
-Markdown, or JSON output paths that alias campaign evidence or one another.
+Markdown, or JSON output paths that alias campaign evidence, ``job.py``,
+trust-contract source paths, or one another. Outputs within the campaign
+directory must not match the trust contract's allowed source-creation patterns.
 The persisted POSIX lock file does not by itself mean a campaign is active, so
 a read-only campaign archive can be reported to explicitly writable output
 paths.

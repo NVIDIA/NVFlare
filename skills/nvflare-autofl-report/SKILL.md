@@ -72,7 +72,9 @@ All relative helper path options, including `--plotter`, resolve from the
 campaign job directory rather than the shell's current working directory.
 The helper holds the campaign lifecycle lock from evidence loading through
 artifact writes. It refuses a busy campaign and rejects writable output paths
-that alias campaign evidence or another output, including filesystem aliases.
+that alias campaign evidence, `job.py`, trust-contract source paths, or another
+output, including filesystem aliases. Outputs must not match the trust
+contract's allowed source-creation patterns.
 An archived campaign may be read-only when writable output paths are supplied;
 the persisted lock file alone does not imply live contention.
 

@@ -330,6 +330,83 @@ def test_report_rejects_output_alias_to_plotter_before_loading_it(tmp_path, monk
     assert plotter_path.read_text(encoding="utf-8") == "raise AssertionError('plotter must not load')\n"
 
 
+def test_report_rejects_outputs_that_overwrite_campaign_source(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    job_path = tmp_path / "job.py"
+    client_path = tmp_path / "client.py"
+    job_path.write_text("print('job')\n", encoding="utf-8")
+    client_path.write_text("print('client')\n", encoding="utf-8")
+    config_path = tmp_path / "autofl.yaml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        + "trust_contract:\n"
+        + "  allowed_edit_paths:\n"
+        + "    - job.py\n"
+        + "    - client.py\n"
+        + "  allowed_create_patterns:\n"
+        + "    - '**/*.py'\n",
+        encoding="utf-8",
+    )
+    original = {job_path: job_path.read_bytes(), client_path: client_path.read_bytes()}
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: pytest.fail("plot must not run"))
+
+    cases = [
+        (["--output", "job.py"], "job source"),
+        (["--summary-json", "client.py"], "managed source"),
+        (["--progress", "new_algorithm.py"], "allowed_create_patterns"),
+        (["--output", "algorithms/new_aggregator.py"], "allowed_create_patterns"),
+    ]
+    for extra_args, message in cases:
+        with pytest.raises(ValueError, match=message):
+            reporter.generate(reporter.parse_args([str(tmp_path), *extra_args]))
+
+    assert {path: path.read_bytes() for path in original} == original
+    assert not tmp_path.joinpath("new_algorithm.py").exists()
+    assert not tmp_path.joinpath("algorithms").exists()
+
+
+def test_report_rejects_filesystem_alias_to_managed_source(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    source_path = tmp_path / "client.py"
+    source_path.write_text("print('client')\n", encoding="utf-8")
+    config_path = tmp_path / "autofl.yaml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        + "trust_contract:\n"
+        + "  allowed_edit_paths: [client.py]\n"
+        + "  allowed_create_patterns: []\n",
+        encoding="utf-8",
+    )
+    alias_path = tmp_path / "report-alias.md"
+    alias_path.symlink_to(source_path)
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: pytest.fail("plot must not run"))
+
+    with pytest.raises(ValueError, match="managed source"):
+        reporter.generate(reporter.parse_args([str(tmp_path), "--output", alias_path.name]))
+
+    assert source_path.read_text(encoding="utf-8") == "print('client')\n"
+    assert alias_path.is_symlink()
+
+
+def test_report_rejects_escaping_trust_contract_source_path(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    config_path = tmp_path / "autofl.yaml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        + "trust_contract:\n"
+        + "  allowed_edit_paths: [../outside.py]\n"
+        + "  allowed_create_patterns: []\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: pytest.fail("plot must not run"))
+
+    with pytest.raises(ValueError, match="escapes the campaign directory"):
+        reporter.generate(reporter.parse_args([str(tmp_path)]))
+
+
 @pytest.mark.parametrize("link_kind", ["symlink", "hardlink"])
 def test_report_rejects_filesystem_aliases_to_campaign_evidence(tmp_path, monkeypatch, link_kind):
     reporter = _load_reporter()
