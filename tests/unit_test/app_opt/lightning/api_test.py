@@ -303,6 +303,41 @@ class _FakeAlgorithmHandler:
         return self.metadata
 
 
+class _FakeStartHandler:
+    def __init__(self, error=None):
+        self.active = False
+        self.error = error
+        self.started = False
+        self.aborted = False
+
+    def start_round(self, trainer, pl_module, input_model):
+        self.started = True
+        self.active = True
+        if self.error:
+            raise self.error
+
+    def abort_round(self):
+        self.aborted = True
+        self.active = False
+
+
+def test_algorithm_handler_manager_rolls_back_started_handlers_when_round_setup_fails():
+    first = _FakeStartHandler()
+    second = _FakeStartHandler(error=RuntimeError("second handler failed"))
+    manager = _AlgorithmHandlerManager()
+    manager._handlers = {"one": first, "two": second}
+
+    with pytest.raises(RuntimeError, match="second handler failed"):
+        manager.start_round(SimpleNamespace(), SimpleNet(), FLModel())
+
+    assert first.started is True
+    assert second.started is True
+    assert first.aborted is True
+    assert second.aborted is True
+    assert first.active is False
+    assert second.active is False
+
+
 def test_algorithm_handler_manager_rejects_inconsistent_step_counts():
     manager = _AlgorithmHandlerManager()
     manager._handlers = {

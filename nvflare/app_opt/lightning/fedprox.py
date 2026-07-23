@@ -214,6 +214,10 @@ class _FedProxHandler:
         finally:
             self._clear_round_state()
 
+    def abort_round(self) -> None:
+        """Release state after this or another handler fails to start the round."""
+        self._clear_round_state()
+
     def _clear_round_state(self) -> None:
         self._active = False
         self._mu = None

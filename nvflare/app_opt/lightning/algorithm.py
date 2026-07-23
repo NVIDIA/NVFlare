@@ -64,8 +64,20 @@ class _AlgorithmHandlerManager:
             if metadata_key in meta and metadata_key not in self._handlers:
                 self._handlers[metadata_key] = factory()
 
+        started_handlers = []
         for handler in self._handlers.values():
-            handler.start_round(trainer=trainer, pl_module=pl_module, input_model=input_model)
+            started_handlers.append(handler)
+            try:
+                handler.start_round(trainer=trainer, pl_module=pl_module, input_model=input_model)
+            except Exception:
+                for started_handler in reversed(started_handlers):
+                    try:
+                        started_handler.abort_round()
+                    except Exception:
+                        logger.exception(
+                            "A Lightning automatic algorithm handler failed while rolling back round setup."
+                        )
+                raise
 
     def before_optimizer_step(self, optimizer):
         for handler in self._handlers.values():
