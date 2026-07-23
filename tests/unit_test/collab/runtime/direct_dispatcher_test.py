@@ -111,7 +111,8 @@ def test_group_call_timeout_completes_hung_site():
         release_call.set()
 
 
-def test_cancelled_group_future_completes_site():
+@pytest.mark.parametrize("expect_result", [True, False])
+def test_cancelled_group_future_completes_site(expect_result):
     executor = ThreadPoolExecutor(max_workers=1)
     release_worker = threading.Event()
     worker_started = threading.Event()
@@ -135,7 +136,7 @@ def test_cancelled_group_future_completes_site():
         dispatcher._get_func = MagicMock(return_value=MagicMock())
         gcc = MagicMock()
         gcc.target_name = "site-1"
-        gcc.call_opt = CallOption(timeout=5.0)
+        gcc.call_opt = CallOption(expect_result=expect_result, timeout=5.0)
         gcc.send_completed.side_effect = completed.set
 
         dispatcher.call_target_in_group(gcc, "train")

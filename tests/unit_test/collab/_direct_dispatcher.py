@@ -129,15 +129,17 @@ class _DirectDispatcher(_InvocationDispatcher):
 
         future = self.executor.submit(self._run_func_in_group, gcc, func_name, func, args, kwargs)
         timeout = gcc.call_opt.timeout
+        timer = None
         if gcc.call_opt.expect_result and isinstance(timeout, (int, float)) and timeout > 0:
             timer = threading.Timer(timeout, self._group_call_timed_out, args=(gcc, func_name, timeout))
             timer.daemon = True
             timer.start()
-            future.add_done_callback(lambda done: self._group_call_done(done, timer, gcc, func_name))
+        future.add_done_callback(lambda done: self._group_call_done(done, timer, gcc, func_name))
 
     @staticmethod
-    def _group_call_done(future, timer: threading.Timer, gcc: GroupCallContext, func_name: str):
-        timer.cancel()
+    def _group_call_done(future, timer: threading.Timer | None, gcc: GroupCallContext, func_name: str):
+        if timer:
+            timer.cancel()
         if future.cancelled():
             gcc.set_exception(CancelledError(f"function {func_name} was cancelled before execution"))
             gcc.send_completed()

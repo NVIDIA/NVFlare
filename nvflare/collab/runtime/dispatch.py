@@ -14,6 +14,7 @@
 from nvflare.collab.api.app import App
 from nvflare.collab.api.call_utils import check_call_args
 from nvflare.collab.api.constants import CollabMethodArgName
+from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.decorators import adjust_kwargs
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
@@ -121,8 +122,9 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
         logger.debug(f"found method for {method_name}")
 
     # invoke this method
+    previous_ctx = get_call_context()
     try:
-        ctx, method_kwargs = _preprocess(app, caller, obj_name, target_name, method_name, m, method_args, method_kwargs)
+        _, method_kwargs = _preprocess(app, caller, obj_name, target_name, method_name, m, method_args, method_kwargs)
         result = m(*method_args, **method_kwargs)
 
         return new_cell_message(
@@ -137,3 +139,5 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
             error_type=type(ex).__name__,
             traceback_text=traceback_text,
         )
+    finally:
+        set_call_context(previous_ctx)

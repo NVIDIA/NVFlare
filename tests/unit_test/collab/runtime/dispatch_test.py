@@ -15,6 +15,7 @@
 from unittest.mock import MagicMock, patch
 
 from nvflare.collab.api.app import ClientApp
+from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.decorators import publish
 from nvflare.collab.runtime.defs import CallReplyKey, ObjectCallKey
 from nvflare.collab.runtime.dispatch import _call_app_method
@@ -26,6 +27,12 @@ class _FailingClient:
     @publish
     def fail(self):
         raise ValueError("invalid input")
+
+
+class _SuccessfulClient:
+    @publish
+    def succeed(self):
+        return "result"
 
 
 def test_remote_call_returns_secure_exception_detail():
@@ -41,23 +48,53 @@ def test_remote_call_returns_secure_exception_detail():
     )
     logger = MagicMock()
 
-    with (
-        patch(
-            "nvflare.collab.runtime.dispatch.secure_format_exception",
-            return_value="ValueError: invalid input",
-        ) as format_exception,
-        patch(
-            "nvflare.collab.runtime.dispatch.secure_format_traceback",
-            return_value="remote traceback",
-        ),
-    ):
-        reply = _call_app_method(request, app, logger)
+    previous_ctx = MagicMock()
+    set_call_context(previous_ctx)
+    try:
+        with (
+            patch(
+                "nvflare.collab.runtime.dispatch.secure_format_exception",
+                return_value="ValueError: invalid input",
+            ) as format_exception,
+            patch(
+                "nvflare.collab.runtime.dispatch.secure_format_traceback",
+                return_value="remote traceback",
+            ),
+        ):
+            reply = _call_app_method(request, app, logger)
+        assert get_call_context() is previous_ctx
+    finally:
+        set_call_context(None)
 
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.PROCESS_EXCEPTION
     assert reply.payload[CallReplyKey.ERROR] == "ValueError: invalid input"
     assert reply.payload[CallReplyKey.ERROR_TYPE] == "ValueError"
     assert reply.payload[CallReplyKey.ERROR_TRACEBACK] == "remote traceback"
     format_exception.assert_called_once()
+
+
+def test_remote_call_restores_previous_context_after_success():
+    app = ClientApp(_SuccessfulClient())
+    app.name = "site-1"
+    request = new_cell_message(
+        {},
+        {
+            ObjectCallKey.CALLER: "server",
+            ObjectCallKey.TARGET_NAME: "site-1.client",
+            ObjectCallKey.METHOD_NAME: "succeed",
+        },
+    )
+    previous_ctx = MagicMock()
+
+    set_call_context(previous_ctx)
+    try:
+        reply = _call_app_method(request, app, MagicMock())
+        assert get_call_context() is previous_ctx
+    finally:
+        set_call_context(None)
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+    assert reply.payload[CallReplyKey.RESULT] == "result"
 
 
 def test_remote_call_rejects_unnormalized_positional_args():
