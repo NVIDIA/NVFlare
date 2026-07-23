@@ -135,7 +135,8 @@ def test_setup_uses_each_remote_clients_reported_interface(monkeypatch):
     assert calls[1].args[4] == {"": {"second": []}}
 
 
-def test_setup_returns_error_without_publishing_context_when_initialize_fails(monkeypatch):
+@pytest.mark.parametrize("failing_method", ["setup", "initialize"])
+def test_setup_returns_error_without_publishing_context_when_client_setup_fails(monkeypatch, failing_method):
     client = MagicMock()
     client.name = "site-1"
     monkeypatch.setattr(executor_module, "from_dict", lambda client: client)
@@ -145,7 +146,7 @@ def test_setup_returns_error_without_publishing_context_when_initialize_fails(mo
     executor.client_app = MagicMock()
     executor.client_app.name = "site-1"
     executor.client_app.get_collab_interface.return_value = {"": {"local": []}}
-    executor.client_app.initialize.side_effect = RuntimeError("initialize failed")
+    getattr(executor.client_app, failing_method).side_effect = RuntimeError(f"{failing_method} failed")
     executor.log_info = MagicMock()
     executor.log_exception = MagicMock()
     executor._prepare_server_proxy = MagicMock(return_value=MagicMock())

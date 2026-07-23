@@ -226,7 +226,15 @@ class CollabExecutor(Executor, CollabAdaptor):
             client_proxies.append(p)
 
         ws = fl_ctx.get_workspace()
-        self.client_app.setup(ws, server_proxy, client_proxies, abort_signal)
+        try:
+            self.client_app.setup(ws, server_proxy, client_proxies, abort_signal)
+        except Exception as ex:
+            self.client_ctx = None
+            self.log_exception(
+                fl_ctx,
+                f"failed to set up client app {self.client_app.name}: {secure_format_exception(ex)}",
+            )
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         client_ctx = self.client_app.new_context(self.client_app.name, self.client_app.name, set_call_ctx=False)
         self.logger.info(f"initializing client app {self.client_app.name}")
