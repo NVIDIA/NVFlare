@@ -152,6 +152,19 @@ def test_remote_user_function_is_submitted_to_collab_executor():
     assert client.thread_name.startswith("collab_call")
 
 
+def test_remote_call_after_executor_shutdown_returns_error_reply():
+    executor = ThreadPoolExecutor(max_workers=1)
+    executor.shutdown()
+
+    reply = _submit_app_method(MagicMock(), MagicMock(), MagicMock(), executor)
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.PROCESS_EXCEPTION
+    assert reply.payload[CallReplyKey.ERROR] == (
+        "cannot process remote call because the Collab runtime is shutting down"
+    )
+    assert reply.payload[CallReplyKey.ERROR_TYPE] == "RuntimeError"
+
+
 def test_stream_adapter_sends_future_response_asynchronously():
     response_future = Future()
     cell = MagicMock()

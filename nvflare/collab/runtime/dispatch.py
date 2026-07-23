@@ -41,7 +41,14 @@ def prepare_for_remote_call(cell, app, logger, executor):
 
 def _submit_app_method(request: Message, app: App, logger, executor):
     """Move user code off the shared Cell/stream callback executor."""
-    return executor.submit(_call_app_method, request, app, logger)
+    try:
+        return executor.submit(_call_app_method, request, app, logger)
+    except RuntimeError:
+        return _error_reply(
+            "cannot process remote call because the Collab runtime is shutting down",
+            logger,
+            error_type=RuntimeError.__name__,
+        )
 
 
 def _error_reply(error: str, logger, error_type: str = None, traceback_text: str = None) -> Message:
