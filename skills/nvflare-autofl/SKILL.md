@@ -1,6 +1,6 @@
 ---
 name: nvflare-autofl
-description: "Use for agent-assisted Auto-FL optimization of an existing NVFLARE job in simulation, POC, or production. Do not use for code conversion, diagnosis-only work, or deployment setup."
+description: "Use to improve or optimize an existing NVFLARE job with low accuracy or an underperforming metric ('try two approaches') via an Auto-FL campaign. Do not use for conversion, diagnosis, or deployment."
 license: Apache-2.0
 version: "0.1.0"
 compatibility: "Requires NVFLARE 2.8.0+, Python, and permission to run NVFLARE jobs in the selected environment."
