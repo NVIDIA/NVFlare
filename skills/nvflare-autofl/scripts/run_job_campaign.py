@@ -2736,6 +2736,15 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
     settings = metadata.get("settings")
     if not isinstance(settings, dict):
         raise ValueError("campaign metadata is missing settings")
+    if settings.get("prefer_synthetic"):
+        # Pre-removal campaigns scored their baseline and prior candidates on injected
+        # synthetic data; new runs use real data, so ledger comparisons cross a data regime.
+        print(
+            "Warning: prior scores in this campaign were computed on synthetic data "
+            "(legacy prefer_synthetic setting); new runs use the job's real data, so ledger "
+            "comparisons mix data regimes. Consider re-initializing the campaign.",
+            file=sys.stderr,
+        )
     explicit = getattr(args, "_explicit_settings", set())
     changed = False
     for name in CAMPAIGN_SETTING_NAMES:

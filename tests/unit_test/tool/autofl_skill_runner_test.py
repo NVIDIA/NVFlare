@@ -438,7 +438,7 @@ def test_explicit_base_args_pass_through_verbatim():
     assert runner.build_base_args(args, help_text, {}) == ["--synthetic_data", "--train_size", "64"]
 
 
-def test_restore_campaign_settings_ignores_legacy_synthetic_settings(tmp_path):
+def test_restore_campaign_settings_ignores_legacy_synthetic_settings(tmp_path, capsys):
     runner = _load_runner()
     args = runner.parse_args(["status", "job.py"])
     settings = runner.campaign_settings(args)
@@ -450,6 +450,20 @@ def test_restore_campaign_settings_ignores_legacy_synthetic_settings(tmp_path):
     assert not hasattr(args, "prefer_synthetic")
     help_text = "usage: job.py [--synthetic_data] [--train_size TRAIN_SIZE] [--test_size TEST_SIZE]"
     assert runner.build_base_args(args, help_text, {}) == []
+    # The prior baseline/candidates were scored on injected synthetic data; new runs use
+    # real data, so the ledger crosses a data regime — warn instead of staying silent.
+    stderr = capsys.readouterr().err
+    assert "computed on synthetic data" in stderr
+    assert "re-initializing" in stderr
+
+
+def test_restore_campaign_settings_does_not_warn_without_legacy_synthetic_setting(tmp_path, capsys):
+    runner = _load_runner()
+    args = runner.parse_args(["status", "job.py"])
+    metadata = {"settings": runner.campaign_settings(args), "workspace_root": str(tmp_path)}
+
+    assert runner.restore_campaign_settings(args, metadata) is False
+    assert "synthetic" not in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
