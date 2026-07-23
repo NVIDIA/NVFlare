@@ -18,6 +18,7 @@ import re
 import threading
 import time
 from abc import abstractmethod
+from urllib.parse import urlsplit
 
 try:
     import docker.errors
@@ -46,6 +47,7 @@ from nvflare.app_opt.job_launcher.study_runtime import (
     resolve_study_runtime,
 )
 from nvflare.fuel.f3.comm_error import CommError
+from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.fuel.f3.drivers.file_driver import parse_file_url
 from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
@@ -554,7 +556,7 @@ class DockerJobLauncher(JobLauncherSpec):
         file_parent_dir = None
         if JobProcessArgs.PARENT_URL in job_args:
             flag, original_url = job_args[JobProcessArgs.PARENT_URL]
-            if str(original_url).startswith("file:"):
+            if urlsplit(str(original_url)).scheme == SHARED_FILE_SCHEME:
                 # Shared-file transport URLs are location-independent; pass through unchanged and
                 # bind-mount the listener directory at the same path inside the container
                 try:

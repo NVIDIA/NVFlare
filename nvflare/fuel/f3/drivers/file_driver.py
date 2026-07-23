@@ -14,7 +14,6 @@
 import logging
 import os
 import shutil
-import struct
 import threading
 import time
 import uuid
@@ -28,14 +27,14 @@ from nvflare.fuel.f3.drivers.base_driver import BaseDriver
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
 from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
 from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE
-from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN
+from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN, Prefix
 from nvflare.fuel.utils.argument_utils import str2bool
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
 log = logging.getLogger(__name__)
 
-FRAME_LEN_STRUCT = struct.Struct(">I")
+SCHEME = "shared-file"
 
 # Resource/query parameter names
 ROOT_DIR = "root_dir"
@@ -67,8 +66,9 @@ LISTENER_LEASE_FILE = "lease"
 OWNER_MARKER = ".nvf_file_transport"
 CLOSED_FILE = "closed"
 TMP_PREFIX = "."
-A2P = "a2p"  # active-to-passive log prefix
-P2A = "p2a"  # passive-to-active log prefix
+# Log files are named after the side that writes them, following the CellPipe convention
+ACTIVE_LOG = "active"  # written by the active (dialing) side
+PASSIVE_LOG = "passive"  # written by the passive (listener) side
 
 LISTENER_STALE_TIME = 3600.0
 TMP_DIR_STALE_TIME = 3600.0
@@ -81,29 +81,30 @@ DRAIN_POLL_INTERVAL = 0.05
 
 
 def parse_file_url(url: str) -> str:
-    """Parse and validate a file transport URL of the form file://0/absolute/dir.
+    """Parse and validate a shared-file transport URL of the form shared-file://0/absolute/dir.
 
     The authority must be the empty-host placeholder "0" and the path must be an absolute
-    directory. This is the single source of truth for file URL semantics; launchers and deploy
-    tools that need the directory (e.g. to bind-mount it into a container) should use this
-    instead of parsing the URL themselves.
+    directory. This is the single source of truth for shared-file URL semantics; launchers and
+    deploy tools that need the directory (e.g. to bind-mount it into a container) should use
+    this instead of parsing the URL themselves.
 
     Returns:
         The absolute directory path (query parameters excluded).
 
     Raises:
-        CommError: If the URL is not a valid file transport URL.
+        CommError: If the URL is not a valid shared-file transport URL.
     """
     parsed = urlsplit(url)
-    if parsed.scheme != "file":
-        raise CommError(CommError.BAD_CONFIG, f"Not a file transport URL: {url}")
+    if parsed.scheme != SCHEME:
+        raise CommError(CommError.BAD_CONFIG, f"Not a {SCHEME} transport URL: {url}")
     if parsed.netloc != "0":
         raise CommError(
-            CommError.BAD_CONFIG, f"Invalid file URL {url}: authority must be the placeholder '0' (file://0/abs/dir)"
+            CommError.BAD_CONFIG,
+            f"Invalid {SCHEME} URL {url}: authority must be the placeholder '0' ({SCHEME}://0/abs/dir)",
         )
     path = parsed.path.rstrip("/")
     if not path or not os.path.isabs(path):
-        raise CommError(CommError.BAD_CONFIG, f"Invalid file URL {url}: an absolute directory path is required")
+        raise CommError(CommError.BAD_CONFIG, f"Invalid {SCHEME} URL {url}: an absolute directory path is required")
     return path
 
 
@@ -168,15 +169,16 @@ class _ConnConfig:
     """Effective tuning values for one connection.
 
     Precedence: hardcoded defaults < connector params (listener resources / URL query) < the
-    local comm_config "file" section, so a cell can locally override polling/lease/fsync for its
-    own mount. max_log_size is exempt from local override because reader-side rotation detection
+    local comm_config "shared-file" section, so a cell can locally override polling/lease/fsync
+    for its own mount. max_log_size is exempt from local override because reader-side rotation
+    detection
     requires the same value on both sides of a connection.
     """
 
     def __init__(self, params: dict):
         merged = dict(params)
         config = CommConfigurator().get_config()
-        local_overrides = config.get("file") if config else None
+        local_overrides = config.get(SCHEME) if config else None
         if local_overrides:
             for key, value in local_overrides.items():
                 if key != MAX_LOG_SIZE:
@@ -284,8 +286,8 @@ class _LogReader:
         pos = 0
         buf = self.buffer
         total = len(buf)
-        while total - pos >= FRAME_LEN_STRUCT.size:
-            length = FRAME_LEN_STRUCT.unpack_from(buf, pos)[0]
+        while total - pos >= PREFIX_LEN:
+            length = Prefix.from_bytes(memoryview(buf)[pos:]).length
             if length < PREFIX_LEN or length > MAX_FRAME_SIZE:
                 raise CommError(
                     CommError.BAD_DATA,
@@ -370,13 +372,13 @@ class FileConnection(Connection):
         self.logger = get_obj_logger(self)
 
         active = connector.mode == Mode.ACTIVE
-        side = "a" if active else "p"
-        peer_side = "p" if active else "a"
+        side = ACTIVE_LOG if active else PASSIVE_LOG
+        peer_side = PASSIVE_LOG if active else ACTIVE_LOG
         self.my_lease = os.path.join(conn_dir, f"{side}.lease")
         self.peer_lease = os.path.join(conn_dir, f"{peer_side}.lease")
         self.closed_file = os.path.join(conn_dir, CLOSED_FILE)
-        self.writer = _LogWriter(conn_dir, A2P if active else P2A, cfg)
-        self.reader = _LogReader(conn_dir, P2A if active else A2P, cfg)
+        self.writer = _LogWriter(conn_dir, side, cfg)
+        self.reader = _LogReader(conn_dir, peer_side, cfg)
 
         _touch(self.my_lease, cfg.file_mode)
         self.conn_props = {
@@ -489,7 +491,7 @@ class FileDriver(BaseDriver):
     """Transport driver that exchanges SFM frames through a shared filesystem (e.g. Lustre).
 
     Intended for deployments where two cells share a filesystem but have no network path between
-    them (e.g. an HPC compute node and a gateway node). The URL form is file://0/absolute/dir
+    them (e.g. an HPC compute node and a gateway node). The URL form is shared-file://0/absolute/dir
     ("0" is the empty-host placeholder). The passive side owns the directory; each active peer
     creates a connection subdirectory with one append log per direction. There is no transport
     security: directory permissions are the trust boundary. Directories are created 0o770 and
@@ -503,7 +505,7 @@ class FileDriver(BaseDriver):
         {
             "backbone": {"connect_generation": 1},
             "internal": {
-                "scheme": "file",
+                "scheme": "shared-file",
                 "resources": {
                     "root_dir": "/absolute/shared/path/cellnet",
                     "connection_security": "clear",
@@ -518,7 +520,7 @@ class FileDriver(BaseDriver):
 
     The tuning resources are optional (defaults in _ConnConfig) and are propagated to the child
     cell through the query string of the generated connect URL; a cell can locally override them
-    (except max_log_size, which must match on both sides) via a "file" section in its own
+    (except max_log_size, which must match on both sides) via a "shared-file" section in its own
     comm_config.json. The example above pins lower-latency polling than the defaults.
 
     Filesystem metadata load: an idle connection costs one log stat per poll tick per direction
@@ -544,7 +546,7 @@ class FileDriver(BaseDriver):
 
     @staticmethod
     def supported_transports() -> List[str]:
-        return ["file"]
+        return [SCHEME]
 
     @staticmethod
     def capabilities() -> Dict[str, Any]:
@@ -624,7 +626,7 @@ class FileDriver(BaseDriver):
         name = uuid.uuid4().hex[:12]
         tmp_dir = os.path.join(conns_dir, TMP_PREFIX + name)
         _make_new_dir(tmp_dir, cfg.dir_mode)
-        for log_name in (f"{A2P}.0.log", f"{P2A}.0.log"):
+        for log_name in (f"{ACTIVE_LOG}.0.log", f"{PASSIVE_LOG}.0.log"):
             _create_file(os.path.join(tmp_dir, log_name), cfg.file_mode)
         conn_dir = os.path.join(conns_dir, name)
         os.rename(tmp_dir, conn_dir)
@@ -659,7 +661,7 @@ class FileDriver(BaseDriver):
         if path:
             path = path.rstrip("/")
         if not path or not os.path.isabs(path):
-            raise CommError(CommError.BAD_CONFIG, "Missing directory path, expected URL of form file://0/abs/dir")
+            raise CommError(CommError.BAD_CONFIG, f"Missing directory path, expected URL of form {SCHEME}://0/abs/dir")
         return path
 
     def _adopt_new_dirs(self, conns_dir: str, entries: list, connector: ConnectorInfo, cfg: _ConnConfig) -> int:
@@ -674,7 +676,7 @@ class FileDriver(BaseDriver):
             if not os.path.isdir(conn_dir):
                 continue
             if os.path.exists(os.path.join(conn_dir, CLOSED_FILE)) or not os.path.isfile(
-                os.path.join(conn_dir, f"{A2P}.0.log")
+                os.path.join(conn_dir, f"{ACTIVE_LOG}.0.log")
             ):
                 # Leftover from a previous listener incarnation: already closed, or its logs were
                 # partially consumed. Adopting it would replay or wedge; mark for GC instead.

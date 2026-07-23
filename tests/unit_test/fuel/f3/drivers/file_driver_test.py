@@ -96,10 +96,10 @@ class TestParseFileUrl:
     @pytest.mark.parametrize(
         "url, expected",
         [
-            ("file://0/lustre/proj/cellnet", "/lustre/proj/cellnet"),
-            ("file://0/lustre/proj/cellnet/", "/lustre/proj/cellnet"),
-            ("file://0/a/b?poll_interval=0.05&fsync=False", "/a/b"),
-            ("file://0/a#frag", "/a"),
+            ("shared-file://0/lustre/proj/cellnet", "/lustre/proj/cellnet"),
+            ("shared-file://0/lustre/proj/cellnet/", "/lustre/proj/cellnet"),
+            ("shared-file://0/a/b?poll_interval=0.05&fsync=False", "/a/b"),
+            ("shared-file://0/a#frag", "/a"),
         ],
     )
     def test_valid_urls(self, url, expected):
@@ -108,13 +108,13 @@ class TestParseFileUrl:
     @pytest.mark.parametrize(
         "url",
         [
-            "file://lustre/proj/cellnet",  # non-0 authority, path would be silently wrong
-            "file:///lustre/proj/cellnet",  # empty authority
-            "file://0",  # no path
-            "file://0/",  # root path
-            "file://localhost/a/b",
+            "shared-file://lustre/proj/cellnet",  # non-0 authority, path would be silently wrong
+            "shared-file:///lustre/proj/cellnet",  # empty authority
+            "shared-file://0",  # no path
+            "shared-file://0/",  # root path
+            "shared-file://localhost/a/b",
             "tcp://host:1234",
-            "file:relative/path",
+            "shared-file:relative/path",
         ],
     )
     def test_invalid_urls(self, url):
@@ -125,8 +125,8 @@ class TestParseFileUrl:
 class TestLogRoundtrip:
     def test_rotation_and_cleanup(self, tmp_path):
         cfg = _ConnConfig({"max_log_size": 100})
-        writer = _LogWriter(str(tmp_path), "a2p", cfg)
-        reader = _LogReader(str(tmp_path), "a2p", cfg)
+        writer = _LogWriter(str(tmp_path), "active", cfg)
+        reader = _LogReader(str(tmp_path), "active", cfg)
 
         frames = [_frame(f"payload-{i}".encode()) for i in range(20)]
         received = []
@@ -143,8 +143,8 @@ class TestLogRoundtrip:
 
     def test_frame_larger_than_log_cap(self, tmp_path):
         cfg = _ConnConfig({"max_log_size": 64})
-        writer = _LogWriter(str(tmp_path), "a2p", cfg)
-        reader = _LogReader(str(tmp_path), "a2p", cfg)
+        writer = _LogWriter(str(tmp_path), "active", cfg)
+        reader = _LogReader(str(tmp_path), "active", cfg)
 
         frames = [_frame(bytes(1000)), _frame(b"small"), _frame(bytes(2000))]
         received = []
@@ -157,8 +157,8 @@ class TestLogRoundtrip:
 
     def test_reader_recovers_from_stale_file_handle(self, tmp_path):
         cfg = _ConnConfig({})
-        writer = _LogWriter(str(tmp_path), "a2p", cfg)
-        reader = _LogReader(str(tmp_path), "a2p", cfg)
+        writer = _LogWriter(str(tmp_path), "active", cfg)
+        reader = _LogReader(str(tmp_path), "active", cfg)
 
         writer.append(_frame(b"first"))
         assert reader.read_frames() == [_frame(b"first")]
@@ -170,10 +170,10 @@ class TestLogRoundtrip:
 
     def test_partial_frame_visibility(self, tmp_path):
         cfg = _ConnConfig({})
-        reader = _LogReader(str(tmp_path), "a2p", cfg)
+        reader = _LogReader(str(tmp_path), "active", cfg)
         frame = _frame(b"split-delivery")
 
-        with open(os.path.join(tmp_path, "a2p.0.log"), "ab") as f:
+        with open(os.path.join(tmp_path, "active.0.log"), "ab") as f:
             f.write(frame[:10])
             f.flush()
             assert reader.read_frames() == []
@@ -190,8 +190,8 @@ class TestFileDriver:
 
         try:
             resources = {"root_dir": str(tmp_path), **FAST_PARAMS}
-            _, url, _ = comm_a.start_listener("file", resources)
-            assert url.startswith("file://0/")
+            _, url, _ = comm_a.start_listener("shared-file", resources)
+            assert url.startswith("shared-file://0/")
             comm_a.start()
 
             comm_b.add_connector(url, Mode.ACTIVE)
@@ -220,7 +220,7 @@ class TestFileDriver:
 
         try:
             resources = {"root_dir": str(tmp_path), "max_log_size": "300", **FAST_PARAMS}
-            _, url, _ = comm_a.start_listener("file", resources)
+            _, url, _ = comm_a.start_listener("shared-file", resources)
             comm_a.start()
             comm_b.add_connector(url, Mode.ACTIVE)
             comm_b.start()
@@ -236,7 +236,7 @@ class TestFileDriver:
 
             conn_dirs = list((tmp_path / next(p for p in os.listdir(tmp_path)) / "conns").iterdir())
             assert len(conn_dirs) == 1
-            logs = [f for f in os.listdir(conn_dirs[0]) if f.startswith("a2p") and f.endswith(".log")]
+            logs = [f for f in os.listdir(conn_dirs[0]) if f.startswith("active") and f.endswith(".log")]
             assert len(logs) <= 2
         finally:
             comm_b.stop()
@@ -250,7 +250,7 @@ class TestFileDriver:
         comm_b2 = None
         try:
             resources = {"root_dir": str(tmp_path), **FAST_PARAMS}
-            _, url, _ = comm_a.start_listener("file", resources)
+            _, url, _ = comm_a.start_listener("shared-file", resources)
             comm_a.start()
             comm_b.add_connector(url, Mode.ACTIVE)
             comm_b.start()
@@ -278,7 +278,7 @@ class TestFileDriver:
     def test_missing_root_dir(self):
         comm = _make_comm(NODE_A, _State())
         with pytest.raises(CommError):
-            comm.start_listener("file", {})
+            comm.start_listener("shared-file", {})
 
     def test_close_drains_pending_frames(self, tmp_path):
         state = _State()
@@ -286,7 +286,7 @@ class TestFileDriver:
         comm_b = _make_comm(NODE_B, state)
 
         try:
-            _, url, _ = comm_a.start_listener("file", {"root_dir": str(tmp_path), **FAST_PARAMS})
+            _, url, _ = comm_a.start_listener("shared-file", {"root_dir": str(tmp_path), **FAST_PARAMS})
             comm_a.start()
             comm_b.add_connector(url, Mode.ACTIVE)
             comm_b.start()
@@ -307,7 +307,7 @@ class TestFileDriver:
         conn_dir = tmp_path / "conn"
         conn_dir.mkdir()
         frame = _frame(bytes(READ_CHUNK + 1040))
-        (conn_dir / "a2p.0.log").write_bytes(frame)
+        (conn_dir / "active.0.log").write_bytes(frame)
         (conn_dir / "closed").touch()
 
         connector = ConnectorInfo("test", None, {}, Mode.PASSIVE, 0, 0, False, Event())
@@ -329,7 +329,7 @@ class TestFileDriver:
             return stat.S_IMODE(os.stat(path).st_mode)
 
         try:
-            _, url, _ = comm_a.start_listener("file", {"root_dir": str(tmp_path), **FAST_PARAMS})
+            _, url, _ = comm_a.start_listener("shared-file", {"root_dir": str(tmp_path), **FAST_PARAMS})
             comm_a.start()
             comm_b.add_connector(url, Mode.ACTIVE)
             comm_b.start()
@@ -339,7 +339,7 @@ class TestFileDriver:
             assert _mode(listen_dir) == 0o770
             conn_dir = next((listen_dir / "conns").iterdir())
             assert _mode(conn_dir) == 0o770
-            assert _mode(conn_dir / "a2p.0.log") == 0o660
+            assert _mode(conn_dir / "active.0.log") == 0o660
         finally:
             os.umask(old_umask)
             comm_b.stop()
@@ -350,7 +350,7 @@ class TestFileDriver:
         (listen_dir / "conns").mkdir(parents=True)
         state = _State()
         comm_b = _make_comm(NODE_B, state)
-        url = f"file://0{listen_dir}?poll_interval=0.005&lease_interval=0.2&lease_timeout=1"
+        url = f"shared-file://0{listen_dir}?poll_interval=0.005&lease_interval=0.2&lease_timeout=1"
 
         try:
             comm_b.add_connector(url, Mode.ACTIVE)
@@ -375,7 +375,7 @@ class TestGetUrls:
         (dead / "lease").touch()
         os.utime(dead / "lease", (old, old))
 
-        FileDriver.get_urls("file", {"root_dir": str(tmp_path)})
+        FileDriver.get_urls("shared-file", {"root_dir": str(tmp_path)})
 
         assert foreign.exists() and (foreign / "data.txt").exists()
         assert _wait_until(lambda: not dead.exists(), 5)
@@ -383,7 +383,7 @@ class TestGetUrls:
     def test_reserved_chars_rejected(self, tmp_path):
         for ch in ("?", "#"):
             with pytest.raises(CommError):
-                FileDriver.get_urls("file", {"root_dir": str(tmp_path) + f"/bad{ch}dir"})
+                FileDriver.get_urls("shared-file", {"root_dir": str(tmp_path) + f"/bad{ch}dir"})
 
 
 class TestConnConfig:

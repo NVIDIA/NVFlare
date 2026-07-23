@@ -645,7 +645,7 @@ class TestDockerJobLauncherLaunchJob:
         dc.containers.run.return_value = container
         dc.containers.get.return_value = _make_container("running")
 
-        parent_url = "file://0/lustre/nvflare/cellnet/lst_12345678?poll_interval=0.05"
+        parent_url = "shared-file://0/lustre/nvflare/cellnet/lst_12345678?poll_interval=0.05"
         fl_ctx, _ = _make_fl_ctx(parent_url=parent_url)
         launcher.launch_job(_make_job_meta(), fl_ctx)
 
@@ -659,7 +659,7 @@ class TestDockerJobLauncherLaunchJob:
 
     def test_launch_rejects_malformed_shared_file_parent_url(self):
         launcher = _make_launcher(workspace="/host/workspace")
-        fl_ctx, _ = _make_fl_ctx(parent_url="file://lustre/not-placeholder")
+        fl_ctx, _ = _make_fl_ctx(parent_url="shared-file://lustre/not-placeholder")
 
         with pytest.raises(ValueError, match="invalid shared-file parent URL"):
             launcher.launch_job(_make_job_meta(), fl_ctx)

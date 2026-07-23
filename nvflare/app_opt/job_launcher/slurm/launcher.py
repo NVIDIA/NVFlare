@@ -56,6 +56,7 @@ from nvflare.app_opt.job_launcher.study_runtime import (
     study_runtime_file_path,
 )
 from nvflare.fuel.f3.comm_error import CommError
+from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.fuel.f3.drivers.file_driver import parse_file_url
 from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
@@ -165,7 +166,7 @@ def _rewrite_parent_url(job_args: dict, parent_host: Optional[str], internal_por
     except ValueError as e:
         raise SlurmLauncherError("malformed parent URL in JOB_PROCESS_ARGS") from e
 
-    if parsed.scheme == "file":
+    if parsed.scheme == SHARED_FILE_SCHEME:
         # Shared-file transport: the directory path is location-independent, so the URL
         # (including its tuning query parameters) is preserved without any host/port rewrite
         try:
@@ -181,7 +182,8 @@ def _rewrite_parent_url(job_args: dict, parent_host: Optional[str], internal_por
         raise SlurmLauncherError("malformed parent URL in JOB_PROCESS_ARGS") from e
     if parsed.scheme != "tcp" or port != internal_port or not host:
         raise SlurmLauncherError(
-            f"parent URL must use file or tcp with configured internal_port {internal_port}, got {raw_url!r}"
+            f"parent URL must use {SHARED_FILE_SCHEME} or tcp with configured internal_port "
+            f"{internal_port}, got {raw_url!r}"
         )
     host = _resolve_parent_host(parent_host)
     rendered_host = host if host.startswith("[") and host.endswith("]") else f"[{host}]" if ":" in host else host
@@ -194,7 +196,7 @@ def _rewrite_parent_url(job_args: dict, parent_host: Optional[str], internal_por
 def _file_parent_mount(parent_url: str, workspace_path: str) -> Optional[BindMount]:
     """Bind mount for a shared-file transport parent URL so the CJ container can reach the
     listener directory at the same absolute path as the CP."""
-    if urlsplit(str(parent_url)).scheme != "file":
+    if urlsplit(str(parent_url)).scheme != SHARED_FILE_SCHEME:
         return None
     listen_dir = parse_file_url(str(parent_url))
     destination = _validate_mount_destination(listen_dir, "shared-file parent directory")

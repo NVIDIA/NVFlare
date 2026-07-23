@@ -217,7 +217,7 @@ can run over shared files instead of TCP. Configure the client kit's
    {
      "backbone": {"connect_generation": 1},
      "internal": {
-       "scheme": "file",
+       "scheme": "shared-file",
        "resources": {
          "root_dir": "/lustre/proj123/nvflare/site-1-cellnet",
          "connection_security": "clear"
@@ -233,7 +233,7 @@ not apply the TCP host and port patch; ``internal_port`` and ``parent_host``
 are then not used for the worker channel.
 
 At runtime the parent creates a listener directory under ``root_dir`` and
-passes its ``file://0/...`` URL to each worker unchanged. Apptainer and Pyxis
+passes its ``shared-file://0/...`` URL to each worker unchanged. Apptainer and Pyxis
 jobs bind-mount the listener directory read-write at the same path inside the
 container automatically; bare jobs use it directly. Directories are created
 with mode ``0o770`` and log files with ``0o660`` regardless of umask.

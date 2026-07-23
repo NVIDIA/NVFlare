@@ -27,6 +27,7 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     normalize_slurm_launcher_settings,
     normalize_slurm_workspace_path,
 )
+from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.tool.deploy.deploy_common import (
     COMM_CONFIG_JSON,
     RESOURCES_JSON_DEFAULT,
@@ -189,7 +190,7 @@ def _patch_comm_config(kit_dir: Path, port: int) -> None:
     internal = comm_config.setdefault("internal", {})
     if not isinstance(internal, dict):
         _fail("INVALID_KIT", "comm_config.json internal must be a mapping.", "Fix the startup kit comm config.")
-    if internal.get("scheme") == "file":
+    if internal.get("scheme") == SHARED_FILE_SCHEME:
         _validate_file_comm_config(comm_config)
         _write_json(comm_config_path, comm_config)
         return

@@ -154,7 +154,7 @@ def test_parent_url_rewrite_formats_ipv6_host():
 
 
 def test_shared_file_parent_url_is_preserved_without_parent_host():
-    parent_url = "file://0/lustre/nvflare/cellnet/lst_12345678?poll_interval=0.05&lease_timeout=30"
+    parent_url = "shared-file://0/lustre/nvflare/cellnet/lst_12345678?poll_interval=0.05&lease_timeout=30"
     args = {JobProcessArgs.PARENT_URL: ("-p", parent_url)}
 
     rewritten = _rewrite_parent_url(args, None, 8102)
@@ -168,10 +168,10 @@ def test_shared_file_parent_url_is_preserved_without_parent_host():
     [
         (None, "missing or malformed"),
         (("-p", "tcp://old:not-a-port"), "malformed parent URL"),
-        (("-p", "http://old:8102"), "must use file or tcp"),
+        (("-p", "http://old:8102"), "must use shared-file or tcp"),
         (("-p", "tcp://old:9000"), "configured internal_port"),
-        (("-p", "file://host/not-placeholder"), "malformed shared-file"),
-        (("-p", "file://0"), "malformed shared-file"),
+        (("-p", "shared-file://host/not-placeholder"), "malformed shared-file"),
+        (("-p", "shared-file://0"), "malformed shared-file"),
     ],
 )
 def test_parent_url_rewrite_rejects_malformed_or_incompatible_value(entry, message):
@@ -185,7 +185,7 @@ def _file_parent_context(workspace, listener):
     context = _fl_ctx(workspace)
     context.get_prop(FLContextKey.JOB_PROCESS_ARGS)[JobProcessArgs.PARENT_URL] = (
         "-p",
-        f"file://0{listener}?poll_interval=0.05",
+        f"shared-file://0{listener}?poll_interval=0.05",
     )
     return context
 

@@ -58,7 +58,7 @@ def _slurm_config(tmp_path, **launcher_overrides):
 def test_prepare_slurm_preserves_file_transport_comm_config(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
     file_internal = {
-        "scheme": "file",
+        "scheme": "shared-file",
         "resources": {
             "root_dir": "/lustre/proj/cellnet",
             "poll_interval": 0.05,
@@ -76,7 +76,7 @@ def test_prepare_slurm_preserves_file_transport_comm_config(tmp_path, capsys):
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["backbone"] == {"connect_generation": 1}
     resources = comm_config["internal"]["resources"]
-    assert comm_config["internal"]["scheme"] == "file"
+    assert comm_config["internal"]["scheme"] == "shared-file"
     assert resources["root_dir"] == "/lustre/proj/cellnet"
     assert resources["connection_security"] == "clear"
     assert "host" not in resources and "port" not in resources
@@ -85,7 +85,7 @@ def test_prepare_slurm_preserves_file_transport_comm_config(tmp_path, capsys):
 def test_prepare_slurm_rejects_relative_file_transport_root_dir(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
     (kit / "local" / "comm_config.json").write_text(
-        json.dumps({"internal": {"scheme": "file", "resources": {"root_dir": "relative/cellnet"}}}),
+        json.dumps({"internal": {"scheme": "shared-file", "resources": {"root_dir": "relative/cellnet"}}}),
         encoding="utf-8",
     )
     output = tmp_path / "site-1-slurm"
