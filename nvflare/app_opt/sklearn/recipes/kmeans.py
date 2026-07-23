@@ -87,7 +87,7 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
             indicate a better model. Defaults to "metrics"
             (which corresponds to the homogeneity score sent by the K-Means client).
         negate_key_metric: Whether the model selector should invert key_metric before comparing models.
-            Use this for lower-is-better metrics such as losses. Defaults to False.
+            Use this if key_metric is a lower-is-better metric. Defaults to False.
 
     Example:
         Basic usage with same config for all clients:

@@ -65,6 +65,7 @@ class BaseFedJob(FedJob):
                 Defaults to "accuracy". Only used if model_selector is not provided.
             negate_key_metric: Whether the model selector should invert key_metric before comparing models.
                 Use this for lower-is-better metrics such as losses. Defaults to False.
+                Only used if model_selector is not provided.
             validation_json_generator: A component for generating validation results.
                 If not provided, a ValidationJsonGenerator will be configured.
             model_selector: A component for selecting the best model during training.
