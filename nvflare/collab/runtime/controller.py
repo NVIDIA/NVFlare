@@ -174,6 +174,10 @@ class CollabController(Controller, CollabAdaptor):
         return proxy
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
+        if self.server_app is None:
+            self.log_error(fl_ctx, "server app is unavailable because controller initialization did not complete")
+            return
+
         # configure all sites
         engine = fl_ctx.get_engine()
         self.cell = engine.get_cell()

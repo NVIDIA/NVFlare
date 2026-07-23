@@ -16,7 +16,7 @@ from collections.abc import Mapping, Sequence
 
 from nvflare.collab.api._invocation import _InvocationDispatcher
 from nvflare.collab.api.call_utils import check_call_args
-from nvflare.collab.api.exceptions import CollabCallError
+from nvflare.collab.api.exceptions import CollabCallError, RunAborted
 from nvflare.collab.api.publish_interface import PublishInterface
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -231,6 +231,10 @@ class Proxy:
                     raise result
 
                 return result
+        except RunAborted:
+            # A runtime abort is not a per-site call failure and must never be
+            # suppressed by optional-call semantics.
+            raise
         except Exception as ex:
             if isinstance(ex, CollabCallError):
                 call_error = ex

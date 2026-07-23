@@ -23,6 +23,21 @@ def test_default_sync_timeout_allows_client_startup():
     assert CollabController().sync_task_timeout == 60
 
 
+def test_control_flow_returns_when_start_did_not_create_server_app():
+    controller = CollabController()
+    controller.log_error = MagicMock()
+    fl_ctx = MagicMock()
+
+    try:
+        controller.control_flow(abort_signal=MagicMock(), fl_ctx=fl_ctx)
+        controller.log_error.assert_called_once_with(
+            fl_ctx, "server app is unavailable because controller initialization did not complete"
+        )
+        fl_ctx.get_engine.assert_not_called()
+    finally:
+        controller.thread_executor.shutdown()
+
+
 def test_fractional_sync_timeout_rounds_up(monkeypatch):
     task_class = MagicMock()
     monkeypatch.setattr(controller_module, "Task", task_class)

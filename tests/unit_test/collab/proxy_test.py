@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nvflare.collab.api.exceptions import CollabCallError
+from nvflare.collab.api.exceptions import CollabCallError, RunAborted
 from nvflare.collab.api.proxy import Proxy
 
 
@@ -58,4 +58,14 @@ def test_optional_call_failure_returns_none_without_panicking():
     result = proxy(optional=True).train()
 
     assert result is None
+    backend.handle_exception.assert_not_called()
+
+
+def test_optional_call_propagates_run_abort():
+    error = RunAborted("run is aborted")
+    proxy, backend = _make_failing_proxy(error)
+
+    with pytest.raises(RunAborted, match="run is aborted"):
+        proxy(optional=True).train()
+
     backend.handle_exception.assert_not_called()
