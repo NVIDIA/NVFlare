@@ -57,7 +57,7 @@ def is_multi_node_env(environ) -> bool:
 def _positive_int(value, name: str, default: int) -> int:
     if value is None or value == "":
         return default
-    if not isinstance(value, str) or not value.isascii() or not value.isdigit() or int(value) <= 0:
+    if not value.isascii() or not value.isdigit() or int(value) <= 0:
         raise NodeGroupError(f"{name} must be a positive integer")
     return int(value)
 
@@ -65,7 +65,7 @@ def _positive_int(value, name: str, default: int) -> int:
 def _node_rank(value, nnodes: int) -> int:
     if value is None or value == "":
         return 0
-    if not isinstance(value, str) or not value.isascii() or not value.isdigit() or int(value) >= nnodes:
+    if not value.isascii() or not value.isdigit() or int(value) >= nnodes:
         raise NodeGroupError(f"{ENV_NODE_RANK} must be an integer in 0..{nnodes - 1}")
     return int(value)
 
@@ -97,8 +97,6 @@ class NodeGroup:
         if nnodes > 1 and not master_addr:
             raise NodeGroupError(f"{ENV_MASTER_ADDR} must be set for a multi-node group")
         master_port = _positive_int(environ.get(ENV_MASTER_PORT), ENV_MASTER_PORT, DEFAULT_MASTER_PORT)
-        if master_port > 65535:
-            raise NodeGroupError(f"{ENV_MASTER_PORT} must be at most 65535")
         return cls(
             nnodes=nnodes,
             node_rank=node_rank,
