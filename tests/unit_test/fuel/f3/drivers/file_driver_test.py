@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import stat
 import struct
 import time
 from threading import Event
@@ -22,15 +23,23 @@ from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.communicator import Communicator
 from nvflare.fuel.f3.connection import Connection
 from nvflare.fuel.f3.drivers.connector_info import Mode
-from nvflare.fuel.f3.drivers.file_driver import _ConnConfig, _LogReader, _LogWriter, parse_file_url
+from nvflare.fuel.f3.drivers.file_driver import (
+    OWNER_MARKER,
+    FileDriver,
+    _ConnConfig,
+    _LogReader,
+    _LogWriter,
+    parse_file_url,
+)
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message, MessageReceiver
+from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN
 
 APP_ID = 321
 NODE_A = "file-comm-a"
 NODE_B = "file-comm-b"
 
-FAST_PARAMS = {"poll_interval": "0.005", "lease_interval": "0.2", "lease_timeout": "2"}
+FAST_PARAMS = {"poll_interval": "0.005", "lease_interval": "0.2", "lease_timeout": "5"}
 
 
 class _State:
@@ -76,8 +85,8 @@ def _wait_until(condition, timeout=15.0) -> bool:
 
 
 def _frame(payload: bytes) -> bytes:
-    length = 16 + len(payload)
-    return struct.pack(">I", length) + bytes(12) + payload
+    length = PREFIX_LEN + len(payload)
+    return struct.pack(">I", length) + bytes(PREFIX_LEN - 4) + payload
 
 
 class TestParseFileUrl:
@@ -254,3 +263,103 @@ class TestFileDriver:
         comm = _make_comm(NODE_A, _State())
         with pytest.raises(CommError):
             comm.start_listener("file", {})
+
+    def test_close_drains_pending_frames(self, tmp_path):
+        state = _State()
+        comm_a = _make_comm(NODE_A, state)
+        comm_b = _make_comm(NODE_B, state)
+
+        try:
+            _, url, _ = comm_a.start_listener("file", {"root_dir": str(tmp_path), **FAST_PARAMS})
+            comm_a.start()
+            comm_b.add_connector(url, Mode.ACTIVE)
+            comm_b.start()
+            assert state.ready[NODE_A].wait(15) and state.ready[NODE_B].wait(15)
+
+            expected = [f"tail-{i}".encode() for i in range(30)]
+            for payload in expected:
+                comm_b.send(Endpoint(NODE_A), APP_ID, Message({}, payload))
+            comm_b.stop()
+
+            assert _wait_until(lambda: len(state.received_from[NODE_B]) == len(expected))
+            assert sorted(state.received_from[NODE_B]) == sorted(expected)
+        finally:
+            comm_b.stop()
+            comm_a.stop()
+
+    def test_permissions_ignore_umask(self, tmp_path):
+        old_umask = os.umask(0o022)
+        state = _State()
+        comm_a = _make_comm(NODE_A, state)
+        comm_b = _make_comm(NODE_B, state)
+
+        def _mode(path):
+            return stat.S_IMODE(os.stat(path).st_mode)
+
+        try:
+            _, url, _ = comm_a.start_listener("file", {"root_dir": str(tmp_path), **FAST_PARAMS})
+            comm_a.start()
+            comm_b.add_connector(url, Mode.ACTIVE)
+            comm_b.start()
+            assert state.ready[NODE_A].wait(15) and state.ready[NODE_B].wait(15)
+
+            listen_dir = tmp_path / next(p for p in os.listdir(tmp_path))
+            assert _mode(listen_dir) == 0o770
+            conn_dir = next((listen_dir / "conns").iterdir())
+            assert _mode(conn_dir) == 0o770
+            assert _mode(conn_dir / "a2p.0.log") == 0o660
+        finally:
+            os.umask(old_umask)
+            comm_b.stop()
+            comm_a.stop()
+
+    def test_active_cleans_up_when_listener_dead(self, tmp_path):
+        listen_dir = tmp_path / "cell"
+        (listen_dir / "conns").mkdir(parents=True)
+        state = _State()
+        comm_b = _make_comm(NODE_B, state)
+        url = f"file://0{listen_dir}?poll_interval=0.005&lease_interval=0.2&lease_timeout=1"
+
+        try:
+            comm_b.add_connector(url, Mode.ACTIVE)
+            comm_b.start()
+            assert _wait_until(lambda: len(os.listdir(listen_dir / "conns")) > 0, 5)
+            assert _wait_until(lambda: len(os.listdir(listen_dir / "conns")) == 0, 15)
+        finally:
+            comm_b.stop()
+
+
+class TestGetUrls:
+    def test_gc_requires_ownership_marker(self, tmp_path):
+        old = time.time() - 7200
+        foreign = tmp_path / "lst_foreign"
+        foreign.mkdir()
+        (foreign / "data.txt").write_text("keep me")
+        os.utime(foreign, (old, old))
+
+        dead = tmp_path / "lst_dead"
+        (dead / "conns").mkdir(parents=True)
+        (dead / OWNER_MARKER).touch()
+        (dead / "lease").touch()
+        os.utime(dead / "lease", (old, old))
+
+        FileDriver.get_urls("file", {"root_dir": str(tmp_path)})
+
+        assert foreign.exists() and (foreign / "data.txt").exists()
+        assert _wait_until(lambda: not dead.exists(), 5)
+
+    def test_reserved_chars_rejected(self, tmp_path):
+        for ch in ("?", "#"):
+            with pytest.raises(CommError):
+                FileDriver.get_urls("file", {"root_dir": str(tmp_path) + f"/bad{ch}dir"})
+
+
+class TestConnConfig:
+    def test_robust_param_parsing(self):
+        cfg = _ConnConfig({"max_log_size": "1000000000.0", "poll_interval": "0", "fsync": "False"})
+        assert cfg.max_log_size == 1_000_000_000
+        assert cfg.poll_interval >= 0.001
+        assert cfg.max_poll_interval >= cfg.poll_interval
+        assert cfg.fsync is False
+        assert _ConnConfig({"fsync": "true"}).fsync is True
+        assert _ConnConfig({"dir_mode": "700", "file_mode": "600"}).dir_mode == 0o700

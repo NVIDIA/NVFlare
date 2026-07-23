@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 import os
 import shutil
 import struct
@@ -20,6 +21,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode, urlsplit
 
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import BytesAlike, Connection
 from nvflare.fuel.f3.drivers.base_driver import BaseDriver
@@ -27,8 +29,11 @@ from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
 from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
 from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE
 from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN
+from nvflare.fuel.utils.argument_utils import str2bool
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
+
+log = logging.getLogger(__name__)
 
 FRAME_LEN_STRUCT = struct.Struct(">I")
 
@@ -40,20 +45,35 @@ MAX_LOG_SIZE = "max_log_size"
 LEASE_INTERVAL = "lease_interval"
 LEASE_TIMEOUT = "lease_timeout"
 FSYNC = "fsync"
+DIR_MODE = "dir_mode"
+FILE_MODE = "file_mode"
 
 # Tuning params propagated from listener resources to the connect URL so the active side uses the same values
-_TUNING_PARAMS = [POLL_INTERVAL, MAX_POLL_INTERVAL, MAX_LOG_SIZE, LEASE_INTERVAL, LEASE_TIMEOUT, FSYNC]
+_TUNING_PARAMS = [
+    POLL_INTERVAL,
+    MAX_POLL_INTERVAL,
+    MAX_LOG_SIZE,
+    LEASE_INTERVAL,
+    LEASE_TIMEOUT,
+    FSYNC,
+    FILE_MODE,
+    DIR_MODE,
+]
 
 # Directory layout
 CONNS_DIR = "conns"
 LISTENER_PREFIX = "lst_"
 LISTENER_LEASE_FILE = "lease"
+OWNER_MARKER = ".nvf_file_transport"
 CLOSED_FILE = "closed"
 TMP_PREFIX = "."
 A2P = "a2p"  # active-to-passive log prefix
 P2A = "p2a"  # passive-to-active log prefix
 
-LISTENER_STALE_TIME = 600.0
+LISTENER_STALE_TIME = 3600.0
+TMP_DIR_STALE_TIME = 3600.0
+MIN_POLL_INTERVAL = 0.001
+READ_CHUNK = 8 * 1024 * 1024
 
 
 def parse_file_url(url: str) -> str:
@@ -83,16 +103,26 @@ def parse_file_url(url: str) -> str:
     return path
 
 
-def _touch(path: str):
+def _validate_dir_path(path: str):
+    for ch in ("?", "#", "\n", "\r"):
+        if ch in path:
+            raise CommError(
+                CommError.BAD_CONFIG, f"Unsupported character {ch!r} in file transport directory path: {path}"
+            )
+
+
+def _touch(path: str, mode: Optional[int] = None):
     try:
         os.utime(path, None)
     except FileNotFoundError:
         try:
             open(path, "ab").close()
-        except OSError:
-            pass
-    except OSError:
-        pass
+            if mode is not None:
+                os.chmod(path, mode)
+        except OSError as ex:
+            log.debug(f"Cannot create {path}: {secure_format_exception(ex)}")
+    except OSError as ex:
+        log.debug(f"Cannot touch {path}: {secure_format_exception(ex)}")
 
 
 def _mtime(path: str) -> Optional[float]:
@@ -102,22 +132,58 @@ def _mtime(path: str) -> Optional[float]:
         return None
 
 
-def _to_bool(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
+def _make_new_dir(path: str, mode: int):
+    os.makedirs(path)
+    os.chmod(path, mode)
+
+
+def _create_file(path: str, mode: int):
+    open(path, "ab").close()
+    os.chmod(path, mode)
+
+
+def _log_path(conn_dir: str, prefix: str, index: int) -> str:
+    return os.path.join(conn_dir, f"{prefix}.{index}.log")
+
+
+def _sealed_path(conn_dir: str, prefix: str, index: int) -> str:
+    return os.path.join(conn_dir, f"{prefix}.{index}.sealed")
+
+
+def _parse_mode(value: Any, default: int) -> int:
     if value is None:
-        return False
-    return str(value).strip().lower() in ("true", "1", "yes", "y", "t")
+        return default
+    if isinstance(value, int):
+        return value
+    return int(str(value), 8)
 
 
 class _ConnConfig:
+    """Effective tuning values for one connection.
+
+    Precedence: hardcoded defaults < connector params (listener resources / URL query) < the
+    local comm_config "file" section, so a cell can locally override polling/lease/fsync for its
+    own mount. max_log_size is exempt from local override because reader-side rotation detection
+    requires the same value on both sides of a connection.
+    """
+
     def __init__(self, params: dict):
-        self.poll_interval = float(params.get(POLL_INTERVAL, 0.01))
-        self.max_poll_interval = float(params.get(MAX_POLL_INTERVAL, 0.5))
-        self.max_log_size = int(params.get(MAX_LOG_SIZE, 1024 * 1024 * 1024))
-        self.lease_interval = float(params.get(LEASE_INTERVAL, 5.0))
-        self.lease_timeout = float(params.get(LEASE_TIMEOUT, 30.0))
-        self.fsync = _to_bool(params.get(FSYNC, False))
+        merged = dict(params)
+        config = CommConfigurator().get_config()
+        local_overrides = config.get("file") if config else None
+        if local_overrides:
+            for key, value in local_overrides.items():
+                if key != MAX_LOG_SIZE:
+                    merged[key] = value
+
+        self.poll_interval = max(float(merged.get(POLL_INTERVAL, 0.01)), MIN_POLL_INTERVAL)
+        self.max_poll_interval = max(float(merged.get(MAX_POLL_INTERVAL, 0.5)), self.poll_interval)
+        self.max_log_size = int(float(params.get(MAX_LOG_SIZE, 1024 * 1024 * 1024)))
+        self.lease_interval = float(merged.get(LEASE_INTERVAL, 5.0))
+        self.lease_timeout = float(merged.get(LEASE_TIMEOUT, 30.0))
+        self.fsync = bool(str2bool(merged.get(FSYNC, False)))
+        self.dir_mode = _parse_mode(merged.get(DIR_MODE), 0o770)
+        self.file_mode = _parse_mode(merged.get(FILE_MODE), 0o660)
 
 
 class _LogWriter:
@@ -138,19 +204,16 @@ class _LogWriter:
         self.closed = False
         self.lock = threading.Lock()
 
-    def log_path(self, index: int) -> str:
-        return os.path.join(self.conn_dir, f"{self.prefix}.{index}.log")
-
-    def sealed_path(self, index: int) -> str:
-        return os.path.join(self.conn_dir, f"{self.prefix}.{index}.sealed")
-
     def append(self, frame: BytesAlike):
         with self.lock:
             if self.closed:
                 raise CommError(CommError.CLOSED, "Log writer is closed")
             if self.file is None:
-                path = self.log_path(self.index)
+                path = _log_path(self.conn_dir, self.prefix, self.index)
+                existed = os.path.exists(path)
                 self.file = open(path, "ab")
+                if not existed:
+                    os.chmod(path, self.cfg.file_mode)
                 self.size = os.path.getsize(path)
             self.file.write(frame)
             self.file.flush()
@@ -161,16 +224,22 @@ class _LogWriter:
                 self._rotate()
 
     def _rotate(self):
-        # fsync before sealing so the recorded size is never ahead of visible data
+        # fsync before sealing so the recorded size is never ahead of visible data. self.file is
+        # cleared before any fallible step so a failed rotation never wedges the writer on a
+        # closed handle; the caller closes the connection on error and a reconnect starts clean.
         os.fsync(self.file.fileno())
         self.file.close()
-        sealed = self.sealed_path(self.index)
+        self.file = None
+        sealed = _sealed_path(self.conn_dir, self.prefix, self.index)
         tmp = sealed + ".tmp"
         with open(tmp, "w") as f:
             f.write(str(self.size))
+        os.chmod(tmp, self.cfg.file_mode)
         os.replace(tmp, sealed)
+        next_path = _log_path(self.conn_dir, self.prefix, self.index + 1)
         self.index += 1
-        self.file = open(self.log_path(self.index), "ab")
+        self.file = open(next_path, "ab")
+        os.chmod(next_path, self.cfg.file_mode)
         self.size = 0
 
     def close(self):
@@ -196,58 +265,59 @@ class _LogReader:
         self.offset = 0
         self.file = None
         self.buffer = bytearray()
-
-    def log_path(self, index: int) -> str:
-        return os.path.join(self.conn_dir, f"{self.prefix}.{index}.log")
-
-    def sealed_path(self, index: int) -> str:
-        return os.path.join(self.conn_dir, f"{self.prefix}.{index}.sealed")
+        self.progressed = False
 
     def read_frames(self) -> list:
+        self.progressed = False
         data = self._read_new_data()
         if data:
             self.buffer.extend(data)
+            self.progressed = True
 
         frames = []
-        while True:
-            frame = self._extract_frame()
-            if frame is None:
+        pos = 0
+        buf = self.buffer
+        total = len(buf)
+        while total - pos >= FRAME_LEN_STRUCT.size:
+            length = FRAME_LEN_STRUCT.unpack_from(buf, pos)[0]
+            if length < PREFIX_LEN or length > MAX_FRAME_SIZE:
+                raise CommError(
+                    CommError.BAD_DATA,
+                    f"Corrupt frame length {length} in {_log_path(self.conn_dir, self.prefix, self.index)}",
+                )
+            if total - pos < length:
                 break
-            frames.append(frame)
+            frames.append(bytes(memoryview(buf)[pos : pos + length]))
+            pos += length
+        if pos:
+            del buf[:pos]
 
-        self._advance_if_sealed()
+        # A seal is only ever written at or past max_log_size, so skip the probe until then.
+        # This requires max_log_size to be identical on both sides of a connection.
+        if self.offset >= self.cfg.max_log_size:
+            self._advance_if_sealed()
         return frames
 
     def _read_new_data(self) -> Optional[bytes]:
-        path = self.log_path(self.index)
+        path = _log_path(self.conn_dir, self.prefix, self.index)
         try:
             size = os.stat(path).st_size
+            if size <= self.offset:
+                return None
+            if self.file is None:
+                self.file = open(path, "rb")
+            self.file.seek(self.offset)
+            data = self.file.read(min(size - self.offset, READ_CHUNK))
         except OSError:
-            # Not created yet (writer still opening the next log after rotation)
+            # Not created yet (writer still opening the next log after rotation), or transient
+            # FS error; either way retry on the next poll and rely on lease timeout for liveness
             return None
-        if size <= self.offset:
-            return None
-        if self.file is None:
-            self.file = open(path, "rb")
-        self.file.seek(self.offset)
-        data = self.file.read(size - self.offset)
-        self.offset += len(data)
+        if data:
+            self.offset += len(data)
         return data
 
-    def _extract_frame(self) -> Optional[bytes]:
-        if len(self.buffer) < FRAME_LEN_STRUCT.size:
-            return None
-        length = FRAME_LEN_STRUCT.unpack_from(self.buffer, 0)[0]
-        if length < PREFIX_LEN or length > MAX_FRAME_SIZE:
-            raise CommError(CommError.BAD_DATA, f"Corrupt frame length {length} in {self.log_path(self.index)}")
-        if len(self.buffer) < length:
-            return None
-        frame = bytes(self.buffer[:length])
-        del self.buffer[:length]
-        return frame
-
     def _advance_if_sealed(self):
-        sealed = self.sealed_path(self.index)
+        sealed = _sealed_path(self.conn_dir, self.prefix, self.index)
         try:
             with open(sealed) as f:
                 final_size = int(f.read())
@@ -256,11 +326,14 @@ class _LogReader:
         if self.offset < final_size:
             return
         if self.buffer:
-            raise CommError(CommError.BAD_DATA, f"Partial frame at end of sealed log {self.log_path(self.index)}")
+            raise CommError(
+                CommError.BAD_DATA,
+                f"Partial frame at end of sealed log {_log_path(self.conn_dir, self.prefix, self.index)}",
+            )
         if self.file:
             self.file.close()
             self.file = None
-        for path in (self.log_path(self.index), sealed):
+        for path in (_log_path(self.conn_dir, self.prefix, self.index), sealed):
             try:
                 os.unlink(path)
             except OSError:
@@ -285,20 +358,21 @@ class FileConnection(Connection):
         self.conn_dir = conn_dir
         self.cfg = cfg
         self.closing = False
+        self.received_anything = False
         self.logger = get_obj_logger(self)
 
         active = connector.mode == Mode.ACTIVE
-        self.side = "a" if active else "p"
+        side = "a" if active else "p"
         peer_side = "p" if active else "a"
-        self.my_lease = os.path.join(conn_dir, f"{self.side}.lease")
+        self.my_lease = os.path.join(conn_dir, f"{side}.lease")
         self.peer_lease = os.path.join(conn_dir, f"{peer_side}.lease")
         self.closed_file = os.path.join(conn_dir, CLOSED_FILE)
         self.writer = _LogWriter(conn_dir, A2P if active else P2A, cfg)
         self.reader = _LogReader(conn_dir, P2A if active else A2P, cfg)
 
-        _touch(self.my_lease)
+        _touch(self.my_lease, cfg.file_mode)
         self.conn_props = {
-            DriverParams.LOCAL_ADDR.value: f"{conn_dir}#{self.side}",
+            DriverParams.LOCAL_ADDR.value: f"{conn_dir}#{side}",
             DriverParams.PEER_ADDR.value: f"{conn_dir}#{peer_side}",
         }
 
@@ -309,17 +383,23 @@ class FileConnection(Connection):
         if self.closing:
             return
         self.closing = True
-        _touch(self.closed_file)
+        # Close the writer before creating the closed marker so the marker always follows all
+        # data: any in-flight append completes under the writer lock, later appends are rejected,
+        # and a peer that sees the marker can trust a final drain to observe every frame.
         self.writer.close()
+        _touch(self.closed_file, self.cfg.file_mode)
 
     def send_frame(self, frame: BytesAlike):
         if self.closing:
             raise CommError(CommError.CLOSED, f"Connection {self.name} is closed")
         try:
             self.writer.append(frame)
-        except CommError:
-            raise
         except Exception as ex:
+            # A failed append may have left a torn frame in the log; the framing can never
+            # recover, so close the connection to force a clean reconnect.
+            self.close()
+            if isinstance(ex, CommError):
+                raise
             raise CommError(CommError.ERROR, f"Error sending frame: {secure_format_exception(ex)}")
 
     def read_loop(self, stopped: threading.Event):
@@ -334,33 +414,48 @@ class FileConnection(Connection):
         peer_seen = now
         peer_mtime = None
 
-        while not self.closing and not stopped.is_set():
-            now = time.monotonic()
-            if now - last_housekeeping >= self.cfg.lease_interval:
-                last_housekeeping = now
-                _touch(self.my_lease)
-                if os.path.exists(self.closed_file):
-                    self.logger.debug(f"{self}: closed by peer")
-                    break
-                mtime = _mtime(self.peer_lease)
-                if mtime is not None and mtime != peer_mtime:
-                    peer_mtime = mtime
+        try:
+            while not self.closing and not stopped.is_set():
+                now = time.monotonic()
+                if now - last_housekeeping >= self.cfg.lease_interval:
+                    last_housekeeping = now
+                    _touch(self.my_lease, self.cfg.file_mode)
+                    if os.path.exists(self.closed_file):
+                        self.logger.debug(f"{self}: closed by peer")
+                        self._drain()
+                        break
+                    mtime = _mtime(self.peer_lease)
+                    if mtime is not None and mtime != peer_mtime:
+                        peer_mtime = mtime
+                        peer_seen = now
+                    elif now - peer_seen > self.cfg.lease_timeout:
+                        self.logger.info(f"{self}: peer lease is stale, closing")
+                        break
+
+                frames = self.reader.read_frames()
+                if frames:
+                    self.received_anything = True
                     peer_seen = now
-                elif now - peer_seen > self.cfg.lease_timeout:
-                    self.logger.info(f"{self}: peer lease is stale, closing")
-                    break
+                    for frame in frames:
+                        self.process_frame(frame)
+                if frames or self.reader.progressed:
+                    interval = self.cfg.poll_interval
+                else:
+                    interval = min(interval * 1.5, self.cfg.max_poll_interval)
+                if not frames:
+                    stopped.wait(interval)
+        finally:
+            self.reader.close()
 
+    def _drain(self):
+        """Deliver frames still in the log after the peer's closed marker (which follows all data)"""
+        while True:
             frames = self.reader.read_frames()
-            if frames:
-                peer_seen = now
-                interval = self.cfg.poll_interval
-                for frame in frames:
-                    self.process_frame(frame)
-            else:
-                interval = min(interval * 1.5, self.cfg.max_poll_interval)
-                stopped.wait(interval)
-
-        self.reader.close()
+            if not frames:
+                return
+            self.received_anything = True
+            for frame in frames:
+                self.process_frame(frame)
 
 
 class FileDriver(BaseDriver):
@@ -370,7 +465,9 @@ class FileDriver(BaseDriver):
     them (e.g. an HPC compute node and a gateway node). The URL form is file://0/absolute/dir
     ("0" is the empty-host placeholder). The passive side owns the directory; each active peer
     creates a connection subdirectory with one append log per direction. There is no transport
-    security: directory permissions are the trust boundary.
+    security: directory permissions are the trust boundary. Directories are created 0o770 and
+    files 0o660 regardless of umask; override with the dir_mode/file_mode resources (octal
+    strings) if the two sides run as different users needing other group semantics.
 
     Typical use is job-cell to client-parent communication, configured in the client's
     comm_config.json. connect_generation 1 routes job-cell traffic through the client parent
@@ -392,8 +489,17 @@ class FileDriver(BaseDriver):
             }
         }
 
-    The tuning resources are optional (defaults shown in _ConnConfig) and are propagated to the
-    child cell through the query string of the generated connect URL.
+    The tuning resources are optional (defaults in _ConnConfig) and are propagated to the child
+    cell through the query string of the generated connect URL; a cell can locally override them
+    (except max_log_size, which must match on both sides) via a "file" section in its own
+    comm_config.json. Filesystem metadata load: an idle connection costs one stat per poll tick
+    per direction plus one lease utime per lease_interval per side, so defaults cost roughly 4-5
+    metadata ops/sec per idle connection; raise max_poll_interval (e.g. to 1-2s) to shrink it
+    proportionally at the cost of first-message latency. Data bursts are read without sleeping,
+    so throughput is unaffected by the poll settings. Note for NFS: attribute caching (actimeo)
+    can delay lease-change and size visibility; mount with a low actimeo or raise lease_timeout
+    well above the attribute-cache window. fsync=true is recommended on filesystems without
+    close-to-open or POSIX coherence.
     """
 
     def __init__(self):
@@ -401,7 +507,7 @@ class FileDriver(BaseDriver):
         self.stop_event = threading.Event()
         self.dir_lock = threading.Lock()
         self.handled_dirs = set()
-        self.done_dirs = set()
+        self.done_dirs: Dict[str, float] = {}
         self.logger = get_obj_logger(self)
 
     @staticmethod
@@ -418,11 +524,16 @@ class FileDriver(BaseDriver):
         if not root_dir:
             raise CommError(CommError.BAD_CONFIG, f"'{ROOT_DIR}' resource is required for scheme {scheme}")
         root_dir = os.path.abspath(root_dir)
-        os.makedirs(root_dir, exist_ok=True)
+        _validate_dir_path(root_dir)
+        cfg = _ConnConfig(resources)
+        if not os.path.isdir(root_dir):
+            _make_new_dir(root_dir, cfg.dir_mode)
         _remove_stale_listener_dirs(root_dir)
 
         listen_dir = os.path.join(root_dir, LISTENER_PREFIX + uuid.uuid4().hex[:8])
-        os.makedirs(os.path.join(listen_dir, CONNS_DIR))
+        _make_new_dir(listen_dir, cfg.dir_mode)
+        _make_new_dir(os.path.join(listen_dir, CONNS_DIR), cfg.dir_mode)
+        _create_file(os.path.join(listen_dir, OWNER_MARKER), cfg.file_mode)
 
         url = f"{scheme}://0{listen_dir}"
         tuning = {k: str(resources[k]) for k in _TUNING_PARAMS if k in resources}
@@ -435,25 +546,34 @@ class FileDriver(BaseDriver):
         cfg = _ConnConfig(connector.params)
         listen_dir = self._get_dir_from_params(connector.params)
         conns_dir = os.path.join(listen_dir, CONNS_DIR)
-        os.makedirs(conns_dir, exist_ok=True)
+        if not os.path.isdir(conns_dir):
+            os.makedirs(conns_dir, exist_ok=True)
+            os.chmod(conns_dir, cfg.dir_mode)
         lease = os.path.join(listen_dir, LISTENER_LEASE_FILE)
 
         interval = cfg.poll_interval
         last_housekeeping = 0.0
 
         while not self._stopping(connector):
+            try:
+                entries = sorted(os.listdir(conns_dir))
+            except OSError as ex:
+                raise CommError(CommError.ERROR, f"Cannot list {conns_dir}: {secure_format_exception(ex)}")
+
             now = time.monotonic()
             if now - last_housekeeping >= cfg.lease_interval:
                 last_housekeeping = now
-                _touch(lease)
-                self._gc_conn_dirs(conns_dir, cfg)
+                _touch(lease, cfg.file_mode)
+                self._gc_conn_dirs(conns_dir, cfg, entries)
 
-            new_conns = self._scan_for_connections(conns_dir, connector, cfg)
+            new_conns = self._adopt_new_dirs(conns_dir, entries, connector, cfg)
             if new_conns:
                 interval = cfg.poll_interval
             else:
                 interval = min(interval * 1.5, cfg.max_poll_interval)
                 connector.stopped.wait(interval)
+
+        self._cleanup_listen_dir(listen_dir)
 
     def connect(self, connector: ConnectorInfo):
         self.connector = connector
@@ -465,9 +585,9 @@ class FileDriver(BaseDriver):
 
         name = uuid.uuid4().hex[:12]
         tmp_dir = os.path.join(conns_dir, TMP_PREFIX + name)
-        os.makedirs(tmp_dir)
+        _make_new_dir(tmp_dir, cfg.dir_mode)
         for log_name in (f"{A2P}.0.log", f"{P2A}.0.log"):
-            open(os.path.join(tmp_dir, log_name), "ab").close()
+            _create_file(os.path.join(tmp_dir, log_name), cfg.file_mode)
         conn_dir = os.path.join(conns_dir, name)
         os.rename(tmp_dir, conn_dir)
 
@@ -478,6 +598,10 @@ class FileDriver(BaseDriver):
         finally:
             conn.close()
             self.close_connection(conn)
+            if not conn.received_anything:
+                # Nothing ever arrived (e.g. the listener is dead); remove our own dir so
+                # reconnect attempts don't accumulate directories on the shared filesystem
+                shutil.rmtree(conn_dir, ignore_errors=True)
 
     def shutdown(self):
         self.stop_event.set()
@@ -494,16 +618,13 @@ class FileDriver(BaseDriver):
         if url:
             return parse_file_url(url)
         path = params.get(DriverParams.PATH.value)
-        if not path or path == "/":
+        if path:
+            path = path.rstrip("/")
+        if not path or not os.path.isabs(path):
             raise CommError(CommError.BAD_CONFIG, "Missing directory path, expected URL of form file://0/abs/dir")
         return path
 
-    def _scan_for_connections(self, conns_dir: str, connector: ConnectorInfo, cfg: _ConnConfig) -> int:
-        try:
-            entries = sorted(os.listdir(conns_dir))
-        except OSError as ex:
-            raise CommError(CommError.ERROR, f"Cannot list {conns_dir}: {secure_format_exception(ex)}")
-
+    def _adopt_new_dirs(self, conns_dir: str, entries: list, connector: ConnectorInfo, cfg: _ConnConfig) -> int:
         new_conns = 0
         for entry in entries:
             if entry.startswith(TMP_PREFIX):
@@ -511,10 +632,21 @@ class FileDriver(BaseDriver):
             with self.dir_lock:
                 if entry in self.handled_dirs:
                     continue
-                self.handled_dirs.add(entry)
             conn_dir = os.path.join(conns_dir, entry)
             if not os.path.isdir(conn_dir):
                 continue
+            if os.path.exists(os.path.join(conn_dir, CLOSED_FILE)) or not os.path.isfile(
+                os.path.join(conn_dir, f"{A2P}.0.log")
+            ):
+                # Leftover from a previous listener incarnation: already closed, or its logs were
+                # partially consumed. Adopting it would replay or wedge; mark for GC instead.
+                _touch(os.path.join(conn_dir, CLOSED_FILE), cfg.file_mode)
+                with self.dir_lock:
+                    self.handled_dirs.add(entry)
+                    self.done_dirs[entry] = time.monotonic()
+                continue
+            with self.dir_lock:
+                self.handled_dirs.add(entry)
             conn = FileConnection(conn_dir, connector, cfg)
             self.add_connection(conn)
             t = threading.Thread(target=self._conn_loop, args=(conn, entry), name=f"file_conn_{entry}", daemon=True)
@@ -531,31 +663,51 @@ class FileDriver(BaseDriver):
             conn.close()
             self.close_connection(conn)
             with self.dir_lock:
-                self.done_dirs.add(entry)
+                self.done_dirs[entry] = time.monotonic()
 
-    def _gc_conn_dirs(self, conns_dir: str, cfg: _ConnConfig):
-        """Remove connection dirs whose connection has ended, once the closed marker is old
-        enough for the peer to have noticed it."""
+    def _gc_conn_dirs(self, conns_dir: str, cfg: _ConnConfig, entries: list):
+        """Remove ended connection dirs after a locally-timed grace period (no cross-node clock
+        comparison), plus orphaned tmp dirs from crashed dialers."""
         with self.dir_lock:
-            done = list(self.done_dirs)
+            done = list(self.done_dirs.items())
 
-        for entry in done:
+        now = time.monotonic()
+        for entry, done_time in done:
+            if now - done_time <= 2 * cfg.lease_timeout:
+                continue
             conn_dir = os.path.join(conns_dir, entry)
+            shutil.rmtree(conn_dir, ignore_errors=True)
             if os.path.isdir(conn_dir):
-                closed_mtime = _mtime(os.path.join(conn_dir, CLOSED_FILE))
-                if closed_mtime is None:
-                    _touch(os.path.join(conn_dir, CLOSED_FILE))
-                    continue
-                if time.time() - closed_mtime <= 2 * cfg.lease_timeout:
-                    continue
-                shutil.rmtree(conn_dir, ignore_errors=True)
+                # Removal failed (e.g. peer still holds files open on NFS); keep the entry so the
+                # dir is retried later and never re-adopted as a new connection
+                continue
             with self.dir_lock:
-                self.done_dirs.discard(entry)
+                self.done_dirs.pop(entry, None)
                 self.handled_dirs.discard(entry)
+
+        for entry in entries:
+            if not entry.startswith(TMP_PREFIX):
+                continue
+            tmp_dir = os.path.join(conns_dir, entry)
+            mtime = _mtime(tmp_dir)
+            if mtime is not None and time.time() - mtime > TMP_DIR_STALE_TIME:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def _cleanup_listen_dir(self, listen_dir: str):
+        """On clean shutdown, remove the listener dir if this driver's get_urls() minted it"""
+        if os.path.basename(listen_dir).startswith(LISTENER_PREFIX) and os.path.isfile(
+            os.path.join(listen_dir, OWNER_MARKER)
+        ):
+            shutil.rmtree(listen_dir, ignore_errors=True)
 
 
 def _remove_stale_listener_dirs(root_dir: str):
-    """GC listener dirs from previous runs whose lease has not been touched for a long time"""
+    """GC listener dirs from previous runs whose lease has not been touched for a long time.
+
+    Only directories carrying the driver's ownership marker are ever removed, so a mistakenly
+    broad root_dir cannot cause loss of unrelated data. Removal runs in a background thread to
+    keep cell startup off the critical path of large tree deletions.
+    """
     try:
         entries = os.listdir(root_dir)
     except OSError:
@@ -565,8 +717,12 @@ def _remove_stale_listener_dirs(root_dir: str):
         if not entry.startswith(LISTENER_PREFIX):
             continue
         listen_dir = os.path.join(root_dir, entry)
+        if not os.path.isfile(os.path.join(listen_dir, OWNER_MARKER)):
+            continue
         mtime = _mtime(os.path.join(listen_dir, LISTENER_LEASE_FILE))
         if mtime is None:
             mtime = _mtime(listen_dir)
         if mtime is None or time.time() - mtime > LISTENER_STALE_TIME:
-            shutil.rmtree(listen_dir, ignore_errors=True)
+            threading.Thread(
+                target=shutil.rmtree, args=(listen_dir,), kwargs={"ignore_errors": True}, daemon=True
+            ).start()
