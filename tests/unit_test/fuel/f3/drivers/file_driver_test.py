@@ -155,6 +155,19 @@ class TestLogRoundtrip:
 
         assert received == frames
 
+    def test_reader_recovers_from_stale_file_handle(self, tmp_path):
+        cfg = _ConnConfig({})
+        writer = _LogWriter(str(tmp_path), "a2p", cfg)
+        reader = _LogReader(str(tmp_path), "a2p", cfg)
+
+        writer.append(_frame(b"first"))
+        assert reader.read_frames() == [_frame(b"first")]
+
+        os.close(reader.file.fileno())
+        writer.append(_frame(b"second"))
+        assert reader.read_frames() == []
+        assert reader.read_frames() == [_frame(b"second")]
+
     def test_partial_frame_visibility(self, tmp_path):
         cfg = _ConnConfig({})
         reader = _LogReader(str(tmp_path), "a2p", cfg)

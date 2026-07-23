@@ -316,7 +316,9 @@ class _LogReader:
             data = self.file.read(min(size - self.offset, READ_CHUNK))
         except OSError:
             # Not created yet (writer still opening the next log after rotation), or transient
-            # FS error; either way retry on the next poll and rely on lease timeout for liveness
+            # FS error. Drop any open handle so a stale descriptor (e.g. ESTALE after NFS server
+            # recovery) is replaced by a fresh open on the next poll instead of wedging forever.
+            self.close()
             return None
         if data:
             self.offset += len(data)
