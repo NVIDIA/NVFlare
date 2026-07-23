@@ -15,6 +15,7 @@ from nvflare.collab.api.app import ServerApp
 from nvflare.collab.api.constants import CollabMethodArgName, ContextKey
 from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.decorators import supports_context
+from nvflare.collab.api.exceptions import RunAborted
 from nvflare.security.logging import secure_log_traceback
 
 
@@ -38,6 +39,8 @@ def run_server(server_app: ServerApp, logger):
                     kwargs = {}
                 result = main_func(**kwargs)
                 server_ctx.set_prop(ContextKey.RESULT, result)
+            except RunAborted:
+                logger.info("server app run aborted")
             except Exception as ex:
                 secure_log_traceback(logger)
                 backend = server_app.backend

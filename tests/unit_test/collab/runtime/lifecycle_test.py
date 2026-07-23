@@ -16,6 +16,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nvflare.collab.api.exceptions import RunAborted
 from nvflare.collab.runtime.lifecycle import run_server
 
 
@@ -28,4 +29,19 @@ def test_run_server_finalizes_when_initialize_raises():
     with pytest.raises(ValueError, match="initialization failed"):
         run_server(server_app, MagicMock())
 
+    server_app.finalize.assert_called_once_with(server_ctx)
+
+
+def test_run_server_treats_run_aborted_as_controlled_shutdown():
+    server_app = MagicMock()
+    server_ctx = MagicMock()
+    server_ctx.is_aborted.return_value = False
+    server_app.new_context.return_value = server_ctx
+    server_app.mains = [("main", MagicMock(side_effect=RunAborted("run aborted")))]
+    logger = MagicMock()
+
+    assert run_server(server_app, logger) is None
+
+    logger.info.assert_any_call("server app run aborted")
+    server_app.backend.handle_exception.assert_not_called()
     server_app.finalize.assert_called_once_with(server_ctx)
