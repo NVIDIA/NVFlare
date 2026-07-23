@@ -145,7 +145,8 @@ class FedAvgRecipe(Recipe):
             Only used if `launch_external_process` is True. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
             key_metric selects the metric used for global model selection by the IntimeModelSelector.
-            Defaults to "accuracy".
+            Higher values must indicate a better model; for lower-is-better metrics such as a loss,
+            report a negated value from the client (e.g., "neg_loss"). Defaults to "accuracy".
         stop_cond: Early stopping condition based on metric. String literal in the format of
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.

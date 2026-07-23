@@ -59,6 +59,8 @@ class BaseFedJob(FedJob):
             mandatory_clients: Mandatory clients to run the job. Default None.
             key_metric: Metric used to determine if the model is globally best.
                 If metrics are a dict, key_metric can select the metric used for global model selection.
+                Higher values must indicate a better model; for lower-is-better metrics such as a loss,
+                report a negated value from the client (e.g., "neg_loss").
                 Defaults to "accuracy". Only used if model_selector is not provided.
             validation_json_generator: A component for generating validation results.
                 If not provided, a ValidationJsonGenerator will be configured.

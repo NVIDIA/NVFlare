@@ -489,12 +489,11 @@ to force a run.
   will fail.
 - Keep validation commands single-purpose. Run cleanup, dependency install,
   export, and simulation as separate commands; do not combine destructive
-  cleanup and execution such as `rm -rf <workspace> && python job.py`.
-- Never run destructive commands against the source tree or its git state
-  (`git clean`, `git reset --hard`, `git checkout -- .`, or a standalone
-  `rm -rf` over source or user files). Scope any cleanup to generated runtime or
-  output directories under the runtime location convention, never the user's
-  project or working tree.
+  cleanup and execution in one compound command.
+- Never run destructive cleanup against the source tree or its git state, such
+  as git clean/reset/checkout operations or recursive deletion over source or
+  user files. Scope any cleanup to generated runtime or output directories under
+  the runtime location convention, never the user's project or working tree.
 - After successful simulation, follow `metrics-and-artifact-reporting.md`.
 
 ## Final Validation Run Must Finish Before You Finalize
