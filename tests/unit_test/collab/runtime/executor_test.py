@@ -15,6 +15,8 @@
 import threading
 from unittest.mock import MagicMock
 
+import pytest
+
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
@@ -71,6 +73,20 @@ def test_end_run_installs_client_context_on_event_thread():
 
     assert not thread.is_alive()
     assert finalized_at == ["site-1"]
+
+
+def test_end_run_shuts_down_thread_executor_when_finalize_raises():
+    executor = CollabExecutor(client_obj_id="client")
+    executor.client_app = MagicMock()
+    executor.client_app.name = "site-1"
+    executor.client_app.finalize.side_effect = RuntimeError("finalize failed")
+    executor.client_ctx = MagicMock()
+    executor.thread_executor.shutdown = MagicMock(wraps=executor.thread_executor.shutdown)
+
+    with pytest.raises(RuntimeError, match="finalize failed"):
+        executor._handle_end_run("end_run", FLContext())
+
+    executor.thread_executor.shutdown.assert_called_once_with(wait=True, cancel_futures=True)
 
 
 def test_setup_uses_each_remote_clients_reported_interface(monkeypatch):

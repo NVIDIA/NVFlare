@@ -100,10 +100,12 @@ class CollabExecutor(Executor, CollabAdaptor):
         self.client_app = app
 
     def _handle_end_run(self, event_type: str, fl_ctx: FLContext):
-        if self.client_ctx:
-            self.logger.info(f"finalizing client app {self.client_app.name}")
-            self.client_app.finalize(self.client_ctx)
-        self.thread_executor.shutdown(wait=True, cancel_futures=True)
+        try:
+            if self.client_ctx:
+                self.logger.info(f"finalizing client app {self.client_app.name}")
+                self.client_app.finalize(self.client_ctx)
+        finally:
+            self.thread_executor.shutdown(wait=True, cancel_futures=True)
 
     def _prepare_server_proxy(self, server_fqcn, cell, collab_interface: dict, abort_signal, fl_ctx: FLContext):
         server_name = "server"
