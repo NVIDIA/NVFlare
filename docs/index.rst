@@ -29,6 +29,7 @@ NVIDIA FLARE
    :caption: User Guide
 
    user_guide/data_scientist_guide/client_api_usage
+   HuggingFace Client API <user_guide/data_scientist_guide/hf_client_api>
    user_guide/data_scientist_guide/job_recipe
    user_guide/data_scientist_guide/recipe_api
    user_guide/data_scientist_guide/available_recipes
