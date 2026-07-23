@@ -407,6 +407,42 @@ def test_report_rejects_escaping_trust_contract_source_path(tmp_path, monkeypatc
         reporter.generate(reporter.parse_args([str(tmp_path)]))
 
 
+@pytest.mark.parametrize(
+    "trust_contract,error",
+    [
+        ("trust_contract: []\n", "trust_contract must be a mapping"),
+        (
+            "trust_contract:\n  allowed_edit_paths: job.py\n",
+            "allowed_edit_paths must be a list",
+        ),
+        (
+            "trust_contract:\n  allowed_edit_paths: ['']\n",
+            "allowed_edit_paths must contain non-empty strings",
+        ),
+        (
+            "trust_contract:\n  allowed_edit_paths: ['.']\n",
+            "trust-contract source path must name a file",
+        ),
+        (
+            "trust_contract:\n  allowed_create_patterns: '*.py'\n",
+            "allowed_create_patterns must be a list of patterns",
+        ),
+    ],
+)
+def test_report_rejects_malformed_trust_contract_source_permissions(tmp_path, monkeypatch, trust_contract, error):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    config_path = tmp_path / "autofl.yaml"
+    config_path.write_text(config_path.read_text(encoding="utf-8") + trust_contract, encoding="utf-8")
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: pytest.fail("plot must not run"))
+
+    with pytest.raises(ValueError, match=error):
+        reporter.generate(reporter.parse_args([str(tmp_path)]))
+
+    assert not tmp_path.joinpath("autofl_final_report.md").exists()
+    assert not tmp_path.joinpath("autofl_report_summary.json").exists()
+
+
 @pytest.mark.parametrize("link_kind", ["symlink", "hardlink"])
 def test_report_rejects_filesystem_aliases_to_campaign_evidence(tmp_path, monkeypatch, link_kind):
     reporter = _load_reporter()
@@ -499,21 +535,17 @@ def test_report_can_lock_read_only_campaign_evidence(tmp_path, monkeypatch):
     assert output_dir.joinpath("summary.json").is_file()
 
 
-def test_fallback_lock_reclaims_stale_lock_from_other_workspace(tmp_path, monkeypatch):
+def test_report_rejects_platform_without_fcntl(tmp_path, monkeypatch):
     reporter = _load_reporter()
     _write_campaign(tmp_path)
-    lock_path = tmp_path / reporter.CAMPAIGN_LOCK_PATH
-    lock_path.write_text(
-        json.dumps({"pid": reporter.os.getpid(), "action": "status", "workspace": "/copied/from/linux"}) + "\n",
-        encoding="utf-8",
-    )
     monkeypatch.setattr(reporter, "fcntl", None)
-    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: None)
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: pytest.fail("plot must not run"))
 
-    summary = reporter.generate(reporter.parse_args([str(tmp_path)]))
+    with pytest.raises(ValueError, match="platform without fcntl is unsupported"):
+        reporter.generate(reporter.parse_args([str(tmp_path)]))
 
-    assert summary["best"]["name"] == "inherited_tuning"
-    assert not lock_path.exists()
+    assert not tmp_path.joinpath(reporter.CAMPAIGN_LOCK_PATH).exists()
+    assert not tmp_path.joinpath("autofl_final_report.md").exists()
 
 
 def test_report_refuses_active_campaign_without_confirmation(tmp_path, monkeypatch):
@@ -1016,7 +1048,7 @@ def test_report_warns_when_aggregation_or_evaluation_population_changes(tmp_path
                 "baseline",
                 "baseline",
                 "0.500000",
-                run_command="python job.py --aggregator weighted --final_eval_clients site-1",
+                run_command=("python job.py --aggregator weighted --final_eval_clients site-1 --cross_site_eval"),
             ),
             _row(
                 "keep",
@@ -1032,8 +1064,10 @@ def test_report_warns_when_aggregation_or_evaluation_population_changes(tmp_path
     warnings = "\n".join(summary["warnings"])
 
     assert "aggregator" in warnings
+    assert "cross_site_eval" in warnings
     assert "final_eval_clients" in warnings
     assert summary["best_command_changes"]["aggregator"] == {"baseline": "weighted", "best": "median"}
+    assert summary["best_command_changes"]["cross_site_eval"] == {"baseline": True, "best": None}
     assert summary["best_command_changes"]["final_eval_clients"] == {"baseline": "site-1", "best": "all"}
 
 
@@ -1090,6 +1124,80 @@ def test_report_state_accounting_matches_authoritative_state(tmp_path, monkeypat
     assert not any("disagrees with the ledger" in warning for warning in summary["warnings"])
 
 
+def test_report_state_accounting_matches_authoritative_ledger_path(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["results"] = "results.tsv"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+
+    assert summary["state_accounting"]["consistent"] is True
+    assert summary["state_accounting"]["campaign_state"]["results"] == "results.tsv"
+    assert not any("Campaign state names ledger" in warning for warning in summary["warnings"])
+
+
+def test_report_state_accounting_warns_on_authoritative_ledger_path_mismatch(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["results"] = "other-results.tsv"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+    warnings = "\n".join(summary["warnings"])
+
+    assert summary["state_accounting"]["consistent"] is False
+    assert f"Campaign state names ledger {(tmp_path / 'other-results.tsv').resolve()}" in warnings
+    assert f"report was generated from {(tmp_path / 'results.tsv').resolve()}" in warnings
+
+
+def test_report_state_accounting_matches_campaign_guard_output(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    guard = _load_autofl_script("campaign_guard")
+    rows = _write_campaign(tmp_path)
+    results_path = tmp_path / "results.tsv"
+    state = guard.guard_state_for_rows(
+        rows,
+        results_path=str(results_path.resolve()),
+        max_candidates=4,
+    )
+    tmp_path.joinpath(".nvflare/autofl/campaign_state.json").write_text(json.dumps(state), encoding="utf-8")
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+
+    assert state["final_response_allowed"] is True
+    assert summary["state_accounting"]["consistent"] is True
+    assert summary["state_accounting"]["ledger"] == {
+        "candidate_attempts": state["candidate_attempts"],
+        "baseline_score": state["baseline_score"],
+        "improvement": pytest.approx(state["improvement"]),
+    }
+    assert summary["state_accounting"]["campaign_state"]["results"] == str(results_path.resolve())
+
+
+@pytest.mark.parametrize("value", ["three", -1])
+def test_report_omits_invalid_abandoned_candidate_count(tmp_path, monkeypatch, value):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["abandoned_candidates"] = value
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+
+    assert summary["abandoned_candidates"] is None
+    assert summary["state_accounting"]["consistent"] is False
+    assert any(
+        f"Campaign state abandoned_candidates is invalid: {value!r}; it was not reported." == warning
+        for warning in summary["warnings"]
+    )
+
+
 def test_report_records_agent_context_without_git(tmp_path, monkeypatch):
     reporter = _load_reporter()
     _write_campaign(tmp_path)
@@ -1125,6 +1233,7 @@ def test_report_records_agent_context_without_git(tmp_path, monkeypatch):
     "config_text,state_update",
     [
         ("objective:\n  metric: loss\n  mode: min\n", {}),
+        ("objective:\n  metric: loss\n  direction: minimize\n", {}),
         ("objective:\n  metric: accuracy\n", {"mode": "min"}),
     ],
 )
@@ -1374,6 +1483,7 @@ def test_refresh_plot_reloads_plotter_without_leaking_module(tmp_path):
 
 
 def test_refresh_plot_uses_merged_product_plotter_contract(tmp_path):
+    pytest.importorskip("matplotlib")
     reporter = _load_reporter()
     plotter_path = Path(__file__).parents[3] / "skills/nvflare-autofl/scripts/plot_progress.py"
     results_path = tmp_path / "results.tsv"
@@ -1474,6 +1584,20 @@ def test_report_attempt_and_baseline_rules_match_campaign_guard():
             **case,
         )
         assert reporter.is_baseline(record) == guard.is_baseline(case)
+
+
+def test_report_training_budget_vocabulary_matches_campaign_runner():
+    reporter = _load_reporter()
+    runner = _load_autofl_script("run_job_campaign")
+    expected = (
+        set(runner.COMPARISON_BUDGET_TO_CLI)
+        | set(runner.COMPARISON_BUDGET_TO_CLI.values())
+        | set(runner.FIXED_BUDGET_TO_CLI)
+        | set(runner.FIXED_BUDGET_TO_CLI.values())
+        | {"cross_site_eval"}
+    )
+
+    assert reporter.TRAINING_BUDGET_ARGS == expected
 
 
 @pytest.mark.parametrize("seconds", [0.0, 45.0, 3599.0, 3600.0])

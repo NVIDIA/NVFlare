@@ -37,7 +37,7 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tupl
 
 try:
     import fcntl
-except ImportError:  # pragma: no cover - Windows uses the exclusive-create fallback
+except ImportError:  # pragma: no cover - NVFlare supports POSIX platforms
     fcntl = None
 
 try:
@@ -53,12 +53,13 @@ FINALIZED_SCORE_STATUSES = {"baseline", "keep", "discard"}
 RETAINED_STATUSES = {"baseline", "keep"}
 PENDING_MANIFEST_STATUSES = {"prepared", "ready_for_external_execution"}
 CAMPAIGN_LOCK_PATH = ".nvflare/autofl/campaign.lock"
-TRAINING_BUDGET_ARGS = {
+FALLBACK_TRAINING_BUDGET_ARGS = {
     "aggregation_epochs",
     "aggregator",
     "aggregator_data_kind",
     "alpha",
     "batch_size",
+    "cross_site_eval",
     "eval_batch_size",
     "final_eval_clients",
     "local_train_steps",
@@ -70,6 +71,7 @@ TRAINING_BUDGET_ARGS = {
     "num_rounds",
     "seed",
 }
+SPECIAL_COMPARISON_BUDGET_ARGS = {"cross_site_eval"}
 FIXED_BUDGET_TO_CLI = {
     "min_clients": "min_clients",
     "num_clients": "n_clients",
@@ -77,6 +79,53 @@ FIXED_BUDGET_TO_CLI = {
 }
 SOURCE_RE = re.compile(r"\[src:\s*([^\]]+)\]", re.IGNORECASE)
 ARXIV_RE = re.compile(r"\barxiv\s*:\s*(\d{4}\.\d{4,5})", re.IGNORECASE)
+
+
+def product_autofl_script_path(name: str) -> Path:
+    return Path(__file__).resolve().parents[2] / "nvflare-autofl" / "scripts" / name
+
+
+def load_training_budget_args() -> set:
+    """Use the installed producer's comparison vocabulary when it is available."""
+
+    runner_path = product_autofl_script_path("run_job_campaign.py")
+    if not runner_path.is_file():
+        return set(FALLBACK_TRAINING_BUDGET_ARGS)
+    module_name = "nvflare_autofl_report_runner_contract"
+    spec = importlib.util.spec_from_file_location(module_name, runner_path)
+    if spec is None or spec.loader is None:
+        return set(FALLBACK_TRAINING_BUDGET_ARGS)
+    module = importlib.util.module_from_spec(spec)
+    previous_module = sys.modules.get(module_name)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+        mapping = getattr(module, "COMPARISON_BUDGET_TO_CLI", None)
+        fixed_mapping = getattr(module, "FIXED_BUDGET_TO_CLI", None)
+        mappings = (mapping, fixed_mapping)
+        if not all(
+            isinstance(candidate, dict)
+            and all(isinstance(key, str) and isinstance(value, str) for key, value in candidate.items())
+            for candidate in mappings
+        ):
+            return set(FALLBACK_TRAINING_BUDGET_ARGS)
+        return (
+            set(mapping)
+            | set(mapping.values())
+            | set(fixed_mapping)
+            | set(fixed_mapping.values())
+            | SPECIAL_COMPARISON_BUDGET_ARGS
+        )
+    except Exception:
+        return set(FALLBACK_TRAINING_BUDGET_ARGS)
+    finally:
+        if previous_module is None:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous_module
+
+
+TRAINING_BUDGET_ARGS = load_training_budget_args()
 
 
 @dataclass(frozen=True)
@@ -218,85 +267,39 @@ def validate_output_create_patterns(outputs: Dict[str, Path], root: Path, patter
             )
 
 
-def process_is_running(pid: Any) -> bool:
-    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
-def fallback_lock_is_live(lock_path: Path, workspace: Path) -> bool:
-    """Conservatively distinguish an active fallback lock from a stale POSIX lock artifact."""
-
-    try:
-        metadata = json.loads(lock_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return True
-    if not isinstance(metadata, dict) or metadata.get("workspace") != str(workspace.resolve()):
-        return False
-    return process_is_running(metadata.get("pid"))
-
-
 @contextmanager
 def locked_campaign_workspace(workspace: Path, action: str) -> Iterator[None]:
     """Serialize report generation with Auto-FL lifecycle actions."""
 
+    if fcntl is None:
+        raise ValueError("platform without fcntl is unsupported for Auto-FL reporting")
     lock_path = workspace / CAMPAIGN_LOCK_PATH
     try:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise ValueError(f"cannot access Auto-FL campaign lock directory {lock_path.parent}: {exc}") from exc
-    fallback = fcntl is None
     descriptor = None
     acquired = False
-    fallback_created = False
     lock_created = False
     acquisition_complete = False
     try:
-        if fallback:
-            for _ in range(2):
-                try:
-                    descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-                    acquired = True
-                    fallback_created = True
-                    break
-                except FileExistsError as exc:
-                    if fallback_lock_is_live(lock_path, workspace):
-                        raise ValueError(
-                            f"Auto-FL campaign workspace is already in use: {workspace}; "
-                            "wait for the active lifecycle action to finish, then retry"
-                        ) from exc
-                    try:
-                        lock_path.unlink()
-                    except OSError as unlink_exc:
-                        raise ValueError(
-                            f"cannot remove stale Auto-FL campaign lock {lock_path}: {unlink_exc}"
-                        ) from exc
-            if descriptor is None:
-                raise ValueError(f"could not acquire Auto-FL campaign lock: {lock_path}")
-        else:
+        try:
+            descriptor = os.open(lock_path, os.O_RDONLY)
+        except FileNotFoundError:
             try:
+                descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+                lock_created = True
+            except FileExistsError:
                 descriptor = os.open(lock_path, os.O_RDONLY)
-            except FileNotFoundError:
-                try:
-                    descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
-                    lock_created = True
-                except FileExistsError:
-                    descriptor = os.open(lock_path, os.O_RDONLY)
-            try:
-                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                acquired = True
-            except BlockingIOError as exc:
-                raise ValueError(
-                    f"Auto-FL campaign workspace is already in use: {workspace}; "
-                    "wait for the active lifecycle action to finish, then retry"
-                ) from exc
-        if fallback_created or lock_created:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            acquired = True
+        except BlockingIOError as exc:
+            raise ValueError(
+                f"Auto-FL campaign workspace is already in use: {workspace}; "
+                "wait for the active lifecycle action to finish, then retry"
+            ) from exc
+        if lock_created:
             os.write(
                 descriptor,
                 (
@@ -311,11 +314,9 @@ def locked_campaign_workspace(workspace: Path, action: str) -> Iterator[None]:
         raise ValueError(f"cannot acquire Auto-FL campaign lock {lock_path}: {exc}") from exc
     finally:
         if descriptor is not None:
-            if not fallback and acquired:
+            if acquired:
                 fcntl.flock(descriptor, fcntl.LOCK_UN)
             os.close(descriptor)
-        if fallback_created:
-            lock_path.unlink(missing_ok=True)
 
 
 def finite_float(value: Any) -> Optional[float]:
@@ -1137,6 +1138,8 @@ def state_accounting(
     candidate_attempts: int,
     baseline: Optional[RunRecord],
     best: Optional[RunRecord],
+    results_path: Path,
+    campaign_root: Path,
 ) -> Tuple[Dict[str, Any], List[str]]:
     ledger_baseline = None if baseline is None else baseline.score
     ledger_improvement = None if baseline is None or best is None else best.score - baseline.score
@@ -1147,7 +1150,21 @@ def state_accounting(
     }
     state_values = {key: state.get(key) for key in ledger_values}
     state_values["abandoned_candidates"] = state.get("abandoned_candidates")
+    state_values["results"] = state.get("results")
     warnings = []
+
+    if "results" in state:
+        state_results = state.get("results")
+        if not isinstance(state_results, str) or not state_results.strip():
+            warnings.append(f"Campaign state results is invalid: {state_results!r}.")
+        else:
+            state_results_path = canonical_path(resolve_path(campaign_root, state_results))
+            parsed_results_path = canonical_path(results_path)
+            if state_results_path != parsed_results_path:
+                warnings.append(
+                    f"Campaign state names ledger {state_results_path} but the report was generated from "
+                    f"{parsed_results_path}."
+                )
 
     if "candidate_attempts" in state:
         state_attempts = finite_float(state.get("candidate_attempts"))
@@ -1194,7 +1211,7 @@ def state_accounting(
 
 
 def default_plotter_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "nvflare-autofl" / "scripts" / "plot_progress.py"
+    return product_autofl_script_path("plot_progress.py")
 
 
 def refresh_plot(results: Path, output: Path, metric: str, plotter_path: Path) -> Optional[str]:
@@ -1729,7 +1746,14 @@ def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
     candidate_attempts = len(
         [record for record in records if record.status in ATTEMPT_STATUSES and not is_baseline(record)]
     )
-    accounting, accounting_warnings = state_accounting(state, candidate_attempts, baseline, best)
+    accounting, accounting_warnings = state_accounting(
+        state,
+        candidate_attempts,
+        baseline,
+        best,
+        results_path,
+        root,
+    )
     warnings.extend(accounting_warnings)
     environment = config.get("environment") if isinstance(config.get("environment"), dict) else {}
     budget = config.get("budget") if isinstance(config.get("budget"), dict) else {}

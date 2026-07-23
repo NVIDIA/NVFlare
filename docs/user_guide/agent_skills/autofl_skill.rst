@@ -148,8 +148,8 @@ Markdown, or JSON output paths that alias campaign evidence, ``job.py``,
 trust-contract source paths, or one another. Outputs within the campaign
 directory must not match the trust contract's allowed source-creation patterns.
 The persisted POSIX lock file does not by itself mean a campaign is active, so
-a read-only campaign archive can be reported to explicitly writable output
-paths.
+a read-only campaign archive can be reported when that lock file already exists
+and the three output paths are explicitly writable.
 
 The skill refreshes ``progress.png`` when plotting is available and generates:
 
@@ -177,8 +177,8 @@ objective improvements rather than evenly sampling the campaign.
 
 The product campaign and report contracts support metric maximization only.
 The report also surfaces abandoned-candidate state and warns if the state's
-candidate-attempt, baseline, or improvement accounting disagrees with the
-ledger.
+ledger pointer, candidate-attempt, baseline, or improvement accounting
+disagrees with the ledger.
 
 As with active Auto-FL, users invoke the skill through their coding agent and
 do not run scripts from the installed skill directory themselves.

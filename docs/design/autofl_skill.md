@@ -287,9 +287,10 @@ canonical or filesystem aliases between writable outputs and campaign evidence,
 `job.py`, or trust-contract source paths; outputs may not match the trust
 contract's allowed source-creation patterns. It also requires the plot,
 Markdown, and JSON destinations to be distinct. A persisted POSIX lock file is
-a stable lock target, not proof of a live owner; read-only archives remain
-reportable when outputs point to writable locations. Case-folded collision
-checks keep output configurations safe on case-insensitive filesystems.
+a stable lock target, not proof of a live owner. A read-only archive remains
+reportable only when that lock file already exists and outputs point to writable
+locations. Case-folded collision checks keep output configurations safe on
+case-insensitive filesystems.
 
 Relative report-helper paths, including an overridden plotter, resolve from
 the campaign directory so agent execution is independent of shell location.
@@ -336,12 +337,13 @@ the JSON summary and best-candidate report.
 The merged Auto-FL producer supports maximization only, so the report rejects
 obsolete minimization contracts. It derives candidate attempts, baseline, and
 improvement from the ledger, cross-checks those values against authoritative
-campaign state, and preserves the state-derived abandoned-candidate count.
+campaign state, verifies the state's authoritative ledger pointer, and
+preserves the state-derived abandoned-candidate count.
 
 Finally, the report compares the declarative/imported budget with exact
 baseline and best-candidate commands. It highlights changed compute or data
-arguments, aggregation or final-evaluation populations, incomplete lineage,
-and repeated selection on test-like metrics.
+arguments, aggregation, cross-site evaluation, or final-evaluation populations,
+incomplete lineage, and repeated selection on test-like metrics.
 This makes the report a trust artifact rather than a polished restatement of
 the agent's conclusions.
 

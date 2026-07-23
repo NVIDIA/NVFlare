@@ -38,8 +38,8 @@ action owns the lock, reporting fails cleanly rather than publishing a mixed
 snapshot. On POSIX, the persisted lock file is a stable lock target rather than
 proof of a live owner. The reporter can therefore read a read-only campaign
 archive when the lock file already exists and the three outputs point to a
-writable location. The exclusive-create fallback reclaims only lock metadata
-that is demonstrably stale for the current workspace.
+writable location. NVFlare supports POSIX platforms; reporting fails clearly
+when `fcntl` locking is unavailable.
 
 ## Candidate Lineage
 
@@ -135,9 +135,11 @@ aggregation, or final-evaluation clients.
 
 The report derives candidate attempts, baseline score, and improvement from
 the ledger and cross-checks those values against authoritative campaign state.
-It exposes state/ledger disagreements as warnings rather than silently choosing
-one account. The state-derived `abandoned_candidates` count remains visible
-because abandoned manifests do not necessarily have ledger rows.
+It also verifies that the state's `results` pointer names the ledger being
+reported. It exposes state/ledger disagreements as warnings rather than
+silently choosing one account. The state-derived `abandoned_candidates` count
+remains visible because abandoned manifests do not necessarily have ledger
+rows.
 
 When a test-like metric guided multiple candidate decisions, state that the
 selected candidate needs one final evaluation on an untouched holdout. Do not

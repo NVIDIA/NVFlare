@@ -75,8 +75,9 @@ artifact writes. It refuses a busy campaign and rejects writable output paths
 that alias campaign evidence, `job.py`, trust-contract source paths, or another
 output, including filesystem aliases. Outputs must not match the trust
 contract's allowed source-creation patterns.
-An archived campaign may be read-only when writable output paths are supplied;
-the persisted lock file alone does not imply live contention.
+A read-only campaign archive is reportable only when its persisted
+`campaign.lock` already exists and writable output paths are supplied; the
+persisted lock target alone does not imply live contention.
 
 ## Interrupted Campaigns
 
