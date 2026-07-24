@@ -21,26 +21,6 @@ DEFAULT_LORA_ALPHA = 16
 DEFAULT_LORA_DROPOUT = 0.05
 
 
-class QwenCausalLMModel(torch.nn.Module):
-    def __init__(self, model_name_or_path: str = DEFAULT_MODEL_NAME):
-        super().__init__()
-        from transformers import AutoModelForCausalLM
-
-        self.model = AutoModelForCausalLM.from_pretrained(model_name_or_path, trust_remote_code=True)
-
-    def forward(self, input_ids=None, attention_mask=None, labels=None):
-        return self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-
-    def state_dict(self, *args, **kwargs):
-        return self.model.state_dict(*args, **kwargs)
-
-    def load_state_dict(self, state_dict, strict=True, assign=False):
-        try:
-            return self.model.load_state_dict(state_dict, strict=strict, assign=assign)
-        except TypeError:
-            return self.model.load_state_dict(state_dict, strict=strict)
-
-
 class QwenLoRAModel(torch.nn.Module):
     def __init__(
         self,

@@ -16,6 +16,7 @@ import argparse
 import inspect
 import os
 import random
+from pathlib import Path
 
 from model import (
     DEFAULT_LORA_ALPHA,
@@ -31,19 +32,7 @@ import nvflare.client.hf as flare
 def define_parser():
     parser = argparse.ArgumentParser(description="Federated Qwen SFT with nvflare.client.hf")
     parser.add_argument("--model_name_or_path", type=str, default=DEFAULT_MODEL_NAME)
-    parser.add_argument("--train_data", type=str, required=True)
-    parser.add_argument("--eval_data", type=str, required=True)
-    parser.add_argument("--output_dir", type=str, default="./outputs/qwen")
-    parser.add_argument("--train_mode", choices=("sft", "peft"), default="peft")
-    parser.add_argument("--local_epochs", type=float, default=1.0)
-    parser.add_argument("--max_length", type=int, default=256)
-    parser.add_argument("--per_device_train_batch_size", type=int, default=1)
-    parser.add_argument("--gradient_accumulation_steps", type=int, default=4)
-    parser.add_argument("--learning_rate", type=float, default=2e-5)
-    parser.add_argument("--lr_scheduler_type", type=str, default="constant")
-    parser.add_argument("--lora_r", type=int, default=DEFAULT_LORA_R)
-    parser.add_argument("--lora_alpha", type=int, default=DEFAULT_LORA_ALPHA)
-    parser.add_argument("--lora_dropout", type=float, default=DEFAULT_LORA_DROPOUT)
+    parser.add_argument("--data_root", type=str, default="/tmp/nvflare/hello-huggingface/data")
     return parser.parse_args()
 
 
@@ -102,26 +91,26 @@ def precision_config(torch):
     return bf16_supported, fp16_enabled, dtype
 
 
-def make_sft_config(args):
+def make_sft_config(output_dir: Path):
     import torch
     from trl import SFTConfig
 
     bf16_enabled, fp16_enabled, _ = precision_config(torch)
     values = {
-        "output_dir": args.output_dir,
-        "num_train_epochs": args.local_epochs,
-        "per_device_train_batch_size": args.per_device_train_batch_size,
+        "output_dir": str(output_dir),
+        "num_train_epochs": 1,
+        "per_device_train_batch_size": 1,
         "per_device_eval_batch_size": 1,
-        "gradient_accumulation_steps": args.gradient_accumulation_steps,
-        "learning_rate": args.learning_rate,
-        "lr_scheduler_type": args.lr_scheduler_type,
+        "gradient_accumulation_steps": 4,
+        "learning_rate": 2e-5,
+        "lr_scheduler_type": "constant",
         "logging_strategy": "steps",
         "logging_steps": 1,
         "save_strategy": "epoch",
         "save_total_limit": 2,
         "disable_tqdm": True,
         "report_to": [],
-        "max_length": args.max_length,
+        "max_length": 256,
         "bf16": bf16_enabled,
         "fp16": fp16_enabled,
         "use_cpu": not torch.cuda.is_available(),
@@ -132,7 +121,7 @@ def make_sft_config(args):
     return SFTConfig(**filtered_kwargs(SFTConfig.__init__, values))
 
 
-def make_model_and_peft_config(args, local_rank: int):
+def make_model_and_peft_config(model_name_or_path: str, local_rank: int):
     import torch
     from transformers import AutoModelForCausalLM
 
@@ -141,18 +130,15 @@ def make_model_and_peft_config(args, local_rank: int):
     if torch.cuda.is_available():
         model_kwargs["device_map"] = {"": local_rank}
 
-    model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, **model_kwargs)
+    model = AutoModelForCausalLM.from_pretrained(model_name_or_path, **model_kwargs)
     model.config.use_cache = False
-
-    if args.train_mode == "sft":
-        return model, None
 
     from peft import LoraConfig, TaskType
 
     peft_config = LoraConfig(
-        r=args.lora_r,
-        lora_alpha=args.lora_alpha,
-        lora_dropout=args.lora_dropout,
+        r=DEFAULT_LORA_R,
+        lora_alpha=DEFAULT_LORA_ALPHA,
+        lora_dropout=DEFAULT_LORA_DROPOUT,
         target_modules=DEFAULT_LORA_TARGET_MODULES,
         bias="none",
         task_type=TaskType.CAUSAL_LM,
@@ -174,8 +160,17 @@ def main():
     torch.manual_seed(0)
 
     rank, _, local_rank = setup_distributed()
+    flare.init(rank=rank)
+    site_name = flare.get_site_name()
+    site_data_dir = Path(args.data_root).expanduser().resolve() / site_name
+    train_data = site_data_dir / "train.jsonl"
+    eval_data = site_data_dir / "valid.jsonl"
+    if not train_data.is_file() or not eval_data.is_file():
+        raise FileNotFoundError(f"Missing prepared data under {site_data_dir}. Run `python prepare_data.py` first.")
+    output_dir = Path("outputs") / site_name
+
     if rank == 0:
-        os.makedirs(args.output_dir, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
     if dist.is_initialized():
         dist.barrier()
 
@@ -183,13 +178,13 @@ def main():
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    train_dataset = load_jsonl_dataset(args.train_data)
-    eval_dataset = load_jsonl_dataset(args.eval_data)
-    model, peft_config = make_model_and_peft_config(args, local_rank)
+    train_dataset = load_jsonl_dataset(str(train_data))
+    eval_dataset = load_jsonl_dataset(str(eval_data))
+    model, peft_config = make_model_and_peft_config(args.model_name_or_path, local_rank)
 
     trainer = SFTTrainer(
         model=model,
-        args=make_sft_config(args),
+        args=make_sft_config(output_dir),
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         processing_class=tokenizer,
@@ -197,16 +192,15 @@ def main():
         peft_config=peft_config,
     )
 
-    if args.train_mode == "peft":
-        from peft import PeftModel
+    from peft import PeftModel
 
-        if not isinstance(trainer.model, PeftModel):
-            raise RuntimeError("PEFT mode is enabled, but SFTTrainer did not wrap the model as a PeftModel.")
+    if not isinstance(trainer.model, PeftModel):
+        raise RuntimeError("SFTTrainer did not wrap the model as a PeftModel.")
 
     flare.patch(trainer)
     # Defaults are enough for this example. If needed, replace the line above with
     # optional settings such as:
-    # flare.patch(trainer, local_epochs=args.local_epochs, stream_metrics=True)
+    # flare.patch(trainer, local_epochs=1, stream_metrics=True)
     # flare.patch(trainer, local_steps=100)
     # flare.patch(trainer, params_scope="adapter", server_key_prefix="model.")
 

@@ -694,7 +694,8 @@ No new components required:
 - PEFT jobs (`params_scope="adapter"`): the server's initial model must be
   **adapter-shaped** — the persistor/model definition contains only the adapter
   keys, since that is what round 0 sends and what the aggregator averages. The
-  clean example must show the PEFT-mode server model alongside the SFT one.
+  hello-world example uses this single PEFT path; full-model and multi-node
+  variants remain in the advanced `llm_hf` example.
 - The `server_key_prefix` option removes the example's hand-rolled `"model."`
   renames; sites that prefer executor-side conversion can keep using a
   `ParamsConverter` instead — the two mechanisms are alternatives, and the doc for
@@ -706,13 +707,13 @@ A clean `examples/hello-world/hello-huggingface` example demonstrates the API wi
 carrying the legacy `llm_hf` comparison scripts and figures. Its `client.py`
 contains ordinary dataset/model/`SFTConfig`/`SFTTrainer` setup, one default
 `flare.patch(trainer)` call, and the standard `while flare.is_running():
-evaluate(); train()` loop. The example server model wrappers expose state-dict
+evaluate(); train()` loop. The example's PEFT server model exposes state-dict
 keys that match the trainer model, so first-time users do not need
 `params_scope`, `server_key_prefix`, `local_epochs`, or metrics-streaming options
 on the main path. Those knobs stay documented and are shown as comments in the
 example for users who need them. Synthetic data generation is kept in the
-standard example helper `prepare_data.py`; `job.py` only consumes prepared
-per-site data paths.
+standard example helper `prepare_data.py`; `job.py` passes one prepared data
+root and `client.py` selects `<data_root>/<site_name>/`.
 
 ## Testing Plan
 

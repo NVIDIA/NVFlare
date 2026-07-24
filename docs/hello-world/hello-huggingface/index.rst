@@ -4,7 +4,7 @@ Hello HuggingFace
 =================
 
 This example demonstrates how to use NVIDIA FLARE with the HuggingFace Client
-API to run federated supervised fine-tuning with a Qwen causal language model.
+API to run federated PEFT/LoRA fine-tuning with a Qwen causal language model.
 The complete example code is in
 :github_nvflare_link:`examples/hello-world/hello-huggingface <examples/hello-world/hello-huggingface>`.
 
@@ -42,9 +42,9 @@ Code Structure
    hello-huggingface
    |
    |-- client.py        # HuggingFace/TRL local training script
-   |-- model.py         # Qwen server-side model definitions
+   |-- model.py         # Qwen LoRA server-side model
    |-- prepare_data.py  # writes synthetic per-site JSONL data
-   |-- job.py           # job recipe for simulation and export
+   |-- job.py           # job recipe for simulation
    |-- requirements.txt
    |-- README.md
 
@@ -83,6 +83,9 @@ federated adaptation is intentionally small:
 
    import nvflare.client.hf as flare
 
+   flare.init()
+   site_name = flare.get_site_name()
+
    flare.patch(trainer)
 
    while flare.is_running():
@@ -102,15 +105,10 @@ After preparing data, run the simulation:
 
    python job.py
 
-The default job runs two simulated clients for two FL rounds using PEFT/LoRA.
-To export the job configuration without running simulation:
-
-.. code-block:: bash
-
-   python job.py --export_config
-
-Use ``--train_mode sft`` to run full-model SFT instead of the default LoRA
-mode.
+The job runs two simulated clients for two FL rounds using PEFT/LoRA. Each
+client resolves its data from ``<data_root>/<site_name>/`` after initializing
+the Client API. For full-model and multi-node Qwen workflows, see
+:github_nvflare_link:`examples/advanced/llm_hf <examples/advanced/llm_hf>`.
 
 Learn More
 ----------
