@@ -51,3 +51,14 @@ Compatibility and Migration Notes
   inside a longer FQCN is indistinguishable from a real cell of that name.
   When upgrading to 2.9, upgrade a site and its relay together, including
   sites currently running NVFlare 2.8.
+- ``ScriptRunner`` now exports ``ClientAPIExecutor`` for both in-process and
+  external-process execution. Jobs generated with FLARE 2.9 therefore require
+  a client runtime that provides this executor and are not runnable on older
+  client runtimes. ``ScriptRunner`` no longer performs a build-time PyTorch or
+  TensorFlow import check; ensure the required framework dependencies are
+  available in the execution environment. Code that explicitly passes
+  ``pipe_connect_type`` (including its former default value) or supplies a
+  custom ``task_pipe`` must use ``BaseScriptRunner``. A client app may contain
+  only one ``ClientAPIExecutor``; configurations that previously added multiple
+  script runners to one site must combine the scripts behind one entry point
+  and dispatch on the Client API task name.

@@ -158,7 +158,12 @@ class TestFedTaskRecipe:
         assert server_config["workflows"][0]["args"]["timeout"] == 30
         assert server_config["workflows"][0]["args"]["persistor_id"] == ""
         assert client_config["executors"][0]["tasks"] == ["infer"]
-        assert client_config["executors"][0]["executor"]["args"]["params_exchange_format"] == "raw"
+        executor = client_config["executors"][0]["executor"]
+        assert executor["path"].endswith(".ClientAPIExecutor")
+        assert executor["args"]["execution_mode"] == "in_process"
+        # RAW is ClientAPIExecutor's default and may be omitted by job-config serialization.
+        assert executor["args"].get("params_exchange_format", "raw") == "raw"
+        assert executor["args"]["server_expected_format"] == "raw"
 
     @pytest.mark.parametrize(
         "kwargs",

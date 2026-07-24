@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Optional
 
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.shareable import Shareable
@@ -20,26 +20,8 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 
+from .converter_utils import _ConverterContext
 from .flare_agent import FlareAgent
-
-
-class _ConverterContext:
-    """Minimal duck-type stub for FLContext used by ParamsConverters.
-
-    ParamsConverter.process() requires a context object with get_prop/set_prop.
-    In the subprocess there is no FLContext, so this lightweight stub is used instead.
-    """
-
-    def __init__(self):
-        self._props = {}
-
-    def get_prop(self, key: str, default=None):
-        return self._props.get(key, default)
-
-    def set_prop(self, key: str, value: Any, private: Optional[bool] = None, sticky: Optional[bool] = None):
-        _ = private
-        _ = sticky
-        self._props[key] = value
 
 
 class FlareAgentWithFLModel(FlareAgent):

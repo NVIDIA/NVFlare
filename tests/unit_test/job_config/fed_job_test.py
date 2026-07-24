@@ -21,6 +21,7 @@ import pytest
 
 from nvflare.apis.fl_constant import ConfigVarName
 from nvflare.app_common.abstract.model_learner import _MODEL_LEARNER_DEPRECATION_MSG, ModelLearner
+from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
 from nvflare.app_common.executors.model_learner_executor import ModelLearnerExecutor
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.fuel.utils.deprecated import _WARNED_DEPRECATION_MESSAGES
@@ -99,6 +100,21 @@ class TestFedJob:
             for key, value in client_params.items():
                 assert key in client_config
                 assert client_config[key] == value
+
+    def test_same_executor_instance_exports_combined_task_routes(self, tmp_path):
+        job = FedJob(name="same_executor_multiple_tasks")
+        job.to_server(FedAvg())
+        executor = ClientAPIExecutor(execution_mode="external_process", command="python train.py")
+
+        job.to_clients(executor, tasks=["train"])
+        job.to_clients(executor, tasks=["evaluate", "submit_model"])
+        job.export_job(str(tmp_path))
+
+        client_config_path = tmp_path / job.name / "app" / "config" / "config_fed_client.json"
+        client_config = json.loads(client_config_path.read_text())
+
+        assert len(client_config["executors"]) == 1
+        assert client_config["executors"][0]["tasks"] == ["train", "evaluate", "submit_model"]
 
     def test_fail_fast_false_by_default(self):
         """fail_fast should default to False and not inject dead_client_grace_period."""

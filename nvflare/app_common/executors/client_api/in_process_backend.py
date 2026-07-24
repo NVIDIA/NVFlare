@@ -22,18 +22,11 @@ TOPIC_GLOBAL_RESULT, and returns results over TOPIC_LOCAL_RESULT.
 
 Differences from the legacy executor (see docs/design/client_api_execution_modes.md):
 
-- No ParamsConverters and no exchange-format/transfer-type knobs:
-  the Client API boundary passes params through unconverted (ExchangeFormat.RAW)
-  and V1 sends full params (TransferType.FULL); DIFF support returns with the
-  model_registry transfer-type decision, and format conversion moves to
-  send/receive filters at the client edge.
 - LOG data is converted to analytics events through the executor-owned
   fire_log_analytics() (single analytics-event ownership point), not a direct
   send_analytic_dxo call.
 - initialize() self-unwinds on failure and finalize() is idempotent and
-  unsubscribes this backend's DataBus callbacks: the DataBus is a process
-  singleton, so leaked subscriptions would survive into later jobs run in the
-  same process (e.g. the simulator).
+  releases the API entry and callbacks it installed on the process-global DataBus.
 """
 
 import threading
@@ -51,7 +44,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.client.api_spec import CLIENT_API_KEY
-from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
+from nvflare.client.config import ConfigKey
 from nvflare.client.in_process.api import (
     TOPIC_ABORT,
     TOPIC_GLOBAL_RESULT,
@@ -92,6 +85,7 @@ class InProcessBackend(ClientAPIBackendSpec):
         self._data_bus: Optional[DataBus] = None
         self._event_manager: Optional[EventManager] = None
         self._client_api: Optional[InProcessClientAPI] = None
+        self._task_fn_wrapper: Optional[TaskScriptRunner] = None
         self._task_fn_thread: Optional[threading.Thread] = None
         self._local_result = _NO_RESULT
         self._abort = False
@@ -119,7 +113,7 @@ class InProcessBackend(ClientAPIBackendSpec):
             workspace: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
             job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
             custom_dir = workspace.get_app_custom_dir(job_id)
-            task_fn_wrapper = TaskScriptRunner(
+            self._task_fn_wrapper = TaskScriptRunner(
                 custom_dir=custom_dir, script_path=task_script_path, script_args=context.task_script_args
             )
 
@@ -139,12 +133,14 @@ class InProcessBackend(ClientAPIBackendSpec):
             # thread would then block process exit even after finalize() gives up its
             # bounded join. finalize() still joins cooperatively first.
             self._task_fn_thread = threading.Thread(
-                target=task_fn_wrapper.run, name="client_api_in_process_trainer", daemon=True
+                target=self._task_fn_wrapper.run, name="client_api_in_process_trainer", daemon=True
             )
             self._task_fn_thread.start()
-        except Exception:
+        except BaseException:
             # contract (backend_spec): initialize() self-unwinds its partial setup on failure;
-            # the executor does not call finalize() on a half-initialized backend.
+            # the executor does not call finalize() on a half-initialized backend. BaseException
+            # ensures partial DataBus subscriptions/API state are also cleaned up for
+            # KeyboardInterrupt/SystemExit.
             self._unwind()
             raise
 
@@ -246,11 +242,6 @@ class InProcessBackend(ClientAPIBackendSpec):
             self._event_manager.fire_event(TOPIC_ABORT, f"'{task_name}' failed: {secure_format_traceback()}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-    def handle_event(self, event_type: str, fl_ctx: FLContext) -> None:
-        # no per-event behavior for in_process (START_RUN/END_RUN are handled by the
-        # executor via initialize/finalize); contract: must not raise
-        pass
-
     def finalize(self, fl_ctx: FLContext) -> None:
         # contract: idempotent and must not raise
         if self._finalized:
@@ -274,21 +265,20 @@ class InProcessBackend(ClientAPIBackendSpec):
                         f"after TOPIC_STOP; abandoning it (daemon thread, will not block process exit; "
                         f"its API is closed, so any later send/log from it is dropped)"
                     )
+                    if self._task_fn_wrapper is not None:
+                        self._task_fn_wrapper.release_runtime()
         except Exception:
             self.logger.error(secure_format_traceback())
         finally:
             self._unwind()
 
     def _unwind(self) -> None:
-        """Releases DataBus state so nothing leaks into later jobs (DataBus is a process singleton).
+        """Release the API and DataBus state owned by this backend.
 
         Each step is individually best-effort: a failure in one must not skip the others.
         """
-        # close the API FIRST: it detaches the API's own subscriptions (the singleton bus would
-        # otherwise keep the dead instance subscribed to TOPIC_GLOBAL_RESULT, pinning each later
-        # job's global model) and sets the closed gate that stops an abandoned trainer from
-        # publishing into a successor job -- the one step that must not be skipped by a failure
-        # elsewhere in the teardown
+        # Close the API first so it detaches its subscriptions and blocks late publications
+        # from an abandoned trainer while the remaining cleanup runs.
         if self._client_api is not None:
             try:
                 self._client_api.close()
@@ -296,7 +286,7 @@ class InProcessBackend(ClientAPIBackendSpec):
                 self.logger.error(secure_format_traceback())
             try:
                 if self._data_bus is not None and self._data_bus.get_data(CLIENT_API_KEY) is self._client_api:
-                    # only clear our own entry: a later backend may have installed its API
+                    # Clear only the entry still owned by this backend.
                     self._data_bus.put_data(CLIENT_API_KEY, None)
             except Exception:
                 self.logger.error(secure_format_traceback())
@@ -322,11 +312,11 @@ class InProcessBackend(ClientAPIBackendSpec):
             ConfigKey.TASK_NAME: task_name,
             ConfigKey.TASK_EXCHANGE: {
                 ConfigKey.TRAIN_WITH_EVAL: context.train_with_evaluation,
-                # the Client API boundary passes params through unconverted; format conversion
-                # happens in send/receive filters at the client edge, and DIFF returns with the
-                # model-registry transfer-type decision
-                ConfigKey.EXCHANGE_FORMAT: ExchangeFormat.RAW,
-                ConfigKey.TRANSFER_TYPE: TransferType.FULL,
+                # The backend only transports the declared representation contract. The
+                # trainer-side Client API adapts at receive/send and computes DIFF natively.
+                ConfigKey.EXCHANGE_FORMAT: context.params_exchange_format,
+                ConfigKey.SERVER_EXPECTED_FORMAT: context.server_expected_format,
+                ConfigKey.TRANSFER_TYPE: context.params_transfer_type,
                 ConfigKey.TRAIN_TASK_NAME: context.train_task_name,
                 ConfigKey.EVAL_TASK_NAME: context.evaluate_task_name,
                 ConfigKey.SUBMIT_MODEL_TASK_NAME: context.submit_model_task_name,

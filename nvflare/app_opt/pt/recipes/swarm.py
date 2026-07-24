@@ -32,7 +32,7 @@ from nvflare.fuel.utils.secret_utils import (
     warn_on_unsupported_secret_refs_outside_keys,
 )
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.job_config.script_runner import BaseScriptRunner, ScriptRunner
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import merge_config_overrides, validate_aggregator_data_kind, validate_ckpt
 
@@ -173,13 +173,12 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             ``min_responses_required``) cannot be replaced through this dictionary; use
             ``BaseSwarmLearningRecipe`` for custom components or quorum settings.
             This dictionary is stored in the job definition and must not contain secrets.
-        pipe_type: Pipe used for communication between the NVFlare client process
-            and the external training process when ``launch_external_process=True``.
-            Accepted values:
+        pipe_type: Transport used between the NVFlare client process and the external
+            training process when ``launch_external_process=True``. Accepted values:
 
-            - ``"cell_pipe"`` *(default)*: ``CellPipe`` with zero-copy tensor
-              forwarding — the NVFlare client process relays model tensors without
-              loading them into memory (~1 GB RAM for large models).
+            - ``"cell_pipe"`` *(default)*: Direct Cell transport through
+              ``ClientAPIExecutor`` with zero-copy tensor forwarding. Despite the option
+              name, this mode does not create a ``CellPipe`` component.
             - ``"file_pipe"``: ``FilePipe`` backed by a shared directory. The NVFlare
               client process fully loads and re-serializes the model (~2× model size
               in RAM). Use when cell networking is unavailable or for third-party
@@ -329,7 +328,7 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         )
 
         task_pipe = None
-        if pipe_type == "file_pipe":
+        if pipe_type == "file_pipe" and launch_external_process:
             # Append {JOB_ID}/{SITE_NAME} so concurrent jobs and sites on the same
             # machine use isolated pipe directories (resolved at runtime by NVFlare).
             # Format matches the sag_cse_ccwf_pt reference template.
@@ -389,8 +388,12 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         )
         server_config = SwarmServerConfig(**server_config_args)
 
+        # FilePipe remains an explicit legacy compatibility option. Ordinary Swarm jobs use
+        # ScriptRunner's ClientAPIExecutor path; only the custom Pipe case opts into the old
+        # BaseScriptRunner/LauncherExecutor stack.
+        runner_cls = BaseScriptRunner if task_pipe is not None else ScriptRunner
         client_config_args = {
-            "executor": ScriptRunner(
+            "executor": runner_cls(
                 script=train_script,
                 launch_external_process=launch_external_process,
                 command=command,

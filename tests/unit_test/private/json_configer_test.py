@@ -231,8 +231,9 @@ def test_configured_in_process_executor_resolves_file_ref_only_at_script_start(t
     _write_component_config(
         config_file,
         {
-            "path": "nvflare.app_common.executors.in_process_client_api_executor.InProcessClientAPIExecutor",
+            "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
             "args": {
+                "execution_mode": "in_process",
                 "task_script_path": "train.py",
                 "task_script_args": f"--site {{SITE_NAME}} --api-key {placeholder}",
             },

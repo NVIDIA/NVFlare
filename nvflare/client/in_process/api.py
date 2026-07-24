@@ -12,18 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import os
 import time
 from typing import Any, Dict, Optional
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
+from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.api_spec import APISpec
-from nvflare.client.config import ClientConfig, ConfigKey, TransferType
+from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat, TransferType
 from nvflare.client.constants import SYS_ATTRS
+from nvflare.client.converter_utils import convert_params
 from nvflare.client.utils import DIFF_FUNCS
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
@@ -38,12 +42,20 @@ TOPIC_GLOBAL_RESULT = "GLOBAL_RESULT"
 
 
 class InProcessClientAPI(APISpec):
-    def __init__(self, task_metadata: dict, result_check_interval: float = 2.0):
+    def __init__(
+        self,
+        task_metadata: dict,
+        result_check_interval: float = 2.0,
+        from_nvflare_converter: Optional[ParamsConverter] = None,
+        to_nvflare_converter: Optional[ParamsConverter] = None,
+    ):
         """Initializes the InProcessClientAPI.
 
         Args:
             task_metadata (dict): task metadata, added to client_config.
             result_check_interval (float): how often to check if result is available.
+            from_nvflare_converter: optional custom converter applied when receiving a task.
+            to_nvflare_converter: optional custom converter applied before publishing a result.
         """
         super().__init__()  # Initialize memory management from base class
 
@@ -66,6 +78,11 @@ class InProcessClientAPI(APISpec):
         self.closed = False
         self.rank = None
         self.receive_called = False  # to check if users have call received for a new model
+        self._params_conversion_state = {}
+        self._from_nvflare_converter = from_nvflare_converter
+        self._to_nvflare_converter = to_nvflare_converter
+        self._converter_fl_ctx: Optional[FLContext] = None
+        self._receive_error: Optional[Exception] = None
 
     def init(self, rank: Optional[str] = None, config: Optional[Dict] = None):
         """Initializes NVFlare Client API environment.
@@ -100,8 +117,10 @@ class InProcessClientAPI(APISpec):
             client_config.config = self.meta
         self.client_config = client_config
 
-    def set_meta(self, meta: dict):
+    def set_meta(self, meta: dict, fl_ctx: Optional[FLContext] = None):
         self.meta = meta
+        self._converter_fl_ctx = fl_ctx
+        self._receive_error = None
 
     def configure_memory_management(self, gc_rounds: int = 0, cuda_empty_cache: bool = False):
         """Configure memory management settings.
@@ -118,12 +137,9 @@ class InProcessClientAPI(APISpec):
     def _dropped_because_closed(self, what: str) -> bool:
         """Outgoing-publication gate for a closed API.
 
-        After close(), this instance belongs to a job that has ended, but an abandoned
-        trainer thread may still hold it and resume later. Its publications must not land
-        on the singleton DataBus where a successor job's backend is now subscribed. The
-        gate DROPS (with a warning) instead of raising: an exception would propagate into
-        TaskScriptRunner's catch-all, which fires TOPIC_ABORT onto the same singleton bus
-        and would poison the successor -- the exact cross-job leak this gate prevents.
+        An abandoned trainer thread may resume after its backend has finalized. Drop its
+        publications instead of raising: an exception would reach TaskScriptRunner's
+        catch-all and turn orderly teardown into an abort event.
         """
         if not self.closed:
             return False
@@ -143,11 +159,13 @@ class InProcessClientAPI(APISpec):
         return result
 
     def __receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
+        self._raise_receive_error()
         if self.fl_model:
             return self.fl_model
 
         start_time = time.monotonic()
         while True:
+            self._raise_receive_error()
             if not self.__continue_job():
                 break
 
@@ -180,7 +198,20 @@ class InProcessClientAPI(APISpec):
         if model.params is None and model.metrics is None:
             raise RuntimeError("the model to send does not have either params or metrics")
 
-        shareable = FLModelUtils.to_shareable(model)
+        # DIFF is computed above in the trainer-native representation. Adapt only the
+        # shallow wire model so clear_cache=False leaves the user's FLModel native.
+        wire_model = copy.copy(model)
+        if self._to_nvflare_converter is None:
+            wire_model.params = convert_params(
+                model.params,
+                self.client_config.get_exchange_format() or ExchangeFormat.RAW,
+                self.client_config.get_server_expected_format(),
+                self._params_conversion_state,
+                self.logger,
+            )
+        shareable = FLModelUtils.to_shareable(wire_model)
+        if self._to_nvflare_converter is not None:
+            shareable = self._apply_converter(self._to_nvflare_converter, shareable)
         self.event_manager.fire_event(TOPIC_LOCAL_RESULT, shareable)
 
         if clear_cache:
@@ -258,27 +289,56 @@ class InProcessClientAPI(APISpec):
         exchange_format = self.client_config.get_exchange_format()
         diff_func = DIFF_FUNCS.get(exchange_format, None)
 
+        # RAW keeps the direct ClientAPIExecutor compatibility behavior: its payload is
+        # unadapted, but the historical generic numerical diff still applies.
+        if diff_func is None and exchange_format == ExchangeFormat.RAW:
+            diff_func = DIFF_FUNCS.get(ExchangeFormat.NUMPY)
+
         if diff_func is None:
             raise RuntimeError(f"no default params diff function for {exchange_format}")
         elif self.fl_model is None:
             raise RuntimeError("no received model")
-        elif self.fl_model.params is not None:
-            if model.params_type == ParamsType.FULL:
-                try:
-                    model.params = diff_func(original=self.fl_model.params, new=model.params)
-                    model.params_type = ParamsType.DIFF
-                except Exception as e:
-                    raise RuntimeError(f"params diff function failed: {e}")
+        elif self.fl_model.params is not None and model.params is not None and model.params_type == ParamsType.FULL:
+            try:
+                model.params = diff_func(original=self.fl_model.params, new=model.params)
+                model.params_type = ParamsType.DIFF
+            except Exception as e:
+                raise RuntimeError(f"params diff function failed: {e}") from e
 
         return model
 
+    def _apply_converter(self, converter: ParamsConverter, shareable: Shareable) -> Shareable:
+        if self._converter_fl_ctx is None:
+            raise RuntimeError("custom ParamsConverter requires the current task FLContext")
+        return converter.process(self.meta.get(ConfigKey.TASK_NAME), shareable, self._converter_fl_ctx)
+
+    def _raise_receive_error(self) -> None:
+        if self._receive_error is not None:
+            raise RuntimeError(f"failed to receive task: {self._receive_error}") from self._receive_error
+
     def __receive_callback(self, topic, data, databus):
+        try:
+            if topic == TOPIC_GLOBAL_RESULT and not isinstance(data, Shareable):
+                raise ValueError(f"expecting a Shareable, but got '{type(data)}'")
 
-        if topic == TOPIC_GLOBAL_RESULT and not isinstance(data, Shareable):
-            raise ValueError(f"expecting a Shareable, but got '{type(data)}'")
-
-        fl_model = FLModelUtils.from_shareable(data)
-        self.fl_model = fl_model
+            if self._from_nvflare_converter is not None:
+                data = self._apply_converter(self._from_nvflare_converter, data)
+                fl_model = FLModelUtils.from_shareable(data)
+            else:
+                fl_model = FLModelUtils.from_shareable(data)
+                exchange = self.client_config.get_exchange_format() or ExchangeFormat.RAW
+                fl_model.params = convert_params(
+                    fl_model.params,
+                    self.client_config.get_server_expected_format(),
+                    exchange,
+                    self._params_conversion_state,
+                    self.logger,
+                )
+            self.fl_model = fl_model
+        except Exception as e:
+            # DataBus callbacks run in a worker and publish() does not propagate their
+            # exceptions. Surface conversion failures from flare.receive() instead.
+            self._receive_error = e
 
     def __ask_to_abort(self, topic, msg, databus):
         if topic == TOPIC_ABORT:
@@ -308,15 +368,14 @@ class InProcessClientAPI(APISpec):
     def close(self):
         """Detaches this API instance from the singleton DataBus, in both directions.
 
-        Incoming: unsubscribes its callbacks -- without this, a finished job's API stays
-        subscribed to TOPIC_GLOBAL_RESULT for the process lifetime, so every later job's
-        task publish also lands on the dead instance and pins its latest global model.
-        Outgoing: marks the instance closed so send()/log() DROP instead of publishing --
-        an abandoned trainer thread that resumes after its job ended must not feed results
-        or metrics to a successor job's backend. Called by the owning executor/backend at
-        teardown; idempotent.
+        Incoming callbacks are unsubscribed so the process-global bus does not retain this
+        API or its last model after backend teardown. The closed gate makes send()/log()
+        from an abandoned trainer thread drop instead of publishing. Called by the owning
+        executor/backend at teardown; idempotent.
         """
         self.closed = True
+        self._converter_fl_ctx = None
+        self._receive_error = None
         self.data_bus.unsubscribe(TOPIC_GLOBAL_RESULT, self.__receive_callback)
         self.data_bus.unsubscribe(TOPIC_ABORT, self.__ask_to_abort)
         self.data_bus.unsubscribe(TOPIC_STOP, self.__ask_to_abort)

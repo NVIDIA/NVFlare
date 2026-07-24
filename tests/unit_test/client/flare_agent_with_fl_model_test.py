@@ -20,7 +20,8 @@ from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
-from nvflare.client.flare_agent_with_fl_model import FlareAgentWithFLModel, _ConverterContext
+from nvflare.client.converter_utils import _ConverterContext
+from nvflare.client.flare_agent_with_fl_model import FlareAgentWithFLModel
 
 
 class _AddOneConverter(ParamsConverter):

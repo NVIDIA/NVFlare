@@ -29,13 +29,13 @@ class WaiterRC:
 
 
 def conditional_wait(
-    waiter: Optional[threading.Event], timeout: float, abort_signal: Signal, condition_cb=None, **cb_kwargs
+    waiter: Optional[threading.Event], timeout: Optional[float], abort_signal: Signal, condition_cb=None, **cb_kwargs
 ):
     """Wait for an event until timeout, aborted, or some condition is met.
 
     Args:
         waiter: the event to wait. If not specified, then use sleep.
-        timeout: the max time to wait
+        timeout: the max time to wait. None means no timeout.
         abort_signal: signal to abort the wait
         condition_cb: condition to check during waiting
         **cb_kwargs: kwargs for the condition_cb
@@ -49,7 +49,7 @@ def conditional_wait(
         other integers: returned by condition_cb for other conditions met
 
     """
-    wait_time = min(_SMALL_WAIT, timeout)
+    wait_time = _SMALL_WAIT if timeout is None else min(_SMALL_WAIT, timeout)
     start = time.time()
     while True:
         if waiter:
@@ -59,7 +59,7 @@ def conditional_wait(
         else:
             time.sleep(wait_time)
 
-        if time.time() - start >= timeout:
+        if timeout is not None and time.time() - start >= timeout:
             return WaiterRC.TIMEOUT
 
         # check conditions

@@ -79,15 +79,19 @@ class TaskScriptRunner:
         self.custom_dir = custom_dir
         self.script_path = script_path
         self.script_full_path = self.get_script_full_path(self.custom_dir, self.script_path)
+        self._runtime_lock = threading.Lock()
+        self._runtime_released = False
+        self._original_argv = None
+        self._original_argv_values = None
+        self._task_argv = None
+        self._print_redirect_enabled = False
 
     def run(self):
         """Call the task_fn with any required arguments."""
         self.logger.info(f"start task run() with full path: {self.script_full_path}")
-        curr_argv = sys.argv
         try:
-            if self.redirect_print_to_log:
-                _enable_print_redirect()
-            sys.argv = self.get_sys_argv()
+            if not self._activate_runtime():
+                return
             runpy.run_path(self.script_full_path, run_name="__main__")
         except ImportError as ie:
             msg = "attempted relative import with no known parent package"
@@ -106,9 +110,34 @@ class TaskScriptRunner:
             self.event_manager.fire_event(TOPIC_ABORT, f"'{self.script_full_path}' is aborted, {msg}")
             raise e
         finally:
-            sys.argv = curr_argv
+            self.release_runtime()
+
+    def _activate_runtime(self) -> bool:
+        with self._runtime_lock:
+            # finalize() can release a trainer before its thread reaches this point.
+            if self._runtime_released:
+                return False
+            self._original_argv = sys.argv
+            self._original_argv_values = list(sys.argv)
+            self._task_argv = self.get_sys_argv()
+            sys.argv = self._task_argv
             if self.redirect_print_to_log:
+                _enable_print_redirect()
+                self._print_redirect_enabled = True
+            return True
+
+    def release_runtime(self):
+        """Restore globals owned by this runner, even when its thread must be abandoned."""
+        with self._runtime_lock:
+            first_release = not self._runtime_released
+            self._runtime_released = True
+            if first_release and self._print_redirect_enabled:
                 _disable_print_redirect()
+                self._print_redirect_enabled = False
+            if self._original_argv is not None:
+                self._original_argv[:] = self._original_argv_values
+                if first_release and sys.argv is self._task_argv:
+                    sys.argv = self._original_argv
 
     def get_sys_argv(self):
         # Preserve the runner's legacy whitespace splitting for existing arguments. Only quoted

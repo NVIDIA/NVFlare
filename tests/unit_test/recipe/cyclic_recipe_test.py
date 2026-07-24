@@ -206,11 +206,18 @@ class TestCyclicRecipeControllerConfig:
         )
 
         controller = recipe._job._deploy_map["server"].app_config.workflows[0].controller
-        launcher = recipe._job._deploy_map[ALL_SITES].app_config.components["launcher"]
+        from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
+
+        client_api_executor = next(
+            entry.executor
+            for entry in recipe._job._deploy_map[ALL_SITES].app_config.executors
+            if isinstance(entry.executor, ClientAPIExecutor)
+        )
         assert controller.task_assignment_timeout == 60
         assert controller._task_check_period == 2.0
-        assert launcher._shutdown_timeout == 90.0
-        assert launcher._launch_once is False
+        assert client_api_executor._execution_mode == "external_process"
+        assert client_api_executor._shutdown_timeout == 90.0
+        assert client_api_executor._launch_once is False
 
         with pytest.raises(ValueError, match="task_check_period"):
             PTCyclicRecipe(

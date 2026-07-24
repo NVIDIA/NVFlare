@@ -13,9 +13,12 @@
 # limitations under the License.
 
 import unittest
+from copy import deepcopy
 
 from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.client.config import ConfigKey
 from nvflare.client.in_process.api import (
     TOPIC_ABORT,
@@ -28,6 +31,23 @@ from nvflare.client.in_process.api import (
 from nvflare.fuel.data_event.data_bus import DataBus
 
 
+class _AddOneConverter(ParamsConverter):
+    def convert(self, params, fl_ctx):
+        fl_ctx.set_prop("from_converter_called", True)
+        return {k: v + 1 for k, v in params.items()}
+
+
+class _AddTwoConverter(ParamsConverter):
+    def convert(self, params, fl_ctx):
+        assert fl_ctx.get_prop("from_converter_called")
+        return {k: v + 2 for k, v in params.items()}
+
+
+class _FailingConverter(ParamsConverter):
+    def convert(self, params, fl_ctx):
+        raise ValueError("bad conversion")
+
+
 class TestInProcessClientAPI(unittest.TestCase):
     def setUp(self):
         # Create a mock task_metadata for testing
@@ -37,7 +57,8 @@ class TestInProcessClientAPI(unittest.TestCase):
             "TASK_NAME": "train",
             ConfigKey.TASK_EXCHANGE: {
                 ConfigKey.TRAIN_WITH_EVAL: "train_with_eval",
-                ConfigKey.EXCHANGE_FORMAT: "pytorch",
+                ConfigKey.EXCHANGE_FORMAT: "numpy",
+                ConfigKey.SERVER_EXPECTED_FORMAT: "numpy",
                 ConfigKey.TRANSFER_TYPE: "DIFF",
                 ConfigKey.TRAIN_TASK_NAME: "train",
                 ConfigKey.EVAL_TASK_NAME: "evaluate",
@@ -274,6 +295,33 @@ class TestInProcessClientAPI(unittest.TestCase):
         self.assertIsNone(output_model.params)
         self.assertEqual(output_model.metrics, {"loss": 0.42})
 
+    def test_diff_config_allows_metrics_only_result(self):
+        """DIFF applies only to parameter results; validation metrics remain metrics."""
+        import numpy as np
+
+        from nvflare.apis.dxo import DataKind, from_shareable
+
+        client_api = InProcessClientAPI(self.task_metadata)
+        client_api.init()
+        sent = []
+
+        def capture(_topic, data, _databus):
+            sent.append(data)
+
+        client_api.data_bus.subscribe([TOPIC_LOCAL_RESULT], capture)
+        try:
+            self._fire_global_model(client_api, {"w": np.ones((10,))})
+            self.assertIsNotNone(client_api.receive())
+
+            client_api.send(FLModel(metrics={"accuracy": 0.75}), clear_cache=False)
+
+            self.assertEqual(len(sent), 1)
+            result = from_shareable(sent[0])
+            self.assertEqual(result.data_kind, DataKind.METRICS)
+            self.assertEqual(result.data, {"accuracy": 0.75})
+        finally:
+            client_api.data_bus.unsubscribe(TOPIC_LOCAL_RESULT, capture)
+
     def test_receive_timeout_does_not_arm_send_under_congestion(self):
         """A missing next-round model should time out cleanly and not permit send()."""
         client_api = InProcessClientAPI(self.task_metadata, result_check_interval=0.001)
@@ -302,6 +350,91 @@ class TestInProcessClientAPI(unittest.TestCase):
 
         client_api.send(FLModel(params={"w": np.zeros((10,))}), clear_cache=False)
         self.assertTrue(client_api.receive_called)
+
+    def test_declared_pytorch_conversion_runs_at_receive_send_boundary(self):
+        import numpy as np
+
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("PyTorch is not installed")
+
+        meta = deepcopy(self.task_metadata)
+        exchange = meta[ConfigKey.TASK_EXCHANGE]
+        exchange[ConfigKey.EXCHANGE_FORMAT] = "pytorch"
+        exchange[ConfigKey.SERVER_EXPECTED_FORMAT] = "numpy"
+        exchange[ConfigKey.TRANSFER_TYPE] = "FULL"
+        client_api = InProcessClientAPI(meta)
+        client_api.init()
+        sent = []
+
+        def capture(_topic, data, _databus):
+            sent.append(data)
+
+        client_api.data_bus.subscribe([TOPIC_LOCAL_RESULT], capture)
+        try:
+            self._fire_global_model(client_api, {"w": np.asarray([1.0, 2.0])})
+            received = client_api.receive()
+            self.assertIsInstance(received.params["w"], torch.Tensor)
+
+            client_api.send(FLModel(params={"w": received.params["w"] + 1}), clear_cache=False)
+
+            from nvflare.apis.dxo import from_shareable
+
+            wire_params = from_shareable(sent[-1]).data
+            self.assertIsInstance(wire_params["w"], np.ndarray)
+            np.testing.assert_array_equal(wire_params["w"], np.asarray([2.0, 3.0]))
+        finally:
+            client_api.data_bus.unsubscribe(TOPIC_LOCAL_RESULT, capture)
+
+    def test_custom_converters_run_at_receive_send_boundary(self):
+        import numpy as np
+
+        meta = deepcopy(self.task_metadata)
+        meta[ConfigKey.TASK_EXCHANGE][ConfigKey.TRANSFER_TYPE] = "FULL"
+        fl_ctx = FLContext()
+        client_api = InProcessClientAPI(
+            meta,
+            from_nvflare_converter=_AddOneConverter(["train"]),
+            to_nvflare_converter=_AddTwoConverter(["train"]),
+        )
+        client_api.init()
+        client_api.set_meta(meta, fl_ctx)
+        sent = []
+
+        def capture(_topic, data, _databus):
+            sent.append(data)
+
+        client_api.data_bus.subscribe([TOPIC_LOCAL_RESULT], capture)
+        try:
+            self._fire_global_model(client_api, {"w": np.asarray([1.0])})
+            received = client_api.receive()
+            np.testing.assert_array_equal(received.params["w"], np.asarray([2.0]))
+
+            client_api.send(FLModel(params={"w": np.asarray([10.0])}), clear_cache=False)
+
+            from nvflare.apis.dxo import from_shareable
+
+            wire_params = from_shareable(sent[-1]).data
+            np.testing.assert_array_equal(wire_params["w"], np.asarray([12.0]))
+        finally:
+            client_api.data_bus.unsubscribe(TOPIC_LOCAL_RESULT, capture)
+            client_api.close()
+
+    def test_receive_surfaces_converter_failure(self):
+        client_api = InProcessClientAPI(
+            self.task_metadata,
+            result_check_interval=0.001,
+            from_nvflare_converter=_FailingConverter(),
+        )
+        client_api.init()
+        client_api.set_meta(self.task_metadata, FLContext())
+        try:
+            self._fire_global_model(client_api, {"w": 1.0})
+            with self.assertRaisesRegex(RuntimeError, "failed to receive task: bad conversion"):
+                client_api.receive(timeout=0.01)
+        finally:
+            client_api.close()
 
     def test_clear_resets_receive_guard_between_rounds(self):
         """A prior successful round must not arm send() after a later receive timeout."""

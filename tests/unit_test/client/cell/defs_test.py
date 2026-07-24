@@ -27,13 +27,10 @@ class TestDefs:
     def test_expected_topics_present(self):
         expected = {
             "HELLO",
-            "HELLO_CHALLENGE",
-            "HELLO_PROOF",
             "HELLO_ACCEPTED",
             "HELLO_REJECTED",
             "TASK_READY",
             "TASK_ACCEPTED",
-            "TASK_PAYLOAD_READY",
             "TASK_FAILED",
             "RESULT_READY",
             "RESULT_ACCEPTED",
@@ -42,7 +39,6 @@ class TestDefs:
             "HEARTBEAT",
             "ABORT",
             "SHUTDOWN",
-            "BYE",
             "ERROR",
         }
         assert expected == set(_public_str_values(Topic).keys())
@@ -72,13 +68,10 @@ class TestDefs:
         # exact frozen wire strings for every topic; a value rename must fail CI
         expected = {
             "HELLO": "client_api.hello",
-            "HELLO_CHALLENGE": "client_api.hello_challenge",
-            "HELLO_PROOF": "client_api.hello_proof",
             "HELLO_ACCEPTED": "client_api.hello_accepted",
             "HELLO_REJECTED": "client_api.hello_rejected",
             "TASK_READY": "client_api.task_ready",
             "TASK_ACCEPTED": "client_api.task_accepted",
-            "TASK_PAYLOAD_READY": "client_api.task_payload_ready",
             "TASK_FAILED": "client_api.task_failed",
             "RESULT_READY": "client_api.result_ready",
             "RESULT_ACCEPTED": "client_api.result_accepted",
@@ -87,7 +80,6 @@ class TestDefs:
             "HEARTBEAT": "client_api.heartbeat",
             "ABORT": "client_api.abort",
             "SHUTDOWN": "client_api.shutdown",
-            "BYE": "client_api.bye",
             "ERROR": "client_api.error",
         }
         assert _public_str_values(Topic) == expected
@@ -98,28 +90,24 @@ class TestDefs:
         # exact frozen wire strings for every message key; a value rename must fail CI
         expected = {
             "SESSION_ID": "session_id",
-            "ATTACH_ID": "attach_id",
             "JOB_ID": "job_id",
             "SITE_NAME": "site_name",
             "TRAINER_FQCN": "trainer_fqcn",
-            "TARGET_FQCN": "target_fqcn",
             "RANK": "rank",
-            "RANK_POLICY": "rank_policy",
             "PROTOCOL_VERSION": "protocol_version",
-            "NONCE": "nonce",
             "PROOF": "proof",
             "REASON": "reason",
             "TASK_ID": "task_id",
             "TASK_NAME": "task_name",
             "MODEL": "model",
-            "PARAMS": "params",
-            "RESULT_ID": "result_id",
-            "TRANSFER_ID": "transfer_id",
-            "MANIFEST": "manifest",
+            "RESULT": "result",
+            "RESULT_SOURCE_LIVE": "result_source_live",
+            "HEARTBEAT_INTERVAL": "heartbeat_interval",
+            "HEARTBEAT_TIMEOUT": "heartbeat_timeout",
+            "REPLY_TOPIC": "reply_topic",
         }
         assert _public_str_values(MsgKey) == expected
 
     def test_msg_key_names_present(self):
-        # the protocol/Appendix B wire keys must exist by name
-        for name in ("TASK_NAME", "MANIFEST", "RANK_POLICY", "MODEL", "PARAMS", "NONCE", "PROOF"):
+        for name in ("TASK_NAME", "MODEL", "PROOF"):
             assert hasattr(MsgKey, name)

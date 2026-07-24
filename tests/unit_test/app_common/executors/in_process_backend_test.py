@@ -18,17 +18,19 @@ Drives the real DataBus round-trip the design defines for in_process: the backen
 task on TOPIC_GLOBAL_RESULT, a fake trainer replies on TOPIC_LOCAL_RESULT, and execute()
 returns the result. Also covers the backend-contract obligations the legacy executor did not
 have: initialize() self-unwinding, finalize() idempotency + DataBus cleanup (the DataBus is a
-process singleton, so leaks would cross into later jobs in the same process), bounded result
-wait, and LOG routing through the executor-owned fire_log_analytics().
+process singleton, so cleanup must not leave dangling references), bounded result wait, and LOG
+routing through the executor-owned fire_log_analytics().
 """
 
+import builtins
+import sys
 import time
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
@@ -125,7 +127,6 @@ def _make_fl_ctx(engine, custom_dir):
 def _make_context(executor=None, **overrides):
     kwargs = dict(
         executor=executor if executor is not None else MagicMock(),
-        execution_mode="in_process",
         task_script_path="train.py",
         task_script_args="",
         # bounded by default so a broken round trip FAILS the test instead of hanging it
@@ -165,7 +166,7 @@ class TestInitializeAndFinalize:
     def test_initialize_wires_databus_and_starts_trainer(self, clean_databus, custom_dir):
         backend, _ = _initialized_backend(custom_dir)
         try:
-            # the trainer script's flare.init() finds the API instance here
+            # The backend publishes the API instance the trainer consumes here.
             assert isinstance(clean_databus.get_data(CLIENT_API_KEY), InProcessClientAPI)
             for topic in BACKEND_TOPICS:
                 assert topic in clean_databus.subscribers, f"backend must subscribe {topic}"
@@ -203,23 +204,43 @@ class TestInitializeAndFinalize:
     def test_finalize_bounded_when_trainer_stuck_in_user_code(self, tmp_path, caplog, capsys):
         """A trainer wedged in user code never observes TOPIC_STOP: with result_wait_timeout,
         execute() returns while the thread still runs, so finalize() must join with a bound
-        and abandon (daemon thread) instead of hanging CJ/simulator teardown forever."""
-        (tmp_path / "train.py").write_text("import time\nwhile True: time.sleep(0.5)\n")
+        and abandon (daemon thread) instead of hanging CJ/simulator teardown forever. Abandoning
+        the runner must restore the process globals that TaskScriptRunner owns."""
+        release_key = "test.release_stuck_in_process_trainer"
+        (tmp_path / "train.py").write_text(
+            "import time\n"
+            "from nvflare.fuel.data_event.data_bus import DataBus\n"
+            f"while not DataBus().get_data('{release_key}'):\n"
+            "    time.sleep(0.5)\n"
+        )
+        original_print = builtins.print
+        original_argv = sys.argv
+        original_argv_values = list(sys.argv)
         backend, fl_ctx = _initialized_backend(str(tmp_path), result_wait_timeout=0.05)
         try:
-            result = backend.execute("train", Shareable(), fl_ctx, Signal())
-            assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert backend._task_fn_thread.is_alive()  # the reachable-hang precondition
-            assert backend._task_fn_thread.daemon  # a wedged trainer cannot block process exit
+            try:
+                result = backend.execute("train", Shareable(), fl_ctx, Signal())
+                assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+                assert backend._task_fn_thread.is_alive()  # the reachable-hang precondition
+                assert backend._task_fn_thread.daemon  # a wedged trainer cannot block process exit
+            finally:
+                with patch.object(ipb_module, "_TRAINER_STOP_JOIN_TIMEOUT", 0.5):
+                    start = time.monotonic()
+                    backend.finalize(FLContext())
+                    elapsed = time.monotonic() - start
+            assert elapsed < 5.0, "finalize must not hang on a stuck trainer"
+            assert backend._task_fn_thread.is_alive()
+            assert builtins.print is original_print
+            assert sys.argv is original_argv
+            assert list(sys.argv) == original_argv_values
+            capsys.readouterr()
+            print("unrelated output")
+            assert capsys.readouterr().out == "unrelated output\n"
+            assert "did not stop within" in caplog.text
         finally:
-            with patch.object(ipb_module, "_TRAINER_STOP_JOIN_TIMEOUT", 0.5):
-                start = time.monotonic()
-                backend.finalize(FLContext())
-                elapsed = time.monotonic() - start
-        assert elapsed < 5.0, "finalize must not hang on a stuck trainer"
-        assert "did not stop within" in caplog.text
-        print("main-thread output remains available")
-        assert "main-thread output remains available" in capsys.readouterr().out
+            DataBus().put_data(release_key, True)
+            backend._task_fn_thread.join(timeout=2.0)
+        assert not backend._task_fn_thread.is_alive()
 
     def test_initialize_configures_memory_management(self, custom_dir):
         backend, _ = _initialized_backend(custom_dir, memory_gc_rounds=3, cuda_empty_cache=True)
@@ -292,6 +313,30 @@ class TestInitializeAndFinalize:
 
 
 class TestExecute:
+    def test_raw_diff_round_trip_calculates_and_sends_delta(self, clean_databus, tmp_path):
+        """RAW describes the unconverted boundary, but DIFF still sends a numerical delta."""
+        (tmp_path / "train.py").write_text(
+            "from nvflare.app_common.abstract.fl_model import FLModel\n"
+            "from nvflare.client.api_spec import CLIENT_API_KEY\n"
+            "from nvflare.fuel.data_event.data_bus import DataBus\n"
+            "api = DataBus().get_data(CLIENT_API_KEY)\n"
+            "received = api.receive(timeout=5.0)\n"
+            "if received is None:\n"
+            "    raise RuntimeError('no task received')\n"
+            "api.send(FLModel(params={'w': [4.0, 1.0]}), clear_cache=False)\n"
+        )
+        backend, fl_ctx = _initialized_backend(str(tmp_path), params_transfer_type=TransferType.DIFF)
+        try:
+            task = DXO(data_kind=DataKind.WEIGHTS, data={"w": [1.5, -2.0]}).to_shareable()
+
+            result = backend.execute("train", task, fl_ctx, Signal())
+
+            result_dxo = from_shareable(result)
+            assert result_dxo.data_kind == DataKind.WEIGHT_DIFF
+            assert result_dxo.data == {"w": [2.5, 3.0]}
+        finally:
+            backend.finalize(FLContext())
+
     def test_execute_round_trip(self, clean_databus, custom_dir):
         backend, fl_ctx = _initialized_backend(custom_dir)
         try:
@@ -385,7 +430,7 @@ class TestExecute:
                 [TOPIC_GLOBAL_RESULT], lambda t, d, b: clean_databus.publish([TOPIC_LOCAL_RESULT], _result_shareable())
             )
             for round_num in (0, 1, 2):
-                task = Shareable()
+                task = _result_shareable()
                 task.set_header(AppConstants.CURRENT_ROUND, round_num)
                 result = backend.execute("train", task, fl_ctx, Signal())
                 assert result.get_return_code() == ReturnCode.OK
@@ -407,6 +452,19 @@ class TestExecute:
             elapsed = time.monotonic() - start
             assert second.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
             assert elapsed < 1.0, "post-abort tasks must fail at entry, not wait the poll loop"
+        finally:
+            backend.finalize(FLContext())
+
+    def test_late_result_after_timeout_cannot_satisfy_next_task(self, clean_databus, custom_dir):
+        backend, fl_ctx = _initialized_backend(custom_dir, result_wait_timeout=0.05)
+        try:
+            first = backend.execute("train", Shareable(), fl_ctx, Signal())
+            assert first.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+
+            clean_databus.publish([TOPIC_LOCAL_RESULT], _result_shareable())
+            second = backend.execute("evaluate", Shareable(), fl_ctx, Signal())
+
+            assert second.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
         finally:
             backend.finalize(FLContext())
 
@@ -477,25 +535,9 @@ class TestExecute:
         finally:
             backend.finalize(FLContext())
 
-    def test_handle_event_is_noop(self):
-        backend = InProcessBackend()
-        backend.handle_event("custom_event", FLContext())
 
-
-class TestMultiBackend:
-    def test_finalizing_backend_does_not_clear_successors_client_api(self, clean_databus, custom_dir):
-        """Backend A's teardown must not remove the CLIENT_API_KEY a later backend B installed."""
-        backend_a, _ = _initialized_backend(custom_dir)
-        backend_b, _ = _initialized_backend(custom_dir)
-        try:
-            api_b = backend_b._client_api
-            assert clean_databus.get_data(CLIENT_API_KEY) is api_b
-
-            backend_a.finalize(FLContext())
-            assert clean_databus.get_data(CLIENT_API_KEY) is api_b
-        finally:
-            backend_b.finalize(FLContext())
-        assert clean_databus.get_data(CLIENT_API_KEY) is None
+class TestBackendTeardown:
+    """DataBus cleanup and idempotent teardown invariants."""
 
     def test_finalize_fires_stop_exactly_once(self, clean_databus, custom_dir):
         """Idempotency means no repeated side effects, not just no raise."""
@@ -544,10 +586,8 @@ class TestClosedApiOutgoingGate:
     """A closed API must not publish onto the singleton bus (zombie-trainer containment).
 
     finalize() can abandon a still-running daemon trainer after the bounded join; that
-    thread still holds the API object and may resume later. Its send()/log() must DROP --
-    not publish (a successor job's backend is now subscribed to the same topics), and not
-    raise (an exception would hit TaskScriptRunner's catch-all, which fires TOPIC_ABORT
-    onto the singleton bus and would poison the successor)."""
+    thread still holds the API object and may resume later. Its send()/log() must drop
+    without publishing or turning normal teardown into an exception."""
 
     def test_finalize_closes_api_and_late_send_log_are_dropped(self, clean_databus, custom_dir):
         backend, _ = _initialized_backend(custom_dir)
@@ -632,16 +672,22 @@ class TestLogRouting:
 
 
 class TestMetaPassThrough:
-    def test_meta_uses_raw_full_and_context_task_names(self, custom_dir):
+    def test_meta_carries_declared_formats_transfer_type_and_task_names(self, custom_dir):
         backend, fl_ctx = _initialized_backend(
-            custom_dir, train_task_name="my_train", evaluate_task_name="my_eval", submit_model_task_name="my_submit"
+            custom_dir,
+            params_exchange_format=ExchangeFormat.PYTORCH,
+            server_expected_format=ExchangeFormat.NUMPY,
+            params_transfer_type=TransferType.DIFF,
+            train_task_name="my_train",
+            evaluate_task_name="my_eval",
+            submit_model_task_name="my_submit",
         )
         try:
             meta = backend._prepare_task_meta(fl_ctx, "my_train")
             exchange = meta[ConfigKey.TASK_EXCHANGE]
-            # FLARE-2698: pass-through boundary - no converter formats in the frozen surface
-            assert exchange[ConfigKey.EXCHANGE_FORMAT] == ExchangeFormat.RAW
-            assert exchange[ConfigKey.TRANSFER_TYPE] == TransferType.FULL
+            assert exchange[ConfigKey.EXCHANGE_FORMAT] == ExchangeFormat.PYTORCH
+            assert exchange[ConfigKey.SERVER_EXPECTED_FORMAT] == ExchangeFormat.NUMPY
+            assert exchange[ConfigKey.TRANSFER_TYPE] == TransferType.DIFF
             assert exchange[ConfigKey.TRAIN_TASK_NAME] == "my_train"
             assert exchange[ConfigKey.EVAL_TASK_NAME] == "my_eval"
             assert exchange[ConfigKey.SUBMIT_MODEL_TASK_NAME] == "my_submit"

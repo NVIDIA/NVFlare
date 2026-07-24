@@ -429,14 +429,14 @@ class TestSwarmLearningRecipePipeType:
     """Tests for pipe_type and pipe_root_path parameters."""
 
     def _capture_task_pipe(self, recipe_kwargs):
-        """Helper: build recipe and return the task_pipe passed to ScriptRunner."""
+        """Helper: build recipe and return the task_pipe passed to the selected runner."""
         import torch.nn as nn
 
         from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
-        from nvflare.job_config.script_runner import ScriptRunner
+        from nvflare.job_config.script_runner import BaseScriptRunner
 
         captured = {}
-        orig = ScriptRunner.__init__
+        orig = BaseScriptRunner.__init__
 
         def _capture(self, *a, **kw):
             captured["task_pipe"] = kw.get("task_pipe")
@@ -450,23 +450,22 @@ class TestSwarmLearningRecipePipeType:
             patch("os.path.isfile", return_value=True),
             patch("os.path.isdir", return_value=True),
             patch("os.path.exists", return_value=True),
-            patch.object(ScriptRunner, "__init__", _capture),
+            patch.object(BaseScriptRunner, "__init__", _capture),
         ):
             SwarmLearningRecipe(**defaults)
 
         return captured.get("task_pipe")
 
     def test_default_cell_pipe_passes_task_pipe_none(self):
-        """Default pipe_type='cell_pipe' must pass task_pipe=None to ScriptRunner
-        so ScriptRunner creates a CellPipe via its own _create_cell_pipe()."""
+        """Default pipe_type='cell_pipe' uses ScriptRunner without a legacy task pipe."""
         task_pipe = self._capture_task_pipe({})
         assert task_pipe is None
 
     def test_file_pipe_passes_filepipe_instance(self):
-        """pipe_type='file_pipe' must pass a FilePipe instance to ScriptRunner."""
+        """External pipe_type='file_pipe' passes FilePipe to the legacy BaseScriptRunner."""
         from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 
-        task_pipe = self._capture_task_pipe({"pipe_type": "file_pipe"})
+        task_pipe = self._capture_task_pipe({"pipe_type": "file_pipe", "launch_external_process": True})
         assert isinstance(task_pipe, FilePipe)
 
     def test_file_pipe_default_root_path_uses_workspace_template(self):
@@ -474,7 +473,7 @@ class TestSwarmLearningRecipePipeType:
         matching the sag_cse_ccwf_pt reference template for runtime path isolation."""
         from nvflare.apis.fl_constant import SystemVarName
 
-        task_pipe = self._capture_task_pipe({"pipe_type": "file_pipe"})
+        task_pipe = self._capture_task_pipe({"pipe_type": "file_pipe", "launch_external_process": True})
         root_path = task_pipe.root_path
         assert "{" + SystemVarName.WORKSPACE + "}" in root_path
         assert "{" + SystemVarName.JOB_ID + "}" in root_path
@@ -486,7 +485,9 @@ class TestSwarmLearningRecipePipeType:
         from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 
         custom_path = str(tmp_path)
-        task_pipe = self._capture_task_pipe({"pipe_type": "file_pipe", "pipe_root_path": custom_path})
+        task_pipe = self._capture_task_pipe(
+            {"pipe_type": "file_pipe", "pipe_root_path": custom_path, "launch_external_process": True}
+        )
         assert isinstance(task_pipe, FilePipe)
         assert task_pipe.root_path.startswith(custom_path)
         assert "{" + SystemVarName.JOB_ID + "}" in task_pipe.root_path
@@ -622,8 +623,8 @@ class TestSwarmLearningRecipeExport:
         assert model_cfg.get("path") == "hf_sft_model.CausalLMModel"
         assert model_cfg.get("args", {}).get("model_name_or_path") == model_name_or_path
 
-    def test_export_cell_pipe_generates_cell_pipe_component(self, tmp_path):
-        """Default pipe_type='cell_pipe' must export a CellPipe component in client config."""
+    def test_export_default_transport_uses_client_api_executor(self, tmp_path):
+        """Default transport uses ClientAPIExecutor directly without legacy pipe components."""
         import torch.nn as nn
 
         from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
@@ -647,17 +648,12 @@ class TestSwarmLearningRecipeExport:
         with open(config_path, "r") as f:
             config = json.load(f)
 
-        pipe_comp = None
-        for comp in config.get("components", []):
-            if comp.get("id") == "pipe":
-                pipe_comp = comp
-                break
-
-        assert pipe_comp is not None, "Pipe component not found in exported client config"
-        assert "cell_pipe.CellPipe" in pipe_comp["path"], f"Expected CellPipe path, got '{pipe_comp['path']}'"
-        pipe_args = pipe_comp.get("args", {})
-        assert "site_name" in pipe_args, "CellPipe must have site_name arg"
-        assert "token" in pipe_args, "CellPipe must have token arg"
+        train_executor = next(entry["executor"] for entry in config["executors"] if "train" in entry.get("tasks", []))
+        assert train_executor["path"].endswith(".ClientAPIExecutor")
+        assert train_executor["args"]["execution_mode"] == "external_process"
+        component_ids = {component["id"] for component in config.get("components", [])}
+        assert "pipe" not in component_ids
+        assert "launcher" not in component_ids
 
     def test_export_file_pipe_generates_file_pipe_component(self, tmp_path):
         """pipe_type='file_pipe' must export a FilePipe component with correct root_path."""
