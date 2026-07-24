@@ -255,29 +255,24 @@ the hand-written `llm_hf` example does today (it writes the global weights *into
 the checkpoint directory so that resume loads global weights together with local
 optimizer state).
 
-**Checkpoint provenance:** the session resumes only from checkpoints **recorded
-for this FL job** — at each round end it stores the path of the checkpoint just
-written, and round r > 0 resumes from that record. It never scans the directory
-(no blind `get_last_checkpoint()`): a stale `checkpoint-*` left in `output_dir` by
-a previous run can therefore never be resumed. Round 0 never resumes, regardless
-of directory contents. This replaces the example's `rmtree`-on-startup hygiene;
-the session logs a WARNING at startup if stale checkpoint dirs are present.
+**Checkpoint provenance:** Phase 1 keeps the checkpoint path in memory on the
+patched trainer session. At each round end it records the path of the
+checkpoint just written in `_HFTaskState`, and round r > 0 resumes from that
+in-memory record. It never scans the directory (no blind
+`get_last_checkpoint()`): a stale `checkpoint-*` left in `output_dir` by a
+previous run can therefore never be resumed. Round 0 never resumes, regardless
+of directory contents.
 
-**The provenance record is persisted, not in-memory:** the session writes a small
-state file (`<output_dir>/_fl_exchange/fl_state.json`, atomic
-temp-write + `os.replace`) at each round end containing the FL job ID, world
-size, last completed round, the recorded checkpoint path, the computed cumulative
-`max_steps` target, and the per-round budget. **Single-writer rule:** only rank 0
-ever writes it; at startup all ranks pass a barrier after rank 0 has read (or
-created) it, so a relaunch cannot race a partially-written record and no two
-processes ever write concurrently. On startup, a session that finds a state file for the *same*
-job ID restores it — so a new trainer process for the same job, such as
-`launch_once=False` relaunch-per-task, continues from the last completed round
-instead of silently degrading to stateless rounds with an undefined target. This
-does not promise transparent recovery of an in-flight train task that the
-launcher has already reported as failed. A state file from a *different* job ID
-is treated as stale (WARNING, ignored). This also removes any hard dependency on
-`launch_once=True`, though it remains the recommended default.
+The provenance record is deliberately not persisted in Phase 1. This matches
+the existing Lightning Client API lifecycle and avoids implying untested
+same-job process relaunch or crash/rejoin semantics. A Trainer subprocess crash
+is still reported as a task failure by the launcher; NVFlare does not
+transparently launch another Trainer and reconnect it to the failed in-flight
+task. When the Client API config explicitly says `launch_once=False`,
+`patch(..., restore_state=True)` rejects it. `restore_state=False` remains the
+supported mode for per-task trainer launches. Cross-process state continuity is
+a future feature that needs an end-to-end launcher contract and matching
+coverage.
 
 Two modes:
 
@@ -655,8 +650,7 @@ The Phase 1 contract for the file exchange:
   objects through `broadcast_object_list` and reduces serialization pressure, but
   each reader rank still materializes the tensors it must load into its model.
 - Cleanup: each round's payload file is deleted after the post-load barrier; the
-  directory is bounded to one round's payload plus the tiny persistent
-  `fl_state.json` (see Checkpoint provenance).
+  directory is bounded to one round's staged payload.
 - Reach: single-node multi-GPU works on local disk. Multi-node requires
   `output_dir` on a shared filesystem — **not a new requirement**: multi-node
   checkpoint resume from `output_dir` already demands it, as the `llm_hf`

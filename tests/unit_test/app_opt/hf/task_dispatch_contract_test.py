@@ -389,7 +389,6 @@ def test_distributed_budget_uses_rank_zero_payload_on_nonzero_rank(monkeypatch, 
         rank=1,
         world_size=2,
         incoming_payload=[
-            {},
             {
                 "ok": True,
                 "operation": "budget capture",
@@ -589,7 +588,6 @@ def test_checkpoint_injection_failure_raises_on_nonzero_rank_before_barrier(monk
         rank=1,
         world_size=2,
         incoming_payload=[
-            {},
             task_payload,
             {
                 "ok": True,
@@ -733,120 +731,25 @@ def test_aborted_pending_task_blocks_next_is_running_with_actionable_error(monke
         hf_api.hf_is_running()
 
 
-def test_stale_hf_checkpoint_without_nvflare_provenance_warns(monkeypatch, tmp_path, caplog):
-    incoming_model = FLModel(params=_model_params(TinyModel(), 5.0), current_round=1, total_rounds=3)
-    hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model)
-    (tmp_path / "checkpoint-1").mkdir()
-    trainer = _make_trainer(trainer_cls, tmp_path)
-
-    with caplog.at_level(logging.WARNING):
-        hf_api.patch(trainer, restore_state=True, local_steps=1)
-
-    assert "no matching NVFlare checkpoint provenance" in caplog.text
-    assert trainer._nvflare_hf_task_state.last_checkpoint_path is None
-
-
-def test_checkpoint_provenance_round_trips_on_repatch(monkeypatch, tmp_path):
-    incoming_model = FLModel(params=_model_params(TinyModel(), 5.0), current_round=1, total_rounds=3)
-    hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model)
-    trainer = _make_trainer(trainer_cls, tmp_path)
-    checkpoint_dir = tmp_path / "checkpoint-7"
-    checkpoint_dir.mkdir()
-
-    hf_api.patch(trainer, restore_state=True, local_steps=1)
-    task_state = trainer._nvflare_hf_task_state
-    task_state.last_checkpoint_path = str(checkpoint_dir)
-    task_state.cumulative_max_steps = 12
-    task_state.per_round_budget_steps = 3
-    task_state.last_completed_global_step = 7
-    task_state.last_completed_round = 2
-    task_state.metric_step_offset = 19
-    task_state._persist_state()
-
-    hf_api._reset_global_state_for_test()
-    restored_trainer = _make_trainer(trainer_cls, tmp_path)
-    hf_api.patch(restored_trainer, restore_state=True, local_steps=1)
-    restored = restored_trainer._nvflare_hf_task_state
-
-    assert restored.last_checkpoint_path == str(checkpoint_dir)
-    assert restored.cumulative_max_steps == 12
-    assert restored.per_round_budget_steps == 3
-    assert restored.last_completed_global_step == 7
-    assert restored.last_completed_round == 2
-    assert restored.metric_step_offset == 19
-
-
-def test_checkpoint_state_persists_completed_round_before_blocking_send(monkeypatch, tmp_path):
+def test_restore_state_checkpoint_path_is_in_memory_only(monkeypatch, tmp_path):
     incoming_model = FLModel(params=_model_params(TinyModel(), 5.0), current_round=0, total_rounds=2)
     hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model)
     trainer = _make_trainer(trainer_cls, tmp_path)
     checkpoint_dir = tmp_path / "checkpoint-1"
     checkpoint_dir.mkdir()
-    events = []
-
-    def write_checkpoint_state(output_dir, state):
-        events.append(("persist", dict(state)))
-        return os.path.join(output_dir, "_fl_exchange", "fl_state.json")
-
-    def send(model, clear_cache=True, ctx=None):
-        events.append(("send", model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND]))
-
-    monkeypatch.setattr(hf_api.utils, "write_checkpoint_state", write_checkpoint_state)
-    monkeypatch.setattr(hf_api.flare_api, "send", send)
 
     hf_api.patch(trainer, restore_state=True, local_steps=1)
     trainer.train()
+    task_state = trainer._nvflare_hf_task_state
 
-    assert events[0][0] == "persist"
-    assert events[0][1]["last_completed_round"] == 0
-    assert events[0][1]["checkpoint_path"] == str(checkpoint_dir)
-    assert events[0][1]["result_upload_pending"] is True
-    assert events[1][0] == "send"
-    assert events[2][0] == "persist"
-    assert events[2][1]["checkpoint_path"] == str(checkpoint_dir)
-    assert events[2][1]["result_upload_pending"] is False
+    assert task_state.last_checkpoint_path == str(checkpoint_dir)
+    assert not os.path.exists(os.path.join(tmp_path, "_fl_exchange", "fl_state.json"))
 
+    hf_api._reset_global_state_for_test()
+    restored_trainer = _make_trainer(trainer_cls, tmp_path)
+    hf_api.patch(restored_trainer, restore_state=True, local_steps=1)
 
-def test_checkpoint_state_persistence_failure_broadcasts_before_barrier_on_rank_zero(monkeypatch, tmp_path):
-    incoming_model = FLModel(params=_model_params(TinyModel(), 5.0), current_round=1, total_rounds=3)
-    hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model)
-    dist = _RecordingDist(rank=0, world_size=2)
-    monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
-    trainer = _make_trainer(trainer_cls, tmp_path)
-
-    def write_checkpoint_state(*args, **kwargs):
-        raise OSError("disk full")
-
-    monkeypatch.setattr(hf_api.utils, "write_checkpoint_state", write_checkpoint_state)
-
-    hf_api.patch(trainer, restore_state=True, local_steps=1)
-
-    with pytest.raises(RuntimeError, match="checkpoint state persistence failed on rank 0.*disk full"):
-        trainer._nvflare_hf_task_state._persist_state()
-
-    status_payloads = [
-        payload for payload in dist.broadcast_payloads if payload.get("operation") == "checkpoint state persistence"
-    ]
-    assert status_payloads[-1]["ok"] is False
-    assert dist.barrier_calls == 0
-
-
-def test_checkpoint_state_persistence_failure_raises_on_nonzero_rank_before_barrier(monkeypatch, tmp_path):
-    dist = _RecordingDist(
-        rank=1,
-        world_size=2,
-        incoming_payload=[{}, _rank_zero_failure("checkpoint state persistence", "OSError: disk full")],
-    )
-    hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model=None)
-    monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
-    trainer = _make_trainer(trainer_cls, tmp_path)
-
-    hf_api.patch(trainer, restore_state=True, local_steps=1)
-
-    with pytest.raises(RuntimeError, match="checkpoint state persistence failed on rank 0.*disk full"):
-        trainer._nvflare_hf_task_state._persist_state()
-
-    assert dist.barrier_calls == 0
+    assert restored_trainer._nvflare_hf_task_state.last_checkpoint_path is None
 
 
 def test_divergent_trainer_call_across_ranks_fails(monkeypatch, tmp_path):
@@ -885,7 +788,7 @@ def test_params_file_exchange_can_be_forced_for_distributed_dispatch(monkeypatch
     descriptor = dispatch_payloads[0]["params_exchange"]
     assert dispatch_payloads[0]["params"] is None
     assert not os.path.exists(descriptor["path"])
-    assert dist.barrier_calls == 4
+    assert dist.barrier_calls == 2
     assert len(client_api_mock.sent_models) == 1
 
 
@@ -906,4 +809,4 @@ def test_params_object_exchange_can_be_forced_for_distributed_dispatch(monkeypat
     assert len(dispatch_payloads) == 1
     assert dispatch_payloads[0]["params"]
     assert "params_exchange" not in dispatch_payloads[0]
-    assert dist.barrier_calls == 2
+    assert dist.barrier_calls == 0

@@ -136,6 +136,7 @@ class ClientAPIMock:
         exchange_format: ExchangeFormat = ExchangeFormat.PYTORCH,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         train_with_eval: bool = False,
+        launch_once=None,
         running: bool = True,
     ):
         self.incoming_models = [incoming_model] if incoming_model is not None else []
@@ -152,6 +153,8 @@ class ClientAPIMock:
                 ConfigKey.TRAIN_WITH_EVAL: train_with_eval,
             }
         }
+        if launch_once is not None:
+            self.config[ConfigKey.TASK_EXCHANGE][ConfigKey.LAUNCH_ONCE] = launch_once
 
     def init(self, rank=None, config_file=None):
         self.events.append("init")

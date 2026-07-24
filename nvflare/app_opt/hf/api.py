@@ -116,6 +116,7 @@ def patch(
             "Launch distributed HF jobs with torchrun so non-zero ranks can participate in NVFlare broadcasts."
         )
     _init_client_api_for_rank(resolved_rank)
+    _reject_unsupported_launch_once_false(restore_state=restore_state)
     from nvflare.app_opt.pt.decomposers import TensorDecomposer
 
     fobs.register(TensorDecomposer)
@@ -134,7 +135,6 @@ def patch(
         local_steps=local_steps,
         stream_metrics=stream_metrics,
     )
-    state.load_persisted_state()
     _register_callbacks(trainer, state, stream_metrics=stream_metrics)
     _wrap_trainer(trainer, state)
     _set_active_state(state)
@@ -374,6 +374,28 @@ def _init_client_api_for_rank(rank: int):
         )
 
 
+def _reject_unsupported_launch_once_false(restore_state: bool):
+    if not restore_state:
+        return
+    try:
+        task_exchange = flare_api.get_config().get(ConfigKey.TASK_EXCHANGE, {})
+    except Exception:
+        return
+    if ConfigKey.LAUNCH_ONCE not in task_exchange:
+        return
+    if not _as_bool(task_exchange.get(ConfigKey.LAUNCH_ONCE)):
+        raise RuntimeError(
+            "HuggingFace Client API restore_state=True requires a single trainer process lifecycle in Phase 1. "
+            "Set ClientAPILauncherExecutor launch_once=True, or use restore_state=False for per-task trainer launches."
+        )
+
+
+def _as_bool(value) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() not in {"false", "0", "no", "off"}
+    return bool(value)
+
+
 def _default_save_total_limit_if_needed(args, restore_state: bool):
     if not restore_state:
         return
@@ -507,9 +529,7 @@ class _HFTaskState:
         self.train_start_num_input_tokens_seen = None
         self.last_completed_global_step = 0
         self.last_checkpoint_path = None
-        self.last_completed_round = None
         self.metric_step_offset = 0
-        self.result_upload_pending = False
         self.weight_override_strategy = self._select_weight_override_strategy()
         self.train_with_evaluation = self._train_with_evaluation_enabled()
         self._warned_missing_round = False
@@ -678,10 +698,7 @@ class _HFTaskState:
         if not self.restore_state:
             self.metric_step_offset += step_delta
         self.last_completed_global_step = end_global_step
-        self.last_completed_round = self.current_round
         self.last_checkpoint_path = self._checkpoint_path_from_state(end_global_step)
-        self.result_upload_pending = True
-        self._persist_state()
 
         if self.rank == 0:
             params = utils.extract_params(self.trainer, self.params_scope)
@@ -700,8 +717,6 @@ class _HFTaskState:
             )
             flare_api.send(output_model)
 
-        self.result_upload_pending = False
-        self._persist_state()
         self._complete_task()
 
     def metric_step(self, global_step):
@@ -709,25 +724,6 @@ class _HFTaskState:
         if self.restore_state:
             return step
         return self.metric_step_offset + step
-
-    def load_persisted_state(self):
-        output_dir = self._output_dir()
-        if not output_dir:
-            return
-        state = None
-        if self.rank == 0:
-            state = utils.read_checkpoint_state(output_dir, job_id=self._job_id()) or {}
-            self._warn_stale_checkpoints_without_provenance(output_dir, state)
-        state = _broadcast_object(state, src=0) or {}
-        if state:
-            self.last_checkpoint_path = state.get("checkpoint_path")
-            self.cumulative_max_steps = state.get("cumulative_max_steps")
-            self.per_round_budget_steps = state.get("per_round_budget_steps")
-            self.last_completed_global_step = int(state.get("last_completed_global_step") or 0)
-            self.last_completed_round = state.get("last_completed_round")
-            self.metric_step_offset = int(state.get("metric_step_offset") or 0)
-            self.result_upload_pending = bool(state.get("result_upload_pending", False))
-            self.weight_override_strategy = state.get("weight_override_strategy") or self.weight_override_strategy
 
     def _ensure_task(self, call_name: str) -> str:
         if self.pending:
@@ -820,19 +816,6 @@ class _HFTaskState:
         if strategy == PARAMS_EXCHANGE_STRATEGY_FILE:
             return True
         return utils.params_nbytes(params) >= _params_file_exchange_min_bytes()
-
-    def _warn_stale_checkpoints_without_provenance(self, output_dir: str, state: dict):
-        if not self.restore_state or state:
-            return
-        checkpoint_dirs = utils.list_checkpoint_dirs(output_dir)
-        if not checkpoint_dirs:
-            return
-        self.logger.warning(
-            "Found HuggingFace checkpoint directories under %s but no matching NVFlare checkpoint provenance for "
-            "job %r. These checkpoints will not be used for restore_state=True.",
-            output_dir,
-            self._job_id(),
-        )
 
     def _read_task_kind(self) -> str:
         if flare_api.is_train():
@@ -1119,18 +1102,10 @@ class _HFTaskState:
             return None
         if self.current_round == 0:
             return None
-        if self.result_upload_pending and self.current_round == self.last_completed_round:
-            if self.rank == 0:
-                self.logger.warning(
-                    "Ignoring HuggingFace checkpoint provenance from a previous pending result upload for retry "
-                    "of round %s.",
-                    self.current_round,
-                )
-            return None
         if self.current_round is None and self.last_checkpoint_path and not self._warned_missing_round:
             self.logger.warning(
-                "Received a HuggingFace train task without current_round; resuming from recorded NVFlare checkpoint "
-                "because restore_state=True and checkpoint provenance exists."
+                "Received a HuggingFace train task without current_round; resuming from the last in-process "
+                "checkpoint path because restore_state=True."
             )
             self._warned_missing_round = True
         if self.last_checkpoint_path and os.path.isdir(self.last_checkpoint_path):
@@ -1144,37 +1119,12 @@ class _HFTaskState:
             return path
         if self.restore_state and self.rank == 0:
             self.logger.warning(
-                "Expected HuggingFace checkpoint-%s was not found under %s; keeping previous NVFlare checkpoint "
-                "provenance. The next round may not restore the latest optimizer/scheduler state.",
+                "Expected HuggingFace checkpoint-%s was not found under %s; keeping the previous in-process "
+                "checkpoint path. The next round may not restore the latest optimizer/scheduler state.",
                 global_step,
                 output_dir,
             )
         return self.last_checkpoint_path
-
-    def _persist_state(self):
-        output_dir = self._output_dir()
-
-        def write_state():
-            if not output_dir:
-                return
-            utils.write_checkpoint_state(
-                output_dir,
-                {
-                    "job_id": self._job_id(),
-                    "world_size": self.world_size,
-                    "last_completed_round": self.last_completed_round,
-                    "checkpoint_path": self.last_checkpoint_path,
-                    "cumulative_max_steps": self.cumulative_max_steps,
-                    "per_round_budget_steps": self.per_round_budget_steps,
-                    "weight_override_strategy": self.weight_override_strategy,
-                    "last_completed_global_step": self.last_completed_global_step,
-                    "metric_step_offset": self.metric_step_offset,
-                    "result_upload_pending": self.result_upload_pending,
-                },
-            )
-
-        self._run_rank_zero_operation("checkpoint state persistence", write_state)
-        _barrier()
 
     def _run_rank_zero_operation(self, operation_name: str, operation):
         rank_zero_error = None
@@ -1246,12 +1196,6 @@ class _HFTaskState:
             )
         except Exception:
             return ExchangeFormat.NUMPY
-
-    def _job_id(self):
-        try:
-            return flare_api.get_job_id()
-        except Exception:
-            return ""
 
     def _output_dir(self):
         return str(getattr(getattr(self.trainer, "args", None), "output_dir", ".") or ".")

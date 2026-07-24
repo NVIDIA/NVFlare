@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import enum
 import json
 import logging
 import math
@@ -29,8 +28,6 @@ PARAMS_SCOPE_ADAPTER = "adapter"
 VALID_PARAMS_SCOPES = {PARAMS_SCOPE_AUTO, PARAMS_SCOPE_MODEL, PARAMS_SCOPE_ADAPTER}
 
 FL_EXCHANGE_DIR = "_fl_exchange"
-FL_STATE_FILE = "fl_state.json"
-FL_STATE_SCHEMA_VERSION = 1
 PARAMS_EXCHANGE_FORMAT_SAFETENSORS = "safetensors"
 PARAMS_EXCHANGE_FORMAT_TORCH = "torch"
 
@@ -359,77 +356,8 @@ def fl_exchange_dir(output_dir: str) -> str:
     return os.path.join(output_dir, FL_EXCHANGE_DIR)
 
 
-def fl_state_path(output_dir: str) -> str:
-    return os.path.join(fl_exchange_dir(output_dir), FL_STATE_FILE)
-
-
 def get_fl_exchange_dir(output_dir: str) -> str:
     return fl_exchange_dir(os.fspath(output_dir))
-
-
-def get_fl_state_path(output_dir: str) -> str:
-    return fl_state_path(os.fspath(output_dir))
-
-
-def read_fl_state(output_dir: str) -> dict:
-    path = fl_state_path(output_dir)
-    if not os.path.exists(path):
-        return {}
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _json_safe(value):
-    if isinstance(value, enum.Enum):
-        return value.value
-    if isinstance(value, os.PathLike):
-        return os.fspath(value)
-    if isinstance(value, dict):
-        return {str(k): _json_safe(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_json_safe(v) for v in value]
-    return value
-
-
-def write_fl_state(output_dir: str, state: Mapping) -> str:
-    if not isinstance(state, Mapping):
-        raise TypeError(f"state must be a mapping, got {type(state).__name__}.")
-
-    state_dir = fl_exchange_dir(output_dir)
-    os.makedirs(state_dir, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(prefix=".fl_state.", suffix=".tmp", dir=state_dir)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(_json_safe(dict(state)), f, indent=2, sort_keys=True)
-            f.write("\n")
-        path = fl_state_path(output_dir)
-        os.replace(tmp_path, path)
-        return path
-    except Exception:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
-
-
-def read_checkpoint_state(output_dir: str, job_id: Optional[str] = None) -> Optional[dict]:
-    state = read_fl_state(output_dir)
-    if not state:
-        return None
-
-    state_job_id = state.get("job_id")
-    if job_id is not None and state_job_id is not None and state_job_id != job_id:
-        logger.warning("Ignoring HF FL checkpoint state from job %r while running job %r.", state_job_id, job_id)
-        return None
-
-    return state
-
-
-def write_checkpoint_state(output_dir: str, state: Mapping) -> str:
-    state = dict(state)
-    state.setdefault("schema_version", FL_STATE_SCHEMA_VERSION)
-    return write_fl_state(output_dir, state)
 
 
 def find_checkpoint_for_step(output_dir: str, global_step: Optional[int]) -> Optional[str]:
@@ -437,19 +365,6 @@ def find_checkpoint_for_step(output_dir: str, global_step: Optional[int]) -> Opt
         return None
     path = os.path.join(output_dir, f"checkpoint-{int(global_step)}")
     return path if os.path.isdir(path) else None
-
-
-def list_checkpoint_dirs(output_dir: str) -> list[str]:
-    output_dir = os.fspath(output_dir)
-    if not os.path.isdir(output_dir):
-        return []
-
-    result = []
-    for name in os.listdir(output_dir):
-        path = os.path.join(output_dir, name)
-        if name.startswith("checkpoint-") and os.path.isdir(path):
-            result.append(path)
-    return sorted(result)
 
 
 def extract_params_from_checkpoint(checkpoint_dir: str, params_scope: str = PARAMS_SCOPE_MODEL) -> Optional[dict]:

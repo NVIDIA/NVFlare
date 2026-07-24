@@ -257,12 +257,12 @@ If you pass your own ``resume_from_checkpoint`` to ``trainer.train()``, FLARE
 uses that checkpoint for the train call and applies received global weights in
 memory instead of mutating the user-provided checkpoint.
 
-The wrapper records checkpoint provenance in
-``<TrainingArguments.output_dir>/_fl_exchange/fl_state.json``. This state lets a
-new trainer process for the same FL job continue from the last completed round,
-for example when external launchers run one trainer process per task. It does
-not provide transparent recovery of an in-flight training task that the launcher
-has already reported as failed.
+The wrapper keeps the last checkpoint path in memory for the patched trainer
+process. It does not persist FL checkpoint provenance to disk and does not
+provide transparent recovery of an in-flight training task that the launcher has
+already reported as failed. In Phase 1, ``restore_state=True`` requires a
+single trainer process lifecycle; explicitly configured ``launch_once=False`` is
+rejected. Use ``restore_state=False`` for per-task trainer launches.
 
 By default, FLARE uses an in-memory global-weight override for verified
 ``transformers`` versions and falls back to checkpoint injection otherwise. To

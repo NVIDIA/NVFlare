@@ -109,6 +109,25 @@ def test_patch_rejects_incompatible_training_arguments(monkeypatch, tmp_path, ar
         hf_api.patch(trainer)
 
 
+def test_restore_state_rejects_explicit_launch_once_false(monkeypatch, tmp_path):
+    hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch)
+    client_api_mock.config[hf_api.ConfigKey.TASK_EXCHANGE][hf_api.ConfigKey.LAUNCH_ONCE] = False
+    trainer = _make_trainer(trainer_cls, tmp_path)
+
+    with pytest.raises(RuntimeError, match="restore_state=True.*single trainer process|launch_once=True"):
+        hf_api.patch(trainer, restore_state=True)
+
+
+def test_stateless_mode_accepts_explicit_launch_once_false(monkeypatch, tmp_path):
+    hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch)
+    client_api_mock.config[hf_api.ConfigKey.TASK_EXCHANGE][hf_api.ConfigKey.LAUNCH_ONCE] = False
+    trainer = _make_trainer(trainer_cls, tmp_path)
+
+    hf_api.patch(trainer, restore_state=False)
+
+    assert trainer._nvflare_hf_task_state.restore_state is False
+
+
 def test_patch_uses_global_rank_and_ignores_local_rank(monkeypatch, tmp_path):
     hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch)
     monkeypatch.setattr(hf_api, "_torch_dist", lambda: _FakeDist(rank=3, world_size=8))

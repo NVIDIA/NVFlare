@@ -274,27 +274,6 @@ def test_total_train_steps_prefers_max_steps_and_estimates_epoch_budget(monkeypa
     assert hf_utils.total_train_steps(33, args, total_rounds=2) == 6
 
 
-def test_checkpoint_state_helpers_write_atomically_and_ignore_other_jobs(tmp_path, caplog):
-    state_path = hf_utils.write_checkpoint_state(
-        tmp_path,
-        {
-            "job_id": "job-a",
-            "checkpoint_path": tmp_path / "checkpoint-1",
-            "last_completed_round": 2,
-        },
-    )
-
-    assert state_path == hf_utils.get_fl_state_path(tmp_path)
-    state = hf_utils.read_checkpoint_state(tmp_path, job_id="job-a")
-    assert state["schema_version"] == hf_utils.FL_STATE_SCHEMA_VERSION
-    assert state["checkpoint_path"] == str(tmp_path / "checkpoint-1")
-    assert state["last_completed_round"] == 2
-
-    with caplog.at_level(logging.WARNING, logger=hf_utils.__name__):
-        assert hf_utils.read_checkpoint_state(tmp_path, job_id="job-b") is None
-    assert "Ignoring HF FL checkpoint state" in caplog.text
-
-
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for checkpoint parameter tests")
 def test_extract_params_from_checkpoint_reads_known_hf_weight_files(tmp_path):
     import torch
