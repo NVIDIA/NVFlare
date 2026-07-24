@@ -128,7 +128,7 @@ federated averaging workflow:
 
 ```python
 recipe = FedAvgRecipe(
-    name=f"qwen-hf-client-api-{args.train_mode}",
+    name=f"hello-huggingface-{args.train_mode}",
     model=model_config(args),
     min_clients=args.n_clients,
     num_rounds=args.num_rounds,

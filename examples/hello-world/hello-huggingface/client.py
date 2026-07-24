@@ -89,10 +89,24 @@ def filtered_kwargs(callable_obj, values: dict) -> dict:
     return {name: value for name, value in values.items() if name in params}
 
 
+def precision_config(torch):
+    cuda_available = torch.cuda.is_available()
+    bf16_supported = cuda_available and bool(getattr(torch.cuda, "is_bf16_supported", lambda: False)())
+    fp16_enabled = cuda_available and not bf16_supported
+    if bf16_supported:
+        dtype = torch.bfloat16
+    elif fp16_enabled:
+        dtype = torch.float16
+    else:
+        dtype = torch.float32
+    return bf16_supported, fp16_enabled, dtype
+
+
 def make_sft_config(args):
     import torch
     from trl import SFTConfig
 
+    bf16_enabled, fp16_enabled, _ = precision_config(torch)
     values = {
         "output_dir": args.output_dir,
         "num_train_epochs": args.local_epochs,
@@ -108,8 +122,8 @@ def make_sft_config(args):
         "disable_tqdm": True,
         "report_to": [],
         "max_length": args.max_length,
-        "bf16": torch.cuda.is_available(),
-        "fp16": False,
+        "bf16": bf16_enabled,
+        "fp16": fp16_enabled,
         "use_cpu": not torch.cuda.is_available(),
         "remove_unused_columns": False,
         "seed": 0,
@@ -122,7 +136,7 @@ def make_model_and_peft_config(args, local_rank: int):
     import torch
     from transformers import AutoModelForCausalLM
 
-    dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+    _, _, dtype = precision_config(torch)
     model_kwargs = {"trust_remote_code": True, "torch_dtype": dtype}
     if torch.cuda.is_available():
         model_kwargs["device_map"] = {"": local_rank}

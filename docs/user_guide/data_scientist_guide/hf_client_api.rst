@@ -190,7 +190,7 @@ the FLARE client job process.
         min_clients=2,
         num_rounds=3,
         train_script="client.py",
-        train_args="--model_name_or_path gpt2 --local_epoch 1",
+        train_args="--model_name_or_path gpt2 --local_epochs 1",
         server_expected_format=ExchangeFormat.PYTORCH,
         launch_external_process=True,
         key_metric="",
