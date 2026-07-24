@@ -95,7 +95,7 @@ def split_learning():
 
     for step in range(NUM_STEPS):
         _, labels = get_batch(server_data, step)
-        activations = client.forward(step).requires_grad_(True)
+        activations = client(timeout=300).forward(step).requires_grad_(True)
 
         top_optimizer.zero_grad(set_to_none=True)
         logits = top_model(activations)
