@@ -289,7 +289,14 @@ class FedJobConfig:
                 source_root = os.path.dirname(source_path_for_root)
                 for _ in range(max(path_depth, 1)):
                     source_root = os.path.dirname(source_root)
-                self._copy_source_file(custom_dir, module, source_file, dest_file, source_root=source_root)
+                self._copy_source_file(
+                    custom_dir,
+                    module,
+                    source_file,
+                    dest_file,
+                    source_root=source_root,
+                    is_external_script=True,
+                )
 
     def _copy_ext_dirs(self, custom_dir, app_config: BaseAppConfig):
         for dir in app_config.ext_dirs:
@@ -441,7 +448,7 @@ class FedJobConfig:
         resolved_parts = package_parts[:keep_parts] + import_parts
         return ".".join(resolved_parts) if resolved_parts else None
 
-    def _copy_source_file(self, custom_dir, module, source_file, dest_file, source_root):
+    def _copy_source_file(self, custom_dir, module, source_file, dest_file, source_root, is_external_script=False):
         source_file, source_root, dest_file = self._validate_copy_paths(
             custom_dir=custom_dir,
             source_file=source_file,
@@ -464,7 +471,12 @@ class FedJobConfig:
                 continue
             import_path = os.path.join(*self._module_parts(import_module)) + ".py"
             search_roots = [source_root]
-            if level == 0 and "." not in module and os.path.basename(source_file) != "__init__.py":
+            # Registered scripts run as entry points, so their unqualified imports can refer to source-dir siblings.
+            if (
+                level == 0
+                and (is_external_script or "." not in module)
+                and os.path.basename(source_file) != "__init__.py"
+            ):
                 search_roots.insert(0, source_dir)
             checked_roots = set()
             for search_root in search_roots:
