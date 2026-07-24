@@ -440,7 +440,7 @@ class _PythonInspector(ast.NodeVisitor):
         self._detector_states = {detector.name: detector.new_file_state() for detector in self._detectors}
         self._ctx = DetectContext(
             self._emit_framework_evidence,
-            self.state.flare_calls.add,
+            self._add_flare_call,
             self._add_integration_signal,
         )
 
@@ -1051,16 +1051,18 @@ def _conversion_state(
 
 def _authoritative_source_job_file(state: InspectState) -> Optional[str]:
     flare_import_files = {item["file"] for item in state.flare_imports}
-    root_job_files = {path for path in state.job_py_paths if _is_root_level_file(path) and path in flare_import_files}
-    if root_job_files:
-        return sorted(root_job_files)[0]
-
-    # Preserve support for a root-level recipe script that constructs SimEnv
-    # under a filename other than job.py, while retaining file provenance.
-    root_sim_env_files = {
-        path for path in state.sim_env_files if _is_root_level_file(path) and path in flare_import_files
-    }
-    return sorted(root_sim_env_files)[0] if root_sim_env_files else None
+    candidate_files = set(state.job_py_paths) | state.sim_env_files
+    authoritative_candidates = [
+        path
+        for path in candidate_files
+        if path in flare_import_files and _file_belongs_to_active_root_project(state, path)
+    ]
+    if not authoritative_candidates:
+        return None
+    # A root-level candidate remains the strongest signal when both root and
+    # nested source jobs exist; otherwise accept a nested candidate that belongs
+    # to the active project (for example jobs/fedavg/job.py).
+    return min(authoritative_candidates, key=lambda path: (not _is_root_level_file(path), path))
 
 
 def _is_root_level_file(path: str) -> bool:
@@ -1085,25 +1087,41 @@ def _file_belongs_to_active_root_project(state: InspectState, file_path: str) ->
     if _is_root_level_file(file_path):
         return True
 
-    # Root-level Python files are the strongest available project anchors for a
-    # recursive repository inspection. Nested evidence belongs to that active
-    # project only when one of those files imports it (directly or transitively).
-    # If there are no root anchors, retain the historical whole-directory
-    # behavior for package-only layouts whose entry points live below the root.
-    root_files = {path for path in state.file_imports if _is_root_level_file(path)}
-    if not root_files:
+    anchor_files = _active_project_anchor_files(state)
+    if not anchor_files:
+        return True
+    if file_path in anchor_files:
         return True
     local_files_by_module = _local_files_by_module(state)
     return any(
         _imports_reach_file(
             state,
-            root_file,
-            state.file_imports.get(root_file, set()),
+            anchor_file,
+            state.file_imports.get(anchor_file, set()),
             file_path,
             local_files_by_module,
         )
-        for root_file in root_files
+        for anchor_file in anchor_files
     )
+
+
+def _active_project_anchor_files(state: InspectState) -> set[str]:
+    entry_point_files = {entry["path"] for entry in state.entry_points}
+    root_entry_points = {path for path in entry_point_files if _is_root_level_file(path)}
+    root_framework_files = {
+        item["file"]
+        for evidence in state.framework_evidence.values()
+        for item in evidence
+        if _is_root_level_file(item["file"])
+    }
+    root_anchors = root_entry_points | root_framework_files
+    if root_anchors:
+        return root_anchors
+
+    # A packaging-only root (for example setup.py plus src/mypkg/train.py) has
+    # no root training anchor. In that layout the nested entry points define the
+    # active project instead of the unrelated root scaffolding.
+    return entry_point_files
 
 
 def _has_conversion_integration(state: InspectState) -> bool:
