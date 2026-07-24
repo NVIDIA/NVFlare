@@ -800,25 +800,45 @@ class _HFTaskState:
             return self.task_kind
 
         payload = None
+        rank_zero_error = None
         if self.rank == 0:
             try:
                 fl_model = flare_api.receive()
+                if fl_model is None:
+                    self.logger.info("Skipping trainer.%s() because NVFlare job has ended", call_name)
+                    payload = {"task_kind": TASK_STOP, "call_name": call_name}
+                else:
+                    payload = {
+                        "task_kind": self._read_task_kind(),
+                        "call_name": call_name,
+                        "fl_model": _task_fl_model_payload(fl_model),
+                        "params": utils.strip_server_key_prefix(fl_model.params, self.server_key_prefix),
+                        "current_round": fl_model.current_round,
+                        "total_rounds": fl_model.total_rounds,
+                    }
             except AgentClosed:
-                fl_model = None
-            if fl_model is None:
                 self.logger.info("Skipping trainer.%s() because NVFlare job has ended", call_name)
                 payload = {"task_kind": TASK_STOP, "call_name": call_name}
-            else:
+            except Exception as e:
+                if self.world_size <= 1:
+                    raise
+                rank_zero_error = e
                 payload = {
-                    "task_kind": self._read_task_kind(),
+                    "ok": False,
+                    "operation": "task dispatch",
                     "call_name": call_name,
-                    "fl_model": _task_fl_model_payload(fl_model),
-                    "params": utils.strip_server_key_prefix(fl_model.params, self.server_key_prefix),
-                    "current_round": fl_model.current_round,
-                    "total_rounds": fl_model.total_rounds,
+                    "error": f"{type(e).__name__}: {e}",
                 }
 
         payload = self._broadcast_task_payload(payload)
+        if not payload.get("ok", True):
+            message = (
+                f"HuggingFace distributed {payload.get('operation', 'task dispatch')} failed on rank 0: "
+                f"{payload.get('error', 'unknown error')}"
+            )
+            if rank_zero_error is not None:
+                raise RuntimeError(message) from rank_zero_error
+            raise RuntimeError(message)
         if payload["call_name"] != call_name:
             raise RuntimeError(
                 f"Divergent HuggingFace Trainer call across ranks: rank 0 entered trainer.{payload['call_name']}(), "

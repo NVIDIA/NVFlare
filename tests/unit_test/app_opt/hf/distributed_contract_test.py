@@ -219,6 +219,13 @@ def _worker(rank, init_path, output_dir, strategy, scenario, result_queue):
         trainer = trainer_cls(TinyModel(), _make_training_args(output_dir))
         hf_api.patch(trainer, restore_state=False, local_steps=1)
 
+        if scenario == "receive_failure" and rank == 0:
+
+            def receive_raises(timeout=None, ctx=None):
+                raise RuntimeError("rank-zero receive boom")
+
+            hf_api.flare_api.receive = receive_raises
+
         if scenario == "extract_failure" and rank == 0:
 
             def extract_raises(*args, **kwargs):
@@ -263,6 +270,17 @@ def _worker(rank, init_path, output_dir, strategy, scenario, result_queue):
                 ok = "train result send failed on rank 0" in error and "rank-zero extract boom" in error
             else:
                 error = "expected rank-zero extraction failure"
+            result_queue.put({"rank": rank, "ok": ok, "error": error, "sent_count": len(sent_models)})
+        elif scenario == "receive_failure":
+            ok = False
+            error = None
+            try:
+                trainer.train()
+            except RuntimeError as e:
+                error = str(e)
+                ok = "task dispatch failed on rank 0" in error and "rank-zero receive boom" in error
+            else:
+                error = "expected rank-zero receive failure"
             result_queue.put({"rank": rank, "ok": ok, "error": error, "sent_count": len(sent_models)})
         elif scenario == "file_read_failure":
             ok = False
@@ -355,6 +373,15 @@ def test_two_process_gloo_propagates_rank_zero_result_materialization_failure(tm
 @pytest.mark.skipif(running_under_xdist, reason="nested torch.multiprocessing gloo tests are unstable under xdist")
 def test_two_process_gloo_propagates_file_exchange_read_failure(tmp_path):
     results = _run_2process_scenario(tmp_path, strategy="file", scenario="file_read_failure")
+
+    assert all(result["ok"] for result in results), results
+    assert [result["sent_count"] for result in results] == [0, 0]
+
+
+@pytest.mark.skipif(not gloo_available, reason="torch.distributed gloo is required for distributed HF contract tests")
+@pytest.mark.skipif(running_under_xdist, reason="nested torch.multiprocessing gloo tests are unstable under xdist")
+def test_two_process_gloo_propagates_rank_zero_receive_failure(tmp_path):
+    results = _run_2process_scenario(tmp_path, strategy="object", scenario="receive_failure")
 
     assert all(result["ok"] for result in results), results
     assert [result["sent_count"] for result in results] == [0, 0]

@@ -753,6 +753,50 @@ def test_receive_protocol_error_propagates_instead_of_stop_sentinel(monkeypatch,
     assert client_api_mock.sent_models == []
 
 
+def test_receive_failure_on_rank_zero_broadcasts_before_abort(monkeypatch, tmp_path):
+    hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch, incoming_model=None)
+    dist = _RecordingDist(rank=0, world_size=2)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
+
+    def receive_raises(timeout=None, ctx=None):
+        client_api_mock.receive_calls += 1
+        raise RuntimeError("receive boom")
+
+    client_api_mock.receive = receive_raises
+    patch_client_api_aliases(monkeypatch, client_api_mock, hf_api)
+    trainer = _make_trainer(trainer_cls, tmp_path)
+
+    hf_api.patch(trainer, restore_state=False, local_steps=1)
+
+    with pytest.raises(RuntimeError, match="task dispatch failed on rank 0.*receive boom"):
+        trainer.train()
+
+    task_dispatch_payloads = [
+        payload for payload in dist.broadcast_payloads if payload.get("operation") == "task dispatch"
+    ]
+    assert task_dispatch_payloads[-1]["ok"] is False
+    assert client_api_mock.sent_models == []
+    assert trainer._nvflare_hf_task_state.pending is False
+
+
+def test_receive_failure_on_rank_zero_reaches_nonzero_rank(monkeypatch, tmp_path):
+    dist = _RecordingDist(
+        rank=1,
+        world_size=2,
+        incoming_payload=_rank_zero_failure("task dispatch", "RuntimeError: receive boom"),
+    )
+    hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model=None)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
+    trainer = _make_trainer(trainer_cls, tmp_path)
+
+    hf_api.patch(trainer, restore_state=False, local_steps=1)
+
+    with pytest.raises(RuntimeError, match="task dispatch failed on rank 0.*receive boom"):
+        trainer.train()
+
+    assert trainer._nvflare_hf_task_state.pending is False
+
+
 def test_missing_total_rounds_extension_uses_fallback_info_log(monkeypatch, tmp_path, caplog):
     initial_model = TinyModel()
     incoming_model = FLModel(params=_model_params(initial_model, 5.0), current_round=3, total_rounds=None)
