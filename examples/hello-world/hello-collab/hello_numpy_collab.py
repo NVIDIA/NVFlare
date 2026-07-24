@@ -18,9 +18,9 @@ The client publishes an ordinary Python function and the server calls it on
 all clients as if it were local. NumPy arrays and floats are passed directly;
 there are no Shareable, DXO, or FLModel transport objects.
 
-Run from the ``examples`` directory:
+Run from the ``examples/hello-world/hello-collab`` directory:
 
-    python -m collab.hello_numpy_collab.hello_numpy_collab
+    python hello_numpy_collab.py
 """
 
 import argparse

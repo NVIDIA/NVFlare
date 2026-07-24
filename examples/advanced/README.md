@@ -6,6 +6,10 @@ Please make sure you set up a virtual environment and install JupyterLab followi
 
 Please also install "./requirements.txt" in each example folder.
 
+## Custom workflows
+* [Collab API](./collab/README.md)
+  * Advanced examples for custom server workflows, in-time aggregation, and decentralized client-to-client calls.
+
 ## FL algorithms
 * [Federated Learning with CIFAR-10](./cifar10/README.md)
   * [Simulated Federated Learning with CIFAR-10](./cifar10/pt/cifar10-sim/README.md)
