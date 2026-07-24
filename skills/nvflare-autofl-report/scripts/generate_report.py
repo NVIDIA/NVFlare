@@ -71,7 +71,7 @@ FALLBACK_TRAINING_BUDGET_ARGS = {
     "num_rounds",
     "seed",
 }
-SPECIAL_COMPARISON_BUDGET_ARGS = {"cross_site_eval"}
+SPECIAL_COMPARISON_BUDGET_ARGS = {"aggregator_data_kind", "cross_site_eval"}
 FIXED_BUDGET_TO_CLI = {
     "min_clients": "min_clients",
     "num_clients": "n_clients",
@@ -176,7 +176,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 
 def resolve_path(root: Path, value: str) -> Path:
-    path = Path(value).expanduser()
+    try:
+        path = Path(value).expanduser()
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(f"cannot resolve report path {value!r}: {exc}") from exc
     return path if path.is_absolute() else root / path
 
 
@@ -1158,13 +1161,17 @@ def state_accounting(
         if not isinstance(state_results, str) or not state_results.strip():
             warnings.append(f"Campaign state results is invalid: {state_results!r}.")
         else:
-            state_results_path = canonical_path(resolve_path(campaign_root, state_results))
-            parsed_results_path = canonical_path(results_path)
-            if state_results_path != parsed_results_path:
-                warnings.append(
-                    f"Campaign state names ledger {state_results_path} but the report was generated from "
-                    f"{parsed_results_path}."
-                )
+            try:
+                state_results_path = canonical_path(resolve_path(campaign_root, state_results))
+            except ValueError as exc:
+                warnings.append(f"Campaign state results is invalid: {state_results!r} ({exc}).")
+            else:
+                parsed_results_path = canonical_path(results_path)
+                if state_results_path != parsed_results_path:
+                    warnings.append(
+                        f"Campaign state names ledger {state_results_path} but the report was generated from "
+                        f"{parsed_results_path}."
+                    )
 
     if "candidate_attempts" in state:
         state_attempts = finite_float(state.get("candidate_attempts"))

@@ -1048,14 +1048,19 @@ def test_report_warns_when_aggregation_or_evaluation_population_changes(tmp_path
                 "baseline",
                 "baseline",
                 "0.500000",
-                run_command=("python job.py --aggregator weighted --final_eval_clients site-1 --cross_site_eval"),
+                run_command=(
+                    "python job.py --aggregator weighted --aggregator_data_kind weight "
+                    "--final_eval_clients site-1 --cross_site_eval"
+                ),
             ),
             _row(
                 "keep",
                 "changed_comparison",
                 "0.700000",
                 base_candidate="baseline",
-                run_command="python job.py --aggregator median --final_eval_clients all",
+                run_command=(
+                    "python job.py --aggregator median --aggregator_data_kind statistics --final_eval_clients all"
+                ),
             ),
         ],
     )
@@ -1064,9 +1069,14 @@ def test_report_warns_when_aggregation_or_evaluation_population_changes(tmp_path
     warnings = "\n".join(summary["warnings"])
 
     assert "aggregator" in warnings
+    assert "aggregator_data_kind" in warnings
     assert "cross_site_eval" in warnings
     assert "final_eval_clients" in warnings
     assert summary["best_command_changes"]["aggregator"] == {"baseline": "weighted", "best": "median"}
+    assert summary["best_command_changes"]["aggregator_data_kind"] == {
+        "baseline": "weight",
+        "best": "statistics",
+    }
     assert summary["best_command_changes"]["cross_site_eval"] == {"baseline": True, "best": None}
     assert summary["best_command_changes"]["final_eval_clients"] == {"baseline": "site-1", "best": "all"}
 
@@ -1153,6 +1163,22 @@ def test_report_state_accounting_warns_on_authoritative_ledger_path_mismatch(tmp
     assert summary["state_accounting"]["consistent"] is False
     assert f"Campaign state names ledger {(tmp_path / 'other-results.tsv').resolve()}" in warnings
     assert f"report was generated from {(tmp_path / 'results.tsv').resolve()}" in warnings
+
+
+def test_report_state_accounting_warns_on_unresolvable_authoritative_ledger_path(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["results"] = "~nvflare-user-that-does-not-exist-4845/results.tsv"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+    warnings = "\n".join(summary["warnings"])
+
+    assert summary["state_accounting"]["consistent"] is False
+    assert "Campaign state results is invalid" in warnings
+    assert "~nvflare-user-that-does-not-exist-4845/results.tsv" in warnings
 
 
 def test_report_state_accounting_matches_campaign_guard_output(tmp_path, monkeypatch):
@@ -1594,10 +1620,49 @@ def test_report_training_budget_vocabulary_matches_campaign_runner():
         | set(runner.COMPARISON_BUDGET_TO_CLI.values())
         | set(runner.FIXED_BUDGET_TO_CLI)
         | set(runner.FIXED_BUDGET_TO_CLI.values())
-        | {"cross_site_eval"}
+        | {"aggregator_data_kind", "cross_site_eval"}
     )
 
     assert reporter.TRAINING_BUDGET_ARGS == expected
+    assert reporter.FALLBACK_TRAINING_BUDGET_ARGS == expected
+
+
+def test_report_training_budget_vocabulary_falls_back_when_runner_is_missing(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    monkeypatch.setattr(reporter, "product_autofl_script_path", lambda _name: tmp_path / "missing_runner.py")
+
+    assert reporter.load_training_budget_args() == reporter.FALLBACK_TRAINING_BUDGET_ARGS
+
+
+def test_report_training_budget_vocabulary_falls_back_when_runner_spec_is_unavailable(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    runner_path = tmp_path / "run_job_campaign.py"
+    runner_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(reporter, "product_autofl_script_path", lambda _name: runner_path)
+    monkeypatch.setattr(reporter.importlib.util, "spec_from_file_location", lambda *_args, **_kwargs: None)
+
+    assert reporter.load_training_budget_args() == reporter.FALLBACK_TRAINING_BUDGET_ARGS
+
+
+def test_report_training_budget_vocabulary_falls_back_for_invalid_runner_contract(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    runner_path = tmp_path / "run_job_campaign.py"
+    runner_path.write_text(
+        "COMPARISON_BUDGET_TO_CLI = []\nFIXED_BUDGET_TO_CLI = {}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(reporter, "product_autofl_script_path", lambda _name: runner_path)
+
+    assert reporter.load_training_budget_args() == reporter.FALLBACK_TRAINING_BUDGET_ARGS
+
+
+def test_report_training_budget_vocabulary_falls_back_when_runner_import_fails(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    runner_path = tmp_path / "run_job_campaign.py"
+    runner_path.write_text("raise RuntimeError('invalid runner')\n", encoding="utf-8")
+    monkeypatch.setattr(reporter, "product_autofl_script_path", lambda _name: runner_path)
+
+    assert reporter.load_training_budget_args() == reporter.FALLBACK_TRAINING_BUDGET_ARGS
 
 
 @pytest.mark.parametrize("seconds", [0.0, 45.0, 3599.0, 3600.0])
