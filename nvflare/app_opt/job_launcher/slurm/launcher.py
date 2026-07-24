@@ -55,6 +55,9 @@ from nvflare.app_opt.job_launcher.study_runtime import (
     resolve_study_runtime,
     study_runtime_file_path,
 )
+from nvflare.fuel.f3.comm_error import CommError
+from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
+from nvflare.fuel.f3.drivers.file_driver import parse_file_url
 from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
     get_credential_env,
@@ -160,13 +163,27 @@ def _rewrite_parent_url(job_args: dict, parent_host: Optional[str], internal_por
     flag, raw_url = entry
     try:
         parsed = urlsplit(str(raw_url))
+    except ValueError as e:
+        raise SlurmLauncherError("malformed parent URL in JOB_PROCESS_ARGS") from e
+
+    if parsed.scheme == SHARED_FILE_SCHEME:
+        # Shared-file transport: the directory path is location-independent, so the URL
+        # (including its tuning query parameters) is preserved without any host/port rewrite
+        try:
+            parse_file_url(str(raw_url))
+        except CommError as e:
+            raise SlurmLauncherError(f"malformed shared-file parent URL in JOB_PROCESS_ARGS: {raw_url!r}") from e
+        return copied
+
+    try:
         port = parsed.port
         host = parsed.hostname
     except ValueError as e:
         raise SlurmLauncherError("malformed parent URL in JOB_PROCESS_ARGS") from e
     if parsed.scheme != "tcp" or port != internal_port or not host:
         raise SlurmLauncherError(
-            f"parent URL must use tcp and configured internal_port {internal_port}, got {raw_url!r}"
+            f"parent URL must use {SHARED_FILE_SCHEME} or tcp with configured internal_port "
+            f"{internal_port}, got {raw_url!r}"
         )
     host = _resolve_parent_host(parent_host)
     rendered_host = host if host.startswith("[") and host.endswith("]") else f"[{host}]" if ":" in host else host
@@ -174,6 +191,17 @@ def _rewrite_parent_url(job_args: dict, parent_host: Optional[str], internal_por
     rewritten = urlunsplit(("tcp", netloc, parsed.path, parsed.query, parsed.fragment))
     copied[JobProcessArgs.PARENT_URL] = (flag, rewritten)
     return copied
+
+
+def _file_parent_mount(parent_url: str, workspace_path: str) -> Optional[BindMount]:
+    """Bind mount for a shared-file transport parent URL so the CJ container can reach the
+    listener directory at the same absolute path as the CP."""
+    if urlsplit(str(parent_url)).scheme != SHARED_FILE_SCHEME:
+        return None
+    listen_dir = parse_file_url(str(parent_url))
+    destination = _validate_mount_destination(listen_dir, "shared-file parent directory")
+    source = _validate_mount_source(listen_dir, workspace_path, "shared-file parent directory")
+    return BindMount(source, destination, "rw")
 
 
 class SlurmJobLauncher(JobLauncherSpec):
@@ -374,7 +402,13 @@ class SlurmJobLauncher(JobLauncherSpec):
         )
         study_env, secret_env = self._study_environment(runtime)
         secret_env.update(get_credential_env(job_args))
-        mounts = self._study_mounts(runtime) if sandbox != "none" else ()
+        mounts = list(self._study_mounts(runtime)) if sandbox != "none" else []
+        if sandbox != "none":
+            parent_mount = _file_parent_mount(str(job_args[JobProcessArgs.PARENT_URL][1]), self.config.workspace_path)
+            if parent_mount:
+                if any(_paths_overlap(parent_mount.destination, mount.destination) for mount in mounts):
+                    raise SlurmLauncherError("shared-file parent directory overlaps a study mount destination")
+                mounts.append(parent_mount)
         return LaunchPlan(
             job_id=job_id,
             site_name=site_name,
@@ -388,7 +422,7 @@ class SlurmJobLauncher(JobLauncherSpec):
             setup=setup,
             study_env=study_env,
             study_secret_env=secret_env,
-            mounts=mounts,
+            mounts=tuple(mounts),
             python_path=self.config.python_path,
             python_env=self._python_environment(workspace, job_id),
             forward_env=self.config.forward_env,

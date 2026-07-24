@@ -18,6 +18,7 @@ import re
 import threading
 import time
 from abc import abstractmethod
+from urllib.parse import urlsplit
 
 try:
     import docker.errors
@@ -45,6 +46,9 @@ from nvflare.app_opt.job_launcher.study_runtime import (
     load_study_runtime_file,
     resolve_study_runtime,
 )
+from nvflare.fuel.f3.comm_error import CommError
+from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
+from nvflare.fuel.f3.drivers.file_driver import parse_file_url
 from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
     get_credential_env,
@@ -549,12 +553,25 @@ class DockerJobLauncher(JobLauncherSpec):
         # Derive parent_url at runtime: site name (= container name on Docker DNS) + port
         # from the original PARENT_URL in job_args. This avoids baking parent_url into
         # resources.json at provision time.
+        file_parent_dir = None
         if JobProcessArgs.PARENT_URL in job_args:
             flag, original_url = job_args[JobProcessArgs.PARENT_URL]
-            port = original_url.rsplit(":", 1)[-1]
-            parent_url = f"tcp://{site_name}:{port}"
-            job_args = dict(job_args)
-            job_args[JobProcessArgs.PARENT_URL] = (flag, parent_url)
+            if urlsplit(str(original_url)).scheme == SHARED_FILE_SCHEME:
+                # Shared-file transport URLs are location-independent; pass through unchanged and
+                # bind-mount the listener directory at the same path inside the container
+                try:
+                    file_parent_dir = parse_file_url(str(original_url))
+                except CommError as e:
+                    raise ValueError(f"invalid shared-file parent URL {original_url!r}: {e}")
+                if file_parent_dir.startswith(self.WORKSPACE_MOUNT):
+                    raise ValueError(
+                        f"shared-file parent directory {file_parent_dir} overlaps the container workspace mount"
+                    )
+            else:
+                port = original_url.rsplit(":", 1)[-1]
+                parent_url = f"tcp://{site_name}:{port}"
+                job_args = dict(job_args)
+                job_args[JobProcessArgs.PARENT_URL] = (flag, parent_url)
 
         module_args = self.get_module_args(job_args)
         module_args_list = []
@@ -711,6 +728,11 @@ class DockerJobLauncher(JobLauncherSpec):
                         type="bind",
                         read_only=dataset_mount.read_only,
                     )
+                )
+            if file_parent_dir:
+                # The job cell must update leases and append its log, so read-write
+                mounts.append(
+                    docker.types.Mount(target=file_parent_dir, source=file_parent_dir, type="bind", read_only=False)
                 )
             if study_runtime is not None:
                 for secret_mount in study_runtime.secret_mounts:

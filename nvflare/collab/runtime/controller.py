@@ -1,0 +1,310 @@
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+import math
+import time
+from concurrent.futures import ThreadPoolExecutor
+from typing import List
+
+from nvflare.apis.client import Client as ClientSite
+from nvflare.apis.controller_spec import Client, ClientTask, Task
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.impl.controller import Controller
+from nvflare.apis.shareable import ReturnCode, Shareable
+from nvflare.apis.signal import Signal
+from nvflare.collab.api.app import ServerApp
+from nvflare.collab.api.proxy import Proxy
+from nvflare.collab.runtime.cell_dispatcher import CellDispatcher
+from nvflare.collab.runtime.lifecycle import run_server
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.import_utils import optional_import
+
+from .adaptor import CollabAdaptor
+from .defs import SETUP_TASK_NAME, SYNC_TASK_NAME, SyncKey
+from .dispatch import prepare_for_remote_call
+
+
+class _ClientInfo:
+
+    def __init__(self, collab_interface: dict):
+        """Information about a client. Reported by the client in the sync response.
+
+        Args:
+            collab_interface: collab method interface of the client.
+        """
+        self.publish_interface = collab_interface
+
+
+class CollabController(Controller, CollabAdaptor):
+
+    def __init__(
+        self,
+        server_obj_id: str = None,
+        collab_obj_ids: List[str] = None,
+        props=None,
+        sync_task_timeout=60,
+        max_call_threads=100,
+        max_inbound_call_threads=None,
+        max_outbound_call_threads=None,
+    ):
+        Controller.__init__(self)
+        CollabAdaptor.__init__(
+            self,
+            props=props,
+            collab_obj_ids=collab_obj_ids,
+        )
+        self.server_obj_id = server_obj_id  # component name
+        self.sync_task_timeout = sync_task_timeout
+        self.max_call_threads = max_call_threads
+        self.server_app = None
+        self.client_info = {}  # client name => _ClientInfo
+        self.client_setup_status = {}
+        self.cell = None
+        if max_inbound_call_threads is None:
+            max_inbound_call_threads = max_call_threads
+        if max_outbound_call_threads is None:
+            max_outbound_call_threads = max_call_threads
+        self.max_inbound_call_threads = max_inbound_call_threads
+        self.max_outbound_call_threads = max_outbound_call_threads
+        self.inbound_executor = ThreadPoolExecutor(
+            max_workers=max_inbound_call_threads, thread_name_prefix="collab_inbound"
+        )
+        self.outbound_executor = ThreadPoolExecutor(
+            max_workers=max_outbound_call_threads, thread_name_prefix="collab_outbound"
+        )
+
+    def start_controller(self, fl_ctx: FLContext):
+        tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
+        if ok:
+            fobs.register(tensor_decomposer)
+
+        engine = fl_ctx.get_engine()
+
+        server_obj = engine.get_component(self.server_obj_id)
+        if not server_obj:
+            self.system_panic(f"no component defined for {self.server_obj_id}", fl_ctx)
+            return
+
+        app = ServerApp(server_obj)
+
+        app.name = "server"
+        err = self.process_config(app, fl_ctx)
+        if err:
+            self.system_panic(err, fl_ctx)
+            return
+        self.server_app = app
+
+    def _prepare_client_backend(self, job_id, client: ClientSite, abort_signal: Signal, fl_ctx: FLContext):
+        return CellDispatcher(
+            manager=self,
+            engine=fl_ctx.get_engine(),
+            caller=self.server_app.name,
+            cell=self.cell,
+            target_fqcn=FQCN.join([client.get_fqcn(), job_id]),
+            abort_signal=abort_signal,
+            thread_executor=self.outbound_executor,
+        )
+
+    def _prepare_server_backend(self, job_id: str, abort_signal: Signal, fl_ctx: FLContext):
+        return CellDispatcher(
+            manager=self,
+            engine=fl_ctx.get_engine(),
+            caller=self.server_app.name,
+            cell=self.cell,
+            target_fqcn=FQCN.join([FQCN.ROOT_SERVER, job_id]),
+            abort_signal=abort_signal,
+            thread_executor=self.outbound_executor,
+        )
+
+    def _prepare_client_proxy(
+        self,
+        job_id: str,
+        client: ClientSite,
+        collab_interface: dict,
+        abort_signal,
+        fl_ctx: FLContext,
+    ):
+        backend = self._prepare_client_backend(job_id, client, abort_signal, fl_ctx)
+        proxy = Proxy(
+            app=self.server_app,
+            target_name=client.name,
+            target_fqn=client.get_fqsn(),
+            backend=backend,
+            target_interface=collab_interface.get(""),
+        )
+
+        for name, itf in collab_interface.items():
+            if name == "":
+                continue
+
+            p = Proxy(
+                app=self.server_app,
+                target_name=f"{client.name}.{name}",
+                target_fqn="",
+                backend=backend,
+                target_interface=itf,
+            )
+            proxy.add_child(name, p)
+        return proxy
+
+    def _prepare_server_proxy(
+        self,
+        job_id,
+        abort_signal,
+        collab_interface: dict,
+        fl_ctx: FLContext,
+    ):
+        server_name = self.server_app.name
+        backend = self._prepare_server_backend(job_id, abort_signal, fl_ctx)
+        proxy = Proxy(
+            app=self.server_app,
+            target_name=server_name,
+            target_fqn=server_name,
+            backend=backend,
+            target_interface=collab_interface.get(""),
+        )
+
+        collab_objs = self.server_app.get_collab_objects()
+        if collab_objs:
+            for name in collab_objs.keys():
+                p = Proxy(
+                    app=self.server_app,
+                    target_name=f"{server_name}.{name}",
+                    target_fqn="",
+                    backend=backend,
+                    target_interface=collab_interface.get(name),
+                )
+                proxy.add_child(name, p)
+        return proxy
+
+    def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
+        if self.server_app is None:
+            self.log_error(fl_ctx, "server app is unavailable because controller initialization did not complete")
+            return
+
+        # configure all sites
+        engine = fl_ctx.get_engine()
+        self.cell = engine.get_cell()
+        server_collab_interface = self.server_app.get_collab_interface()
+        task = Task(
+            name=SYNC_TASK_NAME,
+            data=Shareable(),
+            timeout=math.ceil(self.sync_task_timeout),
+            result_received_cb=self._process_sync_reply,
+        )
+
+        self.logger.info(f"server engine {type(engine)}")
+        all_clients = engine.get_clients()
+        num_clients = len(all_clients)
+        for c in all_clients:
+            self.client_info[c.name] = None
+            self.client_setup_status[c.name] = False
+
+        start_time = time.time()
+        self.broadcast_and_wait(
+            task=task,
+            min_responses=num_clients,
+            abort_signal=abort_signal,
+            fl_ctx=fl_ctx,
+        )
+        time_taken = time.time() - start_time
+        self.log_info(fl_ctx, f"client sync took {time_taken} seconds")
+
+        failed_clients = []
+        for c, info in self.client_info.items():
+            if not info:
+                failed_clients.append(c)
+
+        if failed_clients:
+            self.system_panic(
+                f"failed to sync clients {failed_clients}",
+                fl_ctx,
+            )
+            return
+
+        self.log_info(fl_ctx, f"successfully synced clients {self.client_info.keys()}")
+
+        client_interfaces = {name: info.publish_interface for name, info in self.client_info.items()}
+        setup_task = Task(
+            name=SETUP_TASK_NAME,
+            data=Shareable(
+                {
+                    SyncKey.COLLAB_INTERFACE: server_collab_interface,
+                    SyncKey.CLIENT_INTERFACES: client_interfaces,
+                    SyncKey.SERVER_FQCN: self.cell.get_fqcn(),
+                }
+            ),
+            timeout=math.ceil(self.sync_task_timeout),
+            result_received_cb=self._process_setup_reply,
+        )
+        self.broadcast_and_wait(
+            task=setup_task,
+            min_responses=num_clients,
+            abort_signal=abort_signal,
+            fl_ctx=fl_ctx,
+        )
+        failed_setup = [name for name, ok in self.client_setup_status.items() if not ok]
+        if failed_setup:
+            self.system_panic(f"failed to set up clients {failed_setup}", fl_ctx)
+            return
+
+        # register msg CB for processing object calls
+        prepare_for_remote_call(self.cell, self.server_app, self.logger, self.inbound_executor)
+
+        # prepare proxies and backends
+        job_id = fl_ctx.get_job_id()
+        server_proxy = self._prepare_server_proxy(job_id, abort_signal, server_collab_interface, fl_ctx)
+        client_proxies = []
+        for c in all_clients:
+            info = self.client_info[c.name]
+            # assert isinstance(info, _ClientInfo)
+            client_proxies.append(self._prepare_client_proxy(job_id, c, info.publish_interface, abort_signal, fl_ctx))
+
+        ws = fl_ctx.get_workspace()
+        self.server_app.setup(ws, server_proxy, client_proxies, abort_signal)
+        run_server(self.server_app, self.logger)
+
+    def _process_sync_reply(self, client_task: ClientTask, fl_ctx: FLContext):
+        result = client_task.result
+        client_name = client_task.client.name
+
+        rc = result.get_return_code()
+        if rc == ReturnCode.OK:
+            self.log_info(fl_ctx, f"successfully synced client {client_name}")
+            collab_itf = result.get(SyncKey.COLLAB_INTERFACE)
+            self.client_info[client_name] = _ClientInfo(collab_itf)
+        else:
+            self.log_error(fl_ctx, f"client {client_task.client.name} failed to sync: {rc}")
+            self.client_info[client_name] = None
+
+    def _process_setup_reply(self, client_task: ClientTask, fl_ctx: FLContext):
+        client_name = client_task.client.name
+        rc = client_task.result.get_return_code()
+        if rc == ReturnCode.OK:
+            self.log_info(fl_ctx, f"successfully set up client {client_name}")
+            self.client_setup_status[client_name] = True
+        else:
+            self.log_error(fl_ctx, f"client {client_name} failed setup: {rc}")
+            self.client_setup_status[client_name] = False
+
+    def process_result_of_unknown_task(
+        self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
+    ):
+        pass
+
+    def stop_controller(self, fl_ctx: FLContext):
+        try:
+            self.inbound_executor.shutdown(wait=True, cancel_futures=True)
+        finally:
+            self.outbound_executor.shutdown(wait=True, cancel_futures=True)
