@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import shlex
 from pathlib import Path
 
 from model import DEFAULT_MODEL_NAME
@@ -44,6 +45,8 @@ def main():
     args = define_parser()
     data_root = Path(args.data_root).expanduser().resolve()
     validate_site_data(data_root, args.n_clients)
+    model_name_arg = shlex.quote(args.model_name_or_path)
+    data_root_arg = shlex.quote(str(data_root))
 
     recipe = FedAvgRecipe(
         name="hello-huggingface",
@@ -54,7 +57,7 @@ def main():
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
         train_script="client.py",
-        train_args=f"--model_name_or_path {args.model_name_or_path} --data_root {data_root}",
+        train_args=f"--model_name_or_path {model_name_arg} --data_root {data_root_arg}",
         launch_external_process=True,
         server_expected_format=ExchangeFormat.PYTORCH,  # Preserve bf16 tensors instead of converting through NumPy.
         key_metric="",  # Disable best-model selection in this API-focused example.
