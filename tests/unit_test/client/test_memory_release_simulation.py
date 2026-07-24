@@ -30,6 +30,7 @@ import sys
 import unittest
 
 import numpy as np
+import pytest
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -38,6 +39,17 @@ from nvflare.client.in_process.api import TOPIC_GLOBAL_RESULT, InProcessClientAP
 from nvflare.fuel.data_event.data_bus import DataBus
 
 # ── helpers ────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def clean_databus():
+    """Isolate tests without replacing the process-singleton DataBus object."""
+    bus = DataBus()
+    bus.subscribers.clear()
+    bus.data_store.clear()
+    yield bus
+    bus.subscribers.clear()
+    bus.data_store.clear()
 
 
 def _task_metadata():
@@ -86,21 +98,11 @@ class TestInProcessMemoryRelease(unittest.TestCase):
     NUM_ROUNDS = 5
 
     def setUp(self):
-        # Reset the DataBus singleton before each test to prevent stale
-        # subscriptions from other tests contaminating refcount measurements.
-        from nvflare.fuel.data_event.data_bus import DataBus
-
-        with DataBus._lock:
-            DataBus._instance = None
         self.api = InProcessClientAPI(_task_metadata())
         self.api.init()
 
     def tearDown(self):
-        # Clean up singleton so subsequent tests start fresh.
-        from nvflare.fuel.data_event.data_bus import DataBus
-
-        with DataBus._lock:
-            DataBus._instance = None
+        self.api.close()
 
     def _one_round(self, round_num: int):
         """Simulate one FL round: receive → train → send."""

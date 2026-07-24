@@ -74,6 +74,7 @@ class _CellStackFake:
     def __init__(self):
         self.requests_dict = {}
         self.decode_pass_through_channels = set()
+        self.decode_pass_through_topics = set()
         self.sent_blobs = []
         self.logger = MagicMock()
 
