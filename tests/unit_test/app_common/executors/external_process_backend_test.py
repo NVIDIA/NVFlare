@@ -806,13 +806,6 @@ class TestInitializeAndFinalize:
         with pytest.raises(ValueError, match="nested interpreter command strings"):
             ExternalProcessBackend._split_command("bash -c 'echo ${secret:EXTERNAL_BACKEND_TEST_SECRET}'")
 
-        monkeypatch.setattr(ebp.os, "name", "nt")
-        win_command = "python C:\\work\\train.py"
-        assert ExternalProcessBackend._split_command(win_command) == ["python", "C:\\work\\train.py"]
-        assert ExternalProcessBackend._split_command(
-            "python C:\\work\\train.py --token ${secret:EXTERNAL_BACKEND_TEST_SECRET}"
-        ) == ["python", "C:\\work\\train.py", "--token", "resolved value with spaces"]
-
         argv = [
             "python",
             "custom/train model.py",

@@ -289,7 +289,7 @@ class BaseScriptRunner:
                 # external_process launches the trainer as its own process, named by a
                 # shell-free argv, not by an in-CJ-process task_script_path. Parse the
                 # user-authored strings once here so the exported config carries stable
-                # argv boundaries to every target platform.
+                # argv boundaries to each target site.
                 command = _to_external_process_argv(self._command, "command")
                 command.append(f"custom/{self._script}")
                 command.extend(_to_external_process_argv(self._script_args, "script_args"))

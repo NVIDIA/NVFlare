@@ -31,7 +31,6 @@ _POSIX_SPAWN_SUPPORTED = hasattr(os, "posix_spawn") and os.name == "posix"
 _ANSI_ESC_RE = re.compile(r"\x1b\[[0-9;]*m")
 _LOG_LINE_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
 _SHELL_COMMAND_INTERPRETERS = frozenset({"ash", "bash", "dash", "fish", "ksh", "mksh", "sh", "zsh"})
-_POWERSHELL_COMMAND_INTERPRETERS = frozenset({"powershell", "pwsh"})
 _ENV_COMMAND_WRAPPERS = frozenset({"env"})
 _COMMAND_MULTIPLEXERS = frozenset({"busybox"})
 _SHELL_OPTIONS_WITH_VALUE = frozenset({"-o", "-O", "--init-file", "--rcfile"})
@@ -97,24 +96,6 @@ def _reject_shell_command_refs(command_seq: list[str], interpreter: str) -> None
         index += 2 if option in _SHELL_OPTIONS_WITH_VALUE else 1
 
 
-def _reject_powershell_code_refs(command_seq: list[str], interpreter: str) -> None:
-    for index, option in enumerate(command_seq[1:], start=1):
-        normalized_option = option.casefold()
-        if option == "--" or not option.startswith("-") or normalized_option in {"-file", "-f"}:
-            return
-        if normalized_option in {"-command", "-c"}:
-            if any(has_secret_refs(arg) for arg in command_seq[index + 1 :]):
-                _raise_nested_command_secret_ref(interpreter, option)
-            return
-        if normalized_option in {"-encodedcommand", "-e", "-ec", "-enc"}:
-            if index + 1 < len(command_seq) and has_secret_refs(command_seq[index + 1]):
-                _raise_nested_command_secret_ref(interpreter, option)
-            return
-        if any(has_secret_refs(arg) for arg in command_seq[index:]):
-            _raise_nested_command_secret_ref(interpreter, option)
-        return
-
-
 def _reject_python_code_refs(command_seq: list[str], interpreter: str) -> None:
     for index, option in enumerate(command_seq[1:], start=1):
         if option == "--" or not option.startswith("-"):
@@ -139,13 +120,11 @@ def _reject_secret_refs_in_nested_command(command_seq: list[str]) -> None:
         normalized_interpreter = interpreter.casefold()
     if normalized_interpreter in _SHELL_COMMAND_INTERPRETERS:
         _reject_shell_command_refs(command_seq, interpreter)
-    elif normalized_interpreter in _POWERSHELL_COMMAND_INTERPRETERS:
-        _reject_powershell_code_refs(command_seq, interpreter)
     elif _PYTHON_INTERPRETER_RE.fullmatch(normalized_interpreter):
         _reject_python_code_refs(command_seq, interpreter)
 
 
-def prepare_subprocess_command(command: Union[str, Sequence[str]], posix: bool = True) -> list[str]:
+def prepare_subprocess_command(command: Union[str, Sequence[str]]) -> list[str]:
     """Build argv for a shell-free subprocess command and resolve secret references safely.
 
     The command is split before references are resolved, so a secret containing spaces or
@@ -154,14 +133,12 @@ def prepare_subprocess_command(command: Union[str, Sequence[str]], posix: bool =
 
     Args:
         command: Command string or pre-tokenized argv from job configuration.
-        posix: Whether to use POSIX shell-style tokenization. When False, use the
-            legacy whitespace-only tokenizer.
 
     Returns:
         A resolved argv list suitable for ``subprocess.Popen(..., shell=False)``.
     """
     if isinstance(command, str):
-        command_seq = split_command_preserving_secret_refs(command, posix=posix, group_secret_ref_quotes=not posix)
+        command_seq = split_command_preserving_secret_refs(command, posix=True)
     else:
         command_seq = list(command)
         if not command_seq or not all(isinstance(arg, str) for arg in command_seq):

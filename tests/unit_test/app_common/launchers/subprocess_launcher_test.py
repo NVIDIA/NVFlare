@@ -256,10 +256,6 @@ class TestSubprocessLauncher:
             "/usr/bin/env -i FOO=bar /bin/bash -c 'echo ${secret:TEST_SECRET_REF_VAR}'",
             "env --unknown-option value sh -c 'echo ${secret:TEST_SECRET_REF_VAR}'",
             "env -S \"bash -c 'echo ${secret:TEST_SECRET_REF_VAR}'\"",
-            "pwsh -Command 'Invoke-Expression ${secret:TEST_SECRET_REF_VAR}'",
-            "pwsh -Bogus value -Command 'Invoke-Expression ${secret:TEST_SECRET_REF_VAR}'",
-            "pwsh -EncodedCommand ${secret:TEST_SECRET_REF_VAR}",
-            "pwsh -enc ${secret:TEST_SECRET_REF_VAR}",
         ],
     )
     def test_start_external_process_rejects_secret_ref_in_nested_command(self, monkeypatch, tmp_path, script):
@@ -284,10 +280,6 @@ class TestSubprocessLauncher:
                 ["bash", "train.sh", "resolved secret"],
             ),
             (
-                "pwsh -File train.ps1 ${secret:TEST_SECRET_REF_VAR}",
-                ["pwsh", "-File", "train.ps1", "resolved secret"],
-            ),
-            (
                 "env -- API_TOKEN=${secret:TEST_SECRET_REF_VAR} sh -c 'echo \"$API_TOKEN\"'",
                 ["env", "--", "API_TOKEN=resolved secret", "sh", "-c", 'echo "$API_TOKEN"'],
             ),
@@ -298,10 +290,6 @@ class TestSubprocessLauncher:
             (
                 "python train.py --label node -e ${secret:TEST_SECRET_REF_VAR}",
                 ["python", "train.py", "--label", "node", "-e", "resolved secret"],
-            ),
-            (
-                "pwsh train.ps1 -Command ${secret:TEST_SECRET_REF_VAR}",
-                ["pwsh", "train.ps1", "-Command", "resolved secret"],
             ),
         ],
     )

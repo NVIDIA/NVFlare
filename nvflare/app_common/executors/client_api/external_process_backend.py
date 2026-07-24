@@ -774,7 +774,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
     @staticmethod
     def _split_command(command: Union[str, Sequence[str]]) -> list[str]:
         """Prepare shell-free argv and resolve each secret as one argument."""
-        return prepare_subprocess_command(command, posix=os.name == "posix")
+        return prepare_subprocess_command(command)
 
     def _shutdown_wait_bound(self) -> float:
         shutdown_timeout = self._context.shutdown_timeout
