@@ -442,5 +442,17 @@ For other custom classes, you will need to write a dedicated custom decomposer a
 using fobs.register on both the server side and client side, as well as in train.py.
 
 Please note that for the custom data class to work, it must be placed in a separate file from train.py.
+The module must be packaged in every app that serializes or deserializes the
+type. Import discovery from ``train.py`` is best-effort and scoped to the client
+app containing that entry point; it does not make the module available to the
+server. With a Recipe, add the defining module to both generated app types::
+
+    custom_type_file = "src/custom_types.py"
+    recipe.add_client_file(custom_type_file)
+    recipe.add_server_file(custom_type_file)
+
+Keep the source package layout consistent with the type's fully qualified
+module name. Add imported dependencies explicitly when they are required on
+both sides rather than relying on best-effort discovery.
 
 For more details on serialization, please refer to :ref:`serialization`.

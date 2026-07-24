@@ -103,6 +103,22 @@ File packaging helpers:
 ``recipe.add_server_file(file_path)``
    Bundle a file or directory into the generated server app package.
 
+For Python files, job export performs best-effort discovery of locally
+resolvable imports and includes discovered modules in the same target app.
+Discovery is not a dependency declaration mechanism: it may not resolve every
+import, and a module discovered for a client app is not propagated to the
+server app.
+
+Add shared modules to every app that imports them or deserializes types defined
+in them. Keep the source package layout consistent with the fully qualified
+module name. For example, for ``src.custom_enum.CustomEnum``::
+
+   recipe.add_client_file("src/custom_enum.py")
+   recipe.add_server_file("src/custom_enum.py")
+
+Add imported dependencies the same way when they are also required by both app
+types.
+
 Helpers that accept ``clients`` target specific generated client apps. This
 requires per-site client apps: call ``set_per_site_config`` immediately after
 constructing a recipe that supports it. The recipe prepares those apps before
