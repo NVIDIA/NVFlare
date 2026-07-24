@@ -1,28 +1,16 @@
 # Hello Pytorch Lightning
 This example demonstrates how to use NVIDIA FLARE with PyTorch Lightning to train an image classifier using
-federated averaging (FedAvg) or SCAFFOLD. The same patched client script works with both algorithms.
-
-> **Main branch note:** Automatic Lightning SCAFFOLD support is introduced for NVFlare 2.9.0. Until that
-> package is published, install NVFlare from this repository and install the remaining dependencies separately.
+federated averaging (FedAvg), FedProx, SCAFFOLD, or SCAFFOLD combined with FedProx. The same patched client
+script works with all four configurations.
 
 ## NVIDIA FLARE Installation
 for the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
 
-For a released branch:
+Install the example dependencies:
 
 ```
-pip install nvflare
+python -m pip install -r requirements.txt
 ```
-
-For the current `main` branch, install from the repository root so the automatic SCAFFOLD support is available:
-
-```
-python -m pip install -e .
-python -m pip install torch torchvision "jsonargparse[signatures]>=4.17.0" pytorch_lightning tensorboard
-```
-
-The `nvflare~=2.9.0rc` entry in `requirements.txt` intentionally records the first compatible release. After
-NVFlare 2.9.0 is published, `python -m pip install -r requirements.txt` installs the complete environment.
 
 Get the example code from github: 
 ```
@@ -286,18 +274,35 @@ Use the following command in your terminal to start the job with the specified n
 python job.py --num_rounds 2 --batch_size 16
 ```
 
-FedAvg is the default. To run the same Lightning client with SCAFFOLD:
+FedAvg is the default. The same unchanged Lightning client can run all supported configurations:
 
 ```
+python job.py --algorithm fedprox --fedprox_mu 0.01 --num_rounds 2 --batch_size 16
 python job.py --algorithm scaffold --num_rounds 2 --batch_size 16
+python job.py --algorithm scaffold_fedprox --fedprox_mu 0.01 --num_rounds 2 --batch_size 16
 ```
 
-`flare.patch(trainer)` detects the SCAFFOLD controls sent by `ScaffoldRecipe`, applies the required
-`PTScaffoldHelper` updates around optimizer steps, and returns the control difference to the server. This
-automatic path supports Lightning automatic optimization with one optimizer, `precision="32-true"` or
-`precision="bf16-mixed"`, and equal finite non-negative learning rates across parameter groups at every step.
-Manual optimization must use an explicit `flare.receive()`/training/`flare.send()` loop without
-`flare.patch(trainer)` and call `PTScaffoldHelper` directly in the client training loop.
+For a quick simulator smoke test without downloading CIFAR-10, add
+`--synthetic_data --limit_batches 1`. Normal runs use CIFAR-10, and the default batch limit `0` runs every batch.
+
+`FedProxRecipe(fedprox_mu=...)` sends the proximal coefficient each round. `flare.patch(trainer)` snapshots the
+received global trainable parameters and injects `mu * (local - global)` after gradient accumulation and AMP
+unscaling but before gradient clipping. The loss returned or logged by `training_step` therefore excludes the
+automatically injected proximal term, while optimization includes its exact gradient.
+
+Automatic injection requires `flare.patch(trainer)`. Setting `fedprox_mu` does not change an unpatched or raw
+PyTorch client; integrate `PTFedProxLoss` explicitly in that case. While a positive coefficient is active, the
+patch keeps an additional device-resident snapshot of every optimizer-owned trainable parameter for the round.
+Custom controllers may change the coefficient between rounds and must keep sending `FEDPROX_MU`: use an explicit
+`0.0` to disable a scheduled round. Omitting the key after the schedule has started raises an error.
+
+`flare.patch(trainer)` also detects the controls sent by `ScaffoldRecipe`, applies the required
+`PTScaffoldHelper` updates after optimizer steps, and returns the control difference to the server. Setting
+`fedprox_mu` on `ScaffoldRecipe` composes both behaviors. The automatic paths support Lightning automatic
+optimization with one optimizer and `precision="32-true"` or `precision="bf16-mixed"`. SCAFFOLD additionally
+requires equal finite non-negative learning rates across parameter groups at every step. Manual optimization
+must use an explicit `flare.receive()`/training/`flare.send()` loop without `flare.patch(trainer)` and integrate
+the selected algorithms directly.
 
 Starting with NVFlare 2.9.0, PyTorch SCAFFOLD control differences contain trainable parameters only. Buffers
 such as BatchNorm running statistics remain ordinary model state. Custom SCAFFOLD aggregators must therefore

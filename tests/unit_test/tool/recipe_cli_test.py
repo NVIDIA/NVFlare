@@ -480,11 +480,11 @@ def test_recipe_catalog_includes_all_documented_recipe_variants():
     catalog = _load_catalog()
     names = {entry["name"] for entry in catalog}
 
-    assert len(_DOCUMENTED_RECIPE_SPECS) == 21
+    assert len(_DOCUMENTED_RECIPE_SPECS) == 20
     assert set(_DOCUMENTED_RECIPE_SPECS).issubset(names)
 
 
-def test_recipe_list_filters_documented_recipe_variants_without_optional_dependencies(monkeypatch, capsys):
+def test_recipe_list_omits_tensorflow_fedprox_without_a_concrete_recipe(monkeypatch, capsys):
     import json
 
     from nvflare.tool import cli_output
@@ -496,26 +496,41 @@ def test_recipe_list_filters_documented_recipe_variants_without_optional_depende
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "ok"
-    assert [entry["name"] for entry in payload["data"]] == ["fedprox-tf"]
+    assert payload["data"] == []
+    assert "fedprox-tf" not in str(payload)
 
 
-def test_recipe_show_fedprox_documents_fedavg_constructor(monkeypatch, capsys):
+def test_recipe_show_fedprox_uses_concrete_recipe(monkeypatch, capsys):
     import json
 
     from nvflare.tool import cli_output
-    from nvflare.tool.recipe.recipe_cli import cmd_recipe_show
+    from nvflare.tool.recipe import recipe_cli
 
     monkeypatch.setattr(cli_output, "_output_format", "json")
+    monkeypatch.setattr(
+        recipe_cli,
+        "_RECIPE_PACKAGE_ROOTS",
+        [{"package": "nvflare.app_opt.pt.recipes", "framework": "pytorch"}],
+    )
+    monkeypatch.setattr(
+        recipe_cli,
+        "_DOCUMENTED_RECIPE_SPECS",
+        {"fedprox-pt": recipe_cli._DOCUMENTED_RECIPE_SPECS["fedprox-pt"]},
+    )
 
-    cmd_recipe_show(Namespace(name="fedprox-pt"))
+    recipe_cli.cmd_recipe_show(Namespace(name="fedprox-pt"))
 
     payload = json.loads(capsys.readouterr().out)
     data = payload["data"]
     assert payload["status"] == "ok"
     assert data["algorithm"] == "fedprox"
-    assert data["class"] == "FedAvgRecipe"
+    assert data["class"] == "FedProxRecipe"
+    assert data["aggregation"] == "weighted_average"
+    assert data["state_exchange"] == "full_model"
+    params = {parameter["name"]: parameter for parameter in data["parameters"]}
+    assert params["fedprox_mu"]["default"] == 0.01
     assert data["notes"]
-    assert "same recipe constructor as fedavg-pt" in data["notes"][0]
+    assert "Lightning" in data["notes"][0]
 
 
 def test_recipe_show_uses_static_metadata_when_optional_dependency_is_missing(monkeypatch, capsys):

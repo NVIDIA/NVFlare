@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 import json
 import warnings
 from unittest.mock import MagicMock, patch
@@ -335,6 +336,9 @@ class TestFedAvgRecipe:
         assert recipe._job.clients == []
         recipe._ensure_client_apps_prepared()
         assert recipe._job.clients == ["site-1", "site-2"]
+
+    def test_pt_constructor_does_not_expose_fedprox_mu(self):
+        assert "fedprox_mu" not in inspect.signature(FedAvgRecipe).parameters
 
     def test_tensor_disk_offload_warns_when_server_format_is_not_pytorch(
         self, mock_file_system, base_recipe_params, simple_model

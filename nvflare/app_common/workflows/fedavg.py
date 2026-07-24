@@ -26,6 +26,7 @@ from nvflare.app_common.aggregators.weighted_aggregation_helper import (
 )
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.app_common.utils.fedprox_utils import normalize_fedprox_mu, set_fedprox_metadata
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
 from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_disk_offload, setup_tensor_disk_offload
 from nvflare.fuel.utils import fobs
@@ -90,6 +91,8 @@ class FedAvg(BaseFedAvg):
             instead of deserializing into memory. Reduces peak server memory from ~N× to ~1×
             model size during aggregation. When used with a custom aggregator, lazy refs are
             passed through directly and must be handled by that aggregator. Defaults to False.
+        fedprox_mu (float or None, optional): Positive FedProx proximal coefficient sent to
+            compatible clients. ``None`` or ``0.0`` disables FedProx. Defaults to None.
     """
 
     def __init__(
@@ -104,6 +107,7 @@ class FedAvg(BaseFedAvg):
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
         enable_tensor_disk_offload: bool = False,
+        fedprox_mu: Optional[float] = None,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -124,6 +128,7 @@ class FedAvg(BaseFedAvg):
         self.exclude_vars = exclude_vars
         self.aggregation_weights = aggregation_weights or {}
         self.enable_tensor_disk_offload = enable_tensor_disk_offload
+        self.fedprox_mu = normalize_fedprox_mu(fedprox_mu)
 
         # Parse stop condition
         if self.stop_cond:
@@ -207,6 +212,7 @@ class FedAvg(BaseFedAvg):
                 self._site_metric_weights = {}
 
                 # Non-blocking send with callback for streaming aggregation
+                set_fedprox_metadata(model, self.fedprox_mu)
                 self.send_model(
                     task_name=self.task_name,
                     targets=clients,
