@@ -367,7 +367,10 @@ class TestInitializeAndFinalize:
         try:
             assert (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK) in env.cell.decode_pass_through_topics
             assert (CHANNEL, Topic.RESULT_READY) in env.cell.decode_pass_through_topics
-            assert (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK) in env.cell.decode_pass_through_relay_topics
+            assert (
+                CellChannel.SERVER_COMMAND,
+                ServerCommandNames.GET_TASK,
+            ) in env.cell.decode_pass_through_relay_topics
             assert (CHANNEL, Topic.RESULT_READY) in env.cell.decode_pass_through_relay_topics
             assert CellChannel.SERVER_COMMAND not in env.cell.decode_pass_through_channels
             bootstrap_path = env.harness.processes[0].kwargs["env"][BOOTSTRAP_FILE_ENV_VAR]

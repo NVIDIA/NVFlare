@@ -1,18 +1,18 @@
-# Regression tests for the ext-process Client API + streaming path (NVBug 6371056):
-# the training script runs in a subprocess whose CellPipe cell must route streamed
-# data (including download-service tensor transfers) to server.<jobid>. This file
-# is the only home of these two test cases; test_configs.yml lists it under both
-# the client_api group and the ext_process_streaming group, so the streaming
-# routing path can also be exercised on its own:
+# Regression tests for external-process Client API streaming (NVBug 6371056).
+# np_loop_cell_pipe is the small-payload launch-once control, while
+# pt_large_model_pass_through exercises DownloadService-backed tensors. Both
+# jobs use the ClientAPIExecutor external-process backend. This file is the only
+# home of these two test cases; test_configs.yml lists it under both the
+# client_api group and the ext_process_streaming group, so the streaming path
+# can also be exercised on its own:
 #   NVFLARE_TEST_FRAMEWORK=ext_process_streaming pytest system_test.py
-n_servers: 1
-n_clients: 2
+project_yaml: ./data/projects/client_api.yml
 jobs_root_dir: ./data/jobs
 cleanup: True
 
 
 tests:
-  - test_name: "run np-loop-cell-pipe"
+  - test_name: "run np-loop-external-process"
     event_sequence:
       - "trigger":
           "type": "server_log"

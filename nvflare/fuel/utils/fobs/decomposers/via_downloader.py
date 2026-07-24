@@ -23,12 +23,7 @@ from nvflare.apis.fl_constant import ConfigVarName, FLMetaKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.streaming.download_service import (
-    Downloadable,
-    ProduceRC,
-    _PropKey,
-    request_download_chunk,
-)
+from nvflare.fuel.f3.streaming.download_service import Downloadable, ProduceRC, _PropKey, request_download_chunk
 from nvflare.fuel.f3.streaming.file_downloader import ObjectDownloader
 from nvflare.fuel.f3.streaming.transfer_progress import (
     DEFAULT_STREAMING_IDLE_TIMEOUT,

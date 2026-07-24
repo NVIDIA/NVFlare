@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""B1 pass-through integration test client script.
+"""External-process pass-through integration test client script.
 
 Mirrors the llm_hf/client.py pattern (launch_once=True external process,
 while-loop FL rounds) but uses a simple synthetic-data MLP so no dataset
@@ -20,9 +20,9 @@ download or GPU is required.
 
 The LargeNet model (~8 MB of float32 parameters) exceeds the 2 MB streaming
 threshold, which forces ViaDownloaderDecomposer to route tensors through the
-download service.  With B1 PASS_THROUGH enabled in ClientAPILauncherExecutor,
-the CJ creates LazyDownloadRef placeholders instead of materialising tensors;
-this subprocess then downloads each tensor directly from the FL server.
+download service. The ClientAPIExecutor external-process backend preserves the
+lazy references across the Client Job boundary, and this subprocess
+materializes the tensors through Cell/F3 streaming.
 """
 
 import torch
@@ -48,7 +48,7 @@ def main():
 
     # (3) FL training loop — mirrors llm_hf/client.py structure
     while flare.is_running():
-        # (4) receive global model from NVFlare (triggers B1 pass-through download)
+        # (4) receive global model from NVFlare (triggers pass-through download)
         input_model = flare.receive()
         print(f"current_round={input_model.current_round}", flush=True)
 

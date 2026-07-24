@@ -62,6 +62,7 @@ class TestPrepareSubprocessCommand:
         with pytest.raises(ValueError, match="nested interpreter command strings"):
             prepare_subprocess_command(command)
 
+
 class TestProcessAdapterWithPopen:
     """Test ProcessAdapter when initialized with a subprocess.Popen object."""
 
