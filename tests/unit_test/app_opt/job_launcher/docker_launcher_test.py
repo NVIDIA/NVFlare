@@ -637,6 +637,33 @@ class TestDockerJobLauncherLaunchJob:
         with pytest.raises(RuntimeError):
             launcher.launch_job(_make_job_meta(), fl_ctx)
 
+    def test_launch_preserves_and_mounts_shared_file_parent_url(self):
+        launcher = _make_launcher(workspace="/host/workspace")
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+
+        parent_url = "shared-file://0/lustre/nvflare/cellnet/lst_12345678?poll_interval=0.05"
+        fl_ctx, _ = _make_fl_ctx(parent_url=parent_url)
+        launcher.launch_job(_make_job_meta(), fl_ctx)
+
+        call_kwargs = dc.containers.run.call_args[1]
+        command_str = " ".join(str(a) for a in call_kwargs["command"])
+        assert parent_url in command_str
+        mounts_by_target = _mounts_by_target(call_kwargs["mounts"])
+        listener_mount = mounts_by_target["/lustre/nvflare/cellnet/lst_12345678"]
+        assert listener_mount["Source"] == "/lustre/nvflare/cellnet/lst_12345678"
+        assert listener_mount["ReadOnly"] is False
+
+    def test_launch_rejects_malformed_shared_file_parent_url(self):
+        launcher = _make_launcher(workspace="/host/workspace")
+        fl_ctx, _ = _make_fl_ctx(parent_url="shared-file://lustre/not-placeholder")
+
+        with pytest.raises(ValueError, match="invalid shared-file parent URL"):
+            launcher.launch_job(_make_job_meta(), fl_ctx)
+
     def test_launch_workspace_bind_mounted(self):
         launcher = _make_launcher(workspace="/host/workspace")
         dc = launcher._docker_client
