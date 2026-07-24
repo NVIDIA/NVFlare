@@ -2032,6 +2032,32 @@ def test_src_layout_converted_project_is_not_hidden_by_root_packaging_scaffold(t
     assert "nvflare-convert-pytorch" not in data["skill_selection"]["recommended_skills"]
 
 
+def test_inspect_classifies_authoritative_flmodel_call_as_client_api_converted(tmp_path):
+    (tmp_path / "client.py").write_text(
+        "from nvflare.app_common.abstract.fl_model import FLModel\n" "\n" "def main():\n" "    return FLModel()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["conversion_state"] == "client_api_converted"
+    assert data["flare_integration"]["calls"] == ["FLModel"]
+
+
+def test_nested_flare_evidence_uses_whole_directory_fallback_without_project_anchors(tmp_path):
+    helper = tmp_path / "src" / "mypkg" / "helper.py"
+    helper.parent.mkdir(parents=True)
+    helper.write_text(
+        "import nvflare.client as flare\n\nmodel = flare.receive()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["conversion_state"] == "partial_client_api"
+    assert data["flare_integration"]["calls"] == ["flare.receive"]
+
+
 def test_inspect_does_not_treat_pytorch_to_call_as_export_support(tmp_path):
     script = tmp_path / "train.py"
     script.write_text(
