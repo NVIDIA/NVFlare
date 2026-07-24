@@ -63,6 +63,21 @@ class TestFedJobConfig:
 
         assert (custom_dir / "helper.py").is_file()
 
+    def test_copy_ext_script_finds_unqualified_sibling_import_in_subdirectory(self, tmp_path, monkeypatch):
+        script_dir = tmp_path / "src"
+        script_dir.mkdir()
+        (script_dir / "net.py").write_text("class Net:\n    pass\n", encoding="utf-8")
+        (script_dir / "client.py").write_text("from net import Net\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["src/client.py"])
+
+        assert (custom_dir / "src" / "client.py").is_file()
+        assert (custom_dir / "net.py").is_file()
+        assert not (custom_dir / "src" / "net.py").exists()
+
     def test_copy_ext_scripts_reject_distinct_absolute_sources_with_same_destination(self, tmp_path, monkeypatch):
         first_dir = tmp_path / "first"
         second_dir = tmp_path / "second"
@@ -104,12 +119,14 @@ class TestFedJobConfig:
         package_dir.mkdir()
         (package_dir / "traceback.py").write_text("from ._compatibility import helper\n", encoding="utf-8")
         (package_dir / "client.py").write_text("import traceback\n", encoding="utf-8")
+        (tmp_path / "entry.py").write_text("import pkg.client\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
 
         custom_dir = tmp_path / "exported" / "custom"
         job_config = FedJobConfig(job_name="job_name", min_clients=1)
-        job_config._copy_ext_scripts(str(custom_dir), ["pkg/client.py"])
+        job_config._copy_ext_scripts(str(custom_dir), ["entry.py"])
 
+        assert (custom_dir / "pkg" / "client.py").is_file()
         assert not (custom_dir / "traceback.py").exists()
 
     def test_copy_ext_script_resolves_valid_multi_level_relative_import(self, tmp_path, monkeypatch):
