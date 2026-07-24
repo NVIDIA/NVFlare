@@ -18,7 +18,7 @@ On a released branch:
 
    pip install nvflare
 
-The example ``requirements.txt`` intentionally uses ``nvflare~=2.9.0rc1``,
+The example ``requirements.txt`` intentionally uses ``nvflare~=2.9.0rc``,
 the first upcoming NVFlare release with ``nvflare.client.hf``. Until that
 package is published, install NVFlare from this repository before running the
 example.

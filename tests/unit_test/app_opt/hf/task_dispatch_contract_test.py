@@ -806,6 +806,30 @@ def test_train_send_failure_on_rank_zero_broadcasts_before_abort(monkeypatch, tm
     assert trainer._nvflare_hf_task_state.aborted is True
 
 
+def test_train_result_materialization_failure_on_rank_zero_broadcasts_before_abort(monkeypatch, tmp_path):
+    incoming_model = FLModel(params=_model_params(TinyModel(), 5.0), current_round=1, total_rounds=2)
+    hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch, incoming_model)
+    dist = _RecordingDist(rank=0, world_size=2)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
+    trainer = _make_trainer(trainer_cls, tmp_path)
+
+    def extract_raises(*args, **kwargs):
+        raise RuntimeError("extract boom")
+
+    monkeypatch.setattr(hf_api.utils, "extract_params", extract_raises)
+    hf_api.patch(trainer, restore_state=False, local_steps=1)
+
+    with pytest.raises(RuntimeError, match="train result send failed on rank 0.*extract boom"):
+        trainer.train()
+
+    status_payloads = [
+        payload for payload in dist.broadcast_payloads if payload.get("operation") == "train result send"
+    ]
+    assert status_payloads[-1]["ok"] is False
+    assert client_api_mock.sent_models == []
+    assert trainer._nvflare_hf_task_state.aborted is True
+
+
 def test_train_send_failure_on_rank_zero_reaches_nonzero_rank(monkeypatch, tmp_path):
     dist = _RecordingDist(
         rank=1,
@@ -828,6 +852,33 @@ def test_train_send_failure_on_rank_zero_reaches_nonzero_rank(monkeypatch, tmp_p
     hf_api.patch(trainer, restore_state=False, local_steps=1)
 
     with pytest.raises(RuntimeError, match="train result send failed on rank 0.*pipe closed"):
+        trainer.train()
+
+    assert trainer._nvflare_hf_task_state.aborted is True
+
+
+def test_train_result_materialization_failure_on_rank_zero_reaches_nonzero_rank(monkeypatch, tmp_path):
+    dist = _RecordingDist(
+        rank=1,
+        world_size=2,
+        incoming_payload=[
+            _task_payload("train", "train"),
+            {
+                "ok": True,
+                "operation": "budget capture",
+                "per_round_budget_steps": 1,
+                "budget_source": "local_steps",
+            },
+            _rank_zero_failure("train result send", "RuntimeError: extract boom"),
+        ],
+    )
+    hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model=None)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
+    trainer = _make_trainer(trainer_cls, tmp_path)
+
+    hf_api.patch(trainer, restore_state=False, local_steps=1)
+
+    with pytest.raises(RuntimeError, match="train result send failed on rank 0.*extract boom"):
         trainer.train()
 
     assert trainer._nvflare_hf_task_state.aborted is True
@@ -860,6 +911,30 @@ def test_rank_zero_send_failures_reach_nonzero_rank_for_eval_and_submit(
             task_state._send_metrics({"eval_loss": 0.25})
         else:
             task_state._submit_model()
+
+
+def test_submit_model_materialization_failure_on_rank_zero_broadcasts_before_abort(monkeypatch, tmp_path):
+    incoming_model = FLModel(params=_model_params(TinyModel(), 5.0), current_round=1, total_rounds=2)
+    hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch, incoming_model, task="submit_model")
+    dist = _RecordingDist(rank=0, world_size=2)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
+    trainer = _make_trainer(trainer_cls, tmp_path)
+
+    def extract_raises(*args, **kwargs):
+        raise RuntimeError("submit extract boom")
+
+    monkeypatch.setattr(hf_api.utils, "extract_params", extract_raises)
+    hf_api.patch(trainer, restore_state=False, local_steps=1)
+
+    with pytest.raises(RuntimeError, match="submit model send failed on rank 0.*submit extract boom"):
+        trainer.train()
+
+    status_payloads = [
+        payload for payload in dist.broadcast_payloads if payload.get("operation") == "submit model send"
+    ]
+    assert status_payloads[-1]["ok"] is False
+    assert client_api_mock.sent_models == []
+    assert trainer._nvflare_hf_task_state.aborted is True
 
 
 def test_restore_state_checkpoint_path_is_in_memory_only(monkeypatch, tmp_path):

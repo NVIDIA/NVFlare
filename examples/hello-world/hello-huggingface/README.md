@@ -19,7 +19,7 @@ Install the example dependencies:
 pip install -r requirements.txt
 ```
 
-`requirements.txt` uses `nvflare~=2.9.0rc1`, the first upcoming NVFlare release
+`requirements.txt` uses `nvflare~=2.9.0rc`, the first upcoming NVFlare release
 with `nvflare.client.hf`. Until that package is published, install NVFlare from
 this repository before running the example.
 

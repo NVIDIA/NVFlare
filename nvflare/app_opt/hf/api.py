@@ -71,6 +71,48 @@ def patch(
     local_steps=None,
     stream_metrics=False,
 ):
+    """Patches a HuggingFace Trainer for usage with NVFlare.
+
+    Patching wraps ``trainer.train()`` and ``trainer.evaluate()`` so the usual
+    HuggingFace training loop can execute NVFlare train, evaluate, and
+    submit_model tasks. In distributed runs, rank 0 owns the NVFlare Client API
+    receive/send calls and broadcasts task state to the other ranks.
+
+    Args:
+        trainer: HuggingFace ``transformers.Trainer`` or subclass, such as TRL
+            ``SFTTrainer``, to patch.
+        restore_state: Whether to resume HuggingFace optimizer and learning-rate
+            scheduler state from the previous in-process checkpoint between FL
+            train rounds. Defaults to ``True``.
+        load_state_dict_strict: Exposes the ``strict`` argument of
+            ``torch.nn.Module.load_state_dict()`` when loading received model
+            weights. Defaults to ``True``.
+        params_scope: Which model parameters participate in FL. Use ``"auto"``
+            to infer full-model versus PEFT adapter parameters, ``"model"`` for
+            full model weights, or ``"adapter"`` for PEFT adapter weights.
+        server_key_prefix: Optional key prefix expected by the FL server. Incoming
+            server parameters have this prefix removed before loading, and
+            outgoing client parameters have it added before sending.
+        local_epochs: Number of local epochs per FL train round. Mutually
+            exclusive with ``local_steps``.
+        local_steps: Number of local optimizer steps per FL train round. Mutually
+            exclusive with ``local_epochs``.
+        stream_metrics: Whether to stream HuggingFace logging metrics through
+            the NVFlare Client API metrics writer. Defaults to ``False``.
+
+    Returns:
+        The patched ``trainer``.
+
+    Raises:
+        TypeError: If ``trainer`` is not a HuggingFace ``Trainer``.
+        ValueError: If the Trainer config is unsupported, including DeepSpeed,
+            FSDP, ``load_best_model_at_end=True``, ``save_only_model=True`` with
+            ``restore_state=True``, or both ``local_epochs`` and ``local_steps``.
+        RuntimeError: If distributed execution is misconfigured, if
+            ``restore_state=True`` is used with an explicit
+            ``launch_once=False`` Client API configuration, or if another
+            Trainer is already patched in the same process.
+    """
     trainer_cls = _load_trainer_class()
     if not isinstance(trainer, trainer_cls):
         raise TypeError(f"trainer must be an instance of transformers.Trainer, got {type(trainer)}")
@@ -711,16 +753,14 @@ class _HFTaskState:
 
         end_global_step = int(getattr(hf_train_state, "global_step", 0) or 0)
         end_tokens = _optional_int(getattr(hf_train_state, "num_input_tokens_seen", None))
-        meta = self._build_meta(end_global_step=end_global_step, end_tokens=end_tokens)
-
         step_delta = max(0, end_global_step - int(self.train_start_global_step or 0))
         if not self.restore_state:
             self.metric_step_offset += step_delta
         self.last_completed_global_step = end_global_step
         self.last_checkpoint_path = self._checkpoint_path_from_state(end_global_step)
 
-        output_model = None
-        if self.rank == 0:
+        def build_model():
+            meta = self._build_meta(end_global_step=end_global_step, end_tokens=end_tokens)
             params = utils.extract_params(self.trainer, self.params_scope)
             params = utils.prepare_out_params(
                 params,
@@ -728,14 +768,15 @@ class _HFTaskState:
                 server_expected_format=self._server_expected_format(),
             )
             params = utils.apply_server_key_prefix(params, self.server_key_prefix)
-            output_model = FLModel(
+            return FLModel(
                 params=params,
                 metrics=self.pre_train_metrics,
                 current_round=self.current_round,
                 total_rounds=self.total_rounds,
                 meta=meta,
             )
-        self._send_fl_model("train result send", output_model)
+
+        self._send_fl_model("train result send", build_model)
 
         self._complete_task()
 
@@ -1049,14 +1090,13 @@ class _HFTaskState:
         self.global_params_loaded = True
 
     def _send_metrics(self, metrics: dict):
-        output_model = None
-        if self.rank == 0:
-            output_model = FLModel(metrics=metrics, current_round=self.current_round, total_rounds=self.total_rounds)
-        self._send_fl_model("eval metrics send", output_model)
+        def build_model():
+            return FLModel(metrics=metrics, current_round=self.current_round, total_rounds=self.total_rounds)
+
+        self._send_fl_model("eval metrics send", build_model)
 
     def _submit_model(self):
-        output_model = None
-        if self.rank == 0:
+        def build_model():
             params = None
             if self.last_checkpoint_path:
                 params = utils.extract_params_from_checkpoint(self.last_checkpoint_path, self.params_scope)
@@ -1078,16 +1118,18 @@ class _HFTaskState:
                 server_expected_format=self._server_expected_format(),
             )
             params = utils.apply_server_key_prefix(params, self.server_key_prefix)
-            output_model = FLModel(
+            return FLModel(
                 params=params,
                 current_round=self.current_round,
                 total_rounds=self.total_rounds,
                 meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 0},
             )
-        self._send_fl_model("submit model send", output_model)
 
-    def _send_fl_model(self, operation_name: str, fl_model):
+        self._send_fl_model("submit model send", build_model)
+
+    def _send_fl_model(self, operation_name: str, build_rank_zero_model):
         def send_model():
+            fl_model = build_rank_zero_model()
             if fl_model is None:
                 raise RuntimeError(f"{operation_name} has no FLModel to send on rank 0")
             flare_api.send(fl_model)

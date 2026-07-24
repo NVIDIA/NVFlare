@@ -219,6 +219,13 @@ def _worker(rank, init_path, output_dir, strategy, scenario, result_queue):
         trainer = trainer_cls(TinyModel(), _make_training_args(output_dir))
         hf_api.patch(trainer, restore_state=False, local_steps=1)
 
+        if scenario == "extract_failure" and rank == 0:
+
+            def extract_raises(*args, **kwargs):
+                raise RuntimeError("rank-zero extract boom")
+
+            hf_api.utils.extract_params = extract_raises
+
         if scenario == "divergent":
             if rank == 0:
                 trainer._nvflare_hf_task_state._ensure_task(hf_api.CALL_TRAIN)
@@ -239,6 +246,17 @@ def _worker(rank, init_path, output_dir, strategy, scenario, result_queue):
                 if error:
                     result["error"] = error
                 result_queue.put(result)
+        elif scenario == "extract_failure":
+            ok = False
+            error = None
+            try:
+                trainer.train()
+            except RuntimeError as e:
+                error = str(e)
+                ok = "train result send failed on rank 0" in error and "rank-zero extract boom" in error
+            else:
+                error = "expected rank-zero extraction failure"
+            result_queue.put({"rank": rank, "ok": ok, "error": error, "sent_count": len(sent_models)})
         else:
             trainer.train()
             first_weight = float(trainer.model.fc.weight.detach().cpu().reshape(-1)[0].item())
@@ -304,3 +322,12 @@ def test_two_process_gloo_detects_divergent_trainer_calls(tmp_path):
 
     assert all(result["ok"] for result in results), results
     assert [result["sent_count"] for result in results if result["rank"] == 0] == [0]
+
+
+@pytest.mark.skipif(not gloo_available, reason="torch.distributed gloo is required for distributed HF contract tests")
+@pytest.mark.skipif(running_under_xdist, reason="nested torch.multiprocessing gloo tests are unstable under xdist")
+def test_two_process_gloo_propagates_rank_zero_result_materialization_failure(tmp_path):
+    results = _run_2process_scenario(tmp_path, strategy="object", scenario="extract_failure")
+
+    assert all(result["ok"] for result in results), results
+    assert [result["sent_count"] for result in results] == [0, 0]

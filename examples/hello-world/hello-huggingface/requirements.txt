@@ -1,4 +1,4 @@
-nvflare~=2.9.0rc1
+nvflare~=2.9.0rc
 torch
 transformers
 accelerate
