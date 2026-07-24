@@ -1,7 +1,7 @@
 # Hello NumPy Collab
 
 This is a Collab API rewrite of
-[`examples/hello-world/hello-numpy`](../../hello-world/hello-numpy/README.md).
+[`examples/hello-world/hello-numpy`](../hello-numpy/README.md).
 It uses the same Recipe API and performs the same small federated averaging
 experiment:
 
@@ -44,19 +44,20 @@ model = model + averaged_update if update_type == "diff" else averaged_update
 
 ## Run it
 
-Install NVFlare from this repository, then run the module from the `examples`
-directory:
+Install NVFlare from this repository, then run the self-contained script from
+its directory:
 
 ```bash
-python -m collab.hello_numpy_collab.hello_numpy_collab
+cd examples/hello-world/hello-collab
+python hello_numpy_collab.py
 ```
 
 The Collab rewrite accepts the same core experiment options as the original.
 For example, send model differences or export the job configuration with:
 
 ```bash
-python -m collab.hello_numpy_collab.hello_numpy_collab --update_type diff
-python -m collab.hello_numpy_collab.hello_numpy_collab --export_config
+python hello_numpy_collab.py --update_type diff
+python hello_numpy_collab.py --export_config
 ```
 
 Other options are `--n_clients`, `--num_rounds`, and `--log_config`. After
@@ -67,3 +68,6 @@ three rounds the final model is:
  [ 7.  8.  9.]
  [10. 11. 12.]]
 ```
+
+For response callbacks, in-time aggregation, and decentralized workflows,
+continue with the [advanced Collab examples](../../advanced/collab/README.md).

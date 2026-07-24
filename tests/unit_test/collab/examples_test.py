@@ -22,11 +22,13 @@ import numpy as np
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _EXAMPLES_ROOT = _REPO_ROOT / "examples"
+_ADVANCED_EXAMPLES_ROOT = _EXAMPLES_ROOT / "advanced"
+_HELLO_COLLAB_ROOT = _EXAMPLES_ROOT / "hello-world" / "hello-collab"
 
 
 def test_hello_numpy_collab_trains_and_averages_models(monkeypatch):
-    monkeypatch.syspath_prepend(str(_EXAMPLES_ROOT))
-    module = importlib.import_module("collab.hello_numpy_collab.hello_numpy_collab")
+    monkeypatch.syspath_prepend(str(_HELLO_COLLAB_ROOT))
+    module = importlib.import_module("hello_numpy_collab")
     initial_model = module.INITIAL_MODEL.copy()
 
     updated_model, weight_mean = module.train(initial_model, "full")
@@ -40,8 +42,8 @@ def test_hello_numpy_collab_trains_and_averages_models(monkeypatch):
 
 
 def test_hello_numpy_collab_recipe_finalizes_with_module_functions(monkeypatch):
-    monkeypatch.syspath_prepend(str(_EXAMPLES_ROOT))
-    module = importlib.import_module("collab.hello_numpy_collab.hello_numpy_collab")
+    monkeypatch.syspath_prepend(str(_HELLO_COLLAB_ROOT))
+    module = importlib.import_module("hello_numpy_collab")
     recipe = module.make_recipe(SimpleNamespace(n_clients=2, num_rounds=3, update_type="full"))
 
     job = recipe.finalize()
@@ -54,7 +56,7 @@ def test_async_aggregation_example_imports_without_torch():
 import importlib.abc
 import sys
 
-sys.path[:0] = [{str(_EXAMPLES_ROOT)!r}, {str(_REPO_ROOT)!r}]
+sys.path[:0] = [{str(_ADVANCED_EXAMPLES_ROOT)!r}, {str(_REPO_ROOT)!r}]
 
 class BlockTorch(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
@@ -72,7 +74,7 @@ import collab.async_aggregation.async_aggregation
 
 
 def test_async_aggregation_recipe_finalizes(monkeypatch):
-    monkeypatch.syspath_prepend(str(_EXAMPLES_ROOT))
+    monkeypatch.syspath_prepend(str(_ADVANCED_EXAMPLES_ROOT))
     module = importlib.import_module("collab.async_aggregation.async_aggregation")
     recipe = module.make_recipe(SimpleNamespace(num_clients=2, num_rounds=2))
 
