@@ -28,7 +28,7 @@ class CollabAdaptor:
         if not collab_obj_ids:
             collab_obj_ids = []
         self.props = props
-        self.publish_obj_ids = collab_obj_ids
+        self.collab_obj_ids = collab_obj_ids
 
     def process_config(self, app: App, fl_ctx: FLContext):
         app.update_props(self.props)
@@ -37,8 +37,8 @@ class CollabAdaptor:
         # function at this site can access it through the facade.
         app.set_prop(FL_CONTEXT_PROP, fl_ctx)
         engine = fl_ctx.get_engine()
-        if self.publish_obj_ids:
-            for cid in self.publish_obj_ids:
+        if self.collab_obj_ids:
+            for cid in self.collab_obj_ids:
                 obj = engine.get_component(cid)
                 if not obj:
                     return f"component {cid} does not exist"

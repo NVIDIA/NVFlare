@@ -16,11 +16,121 @@ from collections.abc import Iterator, Mapping, Sequence
 from types import MappingProxyType
 from typing import Optional
 
+_POSITIONAL_ONLY = "POSITIONAL_ONLY"
+_POSITIONAL_OR_KEYWORD = "POSITIONAL_OR_KEYWORD"
+_KEYWORD_ONLY = "KEYWORD_ONLY"
+_SUPPORTED_KINDS = {_POSITIONAL_ONLY, _POSITIONAL_OR_KEYWORD, _KEYWORD_ONLY}
 
-class PublishInterface(Mapping[str, tuple[str, ...]]):
+
+class MethodParameter:
+    """Serializable subset of an inspect.Parameter used for remote binding."""
+
+    def __init__(self, name: str, kind: str, required: bool, legacy=False):
+        if not isinstance(name, str):
+            raise TypeError(f"parameter name must be str but got {type(name)}")
+        if not name:
+            raise ValueError("parameter name must not be empty")
+        if kind not in _SUPPORTED_KINDS:
+            raise ValueError(f"unsupported parameter kind '{kind}' for '{name}'")
+        if not isinstance(required, bool):
+            raise TypeError(f"required for parameter '{name}' must be bool")
+        self.name = name
+        self.kind = kind
+        self.required = required
+        self.legacy = legacy
+
+    @classmethod
+    def from_wire(cls, value):
+        if isinstance(value, str):
+            return cls(value, _POSITIONAL_OR_KEYWORD, required=False, legacy=True)
+        if not isinstance(value, Mapping):
+            raise TypeError(f"parameter specification must be str or mapping but got {type(value)}")
+        return cls(
+            name=value.get("name"),
+            kind=value.get("kind"),
+            required=value.get("required"),
+        )
+
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "kind": self.kind,
+            "required": self.required,
+        }
+
+
+class MethodInterface(Sequence[str]):
+    """Immutable method signature used to bind user calls before transport."""
+
+    def __init__(self, parameters):
+        self.parameters = tuple(MethodParameter.from_wire(p) for p in parameters)
+        self._by_name = MappingProxyType({p.name: p for p in self.parameters})
+        if len(self._by_name) != len(self.parameters):
+            raise ValueError("method has duplicate parameter names")
+
+    def bind(self, args, kwargs) -> dict:
+        positional_parameters = [p for p in self.parameters if p.kind in (_POSITIONAL_ONLY, _POSITIONAL_OR_KEYWORD)]
+        if len(args) > len(positional_parameters):
+            raise TypeError(f"takes {len(positional_parameters)} positional arguments but {len(args)} were given")
+
+        bound = dict(kwargs)
+        for parameter, value in zip(positional_parameters, args):
+            if parameter.name in bound:
+                raise TypeError(f"got multiple values for argument '{parameter.name}'")
+            bound[parameter.name] = value
+
+        for name in kwargs:
+            parameter = self._by_name.get(name)
+            if parameter is None:
+                raise TypeError(f"got an unexpected keyword argument '{name}'")
+            if parameter.kind == _POSITIONAL_ONLY:
+                raise TypeError(f"got positional-only argument passed as keyword: '{name}'")
+
+        missing = [p.name for p in self.parameters if p.required and p.name not in bound]
+        if missing:
+            names = ", ".join(repr(name) for name in missing)
+            raise TypeError(f"missing required argument(s): {names}")
+        return bound
+
+    def validate_normalized(self, args, kwargs):
+        if args:
+            raise TypeError("positional arguments must be normalized to keyword arguments")
+        unexpected = [name for name in kwargs if name not in self._by_name]
+        if unexpected:
+            raise TypeError(f"got an unexpected keyword argument '{unexpected[0]}'")
+        missing = [p.name for p in self.parameters if p.required and p.name not in kwargs]
+        if missing:
+            names = ", ".join(repr(name) for name in missing)
+            raise TypeError(f"missing required argument(s): {names}")
+
+    def prepare_invocation(self, kwargs):
+        """Restore positional-only values after transport normalization."""
+        call_kwargs = dict(kwargs)
+        call_args = []
+        for parameter in self.parameters:
+            if parameter.kind == _POSITIONAL_ONLY and parameter.name in call_kwargs:
+                call_args.append(call_kwargs.pop(parameter.name))
+        return call_args, call_kwargs
+
+    def to_wire(self):
+        if all(p.legacy for p in self.parameters):
+            return [p.name for p in self.parameters]
+        return [p.to_dict() for p in self.parameters]
+
+    def __getitem__(self, index):
+        return self.parameters[index].name
+
+    def __len__(self):
+        return len(self.parameters)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.to_wire()!r})"
+
+
+class PublishInterface(Mapping[str, MethodInterface]):
     """Immutable description of an object's published Collab methods."""
 
-    def __init__(self, methods: Optional[Mapping[str, Sequence[str]]] = None):
+    def __init__(self, methods: Optional[Mapping[str, Sequence]] = None):
         if methods is None:
             methods = {}
         elif not isinstance(methods, Mapping):
@@ -33,37 +143,30 @@ class PublishInterface(Mapping[str, tuple[str, ...]]):
             if not method_name:
                 raise ValueError("method name must not be empty")
             if isinstance(param_names, (str, bytes)) or not isinstance(param_names, Sequence):
-                raise TypeError(f"parameters for method '{method_name}' must be a sequence of str")
+                raise TypeError(f"parameters for method '{method_name}' must be a sequence")
 
-            params = []
-            for param_name in param_names:
-                if not isinstance(param_name, str):
-                    raise TypeError(f"parameter name for method '{method_name}' must be str but got {type(param_name)}")
-                if not param_name:
-                    raise ValueError(f"parameter name for method '{method_name}' must not be empty")
-                params.append(param_name)
-
-            if len(params) != len(set(params)):
-                raise ValueError(f"method '{method_name}' has duplicate parameter names")
-            normalized[method_name] = tuple(params)
+            try:
+                normalized[method_name] = MethodInterface(param_names)
+            except (TypeError, ValueError) as ex:
+                raise type(ex)(f"invalid parameters for method '{method_name}': {ex}") from ex
 
         self._methods = MappingProxyType(normalized)
 
     @classmethod
-    def from_dict(cls, methods: Optional[Mapping[str, Sequence[str]]]) -> "PublishInterface":
+    def from_dict(cls, methods: Optional[Mapping[str, Sequence]]) -> "PublishInterface":
         if isinstance(methods, cls):
             return methods
         return cls(methods)
 
-    def to_dict(self) -> dict[str, list[str]]:
+    def to_dict(self) -> dict:
         """Return the plain-dict representation used for synchronization."""
-        return {method_name: list(param_names) for method_name, param_names in self._methods.items()}
+        return {method_name: method.to_wire() for method_name, method in self._methods.items()}
 
-    def get_method(self, method_name: str) -> Optional[tuple[str, ...]]:
-        """Return parameter names, preserving an empty tuple for zero-argument methods."""
+    def get_method(self, method_name: str) -> Optional[MethodInterface]:
+        """Return a method interface, preserving an empty interface for zero-argument methods."""
         return self._methods.get(method_name)
 
-    def __getitem__(self, method_name: str) -> tuple[str, ...]:
+    def __getitem__(self, method_name: str) -> MethodInterface:
         return self._methods[method_name]
 
     def __iter__(self) -> Iterator[str]:

@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import copy
 from collections.abc import Mapping, Sequence
 
 from nvflare.collab.api._invocation import _InvocationDispatcher
@@ -62,7 +61,7 @@ class Proxy:
         target_name,
         target_fqn: str,
         backend: _InvocationDispatcher,
-        target_interface: PublishInterface | Mapping[str, Sequence[str]] | None,
+        target_interface: PublishInterface | Mapping[str, Sequence] | None,
     ):
         """The Proxy represents a target in the App."""
         self.app = app
@@ -188,17 +187,10 @@ class Proxy:
             raise RuntimeError(f"target {self.target_name} does not have method '{func_name}'")
 
         if func_itf is not None:
-            # check args and turn them to kwargs
-            num_call_args = len(args) + len(kwargs)
-            if num_call_args > len(func_itf):
-                raise RuntimeError(
-                    f"there are {num_call_args} call args ({args=} {kwargs=}), "
-                    f"but function '{func_name}' only supports {len(func_itf)} args ({func_itf})"
-                )
-            call_kwargs = copy.copy(kwargs)
+            # Bind against the remote signature before transport, then convert
+            # positional values to names so filters can identify every value.
+            call_kwargs = func_itf.bind(args, kwargs)
             call_args = []
-            for i, arg_value in enumerate(args):
-                call_kwargs[func_itf[i]] = arg_value
 
         return p, func_itf, call_args, call_kwargs
 

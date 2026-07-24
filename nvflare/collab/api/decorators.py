@@ -22,6 +22,7 @@ _FLAG_FINAL = "_collab_is_final"
 _FLAG_MAIN = "_collab_is_main"
 _FLAG_SUPPORT_CTX = "_collab_supports_ctx"
 _ATTR_PARAM_NAMES = "_collab_param_names"
+_ATTR_PARAM_SPECS = "_collab_param_specs"
 
 
 class classproperty:
@@ -32,12 +33,26 @@ class classproperty:
         return self.fget(owner_class)
 
 
-def _set_attrs(func, wrapper):
+def _set_attrs(func, wrapper, require_fixed_args=False):
     signature = inspect.signature(func)
-    parameter_names = list(signature.parameters.keys())
-    if "self" in parameter_names:
-        parameter_names.remove("self")
+    parameters = [p for p in signature.parameters.values() if p.name != "self"]
+    if require_fixed_args:
+        flexible = [
+            p.name for p in parameters if p.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+        ]
+        if flexible:
+            raise TypeError(f"@collab.publish does not support flexible parameters {flexible}")
+    parameter_names = [p.name for p in parameters]
+    parameter_specs = [
+        {
+            "name": p.name,
+            "kind": p.kind.name,
+            "required": (p.default is inspect.Parameter.empty and p.name != CollabMethodArgName.CONTEXT),
+        }
+        for p in parameters
+    ]
     setattr(wrapper, _ATTR_PARAM_NAMES, parameter_names)
+    setattr(wrapper, _ATTR_PARAM_SPECS, parameter_specs)
     if CollabMethodArgName.CONTEXT in parameter_names:
         setattr(wrapper, _FLAG_SUPPORT_CTX, True)
 
@@ -46,7 +61,7 @@ def publish(func):
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
 
-    _set_attrs(func, wrapper)
+    _set_attrs(func, wrapper, require_fixed_args=True)
     setattr(wrapper, _FLAG_PUBLISH, True)
     return wrapper
 
@@ -60,7 +75,7 @@ def get_object_publish_interface(obj) -> PublishInterface:
     for name in dir(obj):
         func = getattr(obj, name)
         if callable(func) and is_publish(func):
-            result[name] = get_param_names(func)
+            result[name] = get_param_specs(func)
     return PublishInterface(result)
 
 
@@ -105,6 +120,10 @@ def get_object_main_funcs(obj):
 
 def get_param_names(func):
     return getattr(func, _ATTR_PARAM_NAMES, None)
+
+
+def get_param_specs(func):
+    return getattr(func, _ATTR_PARAM_SPECS, None)
 
 
 def _has_flag(func, flag: str) -> bool:

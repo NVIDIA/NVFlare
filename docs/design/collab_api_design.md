@@ -169,9 +169,9 @@ recipe.set_per_site_config(
 )
 ```
 
-`CollabRecipe` stores the map in the client job configuration. Each
-`CollabExecutor` resolves only its own site's values into application
-properties at run start.
+`CollabRecipe` creates a site-targeted client app for each entry and writes only
+that site's values into its application properties. A client therefore does not
+receive configuration intended for any other site.
 
 ## Architecture
 

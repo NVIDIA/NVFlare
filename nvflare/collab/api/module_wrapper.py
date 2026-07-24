@@ -23,12 +23,14 @@ from typing import Optional, Union
 
 from .decorators import (
     _ATTR_PARAM_NAMES,
+    _ATTR_PARAM_SPECS,
     _FLAG_FINAL,
     _FLAG_INIT,
     _FLAG_MAIN,
     _FLAG_PUBLISH,
     _FLAG_SUPPORT_CTX,
     get_param_names,
+    get_param_specs,
     is_publish,
 )
 
@@ -264,6 +266,8 @@ class ModuleWrapper:
 
         original_params = get_param_names(original_func) or []
         setattr(method, _ATTR_PARAM_NAMES, original_params)
+        original_param_specs = get_param_specs(original_func) or []
+        setattr(method, _ATTR_PARAM_SPECS, original_param_specs)
 
         return method.__get__(self, type(self))
 
@@ -285,6 +289,8 @@ class ModuleWrapper:
 
         original_params = get_param_names(original_func) or []
         setattr(method, _ATTR_PARAM_NAMES, original_params)
+        original_param_specs = get_param_specs(original_func) or []
+        setattr(method, _ATTR_PARAM_SPECS, original_param_specs)
 
         return method.__get__(self, type(self))
 
@@ -300,6 +306,8 @@ class ModuleWrapper:
 
         original_params = get_param_names(original_func) or []
         setattr(method, _ATTR_PARAM_NAMES, original_params)
+        original_param_specs = get_param_specs(original_func) or []
+        setattr(method, _ATTR_PARAM_SPECS, original_param_specs)
         return method.__get__(self, type(self))
 
     def __deepcopy__(self, memo):

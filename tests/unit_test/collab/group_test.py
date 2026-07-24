@@ -50,7 +50,7 @@ def test_group_preflights_all_members_before_dispatch():
     second_backend.call_target_in_group.assert_not_called()
 
 
-def test_group_parallel_limits_calls_until_terminal_completion():
+def test_nonblocking_group_returns_before_bounded_dispatch_completes():
     app = ClientApp(object())
     first_dispatched = threading.Event()
     second_dispatched = threading.Event()
@@ -76,15 +76,23 @@ def test_group_parallel_limits_calls_until_terminal_completion():
     group = Group(app, Signal(), proxies, CallOption(blocking=False, parallel=1))
     returned = {}
 
-    thread = threading.Thread(target=lambda: returned.setdefault("results", group.train()))
+    call_returned = threading.Event()
+
+    def invoke():
+        returned["results"] = group.train()
+        call_returned.set()
+
+    thread = threading.Thread(target=invoke)
     thread.start()
+    assert call_returned.wait(timeout=1.0)
+    thread.join(timeout=1.0)
+    assert not thread.is_alive()
+
     assert first_dispatched.wait(timeout=1.0)
     assert not second_dispatched.wait(timeout=0.1)
 
     first_call["gcc"].set_result("first")
     first_call["gcc"].call_completed()
 
-    thread.join(timeout=1.0)
-    assert not thread.is_alive()
-    assert second_dispatched.is_set()
+    assert second_dispatched.wait(timeout=1.0)
     assert sorted(returned["results"]) == [("site-1", "first"), ("site-2", "second")]

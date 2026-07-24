@@ -80,7 +80,8 @@ def _preprocess(app: App, caller, target_obj_name, target_name, func_name, func,
 
     kwargs[CollabMethodArgName.CONTEXT] = ctx
     adjust_kwargs(func, kwargs)
-    return ctx, kwargs
+    call_args, kwargs = func_itf.prepare_invocation(kwargs)
+    return ctx, call_args, kwargs
 
 
 def _call_app_method(request: Message, app: App, logger) -> Message:
@@ -145,7 +146,9 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
     # invoke this method
     previous_ctx = get_call_context()
     try:
-        _, method_kwargs = _preprocess(app, caller, obj_name, target_name, method_name, m, method_args, method_kwargs)
+        _, method_args, method_kwargs = _preprocess(
+            app, caller, obj_name, target_name, method_name, m, method_args, method_kwargs
+        )
         result = m(*method_args, **method_kwargs)
 
         return new_cell_message(

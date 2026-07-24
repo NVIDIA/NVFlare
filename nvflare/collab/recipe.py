@@ -17,8 +17,8 @@ import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from nvflare.apis.job_def import ALL_SITES
 from nvflare.collab.api.app import App, ClientApp, ServerApp
-from nvflare.collab.api.constants import PER_SITE_CONFIG_PROP
 from nvflare.collab.api.module_wrapper import ModuleWrapper, resolve_server_client, wrap_if_module
 from nvflare.collab.runtime.controller import CollabController
 from nvflare.collab.runtime.executor import CollabExecutor
@@ -40,6 +40,10 @@ class CollabRecipe(Recipe):
         max_call_threads_for_server=100,
         max_call_threads_for_client=100,
         min_clients: int = 1,
+        max_inbound_call_threads_for_server=None,
+        max_outbound_call_threads_for_server=None,
+        max_inbound_call_threads_for_client=None,
+        max_outbound_call_threads_for_client=None,
     ):
         """Create a recipe for collaborative training."""
         check_str("job_name", job_name)
@@ -47,6 +51,14 @@ class CollabRecipe(Recipe):
         check_positive_int("max_call_threads_for_server", max_call_threads_for_server)
         check_positive_int("max_call_threads_for_client", max_call_threads_for_client)
         check_positive_int("min_clients", min_clients)
+        if max_inbound_call_threads_for_server is not None:
+            check_positive_int("max_inbound_call_threads_for_server", max_inbound_call_threads_for_server)
+        if max_outbound_call_threads_for_server is not None:
+            check_positive_int("max_outbound_call_threads_for_server", max_outbound_call_threads_for_server)
+        if max_inbound_call_threads_for_client is not None:
+            check_positive_int("max_inbound_call_threads_for_client", max_inbound_call_threads_for_client)
+        if max_outbound_call_threads_for_client is not None:
+            check_positive_int("max_outbound_call_threads_for_client", max_outbound_call_threads_for_client)
 
         # When server/client are not specified, use the caller's module
         # (@collab.main / @collab.publish functions defined at module level).
@@ -73,6 +85,26 @@ class CollabRecipe(Recipe):
         self.sync_task_timeout = sync_task_timeout
         self.max_call_threads_for_server = max_call_threads_for_server
         self.max_call_threads_for_client = max_call_threads_for_client
+        self.max_inbound_call_threads_for_server = (
+            max_call_threads_for_server
+            if max_inbound_call_threads_for_server is None
+            else max_inbound_call_threads_for_server
+        )
+        self.max_outbound_call_threads_for_server = (
+            max_call_threads_for_server
+            if max_outbound_call_threads_for_server is None
+            else max_outbound_call_threads_for_server
+        )
+        self.max_inbound_call_threads_for_client = (
+            max_call_threads_for_client
+            if max_inbound_call_threads_for_client is None
+            else max_inbound_call_threads_for_client
+        )
+        self.max_outbound_call_threads_for_client = (
+            max_call_threads_for_client
+            if max_outbound_call_threads_for_client is None
+            else max_outbound_call_threads_for_client
+        )
         self.min_clients = min_clients
         job = FedJob(name=self.job_name, min_clients=self.min_clients)
         self._finalized = False
@@ -82,10 +114,8 @@ class CollabRecipe(Recipe):
     def _apply_per_site_config(self, config: Dict[str, Dict]) -> None:
         """Deliver per-site config values as per-site client app properties.
 
-        The values become app props for the matching site only, readable in
-        client code via ``collab.get_app_prop(name)``. ``CollabExecutor``
-        applies each site's entries at start-run in every standard execution
-        environment.
+        Each site's values are materialized only in that site's client app
+        configuration and are readable via ``collab.get_app_prop(name)``.
         """
         self._per_site_config = {site: dict(values) for site, values in config.items()}
 
@@ -112,21 +142,14 @@ class CollabRecipe(Recipe):
             collab_obj_ids=collab_obj_ids,
             sync_task_timeout=self.sync_task_timeout,
             max_call_threads=self.max_call_threads_for_server,
+            max_inbound_call_threads=self.max_inbound_call_threads_for_server,
+            max_outbound_call_threads=self.max_outbound_call_threads_for_server,
             props=self.server_app.get_props(),
         )
 
         job.to_server(controller, id="controller")
 
-        # add client config
-        client_obj_id = job.to_clients(self.client_app.obj, "_client")
-        c_collab_obj_ids = self._add_collab_objects(self.client_app, job.to_clients)
-        executor = CollabExecutor(
-            client_obj_id=client_obj_id,
-            collab_obj_ids=c_collab_obj_ids,
-            max_call_threads=self.max_call_threads_for_client,
-            props=self._client_props_with_per_site_config(),
-        )
-        job.to_clients(executor, id="executor", tasks=["*"])
+        self._ensure_client_apps_prepared()
 
         # Ship the user-provided server/client code into each app's "custom" folder.
         # A collab job runs user-defined objects (the server/client and any collab
@@ -139,20 +162,36 @@ class CollabRecipe(Recipe):
             job.add_file_to_server(src, dest_dir=dest_dir, app_folder_type="custom")
         client_sources = [self.client_app.obj] + list((self.client_objects or {}).values())
         for src, dest_dir in self._user_source_entries(client_sources):
-            job.add_file_to_clients(src, dest_dir=dest_dir, app_folder_type="custom")
+            client_targets = self.configured_sites() or [ALL_SITES]
+            for target in client_targets:
+                job.add_file_to(src, target=target, dest_dir=dest_dir, app_folder_type="custom")
         self._finalized = True
         return job
 
-    def _client_props_with_per_site_config(self) -> Dict[str, object]:
-        """Client app props for the executor, with per-site config attached.
+    def _prepare_client_apps(self) -> None:
+        """Create either one shared client app or isolated per-site client apps."""
+        client_targets = self.configured_sites() or [ALL_SITES]
+        for target in client_targets:
+            self._add_client_app(target)
 
-        The per-site map rides in the shared executor config under a reserved
-        key; each CollabExecutor resolves its own site's entries at start-run.
-        """
+    def _add_client_app(self, target: str) -> None:
+        job = self._job
+        client_obj_id = job.to(self.client_app.obj, target, id="_client")
+        c_collab_obj_ids = self._add_collab_objects(
+            self.client_app,
+            lambda obj, id: job.to(obj, target, id=id),
+        )
         props = dict(self.client_app.get_props() or {})
-        if self._per_site_config:
-            props[PER_SITE_CONFIG_PROP] = self._per_site_config
-        return props
+        props.update(self._per_site_config.get(target, {}))
+        executor = CollabExecutor(
+            client_obj_id=client_obj_id,
+            collab_obj_ids=c_collab_obj_ids,
+            max_call_threads=self.max_call_threads_for_client,
+            max_inbound_call_threads=self.max_inbound_call_threads_for_client,
+            max_outbound_call_threads=self.max_outbound_call_threads_for_client,
+            props=props,
+        )
+        job.to(executor, target, id="executor", tasks=["*"])
 
     @staticmethod
     def _user_source_entries(objs) -> List[tuple[str, Optional[str]]]:

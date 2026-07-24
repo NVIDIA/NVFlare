@@ -55,6 +55,8 @@ class CollabController(Controller, CollabAdaptor):
         props=None,
         sync_task_timeout=60,
         max_call_threads=100,
+        max_inbound_call_threads=None,
+        max_outbound_call_threads=None,
     ):
         Controller.__init__(self)
         CollabAdaptor.__init__(
@@ -64,11 +66,23 @@ class CollabController(Controller, CollabAdaptor):
         )
         self.server_obj_id = server_obj_id  # component name
         self.sync_task_timeout = sync_task_timeout
+        self.max_call_threads = max_call_threads
         self.server_app = None
         self.client_info = {}  # client name => _ClientInfo
         self.client_setup_status = {}
         self.cell = None
-        self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads, thread_name_prefix="collab_call")
+        if max_inbound_call_threads is None:
+            max_inbound_call_threads = max_call_threads
+        if max_outbound_call_threads is None:
+            max_outbound_call_threads = max_call_threads
+        self.max_inbound_call_threads = max_inbound_call_threads
+        self.max_outbound_call_threads = max_outbound_call_threads
+        self.inbound_executor = ThreadPoolExecutor(
+            max_workers=max_inbound_call_threads, thread_name_prefix="collab_inbound"
+        )
+        self.outbound_executor = ThreadPoolExecutor(
+            max_workers=max_outbound_call_threads, thread_name_prefix="collab_outbound"
+        )
 
     def start_controller(self, fl_ctx: FLContext):
         tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
@@ -99,7 +113,7 @@ class CollabController(Controller, CollabAdaptor):
             cell=self.cell,
             target_fqcn=FQCN.join([client.get_fqcn(), job_id]),
             abort_signal=abort_signal,
-            thread_executor=self.thread_executor,
+            thread_executor=self.outbound_executor,
         )
 
     def _prepare_server_backend(self, job_id: str, abort_signal: Signal, fl_ctx: FLContext):
@@ -110,7 +124,7 @@ class CollabController(Controller, CollabAdaptor):
             cell=self.cell,
             target_fqcn=FQCN.join([FQCN.ROOT_SERVER, job_id]),
             abort_signal=abort_signal,
-            thread_executor=self.thread_executor,
+            thread_executor=self.outbound_executor,
         )
 
     def _prepare_client_proxy(
@@ -246,7 +260,7 @@ class CollabController(Controller, CollabAdaptor):
             return
 
         # register msg CB for processing object calls
-        prepare_for_remote_call(self.cell, self.server_app, self.logger, self.thread_executor)
+        prepare_for_remote_call(self.cell, self.server_app, self.logger, self.inbound_executor)
 
         # prepare proxies and backends
         job_id = fl_ctx.get_job_id()
@@ -290,4 +304,7 @@ class CollabController(Controller, CollabAdaptor):
         pass
 
     def stop_controller(self, fl_ctx: FLContext):
-        self.thread_executor.shutdown(wait=True, cancel_futures=True)
+        try:
+            self.inbound_executor.shutdown(wait=True, cancel_futures=True)
+        finally:
+            self.outbound_executor.shutdown(wait=True, cancel_futures=True)

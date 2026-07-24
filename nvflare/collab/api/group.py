@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+import threading
 from typing import List
 
 from nvflare.apis.signal import Signal
 from nvflare.collab.api.call_utils import check_call_args
+from nvflare.collab.api.exceptions import RunAborted
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .app import App
@@ -147,20 +149,22 @@ class Group:
                         gcc.set_completion_cb(self._call_completed, gcc=gcc, proxy=func_proxy)
                         work_items.append((func_proxy, gcc, call_args, call_kwargs))
 
-                    for func_proxy, gcc, call_args, call_kwargs in work_items:
-                        # Limit calls that are still in flight, including remote
-                        # execution and response transfer.
-                        waiter.wait_for_call_permission(max_parallel, self._abort_signal)
-                        waiter.inc_call_count()
-                        func_proxy.backend.call_target_in_group(gcc, func_name, *call_args, **call_kwargs)
-
                     if not self._call_opt.expect_result:
-                        # do not wait for responses
+                        self._dispatch_work_items(work_items, func_name, waiter, max_parallel)
                         return None
 
                     if not self._call_opt.blocking:
                         self._logger.debug(f"not blocking {func_name}")
+                        threading.Thread(
+                            target=self._dispatch_work_items,
+                            args=(work_items, func_name, waiter, max_parallel),
+                            kwargs={"raise_on_abort": False},
+                            daemon=True,
+                            name="collab_group_dispatch",
+                        ).start()
                         return waiter.results
+
+                    self._dispatch_work_items(work_items, func_name, waiter, max_parallel)
 
                     # wait for responses
                     waiter.wait_for_responses(self._abort_signal)
@@ -170,6 +174,36 @@ class Group:
                 raise
 
         return method
+
+    def _dispatch_work_items(self, work_items, func_name, waiter, max_parallel, raise_on_abort=True):
+        for index, (func_proxy, gcc, call_args, call_kwargs) in enumerate(work_items):
+            slot_acquired = False
+            try:
+                # Limit calls that are still in flight, including remote
+                # execution and response transfer.
+                waiter.wait_for_call_permission(max_parallel, self._abort_signal)
+                waiter.inc_call_count()
+                slot_acquired = True
+                func_proxy.backend.call_target_in_group(gcc, func_name, *call_args, **call_kwargs)
+            except RunAborted as ex:
+                try:
+                    gcc.set_exception(ex)
+                finally:
+                    if slot_acquired:
+                        gcc.call_completed()
+                for _, remaining_gcc, _, _ in work_items[index + 1 :]:
+                    remaining_gcc.set_exception(ex)
+                if raise_on_abort:
+                    raise
+                return
+            except Exception as ex:
+                # A synchronous dispatch failure has no backend callback to
+                # publish an outcome or release the bounded-parallel slot.
+                try:
+                    gcc.set_exception(ex)
+                finally:
+                    if slot_acquired:
+                        gcc.call_completed()
 
     def _call_completed(self, gcc: GroupCallContext, proxy: Proxy):
         self._logger.debug(f"[{gcc.context}] call to '{proxy.name}' completed for func '{gcc.func_name}'")

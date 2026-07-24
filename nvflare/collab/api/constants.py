@@ -25,8 +25,3 @@ MAKE_CLIENT_APP_METHOD = "make_client_app"
 
 # Reserved app-prop key carrying the site's live FLContext.
 FL_CONTEXT_PROP = "__fl_context__"
-
-
-# Reserved app-prop key carrying the recipe's per-site configuration.
-# Each execution path resolves its own site's entries into plain app props.
-PER_SITE_CONFIG_PROP = "__per_site_config__"

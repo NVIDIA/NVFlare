@@ -25,6 +25,7 @@ from nvflare.collab import collab
 from nvflare.collab.runtime import executor as executor_module
 from nvflare.collab.runtime.defs import SETUP_TASK_NAME, SYNC_TASK_NAME, SyncKey
 from nvflare.collab.runtime.executor import CollabExecutor
+from nvflare.job_config.fed_job_config import FedJobConfig
 
 
 def test_failed_start_run_does_not_publish_partially_configured_app(monkeypatch):
@@ -42,7 +43,7 @@ def test_failed_start_run_does_not_publish_partially_configured_app(monkeypatch)
         assert executor.client_app is None
         executor.system_panic.assert_called_once_with("invalid config", fl_ctx)
     finally:
-        executor.thread_executor.shutdown()
+        executor._shutdown_call_executors()
 
 
 def test_execute_returns_error_when_start_run_did_not_create_client_app():
@@ -52,7 +53,41 @@ def test_execute_returns_error_when_start_run_did_not_create_client_app():
         reply = executor.execute(SYNC_TASK_NAME, Shareable(), FLContext(), MagicMock())
         assert reply.get_return_code() == ReturnCode.ERROR
     finally:
-        executor.thread_executor.shutdown()
+        executor._shutdown_call_executors()
+
+
+def test_inbound_and_outbound_calls_use_separate_executors():
+    executor = CollabExecutor(
+        client_obj_id="client",
+        max_call_threads=1,
+        max_inbound_call_threads=2,
+        max_outbound_call_threads=3,
+    )
+
+    try:
+        assert executor.inbound_executor is not executor.outbound_executor
+        assert executor.inbound_executor._max_workers == 2
+        assert executor.outbound_executor._max_workers == 3
+    finally:
+        executor._shutdown_call_executors()
+
+
+def test_executor_serializes_independent_pool_sizes_and_collab_objects(tmp_path):
+    executor = CollabExecutor(
+        client_obj_id="client",
+        collab_obj_ids=["extra"],
+        max_inbound_call_threads=2,
+        max_outbound_call_threads=3,
+    )
+
+    try:
+        args = FedJobConfig("job", 1)._get_args(executor, str(tmp_path))
+    finally:
+        executor._shutdown_call_executors()
+
+    assert args["collab_obj_ids"] == ["extra"]
+    assert args["max_inbound_call_threads"] == 2
+    assert args["max_outbound_call_threads"] == 3
 
 
 def test_end_run_installs_client_context_on_event_thread():
@@ -75,18 +110,20 @@ def test_end_run_installs_client_context_on_event_thread():
     assert finalized_at == ["site-1"]
 
 
-def test_end_run_shuts_down_thread_executor_when_finalize_raises():
+def test_end_run_shuts_down_call_executors_when_finalize_raises():
     executor = CollabExecutor(client_obj_id="client")
     executor.client_app = MagicMock()
     executor.client_app.name = "site-1"
     executor.client_app.finalize.side_effect = RuntimeError("finalize failed")
     executor.client_ctx = MagicMock()
-    executor.thread_executor.shutdown = MagicMock(wraps=executor.thread_executor.shutdown)
+    executor.inbound_executor.shutdown = MagicMock(wraps=executor.inbound_executor.shutdown)
+    executor.outbound_executor.shutdown = MagicMock(wraps=executor.outbound_executor.shutdown)
 
     with pytest.raises(RuntimeError, match="finalize failed"):
         executor._handle_end_run("end_run", FLContext())
 
-    executor.thread_executor.shutdown.assert_called_once_with(wait=True, cancel_futures=True)
+    executor.inbound_executor.shutdown.assert_called_once_with(wait=True, cancel_futures=True)
+    executor.outbound_executor.shutdown.assert_called_once_with(wait=True, cancel_futures=True)
 
 
 def test_setup_uses_each_remote_clients_reported_interface(monkeypatch):
@@ -127,12 +164,42 @@ def test_setup_uses_each_remote_clients_reported_interface(monkeypatch):
     try:
         reply = executor.execute(SETUP_TASK_NAME, shareable, fl_ctx, MagicMock())
     finally:
-        executor.thread_executor.shutdown()
+        executor._shutdown_call_executors()
 
     assert reply.get_return_code() == ReturnCode.OK
     calls = executor._prepare_client_proxy.call_args_list
     assert calls[0].args[4] == {"": {"first": []}}
     assert calls[1].args[4] == {"": {"second": []}}
+
+
+def test_client_proxy_builds_children_from_remote_interface():
+    executor = CollabExecutor(client_obj_id="client")
+    executor.client_app = MagicMock()
+    executor.client_app.name = "site-1"
+    client = MagicMock()
+    client.name = "site-2"
+    client.get_fqcn.return_value = "site-2"
+    client.get_fqsn.return_value = "site-2"
+    remote_interface = {
+        "": {"train": []},
+        "remote_only": {"evaluate": ["model"]},
+    }
+
+    try:
+        proxy = executor._prepare_client_proxy(
+            "job",
+            MagicMock(),
+            client,
+            MagicMock(),
+            remote_interface,
+            MagicMock(),
+        )
+    finally:
+        executor._shutdown_call_executors()
+
+    assert set(proxy.children) == {"remote_only"}
+    assert proxy.remote_only.target_interface.to_dict() == {"evaluate": ["model"]}
+    assert proxy.backend.thread_executor is executor.outbound_executor
 
 
 @pytest.mark.parametrize("failing_method", ["setup", "initialize"])
@@ -167,7 +234,7 @@ def test_setup_returns_error_without_publishing_context_when_client_setup_fails(
     try:
         reply = executor.execute(SETUP_TASK_NAME, shareable, fl_ctx, MagicMock())
     finally:
-        executor.thread_executor.shutdown()
+        executor._shutdown_call_executors()
 
     assert reply.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
     assert executor.client_ctx is None

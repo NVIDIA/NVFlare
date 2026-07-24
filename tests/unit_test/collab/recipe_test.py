@@ -22,7 +22,6 @@ import pytest
 
 from nvflare.collab import CollabRecipe, collab
 from nvflare.collab.api import ClientApp, ModuleWrapper, ServerApp
-from nvflare.collab.api.constants import PER_SITE_CONFIG_PROP
 from nvflare.collab.api.decorators import supports_context
 
 
@@ -93,7 +92,9 @@ def test_apps_automatically_wrap_primary_and_named_modules():
     assert isinstance(server_app.get_collab_objects()["extra"], ModuleWrapper)
     assert isinstance(client_app.get_collab_objects()["extra"], ModuleWrapper)
     assert [name for name, _ in server_app.mains] == ["run"]
-    assert client_app.get_collab_interface()["client"] == {"train": ["value"]}
+    assert client_app.get_collab_interface()["client"] == {
+        "train": [{"name": "value", "kind": "POSITIONAL_OR_KEYWORD", "required": True}]
+    }
 
     context = server_app.new_context("server", "server")
     server_app.initialize(context)
@@ -175,7 +176,7 @@ def test_recipe_accepts_modules_for_all_collab_objects():
     assert isinstance(recipe.client_objects["extra"], ModuleWrapper)
 
 
-def test_recipe_public_per_site_config_reaches_executor_props():
+def test_recipe_materializes_only_each_sites_config_into_targeted_executor_props():
     module = _make_module("per_site_config_module")
     recipe = CollabRecipe(job_name="per_site_config_test", server=module, client=module)
     config = {
@@ -184,13 +185,18 @@ def test_recipe_public_per_site_config_reaches_executor_props():
     }
 
     recipe.set_per_site_config(config)
+    recipe.set_client_prop("shared", "value")
     config["site-1"]["learning_rate"] = 1.0
 
-    props = recipe._client_props_with_per_site_config()
-    assert props[PER_SITE_CONFIG_PROP] == {
-        "site-1": {"learning_rate": 0.01},
-        "site-2": {"learning_rate": 0.02},
-    }
+    job = recipe.finalize()
+
+    assert "@ALL" not in job._deploy_map
+    site_1_executor = job._deploy_map["site-1"].app_config.executors[0].executor
+    site_2_executor = job._deploy_map["site-2"].app_config.executors[0].executor
+    assert site_1_executor.props == {"shared": "value", "learning_rate": 0.01}
+    assert site_2_executor.props == {"shared": "value", "learning_rate": 0.02}
+    assert "__per_site_config__" not in site_1_executor.props
+    assert "__per_site_config__" not in site_2_executor.props
 
 
 def test_exported_module_package_imports_in_clean_process(tmp_path, monkeypatch):

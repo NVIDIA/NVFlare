@@ -39,6 +39,12 @@ class _SuccessfulClient:
         return "result"
 
 
+class _SignatureClient:
+    @publish
+    def scale(self, value, /, *, factor):
+        return value * factor
+
+
 class _ThreadCapturingClient:
     def __init__(self):
         self.thread_name = None
@@ -109,6 +115,25 @@ def test_remote_call_restores_previous_context_after_success():
 
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
     assert reply.payload[CallReplyKey.RESULT] == "result"
+
+
+def test_remote_call_restores_positional_only_arguments_for_invocation():
+    app = ClientApp(_SignatureClient())
+    app.name = "site-1"
+    request = new_cell_message(
+        {},
+        {
+            ObjectCallKey.CALLER: "server",
+            ObjectCallKey.TARGET_NAME: "site-1.client",
+            ObjectCallKey.METHOD_NAME: "scale",
+            ObjectCallKey.KWARGS: {"value": 3, "factor": 4},
+        },
+    )
+
+    reply = _call_app_method(request, app, MagicMock())
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+    assert reply.payload[CallReplyKey.RESULT] == 12
 
 
 def test_remote_call_rejects_unnormalized_positional_args():

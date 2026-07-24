@@ -23,7 +23,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.collab.api.app import ClientApp
-from nvflare.collab.api.constants import MAKE_CLIENT_APP_METHOD, PER_SITE_CONFIG_PROP
+from nvflare.collab.api.constants import MAKE_CLIENT_APP_METHOD
 from nvflare.collab.api.proxy import Proxy
 from nvflare.collab.runtime.cell_dispatcher import CellDispatcher
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -45,6 +45,8 @@ class CollabExecutor(Executor, CollabAdaptor):
         collab_obj_ids: List[str] = None,
         props: Dict[str, Any] = None,
         max_call_threads=100,
+        max_inbound_call_threads=None,
+        max_outbound_call_threads=None,
     ):
         Executor.__init__(self)
         CollabAdaptor.__init__(
@@ -53,11 +55,23 @@ class CollabExecutor(Executor, CollabAdaptor):
             props=props,
         )
         self.client_obj_id = client_obj_id
+        self.max_call_threads = max_call_threads
         self.register_event_handler(EventType.START_RUN, self._handle_start_run)
         self.register_event_handler(EventType.END_RUN, self._handle_end_run)
         self.client_app = None
         self.client_ctx = None
-        self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads, thread_name_prefix="collab_call")
+        if max_inbound_call_threads is None:
+            max_inbound_call_threads = max_call_threads
+        if max_outbound_call_threads is None:
+            max_outbound_call_threads = max_call_threads
+        self.max_inbound_call_threads = max_inbound_call_threads
+        self.max_outbound_call_threads = max_outbound_call_threads
+        self.inbound_executor = ThreadPoolExecutor(
+            max_workers=max_inbound_call_threads, thread_name_prefix="collab_inbound"
+        )
+        self.outbound_executor = ThreadPoolExecutor(
+            max_workers=max_outbound_call_threads, thread_name_prefix="collab_outbound"
+        )
 
     def _handle_start_run(self, event_type: str, fl_ctx: FLContext):
         tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
@@ -89,13 +103,6 @@ class CollabExecutor(Executor, CollabAdaptor):
             self.system_panic(err, fl_ctx)
             return
 
-        # Resolve this site's entries from the recipe's per-site config into
-        # plain app props (readable via collab.get_app_prop).
-        per_site = app.get_prop(PER_SITE_CONFIG_PROP)
-        if per_site:
-            for name, value in (per_site.get(client_name) or {}).items():
-                app.set_prop(name, value)
-
         # Publish the app only after start-run initialization succeeds. This
         # keeps execute() from using a partially configured app.
         self.client_app = app
@@ -106,7 +113,13 @@ class CollabExecutor(Executor, CollabAdaptor):
                 self.logger.info(f"finalizing client app {self.client_app.name}")
                 self.client_app.finalize(self.client_ctx)
         finally:
-            self.thread_executor.shutdown(wait=True, cancel_futures=True)
+            self._shutdown_call_executors()
+
+    def _shutdown_call_executors(self):
+        try:
+            self.inbound_executor.shutdown(wait=True, cancel_futures=True)
+        finally:
+            self.outbound_executor.shutdown(wait=True, cancel_futures=True)
 
     def _prepare_server_proxy(self, server_fqcn, cell, collab_interface: dict, abort_signal, fl_ctx: FLContext):
         server_name = "server"
@@ -117,7 +130,7 @@ class CollabExecutor(Executor, CollabAdaptor):
             cell=cell,
             target_fqcn=server_fqcn,
             abort_signal=abort_signal,
-            thread_executor=self.thread_executor,
+            thread_executor=self.outbound_executor,
         )
         proxy = Proxy(
             app=self.client_app,
@@ -149,7 +162,7 @@ class CollabExecutor(Executor, CollabAdaptor):
             cell=cell,
             target_fqcn=FQCN.join([client.get_fqcn(), job_id]),
             abort_signal=abort_signal,
-            thread_executor=self.thread_executor,
+            thread_executor=self.outbound_executor,
         )
         proxy = Proxy(
             app=self.client_app,
@@ -159,17 +172,17 @@ class CollabExecutor(Executor, CollabAdaptor):
             target_interface=collab_interface.get(""),
         )
 
-        collab_objs = self.client_app.get_collab_objects()
-        if collab_objs:
-            for name in collab_objs.keys():
-                p = Proxy(
-                    app=self.client_app,
-                    target_name=f"{client.name}.{name}",
-                    target_fqn="",
-                    backend=backend,
-                    target_interface=collab_interface.get(name),
-                )
-                proxy.add_child(name, p)
+        for name, itf in collab_interface.items():
+            if name == "":
+                continue
+            p = Proxy(
+                app=self.client_app,
+                target_name=f"{client.name}.{name}",
+                target_fqn="",
+                backend=backend,
+                target_interface=itf,
+            )
+            proxy.add_child(name, p)
         return proxy
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
@@ -209,7 +222,7 @@ class CollabExecutor(Executor, CollabAdaptor):
             cell=cell,
             app=self.client_app,
             logger=self.logger,
-            executor=self.thread_executor,
+            executor=self.inbound_executor,
         )
 
         # build proxies

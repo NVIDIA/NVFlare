@@ -15,6 +15,7 @@ import inspect
 from typing import List
 
 from nvflare.collab.api.constants import CollabMethodArgName
+from nvflare.collab.api.publish_interface import MethodInterface
 
 
 def check_optional_args(func, kwargs, arg_names: List[str]):
@@ -60,6 +61,13 @@ def check_call_args(func_name, func_itf, call_args, call_kwargs: dict):
     Returns:
 
     """
+    if isinstance(func_itf, MethodInterface):
+        try:
+            func_itf.validate_normalized(call_args, call_kwargs)
+        except TypeError as ex:
+            raise TypeError(f"invalid call to '{func_name}': {ex}") from ex
+        return
+
     num_call_args = len(call_args) + len(call_kwargs)
     if num_call_args > len(func_itf):
         # For security, collab funcs must only have fixed args - no flexible args are allowed.

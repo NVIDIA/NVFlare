@@ -35,7 +35,7 @@ def test_control_flow_returns_when_start_did_not_create_server_app():
         )
         fl_ctx.get_engine.assert_not_called()
     finally:
-        controller.thread_executor.shutdown()
+        controller.stop_controller(fl_ctx)
 
 
 def test_fractional_sync_timeout_rounds_up(monkeypatch):

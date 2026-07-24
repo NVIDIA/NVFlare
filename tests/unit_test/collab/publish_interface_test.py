@@ -23,7 +23,7 @@ from nvflare.collab.api.publish_interface import PublishInterface
 
 class _Target:
     @publish
-    def train(self, model):
+    def train(self, model, /, *, rounds=1):
         return model
 
 
@@ -33,8 +33,8 @@ def test_publish_interface_is_immutable_and_round_trips_to_wire_dict():
     interface = PublishInterface.from_dict(source)
     source["train"].append("later")
 
-    assert interface.get_method("train") == ("model", "context")
-    assert interface.get_method("stop") == ()
+    assert tuple(interface.get_method("train")) == ("model", "context")
+    assert tuple(interface.get_method("stop")) == ()
     assert interface.get_method("missing") is None
     assert interface.to_dict() == {"train": ["model", "context"], "stop": []}
     assert copy.copy(interface) is interface
@@ -51,8 +51,13 @@ def test_app_keeps_publish_interface_locally_and_exposes_wire_dict():
     app = App(_Target(), "target")
 
     assert isinstance(app.get_target_object_publish_interface("target"), PublishInterface)
-    assert app.get_target_object_publish_interface("target").get_method("train") == ("model",)
-    assert app.get_collab_interface()["target"] == {"train": ["model"]}
+    assert tuple(app.get_target_object_publish_interface("target").get_method("train")) == ("model", "rounds")
+    assert app.get_collab_interface()["target"] == {
+        "train": [
+            {"name": "model", "kind": "POSITIONAL_ONLY", "required": True},
+            {"name": "rounds", "kind": "KEYWORD_ONLY", "required": False},
+        ]
+    }
 
 
 @pytest.mark.parametrize(
@@ -61,8 +66,8 @@ def test_app_keeps_publish_interface_locally_and_exposes_wire_dict():
         ([], TypeError, "methods must be a mapping"),
         ({1: []}, TypeError, "method name must be str"),
         ({"": []}, ValueError, "method name must not be empty"),
-        ({"train": "model"}, TypeError, "must be a sequence of str"),
-        ({"train": [1]}, TypeError, "parameter name.*must be str"),
+        ({"train": "model"}, TypeError, "must be a sequence"),
+        ({"train": [1]}, TypeError, "parameter specification must be str or mapping"),
         ({"train": [""]}, ValueError, "parameter name.*must not be empty"),
         ({"train": ["model", "model"]}, ValueError, "duplicate parameter names"),
     ],
