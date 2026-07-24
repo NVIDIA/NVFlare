@@ -92,6 +92,9 @@ class SlurmConfig:
     setup: str = ""
     forward_env: tuple = ()
     parent_host: Optional[str] = None
+    submit_timeout: float = 30.0
+    query_timeout: float = 10.0
+    cancel_timeout: float = 10.0
     poll_interval: float = 10.0
     pending_timeout: float = 600.0
 
@@ -325,6 +328,9 @@ def normalize_slurm_launcher_settings(
     setup: Optional[str],
     forward_env: Optional[list],
     parent_host: Optional[str],
+    submit_timeout: float,
+    query_timeout: float,
+    cancel_timeout: float,
     poll_interval: float,
     pending_timeout: float,
     require_image_file: bool = False,
@@ -334,6 +340,9 @@ def normalize_slurm_launcher_settings(
     internal_port = _require_int(internal_port, "internal_port")
     if internal_port > 65535:
         raise SlurmLauncherError("internal_port must be at most 65535")
+    submit_timeout = _require_positive_number(submit_timeout, "submit_timeout")
+    query_timeout = _require_positive_number(query_timeout, "query_timeout")
+    cancel_timeout = _require_positive_number(cancel_timeout, "cancel_timeout")
     poll_interval = _require_positive_number(poll_interval, "poll_interval")
     pending_timeout = _require_positive_number(pending_timeout, "pending_timeout")
     setup = "" if setup is None else setup
@@ -352,6 +361,9 @@ def normalize_slurm_launcher_settings(
         "setup": setup,
         "forward_env": validated_forward,
         "parent_host": None if parent_host is None else _require_string(parent_host, "parent_host"),
+        "submit_timeout": submit_timeout,
+        "query_timeout": query_timeout,
+        "cancel_timeout": cancel_timeout,
         "poll_interval": poll_interval,
         "pending_timeout": pending_timeout,
     }

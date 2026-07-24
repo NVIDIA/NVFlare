@@ -101,6 +101,9 @@ login or service host:
      setup: |
        source /etc/profile.d/modules.sh
        module load apptainer
+     submit_timeout: 30
+     query_timeout: 10
+     cancel_timeout: 10
      pending_timeout: 600
 
 Important keys are:
@@ -137,6 +140,14 @@ Important keys are:
      - Worker-to-parent port; default ``8102``.
    * - ``poll_interval``
      - Scheduler polling interval; default ``10`` seconds.
+   * - ``submit_timeout``
+     - Maximum time to wait for ``sbatch`` to return a job ID; default ``30``
+       seconds.
+   * - ``query_timeout``
+     - Maximum time for each ``squeue`` or ``sacct`` query; default ``10``
+       seconds.
+   * - ``cancel_timeout``
+     - Maximum time for each ``scancel`` request; default ``10`` seconds.
    * - ``pending_timeout``
      - Time limit starting at the first observed pending state; default ``600``
        seconds. A job may lower it.
@@ -360,7 +371,8 @@ verifies that no old allocation uses it and removes the directory.
 
 An ``sbatch`` timeout fails the FL dispatch even if Slurm accepted the job.
 Artifact removal prevents a pending allocation from starting unless the same
-job ID is relaunched before it starts.
+job ID is relaunched before it starts. Increase ``submit_timeout`` where slow
+scheduler responses make this risk unacceptable.
 
 To change the workspace, stop the parent and prepare to a new ``--output``.
 Preparing to an existing output replaces it, so copy any data that must survive

@@ -134,7 +134,14 @@ def test_render_template_rejects_unresolved_placeholder(tmp_path, monkeypatch):
 def test_prepare_slurm_generates_runtime_artifacts(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
     output = tmp_path / "site-1-slurm"
-    config = _slurm_config(tmp_path, internal_port=9210, forward_env=["HTTP_PROXY"])
+    config = _slurm_config(
+        tmp_path,
+        internal_port=9210,
+        forward_env=["HTTP_PROXY"],
+        submit_timeout=47,
+        query_timeout=23,
+        cancel_timeout=19,
+    )
 
     _run_prepare(kit, output, config)
     capsys.readouterr()
@@ -157,6 +164,9 @@ def test_prepare_slurm_generates_runtime_artifacts(tmp_path, capsys):
         },
         "forward_env": ["HTTP_PROXY"],
         "parent_host": None,
+        "submit_timeout": 47.0,
+        "query_timeout": 23.0,
+        "cancel_timeout": 19.0,
         "poll_interval": 10,
         "pending_timeout": 600,
     }
