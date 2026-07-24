@@ -153,7 +153,8 @@ def inspect_path(
     ranked_frameworks = _rank_frameworks(state)
     detected_framework = _detect_primary_framework(state, ranked_frameworks)
     ranked_frameworks = _order_frameworks_for_display(ranked_frameworks, detected_framework)
-    conversion_state = _conversion_state(state, detected_framework, exported_job_info)
+    source_job_file = _authoritative_source_job_file(state)
+    conversion_state = _conversion_state(state, detected_framework, exported_job_info, source_job_file)
     target_type = _target_type(target, state, detected_framework, conversion_state)
 
     # Data-target classification runs when code classification found nothing,
@@ -217,7 +218,9 @@ def inspect_path(
         "findings": state.findings[:MAX_EVIDENCE_PER_BUCKET],
         "dataset": dataset,
         "skill_selection": _skill_selection(detected_framework, conversion_state, state, dataset),
-        "recommended_next_commands": _recommended_next_commands(detected_framework, conversion_state, state),
+        "recommended_next_commands": _recommended_next_commands(
+            detected_framework, conversion_state, state, source_job_file
+        ),
         "installed_skills": _installed_skills(target),
     }
 
@@ -1018,7 +1021,12 @@ def _exported_job_info(state: InspectState) -> dict:
     return {"submit_ready_candidates": submit_ready, "nested_candidates": nested}
 
 
-def _conversion_state(state: InspectState, detected_framework: Optional[str], exported_job_info: dict) -> str:
+def _conversion_state(
+    state: InspectState,
+    detected_framework: Optional[str],
+    exported_job_info: dict,
+    source_job_file: Optional[str],
+) -> str:
     if exported_job_info["submit_ready_candidates"]:
         return "exported_job"
     # job.py is a common filename (SLURM launchers) and SimEnv is a natural class
@@ -1026,7 +1034,7 @@ def _conversion_state(state: InspectState, detected_framework: Optional[str], ex
     # root-level source candidate with corroborating nvflare evidence from that
     # same file. This prevents historical jobs, fixtures, and vendored projects
     # from classifying the recursively inspected repository root as a FLARE job.
-    if _authoritative_source_job_file(state):
+    if source_job_file:
         return "flare_job"
     if _has_conversion_integration(state):
         return "client_api_converted"
@@ -1329,16 +1337,15 @@ def _has_problematic_skips(state: InspectState) -> bool:
 
 
 def _recommended_next_commands(
-    detected_framework: Optional[str], conversion_state: str, state: InspectState
+    detected_framework: Optional[str],
+    conversion_state: str,
+    state: InspectState,
+    source_job_file: Optional[str],
 ) -> list[str]:
     commands = []
     if conversion_state == "exported_job":
         commands.append("nvflare job submit <job-folder> --format json")
-    elif (
-        (source_job_file := _authoritative_source_job_file(state))
-        and source_job_file == "job.py"
-        and source_job_file in state.export_support_files
-    ):
+    elif source_job_file == "job.py" and source_job_file in state.export_support_files:
         # Only suggest `job.py --export` for a genuine FLARE job.py: `.export`
         # calls (torch.onnx.export, YOLO model.export, ...) over-match, so without
         # corroborating nvflare evidence this would ship a command that fails with
