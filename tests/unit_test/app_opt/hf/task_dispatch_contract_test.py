@@ -404,7 +404,7 @@ def test_cumulative_max_steps_extends_after_checkpoint_resume_restores_global_st
     trainer.state.global_step = 0
     train_kwargs = {}
 
-    task_state._prepare_train_call(train_kwargs)
+    task_state._prepare_train_call((), train_kwargs)
 
     assert task_state.train_start_global_step == 8
     assert task_state.cumulative_max_steps == 10
@@ -440,7 +440,7 @@ def test_distributed_budget_uses_rank_zero_payload_on_nonzero_rank(monkeypatch, 
     task_state.current_round = 0
     task_state.total_rounds = 4
 
-    task_state._prepare_train_call({})
+    task_state._prepare_train_call((), {})
 
     assert task_state.per_round_budget_steps == 2
     assert task_state.budget_source == "local_epochs"
@@ -603,7 +603,7 @@ def test_resume_checkpoint_decision_uses_rank_zero_path_on_nonzero_rank(monkeypa
     task_state.last_checkpoint_path = str(tmp_path / "rank-one-local-only" / "checkpoint-1")
     train_kwargs = {}
 
-    task_state._prepare_train_call(train_kwargs)
+    task_state._prepare_train_call((), train_kwargs)
 
     assert train_kwargs["resume_from_checkpoint"] == rank_zero_checkpoint
     assert task_state.global_params_loaded is True
@@ -712,6 +712,30 @@ def test_user_resume_checkpoint_uses_in_memory_override_without_mutating_checkpo
     assert torch.equal(sent_params["fc.weight"], torch.full_like(sent_params["fc.weight"], 6.0))
 
 
+def test_positional_user_resume_checkpoint_is_not_duplicated_as_keyword(monkeypatch, tmp_path):
+    initial_model = TinyModel()
+    incoming_model = FLModel(params=_model_params(initial_model, 5.0), current_round=1, total_rounds=2)
+    hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch, incoming_model)
+    trainer = _make_trainer(trainer_cls, tmp_path)
+    user_checkpoint_dir = tmp_path / "user-checkpoint"
+    user_checkpoint_dir.mkdir()
+    original_train = trainer._train_impl
+
+    def resume_then_train(*args, **kwargs):
+        assert args == (str(user_checkpoint_dir),)
+        assert "resume_from_checkpoint" not in kwargs
+        return original_train(*args, **kwargs)
+
+    hf_api.patch(trainer, restore_state=True, local_steps=1)
+    setattr(trainer, hf_api.ORIGINAL_TRAIN_ATTR, resume_then_train)
+    trainer._nvflare_hf_task_state.last_checkpoint_path = str(tmp_path / "nvflare-checkpoint")
+    trainer.train(str(user_checkpoint_dir))
+
+    assert trainer.last_train_args == (str(user_checkpoint_dir),)
+    assert "resume_from_checkpoint" not in trainer.last_train_kwargs
+    assert len(client_api_mock.sent_models) == 1
+
+
 def test_receive_agent_closed_maps_to_logged_stop_sentinel(monkeypatch, tmp_path, caplog):
     hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch, incoming_model=None)
 
@@ -797,7 +821,7 @@ def test_receive_failure_on_rank_zero_reaches_nonzero_rank(monkeypatch, tmp_path
     assert trainer._nvflare_hf_task_state.pending is False
 
 
-def test_is_running_failure_on_rank_zero_broadcasts_stop(monkeypatch, tmp_path, caplog):
+def test_is_running_failure_on_rank_zero_broadcasts_and_raises(monkeypatch, tmp_path):
     hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch, incoming_model=None)
     dist = _RecordingDist(rank=0, world_size=2)
     monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
@@ -811,22 +835,26 @@ def test_is_running_failure_on_rank_zero_broadcasts_stop(monkeypatch, tmp_path, 
 
     hf_api.patch(trainer, restore_state=False, local_steps=1)
 
-    with caplog.at_level(logging.WARNING):
-        assert hf_api.hf_is_running() is False
+    with pytest.raises(RuntimeError, match="is_running failed on rank 0.*is_running boom"):
+        hf_api.hf_is_running()
 
-    assert dist.broadcast_payloads[-1] == {}
-    assert "is_running failed on rank 0" in caplog.text
+    assert dist.broadcast_payloads[-1] == _rank_zero_failure("is_running", "RuntimeError: is_running boom")
 
 
 def test_is_running_failure_on_rank_zero_reaches_nonzero_rank(monkeypatch, tmp_path):
     hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model=None)
-    dist = _RecordingDist(rank=1, world_size=2, incoming_payload=None)
+    dist = _RecordingDist(
+        rank=1,
+        world_size=2,
+        incoming_payload=_rank_zero_failure("is_running", "RuntimeError: is_running boom"),
+    )
     monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
     trainer = _make_trainer(trainer_cls, tmp_path)
 
     hf_api.patch(trainer, restore_state=False, local_steps=1)
 
-    assert hf_api.hf_is_running() is False
+    with pytest.raises(RuntimeError, match="is_running failed on rank 0.*is_running boom"):
+        hf_api.hf_is_running()
 
 
 def test_missing_total_rounds_extension_uses_fallback_info_log(monkeypatch, tmp_path, caplog):

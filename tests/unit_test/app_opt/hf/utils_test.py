@@ -211,6 +211,42 @@ def test_adapter_scope_uses_peft_adapter_keyspace(monkeypatch):
     assert torch.equal(extracted["lora_A.weight"], torch.zeros(2, 2))
 
 
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for PEFT parameter helper tests")
+def test_strict_adapter_load_rejects_missing_reference_keys(monkeypatch):
+    import torch
+
+    class FakePeftModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.adapter_state = {
+                "lora_A.weight": torch.zeros(2, 2),
+                "lora_B.weight": torch.zeros(2, 2),
+            }
+
+    FakePeftModel.__name__ = "PeftModel"
+    FakePeftModel.__module__ = "peft.fake"
+
+    class FakePeftModule:
+        @staticmethod
+        def get_peft_model_state_dict(model):
+            return model.adapter_state
+
+        @staticmethod
+        def set_peft_model_state_dict(model, params):
+            raise AssertionError("incomplete adapter params must be rejected before PEFT loading")
+
+    monkeypatch.setattr(hf_utils, "_import_peft", lambda reason="": FakePeftModule)
+    trainer = _Trainer(FakePeftModel())
+
+    with pytest.raises(RuntimeError, match=r"incomplete PEFT adapter parameters.*lora_B\.weight"):
+        hf_utils.load_params(
+            trainer,
+            FLModel(params={"lora_A.weight": torch.ones(2, 2)}),
+            params_scope="adapter",
+            strict=True,
+        )
+
+
 @pytest.mark.skipif(not HAS_TORCH or not HAS_NUMPY, reason="PyTorch and NumPy are required for dtype tests")
 def test_prepare_out_params_casts_halves_for_numpy_and_preserves_tensor_dtype():
     import numpy as np

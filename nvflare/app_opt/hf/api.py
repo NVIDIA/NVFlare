@@ -630,16 +630,31 @@ class _HFTaskState:
         if self.completed:
             self._reset_completed_task()
 
-        running = None
+        rank_zero_error = None
+        status = {"ok": True, "operation": "is_running", "error": None, "running": False}
         if self.rank == 0:
             try:
-                running = flare_api.is_running()
+                status["running"] = flare_api.is_running()
             except Exception as e:
                 if self.world_size <= 1:
                     raise
-                self.logger.warning("HuggingFace distributed is_running failed on rank 0; stopping all ranks: %s", e)
-                running = None
-        return bool(_broadcast_object(running, src=0))
+                rank_zero_error = e
+                status = {
+                    "ok": False,
+                    "operation": "is_running",
+                    "error": f"{type(e).__name__}: {e}",
+                }
+
+        status = _broadcast_object(status, src=0) or {}
+        if not status.get("ok", False):
+            message = (
+                f"HuggingFace distributed {status.get('operation', 'is_running')} failed on rank 0: "
+                f"{status.get('error', 'unknown error')}"
+            )
+            if rank_zero_error is not None:
+                raise RuntimeError(message) from rank_zero_error
+            raise RuntimeError(message)
+        return bool(status.get("running", False))
 
     def wrapped_evaluate(self, *args, **kwargs):
         if self._inside_train:
@@ -707,7 +722,7 @@ class _HFTaskState:
                 raise RuntimeError(f"Unsupported HF task kind: {task_kind}")
 
             train_kwargs = dict(kwargs)
-            self._prepare_train_call(train_kwargs)
+            self._prepare_train_call(args, train_kwargs)
             self._inside_train = True
             try:
                 return self.original_train(*args, **train_kwargs)
@@ -937,7 +952,7 @@ class _HFTaskState:
             return TASK_SUBMIT_MODEL
         raise RuntimeError("Received an unsupported Client API task for the HuggingFace Trainer integration")
 
-    def _prepare_train_call(self, train_kwargs: dict):
+    def _prepare_train_call(self, train_args: tuple, train_kwargs: dict):
         self._capture_budget_if_needed()
         if not self.restore_state:
             self._reset_stateless_trainer_task_state()
@@ -950,10 +965,11 @@ class _HFTaskState:
         self.round_stop_step = self.train_start_global_step + int(self.per_round_budget_steps)
 
         checkpoint_path = self._resume_checkpoint_path()
+        positional_resume_supplied = bool(train_args)
         user_resume_checkpoint = (
-            train_kwargs.get("resume_from_checkpoint") if "resume_from_checkpoint" in train_kwargs else None
+            train_args[0] if positional_resume_supplied else train_kwargs.get("resume_from_checkpoint")
         )
-        user_resume_checkpoint_supplied = user_resume_checkpoint is not None
+        user_resume_checkpoint_supplied = positional_resume_supplied or user_resume_checkpoint is not None
         if user_resume_checkpoint_supplied:
             self.logger.warning(
                 "Using user-provided resume_from_checkpoint=%s instead of NVFlare checkpoint provenance. "

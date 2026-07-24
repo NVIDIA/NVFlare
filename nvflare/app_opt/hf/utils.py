@@ -209,6 +209,15 @@ def load_params(
     model = unwrap_model(trainer)
 
     if params_scope == PARAMS_SCOPE_ADAPTER:
+        if strict:
+            missing_keys = sorted(set(reference) - set(tensor_params))
+            if missing_keys:
+                sample = ", ".join(repr(key) for key in missing_keys[:5])
+                suffix = "" if len(missing_keys) <= 5 else ", ..."
+                raise RuntimeError(
+                    f"Rejecting incomplete PEFT adapter parameters: missing {len(missing_keys)} expected "
+                    f"key(s): {sample}{suffix}"
+                )
         peft = _import_peft("loading PEFT adapter params")
         result = peft.set_peft_model_state_dict(model, tensor_params)
         _log_incompatible_keys(result)

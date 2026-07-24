@@ -9,19 +9,26 @@ virtualenv.
 For the complete installation instructions, see
 [Installation](https://nvflare.readthedocs.io/en/main/installation.html).
 
+> **Main branch note:** The HuggingFace Client API is introduced for NVFlare
+> 2.9.0. Until that package is published, install NVFlare from this repository
+> and install the remaining example dependencies separately.
+
+For a released branch:
+
 ```
 pip install nvflare
 ```
 
-Install the example dependencies:
+For the current `main` branch, run these commands from the repository root:
 
 ```
-pip install -r requirements.txt
+python -m pip install -e .
+python -m pip install torch transformers accelerate datasets peft trl safetensors
 ```
 
-`requirements.txt` uses `nvflare~=2.9.0rc`, the first upcoming NVFlare release
-with `nvflare.client.hf`. Until that package is published, install NVFlare from
-this repository before running the example.
+The `nvflare~=2.9.0rc` entry in `requirements.txt` records the first compatible
+release. After NVFlare 2.9.0 is published,
+`python -m pip install -r requirements.txt` installs the complete environment.
 
 ## Code Structure
 First get the example code from GitHub:

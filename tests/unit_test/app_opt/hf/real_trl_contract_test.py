@@ -32,6 +32,7 @@ from tokenizers.pre_tokenizers import Whitespace  # noqa: E402
 from transformers import GPT2Config, GPT2LMHeadModel, PreTrainedTokenizerFast, default_data_collator  # noqa: E402
 from trl import SFTConfig, SFTTrainer  # noqa: E402
 
+from nvflare.app_common.abstract.fl_model import FLModel, MetaKey  # noqa: E402
 from nvflare.client.config import ConfigKey, ExchangeFormat  # noqa: E402
 
 
@@ -150,6 +151,21 @@ def _patch_client_api(monkeypatch, hf_api):
     monkeypatch.setattr(hf_api.flare_api, "get_job_id", lambda ctx=None: "hf-real-trl-contract")
 
 
+def _configure_train_task(monkeypatch, hf_api, trainer, params_scope):
+    sent_models = []
+    incoming_model = FLModel(
+        params=hf_api.utils.extract_params(trainer, params_scope),
+        current_round=0,
+        total_rounds=1,
+    )
+    monkeypatch.setattr(hf_api.flare_api, "is_train", lambda ctx=None: True)
+    monkeypatch.setattr(hf_api.flare_api, "is_evaluate", lambda ctx=None: False)
+    monkeypatch.setattr(hf_api.flare_api, "is_submit_model", lambda ctx=None: False)
+    monkeypatch.setattr(hf_api.flare_api, "receive", lambda timeout=None, ctx=None: incoming_model)
+    monkeypatch.setattr(hf_api.flare_api, "send", lambda model, clear_cache=True, ctx=None: sent_models.append(model))
+    return sent_models
+
+
 def _fl_callbacks(trainer):
     callback_handler = getattr(trainer, "callback_handler", None)
     return list(getattr(callback_handler, "callbacks", None) or getattr(trainer, "callbacks", []))
@@ -171,7 +187,7 @@ def _fl_callbacks(trainer):
         ),
     ],
 )
-def test_real_sft_trainer_constructs_and_accepts_hf_patch(monkeypatch, tmp_path, peft_config, expected_scope):
+def test_real_sft_trainer_runs_patched_train_and_send_round(monkeypatch, tmp_path, peft_config, expected_scope):
     hf_api, flare = _import_real_hf_api_modules()
 
     hf_api._reset_global_state_for_test()
@@ -180,11 +196,18 @@ def test_real_sft_trainer_constructs_and_accepts_hf_patch(monkeypatch, tmp_path,
     trainer = _make_sft_trainer(tmp_path / expected_scope, peft_config=peft_config)
     if peft_config is not None:
         assert isinstance(trainer.model, PeftModel)
+    sent_models = _configure_train_task(monkeypatch, hf_api, trainer, expected_scope)
 
-    flare.patch(trainer, restore_state=False)
+    flare.patch(trainer, restore_state=False, local_steps=1)
 
     assert getattr(trainer, "_nvflare_hf_patched", False)
     assert trainer._nvflare_hf_task_state.params_scope == expected_scope
     assert any(callback.__class__.__name__ == "FLCallback" for callback in _fl_callbacks(trainer))
+
+    trainer.train()
+
+    assert len(sent_models) == 1
+    assert sent_models[0].params
+    assert sent_models[0].meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == 1
 
     hf_api._reset_global_state_for_test()

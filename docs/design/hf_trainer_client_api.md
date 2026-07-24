@@ -656,11 +656,13 @@ The Phase 1 contract for the file exchange:
   each reader rank still materializes the tensors it must load into its model.
 - Cleanup: each round's payload file is deleted after the post-load barrier; the
   directory is bounded to one round's staged payload.
-- Reach: single-node multi-GPU works on local disk. Multi-node requires
-  `output_dir` on a shared filesystem — **not a new requirement**: multi-node
+- Reach: single-node multi-GPU works on local disk. Multi-node requires every
+  rank to read and write the same `output_dir` on a shared filesystem; the
+  implementation fails loudly if a staged exchange file is not visible rather
+  than allowing ranks to hang. This is **not a new requirement**: multi-node
   checkpoint resume from `output_dir` already demands it, as the `llm_hf`
-  multi-node setup does today. If a deployment cannot share `output_dir`,
-  a config flag forces object broadcast with its documented per-rank memory cost.
+  multi-node setup does today. If a deployment cannot share `output_dir`, a
+  config flag forces object broadcast with its documented per-rank memory cost.
 
 ## Job-Side Integration
 

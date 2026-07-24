@@ -279,8 +279,16 @@ def _worker(rank, init_path, output_dir, strategy, scenario, result_queue):
                 error = "expected rank-zero extraction failure"
             result_queue.put({"rank": rank, "ok": ok, "error": error, "sent_count": len(sent_models)})
         elif scenario == "is_running_failure":
-            running = hf_api.hf_is_running()
-            result_queue.put({"rank": rank, "ok": running is False, "running": running, "sent_count": len(sent_models)})
+            ok = False
+            error = None
+            try:
+                hf_api.hf_is_running()
+            except RuntimeError as e:
+                error = str(e)
+                ok = "is_running failed on rank 0" in error and "rank-zero is_running boom" in error
+            else:
+                error = "expected rank-zero is_running failure"
+            result_queue.put({"rank": rank, "ok": ok, "error": error, "sent_count": len(sent_models)})
         elif scenario == "receive_failure":
             ok = False
             error = None
@@ -403,4 +411,4 @@ def test_two_process_gloo_propagates_rank_zero_is_running_failure(tmp_path):
     results = _run_2process_scenario(tmp_path, strategy="object", scenario="is_running_failure")
 
     assert all(result["ok"] for result in results), results
-    assert [result["running"] for result in results] == [False, False]
+    assert [result["sent_count"] for result in results] == [0, 0]

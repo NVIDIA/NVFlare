@@ -18,18 +18,21 @@ On a released branch:
 
    pip install nvflare
 
-The example ``requirements.txt`` intentionally uses ``nvflare~=2.9.0rc``,
-the first upcoming NVFlare release with ``nvflare.client.hf``. Until that
-package is published, install NVFlare from this repository before running the
-example.
+The HuggingFace Client API is introduced for NVFlare 2.9.0. Until that package
+is published, install NVFlare from this repository and install the remaining
+example dependencies separately:
 
 .. code-block:: bash
 
    git clone https://github.com/NVIDIA/NVFlare.git
    cd NVFlare
    python -m pip install -e .
-   cd examples/hello-world/hello-huggingface
-   python -m pip install -r requirements.txt
+   python -m pip install torch transformers accelerate datasets peft trl safetensors
+
+The ``nvflare~=2.9.0rc`` entry in ``requirements.txt`` records the first
+compatible release. After NVFlare 2.9.0 is published,
+``python -m pip install -r requirements.txt`` installs the complete
+environment.
 
 Code Structure
 --------------
