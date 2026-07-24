@@ -219,6 +219,13 @@ def _worker(rank, init_path, output_dir, strategy, scenario, result_queue):
         trainer = trainer_cls(TinyModel(), _make_training_args(output_dir))
         hf_api.patch(trainer, restore_state=False, local_steps=1)
 
+        if scenario == "is_running_failure" and rank == 0:
+
+            def is_running_raises(ctx=None):
+                raise RuntimeError("rank-zero is_running boom")
+
+            hf_api.flare_api.is_running = is_running_raises
+
         if scenario == "receive_failure" and rank == 0:
 
             def receive_raises(timeout=None, ctx=None):
@@ -271,6 +278,9 @@ def _worker(rank, init_path, output_dir, strategy, scenario, result_queue):
             else:
                 error = "expected rank-zero extraction failure"
             result_queue.put({"rank": rank, "ok": ok, "error": error, "sent_count": len(sent_models)})
+        elif scenario == "is_running_failure":
+            running = hf_api.hf_is_running()
+            result_queue.put({"rank": rank, "ok": running is False, "running": running, "sent_count": len(sent_models)})
         elif scenario == "receive_failure":
             ok = False
             error = None
@@ -385,3 +395,12 @@ def test_two_process_gloo_propagates_rank_zero_receive_failure(tmp_path):
 
     assert all(result["ok"] for result in results), results
     assert [result["sent_count"] for result in results] == [0, 0]
+
+
+@pytest.mark.skipif(not gloo_available, reason="torch.distributed gloo is required for distributed HF contract tests")
+@pytest.mark.skipif(running_under_xdist, reason="nested torch.multiprocessing gloo tests are unstable under xdist")
+def test_two_process_gloo_propagates_rank_zero_is_running_failure(tmp_path):
+    results = _run_2process_scenario(tmp_path, strategy="object", scenario="is_running_failure")
+
+    assert all(result["ok"] for result in results), results
+    assert [result["running"] for result in results] == [False, False]

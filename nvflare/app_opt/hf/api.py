@@ -632,7 +632,13 @@ class _HFTaskState:
 
         running = None
         if self.rank == 0:
-            running = flare_api.is_running()
+            try:
+                running = flare_api.is_running()
+            except Exception as e:
+                if self.world_size <= 1:
+                    raise
+                self.logger.warning("HuggingFace distributed is_running failed on rank 0; stopping all ranks: %s", e)
+                running = None
         return bool(_broadcast_object(running, src=0))
 
     def wrapped_evaluate(self, *args, **kwargs):

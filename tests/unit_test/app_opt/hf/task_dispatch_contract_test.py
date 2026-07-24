@@ -797,6 +797,38 @@ def test_receive_failure_on_rank_zero_reaches_nonzero_rank(monkeypatch, tmp_path
     assert trainer._nvflare_hf_task_state.pending is False
 
 
+def test_is_running_failure_on_rank_zero_broadcasts_stop(monkeypatch, tmp_path, caplog):
+    hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch, incoming_model=None)
+    dist = _RecordingDist(rank=0, world_size=2)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
+
+    def is_running_raises(ctx=None):
+        raise RuntimeError("is_running boom")
+
+    client_api_mock.is_running = is_running_raises
+    patch_client_api_aliases(monkeypatch, client_api_mock, hf_api)
+    trainer = _make_trainer(trainer_cls, tmp_path)
+
+    hf_api.patch(trainer, restore_state=False, local_steps=1)
+
+    with caplog.at_level(logging.WARNING):
+        assert hf_api.hf_is_running() is False
+
+    assert dist.broadcast_payloads[-1] == {}
+    assert "is_running failed on rank 0" in caplog.text
+
+
+def test_is_running_failure_on_rank_zero_reaches_nonzero_rank(monkeypatch, tmp_path):
+    hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model=None)
+    dist = _RecordingDist(rank=1, world_size=2, incoming_payload=None)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
+    trainer = _make_trainer(trainer_cls, tmp_path)
+
+    hf_api.patch(trainer, restore_state=False, local_steps=1)
+
+    assert hf_api.hf_is_running() is False
+
+
 def test_missing_total_rounds_extension_uses_fallback_info_log(monkeypatch, tmp_path, caplog):
     initial_model = TinyModel()
     incoming_model = FLModel(params=_model_params(initial_model, 5.0), current_round=3, total_rounds=None)
