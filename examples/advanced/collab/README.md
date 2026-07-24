@@ -1,14 +1,16 @@
-# Collab API Examples
+# Advanced Collab API Examples
 
-The catalog contains self-contained examples of the core Collab programming
-model. `hello_numpy_collab` mirrors the Recipe API and `SimEnv` flow of
-`hello-world/hello-numpy`. Every entry point builds a `CollabRecipe` and runs it
-directly with the standard `SimEnv`:
+These self-contained examples demonstrate custom workflows built with the core
+Collab programming model. For a minimal introduction that mirrors
+`hello-world/hello-numpy`, start with
+[Hello NumPy Collab](../../hello-world/hello-collab/README.md).
+
+Every entry point builds a `CollabRecipe` and runs it directly with the standard
+`SimEnv`:
 
 ```bash
-cd examples   # makes the collab package available to module imports
+cd examples/advanced   # makes the collab package available to module imports
 
-python -m collab.hello_numpy_collab.hello_numpy_collab
 python -m collab.hello_fedavg.hello_fedavg
 python -m collab.async_aggregation.async_aggregation
 python -m collab.swarm.swarm --num-clients 3
@@ -18,7 +20,6 @@ python -m collab.swarm.swarm --num-clients 3
 
 | Example | Demonstrates |
 |---|---|
-| `hello_numpy_collab` | Same Recipe API/`SimEnv` flow as `hello-world/hello-numpy`, using direct calls instead of Client API messaging |
 | `hello_fedavg` | The Collab API in one file: `@collab.main`, `@collab.publish`, `collab.clients.train(...)`, per-site config |
 | `async_aggregation` | In-time aggregation with a response callback |
 | `swarm` | Decentralized swarm learning with client-to-client calls |
@@ -40,6 +41,6 @@ abstraction.
 The NumPy examples run in a base installation; `hello_fedavg` needs PyTorch.
 
 For the design behind the API see the
-[Collab API design](../../docs/design/collab_api_design.md). For a step-by-step
+[Collab API design](../../../docs/design/collab_api_design.md). For a step-by-step
 migration from local training to Collab see the
-[migration tutorial](../../docs/design/collab_api_migration_tutorial.md).
+[migration tutorial](../../../docs/design/collab_api_migration_tutorial.md).

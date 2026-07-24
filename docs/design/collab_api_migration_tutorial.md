@@ -711,8 +711,8 @@ function. If a workflow has several stages, call them from that one main entry
 point.
 
 Keep support code beside the entry point that consumes it. The runnable
-examples under `examples/collab` are self-contained and do not import trainers,
-strategies, or utilities from a shared example package.
+examples under `examples/advanced/collab` are self-contained and do not import
+trainers, strategies, or utilities from a shared example package.
 
 ---
 
@@ -723,12 +723,14 @@ simulation scripts are not maintained as files. The runnable equivalent of
 the final collab version is the `hello_fedavg` example:
 
 ```bash
-cd examples
+cd examples/advanced
 python -m collab.hello_fedavg.hello_fedavg
 ```
 
-See the [Collab examples](../../examples/collab/README.md) for the full example
-set, including the no-class (standalone function) pattern noted in
+Start with [Hello NumPy Collab](../../examples/hello-world/hello-collab/README.md)
+for the minimal one-file workflow. See the
+[advanced Collab examples](../../examples/advanced/collab/README.md) for the
+full example set, including the no-class (standalone function) pattern noted in
 `hello_fedavg`. Each entry point executes its recipe directly with `SimEnv`;
 production code can execute the same recipe with `PocEnv` or `ProdEnv` from
 `nvflare.recipe`.
