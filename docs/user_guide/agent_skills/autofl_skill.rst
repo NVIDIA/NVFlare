@@ -140,7 +140,9 @@ The report skill verifies that authoritative campaign state allows a final
 response and that no ledger row or candidate manifest remains pending. For an
 abrupt interruption, the human must first confirm that no campaign process is
 running; this confirmation bypasses stale stop state only and never unfinished
-candidate evidence.
+candidate evidence. An available candidate manifest is complete only with
+``keep``, ``discard``, ``crash``, or ``abandoned`` status; missing, unknown, or
+unreadable status blocks reporting.
 
 Report generation holds the same campaign lifecycle lock as the active Auto-FL
 runner. It refuses concurrent lifecycle activity and rejects custom plot,

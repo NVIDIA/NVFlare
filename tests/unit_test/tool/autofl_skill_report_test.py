@@ -616,16 +616,24 @@ def test_report_refuses_pending_manifest_named_only_in_campaign_state(tmp_path, 
         reporter.generate(reporter.parse_args([str(tmp_path), "--confirm-interrupted"]))
 
 
-@pytest.mark.parametrize("status", ["prepared", "ready_for_external_execution"])
-def test_report_refuses_pending_candidate_manifests(tmp_path, monkeypatch, status):
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        {"status": "prepared"},
+        {"status": "ready_for_external_execution"},
+        {},
+        {"status": "future_runner_status"},
+    ],
+)
+def test_report_refuses_unfinished_or_unknown_candidate_manifests(tmp_path, monkeypatch, manifest):
     reporter = _load_reporter()
     _write_campaign(tmp_path)
     manifest_path = tmp_path / ".nvflare/autofl/candidates/pending/candidate_manifest.json"
     manifest_path.parent.mkdir(parents=True)
-    manifest_path.write_text(json.dumps({"status": status}), encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: None)
 
-    with pytest.raises(ValueError, match="candidate manifests remain prepared"):
+    with pytest.raises(ValueError, match="candidate manifests have unfinished or unknown status"):
         reporter.generate(reporter.parse_args([str(tmp_path), "--confirm-interrupted"]))
 
 
@@ -652,8 +660,21 @@ def test_report_checks_ledger_referenced_candidate_manifest(tmp_path, monkeypatc
     _write_rows(tmp_path, rows)
     monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: None)
 
-    with pytest.raises(ValueError, match="candidate manifests remain prepared"):
+    with pytest.raises(ValueError, match="candidate manifests have unfinished or unknown status"):
         reporter.generate(reporter.parse_args([str(tmp_path)]))
+
+
+@pytest.mark.parametrize("status", ["keep", "discard", "crash", "abandoned"])
+def test_report_accepts_recognized_terminal_candidate_manifest_statuses(tmp_path, monkeypatch, status):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    manifest_path = tmp_path / ".nvflare/autofl/candidates/finalized/candidate_manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(json.dumps({"status": status}), encoding="utf-8")
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+
+    assert summary["schema_version"] == reporter.SUMMARY_SCHEMA_VERSION
 
 
 def test_pending_refusal_does_not_refresh_progress_plot(tmp_path, monkeypatch):

@@ -25,11 +25,11 @@ campaign may be finalized. For abrupt process termination, the user and agent
 may explicitly confirm interruption. This assertion is report provenance only:
 it must not mutate campaign state. `--confirm-interrupted` bypasses only stale
 stop state. Finalization is refused when campaign state reports pending work,
-the ledger has a `candidate` row, or an available manifest remains `prepared`
-or `ready_for_external_execution`. An available but unreadable manifest also
-blocks finalization because the helper cannot prove that its candidate is
-complete. Finalize or abandon such candidates before generating an
-authoritative report.
+the ledger has a `candidate` row, or an available manifest is not in a
+recognized terminal status: `keep`, `discard`, `crash`, or `abandoned`.
+Missing, unknown, or unreadable manifest status also blocks finalization
+because the helper cannot prove that its candidate is complete. Finalize or
+abandon such candidates before generating an authoritative report.
 
 The reporter acquires the same nonblocking
 `.nvflare/autofl/campaign.lock` used by runner lifecycle actions before reading

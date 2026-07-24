@@ -51,7 +51,7 @@ PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 ATTEMPT_STATUSES = {"candidate", "keep", "discard", "crash"}
 FINALIZED_SCORE_STATUSES = {"baseline", "keep", "discard"}
 RETAINED_STATUSES = {"baseline", "keep"}
-PENDING_MANIFEST_STATUSES = {"prepared", "ready_for_external_execution"}
+TERMINAL_MANIFEST_STATUSES = {"abandoned", "crash", "discard", "keep"}
 CAMPAIGN_LOCK_PATH = ".nvflare/autofl/campaign.lock"
 FALLBACK_TRAINING_BUDGET_ARGS = {
     "aggregation_epochs",
@@ -482,8 +482,8 @@ def candidate_manifest_paths(campaign_root: Path, records: Sequence[RunRecord]) 
 
 def candidate_manifest_evidence(
     campaign_root: Path, records: Sequence[RunRecord]
-) -> Tuple[List[Path], List[Tuple[Path, str]]]:
-    pending = []
+) -> Tuple[List[Tuple[Path, str]], List[Tuple[Path, str]]]:
+    unfinished = []
     unreadable = []
     for path in candidate_manifest_paths(campaign_root, records):
         if not path.is_file():
@@ -493,9 +493,10 @@ def candidate_manifest_evidence(
         except ValueError as exc:
             unreadable.append((path, str(exc)))
             continue
-        if str(manifest.get("status") or "").strip().lower() in PENDING_MANIFEST_STATUSES:
-            pending.append(path)
-    return pending, unreadable
+        status = str(manifest.get("status") or "").strip().lower()
+        if status not in TERMINAL_MANIFEST_STATUSES:
+            unfinished.append((path, status))
+    return unfinished, unreadable
 
 
 def verify_no_pending_candidates(campaign_root: Path, state: Dict[str, Any], records: Sequence[RunRecord]) -> None:
@@ -515,10 +516,10 @@ def verify_no_pending_candidates(campaign_root: Path, state: Dict[str, Any], rec
 
     manifests, unreadable_manifests = candidate_manifest_evidence(campaign_root, records)
     if manifests:
-        paths = ", ".join(str(path.resolve()) for path in manifests[:3])
+        paths = ", ".join(f"{path.resolve()} (status={status or '<missing>'})" for path, status in manifests[:3])
         if len(manifests) > 3:
             paths += f", and {len(manifests) - 3} more"
-        evidence.append(f"candidate manifests remain prepared for execution: {paths}")
+        evidence.append(f"candidate manifests have unfinished or unknown status: {paths}")
     if unreadable_manifests:
         details = "; ".join(f"{path.resolve()} ({error})" for path, error in unreadable_manifests[:3])
         if len(unreadable_manifests) > 3:

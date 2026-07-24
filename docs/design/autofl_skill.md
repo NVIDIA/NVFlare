@@ -274,10 +274,11 @@ The helper does not edit source, ledger, manifests, or campaign state and does
 not require Git. If an abrupt interruption leaves state active, the human must
 confirm interruption after execution is independently checked; the report
 records that assertion without rewriting history. This confirmation bypasses
-only stale stop state. Pending state, `candidate` ledger rows, or manifests in
-`prepared`/`ready_for_external_execution` status block finalization until the
-active skill finalizes or abandons them. Unreadable manifests block as well,
-because report generation cannot prove that their candidates were finalized.
+only stale stop state. Pending state, `candidate` ledger rows, or manifests
+without a recognized terminal status (`keep`, `discard`, `crash`, or
+`abandoned`) block finalization until the active skill finalizes or abandons
+them. Missing, unknown, or unreadable manifest status blocks as well because
+report generation cannot prove that the candidate was finalized.
 
 Report finalization acquires the same nonblocking campaign lifecycle lock as
 the active runner and holds it across evidence reads, plotting, and report

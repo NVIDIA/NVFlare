@@ -91,11 +91,11 @@ python "$REPORTER" <job-dir> --confirm-interrupted
 
 This records a reporting-time interruption assertion; it does not rewrite the
 campaign state or pretend the runner finalized cleanly. It bypasses only stale
-stop state. A `candidate` ledger row, pending-candidate state, or a manifest in
-`prepared` or `ready_for_external_execution` status always blocks finalization;
-an unreadable candidate manifest also blocks because its completion status
-cannot be established. The agent must finalize or abandon that candidate
-first.
+stop state. A `candidate` ledger row or pending-candidate state always blocks
+finalization. Any available candidate manifest whose status is not a recognized
+terminal value (`keep`, `discard`, `crash`, or `abandoned`) also blocks. Missing,
+unknown, or unreadable status is unfinished evidence because completion cannot
+be established. The agent must finalize or abandon that candidate first.
 
 ## Report Contract
 
