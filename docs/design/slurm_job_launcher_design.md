@@ -284,6 +284,11 @@ its `node_command`:
 python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 -- custom/client.py --epochs 2
 ```
 
+Non-zero tasks start before the CJ has prepared Client API runtime files. A hand-written `node_command` therefore
+must join its framework rendezvous before reading CJ-created runtime state; in particular, a wrapper must not call
+`flare.init()` before that rendezvous. `torchrun_node` satisfies this constraint because torchrun rendezvous blocks
+the training script until rank 0 starts.
+
 Known contract limits: frameworks that need every member's address up front (for example `TF_CONFIG`) would need
 an additive node-list variable, and PMI-launched MPI does not fit the per-node-exec model because PMI expects the
 scheduler to start the ranks themselves.

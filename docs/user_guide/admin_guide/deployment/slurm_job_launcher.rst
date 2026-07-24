@@ -370,6 +370,13 @@ both the job's training command and its ``node_command``:
      }
    }
 
+Non-zero tasks start before the client job process has prepared Client API
+runtime files. A hand-written ``node_command`` must therefore join its
+framework rendezvous before reading client-job-created runtime state; a wrapper
+must not call ``flare.init()`` before that rendezvous. ``torchrun_node``
+satisfies this ordering because torchrun blocks the training script at
+rendezvous until node rank 0 starts.
+
 Without ``node_command``, a multi-node allocation keeps the client job process
 alone on the first node and the application owns any fan-out; this mode
 requires effective ``sandbox: none`` because only a bare client job process

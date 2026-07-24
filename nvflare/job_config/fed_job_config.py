@@ -227,7 +227,8 @@ class FedJobConfig:
         if has_secret_refs(script):
             self.logger.warning(
                 f"multi-node launcher block for '{site_name}': the training command contains secret references, "
-                "which node_command does not support; set node_command explicitly or remove the references"
+                "which node_command does not support; set a secret-free node_command explicitly "
+                "or remove the references"
             )
             return None
         return script
