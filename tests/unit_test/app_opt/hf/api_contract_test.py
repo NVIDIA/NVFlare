@@ -52,6 +52,24 @@ def _fl_callbacks(trainer):
     return [callback for callback in trainer.callbacks if callback.__class__.__name__ == "FLCallback"]
 
 
+def test_extract_metrics_keeps_only_finite_scalars(monkeypatch):
+    hf_api, _, _ = _fresh_api(monkeypatch)
+
+    metrics = hf_api._extract_metrics(
+        {
+            "loss": 0.5,
+            "steps": 2,
+            "tensor": torch.tensor(0.25),
+            "nan": float("nan"),
+            "inf": float("inf"),
+            "text": "ignore",
+            "vector": torch.tensor([1.0, 2.0]),
+        }
+    )
+
+    assert metrics == {"loss": 0.5, "steps": 2.0, "tensor": 0.25}
+
+
 class _FakeDist:
     def __init__(self, rank=0, world_size=1):
         self.rank = rank

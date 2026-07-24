@@ -27,7 +27,7 @@ from nvflare.client.flare_agent import AgentClosed
 from nvflare.fuel.utils import fobs
 
 from . import utils
-from .callbacks import FLCallback, FLMetricsCallback
+from .callbacks import FLCallback, FLMetricsCallback, _to_finite_scalar
 
 FL_META_KEY = "__fl_meta__"
 HF_STATE_ATTR = "_nvflare_hf_task_state"
@@ -1006,6 +1006,7 @@ class _HFTaskState:
                     )
 
                 self._run_rank_zero_operation("checkpoint injection", write_checkpoint_params)
+                # Ensure every rank sees the completed checkpoint update before HF resumes from it.
                 _barrier()
                 self.global_params_loaded = True
             elif self.weight_override_strategy == STRATEGY_IN_MEMORY:
@@ -1412,17 +1413,12 @@ def _optional_int(value):
 
 
 def _extract_metrics(metrics):
-    if metrics is None:
-        return {}
     if not isinstance(metrics, dict):
         return {}
 
     result = {}
     for key, value in metrics.items():
-        if hasattr(value, "item"):
-            try:
-                value = value.item()
-            except Exception:
-                pass
-        result[key] = value
+        scalar = _to_finite_scalar(value)
+        if scalar is not None:
+            result[key] = scalar
     return result
