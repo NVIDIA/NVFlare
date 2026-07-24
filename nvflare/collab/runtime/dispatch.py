@@ -31,7 +31,7 @@ def prepare_for_remote_call(cell, app, logger, executor):
     cell.register_blob_cb(
         channel=MSG_CHANNEL,
         topic=MSG_TOPIC,
-        cb=adapter.call,
+        blob_cb=adapter.call,
         app=app,
         logger=logger,
         executor=executor,
