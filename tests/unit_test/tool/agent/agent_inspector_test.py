@@ -1936,6 +1936,59 @@ def test_inspect_flare_job_source_recommends_autofl_not_conversion(tmp_path):
     assert "nvflare-convert-pytorch" not in data["skill_selection"]["recommended_skills"]
 
 
+def test_nested_flare_job_source_does_not_override_root_pytorch_project(tmp_path):
+    (tmp_path / "model.py").write_text(
+        "import torch\n\n\nclass Net(torch.nn.Module):\n    pass\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "train.py").write_text(
+        "from model import Net\n\n\ndef train():\n    return Net()\n",
+        encoding="utf-8",
+    )
+    fixture = tmp_path / "tests" / "fixture"
+    fixture.mkdir(parents=True)
+    (fixture / "job.py").write_text(
+        "from nvflare.app_common.workflows.fedavg import FedAvg\n"
+        "from nvflare.job_config.api import FedJob\n"
+        "\n"
+        "job = FedJob(name='historical_fixture')\n"
+        "controller = FedAvg()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["frameworks"][0]["name"] == "pytorch"
+    assert data["conversion_state"] == "not_converted"
+    assert data["target_type"] == "training_repository"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+    assert data["job"]["job_py"] == "tests/fixture/job.py"
+
+
+def test_root_flare_job_source_remains_authoritative_with_nested_job_candidate(tmp_path):
+    (tmp_path / "job.py").write_text(
+        "from nvflare.app_common.workflows.fedavg import FedAvg\n"
+        "from nvflare.job_config.api import FedJob\n"
+        "\n"
+        "job = FedJob(name='active_job')\n"
+        "controller = FedAvg()\n",
+        encoding="utf-8",
+    )
+    fixture = tmp_path / "tests" / "fixture"
+    fixture.mkdir(parents=True)
+    (fixture / "job.py").write_text(
+        "from nvflare.job_config.api import FedJob\n\njob = FedJob(name='historical_fixture')\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["conversion_state"] == "flare_job"
+    assert data["target_type"] == "flare_job_source"
+    assert data["job"]["job_py"] == "job.py"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-autofl"]
+
+
 def test_inspect_does_not_treat_pytorch_to_call_as_export_support(tmp_path):
     script = tmp_path / "train.py"
     script.write_text(
