@@ -51,6 +51,8 @@ def load_mnist():
 
 
 def get_batch(dataset, step):
+    if len(dataset) == 0:
+        raise ValueError("dataset must not be empty")
     num_batches = math.ceil(len(dataset) / BATCH_SIZE)
     batch_index = step % num_batches
     start = batch_index * BATCH_SIZE
@@ -75,6 +77,8 @@ def forward(step):
 @collab.publish
 def backward(gradients):
     """Apply server-provided cut-layer gradients to the bottom model."""
+    if _bottom_optimizer is None or _activations is None:
+        raise RuntimeError("backward() called before a successful forward(); run forward() first")
     _bottom_optimizer.zero_grad(set_to_none=True)
     _activations.backward(gradients)
     _bottom_optimizer.step()
