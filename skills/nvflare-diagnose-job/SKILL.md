@@ -2,7 +2,7 @@
 name: nvflare-diagnose-job
 description: "Use when the user asks why an NVFLARE job failed, stalled, timed out, lost clients, produced suspicious errors, or needs failure evidence interpreted. Diagnose in simulation, POC, or production by collecting bounded evidence and mapping failure patterns to recovery actions."
 license: Apache-2.0
-version: "0.1.1"
+version: "0.1.0"
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
   min_flare_version: "2.8.0"
