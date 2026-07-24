@@ -1,0 +1,239 @@
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+import copy
+import threading
+from typing import List
+
+from nvflare.apis.signal import Signal
+from nvflare.collab.api.call_utils import check_call_args
+from nvflare.collab.api.exceptions import RunAborted
+from nvflare.fuel.utils.log_utils import get_obj_logger
+
+from .app import App
+from .call_opt import CallOption
+from .context import Context
+from .group_call_context import GroupCallContext, ResultWaiter
+from .proxy import Proxy
+
+
+class Group:
+
+    def __init__(
+        self,
+        app,
+        abort_signal: Signal,
+        proxies: List[Proxy],
+        call_opt: CallOption = None,
+        process_resp_cb=None,
+        **cb_kwargs,
+    ):
+        """A Group is a group of remote apps to be called.
+
+        Args:
+            app: the calling app.
+            abort_signal: signal to abort execution.
+            proxies: proxies of the remote apps to be called.
+            call_opt: call option that specifies call behavior
+            process_resp_cb: callback function to be called to process responses from remote apps.
+            **cb_kwargs: kwargs passed to process_resp_cb.
+        """
+        if not proxies:
+            raise ValueError("no proxies to group")
+
+        self._app = app
+        self._abort_signal = abort_signal
+        self._proxies = proxies
+        if not call_opt:
+            call_opt = CallOption()
+        self._call_opt = call_opt
+        self._process_resp_cb = process_resp_cb
+        self._cb_kwargs = cb_kwargs
+        self._logger = get_obj_logger(self)
+
+    @property
+    def size(self):
+        """Size of the group, which is the number of remote apps to be called.
+
+        Returns: size of the group.
+
+        """
+        return len(self._proxies)
+
+    @property
+    def members(self):
+        """
+        Returns the members of the group, which is the list of all remote apps to be called.
+
+        Returns: the members of the group
+
+        """
+        return self._proxies
+
+    def _get_work_proxy(self, p, func_name):
+        if self._call_opt.target:
+            child = p.get_child(self._call_opt.target)
+            if not child:
+                raise RuntimeError(
+                    f"site {p.name} does not have collab target named '{self._call_opt.target}': "
+                    f"make sure to use correct target in the group call of '{func_name}'."
+                )
+            return child
+        else:
+            return p
+
+    def __getattr__(self, func_name):
+        """
+        This method is called to invoke the specified collab function.
+
+        If expect_result is False, then the call immediately returns None.
+
+        If expect_result is True, a ResultQueue object is returned. Successful results are appended to the queue
+        as (site_name, result) tuples when they become available. Per-site failures are available in
+        ResultQueue.failures as a mapping from site name to CollabCallError.
+
+        The blocking flag is only meaningful when expect_result is True. If blocking is True, the call does not
+        return until results are received from all sites (or timed out). If blocking is False, the call immediately
+        returns. In both cases, the ResultQueue object is returned, and the application should iterate through it
+        to process site results.
+
+        """
+
+        def method(*args, **kwargs):
+            try:
+                first_proxy = self._get_work_proxy(self._proxies[0], func_name)
+                with first_proxy.app.new_context(first_proxy.caller_name, first_proxy.name, target_group=self) as ctx:
+                    self._logger.info(
+                        f"[{ctx}] calling {func_name} {self._call_opt} of group {[p.name for p in self._proxies]}"
+                    )
+
+                    assert isinstance(self._app, App)
+                    waiter = ResultWaiter([p.name for p in self._proxies])
+                    max_parallel = self._call_opt.parallel
+                    if max_parallel <= 0:
+                        max_parallel = len(self._proxies)
+
+                    # Validate and normalize every target before dispatching any
+                    # work. A malformed or heterogeneous member therefore
+                    # cannot leave the group partially invoked.
+                    work_items = []
+                    for p in self._proxies:
+                        p = self._get_work_proxy(p, func_name)
+                        func_proxy, func_itf, call_args, call_kwargs = p.adjust_func_args(func_name, args, kwargs)
+                        check_call_args(func_name, func_itf, call_args, call_kwargs)
+                        call_kwargs = copy.copy(call_kwargs)
+                        call_ctx = self._app.new_context(
+                            func_proxy.caller_name, func_proxy.name, target_group=self, set_call_ctx=False
+                        )
+
+                        gcc = GroupCallContext(
+                            app=self._app,
+                            target_name=func_proxy.target_name,
+                            call_opt=self._call_opt,
+                            func_name=func_name,
+                            process_cb=self._process_resp_cb,
+                            cb_kwargs=copy.copy(self._cb_kwargs),
+                            context=call_ctx,
+                            waiter=waiter,
+                        )
+                        gcc.set_completion_cb(self._call_completed, gcc=gcc, proxy=func_proxy)
+                        work_items.append((func_proxy, gcc, call_args, call_kwargs))
+
+                    if not self._call_opt.expect_result:
+                        self._dispatch_work_items(work_items, func_name, waiter, max_parallel)
+                        return None
+
+                    if not self._call_opt.blocking:
+                        self._logger.debug(f"not blocking {func_name}")
+                        threading.Thread(
+                            target=self._dispatch_work_items,
+                            args=(work_items, func_name, waiter, max_parallel),
+                            kwargs={"raise_on_abort": False},
+                            daemon=True,
+                            name="collab_group_dispatch",
+                        ).start()
+                        return waiter.results
+
+                    self._dispatch_work_items(work_items, func_name, waiter, max_parallel)
+
+                    # wait for responses
+                    waiter.wait_for_responses(self._abort_signal)
+                    return waiter.results
+            except Exception as ex:
+                self._logger.error(f"exception {type(ex)} occurred: {ex}")
+                raise
+
+        return method
+
+    def _dispatch_work_items(self, work_items, func_name, waiter, max_parallel, raise_on_abort=True):
+        for index, (func_proxy, gcc, call_args, call_kwargs) in enumerate(work_items):
+            slot_acquired = False
+            try:
+                # Limit calls that are still in flight, including remote
+                # execution and response transfer.
+                waiter.wait_for_call_permission(max_parallel, self._abort_signal)
+                waiter.inc_call_count()
+                slot_acquired = True
+                func_proxy.backend.call_target_in_group(gcc, func_name, *call_args, **call_kwargs)
+            except RunAborted as ex:
+                try:
+                    gcc.set_exception(ex)
+                finally:
+                    if slot_acquired:
+                        gcc.call_completed()
+                for _, remaining_gcc, _, _ in work_items[index + 1 :]:
+                    remaining_gcc.set_exception(ex)
+                if raise_on_abort:
+                    raise
+                return
+            except Exception as ex:
+                # A synchronous dispatch failure has no backend callback to
+                # publish an outcome or release the bounded-parallel slot.
+                try:
+                    gcc.set_exception(ex)
+                finally:
+                    if slot_acquired:
+                        gcc.call_completed()
+
+    def _call_completed(self, gcc: GroupCallContext, proxy: Proxy):
+        self._logger.debug(f"[{gcc.context}] call to '{proxy.name}' completed for func '{gcc.func_name}'")
+        gcc.waiter.dec_call_count()
+
+
+def group(
+    ctx: Context,
+    proxies: List[Proxy],
+    call_opt: CallOption = None,
+    process_resp_cb=None,
+    **cb_kwargs,
+):
+    """This is a convenience method for creating a group.
+
+    Args:
+        ctx: call context.
+        proxies: list of proxies.
+        call_opt: call option that defines call behavior.
+        process_resp_cb: callback to be called to process response from remote site.
+        **cb_kwargs: kwargs to be passed to the CB.
+
+    Returns: a Group object.
+
+    """
+    return Group(
+        ctx.app,
+        ctx.abort_signal,
+        proxies,
+        call_opt,
+        process_resp_cb,
+        **cb_kwargs,
+    )
