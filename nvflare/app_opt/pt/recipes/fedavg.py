@@ -72,8 +72,10 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         launch_once: Whether external process is launched once or per task. Defaults to True.
         shutdown_timeout: Seconds to wait before shutdown. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. Higher values must indicate
-            a better model; for lower-is-better metrics such as a loss, report a negated value from the
-            client (e.g., "neg_loss"). Defaults to "accuracy".
+            a better model; for lower-is-better metrics such as a loss, set negate_key_metric=True or
+            report a negated value from the client (e.g., "neg_loss"). Defaults to "accuracy".
+        negate_key_metric: Whether the model selector should invert key_metric before comparing models.
+            Use this for lower-is-better metrics such as losses. Defaults to False.
         stop_cond: Early stopping condition based on metric. String literal in the format of
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
@@ -128,6 +130,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
+        negate_key_metric: bool = False,
         # New FedAvg features
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
@@ -164,6 +167,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
+            negate_key_metric=negate_key_metric,
             stop_cond=stop_cond,
             patience=patience,
             best_model_filename=best_model_filename,
