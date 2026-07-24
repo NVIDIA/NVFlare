@@ -194,7 +194,7 @@ On import or validation failure, fix the reported contract issue without bypassi
 
 ## Stop Handling
 
-Only produce a final answer for a campaign when the code-owned campaign state reports `final_response_allowed=true`,
-for example because the user manually stopped it, an explicit cap is exhausted, production policy blocks execution, or
-a hard safety/runtime blocker prevents further comparable runs. Then finalize `results.tsv`, `progress.png`, and a
-concise report with baseline, best score, metric source, failures, friction, commands, and absolute artifact paths.
+Only finalize when code-owned state reports `final_response_allowed=true` due to manual stop, explicit cap,
+policy boundary, or hard blocker. Then hand off to `nvflare-autofl-report` for `progress.png` and final Markdown/JSON.
+If state was not finalized, confirm no campaign/job process remains; the report skill records interruption without
+rewriting state. Return its baseline, best, provenance, literature outcomes, failures, warnings, commands, and paths.

@@ -55,6 +55,7 @@ _ACCOUNTING_RETRY_INTERVAL = 6.0
 _COMMAND_TIMEOUT = 10.0
 _MIN_SLURM_VERSION = (23, 2)
 _SLURM_VERSION_RE = re.compile(r"^slurm\s+(\d+)\.(\d+)", re.IGNORECASE)
+_JOB_NAME_SITE_LENGTH = 32
 
 
 def _job_key(job_id: str) -> str:
@@ -98,8 +99,8 @@ def _cleanup_job_dir(job_dir: str) -> None:
         pass
 
 
-def _job_name(job_key: str) -> str:
-    return f"nvfl-{job_key[:8]}"
+def _job_name(site_name: str, job_key: str) -> str:
+    return f"nvfl-{site_name[:_JOB_NAME_SITE_LENGTH]}-{job_key[:8]}"
 
 
 def _is_terminal(state: str) -> bool:
@@ -261,6 +262,7 @@ class SlurmJobManager:
                 if plan.job_id in self._handles:
                     raise SlurmLauncherError(f"job '{plan.job_id}' already has a live Slurm handle")
             job_key, job_dir = self._prepare_job_dir(plan.job_id, plan.sandbox != "none")
+            job_name = _job_name(plan.site_name, job_key)
             try:
                 self._write_job_files(plan, job_dir)
                 try:
@@ -268,7 +270,7 @@ class SlurmJobManager:
                         _submission_argv(
                             plan,
                             job_dir,
-                            _job_name(job_key),
+                            job_name,
                             self._marker(plan.job_id),
                             self.config,
                         ),
@@ -299,7 +301,7 @@ class SlurmJobManager:
                 handle = SlurmJobHandle(
                     self,
                     plan.job_id,
-                    job_key,
+                    job_name,
                     job_dir,
                     submission.job_id,
                     plan.resources.pending_timeout,
@@ -348,7 +350,7 @@ class SlurmJobManager:
         handle.accounting_last_query = now
         result = self.adapter.accounting_by_id(
             handle.job_id,
-            _job_name(handle.job_key),
+            handle.job_name,
             timeout=_COMMAND_TIMEOUT,
         )
         if result.status == LookupStatus.UNAVAILABLE:
@@ -375,7 +377,7 @@ class SlurmJobManager:
                 return handle.terminal_result
             active = self.adapter.active_by_id(
                 handle.job_id,
-                _job_name(handle.job_key),
+                handle.job_name,
                 self._marker(handle.nvflare_job_id),
                 timeout=_COMMAND_TIMEOUT,
             )
@@ -424,7 +426,7 @@ class SlurmJobHandle(JobHandleSpec):
         self,
         manager: SlurmJobManager,
         nvflare_job_id: str,
-        job_key: str,
+        job_name: str,
         job_dir: str,
         job_id: str,
         pending_timeout: float,
@@ -432,7 +434,7 @@ class SlurmJobHandle(JobHandleSpec):
     ):
         self.manager = manager
         self.nvflare_job_id = nvflare_job_id
-        self.job_key = job_key
+        self.job_name = job_name
         self.job_dir = job_dir
         self.pending_timeout = pending_timeout
         self.poll_interval = poll_interval
