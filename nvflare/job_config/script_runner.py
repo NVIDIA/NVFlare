@@ -95,16 +95,14 @@ class BaseScriptRunner:
         Args:
             script (str): Script to run. For in-process must be a python script path. For ex-process can be any script support by `command`.
             script_args (Union[str, list[str]]): Optional arguments appended to the script. External-process
-                runners also accept pre-tokenized argv; use it when Windows paths or exact argument boundaries
-                must be preserved across platforms. Values are written in clear text into the generated job
-                config, so they must never contain actual secrets; use
+                runners also accept pre-tokenized argv when exact argument boundaries must be preserved.
+                Values are written in clear text into the generated job config, so they must never contain actual secrets; use
                 :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
                 :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The executing site
                 resolves the placeholder at runtime.
             launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
             command (Union[str, list[str]]): If launch_external_process=True, command prepended to the script.
-                Pass pre-tokenized argv to preserve Windows paths and exact argument boundaries. Defaults to
-                "python3 -u".
+                Pass pre-tokenized argv to preserve exact argument boundaries. Defaults to "python3 -u".
             framework (str): Framework is used to determine the `params_exchange_format`. Defaults to FrameworkType.PYTORCH.
             server_expected_format (str): What format to exchange the parameters between server and client.
             params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
@@ -445,16 +443,14 @@ class ScriptRunner(BaseScriptRunner):
         Args:
             script (str): Script to run. For in-process must be a python script path. For ex-process can be any script support by `command`.
             script_args (Union[str, list[str]]): Optional arguments appended to the script. External-process
-                runners also accept pre-tokenized argv; use it when Windows paths or exact argument boundaries
-                must be preserved across platforms. Values are written in clear text into the generated job
-                config, so they must never contain actual secrets; use
+                runners also accept pre-tokenized argv when exact argument boundaries must be preserved.
+                Values are written in clear text into the generated job config, so they must never contain actual secrets; use
                 :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
                 :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The executing site
                 resolves the placeholder at runtime.
             launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
             command (Union[str, list[str]]): If launch_external_process=True, command prepended to the script.
-                Pass pre-tokenized argv to preserve Windows paths and exact argument boundaries. Defaults to
-                "python3 -u".
+                Pass pre-tokenized argv to preserve exact argument boundaries. Defaults to "python3 -u".
             framework (str): Framework is used to determine the `params_exchange_format`. Defaults to FrameworkType.PYTORCH.
             server_expected_format (str): What format to exchange the parameters between server and client.
             params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.

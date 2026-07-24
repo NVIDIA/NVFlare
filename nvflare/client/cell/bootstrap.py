@@ -51,6 +51,7 @@ class BootstrapKey:
 
     JOB_ID = "job_id"
     SITE_NAME = "site_name"
+    SECURE_MODE = "secure_mode"
 
     # Legacy TASK_EXCHANGE shape needed before the first task arrives.
     TASK_EXCHANGE = "task_exchange"
@@ -102,6 +103,10 @@ def get_bootstrap_client_api_type(config: dict, path: str = "<bootstrap config>"
             raise ValueError(f"invalid Client API bootstrap config {path}: missing required field {field!r}")
         if not isinstance(config[field], str) or not config[field].strip():
             raise ValueError(f"invalid Client API bootstrap config {path}: field {field!r} must be a non-empty string")
+    if BootstrapKey.SECURE_MODE in config and type(config[BootstrapKey.SECURE_MODE]) is not bool:
+        raise ValueError(
+            f"invalid Client API bootstrap config {path}: field {BootstrapKey.SECURE_MODE!r} must be a bool"
+        )
     return CELL_API_TYPE
 
 

@@ -132,6 +132,7 @@ class CellClientAPI(APISpec):
         self._trainer_fqcn: str = self._config[BootstrapKey.TRAINER_FQCN]
         self._job_id: str = self._config[BootstrapKey.JOB_ID]
         self._site_name: str = self._config[BootstrapKey.SITE_NAME]
+        self._secure_mode = bool(self._config.get(BootstrapKey.SECURE_MODE, False))
         self._task_exchange: dict = self._config.get(BootstrapKey.TASK_EXCHANGE, {})
         # Typed files predating LAUNCH_ONCE default to persistent; one-shot close is irreversible.
         self._launch_once = bool(self._task_exchange.get(ConfigKey.LAUNCH_ONCE, True))
@@ -380,17 +381,15 @@ class CellClientAPI(APISpec):
         def _on_result_progress(**_kwargs):
             return None
 
+        request_headers = {MessageHeaderKey.PASS_THROUGH: True}
         request = new_cell_message(
-            {MessageHeaderKey.PASS_THROUGH: True},
+            request_headers,
             {
                 MsgKey.SESSION_ID: self._session_id,
                 MsgKey.TASK_ID: task.get(MsgKey.TASK_ID),
                 MsgKey.RESULT: shareable,
             },
         )
-        # Preserve ultimate receiver ids so the CJ remains a forwarding hop, not a receiver.
-        result_receiver_ids = self._result_receiver_ids
-
         fobs_ctx_props = {
             FOBSContextKey.STREAM_PROGRESS_CB: _on_result_progress,
             RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: _on_transaction_created,
@@ -400,6 +399,7 @@ class CellClientAPI(APISpec):
                 ResultUploadProgressContextKey.STREAMING_IDLE_TIMEOUT: DEFAULT_STREAMING_IDLE_TIMEOUT,
             },
         }
+        source_receiver_ids = (self._cj_fqcn,) if self._secure_mode else self._result_receiver_ids
 
         result_accepted = False
         # Serialize publication with SHUTDOWN; an admitted send owns the transfer barrier.
@@ -416,8 +416,8 @@ class CellClientAPI(APISpec):
                 timeout=_HELLO_TIMEOUT,
                 abort_signal=self._result_abort_signal,
                 progress_wait_cb=self._has_pending_result_transfer,
-                num_receivers=len(result_receiver_ids) if result_receiver_ids else 1,
-                receiver_ids=result_receiver_ids,
+                num_receivers=len(source_receiver_ids) if source_receiver_ids else 1,
+                receiver_ids=source_receiver_ids,
                 fobs_ctx_props=fobs_ctx_props,
             )
             self._check_result_accepted(reply)

@@ -65,7 +65,7 @@ def _result_shareable() -> Shareable:
 
 
 class FakeProcess:
-    """Stands in for the Popen handle of the launched trainer tree."""
+    """Stands in for the Popen handle of the launched trainer process."""
 
     _next_pid = 90000
 
@@ -78,7 +78,7 @@ class FakeProcess:
         self.stdout = None
         self.term_calls = []
         self.wait_timeouts = []
-        # workers of the launched tree that outlive the leader (torchrun shape)
+        # workers in the launched process group that outlive the leader
         self.extra_group_members = False
 
     def poll(self):
@@ -110,6 +110,7 @@ class FakeCell:
         self.fqcn = CJ_FQCN
         self.decode_pass_through_channels = set()
         self.decode_pass_through_topics = set()
+        self.decode_pass_through_relay_topics = set()
         self.listener_url = "tcp://127.0.0.1:56789"
         self.internal_listener_made = False
         self.cbs = {}
@@ -240,7 +241,7 @@ def _make_engine(cell):
     return engine
 
 
-def _make_fl_ctx(engine, app_dir):
+def _make_fl_ctx(engine, app_dir, secure_mode=False):
     fl_ctx = FLContext()
     fl_ctx.put(key=ReservedKey.ENGINE, value=engine, private=True, sticky=False)
     fl_ctx.put(key=ReservedKey.RUN_NUM, value="job-1", private=False, sticky=False)
@@ -250,6 +251,7 @@ def _make_fl_ctx(engine, app_dir):
     workspace.get_app_custom_dir.return_value = app_dir
     fl_ctx.put(key=FLContextKey.WORKSPACE_OBJECT, value=workspace, private=True, sticky=False)
     fl_ctx.put(key=FLContextKey.CURRENT_JOB_ID, value="job-1", private=False, sticky=False)
+    fl_ctx.put(key=FLContextKey.SECURE_MODE, value=secure_mode, private=True, sticky=False)
     return fl_ctx
 
 
@@ -336,6 +338,8 @@ class TestInitializeAndFinalize:
             assert trainer.trainer_fqcn == f"{CJ_FQCN}.client_api_trainer_1"
             assert env.cell.internal_listener_made
             assert (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK) in env.cell.decode_pass_through_topics
+            assert (CHANNEL, Topic.RESULT_READY) in env.cell.decode_pass_through_topics
+            assert not env.cell.decode_pass_through_relay_topics
             assert CellChannel.SERVER_COMMAND not in env.cell.decode_pass_through_channels
             for topic in PROTOCOL_TOPICS:
                 assert topic in env.cell.cbs, f"backend must register a handler for {topic}"
@@ -351,8 +355,26 @@ class TestInitializeAndFinalize:
             backend.finalize(FLContext())
         assert not backend._active_launch
         assert (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK) not in env.cell.decode_pass_through_topics
+        assert (CHANNEL, Topic.RESULT_READY) not in env.cell.decode_pass_through_topics
         # launch-token file is removed after teardown
         assert not os.path.exists(os.path.join(env.app_dir, bootstrap_file_name(1)))
+
+    def test_initialize_relays_pass_through_refs_in_secure_mode(self, env):
+        backend = ExternalProcessBackend()
+        fl_ctx = _make_fl_ctx(_make_engine(env.cell), env.app_dir, secure_mode=True)
+
+        backend.initialize(_make_context(), fl_ctx)
+        try:
+            assert (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK) in env.cell.decode_pass_through_topics
+            assert (CHANNEL, Topic.RESULT_READY) in env.cell.decode_pass_through_topics
+            assert (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK) in env.cell.decode_pass_through_relay_topics
+            assert (CHANNEL, Topic.RESULT_READY) in env.cell.decode_pass_through_relay_topics
+            assert CellChannel.SERVER_COMMAND not in env.cell.decode_pass_through_channels
+            bootstrap_path = env.harness.processes[0].kwargs["env"][BOOTSTRAP_FILE_ENV_VAR]
+            assert read_bootstrap_config(bootstrap_path)[BootstrapKey.SECURE_MODE] is True
+        finally:
+            backend.finalize(FLContext())
+        assert not env.cell.decode_pass_through_relay_topics
 
     def test_initialize_does_not_log_configured_command(self, env):
         literal_secret = "literal-secret-sentinel"
@@ -414,7 +436,7 @@ class TestInitializeAndFinalize:
         elapsed = time.monotonic() - start
 
         assert elapsed < 5.0
-        # contract: self-unwinding - the launched process tree must not leak
+        # contract: self-unwinding - the launched process group must not leak
         process = env.harness.processes[0]
         assert process.returncode is not None, "unwind must terminate the launched trainer"
         assert backend._active_launch is None
@@ -739,7 +761,7 @@ class TestInitializeAndFinalize:
 
     def test_finalize_escalates_sigterm_to_sigkill(self, env, monkeypatch):
         backend, _ = _initialized_backend(env, stop_grace_period=0.01)
-        # a wedged tree: SIGTERM/SIGKILL are ignored (fake killpg only records; sig-0
+        # a wedged group: SIGTERM/SIGKILL are ignored (fake killpg only records; sig-0
         # probes report the group alive), so the escalation must run its full course
         monkeypatch.setattr(env.harness, "killpg", lambda pgid, sig: env.harness.killpg_calls.append((pgid, sig)))
         monkeypatch.setattr(ebp.os, "killpg", env.harness.killpg, raising=False)
@@ -755,7 +777,7 @@ class TestInitializeAndFinalize:
 
     @pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
     def test_workers_terminated_when_launcher_already_exited(self, env):
-        """torchrun shape: the launcher (group leader) exits while workers keep the group
+        """Launcher exits while workers keep the owned process group
         alive — teardown must still signal the GROUP, not skip on the dead leader."""
         backend, _ = _initialized_backend(env, shutdown_timeout=0.0)
         process = env.harness.processes[0]
@@ -822,47 +844,6 @@ class TestInitializeAndFinalize:
 
         assert process.term_calls == ["terminate", "kill"]
         assert process.returncode is not None
-
-    @pytest.mark.parametrize("hard,expected_fallback", [(False, "terminate"), (True, "kill")])
-    def test_windows_taskkill_failure_uses_process_fallback(self, env, monkeypatch, hard, expected_fallback):
-        backend, _ = _initialized_backend(env)
-        process = env.harness.processes[0]
-        monkeypatch.setattr(ebp.os, "name", "nt")
-        taskkill = Mock(return_value=SimpleNamespace(returncode=1))
-        monkeypatch.setattr(ebp.subprocess, "run", taskkill)
-
-        backend._signal_process_tree(backend._active_launch, hard=hard)
-
-        taskkill.assert_called_once()
-        assert process.term_calls == [expected_fallback]
-        backend.finalize(FLContext())
-
-    def test_windows_successful_taskkill_skips_process_fallback(self, env, monkeypatch):
-        backend, _ = _initialized_backend(env)
-        process = env.harness.processes[0]
-        monkeypatch.setattr(ebp.os, "name", "nt")
-        monkeypatch.setattr(ebp.subprocess, "run", Mock(return_value=SimpleNamespace(returncode=0)))
-
-        backend._signal_process_tree(backend._active_launch, hard=False)
-
-        assert process.term_calls == []
-        process.exit(0)
-        backend.finalize(FLContext())
-
-    def test_windows_taskkill_exception_uses_process_fallback(self, env, monkeypatch):
-        backend, _ = _initialized_backend(env)
-        process = env.harness.processes[0]
-        monkeypatch.setattr(ebp.os, "name", "nt")
-        monkeypatch.setattr(
-            ebp.subprocess,
-            "run",
-            Mock(side_effect=subprocess.TimeoutExpired(cmd=["taskkill"], timeout=10)),
-        )
-
-        backend._signal_process_tree(backend._active_launch, hard=False)
-
-        assert process.term_calls == ["terminate"]
-        backend.finalize(FLContext())
 
     def test_finalize_does_not_raise_when_shutdown_send_fails(self, env, caplog):
         backend, _ = _initialized_backend(env)
@@ -1270,9 +1251,7 @@ class TestExecute:
             topic, target, payload = seen.task_payloads[0]
             trainer = backend._active_launch
             assert topic == Topic.TASK_READY and target == trainer.trainer_fqcn
-            # the streaming request path requires a numeric timeout: the default
-            # task_wait_timeout=None must be normalized, never passed through
-            assert env.cell.sent[0][3] == ebp._TASK_READY_NO_PROGRESS_TIMEOUT
+            assert env.cell.sent[0][3] is None
             assert payload[MsgKey.SESSION_ID] == trainer.session_id
             assert payload[MsgKey.TASK_NAME] == "train"
             assert payload[MsgKey.TASK_ID]

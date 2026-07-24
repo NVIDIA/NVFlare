@@ -52,8 +52,6 @@ class TestPrepareSubprocessCommand:
             "dash -c 'echo ${secret:PROCESS_UTIL_TEST_SECRET}'",
             "fish -c 'echo ${secret:PROCESS_UTIL_TEST_SECRET}'",
             "fish -C 'echo ${secret:PROCESS_UTIL_TEST_SECRET}'",
-            'cmd.exe /c "echo ${secret:PROCESS_UTIL_TEST_SECRET}"',
-            "cmd.exe /Cecho ${secret:PROCESS_UTIL_TEST_SECRET}",
             "busybox sh -c 'echo ${secret:PROCESS_UTIL_TEST_SECRET}'",
             "python -c 'print(\"${secret:PROCESS_UTIL_TEST_SECRET}\")'",
         ],
@@ -63,16 +61,6 @@ class TestPrepareSubprocessCommand:
 
         with pytest.raises(ValueError, match="nested interpreter command strings"):
             prepare_subprocess_command(command)
-
-    def test_windows_tokenization_preserves_backslashes_and_secret_as_one_arg(self, monkeypatch):
-        monkeypatch.setenv("PROCESS_UTIL_TEST_SECRET", "value with spaces")
-
-        argv = prepare_subprocess_command(
-            r"python C:\work\train.py --token ${secret:PROCESS_UTIL_TEST_SECRET}", posix=False
-        )
-
-        assert argv == ["python", r"C:\work\train.py", "--token", "value with spaces"]
-
 
 class TestProcessAdapterWithPopen:
     """Test ProcessAdapter when initialized with a subprocess.Popen object."""

@@ -11,7 +11,7 @@ The currently available modes are:
 | Mode | Backend | Trainer location | Availability |
 |---|---|---|---|
 | `in_process` | DataBus | Thread in the Client Job (CJ) process | Available |
-| `external_process` | Cell | Process tree launched and owned by the CJ | Available |
+| `external_process` | Cell | Trainer process/group launched by the CJ | Available |
 | `attach` | — | — | Reserved; not implemented |
 
 Selecting `attach` fails clearly rather than silently falling back to another transport.
@@ -77,8 +77,8 @@ ClientAPIExecutor
 ### Actors
 
 - **CJ:** hosts `ClientAPIExecutor` and `ExternalProcessBackend`.
-- **Trainer process tree:** runs the user's script or a command such as `torchrun`. The backend
-  launches and owns this local process tree.
+- **Trainer process/group:** runs the user's script or launch command. The backend launches this
+  local process and, on POSIX systems, manages the process group created for it.
 - **Control rank:** rank 0 is the Cell peer and calls the Client API. Other distributed ranks use
   their framework's own collectives.
 
@@ -212,12 +212,12 @@ download transaction. Teardown cannot safely return with a daemon reaper because
 tears down streaming and the CJ Cell immediately after END_RUN. The lower `DownloadService`
 idle/receiver policy normally bounds a stalled transfer. END_RUN also applies a final total wait
 backstop just beyond the default streaming-idle budget; if a still-connected trainer remains wedged
-past that bound, the backend force-stops its owned process tree rather than hanging job teardown.
+past that bound, the backend force-stops its owned process group rather than hanging job teardown.
 Other failure/teardown paths use the bounded SHUTDOWN/TERM/KILL sequence immediately.
 
 Startup waits at most `launch_timeout` for the trainer to complete its HELLO handshake. The
 default is 300 seconds; callers may explicitly use `None` when an unbounded wait is required. For
-ordinary shutdown, a `shutdown_timeout` of zero is kept as zero and starts process-tree termination
+ordinary shutdown, a `shutdown_timeout` of zero is kept as zero and starts process-group termination
 immediately after the orderly SHUTDOWN notification. An accepted result whose publication is
 different: its truthful terminal barrier takes precedence over ordinary process-shutdown timing,
 so historical `ScriptRunner` defaults cannot erase the source-lifetime contract.
@@ -234,8 +234,7 @@ SHUTDOWN: either `send()` sees the stop and closes after terminal settlement, or
 that settlement already happened and can stop the persistent process. A standard trainer loop also releases its Cell
 synchronously when `receive()` or `is_running()` observes the shutdown (or abort), so existing
 scripts do not need an explicit `flare.shutdown()` at loop exit. The backend then terminates any
-surviving owned tree with a bounded soft/hard stop sequence. On Windows the current implementation
-uses `taskkill /T` for tree termination. Because a directly launched trainer does not run under
+surviving owned POSIX process group with a bounded soft/hard stop sequence. Because a directly launched trainer does not run under
 `MainProcessMonitor`, its Cell Client API shutdown also retires process-global DownloadService
 state, the reliable retry scheduler, and the shared streaming executors; otherwise their non-daemon
 pools can keep a completed one-shot or distributed worker process alive. That irreversible runtime
@@ -330,7 +329,7 @@ Validate at least:
 - PyTorch/TensorFlow native-to-NumPy conversion where configured;
 - LOG/analytics delivery;
 - large tensor streaming and tensor disk offload;
-- abort, timeout, trainer exit, CJ loss, and process-tree cleanup;
+- abort, timeout, trainer exit, CJ loss, and process-group cleanup;
 - both `launch_once` policies.
 
 ## Deferred Work

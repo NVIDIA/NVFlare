@@ -191,6 +191,12 @@ def _set_formats(bootstrap_path, params_exchange_format, server_expected_format)
     write_bootstrap_config(bootstrap_path, config)
 
 
+def _set_secure_mode(bootstrap_path, secure_mode):
+    config = read_bootstrap_config(bootstrap_path)
+    config[BootstrapKey.SECURE_MODE] = secure_mode
+    write_bootstrap_config(bootstrap_path, config)
+
+
 def _deliver_task(env, task_name="train", task_id=None, model=None, result_receiver_ids=None):
     task_id = task_id or uuid.uuid4().hex
     if model is None:
@@ -569,6 +575,23 @@ class TestReceiveSend:
             result_kwargs = env.request_kwargs[env.request_messages.index(result_request)]
             assert result_kwargs["receiver_ids"] == ("server.job", "peer.job")
             assert result_kwargs["num_receivers"] == 2
+        finally:
+            api.shutdown()
+
+    def test_secure_mode_send_keeps_pass_through_and_ultimate_receivers(self, bootstrap_path, env):
+        _set_secure_mode(bootstrap_path, True)
+        api = _init_api(bootstrap_path, env)
+        try:
+            _deliver_task(env, result_receiver_ids=["server.job"])
+            api.receive()
+
+            api.send(FLModel(params={"w": [2.0]}, params_type=ParamsType.FULL))
+
+            result_request = [m for m in env.request_messages if MsgKey.RESULT in m.payload][0]
+            result_kwargs = env.request_kwargs[env.request_messages.index(result_request)]
+            assert result_request.get_header(MessageHeaderKey.PASS_THROUGH) is True
+            assert result_kwargs["receiver_ids"] == (CJ_FQCN,)
+            assert result_kwargs["num_receivers"] == 1
         finally:
             api.shutdown()
 

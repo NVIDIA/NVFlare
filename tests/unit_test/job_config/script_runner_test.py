@@ -283,18 +283,18 @@ class TestScriptRunner:
             "",
         ]
 
-    def test_legacy_external_process_windows_argv_is_preserved_and_serialized(self, tmp_path, monkeypatch):
+    def test_legacy_external_process_pre_tokenized_argv_is_preserved_and_serialized(self, tmp_path, monkeypatch):
         from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
         from nvflare.job_config.api import FedJob
 
         monkeypatch.chdir(tmp_path)
         script = tmp_path / "train.py"
         script.write_text("# test trainer\n")
-        command = [r"C:\Program Files\Python311\python.exe", "-u"]
-        script_args = ["--output-dir", r"C:\training runs\site-1", "--api-key", "${secret:API_TOKEN}"]
+        command = ["/opt/python env/bin/python3", "-u"]
+        script_args = ["--output-dir", "/mnt/training runs/site-1", "--api-key", "${secret:API_TOKEN}"]
         expected = [*command, "custom/train.py", *script_args]
 
-        job = FedJob(name="legacy-windows-command-export")
+        job = FedJob(name="legacy-argv-command-export")
         job.to_server(ScatterAndGather(min_clients=1, num_rounds=1, wait_time_after_min_received=0))
         job.to_clients(
             BaseScriptRunner(
@@ -308,8 +308,8 @@ class TestScriptRunner:
         )
 
         # Building the command must not mutate caller-owned argv lists.
-        assert command == [r"C:\Program Files\Python311\python.exe", "-u"]
-        assert script_args == ["--output-dir", r"C:\training runs\site-1", "--api-key", "${secret:API_TOKEN}"]
+        assert command == ["/opt/python env/bin/python3", "-u"]
+        assert script_args == ["--output-dir", "/mnt/training runs/site-1", "--api-key", "${secret:API_TOKEN}"]
 
         export_dir = tmp_path / "export"
         job.export_job(str(export_dir))
@@ -487,7 +487,7 @@ class TestExecutionModeSelection:
         assert executor._params_exchange_format == ExchangeFormat.PYTORCH
         assert executor._server_expected_format == ExchangeFormat.NUMPY
         assert executor._params_transfer_type == TransferType.DIFF
-        # Zero means do not wait for natural exit before process-tree termination. It must
+        # Zero means do not wait for natural exit before process-group termination. It must
         # not be rewritten to None, which asks the backend to use its 30-second fallback.
         assert executor._shutdown_timeout == 0.0
         assert executor._build_backend_context().shutdown_timeout == 0.0
@@ -547,18 +547,18 @@ class TestExecutionModeSelection:
             "two words",
         ]
 
-    def test_external_process_windows_argv_is_preserved_and_serialized(self, tmp_path, monkeypatch):
+    def test_external_process_pre_tokenized_argv_is_preserved_and_serialized(self, tmp_path, monkeypatch):
         from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
         from nvflare.job_config.api import FedJob
 
         monkeypatch.chdir(tmp_path)
         script = tmp_path / "train.py"
         script.write_text("# test trainer\n")
-        command = [r"C:\Program Files\Python311\python.exe", "-u"]
-        script_args = ["--output-dir", r"C:\training runs\site-1", "--api-key", "${secret:API_TOKEN}"]
+        command = ["/opt/python env/bin/python3", "-u"]
+        script_args = ["--output-dir", "/mnt/training runs/site-1", "--api-key", "${secret:API_TOKEN}"]
         expected = [*command, "custom/train.py", *script_args]
 
-        job = FedJob(name="windows-command-export")
+        job = FedJob(name="argv-command-export")
         job.to_server(ScatterAndGather(min_clients=1, num_rounds=1, wait_time_after_min_received=0))
         job.to_clients(
             ScriptRunner(
@@ -571,8 +571,8 @@ class TestExecutionModeSelection:
         )
 
         # Building the command must not mutate caller-owned argv lists.
-        assert command == [r"C:\Program Files\Python311\python.exe", "-u"]
-        assert script_args == ["--output-dir", r"C:\training runs\site-1", "--api-key", "${secret:API_TOKEN}"]
+        assert command == ["/opt/python env/bin/python3", "-u"]
+        assert script_args == ["--output-dir", "/mnt/training runs/site-1", "--api-key", "${secret:API_TOKEN}"]
 
         export_dir = tmp_path / "export"
         job.export_job(str(export_dir))

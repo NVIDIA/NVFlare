@@ -1723,6 +1723,33 @@ class Consumer(ABC):
         pass
 
 
+def request_download_chunk(
+    from_fqcn: str,
+    ref_id: str,
+    state: dict,
+    per_request_timeout: float,
+    cell: Cell,
+    abort_signal: Signal = None,
+    secure=False,
+    optional=False,
+):
+    """Request one DownloadService chunk from a remote producer."""
+
+    payload = {_PropKey.REF_ID: ref_id}
+    if state is not None:
+        payload[_PropKey.STATE] = state
+    return cell.send_request(
+        channel=OBJ_DOWNLOADER_CHANNEL,
+        target=from_fqcn,
+        topic=OBJ_DOWNLOADER_TOPIC,
+        request=new_cell_message(headers={}, payload=payload),
+        timeout=per_request_timeout,
+        secure=secure,
+        optional=optional,
+        abort_signal=abort_signal,
+    )
+
+
 def download_object(
     from_fqcn: str,
     ref_id: str,
@@ -1829,21 +1856,17 @@ def download_object(
     _emit_progress("start", force=True)
 
     while True:
-        # Build a fresh request each iteration (including retries)
-        # to avoid re-encoding an already-encoded message.
+        start_time = time.time()
         request_payload = {_PropKey.REF_ID: ref_id}
         if confirm_enabled:
             request_payload[_PropKey.CONFIRM_CAPABLE] = True
         if current_state is not None:
             request_payload[_PropKey.STATE] = current_state
-        request = new_cell_message(headers={}, payload=request_payload)
-
-        start_time = time.time()
         reply = cell.send_request(
             channel=OBJ_DOWNLOADER_CHANNEL,
             target=from_fqcn,
             topic=OBJ_DOWNLOADER_TOPIC,
-            request=request,
+            request=new_cell_message(headers={}, payload=request_payload),
             timeout=per_request_timeout,
             secure=secure,
             optional=optional,

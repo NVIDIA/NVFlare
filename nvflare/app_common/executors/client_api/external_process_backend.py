@@ -14,7 +14,7 @@
 
 """External-process backend for ClientAPIExecutor.
 
-The backend owns the launched trainer process tree and its authenticated session with the
+The backend owns the launched trainer process/process group and its authenticated session with the
 Client Job (CJ) Cell. Task and result Shareables use Cell/F3 directly, including lazy payload transfer. See
 ``docs/design/client_api_execution_modes.md`` and the trainer counterpart in
 ``nvflare/client/cell/api.py``.
@@ -92,10 +92,6 @@ _SEND_ABORTED = "aborted"
 _SEND_PROCESS_DEAD = "process_dead"
 _SEND_SESSION_DEAD = "session_dead"
 _SEND_CLOSED = "closed"
-
-# Streaming Cell requests require a numeric no-progress timeout. Other cancellation
-# conditions remain live when the public task_wait_timeout is disabled.
-_TASK_READY_NO_PROGRESS_TIMEOUT = 3600.0
 
 # Accepted lazy results keep their trainer source alive until flare.send() settles.
 _NATURAL_EXIT_REAP_INTERVAL = 0.1
@@ -179,7 +175,7 @@ class _TaskContext:
 
 
 class ExternalProcessBackend(ClientAPIBackendSpec):
-    """Launches and owns the external trainer process tree, bridged over the CJ cell."""
+    """Launches and owns the external trainer process/group, bridged over the CJ cell."""
 
     def __init__(self):
         super().__init__()
@@ -189,8 +185,10 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         self._cell = None
         self._cj_fqcn: Optional[str] = None
         self._connect_url: Optional[str] = None
-        self._pass_through_route: Optional[Tuple[str, str]] = None
-        self._owns_pass_through_route = False
+        self._pass_through_routes: tuple[Tuple[str, str], ...] = ()
+        self._owned_pass_through_routes: set[Tuple[str, str]] = set()
+        self._owned_relay_pass_through_routes: set[Tuple[str, str]] = set()
+        self._secure_mode = False
         self._job_id: Optional[str] = None
         self._site_name: Optional[str] = None
         self._app_dir: Optional[str] = None
@@ -227,13 +225,20 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             self._cell = cell
             self._cj_fqcn = cell.get_fqcn()
 
-            # Decode only GET_TASK replies lazily in the CJ so an external trainer can
-            # download directly from the original source. SERVER_COMMAND also carries
-            # unrelated request types (notably subordinate-client SUBMIT_UPDATE), so a
-            # channel-wide opt-in would silently expose lazy refs to their handlers.
-            self._pass_through_route = (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK)
-            self._owns_pass_through_route = self._pass_through_route not in cell.decode_pass_through_topics
-            cell.decode_pass_through_topics.add(self._pass_through_route)
+            # SERVER_COMMAND also carries unrelated request types (notably
+            # subordinate-client SUBMIT_UPDATE), so never opt in the whole channel.
+            task_route = (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK)
+            result_route = (CHANNEL, Topic.RESULT_READY)
+            self._pass_through_routes = (task_route, result_route)
+            self._secure_mode = bool(fl_ctx.get_prop(FLContextKey.SECURE_MODE, False))
+            for route in self._pass_through_routes:
+                if route not in cell.decode_pass_through_topics:
+                    self._owned_pass_through_routes.add(route)
+                cell.decode_pass_through_topics.add(route)
+                if self._secure_mode:
+                    if route not in cell.decode_pass_through_relay_topics:
+                        self._owned_relay_pass_through_routes.add(route)
+                    cell.decode_pass_through_relay_topics.add(route)
 
             workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
             job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
@@ -405,6 +410,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                     BootstrapKey.LAUNCH_TOKEN: token,
                     BootstrapKey.JOB_ID: self._job_id,
                     BootstrapKey.SITE_NAME: self._site_name,
+                    BootstrapKey.SECURE_MODE: self._secure_mode,
                     BootstrapKey.TASK_EXCHANGE: self._task_exchange_config(),
                     BootstrapKey.MEMORY_GC_ROUNDS: self._context.memory_gc_rounds,
                     BootstrapKey.CUDA_EMPTY_CACHE: self._context.cuda_empty_cache,
@@ -430,7 +436,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 stderr=subprocess.STDOUT,
                 cwd=self._app_dir,
                 env=env,
-                # own process group so orderly stop can signal the whole tree
+                # own process group so orderly stop can signal the launched trainer group
                 start_new_session=(os.name == "posix"),
             )
             with trainer._stop_lock:
@@ -483,7 +489,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 raise RuntimeError(f"trainer did not complete the HELLO handshake within launch_timeout={timeout}s")
 
     def _stop_trainer(self, trainer: _TrainerSession, natural_exit_wait: float) -> None:
-        """Stop a trainer gracefully, then terminate its process tree; idempotent and non-raising."""
+        """Stop a trainer gracefully, then terminate its process/group; idempotent and non-raising."""
         with trainer._stop_lock:
             if trainer._cleaned:
                 return
@@ -677,11 +683,14 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
 
     def _disable_task_pass_through(self) -> None:
         cell = self._cell
-        route = self._pass_through_route
-        if cell is not None and route is not None and self._owns_pass_through_route:
-            cell.decode_pass_through_topics.discard(route)
-        self._pass_through_route = None
-        self._owns_pass_through_route = False
+        if cell is not None:
+            for route in self._owned_pass_through_routes:
+                cell.decode_pass_through_topics.discard(route)
+            for route in self._owned_relay_pass_through_routes:
+                cell.decode_pass_through_relay_topics.discard(route)
+        self._pass_through_routes = ()
+        self._owned_pass_through_routes.clear()
+        self._owned_relay_pass_through_routes.clear()
 
     def _process_group_alive(self, trainer: _TrainerSession) -> bool:
         """Return group liveness even when a launcher exits before its workers."""
@@ -729,20 +738,20 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             time.sleep(0.1)
 
     def _terminate_process_tree(self, trainer: _TrainerSession, grace: float) -> None:
-        """Apply SIGTERM, bounded grace, then SIGKILL to the owned process tree."""
+        """Apply SIGTERM, bounded grace, then SIGKILL to the owned process group."""
         if not self._process_group_alive(trainer):
             return
-        self.logger.info(f"terminating trainer process tree (pgid={trainer.pgid}, grace={grace}s)")
+        self.logger.info(f"terminating trainer process group (pgid={trainer.pgid}, grace={grace}s)")
         self._signal_process_tree(trainer, hard=False)
         if self._await_group_exit(trainer, grace):
             return
-        self.logger.warning(f"trainer process tree (pgid={trainer.pgid}) survived SIGTERM grace; killing")
+        self.logger.warning(f"trainer process group (pgid={trainer.pgid}) survived SIGTERM grace; killing")
         self._signal_process_tree(trainer, hard=True)
         if not self._await_group_exit(trainer, _LOG_THREAD_JOIN_TIMEOUT):
             self.logger.error(f"trainer process group (pgid={trainer.pgid}) did not die after SIGKILL")
 
     def _signal_process_tree(self, trainer: _TrainerSession, hard: bool) -> None:
-        """Soft (SIGTERM/terminate) or hard (SIGKILL/kill) signal to the trainer's tree."""
+        """Soft (SIGTERM/terminate) or hard (SIGKILL/kill) signal to the trainer process/group."""
         if os.name == "posix" and trainer.pgid is not None:
             try:
                 os.killpg(trainer.pgid, signal.SIGKILL if hard else signal.SIGTERM)
@@ -754,18 +763,6 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         process = trainer.process
         if process is None or process.poll() is not None:
             return
-        if os.name == "nt":
-            # Without a Job Object, taskkill /T is the best available tree termination.
-            try:
-                cmd = ["taskkill", "/T", "/PID", str(process.pid)]
-                if hard:
-                    cmd.insert(1, "/F")
-                completed = subprocess.run(cmd, capture_output=True, timeout=10)
-                if completed.returncode == 0 or process.poll() is not None:
-                    return
-                self.logger.debug(f"taskkill on trainer tree failed with rc={completed.returncode}")
-            except Exception as e:
-                self.logger.debug(f"taskkill on trainer tree failed: {e}")
         try:
             if hard:
                 process.kill()
@@ -777,7 +774,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
     @staticmethod
     def _split_command(command: Union[str, Sequence[str]]) -> list[str]:
         """Prepare shell-free argv and resolve each secret as one argument."""
-        return prepare_subprocess_command(command, posix=os.name == "posix")
+        return prepare_subprocess_command(command)
 
     def _shutdown_wait_bound(self) -> float:
         shutdown_timeout = self._context.shutdown_timeout
@@ -911,9 +908,6 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
     def _send_task_ready(self, trainer: _TrainerSession, task_message: dict, abort_signal: Signal) -> Tuple[str, Any]:
         """Send TASK_READY with native cancellation for abort and liveness failures."""
         timeout = self._context.task_wait_timeout
-        if timeout is None:
-            # the streaming request path requires a numeric (no-progress) timeout
-            timeout = _TASK_READY_NO_PROGRESS_TIMEOUT
         transfer_waiters = []
 
         def _on_transaction_created(transaction):

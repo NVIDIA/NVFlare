@@ -67,7 +67,6 @@ class TestBootstrapConfig:
         assert os.stat(path).st_mode & 0o777 == 0o600
         assert read_bootstrap_config(path) == CONFIG
 
-    @pytest.mark.skipif(os.name == "nt", reason="creating a symlink may require elevated privileges on Windows")
     def test_write_replaces_symlink_without_touching_target(self, tmp_path):
         target = tmp_path / "unrelated.json"
         target.write_text('{"owner": "other"}')
@@ -137,6 +136,12 @@ class TestBootstrapConfig:
         config = {**CONFIG, field: invalid_value}
 
         with pytest.raises(ValueError, match=f"field '{field}' must be a non-empty string"):
+            get_bootstrap_client_api_type(config, "bootstrap.json")
+
+    def test_typed_bootstrap_rejects_invalid_secure_mode(self):
+        config = {**CONFIG, BootstrapKey.SECURE_MODE: "true"}
+
+        with pytest.raises(ValueError, match="field 'secure_mode' must be a bool"):
             get_bootstrap_client_api_type(config, "bootstrap.json")
 
     @pytest.mark.parametrize(
