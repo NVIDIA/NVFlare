@@ -18,8 +18,8 @@ from pathlib import Path
 
 
 def define_parser():
-    parser = argparse.ArgumentParser(description="Prepare synthetic JSONL data for the Qwen HF Client API example")
-    parser.add_argument("--data_root", type=str, default="/tmp/nvflare/hf_client_api_qwen/data")
+    parser = argparse.ArgumentParser(description="Prepare synthetic JSONL data for the Hello HuggingFace example")
+    parser.add_argument("--data_root", type=str, default="/tmp/nvflare/hello-huggingface/data")
     parser.add_argument("--n_clients", type=int, default=2)
     return parser.parse_args()
 

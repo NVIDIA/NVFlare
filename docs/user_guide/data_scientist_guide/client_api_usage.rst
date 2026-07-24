@@ -195,7 +195,7 @@ For complete working examples across different frameworks:
 * NumPy: :github_nvflare_link:`hello-numpy <examples/hello-world/hello-numpy>`
 * PyTorch Lightning: :github_nvflare_link:`hello-lightning <examples/hello-world/hello-lightning>`
 * TensorFlow: :github_nvflare_link:`hello-tf <examples/hello-world/hello-tf>`
-* HuggingFace Trainer: :github_nvflare_link:`hf_client_api <examples/advanced/hf_client_api>`
+* HuggingFace Trainer: :github_nvflare_link:`hello-huggingface <examples/hello-world/hello-huggingface>`
 
 Each example shows both the Client API training script (``client.py``) and Job Recipe definition (``job.py``).
 

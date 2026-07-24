@@ -30,7 +30,7 @@ calls can participate in FL rounds.
    import nvflare.client.hf as flare
 
    trainer = SFTTrainer(...)
-   flare.patch(trainer, params_scope="auto")
+   flare.patch(trainer)
 
    while flare.is_running():
        trainer.evaluate()
@@ -41,7 +41,8 @@ communication costs -- ideal for large models where transmitting full weights is
 
 See the complete examples:
 
-- `HuggingFace Client API Qwen Example <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/hf_client_api>`_
+- `Hello HuggingFace Qwen Example <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-huggingface>`_
+- :github_nvflare_link:`Advanced LLM HuggingFace Example <examples/advanced/llm_hf>`
 - :ref:`hf_client_api`
 
 NVIDIA NeMo Integration

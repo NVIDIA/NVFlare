@@ -424,11 +424,12 @@ For complete working examples of using Client API with Job Recipes across differ
 - NumPy: :github_nvflare_link:`hello-numpy <examples/hello-world/hello-numpy>` - Basic FL concepts
 - PyTorch Lightning: :github_nvflare_link:`hello-lightning <examples/hello-world/hello-lightning>` - Lightning integration
 - TensorFlow: :ref:`hello_tf_job_api` - MNIST classification
+- HuggingFace Trainer: :github_nvflare_link:`hello-huggingface <examples/hello-world/hello-huggingface>` - Qwen SFT/PEFT with HuggingFace Client API
 - Flower: :github_nvflare_link:`hello-flower <examples/hello-world/hello-flower>` - Flower on FLARE
 
 **Advanced Examples:**
 
-- HuggingFace Transformers: :github_nvflare_link:`hf_client_api <examples/advanced/hf_client_api>` - Qwen SFT/PEFT with HuggingFace Client API
+- HuggingFace LLM tuning: :github_nvflare_link:`llm_hf <examples/advanced/llm_hf>` - Large-model SFT/PEFT, quantization, and multi-GPU patterns
 - XGBoost: :github_nvflare_link:`xgboost examples <examples/advanced/xgboost>` - Tree-based federated learning
 - Scikit-learn: :github_nvflare_link:`sklearn-linear <examples/advanced/sklearn-linear>`, :github_nvflare_link:`sklearn-kmeans <examples/advanced/sklearn-kmeans>`, :github_nvflare_link:`sklearn-svm <examples/advanced/sklearn-svm>` - Traditional ML algorithms
 

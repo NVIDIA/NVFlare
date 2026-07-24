@@ -257,6 +257,31 @@ If you pass your own ``resume_from_checkpoint`` to ``trainer.train()``, FLARE
 uses that checkpoint for the train call and applies received global weights in
 memory instead of mutating the user-provided checkpoint.
 
+The wrapper records checkpoint provenance in
+``<TrainingArguments.output_dir>/_fl_exchange/fl_state.json``. This state lets a
+new trainer process for the same FL job continue from the last completed round,
+for example when external launchers run one trainer process per task. It does
+not provide transparent recovery of an in-flight training task that the launcher
+has already reported as failed.
+
+By default, FLARE uses an in-memory global-weight override for verified
+``transformers`` versions and falls back to checkpoint injection otherwise. To
+override this selection after validating your environment, set
+``NVFLARE_HF_WEIGHT_OVERRIDE_STRATEGY`` to one of:
+
+``auto``
+   Use the verified-version gate. This is the default.
+
+``in_memory``
+   Resume from the previous checkpoint and apply the received global weights in
+   memory during ``on_train_begin``. This avoids rewriting model weights to
+   checkpoint storage each round.
+
+``checkpoint_injection``
+   Write received global weights into the recorded checkpoint before resume.
+   Use this when the in-memory override is not compatible with the installed
+   HuggingFace stack or distributed backend.
+
 Unsupported Configurations
 ==========================
 
@@ -293,6 +318,6 @@ Complete Example
 
 See the full HuggingFace SFT/PEFT example:
 
-* :github_nvflare_link:`examples/advanced/hf_client_api <examples/advanced/hf_client_api>`
+* :github_nvflare_link:`examples/hello-world/hello-huggingface <examples/hello-world/hello-huggingface>`
 
 For the general Client API concepts, see :ref:`client_api_usage`.

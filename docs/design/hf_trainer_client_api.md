@@ -271,11 +271,13 @@ size, last completed round, the recorded checkpoint path, the computed cumulativ
 ever writes it; at startup all ranks pass a barrier after rank 0 has read (or
 created) it, so a relaunch cannot race a partially-written record and no two
 processes ever write concurrently. On startup, a session that finds a state file for the *same*
-job ID restores it — so a mid-job script relaunch (client crash + rejoin, or
-`launch_once=False` relaunch-per-task) resumes correctly instead of silently
-degrading to stateless rounds with an undefined target. A state file from a
-*different* job ID is treated as stale (WARNING, ignored). This also removes any
-hard dependency on `launch_once=True`, though it remains the recommended default.
+job ID restores it — so a new trainer process for the same job, such as
+`launch_once=False` relaunch-per-task, continues from the last completed round
+instead of silently degrading to stateless rounds with an undefined target. This
+does not promise transparent recovery of an in-flight train task that the
+launcher has already reported as failed. A state file from a *different* job ID
+is treated as stale (WARNING, ignored). This also removes any hard dependency on
+`launch_once=True`, though it remains the recommended default.
 
 Two modes:
 
@@ -699,7 +701,7 @@ No new components required:
 
 ## Example
 
-A clean `examples/advanced/hf_client_api` example demonstrates the API without
+A clean `examples/hello-world/hello-huggingface` example demonstrates the API without
 carrying the legacy `llm_hf` comparison scripts and figures. Its `client.py`
 contains ordinary dataset/model/`SFTConfig`/`SFTTrainer` setup, one default
 `flare.patch(trainer)` call, and the standard `while flare.is_running():
@@ -741,7 +743,7 @@ per-site data paths.
 - Version matrix in CI: `transformers` min supported pin + latest (the Trainer
   callback/resume internals are the main drift risk), and `trl` 0.18 + latest
   (integration test only).
-- Integration: `hf_client_api` example under simulator (single GPU) per release;
+- Integration: `hello-huggingface` example under simulator (single GPU) per release;
   multi-node remains a manual/HPC run.
 
 ## Phasing
@@ -756,7 +758,7 @@ per-site data paths.
   runtime version check. (The strategy decision itself is made: in-memory override
   primary, checkpoint-injection as automatic fallback — see Round-Loop Semantics.)
 - **Phase 1:** `patch()` + `FLCallback`; SFT + PEFT; single-GPU + DDP; train /
-  evaluate / submit_model; unit tests; add the clean `hf_client_api` example.
+  evaluate / submit_model; unit tests; add the clean `hello-huggingface` example.
 - **Phase 2 (HF-specific; primarily validation):** exercise the Phase 1 code paths
   under DeepSpeed (ZeRO-1/2/3) and FSDP — `accelerator.get_state_dict()` extraction
   and the resume/override path are designed to be backend-agnostic, so the bulk of

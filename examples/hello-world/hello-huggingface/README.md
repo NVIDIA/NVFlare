@@ -1,7 +1,7 @@
-# Qwen HuggingFace Client API
+# Hello HuggingFace
 This example demonstrates how to use NVIDIA FLARE with the HuggingFace Client API
 to run federated supervised fine-tuning with a Qwen causal language model. The
-complete example code can be found in the `hf_client_api` directory. It is
+complete example code can be found in the `hello-huggingface` directory. It is
 recommended to create a virtual environment and run everything within a
 virtualenv.
 
@@ -30,15 +30,15 @@ First get the example code from GitHub:
 git clone https://github.com/NVIDIA/NVFlare.git
 ```
 
-Then navigate to the `hf_client_api` directory:
+Then navigate to the `hello-huggingface` directory:
 
 ```
 git switch <release branch>
-cd examples/advanced/hf_client_api
+cd examples/hello-world/hello-huggingface
 ```
 
 ```bash
-hf_client_api
+hello-huggingface
 |
 |-- client.py             # HuggingFace/TRL local training script
 |-- model.py              # Qwen server-side model definitions
@@ -53,7 +53,7 @@ This example uses small JSONL instruction datasets. The `prepare_data.py` script
 writes synthetic per-site data under:
 
 ```
-/tmp/nvflare/hf_client_api_qwen/data
+/tmp/nvflare/hello-huggingface/data
 ```
 
 Each row can contain either a single `text` field or the instruction-tuning
@@ -191,7 +191,7 @@ python job.py --data_root /path/to/qwen_jsonl_data
 To export the job folder without running simulation:
 
 ```
-python job.py --export_config --job_dir /tmp/nvflare/jobs/qwen_hf_client_api
+python job.py --export_config --job_dir /tmp/nvflare/hello-huggingface/jobs/hello_huggingface
 ```
 
 Export only writes the job configuration. The client sites still need the
@@ -212,11 +212,11 @@ python job.py --train_mode sft
 The simulation creates a workspace under:
 
 ```
-/tmp/nvflare/hf_client_api_qwen/workspace
+/tmp/nvflare/hello-huggingface/workspace
 ```
 
 The exported job configuration is written to:
 
 ```
-/tmp/nvflare/hf_client_api_qwen/jobs/qwen_hf_client_api
+/tmp/nvflare/hello-huggingface/jobs/hello_huggingface
 ```

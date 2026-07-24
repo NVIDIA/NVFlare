@@ -27,14 +27,14 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 
 
 def define_parser():
-    parser = argparse.ArgumentParser(description="Qwen HuggingFace Client API example")
+    parser = argparse.ArgumentParser(description="Hello HuggingFace Qwen Client API example")
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=2)
     parser.add_argument("--model_name_or_path", type=str, default=DEFAULT_MODEL_NAME)
     parser.add_argument("--train_mode", choices=("sft", "peft"), default="peft")
-    parser.add_argument("--data_root", type=str, default="/tmp/nvflare/hf_client_api_qwen/data")
-    parser.add_argument("--workspace_root", type=str, default="/tmp/nvflare/hf_client_api_qwen/workspace")
-    parser.add_argument("--job_dir", type=str, default="/tmp/nvflare/hf_client_api_qwen/jobs/qwen_hf_client_api")
+    parser.add_argument("--data_root", type=str, default="/tmp/nvflare/hello-huggingface/data")
+    parser.add_argument("--workspace_root", type=str, default="/tmp/nvflare/hello-huggingface/workspace")
+    parser.add_argument("--job_dir", type=str, default="/tmp/nvflare/hello-huggingface/jobs/hello_huggingface")
     parser.add_argument("--local_epochs", type=float, default=1.0)
     parser.add_argument("--max_length", type=int, default=256)
     parser.add_argument("--per_device_train_batch_size", type=int, default=1)
@@ -134,7 +134,7 @@ def main():
     os.chdir(SCRIPT_DIR)
     try:
         recipe = FedAvgRecipe(
-            name=f"qwen-hf-client-api-{args.train_mode}",
+            name=f"hello-huggingface-{args.train_mode}",
             model=model_config(args),
             min_clients=args.n_clients,
             num_rounds=args.num_rounds,
