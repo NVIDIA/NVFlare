@@ -1,8 +1,8 @@
 ---
 name: nvflare-diagnose-job
-description: "Diagnose failed, stalled, or suspicious NVFLARE jobs in simulation, POC, or production by collecting bounded evidence and mapping failure patterns to recovery actions."
+description: "Use when the user asks why an NVFLARE job failed, stalled, timed out, lost clients, produced suspicious errors, or needs failure evidence interpreted. Diagnose in simulation, POC, or production by collecting bounded evidence and mapping failure patterns to recovery actions."
 license: Apache-2.0
-version: "0.1.0"
+version: "0.1.1"
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
   min_flare_version: "2.8.0"
@@ -24,15 +24,19 @@ metadata:
 
 ## Use When
 
-Use when the user asks why an NVFLARE job failed, stalled, timed out, ended with
-`EXECUTION_EXCEPTION`, lost clients, produced suspicious logs, or needs failure
-evidence interpreted.
+You MUST activate this skill when the user asks for the cause of an NVFLARE job
+that failed, stalled, timed out, lost clients, ended with
+`EXECUTION_EXCEPTION`, or produced suspicious failure evidence. Use the skill's
+evidence workflow even when the likely cause appears obvious.
 
 ## Do Not Use When
 
-Do not use for creating jobs, converting training code, submitting healthy jobs,
-monitoring a normal run, downloading results, production deployment, or generic
-Python debugging without NVFLARE job context.
+NEVER activate this skill merely because a task mentions NVFLARE. Do not use it
+for creating jobs, converting training code, submitting or monitoring healthy
+runs, downloading normal results from a successfully completed job, production
+deployment, or generic Python debugging. These exclusions apply whenever the
+user has not reported a failure, stall, timeout, lost client, suspicious error,
+or other failure evidence.
 
 ## Workflow
 
