@@ -76,20 +76,20 @@ class Adapter:
         return value.pop(0) if isinstance(value, list) else value
 
     def submit(self, argv, timeout):
-        self.calls.append(("submit", argv))
+        self.calls.append(("submit", argv, timeout))
         self.submitted_batch = Path(argv[-1]).read_text(encoding="utf-8")
         return self._take(self.submission)
 
     def active_by_id(self, job_id, job_name, marker, timeout):
-        self.calls.append(("live", job_name, marker, job_id))
+        self.calls.append(("live", job_name, marker, job_id, timeout))
         return self._take(self.live)
 
     def accounting_by_id(self, job_id, job_name, timeout):
-        self.calls.append(("accounting_id", job_id, job_name))
+        self.calls.append(("accounting_id", job_id, job_name, timeout))
         return self._take(self.accounting_id)
 
     def cancel(self, job_id, timeout):
-        self.calls.append(("cancel", job_id))
+        self.calls.append(("cancel", job_id, timeout))
         return self._take(self.cancel_result)
 
     def cancel_suffix(self, job_id, suffix, timeout):
@@ -109,22 +109,25 @@ def _record(job_id="42", state="RUNNING", **kwargs):
     return SlurmRecord(job_id, state, **kwargs)
 
 
-def _config(tmp_path):
+def _config(tmp_path, submit_timeout=30, query_timeout=10, cancel_timeout=10):
     return SlurmConfig(
         workspace_path=str(tmp_path),
         sandbox="none",
         python_path="/usr/bin/python3",
         executables={name: f"/usr/bin/{name}" for name in ("sbatch", "squeue", "sacct", "scancel")},
+        submit_timeout=submit_timeout,
+        query_timeout=query_timeout,
+        cancel_timeout=cancel_timeout,
         poll_interval=0.01,
         pending_timeout=5,
     )
 
 
-def _manager(tmp_path, adapter=None, monotonic=None):
+def _manager(tmp_path, adapter=None, monotonic=None, **config_kwargs):
     adapter = adapter or Adapter()
     monotonic = monotonic or Clock()
     manager = SlurmJobManager(
-        _config(tmp_path),
+        _config(tmp_path, **config_kwargs),
         logging.getLogger("slurm-manager-test"),
         adapter=adapter,
         monotonic_clock=monotonic,
@@ -337,6 +340,14 @@ def test_job_name_limits_site_name_length():
     assert job_name == f"nvfl-{'s' * 32}-{_job_key('job-1')[:8]}"
 
 
+def test_submission_uses_site_timeout(tmp_path):
+    adapter = Adapter()
+
+    _manager(tmp_path, adapter, submit_timeout=47).launch(_plan(tmp_path))
+
+    assert adapter.calls[0][2] == 47
+
+
 def test_stale_job_artifacts_block_relaunch(tmp_path):
     manager = _manager(tmp_path)
     stale = Path(manager.jobs_dir, _job_key("job-1"))
@@ -422,6 +433,26 @@ def test_running_allocation_remains_unknown(tmp_path):
 
     assert handle.poll() == JobReturnCode.UNKNOWN
     assert not any(call[0] == "accounting_id" for call in adapter.calls)
+
+
+def test_query_and_cancel_commands_use_site_timeouts(tmp_path):
+    adapter = Adapter()
+    adapter.live = _query(LookupStatus.FOUND, _record())
+    manager = _manager(tmp_path, adapter, query_timeout=23, cancel_timeout=19)
+    handle = manager.launch(_plan(tmp_path))
+
+    handle.terminate()
+
+    live_call = next(call for call in adapter.calls if call[0] == "live")
+    cancel_call = next(call for call in adapter.calls if call[0] == "cancel")
+    assert live_call[4] == 23
+    assert cancel_call[2] == 19
+
+    adapter.live = _query(LookupStatus.NOT_FOUND)
+    adapter.accounting_id = _query(LookupStatus.FOUND, _record(state="CANCELLED"))
+    assert handle.poll() == JobReturnCode.ABORTED
+    accounting_call = next(call for call in adapter.calls if call[0] == "accounting_id")
+    assert accounting_call[3] == 23
 
 
 def test_handle_monitors_only_its_returned_id_when_job_name_is_shared(tmp_path):
