@@ -1097,13 +1097,22 @@ def test_divergent_trainer_call_across_ranks_fails(monkeypatch, tmp_path):
         trainer.evaluate()
 
 
-def test_params_file_exchange_can_be_forced_for_distributed_dispatch(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    "strategy,threshold",
+    [
+        ("file", None),
+        ("auto", "0"),
+    ],
+)
+def test_params_file_exchange_can_be_opted_in_for_distributed_dispatch(monkeypatch, tmp_path, strategy, threshold):
     initial_model = TinyModel()
     incoming_model = FLModel(params=_model_params(initial_model, 5.0), current_round=1, total_rounds=3)
     hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch, incoming_model)
     dist = _RecordingDist(rank=0, world_size=2)
     monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
-    monkeypatch.setenv("NVFLARE_HF_PARAMS_EXCHANGE_STRATEGY", "file")
+    monkeypatch.setenv("NVFLARE_HF_PARAMS_EXCHANGE_STRATEGY", strategy)
+    if threshold is not None:
+        monkeypatch.setenv("NVFLARE_HF_PARAMS_FILE_EXCHANGE_MIN_BYTES", threshold)
     trainer = _make_trainer(trainer_cls, tmp_path)
 
     hf_api.patch(trainer, restore_state=False, local_steps=1)
@@ -1185,13 +1194,13 @@ def test_params_file_exchange_read_failure_on_nonzero_rank_aborts_locally(monkey
     assert trainer._nvflare_hf_task_state.aborted is True
 
 
-def test_params_object_exchange_can_be_forced_for_distributed_dispatch(monkeypatch, tmp_path):
+def test_params_object_exchange_is_default_for_distributed_dispatch(monkeypatch, tmp_path):
     initial_model = TinyModel()
     incoming_model = FLModel(params=_model_params(initial_model, 5.0), current_round=1, total_rounds=3)
     hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model)
     dist = _RecordingDist(rank=0, world_size=2)
     monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
-    monkeypatch.setenv("NVFLARE_HF_PARAMS_EXCHANGE_STRATEGY", "object")
+    monkeypatch.delenv("NVFLARE_HF_PARAMS_EXCHANGE_STRATEGY", raising=False)
     monkeypatch.setenv("NVFLARE_HF_PARAMS_FILE_EXCHANGE_MIN_BYTES", "0")
     trainer = _make_trainer(trainer_cls, tmp_path)
 

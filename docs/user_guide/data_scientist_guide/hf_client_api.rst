@@ -226,20 +226,20 @@ If one rank calls ``trainer.evaluate()`` while another calls
 ``trainer.train()`` for the same task, the wrapper raises an error instead of
 allowing a distributed deadlock.
 
-For large distributed parameter payloads, the wrapper may stage rank-0
-parameters under ``<output_dir>/_fl_exchange`` and have the other ranks read
-that file. In multi-node jobs, make sure ``TrainingArguments.output_dir`` is
-on shared storage. ``restore_state=True`` checkpoint resume also requires that
-all ranks can see the same checkpoint paths under ``output_dir``. If shared
-storage is not available, force object broadcast:
+Distributed parameter payloads use in-memory object broadcast by default, so
+parameter delivery does not require shared storage. To opt into automatic file
+staging above a size threshold, set:
 
 .. code-block:: bash
 
-    export NVFLARE_HF_PARAMS_EXCHANGE_STRATEGY=object
+    export NVFLARE_HF_PARAMS_EXCHANGE_STRATEGY=auto
 
-You can also force file staging with ``NVFLARE_HF_PARAMS_EXCHANGE_STRATEGY=file``.
-The automatic threshold is controlled by
-``NVFLARE_HF_PARAMS_FILE_EXCHANGE_MIN_BYTES``.
+You can force file staging with ``NVFLARE_HF_PARAMS_EXCHANGE_STRATEGY=file``.
+Both file modes stage rank-0 parameters under ``<output_dir>/_fl_exchange`` and
+require all ranks to share ``TrainingArguments.output_dir``. The ``auto``
+threshold is controlled by ``NVFLARE_HF_PARAMS_FILE_EXCHANGE_MIN_BYTES``.
+Independently, ``restore_state=True`` checkpoint resume requires all ranks to
+see the same checkpoint paths under ``output_dir``.
 
 Checkpoint Behavior
 ===================
@@ -265,6 +265,13 @@ provide transparent recovery of an in-flight training task that the launcher has
 already reported as failed. In Phase 1, ``restore_state=True`` requires a
 single trainer process lifecycle; explicitly configured ``launch_once=False`` is
 rejected. Use ``restore_state=False`` for per-task trainer launches.
+
+``restore_state=False`` creates fresh Trainer-managed optimizer and scheduler
+instances for each FL round. It rejects Trainers that already have prebuilt
+``optimizer`` or ``lr_scheduler`` instances at patch time because silently
+discarding those instances would change user-configured training semantics.
+Use ``restore_state=True`` for prebuilt instances, or let Trainer construct
+them.
 
 By default, FLARE uses an in-memory global-weight override for verified
 ``transformers`` versions and falls back to checkpoint injection otherwise. To

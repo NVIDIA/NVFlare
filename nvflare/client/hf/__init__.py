@@ -16,6 +16,7 @@ from nvflare.apis.analytix import AnalyticsDataType as AnalyticsDataType
 from nvflare.app_common.abstract.fl_model import FLModel as FLModel
 from nvflare.app_common.abstract.fl_model import ParamsType as ParamsType
 from nvflare.app_opt.hf import patch as patch
+from nvflare.app_opt.hf.api import hf_is_running as is_running
 from nvflare.client.api import get_config as get_config
 from nvflare.client.api import get_job_id as get_job_id
 from nvflare.client.api import get_site_name as get_site_name
@@ -32,8 +33,6 @@ from nvflare.client.api import system_info as system_info
 from nvflare.client.decorator import evaluate as evaluate
 from nvflare.client.decorator import train as train
 from nvflare.client.ipc.ipc_agent import IPCAgent as IPCAgent
-
-from ._running import is_running as is_running
 
 __all__ = [
     "AnalyticsDataType",

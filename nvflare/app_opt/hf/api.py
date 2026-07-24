@@ -107,7 +107,8 @@ def patch(
         TypeError: If ``trainer`` is not a HuggingFace ``Trainer``.
         ValueError: If the Trainer config is unsupported, including DeepSpeed,
             FSDP, ``load_best_model_at_end=True``, ``save_only_model=True`` with
-            ``restore_state=True``, or both ``local_epochs`` and ``local_steps``.
+            ``restore_state=True``, prebuilt optimizer/scheduler instances with
+            ``restore_state=False``, or both ``local_epochs`` and ``local_steps``.
         RuntimeError: If distributed execution is misconfigured, if
             ``restore_state=True`` is used with an explicit
             ``launch_once=False`` Client API configuration, or if another
@@ -150,6 +151,13 @@ def patch(
         raise ValueError("save_only_model=True is incompatible with restore_state=True")
     if bool(getattr(args, "load_best_model_at_end", False)):
         raise ValueError("load_best_model_at_end=True is incompatible with FL train tasks")
+    if not restore_state and (
+        getattr(trainer, "optimizer", None) is not None or getattr(trainer, "lr_scheduler", None) is not None
+    ):
+        raise ValueError(
+            "restore_state=False cannot preserve prebuilt Trainer optimizer or scheduler instances across FL rounds. "
+            "Use restore_state=True, or let Trainer create the optimizer and scheduler."
+        )
 
     resolved_rank = _resolve_rank(trainer)
     dist = _torch_dist()
@@ -400,7 +408,7 @@ def _params_file_exchange_min_bytes() -> int:
 
 
 def _params_exchange_strategy() -> str:
-    strategy = os.environ.get(PARAMS_EXCHANGE_STRATEGY_ENV_VAR, PARAMS_EXCHANGE_STRATEGY_AUTO).lower()
+    strategy = os.environ.get(PARAMS_EXCHANGE_STRATEGY_ENV_VAR, PARAMS_EXCHANGE_STRATEGY_OBJECT).lower()
     valid_strategies = {
         PARAMS_EXCHANGE_STRATEGY_AUTO,
         PARAMS_EXCHANGE_STRATEGY_OBJECT,
@@ -412,9 +420,9 @@ def _params_exchange_strategy() -> str:
         "Invalid %s=%r; using %s.",
         PARAMS_EXCHANGE_STRATEGY_ENV_VAR,
         strategy,
-        PARAMS_EXCHANGE_STRATEGY_AUTO,
+        PARAMS_EXCHANGE_STRATEGY_OBJECT,
     )
-    return PARAMS_EXCHANGE_STRATEGY_AUTO
+    return PARAMS_EXCHANGE_STRATEGY_OBJECT
 
 
 def _task_fl_model_payload(fl_model):
@@ -616,6 +624,8 @@ class _HFTaskState:
         }
 
     def is_running(self) -> bool:
+        # Core Client API is_running() prefetches and caches the next task. Do not
+        # fetch again until the current task has completed or failed explicitly.
         if self.pending:
             if self.aborted:
                 raise RuntimeError(

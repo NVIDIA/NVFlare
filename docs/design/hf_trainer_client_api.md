@@ -375,7 +375,9 @@ than silently misbehaving:
 Fresh optimizer/scheduler each round; each `train()` call simply runs exactly the
 per-round budget (epochs or steps) from the received global weights, with no
 resume and no cumulative target. Simpler, matches FedAvg-with-restart semantics
-some papers assume; loses LR continuity.
+some papers assume; loses LR continuity. Patch rejects this mode when the
+Trainer already contains prebuilt optimizer or scheduler instances, since
+discarding them would silently replace user-configured training semantics.
 
 ### LR schedule across rounds
 
@@ -642,9 +644,11 @@ rank 0 saves the params to a file and broadcasts only the file path; other ranks
 load from the path. This is one local rank-distribution strategy, not a
 server-to-client model-transfer redesign; the FL transfer path remains the
 existing Client API / Cellnet / download-service mechanism. The session applies
-file exchange automatically above a configurable payload-size threshold, while
-small payloads — PEFT adapters, metrics, task metadata — keep using object
-broadcast. Operators can also force object broadcast or force file exchange.
+in-memory object broadcast by default. File exchange is an explicit optimization:
+operators can select `auto` to stage payloads above a configurable threshold or
+`file` to stage every parameter payload. This keeps shared storage out of the
+default parameter-delivery contract while retaining the lower-serialization
+option for measured large-model workloads.
 The Phase 1 contract for the file exchange:
 
 - Location: `<args.output_dir>/_fl_exchange/`, written as a temp file + atomic
@@ -733,7 +737,8 @@ root and `client.py` selects `<data_root>/<site_name>/`.
   `restore_state` modes; the **checkpoint-injection fallback strategy** (forced via
   its config override — the fallback must not ship as dead code); patch-time
   rejections (`save_only_model`, `load_best_model_at_end`, both explicit budgets,
-  `"adapter"` scope on non-PEFT); first-train rejection for epoch budget on
+  prebuilt optimizer/scheduler with `restore_state=False`, `"adapter"` scope on
+  non-PEFT); first-train rejection for epoch budget on
   length-less `IterableDataset`; empty train dataloader rejection; in-memory
   checkpoint provenance (stale `checkpoint-*` in `output_dir` is ignored).
 - Multi-process unit tests: 2-process CPU/`gloo` `torch.distributed` tests for the

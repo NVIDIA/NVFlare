@@ -109,6 +109,19 @@ def test_patch_rejects_incompatible_training_arguments(monkeypatch, tmp_path, ar
         hf_api.patch(trainer)
 
 
+@pytest.mark.parametrize("prebuilt_attr", ["optimizer", "lr_scheduler"])
+def test_stateless_mode_rejects_prebuilt_optimizer_or_scheduler(monkeypatch, tmp_path, prebuilt_attr):
+    hf_api, trainer_cls, _ = _fresh_api(monkeypatch)
+    trainer = _make_trainer(trainer_cls, tmp_path)
+    prebuilt = object()
+    setattr(trainer, prebuilt_attr, prebuilt)
+
+    with pytest.raises(ValueError, match="restore_state=False.*prebuilt Trainer optimizer or scheduler"):
+        hf_api.patch(trainer, restore_state=False)
+
+    assert getattr(trainer, prebuilt_attr) is prebuilt
+
+
 def test_restore_state_rejects_explicit_launch_once_false(monkeypatch, tmp_path):
     hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch)
     client_api_mock.config[hf_api.ConfigKey.TASK_EXCHANGE][hf_api.ConfigKey.LAUNCH_ONCE] = False

@@ -267,3 +267,28 @@ def test_public_hf_patch_restore_state_false_reports_positive_steps_after_state_
     assert min(second_round_steps) > max(first_round_steps)
 
     hf_api._reset_global_state_for_test()
+
+
+def test_public_hf_patch_stateless_mode_rejects_prebuilt_optimizer_and_scheduler(monkeypatch, tmp_path):
+    hf_api, flare = _import_real_hf_api_modules()
+
+    hf_api._reset_global_state_for_test()
+    model = TinyRegressionModel()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.125, momentum=0.75)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda _: 0.5)
+    trainer = Trainer(
+        model=model,
+        args=_training_args(tmp_path / "prebuilt-optimizer", save_strategy="no"),
+        train_dataset=TinyRegressionDataset(),
+        optimizers=(optimizer, scheduler),
+    )
+
+    with pytest.raises(ValueError, match="restore_state=False.*prebuilt Trainer optimizer or scheduler"):
+        flare.patch(trainer, restore_state=False, local_steps=1)
+
+    assert trainer.optimizer is optimizer
+    assert trainer.lr_scheduler is scheduler
+    assert isinstance(trainer.optimizer, torch.optim.SGD)
+    assert trainer.optimizer.defaults["momentum"] == pytest.approx(0.75)
+
+    hf_api._reset_global_state_for_test()
