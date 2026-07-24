@@ -337,6 +337,29 @@ class TestFillNodeCommands:
 
         assert meta["launcher_spec"]["default"]["slurm"]["node_command"] == self._SCRIPT
 
+    def test_generated_default_command_respects_site_app_and_node_count_overrides(self):
+        from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
+        from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig
+
+        job_config = self._job_config(site="@ALL")
+        client_app = ClientAppConfig()
+        client_app.add_component("launcher", SubprocessLauncher(script="python3 special.py"))
+        job_config.add_fed_app("special", FedAppConfig(client_app=client_app))
+        job_config.set_site_app("site-2", "special")
+        meta = {
+            "launcher_spec": {
+                "default": {"slurm": {"nodes": 2}},
+                "site-2": {"slurm": {}},
+                "site-3": {"slurm": {"nodes": 1}},
+            }
+        }
+
+        job_config._fill_node_commands(meta)
+
+        assert meta["launcher_spec"]["default"]["slurm"]["node_command"] == self._SCRIPT
+        assert meta["launcher_spec"]["site-2"]["slurm"]["node_command"] == "python3 special.py"
+        assert meta["launcher_spec"]["site-3"]["slurm"]["node_command"] is None
+
     def test_default_block_without_all_sites_app_is_left_alone(self):
         job_config = self._job_config(site="site-1")
         meta = {"launcher_spec": {"default": {"slurm": {"nodes": 2}}}}

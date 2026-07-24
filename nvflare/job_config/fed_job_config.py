@@ -177,24 +177,40 @@ class FedJobConfig:
         filled = json.loads(json.dumps(launcher_spec))
         default_site_spec = filled.get(LAUNCHER_SPEC_DEFAULT_KEY)
         default_site_spec = default_site_spec if isinstance(default_site_spec, dict) else {}
+        generated_defaults = {}
         for mode in NODE_GROUP_MODES:
             block = default_site_spec.get(mode)
             if isinstance(block, dict) and self._needs_node_command(block):
                 script = self._resolvable_launch_script(ALL_SITES)
                 if script:
                     block[JOB_SPEC_NODE_COMMAND] = script
+                    generated_defaults[mode] = script
         for site_name, site_spec in filled.items():
             if site_name == LAUNCHER_SPEC_DEFAULT_KEY or not isinstance(site_spec, dict):
                 continue
             for mode in NODE_GROUP_MODES:
-                merged = {**self._mode_block(default_site_spec, mode), **self._mode_block(site_spec, mode)}
+                site_block = self._mode_block(site_spec, mode)
+                merged = {**self._mode_block(default_site_spec, mode), **site_block}
+                generated_default = generated_defaults.get(mode)
+                if generated_default is not None and JOB_SPEC_NODE_COMMAND not in site_block:
+                    nodes = merged.get(JOB_SPEC_NODES)
+                    if not isinstance(nodes, int) or nodes <= 1:
+                        if JOB_SPEC_NODES in site_block:
+                            site_block[JOB_SPEC_NODE_COMMAND] = None
+                        continue
+                    script = self._resolvable_launch_script(site_name)
+                    if script != generated_default:
+                        if not isinstance(site_spec.get(mode), dict):
+                            site_block = {}
+                            site_spec[mode] = site_block
+                        site_block[JOB_SPEC_NODE_COMMAND] = script
+                    continue
                 if not self._needs_node_command(merged):
                     continue
                 script = self._resolvable_launch_script(site_name)
                 if not script:
                     continue
-                site_block = site_spec.get(mode)
-                if not isinstance(site_block, dict):
+                if not isinstance(site_spec.get(mode), dict):
                     site_block = {}
                     site_spec[mode] = site_block
                 site_block[JOB_SPEC_NODE_COMMAND] = script
