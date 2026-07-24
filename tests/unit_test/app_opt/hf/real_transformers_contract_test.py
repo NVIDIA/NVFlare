@@ -200,11 +200,16 @@ def test_public_hf_patch_restore_state_false_reports_positive_steps_after_state_
 
     hf_api._reset_global_state_for_test()
     sent_models = []
+    writer_calls = []
     model = TinyRegressionModel()
     incoming_models = [
         FLModel(params={name: param.detach().clone() for name, param in model.state_dict().items()}, current_round=0),
         FLModel(params={name: param.detach().clone() for name, param in model.state_dict().items()}, current_round=1),
     ]
+
+    class RecordingWriter:
+        def add_scalar(self, tag, scalar, global_step=None):
+            writer_calls.append((tag, scalar, global_step))
 
     def get_config(ctx=None):
         return {
@@ -225,20 +230,31 @@ def test_public_hf_patch_restore_state_false_reports_positive_steps_after_state_
     monkeypatch.setattr(hf_api.flare_api, "send", lambda model, clear_cache=True, ctx=None: sent_models.append(model))
     monkeypatch.setattr(hf_api.flare_api, "get_config", get_config)
     monkeypatch.setattr(hf_api.flare_api, "get_job_id", lambda ctx=None: "hf-real-two-round-job")
+    import nvflare.client.tracking as tracking
+
+    monkeypatch.setattr(tracking, "SummaryWriter", lambda: RecordingWriter())
 
     trainer = Trainer(
         model=model,
-        args=_training_args(tmp_path / "two-round-no-restore", max_steps=1, save_strategy="no"),
+        args=_training_args(
+            tmp_path / "two-round-no-restore",
+            logging_steps=1,
+            logging_strategy="steps",
+            max_steps=1,
+            save_strategy="no",
+        ),
         train_dataset=TinyRegressionDataset(),
     )
 
-    flare.patch(trainer, restore_state=False, local_steps=1)
+    flare.patch(trainer, restore_state=False, local_steps=1, stream_metrics=True)
     assert flare.is_running()
     trainer.train()
     first_optimizer = trainer.optimizer
     first_lr_scheduler = trainer.lr_scheduler
+    first_round_steps = [step for _, _, step in writer_calls]
     assert flare.is_running()
     trainer.train()
+    second_round_steps = [step for _, _, step in writer_calls[len(first_round_steps) :]]
 
     assert len(sent_models) == 2
     assert trainer.optimizer is not None
@@ -246,5 +262,8 @@ def test_public_hf_patch_restore_state_false_reports_positive_steps_after_state_
     assert trainer.optimizer is not first_optimizer
     assert trainer.lr_scheduler is not first_lr_scheduler
     assert sent_models[1].meta[MetaKey.NUM_STEPS_CURRENT_ROUND] > 0
+    assert first_round_steps
+    assert second_round_steps
+    assert min(second_round_steps) > max(first_round_steps)
 
     hf_api._reset_global_state_for_test()

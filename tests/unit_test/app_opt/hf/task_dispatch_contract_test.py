@@ -384,6 +384,43 @@ def test_cumulative_max_steps_extends_after_checkpoint_resume_restores_global_st
     assert trainer.args.max_steps == 10
 
 
+def test_distributed_budget_uses_rank_zero_payload_on_nonzero_rank(monkeypatch, tmp_path):
+    dist = _RecordingDist(
+        rank=1,
+        world_size=2,
+        incoming_payload=[
+            {},
+            {
+                "ok": True,
+                "operation": "budget capture",
+                "per_round_budget_steps": 2,
+                "budget_source": "local_epochs",
+            },
+        ],
+    )
+    hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model=None)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
+    trainer = trainer_cls(
+        TinyModel(),
+        make_training_args(tmp_path, max_steps=-1, num_train_epochs=1, gradient_accumulation_steps=1),
+        train_dataloader=[],
+    )
+
+    hf_api.patch(trainer, restore_state=True, local_epochs=1.0)
+    task_state = trainer._nvflare_hf_task_state
+    task_state.task_kind = hf_api.TASK_TRAIN
+    task_state.pending = True
+    task_state.current_round = 0
+    task_state.total_rounds = 4
+
+    task_state._prepare_train_call({})
+
+    assert task_state.per_round_budget_steps == 2
+    assert task_state.budget_source == "local_epochs"
+    assert task_state.cumulative_max_steps == 8
+    assert trainer.args.max_steps == 8
+
+
 def test_epoch_budget_rejects_lengthless_dataloader_at_first_train(monkeypatch, tmp_path):
     initial_model = TinyModel()
     incoming_model = FLModel(params=_model_params(initial_model, 5.0), current_round=0, total_rounds=2)
@@ -551,7 +588,17 @@ def test_checkpoint_injection_failure_raises_on_nonzero_rank_before_barrier(monk
     dist = _RecordingDist(
         rank=1,
         world_size=2,
-        incoming_payload=[{}, task_payload, _rank_zero_failure("checkpoint injection", "OSError: disk full")],
+        incoming_payload=[
+            {},
+            task_payload,
+            {
+                "ok": True,
+                "operation": "budget capture",
+                "per_round_budget_steps": 1,
+                "budget_source": "local_steps",
+            },
+            _rank_zero_failure("checkpoint injection", "OSError: disk full"),
+        ],
     )
     hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model=None)
     monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)

@@ -30,7 +30,8 @@ def install_fake_transformers(monkeypatch):
     """Install the small part of transformers needed by the HF adapter contract tests."""
 
     module = types.ModuleType("transformers")
-    module.__version__ = "999.0.0"
+    # Keep this inside the verified range so default fake-contract tests exercise the in-memory path.
+    module.__version__ = "5.14.1"
 
     class Trainer:
         pass

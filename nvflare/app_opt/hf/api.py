@@ -918,7 +918,38 @@ class _HFTaskState:
     def _capture_budget_if_needed(self):
         if self.per_round_budget_steps is not None:
             return
+        if self.world_size <= 1:
+            self._capture_budget_local()
+            return
 
+        rank_zero_error = None
+        payload = None
+        if self.rank == 0:
+            try:
+                self._capture_budget_local()
+                payload = {
+                    "ok": True,
+                    "operation": "budget capture",
+                    "per_round_budget_steps": int(self.per_round_budget_steps),
+                    "budget_source": self.budget_source,
+                }
+            except Exception as e:
+                rank_zero_error = e
+                payload = {"ok": False, "operation": "budget capture", "error": f"{type(e).__name__}: {e}"}
+
+        payload = _broadcast_object(payload, src=0) or {}
+        if not payload.get("ok", False):
+            message = (
+                f"HuggingFace distributed budget capture failed on rank 0: {payload.get('error', 'unknown error')}"
+            )
+            if rank_zero_error:
+                raise RuntimeError(message) from rank_zero_error
+            raise RuntimeError(message)
+
+        self.per_round_budget_steps = int(payload["per_round_budget_steps"])
+        self.budget_source = payload.get("budget_source")
+
+    def _capture_budget_local(self):
         if self.local_steps is not None:
             self.per_round_budget_steps = int(self.local_steps)
             self.budget_source = "local_steps"
@@ -999,7 +1030,6 @@ class _HFTaskState:
                     "extending TrainingArguments.max_steps to %s.",
                     self.cumulative_max_steps,
                 )
-        setattr(getattr(self.trainer, "args"), "max_steps", int(self.cumulative_max_steps))
 
     def _load_global_params_once(self):
         if self.global_params_loaded or not self.received_params:
