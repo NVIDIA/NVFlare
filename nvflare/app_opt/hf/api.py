@@ -110,11 +110,18 @@ def patch(
         raise ValueError("load_best_model_at_end=True is incompatible with FL train tasks")
 
     resolved_rank = _resolve_rank(trainer)
-    if resolved_rank > 0 and _torch_dist() is None:
-        raise RuntimeError(
-            "HuggingFace Client API resolved rank > 0, but torch.distributed is not initialized. "
-            "Launch distributed HF jobs with torchrun so non-zero ranks can participate in NVFlare broadcasts."
-        )
+    dist = _torch_dist()
+    if dist is None:
+        if _env_declares_multirank():
+            raise RuntimeError(
+                "HuggingFace Client API detected WORLD_SIZE or LOCAL_WORLD_SIZE > 1, but torch.distributed is not "
+                "initialized. Initialize the distributed process group before flare.patch(trainer)."
+            )
+        if resolved_rank > 0:
+            raise RuntimeError(
+                "HuggingFace Client API resolved rank > 0, but torch.distributed is not initialized. "
+                "Launch distributed HF jobs with torchrun so non-zero ranks can participate in NVFlare broadcasts."
+            )
     _init_client_api_for_rank(resolved_rank)
     _reject_unsupported_launch_once_false(restore_state=restore_state)
     from nvflare.app_opt.pt.decomposers import TensorDecomposer
@@ -218,6 +225,16 @@ def _world_size() -> int:
     if dist is None:
         return 1
     return int(dist.get_world_size())
+
+
+def _env_declares_multirank() -> bool:
+    for name in ("WORLD_SIZE", "LOCAL_WORLD_SIZE"):
+        try:
+            if int(os.environ.get(name, "1") or 1) > 1:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
 
 
 def _transformers_version_is_verified() -> bool:
@@ -702,6 +719,7 @@ class _HFTaskState:
         self.last_completed_global_step = end_global_step
         self.last_checkpoint_path = self._checkpoint_path_from_state(end_global_step)
 
+        output_model = None
         if self.rank == 0:
             params = utils.extract_params(self.trainer, self.params_scope)
             params = utils.prepare_out_params(
@@ -717,7 +735,7 @@ class _HFTaskState:
                 total_rounds=self.total_rounds,
                 meta=meta,
             )
-            flare_api.send(output_model)
+        self._send_fl_model("train result send", output_model)
 
         self._complete_task()
 
@@ -1031,41 +1049,50 @@ class _HFTaskState:
         self.global_params_loaded = True
 
     def _send_metrics(self, metrics: dict):
+        output_model = None
         if self.rank == 0:
-            flare_api.send(FLModel(metrics=metrics, current_round=self.current_round, total_rounds=self.total_rounds))
+            output_model = FLModel(metrics=metrics, current_round=self.current_round, total_rounds=self.total_rounds)
+        self._send_fl_model("eval metrics send", output_model)
 
     def _submit_model(self):
-        if self.rank != 0:
-            return
-        params = None
-        if self.last_checkpoint_path:
-            params = utils.extract_params_from_checkpoint(self.last_checkpoint_path, self.params_scope)
-            if params is None:
+        output_model = None
+        if self.rank == 0:
+            params = None
+            if self.last_checkpoint_path:
+                params = utils.extract_params_from_checkpoint(self.last_checkpoint_path, self.params_scope)
+                if params is None:
+                    self.logger.warning(
+                        "Could not read HuggingFace checkpoint params from %s; submitting current in-memory model params.",
+                        self.last_checkpoint_path,
+                    )
+            else:
                 self.logger.warning(
-                    "Could not read HuggingFace checkpoint params from %s; submitting current in-memory model params.",
-                    self.last_checkpoint_path,
+                    "submit_model requested before any HuggingFace FL train round completed; "
+                    "submitting current in-memory model parameters."
                 )
-        else:
-            self.logger.warning(
-                "submit_model requested before any HuggingFace FL train round completed; "
-                "submitting current in-memory model parameters."
+            if params is None:
+                params = utils.extract_params(self.trainer, self.params_scope)
+            params = utils.prepare_out_params(
+                params,
+                self._exchange_format(),
+                server_expected_format=self._server_expected_format(),
             )
-        if params is None:
-            params = utils.extract_params(self.trainer, self.params_scope)
-        params = utils.prepare_out_params(
-            params,
-            self._exchange_format(),
-            server_expected_format=self._server_expected_format(),
-        )
-        params = utils.apply_server_key_prefix(params, self.server_key_prefix)
-        flare_api.send(
-            FLModel(
+            params = utils.apply_server_key_prefix(params, self.server_key_prefix)
+            output_model = FLModel(
                 params=params,
                 current_round=self.current_round,
                 total_rounds=self.total_rounds,
                 meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 0},
             )
-        )
+        self._send_fl_model("submit model send", output_model)
+
+    def _send_fl_model(self, operation_name: str, fl_model):
+        def send_model():
+            if fl_model is None:
+                raise RuntimeError(f"{operation_name} has no FLModel to send on rank 0")
+            flare_api.send(fl_model)
+
+        self._run_rank_zero_operation(operation_name, send_model)
 
     def _complete_task(self):
         self.pending = False

@@ -441,7 +441,7 @@ def params_nbytes(params: Optional[Mapping]) -> int:
 def write_params_exchange_file(output_dir: str, params: Mapping) -> dict:
     exchange_dir = fl_exchange_dir(os.fspath(output_dir))
     os.makedirs(exchange_dir, exist_ok=True)
-    params = dict(params or {})
+    params = _params_to_exchange_tensors(dict(params or {}))
 
     try:
         return _write_safetensors_exchange_file(exchange_dir, params)
@@ -482,6 +482,24 @@ def _write_torch_exchange_file(exchange_dir: str, params: Mapping) -> dict:
     except Exception:
         _unlink_silent(tmp_path)
         raise
+
+
+def _params_to_exchange_tensors(params: Mapping) -> dict:
+    torch = _import_torch()
+    result = {}
+    try:
+        import numpy as np
+    except ImportError:
+        np = None
+
+    for key, value in params.items():
+        if torch.is_tensor(value):
+            result[key] = value.detach().cpu()
+        elif np is not None and isinstance(value, np.ndarray):
+            result[key] = torch.as_tensor(value).detach().cpu()
+        else:
+            result[key] = value
+    return result
 
 
 def _atomic_exchange_path(exchange_dir: str, suffix: str) -> str:

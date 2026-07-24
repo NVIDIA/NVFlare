@@ -731,9 +731,8 @@ per-site data paths.
   its config override — the fallback must not ship as dead code); patch-time
   rejections (`save_only_model`, `load_best_model_at_end`, both explicit budgets,
   `"adapter"` scope on non-PEFT); first-train rejection for epoch budget on
-  length-less `IterableDataset`; empty train dataloader rejection;
-  session state-file persistence and restore (relaunch mid-job resumes the
-  recorded checkpoint and target; different-job state file ignored).
+  length-less `IterableDataset`; empty train dataloader rejection; in-memory
+  checkpoint provenance (stale `checkpoint-*` in `output_dir` is ignored).
 - Multi-process unit tests: 2-process CPU/`gloo` `torch.distributed` tests for the
   session's collective sequence — `is_running()` broadcast, dispatch broadcast,
   non-rank-0 no-ops, file-exchange write/barrier/cleanup, and the

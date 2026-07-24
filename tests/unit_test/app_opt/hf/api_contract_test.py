@@ -151,6 +151,17 @@ def test_patch_rejects_nonzero_rank_without_initialized_distributed(monkeypatch,
         hf_api.patch(trainer, restore_state=False)
 
 
+def test_patch_rejects_rank_zero_multirank_env_without_initialized_distributed(monkeypatch, tmp_path):
+    hf_api, trainer_cls, _ = _fresh_api(monkeypatch)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: None)
+    monkeypatch.setenv("RANK", "0")
+    monkeypatch.setenv("WORLD_SIZE", "2")
+    trainer = _make_trainer(trainer_cls, tmp_path)
+
+    with pytest.raises(RuntimeError, match="WORLD_SIZE|torch.distributed|torchrun"):
+        hf_api.patch(trainer, restore_state=False)
+
+
 def test_patch_rejects_adapter_scope_for_non_peft_model(monkeypatch, tmp_path):
     install_fake_peft(monkeypatch)
     hf_api, trainer_cls, _ = _fresh_api(monkeypatch)

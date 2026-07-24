@@ -347,3 +347,20 @@ def test_params_exchange_file_round_trips_tensors_and_cleans_up(tmp_path):
 
     hf_utils.cleanup_params_exchange_file(descriptor)
     assert not os.path.exists(descriptor["path"])
+
+
+@pytest.mark.skipif(not HAS_TORCH or not HAS_NUMPY, reason="PyTorch and NumPy are required for params exchange tests")
+def test_params_exchange_file_round_trips_numpy_arrays_as_tensors(tmp_path):
+    import numpy as np
+    import torch
+
+    params = {"weight": np.ones((2, 2), dtype=np.float32), "bias": np.zeros(2, dtype=np.float32)}
+    descriptor = hf_utils.write_params_exchange_file(tmp_path, params)
+
+    loaded = hf_utils.read_params_exchange_file(descriptor)
+
+    assert torch.equal(loaded["weight"], torch.ones(2, 2))
+    assert torch.equal(loaded["bias"], torch.zeros(2))
+
+    hf_utils.cleanup_params_exchange_file(descriptor)
+    assert not os.path.exists(descriptor["path"])
