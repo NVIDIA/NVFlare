@@ -31,6 +31,7 @@ _POSIX_SPAWN_SUPPORTED = hasattr(os, "posix_spawn") and os.name == "posix"
 _ANSI_ESC_RE = re.compile(r"\x1b\[[0-9;]*m")
 _LOG_LINE_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
 _SHELL_COMMAND_INTERPRETERS = frozenset({"ash", "bash", "dash", "fish", "ksh", "mksh", "sh", "zsh"})
+_POWERSHELL_COMMAND_INTERPRETERS = frozenset({"powershell", "pwsh"})
 _ENV_COMMAND_WRAPPERS = frozenset({"env"})
 _COMMAND_MULTIPLEXERS = frozenset({"busybox"})
 _SHELL_OPTIONS_WITH_VALUE = frozenset({"-o", "-O", "--init-file", "--rcfile"})
@@ -76,7 +77,7 @@ def _unwrap_env_commands(command_seq: list[str]) -> list[str]:
 
 
 def _reject_shell_command_refs(command_seq: list[str], interpreter: str) -> None:
-    normalized_interpreter = interpreter.casefold().removesuffix(".exe")
+    normalized_interpreter = interpreter.casefold()
     index = 1
     while index < len(command_seq):
         option = command_seq[index]
@@ -94,6 +95,24 @@ def _reject_shell_command_refs(command_seq: list[str], interpreter: str) -> None
                 _raise_nested_command_secret_ref(interpreter, option)
             return
         index += 2 if option in _SHELL_OPTIONS_WITH_VALUE else 1
+
+
+def _reject_powershell_code_refs(command_seq: list[str], interpreter: str) -> None:
+    for index, option in enumerate(command_seq[1:], start=1):
+        normalized_option = option.casefold()
+        if option == "--" or not option.startswith("-") or normalized_option in {"-file", "-f"}:
+            return
+        if normalized_option in {"-command", "-c"}:
+            if any(has_secret_refs(arg) for arg in command_seq[index + 1 :]):
+                _raise_nested_command_secret_ref(interpreter, option)
+            return
+        if normalized_option in {"-encodedcommand", "-e", "-ec", "-enc"}:
+            if index + 1 < len(command_seq) and has_secret_refs(command_seq[index + 1]):
+                _raise_nested_command_secret_ref(interpreter, option)
+            return
+        if any(has_secret_refs(arg) for arg in command_seq[index:]):
+            _raise_nested_command_secret_ref(interpreter, option)
+        return
 
 
 def _reject_python_code_refs(command_seq: list[str], interpreter: str) -> None:
@@ -120,6 +139,8 @@ def _reject_secret_refs_in_nested_command(command_seq: list[str]) -> None:
         normalized_interpreter = interpreter.casefold()
     if normalized_interpreter in _SHELL_COMMAND_INTERPRETERS:
         _reject_shell_command_refs(command_seq, interpreter)
+    elif normalized_interpreter in _POWERSHELL_COMMAND_INTERPRETERS:
+        _reject_powershell_code_refs(command_seq, interpreter)
     elif _PYTHON_INTERPRETER_RE.fullmatch(normalized_interpreter):
         _reject_python_code_refs(command_seq, interpreter)
 

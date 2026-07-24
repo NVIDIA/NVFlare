@@ -1,5 +1,5 @@
 # Regression tests for external-process Client API streaming (NVBug 6371056).
-# np_loop_cell_pipe is the small-payload launch-once control, while
+# np_loop_external_process is the small-payload launch-once control, while
 # pt_large_model_pass_through exercises DownloadService-backed tensors. Both
 # jobs use the ClientAPIExecutor external-process backend. This file is the only
 # home of these two test cases; test_configs.yml lists it under both the
@@ -17,7 +17,7 @@ tests:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job np_loop_cell_pipe" ]
+        "actions": [ "submit_job np_loop_external_process" ]
         "result":
           "type": "job_submit_success"
       - "trigger":
@@ -42,3 +42,13 @@ tests:
         "result":
           "type": "run_state"
           "data": { "run_finished": True }
+    validators:
+      - path: tests.integration_test.src.validators.PTModelValidator
+      - path: tests.integration_test.src.validators.LogPatternValidator
+        args:
+          required_patterns:
+            - "round 1 training loss:"
+          forbidden_patterns:
+            - "Traceback (most recent call last)"
+            - "EXECUTION_EXCEPTION"
+            - "unauthenticated msg"
