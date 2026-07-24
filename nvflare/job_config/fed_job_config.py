@@ -471,7 +471,7 @@ class FedJobConfig:
                 continue
             import_path = os.path.join(*self._module_parts(import_module)) + ".py"
             search_roots = [source_root]
-            # Registered scripts run as entry points, so their unqualified imports can refer to source-dir siblings.
+            # Registered scripts and non-package modules can resolve unqualified imports from source-dir siblings.
             if (
                 level == 0
                 and (is_external_script or "." not in module)
