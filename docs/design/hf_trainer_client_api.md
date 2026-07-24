@@ -557,12 +557,17 @@ owns this sequence; per loop iteration it is exactly:
    or, above the size threshold, the exchange-file path.
 3. If file exchange was used: post-write barrier (readers released), then
    post-load cleanup barrier.
-4. Training/eval collectives — owned entirely by HF/torch, outside the session.
-5. No session collective after `send()` — rank 0 sends to the pipe alone.
+4. Train tasks run a budget-capture broadcast from rank 0. With
+   `restore_state=True`, rank 0 also broadcasts the selected checkpoint path so
+   all ranks take the same resume branch even if local filesystem views differ.
+5. If checkpoint injection is selected, rank 0 broadcasts success/failure before
+   the post-injection barrier so non-zero ranks fail instead of hanging.
+6. Training/eval collectives — owned entirely by HF/torch, outside the session.
+7. No session collective after `send()` — rank 0 sends to the pipe alone.
    (Phase 2 forward note: under ZeRO-3/FSDP, `accelerator.get_state_dict()` is
    itself a collective gather that *all* ranks must enter, so the sequence gains a
    gather step between training and send — this section will be amended then;
-   items 1–4 are unchanged.)
+   items 1–6 are unchanged.)
 
 User code must not introduce rank-conditional wrapped calls (e.g. calling
 `trainer.evaluate()` only on rank 0): the wrappers run their collectives on all

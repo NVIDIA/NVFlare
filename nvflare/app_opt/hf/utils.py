@@ -280,7 +280,7 @@ def prepare_out_params(
             continue
 
         tensor = value.detach().cpu()
-        if cast_for_numpy_server and tensor.dtype in (torch.float16, torch.bfloat16):
+        if (as_numpy or cast_for_numpy_server) and tensor.dtype in (torch.float16, torch.bfloat16):
             tensor = tensor.float()
         if as_numpy:
             result[key] = tensor.numpy()

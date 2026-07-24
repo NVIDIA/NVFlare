@@ -210,7 +210,7 @@ Distributed Training
 
 For multi-GPU or multi-node HuggingFace training, launch the script with
 ``torchrun`` or another launcher that initializes ``torch.distributed`` and
-sets global ``RANK``/``WORLD_SIZE``.
+sets global ``RANK``/``WORLD_SIZE`` before calling ``flare.patch(trainer)``.
 
 All ranks must call the same patched Trainer methods in the same order:
 
@@ -229,7 +229,9 @@ allowing a distributed deadlock.
 For large distributed parameter payloads, the wrapper may stage rank-0
 parameters under ``<output_dir>/_fl_exchange`` and have the other ranks read
 that file. In multi-node jobs, make sure ``TrainingArguments.output_dir`` is
-on shared storage. If shared storage is not available, force object broadcast:
+on shared storage. ``restore_state=True`` checkpoint resume also requires that
+all ranks can see the same checkpoint paths under ``output_dir``. If shared
+storage is not available, force object broadcast:
 
 .. code-block:: bash
 

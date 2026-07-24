@@ -495,6 +495,8 @@ class _HFTaskState:
     ):
         self.trainer = trainer
         self.rank = int(rank)
+        # torch.distributed must be initialized before patch(); this snapshot drives
+        # DDP collectives and NUM_STEPS_CURRENT_ROUND aggregation weights.
         self.world_size = _world_size()
         self.restore_state = bool(restore_state)
         self.load_state_dict_strict = bool(load_state_dict_strict)
@@ -850,6 +852,8 @@ class _HFTaskState:
                 user_resume_checkpoint,
             )
             checkpoint_path = user_resume_checkpoint
+        else:
+            checkpoint_path = self._broadcast_resume_checkpoint_path(checkpoint_path)
 
         if checkpoint_path:
             _allow_torch_checkpoint_resume_globals()
@@ -1111,6 +1115,15 @@ class _HFTaskState:
         if self.last_checkpoint_path and os.path.isdir(self.last_checkpoint_path):
             return self.last_checkpoint_path
         return None
+
+    def _broadcast_resume_checkpoint_path(self, checkpoint_path):
+        if not self.restore_state or self.world_size <= 1:
+            return checkpoint_path
+        payload = None
+        if self.rank == 0:
+            payload = {"operation": "resume checkpoint", "checkpoint_path": checkpoint_path}
+        payload = _broadcast_object(payload, src=0) or {}
+        return payload.get("checkpoint_path")
 
     def _checkpoint_path_from_state(self, global_step: int):
         output_dir = self._output_dir()

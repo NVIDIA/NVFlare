@@ -233,6 +233,22 @@ def test_prepare_out_params_casts_halves_for_numpy_and_preserves_tensor_dtype():
     assert torch_params["fp16"].device.type == "cpu"
 
 
+@pytest.mark.skipif(not HAS_TORCH or not HAS_NUMPY, reason="PyTorch and NumPy are required for dtype tests")
+def test_prepare_out_params_casts_halves_when_exchange_format_is_numpy_even_for_pytorch_server():
+    import numpy as np
+    import torch
+
+    params = {
+        "bf16": torch.ones(2, dtype=torch.bfloat16),
+        "fp16": torch.ones(2, dtype=torch.float16),
+    }
+
+    numpy_params = hf_utils.prepare_out_params(params, "numpy", server_expected_format="pytorch")
+
+    assert numpy_params["bf16"].dtype == np.float32
+    assert numpy_params["fp16"].dtype == np.float32
+
+
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for dtype tests")
 def test_prepare_out_params_casts_halves_for_numpy_server_while_preserving_pytorch_exchange():
     import torch

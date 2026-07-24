@@ -395,6 +395,7 @@ def test_distributed_budget_uses_rank_zero_payload_on_nonzero_rank(monkeypatch, 
                 "per_round_budget_steps": 2,
                 "budget_source": "local_epochs",
             },
+            {"operation": "resume checkpoint", "checkpoint_path": None},
         ],
     )
     hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model=None)
@@ -545,6 +546,43 @@ def test_checkpoint_injection_writes_global_params_before_resume_on_later_round(
     assert torch.equal(sent_params["fc.weight"], torch.full_like(sent_params["fc.weight"], 6.0))
 
 
+def test_resume_checkpoint_decision_uses_rank_zero_path_on_nonzero_rank(monkeypatch, tmp_path):
+    monkeypatch.setenv("NVFLARE_HF_WEIGHT_OVERRIDE_STRATEGY", "checkpoint_injection")
+    rank_zero_checkpoint = str(tmp_path / "rank-zero-output" / "checkpoint-1")
+    dist = _RecordingDist(
+        rank=1,
+        world_size=2,
+        incoming_payload=[
+            {
+                "ok": True,
+                "operation": "budget capture",
+                "per_round_budget_steps": 1,
+                "budget_source": "local_steps",
+            },
+            {"operation": "resume checkpoint", "checkpoint_path": rank_zero_checkpoint},
+            {"ok": True, "operation": "checkpoint injection", "error": None},
+        ],
+    )
+    hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model=None)
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
+    trainer = _make_trainer(trainer_cls, tmp_path)
+
+    hf_api.patch(trainer, restore_state=True, local_steps=1)
+    task_state = trainer._nvflare_hf_task_state
+    task_state.task_kind = hf_api.TASK_TRAIN
+    task_state.pending = True
+    task_state.current_round = 1
+    task_state.total_rounds = 2
+    task_state.last_checkpoint_path = str(tmp_path / "rank-one-local-only" / "checkpoint-1")
+    train_kwargs = {}
+
+    task_state._prepare_train_call(train_kwargs)
+
+    assert train_kwargs["resume_from_checkpoint"] == rank_zero_checkpoint
+    assert task_state.global_params_loaded is True
+    assert dist.barrier_calls == 1
+
+
 def test_checkpoint_injection_failure_broadcasts_before_barrier_on_rank_zero(monkeypatch, tmp_path):
     monkeypatch.setenv("NVFLARE_HF_WEIGHT_OVERRIDE_STRATEGY", "checkpoint_injection")
     initial_model = TinyModel()
@@ -595,6 +633,7 @@ def test_checkpoint_injection_failure_raises_on_nonzero_rank_before_barrier(monk
                 "per_round_budget_steps": 1,
                 "budget_source": "local_steps",
             },
+            {"operation": "resume checkpoint", "checkpoint_path": str(tmp_path / "checkpoint-1")},
             _rank_zero_failure("checkpoint injection", "OSError: disk full"),
         ],
     )
