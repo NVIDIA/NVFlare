@@ -336,12 +336,12 @@ mid-round trainability changes. For an unpatched or manual client loop, use ``PT
     import copy
 
     import nvflare.client as flare
-    from nvflare.app_common.app_constant import AlgorithmConstants
+    from nvflare.app_common.utils.fedprox_utils import get_fedprox_mu
     from nvflare.app_opt.pt import PTFedProxLoss
 
     while flare.is_running():
         input_model = flare.receive()
-        mu = input_model.meta[AlgorithmConstants.FEDPROX_MU]
+        mu = get_fedprox_mu(input_model)
         model.load_state_dict(input_model.params)
         global_model = copy.deepcopy(model)
         fedprox_loss = PTFedProxLoss(mu=mu)

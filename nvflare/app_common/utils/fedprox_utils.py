@@ -30,7 +30,7 @@ def normalize_fedprox_mu(fedprox_mu: Optional[float]) -> Optional[float]:
     fedprox_mu = float(fedprox_mu)
     if not math.isfinite(fedprox_mu) or fedprox_mu < 0.0:
         raise ValueError("fedprox_mu must be a finite non-negative number or None.")
-    return fedprox_mu or None
+    return None if fedprox_mu == 0.0 else fedprox_mu
 
 
 def validate_fedprox_mu(fedprox_mu: float) -> float:

@@ -321,6 +321,76 @@ class _FakeStartHandler:
         self.active = False
 
 
+class _RecordingAlgorithmHandler:
+    def __init__(self, name, calls):
+        self.name = name
+        self.calls = calls
+        self.active = False
+        self.num_steps = 1
+
+    def start_round(self, trainer, pl_module, input_model):
+        self.active = True
+        self.calls.append(f"{self.name}.start")
+
+    def before_optimizer_step(self, optimizer):
+        self.calls.append(f"{self.name}.before")
+
+    def after_train_batch(self, pl_module):
+        self.calls.append(f"{self.name}.after")
+
+    def finish_round(self, pl_module):
+        self.active = False
+        self.calls.append(f"{self.name}.finish")
+        return {}
+
+    def abort_round(self):
+        self.active = False
+
+
+def test_algorithm_handler_manager_uses_factory_order_when_handlers_activate_across_rounds():
+    calls = []
+    scaffold = _RecordingAlgorithmHandler("scaffold", calls)
+    fedprox = _RecordingAlgorithmHandler("fedprox", calls)
+    manager = _AlgorithmHandlerManager()
+
+    with (
+        patch("nvflare.app_opt.lightning.algorithm._create_scaffold_handler", return_value=scaffold),
+        patch("nvflare.app_opt.lightning.algorithm._create_fedprox_handler", return_value=fedprox),
+    ):
+        manager.start_round(SimpleNamespace(), SimpleNet(), FLModel(meta={AlgorithmConstants.FEDPROX_MU: 0.1}))
+        manager.before_optimizer_step(None)
+        manager.after_train_batch(SimpleNet())
+        manager.finish_round(SimpleNet())
+
+        manager.start_round(
+            SimpleNamespace(),
+            SimpleNet(),
+            FLModel(
+                meta={
+                    AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL: {},
+                    AlgorithmConstants.FEDPROX_MU: 0.1,
+                }
+            ),
+        )
+        calls.clear()
+        manager.before_optimizer_step(None)
+        manager.after_train_batch(SimpleNet())
+        manager.finish_round(SimpleNet())
+
+    assert list(manager._handlers) == [
+        AlgorithmConstants.FEDPROX_MU,
+        AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL,
+    ]
+    assert calls == [
+        "scaffold.before",
+        "fedprox.before",
+        "scaffold.after",
+        "fedprox.after",
+        "scaffold.finish",
+        "fedprox.finish",
+    ]
+
+
 def test_algorithm_handler_manager_rolls_back_started_handlers_when_round_setup_fails():
     first = _FakeStartHandler()
     second = _FakeStartHandler(error=RuntimeError("second handler failed"))

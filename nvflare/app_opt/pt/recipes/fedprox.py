@@ -102,6 +102,7 @@ class FedProxRecipe(FedAvgRecipe):
         cuda_empty_cache: bool = False,
         fedprox_mu: float = 0.01,
     ):
+        # FedAvgRecipe builds the controller through _get_controller_kwargs(), so this must precede super().__init__.
         self.fedprox_mu = validate_fedprox_mu(fedprox_mu)
         super().__init__(
             name=name,

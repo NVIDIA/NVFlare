@@ -21,6 +21,7 @@ import torch.nn as nn
 from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import SERVER_SITE_NAME
 from nvflare.app_opt.pt.recipes import FedProxRecipe as ExportedFedProxRecipe
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.app_opt.pt.recipes.fedprox import FedProxRecipe
 from nvflare.client.config import ExchangeFormat, TransferType
 
@@ -60,6 +61,19 @@ class TestFedProxRecipe:
         assert recipe.fedprox_mu == 0.01
         assert inspect.signature(FedProxRecipe).parameters["fedprox_mu"].default == 0.01
         assert _get_controller(recipe).fedprox_mu == 0.01
+
+    def test_signature_mirrors_fedavg(self):
+        fedavg_parameters = inspect.signature(FedAvgRecipe).parameters
+        fedprox_parameters = inspect.signature(FedProxRecipe).parameters
+
+        assert set(fedprox_parameters) == set(fedavg_parameters) | {"fedprox_mu"}
+        for name, fedavg_parameter in fedavg_parameters.items():
+            fedprox_parameter = fedprox_parameters[name]
+            assert fedprox_parameter.kind == fedavg_parameter.kind
+            if name == "name":
+                assert fedprox_parameter.default == "fedprox"
+            else:
+                assert fedprox_parameter.default == fedavg_parameter.default
 
     def test_custom_mu_configures_controller(self, mock_file_system):
         recipe = _make_recipe(fedprox_mu=0.2)

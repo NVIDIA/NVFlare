@@ -58,6 +58,18 @@ class _AlgorithmHandlerManager:
     def __init__(self):
         self._handlers = {}
 
+    def _ordered_handlers(self):
+        """Return known handlers in factory order, followed by any private test or extension handlers."""
+        ordered_handlers = []
+        known_keys = set()
+        for metadata_key, _ in _get_handler_factories():
+            known_keys.add(metadata_key)
+            handler = self._handlers.get(metadata_key)
+            if handler is not None:
+                ordered_handlers.append(handler)
+        ordered_handlers.extend(handler for key, handler in self._handlers.items() if key not in known_keys)
+        return ordered_handlers
+
     def start_round(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", input_model: FLModel):
         meta = input_model.meta or {}
         for metadata_key, factory in _get_handler_factories():
@@ -65,7 +77,7 @@ class _AlgorithmHandlerManager:
                 self._handlers[metadata_key] = factory()
 
         started_handlers = []
-        for handler in self._handlers.values():
+        for handler in self._ordered_handlers():
             started_handlers.append(handler)
             try:
                 handler.start_round(trainer=trainer, pl_module=pl_module, input_model=input_model)
@@ -80,17 +92,17 @@ class _AlgorithmHandlerManager:
                 raise
 
     def before_optimizer_step(self, optimizer):
-        for handler in self._handlers.values():
+        for handler in self._ordered_handlers():
             if handler.active:
                 handler.before_optimizer_step(optimizer)
 
     def after_train_batch(self, pl_module: "pl.LightningModule"):
-        for handler in self._handlers.values():
+        for handler in self._ordered_handlers():
             if handler.active:
                 handler.after_train_batch(pl_module)
 
     def finish_round(self, pl_module: "pl.LightningModule") -> _AlgorithmResult:
-        active_handlers = [handler for handler in self._handlers.values() if handler.active]
+        active_handlers = [handler for handler in self._ordered_handlers() if handler.active]
         if not active_handlers:
             return _AlgorithmResult()
 
