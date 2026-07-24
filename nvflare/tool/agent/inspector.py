@@ -101,14 +101,19 @@ class InspectState:
     framework_evidence: dict[str, list[dict]] = field(default_factory=dict)
     flare_imports: list[dict] = field(default_factory=list)
     flare_calls: set[str] = field(default_factory=set)
+    flare_calls_by_file: dict[str, set[str]] = field(default_factory=dict)
     # framework name -> FLARE conversion-integration call names (e.g. Lightning
     # flare.patch). Populated by framework detectors; used by _conversion_state.
     integration_signals: dict[str, set[str]] = field(default_factory=dict)
+    integration_signal_files: set[str] = field(default_factory=set)
     file_imports: dict[str, set[str]] = field(default_factory=dict)
     entry_points: list[dict] = field(default_factory=list)
     job_py: Optional[str] = None
+    job_py_paths: list[str] = field(default_factory=list)
     sim_env_used: bool = False
+    sim_env_files: set[str] = field(default_factory=set)
     export_support: bool = False
+    export_support_files: set[str] = field(default_factory=set)
     exported_job_markers: list[str] = field(default_factory=list)
     exported_job_marker_paths: list[Path] = field(default_factory=list)
     distributed_patterns: list[dict] = field(default_factory=list)
@@ -148,7 +153,8 @@ def inspect_path(
     ranked_frameworks = _rank_frameworks(state)
     detected_framework = _detect_primary_framework(state, ranked_frameworks)
     ranked_frameworks = _order_frameworks_for_display(ranked_frameworks, detected_framework)
-    conversion_state = _conversion_state(state, detected_framework, exported_job_info)
+    source_job_file = _authoritative_source_job_file(state)
+    conversion_state = _conversion_state(state, detected_framework, exported_job_info, source_job_file)
     target_type = _target_type(target, state, detected_framework, conversion_state)
 
     # Data-target classification runs when code classification found nothing,
@@ -212,7 +218,9 @@ def inspect_path(
         "findings": state.findings[:MAX_EVIDENCE_PER_BUCKET],
         "dataset": dataset,
         "skill_selection": _skill_selection(detected_framework, conversion_state, state, dataset),
-        "recommended_next_commands": _recommended_next_commands(detected_framework, conversion_state, state),
+        "recommended_next_commands": _recommended_next_commands(
+            detected_framework, conversion_state, state, source_job_file
+        ),
         "installed_skills": _installed_skills(target),
     }
 
@@ -398,7 +406,11 @@ def _inspect_file(path: Path, state: InspectState, max_file_bytes: int) -> None:
     state.files_scanned += 1
     state.bytes_scanned += size
     if path.name == "job.py":
-        state.job_py = rel_path
+        state.job_py_paths.append(rel_path)
+        # Keep the public summary pointed at the authoritative root candidate
+        # when one exists; a later nested fixture must not overwrite it.
+        if state.job_py is None or _is_root_level_file(rel_path):
+            state.job_py = rel_path
 
     try:
         tree = ast.parse(text, filename=str(path))
@@ -428,7 +440,7 @@ class _PythonInspector(ast.NodeVisitor):
         self._detector_states = {detector.name: detector.new_file_state() for detector in self._detectors}
         self._ctx = DetectContext(
             self._emit_framework_evidence,
-            self.state.flare_calls.add,
+            self._add_flare_call,
             self._add_integration_signal,
         )
 
@@ -437,6 +449,7 @@ class _PythonInspector(ast.NodeVisitor):
 
     def _add_integration_signal(self, framework: str, name: str) -> None:
         self.state.integration_signals.setdefault(framework, set()).add(name)
+        self.state.integration_signal_files.add(self.rel_path)
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
@@ -525,19 +538,25 @@ class _PythonInspector(ast.NodeVisitor):
         # framework activity (pytorch_call, lightning_trainer) and conversion
         # signals (flare.patch) are recorded by framework detectors via on_call.
         if call_name.startswith("flare.") or call_name.startswith("nvflare."):
-            self.state.flare_calls.add(call_name)
+            self._add_flare_call(call_name)
         if call_name in {"FedJob", "FLModel", "SimEnv"}:
-            self.state.flare_calls.add(call_name)
+            self._add_flare_call(call_name)
         if call_name == "SimEnv" or call_name.endswith(".SimEnv"):
             self.state.sim_env_used = True
+            self.state.sim_env_files.add(self.rel_path)
         if call_name.endswith(".export"):
             self.state.export_support = True
+            self.state.export_support_files.add(self.rel_path)
         if call_name in {"importlib.import_module", "__import__", "getattr"}:
             self.state.dynamic_patterns.append(_evidence(self.rel_path, lineno, "dynamic_dispatch", call_name))
         if call_name == "torch.compile":
             self.state.dynamic_patterns.append(_evidence(self.rel_path, lineno, "torch_compile", call_name))
         if call_name.endswith(("DataParallel", "FSDP", "Accelerator")):
             self.state.distributed_patterns.append(_evidence(self.rel_path, lineno, "distributed_call", call_name))
+
+    def _add_flare_call(self, call_name: str) -> None:
+        self.state.flare_calls.add(call_name)
+        self.state.flare_calls_by_file.setdefault(self.rel_path, set()).add(call_name)
 
     def _inspect_secret_assignment(self, targets: list[ast.AST], value: ast.AST, lineno: Optional[int]) -> None:
         if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
@@ -1002,24 +1021,107 @@ def _exported_job_info(state: InspectState) -> dict:
     return {"submit_ready_candidates": submit_ready, "nested_candidates": nested}
 
 
-def _conversion_state(state: InspectState, detected_framework: Optional[str], exported_job_info: dict) -> str:
+def _conversion_state(
+    state: InspectState,
+    detected_framework: Optional[str],
+    exported_job_info: dict,
+    source_job_file: Optional[str],
+) -> str:
     if exported_job_info["submit_ready_candidates"]:
         return "exported_job"
     # job.py is a common filename (SLURM launchers) and SimEnv is a natural class
-    # name in RL/robotics code, so neither is trustworthy on its own. Require
-    # corroborating nvflare evidence (an nvflare-rooted import) before treating a
-    # name-only signal as a FLARE job, mirroring the exported-job marker grouping.
-    if (state.job_py or state.sim_env_used) and state.flare_imports:
+    # name in RL/robotics code, so neither is trustworthy on its own. Require a
+    # root-level source candidate with corroborating nvflare evidence from that
+    # same file. This prevents historical jobs, fixtures, and vendored projects
+    # from classifying the recursively inspected repository root as a FLARE job.
+    if source_job_file:
         return "flare_job"
     if _has_conversion_integration(state):
         return "client_api_converted"
-    if {"flare.receive", "flare.send"} <= state.flare_calls or "FLModel" in state.flare_calls:
+    if all(_has_authoritative_flare_call(state, name) for name in ("flare.receive", "flare.send")):
         return "client_api_converted"
-    if state.flare_imports or state.flare_calls:
+    if _has_authoritative_flare_call(state, "FLModel"):
+        return "client_api_converted"
+    if _has_authoritative_flare_evidence(state):
         return "partial_client_api"
     if detected_framework:
         return "not_converted"
     return "unknown"
+
+
+def _authoritative_source_job_file(state: InspectState) -> Optional[str]:
+    flare_import_files = {item["file"] for item in state.flare_imports}
+    candidate_files = set(state.job_py_paths) | state.sim_env_files
+    authoritative_candidates = [
+        path
+        for path in candidate_files
+        if path in flare_import_files and _file_belongs_to_active_root_project(state, path)
+    ]
+    if not authoritative_candidates:
+        return None
+    # A root-level candidate remains the strongest signal when both root and
+    # nested source jobs exist; otherwise accept a nested candidate that belongs
+    # to the active project (for example jobs/fedavg/job.py).
+    return min(authoritative_candidates, key=lambda path: (not _is_root_level_file(path), path))
+
+
+def _is_root_level_file(path: str) -> bool:
+    return "/" not in path
+
+
+def _has_authoritative_flare_evidence(state: InspectState) -> bool:
+    evidence_files = {item["file"] for item in state.flare_imports} | set(state.flare_calls_by_file)
+    return any(_file_belongs_to_active_root_project(state, path) for path in evidence_files)
+
+
+def _has_authoritative_flare_call(state: InspectState, call_name: str) -> bool:
+    return any(
+        call_name in calls and _file_belongs_to_active_root_project(state, path)
+        for path, calls in state.flare_calls_by_file.items()
+    )
+
+
+def _file_belongs_to_active_root_project(state: InspectState, file_path: str) -> bool:
+    if state.root.is_file():
+        return file_path == _display_path(state.root, state.root, state.redact)
+    if _is_root_level_file(file_path):
+        return True
+
+    anchor_files = _active_project_anchor_files(state)
+    if not anchor_files:
+        return True
+    if file_path in anchor_files:
+        return True
+    local_files_by_module = _local_files_by_module(state)
+    return any(
+        _imports_reach_file(
+            state,
+            anchor_file,
+            state.file_imports.get(anchor_file, set()),
+            file_path,
+            local_files_by_module,
+        )
+        for anchor_file in anchor_files
+    )
+
+
+def _active_project_anchor_files(state: InspectState) -> set[str]:
+    entry_point_files = {entry["path"] for entry in state.entry_points}
+    root_entry_points = {path for path in entry_point_files if _is_root_level_file(path)}
+    root_framework_files = {
+        item["file"]
+        for evidence in state.framework_evidence.values()
+        for item in evidence
+        if _is_root_level_file(item["file"])
+    }
+    root_anchors = root_entry_points | root_framework_files
+    if root_anchors:
+        return root_anchors
+
+    # A packaging-only root (for example setup.py plus src/mypkg/train.py) has
+    # no root training anchor. In that layout the nested entry points define the
+    # active project instead of the unrelated root scaffolding.
+    return entry_point_files
 
 
 def _has_conversion_integration(state: InspectState) -> bool:
@@ -1028,7 +1130,11 @@ def _has_conversion_integration(state: InspectState) -> bool:
     # explicit ``flare.send``, because the framework's callback performs the
     # result exchange. Detectors record these signals via on_call; do not
     # require static constructor evidence here (wrappers/factories can hide it).
-    return bool(state.integration_signals and state.flare_imports)
+    flare_import_files = {item["file"] for item in state.flare_imports}
+    return any(
+        path in flare_import_files and _file_belongs_to_active_root_project(state, path)
+        for path in state.integration_signal_files
+    )
 
 
 def _target_type(path: Path, state: InspectState, detected_framework: Optional[str], conversion_state: str) -> str:
@@ -1249,12 +1355,15 @@ def _has_problematic_skips(state: InspectState) -> bool:
 
 
 def _recommended_next_commands(
-    detected_framework: Optional[str], conversion_state: str, state: InspectState
+    detected_framework: Optional[str],
+    conversion_state: str,
+    state: InspectState,
+    source_job_file: Optional[str],
 ) -> list[str]:
     commands = []
     if conversion_state == "exported_job":
         commands.append("nvflare job submit <job-folder> --format json")
-    elif state.job_py and state.export_support and state.flare_imports:
+    elif source_job_file == "job.py" and source_job_file in state.export_support_files:
         # Only suggest `job.py --export` for a genuine FLARE job.py: `.export`
         # calls (torch.onnx.export, YOLO model.export, ...) over-match, so without
         # corroborating nvflare evidence this would ship a command that fails with
