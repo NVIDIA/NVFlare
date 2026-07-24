@@ -19,7 +19,7 @@ Welcome to the NVIDIA FLARE Hello World examples! These examples demonstrate how
 
 3. **Choose an example and install dependencies:**
    ```bash
-   cd hello-pt  # or hello-jax, hello-numpy, hello-lightning, hello-tf, hello-flower
+   cd hello-pt  # or hello-huggingface, hello-jax, hello-numpy, hello-lightning, hello-tf, hello-flower
    pip install -r requirements.txt
    ```
 
@@ -174,6 +174,22 @@ Train an MNIST classifier using JAX, Flax, and Optax with FedAvg.
 cd hello-jax
 pip install -r requirements.txt
 python prepare_model.py
+python prepare_data.py
+python job.py
+```
+
+#### [Hello HuggingFace](./hello-huggingface/)
+Federated Qwen SFT/PEFT using HuggingFace `Trainer`/TRL `SFTTrainer` and the HuggingFace Client API.
+
+**What you'll learn:**
+- Patching a HuggingFace trainer with `nvflare.client.hf`
+- Running Qwen LoRA fine-tuning with FedAvg
+- Preparing per-site JSONL instruction data
+
+**Run it:**
+```bash
+cd hello-huggingface
+pip install -r requirements.txt
 python prepare_data.py
 python job.py
 ```

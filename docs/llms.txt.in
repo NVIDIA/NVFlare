@@ -11,6 +11,7 @@
 ## User Workflows
 
 - [Client API](user_guide/data_scientist_guide/client_api_usage.md): Use the high-level API for federated training scripts.
+- [HuggingFace Client API](user_guide/data_scientist_guide/hf_client_api.md): Patch HuggingFace Trainer or TRL SFTTrainer scripts for federated training.
 - [Job Recipe API](user_guide/data_scientist_guide/job_recipe.md): Create jobs with pre-built recipes for common federated learning workflows.
 - [Available Recipes](user_guide/data_scientist_guide/available_recipes.md): Browse bundled job recipes and supported patterns.
 - [FLARE API](user_guide/data_scientist_guide/flare_api.md): Use runtime APIs to submit, monitor, and manage jobs.

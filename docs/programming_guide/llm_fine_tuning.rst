@@ -11,36 +11,39 @@ fine-tuning strategies are supported:
 - **SFT (Supervised Fine-Tuning)** -- Full or partial model fine-tuning on task-specific data
 - **PEFT (Parameter-Efficient Fine-Tuning)** -- LoRA and other adapter-based methods that train only a small subset of parameters
 
-All approaches use the standard FLARE Client API, so you can convert existing
+All approaches use the FLARE Client API, so you can convert existing
 single-machine fine-tuning scripts to federated with minimal code changes.
 
 HuggingFace Integration
 =======================
 
-FLARE provides direct support for federated fine-tuning of HuggingFace models.
+FLARE provides direct support for federated fine-tuning of HuggingFace models
+with ``nvflare.client.hf``. This facade patches a HuggingFace ``Trainer`` or
+TRL ``SFTTrainer`` so existing ``trainer.evaluate()`` and ``trainer.train()``
+calls can participate in FL rounds.
 
 **Federated SFT** fine-tunes the full model (or selected layers) across sites:
 
 .. code-block:: python
 
-   # client.py -- standard HuggingFace training, federated via Client API
-   from nvflare.client.tracking import SummaryWriter
-   import nvflare.client as flare
+   # client.py -- standard HuggingFace training, federated via HuggingFace Client API
+   import nvflare.client.hf as flare
 
-   flare.init()
+   trainer = SFTTrainer(...)
+   flare.patch(trainer)
+
    while flare.is_running():
-       input_model = flare.receive()
-       # Load weights into your HuggingFace model
-       # Run SFT training loop
-       # Send updated weights back
-       flare.send(output_model)
+       trainer.evaluate()
+       trainer.train()
 
 **Federated PEFT (LoRA)** trains only adapter parameters, dramatically reducing
 communication costs -- ideal for large models where transmitting full weights is impractical.
 
 See the complete examples:
 
-- `HuggingFace SFT & PEFT Examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/llm_hf>`_
+- `Hello HuggingFace Qwen Example <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-huggingface>`_
+- :github_nvflare_link:`Advanced LLM HuggingFace Example <examples/advanced/llm_hf>`
+- :ref:`hf_client_api`
 
 NVIDIA NeMo Integration
 =======================
