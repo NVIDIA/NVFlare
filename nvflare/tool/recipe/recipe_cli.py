@@ -51,6 +51,17 @@ _DOCUMENTED_RECIPE_SPECS = {
         "aggregation": "weighted_average",
         "state_exchange": "full_model",
     },
+    "fedsm-pt": {
+        "module": "nvflare.app_opt.pt.recipes.fedsm",
+        "class": "FedSMRecipe",
+        "description": "PyTorch personalized federated learning with FedSM and SoftPull.",
+        "framework": "pytorch",
+        "algorithm": "fedsm",
+        "aggregation": "softpull",
+        "state_exchange": "model_bundle",
+        "heterogeneity_support": ["non_iid", "personalization"],
+        "notes": ["FedSM exchanges global, per-client personalized, selector, and optional selector optimizer state."],
+    },
     "fedavg-tf": {
         "module": "nvflare.app_opt.tf.recipes.fedavg",
         "class": "FedAvgRecipe",

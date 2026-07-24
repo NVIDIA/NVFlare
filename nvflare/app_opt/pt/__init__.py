@@ -15,6 +15,7 @@
 from nvflare.app_opt.pt.ditto import PTDittoHelper
 from nvflare.app_opt.pt.fedopt import PTFedOptModelShareableGenerator
 from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
+from nvflare.app_opt.pt.fedsm import FedSMConstants, FedSMModelAggregator, PTFedSMHelper, PTFedSMModelPersistor
 from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.app_opt.pt.he_model_reader_writer import HEPTModelReaderWriter
