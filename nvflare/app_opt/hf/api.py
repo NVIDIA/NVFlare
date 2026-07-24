@@ -324,6 +324,15 @@ def _broadcast_object(obj, src=0):
     return payload[0]
 
 
+def _all_gather_object(obj):
+    dist = _torch_dist()
+    if dist is None:
+        return [obj]
+    gathered = [None] * int(dist.get_world_size())
+    dist.all_gather_object(gathered, obj)
+    return gathered
+
+
 def _allow_torch_checkpoint_resume_globals():
     """Allow HF Trainer RNG checkpoints to load with PyTorch's safe-loading defaults."""
     try:
@@ -860,8 +869,23 @@ class _HFTaskState:
         descriptor = payload.pop("params_exchange", None) if payload else None
         if descriptor:
             _barrier()
+            params = None
+            read_error = None
             try:
-                payload["params"] = utils.read_params_exchange_file(descriptor)
+                params = utils.read_params_exchange_file(descriptor)
+            except Exception as e:
+                read_error = e
+            statuses = self._gather_rank_status("params file exchange read", read_error)
+            failure_message = self._rank_failure_message("params file exchange read", statuses)
+            try:
+                if failure_message:
+                    self.task_kind = payload.get("task_kind")
+                    self.first_call_name = payload.get("call_name")
+                    self.pending = True
+                    if read_error is not None:
+                        raise RuntimeError(failure_message) from read_error
+                    raise RuntimeError(failure_message)
+                payload["params"] = params
             finally:
                 _barrier()
                 if self.rank == 0:
@@ -1227,6 +1251,24 @@ class _HFTaskState:
             if rank_zero_error is not None:
                 raise RuntimeError(message) from rank_zero_error
             raise RuntimeError(message)
+
+    def _gather_rank_status(self, operation_name: str, error: Optional[Exception]):
+        status = {"ok": error is None, "operation": operation_name, "rank": self.rank, "error": None}
+        if error is not None:
+            status["error"] = f"{type(error).__name__}: {error}"
+        return _all_gather_object(status)
+
+    def _rank_failure_message(self, operation_name: str, statuses):
+        failures = []
+        for idx, status in enumerate(statuses or []):
+            if isinstance(status, dict) and status.get("ok", False):
+                continue
+            rank = status.get("rank", idx) if isinstance(status, dict) else idx
+            error = status.get("error", "unknown error") if isinstance(status, dict) else "missing status"
+            failures.append(f"rank {rank}: {error}")
+        if not failures:
+            return None
+        return f"HuggingFace distributed {operation_name} failed: {'; '.join(failures)}"
 
     def _build_meta(self, end_global_step: int, end_tokens: Optional[int]):
         model = utils.unwrap_model(self.trainer)

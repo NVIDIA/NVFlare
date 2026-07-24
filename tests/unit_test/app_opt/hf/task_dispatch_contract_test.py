@@ -74,11 +74,13 @@ def _model_params(model, value):
 
 
 class _RecordingDist:
-    def __init__(self, rank=0, world_size=2, incoming_payload=None):
+    def __init__(self, rank=0, world_size=2, incoming_payload=None, all_gather_payload=None):
         self.rank = rank
         self.world_size = world_size
         self.incoming_payload = incoming_payload
         self.incoming_payloads = list(incoming_payload) if isinstance(incoming_payload, list) else None
+        self.all_gather_payload = all_gather_payload
+        self.all_gather_calls = []
         self.broadcast_payloads = []
         self.barrier_calls = 0
 
@@ -96,6 +98,20 @@ class _RecordingDist:
                 payload[0] = self.incoming_payloads.pop(0)
             else:
                 payload[0] = self.incoming_payload
+
+    def all_gather_object(self, gathered, obj):
+        self.all_gather_calls.append(dict(obj or {}))
+        if self.all_gather_payload is not None:
+            for idx, value in enumerate(self.all_gather_payload):
+                gathered[idx] = value
+            return
+        for idx in range(len(gathered)):
+            gathered[idx] = {
+                "ok": True,
+                "operation": obj.get("operation") if isinstance(obj, dict) else None,
+                "rank": idx,
+                "error": None,
+            }
 
     def barrier(self):
         self.barrier_calls += 1
@@ -996,6 +1012,73 @@ def test_params_file_exchange_can_be_forced_for_distributed_dispatch(monkeypatch
     assert not os.path.exists(descriptor["path"])
     assert dist.barrier_calls == 2
     assert len(client_api_mock.sent_models) == 1
+
+
+def test_params_file_exchange_read_failure_on_nonzero_rank_reaches_rank_zero(monkeypatch, tmp_path):
+    initial_model = TinyModel()
+    incoming_model = FLModel(params=_model_params(initial_model, 5.0), current_round=1, total_rounds=3)
+    hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch, incoming_model)
+    dist = _RecordingDist(
+        rank=0,
+        world_size=2,
+        all_gather_payload=[
+            {"ok": True, "operation": "params file exchange read", "rank": 0, "error": None},
+            {"ok": False, "operation": "params file exchange read", "rank": 1, "error": "RuntimeError: stale NFS"},
+        ],
+    )
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
+    monkeypatch.setenv("NVFLARE_HF_PARAMS_EXCHANGE_STRATEGY", "file")
+    trainer = _make_trainer(trainer_cls, tmp_path)
+
+    hf_api.patch(trainer, restore_state=False, local_steps=1)
+
+    with pytest.raises(RuntimeError, match="params file exchange read failed.*rank 1.*stale NFS"):
+        trainer.train()
+
+    dispatch_payloads = [payload for payload in dist.broadcast_payloads if payload.get("task_kind") == "train"]
+    descriptor = dispatch_payloads[0]["params_exchange"]
+    assert not os.path.exists(descriptor["path"])
+    assert dist.barrier_calls == 2
+    assert client_api_mock.sent_models == []
+    assert trainer._nvflare_hf_task_state.aborted is True
+
+
+def test_params_file_exchange_read_failure_on_nonzero_rank_aborts_locally(monkeypatch, tmp_path):
+    descriptor = {"path": str(tmp_path / "missing.safetensors"), "format": "safetensors"}
+    payload_from_rank_zero = {
+        "task_kind": "train",
+        "call_name": "train",
+        "fl_model": None,
+        "params": None,
+        "params_exchange": descriptor,
+        "current_round": 1,
+        "total_rounds": 3,
+    }
+    hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model=None)
+    dist = _RecordingDist(
+        rank=1,
+        world_size=2,
+        incoming_payload=payload_from_rank_zero,
+        all_gather_payload=[
+            {"ok": True, "operation": "params file exchange read", "rank": 0, "error": None},
+            {"ok": False, "operation": "params file exchange read", "rank": 1, "error": "RuntimeError: stale NFS"},
+        ],
+    )
+    monkeypatch.setattr(hf_api, "_torch_dist", lambda: dist)
+
+    def read_raises(*args, **kwargs):
+        raise RuntimeError("stale NFS")
+
+    monkeypatch.setattr(hf_api.utils, "read_params_exchange_file", read_raises)
+    trainer = _make_trainer(trainer_cls, tmp_path)
+
+    hf_api.patch(trainer, restore_state=False, local_steps=1)
+
+    with pytest.raises(RuntimeError, match="params file exchange read failed.*rank 1.*stale NFS"):
+        trainer.train()
+
+    assert dist.barrier_calls == 2
+    assert trainer._nvflare_hf_task_state.aborted is True
 
 
 def test_params_object_exchange_can_be_forced_for_distributed_dispatch(monkeypatch, tmp_path):
