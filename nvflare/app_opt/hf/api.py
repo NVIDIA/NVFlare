@@ -265,6 +265,47 @@ def _broadcast_object(obj, src=0):
     return payload[0]
 
 
+def _allow_torch_checkpoint_resume_globals():
+    """Allow HF Trainer RNG checkpoints to load with PyTorch's safe-loading defaults."""
+    try:
+        import importlib
+
+        import numpy as np
+        import torch.serialization as torch_serialization
+    except Exception:
+        return
+
+    add_safe_globals = getattr(torch_serialization, "add_safe_globals", None)
+    if not callable(add_safe_globals):
+        return
+
+    safe_globals = []
+    seen_ids = set()
+
+    def add(obj):
+        if obj is not None and id(obj) not in seen_ids:
+            safe_globals.append(obj)
+            seen_ids.add(id(obj))
+
+    for multiarray_module_name in ("numpy._core.multiarray", "numpy.core.multiarray"):
+        try:
+            multiarray = importlib.import_module(multiarray_module_name)
+            add(getattr(multiarray, "_reconstruct", None))
+            break
+        except Exception:
+            continue
+    add(getattr(np, "ndarray", None))
+    add(getattr(np, "dtype", None))
+    for dtype_name in ("uint32", "int64", "float32", "float64"):
+        try:
+            add(type(np.dtype(dtype_name)))
+        except Exception:
+            continue
+
+    if safe_globals:
+        add_safe_globals(safe_globals)
+
+
 def _params_file_exchange_min_bytes() -> int:
     value = os.environ.get(PARAMS_FILE_EXCHANGE_MIN_BYTES_ENV_VAR)
     if value is None:
@@ -468,6 +509,7 @@ class _HFTaskState:
         self.last_checkpoint_path = None
         self.last_completed_round = None
         self.metric_step_offset = 0
+        self.result_upload_pending = False
         self.weight_override_strategy = self._select_weight_override_strategy()
         self.train_with_evaluation = self._train_with_evaluation_enabled()
         self._warned_missing_round = False
@@ -632,6 +674,15 @@ class _HFTaskState:
         end_tokens = _optional_int(getattr(hf_train_state, "num_input_tokens_seen", None))
         meta = self._build_meta(end_global_step=end_global_step, end_tokens=end_tokens)
 
+        step_delta = max(0, end_global_step - int(self.train_start_global_step or 0))
+        if not self.restore_state:
+            self.metric_step_offset += step_delta
+        self.last_completed_global_step = end_global_step
+        self.last_completed_round = self.current_round
+        self.last_checkpoint_path = self._checkpoint_path_from_state(end_global_step)
+        self.result_upload_pending = True
+        self._persist_state()
+
         if self.rank == 0:
             params = utils.extract_params(self.trainer, self.params_scope)
             params = utils.prepare_out_params(
@@ -649,12 +700,7 @@ class _HFTaskState:
             )
             flare_api.send(output_model)
 
-        step_delta = max(0, end_global_step - int(self.train_start_global_step or 0))
-        if not self.restore_state:
-            self.metric_step_offset += step_delta
-        self.last_completed_global_step = end_global_step
-        self.last_completed_round = self.current_round
-        self.last_checkpoint_path = self._checkpoint_path_from_state(end_global_step)
+        self.result_upload_pending = False
         self._persist_state()
         self._complete_task()
 
@@ -680,6 +726,7 @@ class _HFTaskState:
             self.last_completed_global_step = int(state.get("last_completed_global_step") or 0)
             self.last_completed_round = state.get("last_completed_round")
             self.metric_step_offset = int(state.get("metric_step_offset") or 0)
+            self.result_upload_pending = bool(state.get("result_upload_pending", False))
             self.weight_override_strategy = state.get("weight_override_strategy") or self.weight_override_strategy
 
     def _ensure_task(self, call_name: str) -> str:
@@ -798,6 +845,8 @@ class _HFTaskState:
 
     def _prepare_train_call(self, train_kwargs: dict):
         self._capture_budget_if_needed()
+        if not self.restore_state:
+            self._reset_stateless_trainer_task_state()
         current_global_step = int(getattr(getattr(self.trainer, "state", None), "global_step", 0) or 0)
         if self.restore_state:
             self.train_start_global_step = max(current_global_step, int(self.last_completed_global_step or 0))
@@ -820,6 +869,7 @@ class _HFTaskState:
             checkpoint_path = user_resume_checkpoint
 
         if checkpoint_path:
+            _allow_torch_checkpoint_resume_globals()
             if user_resume_checkpoint_supplied:
                 self.global_params_loaded = False
             elif self.weight_override_strategy == STRATEGY_CHECKPOINT_INJECTION:
@@ -841,6 +891,29 @@ class _HFTaskState:
 
             if not user_resume_checkpoint_supplied:
                 train_kwargs["resume_from_checkpoint"] = checkpoint_path
+
+    def _reset_stateless_trainer_task_state(self):
+        for attr_name in ("optimizer", "lr_scheduler"):
+            if hasattr(self.trainer, attr_name):
+                setattr(self.trainer, attr_name, None)
+        if hasattr(self.trainer, "_created_lr_scheduler"):
+            setattr(self.trainer, "_created_lr_scheduler", False)
+
+        state = getattr(self.trainer, "state", None)
+        if state is not None:
+            try:
+                self.trainer.state = type(state)()
+            except Exception:
+                for attr_name in ("global_step", "epoch", "num_input_tokens_seen"):
+                    if hasattr(state, attr_name):
+                        setattr(state, attr_name, 0)
+
+        control = getattr(self.trainer, "control", None)
+        if control is not None:
+            try:
+                self.trainer.control = type(control)()
+            except Exception:
+                pass
 
     def _capture_budget_if_needed(self):
         if self.per_round_budget_steps is not None:
@@ -1016,6 +1089,14 @@ class _HFTaskState:
             return None
         if self.current_round == 0:
             return None
+        if self.result_upload_pending and self.current_round == self.last_completed_round:
+            if self.rank == 0:
+                self.logger.warning(
+                    "Ignoring HuggingFace checkpoint provenance from a previous pending result upload for retry "
+                    "of round %s.",
+                    self.current_round,
+                )
+            return None
         if self.current_round is None and self.last_checkpoint_path and not self._warned_missing_round:
             self.logger.warning(
                 "Received a HuggingFace train task without current_round; resuming from recorded NVFlare checkpoint "
@@ -1058,6 +1139,7 @@ class _HFTaskState:
                     "weight_override_strategy": self.weight_override_strategy,
                     "last_completed_global_step": self.last_completed_global_step,
                     "metric_step_offset": self.metric_step_offset,
+                    "result_upload_pending": self.result_upload_pending,
                 },
             )
 

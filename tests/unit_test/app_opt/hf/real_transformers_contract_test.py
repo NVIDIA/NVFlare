@@ -83,15 +83,8 @@ def _has_model_weights(checkpoint_dir):
     return (checkpoint_dir / "model.safetensors").exists() or (checkpoint_dir / "pytorch_model.bin").exists()
 
 
-def _remove_rng_state_files(checkpoint_dir):
-    # This test checks model-weight restore ordering, not RNG restore. Newer PyTorch
-    # defaults can reject Transformers' numpy-backed rng_state*.pth files under
-    # weights_only loading, so keep the checkpoint focused on the contract under test.
-    for path in checkpoint_dir.glob("rng_state*.pth"):
-        path.unlink()
-
-
 def test_real_trainer_calls_on_train_begin_after_checkpoint_restore(tmp_path):
+    hf_api, _ = _import_real_hf_api_modules()
     train_dataset = TinyRegressionDataset()
     first_model = TinyRegressionModel()
     first_trainer = Trainer(
@@ -102,7 +95,6 @@ def test_real_trainer_calls_on_train_begin_after_checkpoint_restore(tmp_path):
     first_trainer.train()
     checkpoint_dir = tmp_path / "run" / "checkpoint-1"
     assert checkpoint_dir.is_dir()
-    _remove_rng_state_files(checkpoint_dir)
 
     resumed_model = TinyRegressionModel()
     with torch.no_grad():
@@ -122,6 +114,7 @@ def test_real_trainer_calls_on_train_begin_after_checkpoint_restore(tmp_path):
         train_dataset=train_dataset,
         callbacks=[CaptureTrainBegin()],
     )
+    hf_api._allow_torch_checkpoint_resume_globals()
     resumed_trainer.train(resume_from_checkpoint=str(checkpoint_dir))
 
     assert seen_at_train_begin
@@ -242,10 +235,16 @@ def test_public_hf_patch_restore_state_false_reports_positive_steps_after_state_
     flare.patch(trainer, restore_state=False, local_steps=1)
     assert flare.is_running()
     trainer.train()
+    first_optimizer = trainer.optimizer
+    first_lr_scheduler = trainer.lr_scheduler
     assert flare.is_running()
     trainer.train()
 
     assert len(sent_models) == 2
+    assert trainer.optimizer is not None
+    assert trainer.lr_scheduler is not None
+    assert trainer.optimizer is not first_optimizer
+    assert trainer.lr_scheduler is not first_lr_scheduler
     assert sent_models[1].meta[MetaKey.NUM_STEPS_CURRENT_ROUND] > 0
 
     hf_api._reset_global_state_for_test()

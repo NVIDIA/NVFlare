@@ -131,11 +131,26 @@ def test_restore_state_false_uses_fresh_trainer_state_each_round(monkeypatch, tm
     client_api_mock.incoming_models.append(second_round)
     trainer = _make_trainer(trainer_cls, tmp_path)
     trainer_state_cls = type(trainer.state)
+    reset_observations = []
+
+    def make_trainer_stateful():
+        trainer.optimizer = object()
+        trainer.lr_scheduler = object()
+        trainer._created_lr_scheduler = True
+        trainer.control.should_training_stop = True
 
     def train_resetting_state(*args, **kwargs):
         trainer.train_call_count += 1
         trainer.last_train_args = args
         trainer.last_train_kwargs = dict(kwargs)
+        reset_observations.append(
+            (
+                trainer.optimizer,
+                trainer.lr_scheduler,
+                getattr(trainer, "_created_lr_scheduler", None),
+                trainer.control.should_training_stop,
+            )
+        )
         if trainer.train_call_count > 1:
             trainer.state = trainer_state_cls()
         for callback in list(trainer.callbacks):
@@ -148,11 +163,14 @@ def test_restore_state_false_uses_fresh_trainer_state_each_round(monkeypatch, tm
     hf_api.patch(trainer, restore_state=False, local_steps=1)
     setattr(trainer, hf_api.ORIGINAL_TRAIN_ATTR, train_resetting_state)
 
+    make_trainer_stateful()
     assert hf_api.hf_is_running()
     trainer.train()
+    make_trainer_stateful()
     assert hf_api.hf_is_running()
     trainer.train()
 
+    assert reset_observations == [(None, None, False, False), (None, None, False, False)]
     assert len(client_api_mock.sent_models) == 2
     assert client_api_mock.sent_models[0].meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == 8
     assert client_api_mock.sent_models[1].meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == 8
@@ -711,6 +729,37 @@ def test_checkpoint_provenance_round_trips_on_repatch(monkeypatch, tmp_path):
     assert restored.metric_step_offset == 19
 
 
+def test_checkpoint_state_persists_completed_round_before_blocking_send(monkeypatch, tmp_path):
+    incoming_model = FLModel(params=_model_params(TinyModel(), 5.0), current_round=0, total_rounds=2)
+    hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model)
+    trainer = _make_trainer(trainer_cls, tmp_path)
+    checkpoint_dir = tmp_path / "checkpoint-1"
+    checkpoint_dir.mkdir()
+    events = []
+
+    def write_checkpoint_state(output_dir, state):
+        events.append(("persist", dict(state)))
+        return os.path.join(output_dir, "_fl_exchange", "fl_state.json")
+
+    def send(model, clear_cache=True, ctx=None):
+        events.append(("send", model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND]))
+
+    monkeypatch.setattr(hf_api.utils, "write_checkpoint_state", write_checkpoint_state)
+    monkeypatch.setattr(hf_api.flare_api, "send", send)
+
+    hf_api.patch(trainer, restore_state=True, local_steps=1)
+    trainer.train()
+
+    assert events[0][0] == "persist"
+    assert events[0][1]["last_completed_round"] == 0
+    assert events[0][1]["checkpoint_path"] == str(checkpoint_dir)
+    assert events[0][1]["result_upload_pending"] is True
+    assert events[1][0] == "send"
+    assert events[2][0] == "persist"
+    assert events[2][1]["checkpoint_path"] == str(checkpoint_dir)
+    assert events[2][1]["result_upload_pending"] is False
+
+
 def test_checkpoint_state_persistence_failure_broadcasts_before_barrier_on_rank_zero(monkeypatch, tmp_path):
     incoming_model = FLModel(params=_model_params(TinyModel(), 5.0), current_round=1, total_rounds=3)
     hf_api, trainer_cls, _ = _fresh_api(monkeypatch, incoming_model)
@@ -789,7 +838,7 @@ def test_params_file_exchange_can_be_forced_for_distributed_dispatch(monkeypatch
     descriptor = dispatch_payloads[0]["params_exchange"]
     assert dispatch_payloads[0]["params"] is None
     assert not os.path.exists(descriptor["path"])
-    assert dist.barrier_calls == 3
+    assert dist.barrier_calls == 4
     assert len(client_api_mock.sent_models) == 1
 
 
@@ -810,4 +859,4 @@ def test_params_object_exchange_can_be_forced_for_distributed_dispatch(monkeypat
     assert len(dispatch_payloads) == 1
     assert dispatch_payloads[0]["params"]
     assert "params_exchange" not in dispatch_payloads[0]
-    assert dist.barrier_calls == 1
+    assert dist.barrier_calls == 2
