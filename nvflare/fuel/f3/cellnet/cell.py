@@ -128,12 +128,34 @@ class Adapter:
         optional = request.get_header(MessageHeaderKey.OPTIONAL, False)
         self.logger.debug(f"{stream_req_id=}: on {channel=}, {topic=}")
         response = self.cb(request, *args, **kwargs)
-        self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
+        if isinstance(response, concurrent.futures.Future):
+            response.add_done_callback(
+                lambda done: self._send_async_response(
+                    done, stream_req_id, req_id, channel, topic, origin, secure, optional
+                )
+            )
+            return
 
+        self._send_response(response, stream_req_id, req_id, channel, topic, origin, secure, optional)
+
+    def _send_async_response(self, response_future, *reply_args):
+        try:
+            response = response_future.result()
+        except Exception as ex:
+            self.logger.error(f"async request callback failed: {secure_format_exception(ex)}")
+            response = make_reply(ReturnCode.PROCESS_EXCEPTION)
+        self._send_response(response, *reply_args)
+
+    def _send_response(self, response, stream_req_id, req_id, channel, topic, origin, secure, optional):
+        self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
         if not stream_req_id:
             # no need to reply!
             self.logger.debug("Do not send reply because there is no stream_req_id!")
             return
+
+        if not isinstance(response, Message):
+            self.logger.error(f"request callback must return Message but got {type(response)}")
+            response = make_reply(ReturnCode.PROCESS_EXCEPTION)
 
         response.add_headers(
             {

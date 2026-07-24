@@ -535,6 +535,14 @@ class Recipe(ABC):
             for client in clients:
                 self._job.to(obj, client, **kwargs)
 
+    def finalize(self):
+        """Called to finalize the setup of the recipe.
+
+        Returns:
+
+        """
+        pass
+
     def add_client_input_filter(
         self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None
     ):
@@ -848,6 +856,7 @@ class Recipe(ABC):
         """
         self._validate_before_use()
         self._ensure_client_apps_prepared()
+        self.finalize()
         self._warn_potential_secrets_in_params()
         with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
             if env is not None:
@@ -870,6 +879,7 @@ class Recipe(ABC):
         """
         self._validate_before_use()
         self._ensure_client_apps_prepared()
+        self.finalize()
         self._warn_potential_secrets_in_params()
         with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
             self.process_env(env)
