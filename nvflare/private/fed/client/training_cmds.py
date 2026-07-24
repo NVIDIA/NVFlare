@@ -18,6 +18,7 @@ import os
 import tempfile
 from typing import List
 
+from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
@@ -28,7 +29,7 @@ from nvflare.private.admin_defs import Message, error_reply, ok_reply
 from nvflare.private.defs import RequestHeader, ScopeInfoKey, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
-from nvflare.private.fed.utils.fed_utils import get_scope_info
+from nvflare.private.fed.utils.fed_utils import get_scope_info, require_signed_jobs
 from nvflare.security.logging import secure_format_exception
 
 logger = logging.getLogger(__name__)
@@ -127,9 +128,7 @@ class DeployProcessor(RequestProcessor):
                 if os.path.exists(sig_file) and has_root_ca:
                     if not verify_folder_signature(app_staging_dir, root_ca_path):
                         return error_reply(f"app {app_name} does not pass signature verification")
-                elif has_root_ca:
-                    # Client startup kits do not carry the server's require_signed_jobs override.
-                    # With a local trust root, direct-deploy bytes must be signed and fail closed.
+                elif has_root_ca and require_signed_jobs(workspace, WorkspaceConstants.CLIENT_STARTUP_CONFIG):
                     return error_reply("unsigned job rejected - signed deploy is required")
 
         err = engine.deploy_app(

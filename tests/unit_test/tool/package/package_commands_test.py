@@ -3515,7 +3515,7 @@ class TestDistributedProvisioningV2PackageMode:
                 {"path": "nvflare.lighter.impl.workspace.WorkspaceBuilder"},
                 {
                     "path": "nvflare.lighter.impl.static_file.StaticFileBuilder",
-                    "args": {"config_folder": "custom_config"},
+                    "args": {"config_folder": "custom_config", "require_signed_jobs": False},
                 },
                 {"path": "nvflare.lighter.impl.signature.SignatureBuilder"},
             ],
@@ -3538,6 +3538,7 @@ class TestDistributedProvisioningV2PackageMode:
         assert any(isinstance(b, PrebuiltCertBuilder) for b in captured["builders"])
         static_builder = next(b for b in captured["builders"] if isinstance(b, StaticFileBuilder))
         assert static_builder.config_folder == "custom_config"
+        assert static_builder.require_signed_jobs is False
         assert static_builder.scheme == "grpc"
         assert not any(isinstance(b, SignatureBuilder) for b in captured["builders"])
         assert yaml.safe_load((request_dir / "site.yaml").read_text()) == participant_definition

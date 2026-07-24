@@ -1239,9 +1239,13 @@ This is the same trust model as centralized provisioning: the submitted job carr
 submitter certificate, and `verify_folder_signature()` validates that certificate's chain
 against the server/client `rootCA.pem` before verifying the folder signatures.
 
-The server policy `require_signed_jobs` (default: `true` when `rootCA.pem` is present)
-controls whether unsigned jobs are rejected. This policy applies uniformly regardless of
-how participants were provisioned.
+Each server and client enforces its local `require_signed_jobs` policy (default: `true`
+when `rootCA.pem` is present). To allow unsigned jobs, operators must set
+`require_signed_jobs: false` in `fed_server.json` and in every participating
+`fed_client.json`. Centralized provisioning can render the same setting into all startup
+kits with the `StaticFileBuilder` argument `require_signed_jobs: false`. Distributed sites
+can set the same builder argument in their own participant definition, so the opt-out is
+site-controlled rather than carried in the server's deploy request.
 
 ### HUB Job Forwarding
 
@@ -1272,7 +1276,7 @@ public CLI workflow is `request` / `approve` / `package`.
 | 1 | `lighter/impl/signature.py` | Do not require `signature.json` for standard non-CC, non-HE signed-zip/distributed kits. Continue to generate it for modes that require startup-kit immutability, such as CC or HE. |
 | 2 | `fed_utils.py` (`security_init`, `security_init_for_job`) | Do not treat absent startup integrity metadata as a failure for standard PKI kits. In secure runtime paths, run startup integrity checks only when valid startup integrity metadata exists. `secure_train` remains the PKI/mTLS switch and secure-startup trigger. |
 | 3 | `file_transfer.py` (`push_folder`) | Guard `load_private_key_file` on key file existence before loading. Prevents crash in simulator (no key file); PKI runtime behavior unchanged. |
-| 4 | `job_runner.py`, `training_cmds.py` | Replace `secure_train` gate on job sig verification with: verify if `__nvfl_sig.json` present; reject if absent and `require_signed_jobs=true`. |
+| 4 | `job_runner.py`, `training_cmds.py` | Replace `secure_train` gate on job sig verification with: verify if `__nvfl_sig.json` present; reject if absent and the site's local `require_signed_jobs=true`. |
 | 5 | `fuel/hci/client/config.py` (`secure_load_admin_config`) | Gate strict `LoadResult.OK` check on `mgr.valid_config`. Without `signature.json` (non-CC, distributed workflow), `fed_admin.json` returns `NOT_SIGNED`; the strict check causes admin login to fail. |
 
 After these changes, `secure_train` remains the secure-runtime switch. It must not be used

@@ -53,7 +53,7 @@ from .app_authz import AppAuthzService
 
 # Job signing uses the same trust model for centralized and distributed provisioning:
 # the submitted job carries the submitter certificate, and verification chains that cert
-# to the server's rootCA.pem.  require_signed_jobs() only controls whether unsigned job
+# to the site's rootCA.pem.  require_signed_jobs() only controls whether unsigned job
 # folders are accepted.  _warn_once suppresses repeated log noise for the same condition.
 _SIGNED_JOB_WARNINGS_EMITTED = set()
 _DEFAULT_COMPONENT_PATH_AUTHORIZER = ComponentPathAuthorizer()
@@ -69,28 +69,29 @@ def _warn_once(logger: logging.Logger, cache_key: str, message: str, *args) -> N
     logger.warning(message, *args)
 
 
-def require_signed_jobs(workspace: Workspace) -> bool:
-    """Return True if the server requires all submitted jobs to carry __nvfl_sig.json.
+def require_signed_jobs(workspace: Workspace, startup_config: str = WorkspaceConstants.SERVER_STARTUP_CONFIG) -> bool:
+    """Return True if the site requires all submitted jobs to carry __nvfl_sig.json.
 
     Centralized and distributed provisioning use the same verification model: the job
     carries the submitter certificate, and that certificate must chain to the server's
-    rootCA.pem.  Operators can set ``require_signed_jobs: false`` in fed_server.json to
-    allow unsigned job folders without restarting the server (hot-reload).
+    or client's rootCA.pem. Operators can set ``require_signed_jobs: false`` in the
+    site's startup config to allow unsigned job folders without restarting the site
+    (hot-reload).
 
     Default: True when rootCA.pem is present (any PKI deployment); False otherwise.
-    Explicit "require_signed_jobs" key in fed_server.json overrides the inferred default.
+    An explicit boolean "require_signed_jobs" overrides the inferred default.
     """
     import stat as _stat
 
     logger = logging.getLogger(__name__)
 
-    server_config_path = os.path.join(workspace.get_startup_kit_dir(), "fed_server.json")
-    if os.path.exists(server_config_path):
+    startup_config_path = os.path.join(workspace.get_startup_kit_dir(), startup_config)
+    if os.path.exists(startup_config_path):
         try:
             _open_flags = os.O_RDONLY
             if hasattr(os, "O_NOFOLLOW"):
                 _open_flags |= os.O_NOFOLLOW
-            fd = os.open(server_config_path, _open_flags)
+            fd = os.open(startup_config_path, _open_flags)
             try:
                 with os.fdopen(fd) as f:
                     fd = -1  # ownership transferred to f
@@ -98,9 +99,10 @@ def require_signed_jobs(workspace: Workspace) -> bool:
                     if st.st_mode & (_stat.S_IWGRP | _stat.S_IWOTH):
                         _warn_once(
                             logger,
-                            f"writable:{server_config_path}",
-                            "fed_server.json is group/world-writable — require_signed_jobs policy "
+                            f"writable:{startup_config_path}",
+                            "%s is group/world-writable — require_signed_jobs policy "
                             "can be altered by other local users (TOCTOU risk)",
+                            startup_config,
                         )
                     cfg = json.load(f)
             except BaseException:
@@ -108,7 +110,15 @@ def require_signed_jobs(workspace: Workspace) -> bool:
                     os.close(fd)
                 raise
             if "require_signed_jobs" in cfg:
-                value = bool(cfg["require_signed_jobs"])
+                value = cfg["require_signed_jobs"]
+                if not isinstance(value, bool):
+                    _warn_once(
+                        logger,
+                        f"invalid:{startup_config_path}",
+                        "invalid require_signed_jobs value in %s: expected a boolean — failing closed",
+                        startup_config,
+                    )
+                    return True
                 logger.debug("require_signed_jobs=%s (explicit config)", value)
                 return value
         except FileNotFoundError:
@@ -116,8 +126,9 @@ def require_signed_jobs(workspace: Workspace) -> bool:
         except Exception as e:
             _warn_once(
                 logger,
-                f"parse:{server_config_path}",
-                "failed to parse fed_server.json for require_signed_jobs: %s — failing closed",
+                f"parse:{startup_config_path}",
+                "failed to parse %s for require_signed_jobs: %s — failing closed",
+                startup_config,
                 e,
             )
             return True

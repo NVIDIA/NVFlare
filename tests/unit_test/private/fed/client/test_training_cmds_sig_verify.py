@@ -18,6 +18,7 @@ Tests cover client-side verification of the app bytes received for deploy.
 """
 
 import io
+import json
 import types
 from unittest.mock import MagicMock, patch
 from zipfile import ZipFile
@@ -158,6 +159,11 @@ def _write_root_ca(startup_dir):
     (startup_dir / "rootCA.pem").write_text("FAKECERT")
 
 
+def _write_client_policy(startup_dir, require_signed_jobs):
+    config = {"require_signed_jobs": require_signed_jobs}
+    (startup_dir / "fed_client.json").write_text(json.dumps(config))
+
+
 # ---------------------------------------------------------------------------
 # Signed, valid — should return ok_reply
 # ---------------------------------------------------------------------------
@@ -219,6 +225,19 @@ class TestSignedInvalid:
 
         assert len(engine._deploy_calls) == 0
 
+    def test_disabled_policy_does_not_allow_invalid_signature(self, tmp_path):
+        """The opt-out permits missing signatures, never invalid signatures."""
+        req = _make_request()
+        engine = _StubEngine(workspace_dir=str(tmp_path))
+        _write_root_ca(tmp_path)
+        _write_client_policy(tmp_path, require_signed_jobs=False)
+
+        with patch("nvflare.private.fed.client.training_cmds.verify_folder_signature", return_value=False):
+            reply = _run_process(req, engine, str(tmp_path))
+
+        assert "does not pass signature verification" in reply.body
+        assert len(engine._deploy_calls) == 0
+
 
 # ---------------------------------------------------------------------------
 # Unsigned — rejected when signing is required, otherwise accepted
@@ -234,6 +253,44 @@ class TestUnsignedJob:
         _run_process(req, engine, str(tmp_path))
 
         assert len(engine._deploy_calls) == 1
+
+    def test_unsigned_job_calls_deploy_app_when_client_policy_disabled(self, tmp_path):
+        """A PKI client can independently opt in to unsigned deployments."""
+        req = _make_request(body=_make_app_zip(signed=False))
+        engine = _StubEngine(workspace_dir=str(tmp_path))
+        _write_root_ca(tmp_path)
+        _write_client_policy(tmp_path, require_signed_jobs=False)
+
+        with patch("nvflare.private.fed.client.training_cmds.verify_folder_signature") as mock_vfs:
+            reply = _run_process(req, engine, str(tmp_path))
+
+        assert "deployed" in reply.body
+        assert len(engine._deploy_calls) == 1
+        mock_vfs.assert_not_called()
+
+    def test_unsigned_job_is_rejected_when_client_policy_enabled(self, tmp_path):
+        """An explicit client policy continues to reject unsigned deployments."""
+        req = _make_request(body=_make_app_zip(signed=False))
+        engine = _StubEngine(workspace_dir=str(tmp_path))
+        _write_root_ca(tmp_path)
+        _write_client_policy(tmp_path, require_signed_jobs=True)
+
+        reply = _run_process(req, engine, str(tmp_path))
+
+        assert "unsigned job rejected" in reply.body
+        assert len(engine._deploy_calls) == 0
+
+    def test_invalid_client_policy_fails_closed(self, tmp_path):
+        """A non-boolean client policy must not enable unsigned deployments."""
+        req = _make_request(body=_make_app_zip(signed=False))
+        engine = _StubEngine(workspace_dir=str(tmp_path))
+        _write_root_ca(tmp_path)
+        _write_client_policy(tmp_path, require_signed_jobs="false")
+
+        reply = _run_process(req, engine, str(tmp_path))
+
+        assert "unsigned job rejected" in reply.body
+        assert len(engine._deploy_calls) == 0
 
     def test_signed_job_calls_deploy_app_when_root_ca_is_missing(self, tmp_path):
         """No rootCA.pem -> client cannot verify signature and preserves no-rootCA deploy behavior."""

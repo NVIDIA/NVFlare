@@ -44,6 +44,7 @@ class StaticFileBuilder(Builder):
         download_job_url="",
         docker_image="",
         overseer_agent=None,
+        require_signed_jobs=None,
         **kwargs,
     ):
         """Build all static files from template.
@@ -61,6 +62,7 @@ class StaticFileBuilder(Builder):
             app_validator: optional path to an app validator to verify that uploaded app has the expected structure
             docker_image: when docker_image is set to a docker image name, docker.sh will be generated on
             server/client/admin
+            require_signed_jobs: optional boolean rendered into server and client startup configs
         """
         if overseer_agent is not None:
             _logger.warning("'overseer_agent' arg in StaticFileBuilder is obsolete and will be ignored.")
@@ -80,11 +82,19 @@ class StaticFileBuilder(Builder):
         self.docker_image = docker_image
         self.download_job_url = download_job_url
         self.app_validator = app_validator
+        if require_signed_jobs is not None and not isinstance(require_signed_jobs, bool):
+            raise ValueError("require_signed_jobs must be a boolean")
+        self.require_signed_jobs = require_signed_jobs
         self.aio_schemes = {
             "tcp": "atcp",
             "grpc": "agrpc",
             "http": "http",
         }
+
+    def _build_require_signed_jobs_config(self):
+        if self.require_signed_jobs is None:
+            return ""
+        return f',\n  "require_signed_jobs": {json.dumps(self.require_signed_jobs)}'
 
     @staticmethod
     def _build_conn_properties(site: Participant, ctx: ProvisionContext):
@@ -213,6 +223,7 @@ class StaticFileBuilder(Builder):
                 "admin_port": admin_port,
                 "scheme": self._determine_scheme(server),
                 "conn_sec": conn_sec,
+                "require_signed_jobs_config": self._build_require_signed_jobs_config(),
                 "auth_identity_config": self._build_auth_identity_config(
                     auth_identity=server_auth_identity,
                     default_identity=server.name,
@@ -359,6 +370,7 @@ class StaticFileBuilder(Builder):
                 "fqsn": client.get_prop(PropKey.FQSN),
                 "is_leaf": is_leaf,
                 "conn_sec": self._build_conn_properties(client, ctx),
+                "require_signed_jobs_config": self._build_require_signed_jobs_config(),
                 "auth_identity_config": self._build_auth_identity_config(
                     auth_identity=client_auth_identity,
                     default_identity=client.name,
