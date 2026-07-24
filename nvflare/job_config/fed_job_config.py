@@ -24,14 +24,18 @@ from enum import Enum
 from tempfile import TemporaryDirectory
 from typing import Dict, List
 
+from nvflare.apis.job_def import ALL_SITES, JobMetaKey
+from nvflare.app_common.multinode import JOB_SPEC_NODE_COMMAND, JOB_SPEC_NODES, NODE_GROUP_MODES
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.secret_utils import has_secret_refs
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.job_config.base_app_config import BaseAppConfig
 from nvflare.job_config.fed_app_config import FedAppConfig
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
 from nvflare.private.fed.app.utils import kill_child_processes
+from nvflare.utils.job_launcher_utils import LAUNCHER_SPEC_DEFAULT_KEY
 
 CONFIG = "config"
 CUSTOM = "custom"
@@ -138,9 +142,114 @@ class FedJobConfig:
         if self.meta_props:
             meta_json.update(self.meta_props)
 
+        self._fill_node_commands(meta_json)
+
         with open(meta_file, "w") as outfile:
             json_dump = json.dumps(meta_json, indent=4)
             outfile.write(json_dump)
+
+    @staticmethod
+    def _mode_block(site_spec: dict, mode):
+        block = site_spec.get(mode)
+        return block if isinstance(block, dict) else {}
+
+    @staticmethod
+    def _needs_node_command(block: dict) -> bool:
+        nodes = block.get(JOB_SPEC_NODES)
+        return isinstance(nodes, int) and nodes > 1 and JOB_SPEC_NODE_COMMAND not in block
+
+    def _fill_node_commands(self, meta_json):
+        """Fill launcher_spec node_command for multi-node sites from the site's SubprocessLauncher.
+
+        The deployed launcher command is the single source the job author writes; copying
+        it here at export keeps meta.json and the client config from drifting. An explicit
+        node_command (including null, the application-owned fan-out opt-out) always wins.
+        Detection mirrors launch-time resolution: the reserved default block is merged
+        into each site, and a qualifying default block is filled directly so unlisted
+        sites inherit the command.
+        """
+        launcher_spec = meta_json.get(JobMetaKey.JOB_LAUNCHER_SPEC.value)
+        if not isinstance(launcher_spec, dict):
+            return
+        # JSON round-trip instead of deepcopy: breaks aliasing when the author reuses
+        # one block dict across sites (deepcopy would preserve the shared identity and
+        # the last-filled site would win for all of them).
+        filled = json.loads(json.dumps(launcher_spec))
+        default_site_spec = filled.get(LAUNCHER_SPEC_DEFAULT_KEY)
+        default_site_spec = default_site_spec if isinstance(default_site_spec, dict) else {}
+        generated_defaults = {}
+        for mode in NODE_GROUP_MODES:
+            block = default_site_spec.get(mode)
+            if isinstance(block, dict) and self._needs_node_command(block):
+                script = self._resolvable_launch_script(ALL_SITES)
+                if script:
+                    block[JOB_SPEC_NODE_COMMAND] = script
+                    generated_defaults[mode] = script
+        for site_name, site_spec in filled.items():
+            if site_name == LAUNCHER_SPEC_DEFAULT_KEY or not isinstance(site_spec, dict):
+                continue
+            for mode in NODE_GROUP_MODES:
+                site_block = self._mode_block(site_spec, mode)
+                merged = {**self._mode_block(default_site_spec, mode), **site_block}
+                generated_default = generated_defaults.get(mode)
+                if generated_default is not None and JOB_SPEC_NODE_COMMAND not in site_block:
+                    nodes = merged.get(JOB_SPEC_NODES)
+                    if not isinstance(nodes, int) or nodes <= 1:
+                        if JOB_SPEC_NODES in site_block:
+                            site_block[JOB_SPEC_NODE_COMMAND] = None
+                        continue
+                    script = self._resolvable_launch_script(site_name)
+                    if script != generated_default:
+                        if not isinstance(site_spec.get(mode), dict):
+                            site_block = {}
+                            site_spec[mode] = site_block
+                        site_block[JOB_SPEC_NODE_COMMAND] = script
+                    continue
+                if not self._needs_node_command(merged):
+                    continue
+                script = self._resolvable_launch_script(site_name)
+                if not script:
+                    continue
+                if not isinstance(site_spec.get(mode), dict):
+                    site_block = {}
+                    site_spec[mode] = site_block
+                site_block[JOB_SPEC_NODE_COMMAND] = script
+        meta_json[JobMetaKey.JOB_LAUNCHER_SPEC.value] = filled
+
+    def _resolvable_launch_script(self, site_name):
+        script = self._site_external_launch_script(site_name)
+        if not script:
+            self.logger.warning(
+                f"multi-node launcher block for '{site_name}' has no resolvable external training command; "
+                "node_command was not generated and extra nodes will idle unless the application fans out itself"
+            )
+            return None
+        if has_secret_refs(script):
+            self.logger.warning(
+                f"multi-node launcher block for '{site_name}': the training command contains secret references, "
+                "which node_command does not support; set a secret-free node_command explicitly "
+                "or remove the references"
+            )
+            return None
+        return script
+
+    def _site_external_launch_script(self, site_name):
+        from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
+
+        app_name = self.deploy_map.get(site_name, self.deploy_map.get(ALL_SITES))
+        fed_app = self.fed_apps.get(app_name)
+        client_app = fed_app.client_app if fed_app else None
+        if client_app is None:
+            return None
+        launchers = [comp for comp in client_app.components.values() if isinstance(comp, SubprocessLauncher)]
+        scripts = {launcher._script for launcher in launchers}
+        if len(scripts) != 1:
+            return None
+        if not all(launcher._launch_once for launcher in launchers):
+            raise RuntimeError(
+                f"multi-node job for site '{site_name}' requires the external launcher to use launch_once=True"
+            )
+        return scripts.pop()
 
     def generate_job_config(self, job_root):
         """generate the job config

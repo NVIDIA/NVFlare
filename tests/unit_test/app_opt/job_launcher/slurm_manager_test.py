@@ -15,6 +15,7 @@
 import logging
 import os
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -335,6 +336,26 @@ def test_job_name_limits_site_name_length():
     job_name = _job_name("s" * 100, _job_key("job-1"))
 
     assert job_name == f"nvfl-{'s' * 32}-{_job_key('job-1')[:8]}"
+
+
+def test_pyxis_node_group_writes_node_script_and_mounts_job_artifacts(tmp_path):
+    manager = _manager(tmp_path)
+    plan = replace(
+        _plan(tmp_path, sandbox="pyxis"),
+        image="/images/python.sqsh",
+        resources=JobResources(nodes=2, pending_timeout=5),
+        node_command=("python3", "-m", "trainer"),
+        node_app_dir=str(tmp_path / "job-1" / "app_site-1"),
+    )
+
+    handle = manager.launch(plan)
+
+    node_script = Path(handle.job_dir, "node.sh")
+    assert node_script.is_file()
+    assert os.access(node_script, os.X_OK)
+    assert "python3 -m trainer" in node_script.read_text(encoding="utf-8")
+    batch = Path(handle.job_dir, "batch.sh").read_text(encoding="utf-8")
+    assert f"{handle.job_dir}:{handle.job_dir}:ro" in batch
 
 
 def test_stale_job_artifacts_block_relaunch(tmp_path):

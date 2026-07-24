@@ -258,6 +258,83 @@ def test_launch_plan_uses_fixed_worker_and_one_resolved_job_spec(tmp_path):
     assert plan.resources.nodes == 1
 
 
+def _multinode_meta(node_command="python3 -m nvflare.app_opt.pt.torchrun_node -- custom/client.py", nodes=2):
+    return {
+        JobConstants.JOB_ID: "job-1",
+        JobMetaKey.JOB_LAUNCHER_SPEC.value: {"site-1": {"slurm": {"nodes": nodes, "node_command": node_command}}},
+    }
+
+
+def test_launch_plan_resolves_node_command_and_app_dir(tmp_path):
+    workspace = _workspace(tmp_path)
+    app_dir = workspace / "job-1" / "app_site-1"
+    app_dir.mkdir()
+    launcher = _launcher(tmp_path, workspace)
+
+    plan = launcher._build_launch_plan(_multinode_meta(), _fl_ctx(workspace))
+
+    assert plan.resources.nodes == 2
+    assert plan.node_command == ("python3", "-m", "nvflare.app_opt.pt.torchrun_node", "--", "custom/client.py")
+    assert plan.node_app_dir == str(app_dir)
+
+
+@pytest.mark.parametrize(
+    "meta_kwargs, message",
+    [
+        ({"nodes": 1}, "node_command requires nodes > 1"),
+        ({"node_command": "python3 -m trainer --token ${secret:MY_TOKEN}"}, "secret references"),
+        ({"node_command": "unbalanced 'quote"}, "malformed node_command"),
+        ({"node_command": "python3\n-m trainer"}, "single line"),
+        ({"node_command": ""}, "non-empty string"),
+        ({"node_command": " "}, "at least one word"),
+    ],
+)
+def test_launch_plan_rejects_invalid_node_command(tmp_path, meta_kwargs, message):
+    workspace = _workspace(tmp_path)
+    (workspace / "job-1" / "app_site-1").mkdir()
+    launcher = _launcher(tmp_path, workspace)
+
+    with pytest.raises(SlurmLauncherError, match=message):
+        launcher._build_launch_plan(_multinode_meta(**meta_kwargs), _fl_ctx(workspace))
+
+
+def test_launch_plan_allows_container_node_group(tmp_path):
+    workspace = _workspace(tmp_path)
+    (workspace / "job-1" / "app_site-1").mkdir()
+    image = tmp_path / "python.sif"
+    image.write_bytes(b"sif")
+    launcher = _launcher(tmp_path, workspace, sandbox="apptainer", image=str(image))
+
+    plan = launcher._build_launch_plan(_multinode_meta(), _fl_ctx(workspace))
+
+    assert plan.sandbox == "apptainer"
+    assert plan.image.endswith("python.sif")
+    assert plan.resources.nodes == 2
+    assert plan.node_command[0] == "python3"
+
+
+def test_multinode_without_node_command_still_requires_bare_sandbox(tmp_path):
+    with pytest.raises(SlurmLauncherError, match="unless node_command"):
+        _resolve_resources({}, "site-1", "pyxis", 600, spec={"nodes": 2})
+
+
+def test_launch_plan_rejects_node_command_without_deployed_app_dir(tmp_path):
+    workspace = _workspace(tmp_path)
+    launcher = _launcher(tmp_path, workspace)
+
+    with pytest.raises(SlurmLauncherError, match="app directory"):
+        launcher._build_launch_plan(_multinode_meta(), _fl_ctx(workspace))
+
+
+def test_server_launcher_rejects_node_command(tmp_path):
+    workspace = _workspace(tmp_path)
+    (workspace / "job-1" / "app_site-1").mkdir()
+    launcher = _launcher(tmp_path, workspace, launcher_class=ServerSlurmJobLauncher)
+
+    with pytest.raises(SlurmLauncherError, match="only supported for client jobs"):
+        launcher._build_launch_plan(_multinode_meta(), _fl_ctx(workspace))
+
+
 def test_concrete_launchers_select_client_and_server_module_arguments(tmp_path):
     workspace = _workspace(tmp_path)
     job_args = {

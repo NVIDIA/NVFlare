@@ -24,6 +24,7 @@ from enum import Enum
 from pathlib import PurePosixPath
 from typing import Optional
 
+from nvflare.app_common.multinode import JOB_SPEC_NODE_COMMAND, JOB_SPEC_NODES
 from nvflare.app_opt.job_launcher.study_runtime import (
     SLURM_RESERVED_ENV_NAMES,
     SLURM_RESERVED_ENV_PREFIXES,
@@ -33,9 +34,16 @@ from nvflare.app_opt.job_launcher.study_runtime import (
 CONTROL_DIR = ".nvflare_slurm"
 SECRET_FILE = "secret.env"
 BATCH_FILE = "batch.sh"
+NODE_FILE = "node.sh"
 SANDBOX_ROOT = "sandbox_root"
 SLURM_CHILD_PROCESS_ENV = "NVFLARE_SLURM_CHILD_PROCESS"
 CONTAINER_RESOLV_CONF = "/etc/resolv.conf"
+
+# The node-group environment contract (nvflare.app_common.multinode) is
+# exported to every task of a launcher-owned multi-node job. How the port is
+# derived within the allocation is Slurm-launcher policy; sites override the
+# default range with multi_node_port_range.
+DEFAULT_MULTINODE_PORT_RANGE = (29400, 30399)
 
 SQUEUE_FORMAT = "%i|%T|%U|%k|%j"
 SACCT_FORMAT = "JobIDRaw%32,JobName%128,User%64,State%64,ExitCode%32"
@@ -49,7 +57,16 @@ SLURM_SBATCH_DIRECTIVES = ("partition", "account", "qos", "time", "constraint", 
 SLURM_PARENT_EXECUTABLES = ("sbatch", "squeue", "sacct", "scancel")
 SLURM_COMPUTE_EXECUTABLES = ("apptainer", "srun")
 
-_JOB_SLURM_KEYS = {"image", "nodes", "gpus_per_node", "cpus_per_node", "mem_per_node", "time", "pending_timeout"}
+_JOB_SLURM_KEYS = {
+    "image",
+    JOB_SPEC_NODES,
+    "gpus_per_node",
+    "cpus_per_node",
+    "mem_per_node",
+    "time",
+    "pending_timeout",
+    JOB_SPEC_NODE_COMMAND,
+}
 
 _PENDING_STATES = {"PENDING", "CONFIGURING", "REQUEUE_HOLD", "RESV_DEL_HOLD", "SPECIAL_EXIT"}
 _APPLICATION_TERMINAL_STATES = {"COMPLETED", "FAILED"}
@@ -94,6 +111,7 @@ class SlurmConfig:
     parent_host: Optional[str] = None
     poll_interval: float = 10.0
     pending_timeout: float = 600.0
+    multi_node_port_range: tuple = DEFAULT_MULTINODE_PORT_RANGE
 
 
 @dataclass(frozen=True)
@@ -305,6 +323,24 @@ def normalize_slurm_image(
     return real_path
 
 
+def normalize_multi_node_port_range(value, internal_port: int) -> tuple:
+    """Normalize a site-owned rendezvous port range ('START-END' or a 2-item pair)."""
+    if isinstance(value, str):
+        parts = value.split("-", maxsplit=1)
+        if len(parts) != 2 or any(not part.isascii() or not part.isdigit() for part in parts):
+            raise SlurmLauncherError("multi_node_port_range must have the form 'START-END'")
+        value = tuple(map(int, parts))
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        raise SlurmLauncherError("multi_node_port_range must have the form 'START-END'")
+    start = _require_int(value[0], "multi_node_port_range start", 1024)
+    end = _require_int(value[1], "multi_node_port_range end", 1024)
+    if end > 65535 or start > end:
+        raise SlurmLauncherError("multi_node_port_range must be within 1024..65535 with START <= END")
+    if start <= internal_port <= end:
+        raise SlurmLauncherError("multi_node_port_range must not contain internal_port")
+    return start, end
+
+
 def normalize_slurm_workspace_path(value: str) -> str:
     value = os.path.normpath(_validate_absolute_path(value, "workspace_path"))
     if os.pathsep in value:
@@ -328,6 +364,7 @@ def normalize_slurm_launcher_settings(
     poll_interval: float,
     pending_timeout: float,
     require_image_file: bool = False,
+    multi_node_port_range=None,
 ) -> dict:
     sandbox = _require_string(sandbox, "sandbox")
     python_path = _validate_absolute_path(python_path, "python_path")
@@ -354,6 +391,12 @@ def normalize_slurm_launcher_settings(
         "parent_host": None if parent_host is None else _require_string(parent_host, "parent_host"),
         "poll_interval": poll_interval,
         "pending_timeout": pending_timeout,
+        # The default range is validated too: the internal_port exclusion is
+        # unconditional, however the range was chosen.
+        "multi_node_port_range": normalize_multi_node_port_range(
+            DEFAULT_MULTINODE_PORT_RANGE if multi_node_port_range is None else multi_node_port_range,
+            internal_port=internal_port,
+        ),
     }
 
 
@@ -375,3 +418,5 @@ class LaunchPlan:
     python_path: str
     python_env: str
     forward_env: tuple
+    node_command: tuple = ()
+    node_app_dir: Optional[str] = None

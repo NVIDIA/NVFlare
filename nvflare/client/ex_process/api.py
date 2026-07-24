@@ -59,6 +59,27 @@ def _downgrade_rotating_handlers(dict_config: dict) -> None:
                 handler_cfg.pop(key, None)
 
 
+def _remove_file_handlers(dict_config: dict) -> None:
+    """Strip file handlers from a subprocess log config, keeping console output.
+
+    In distributed training only global rank 0 may write the shared workspace log
+    files; concurrent appends from every rank (across nodes on a shared filesystem)
+    interleave and corrupt them.  Non-zero ranks keep the console handlers so their
+    output still reaches stdout with consistent formatting.
+    """
+    handlers = dict_config.get("handlers", {})
+    file_handler_names = {
+        name for name, handler_cfg in handlers.items() if isinstance(handler_cfg, dict) and "filename" in handler_cfg
+    }
+    for name in file_handler_names:
+        handlers.pop(name)
+    logger_configs = list(dict_config.get("loggers", {}).values())
+    logger_configs.append(dict_config.get("root", {}))
+    for logger_cfg in logger_configs:
+        if isinstance(logger_cfg, dict) and "handlers" in logger_cfg:
+            logger_cfg["handlers"] = [name for name in logger_cfg["handlers"] if name not in file_handler_names]
+
+
 def _create_client_config(config: str) -> ClientConfig:
     if isinstance(config, str):
         client_config = from_file(config_file=config)
@@ -119,7 +140,7 @@ class ExProcessClientAPI(APISpec):
         self.flare_agent = None
         # Memory settings will be read from config in init()
 
-    def _configure_subprocess_logging(self, client_config: ClientConfig) -> None:
+    def _configure_subprocess_logging(self, client_config: ClientConfig, rank: str) -> None:
         """Configure Python logging in the subprocess using the site's log config file.
 
         Uses ConfigFactory.load_config() so all supported variants (.json, .conf,
@@ -127,7 +148,8 @@ class ExProcessClientAPI(APISpec):
         not assumed.  RotatingFileHandler entries in the config are downgraded to
         plain FileHandler before applying: both the CJ and the subprocess share the
         same log files, and only the CJ should trigger rotation (RotatingFileHandler
-        is not process-safe).  consoleHandler output reaches stdout, where
+        is not process-safe).  Only global rank 0 keeps the shared file handlers;
+        other ranks are console-only.  consoleHandler output reaches stdout, where
         SubprocessLauncher routes it to the terminal or wraps it with logger.info()
         for raw print() lines from user training scripts.
         """
@@ -144,7 +166,10 @@ class ExProcessClientAPI(APISpec):
                 return
 
             dict_config = conf.to_dict()
-            _downgrade_rotating_handlers(dict_config)
+            if rank == "0":
+                _downgrade_rotating_handlers(dict_config)
+            else:
+                _remove_file_handlers(dict_config)
             apply_log_config(dict_config, workspace_dir)
         except Exception as e:
             # Logging setup failure must never crash the training script.
@@ -177,8 +202,8 @@ class ExProcessClientAPI(APISpec):
         # Configure logging for the subprocess using the site's log_config.json.
         # Without this the subprocess Python logging is unconfigured — logger.info()
         # is silently dropped. With it, all NVFlare loggers write to sys.stdout
-        # (captured by SubprocessLauncher) and to the site's log.txt file.
-        self._configure_subprocess_logging(client_config)
+        # (captured by SubprocessLauncher) and, on rank 0 only, to the site's log.txt.
+        self._configure_subprocess_logging(client_config, rank)
 
         flare_agent = None
         try:

@@ -94,7 +94,7 @@ class TestConfigureSubprocessLogging:
             patch("nvflare.client.ex_process.api.apply_log_config"),
         ):
             MockCF.load_config.return_value = mock_conf
-            api._configure_subprocess_logging(client_config)
+            api._configure_subprocess_logging(client_config, "0")
 
         import os
 
@@ -116,7 +116,7 @@ class TestConfigureSubprocessLogging:
             patch("nvflare.client.ex_process.api.apply_log_config") as mock_apply,
         ):
             MockCF.load_config.return_value = None
-            api._configure_subprocess_logging(client_config)
+            api._configure_subprocess_logging(client_config, "0")
 
         mock_apply.assert_not_called()
 
@@ -145,7 +145,7 @@ class TestConfigureSubprocessLogging:
             patch("nvflare.client.ex_process.api.apply_log_config", side_effect=capture_apply),
         ):
             MockCF.load_config.return_value = mock_conf
-            api._configure_subprocess_logging(client_config)
+            api._configure_subprocess_logging(client_config, "0")
 
         assert "cfg" in captured, "apply_log_config must be called"
         kept_root = captured["cfg"]["loggers"]["root"]["handlers"]
@@ -167,7 +167,7 @@ class TestConfigureSubprocessLogging:
             patch("nvflare.client.ex_process.api.apply_log_config") as mock_apply,
         ):
             MockCF.load_config.return_value = mock_conf
-            api._configure_subprocess_logging(client_config)
+            api._configure_subprocess_logging(client_config, "0")
 
         mock_apply.assert_called_once()
         args = mock_apply.call_args[0]
@@ -181,7 +181,7 @@ class TestConfigureSubprocessLogging:
         with patch("nvflare.client.ex_process.api.ConfigFactory") as MockCF:
             MockCF.load_config.side_effect = RuntimeError("boom")
             # Must not raise
-            api._configure_subprocess_logging(client_config)
+            api._configure_subprocess_logging(client_config, "0")
 
         api.logger.warning.assert_called_once()
         assert "boom" in api.logger.warning.call_args[0][0]
@@ -195,7 +195,7 @@ class TestConfigureSubprocessLogging:
         client_config = ClientConfig(config={ConfigKey.TASK_EXCHANGE: {ConfigKey.PIPE: {ConfigKey.ARG: {}}}})
 
         with patch("nvflare.client.ex_process.api.ConfigFactory") as MockCF:
-            api._configure_subprocess_logging(client_config)
+            api._configure_subprocess_logging(client_config, "0")
 
         MockCF.load_config.assert_not_called()
 

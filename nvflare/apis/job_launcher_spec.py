@@ -52,6 +52,11 @@ class JobProcessEnv:
     SSID = "NVFLARE_JOB_SSID"
 
 
+# The complete bootstrap-credential set; every scrub of job-process credentials
+# must consume this so a future credential cannot be missed by one of them.
+CREDENTIAL_ENV_NAMES = (JobProcessEnv.AUTH_TOKEN, JobProcessEnv.TOKEN_SIGNATURE, JobProcessEnv.SSID)
+
+
 def pop_credential_env() -> dict:
     """Remove every JobProcessEnv credential from the environment and return it.
 
@@ -59,8 +64,7 @@ def pop_credential_env() -> dict:
     job-spawned children from inheriting credentials. Empty values count as absent so
     a blank env var fails parsing like a missing one.
     """
-    names = (JobProcessEnv.AUTH_TOKEN, JobProcessEnv.TOKEN_SIGNATURE, JobProcessEnv.SSID)
-    return {name: os.environ.pop(name, None) or None for name in names}
+    return {name: os.environ.pop(name, None) or None for name in CREDENTIAL_ENV_NAMES}
 
 
 class JobReturnCode(ProcessExitCode):

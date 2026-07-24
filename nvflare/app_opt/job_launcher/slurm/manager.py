@@ -28,7 +28,12 @@ from typing import Callable, Optional
 
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobReturnCode
-from nvflare.app_opt.job_launcher.slurm.batch import _render_batch_script, _render_secret_file, _submission_argv
+from nvflare.app_opt.job_launcher.slurm.batch import (
+    _render_batch_script,
+    _render_node_script,
+    _render_secret_file,
+    _submission_argv,
+)
 from nvflare.app_opt.job_launcher.slurm.config import (
     _APPLICATION_TERMINAL_STATES,
     _INFRASTRUCTURE_TERMINAL_STATES,
@@ -36,6 +41,7 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     BATCH_FILE,
     CONTAINER_RESOLV_CONF,
     CONTROL_DIR,
+    NODE_FILE,
     SANDBOX_ROOT,
     SECRET_FILE,
     BindMount,
@@ -240,6 +246,9 @@ class SlurmJobManager:
                         "ro",
                     ),
                 )
+            if plan.sandbox == "pyxis" and plan.node_command:
+                # srun starts node.sh inside the container, so its directory must be visible there.
+                launcher_mounts += (BindMount(job_dir, job_dir, "ro"),)
             plan = replace(plan, mounts=launcher_mounts + plan.mounts)
         script, secrets = _render_batch_script(
             plan=plan,
@@ -252,6 +261,9 @@ class SlurmJobManager:
             0o600,
         )
         _write_exclusive(os.path.join(job_dir, BATCH_FILE), script.encode("utf-8"), 0o700)
+        if plan.node_command:
+            node_script = _render_node_script(plan, self.config)
+            _write_exclusive(os.path.join(job_dir, NODE_FILE), node_script.encode("utf-8"), 0o700)
 
     def launch(self, plan: LaunchPlan) -> "SlurmJobHandle":
         self._require_initialized()

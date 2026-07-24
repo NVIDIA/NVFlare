@@ -63,6 +63,10 @@ def prepare(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) -> di
 
     launcher_path = SLURM_SERVER_LAUNCHER if kit_info.role == ROLE_SERVER else SLURM_CLIENT_LAUNCHER
     launcher_args = _normalize_job_launcher(job_launcher)
+    if "multi_node_port_range" not in job_launcher:
+        # Keep the default out of kit artifacts: older launchers reject the kwarg
+        # and a frozen default would never follow a future default change.
+        launcher_args.pop("multi_node_port_range", None)
     launcher_args["workspace_path"] = workspace_path
     _patch_resources(kit_info.kit_dir, "slurm_launcher", launcher_path, launcher_args)
     _patch_comm_config(kit_info.kit_dir, port=launcher_args["internal_port"])
@@ -137,6 +141,7 @@ def validate_config(config: dict[str, Any]) -> None:
             "parent_host",
             "poll_interval",
             "pending_timeout",
+            "multi_node_port_range",
         },
         "job_launcher",
     )
@@ -179,6 +184,7 @@ def _normalize_job_launcher(job_launcher: dict[str, Any]) -> dict:
             poll_interval=job_launcher.get("poll_interval", 10),
             pending_timeout=job_launcher.get("pending_timeout", 600),
             require_image_file=True,
+            multi_node_port_range=job_launcher.get("multi_node_port_range"),
         )
     except SlurmLauncherError as ex:
         _fail("INVALID_CONFIG", str(ex), "Fix slurm config.job_launcher.")

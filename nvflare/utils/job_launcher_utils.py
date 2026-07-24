@@ -147,12 +147,12 @@ def get_launcher_resource_spec(job_meta, site_name, mode):
     return get_site_launcher_spec(resource_spec.get(site_name), mode)
 
 
-_LAUNCHER_SPEC_DEFAULT_KEY = "default"
+LAUNCHER_SPEC_DEFAULT_KEY = "default"
 
 # "default" is the only reserved top-level key in launcher_spec. Every other
 # top-level key is treated as a site name. A typo such as "defaults" would be
 # silently accepted as a site name and never matched during resolution.
-_LAUNCHER_SPEC_RESERVED_KEYS = {_LAUNCHER_SPEC_DEFAULT_KEY}
+_LAUNCHER_SPEC_RESERVED_KEYS = {LAUNCHER_SPEC_DEFAULT_KEY}
 
 
 def _validate_launcher_spec(launcher_spec: dict) -> list:
@@ -194,9 +194,9 @@ def get_job_launcher_spec(job_meta, site_name, mode):
     for bad_key in _validate_launcher_spec(launcher_spec):
         logging.getLogger(__name__).warning(
             f"launcher_spec key '{bad_key}' looks like a misspelling of the reserved key "
-            f"'{_LAUNCHER_SPEC_DEFAULT_KEY}' and will be treated as a site name, not a default block."
+            f"'{LAUNCHER_SPEC_DEFAULT_KEY}' and will be treated as a site name, not a default block."
         )
-    default_spec = (launcher_spec.get(_LAUNCHER_SPEC_DEFAULT_KEY) or {}).get(mode) or {}
+    default_spec = (launcher_spec.get(LAUNCHER_SPEC_DEFAULT_KEY) or {}).get(mode) or {}
     site_spec = (launcher_spec.get(site_name) or {}).get(mode)
     if default_spec or site_spec is not None:
         return {**default_spec, **(site_spec or {})}

@@ -19,7 +19,12 @@ from pathlib import Path
 import pytest
 
 from nvflare.apis.job_launcher_spec import JobProcessEnv
-from nvflare.app_opt.job_launcher.slurm.batch import _render_batch_script, _render_secret_file, _submission_argv
+from nvflare.app_opt.job_launcher.slurm.batch import (
+    _render_batch_script,
+    _render_node_script,
+    _render_secret_file,
+    _submission_argv,
+)
 from nvflare.app_opt.job_launcher.slurm.config import BindMount, JobResources, LaunchPlan, SlurmConfig
 
 
@@ -45,7 +50,7 @@ def _config(tmp_path, sandbox="none"):
     )
 
 
-def _plan(tmp_path, sandbox="none", resources=None, mounts=(), forward_env=()):
+def _plan(tmp_path, sandbox="none", resources=None, mounts=(), forward_env=(), node_command=(), node_app_dir=None):
     run_dir = tmp_path / "workspace" / "job-1"
     run_dir.mkdir(parents=True, exist_ok=True)
     return LaunchPlan(
@@ -70,6 +75,20 @@ def _plan(tmp_path, sandbox="none", resources=None, mounts=(), forward_env=()):
         python_path="/usr/bin/python3",
         python_env="/custom",
         forward_env=forward_env,
+        node_command=node_command,
+        node_app_dir=node_app_dir,
+    )
+
+
+def _multinode_plan(tmp_path, sandbox="none", node_command=("python3", "-m", "trainer", "--epochs", "2")):
+    app_dir = tmp_path / "workspace" / "job-1" / "app_site-1"
+    app_dir.mkdir(parents=True, exist_ok=True)
+    return _plan(
+        tmp_path,
+        sandbox=sandbox,
+        resources=JobResources(nodes=2, gpus_per_node=1),
+        node_command=node_command,
+        node_app_dir=str(app_dir),
     )
 
 
@@ -138,6 +157,125 @@ def test_rendered_batch_propagates_final_exec_status_and_removes_secret(tmp_path
     else:
         assert completed.returncode != 0
     assert not secret_path.exists()
+
+
+def test_multinode_batch_exports_node_group_contract_and_delegates_to_srun(tmp_path):
+    plan = _multinode_plan(tmp_path)
+    job_dir = _job_dir(tmp_path)
+
+    script, _ = _render_batch_script(plan, job_dir, _config(tmp_path))
+
+    assert 'export NVFL_NNODES="${SLURM_JOB_NUM_NODES:?}"' in script
+    assert 'export NVFL_MASTER_ADDR="${SLURMD_NODENAME:?}"' in script
+    assert 'export NVFL_MASTER_PORT="$((29400 + 10#${SLURM_JOB_ID} % 1000))"' in script
+    assert 'export NVFL_RUN_ID="${SLURM_JOB_ID}"' in script
+    assert "NVFL_SRUN=srun" in script
+    command_line = next(line for line in script.splitlines() if line.startswith("_nvfl_command="))
+    assert "--nodes=2" in command_line
+    assert "--ntasks-per-node=1" in command_line
+    assert "--kill-on-bad-exit=1" in command_line
+    assert "--wait=0" in command_line
+    assert "--label" in command_line
+    assert f"{job_dir}/node.sh" in command_line
+    assert "worker.module" not in command_line
+
+
+def test_site_port_range_overrides_the_default_rendezvous_ports(tmp_path):
+    config = replace(_config(tmp_path), multi_node_port_range=(29500, 29599))
+
+    script, _ = _render_batch_script(_multinode_plan(tmp_path), _job_dir(tmp_path), config)
+
+    assert 'export NVFL_MASTER_PORT="$((29500 + 10#${SLURM_JOB_ID} % 100))"' in script
+
+
+def test_apptainer_node_group_containerizes_each_rank_on_its_node(tmp_path):
+    plan = _multinode_plan(tmp_path, sandbox="apptainer")
+    job_dir = _job_dir(tmp_path)
+
+    batch, _ = _render_batch_script(plan, job_dir, _config(tmp_path, "apptainer"))
+    node = _render_node_script(plan, _config(tmp_path, "apptainer"))
+
+    batch_command = next(line for line in batch.splitlines() if line.startswith("_nvfl_command="))
+    assert "--ntasks-per-node=1" in batch_command
+    assert f"{job_dir}/node.sh" in batch_command
+    assert "NVFL_APPTAINER" not in batch_command
+    assert 'export APPTAINERENV_NVFL_NNODES="${NVFL_NNODES}"' in batch
+    assert 'export APPTAINERENV_NVFL_MASTER_ADDR="${NVFL_MASTER_ADDR}"' in batch
+
+    assert 'export APPTAINERENV_NVFL_NODE_RANK="${NVFL_NODE_RANK}"' in node
+    assert node.count('"${NVFL_APPTAINER}"') == 2
+    assert f"--pwd {plan.run_dir}" in node
+    assert f"--pwd {plan.node_app_dir}" in node
+    assert "cd " not in node
+    assert "worker.module" in node
+    assert "python3 -m trainer --epochs 2" in node
+    assert "unset NVFLARE_JOB_AUTH_TOKEN" in node
+    assert "APPTAINERENV_NVFLARE_JOB_AUTH_TOKEN" in node
+    assert "SINGULARITYENV_NVFLARE_JOB_AUTH_TOKEN" in node
+    assert "node group topology mismatch" in node
+    assert "export CLIENT_API_TYPE=EX_PROCESS_API APPTAINERENV_CLIENT_API_TYPE=EX_PROCESS_API" in node
+
+
+def test_pyxis_node_group_fans_out_containers_through_one_srun(tmp_path):
+    plan = _multinode_plan(tmp_path, sandbox="pyxis")
+    job_dir = _job_dir(tmp_path)
+
+    batch, _ = _render_batch_script(plan, job_dir, _config(tmp_path, "pyxis"))
+    node = _render_node_script(plan, _config(tmp_path, "pyxis"))
+
+    env_line = next(line for line in batch.splitlines() if line.startswith("_nvfl_container_env="))
+    for name in ("NVFL_NNODES", "NVFL_MASTER_ADDR", "NVFL_MASTER_PORT", "NVFL_RUN_ID"):
+        assert name in env_line
+    batch_command = next(line for line in batch.splitlines() if line.startswith("_nvfl_command="))
+    assert "--nodes=2" in batch_command
+    assert "--kill-on-bad-exit=1" in batch_command
+    assert "--container-image=/images/python.sif" in batch_command
+    assert batch_command.rstrip(")").endswith(f"{job_dir}/node.sh")
+    assert "worker.module" not in batch_command
+
+    assert "apptainer" not in node
+    assert f"cd {plan.node_app_dir}" in node
+    assert "worker.module" in node
+    assert "export CLIENT_API_TYPE=EX_PROCESS_API" in node
+
+
+@pytest.mark.parametrize(
+    "node_rank, expected",
+    [("0", "worker-ran token=cj-secret"), ("00", "worker-ran token=cj-secret"), ("1", "rank=1 token=scrubbed")],
+)
+def test_rendered_node_script_executes_by_rank_and_scrubs_worker_credentials(tmp_path, node_rank, expected):
+    worker = tmp_path / "worker"
+    worker.write_text(
+        '#!/usr/bin/env bash\necho "worker-ran token=${NVFLARE_JOB_AUTH_TOKEN:-missing}"\n', encoding="utf-8"
+    )
+    worker.chmod(0o700)
+    plan = replace(
+        _multinode_plan(
+            tmp_path,
+            node_command=("bash", "-c", 'echo "rank=${NVFL_NODE_RANK} token=${NVFLARE_JOB_AUTH_TOKEN:-scrubbed}"; pwd'),
+        ),
+        python_path=str(worker),
+    )
+    node_path = Path(_job_dir(tmp_path)) / "node.sh"
+    node_path.write_text(_render_node_script(plan, _config(tmp_path)), encoding="utf-8")
+    node_path.chmod(0o700)
+
+    completed = subprocess.run(
+        [str(node_path)],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "SLURM_NODEID": node_rank,
+            "SLURM_JOB_NUM_NODES": "2",
+            "NVFLARE_JOB_AUTH_TOKEN": "cj-secret",
+        },
+    )
+
+    assert completed.returncode == 0
+    assert expected in completed.stdout
+    if node_rank == "1":
+        assert plan.node_app_dir in completed.stdout
 
 
 def test_apptainer_renderer_keeps_isolation_contract(tmp_path):
