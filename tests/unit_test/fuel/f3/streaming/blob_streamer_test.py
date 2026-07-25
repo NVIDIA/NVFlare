@@ -16,8 +16,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from nvflare.fuel.f3.cellnet.defs import Encoding
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.streaming.blob_streamer import BlobHandler, BlobTask
+from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
 
 
@@ -83,6 +85,45 @@ def test_blob_task_allows_declared_size_at_exact_limit():
 
     assert blob_task.pre_allocated is True
     assert len(blob_task.buffer) == 4
+
+
+def test_blob_task_can_preserve_chunks_without_preallocation():
+    future = StreamFuture(stream_id=15)
+    blob_task = BlobTask(
+        future=future,
+        stream=_FakeStream(declared_size=4, chunks=[b"ab", b"cd"]),
+        max_size=4,
+        preserve_chunks=True,
+    )
+    handler = BlobHandler(lambda future: None)
+
+    handler._read_stream(blob_task)
+
+    assert blob_task.pre_allocated is False
+    assert future.result(timeout=0.1) == [b"ab", b"cd"]
+
+
+def test_fobs_streams_preserve_chunks(monkeypatch):
+    captured = {}
+
+    class CapturingBlobTask(BlobTask):
+        def __init__(self, future, stream, max_size=0, preserve_chunks=False):
+            captured["preserve_chunks"] = preserve_chunks
+            super().__init__(future, stream, max_size, preserve_chunks)
+
+    import nvflare.fuel.f3.streaming.blob_streamer as blob_streamer_module
+
+    monkeypatch.setattr(blob_streamer_module, "BlobTask", CapturingBlobTask)
+    monkeypatch.setattr(blob_streamer_module.stream_thread_pool, "submit", lambda fn, *args: fn(*args))
+    monkeypatch.setattr(blob_streamer_module.callback_thread_pool, "submit", lambda fn, *args: fn(*args))
+    future = StreamFuture(stream_id=16)
+    stream = _FakeStream(declared_size=4, chunks=[b"abcd"])
+    stream.headers = {StreamHeaderKey.PAYLOAD_ENCODING: Encoding.FOBS}
+    handler = BlobHandler(lambda future: future.result(timeout=0.1))
+
+    handler.handle_blob_cb(future, stream, False)
+
+    assert captured["preserve_chunks"] is True
 
 
 def test_blob_handler_uses_dedicated_streaming_blob_limit(monkeypatch):

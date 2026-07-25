@@ -253,13 +253,13 @@ This is an example of comm_config.json file with default values for all the para
     "streaming_max_blob_size": 2144337904,
     "streaming_read_timeout": 60,
     "streaming_max_out_seq_chunks": 16,
-    "streaming_window_size": 16777216,
-    "streaming_ack_interval": 4194304,
+    "streaming_window_size": 67108864,
+    "streaming_ack_interval": 16777216,
     "streaming_ack_wait": 10,
     "streaming_reliable": false,
     "streaming_retry_wait": 5.0,
     "streaming_retry_timeout": 60.0,
-    "streaming_retry_max_pending_bytes": 33554432
+    "streaming_retry_max_pending_bytes": 134217728
   }
 
 When large amount of data are exchanged on busy hosts like in LLM training, following parameters are recommended in <site_workspace>/local/comm_config.json on both servers and clients,

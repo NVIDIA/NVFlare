@@ -67,6 +67,42 @@ class BufferList:
 
         return buffer
 
+    def read_bytes(self, start: int, end: int) -> bytes:
+        """Read a range into one immutable bytes allocation.
+
+        Unlike ``read()``, this method does not first assemble a multi-buffer
+        range into a bytearray. This matters for large streamed FOBS sections:
+        callers that require bytes would otherwise copy the complete range
+        once into a bytearray and a second time into bytes.
+        """
+        if start < 0:
+            raise ValueError(f"start must be non-negative, got {start}")
+        if end < start:
+            raise ValueError(f"end {end} must not be less than start {start}")
+        if start == end:
+            return b""
+
+        parts = []
+        view_start = 0
+        for buffer in self.buf_list or []:
+            view_end = view_start + len(buffer)
+            if view_end <= start:
+                view_start = view_end
+                continue
+            if view_start >= end:
+                break
+
+            part_start = max(start, view_start) - view_start
+            part_end = min(end, view_end) - view_start
+            parts.append(memoryview(buffer)[part_start:part_end])
+            view_start = view_end
+
+        if not parts:
+            return b""
+        if len(parts) == 1:
+            return parts[0].tobytes()
+        return b"".join(parts)
+
     def flatten(self):
 
         size = self.get_size()

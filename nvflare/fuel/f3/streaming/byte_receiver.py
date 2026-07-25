@@ -39,7 +39,7 @@ log = logging.getLogger(__name__)
 
 MAX_OUT_SEQ_CHUNKS = 16
 # 1/4 of the window size
-ACK_INTERVAL = 1024 * 1024 * 4
+ACK_INTERVAL = 1024 * 1024 * 16
 READ_TIMEOUT = 300
 COMPLETED_TASK_TTL = 60.0
 RETRY_WAIT = 5.0

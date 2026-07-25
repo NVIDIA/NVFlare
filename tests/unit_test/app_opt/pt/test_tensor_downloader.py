@@ -19,8 +19,10 @@ not in TensorDownloadable itself. These tests verify the Downloadable's basic be
 """
 
 import torch
+from safetensors.torch import load as load_tensors
 
 from nvflare.app_opt.pt.tensor_downloader import TensorDownloadable
+from nvflare.fuel.f3.streaming.download_service import ProduceRC
 
 
 class TestTensorDownloadableBasic:
@@ -68,3 +70,22 @@ class TestTensorDownloadableBasic:
 
         # Downloadable IS affected (this is expected - protection is at broadcast level)
         assert downloadable.base_obj["model"][0].item() == 999.0
+
+    def test_prefetches_next_tensor(self):
+        tensors = {
+            "first": torch.tensor([1.0]),
+            "second": torch.tensor([2.0]),
+        }
+        downloadable = TensorDownloadable(tensors=tensors, max_chunk_size=1)
+
+        rc, first_items, state = downloadable.produce({}, "receiver")
+
+        assert rc == ProduceRC.OK
+        assert load_tensors(first_items[0])["first"].item() == 1.0
+        assert 1 in downloadable._prefetch_futures
+
+        rc, second_items, state = downloadable.produce(state, "receiver")
+
+        assert rc == ProduceRC.OK
+        assert load_tensors(second_items[0])["second"].item() == 2.0
+        assert not downloadable._prefetch_futures

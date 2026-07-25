@@ -31,7 +31,7 @@ class BufListStream:
         if end > self.size:
             end = self.size
 
-        result = self.buffer_list.read(self.pos, end)
+        result = self.buffer_list.read_bytes(self.pos, end)
         self.pos = end
 
         return result
