@@ -1,6 +1,6 @@
 ---
 name: nvflare-diagnose-job
-description: "Use when the user asks why an NVFLARE job failed, stalled, timed out, lost clients, produced suspicious errors, or needs failure evidence interpreted. Diagnose in simulation, POC, or production by collecting bounded evidence and mapping failure patterns to recovery actions."
+description: "Use when the user asks why a reported NVFLARE job failure signal occurred: the job failed, stalled, timed out, lost clients, ended with EXECUTION_EXCEPTION, or produced suspicious errors. Diagnose in simulation, POC, or production by collecting bounded evidence and mapping failure patterns to recovery actions."
 license: Apache-2.0
 version: "0.1.0"
 metadata:
@@ -24,19 +24,17 @@ metadata:
 
 ## Use When
 
-You MUST activate this skill when the user asks for the cause of an NVFLARE job
-that failed, stalled, timed out, lost clients, ended with
-`EXECUTION_EXCEPTION`, or produced suspicious failure evidence. Use the skill's
-evidence workflow even when the likely cause appears obvious.
+Proceed only when the request includes a reported NVFLARE job failure signal as
+defined in the description. Follow the evidence workflow even when the likely
+cause appears obvious; do not diagnose from prior knowledge alone.
 
 ## Do Not Use When
 
-NEVER activate this skill merely because a task mentions NVFLARE. Do not use it
-for creating jobs, converting training code, submitting or monitoring healthy
-runs, downloading normal results from a successfully completed job, production
-deployment, or generic Python debugging. These exclusions apply whenever the
-user has not reported a failure, stall, timeout, lost client, suspicious error,
-or other failure evidence.
+Stop this skill path and return to normal handling when no reported NVFLARE job
+failure signal is present. This includes creating jobs, converting training
+code, submitting or monitoring healthy runs, downloading normal results from a
+successfully completed job, production deployment, and generic Python
+debugging.
 
 ## Workflow
 
@@ -57,7 +55,9 @@ or other failure evidence.
    FLARE CLI, using `--tail`, `--since`, or `--max-bytes` for logs. For
    terminal jobs, use `nvflare job download <job_id> -o <dir> --format json`
    and read `data.artifacts.global_model`, `data.artifacts.metrics_summary`,
-   and `data.artifacts.round_metrics` when present.
+   and `data.artifacts.round_metrics` when present. This is bounded
+   failure-evidence collection for diagnosis, not normal result retrieval from
+   an otherwise healthy, successfully completed job.
 5. Match evidence against the packaged failure-pattern catalog before
    interpreting raw logs.
 6. Report observed status, evidence quality, matched pattern, likely cause,

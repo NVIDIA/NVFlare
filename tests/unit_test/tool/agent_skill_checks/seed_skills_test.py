@@ -76,6 +76,21 @@ def test_diagnose_job_catalog_pins_recovery_categories():
     assert "do not classify the log-access problem as the job failure cause" in partial_logs["Next Action"]
 
 
+def test_diagnose_job_uses_one_post_load_scope_check():
+    repo_root = Path(__file__).resolve().parents[4]
+    skill_text = repo_root.joinpath("skills/nvflare-diagnose-job/SKILL.md").read_text(encoding="utf-8")
+    normalized_skill = " ".join(skill_text.split())
+
+    assert normalized_skill.count("reported NVFLARE job failure signal") == 3
+    assert normalized_skill.count("failed, stalled, timed out") == 1
+    assert "Proceed only when the request includes" in normalized_skill
+    assert "Stop this skill path and return to normal handling" in normalized_skill
+    assert "MUST activate" not in skill_text
+    assert "NEVER activate" not in skill_text
+    assert "bounded failure-evidence collection for diagnosis" in normalized_skill
+    assert "not normal result retrieval from an otherwise healthy, successfully completed job" in normalized_skill
+
+
 def _failure_pattern_rows(catalog_text):
     rows = {}
     headers = []
