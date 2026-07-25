@@ -6,33 +6,56 @@ recipe-capability handling for both plain PyTorch and PyTorch Lightning.
 
 ## Derive A Capability Profile
 
-Build a set of parameter names from the returned `data.parameters` entries.
-Only pass a recipe keyword when its name is in that set. Do not copy the FedAvg
-constructor shape to Cyclic, FedEval, Swarm, or another recipe.
+The JSON returned by `recipe show` contains `data.parameters`, a list of
+parameter objects whose `name` field is the public constructor keyword. Build
+the exposed-name set from those fields. Treat a missing or malformed
+`data.parameters` value as a failed capability check rather than guessing from
+another recipe.
 
-Apply the tensor profile in this order:
+Only pass a recipe keyword when its name is in the exposed-name set. Do not copy
+the FedAvg constructor shape to Cyclic, FedEval, Swarm, or another recipe.
 
-1. When `server_expected_format` is exposed, pass
-   `server_expected_format=ExchangeFormat.PYTORCH`. This selects tensor-native
-   exchange.
-2. When `enable_tensor_disk_offload` is exposed, pass
-   `enable_tensor_disk_offload=True`. Never pass it to a recipe that does not
-   expose it.
-3. When tensor-native exchange was selected, call
-   `recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])`
-   after any `set_per_site_config(...)` call and before export or execution.
+## Tensor-Native Transport
+
+When `server_expected_format` is exposed, pass
+`server_expected_format=ExchangeFormat.PYTORCH`. This selects tensor-native
+transport. When tensor-native transport was selected, call
+`recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])`
+after any `set_per_site_config(...)` call and before export or execution.
 
 If `server_expected_format` is absent, preserve the recipe's documented
-exchange default and do not infer tensor-native exchange from its framework
+transport default and do not infer tensor-native transport from its framework
 name. Register `TensorDecomposer` only when another public recipe surface
-explicitly selects a tensor-native exchange. If the user requires tensor-native
-exchange and the selected recipe has no public way to select it, report a
+explicitly selects tensor-native transport. If the user requires tensor-native
+transport and the selected recipe has no public way to select it, report a
 recipe-capability gap instead of passing unsupported keywords or switching
 recipes.
 
-Keep outbound plain-PyTorch model state as `torch.Tensor` values; never add a
-manual NumPy conversion to compensate for a missing recipe capability.
-`pytorch-model-exchange.md` owns the framework payload and state-dict rules.
+`pytorch-model-exchange.md` is the canonical owner of framework payload and
+state-dict rules.
+
+## Server Tensor Disk Offload
+
+Disk offload is a server memory optimization, not a model-exchange format. It
+causes incoming streamed tensors to be downloaded to server-side temporary files
+and materialized lazily during aggregation instead of being deserialized into
+memory immediately, reducing peak server memory pressure and OOM risk.
+
+When tensor-native transport was selected and `enable_tensor_disk_offload` is
+exposed, pass `enable_tensor_disk_offload=True`. NVFLARE activates this
+optimization only with `server_expected_format=ExchangeFormat.PYTORCH`;
+otherwise it warns and treats the setting as a no-op. Never pass the keyword to
+a recipe that does not expose it.
+
+If the user requires disk offload and the selected recipe cannot expose both
+tensor-native transport and `enable_tensor_disk_offload`, report a
+recipe-capability gap instead of claiming that offload is enabled.
+
+## Transfer Mode
+
+When `params_transfer_type` is exposed, choose the mode that matches the user's
+intent: `FULL` sends whole models and `DIFF` sends model differences. Do not pass
+it when absent or infer a transfer mode from another recipe.
 
 ## Execution Mode Is Process-Based
 
@@ -60,3 +83,16 @@ when the selected recipe exposes it. Do not also pass `save_filename`; it is a
 deprecated alias, and conflicting values make recipe construction fail. Omit
 both when the default artifact name is acceptable. If customization is required
 but `best_model_filename` is absent, report the capability gap.
+
+## Best-Model Metric
+
+When `key_metric` is exposed, select a source-backed metric whose larger value
+means a better model. Its name must exactly match one key emitted by the client
+in `FLModel.metrics` (or by Lightning through `self.log`). For example, a client
+metric named `f1` uses `key_metric="f1"`.
+
+For a lower-is-better source metric such as loss, send its negated value under a
+clear key such as `metrics={"neg_loss": -loss}` and use
+`key_metric="neg_loss"`. Do not rely on a recipe default unless the client emits
+that exact metric, and ask or fail closed when the metric direction is unclear.
+Do not pass `key_metric` when the recipe does not expose it.

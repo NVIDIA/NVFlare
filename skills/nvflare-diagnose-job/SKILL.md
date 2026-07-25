@@ -53,11 +53,12 @@ debugging.
    `round_metrics.jsonl` before falling back to logs for metric evidence.
 4. For POC/production mode, collect bounded job and system evidence through the
    FLARE CLI, using `--tail`, `--since`, or `--max-bytes` for logs. For
-   terminal jobs, use `nvflare job download <job_id> -o <dir> --format json`
-   and read `data.artifacts.global_model`, `data.artifacts.metrics_summary`,
-   and `data.artifacts.round_metrics` when present. This is bounded
-   failure-evidence collection for diagnosis, not normal result retrieval from
-   an otherwise healthy, successfully completed job.
+   terminal jobs with the reported failure signal, use
+   `nvflare job download <job_id> -o <dir> --format json` and read
+   `data.artifacts.global_model`, `data.artifacts.metrics_summary`, and
+   `data.artifacts.round_metrics` when present. This is bounded failure-evidence
+   collection for diagnosis; do not download artifacts for a healthy,
+   successfully completed job.
 5. Match evidence against the packaged failure-pattern catalog before
    interpreting raw logs.
 6. Report observed status, evidence quality, matched pattern, likely cause,

@@ -24,16 +24,15 @@ not write this snippet in Lightning client code. The tensor-not-NumPy rule still
 applies to the PyTorch family, but Lightning enforces it through recipe/job
 configuration rather than manual client payload construction.
 
-## Exchange Format Recipe Settings
+## Related Recipe Construction
 
 After `recipe show`, follow `pytorch-family-recipe-construction.md`. That
-reference is the canonical owner of capability-gated format, disk-offload,
-decomposer, filename, and execution-mode settings. Do not copy settings from a
-different recipe or move decomposer registration into a framework-neutral
-executor or generated trainer code.
-
-If the recipe exposes `params_transfer_type`, choose the mode that matches the
-user's intent: `FULL` sends whole models; `DIFF` sends model differences.
+reference owns capability-gated tensor transport, decomposer, transfer-mode,
+best-model, and execution-mode settings. It separately owns
+`enable_tensor_disk_offload` as a server memory optimization; disk offload is
+not part of the model payload or exchange-format contract. Do not copy settings
+from a different recipe or move decomposer registration into a
+framework-neutral executor or generated trainer code.
 
 ## State-Dict Compatibility
 

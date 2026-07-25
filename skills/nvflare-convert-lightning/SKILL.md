@@ -106,8 +106,8 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
    of `../nvflare-shared/references/conversion-workflow.md`.
 7. Add or update `job.py` with explicit model config
    `{"class_path": ..., "args": ...}` (never a live `LightningModule`),
-   requested `aggregator=` wiring, and only the tensor/offload/execution
-   settings exposed by the selected recipe, following the shared PyTorch-family
+   requested `aggregator=` wiring, and the metric, tensor-transport, server
+   offload, and execution settings derived from the shared PyTorch-family
    construction profile.
 8. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`:
    compile checks, recipe construction, one final full-run path chosen by the
@@ -149,8 +149,9 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
 - Must use the PyTorch recipe family; must not invent a Lightning-only recipe.
 - Must apply
   `../nvflare-shared/references/pytorch-family-recipe-construction.md` after
-  `recipe show`, including its recipe-parameter and process-model capability
-  checks. For Lightning DDP details see
+  `recipe show`; it is the canonical policy for optional recipe parameters,
+  model selection, tensor transport, server disk offload, and execution mode.
+  For Lightning DDP details see
   `references/lightning-ddp-and-tracking.md`.
 - Must preserve local-only callbacks and logger behavior where safe. Existing
   network-connected tracking, upload callbacks, and custom/unknown loggers are
@@ -181,19 +182,19 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
   handled by the host. POC or production submission is outside conversion
   scope.
 
-Always read this converter SKILL.md. The standard routing, recipe selection,
-output, authorization, and reporting path is inline, so common FedAvg does not
-load broad policy or algorithm-selection references. Load Lightning conversion,
-model-exchange, validation references, and aggregator asset only when their phase
-needs them. Load other detailed references only for exceptions:
+Always read this converter SKILL.md. Load detailed references only at their
+named phase:
 `../nvflare-shared/references/conversion-workflow.md` for non-standard cases;
 `../nvflare-shared/references/pytorch-family-recipe-selection.md` only for ambiguous
 or non-FedAvg algorithms;
+`../nvflare-shared/references/pytorch-family-recipe-construction.md` after every `recipe show`;
 `../nvflare-shared/references/dependency-install.md` only when an install is needed;
+`../nvflare-shared/references/runtime-output-guidance.md` only for read-only
+source roots or user-chosen output destinations;
 `../nvflare-shared/references/metrics-and-artifact-reporting.md` only when metrics
 are absent or inconsistent; `../nvflare-shared/references/validation-evidence.md`
-before validation; `../nvflare-shared/references/pytorch-model-exchange.md` only
-for PyTorch-family exchange. For Lightning-specific work load
+before validation; `../nvflare-shared/references/pytorch-model-exchange.md` for
+PyTorch-family exchange. For Lightning-specific work load
 `references/lightning-detection.md`, `references/lightning-conversion.md`,
 `references/lightning-validation.md`, or `references/lightning-ddp-and-tracking.md`
 only as needed. Do not depend on NVFLARE repository examples being present.

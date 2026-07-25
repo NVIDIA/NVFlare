@@ -18,19 +18,20 @@ them before constructing `job.py`. This file covers only the plain-PyTorch
 
 For a normal PyTorch-to-FedAvg conversion, keep the `job.py` recipe construction
 small and portable. Run `recipe show fedavg-pt --format json` first and follow
-`../../nvflare-shared/references/pytorch-family-recipe-construction.md`; the
-current FedAvg profile exposes both tensor-format and disk-offload controls:
+`../../nvflare-shared/references/pytorch-family-recipe-construction.md`. The
+example below contains only the workflow-specific constructor values; add
+optional recipe keywords and decomposers only as directed by that capability
+profile:
 
 ```python
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.client.config import ExchangeFormat
 from nvflare.recipe.sim_env import SimEnv
 
 model_args = {"input_size": input_size, "num_classes": num_classes}
 recipe_model = {"class_path": "model.ModelClass", "args": model_args}
-metric_name = "accuracy"  # use a source higher-is-better key, or "neg_loss" for loss-like metrics
+metric_name = source_metric_name
 
-recipe = FedAvgRecipe(
+recipe_kwargs = dict(
     name=job_name,
     min_clients=num_clients,
     num_rounds=num_rounds,
@@ -38,10 +39,10 @@ recipe = FedAvgRecipe(
     train_script="client.py",
     train_args=train_args,
     key_metric=metric_name,
-    server_expected_format=ExchangeFormat.PYTORCH,
-    enable_tensor_disk_offload=True,
 )
-recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])
+# Add only capability-gated keywords confirmed by recipe show.
+recipe = FedAvgRecipe(**recipe_kwargs)
+# Apply per-site configuration, then capability-gated decomposers, if required.
 
 env = SimEnv(num_clients=num_clients, workspace_root=workspace_root)
 run = recipe.execute(env)
@@ -57,21 +58,12 @@ model={"class_path": "model.ModelClass", "args": model_args}
 Prefer `class_path` at recipe construction time; `path` is the normalized key
 used in exported job config, and recipes accept it as an alias.
 
-The maintained `hello-pt` example uses the in-process recipe defaults and does
-not enable tensor disk offload. This conversion profile intentionally differs:
-keep tensors native, enable disk offload, and register the PyTorch decomposer at
-the recipe boundary:
-
-- `server_expected_format=ExchangeFormat.PYTORCH`
-- `enable_tensor_disk_offload=True`
-- `recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])`
-
-`add_decomposers(...)` adds a registration component to both server and client
-apps, so `TensorDecomposer` is installed before the first tensor payload is
-decoded. This keeps the framework-neutral executor unchanged and supports the
-default in-process path. If per-site configuration is needed, call
-`set_per_site_config(...)` first because adding decomposers prepares the client
-apps.
+The maintained `hello-pt` example uses the in-process recipe defaults. The
+conversion profile may intentionally differ by selecting tensor-native
+transport and, independently, enabling the server-side disk-offload
+optimization when the selected recipe exposes those capabilities. The shared
+construction reference is the single source of truth for their prerequisites,
+ordering, and decomposer-registration rules.
 
 The server-side recipe model and the client-side training model must construct
 the same architecture. If the model constructor needs dimensions, class counts,
@@ -79,13 +71,8 @@ dropout settings, embedding sizes, or other architecture arguments, pass the
 same values on both sides. Prefer a small shared constant, JSON/config file, or
 explicit `train_args` values over hard-coded divergent defaults.
 
-The recipe's `key_metric` must match the metric key sent by `client.py` in
-`FLModel.metrics`. Preserve higher-is-better metric names on both sides: if
-`client.py` sends `metrics={"f1": f1}`, construct `FedAvgRecipe(...,
-key_metric="f1", ...)`. For loss-like metrics, higher values still select the
-best model; send a negated scalar such as `metrics={"neg_loss": -loss}` and use
-`key_metric="neg_loss"`. Do not rely on the recipe default unless the client
-really reports `accuracy`.
+Follow the shared construction reference for `key_metric` capability, exact
+client-metric matching, and lower-is-better metric direction.
 
 Use these portable imports when writing custom Job API code:
 

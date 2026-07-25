@@ -97,9 +97,9 @@ policy; route onward rather than substituting an unprotected recipe or adding on
    Partitioning" section of
    `../nvflare-shared/references/conversion-workflow.md`.
 6. Add or update `job.py` with explicit model config (never a live model),
-   requested `aggregator=` wiring, the client `key_metric`, and only the
-   tensor/offload/execution settings exposed by the selected recipe, following
-   the shared PyTorch-family construction profile.
+   requested `aggregator=` wiring, and the metric, tensor-transport, server
+   offload, and execution settings derived from the shared PyTorch-family
+   construction profile.
 7. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`:
    compile checks, recipe construction, one final full-run path chosen by the
    artifact being validated, and export inspection; use
@@ -121,25 +121,18 @@ policy; route onward rather than substituting an unprotected recipe or adding on
   `args` only when the values are statically clear from literal source,
   configuration, or supplied metadata; otherwise ask one semantic question when
   an answer channel exists or fail closed on that missing value.
-- Must keep outbound PyTorch model weights as `torch.Tensor` values in
-  `FLModel(params=...)`; do not add a manual NumPy fallback. Load
-  `../nvflare-shared/references/pytorch-model-exchange.md` and
-  `references/pytorch-client-api-conversion.md` for the exact send pattern.
+- Must follow `../nvflare-shared/references/pytorch-model-exchange.md` and
+  `references/pytorch-client-api-conversion.md` for the canonical plain-PyTorch
+  payload and round-loop pattern.
 - Must apply
   `../nvflare-shared/references/pytorch-family-recipe-construction.md` after
-  `recipe show`: never pass an absent recipe parameter, and never patch a
-  framework-neutral runtime module or register FOBS handlers in `client.py`.
-- Must choose external execution from process-spawning/distributed-launch
-  evidence. GPU count alone is insufficient; single-process
-  `torch.nn.DataParallel` stays in-process.
+  `recipe show`; it is the canonical policy for optional recipe parameters,
+  model selection, tensor transport, server disk offload, and execution mode.
+  Never patch a framework-neutral runtime module or register FOBS handlers in
+  `client.py`.
 - Must convert source evaluation alongside training and return metrics through
   `FLModel.metrics`; must not synthesize metric semantics without source
   evidence.
-- Must align model selection with client metrics: `FedAvgRecipe.key_metric`
-  must exactly match the metric key sent in `FLModel.metrics`. If the source
-  reports a higher-is-better metric such as `f1` or `auc`, pass that name as
-  `key_metric`. For loss-like metrics, report a negated client metric such as
-  `neg_loss` and use it as `key_metric`; if direction is unclear, ask or fail closed.
 - Must train each site on its local partition for multi-site single-node-source
   conversion. Preserve existing site splits; otherwise use deterministic seeded
   split, stratified when labels exist. Shared validation/test is allowed only
@@ -184,6 +177,8 @@ their phase needs them. Load other detailed references only for exceptions:
   ambiguous or non-FedAvg algorithms, and `references/recipe-selection.md` only
   for non-FedAvg or execution-mode construction details not supplied by
   `recipe show`;
+- `../nvflare-shared/references/pytorch-family-recipe-construction.md` after
+  every `recipe show`;
 - `../nvflare-shared/references/dependency-install.md` only when an install is
   needed;
 - `../nvflare-shared/references/runtime-output-guidance.md` only for read-only

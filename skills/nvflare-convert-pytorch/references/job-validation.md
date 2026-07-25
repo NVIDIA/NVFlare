@@ -16,19 +16,18 @@ covers PyTorch-specific validation checks.
   work after the Client API conversion.
 - Confirm that scalar validation metrics are sent in `FLModel.metrics` so
   aggregation recipes can write server-side metrics artifacts.
-- Confirm that the recipe's `key_metric` exactly matches one key sent in
-  `FLModel.metrics`; warnings such as a validation metric missing from site
-  metrics mean best-model selection is not wired correctly.
-- Confirm that the selected `key_metric` is higher-is-better; for loss-like
-  metrics, the client should send a negated scalar such as `neg_loss`.
+- Validate the "Best-Model Metric" contract in
+  `../../nvflare-shared/references/pytorch-family-recipe-construction.md`.
+  Warnings that the selected validation metric is missing from site metrics
+  mean best-model selection is not wired correctly.
 - If simulation reports `cannot find handler for Datum Object Type 6` or
-  `TENSOR_DOWNLOAD`, inspect generated `job.py` for an incomplete tensor-offload
-  profile. Re-run `recipe show` and apply the capability profile in
-  `../../nvflare-shared/references/pytorch-family-recipe-construction.md`:
-  select tensor-native format only when exposed, enable disk offload only when
-  exposed, and register `TensorDecomposer` when tensor-native exchange is
-  selected. Revalidate without changing execution mode. Do not patch NVFLARE
-  runtime modules or register FOBS handlers in generated clients.
+  `TENSOR_DOWNLOAD`, inspect generated `job.py` for an incomplete
+  tensor-transport/decomposer configuration. Re-run `recipe show` and apply the
+  canonical capability profile in
+  `../../nvflare-shared/references/pytorch-family-recipe-construction.md`.
+  Revalidate without changing execution mode. Do not patch NVFLARE runtime
+  modules or register FOBS handlers in generated clients. Treat server disk
+  offload as an optimization, not as a codec-registration fix.
 - For data-prep changes, confirm the PyTorch `Dataset` or `DataLoader` receives
   the generated per-site path or arguments rather than hard-coded global paths.
 - Report PyTorch-specific blockers such as non-serializable model state,

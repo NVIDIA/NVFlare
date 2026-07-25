@@ -88,7 +88,7 @@ def test_diagnose_job_uses_one_post_load_scope_check():
     assert "MUST activate" not in skill_text
     assert "NEVER activate" not in skill_text
     assert "bounded failure-evidence collection for diagnosis" in normalized_skill
-    assert "not normal result retrieval from an otherwise healthy, successfully completed job" in normalized_skill
+    assert "do not download artifacts for a healthy, successfully completed job" in normalized_skill
 
 
 def _failure_pattern_rows(catalog_text):
@@ -107,29 +107,43 @@ def _failure_pattern_rows(catalog_text):
     return rows
 
 
-def test_pytorch_conversion_pins_recipe_key_metric_to_client_metric():
+def test_pytorch_family_construction_owns_best_model_metric_policy():
     repo_root = Path(__file__).resolve().parents[4]
     skill_root = repo_root / "skills" / "nvflare-convert-pytorch"
     skill_text = skill_root.joinpath("SKILL.md").read_text(encoding="utf-8")
     recipe_text = skill_root.joinpath("references/recipe-selection.md").read_text(encoding="utf-8")
     client_text = skill_root.joinpath("references/pytorch-client-api-conversion.md").read_text(encoding="utf-8")
-    normalized_client = " ".join(client_text.split())
     validation_text = skill_root.joinpath("references/job-validation.md").read_text(encoding="utf-8")
+    construction_text = repo_root.joinpath(
+        "skills/nvflare-shared/references/pytorch-family-recipe-construction.md"
+    ).read_text(encoding="utf-8")
+    normalized_construction = " ".join(construction_text.split())
 
-    assert "`FedAvgRecipe.key_metric`" in skill_text
-    assert "must exactly match the metric key sent in `FLModel.metrics`" in skill_text
-    assert "`val_loss`" not in skill_text
-    assert "`neg_loss`" in skill_text
+    assert "## Best-Model Metric" in construction_text
+    assert "Its name must exactly match one key emitted by the client" in normalized_construction
+    assert 'metrics={"neg_loss": -loss}' in construction_text
+    assert 'key_metric="neg_loss"' in construction_text
+    assert "ask or fail closed when the metric direction is unclear" in normalized_construction
     assert "unprotected recipe or adding only a disclaimer" in skill_text
     assert "key_metric=metric_name" in recipe_text
-    assert 'metrics={"f1": f1}' in recipe_text
-    assert 'key_metric="f1"' in recipe_text
-    assert 'metrics={"neg_loss": -loss}' in recipe_text
-    assert 'key_metric="neg_loss"' in recipe_text
-    assert "`FLModel.metrics` must exactly match the selected recipe's `key_metric`" in normalized_client
-    assert 'metrics={"neg_loss": -loss}' in normalized_client
-    assert "recipe's `key_metric` exactly matches one key sent in" in validation_text
-    assert "higher-is-better" in validation_text
+    for consumer_text in (skill_text, recipe_text, client_text, validation_text):
+        assert "pytorch-family-recipe-construction.md" in consumer_text
+        assert 'metrics={"neg_loss": -loss}' not in consumer_text
+
+
+def test_pytorch_model_exchange_owns_plain_pytorch_send_pattern():
+    repo_root = Path(__file__).resolve().parents[4]
+    model_exchange_text = repo_root.joinpath("skills/nvflare-shared/references/pytorch-model-exchange.md").read_text(
+        encoding="utf-8"
+    )
+    client_reference_text = repo_root.joinpath(
+        "skills/nvflare-convert-pytorch/references/pytorch-client-api-conversion.md"
+    ).read_text(encoding="utf-8")
+
+    assert "params = {k: v.detach().cpu() for k, v in model.state_dict().items()}" in model_exchange_text
+    assert "assert all(isinstance(v, torch.Tensor) for v in params.values())" in model_exchange_text
+    assert "v.detach().cpu()" not in client_reference_text
+    assert "pytorch-model-exchange.md" in client_reference_text
 
 
 def test_pytorch_family_construction_policy_is_canonical_and_capability_based():
@@ -151,32 +165,47 @@ def test_pytorch_family_construction_policy_is_canonical_and_capability_based():
     )
     hello_pt_job = repo_root.joinpath("examples/hello-world/hello-pt/job.py").read_text(encoding="utf-8")
     normalized_construction = " ".join(construction_text.split())
+    normalized_model_exchange = " ".join(model_exchange_text.split())
     normalized_validation = " ".join(validation_text.split())
 
     assert construction_path in pytorch_skill
     assert construction_path in lightning_skill
-    assert "Only pass a recipe keyword when its name is in that set" in normalized_construction
+    assert "whose `name` field is the public constructor keyword" in normalized_construction
+    assert "Only pass a recipe keyword when its name is in the exposed-name set" in normalized_construction
     assert "When `server_expected_format` is exposed" in normalized_construction
-    assert "When `enable_tensor_disk_offload` is exposed" in normalized_construction
-    assert "When tensor-native exchange was selected" in normalized_construction
+    assert "When tensor-native transport was selected" in normalized_construction
+    assert "Disk offload is a server memory optimization, not a model-exchange format" in normalized_construction
+    assert "downloaded to server-side temporary files and materialized lazily" in normalized_construction
+    assert "optimization only with `server_expected_format=ExchangeFormat.PYTORCH`" in normalized_construction
+    assert "When `params_transfer_type` is exposed" in normalized_construction
     assert "single-process multi-GPU `torch.nn.DataParallel` stay in-process" in normalized_construction
     assert "Do not also pass `save_filename`" in normalized_construction
-    assert "canonical owner of capability-gated" in model_exchange_text
+    assert "disk offload is not part of the model payload or exchange-format contract" in normalized_model_exchange
+    assert "params_transfer_type" not in model_exchange_text
     assert "pytorch-family-recipe-construction.md" in workflow_text
     assert "`server_expected_format=ExchangeFormat.PYTORCH`" not in pytorch_skill
     assert "`enable_tensor_disk_offload=True`" not in pytorch_skill
     assert "`server_expected_format=ExchangeFormat.PYTORCH`" not in lightning_skill
     assert "`enable_tensor_disk_offload=True`" not in lightning_skill
     assert "launch_external_process=True," not in recipe_text
-    assert "server_expected_format=ExchangeFormat.PYTORCH," in recipe_text
-    assert "enable_tensor_disk_offload=True," in recipe_text
-    assert 'recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])' in recipe_text
+    assert "server_expected_format=ExchangeFormat.PYTORCH," not in recipe_text
+    assert "enable_tensor_disk_offload=True," not in recipe_text
+    assert 'recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])' not in recipe_text
     assert "server_expected_format=" not in hello_pt_job
     assert "enable_tensor_disk_offload=" not in hello_pt_job
-    assert "intentionally differs" in recipe_text
+    assert "single source of truth" in recipe_text
     assert "cannot find handler for Datum Object Type 6" in normalized_validation
-    assert "select tensor-native format only when exposed" in normalized_validation
+    assert "tensor-transport/decomposer configuration" in normalized_validation
+    assert "server disk offload as an optimization" in normalized_validation
     assert "Do not patch NVFLARE runtime modules" in normalized_validation
+
+
+def test_seed_skill_versions_stay_at_release_version():
+    repo_root = Path(__file__).resolve().parents[4]
+
+    for skill_path in repo_root.joinpath("skills").glob("*/SKILL.md"):
+        skill_text = skill_path.read_text(encoding="utf-8")
+        assert 'version: "0.1.0"' in skill_text, skill_path
 
 
 def test_pytorch_recipe_capability_profiles_include_non_fedavg_without_disk_offload():

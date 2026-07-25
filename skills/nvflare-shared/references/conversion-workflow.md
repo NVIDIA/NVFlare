@@ -321,9 +321,9 @@ supports it.
 
 For PyTorch-family jobs, run `recipe show` and load
 `pytorch-family-recipe-construction.md` before constructing the selected
-recipe. That reference owns capability-gated tensor exchange, disk offload,
-decomposer registration, best-model naming, and process-model selection for
-both plain PyTorch and Lightning.
+recipe. That reference owns capability-gated tensor transport, decomposer
+registration, the separate server disk-offload optimization, best-model
+selection, and process-model selection for both plain PyTorch and Lightning.
 
 Device placement follows the source project: CPU source training stays on CPU,
 GPU source training stays on GPU, and a source that selects the device
@@ -475,11 +475,10 @@ site-1,site-2,...`). Do not write Python code to call simulator APIs such as
 
 `PocEnv` and `ProdEnv` are outside conversion scope; do not generate or run
 them from a conversion skill. Homomorphic-encryption recipes reject `SimEnv` and
-require those provisioned environments, so HE is not supported by conversion —
-see the HE rule in `pytorch-family-recipe-selection.md`. If any other selected
-recipe rejects `SimEnv`, follow the selecting reference's ask/fail-closed rule
-and report the job as unvalidated instead of switching recipes or environments
-to force a run.
+require those provisioned environments, so HE is not supported by conversion.
+If any other selected recipe rejects `SimEnv`, follow the selecting reference's
+ask/fail-closed rule and report the job as unvalidated instead of switching
+recipes or environments to force a run.
 
 - Choose one final full-run path based on the artifact being validated. Use
   `python job.py` for local recipe or first-user simulation validation. Use
@@ -500,9 +499,8 @@ to force a run.
   a blocker before an install attempt: install it into the host-provided
   environment per `dependency-install.md` instead of running a command you know
   will fail.
-- Keep validation commands single-purpose. Run cleanup, dependency install,
-  export, and simulation as separate commands; do not combine destructive
-  cleanup and execution in one compound command.
+- Follow `validation-evidence.md` for validation command isolation and terminal
+  evidence.
 - Never run destructive cleanup against the source tree or its git state, such
   as git clean/reset/checkout operations or recursive deletion over source or
   user files. Scope any cleanup to generated runtime or output directories under
@@ -599,5 +597,4 @@ local-validation job carries no deployment-reviewed privacy or security policy
 (no differential privacy, access control, or production approval) unless a
 separate workflow explicitly added one. If the user requested homomorphic
 encryption or encrypted aggregation, report that it is not supported by
-conversion and was routed to provisioning/deployment (no HE job was generated),
-per the HE rule in `pytorch-family-recipe-selection.md`.
+conversion and was routed to provisioning/deployment; no HE job was generated.
