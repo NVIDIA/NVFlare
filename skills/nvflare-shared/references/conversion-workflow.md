@@ -94,6 +94,9 @@ resource (network, package index, system library, accelerator), no applicable
 dependency entry for a missing import, or a missing required semantic decision
 above. A conversion request that ends `not_started` because the agent waited for
 approval that never came is a failure, not a valid blocked result.
+Proceeding by default authorizes the first canonical install attempt, not
+autonomous retries or environment repair after a nonzero exit; follow
+`dependency-install.md` and report the conversion as an unvalidated draft.
 
 ## Source Trust Boundary
 

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import sys
 from pathlib import Path
 
@@ -150,3 +151,34 @@ def test_pytorch_family_conversion_registers_tensor_decomposer_at_recipe_boundar
     assert "Leave `launch_external_process` unset for CPU or single-GPU training" in normalized_shared_profile
     assert "cannot find handler for Datum Object Type 6" in normalized_validation
     assert "Do not patch NVFLARE runtime modules" in normalized_validation
+
+
+def test_pytorch_conversion_stops_after_dependency_install_failure():
+    repo_root = Path(__file__).resolve().parents[4]
+    skill_text = repo_root.joinpath("skills/nvflare-convert-pytorch/SKILL.md").read_text(encoding="utf-8")
+    dependency_text = repo_root.joinpath("skills/nvflare-shared/references/dependency-install.md").read_text(
+        encoding="utf-8"
+    )
+    workflow_text = repo_root.joinpath("skills/nvflare-shared/references/conversion-workflow.md").read_text(
+        encoding="utf-8"
+    )
+    eval_data = json.loads(
+        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-convert-pytorch/evals.json").read_text(encoding="utf-8")
+    )
+    normalized_skill = " ".join(skill_text.split())
+    normalized_dependency = " ".join(dependency_text.split())
+    normalized_workflow = " ".join(workflow_text.split())
+    mandatory_ids = {item["id"] for item in eval_data["evals"][0]["nvflare"]["mandatory_behavior"]}
+    prohibited_ids = {item["id"] for item in eval_data["evals"][0]["nvflare"]["prohibited_behavior"]}
+
+    assert (
+        "before any Python command imports user, PyTorch, NVFLARE, or declared dependency modules" in normalized_skill
+    )
+    assert "on a nonzero exit, stop validation" in normalized_skill
+    assert "Run the selected canonical install command once." in dependency_text
+    assert "stop dependency installation and validation for this conversion run" in normalized_dependency
+    assert "Do not retry with another installer, index, backend, package version" in normalized_dependency
+    assert "do not purge caches, uninstall packages, or mutate `site-packages` directly" in normalized_dependency
+    assert "first canonical install attempt, not autonomous retries or environment repair" in normalized_workflow
+    assert "dependency-install-failure-is-terminal" in mandatory_ids
+    assert "no-dependency-install-retry-or-environment-surgery" in prohibited_ids

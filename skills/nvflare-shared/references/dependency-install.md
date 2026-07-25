@@ -42,6 +42,11 @@ Order is mandatory:
 3. only then run Python import probes, recipe-construction preflights, export,
    simulation, or `python job.py`.
 
+Package inventory before installation may use installer metadata or
+`importlib.metadata`, but the command must not import user, framework, product,
+or declared dependency modules. A compound Python command containing any such
+import is an import-level preflight and belongs after installation.
+
 Do not run an import-level preflight first to discover a missing package when an
 applicable requirements file is already present. A `ModuleNotFoundError` from
 such a preflight is an ordering error, not validation evidence.
@@ -55,8 +60,16 @@ such a preflight is an ordering error, not validation evidence.
 - If `uv` is unavailable, use `<python> -m pip install -r <file>` with the
   host-provided environment's interpreter.
 
-When an import still fails after installation, verify which interpreter received
-the packages before rerunning the failed check.
+Run the selected canonical install command once. If it returns a nonzero exit,
+stop dependency installation and validation for this conversion run. Preserve
+any generated source as an unvalidated draft and report the command and product
+error. Do not retry with another installer, index, backend, package version, or
+package-by-package install; do not purge caches, uninstall packages, or mutate
+`site-packages` directly. A later user-directed run may retry after the reported
+blocker is resolved.
+
+Only after an install exits successfully, if an import still fails, verify which
+interpreter received the packages before rerunning that import check.
 
 ## Blockers To Report
 
