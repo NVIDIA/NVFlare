@@ -86,10 +86,18 @@ but `best_model_filename` is absent, report the capability gap.
 
 ## Best-Model Metric
 
-When `key_metric` is exposed, select a source-backed metric whose larger value
-means a better model. Its name must exactly match one key emitted by the client
-in `FLModel.metrics` (or by Lightning through `self.log`). For example, a client
-metric named `f1` uses `key_metric="f1"`.
+Only configure a source-derived `key_metric` when the recipe exposes it and the
+selected execution path delivers that exact metric to the server. A local
+evaluation call, `self.log`, or client log does not by itself prove server
+delivery. If delivery is unavailable or unverified, do not pass a source-derived
+`key_metric` or claim server-side best-model selection; report the execution-path
+limitation instead. The Lightning DDP guidance documents its default
+metric-delivery exception.
+
+When both preconditions hold, select a source-backed metric whose larger value
+means a better model. Its name must exactly match one key delivered by the
+client in `FLModel.metrics` (or by the Lightning integration). For example, a
+delivered client metric named `f1` uses `key_metric="f1"`.
 
 For a lower-is-better source metric such as loss, send its negated value under a
 clear key such as `metrics={"neg_loss": -loss}` and use

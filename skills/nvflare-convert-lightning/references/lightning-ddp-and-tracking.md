@@ -64,12 +64,15 @@ attached to the training result. The `validate` call above still runs locally
 (useful for local logging), but server-side model selection and per-round metric
 reporting do **not** receive those metrics under the default DDP path.
 
-Do not promise per-round server-side validation metrics for a DDP conversion.
-Report this as a recipe limitation, and only claim server-side round metrics when
-the user opts into an advanced, non-`ScriptRunner` configuration that constructs
-the launcher executor with `train_with_evaluation=True`. Otherwise surface the
-limitation (or a blocker in unattended mode) instead of promising metrics the
-default recipe path cannot deliver.
+Therefore default DDP does not satisfy the shared "Best-Model Metric" delivery
+precondition. Do not pass a source-derived `key_metric`, claim server-side
+best-model selection, or promise per-round server validation metrics for that
+path. Report this as a recipe limitation. Only apply the shared `key_metric`
+policy and claim server-side round metrics when the user opts into an advanced,
+non-`ScriptRunner` configuration that constructs the launcher executor with
+`train_with_evaluation=True`. Otherwise surface the limitation (or a blocker in
+unattended mode) instead of promising metrics the default recipe path cannot
+deliver.
 
 ## GPU/CPU Fallback
 

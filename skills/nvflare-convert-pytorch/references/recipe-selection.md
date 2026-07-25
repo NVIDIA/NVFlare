@@ -29,7 +29,6 @@ from nvflare.recipe.sim_env import SimEnv
 
 model_args = {"input_size": input_size, "num_classes": num_classes}
 recipe_model = {"class_path": "model.ModelClass", "args": model_args}
-metric_name = source_metric_name
 
 recipe_kwargs = dict(
     name=job_name,
@@ -38,9 +37,9 @@ recipe_kwargs = dict(
     model=recipe_model,
     train_script="client.py",
     train_args=train_args,
-    key_metric=metric_name,
 )
-# Add only capability-gated keywords confirmed by recipe show.
+# Add only capability-gated keywords confirmed by recipe show, including
+# key_metric when the selected execution path delivers that metric to the server.
 recipe = FedAvgRecipe(**recipe_kwargs)
 # Apply per-site configuration, then capability-gated decomposers, if required.
 

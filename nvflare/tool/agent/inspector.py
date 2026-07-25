@@ -135,24 +135,27 @@ class _ProjectComponent:
         return "." if parent == "." else parent
 
 
-def _component_group_count(components: tuple[_ProjectComponent, ...]) -> int:
-    """Count projects without merging unrelated anchors that share a dependency."""
+def _component_groups(components: tuple[_ProjectComponent, ...]) -> tuple[tuple[_ProjectComponent, ...], ...]:
+    """Group project anchors without merging unrelated importers of one dependency."""
     remaining = set(range(len(components)))
-    groups = 0
+    groups = []
     while remaining:
-        groups += 1
-        pending = [remaining.pop()]
+        pending = [min(remaining)]
+        remaining.remove(pending[0])
+        group_indices = []
         while pending:
             current_index = pending.pop()
+            group_indices.append(current_index)
             current = components[current_index]
-            connected = {
+            connected = sorted(
                 candidate_index
                 for candidate_index in remaining
                 if _components_share_project(current, components[candidate_index])
-            }
+            )
             remaining.difference_update(connected)
             pending.extend(connected)
-    return groups
+        groups.append(tuple(components[index] for index in sorted(group_indices)))
+    return tuple(groups)
 
 
 def _components_share_project(left: _ProjectComponent, right: _ProjectComponent) -> bool:
@@ -1132,18 +1135,33 @@ def _build_project_scope(state: InspectState) -> _ProjectScope:
             active_components=(fallback,),
         )
 
-    # The nearest anchors generalize the old root-level preference. A deeper
-    # fixture/job.py is not authoritative merely because the scan is recursive;
-    # it must be reachable from a nearer component. This also works when the
-    # active project itself starts below the inspected root (src/pkg/train.py).
-    nearest_depth = min(component.depth for component in components)
-    active_components = tuple(component for component in components if component.depth == nearest_depth)
+    # Group anchors into projects before applying root-distance preference. This
+    # preserves a nested entry point that imports a shallower model: the entry
+    # point and model are one project, and all of that project's components stay
+    # authoritative. A separate deeper fixture remains a different project and
+    # cannot promote the inspected root.
+    project_groups = _component_groups(components)
+    group_depths = tuple(min(component.depth for component in group) for group in project_groups)
+    nearest_depth = min(group_depths)
+    active_groups = tuple(group for group, depth in zip(project_groups, group_depths) if depth == nearest_depth)
 
-    # Equally near components that neither share an anchor directory nor import
-    # one another identify a multi-project workspace with no single authority.
-    # Keep them for framework reporting, but do not let one component's FLARE
-    # signals classify the inspected root as a whole.
-    ambiguous = _component_group_count(active_components) > 1
+    # At the same nearest depth, a group with a training/job entry point is a
+    # stronger project boundary than a framework-only module or package. This
+    # keeps an unrelated top-level model/helper from making a real entry-point
+    # project ambiguous. It does not let a deeper fixture override a shallower
+    # model project because distance filtering has already happened, and two
+    # equally near independent entry-point groups remain ambiguous.
+    entry_point_groups = tuple(
+        group for group in active_groups if any(component.anchor_file in entry_point_files for component in group)
+    )
+    if entry_point_groups:
+        active_groups = entry_point_groups
+    active_components = tuple(component for group in active_groups for component in group)
+
+    # Equally near independent project groups identify a multi-project workspace
+    # with no single authority. Keep their components for framework reporting,
+    # but do not authorize one group's FLARE signals for the workspace as a whole.
+    ambiguous = len(active_groups) > 1
     return _ProjectScope(
         active_components=active_components,
         ambiguous=ambiguous,
@@ -1188,6 +1206,8 @@ def _conversion_state(
 ) -> str:
     if exported_job_info["submit_ready_candidates"]:
         return "exported_job"
+    if project_scope.ambiguous:
+        return "ambiguous"
     # job.py is a common filename (SLURM launchers) and SimEnv is a natural class
     # name in RL/robotics code, so neither is trustworthy on its own. A source
     # candidate must belong to an authoritative project component and carry
@@ -1237,6 +1257,8 @@ def _target_type(path: Path, state: InspectState, detected_framework: Optional[s
         return "exported_submit_ready_flare_job"
     if conversion_state == "flare_job":
         return "flare_job_source"
+    if conversion_state == "ambiguous":
+        return "mixed_workspace"
     if detected_framework and conversion_state in {"partial_client_api", "client_api_converted"}:
         return "mixed_workspace"
     if frameworks.family_base_has_member(detected_framework, state.framework_evidence):
@@ -1410,6 +1432,8 @@ def _skill_selection(
         # An existing FLARE job source: optimization requests (improve a metric,
         # fix low accuracy, explore hyperparameters/algorithms) route to Auto-FL.
         recommended.append("nvflare-autofl")
+    elif conversion_state == "ambiguous":
+        recommended.append("nvflare-orient")
     elif dataset and dataset.get("modality") in ("tabular", "image"):
         # A dataset target routes to federated statistics; when a dataset
         # block exists, code classification found no converter route.

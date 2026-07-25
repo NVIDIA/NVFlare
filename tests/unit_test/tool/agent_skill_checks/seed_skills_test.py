@@ -117,15 +117,27 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     construction_text = repo_root.joinpath(
         "skills/nvflare-shared/references/pytorch-family-recipe-construction.md"
     ).read_text(encoding="utf-8")
+    lightning_ddp_text = repo_root.joinpath(
+        "skills/nvflare-convert-lightning/references/lightning-ddp-and-tracking.md"
+    ).read_text(encoding="utf-8")
     normalized_construction = " ".join(construction_text.split())
+    normalized_lightning_ddp = " ".join(lightning_ddp_text.split())
 
     assert "## Best-Model Metric" in construction_text
-    assert "Its name must exactly match one key emitted by the client" in normalized_construction
+    assert "Only configure a source-derived `key_metric`" in normalized_construction
+    assert "selected execution path delivers that exact metric to the server" in normalized_construction
+    assert (
+        "do not pass a source-derived `key_metric` or claim server-side best-model selection" in normalized_construction
+    )
+    assert "Its name must exactly match one key delivered by the client" in normalized_construction
     assert 'metrics={"neg_loss": -loss}' in construction_text
     assert 'key_metric="neg_loss"' in construction_text
     assert "ask or fail closed when the metric direction is unclear" in normalized_construction
+    assert "default DDP does not satisfy the shared" in normalized_lightning_ddp
+    assert "Do not pass a source-derived `key_metric`" in normalized_lightning_ddp
     assert "unprotected recipe or adding only a disclaimer" in skill_text
-    assert "key_metric=metric_name" in recipe_text
+    assert "key_metric=metric_name" not in recipe_text
+    assert "when the selected execution path delivers that metric to the server" in recipe_text
     for consumer_text in (skill_text, recipe_text, client_text, validation_text):
         assert "pytorch-family-recipe-construction.md" in consumer_text
         assert 'metrics={"neg_loss": -loss}' not in consumer_text
@@ -249,6 +261,9 @@ def test_pytorch_family_capability_evals_cover_fedeval_and_dataparallel():
     assert {item["id"] for item in fed_eval["mandatory_behavior"]} >= {"fedeval-capability-profile"}
     assert {item["id"] for item in fed_eval["prohibited_behavior"]} >= {"no-unsupported-fedeval-disk-offload"}
 
+    ddp = lightning_by_id["lightning-ddp-multigpu"]["nvflare"]
+    assert {item["id"] for item in ddp["mandatory_behavior"]} >= {"ddp-key-metric-requires-server-delivery"}
+
 
 def test_pytorch_conversion_stops_after_dependency_install_failure():
     repo_root = Path(__file__).resolve().parents[4]
@@ -265,19 +280,32 @@ def test_pytorch_conversion_stops_after_dependency_install_failure():
     normalized_skill = " ".join(skill_text.split())
     normalized_dependency = " ".join(dependency_text.split())
     normalized_workflow = " ".join(workflow_text.split())
-    mandatory_ids = {item["id"] for item in eval_data["evals"][0]["nvflare"]["mandatory_behavior"]}
+    mandatory_by_id = {
+        item["id"]: item["description"] for item in eval_data["evals"][0]["nvflare"]["mandatory_behavior"]
+    }
+    mandatory_ids = set(mandatory_by_id)
     prohibited_ids = {item["id"] for item in eval_data["evals"][0]["nvflare"]["prohibited_behavior"]}
 
     assert (
         "before any Python command imports user, PyTorch, NVFLARE, or declared dependency modules" in normalized_skill
     )
     assert "on a nonzero exit, stop validation" in normalized_skill
-    assert "Run the selected canonical install command once." in dependency_text
+    assert "include every applicable requirements file" in normalized_dependency
+    assert "`-r <requirements-a> -r <requirements-b> -c <constraints> nvflare`" in dependency_text
+    assert "append `nvflare` to the same command" in normalized_dependency
+    assert "parts of one planned install, not retries" in normalized_dependency
+    assert "Run the selected combined canonical install command once." in dependency_text
     assert "stop dependency installation and validation for this conversion run" in normalized_dependency
+    assert "report a redacted form of the command and product error" in normalized_dependency
+    assert "replace credential-bearing option or environment values with `<redacted>`" in normalized_dependency
     assert "Do not retry with another installer, index, backend, package version" in normalized_dependency
     assert "do not purge caches, uninstall packages, or mutate `site-packages` directly" in normalized_dependency
     assert "first canonical install attempt, not autonomous retries or environment repair" in normalized_workflow
     assert "dependency-install-failure-is-terminal" in mandatory_ids
+    assert (
+        "one combined canonical dependency-install command" in mandatory_by_id["dependency-install-failure-is-terminal"]
+    )
+    assert "reports a redacted failed command" in mandatory_by_id["dependency-install-failure-is-terminal"]
     assert "no-dependency-install-retry-or-environment-surgery" in prohibited_ids
 
 

@@ -400,7 +400,7 @@
     {
       "id": "lightning-ddp-multigpu",
       "prompt": "My Lightning Trainer uses DDP across multiple GPUs. Federate it with FedAvg and keep multi-GPU training on each site.",
-      "expected_output": "The agent treats the DDP evidence as a high-impact runtime decision: it confirms the selected recipe documents an external-process launch parameter with nvflare recipe show before using it, applies the rank-synchronized round loop when the documented external-process path is used, keeps the patched trainer in charge of exchange, and asks or fails closed if the recipe does not document a launch parameter for DDP.",
+      "expected_output": "The agent treats the DDP evidence as a high-impact runtime decision: it confirms the selected recipe documents an external-process launch parameter with nvflare recipe show before using it, applies the rank-synchronized round loop when the documented external-process path is used, keeps the patched trainer in charge of exchange, does not configure a source-derived key_metric or claim server-side best-model selection when the default DDP path does not deliver validation metrics, and asks or fails closed if the recipe does not document a launch parameter for DDP.",
       "files": [
         "files/hello-lightning/train.py",
         "files/hello-lightning/model.py"
@@ -411,6 +411,7 @@
         "When the documented external-process path is used, the agent applies the rank-synchronized while loop that broadcasts flare.is_running() from rank 0 before receive/validate/fit.",
         "If the recipe did not document a launch parameter for DDP, the agent would ask in interactive mode or fail closed in unattended mode, reporting the DDP evidence and the missing product surface.",
         "The agent keeps flare.patch(trainer) in charge of model exchange and does not pass input_model into the Trainer.",
+        "For the default DDP path, the agent does not configure a source-derived key_metric or claim server-side best-model selection because local trainer.validate/self.log evidence is not delivered to the server.",
         "The agent keeps the user's accelerator/devices intent and reports any GPU/CPU validation limitation."
       ],
       "nvflare": {
@@ -423,6 +424,10 @@
           {
             "id": "rank-synchronized-loop",
             "description": "broadcasts flare.is_running() from rank 0 before receive/validate/fit when the documented external-process path is used"
+          },
+          {
+            "id": "ddp-key-metric-requires-server-delivery",
+            "description": "does not configure a source-derived key_metric or claim server-side best-model selection for the default Lightning DDP path because its local validation metrics are not delivered to the server"
           }
         ],
         "prohibited_behavior": [
@@ -440,7 +445,7 @@
           },
           {
             "id": "no-local-validate-metric-delivery-inference",
-            "description": "does not infer server-side metric delivery from a local trainer.validate call or from executor internals"
+            "description": "does not infer server-side metric delivery or configure key_metric from a local trainer.validate/self.log call or from executor internals"
           }
         ]
       }

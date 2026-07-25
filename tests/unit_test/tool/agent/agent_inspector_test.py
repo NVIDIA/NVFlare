@@ -1991,6 +1991,34 @@ def test_deeper_flare_job_does_not_override_nested_pytorch_component(tmp_path):
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
+def test_nested_converted_entry_point_importing_root_model_is_authoritative(tmp_path):
+    (tmp_path / "model.py").write_text(
+        "import torch\n\n\nclass Net(torch.nn.Module):\n    pass\n",
+        encoding="utf-8",
+    )
+    jobs = tmp_path / "jobs"
+    jobs.mkdir()
+    (jobs / "__init__.py").write_text("", encoding="utf-8")
+    (jobs / "train.py").write_text(
+        "from model import Net\n"
+        "import nvflare.client as flare\n"
+        "\n"
+        "\n"
+        "def train():\n"
+        "    input_model = flare.receive()\n"
+        "    flare.send(input_model)\n"
+        "    return Net()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["frameworks"][0]["name"] == "pytorch"
+    assert data["conversion_state"] == "client_api_converted"
+    assert data["target_type"] == "mixed_workspace"
+    assert "nvflare-convert-pytorch" not in data["skill_selection"]["recommended_skills"]
+
+
 def test_same_depth_independent_components_do_not_classify_whole_workspace_as_flare_job(tmp_path):
     (tmp_path / "common.py").write_text("VALUE = 1\n", encoding="utf-8")
     app = tmp_path / "app"
@@ -2017,9 +2045,10 @@ def test_same_depth_independent_components_do_not_classify_whole_workspace_as_fl
     data = inspect_path(tmp_path)
 
     assert data["frameworks"][0]["name"] == "pytorch"
-    assert data["conversion_state"] == "not_converted"
-    assert data["target_type"] == "training_repository"
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+    assert data["conversion_state"] == "ambiguous"
+    assert data["target_type"] == "mixed_workspace"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
+    assert "nvflare-convert-pytorch" not in data["skill_selection"]["recommended_skills"]
 
 
 def test_same_depth_imported_components_share_source_job_authority(tmp_path):
