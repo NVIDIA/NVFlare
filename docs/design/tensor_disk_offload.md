@@ -2,12 +2,12 @@
 
 ## Objective
 
-Reduce server peak memory for large PyTorch FedAvg model updates by streaming tensor payloads to disk and resolving tensors lazily end-to-end.
+Reduce aggregation peak memory for large PyTorch model updates by streaming tensor payloads to disk and resolving tensors lazily end-to-end.
 
 ## Scope
 
 - Applies to streamed **PyTorch tensor** payloads handled by `TensorDecomposer`.
-- Controlled by `enable_tensor_disk_offload` in the server-side FedAvg workflow/controller config.
+- Controlled by `enable_tensor_disk_offload` in the receiving FedAvg or Swarm workflow/controller config.
 - Default is `False` (legacy in-memory behavior).
 - If model updates are converted to NumPy before transport, tensor disk offload is not engaged.
 
@@ -18,6 +18,15 @@ FedAvg:
 - `nvflare/recipe/fedavg.py` -> `FedAvgRecipe(..., enable_tensor_disk_offload=True)`
 - `nvflare/app_opt/pt/recipes/fedavg.py` -> PT recipe forwards the same flag
 - `nvflare/app_common/workflows/fedavg.py` -> `FedAvg(..., enable_tensor_disk_offload=True)`
+
+Swarm/CCWF:
+
+- `nvflare/app_opt/pt/recipes/swarm.py` -> use
+  `SwarmLearningRecipe(server_expected_format=ExchangeFormat.PYTORCH, enable_tensor_disk_offload=True)`
+- `nvflare/app_common/ccwf/ccwf_job.py` -> use
+  `SwarmClientConfig(..., enable_tensor_disk_offload=True)` for custom Job API configurations
+- `nvflare/app_common/ccwf/swarm_client_ctl.py` applies the offload context to each
+  client because the aggregation role moves between clients
 
 If no active Cell is available, the offload context is not enabled and the runtime falls back to in-memory download.
 
@@ -47,6 +56,8 @@ Lazy refs in payload tree
 
 ## Runtime Behavior
 
+### FedAvg
+
 In `nvflare/app_common/workflows/fedavg.py`:
 
 - custom aggregators receive `result.params` as-is
@@ -55,6 +66,20 @@ In `nvflare/app_common/workflows/fedavg.py`:
   and relies on lazy-ref object lifetime / GC for temp-resource cleanup
 
 The built-in weighted path remains lazy-friendly and memory-efficient.
+
+### Swarm/CCWF
+
+`ClientAPIExecutor` preserves the Cell/FOBS large-payload references between an
+external trainer and the CCWF controller. For remote aggregation, the selected
+aggregation client downloads the peer's tensor stream directly. For local
+aggregation, `SwarmClientController._resolve_lazy_refs()` resolves the trainer
+reference through the same active Cell context. In both cases tensor disk
+offload yields lazy tensor refs, and the built-in
+`InTimeAccumulateWeightedAggregator` materializes one tensor at a time.
+
+`SwarmLearningRecipe` defaults to NumPy exchange for compatibility. Disk offload
+therefore requires `server_expected_format=ExchangeFormat.PYTORCH`; streamed
+NumPy arrays are not handled by `TensorDecomposer`.
 
 ## Custom Aggregator Contract
 
@@ -67,11 +92,14 @@ Custom aggregators are responsible for:
 
 ## Temp File Lifecycle
 
-- Disk offload writes safetensors chunks under a temp dir (`nvflare_tensors_*`).
+- Each workflow creates a job-scoped offload root (`nvflare_tensor_offload_<job>_*`),
+  with safetensors download directories beneath it.
 - Temp dir selection follows Python `tempfile` behavior (`TMPDIR` / OS default, typically `/tmp`).
 - In containerized deployments, `/tmp` may be tmpfs (RAM-backed); set `TMPDIR` to a disk-backed mount to realize memory offload benefits.
 - `LazyTensorDict` owns a shared `_TempDirRef`; each lazy ref keeps this reference alive.
-- Runtime cleanup relies on GC: when lazy refs are released, `_TempDirRef.__del__` removes the temp dir.
+- Lazy download directories are reclaimed when their refs are released, with GC as
+  a fallback. Workflow finalization restores the prior FOBS context and removes
+  the job-scoped root deterministically.
 
 ## Failure Behavior
 
@@ -86,11 +114,16 @@ Custom aggregators are responsible for:
 - `nvflare/app_opt/pt/tensor_downloader.py`
 - `nvflare/fuel/utils/fobs/decomposers/via_downloader.py`
 - `nvflare/app_common/workflows/fedavg.py`
+- `nvflare/app_common/ccwf/swarm_client_ctl.py`
+- `nvflare/app_common/ccwf/ccwf_job.py`
 - `nvflare/recipe/fedavg.py`
+- `nvflare/app_opt/pt/recipes/swarm.py`
 
 ## Test Coverage
 
 - `tests/unit_test/app_common/workflow/fedavg_test.py`
+- `tests/unit_test/app_common/ccwf/test_swarm_tensor_disk_offload.py`
+- `tests/unit_test/recipe/swarm_recipe_test.py`
 - `tests/unit_test/app_opt/pt/test_lazy_tensor_dict.py`
 - `tests/unit_test/app_opt/pt/test_disk_tensor_consumer.py`
 - `tests/unit_test/app_common/aggregators/weighted_aggregation_helper_test.py`

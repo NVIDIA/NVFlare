@@ -507,6 +507,7 @@ Use ``SwarmLearningRecipe`` for a streamlined swarm learning setup:
 .. code-block:: python
 
     from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+    from nvflare.client.config import ExchangeFormat
     from nvflare.recipe.sim_env import SimEnv
 
     # Create swarm learning recipe
@@ -524,11 +525,12 @@ Use ``SwarmLearningRecipe`` for a streamlined swarm learning setup:
         learn_task_ack_timeout=3600,   # P2P task-transfer ACK budget
         final_result_ack_timeout=3600, # P2P final-result ACK budget
         max_concurrent_submissions=1,
+        server_expected_format=ExchangeFormat.PYTORCH,
+        enable_tensor_disk_offload=True,
     )
 
-    # Configure large model parameters if needed (server-side only)
-    recipe.add_server_config({
-        "np_download_chunk_size": 2097152,
+    # Configure the client-to-client tensor streaming path.
+    recipe.add_client_config({
         "tensor_download_chunk_size": 2097152,
         "streaming_per_request_timeout": 600
     })
@@ -548,6 +550,11 @@ executor, aggregator, persistor, shareable generator, or
 ``min_responses_required``; use ``BaseSwarmLearningRecipe`` for custom components
 or quorum settings. Set ``min_clients`` only through the named parameter so the
 scheduler, server controller, and client aggregation quorums remain aligned.
+For large PyTorch models, use
+``server_expected_format=ExchangeFormat.PYTORCH`` together with
+``enable_tensor_disk_offload=True``. The first keeps CCWF payloads on the
+PyTorch tensor streaming path; the second writes incoming streamed tensors to
+disk on whichever client is selected as the aggregator.
 
 For advanced customization, use ``BaseSwarmLearningRecipe`` with explicit server and client configurations:
 
@@ -834,6 +841,15 @@ The following SwarmClientController parameters are particularly important for la
 - ``max_concurrent_submissions``: Maximum concurrent submissions. **Default: 1**. **Suggested: 1** to reduce memory pressure.
 - ``min_responses_required``: Minimum client results required to begin aggregation. **Default: 1**. **Suggested: 2** for 3-client runs.
 - ``wait_time_after_min_resps_received``: Extra wait time after minimum responses. **Default: 10.0**. **Suggested: 120 to 300**.
+- ``enable_tensor_disk_offload``: Write incoming streamed PyTorch tensors to disk and materialize them lazily during aggregation. **Default: False**. **Suggested: True** for very large PyTorch models.
+
+.. warning::
+
+   Tensor disk offload requires PyTorch payloads. With ``SwarmLearningRecipe``,
+   set ``server_expected_format=ExchangeFormat.PYTORCH``; NumPy payloads still
+   stream, but they do not use tensor disk offload. Temporary data follows
+   Python's ``TMPDIR`` setting, so point ``TMPDIR`` to a disk-backed mount
+   rather than RAM-backed ``tmpfs``.
 
 **Example client config for large models:**
 
@@ -854,6 +870,7 @@ The following SwarmClientController parameters are particularly important for la
             max_concurrent_submissions = 1
             min_responses_required = 2
             wait_time_after_min_resps_received = 120
+            enable_tensor_disk_offload = true
           }
         }
       }
@@ -863,6 +880,7 @@ The following SwarmClientController parameters are particularly important for la
 
 - ``np_download_chunk_size``: Chunk size for numpy array downloads. **Default: 2097152 (2MB)**. Value 0 disables streaming and uses native serialization which can spike memory.
 - ``tensor_download_chunk_size``: Chunk size for PyTorch tensor downloads. **Default: 2097152 (2MB)**. Value 0 disables streaming.
+- Tensor disk offload only applies to the ``tensor_download_chunk_size`` path. The built-in weighted aggregator materializes one lazy tensor at a time.
 
 .. code-block::
 
@@ -919,6 +937,7 @@ If you only adjust a few parameters for large models, start with:
 3. ``request_to_submit_result_max_wait`` - Provides adequate aggregation window
 4. ``progress_timeout`` - Prevents premature workflow termination
 5. ``np_download_chunk_size`` and ``tensor_download_chunk_size`` - Enables memory-efficient streaming
+6. ``server_expected_format=ExchangeFormat.PYTORCH`` and ``enable_tensor_disk_offload=True`` - Keep PyTorch tensors streamed and offload aggregation inputs to disk
 
 .. _ccwf_cross_site_evaluation:
 

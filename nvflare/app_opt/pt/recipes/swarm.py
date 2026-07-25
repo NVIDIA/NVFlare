@@ -14,6 +14,7 @@
 
 import logging
 import os
+import warnings
 from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel, field_validator
@@ -24,6 +25,7 @@ from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import In
 from nvflare.app_common.ccwf.ccwf_job import CCWFJob, CrossSiteEvalConfig, SwarmClientConfig, SwarmServerConfig
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from nvflare.fuel.utils.secret_utils import (
@@ -192,6 +194,12 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             the directory is treated as a runtime path and does not need to exist on the
             machine that builds or exports the job. ``{JOB_ID}/{SITE_NAME}`` is always
             appended so concurrent jobs and sites remain isolated. Ignored for ``"cell_pipe"``.
+        server_expected_format: Parameter representation used by the CCWF controllers and aggregator.
+            Use ``ExchangeFormat.PYTORCH`` to keep tensors on the streaming path. Defaults to
+            ``ExchangeFormat.NUMPY`` for backward compatibility.
+        enable_tensor_disk_offload: Download streamed PyTorch tensors to temporary disk files on
+            aggregation clients and materialize them lazily during aggregation. This requires
+            ``server_expected_format=ExchangeFormat.PYTORCH`` to take effect. Defaults to False.
 
     Example:
         Using nn.Module instance:
@@ -249,9 +257,12 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         client_config_overrides: Optional[Dict[str, Any]] = None,
         pipe_type: str = "cell_pipe",
         pipe_root_path: Optional[str] = None,
+        server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
+        enable_tensor_disk_offload: bool = False,
     ):
         _SwarmValidator(initial_ckpt=initial_ckpt)
         warn_on_potential_secrets(command, context="recipe parameter 'command'")
+        self.server_expected_format = server_expected_format
 
         if train_args:
             warn_on_potential_secrets(train_args, context="recipe parameter 'train_args'")
@@ -362,6 +373,7 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 "launch_external_process",
                 "command",
                 "framework",
+                "server_expected_format",
                 "memory_gc_rounds",
                 "cuda_empty_cache",
             }
@@ -399,13 +411,19 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 command=command,
                 memory_gc_rounds=memory_gc_rounds,
                 cuda_empty_cache=cuda_empty_cache,
+                server_expected_format=server_expected_format,
                 params_transfer_type=params_transfer_type,
                 task_pipe=task_pipe,
                 **train_args,
             ),
             "aggregator": aggregator,
-            "persistor": PTFileModelPersistor(model=model, source_ckpt_file_full_name=ckpt_path),
+            "persistor": PTFileModelPersistor(
+                model=model,
+                source_ckpt_file_full_name=ckpt_path,
+                allow_numpy_conversion=server_expected_format != ExchangeFormat.PYTORCH,
+            ),
             "shareable_generator": SimpleModelShareableGenerator(),
+            "enable_tensor_disk_offload": enable_tensor_disk_offload,
             "memory_gc_rounds": memory_gc_rounds,
             "cuda_empty_cache": cuda_empty_cache,
             "min_responses_required": min_clients,
@@ -423,6 +441,15 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             validated_client_config_overrides,
             "client_config_overrides",
         )
+        self.enable_tensor_disk_offload = client_config_args["enable_tensor_disk_offload"]
+        if self.enable_tensor_disk_offload and self.server_expected_format != ExchangeFormat.PYTORCH:
+            warnings.warn(
+                "enable_tensor_disk_offload=True only applies to streamed PyTorch tensors. "
+                "Set server_expected_format=ExchangeFormat.PYTORCH to enable tensor disk offload; "
+                f"current server_expected_format={self.server_expected_format!r} will not offload NumPy payloads.",
+                UserWarning,
+                stacklevel=2,
+            )
         check_positive_int("max_concurrent_submissions", client_config_args["max_concurrent_submissions"])
         if client_config_args.get("learn_task_timeout") is not None:
             check_positive_number("learn_task_timeout", client_config_args["learn_task_timeout"])

@@ -29,9 +29,15 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
 from nvflare.app_common.ccwf.common import Constant, NumberMetricComparator, ResultType, make_task_name
+from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_disk_offload, setup_tensor_disk_offload
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.fobs import FOBSContextKey
-from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_positive_int, check_positive_number
+from nvflare.fuel.utils.validation_utils import (
+    check_non_empty_str,
+    check_object_type,
+    check_positive_int,
+    check_positive_number,
+)
 from nvflare.security.logging import secure_format_traceback
 
 
@@ -290,6 +296,7 @@ class SwarmClientController(ClientSideController):
         max_concurrent_submissions: int = 1,
         memory_gc_rounds: int = 1,
         cuda_empty_cache: bool = False,
+        enable_tensor_disk_offload: bool = False,
     ):
         """
         Constructor of a ClientSideController object.
@@ -324,6 +331,8 @@ class SwarmClientController(ClientSideController):
             cuda_empty_cache: also call torch.cuda.empty_cache() during aggregator-side cleanup.
                 In swarm learning the aggregator runs on the same client as the trainer, so GPU
                 memory may be relevant. Defaults to False.
+            enable_tensor_disk_offload: download streamed PyTorch tensors to temporary disk files and pass
+                lazy tensor refs to the aggregator. Defaults to False.
 
         Note that if the max_concurrent_submissions is set to 1, it practically means that all training results
         will be submitted to the aggregation client sequentially. This lowers the resource pressure on
@@ -338,6 +347,7 @@ class SwarmClientController(ClientSideController):
         check_positive_number("request_to_submit_result_msg_timeout", request_to_submit_result_msg_timeout)
         check_positive_number("request_to_submit_result_interval", request_to_submit_result_interval)
         check_positive_int("max_concurrent_submissions", max_concurrent_submissions)
+        check_object_type("enable_tensor_disk_offload", enable_tensor_disk_offload, bool)
         if request_to_submit_result_max_wait:
             check_positive_number("request_to_submit_result_max_wait", request_to_submit_result_max_wait)
 
@@ -383,6 +393,8 @@ class SwarmClientController(ClientSideController):
         self.is_trainer = False
         self.is_aggr = False
         self.last_aggr_round_done = -1
+        self.enable_tensor_disk_offload = enable_tensor_disk_offload
+        self._tensor_disk_offload_context = None
         self.memory_gc_rounds = memory_gc_rounds
         self.cuda_empty_cache = cuda_empty_cache
         self._aggr_round_count = 0
@@ -417,6 +429,17 @@ class SwarmClientController(ClientSideController):
 
     def start_run(self, fl_ctx: FLContext):
         super().start_run(fl_ctx)
+        self._tensor_disk_offload_context = setup_tensor_disk_offload(
+            engine=self.engine,
+            enabled=self.enable_tensor_disk_offload,
+            job_id=fl_ctx.get_job_id("job"),
+        )
+        if self.enable_tensor_disk_offload and not self._tensor_disk_offload_context.applied:
+            self.log_warning(
+                fl_ctx,
+                "enable_tensor_disk_offload=True but no active cell is available; "
+                "falling back to in-memory tensor download",
+            )
         self.aggregator = self.engine.get_component(self.aggregator_id)
         if not isinstance(self.aggregator, Aggregator):
             self.system_panic(
@@ -442,6 +465,16 @@ class SwarmClientController(ClientSideController):
         aggr_thread.daemon = True
         aggr_thread.start()
         self.log_debug(fl_ctx, "started aggregator thread")
+
+    def finalize(self, fl_ctx: FLContext):
+        context = self._tensor_disk_offload_context
+        self._tensor_disk_offload_context = None
+        try:
+            cleanup_tensor_disk_offload(engine=getattr(self, "engine", None), context=context)
+        except Exception:
+            self.log_warning(fl_ctx, f"failed to clean up tensor disk offload: {secure_format_traceback()}")
+        finally:
+            super().finalize(fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == AppEventType.GLOBAL_BEST_MODEL_AVAILABLE:
