@@ -17,6 +17,7 @@
 import ast
 import os
 import re
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -1031,9 +1032,10 @@ def _conversion_state(
         return "exported_job"
     # job.py is a common filename (SLURM launchers) and SimEnv is a natural class
     # name in RL/robotics code, so neither is trustworthy on its own. Require a
-    # root-level source candidate with corroborating nvflare evidence from that
-    # same file. This prevents historical jobs, fixtures, and vendored projects
-    # from classifying the recursively inspected repository root as a FLARE job.
+    # source candidate with corroborating nvflare evidence from that file or its
+    # local import closure. This prevents historical jobs, fixtures, and vendored
+    # projects from classifying the recursively inspected repository root as a
+    # FLARE job while allowing job.py to delegate construction to a local helper.
     if source_job_file:
         return "flare_job"
     if _has_conversion_integration(state):
@@ -1052,10 +1054,12 @@ def _conversion_state(
 def _authoritative_source_job_file(state: InspectState) -> Optional[str]:
     flare_import_files = {item["file"] for item in state.flare_imports}
     candidate_files = set(state.job_py_paths) | state.sim_env_files
+    local_files_by_module = _local_files_by_module(state)
     authoritative_candidates = [
         path
         for path in candidate_files
-        if path in flare_import_files and _file_belongs_to_active_root_project(state, path)
+        if _source_candidate_reaches_flare_import(state, path, flare_import_files, local_files_by_module)
+        and _file_belongs_to_active_root_project(state, path)
     ]
     if not authoritative_candidates:
         return None
@@ -1063,6 +1067,21 @@ def _authoritative_source_job_file(state: InspectState) -> Optional[str]:
     # nested source jobs exist; otherwise accept a nested candidate that belongs
     # to the active project (for example jobs/fedavg/job.py).
     return min(authoritative_candidates, key=lambda path: (not _is_root_level_file(path), path))
+
+
+def _source_candidate_reaches_flare_import(
+    state: InspectState,
+    candidate_file: str,
+    flare_import_files: set[str],
+    local_files_by_module: dict[str, set[str]],
+) -> bool:
+    if candidate_file in flare_import_files:
+        return True
+    imports = state.file_imports.get(candidate_file, set())
+    return any(
+        _imports_reach_file(state, candidate_file, imports, flare_import_file, local_files_by_module)
+        for flare_import_file in flare_import_files
+    )
 
 
 def _is_root_level_file(path: str) -> bool:
@@ -1363,12 +1382,12 @@ def _recommended_next_commands(
     commands = []
     if conversion_state == "exported_job":
         commands.append("nvflare job submit <job-folder> --format json")
-    elif source_job_file == "job.py" and source_job_file in state.export_support_files:
+    elif source_job_file and source_job_file in state.export_support_files:
         # Only suggest `job.py --export` for a genuine FLARE job.py: `.export`
         # calls (torch.onnx.export, YOLO model.export, ...) over-match, so without
         # corroborating nvflare evidence this would ship a command that fails with
         # an argparse error on an unrelated repo.
-        commands.append("python job.py --export --export-dir <job-dir>")
+        commands.append(f"python {shlex.quote(source_job_file)} --export --export-dir <job-dir>")
     elif detected_framework and conversion_state == "not_converted":
         skill = frameworks.recommended_skill_for(detected_framework)
         if skill:

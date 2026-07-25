@@ -1989,6 +1989,43 @@ def test_root_flare_job_source_remains_authoritative_with_nested_job_candidate(t
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-autofl"]
 
 
+def test_root_flare_job_source_can_delegate_nvflare_import_to_local_helper(tmp_path):
+    (tmp_path / "job.py").write_text(
+        "from job_utils import build_job\n\njob = build_job()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "job_utils.py").write_text(
+        "from nvflare.job_config.api import FedJob\n\n" "def build_job():\n" "    return FedJob(name='active_job')\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["conversion_state"] == "flare_job"
+    assert data["target_type"] == "flare_job_source"
+    assert data["job"]["job_py"] == "job.py"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-autofl"]
+
+
+def test_root_job_source_does_not_use_unreachable_nvflare_import(tmp_path):
+    (tmp_path / "job.py").write_text(
+        "def build_job():\n" "    return object()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "unused_helper.py").write_text(
+        "from nvflare.job_config.api import FedJob\n\n"
+        "def build_job():\n"
+        "    return FedJob(name='unrelated_job')\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["conversion_state"] != "flare_job"
+    assert data["target_type"] != "flare_job_source"
+    assert data["skill_selection"]["recommended_skills"] != ["nvflare-autofl"]
+
+
 def test_nested_flare_job_source_is_authoritative_without_competing_root_project(tmp_path):
     job_dir = tmp_path / "jobs" / "fedavg"
     job_dir.mkdir(parents=True)
@@ -1997,7 +2034,8 @@ def test_nested_flare_job_source_is_authoritative_without_competing_root_project
         "from nvflare.job_config.api import FedJob\n"
         "\n"
         "job = FedJob(name='nested_active_job')\n"
-        "controller = FedAvg()\n",
+        "controller = FedAvg()\n"
+        "job.export('/tmp/job')\n",
         encoding="utf-8",
     )
 
@@ -2007,6 +2045,9 @@ def test_nested_flare_job_source_is_authoritative_without_competing_root_project
     assert data["target_type"] == "flare_job_source"
     assert data["job"]["job_py"] == "jobs/fedavg/job.py"
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-autofl"]
+    assert data["recommended_next_commands"] == [
+        "python jobs/fedavg/job.py --export --export-dir <job-dir>",
+    ]
 
 
 def test_src_layout_converted_project_is_not_hidden_by_root_packaging_scaffold(tmp_path):
