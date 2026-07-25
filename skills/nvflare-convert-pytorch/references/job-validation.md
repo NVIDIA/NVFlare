@@ -23,14 +23,12 @@ covers PyTorch-specific validation checks.
   metrics, the client should send a negated scalar such as `neg_loss`.
 - If simulation reports `cannot find handler for Datum Object Type 6` or
   `TENSOR_DOWNLOAD`, inspect generated `job.py` for an incomplete tensor-offload
-  profile. Keep `server_expected_format=ExchangeFormat.PYTORCH` and
-  `enable_tensor_disk_offload=True`, and add
-  `recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])`
-  after any per-site configuration and before export or execution. Revalidate
-  without changing execution mode. Set `launch_external_process=True` only
-  when the source actually uses DDP or another multi-process/multi-GPU launch.
-  Do not patch NVFLARE runtime modules or register FOBS handlers in generated
-  clients.
+  profile. Re-run `recipe show` and apply the capability profile in
+  `../../nvflare-shared/references/pytorch-family-recipe-construction.md`:
+  select tensor-native format only when exposed, enable disk offload only when
+  exposed, and register `TensorDecomposer` when tensor-native exchange is
+  selected. Revalidate without changing execution mode. Do not patch NVFLARE
+  runtime modules or register FOBS handlers in generated clients.
 - For data-prep changes, confirm the PyTorch `Dataset` or `DataLoader` receives
   the generated per-site path or arguments rather than hard-coded global paths.
 - Report PyTorch-specific blockers such as non-serializable model state,

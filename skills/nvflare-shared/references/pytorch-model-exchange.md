@@ -8,8 +8,7 @@ non-PyTorch framework skills.
 
 For PyTorch Client API training, outbound `FLModel(params=...)` must contain
 `torch.Tensor` values from the trained model state. Do not convert outbound
-weights to NumPy before sending. Keep the wire tensor-native, enable disk
-offload, and register the PyTorch decomposer through the recipe.
+weights to NumPy before sending.
 
 The manual `flare.send` snippet below applies only to plain PyTorch, where
 client code builds the payload itself:
@@ -27,29 +26,14 @@ configuration rather than manual client payload construction.
 
 ## Exchange Format Recipe Settings
 
-Confirm recipe parameters and defaults with
-`nvflare recipe show <recipe-name> --format json`. When the selected recipe
-exposes the required controls, set
-`server_expected_format=ExchangeFormat.PYTORCH` and
-`enable_tensor_disk_offload=True`. After any `set_per_site_config(...)` call
-and before export or execution, add the framework-specific registration
-component:
-
-```python
-recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])
-```
-
-This installs `TensorDecomposer` on both server and client apps before the first
-payload is decoded. Do not move the registration into a framework-neutral
+After `recipe show`, follow `pytorch-family-recipe-construction.md`. That
+reference is the canonical owner of capability-gated format, disk-offload,
+decomposer, filename, and execution-mode settings. Do not copy settings from a
+different recipe or move decomposer registration into a framework-neutral
 executor or generated trainer code.
 
 If the recipe exposes `params_transfer_type`, choose the mode that matches the
 user's intent: `FULL` sends whole models; `DIFF` sends model differences.
-
-Choose execution mode independently from serialization. Leave
-`launch_external_process` unset for CPU or single-GPU training. Set
-`launch_external_process=True` only for DDP or another multi-process/multi-GPU
-source launch model.
 
 ## State-Dict Compatibility
 

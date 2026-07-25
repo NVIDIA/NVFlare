@@ -79,7 +79,10 @@ policy; route onward rather than substituting an unprotected recipe or adding on
    ambiguous or non-FedAvg algorithms, reserving `nvflare recipe list` for those
    cases. Use the module, class, and parameters returned by `recipe show` for
    standard `job.py` construction; for `fedavg-pt`, import `FedAvgRecipe` from
-   `nvflare.app_opt.pt.recipes.fedavg`, never from `nvflare.recipe`. Load
+   `nvflare.app_opt.pt.recipes.fedavg`, never from `nvflare.recipe`. After every
+   `recipe show`, load
+   `../nvflare-shared/references/pytorch-family-recipe-construction.md` and
+   derive the recipe's construction capabilities. Load
    `references/recipe-selection.md` only when non-FedAvg or execution-mode
    details are needed.
 5. Convert training and evaluation as a pair using
@@ -89,13 +92,14 @@ policy; route onward rather than substituting an unprotected recipe or adding on
    evaluation code into the packaged evaluation template; if evaluation is
    required but missing, ask or fail closed. For multi-site single-node-source
    conversion, create deterministic site-local training partitions unless the
-   source has site data or the user explicitly asks for shared training data.
-6. Add or update `job.py` with explicit model config (never a live model), requested
-   `aggregator=` wiring, the client `key_metric`,
-   `server_expected_format=ExchangeFormat.PYTORCH`, and `enable_tensor_disk_offload=True`.
-   After any `set_per_site_config(...)`, register `nvflare.app_opt.pt.decomposers.TensorDecomposer`
-   through `recipe.add_decomposers(...)`. Leave `launch_external_process` unset for
-   CPU/single-GPU training; set it only for multi-process/multi-GPU source evidence.
+   source has site data or the user explicitly asks for shared training data. If
+   generated code partitions a Pandas `DataFrame`, load the "Site Data
+   Partitioning" section of
+   `../nvflare-shared/references/conversion-workflow.md`.
+6. Add or update `job.py` with explicit model config (never a live model),
+   requested `aggregator=` wiring, the client `key_metric`, and only the
+   tensor/offload/execution settings exposed by the selected recipe, following
+   the shared PyTorch-family construction profile.
 7. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`:
    compile checks, recipe construction, one final full-run path chosen by the
    artifact being validated, and export inspection; use
@@ -118,15 +122,16 @@ policy; route onward rather than substituting an unprotected recipe or adding on
   configuration, or supplied metadata; otherwise ask one semantic question when
   an answer channel exists or fail closed on that missing value.
 - Must keep outbound PyTorch model weights as `torch.Tensor` values in
-  `FLModel(params=...)` and use tensor-native transport; do not fall back to NumPy. Load
+  `FLModel(params=...)`; do not add a manual NumPy fallback. Load
   `../nvflare-shared/references/pytorch-model-exchange.md` and
   `references/pytorch-client-api-conversion.md` for the exact send pattern.
-- Must register `nvflare.app_opt.pt.decomposers.TensorDecomposer` through `recipe.add_decomposers(...)`
-  after per-site configuration and before export or execution. Do not patch framework-neutral runtime
-  modules or register FOBS handlers from generated `client.py`.
-- Must leave `launch_external_process` unset for CPU or single-GPU training
-  without distributed-launch evidence. Set it to `True` for DDP, `torchrun`,
-  `torch.distributed`, or another multi-process/multi-GPU source launch model.
+- Must apply
+  `../nvflare-shared/references/pytorch-family-recipe-construction.md` after
+  `recipe show`: never pass an absent recipe parameter, and never patch a
+  framework-neutral runtime module or register FOBS handlers in `client.py`.
+- Must choose external execution from process-spawning/distributed-launch
+  evidence. GPU count alone is insufficient; single-process
+  `torch.nn.DataParallel` stays in-process.
 - Must convert source evaluation alongside training and return metrics through
   `FLModel.metrics`; must not synthesize metric semantics without source
   evidence.
@@ -151,12 +156,6 @@ policy; route onward rather than substituting an unprotected recipe or adding on
   source or docstrings.
 - Must not make non-PyTorch skills load `../nvflare-shared/references/pytorch-model-exchange.md`;
   that reference is only for PyTorch-family model/state-dict exchange.
-
-## Agent Responsibilities
-
-- Inspect the project and selected recipe, explain ambiguous selection, and generate the Client API conversion.
-- Keep conversion decisions within this skill, its references, and the shared conversion guidance.
-- Report PyTorch blockers including incompatible state, unsafe checkpoints, metrics, and site data loaders.
 
 ## User Input And Authorization
 

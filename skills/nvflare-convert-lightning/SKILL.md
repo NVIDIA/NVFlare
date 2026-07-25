@@ -77,10 +77,9 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
    bypass host permissions.
 4. Identify the existing `LightningModule`, `LightningDataModule`, trainer
    construction, callbacks, checkpointing, `validation_step`/`test_step` and
-   dataloaders, metrics, logger usage, source data split or partition evidence,
-   DDP/multi-GPU evidence, and any custom aggregation intent. Determine the
-   concrete model constructor values that server and client models must share
-   before creating `job.py`.
+   dataloaders, metrics, logger usage, source partition evidence, distributed
+   process-spawning evidence, custom aggregation intent, and the concrete model
+   constructor values that server and clients must share.
 5. Reuse the PyTorch recipe family; Lightning is not a separate recipe family.
    For the standard case — the user explicitly requests FedAvg and inspection
    identifies Lightning — run `nvflare recipe show fedavg-pt --format json`
@@ -91,7 +90,9 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
    algorithm guide, catalog-based selection, HE-not-supported rule; FedAvg,
    FedOpt, FedProx, SCAFFOLD, Cyclic, Swarm, FedEval) only for ambiguous or
    non-FedAvg algorithms, reserving `nvflare recipe list` for those cases. Use
-   FedEval for evaluation-only.
+   FedEval for evaluation-only. After every `recipe show`, load
+   `../nvflare-shared/references/pytorch-family-recipe-construction.md` and
+   derive the recipe's construction capabilities.
 6. Convert the training entry point to the Lightning Client API: build the
    `Trainer`, call `flare.patch(trainer)`, and let the patched trainer own
    model load/send through its callbacks. Keep evaluation inside Lightning per
@@ -100,13 +101,14 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
    `self.log(...)`); if the source lacks validation/test steps or dataloaders,
    ask or fail closed. For multi-site single-node-source conversion, create
    deterministic site-local training partitions unless the source has site data
-   or the user explicitly asks for shared training data.
+   or the user explicitly asks for shared training data. If generated code
+   partitions a Pandas `DataFrame`, load the "Site Data Partitioning" section
+   of `../nvflare-shared/references/conversion-workflow.md`.
 7. Add or update `job.py` with explicit model config
    `{"class_path": ..., "args": ...}` (never a live `LightningModule`),
-   requested `aggregator=` wiring, `server_expected_format=ExchangeFormat.PYTORCH`,
-   and `enable_tensor_disk_offload=True`. After per-site configuration, register
-   `nvflare.app_opt.pt.decomposers.TensorDecomposer` with
-   `recipe.add_decomposers(...)`. Use external process only for DDP/multi-GPU.
+   requested `aggregator=` wiring, and only the tensor/offload/execution
+   settings exposed by the selected recipe, following the shared PyTorch-family
+   construction profile.
 8. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`:
    compile checks, recipe construction, one final full-run path chosen by the
    artifact being validated, and export inspection; then use
@@ -145,17 +147,15 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
   source, configuration, or supplied metadata; otherwise ask one semantic
   question when an answer channel exists or fail closed on that missing value.
 - Must use the PyTorch recipe family; must not invent a Lightning-only recipe.
-- Must treat DDP/multi-GPU as high-impact source evidence. When the source uses
-  a DDP-family strategy, confirm the selected recipe exposes
-  `launch_external_process` via `recipe show`, then set it `True`; if the recipe
-  does not expose it, ask or fail closed. For single-process DataParallel
-  (`dp`), leave `launch_external_process` unset so the recipe stays in-process.
-  See `references/lightning-ddp-and-tracking.md`.
+- Must apply
+  `../nvflare-shared/references/pytorch-family-recipe-construction.md` after
+  `recipe show`, including its recipe-parameter and process-model capability
+  checks. For Lightning DDP details see
+  `references/lightning-ddp-and-tracking.md`.
 - Must preserve local-only callbacks and logger behavior where safe. Existing
   network-connected tracking, upload callbacks, and custom/unknown loggers are
-  evidence of intent, not a user request: keep them disabled during validation
-  unless the user explicitly requested those effects. Do not ask solely to
-  enable them. This narrows the guidance in
+  evidence, not a user request: keep them disabled during validation unless
+  explicitly requested, and do not ask solely to enable them. This narrows
   `references/lightning-conversion.md`.
 - Custom aggregation must use the recipe `aggregator=` hook with a
   `ModelAggregator` subclass in `aggregators.py`, adapting
@@ -188,9 +188,8 @@ model-exchange, validation references, and aggregator asset only when their phas
 needs them. Load other detailed references only for exceptions:
 `../nvflare-shared/references/conversion-workflow.md` for non-standard cases;
 `../nvflare-shared/references/pytorch-family-recipe-selection.md` only for ambiguous
-or non-FedAvg algorithms; `../nvflare-shared/references/dependency-install.md`
-only when an install is needed; `../nvflare-shared/references/runtime-output-guidance.md`
-only for read-only source roots or user-chosen destinations;
+or non-FedAvg algorithms;
+`../nvflare-shared/references/dependency-install.md` only when an install is needed;
 `../nvflare-shared/references/metrics-and-artifact-reporting.md` only when metrics
 are absent or inconsistent; `../nvflare-shared/references/validation-evidence.md`
 before validation; `../nvflare-shared/references/pytorch-model-exchange.md` only

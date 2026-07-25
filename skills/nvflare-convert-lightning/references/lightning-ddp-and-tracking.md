@@ -1,20 +1,19 @@
 # Lightning DDP And Experiment Tracking
 
-Use this reference only for Lightning DDP/multi-GPU work or experiment-tracking
-work. Single-GPU or single-process Lightning training does not need it.
+Use this reference only for Lightning distributed-process work or
+experiment-tracking work. Single-process Lightning training does not need it.
 
 ## DDP Execution Model
 
-Lightning DDP maps to the external-process executor exactly like plain-PyTorch
-DDP. Lightning's process-spawning strategies — `ddp` and its variants such as
-`ddp_spawn`, and any other strategy that launches one worker process per device
-through a torchrun-style / `torch.distributed` launch — run the training script
-as multiple worker processes, and distributed workers cannot run inside an
-in-process executor. So DDP/multi-process evidence maps to
-`launch_external_process=True`.
+Follow the process-based criterion in
+`../../nvflare-shared/references/pytorch-family-recipe-construction.md`.
+Lightning's process-spawning strategies — `ddp` and variants such as
+`ddp_spawn`, and any strategy that launches one worker process per device
+through a torchrun-style / `torch.distributed` launch — require external
+execution because distributed workers cannot run inside an in-process executor.
 
-The one exception is single-process multi-GPU DataParallel (`dp`), which runs in
-a single process and stays in-process like single-GPU training; leave
+Single-process multi-GPU DataParallel (`dp`) does not spawn workers and stays
+in-process like single-GPU training; leave
 `launch_external_process` unset so the recipe applies its own default.
 
 When the source shows a DDP-family strategy, confirm the selected recipe exposes

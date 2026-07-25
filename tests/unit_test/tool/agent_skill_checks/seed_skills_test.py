@@ -132,29 +132,41 @@ def test_pytorch_conversion_pins_recipe_key_metric_to_client_metric():
     assert "higher-is-better" in validation_text
 
 
-def test_pytorch_family_conversion_registers_tensor_decomposer_at_recipe_boundary():
+def test_pytorch_family_construction_policy_is_canonical_and_capability_based():
     repo_root = Path(__file__).resolve().parents[4]
     pytorch_root = repo_root / "skills" / "nvflare-convert-pytorch"
     pytorch_skill = pytorch_root.joinpath("SKILL.md").read_text(encoding="utf-8")
     lightning_skill = repo_root.joinpath("skills/nvflare-convert-lightning/SKILL.md").read_text(encoding="utf-8")
     recipe_text = pytorch_root.joinpath("references/recipe-selection.md").read_text(encoding="utf-8")
     validation_text = pytorch_root.joinpath("references/job-validation.md").read_text(encoding="utf-8")
-    shared_profile = repo_root.joinpath("skills/nvflare-shared/references/pytorch-model-exchange.md").read_text(
+    construction_path = "../nvflare-shared/references/pytorch-family-recipe-construction.md"
+    construction_text = repo_root.joinpath(
+        "skills/nvflare-shared/references/pytorch-family-recipe-construction.md"
+    ).read_text(encoding="utf-8")
+    model_exchange_text = repo_root.joinpath("skills/nvflare-shared/references/pytorch-model-exchange.md").read_text(
+        encoding="utf-8"
+    )
+    workflow_text = repo_root.joinpath("skills/nvflare-shared/references/conversion-workflow.md").read_text(
         encoding="utf-8"
     )
     hello_pt_job = repo_root.joinpath("examples/hello-world/hello-pt/job.py").read_text(encoding="utf-8")
-    normalized_pytorch_skill = " ".join(pytorch_skill.split())
-    normalized_lightning_skill = " ".join(lightning_skill.split())
+    normalized_construction = " ".join(construction_text.split())
     normalized_validation = " ".join(validation_text.split())
-    normalized_shared_profile = " ".join(shared_profile.split())
 
-    for text in (normalized_pytorch_skill, normalized_lightning_skill):
-        assert "`server_expected_format=ExchangeFormat.PYTORCH`" in text
-        assert "`enable_tensor_disk_offload=True`" in text
-        assert "`recipe.add_decomposers(...)`" in text
-        assert "multi-GPU" in text
-    assert "multi-process/multi-GPU" in normalized_pytorch_skill
-    assert "DDP/multi-GPU" in normalized_lightning_skill
+    assert construction_path in pytorch_skill
+    assert construction_path in lightning_skill
+    assert "Only pass a recipe keyword when its name is in that set" in normalized_construction
+    assert "When `server_expected_format` is exposed" in normalized_construction
+    assert "When `enable_tensor_disk_offload` is exposed" in normalized_construction
+    assert "When tensor-native exchange was selected" in normalized_construction
+    assert "single-process multi-GPU `torch.nn.DataParallel` stay in-process" in normalized_construction
+    assert "Do not also pass `save_filename`" in normalized_construction
+    assert "canonical owner of capability-gated" in model_exchange_text
+    assert "pytorch-family-recipe-construction.md" in workflow_text
+    assert "`server_expected_format=ExchangeFormat.PYTORCH`" not in pytorch_skill
+    assert "`enable_tensor_disk_offload=True`" not in pytorch_skill
+    assert "`server_expected_format=ExchangeFormat.PYTORCH`" not in lightning_skill
+    assert "`enable_tensor_disk_offload=True`" not in lightning_skill
     assert "launch_external_process=True," not in recipe_text
     assert "server_expected_format=ExchangeFormat.PYTORCH," in recipe_text
     assert "enable_tensor_disk_offload=True," in recipe_text
@@ -162,10 +174,51 @@ def test_pytorch_family_conversion_registers_tensor_decomposer_at_recipe_boundar
     assert "server_expected_format=" not in hello_pt_job
     assert "enable_tensor_disk_offload=" not in hello_pt_job
     assert "intentionally differs" in recipe_text
-    assert "both server and client apps before the first" in normalized_shared_profile
-    assert "Leave `launch_external_process` unset for CPU or single-GPU training" in normalized_shared_profile
     assert "cannot find handler for Datum Object Type 6" in normalized_validation
+    assert "select tensor-native format only when exposed" in normalized_validation
     assert "Do not patch NVFLARE runtime modules" in normalized_validation
+
+
+def test_pytorch_recipe_capability_profiles_include_non_fedavg_without_disk_offload():
+    from nvflare.tool.recipe.recipe_cli import _load_catalog, _recipe_detail
+
+    catalog = {entry["name"]: entry for entry in _load_catalog()}
+    parameter_names = {}
+    for recipe_name in ("fedavg-pt", "cyclic-pt", "fedeval-pt", "swarm-pt"):
+        detail = _recipe_detail(catalog[recipe_name])
+        parameter_names[recipe_name] = {parameter["name"] for parameter in detail["parameters"]}
+
+    assert {"server_expected_format", "enable_tensor_disk_offload"} <= parameter_names["fedavg-pt"]
+    for recipe_name in ("cyclic-pt", "fedeval-pt"):
+        assert "server_expected_format" in parameter_names[recipe_name]
+        assert "enable_tensor_disk_offload" not in parameter_names[recipe_name]
+    assert "server_expected_format" not in parameter_names["swarm-pt"]
+    assert "enable_tensor_disk_offload" not in parameter_names["swarm-pt"]
+
+
+def test_pytorch_family_capability_evals_cover_fedeval_and_dataparallel():
+    repo_root = Path(__file__).resolve().parents[4]
+    pytorch_evals = json.loads(
+        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-convert-pytorch/evals.json").read_text(encoding="utf-8")
+    )
+    lightning_evals = json.loads(
+        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-convert-lightning/evals.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    pytorch_by_id = {case["id"]: case for case in pytorch_evals["evals"]}
+    lightning_by_id = {case["id"]: case for case in lightning_evals["evals"]}
+
+    data_parallel = pytorch_by_id["pytorch-dataparallel-in-process"]["nvflare"]
+    assert {item["id"] for item in data_parallel["mandatory_behavior"]} >= {
+        "dataparallel-stays-in-process",
+        "recipe-capability-profile",
+    }
+    assert {item["id"] for item in data_parallel["prohibited_behavior"]} >= {"no-dataparallel-external-process"}
+
+    fed_eval = lightning_by_id["lightning-eval-only"]["nvflare"]
+    assert {item["id"] for item in fed_eval["mandatory_behavior"]} >= {"fedeval-capability-profile"}
+    assert {item["id"] for item in fed_eval["prohibited_behavior"]} >= {"no-unsupported-fedeval-disk-offload"}
 
 
 def test_pytorch_conversion_stops_after_dependency_install_failure():
@@ -201,26 +254,35 @@ def test_pytorch_conversion_stops_after_dependency_install_failure():
 
 def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
     repo_root = Path(__file__).resolve().parents[4]
-    skill_root = repo_root / "skills" / "nvflare-convert-pytorch"
-    recipe_text = skill_root.joinpath("references/recipe-selection.md").read_text(encoding="utf-8")
-    client_text = skill_root.joinpath("references/pytorch-client-api-conversion.md").read_text(encoding="utf-8")
+    construction_text = repo_root.joinpath(
+        "skills/nvflare-shared/references/pytorch-family-recipe-construction.md"
+    ).read_text(encoding="utf-8")
+    workflow_text = repo_root.joinpath("skills/nvflare-shared/references/conversion-workflow.md").read_text(
+        encoding="utf-8"
+    )
+    client_text = repo_root.joinpath(
+        "skills/nvflare-convert-pytorch/references/pytorch-client-api-conversion.md"
+    ).read_text(encoding="utf-8")
+    lightning_skill = repo_root.joinpath("skills/nvflare-convert-lightning/SKILL.md").read_text(encoding="utf-8")
     validation_text = repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md").read_text(
         encoding="utf-8"
     )
     eval_data = json.loads(
         repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-convert-pytorch/evals.json").read_text(encoding="utf-8")
     )
-    normalized_recipe = " ".join(recipe_text.split())
-    normalized_client = " ".join(client_text.split())
+    normalized_construction = " ".join(construction_text.split())
+    normalized_workflow = " ".join(workflow_text.split())
     normalized_validation = " ".join(validation_text.split())
     mandatory_ids = {item["id"] for item in eval_data["evals"][0]["nvflare"]["mandatory_behavior"]}
     prohibited_ids = {item["id"] for item in eval_data["evals"][0]["nvflare"]["prohibited_behavior"]}
 
-    assert "set `best_model_filename` only" in normalized_recipe
-    assert "Do not also set `save_filename`" in normalized_recipe
-    assert "shuffle writable **positional** index arrays" in client_text
-    assert '`positions = np.flatnonzero(frame["label"].to_numpy() == label).copy()`' in client_text
-    assert "do not pass positional indices to `DataFrame.loc`" in normalized_client
+    assert "pass `best_model_filename` only" in normalized_construction
+    assert "Do not also pass `save_filename`" in normalized_construction
+    assert "Make every array passed to an in-place shuffle writable" in workflow_text
+    assert "positions = np.flatnonzero(frame[label_column].to_numpy() == label).copy()" in workflow_text
+    assert "do not pass positional indices to `DataFrame.loc`" in normalized_workflow
+    assert "shuffle writable **positional** index arrays" not in client_text
+    assert '"Site Data Partitioning"' in lightning_skill
     assert "validate properties rather than guessed site sizes" in normalized_validation
     assert "complete, non-overlapping coverage" in normalized_validation
     assert "Assert exact per-site row counts only when" in validation_text

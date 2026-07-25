@@ -22,6 +22,7 @@ nondeterministic LLM evals.
 
 import ast
 import importlib.util
+import inspect
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,30 @@ def _load_module(path: Path):
 class _FloatOverflow:
     def __float__(self):
         raise OverflowError("step count too large")
+
+
+def test_non_fedavg_tensor_profile_omits_unsupported_disk_offload(tmp_path):
+    pytest.importorskip("torch")
+    from nvflare.app_opt.pt.recipes.cyclic import CyclicRecipe
+    from nvflare.client.config import ExchangeFormat
+
+    train_script = tmp_path / "client.py"
+    train_script.write_text("pass\n", encoding="utf-8")
+    parameters = inspect.signature(CyclicRecipe).parameters
+
+    assert "server_expected_format" in parameters
+    assert "enable_tensor_disk_offload" not in parameters
+
+    recipe = CyclicRecipe(
+        name="skill-capability-test",
+        model={"class_path": "torch.nn.Linear", "args": {"in_features": 2, "out_features": 1}},
+        train_script=str(train_script),
+        min_clients=2,
+        server_expected_format=ExchangeFormat.PYTORCH,
+    )
+    recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])
+
+    assert recipe.server_expected_format == ExchangeFormat.PYTORCH
 
 
 def test_pytorch_eval_template_computes_metric_against_toy_model():

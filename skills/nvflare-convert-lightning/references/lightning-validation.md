@@ -23,8 +23,9 @@ covers Lightning-specific validation checks.
    (`../../nvflare-shared/references/conversion-workflow.md` hard-stop and
    `../../nvflare-shared/references/validation-evidence.md` evidence contract).
    Lightning-specific delta: the patched `Trainer` start, callback setup, and
-   logger flush make Lightning runs slower than plain PyTorch, and DDP/multi-GPU
-   jobs launch external processes (see `lightning-ddp-and-tracking.md`) whose
+   logger flush make Lightning runs slower than plain PyTorch, and
+   distributed-process jobs launch externally (see
+   `lightning-ddp-and-tracking.md`), so their
    completion must also be observed before you report success. Allow more
    wall-clock for the foreground run accordingly; scheduled wakeups or progress
    logs are not success evidence. If the run times out, report it as blocked or
@@ -52,9 +53,10 @@ covers Lightning-specific validation checks.
 
 ## Known SimEnv Limitations
 
-- SimEnv runs sites in a single local environment; multi-GPU and DDP behavior is
-  validated separately (see `lightning-ddp-and-tracking.md`). A single-process
-  SimEnv run validates conversion structure, not distributed scaling.
+- SimEnv runs sites in a single local environment; accelerator scaling and
+  distributed-process behavior are validated separately (see
+  `lightning-ddp-and-tracking.md`). A single-process SimEnv run validates
+  conversion structure, not distributed scaling.
 - Treat synthetic or smoke-test data runs as structural validation, not as
   meaningful accuracy evidence, unless the user supplies expected metrics.
 - Report Lightning-specific blockers such as a trainer that cannot be patched, a

@@ -319,20 +319,11 @@ supports it.
 
 ## Conversion Defaults
 
-For PyTorch-family conversion recipes that expose tensor disk offload, use the
-tensor-native recipe profile:
-
-- `server_expected_format=ExchangeFormat.PYTORCH`
-- `enable_tensor_disk_offload=True`
-- after any per-site configuration, call
-  `recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])`.
-
-Confirm the two recipe parameters with `nvflare recipe show <recipe-name>
---format json`; `add_decomposers(...)` is the recipe-level component API. The
-registration component is installed on server and clients before payload
-decoding, so CPU and single-GPU training stays in-process. Set
-`launch_external_process=True` only when the source requires DDP or another
-multi-process/multi-GPU launch model.
+For PyTorch-family jobs, run `recipe show` and load
+`pytorch-family-recipe-construction.md` before constructing the selected
+recipe. That reference owns capability-gated tensor exchange, disk offload,
+decomposer registration, best-model naming, and process-model selection for
+both plain PyTorch and Lightning.
 
 Device placement follows the source project: CPU source training stays on CPU,
 GPU source training stays on GPU, and a source that selects the device
@@ -422,6 +413,19 @@ each site frame with `df.iloc[positions]` or equivalent. Do not apply generic
 array chunking directly to the `DataFrame` object; library versions can return
 chunks that no longer behave like data frames and can break concatenation,
 validation, or metric checks.
+
+Make every array passed to an in-place shuffle writable. For label-stratified
+partitioning, derive positional indices from the observed label column and copy
+them before shuffling, for example:
+
+```python
+positions = np.flatnonzero(frame[label_column].to_numpy() == label).copy()
+rng.shuffle(positions)
+site_frame = frame.iloc[positions]
+```
+
+Do not shuffle a possibly read-only array returned by `Index.to_numpy()`, and do
+not pass positional indices to `DataFrame.loc`.
 
 Report the split policy, seed, site count, and any reason stratification was
 not used. Do not copy private site data into generated artifacts unless the user

@@ -20,7 +20,7 @@
         "The generated job.py imports the selected recipe class from the module returned by recipe show, using nvflare.app_opt.pt.recipes.fedavg.FedAvgRecipe for fedavg-pt and not nvflare.recipe.FedAvgRecipe.",
         "The agent selects the PyTorch FedAvg recipe for standard horizontal training instead of inventing a Lightning-only recipe.",
         "The agent generates explicit recipe model config with class_path plus args instead of passing a live LightningModule instance, asking or failing closed when constructor args are not statically clear.",
-        "The agent enables tensor-native disk offload with server_expected_format=ExchangeFormat.PYTORCH and enable_tensor_disk_offload=True, registers nvflare.app_opt.pt.decomposers.TensorDecomposer through recipe.add_decomposers(...) before export or execution, leaves launch_external_process unset for single-process training, and sets it to True only for DDP or another multi-process/multi-GPU strategy.",
+        "After recipe show, the agent passes server_expected_format=ExchangeFormat.PYTORCH and enable_tensor_disk_offload=True only when each parameter is exposed, registers nvflare.app_opt.pt.decomposers.TensorDecomposer when tensor-native exchange is selected, and chooses external execution only from process-spawning or distributed-launch evidence; Lightning dp stays in-process.",
         "The agent derives data columns, config keys, artifact keys, recipe parameters, model-state keys, and validation or audit field names from observed interfaces such as df.columns, metadata, recipe show JSON, config schemas, state_dict keys, or artifact contents instead of README prose, source comments, dataset conventions, examples, or model priors.",
         "For multiple simulated sites, the generated Lightning client or DataModule trains each site on a deterministic local training partition by default and does not make every site train on the full source training set unless the user explicitly requested shared training data.",
         "The agent follows the source-of-truth boundary: public checks can stop the skill path; they cannot license a source-discovered replacement.",
@@ -74,7 +74,7 @@
           },
           {
             "id": "tensor-offload-decomposer-profile",
-            "description": "sets server_expected_format=ExchangeFormat.PYTORCH and enable_tensor_disk_offload=True, registers TensorDecomposer through recipe.add_decomposers(...) before export or execution, and chooses external process only for DDP or another multi-process/multi-GPU strategy"
+            "description": "after recipe show, sets server_expected_format=ExchangeFormat.PYTORCH and enable_tensor_disk_offload=True only when each parameter is exposed, registers TensorDecomposer through recipe.add_decomposers(...) when tensor-native exchange is selected, and chooses external execution only from process-spawning or distributed-launch evidence; Lightning dp stays in-process"
           },
           {
             "id": "observe-interface-before-field-use",
@@ -455,6 +455,7 @@
       ],
       "assertions": [
         "The agent selects the PyTorch FedEval recipe for evaluation-only workflows and passes the repo-supplied checkpoint as the required eval_ckpt.",
+        "The agent runs recipe show for fedeval-pt, sets server_expected_format=ExchangeFormat.PYTORCH and registers TensorDecomposer because tensor-native exchange is exposed, but omits enable_tensor_disk_offload because FedEval does not expose it.",
         "The agent patches the trainer and runs a single trainer.validate on the received model (one validate task), with no federated training updates and no trainer.fit.",
         "The agent does not rely on trainer.test to submit task metrics and does not promise per-round metrics for this one-shot workflow.",
         "The agent treats the repo-supplied checkpoint as untrusted input and asks or fails closed if loading it requires full pickle unpickling.",
@@ -468,8 +469,18 @@
             "description": "selects the PyTorch FedEval recipe for evaluation-only Lightning workflows"
           },
           {
+            "id": "fedeval-capability-profile",
+            "description": "runs recipe show for fedeval-pt, sets server_expected_format=ExchangeFormat.PYTORCH and registers TensorDecomposer for tensor-native exchange, but omits enable_tensor_disk_offload because the recipe does not expose it"
+          },
+          {
             "id": "safe-checkpoint-handling",
             "description": "treats repo-supplied checkpoints as untrusted input; full-unpickle loading is ask/fail"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-unsupported-fedeval-disk-offload",
+            "description": "does not pass enable_tensor_disk_offload to FedEvalRecipe because recipe show does not expose that parameter"
           }
         ]
       }

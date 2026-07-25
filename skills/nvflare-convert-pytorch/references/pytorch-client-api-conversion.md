@@ -49,11 +49,11 @@ Follow the shared Source Of Truth Boundary in
 
 Follow the shared PyTorch-family model exchange guidance: outbound
 `FLModel(params=...)` must contain `torch.Tensor` values. Keep the transport
-tensor-native rather than converting to NumPy: the generated recipe uses
-`server_expected_format=ExchangeFormat.PYTORCH`,
-`enable_tensor_disk_offload=True`, and recipe-level `TensorDecomposer`
-registration. Execution mode follows the source process model; it is not used
-as a codec-registration workaround.
+tensor-native rather than converting to NumPy. Apply only the format, offload,
+and decomposer settings selected by the recipe-capability profile in
+`../../nvflare-shared/references/pytorch-family-recipe-construction.md`.
+Execution mode follows the source process model; it is not a
+codec-registration workaround.
 
 ```python
 params = {k: v.detach().cpu() for k, v in model.state_dict().items()}
@@ -84,12 +84,8 @@ let every simulated site train on the full source training set unless the user
 explicitly asks for shared training data or the source already provides
 site-specific data that resolves to that behavior. Validation/test loaders may
 remain shared only when that matches the source's validation/test semantics.
-
-For a generated Pandas split, shuffle writable **positional** index arrays and
-select rows with `DataFrame.iloc`. For example, use
-`positions = np.flatnonzero(frame["label"].to_numpy() == label).copy()` before an in-place
-`rng.shuffle(positions)`. Do not shuffle a possibly read-only array exposed by
-`Index.to_numpy()`, and do not pass positional indices to `DataFrame.loc`.
+For generated Pandas partition code, follow "Site Data Partitioning" in
+`../../nvflare-shared/references/conversion-workflow.md`.
 
 ## Model Construction Consistency
 
