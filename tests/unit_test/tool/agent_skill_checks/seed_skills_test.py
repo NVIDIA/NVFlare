@@ -99,6 +99,9 @@ def test_pytorch_conversion_pins_recipe_key_metric_to_client_metric():
     client_text = skill_root.joinpath("references/pytorch-client-api-conversion.md").read_text(encoding="utf-8")
     normalized_client = " ".join(client_text.split())
     validation_text = skill_root.joinpath("references/job-validation.md").read_text(encoding="utf-8")
+    exchange_text = repo_root.joinpath("skills/nvflare-shared/references/pytorch-model-exchange.md").read_text(
+        encoding="utf-8"
+    )
 
     assert "`FedAvgRecipe.key_metric`" in skill_text
     assert "must exactly match the metric key sent in `FLModel.metrics`" in skill_text
@@ -114,3 +117,6 @@ def test_pytorch_conversion_pins_recipe_key_metric_to_client_metric():
     assert 'metrics={"neg_loss": -loss}' in normalized_client
     assert "recipe's `key_metric` exactly matches one key sent in" in validation_text
     assert "higher-is-better" in validation_text
+    assert "Never add `fobs.register(TensorDecomposer)`" in skill_text
+    assert "Generated client code must not import FOBS internals" in exchange_text
+    assert "cannot find handler for Datum Object Type 6" in validation_text

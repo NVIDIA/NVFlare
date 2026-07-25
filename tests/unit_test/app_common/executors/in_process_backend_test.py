@@ -163,6 +163,41 @@ class TestFactory:
 
 
 class TestInitializeAndFinalize:
+    def test_initialize_registers_framework_decomposers_before_client_api_start(self, custom_dir):
+        events = []
+        original_init = InProcessClientAPI.init
+
+        def record_client_api_init(client_api):
+            events.append("client_api_init")
+            return original_init(client_api)
+
+        def record_decomposer_registration(*_args):
+            events.append("decomposers")
+
+        with (
+            patch.object(
+                ipb_module,
+                "register_framework_decomposers",
+                side_effect=record_decomposer_registration,
+            ) as register_decomposers,
+            patch.object(InProcessClientAPI, "init", autospec=True, side_effect=record_client_api_init),
+        ):
+            backend, _ = _initialized_backend(
+                custom_dir,
+                params_exchange_format=ExchangeFormat.PYTORCH,
+                server_expected_format=ExchangeFormat.PYTORCH,
+            )
+
+        try:
+            register_decomposers.assert_called_once_with(
+                ExchangeFormat.PYTORCH,
+                ExchangeFormat.PYTORCH,
+                backend.logger,
+            )
+            assert events == ["decomposers", "client_api_init"]
+        finally:
+            backend.finalize(FLContext())
+
     def test_initialize_wires_databus_and_starts_trainer(self, clean_databus, custom_dir):
         backend, _ = _initialized_backend(custom_dir)
         try:

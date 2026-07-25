@@ -116,10 +116,10 @@ policy; route onward rather than substituting an unprotected recipe or adding on
   `args` only when the values are statically clear from literal source,
   configuration, or supplied metadata; otherwise ask one semantic question when
   an answer channel exists or fail closed on that missing value.
-- Must keep outbound PyTorch model weights as `torch.Tensor` values in
-  `FLModel(params=...)` when using `PTInProcessClientAPIExecutor`; load
-  `../nvflare-shared/references/pytorch-model-exchange.md` and
-  `references/pytorch-client-api-conversion.md` for the exact send pattern.
+- Must keep outbound PyTorch weights as `torch.Tensor` values in `FLModel(params=...)` for
+  PyTorch exchange; executor owns codec registration. Never add `fobs.register(TensorDecomposer)`.
+  Load `../nvflare-shared/references/pytorch-model-exchange.md` and
+  `references/pytorch-client-api-conversion.md` for exact send pattern.
 - Must convert source evaluation alongside training and return metrics through
   `FLModel.metrics`; must not synthesize metric semantics without source
   evidence.

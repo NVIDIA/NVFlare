@@ -21,6 +21,12 @@ covers PyTorch-specific validation checks.
   metrics mean best-model selection is not wired correctly.
 - Confirm that the selected `key_metric` is higher-is-better; for loss-like
   metrics, the client should send a negated scalar such as `neg_loss`.
+- Treat `cannot find handler for Datum Object Type 6` or `TENSOR_DOWNLOAD`
+  before client startup as an NVFLARE runtime compatibility failure, not a
+  training-code conversion error. Record the installed NVFLARE version and
+  preserve the failed simulation evidence. Do not add
+  `fobs.register(TensorDecomposer)` to generated client code; the executor must
+  register its declared PyTorch wire format before accepting the first task.
 - For data-prep changes, confirm the PyTorch `Dataset` or `DataLoader` receives
   the generated per-site path or arguments rather than hard-coded global paths.
 - Report PyTorch-specific blockers such as non-serializable model state,

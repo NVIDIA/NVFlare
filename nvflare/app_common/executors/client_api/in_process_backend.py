@@ -44,6 +44,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.client.api_spec import CLIENT_API_KEY
+from nvflare.client.cell.decomposers import register_framework_decomposers
 from nvflare.client.config import ConfigKey
 from nvflare.client.in_process.api import (
     TOPIC_ABORT,
@@ -101,6 +102,11 @@ class InProcessBackend(ClientAPIBackendSpec):
             raise ValueError(f"invalid task_script_path '{task_script_path}': in_process mode requires a .py script")
 
         try:
+            # The CJ process deserializes the server Shareable before the trainer
+            # script can run. Register wire-format handlers here rather than in
+            # user code so the first task is decodable.
+            register_framework_decomposers(context.params_exchange_format, context.server_expected_format, self.logger)
+
             self._engine = fl_ctx.get_engine()
 
             self._data_bus = DataBus()

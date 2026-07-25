@@ -6,10 +6,15 @@ non-PyTorch framework skills.
 
 ## Tensor Payload Rule
 
-For `PTInProcessClientAPIExecutor`, outbound `FLModel(params=...)` must contain
+For PyTorch Client API execution, outbound `FLModel(params=...)` must contain
 `torch.Tensor` values from the trained model state. Do not convert outbound
-weights to NumPy before sending. `PTSendParamsConverter` excludes non-tensor
-params.
+weights to NumPy before sending.
+
+Framework wire-codec registration is executor lifecycle work because the
+NVFLARE client process may need to deserialize the first server task before the
+training script starts. Generated client code must not import FOBS internals or
+call `fobs.register(TensorDecomposer)`: registration in or near `flare.init()`
+is too late to guarantee that the first model is decodable.
 
 The manual `flare.send` snippet below applies only to plain PyTorch, where
 client code builds the payload itself:
