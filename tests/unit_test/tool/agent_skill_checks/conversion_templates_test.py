@@ -155,6 +155,34 @@ def test_custom_aggregator_template_step_weighted_average():
     assert result.params["w"][0] == pytest.approx(3.5)
 
 
+def test_custom_aggregator_template_preserves_step_weighted_metrics():
+    import numpy as np
+
+    from nvflare.apis.dxo import MetaKey
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+
+    aggregator.accept_model(
+        FLModel(
+            params={"w": np.array([2.0])},
+            metrics={"val_auroc": 0.5},
+            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+    )
+    aggregator.accept_model(
+        FLModel(
+            params={"w": np.array([4.0])},
+            metrics={"val_auroc": 0.9},
+            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 3},
+        )
+    )
+    result = aggregator.aggregate_model()
+
+    assert result.metrics == {"val_auroc": pytest.approx(0.8)}
+
+
 def test_custom_aggregator_template_materializes_lazy_disk_offload_refs():
     # With enable_tensor_disk_offload=True, params can arrive as lazy references
     # exposing materialize() instead of in-memory arrays. The template must
@@ -289,9 +317,13 @@ def test_lightning_eval_template_reports_validation_metric():
     loader = DataLoader(TensorDataset(torch.randn(6, 4), torch.randint(0, 2, (6,))), batch_size=3)
     trainer = pl.Trainer(logger=False, enable_checkpointing=False, enable_progress_bar=False, devices=1)
 
-    metrics = module.validate_global_model(trainer, ToyLightning(), dataloaders=loader)
+    model = ToyLightning()
+    metrics = module.validate_global_model(trainer, model, dataloaders=loader)
 
     assert "val_loss" in metrics
+    from nvflare.app_common.abstract.fl_model import MetaKey
+
+    assert model.__fl_meta__[MetaKey.INITIAL_METRICS] == metrics
 
 
 def test_lightning_template_eval_only_mode_skips_training():
@@ -306,11 +338,16 @@ def test_lightning_template_eval_only_mode_skips_training():
 
         def validate(self, *a, **k):
             calls.append("validate")
+            return [{"val_loss": 0.1}]
 
         def fit(self, *a, **k):
             calls.append("fit")
 
     fake = _FakeTrainer()
+
+    class _FakeModel:
+        pass
+
     import types
 
     fake_flare = types.SimpleNamespace(
@@ -322,7 +359,7 @@ def test_lightning_template_eval_only_mode_skips_training():
     module.flare = fake_flare  # patch the module-level flare handle
 
     try:
-        module.main(model=object(), datamodule=object(), trainer_factory=lambda: fake, evaluate_only=True)
+        module.main(model=_FakeModel(), datamodule=object(), trainer_factory=lambda: fake, evaluate_only=True)
     finally:
         pass
 

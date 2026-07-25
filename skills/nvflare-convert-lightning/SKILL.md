@@ -95,15 +95,15 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
    derive the recipe's construction capabilities.
 6. Convert the training entry point to the Lightning Client API: build the
    `Trainer`, call `flare.patch(trainer)`, and let the patched trainer own
-   model load/send through its callbacks. Keep evaluation inside Lightning per
-   the evaluation template in `references/lightning-conversion.md`
-   (`trainer.validate(...)` before `trainer.fit(...)`, metrics through
-   `self.log(...)`); if the source lacks validation/test steps or dataloaders,
-   ask or fail closed. For multi-site single-node-source conversion, create
-   deterministic site-local training partitions unless the source has site data
-   or the user explicitly asks for shared training data. If generated code
-   partitions a Pandas `DataFrame`, load the "Site Data Partitioning" section
-   of `../nvflare-shared/references/conversion-workflow.md`.
+   model exchange. Keep evaluation inside Lightning per
+   `references/lightning-conversion.md`: validate before fit and use `self.log`.
+   When server metrics are required, follow that reference to preserve scalar
+   results under `MetaKey.INITIAL_METRICS`; calling `trainer.validate(...)`
+   alone does not prove delivery. Ask or fail closed when validation semantics
+   are missing. Create deterministic site-local training partitions unless the
+   source provides site data or requests shared data. For generated Pandas
+   partitions, load the "Site Data Partitioning" section of
+   `../nvflare-shared/references/conversion-workflow.md`.
 7. Add or update `job.py` with explicit model config
    `{"class_path": ..., "args": ...}` (never a live `LightningModule`),
    requested `aggregator=` wiring, and the metric, tensor-transport, server
@@ -135,6 +135,10 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
 - Must keep evaluation inside Lightning (`trainer.validate`/`trainer.test`,
   `validation_step`, `self.log`); must not generate a raw PyTorch
   `model.eval()` loop for ordinary Lightning conversion.
+- When training promises server metrics, must preserve finite scalar pre-fit
+  validation results through `model.__fl_meta__[MetaKey.INITIAL_METRICS]` per
+  `references/lightning-conversion.md` and `assets/lightning_client.py`; this is
+  patched-exchange metadata, not a second manual `flare.send(...)`.
 - Must train each site on its local partition for multi-site single-node-source
   conversion. Preserve existing site splits; otherwise use deterministic seeded
   split, stratified when labels exist. Shared validation/test is allowed only
@@ -160,8 +164,9 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
   `references/lightning-conversion.md`.
 - Custom aggregation must use the recipe `aggregator=` hook with a
   `ModelAggregator` subclass in `aggregators.py`, adapting
-  `../nvflare-shared/assets/aggregator.py`, and only while the Lightning client
-  still satisfies the `FLModel` exchange contract.
+  `../nvflare-shared/assets/aggregator.py`, while preserving the `FLModel`
+  contract. When clients provide metrics, return their supported aggregate in
+  `FLModel.metrics`; parameters alone lose aggregate metric artifacts.
 - Must follow the Source Of Truth Boundary: public checks can stop the skill
   path; they cannot license a replacement strategy discovered from NVFLARE
   source or docstrings.
@@ -170,9 +175,8 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
 
 ## User Input And Authorization
 
-- Ask only to resolve a missing required conversion-semantics decision (an
-  ambiguous FL algorithm or a required constructor arg not statically clear);
-  fail closed on it when no answer channel is available. Never ask for
+- Ask only to resolve a missing required conversion-semantics decision; fail
+  closed when no answer channel is available. Never ask for
   authorization to install, execute, or access the filesystem.
 - Install missing dependencies and run validation by default; the host
   permission system allows, denies, or prompts. Never emit a skill-issued
@@ -182,19 +186,15 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
   handled by the host. POC or production submission is outside conversion
   scope.
 
-Always read this converter SKILL.md. Load detailed references only at their
-named phase:
+Always read this converter SKILL.md. Load detailed references only at their named phase:
 `../nvflare-shared/references/conversion-workflow.md` for non-standard cases;
-`../nvflare-shared/references/pytorch-family-recipe-selection.md` only for ambiguous
-or non-FedAvg algorithms;
+`../nvflare-shared/references/pytorch-family-recipe-selection.md` only for ambiguous or non-FedAvg algorithms;
 `../nvflare-shared/references/pytorch-family-recipe-construction.md` after every `recipe show`;
 `../nvflare-shared/references/dependency-install.md` only when an install is needed;
-`../nvflare-shared/references/runtime-output-guidance.md` only for read-only
-source roots or user-chosen output destinations;
-`../nvflare-shared/references/metrics-and-artifact-reporting.md` only when metrics
-are absent or inconsistent; `../nvflare-shared/references/validation-evidence.md`
-before validation; `../nvflare-shared/references/pytorch-model-exchange.md` for
-PyTorch-family exchange. For Lightning-specific work load
-`references/lightning-detection.md`, `references/lightning-conversion.md`,
-`references/lightning-validation.md`, or `references/lightning-ddp-and-tracking.md`
-only as needed. Do not depend on NVFLARE repository examples being present.
+`../nvflare-shared/references/runtime-output-guidance.md` only for read-only source roots or chosen outputs;
+`../nvflare-shared/references/metrics-and-artifact-reporting.md` only when metrics are absent or inconsistent;
+`../nvflare-shared/references/validation-evidence.md` before validation;
+`../nvflare-shared/references/pytorch-model-exchange.md` for PyTorch-family exchange.
+For Lightning work load `references/lightning-detection.md`, `references/lightning-conversion.md`,
+`references/lightning-validation.md`, or `references/lightning-ddp-and-tracking.md` only as needed.
+Do not depend on NVFLARE repository examples being present.

@@ -91,8 +91,8 @@ selected execution path delivers that exact metric to the server. A local
 evaluation call, `self.log`, or client log does not by itself prove server
 delivery. If delivery is unavailable or unverified, do not pass a source-derived
 `key_metric` or claim server-side best-model selection; report the execution-path
-limitation instead. The Lightning DDP guidance documents its default
-metric-delivery exception.
+limitation instead. The Lightning conversion guidance documents the explicit
+training-result metric bridge and its DDP validation requirements.
 
 When both preconditions hold, select a source-backed metric whose larger value
 means a better model. Its name must exactly match one key delivered by the

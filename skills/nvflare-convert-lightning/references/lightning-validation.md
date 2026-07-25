@@ -48,6 +48,16 @@ covers Lightning-specific validation checks.
 - Confirm validation metrics are exposed as scalars (for example through
   `self.log(...)` in the `LightningModule`) so aggregation recipes can write
   server-side metric artifacts.
+- For training tasks that require server metrics, confirm the pre-fit
+  `trainer.validate(...)` result is preserved under
+  `model.__fl_meta__[MetaKey.INITIAL_METRICS]` before `trainer.fit(...)`; local
+  callback metrics alone are insufficient evidence.
+- When a custom `ModelAggregator` is used, confirm client models reach it with
+  non-empty `FLModel.metrics` and its aggregated result returns non-empty
+  `FLModel.metrics`.
+- When server metrics were requested, require the expected metric key in the
+  server metric artifact or bounded server logs. A terminal `Finished` state
+  without that metric is incomplete validation, not a successful metric result.
 - For data-prep changes, confirm the `LightningDataModule` receives the
   generated per-site path or arguments rather than hard-coded global paths.
 

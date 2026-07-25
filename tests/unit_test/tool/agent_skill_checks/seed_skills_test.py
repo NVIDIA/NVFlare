@@ -133,8 +133,8 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     assert 'metrics={"neg_loss": -loss}' in construction_text
     assert 'key_metric="neg_loss"' in construction_text
     assert "ask or fail closed when the metric direction is unclear" in normalized_construction
-    assert "default DDP does not satisfy the shared" in normalized_lightning_ddp
-    assert "Do not pass a source-derived `key_metric`" in normalized_lightning_ddp
+    assert "`MetaKey.INITIAL_METRICS` bridge" in normalized_lightning_ddp
+    assert "Only pass a source-derived `key_metric`" in normalized_lightning_ddp
     assert "unprotected recipe or adding only a disclaimer" in skill_text
     assert "key_metric=metric_name" not in recipe_text
     assert "when the selected execution path delivers that metric to the server" in recipe_text
@@ -220,6 +220,35 @@ def test_seed_skill_versions_stay_at_release_version():
         assert 'version: "0.1.0"' in skill_text, skill_path
 
 
+def test_lightning_training_metrics_have_one_canonical_delivery_bridge():
+    repo_root = Path(__file__).resolve().parents[4]
+    skill_root = repo_root / "skills" / "nvflare-convert-lightning"
+    skill_text = skill_root.joinpath("SKILL.md").read_text(encoding="utf-8")
+    conversion_text = skill_root.joinpath("references/lightning-conversion.md").read_text(encoding="utf-8")
+    validation_text = skill_root.joinpath("references/lightning-validation.md").read_text(encoding="utf-8")
+    client_template = skill_root.joinpath("assets/lightning_client.py").read_text(encoding="utf-8")
+    workflow_text = repo_root.joinpath("skills/nvflare-shared/references/conversion-workflow.md").read_text(
+        encoding="utf-8"
+    )
+    aggregator_template = repo_root.joinpath("skills/nvflare-shared/assets/aggregator.py").read_text(encoding="utf-8")
+    normalized_skill = " ".join(skill_text.split())
+    normalized_conversion = " ".join(conversion_text.split())
+    normalized_validation = " ".join(validation_text.split())
+    normalized_workflow = " ".join(workflow_text.split())
+
+    assert "calling `trainer.validate(...)` alone does not prove" in normalized_skill
+    assert "## Training-result metric delivery" in conversion_text
+    assert "`train_with_evaluation` setting is disabled or not exposed" in normalized_conversion
+    assert "model.__fl_meta__" in conversion_text
+    assert "MetaKey.INITIAL_METRICS" in client_template
+    assert "trainer.validate" in client_template
+    assert "trainer.fit" in client_template
+    assert client_template.index("trainer.validate") < client_template.index("trainer.fit")
+    assert "A terminal `Finished` state without that metric is incomplete validation" in normalized_validation
+    assert "return them in the aggregated `FLModel.metrics`" in normalized_workflow
+    assert "metrics=averaged_metrics or None" in aggregator_template
+
+
 def test_pytorch_recipe_capability_profiles_include_non_fedavg_without_disk_offload():
     from nvflare.tool.recipe.recipe_cli import _load_catalog, _recipe_detail
 
@@ -263,6 +292,17 @@ def test_pytorch_family_capability_evals_cover_fedeval_and_dataparallel():
 
     ddp = lightning_by_id["lightning-ddp-multigpu"]["nvflare"]
     assert {item["id"] for item in ddp["mandatory_behavior"]} >= {"ddp-key-metric-requires-server-delivery"}
+
+    custom_metrics = lightning_by_id["lightning-custom-aggregation-with-server-metrics"]["nvflare"]
+    assert {item["id"] for item in custom_metrics["mandatory_behavior"]} >= {
+        "preserve-training-result-metrics",
+        "custom-aggregator-preserves-metrics",
+        "verify-server-metric-evidence",
+    }
+    assert {item["id"] for item in custom_metrics["prohibited_behavior"]} >= {
+        "no-parameters-only-custom-aggregate",
+        "no-second-manual-flare-send",
+    }
 
 
 def test_pytorch_conversion_stops_after_dependency_install_failure():

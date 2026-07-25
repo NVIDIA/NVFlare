@@ -346,7 +346,12 @@ A generated custom aggregator must:
 - operate on `FLModel.params` and preserve or intentionally set
   `FLModel.params_type`;
 - use `FLModel.meta` such as `NUM_STEPS_CURRENT_ROUND` when weighting needs
-  client contribution metadata.
+  client contribution metadata;
+- when accepted client models contain supported scalar `FLModel.metrics`,
+  aggregate those metrics with the intended contribution weights and return
+  them in the aggregated `FLModel.metrics`. A parameters-only result prevents
+  aggregate metric artifacts and server model selection even though training
+  itself can finish.
 
 When the aggregator weights by client contribution, the client must send that
 metadata; the plain Client API does not populate it automatically. Include it
@@ -368,10 +373,10 @@ from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 
 class WeightedAggregator(ModelAggregator):
     def accept_model(self, model: FLModel):
-        ...  # accumulate model.params using model.meta weights
+        ...  # accumulate model.params and supported model.metrics using model.meta weights
 
     def aggregate_model(self) -> FLModel:
-        ...  # return aggregated FLModel; keep params_type consistent
+        ...  # return params and aggregated metrics; keep params_type consistent
 
     def reset_stats(self):
         ...  # clear accumulators between rounds
