@@ -182,3 +182,32 @@ def test_pytorch_conversion_stops_after_dependency_install_failure():
     assert "first canonical install attempt, not autonomous retries or environment repair" in normalized_workflow
     assert "dependency-install-failure-is-terminal" in mandatory_ids
     assert "no-dependency-install-retry-or-environment-surgery" in prohibited_ids
+
+
+def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
+    repo_root = Path(__file__).resolve().parents[4]
+    skill_root = repo_root / "skills" / "nvflare-convert-pytorch"
+    recipe_text = skill_root.joinpath("references/recipe-selection.md").read_text(encoding="utf-8")
+    client_text = skill_root.joinpath("references/pytorch-client-api-conversion.md").read_text(encoding="utf-8")
+    validation_text = repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md").read_text(
+        encoding="utf-8"
+    )
+    eval_data = json.loads(
+        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-convert-pytorch/evals.json").read_text(encoding="utf-8")
+    )
+    normalized_recipe = " ".join(recipe_text.split())
+    normalized_client = " ".join(client_text.split())
+    normalized_validation = " ".join(validation_text.split())
+    mandatory_ids = {item["id"] for item in eval_data["evals"][0]["nvflare"]["mandatory_behavior"]}
+    prohibited_ids = {item["id"] for item in eval_data["evals"][0]["nvflare"]["prohibited_behavior"]}
+
+    assert "set `best_model_filename` only" in normalized_recipe
+    assert "Do not also set `save_filename`" in normalized_recipe
+    assert "shuffle writable **positional** index arrays" in client_text
+    assert '`positions = np.flatnonzero(frame["label"].to_numpy() == label).copy()`' in client_text
+    assert "do not pass positional indices to `DataFrame.loc`" in normalized_client
+    assert "validate properties rather than guessed site sizes" in normalized_validation
+    assert "complete, non-overlapping coverage" in normalized_validation
+    assert "Assert exact per-site row counts only when" in validation_text
+    assert {"safe-pandas-partitioning", "invariant-based-partition-validation"} <= mandatory_ids
+    assert {"no-deprecated-save-filename-alias", "no-hardcoded-guessed-partition-counts"} <= prohibited_ids

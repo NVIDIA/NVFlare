@@ -17,11 +17,13 @@
         "The agent selects FedAvg only when the requested workflow is standard horizontal model-parameter aggregation.",
         "The agent translates the natural request into recipe, site-count, dataset, split, training, evaluation, and export settings.",
         "For multiple simulated sites, the generated client trains each site on a deterministic local training partition by default and does not make every site train on the full source training set unless the user explicitly requested shared training data.",
+        "When generated Pandas code partitions rows, it shuffles writable positional index arrays and selects with iloc; its preflight verifies coverage, no overlap, determinism, and the generated split's actual stratification or balance guarantees instead of asserting hand-guessed site sizes.",
         "The agent generates explicit recipe model config with class_path plus args instead of passing a live model instance, asking or failing closed when constructor args are not statically clear.",
         "The generated training code uses nvflare.client receive/send and FLModel for model exchange.",
         "The generated source uses standard names such as client.py, job.py, and model.py instead of ad hoc names such as fl_train.py.",
         "The agent derives the user's existing model source file from static inspection rather than assuming it is named model.py, treats imported model/data/training source as relevant, and reuses it by import, mechanical copy/rename, thin wrapper, or targeted edit instead of synthesizing a nested replacement model implementation.",
         "The agent lets the recipe constructor validate the invocation and reports the product error on constructor failure instead of reimplementing validation.",
+        "If the generated recipe customizes the best-model artifact name, it sets best_model_filename only and does not also pass the deprecated save_filename alias.",
         "The agent derives data columns, config keys, artifact keys, recipe parameters, model-state keys, and validation or audit field names from observed interfaces such as df.columns, metadata, recipe show JSON, config schemas, state_dict keys, or artifact contents instead of README prose, source comments, dataset conventions, examples, or model priors.",
         "The agent enables tensor-native disk offload with server_expected_format=ExchangeFormat.PYTORCH and enable_tensor_disk_offload=True, registers nvflare.app_opt.pt.decomposers.TensorDecomposer through recipe.add_decomposers(...) before export or execution, leaves launch_external_process unset for CPU or single-GPU training, and sets it to True only for multi-process/multi-GPU source evidence.",
         "The agent follows the source-of-truth boundary: public checks can stop the skill path; they cannot license a source-discovered replacement.",
@@ -68,6 +70,14 @@
           {
             "id": "site-local-training-partitions",
             "description": "for multiple simulated/federated sites, trains each site on a deterministic local training partition by default and does not make every site train on the full source training set unless the user explicitly requested shared training data"
+          },
+          {
+            "id": "safe-pandas-partitioning",
+            "description": "when generating a Pandas partition, shuffles a writable copy of positional row indices and selects rows with iloc rather than shuffling a potentially read-only Index array or using loc with positions"
+          },
+          {
+            "id": "invariant-based-partition-validation",
+            "description": "validates generated partitions with source-position coverage, no overlap, same-seed determinism, and the stratification or balance guarantees the algorithm actually makes rather than hand-guessed exact site sizes"
           },
           {
             "id": "explicit-model-config-with-args",
@@ -226,6 +236,14 @@
           {
             "id": "no-per-site-config-inference-from-metadata",
             "description": "does not infer that per_site_config is required only because recipe metadata mentions it"
+          },
+          {
+            "id": "no-deprecated-save-filename-alias",
+            "description": "when customizing a FedAvg best-model artifact name, uses best_model_filename only and does not also pass the deprecated save_filename alias"
+          },
+          {
+            "id": "no-hardcoded-guessed-partition-counts",
+            "description": "does not make partition validation depend on exact per-site row counts guessed by hand from one dataset"
           }
         ],
         "optional_behavior": [

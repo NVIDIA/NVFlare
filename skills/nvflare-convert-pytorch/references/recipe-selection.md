@@ -85,6 +85,11 @@ best model; send a negated scalar such as `metrics={"neg_loss": -loss}` and use
 `key_metric="neg_loss"`. Do not rely on the recipe default unless the client
 really reports `accuracy`.
 
+When customizing the best-model artifact name, set `best_model_filename` only.
+Do not also set `save_filename`; it is a deprecated alias and conflicting
+values make recipe construction fail. Omit both parameters when the default
+artifact names are acceptable.
+
 Use these portable imports when writing custom Job API code:
 
 ```python

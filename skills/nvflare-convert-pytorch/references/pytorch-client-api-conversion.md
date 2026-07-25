@@ -85,6 +85,12 @@ explicitly asks for shared training data or the source already provides
 site-specific data that resolves to that behavior. Validation/test loaders may
 remain shared only when that matches the source's validation/test semantics.
 
+For a generated Pandas split, shuffle writable **positional** index arrays and
+select rows with `DataFrame.iloc`. For example, use
+`positions = np.flatnonzero(frame["label"].to_numpy() == label).copy()` before an in-place
+`rng.shuffle(positions)`. Do not shuffle a possibly read-only array exposed by
+`Index.to_numpy()`, and do not pass positional indices to `DataFrame.loc`.
+
 ## Model Construction Consistency
 
 Follow the shared model-config and construction-consistency rule in
