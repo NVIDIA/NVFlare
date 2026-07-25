@@ -112,16 +112,16 @@ silently dropped or approximated.
    flat single-source data the site count must come from the request or a
    declaration (missing fails closed), with deterministic seeded
    partitions unless shared data is explicitly requested.
-6. Run `nvflare recipe show fedstats --format json`; generate `job.py`
-   with `FedStatsRecipe`, `statistic_configs`, and one canonical site list:
-   `FedStatsRecipe(..., sites=sites, ...)` and `SimEnv(clients=sites, ...)`.
+6. Run `nvflare recipe show fedstats --format json`; for preflights/`job.py` use:
+   `from nvflare.recipe import SimEnv`; `from nvflare.recipe.fedstats import FedStatsRecipe` (never package root).
+   Use `statistic_configs` and one site list: `FedStatsRecipe(..., sites=sites, ...)`; `SimEnv(clients=sites, ...)`.
    The recipe already assigns those clients; never use
    `SimEnv(num_clients=...)` or both forms. Let `SimEnv` derive thread
    count, or set `num_threads=len(sites)`. Histograms default to 20 bins,
    no `range`; set one only from a script, declaration, or user answer
    (images: bit depth), else use protected min/max estimation. Reduce bins
-   when small sites demand it (20 bins needs 206+ rows per site) and
-   report it. Keep and state `StatsJob` defaults: `min_count=10`, noise
+   when small sites demand it (20 bins needs 206+ rows per site); report
+   it. Keep and state `StatsJob` defaults: `min_count=10`, noise
    `0.1`–`0.3`, and `max_bins_percent=10`.
 7. Validate in a ladder per the shared `validation-evidence.md`: compile
    checks, recipe construction, one simulator run, then output

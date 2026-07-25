@@ -402,16 +402,29 @@ def test_fedstats_reuses_named_sites_for_recipe_and_simulation():
     normalized_skill = " ".join(skill_text.split())
     normalized_validation = " ".join(validation_text.split())
 
-    assert "one canonical site list" in normalized_skill
+    assert "one site list" in normalized_skill
+    assert "`from nvflare.recipe import SimEnv`" in normalized_skill
+    assert "`from nvflare.recipe.fedstats import FedStatsRecipe` (never package root)" in normalized_skill
     assert "FedStatsRecipe(...," in skill_text
     assert "sites=sites, ...)" in skill_text
     assert "SimEnv(clients=sites, ...)" in skill_text
     assert "never use `SimEnv(num_clients=...)`" in normalized_skill
+    assert "`from nvflare.recipe import SimEnv`" in normalized_validation
+    assert "`from nvflare.recipe.fedstats import FedStatsRecipe`" in normalized_validation
+    assert "never import `FedStatsRecipe` from `nvflare.recipe`" in normalized_validation
     assert "**Site-ownership preflight**" in validation_text
     assert "passed unchanged to both `FedStatsRecipe(sites=sites)` and `SimEnv(clients=sites)`" in normalized_validation
     assert "`SimEnv(num_clients=...)` is invalid for this recipe" in normalized_validation
+    assert "fedstats-public-import-paths" in mandatory_ids
     assert "fedstats-explicit-sim-clients" in mandatory_ids
+    assert "no-fedstats-package-root-import" in prohibited_ids
     assert "no-fedstats-sim-num-clients" in prohibited_ids
+
+    recipe_docs = repo_root.joinpath("docs/user_guide/data_scientist_guide/available_recipes.rst").read_text(
+        encoding="utf-8"
+    )
+    assert "from nvflare.recipe import SimEnv" in recipe_docs
+    assert "from nvflare.recipe.fedstats import FedStatsRecipe" in recipe_docs
 
     for relative_path in (
         "examples/advanced/federated-statistics/df_stats/job.py",

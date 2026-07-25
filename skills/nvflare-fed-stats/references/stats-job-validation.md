@@ -10,8 +10,11 @@ harnesses, not performed by the skill.
 
 1. **Compile checks** — `python -m py_compile` on generated `client.py` and
    `job.py`.
-2. **Import preflight** — pandas import; re-verify the `fastdigest` import
-   (first gated at selection time) only when quantiles are configured.
+2. **Import preflight** — use the public paths
+   `from nvflare.recipe import SimEnv` and
+   `from nvflare.recipe.fedstats import FedStatsRecipe`; never import
+   `FedStatsRecipe` from `nvflare.recipe`. Import pandas, and re-verify
+   `fastdigest` only when quantiles are configured.
 3. **Recipe construction** — construct `FedStatsRecipe` with the generated
    arguments without executing the job. The constructor returning without
    error IS the pass signal; do not probe attributes of the recipe object
