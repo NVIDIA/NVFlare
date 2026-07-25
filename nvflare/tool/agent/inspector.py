@@ -85,6 +85,114 @@ _GLOBAL_SKILL_DIRS = ("~/.claude/skills", "~/.codex/skills")
 
 
 @dataclass
+class _LocalImportGraph:
+    """Directed local-import graph with one cached traversal per source file."""
+
+    edges: dict[str, frozenset[str]]
+    _reachable_cache: dict[str, frozenset[str]] = field(default_factory=dict, repr=False)
+
+    @property
+    def files(self) -> frozenset[str]:
+        return frozenset(self.edges)
+
+    def reachable_from(self, source_file: str) -> frozenset[str]:
+        cached = self._reachable_cache.get(source_file)
+        if cached is not None:
+            return cached
+
+        pending = list(self.edges.get(source_file, ()))
+        reachable = set()
+        while pending:
+            imported_file = pending.pop()
+            if imported_file == source_file or imported_file in reachable:
+                continue
+            reachable.add(imported_file)
+            pending.extend(self.edges.get(imported_file, ()))
+
+        result = frozenset(reachable)
+        self._reachable_cache[source_file] = result
+        return result
+
+    def component_from(self, anchor_file: str) -> frozenset[str]:
+        """Return the anchor and every local dependency reachable from it."""
+        return frozenset({anchor_file}) | self.reachable_from(anchor_file)
+
+
+@dataclass(frozen=True)
+class _ProjectComponent:
+    """One project anchor and its directed local-dependency component."""
+
+    anchor_file: str
+    files: frozenset[str]
+
+    @property
+    def depth(self) -> int:
+        return len(Path(self.anchor_file).parts)
+
+    @property
+    def directory(self) -> str:
+        parent = Path(self.anchor_file).parent.as_posix()
+        return "." if parent == "." else parent
+
+
+def _component_group_count(components: tuple[_ProjectComponent, ...]) -> int:
+    """Count projects without merging unrelated anchors that share a dependency."""
+    remaining = set(range(len(components)))
+    groups = 0
+    while remaining:
+        groups += 1
+        pending = [remaining.pop()]
+        while pending:
+            current_index = pending.pop()
+            current = components[current_index]
+            connected = {
+                candidate_index
+                for candidate_index in remaining
+                if _components_share_project(current, components[candidate_index])
+            }
+            remaining.difference_update(connected)
+            pending.extend(connected)
+    return groups
+
+
+def _components_share_project(left: _ProjectComponent, right: _ProjectComponent) -> bool:
+    # Anchors in the same directory describe one project. Across directories,
+    # require directed reachability between the anchors; merely sharing a common
+    # helper dependency must not merge otherwise independent projects.
+    return left.directory == right.directory or left.anchor_file in right.files or right.anchor_file in left.files
+
+
+@dataclass(frozen=True)
+class _ProjectScope:
+    """Components authorized to describe the inspected target as a whole."""
+
+    active_components: tuple[_ProjectComponent, ...]
+    ambiguous: bool = False
+
+    def component_for(self, file_path: str) -> Optional[_ProjectComponent]:
+        if self.ambiguous:
+            return None
+        return next((component for component in self.active_components if file_path in component.files), None)
+
+    def authorizes(self, file_path: str) -> bool:
+        return self.component_for(file_path) is not None
+
+
+@dataclass(frozen=True)
+class _SourceJobCandidate:
+    """A source-job signal and the provenance contained in its own component."""
+
+    source_file: str
+    flare_import_files: frozenset[str]
+    project_component: Optional[_ProjectComponent]
+    export_supported: bool
+
+    @property
+    def authoritative(self) -> bool:
+        return self.project_component is not None and bool(self.flare_import_files)
+
+
+@dataclass
 class InspectState:
     root: Path
     redact: bool
@@ -124,9 +232,9 @@ class InspectState:
     # decide whether base-framework usage lives inside a superset model class
     # body (e.g. torch calls inside a LightningModule) versus standalone.
     class_body_ranges: dict[str, list[tuple[int, int]]] = field(default_factory=dict)
-    # Cache for _local_files_by_module: built once after the scan populates
-    # file_imports, reused across per-evidence entry-context reachability checks.
-    local_files_by_module_cache: Optional[dict[str, set[str]]] = field(default=None, repr=False, compare=False)
+    # Built after the scan populates file_imports, then reused by framework
+    # ranking, project-scope classification, and source-job provenance checks.
+    local_import_graph_cache: Optional[_LocalImportGraph] = field(default=None, repr=False, compare=False)
 
 
 def inspect_path(
@@ -151,11 +259,12 @@ def inspect_path(
         _inspect_dir(target, state, max_files=max_files, max_file_bytes=max_file_bytes)
 
     exported_job_info = _exported_job_info(state)
+    project_scope = _build_project_scope(state)
     ranked_frameworks = _rank_frameworks(state)
     detected_framework = _detect_primary_framework(state, ranked_frameworks)
     ranked_frameworks = _order_frameworks_for_display(ranked_frameworks, detected_framework)
-    source_job_file = _authoritative_source_job_file(state)
-    conversion_state = _conversion_state(state, detected_framework, exported_job_info, source_job_file)
+    source_job = _authoritative_source_job_candidate(state, project_scope)
+    conversion_state = _conversion_state(state, detected_framework, exported_job_info, project_scope, source_job)
     target_type = _target_type(target, state, detected_framework, conversion_state)
 
     # Data-target classification runs when code classification found nothing,
@@ -219,9 +328,7 @@ def inspect_path(
         "findings": state.findings[:MAX_EVIDENCE_PER_BUCKET],
         "dataset": dataset,
         "skill_selection": _skill_selection(detected_framework, conversion_state, state, dataset),
-        "recommended_next_commands": _recommended_next_commands(
-            detected_framework, conversion_state, state, source_job_file
-        ),
+        "recommended_next_commands": _recommended_next_commands(detected_framework, conversion_state, source_job),
         "installed_skills": _installed_skills(target),
     }
 
@@ -427,6 +534,9 @@ def _inspect_file(path: Path, state: InspectState, max_file_bytes: int) -> None:
         )
         return
 
+    # Register every successfully parsed Python file, including leaf modules
+    # with no imports, so local imports can resolve to the complete scanned graph.
+    state.file_imports.setdefault(rel_path, set())
     visitor = _PythonInspector(path, rel_path, state)
     visitor.visit(tree)
     _add_entry_point(path, rel_path, tree, state)
@@ -748,50 +858,8 @@ def _framework_evidence_tied_to_inspected_file_or_entry_point(state: InspectStat
 def _entry_point_imports_file(state: InspectState, evidence_file: str) -> bool:
     if not _module_names_for_file(evidence_file):
         return False
-    local_files_by_module = _local_files_by_module(state)
-    for entry_point in state.entry_points:
-        if _imports_reach_file(
-            state,
-            entry_point["path"],
-            state.file_imports.get(entry_point["path"], set()),
-            evidence_file,
-            local_files_by_module,
-        ):
-            return True
-    return False
-
-
-def _imports_reach_file(
-    state: InspectState,
-    importing_file: str,
-    imports: set[str],
-    target_file: str,
-    local_files_by_module: dict[str, set[str]],
-) -> bool:
-    # Match on the resolved file, not on module names: a stale src-layout copy
-    # (src/mypkg/loop.py) shares the stripped module name "mypkg.loop" with a
-    # root-level mypkg/loop.py, so name-based matching would let the entry point
-    # "reach" the never-imported copy. _local_files_by_module resolves the shared
-    # name to the root file only, and comparing files keeps them distinct.
-    pending_imports = [(importing_file, import_name) for import_name in imports]
-    seen_imports = set()
-    seen_files = set()
-    while pending_imports:
-        source_file, import_name = pending_imports.pop()
-        import_key = (source_file, import_name)
-        if import_key in seen_imports:
-            continue
-        seen_imports.add(import_key)
-        for imported_file in _local_files_for_import(import_name, source_file, local_files_by_module):
-            if imported_file in seen_files:
-                continue
-            seen_files.add(imported_file)
-            if imported_file == target_file:
-                return True
-            pending_imports.extend(
-                (imported_file, nested_import) for nested_import in state.file_imports.get(imported_file, set())
-            )
-    return False
+    graph = _local_import_graph(state)
+    return any(evidence_file in graph.reachable_from(entry_point["path"]) for entry_point in state.entry_points)
 
 
 def _local_files_by_module(state: InspectState) -> dict[str, set[str]]:
@@ -802,18 +870,32 @@ def _local_files_by_module(state: InspectState) -> dict[str, set[str]]:
     # file's own packaging root, so neither a stale src/ copy nor a stale
     # root-level copy can steal the actively-imported module in either direction.
     #
-    # Memoized on the state: entry-context reachability calls this once per
-    # evidence item, and file_imports is fully populated during the scan before
-    # detection runs, so the map is built once instead of O(evidence) times over
-    # the now-uncapped evidence lists.
-    if state.local_files_by_module_cache is not None:
-        return state.local_files_by_module_cache
     files_by_module: dict[str, set[str]] = {}
     for file_path in state.file_imports:
         for module_name in _module_names_for_file(file_path):
             files_by_module.setdefault(module_name, set()).add(file_path)
-    state.local_files_by_module_cache = files_by_module
     return files_by_module
+
+
+def _local_import_graph(state: InspectState) -> _LocalImportGraph:
+    if state.local_import_graph_cache is not None:
+        return state.local_import_graph_cache
+
+    local_files_by_module = _local_files_by_module(state)
+    edges = {}
+    for source_file, imports in state.file_imports.items():
+        imported_files = set()
+        for import_name in imports:
+            imported_files.update(_local_files_for_import(import_name, source_file, local_files_by_module))
+        edges[source_file] = frozenset(imported_files)
+
+    # Edges store resolved files rather than module names. A stale src-layout
+    # copy (src/mypkg/loop.py) can share the stripped name "mypkg.loop" with a
+    # root copy, but _local_files_for_import resolves that collision in the
+    # importing file's packaging context before the graph is cached.
+    graph = _LocalImportGraph(edges)
+    state.local_import_graph_cache = graph
+    return graph
 
 
 def _packaging_root_of(file_path: str) -> str:
@@ -932,6 +1014,10 @@ def _module_names_for_file(file_path: str) -> set[str]:
     return names
 
 
+def _is_root_level_file(path: str) -> bool:
+    return len(Path(path).parts) == 1
+
+
 def _import_context_prefix(file_path: str) -> str:
     if not file_path.endswith(".py"):
         return ""
@@ -1022,138 +1108,124 @@ def _exported_job_info(state: InspectState) -> dict:
     return {"submit_ready_candidates": submit_ready, "nested_candidates": nested}
 
 
+def _build_project_scope(state: InspectState) -> _ProjectScope:
+    graph = _local_import_graph(state)
+    if state.root.is_file():
+        inspected_file = _display_path(state.root, state.root, state.redact)
+        component = _ProjectComponent(inspected_file, graph.component_from(inspected_file))
+        return _ProjectScope(
+            active_components=(component,),
+        )
+
+    entry_point_files = {entry["path"] for entry in state.entry_points}
+    framework_files = {item["file"] for evidence in state.framework_evidence.values() for item in evidence}
+    anchor_files = entry_point_files | framework_files
+    components = tuple(
+        _ProjectComponent(anchor_file, graph.component_from(anchor_file)) for anchor_file in sorted(anchor_files)
+    )
+    if not components:
+        # With no project anchors, preserve whole-directory evidence rather than
+        # hiding a standalone helper or dynamically-dispatched project.
+        all_files = graph.files
+        fallback = _ProjectComponent(".", all_files)
+        return _ProjectScope(
+            active_components=(fallback,),
+        )
+
+    # The nearest anchors generalize the old root-level preference. A deeper
+    # fixture/job.py is not authoritative merely because the scan is recursive;
+    # it must be reachable from a nearer component. This also works when the
+    # active project itself starts below the inspected root (src/pkg/train.py).
+    nearest_depth = min(component.depth for component in components)
+    active_components = tuple(component for component in components if component.depth == nearest_depth)
+
+    # Equally near components that neither share an anchor directory nor import
+    # one another identify a multi-project workspace with no single authority.
+    # Keep them for framework reporting, but do not let one component's FLARE
+    # signals classify the inspected root as a whole.
+    ambiguous = _component_group_count(active_components) > 1
+    return _ProjectScope(
+        active_components=active_components,
+        ambiguous=ambiguous,
+    )
+
+
+def _source_job_candidates(state: InspectState, project_scope: _ProjectScope) -> tuple[_SourceJobCandidate, ...]:
+    graph = _local_import_graph(state)
+    flare_import_files = frozenset(item["file"] for item in state.flare_imports)
+    source_files = set(state.job_py_paths) | state.sim_env_files
+    candidates = []
+    for source_file in sorted(source_files):
+        component_files = graph.component_from(source_file)
+        candidates.append(
+            _SourceJobCandidate(
+                source_file=source_file,
+                flare_import_files=flare_import_files & component_files,
+                project_component=project_scope.component_for(source_file),
+                export_supported=source_file in state.export_support_files,
+            )
+        )
+    return tuple(candidates)
+
+
+def _authoritative_source_job_candidate(
+    state: InspectState, project_scope: _ProjectScope
+) -> Optional[_SourceJobCandidate]:
+    candidates = [candidate for candidate in _source_job_candidates(state, project_scope) if candidate.authoritative]
+    if not candidates:
+        return None
+    # Prefer the source closest to the inspected root when multiple candidates
+    # live in the same active component.
+    return min(candidates, key=lambda candidate: (len(Path(candidate.source_file).parts), candidate.source_file))
+
+
 def _conversion_state(
     state: InspectState,
     detected_framework: Optional[str],
     exported_job_info: dict,
-    source_job_file: Optional[str],
+    project_scope: _ProjectScope,
+    source_job: Optional[_SourceJobCandidate],
 ) -> str:
     if exported_job_info["submit_ready_candidates"]:
         return "exported_job"
     # job.py is a common filename (SLURM launchers) and SimEnv is a natural class
-    # name in RL/robotics code, so neither is trustworthy on its own. Require a
-    # source candidate with corroborating nvflare evidence from that file or its
-    # local import closure. This prevents historical jobs, fixtures, and vendored
-    # projects from classifying the recursively inspected repository root as a
-    # FLARE job while allowing job.py to delegate construction to a local helper.
-    if source_job_file:
+    # name in RL/robotics code, so neither is trustworthy on its own. A source
+    # candidate must belong to an authoritative project component and carry
+    # corroborating nvflare evidence in its own directed import component.
+    if source_job:
         return "flare_job"
-    if _has_conversion_integration(state):
+    if _has_conversion_integration(state, project_scope):
         return "client_api_converted"
-    if all(_has_authoritative_flare_call(state, name) for name in ("flare.receive", "flare.send")):
+    if all(_has_authoritative_flare_call(state, project_scope, name) for name in ("flare.receive", "flare.send")):
         return "client_api_converted"
-    if _has_authoritative_flare_call(state, "FLModel"):
+    if _has_authoritative_flare_call(state, project_scope, "FLModel"):
         return "client_api_converted"
-    if _has_authoritative_flare_evidence(state):
+    if _has_authoritative_flare_evidence(state, project_scope):
         return "partial_client_api"
     if detected_framework:
         return "not_converted"
     return "unknown"
 
 
-def _authoritative_source_job_file(state: InspectState) -> Optional[str]:
-    flare_import_files = {item["file"] for item in state.flare_imports}
-    candidate_files = set(state.job_py_paths) | state.sim_env_files
-    local_files_by_module = _local_files_by_module(state)
-    authoritative_candidates = [
-        path
-        for path in candidate_files
-        if _source_candidate_reaches_flare_import(state, path, flare_import_files, local_files_by_module)
-        and _file_belongs_to_active_root_project(state, path)
-    ]
-    if not authoritative_candidates:
-        return None
-    # A root-level candidate remains the strongest signal when both root and
-    # nested source jobs exist; otherwise accept a nested candidate that belongs
-    # to the active project (for example jobs/fedavg/job.py).
-    return min(authoritative_candidates, key=lambda path: (not _is_root_level_file(path), path))
-
-
-def _source_candidate_reaches_flare_import(
-    state: InspectState,
-    candidate_file: str,
-    flare_import_files: set[str],
-    local_files_by_module: dict[str, set[str]],
-) -> bool:
-    if candidate_file in flare_import_files:
-        return True
-    imports = state.file_imports.get(candidate_file, set())
-    return any(
-        _imports_reach_file(state, candidate_file, imports, flare_import_file, local_files_by_module)
-        for flare_import_file in flare_import_files
-    )
-
-
-def _is_root_level_file(path: str) -> bool:
-    return "/" not in path
-
-
-def _has_authoritative_flare_evidence(state: InspectState) -> bool:
+def _has_authoritative_flare_evidence(state: InspectState, project_scope: _ProjectScope) -> bool:
     evidence_files = {item["file"] for item in state.flare_imports} | set(state.flare_calls_by_file)
-    return any(_file_belongs_to_active_root_project(state, path) for path in evidence_files)
+    return any(project_scope.authorizes(path) for path in evidence_files)
 
 
-def _has_authoritative_flare_call(state: InspectState, call_name: str) -> bool:
+def _has_authoritative_flare_call(state: InspectState, project_scope: _ProjectScope, call_name: str) -> bool:
     return any(
-        call_name in calls and _file_belongs_to_active_root_project(state, path)
-        for path, calls in state.flare_calls_by_file.items()
+        call_name in calls and project_scope.authorizes(path) for path, calls in state.flare_calls_by_file.items()
     )
 
 
-def _file_belongs_to_active_root_project(state: InspectState, file_path: str) -> bool:
-    if state.root.is_file():
-        return file_path == _display_path(state.root, state.root, state.redact)
-    if _is_root_level_file(file_path):
-        return True
-
-    anchor_files = _active_project_anchor_files(state)
-    if not anchor_files:
-        return True
-    if file_path in anchor_files:
-        return True
-    local_files_by_module = _local_files_by_module(state)
-    return any(
-        _imports_reach_file(
-            state,
-            anchor_file,
-            state.file_imports.get(anchor_file, set()),
-            file_path,
-            local_files_by_module,
-        )
-        for anchor_file in anchor_files
-    )
-
-
-def _active_project_anchor_files(state: InspectState) -> set[str]:
-    entry_point_files = {entry["path"] for entry in state.entry_points}
-    root_entry_points = {path for path in entry_point_files if _is_root_level_file(path)}
-    root_framework_files = {
-        item["file"]
-        for evidence in state.framework_evidence.values()
-        for item in evidence
-        if _is_root_level_file(item["file"])
-    }
-    root_anchors = root_entry_points | root_framework_files
-    if root_anchors:
-        return root_anchors
-
-    # A packaging-only root (for example setup.py plus src/mypkg/train.py) has
-    # no root training anchor. In that layout the nested entry points define the
-    # active project instead of the unrelated root scaffolding.
-    return entry_point_files
-
-
-def _has_conversion_integration(state: InspectState) -> bool:
+def _has_conversion_integration(state: InspectState, project_scope: _ProjectScope) -> bool:
     # A framework conversion-integration signal (e.g. an nvflare.client.lightning
     # ``patch(trainer)`` call) is a definitive conversion signal even without an
     # explicit ``flare.send``, because the framework's callback performs the
     # result exchange. Detectors record these signals via on_call; do not
     # require static constructor evidence here (wrappers/factories can hide it).
     flare_import_files = {item["file"] for item in state.flare_imports}
-    return any(
-        path in flare_import_files and _file_belongs_to_active_root_project(state, path)
-        for path in state.integration_signal_files
-    )
+    return any(path in flare_import_files and project_scope.authorizes(path) for path in state.integration_signal_files)
 
 
 def _target_type(path: Path, state: InspectState, detected_framework: Optional[str], conversion_state: str) -> str:
@@ -1376,18 +1448,17 @@ def _has_problematic_skips(state: InspectState) -> bool:
 def _recommended_next_commands(
     detected_framework: Optional[str],
     conversion_state: str,
-    state: InspectState,
-    source_job_file: Optional[str],
+    source_job: Optional[_SourceJobCandidate],
 ) -> list[str]:
     commands = []
     if conversion_state == "exported_job":
         commands.append("nvflare job submit <job-folder> --format json")
-    elif source_job_file and source_job_file in state.export_support_files:
+    elif source_job and source_job.export_supported:
         # Only suggest `job.py --export` for a genuine FLARE job.py: `.export`
         # calls (torch.onnx.export, YOLO model.export, ...) over-match, so without
         # corroborating nvflare evidence this would ship a command that fails with
         # an argparse error on an unrelated repo.
-        commands.append(f"python {shlex.quote(source_job_file)} --export --export-dir <job-dir>")
+        commands.append(f"python {shlex.quote(source_job.source_file)} --export --export-dir <job-dir>")
     elif detected_framework and conversion_state == "not_converted":
         skill = frameworks.recommended_skill_for(detected_framework)
         if skill:

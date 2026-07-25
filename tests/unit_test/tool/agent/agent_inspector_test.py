@@ -1965,6 +1965,105 @@ def test_nested_flare_job_source_does_not_override_root_pytorch_project(tmp_path
     assert data["job"]["job_py"] == "tests/fixture/job.py"
 
 
+def test_deeper_flare_job_does_not_override_nested_pytorch_component(tmp_path):
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "model.py").write_text(
+        "import torch\n\n\nclass Net(torch.nn.Module):\n    pass\n",
+        encoding="utf-8",
+    )
+    (app / "train.py").write_text(
+        "from model import Net\n\n\ndef train():\n    return Net()\n",
+        encoding="utf-8",
+    )
+    fixture = tmp_path / "tests" / "fixture"
+    fixture.mkdir(parents=True)
+    (fixture / "job.py").write_text(
+        "from nvflare.job_config.api import FedJob\n\njob = FedJob(name='historical_fixture')\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["frameworks"][0]["name"] == "pytorch"
+    assert data["conversion_state"] == "not_converted"
+    assert data["target_type"] == "training_repository"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
+def test_same_depth_independent_components_do_not_classify_whole_workspace_as_flare_job(tmp_path):
+    (tmp_path / "common.py").write_text("VALUE = 1\n", encoding="utf-8")
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "train.py").write_text(
+        "import torch\n"
+        "from common import VALUE\n"
+        "\n"
+        "\n"
+        "def train():\n"
+        "    return torch.nn.Linear(VALUE, 1)\n",
+        encoding="utf-8",
+    )
+    archive = tmp_path / "archive"
+    archive.mkdir()
+    (archive / "job.py").write_text(
+        "from common import VALUE\n"
+        "from nvflare.job_config.api import FedJob\n"
+        "\n"
+        "job = FedJob(name=f'archived_job_{VALUE}')\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["frameworks"][0]["name"] == "pytorch"
+    assert data["conversion_state"] == "not_converted"
+    assert data["target_type"] == "training_repository"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
+def test_same_depth_imported_components_share_source_job_authority(tmp_path):
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "main.py").write_text(
+        "from jobs import job\n\n\ndef main():\n    return job\n",
+        encoding="utf-8",
+    )
+    jobs = tmp_path / "jobs"
+    jobs.mkdir()
+    (jobs / "__init__.py").write_text("", encoding="utf-8")
+    (jobs / "job.py").write_text(
+        "from nvflare.job_config.api import FedJob\n\njob = FedJob(name='active_job')\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["conversion_state"] == "flare_job"
+    assert data["target_type"] == "flare_job_source"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-autofl"]
+
+
+def test_root_launcher_import_makes_nested_flare_job_component_authoritative(tmp_path):
+    (tmp_path / "main.py").write_text(
+        "from jobs.fedavg import job\n\n\ndef main():\n    return job\n",
+        encoding="utf-8",
+    )
+    job_dir = tmp_path / "jobs" / "fedavg"
+    job_dir.mkdir(parents=True)
+    (job_dir / "__init__.py").write_text("", encoding="utf-8")
+    (job_dir / "job.py").write_text(
+        "from nvflare.job_config.api import FedJob\n\njob = FedJob(name='active_nested_job')\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["conversion_state"] == "flare_job"
+    assert data["target_type"] == "flare_job_source"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-autofl"]
+
+
 def test_root_flare_job_source_remains_authoritative_with_nested_job_candidate(tmp_path):
     (tmp_path / "job.py").write_text(
         "from nvflare.app_common.workflows.fedavg import FedAvg\n"
