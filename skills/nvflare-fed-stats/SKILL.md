@@ -112,17 +112,17 @@ silently dropped or approximated.
    flat single-source data the site count must come from the request or a
    declaration (missing fails closed), with deterministic seeded
    partitions unless shared data is explicitly requested.
-6. Run `nvflare recipe show fedstats --format json` and generate `job.py`
-   constructing `FedStatsRecipe` (import from `nvflare.recipe.fedstats`)
-   with `SimEnv` and `statistic_configs` from step 4. Histograms default
-   to 20 bins, no `range`; set an explicit per-feature `range` only from
-   a script, declaration, or user answer (images: from bit depth) — else
-   the controller estimates it from noise-protected min/max. Reduce
-   default bins when small sites demand it (bin cap: 20 bins needs 206+
-   rows per site) and report the choice. `StatsJob` wires the privacy
-   filters by default: keep the defaults (`min_count=10`,
-   `min_noise_level=0.1`, `max_noise_level=0.3`, `max_bins_percent=10`)
-   and state the applied values.
+6. Run `nvflare recipe show fedstats --format json`; generate `job.py`
+   with `FedStatsRecipe`, `statistic_configs`, and one canonical site list:
+   `FedStatsRecipe(..., sites=sites, ...)` and `SimEnv(clients=sites, ...)`.
+   The recipe already assigns those clients; never use
+   `SimEnv(num_clients=...)` or both forms. Let `SimEnv` derive thread
+   count, or set `num_threads=len(sites)`. Histograms default to 20 bins,
+   no `range`; set one only from a script, declaration, or user answer
+   (images: bit depth), else use protected min/max estimation. Reduce bins
+   when small sites demand it (20 bins needs 206+ rows per site) and
+   report it. Keep and state `StatsJob` defaults: `min_count=10`, noise
+   `0.1`–`0.3`, and `max_bins_percent=10`.
 7. Validate in a ladder per the shared `validation-evidence.md`: compile
    checks, recipe construction, one simulator run, then output
    completeness — the output JSON exists, parses, and covers every

@@ -385,3 +385,38 @@ def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
     assert "Assert exact per-site row counts only when" in validation_text
     assert {"safe-pandas-partitioning", "invariant-based-partition-validation"} <= mandatory_ids
     assert {"no-deprecated-save-filename-alias", "no-hardcoded-guessed-partition-counts"} <= prohibited_ids
+
+
+def test_fedstats_reuses_named_sites_for_recipe_and_simulation():
+    repo_root = Path(__file__).resolve().parents[4]
+    skill_text = repo_root.joinpath("skills/nvflare-fed-stats/SKILL.md").read_text(encoding="utf-8")
+    validation_text = repo_root.joinpath("skills/nvflare-fed-stats/references/stats-job-validation.md").read_text(
+        encoding="utf-8"
+    )
+    eval_data = json.loads(
+        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-fed-stats/evals.json").read_text(encoding="utf-8")
+    )
+    first_eval = eval_data["evals"][0]["nvflare"]
+    mandatory_ids = {item["id"] for item in first_eval["mandatory_behavior"]}
+    prohibited_ids = {item["id"] for item in first_eval["prohibited_behavior"]}
+    normalized_skill = " ".join(skill_text.split())
+    normalized_validation = " ".join(validation_text.split())
+
+    assert "one canonical site list" in normalized_skill
+    assert "FedStatsRecipe(...," in skill_text
+    assert "sites=sites, ...)" in skill_text
+    assert "SimEnv(clients=sites, ...)" in skill_text
+    assert "never use `SimEnv(num_clients=...)`" in normalized_skill
+    assert "**Site-ownership preflight**" in validation_text
+    assert "passed unchanged to both `FedStatsRecipe(sites=sites)` and `SimEnv(clients=sites)`" in normalized_validation
+    assert "`SimEnv(num_clients=...)` is invalid for this recipe" in normalized_validation
+    assert "fedstats-explicit-sim-clients" in mandatory_ids
+    assert "no-fedstats-sim-num-clients" in prohibited_ids
+
+    for relative_path in (
+        "examples/advanced/federated-statistics/df_stats/job.py",
+        "examples/advanced/federated-statistics/image_stats/job.py",
+    ):
+        example_text = repo_root.joinpath(relative_path).read_text(encoding="utf-8")
+        assert "sites=sites" in example_text
+        assert "SimEnv(clients=sites" in example_text

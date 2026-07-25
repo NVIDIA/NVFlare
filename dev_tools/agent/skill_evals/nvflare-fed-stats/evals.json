@@ -12,7 +12,7 @@
         "The agent recognizes both asks are satisfied by one FedStatsRecipe job and does not create separate per-site scripts or run the job once per site.",
         "The agent builds a real federated statistics job; it does not pool the site CSVs into one DataFrame and present pandas output as the federated result.",
         "The agent runs nvflare agent inspect and takes the 27 feature names, dtype classes, site layout, and row counts from its dataset block instead of hand-rolling data inspection, and runs end-to-end without pausing for confirmation.",
-        "The generated client subclasses DFStatisticsCore and points each site at its own site directory; the generated job.py imports FedStatsRecipe from nvflare.recipe.fedstats and runs SimEnv with 3 sites.",
+        "The generated client subclasses DFStatisticsCore and points each site at its own site directory; the generated job.py imports FedStatsRecipe from nvflare.recipe.fedstats and passes one canonical site list to both FedStatsRecipe(sites=sites) and SimEnv(clients=sites).",
         "statistic_configs includes count, and the default statistic selection is stated.",
         "The categorical features (sex, smoker, diagnosis_group, readmitted_30d) are named as excluded, derived from observed dtypes.",
         "The default privacy filters (min-count, min/max noise, histogram bin cap) remain wired and their applied parameters are stated.",
@@ -33,6 +33,10 @@
           {
             "id": "real-federated-job",
             "description": "generates and runs an actual FedStatsRecipe job instead of pooling site data into a local pandas computation"
+          },
+          {
+            "id": "fedstats-explicit-sim-clients",
+            "description": "uses one canonical site list for both FedStatsRecipe(sites=sites) and SimEnv(clients=sites), matching the recipe's named client assignments"
           },
           {
             "id": "inspect-dataset-block",
@@ -87,6 +91,10 @@
           {
             "id": "no-pooled-pandas-substitute",
             "description": "does not substitute a pooled local pandas computation for the federated job"
+          },
+          {
+            "id": "no-fedstats-sim-num-clients",
+            "description": "does not use SimEnv(num_clients=...) or specify both clients and num_clients for a FedStatsRecipe job whose sites are already named"
           },
           {
             "id": "no-raw-data-echo",

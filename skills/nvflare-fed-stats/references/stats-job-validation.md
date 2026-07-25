@@ -16,14 +16,21 @@ harnesses, not performed by the skill.
    arguments without executing the job. The constructor returning without
    error IS the pass signal; do not probe attributes of the recipe object
    (it exposes no `name` and needs no inspection).
-4. **Simulator run** — execute `job.py` under `SimEnv`.
+4. **Site-ownership preflight** — before execution, verify that one
+   nonempty canonical `sites` list is passed unchanged to both
+   `FedStatsRecipe(sites=sites)` and `SimEnv(clients=sites)`.
+   `FedStatsRecipe` has already assigned those named clients to the job,
+   so `SimEnv(num_clients=...)` is invalid for this recipe; neither use it
+   alone nor combine it with `clients`. Let `SimEnv` derive
+   `num_threads` from `clients`, or set `num_threads=len(sites)`.
+5. **Simulator run** — execute `job.py` under `SimEnv`.
    `recipe.execute(env)` returns a run handle (`nvflare.recipe.run.Run` —
    note the module, not `spec`); you do not need it for validation:
    success is determined by the completeness rung over the output JSON,
    not by inspecting the handle. The statistics job is
    single-round and completes in seconds on typical tabular data; a hang
    usually means `load_data()` cannot find a site's data path.
-5. **Output completeness** — run as ephemeral commands (inline python),
+6. **Output completeness** — run as ephemeral commands (inline python),
    never saved as script files: locate the output JSON under the simulator
    workspace (`.../server/simulate_job/<stats_output_path>`), print its
    top two levels FIRST (the hierarchy is feature-first, not
