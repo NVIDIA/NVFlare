@@ -2051,6 +2051,31 @@ def test_same_depth_independent_components_do_not_classify_whole_workspace_as_fl
     assert "nvflare-convert-pytorch" not in data["skill_selection"]["recommended_skills"]
 
 
+def test_equal_depth_fixture_entry_point_does_not_override_framework_project(tmp_path):
+    model_dir = tmp_path / "src" / "pkg"
+    model_dir.mkdir(parents=True)
+    (model_dir / "model.py").write_text(
+        "import torch\n\n\nclass Net(torch.nn.Module):\n    pass\n",
+        encoding="utf-8",
+    )
+    fixture_dir = tmp_path / "tests" / "fixture"
+    fixture_dir.mkdir(parents=True)
+    (fixture_dir / "job.py").write_text(
+        "from nvflare.job_config.api import FedJob\n\njob = FedJob(name='historical_fixture')\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["frameworks"][0]["name"] == "pytorch"
+    assert data["conversion_state"] == "ambiguous"
+    assert data["target_type"] == "mixed_workspace"
+    assert data["job"]["job_py"] == "tests/fixture/job.py"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
+    assert "nvflare-autofl" not in data["skill_selection"]["recommended_skills"]
+    assert "nvflare-convert-pytorch" not in data["skill_selection"]["recommended_skills"]
+
+
 def test_same_depth_imported_components_share_source_job_authority(tmp_path):
     app = tmp_path / "app"
     app.mkdir()

@@ -40,6 +40,22 @@ MAX_EVIDENCE_COLLECT = 10000
 # Packaging root dirs whose leading segment is not part of the import path
 # (PyPA src-layout), so `src/pkg/mod.py` is importable as `pkg.mod`.
 _PACKAGE_ROOT_DIR_NAMES = {"src"}
+# These directory names commonly contain secondary or historical projects when
+# inspection starts at a repository/monorepo root. Their entry points remain
+# valid when inspected directly, but must not win an equal-depth authority tie
+# against an independent framework project merely because they are entry points.
+_SECONDARY_PROJECT_DIR_NAMES = {
+    "archive",
+    "archives",
+    "archived",
+    "fixture",
+    "fixtures",
+    "test",
+    "tests",
+    "vendor",
+    "vendors",
+    "vendored",
+}
 
 PYTHON_SUFFIXES = {".py"}
 SKIPPED_DIR_NAMES = {
@@ -163,6 +179,10 @@ def _components_share_project(left: _ProjectComponent, right: _ProjectComponent)
     # require directed reachability between the anchors; merely sharing a common
     # helper dependency must not merge otherwise independent projects.
     return left.directory == right.directory or left.anchor_file in right.files or right.anchor_file in left.files
+
+
+def _is_secondary_project_entry_point(file_path: str) -> bool:
+    return any(part.lower() in _SECONDARY_PROJECT_DIR_NAMES for part in Path(file_path).parent.parts)
 
 
 @dataclass(frozen=True)
@@ -1145,22 +1165,29 @@ def _build_project_scope(state: InspectState) -> _ProjectScope:
     nearest_depth = min(group_depths)
     active_groups = tuple(group for group, depth in zip(project_groups, group_depths) if depth == nearest_depth)
 
-    # At the same nearest depth, a group with a training/job entry point is a
-    # stronger project boundary than a framework-only module or package. This
-    # keeps an unrelated top-level model/helper from making a real entry-point
-    # project ambiguous. It does not let a deeper fixture override a shallower
-    # model project because distance filtering has already happened, and two
-    # equally near independent entry-point groups remain ambiguous.
+    # A real training/job entry point can disambiguate an unrelated
+    # framework-only helper at the same depth. Do not apply that preference to
+    # entry points under tests, fixtures, archives, or vendored trees: those are
+    # common secondary projects and must not suppress an equally near
+    # independent framework project. Connected entry points and framework files
+    # already share a project group through directory/import connectivity.
     entry_point_groups = tuple(
         group for group in active_groups if any(component.anchor_file in entry_point_files for component in group)
     )
-    if entry_point_groups:
+    has_secondary_entry_point = any(
+        component.anchor_file in entry_point_files and _is_secondary_project_entry_point(component.anchor_file)
+        for group in entry_point_groups
+        for component in group
+    )
+    if entry_point_groups and not has_secondary_entry_point:
         active_groups = entry_point_groups
+
     active_components = tuple(component for group in active_groups for component in group)
 
     # Equally near independent project groups identify a multi-project workspace
-    # with no single authority. Keep their components for framework reporting,
-    # but do not authorize one group's FLARE signals for the workspace as a whole.
+    # with no single authority. Keep all remaining tied components for framework
+    # reporting, but do not authorize one group's FLARE signals for the
+    # workspace as a whole.
     ambiguous = len(active_groups) > 1
     return _ProjectScope(
         active_components=active_components,
