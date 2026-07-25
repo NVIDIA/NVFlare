@@ -90,11 +90,12 @@ policy; route onward rather than substituting an unprotected recipe or adding on
    required but missing, ask or fail closed. For multi-site single-node-source
    conversion, create deterministic site-local training partitions unless the
    source has site data or the user explicitly asks for shared training data.
-6. Add or update `job.py` with the selected recipe: explicit model config
-   `{"class_path": ..., "args": ...}` (never a live model instance), custom
-   aggregator wiring through `aggregator=` when requested, `key_metric` set to
-   the same metric key reported in `FLModel.metrics`, and
-   `enable_tensor_disk_offload=True` when the recipe exposes it.
+6. Add or update `job.py` with explicit model config (never a live model), requested
+   `aggregator=` wiring, the client `key_metric`,
+   `server_expected_format=ExchangeFormat.PYTORCH`, and `enable_tensor_disk_offload=True`.
+   After any `set_per_site_config(...)`, register `nvflare.app_opt.pt.decomposers.TensorDecomposer`
+   through `recipe.add_decomposers(...)`. Leave `launch_external_process` unset for
+   CPU/single-GPU training; set it only for multi-process/multi-GPU source evidence.
 7. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`:
    compile checks, recipe construction, one final full-run path chosen by the
    artifact being validated, and export inspection; use
@@ -116,10 +117,16 @@ policy; route onward rather than substituting an unprotected recipe or adding on
   `args` only when the values are statically clear from literal source,
   configuration, or supplied metadata; otherwise ask one semantic question when
   an answer channel exists or fail closed on that missing value.
-- Must keep outbound PyTorch weights as `torch.Tensor` values in `FLModel(params=...)` for
-  PyTorch exchange; executor owns codec registration. Never add `fobs.register(TensorDecomposer)`.
-  Load `../nvflare-shared/references/pytorch-model-exchange.md` and
-  `references/pytorch-client-api-conversion.md` for exact send pattern.
+- Must keep outbound PyTorch model weights as `torch.Tensor` values in
+  `FLModel(params=...)` and use tensor-native transport; do not fall back to NumPy. Load
+  `../nvflare-shared/references/pytorch-model-exchange.md` and
+  `references/pytorch-client-api-conversion.md` for the exact send pattern.
+- Must register `nvflare.app_opt.pt.decomposers.TensorDecomposer` through `recipe.add_decomposers(...)`
+  after per-site configuration and before export or execution. Do not patch framework-neutral runtime
+  modules or register FOBS handlers from generated `client.py`.
+- Must leave `launch_external_process` unset for CPU or single-GPU training
+  without distributed-launch evidence. Set it to `True` for DDP, `torchrun`,
+  `torch.distributed`, or another multi-process/multi-GPU source launch model.
 - Must convert source evaluation alongside training and return metrics through
   `FLModel.metrics`; must not synthesize metric semantics without source
   evidence.
@@ -147,16 +154,9 @@ policy; route onward rather than substituting an unprotected recipe or adding on
 
 ## Agent Responsibilities
 
-- Run static project inspection and inspect the selected recipe before
-  constructing it; use catalog discovery only when recipe intent is ambiguous.
-- Explain the selected recipe when the user's algorithm intent is ambiguous.
-- Convert PyTorch Client API model exchange and generate or update `job.py`.
-- Keep conversion choices, validation blockers, recipe comparisons, and
-  data-prep decisions within this skill, its references, and the shared
-  conversion guidance.
-- Report PyTorch-specific blockers such as non-`state_dict` model state,
-  checkpoints requiring unsafe deserialization, unsupported metric
-  serialization, or data loaders that cannot be parameterized per site.
+- Inspect the project and selected recipe, explain ambiguous selection, and generate the Client API conversion.
+- Keep conversion decisions within this skill, its references, and the shared conversion guidance.
+- Report PyTorch blockers including incompatible state, unsafe checkpoints, metrics, and site data loaders.
 
 ## User Input And Authorization
 

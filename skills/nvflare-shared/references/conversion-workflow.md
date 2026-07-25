@@ -316,14 +316,20 @@ supports it.
 
 ## Conversion Defaults
 
-Set `enable_tensor_disk_offload=True` in generated recipe invocations whenever
-the selected recipe exposes that parameter; confirm with
-`nvflare recipe show <recipe-name> --format json`. Do not add the parameter to
-recipes that do not expose it. The offload applies to streamed PyTorch tensors
-only: when the recipe also exposes `server_expected_format`, pair it with
-`server_expected_format=ExchangeFormat.PYTORCH` (the PyTorch-family preference
-in `pytorch-model-exchange.md`); with a NumPy exchange format the parameter is
-a warned no-op.
+For PyTorch-family conversion recipes that expose tensor disk offload, use the
+tensor-native recipe profile:
+
+- `server_expected_format=ExchangeFormat.PYTORCH`
+- `enable_tensor_disk_offload=True`
+- after any per-site configuration, call
+  `recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])`.
+
+Confirm the two recipe parameters with `nvflare recipe show <recipe-name>
+--format json`; `add_decomposers(...)` is the recipe-level component API. The
+registration component is installed on server and clients before payload
+decoding, so CPU and single-GPU training stays in-process. Set
+`launch_external_process=True` only when the source requires DDP or another
+multi-process/multi-GPU launch model.
 
 Device placement follows the source project: CPU source training stays on CPU,
 GPU source training stays on GPU, and a source that selects the device

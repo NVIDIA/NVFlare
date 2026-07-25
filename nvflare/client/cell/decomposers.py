@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Register framework decomposers at Client API serialization boundaries."""
+"""Register framework decomposers needed by the external-process CJ and trainer."""
 
 from nvflare.client.config import ExchangeFormat
 

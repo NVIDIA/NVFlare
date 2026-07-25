@@ -39,6 +39,7 @@ recipe = FedAvgRecipe(
     server_expected_format=ExchangeFormat.PYTORCH,
     enable_tensor_disk_offload=True,
 )
+recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])
 
 env = SimEnv(num_clients=num_clients, workspace_root=workspace_root)
 run = recipe.execute(env)
@@ -52,11 +53,23 @@ model={"class_path": "model.ModelClass", "args": model_args}
 ```
 
 Prefer `class_path` at recipe construction time; `path` is the normalized key
-used in exported job config, and recipes accept it as an alias. Set
-`enable_tensor_disk_offload=True` when the selected recipe exposes it, paired
-with `server_expected_format=ExchangeFormat.PYTORCH`, per
-`../../nvflare-shared/references/conversion-workflow.md` ("Conversion Defaults") and
-`../../nvflare-shared/references/pytorch-model-exchange.md`.
+used in exported job config, and recipes accept it as an alias.
+
+The maintained `hello-pt` example uses the in-process recipe defaults and does
+not enable tensor disk offload. This conversion profile intentionally differs:
+keep tensors native, enable disk offload, and register the PyTorch decomposer at
+the recipe boundary:
+
+- `server_expected_format=ExchangeFormat.PYTORCH`
+- `enable_tensor_disk_offload=True`
+- `recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])`
+
+`add_decomposers(...)` adds a registration component to both server and client
+apps, so `TensorDecomposer` is installed before the first tensor payload is
+decoded. This keeps the framework-neutral executor unchanged and supports the
+default in-process path. If per-site configuration is needed, call
+`set_per_site_config(...)` first because adding decomposers prepares the client
+apps.
 
 The server-side recipe model and the client-side training model must construct
 the same architecture. If the model constructor needs dimensions, class counts,
@@ -99,9 +112,9 @@ that recipe's expected task names, metadata, and parameter format.
 Match the recipe's execution mode to the source project's process model:
 
 - Single-process training — CPU or a single GPU with no distributed launch —
-  runs in-process; leave `launch_external_process` unset so the recipe applies
-  its own default (the in-process Client API). Do not force it on for
-  single-process training.
+  runs in-process; leave `launch_external_process` unset. Tensor-native disk
+  offload remains enabled through the recipe-level decomposer registration
+  above.
 - Multi-process / multi-GPU evidence — `torch.distributed` / DDP, `torchrun` or
   `torch.distributed.run`, `DistributedDataParallel`, or an explicit user request
   for multi-GPU — needs the external-process executor: set

@@ -20,7 +20,7 @@
         "The generated job.py imports the selected recipe class from the module returned by recipe show, using nvflare.app_opt.pt.recipes.fedavg.FedAvgRecipe for fedavg-pt and not nvflare.recipe.FedAvgRecipe.",
         "The agent selects the PyTorch FedAvg recipe for standard horizontal training instead of inventing a Lightning-only recipe.",
         "The agent generates explicit recipe model config with class_path plus args instead of passing a live LightningModule instance, asking or failing closed when constructor args are not statically clear.",
-        "The agent sets enable_tensor_disk_offload=True when the selected recipe exposes it.",
+        "The agent enables tensor-native disk offload with server_expected_format=ExchangeFormat.PYTORCH and enable_tensor_disk_offload=True, registers nvflare.app_opt.pt.decomposers.TensorDecomposer through recipe.add_decomposers(...) before export or execution, leaves launch_external_process unset for single-process training, and sets it to True only for DDP or another multi-process/multi-GPU strategy.",
         "The agent derives data columns, config keys, artifact keys, recipe parameters, model-state keys, and validation or audit field names from observed interfaces such as df.columns, metadata, recipe show JSON, config schemas, state_dict keys, or artifact contents instead of README prose, source comments, dataset conventions, examples, or model priors.",
         "For multiple simulated sites, the generated Lightning client or DataModule trains each site on a deterministic local training partition by default and does not make every site train on the full source training set unless the user explicitly requested shared training data.",
         "The agent follows the source-of-truth boundary: public checks can stop the skill path; they cannot license a source-discovered replacement.",
@@ -73,8 +73,8 @@
             "description": "generates explicit recipe model config with class_path plus args instead of a live LightningModule instance, asking or failing closed when constructor args are not statically clear"
           },
           {
-            "id": "disk-offload-default",
-            "description": "sets enable_tensor_disk_offload=True when the selected recipe exposes the parameter"
+            "id": "tensor-offload-decomposer-profile",
+            "description": "sets server_expected_format=ExchangeFormat.PYTORCH and enable_tensor_disk_offload=True, registers TensorDecomposer through recipe.add_decomposers(...) before export or execution, and chooses external process only for DDP or another multi-process/multi-GPU strategy"
           },
           {
             "id": "observe-interface-before-field-use",

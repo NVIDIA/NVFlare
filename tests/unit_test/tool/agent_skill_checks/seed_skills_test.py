@@ -99,9 +99,6 @@ def test_pytorch_conversion_pins_recipe_key_metric_to_client_metric():
     client_text = skill_root.joinpath("references/pytorch-client-api-conversion.md").read_text(encoding="utf-8")
     normalized_client = " ".join(client_text.split())
     validation_text = skill_root.joinpath("references/job-validation.md").read_text(encoding="utf-8")
-    exchange_text = repo_root.joinpath("skills/nvflare-shared/references/pytorch-model-exchange.md").read_text(
-        encoding="utf-8"
-    )
 
     assert "`FedAvgRecipe.key_metric`" in skill_text
     assert "must exactly match the metric key sent in `FLModel.metrics`" in skill_text
@@ -117,6 +114,39 @@ def test_pytorch_conversion_pins_recipe_key_metric_to_client_metric():
     assert 'metrics={"neg_loss": -loss}' in normalized_client
     assert "recipe's `key_metric` exactly matches one key sent in" in validation_text
     assert "higher-is-better" in validation_text
-    assert "Never add `fobs.register(TensorDecomposer)`" in skill_text
-    assert "Generated client code must not import FOBS internals" in exchange_text
-    assert "cannot find handler for Datum Object Type 6" in validation_text
+
+
+def test_pytorch_family_conversion_registers_tensor_decomposer_at_recipe_boundary():
+    repo_root = Path(__file__).resolve().parents[4]
+    pytorch_root = repo_root / "skills" / "nvflare-convert-pytorch"
+    pytorch_skill = pytorch_root.joinpath("SKILL.md").read_text(encoding="utf-8")
+    lightning_skill = repo_root.joinpath("skills/nvflare-convert-lightning/SKILL.md").read_text(encoding="utf-8")
+    recipe_text = pytorch_root.joinpath("references/recipe-selection.md").read_text(encoding="utf-8")
+    validation_text = pytorch_root.joinpath("references/job-validation.md").read_text(encoding="utf-8")
+    shared_profile = repo_root.joinpath("skills/nvflare-shared/references/pytorch-model-exchange.md").read_text(
+        encoding="utf-8"
+    )
+    hello_pt_job = repo_root.joinpath("examples/hello-world/hello-pt/job.py").read_text(encoding="utf-8")
+    normalized_pytorch_skill = " ".join(pytorch_skill.split())
+    normalized_lightning_skill = " ".join(lightning_skill.split())
+    normalized_validation = " ".join(validation_text.split())
+    normalized_shared_profile = " ".join(shared_profile.split())
+
+    for text in (normalized_pytorch_skill, normalized_lightning_skill):
+        assert "`server_expected_format=ExchangeFormat.PYTORCH`" in text
+        assert "`enable_tensor_disk_offload=True`" in text
+        assert "`recipe.add_decomposers(...)`" in text
+        assert "multi-GPU" in text
+    assert "multi-process/multi-GPU" in normalized_pytorch_skill
+    assert "DDP/multi-GPU" in normalized_lightning_skill
+    assert "launch_external_process=True," not in recipe_text
+    assert "server_expected_format=ExchangeFormat.PYTORCH," in recipe_text
+    assert "enable_tensor_disk_offload=True," in recipe_text
+    assert 'recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])' in recipe_text
+    assert "server_expected_format=" not in hello_pt_job
+    assert "enable_tensor_disk_offload=" not in hello_pt_job
+    assert "intentionally differs" in recipe_text
+    assert "both server and client apps before the first" in normalized_shared_profile
+    assert "Leave `launch_external_process` unset for CPU or single-GPU training" in normalized_shared_profile
+    assert "cannot find handler for Datum Object Type 6" in normalized_validation
+    assert "Do not patch NVFLARE runtime modules" in normalized_validation

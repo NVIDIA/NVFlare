@@ -6,15 +6,10 @@ non-PyTorch framework skills.
 
 ## Tensor Payload Rule
 
-For PyTorch Client API execution, outbound `FLModel(params=...)` must contain
+For PyTorch Client API training, outbound `FLModel(params=...)` must contain
 `torch.Tensor` values from the trained model state. Do not convert outbound
-weights to NumPy before sending.
-
-Framework wire-codec registration is executor lifecycle work because the
-NVFLARE client process may need to deserialize the first server task before the
-training script starts. Generated client code must not import FOBS internals or
-call `fobs.register(TensorDecomposer)`: registration in or near `flare.init()`
-is too late to guarantee that the first model is decodable.
+weights to NumPy before sending. Keep the wire tensor-native, enable disk
+offload, and register the PyTorch decomposer through the recipe.
 
 The manual `flare.send` snippet below applies only to plain PyTorch, where
 client code builds the payload itself:
@@ -32,14 +27,29 @@ configuration rather than manual client payload construction.
 
 ## Exchange Format Recipe Settings
 
-Tensor-preserving exchange is a `job.py`/recipe setting, not something to infer
-by reading NVFLARE library source. Confirm the selected recipe parameters with
-`nvflare recipe show <recipe-name> --format json`.
+Confirm recipe parameters and defaults with
+`nvflare recipe show <recipe-name> --format json`. When the selected recipe
+exposes the required controls, set
+`server_expected_format=ExchangeFormat.PYTORCH` and
+`enable_tensor_disk_offload=True`. After any `set_per_site_config(...)` call
+and before export or execution, add the framework-specific registration
+component:
 
-If the selected recipe exposes `server_expected_format`, prefer
-`ExchangeFormat.PYTORCH` for PyTorch-family tensor-preserving exchange. If the
-recipe exposes `params_transfer_type`, choose the mode that matches the user's
-intent: `FULL` sends whole tensors; `DIFF` sends tensor differences.
+```python
+recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])
+```
+
+This installs `TensorDecomposer` on both server and client apps before the first
+payload is decoded. Do not move the registration into a framework-neutral
+executor or generated trainer code.
+
+If the recipe exposes `params_transfer_type`, choose the mode that matches the
+user's intent: `FULL` sends whole models; `DIFF` sends model differences.
+
+Choose execution mode independently from serialization. Leave
+`launch_external_process` unset for CPU or single-GPU training. Set
+`launch_external_process=True` only for DDP or another multi-process/multi-GPU
+source launch model.
 
 ## State-Dict Compatibility
 

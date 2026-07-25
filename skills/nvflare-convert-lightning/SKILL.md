@@ -101,12 +101,12 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
    ask or fail closed. For multi-site single-node-source conversion, create
    deterministic site-local training partitions unless the source has site data
    or the user explicitly asks for shared training data.
-7. Add or update `job.py` with the selected recipe: explicit model config
-   `{"class_path": ..., "args": ...}` (never a live `LightningModule`
-   instance), custom aggregator wiring through `aggregator=` when requested,
-   and `enable_tensor_disk_offload=True` paired with
-   `server_expected_format=ExchangeFormat.PYTORCH` when the recipe exposes them
-   (the offload is a warned no-op under the default NumPy format).
+7. Add or update `job.py` with explicit model config
+   `{"class_path": ..., "args": ...}` (never a live `LightningModule`),
+   requested `aggregator=` wiring, `server_expected_format=ExchangeFormat.PYTORCH`,
+   and `enable_tensor_disk_offload=True`. After per-site configuration, register
+   `nvflare.app_opt.pt.decomposers.TensorDecomposer` with
+   `recipe.add_decomposers(...)`. Use external process only for DDP/multi-GPU.
 8. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`:
    compile checks, recipe construction, one final full-run path chosen by the
    artifact being validated, and export inspection; then use

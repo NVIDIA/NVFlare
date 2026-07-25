@@ -47,9 +47,13 @@ Follow the shared Source Of Truth Boundary in
 
 ## PyTorch Parameter Payload Type
 
-For `PTInProcessClientAPIExecutor`, follow the shared PyTorch-family model
-exchange guidance: outbound `FLModel(params=...)` must contain `torch.Tensor`
-values. `PTSendParamsConverter` excludes non-tensor params.
+Follow the shared PyTorch-family model exchange guidance: outbound
+`FLModel(params=...)` must contain `torch.Tensor` values. Keep the transport
+tensor-native rather than converting to NumPy: the generated recipe uses
+`server_expected_format=ExchangeFormat.PYTORCH`,
+`enable_tensor_disk_offload=True`, and recipe-level `TensorDecomposer`
+registration. Execution mode follows the source process model; it is not used
+as a codec-registration workaround.
 
 ```python
 params = {k: v.detach().cpu() for k, v in model.state_dict().items()}
