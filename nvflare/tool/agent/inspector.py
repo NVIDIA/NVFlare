@@ -201,6 +201,14 @@ class _ProjectScope:
         return self.component_for(file_path) is not None
 
 
+def _authorizes_flare_evidence(project_scope: _ProjectScope, file_path: str) -> bool:
+    # Secondary-tree source remains visible in inspection evidence, but it
+    # cannot establish repository-level FLARE conversion authority. When the
+    # user inspects that subtree directly its files are root-relative (for
+    # example ``job.py``), so the same source is authoritative in that scope.
+    return project_scope.authorizes(file_path) and not _is_secondary_project_entry_point(file_path)
+
+
 @dataclass(frozen=True)
 class _SourceJobCandidate:
     """A source-job signal and the provenance contained in its own component."""
@@ -1169,8 +1177,12 @@ def _build_project_scope(state: InspectState) -> _ProjectScope:
     # framework-only helper at the same depth. Do not apply that preference to
     # entry points under tests, fixtures, archives, or vendored trees: those are
     # common secondary projects and must not suppress an equally near
-    # independent framework project. Connected entry points and framework files
-    # already share a project group through directory/import connectivity.
+    # independent framework project. If any tied entry point is secondary, keep
+    # every tied group rather than allowing another entry point to suppress
+    # framework-only groups. This intentionally biases uncertain repository
+    # layouts toward ambiguity instead of false FLARE authority. Connected entry
+    # points and framework files already share a project group through
+    # directory/import connectivity.
     entry_point_groups = tuple(
         group for group in active_groups if any(component.anchor_file in entry_point_files for component in group)
     )
@@ -1206,7 +1218,11 @@ def _source_job_candidates(state: InspectState, project_scope: _ProjectScope) ->
             _SourceJobCandidate(
                 source_file=source_file,
                 flare_import_files=flare_import_files & component_files,
-                project_component=project_scope.component_for(source_file),
+                project_component=(
+                    project_scope.component_for(source_file)
+                    if _authorizes_flare_evidence(project_scope, source_file)
+                    else None
+                ),
                 export_supported=source_file in state.export_support_files,
             )
         )
@@ -1256,12 +1272,13 @@ def _conversion_state(
 
 def _has_authoritative_flare_evidence(state: InspectState, project_scope: _ProjectScope) -> bool:
     evidence_files = {item["file"] for item in state.flare_imports} | set(state.flare_calls_by_file)
-    return any(project_scope.authorizes(path) for path in evidence_files)
+    return any(_authorizes_flare_evidence(project_scope, path) for path in evidence_files)
 
 
 def _has_authoritative_flare_call(state: InspectState, project_scope: _ProjectScope, call_name: str) -> bool:
     return any(
-        call_name in calls and project_scope.authorizes(path) for path, calls in state.flare_calls_by_file.items()
+        call_name in calls and _authorizes_flare_evidence(project_scope, path)
+        for path, calls in state.flare_calls_by_file.items()
     )
 
 
@@ -1272,7 +1289,10 @@ def _has_conversion_integration(state: InspectState, project_scope: _ProjectScop
     # result exchange. Detectors record these signals via on_call; do not
     # require static constructor evidence here (wrappers/factories can hide it).
     flare_import_files = {item["file"] for item in state.flare_imports}
-    return any(path in flare_import_files and project_scope.authorizes(path) for path in state.integration_signal_files)
+    return any(
+        path in flare_import_files and _authorizes_flare_evidence(project_scope, path)
+        for path in state.integration_signal_files
+    )
 
 
 def _target_type(path: Path, state: InspectState, detected_framework: Optional[str], conversion_state: str) -> str:
