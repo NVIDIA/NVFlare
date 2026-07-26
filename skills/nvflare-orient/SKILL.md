@@ -2,20 +2,15 @@
 name: nvflare-orient
 description: "Route open-ended or ambiguous NVFLARE requests by inspecting the local project and recommending one specific workflow skill without editing files; explicit conversions normally route directly to a converter, except when inspection reports unresolved Trainer ownership or active Lightning and Hugging Face Trainer entrypoints."
 license: Apache-2.0
-version: "0.1.0"
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-  min_flare_version: "2.8.0"
+  min_flare_version: "2.9.0"
   blast_radius: read_only
   category: Orientation
-  tags:
-    - nvflare
-    - federated-learning
-    - routing
-  languages:
-    - python
-  frameworks:
-    - nvflare
+  version: "0.1.0"
+  tags: "nvflare, federated-learning, routing"
+  languages: "python"
+  frameworks: "nvflare"
   domain: ml
 ---
 
