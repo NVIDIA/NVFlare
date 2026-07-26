@@ -1992,6 +1992,235 @@ def test_inspect_does_not_finalize_class_body_patch_before_later_import(tmp_path
 
 
 @pytest.mark.parametrize(
+    ("source", "expected_framework", "expected_skill"),
+    [
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "class patch:\n"
+            "    def run(self):\n"
+            "        return patch(trainer)\n"
+            "trainer.train()\n",
+            "huggingface",
+            "nvflare-convert-huggingface",
+            id="huggingface-method",
+        ),
+        pytest.param(
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n"
+            "class patch:\n"
+            "    async def run(self):\n"
+            "        return patch(trainer)\n"
+            "trainer.fit(model)\n",
+            "pytorch_lightning",
+            "nvflare-convert-lightning",
+            id="lightning-async-method",
+        ),
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "class patch:\n"
+            "    run = lambda self: patch(trainer)\n"
+            "trainer.train()\n",
+            "huggingface",
+            "nvflare-convert-huggingface",
+            id="huggingface-lambda",
+        ),
+    ],
+)
+def test_inspect_class_callable_body_uses_post_definition_binding(tmp_path, source, expected_framework, expected_skill):
+    script = tmp_path / "client.py"
+    script.write_text(source, encoding="utf-8")
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == expected_framework
+    assert data["conversion_state"] == "partial_client_api"
+    assert data["skill_selection"]["recommended_skills"] == [expected_skill]
+
+
+@pytest.mark.parametrize(
+    ("source", "framework", "evidence_kind", "expected_values"),
+    [
+        pytest.param(
+            "import lightning as L\n"
+            "class L:\n"
+            "    trainer = L.Trainer(max_epochs=1)\n"
+            "    def build(self):\n"
+            "        return L.Trainer(max_epochs=1)\n",
+            "pytorch_lightning",
+            "lightning_trainer",
+            ["L.Trainer"],
+            id="lightning",
+        ),
+        pytest.param(
+            "from torch.optim import SGD\n"
+            "class SGD:\n"
+            "    optimizer = SGD(params)\n"
+            "    def build(self):\n"
+            "        return SGD(params)\n",
+            "pytorch",
+            "pytorch_call",
+            ["SGD"],
+            id="pytorch",
+        ),
+    ],
+)
+def test_inspect_class_immediate_and_deferred_bodies_use_correct_framework_bindings(
+    tmp_path, source, framework, evidence_kind, expected_values
+):
+    script = tmp_path / "train.py"
+    script.write_text(source, encoding="utf-8")
+
+    data = inspect_path(script)
+    evidence = next(item for item in data["frameworks"] if item["name"] == framework)["evidence"]
+
+    assert [item["value"] for item in evidence if item["kind"] == evidence_kind] == expected_values
+
+
+def test_inspect_method_resolves_enclosing_huggingface_trainer_subclass(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "from transformers import Trainer\n"
+        "class CustomTrainer(Trainer):\n"
+        "    def clone(self):\n"
+        "        return CustomTrainer(model=model, args=args)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+    huggingface = next(item for item in data["frameworks"] if item["name"] == "huggingface")
+
+    assert any(
+        item["kind"] == "huggingface_trainer" and item["value"] == "CustomTrainer" for item in huggingface["evidence"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("framework", "source_prefix", "call_target", "expected_state"),
+    [
+        pytest.param(
+            "huggingface",
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n",
+            "outputs[patch(trainer)], patch",
+            "client_api_converted",
+            id="huggingface-call-before-bind",
+        ),
+        pytest.param(
+            "huggingface",
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n",
+            "patch, outputs[patch(trainer)]",
+            "partial_client_api",
+            id="huggingface-bind-before-call",
+        ),
+        pytest.param(
+            "pytorch_lightning",
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n",
+            "outputs[patch(trainer)], patch",
+            "client_api_converted",
+            id="lightning-call-before-bind",
+        ),
+        pytest.param(
+            "pytorch_lightning",
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n",
+            "patch, outputs[patch(trainer)]",
+            "partial_client_api",
+            id="lightning-bind-before-call",
+        ),
+    ],
+)
+def test_inspect_with_unpacking_resolves_patch_in_target_assignment_order(
+    tmp_path, framework, source_prefix, call_target, expected_state
+):
+    script = tmp_path / "client.py"
+    script.write_text(
+        source_prefix + f"with manager() as ({call_target}):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == framework
+    assert data["conversion_state"] == expected_state
+
+
+@pytest.mark.parametrize(
+    ("call_target", "expected_calls"),
+    [
+        pytest.param("outputs[SGD(params)], SGD", ["SGD"], id="call-before-bind"),
+        pytest.param("SGD, outputs[SGD(params)]", [], id="bind-before-call"),
+    ],
+)
+def test_inspect_with_unpacking_resolves_pytorch_call_in_target_assignment_order(tmp_path, call_target, expected_calls):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "from torch.optim import SGD\n" f"with manager() as ({call_target}):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+    pytorch = next(item for item in data["frameworks"] if item["name"] == "pytorch")
+
+    assert [item["value"] for item in pytorch["evidence"] if item["kind"] == "pytorch_call"] == expected_calls
+
+
+@pytest.mark.parametrize(
+    ("assignment_target", "expected_state"),
+    [
+        pytest.param("outputs[patch(trainer)], patch", "client_api_converted", id="call-before-bind"),
+        pytest.param("patch, outputs[patch(trainer)]", "partial_client_api", id="bind-before-call"),
+    ],
+)
+def test_inspect_assignment_unpacking_resolves_patch_in_target_assignment_order(
+    tmp_path, assignment_target, expected_state
+):
+    script = tmp_path / "client.py"
+    script.write_text(
+        "from transformers import Trainer, TrainingArguments\n"
+        "from nvflare.client.hf import patch\n"
+        "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+        f"{assignment_target} = values\n"
+        "trainer.train()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["conversion_state"] == expected_state
+
+
+@pytest.mark.parametrize(
+    ("loop_target", "expected_calls"),
+    [
+        pytest.param("outputs[SGD(params)], SGD", ["SGD"], id="call-before-bind"),
+        pytest.param("SGD, outputs[SGD(params)]", [], id="bind-before-call"),
+    ],
+)
+def test_inspect_for_unpacking_resolves_pytorch_call_in_target_assignment_order(tmp_path, loop_target, expected_calls):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "from torch.optim import SGD\n" f"for {loop_target} in values:\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+    pytorch = next(item for item in data["frameworks"] if item["name"] == "pytorch")
+
+    assert [item["value"] for item in pytorch["evidence"] if item["kind"] == "pytorch_call"] == expected_calls
+
+
+@pytest.mark.parametrize(
     "pattern",
     [
         pytest.param("[trainer]", id="match-as"),
