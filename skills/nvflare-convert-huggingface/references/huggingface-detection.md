@@ -11,7 +11,9 @@ Strong evidence includes:
   `Trainer` subclass;
 - `TrainingArguments`, `Seq2SeqTrainingArguments`, or `SFTConfig` passed to that
   Trainer;
-- Trainer-owned `train()` and `evaluate()` calls;
+- a statically bound Trainer-owned `train()` call;
+- Trainer-owned `evaluate()` and `predict()` calls as supporting lifecycle
+  evidence, not proof that the entry point trains;
 - Trainer callbacks, `compute_metrics`, datasets, processors/tokenizers, data
   collators, or a PEFT config connected to that Trainer;
 - an existing `nvflare.client.hf.patch(trainer)` call.
@@ -33,6 +35,8 @@ as Trainer-style training without examining its entrypoint.
   Hugging Face `Trainer` still owns training.
 - Route a Trainer/configuration factory that static inspection cannot resolve
   to `nvflare-orient` rather than guessing Trainer ownership.
+- Treat cross-file or dynamically assigned Trainer ownership as unresolved
+  unless static inspection can bind the `train()` call to its construction.
 
 ## Facts To Extract
 

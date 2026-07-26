@@ -23,12 +23,12 @@ from .base import DetectContext, FrameworkDetector
 FRAMEWORK = "huggingface"
 
 HUGGINGFACE_MODULES = {"transformers", "trl"}
+HUGGINGFACE_TRAINER_SUBMODULES = {"trainer", "trainer_seq2seq"}
 TRAINING_CONFIG_SYMBOLS = {"TrainingArguments", "Seq2SeqTrainingArguments", "SFTConfig"}
 TRAINER_CANDIDATE_EVIDENCE = {
     "huggingface_trainer",
     "huggingface_trainer_class",
     "huggingface_training_config",
-    "huggingface_trainer_reference",
 }
 PATCH_PARENT_MODULE = "nvflare.client"
 PATCH_SUBMODULE = "hf"
@@ -40,7 +40,9 @@ class _HuggingFaceFileState:
     module_aliases: dict = field(default_factory=dict)
     config_symbols: dict = field(default_factory=dict)
     trainer_symbols: dict = field(default_factory=dict)
+    trainer_classes: set = field(default_factory=set)
     trainer_instances: set = field(default_factory=set)
+    pending_train_calls: dict = field(default_factory=dict)
     patch_symbols: set = field(default_factory=set)
     patch_modules: set = field(default_factory=set)
 
@@ -53,7 +55,6 @@ class HuggingFaceDetector(FrameworkDetector):
         "huggingface_trainer": 2,
         "huggingface_trainer_class": 2,
         "huggingface_training_config": 1,
-        "huggingface_trainer_reference": 1,
     }
     recommended_skill = "nvflare-convert-huggingface"
     recommendation_requires_active_evidence = True
@@ -74,11 +75,9 @@ class HuggingFaceDetector(FrameworkDetector):
                 alias_name = alias.asname or alias.name
                 if self._is_trainer_symbol(alias.name):
                     file_state.trainer_symbols[alias_name] = alias.name
-                    ctx.evidence(FRAMEWORK, "huggingface_trainer_reference", alias.name, None)
                 elif alias.name in TRAINING_CONFIG_SYMBOLS:
                     file_state.config_symbols[alias_name] = alias.name
-                    ctx.evidence(FRAMEWORK, "huggingface_training_config", alias.name, None)
-                elif alias.name.islower():
+                elif alias.name in HUGGINGFACE_TRAINER_SUBMODULES:
                     file_state.module_aliases[alias_name] = f"{module}.{alias.name}"
         if module == PATCH_MODULE:
             for alias in aliases:
@@ -88,6 +87,17 @@ class HuggingFaceDetector(FrameworkDetector):
             for alias in aliases:
                 if alias.name == PATCH_SUBMODULE:
                     file_state.patch_modules.add(alias.asname or alias.name)
+
+    def on_class_definition(
+        self,
+        class_name: str,
+        base_names: list[str],
+        lineno: Optional[int],
+        file_state: _HuggingFaceFileState,
+        ctx: DetectContext,
+    ) -> None:
+        if any(self._is_trainer_name(base_name, file_state) for base_name in base_names):
+            file_state.trainer_classes.add(class_name)
 
     def on_class_base(
         self, base_name: str, lineno: Optional[int], file_state: _HuggingFaceFileState, ctx: DetectContext
@@ -105,8 +115,13 @@ class HuggingFaceDetector(FrameworkDetector):
             ctx.evidence(FRAMEWORK, "huggingface_trainer", call_name, lineno)
         elif self._is_training_config_name(call_name, file_state):
             ctx.evidence(FRAMEWORK, "huggingface_training_config", call_name, lineno)
-        elif self._is_trainer_train_call(call_name, file_state):
-            ctx.evidence(FRAMEWORK, "huggingface_train", call_name, lineno)
+        else:
+            receiver = self._train_call_receiver(call_name)
+            if receiver:
+                if receiver in file_state.trainer_instances:
+                    ctx.evidence(FRAMEWORK, "huggingface_train", call_name, lineno)
+                else:
+                    file_state.pending_train_calls.setdefault(receiver, []).append((call_name, lineno))
 
     def on_assignment_call(
         self,
@@ -118,14 +133,24 @@ class HuggingFaceDetector(FrameworkDetector):
     ) -> None:
         if self._is_trainer_name(call_name, file_state):
             file_state.trainer_instances.update(target_names)
+            for target_name in target_names:
+                for train_call, train_lineno in file_state.pending_train_calls.pop(target_name, []):
+                    ctx.evidence(FRAMEWORK, "huggingface_train", train_call, train_lineno)
 
     def is_active_evidence(self, evidence: dict) -> bool:
         return evidence.get("kind") == "huggingface_train"
 
     def promote_over_family(self, family_base: str, resolver) -> bool:
+        candidate_evidence = [
+            item for item in resolver.evidence(self.name) if item.get("kind") in TRAINER_CANDIDATE_EVIDENCE
+        ]
         active_huggingface = resolver.active_evidence(self.name)
         if not active_huggingface:
-            return False
+            # Import-only PyTorch evidence cannot claim training ownership.
+            # Preserve Hugging Face when the base is inactive; an entry-owned
+            # Trainer/config candidate then routes to nvflare-orient, while pure
+            # inference remains detected without a conversion recommendation.
+            return resolver.tied_to_entry_context(candidate_evidence) or not resolver.active_evidence(family_base)
         if resolver.tied_to_entry_context(active_huggingface):
             return True
         pytorch_outside_trainer_files = resolver.evidence_outside_files(
@@ -149,6 +174,8 @@ class HuggingFaceDetector(FrameworkDetector):
 
     @classmethod
     def _is_trainer_name(cls, name: str, file_state: _HuggingFaceFileState) -> bool:
+        if name in file_state.trainer_classes:
+            return True
         if cls._is_trainer_symbol(file_state.trainer_symbols.get(name, "")):
             return True
         prefix, separator, symbol = name.rpartition(".")
@@ -168,9 +195,9 @@ class HuggingFaceDetector(FrameworkDetector):
         return cls._is_huggingface_module(module)
 
     @staticmethod
-    def _is_trainer_train_call(call_name: str, file_state: _HuggingFaceFileState) -> bool:
+    def _train_call_receiver(call_name: str) -> Optional[str]:
         receiver, separator, method = call_name.rpartition(".")
-        return bool(separator and method == "train" and receiver in file_state.trainer_instances)
+        return receiver if separator and method == "train" else None
 
     @staticmethod
     def _is_trainer_symbol(symbol: str) -> bool:

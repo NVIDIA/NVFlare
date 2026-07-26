@@ -616,10 +616,16 @@ class _PythonInspector(ast.NodeVisitor):
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         end_lineno = getattr(node, "end_lineno", None) or node.lineno
         self.state.class_body_ranges.setdefault(self.rel_path, []).append((node.lineno, end_lineno))
-        for base in node.bases:
-            base_name = _symbol_name(base)
-            if not base_name:
-                continue
+        base_names = [base_name for base in node.bases if (base_name := _symbol_name(base))]
+        for detector in self._detectors:
+            detector.on_class_definition(
+                node.name,
+                base_names,
+                node.lineno,
+                self._detector_states[detector.name],
+                self._ctx,
+            )
+        for base_name in base_names:
             for detector in self._detectors:
                 detector.on_class_base(base_name, node.lineno, self._detector_states[detector.name], self._ctx)
         self.generic_visit(node)

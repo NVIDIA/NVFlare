@@ -44,6 +44,8 @@ def test_evidence_weights_are_aggregated_from_detectors():
 
 
 def test_recommended_skill_for():
+    assert frameworks.recommended_skill_for("pytorch") == "nvflare-convert-pytorch"
+    assert frameworks.recommended_skill_for("huggingface") is None
     assert frameworks.recommended_skill_for("pytorch", []) == "nvflare-convert-pytorch"
     assert frameworks.recommended_skill_for("pytorch_lightning", []) == "nvflare-convert-lightning"
     assert frameworks.recommended_skill_for("huggingface", [{"kind": "import"}]) is None
@@ -113,3 +115,20 @@ def test_huggingface_detector_records_trainer_and_patch_signals():
     assert ("huggingface", "huggingface_train", "trainer.train") in evidence
     assert "flare.patch" in flare_calls
     assert ("huggingface", "flare.patch") in signals
+
+
+def test_huggingface_detector_tracks_local_trainer_subclass():
+    detector = HuggingFaceDetector()
+    state = detector.new_file_state()
+    ctx, evidence, _, _ = _emit_collector()
+
+    detector.on_import_from("transformers", [ast.alias(name="Trainer", asname=None)], state, ctx)
+    detector.on_class_definition("Custom", ["Trainer"], 3, state, ctx)
+    detector.on_class_base("Trainer", 3, state, ctx)
+    detector.on_assignment_call(["trainer"], "Custom", 5, state, ctx)
+    detector.on_call("Custom", 5, state, ctx)
+    detector.on_call("trainer.train", 6, state, ctx)
+
+    assert ("huggingface", "huggingface_trainer_class", "Trainer") in evidence
+    assert ("huggingface", "huggingface_trainer", "Custom") in evidence
+    assert ("huggingface", "huggingface_train", "trainer.train") in evidence

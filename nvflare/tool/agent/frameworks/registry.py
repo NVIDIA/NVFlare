@@ -82,7 +82,8 @@ def framework_for_import(module: str) -> Optional[str]:
     return _IMPORT_ROOTS.get(module.split(".")[0])
 
 
-def recommended_skill_for(framework: Optional[str], evidence: list[dict]) -> Optional[str]:
+def recommended_skill_for(framework: Optional[str], evidence: Optional[list[dict]] = None) -> Optional[str]:
+    evidence = evidence or []
     if framework is None:
         return None
     for detector in _DETECTORS:
