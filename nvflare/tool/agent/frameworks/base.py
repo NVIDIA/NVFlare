@@ -266,6 +266,15 @@ class FrameworkDetector:
     ) -> None:
         """Handle a called name such as ``torch.optim.SGD`` or ``flare.patch``."""
 
+    def classify_assignment_value(
+        self,
+        call_name: Optional[str],
+        file_state: Any,
+        scope: tuple[str, ...] = (),
+    ) -> Any:
+        """Snapshot detector-specific RHS provenance before assignment targets bind."""
+        return None
+
     def on_assignment(
         self,
         target_names: list[str],
@@ -274,6 +283,7 @@ class FrameworkDetector:
         file_state: Any,
         ctx: DetectContext,
         scope: tuple[str, ...] = (),
+        value_info: Any = None,
     ) -> None:
         """Handle assignment and optional call construction in a lexical scope."""
 

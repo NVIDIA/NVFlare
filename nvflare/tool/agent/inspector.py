@@ -582,7 +582,7 @@ class _PythonInspector(ast.NodeVisitor):
         self._detectors = frameworks.detectors()
         self._detector_states = {detector.name: detector.new_file_state() for detector in self._detectors}
         self._scope_stack: list[str] = []
-        self._class_deferred_bodies: list[list[tuple[str, ast.AST]]] = []
+        self._class_deferred_bodies: list[list[tuple[tuple[str, ...], str, ast.AST]]] = []
         self._ctx = DetectContext(
             self._emit_framework_evidence,
             self._add_flare_call,
@@ -631,7 +631,7 @@ class _PythonInspector(ast.NodeVisitor):
         end_lineno = getattr(node, "end_lineno", None) or node.lineno
         self.state.class_body_ranges.setdefault(self.rel_path, []).append((node.lineno, end_lineno))
         for decorator in node.decorator_list:
-            self.visit(decorator)
+            self._visit_decorator_expression(decorator)
         for type_param in getattr(node, "type_params", []):
             self.visit(type_param)
 
@@ -652,7 +652,7 @@ class _PythonInspector(ast.NodeVisitor):
         for keyword in node.keywords:
             self.visit(keyword.value)
 
-        deferred_bodies: list[tuple[str, ast.AST]] = []
+        deferred_bodies: list[tuple[tuple[str, ...], str, ast.AST]] = []
         self._class_deferred_bodies.append(deferred_bodies)
         try:
             self._visit_body_in_scope(node, "class", predeclare_locals=False)
@@ -667,15 +667,10 @@ class _PythonInspector(ast.NodeVisitor):
                 self._ctx,
                 tuple(self._scope_stack),
             )
-        self._scope_stack.append(f"class:{node.name}:{node.lineno}")
-        try:
-            for kind, deferred_node in deferred_bodies:
-                if kind == "lambda":
-                    self._visit_expression_in_scope(deferred_node, kind, deferred_node.body)
-                else:
-                    self._visit_body_in_scope(deferred_node, kind)
-        finally:
-            self._scope_stack.pop()
+        if self._class_deferred_bodies:
+            self._class_deferred_bodies[-1].extend(deferred_bodies)
+        else:
+            self._visit_deferred_bodies(deferred_bodies)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self._visit_function_definition_expressions(node)
@@ -749,21 +744,31 @@ class _PythonInspector(ast.NodeVisitor):
                     self._ctx,
                     tuple(self._scope_stack),
                 )
+        if isinstance(node.func, ast.Lambda):
+            self._visit_argument_defaults(node.func.args)
+            for argument in node.args:
+                self.visit(argument)
+            for keyword in node.keywords:
+                self.visit(keyword.value)
+            self._visit_expression_in_scope(node.func, "lambda", node.func.body)
+            return
         self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign) -> None:
         self._inspect_secret_assignment(node.targets, node.value, getattr(node, "lineno", None))
-        self.visit(node.value)
         call_name = _call_name(node.value.func) if isinstance(node.value, ast.Call) else None
+        value_info = self._classify_assignment_value(call_name)
+        self.visit(node.value)
         for target in node.targets:
-            self._visit_assignment_target(target, getattr(node, "lineno", None), call_name)
+            self._visit_assignment_target(target, getattr(node, "lineno", None), call_name, value_info)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         self._inspect_secret_assignment([node.target], node.value, getattr(node, "lineno", None))
+        call_name = _call_name(node.value.func) if isinstance(node.value, ast.Call) else None
+        value_info = self._classify_assignment_value(call_name)
         if node.value:
             self.visit(node.value)
-        call_name = _call_name(node.value.func) if isinstance(node.value, ast.Call) else None
-        self._visit_assignment_target(node.target, getattr(node, "lineno", None), call_name)
+        self._visit_assignment_target(node.target, getattr(node, "lineno", None), call_name, value_info)
         self.visit(node.annotation)
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
@@ -867,21 +872,39 @@ class _PythonInspector(ast.NodeVisitor):
         target: ast.AST,
         lineno: Optional[int],
         call_name: Optional[str] = None,
+        value_info: Optional[dict[str, object]] = None,
     ) -> None:
         if isinstance(target, (ast.Tuple, ast.List)):
             for item in target.elts:
-                self._visit_assignment_target(item, lineno, call_name)
+                self._visit_assignment_target(item, lineno, call_name, value_info)
             return
         if isinstance(target, ast.Starred):
-            self._visit_assignment_target(target.value, lineno, call_name)
+            self._visit_assignment_target(target.value, lineno, call_name, value_info)
             return
         self.visit(target)
-        self._dispatch_assignment(_assignment_target_names([target]), call_name, lineno)
+        self._dispatch_assignment(_assignment_target_names([target]), call_name, lineno, value_info)
 
     def _record_binding_names(self, target_names: list[str], lineno: Optional[int]) -> None:
         self._dispatch_assignment(target_names, None, lineno)
 
-    def _dispatch_assignment(self, target_names: list[str], call_name: Optional[str], lineno: Optional[int]) -> None:
+    def _classify_assignment_value(self, call_name: Optional[str]) -> dict[str, object]:
+        scope = tuple(self._scope_stack)
+        return {
+            detector.name: detector.classify_assignment_value(
+                call_name,
+                self._detector_states[detector.name],
+                scope,
+            )
+            for detector in self._detectors
+        }
+
+    def _dispatch_assignment(
+        self,
+        target_names: list[str],
+        call_name: Optional[str],
+        lineno: Optional[int],
+        value_info: Optional[dict[str, object]] = None,
+    ) -> None:
         if not target_names:
             return
         for detector in self._detectors:
@@ -892,6 +915,7 @@ class _PythonInspector(ast.NodeVisitor):
                 self._detector_states[detector.name],
                 self._ctx,
                 tuple(self._scope_stack),
+                value_info.get(detector.name) if value_info is not None else None,
             )
 
     def _visit_comprehension(self, node: ast.AST, kind: str) -> None:
@@ -939,7 +963,7 @@ class _PythonInspector(ast.NodeVisitor):
 
     def _visit_function_definition_expressions(self, node: ast.AST) -> None:
         for decorator in getattr(node, "decorator_list", []):
-            self.visit(decorator)
+            self._visit_decorator_expression(decorator)
         for type_param in getattr(node, "type_params", []):
             self.visit(type_param)
         arguments = getattr(node, "args", None)
@@ -951,12 +975,29 @@ class _PythonInspector(ast.NodeVisitor):
             self.visit(returns)
 
     def _defer_class_callable_body(self, kind: str, node: ast.AST) -> bool:
-        if not self._class_deferred_bodies or not self._scope_stack:
+        if not self._class_deferred_bodies:
             return False
-        if not self._scope_stack[-1].startswith("class:"):
-            return False
-        self._class_deferred_bodies[-1].append((kind, node))
+        self._class_deferred_bodies[-1].append((tuple(self._scope_stack), kind, node))
         return True
+
+    def _visit_decorator_expression(self, decorator: ast.AST) -> None:
+        if isinstance(decorator, ast.Lambda):
+            self._visit_argument_defaults(decorator.args)
+            self._visit_expression_in_scope(decorator, "lambda", decorator.body)
+            return
+        self.visit(decorator)
+
+    def _visit_deferred_bodies(self, deferred_bodies: list[tuple[tuple[str, ...], str, ast.AST]]) -> None:
+        original_scope = self._scope_stack
+        try:
+            for scope, kind, node in deferred_bodies:
+                self._scope_stack = list(scope)
+                if kind == "lambda":
+                    self._visit_expression_in_scope(node, kind, node.body)
+                else:
+                    self._visit_body_in_scope(node, kind)
+        finally:
+            self._scope_stack = original_scope
 
     def _visit_argument_defaults(self, arguments: ast.arguments) -> None:
         for default in arguments.defaults:

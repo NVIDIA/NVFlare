@@ -2100,6 +2100,119 @@ def test_inspect_method_resolves_enclosing_huggingface_trainer_subclass(tmp_path
 
 
 @pytest.mark.parametrize(
+    ("source", "expected_framework", "expected_state"),
+    [
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "class patch:\n"
+            "    converted = (lambda: patch(trainer))()\n"
+            "trainer.train()\n",
+            "huggingface",
+            "client_api_converted",
+            id="huggingface-immediate-lambda",
+        ),
+        pytest.param(
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n"
+            "class patch:\n"
+            "    @(lambda method: (patch(trainer), method)[1])\n"
+            "    def run(self):\n"
+            "        pass\n"
+            "trainer.fit(model)\n",
+            "pytorch_lightning",
+            "client_api_converted",
+            id="lightning-lambda-decorator",
+        ),
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "class patch:\n"
+            "    class Inner:\n"
+            "        def run(self):\n"
+            "            return patch(trainer)\n"
+            "trainer.train()\n",
+            "huggingface",
+            "partial_client_api",
+            id="huggingface-nested-class-method",
+        ),
+        pytest.param(
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n"
+            "class patch:\n"
+            "    class Inner:\n"
+            "        async def run(self):\n"
+            "            return patch(trainer)\n"
+            "trainer.fit(model)\n",
+            "pytorch_lightning",
+            "partial_client_api",
+            id="lightning-nested-class-method",
+        ),
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "class patch:\n"
+            "    callbacks = [lambda: patch(trainer) for _ in range(1)]\n"
+            "trainer.train()\n",
+            "huggingface",
+            "partial_client_api",
+            id="huggingface-comprehension-lambda",
+        ),
+        pytest.param(
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n"
+            "class patch:\n"
+            "    callbacks = [lambda: patch(trainer) for _ in range(1)]\n"
+            "trainer.fit(model)\n",
+            "pytorch_lightning",
+            "partial_client_api",
+            id="lightning-comprehension-lambda",
+        ),
+    ],
+)
+def test_inspect_class_callable_uses_execution_phase_binding(tmp_path, source, expected_framework, expected_state):
+    script = tmp_path / "client.py"
+    script.write_text(source, encoding="utf-8")
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == expected_framework
+    assert data["conversion_state"] == expected_state
+
+
+@pytest.mark.parametrize(
+    "assignment",
+    [
+        pytest.param("Trainer = trainer = Trainer(model=model, args=args)", id="direct-symbol-first"),
+        pytest.param("trainer = Trainer = Trainer(model=model, args=args)", id="direct-symbol-last"),
+        pytest.param("tf = trainer = tf.Trainer(model=model, args=args)", id="module-alias-first"),
+        pytest.param("trainer = tf = tf.Trainer(model=model, args=args)", id="module-alias-last"),
+        pytest.param(
+            "trainer = Trainer(model=(Trainer := replacement), args=args)",
+            id="constructor-rebound-in-argument",
+        ),
+    ],
+)
+def test_inspect_chained_assignment_preserves_huggingface_rhs_provenance(tmp_path, assignment):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "import transformers as tf\n" "from transformers import Trainer\n" f"{assignment}\n" "trainer.train()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "huggingface"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-huggingface"]
+
+
+@pytest.mark.parametrize(
     ("framework", "source_prefix", "call_target", "expected_state"),
     [
         pytest.param(

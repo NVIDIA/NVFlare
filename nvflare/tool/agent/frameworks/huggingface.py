@@ -190,6 +190,14 @@ class HuggingFaceDetector(FrameworkDetector):
                     # cannot change the result based on source order.
                     file_state.pending_train_calls.append((receiver, scope, call_name, lineno))
 
+    def classify_assignment_value(
+        self,
+        call_name: Optional[str],
+        file_state: _HuggingFaceFileState,
+        scope: tuple[str, ...] = (),
+    ) -> bool:
+        return bool(call_name and self._is_trainer_name(call_name, file_state, scope))
+
     def on_assignment(
         self,
         target_names: list[str],
@@ -198,8 +206,13 @@ class HuggingFaceDetector(FrameworkDetector):
         file_state: _HuggingFaceFileState,
         ctx: DetectContext,
         scope: tuple[str, ...] = (),
+        value_info: Optional[bool] = None,
     ) -> None:
-        is_trainer = bool(call_name and self._is_trainer_name(call_name, file_state, scope))
+        is_trainer = (
+            bool(call_name and self._is_trainer_name(call_name, file_state, scope))
+            if value_info is None
+            else value_info
+        )
         for target_name in target_names:
             binding_scope = self._bind_name(target_name, scope, file_state)
             if is_trainer:
