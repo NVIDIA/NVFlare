@@ -173,6 +173,7 @@ class PyTorchDetector(FrameworkDetector):
         file_state: _PyTorchFileState,
         ctx: DetectContext,
         scope: tuple[str, ...] = (),
+        value_info=None,
     ) -> None:
         for target_name in target_names:
             self._bind_name(target_name, scope, file_state)
