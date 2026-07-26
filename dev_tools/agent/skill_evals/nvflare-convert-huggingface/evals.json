@@ -6,7 +6,8 @@
       "prompt": "Convert this Hugging Face Trainer sequence-classification script into an NVFLARE FedAvg job for 2 simulated sites and 2 rounds. Preserve evaluation accuracy and run a bounded local validation.",
       "expected_output": "A standard client.py/model.py/job.py conversion that statically inspects the source, uses the PyTorch FedAvg recipe, preserves the Trainer/model/datasets/compute_metrics setup, applies nvflare.client.hf.patch(trainer) once, evaluates the received global model before local training, uses site-local training partitions, preserves PyTorch tensor exchange, validates locally, and reports backups and exact artifact paths.",
       "files": [
-        "files/trainer-basic/train.py"
+        "files/trainer-basic/train.py",
+        "files/trainer-basic/model.py"
       ],
       "assertions": [
         "The agent runs nvflare agent inspect before editing and confirms active Hugging Face Trainer evidence.",
@@ -114,7 +115,8 @@
       "prompt": "Convert this TRL SFTTrainer LoRA script to a two-site NVFLARE FedAvg job. Exchange adapters only, preserve the existing LoRA configuration, and do not add advanced patch options unless they are necessary.",
       "expected_output": "A Hugging Face Client API conversion that keeps the existing SFTTrainer and LoRA configuration, calls flare.patch(trainer) with defaults, creates an adapter-shaped server model with the same PEFT keyspace, uses PyTorch tensor exchange and external execution, and validates exact adapter-key compatibility before simulation.",
       "files": [
-        "files/peft-sft/train.py"
+        "files/peft-sft/train.py",
+        "files/peft-sft/model.py"
       ],
       "assertions": [
         "The agent detects TRL SFTTrainer as Hugging Face Trainer-style training.",
@@ -157,7 +159,8 @@
       "prompt": "Convert this Hugging Face Trainer job for torchrun with two GPU processes per site. Keep checkpoint state across FL rounds and explain any shared-storage requirement.",
       "expected_output": "A Hugging Face conversion that preserves torchrun, initializes torch.distributed before flare.patch, uses global rank for FLARE, keeps every rank in the same is_running/evaluate/train sequence, uses external execution, and explains that in-memory parameter broadcast needs no shared output directory while restore_state checkpoint paths must be visible to every rank.",
       "files": [
-        "files/trainer-basic/train.py"
+        "files/trainer-basic/train.py",
+        "files/trainer-basic/model.py"
       ],
       "assertions": [
         "The generated client initializes torch.distributed before flare.patch when WORLD_SIZE is greater than one.",
@@ -198,6 +201,7 @@
       "id": "huggingface-negative-manual-pytorch",
       "prompt": "Convert this AutoModel-based manual torch optimizer and backward loop to an NVFLARE job. It does not use transformers.Trainer.",
       "expected_output": "The Hugging Face conversion skill is not selected; the request routes to nvflare-convert-pytorch because a manual PyTorch loop owns training.",
+      "files": [],
       "assertions": [
         "The selected skill is nvflare-convert-pytorch, not nvflare-convert-huggingface."
       ],
@@ -216,6 +220,7 @@
       "id": "huggingface-negative-lightning",
       "prompt": "Convert my LightningModule that contains an AutoModel encoder and is trained by lightning.Trainer into an NVFLARE job.",
       "expected_output": "The Hugging Face conversion skill is not selected; the request routes to nvflare-convert-lightning because Lightning Trainer owns the training lifecycle.",
+      "files": [],
       "assertions": [
         "The selected skill is nvflare-convert-lightning, not nvflare-convert-huggingface."
       ],
@@ -234,6 +239,7 @@
       "id": "huggingface-global-negative-serving",
       "prompt": "Deploy a Hugging Face text-generation pipeline as a Kubernetes inference service with autoscaling.",
       "expected_output": "No NVFLARE conversion skill triggers because this is inference serving and Kubernetes deployment, not federated Trainer conversion.",
+      "files": [],
       "assertions": [
         "The selected skill is not nvflare-convert-huggingface."
       ],

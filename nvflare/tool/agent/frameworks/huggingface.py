@@ -23,6 +23,13 @@ from .base import DetectContext, FrameworkDetector
 FRAMEWORK = "huggingface"
 
 HUGGINGFACE_MODULES = {"transformers", "trl"}
+TRAINING_CONFIG_SYMBOLS = {"TrainingArguments", "Seq2SeqTrainingArguments", "SFTConfig"}
+TRAINER_CANDIDATE_EVIDENCE = {
+    "huggingface_trainer",
+    "huggingface_trainer_class",
+    "huggingface_training_config",
+    "huggingface_trainer_reference",
+}
 PATCH_PARENT_MODULE = "nvflare.client"
 PATCH_SUBMODULE = "hf"
 PATCH_MODULE = f"{PATCH_PARENT_MODULE}.{PATCH_SUBMODULE}"
@@ -31,7 +38,9 @@ PATCH_MODULE = f"{PATCH_PARENT_MODULE}.{PATCH_SUBMODULE}"
 @dataclass
 class _HuggingFaceFileState:
     module_aliases: dict = field(default_factory=dict)
+    config_symbols: dict = field(default_factory=dict)
     trainer_symbols: dict = field(default_factory=dict)
+    trainer_instances: set = field(default_factory=set)
     patch_symbols: set = field(default_factory=set)
     patch_modules: set = field(default_factory=set)
 
@@ -39,9 +48,16 @@ class _HuggingFaceFileState:
 class HuggingFaceDetector(FrameworkDetector):
     name = FRAMEWORK
     import_roots = {"transformers": FRAMEWORK, "trl": FRAMEWORK}
-    evidence_weights = {"huggingface_trainer": 4, "huggingface_trainer_class": 4}
+    evidence_weights = {
+        "huggingface_train": 4,
+        "huggingface_trainer": 2,
+        "huggingface_trainer_class": 2,
+        "huggingface_training_config": 1,
+        "huggingface_trainer_reference": 1,
+    }
     recommended_skill = "nvflare-convert-huggingface"
     recommendation_requires_active_evidence = True
+    family = "pytorch"
 
     def new_file_state(self) -> _HuggingFaceFileState:
         return _HuggingFaceFileState()
@@ -55,8 +71,15 @@ class HuggingFaceDetector(FrameworkDetector):
     def on_import_from(self, module: str, aliases: list, file_state: _HuggingFaceFileState, ctx: DetectContext) -> None:
         if self._is_huggingface_module(module):
             for alias in aliases:
+                alias_name = alias.asname or alias.name
                 if self._is_trainer_symbol(alias.name):
-                    file_state.trainer_symbols[alias.asname or alias.name] = alias.name
+                    file_state.trainer_symbols[alias_name] = alias.name
+                    ctx.evidence(FRAMEWORK, "huggingface_trainer_reference", alias.name, None)
+                elif alias.name in TRAINING_CONFIG_SYMBOLS:
+                    file_state.config_symbols[alias_name] = alias.name
+                    ctx.evidence(FRAMEWORK, "huggingface_training_config", alias.name, None)
+                elif alias.name.islower():
+                    file_state.module_aliases[alias_name] = f"{module}.{alias.name}"
         if module == PATCH_MODULE:
             for alias in aliases:
                 if alias.name == "patch":
@@ -80,9 +103,40 @@ class HuggingFaceDetector(FrameworkDetector):
             ctx.integration_signal(FRAMEWORK, call_name)
         if self._is_trainer_name(call_name, file_state):
             ctx.evidence(FRAMEWORK, "huggingface_trainer", call_name, lineno)
+        elif self._is_training_config_name(call_name, file_state):
+            ctx.evidence(FRAMEWORK, "huggingface_training_config", call_name, lineno)
+        elif self._is_trainer_train_call(call_name, file_state):
+            ctx.evidence(FRAMEWORK, "huggingface_train", call_name, lineno)
+
+    def on_assignment_call(
+        self,
+        target_names: list[str],
+        call_name: str,
+        lineno: Optional[int],
+        file_state: _HuggingFaceFileState,
+        ctx: DetectContext,
+    ) -> None:
+        if self._is_trainer_name(call_name, file_state):
+            file_state.trainer_instances.update(target_names)
 
     def is_active_evidence(self, evidence: dict) -> bool:
-        return evidence.get("kind") in {"huggingface_trainer", "huggingface_trainer_class"}
+        return evidence.get("kind") == "huggingface_train"
+
+    def promote_over_family(self, family_base: str, resolver) -> bool:
+        active_huggingface = resolver.active_evidence(self.name)
+        if not active_huggingface:
+            return False
+        if resolver.tied_to_entry_context(active_huggingface):
+            return True
+        pytorch_outside_trainer_files = resolver.evidence_outside_files(
+            resolver.evidence(family_base), active_huggingface
+        )
+        return resolver.score(active_huggingface) > resolver.score(pytorch_outside_trainer_files)
+
+    def fallback_skill_for(self, evidence: list[dict]) -> Optional[str]:
+        if any(item.get("kind") in TRAINER_CANDIDATE_EVIDENCE for item in evidence):
+            return "nvflare-orient"
+        return None
 
     @staticmethod
     def _is_huggingface_module(module: str) -> bool:
@@ -103,6 +157,21 @@ class HuggingFaceDetector(FrameworkDetector):
         module = file_state.module_aliases.get(prefix, prefix)
         return cls._is_huggingface_module(module)
 
+    @classmethod
+    def _is_training_config_name(cls, name: str, file_state: _HuggingFaceFileState) -> bool:
+        if file_state.config_symbols.get(name) in TRAINING_CONFIG_SYMBOLS:
+            return True
+        prefix, separator, symbol = name.rpartition(".")
+        if not separator or symbol not in TRAINING_CONFIG_SYMBOLS:
+            return False
+        module = file_state.module_aliases.get(prefix, prefix)
+        return cls._is_huggingface_module(module)
+
+    @staticmethod
+    def _is_trainer_train_call(call_name: str, file_state: _HuggingFaceFileState) -> bool:
+        receiver, separator, method = call_name.rpartition(".")
+        return bool(separator and method == "train" and receiver in file_state.trainer_instances)
+
     @staticmethod
     def _is_trainer_symbol(symbol: str) -> bool:
-        return symbol == "Trainer" or symbol.endswith("Trainer")
+        return symbol.endswith("Trainer")

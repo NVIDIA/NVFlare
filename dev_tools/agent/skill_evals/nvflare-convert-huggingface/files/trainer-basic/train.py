@@ -14,9 +14,8 @@
 
 import numpy as np
 from datasets import load_dataset
-from transformers import AutoModelForSequenceClassification, AutoTokenizer, Trainer, TrainingArguments
-
-MODEL_NAME = "distilbert/distilbert-base-uncased"
+from model import MODEL_NAME, create_model
+from transformers import AutoTokenizer, Trainer, TrainingArguments
 
 
 def compute_metrics(eval_pred):
@@ -29,7 +28,7 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     dataset = load_dataset("json", data_files={"train": "train.jsonl", "validation": "valid.jsonl"})
     tokenized = dataset.map(lambda row: tokenizer(row["text"], truncation=True), batched=True)
-    model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=2)
+    model = create_model()
     args = TrainingArguments(
         output_dir="outputs",
         num_train_epochs=1,

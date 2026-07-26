@@ -36,7 +36,7 @@ the same recipe `aggregator=` hook, and local validation and export.
 ## Do Not Use When
 
 Do not use for plain `torch.nn.Module` manual training loops without Lightning
-(route to `nvflare-convert-pytorch`), Hugging Face Trainer, TensorFlow,
+(route to `nvflare-convert-pytorch`), Hugging Face Trainer (route to `nvflare-convert-huggingface`), TensorFlow,
 XGBoost, scikit-learn, a failed job (route to `nvflare-diagnose-job`),
 federated statistics without training (route to `nvflare-fed-stats`), or
 generic Lightning debugging without FLARE intent. Out of

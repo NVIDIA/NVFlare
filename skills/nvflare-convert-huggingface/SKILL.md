@@ -7,7 +7,7 @@ metadata:
   min_flare_version: "2.9.0"
   blast_radius: runs_simulator
   category: Conversion
-  skill_version: "0.1.0"
+  version: "0.1.0"
   tags: "nvflare, federated-learning, huggingface, transformers, trl, peft, conversion"
   languages: "python"
   frameworks: "huggingface, transformers, trl, pytorch, nvflare"
@@ -118,6 +118,10 @@ policy, arbitrary controller rewrites, and experiment search.
   between the server model and patched Trainer. Do not infer LoRA target
   modules, silently switch adapter/full-model scope, or solve key mismatches
   with non-strict loading.
+- Must verify that `trainer.model` owns all federated trainable state for
+  Trainer subclasses with reference, reward, value-head, or other auxiliary
+  models. Ask or fail closed when `params_scope="auto"` would omit trainable
+  state required by the algorithm.
 - Must preserve model constructor values needed on both server and clients.
   Ask one semantic question or fail closed when required values are not
   statically available.

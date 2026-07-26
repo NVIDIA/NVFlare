@@ -20,7 +20,7 @@ Python AST once and dispatches every node to the registered
 roots, symbols, evidence kinds and weights, the recommended conversion skill,
 and cross-framework family/promotion rules -- lives in a detector module here.
 
-Adding a framework (XGBoost, TensorFlow, Hugging Face, ...) means adding a
+Adding a framework (XGBoost, TensorFlow, ...) means adding a
 detector module and registering it in ``registry.py``; the engine does not
 change.
 """
@@ -31,6 +31,7 @@ from .registry import (
     UTILITY_FRAMEWORKS,
     detectors,
     evidence_weights,
+    fallback_skill_for,
     family_base_has_member,
     framework_for_import,
     is_active_evidence,
@@ -45,6 +46,7 @@ __all__ = [
     "UTILITY_FRAMEWORKS",
     "detectors",
     "evidence_weights",
+    "fallback_skill_for",
     "family_base_has_member",
     "framework_for_import",
     "is_active_evidence",

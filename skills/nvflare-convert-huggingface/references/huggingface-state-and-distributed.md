@@ -17,6 +17,12 @@ value. Compare actual key sets before validation. Use `server_key_prefix` only
 for a known wrapper namespace difference; do not use non-strict loading to hide
 an unexplained mismatch.
 
+Some Trainer subclasses own auxiliary reference, reward, critic, or value-head
+models in addition to `trainer.model`. Before conversion, inspect which of those
+objects are trainable and whether their state participates in aggregation.
+Proceed only when the complete federated trainable state is represented by the
+patched Trainer's exchanged parameter scope; otherwise ask or fail closed.
+
 Use `ExchangeFormat.PYTORCH` for native tensor dtypes such as BF16. Keep dtype,
 quantization, and device-map behavior from source evidence. Do not enable
 `trust_remote_code`, BF16, FP16, or quantization merely because the selected

@@ -31,7 +31,7 @@ horizontal FL, Client API model exchange with `FLModel`, recipe `aggregator=` ho
 
 ## Do Not Use When
 
-Do not use for PyTorch Lightning (route to `nvflare-convert-lightning`), Hugging Face Trainer, TensorFlow, XGBoost,
+Do not use for PyTorch Lightning (route to `nvflare-convert-lightning`), Hugging Face Trainer (route to `nvflare-convert-huggingface`), TensorFlow, XGBoost,
 scikit-learn, failed jobs (route to
 `nvflare-diagnose-job`), federated statistics without training (route to
 `nvflare-fed-stats`), or generic PyTorch debugging without FLARE intent. Out of
