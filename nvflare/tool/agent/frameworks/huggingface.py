@@ -46,6 +46,7 @@ class _HuggingFaceFileState:
     pending_train_calls: list = field(default_factory=list)
     patch_symbols: set = field(default_factory=set)
     patch_modules: set = field(default_factory=set)
+    pending_patch_calls: list = field(default_factory=list)
 
 
 class HuggingFaceDetector(FrameworkDetector):
@@ -158,11 +159,16 @@ class HuggingFaceDetector(FrameworkDetector):
         ctx: DetectContext,
         scope: tuple[str, ...] = (),
     ) -> None:
-        if file_state.scopes.has_identity(call_name, scope, file_state.patch_symbols) or self._is_patch_call(
-            call_name, file_state, scope
-        ):
+        is_patch_call = file_state.scopes.has_identity(
+            call_name, scope, file_state.patch_symbols
+        ) or self._is_patch_call(call_name, file_state, scope)
+        if is_patch_call:
             ctx.flare_call(call_name)
             ctx.integration_signal(FRAMEWORK, call_name)
+        else:
+            identity_name = self._patch_identity_name(call_name)
+            if identity_name and file_state.scopes.can_resolve_from_enclosing_scope(identity_name, scope):
+                file_state.pending_patch_calls.append((call_name, scope))
         if self._is_trainer_name(call_name, file_state, scope):
             ctx.evidence(FRAMEWORK, "huggingface_trainer", call_name, lineno)
         elif self._is_training_config_name(call_name, file_state, scope):
@@ -193,6 +199,13 @@ class HuggingFaceDetector(FrameworkDetector):
         ctx: DetectContext,
         scope: tuple[str, ...] = (),
     ) -> None:
+        if call_name and (
+            file_state.scopes.has_identity(call_name, scope, file_state.patch_symbols)
+            or self._is_patch_call(call_name, file_state, scope)
+        ):
+            # Assignment right-hand sides run before their targets are rebound.
+            ctx.flare_call(call_name)
+            ctx.integration_signal(FRAMEWORK, call_name)
         is_trainer = bool(call_name and self._is_trainer_name(call_name, file_state, scope))
         for target_name in target_names:
             binding_scope = self._bind_name(target_name, scope, file_state)
@@ -203,6 +216,12 @@ class HuggingFaceDetector(FrameworkDetector):
         for receiver, scope, call_name, lineno in file_state.pending_train_calls:
             if self._has_identity(receiver, scope, file_state.trainer_instances, file_state):
                 ctx.evidence(FRAMEWORK, "huggingface_train", call_name, lineno)
+        for call_name, scope in file_state.pending_patch_calls:
+            if file_state.scopes.has_identity(call_name, scope, file_state.patch_symbols) or self._is_patch_call(
+                call_name, file_state, scope
+            ):
+                ctx.flare_call(call_name)
+                ctx.integration_signal(FRAMEWORK, call_name)
 
     def is_active_evidence(self, evidence: dict) -> bool:
         return evidence.get("kind") == "huggingface_train"
@@ -250,9 +269,21 @@ class HuggingFaceDetector(FrameworkDetector):
         scope: tuple[str, ...],
     ) -> bool:
         prefix, _, symbol = call_name.rpartition(".")
-        return symbol == "patch" and (
-            file_state.scopes.has_identity(prefix, scope, file_state.patch_modules) or prefix == PATCH_MODULE
-        )
+        if symbol != "patch":
+            return False
+        identity_name = HuggingFaceDetector._patch_identity_name(call_name)
+        return bool(identity_name and file_state.scopes.has_identity(identity_name, scope, file_state.patch_modules))
+
+    @staticmethod
+    def _patch_identity_name(call_name: str) -> Optional[str]:
+        prefix, separator, symbol = call_name.rpartition(".")
+        if not separator:
+            return call_name
+        if symbol != "patch":
+            return None
+        if prefix == PATCH_MODULE:
+            return prefix.split(".", 1)[0]
+        return prefix
 
     @classmethod
     def _is_trainer_name(cls, name: str, file_state: _HuggingFaceFileState, scope: tuple[str, ...] = ()) -> bool:

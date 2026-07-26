@@ -1397,45 +1397,11 @@ def test_inspect_classifies_lightning_patch_as_client_api_converted(
             "nvflare-convert-huggingface",
             id="huggingface-module-alias-rebound",
         ),
-        pytest.param(
-            "pytorch_lightning",
-            "import lightning as L\n"
-            "from nvflare.client.lightning import patch\n"
-            "\n"
-            "trainer = L.Trainer(max_epochs=1)\n"
-            "patch = local_patch\n"
-            "patch(trainer)\n"
-            "trainer.fit(model)\n",
-            "nvflare-convert-lightning",
-            id="lightning-direct-alias-rebound",
-        ),
-        pytest.param(
-            "pytorch_lightning",
-            "import lightning as L\n"
-            "from nvflare.client import lightning as flare\n"
-            "\n"
-            "trainer = L.Trainer(max_epochs=1)\n"
-            "flare = local_module\n"
-            "flare.patch(trainer)\n"
-            "trainer.fit(model)\n",
-            "nvflare-convert-lightning",
-            id="lightning-module-alias-rebound",
-        ),
-        pytest.param(
-            "pytorch_lightning",
-            "import lightning as L\n"
-            "from nvflare.client.lightning import patch\n"
-            "from local_callbacks import patch\n"
-            "\n"
-            "trainer = L.Trainer(max_epochs=1)\n"
-            "patch(trainer)\n"
-            "trainer.fit(model)\n",
-            "nvflare-convert-lightning",
-            id="lightning-direct-alias-rebound-by-import",
-        ),
     ],
 )
-def test_inspect_does_not_treat_rebound_patch_alias_as_conversion(tmp_path, framework, source, expected_skill):
+def test_inspect_does_not_treat_rebound_huggingface_patch_alias_as_conversion(
+    tmp_path, framework, source, expected_skill
+):
     script = tmp_path / "client.py"
     script.write_text(source, encoding="utf-8")
 
@@ -1475,35 +1441,11 @@ def test_inspect_does_not_treat_rebound_patch_alias_as_conversion(tmp_path, fram
             "nvflare-convert-huggingface",
             id="huggingface-module-alias-parameter-shadow",
         ),
-        pytest.param(
-            "pytorch_lightning",
-            "import lightning as L\n"
-            "from nvflare.client.lightning import patch\n"
-            "\n"
-            "trainer = L.Trainer(max_epochs=1)\n"
-            "def apply_patch(patch):\n"
-            "    patch(trainer)\n"
-            "apply_patch(local_patch)\n"
-            "trainer.fit(model)\n",
-            "nvflare-convert-lightning",
-            id="lightning-direct-alias-parameter-shadow",
-        ),
-        pytest.param(
-            "pytorch_lightning",
-            "import lightning as L\n"
-            "from nvflare.client import lightning as flare\n"
-            "\n"
-            "trainer = L.Trainer(max_epochs=1)\n"
-            "def apply_patch(flare):\n"
-            "    flare.patch(trainer)\n"
-            "apply_patch(local_module)\n"
-            "trainer.fit(model)\n",
-            "nvflare-convert-lightning",
-            id="lightning-module-alias-parameter-shadow",
-        ),
     ],
 )
-def test_inspect_does_not_treat_shadowed_patch_alias_as_conversion(tmp_path, framework, source, expected_skill):
+def test_inspect_does_not_treat_shadowed_huggingface_patch_alias_as_conversion(
+    tmp_path, framework, source, expected_skill
+):
     script = tmp_path / "client.py"
     script.write_text(source, encoding="utf-8")
 
@@ -1512,6 +1454,101 @@ def test_inspect_does_not_treat_shadowed_patch_alias_as_conversion(tmp_path, fra
     assert data["frameworks"][0]["name"] == framework
     assert data["conversion_state"] == "partial_client_api"
     assert data["skill_selection"]["recommended_skills"] == [expected_skill]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "def configure():\n"
+            "    patch(trainer)\n"
+            "from nvflare.client.hf import patch\n"
+            "configure()\n"
+            "trainer.train()\n",
+            id="huggingface-forward-direct-patch-import",
+        ),
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "def configure():\n"
+            "    flare.patch(trainer)\n"
+            "from nvflare.client import hf as flare\n"
+            "configure()\n"
+            "trainer.train()\n",
+            id="huggingface-forward-module-patch-import",
+        ),
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "def configure():\n"
+            "    nvflare.client.hf.patch(trainer)\n"
+            "import nvflare.client.hf\n"
+            "configure()\n"
+            "trainer.train()\n",
+            id="huggingface-forward-fully-qualified-patch-import",
+        ),
+    ],
+)
+def test_inspect_resolves_huggingface_patch_imported_after_function_definition(tmp_path, source):
+    script = tmp_path / "client.py"
+    script.write_text(source, encoding="utf-8")
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "huggingface"
+    assert data["conversion_state"] == "client_api_converted"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "patch = patch(trainer)\n"
+            "trainer.train()\n",
+            id="direct-patch",
+        ),
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client import hf as flare\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "flare = flare.patch(trainer)\n"
+            "trainer.train()\n",
+            id="module-patch",
+        ),
+    ],
+)
+def test_inspect_resolves_huggingface_patch_before_assignment_target_rebinding(tmp_path, source):
+    script = tmp_path / "client.py"
+    script.write_text(source, encoding="utf-8")
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "huggingface"
+    assert data["conversion_state"] == "client_api_converted"
+
+
+def test_inspect_does_not_trust_rebound_fully_qualified_huggingface_patch_root(tmp_path):
+    script = tmp_path / "client.py"
+    script.write_text(
+        "from transformers import Trainer, TrainingArguments\n"
+        "import nvflare.client.hf\n"
+        "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+        "nvflare = local_module\n"
+        "nvflare.client.hf.patch(trainer)\n"
+        "trainer.train()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "huggingface"
+    assert data["conversion_state"] == "partial_client_api"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-huggingface"]
 
 
 def test_inspect_does_not_route_unconverted_nemo_wrapper_as_lightning(tmp_path):

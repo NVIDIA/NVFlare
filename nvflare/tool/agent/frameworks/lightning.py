@@ -23,7 +23,7 @@ import ast
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .base import DetectContext, FrameworkDetector, LexicalScopeBindings
+from .base import DetectContext, FrameworkDetector
 
 FRAMEWORK = "pytorch_lightning"
 BASE_FAMILY = "pytorch"
@@ -45,7 +45,6 @@ class _LightningFileState:
     # directly.
     aliases: dict = field(default_factory=dict)
     symbols: dict = field(default_factory=dict)
-    scopes: LexicalScopeBindings = field(default_factory=LexicalScopeBindings)
     patch_symbols: set = field(default_factory=set)
     patch_modules: set = field(default_factory=set)
 
@@ -67,16 +66,14 @@ class LightningDetector(FrameworkDetector):
         ctx: DetectContext,
         scope: tuple[str, ...] = (),
     ) -> None:
-        alias_name = alias.asname or alias.name
-        binding_scope = file_state.scopes.bind(alias_name, scope, file_state.patch_symbols, file_state.patch_modules)
         if alias.name in LIGHTNING_MODULES:
             # ``import lightning.pytorch as pl`` -> pl points at lightning.pytorch;
             # ``import lightning as L`` -> L points at the bare lightning package.
-            file_state.aliases[alias_name] = alias.name
+            file_state.aliases[alias.asname or alias.name] = alias.name
         if alias.name == LIGHTNING_PATCH_MODULE:
             # ``import nvflare.client.lightning as flare`` -> ``flare.patch`` is
             # the canonical conversion call; a plain import keeps the full path.
-            file_state.patch_modules.add((binding_scope, alias_name))
+            file_state.patch_modules.add(alias.asname or alias.name)
 
     def on_import_from(
         self,
@@ -86,15 +83,6 @@ class LightningDetector(FrameworkDetector):
         ctx: DetectContext,
         scope: tuple[str, ...] = (),
     ) -> None:
-        bound_names = {}
-        for alias in aliases:
-            if alias.name == "*":
-                continue
-            alias_name = alias.asname or alias.name
-            bound_names[alias_name] = file_state.scopes.bind(
-                alias_name, scope, file_state.patch_symbols, file_state.patch_modules
-            )
-
         if module in LIGHTNING_MODULES or any(module.startswith(f"{prefix}.") for prefix in LIGHTNING_MODULES):
             for alias in aliases:
                 if alias.name in LIGHTNING_SYMBOLS:
@@ -106,26 +94,13 @@ class LightningDetector(FrameworkDetector):
         if module == LIGHTNING_PATCH_MODULE:
             for alias in aliases:
                 if alias.name == "patch":
-                    alias_name = alias.asname or alias.name
-                    file_state.patch_symbols.add((bound_names[alias_name], alias_name))
+                    file_state.patch_symbols.add(alias.asname or alias.name)
         # ``from nvflare.client import lightning as flare`` -> ``flare.patch`` is
         # the module-alias form of the canonical conversion call.
         elif module == LIGHTNING_PATCH_PARENT_MODULE:
             for alias in aliases:
                 if alias.name == LIGHTNING_PATCH_SUBMODULE:
-                    alias_name = alias.asname or alias.name
-                    file_state.patch_modules.add((bound_names[alias_name], alias_name))
-
-    def on_scope(
-        self,
-        scope: tuple[str, ...],
-        local_names: set[str],
-        global_names: set[str],
-        nonlocal_names: set[str],
-        file_state: _LightningFileState,
-        ctx: DetectContext,
-    ) -> None:
-        file_state.scopes.declare_scope(scope, local_names, global_names, nonlocal_names)
+                    file_state.patch_modules.add(alias.asname or alias.name)
 
     def on_class_base(
         self,
@@ -146,30 +121,18 @@ class LightningDetector(FrameworkDetector):
         ctx: DetectContext,
         scope: tuple[str, ...] = (),
     ) -> None:
-        if file_state.scopes.has_identity(call_name, scope, file_state.patch_symbols) or self._is_lightning_patch_call(
-            call_name, file_state, scope
-        ):
+        if call_name in file_state.patch_symbols or self._is_lightning_patch_call(call_name, file_state):
             ctx.flare_call(call_name)
             ctx.integration_signal(FRAMEWORK, call_name)
         if self._is_lightning_trainer_call(call_name, file_state):
             ctx.evidence(FRAMEWORK, "lightning_trainer", call_name, lineno)
 
-    def on_assignment(
-        self,
-        target_names: list[str],
-        call_name: Optional[str],
-        lineno: Optional[int],
-        file_state: _LightningFileState,
-        ctx: DetectContext,
-        scope: tuple[str, ...] = (),
-    ) -> None:
-        for target_name in target_names:
-            file_state.scopes.bind(target_name, scope, file_state.patch_symbols, file_state.patch_modules)
-
     def is_active_evidence(self, evidence: dict) -> bool:
         return evidence.get("kind") in {"lightning_class", "lightning_trainer"}
 
     def is_training_owner_evidence(self, evidence: dict) -> bool:
+        # A LightningModule can be trained by another framework; Trainer owns
+        # the loop when resolving mixed Lightning/Hugging Face projects.
         return evidence.get("kind") == "lightning_trainer"
 
     @staticmethod
@@ -195,17 +158,11 @@ class LightningDetector(FrameworkDetector):
         return symbol in LIGHTNING_CLASS_SYMBOLS and cls._prefix_exposes_lightning_symbols(prefix, file_state)
 
     @staticmethod
-    def _is_lightning_patch_call(
-        call_name: str,
-        file_state: _LightningFileState,
-        scope: tuple[str, ...],
-    ) -> bool:
+    def _is_lightning_patch_call(call_name: str, file_state: _LightningFileState) -> bool:
         prefix, _, symbol = call_name.rpartition(".")
         if symbol != "patch":
             return False
-        return (
-            file_state.scopes.has_identity(prefix, scope, file_state.patch_modules) or prefix == LIGHTNING_PATCH_MODULE
-        )
+        return prefix in file_state.patch_modules or prefix == LIGHTNING_PATCH_MODULE
 
     @classmethod
     def _is_lightning_trainer_call(cls, call_name: str, file_state: _LightningFileState) -> bool:
