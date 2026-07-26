@@ -23,6 +23,7 @@ a full detector and conversion skill land.
 from typing import Optional
 
 from .base import FrameworkDetector
+from .huggingface import HuggingFaceDetector
 from .lightning import LightningDetector
 from .pytorch import PyTorchDetector
 
@@ -30,6 +31,7 @@ from .pytorch import PyTorchDetector
 _DETECTORS: list[FrameworkDetector] = [
     PyTorchDetector(),
     LightningDetector(),
+    HuggingFaceDetector(),
 ]
 
 # Frameworks recognized by import only (ranked from import evidence) until a
@@ -80,11 +82,17 @@ def framework_for_import(module: str) -> Optional[str]:
     return _IMPORT_ROOTS.get(module.split(".")[0])
 
 
-def recommended_skill_for(framework: Optional[str]) -> Optional[str]:
+def recommended_skill_for(framework: Optional[str], evidence: Optional[list[dict]] = None) -> Optional[str]:
     if framework is None:
         return None
     for detector in _DETECTORS:
         if detector.name == framework:
+            if (
+                evidence is not None
+                and detector.recommendation_requires_active_evidence
+                and not any(detector.is_active_evidence(item) for item in evidence)
+            ):
+                return None
             return detector.recommended_skill
     return None
 

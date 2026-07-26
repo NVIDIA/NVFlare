@@ -1490,7 +1490,7 @@ def _skill_selection(
         # orient's job; an empty recommendation would strand the consumer.
         recommended.append("nvflare-orient")
     elif detected_framework and conversion_state == "not_converted":
-        skill = frameworks.recommended_skill_for(detected_framework)
+        skill = frameworks.recommended_skill_for(detected_framework, state.framework_evidence.get(detected_framework))
         if skill:
             recommended.append(skill)
     if (
@@ -1531,7 +1531,7 @@ def _recommended_next_commands(
         # an argparse error on an unrelated repo.
         commands.append(f"python {shlex.quote(source_job.source_file)} --export --export-dir <job-dir>")
     elif detected_framework and conversion_state == "not_converted":
-        skill = frameworks.recommended_skill_for(detected_framework)
+        skill = frameworks.recommended_skill_for(detected_framework, state.framework_evidence.get(detected_framework))
         if skill:
             commands.append(f"Use the {skill} skill before editing.")
     return commands

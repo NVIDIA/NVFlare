@@ -72,6 +72,9 @@ class FrameworkDetector:
     evidence_weights: dict[str, int] = {}
     #: Conversion skill recommended when this framework is primary, or ``None``.
     recommended_skill: Optional[str] = None
+    #: Whether inspector recommendations require active evidence rather than
+    #: imports alone. Useful when a package also has non-training uses.
+    recommendation_requires_active_evidence: bool = False
     #: Family this framework belongs to for cross-framework disambiguation
     #: (e.g. Lightning declares ``"pytorch"``). ``None`` means standalone.
     family: Optional[str] = None
