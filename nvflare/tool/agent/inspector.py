@@ -570,6 +570,7 @@ def _inspect_file(path: Path, state: InspectState, max_file_bytes: int) -> None:
     state.file_imports.setdefault(rel_path, set())
     visitor = _PythonInspector(path, rel_path, state)
     visitor.visit(tree)
+    visitor.finalize()
     _add_entry_point(path, rel_path, tree, state)
 
 
@@ -598,7 +599,12 @@ class _PythonInspector(ast.NodeVisitor):
         for alias in node.names:
             self._record_import(alias.name, node.lineno)
             for detector in self._detectors:
-                detector.on_import(alias, self._detector_states[detector.name], self._ctx)
+                detector.on_import(
+                    alias,
+                    self._detector_states[detector.name],
+                    self._ctx,
+                    tuple(self._scope_stack),
+                )
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
@@ -606,7 +612,13 @@ class _PythonInspector(ast.NodeVisitor):
         self._record_import(_resolve_import_from_module(self.rel_path, module, node.level), node.lineno)
         self._record_import_from_modules(module, node.level, node.names)
         for detector in self._detectors:
-            detector.on_import_from(module, node.names, self._detector_states[detector.name], self._ctx)
+            detector.on_import_from(
+                module,
+                node.names,
+                self._detector_states[detector.name],
+                self._ctx,
+                tuple(self._scope_stack),
+            )
         for alias in node.names:
             if alias.name in {"FedJob", "FLModel", "SimEnv"}:
                 self.state.flare_imports.append(
@@ -625,20 +637,57 @@ class _PythonInspector(ast.NodeVisitor):
                 node.lineno,
                 self._detector_states[detector.name],
                 self._ctx,
+                tuple(self._scope_stack),
             )
         for base_name in base_names:
             for detector in self._detectors:
-                detector.on_class_base(base_name, node.lineno, self._detector_states[detector.name], self._ctx)
+                detector.on_class_base(
+                    base_name,
+                    node.lineno,
+                    self._detector_states[detector.name],
+                    self._ctx,
+                    tuple(self._scope_stack),
+                )
         self._visit_scoped(node, "class")
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._record_binding_names([node.name], node.lineno)
         self._visit_scoped(node, "function")
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._record_binding_names([node.name], node.lineno)
         self._visit_scoped(node, "async-function")
 
     def visit_Lambda(self, node: ast.Lambda) -> None:
         self._visit_scoped(node, "lambda")
+
+    def visit_For(self, node: ast.For) -> None:
+        self.visit(node.iter)
+        self._record_binding_targets([node.target], getattr(node, "lineno", None))
+        for statement in node.body:
+            self.visit(statement)
+        for statement in node.orelse:
+            self.visit(statement)
+
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
+        self.visit(node.iter)
+        self._record_binding_targets([node.target], getattr(node, "lineno", None))
+        for statement in node.body:
+            self.visit(statement)
+        for statement in node.orelse:
+            self.visit(statement)
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+        self._visit_comprehension(node, "list-comprehension")
+
+    def visit_SetComp(self, node: ast.SetComp) -> None:
+        self._visit_comprehension(node, "set-comprehension")
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:
+        self._visit_comprehension(node, "dict-comprehension")
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+        self._visit_comprehension(node, "generator-expression")
 
     def visit_Call(self, node: ast.Call) -> None:
         call_name = _call_name(node.func)
@@ -663,6 +712,33 @@ class _PythonInspector(ast.NodeVisitor):
         self._inspect_secret_assignment([node.target], node.value, getattr(node, "lineno", None))
         self._record_assignment([node.target], node.value, getattr(node, "lineno", None))
         self.generic_visit(node)
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        self.generic_visit(node)
+        self._record_binding_targets([node.target], getattr(node, "lineno", None))
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+        self.visit(node.value)
+        self._record_binding_targets([node.target], getattr(node, "lineno", None))
+
+    def visit_With(self, node: ast.With) -> None:
+        for item in node.items:
+            self.visit(item.context_expr)
+            if item.optional_vars:
+                self._record_binding_targets([item.optional_vars], getattr(node, "lineno", None))
+        for statement in node.body:
+            self.visit(statement)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+        self.visit_With(node)
+
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+        if node.type:
+            self.visit(node.type)
+        if node.name:
+            self._record_binding_names([node.name], getattr(node, "lineno", None))
+        for statement in node.body:
+            self.visit(statement)
 
     def visit_Constant(self, node: ast.Constant) -> None:
         if isinstance(node.value, str):
@@ -701,8 +777,9 @@ class _PythonInspector(ast.NodeVisitor):
 
     def _record_call(self, call_name: str, lineno: int) -> None:
         # Generic FLARE / distributed / dynamic-dispatch signals only. Ranked
-        # framework activity (pytorch_call, lightning_trainer) and conversion
-        # signals (flare.patch) are recorded by framework detectors via on_call.
+        # framework activity (pytorch_call/pytorch_data_call,
+        # lightning_trainer) and conversion signals (flare.patch) are recorded
+        # by framework detectors via on_call.
         if call_name.startswith("flare.") or call_name.startswith("nvflare."):
             self._add_flare_call(call_name)
         if call_name in {"FedJob", "FLModel", "SimEnv"}:
@@ -727,6 +804,15 @@ class _PythonInspector(ast.NodeVisitor):
     def _record_assignment(self, targets: list[ast.AST], value: ast.AST, lineno: Optional[int]) -> None:
         call_name = _call_name(value.func) if isinstance(value, ast.Call) else None
         target_names = _assignment_target_names(targets)
+        self._dispatch_assignment(target_names, call_name, lineno)
+
+    def _record_binding_targets(self, targets: list[ast.AST], lineno: Optional[int]) -> None:
+        self._record_binding_names(_assignment_target_names(targets), lineno)
+
+    def _record_binding_names(self, target_names: list[str], lineno: Optional[int]) -> None:
+        self._dispatch_assignment(target_names, None, lineno)
+
+    def _dispatch_assignment(self, target_names: list[str], call_name: Optional[str], lineno: Optional[int]) -> None:
         if not target_names:
             return
         for detector in self._detectors:
@@ -739,10 +825,64 @@ class _PythonInspector(ast.NodeVisitor):
                 tuple(self._scope_stack),
             )
 
+    def _visit_comprehension(self, node: ast.AST, kind: str) -> None:
+        generators = getattr(node, "generators", [])
+        if not generators:
+            return
+        # Python evaluates the first iterable in the enclosing scope; loop
+        # targets and all remaining expressions live in the comprehension's
+        # implicit scope.
+        self.visit(generators[0].iter)
+        self._scope_stack.append(f"{kind}:<anonymous>:{getattr(node, 'lineno', 0)}")
+        try:
+            scope = tuple(self._scope_stack)
+            target_names = {
+                name
+                for generator in generators
+                for name in _assignment_target_names([generator.target])
+                if "." not in name
+            }
+            for detector in self._detectors:
+                detector.on_scope(
+                    scope,
+                    target_names,
+                    set(),
+                    set(),
+                    self._detector_states[detector.name],
+                    self._ctx,
+                )
+            for index, generator in enumerate(generators):
+                if index:
+                    self.visit(generator.iter)
+                for condition in generator.ifs:
+                    self.visit(condition)
+            if isinstance(node, ast.DictComp):
+                self.visit(node.key)
+                self.visit(node.value)
+            else:
+                self.visit(node.elt)
+        finally:
+            self._scope_stack.pop()
+
+    def finalize(self) -> None:
+        for detector in self._detectors:
+            detector.finalize_file(self._detector_states[detector.name], self._ctx)
+
     def _visit_scoped(self, node: ast.AST, kind: str) -> None:
         name = getattr(node, "name", "<anonymous>")
         self._scope_stack.append(f"{kind}:{name}:{getattr(node, 'lineno', 0)}")
         try:
+            scope = tuple(self._scope_stack)
+            local_names, global_names, nonlocal_names = _lexical_bindings(node)
+            for detector in self._detectors:
+                detector.on_scope(
+                    scope,
+                    local_names,
+                    global_names,
+                    nonlocal_names,
+                    self._detector_states[detector.name],
+                    self._ctx,
+                )
             self.generic_visit(node)
         finally:
             self._scope_stack.pop()
@@ -776,6 +916,87 @@ class _PythonInspector(ast.NodeVisitor):
                     "value": _redact_literal(value, self.state.redact),
                 }
             )
+
+
+class _LexicalBindingCollector(ast.NodeVisitor):
+    """Collect names owned by one lexical scope without entering child scopes."""
+
+    def __init__(self):
+        self.local_names: set[str] = set()
+        self.global_names: set[str] = set()
+        self.nonlocal_names: set[str] = set()
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if isinstance(node.ctx, ast.Store):
+            self.local_names.add(node.id)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            self.local_names.add(alias.asname or alias.name.split(".", 1)[0])
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for alias in node.names:
+            if alias.name != "*":
+                self.local_names.add(alias.asname or alias.name)
+
+    def visit_Global(self, node: ast.Global) -> None:
+        self.global_names.update(node.names)
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+        self.nonlocal_names.update(node.names)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        # Defaults and decorators execute in the enclosing scope but do not
+        # create bindings there; only the function name belongs to this scope.
+        self.local_names.add(node.name)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self.local_names.add(node.name)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self.local_names.add(node.name)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        return
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+        return
+
+    def visit_SetComp(self, node: ast.SetComp) -> None:
+        return
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:
+        return
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+        return
+
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+        if node.name:
+            self.local_names.add(node.name)
+        for statement in node.body:
+            self.visit(statement)
+
+
+def _lexical_bindings(node: ast.AST) -> tuple[set[str], set[str], set[str]]:
+    collector = _LexicalBindingCollector()
+    arguments = getattr(node, "args", None)
+    if isinstance(arguments, ast.arguments):
+        for argument in arguments.posonlyargs + arguments.args + arguments.kwonlyargs:
+            collector.local_names.add(argument.arg)
+        if arguments.vararg:
+            collector.local_names.add(arguments.vararg.arg)
+        if arguments.kwarg:
+            collector.local_names.add(arguments.kwarg.arg)
+
+    if isinstance(node, ast.Lambda):
+        collector.visit(node.body)
+    else:
+        for statement in getattr(node, "body", []):
+            collector.visit(statement)
+
+    collector.local_names.difference_update(collector.global_names | collector.nonlocal_names)
+    return collector.local_names, collector.global_names, collector.nonlocal_names
 
 
 def _rank_frameworks(state: InspectState) -> list[dict]:
@@ -879,6 +1100,9 @@ class _FamilyResolver:
 
     def active_evidence(self, framework: str) -> list[dict]:
         return [item for item in self.evidence(framework) if frameworks.is_active_evidence(framework, item)]
+
+    def training_owner_evidence(self, framework: str) -> list[dict]:
+        return [item for item in self.evidence(framework) if frameworks.is_training_owner_evidence(framework, item)]
 
     def score(self, evidence: list[dict]) -> int:
         return _evidence_score(evidence)
@@ -1536,10 +1760,12 @@ def _skill_selection(
         # Mixed data is definitionally ambiguous, and routing ambiguity is
         # orient's job; an empty recommendation would strand the consumer.
         recommended.append("nvflare-orient")
-    elif conversion_state == "not_converted" and frameworks.has_active_family_member_conflict(state.framework_evidence):
+    elif conversion_state in {"not_converted", "partial_client_api"} and frameworks.has_active_family_member_conflict(
+        state.framework_evidence, _FamilyResolver(state)
+    ):
         # Two specialized trainers in one family cannot both own one conversion.
         recommended.append("nvflare-orient")
-    elif detected_framework and conversion_state == "not_converted":
+    elif detected_framework and conversion_state in {"not_converted", "partial_client_api"}:
         evidence = state.framework_evidence.get(detected_framework, [])
         skill = frameworks.recommended_skill_for(detected_framework, evidence)
         if skill:
@@ -1585,9 +1811,11 @@ def _recommended_next_commands(
         # corroborating nvflare evidence this would ship a command that fails with
         # an argparse error on an unrelated repo.
         commands.append(f"python {shlex.quote(source_job.source_file)} --export --export-dir <job-dir>")
-    elif conversion_state == "not_converted" and frameworks.has_active_family_member_conflict(state.framework_evidence):
+    elif conversion_state in {"not_converted", "partial_client_api"} and frameworks.has_active_family_member_conflict(
+        state.framework_evidence, _FamilyResolver(state)
+    ):
         commands.append("Use the nvflare-orient skill before editing.")
-    elif detected_framework and conversion_state == "not_converted":
+    elif detected_framework and conversion_state in {"not_converted", "partial_client_api"}:
         evidence = state.framework_evidence.get(detected_framework, [])
         skill = frameworks.recommended_skill_for(detected_framework, evidence)
         if skill:

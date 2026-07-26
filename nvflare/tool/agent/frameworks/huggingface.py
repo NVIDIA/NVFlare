@@ -18,7 +18,7 @@ import ast
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .base import DetectContext, FrameworkDetector
+from .base import DetectContext, FrameworkDetector, LexicalScopeBindings
 
 FRAMEWORK = "huggingface"
 
@@ -42,6 +42,8 @@ class _HuggingFaceFileState:
     trainer_symbols: dict = field(default_factory=dict)
     trainer_classes: set = field(default_factory=set)
     trainer_instances: set = field(default_factory=set)
+    scopes: LexicalScopeBindings = field(default_factory=LexicalScopeBindings)
+    pending_train_calls: list = field(default_factory=list)
     patch_symbols: set = field(default_factory=set)
     patch_modules: set = field(default_factory=set)
 
@@ -62,30 +64,66 @@ class HuggingFaceDetector(FrameworkDetector):
     def new_file_state(self) -> _HuggingFaceFileState:
         return _HuggingFaceFileState()
 
-    def on_import(self, alias: ast.alias, file_state: _HuggingFaceFileState, ctx: DetectContext) -> None:
+    def on_import(
+        self,
+        alias: ast.alias,
+        file_state: _HuggingFaceFileState,
+        ctx: DetectContext,
+        scope: tuple[str, ...] = (),
+    ) -> None:
+        alias_name = alias.asname or alias.name.split(".", 1)[0]
+        binding_scope = self._bind_name(alias_name, scope, file_state)
         if self._is_huggingface_module(alias.name):
-            file_state.module_aliases[alias.asname or alias.name] = alias.name
+            file_state.module_aliases[(binding_scope, alias_name)] = alias.name
         if alias.name == PATCH_MODULE:
-            file_state.patch_modules.add(alias.asname or alias.name)
+            file_state.patch_modules.add((binding_scope, alias_name))
 
-    def on_import_from(self, module: str, aliases: list, file_state: _HuggingFaceFileState, ctx: DetectContext) -> None:
+    def on_import_from(
+        self,
+        module: str,
+        aliases: list,
+        file_state: _HuggingFaceFileState,
+        ctx: DetectContext,
+        scope: tuple[str, ...] = (),
+    ) -> None:
+        bound_names = {}
+        for alias in aliases:
+            if alias.name == "*":
+                continue
+            alias_name = alias.asname or alias.name
+            bound_names[alias_name] = self._bind_name(alias_name, scope, file_state)
+
         if self._is_huggingface_module(module):
             for alias in aliases:
                 alias_name = alias.asname or alias.name
+                binding_scope = bound_names.get(alias_name, scope)
                 if self._is_trainer_symbol(alias.name):
-                    file_state.trainer_symbols[alias_name] = alias.name
+                    file_state.trainer_symbols[(binding_scope, alias_name)] = alias.name
                 elif alias.name in TRAINING_CONFIG_SYMBOLS:
-                    file_state.config_symbols[alias_name] = alias.name
+                    file_state.config_symbols[(binding_scope, alias_name)] = alias.name
                 elif self._is_trainer_submodule(module, alias.name):
-                    file_state.module_aliases[alias_name] = f"{module}.{alias.name}"
+                    file_state.module_aliases[(binding_scope, alias_name)] = f"{module}.{alias.name}"
         if module == PATCH_MODULE:
             for alias in aliases:
                 if alias.name == "patch":
-                    file_state.patch_symbols.add(alias.asname or alias.name)
+                    alias_name = alias.asname or alias.name
+                    file_state.patch_symbols.add((bound_names[alias_name], alias_name))
         elif module == PATCH_PARENT_MODULE:
             for alias in aliases:
                 if alias.name == PATCH_SUBMODULE:
-                    file_state.patch_modules.add(alias.asname or alias.name)
+                    alias_name = alias.asname or alias.name
+                    file_state.patch_modules.add((bound_names[alias_name], alias_name))
+
+    def on_scope(
+        self,
+        scope: tuple[str, ...],
+        local_names: set[str],
+        global_names: set[str],
+        nonlocal_names: set[str],
+        file_state: _HuggingFaceFileState,
+        ctx: DetectContext,
+    ) -> None:
+        file_state.scopes.declare_scope(scope, local_names, global_names, nonlocal_names)
 
     def on_class_definition(
         self,
@@ -94,14 +132,22 @@ class HuggingFaceDetector(FrameworkDetector):
         lineno: Optional[int],
         file_state: _HuggingFaceFileState,
         ctx: DetectContext,
+        scope: tuple[str, ...] = (),
     ) -> None:
-        if any(self._is_trainer_name(base_name, file_state) for base_name in base_names):
-            file_state.trainer_classes.add(class_name)
+        is_trainer_class = any(self._is_trainer_name(base_name, file_state, scope) for base_name in base_names)
+        binding_scope = self._bind_name(class_name, scope, file_state)
+        if is_trainer_class:
+            file_state.trainer_classes.add((binding_scope, class_name))
 
     def on_class_base(
-        self, base_name: str, lineno: Optional[int], file_state: _HuggingFaceFileState, ctx: DetectContext
+        self,
+        base_name: str,
+        lineno: Optional[int],
+        file_state: _HuggingFaceFileState,
+        ctx: DetectContext,
+        scope: tuple[str, ...] = (),
     ) -> None:
-        if self._is_trainer_name(base_name, file_state):
+        if self._is_trainer_name(base_name, file_state, scope):
             ctx.evidence(FRAMEWORK, "huggingface_trainer_class", base_name, lineno)
 
     def on_call(
@@ -112,17 +158,31 @@ class HuggingFaceDetector(FrameworkDetector):
         ctx: DetectContext,
         scope: tuple[str, ...] = (),
     ) -> None:
-        if call_name in file_state.patch_symbols or self._is_patch_call(call_name, file_state):
+        if file_state.scopes.has_identity(call_name, scope, file_state.patch_symbols) or self._is_patch_call(
+            call_name, file_state, scope
+        ):
             ctx.flare_call(call_name)
             ctx.integration_signal(FRAMEWORK, call_name)
-        if self._is_trainer_name(call_name, file_state):
+        if self._is_trainer_name(call_name, file_state, scope):
             ctx.evidence(FRAMEWORK, "huggingface_trainer", call_name, lineno)
-        elif self._is_training_config_name(call_name, file_state):
+        elif self._is_training_config_name(call_name, file_state, scope):
             ctx.evidence(FRAMEWORK, "huggingface_training_config", call_name, lineno)
         else:
             receiver = self._train_call_receiver(call_name)
-            if receiver and (scope, receiver) in file_state.trainer_instances:
-                ctx.evidence(FRAMEWORK, "huggingface_train", call_name, lineno)
+            if receiver:
+                identity_key = self._lookup_identity_key(
+                    receiver,
+                    scope,
+                    file_state.trainer_instances,
+                    file_state,
+                )
+                if identity_key and identity_key[0] == scope:
+                    ctx.evidence(FRAMEWORK, "huggingface_train", call_name, lineno)
+                elif self._can_resolve_from_enclosing_scope(receiver, scope, file_state):
+                    # Calls resolved through an enclosing scope are finalized
+                    # after the full file is visited so later lexical bindings
+                    # cannot change the result based on source order.
+                    file_state.pending_train_calls.append((receiver, scope, call_name, lineno))
 
     def on_assignment(
         self,
@@ -133,22 +193,16 @@ class HuggingFaceDetector(FrameworkDetector):
         ctx: DetectContext,
         scope: tuple[str, ...] = (),
     ) -> None:
-        direct_targets = [name for name in target_names if "." not in name]
-        for target_name in direct_targets:
-            file_state.trainer_instances.discard((scope, target_name))
-        if call_name and self._is_trainer_name(call_name, file_state):
-            file_state.trainer_instances.update((scope, target_name) for target_name in direct_targets)
+        is_trainer = bool(call_name and self._is_trainer_name(call_name, file_state, scope))
+        for target_name in target_names:
+            binding_scope = self._bind_name(target_name, scope, file_state)
+            if is_trainer:
+                file_state.trainer_instances.add((binding_scope, target_name))
 
-    def on_assignment_call(
-        self,
-        target_names: list[str],
-        call_name: str,
-        lineno: Optional[int],
-        file_state: _HuggingFaceFileState,
-        ctx: DetectContext,
-        scope: tuple[str, ...] = (),
-    ) -> None:
-        self.on_assignment(target_names, call_name, lineno, file_state, ctx, scope)
+    def finalize_file(self, file_state: _HuggingFaceFileState, ctx: DetectContext) -> None:
+        for receiver, scope, call_name, lineno in file_state.pending_train_calls:
+            if self._has_identity(receiver, scope, file_state.trainer_instances, file_state):
+                ctx.evidence(FRAMEWORK, "huggingface_train", call_name, lineno)
 
     def is_active_evidence(self, evidence: dict) -> bool:
         return evidence.get("kind") == "huggingface_train"
@@ -157,10 +211,16 @@ class HuggingFaceDetector(FrameworkDetector):
         active_huggingface = resolver.active_evidence(self.name)
         if not active_huggingface:
             # Import-only PyTorch evidence cannot claim training ownership.
-            # Preserve Hugging Face when the base is inactive; an entry-owned
-            # Trainer/config candidate then routes to nvflare-orient, while pure
-            # inference remains detected without a conversion recommendation.
-            return not resolver.active_evidence(family_base)
+            # A Trainer/config candidate outranks shared data plumbing or a
+            # model class and routes safely to nvflare-orient. Without a
+            # Trainer candidate, active base evidence keeps the PyTorch
+            # converter while pure inference remains recommendation-free.
+            if resolver.training_owner_evidence(family_base):
+                return False
+            candidate_evidence = [
+                item for item in resolver.evidence(self.name) if item.get("kind") in TRAINER_CANDIDATE_EVIDENCE
+            ]
+            return bool(candidate_evidence) or not resolver.active_evidence(family_base)
         if resolver.tied_to_entry_context(active_huggingface):
             return True
         pytorch_outside_trainer_files = resolver.evidence_outside_files(
@@ -184,31 +244,92 @@ class HuggingFaceDetector(FrameworkDetector):
         return (module == "trl.trainer" or module.startswith("trl.trainer.")) and symbol.endswith("_trainer")
 
     @staticmethod
-    def _is_patch_call(call_name: str, file_state: _HuggingFaceFileState) -> bool:
+    def _is_patch_call(
+        call_name: str,
+        file_state: _HuggingFaceFileState,
+        scope: tuple[str, ...],
+    ) -> bool:
         prefix, _, symbol = call_name.rpartition(".")
-        return symbol == "patch" and (prefix in file_state.patch_modules or prefix == PATCH_MODULE)
+        return symbol == "patch" and (
+            file_state.scopes.has_identity(prefix, scope, file_state.patch_modules) or prefix == PATCH_MODULE
+        )
 
     @classmethod
-    def _is_trainer_name(cls, name: str, file_state: _HuggingFaceFileState) -> bool:
-        if name in file_state.trainer_classes:
+    def _is_trainer_name(cls, name: str, file_state: _HuggingFaceFileState, scope: tuple[str, ...] = ()) -> bool:
+        if cls._has_identity(name, scope, file_state.trainer_classes, file_state):
             return True
-        if cls._is_trainer_symbol(file_state.trainer_symbols.get(name, "")):
+        symbol = cls._lookup_mapping(name, scope, file_state.trainer_symbols, file_state)
+        if cls._is_trainer_symbol(symbol or ""):
             return True
         prefix, separator, symbol = name.rpartition(".")
         if not separator or not cls._is_trainer_symbol(symbol):
             return False
-        module = file_state.module_aliases.get(prefix, prefix)
+        module = cls._lookup_mapping(prefix, scope, file_state.module_aliases, file_state) or prefix
         return cls._is_huggingface_module(module)
 
     @classmethod
-    def _is_training_config_name(cls, name: str, file_state: _HuggingFaceFileState) -> bool:
-        if file_state.config_symbols.get(name) in TRAINING_CONFIG_SYMBOLS:
+    def _is_training_config_name(
+        cls, name: str, file_state: _HuggingFaceFileState, scope: tuple[str, ...] = ()
+    ) -> bool:
+        if cls._lookup_mapping(name, scope, file_state.config_symbols, file_state) in TRAINING_CONFIG_SYMBOLS:
             return True
         prefix, separator, symbol = name.rpartition(".")
         if not separator or symbol not in TRAINING_CONFIG_SYMBOLS:
             return False
-        module = file_state.module_aliases.get(prefix, prefix)
+        module = cls._lookup_mapping(prefix, scope, file_state.module_aliases, file_state) or prefix
         return cls._is_huggingface_module(module)
+
+    @classmethod
+    def _bind_name(cls, name: str, scope: tuple[str, ...], file_state: _HuggingFaceFileState) -> tuple[str, ...]:
+        return file_state.scopes.bind(
+            name,
+            scope,
+            file_state.module_aliases,
+            file_state.config_symbols,
+            file_state.trainer_symbols,
+            file_state.trainer_classes,
+            file_state.trainer_instances,
+            file_state.patch_symbols,
+            file_state.patch_modules,
+        )
+
+    @classmethod
+    def _has_identity(
+        cls,
+        name: str,
+        scope: tuple[str, ...],
+        identities: set,
+        file_state: _HuggingFaceFileState,
+    ) -> bool:
+        return cls._lookup_identity_key(name, scope, identities, file_state) is not None
+
+    @staticmethod
+    def _can_resolve_from_enclosing_scope(
+        name: str,
+        scope: tuple[str, ...],
+        file_state: _HuggingFaceFileState,
+    ) -> bool:
+        return file_state.scopes.can_resolve_from_enclosing_scope(name, scope)
+
+    @classmethod
+    def _lookup_mapping(
+        cls,
+        name: str,
+        scope: tuple[str, ...],
+        identities: dict,
+        file_state: _HuggingFaceFileState,
+    ):
+        return file_state.scopes.lookup_mapping(name, scope, identities)
+
+    @classmethod
+    def _lookup_identity_key(
+        cls,
+        name: str,
+        scope: tuple[str, ...],
+        identities: set,
+        file_state: _HuggingFaceFileState,
+    ):
+        return file_state.scopes.lookup_identity_key(name, scope, identities)
 
     @staticmethod
     def _train_call_receiver(call_name: str) -> Optional[str]:

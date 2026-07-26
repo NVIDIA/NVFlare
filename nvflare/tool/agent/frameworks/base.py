@@ -23,7 +23,124 @@ as opaque.
 """
 
 import ast
+from dataclasses import dataclass, field
 from typing import Any, Optional
+
+
+@dataclass
+class LexicalScopeBindings:
+    """Resolve scoped identities while honoring Python binding declarations."""
+
+    bindings: dict = field(default_factory=dict)
+    scope_locals: dict = field(default_factory=dict)
+    scope_globals: dict = field(default_factory=dict)
+    scope_nonlocals: dict = field(default_factory=dict)
+
+    def declare_scope(
+        self,
+        scope: tuple[str, ...],
+        local_names: set[str],
+        global_names: set[str],
+        nonlocal_names: set[str],
+    ) -> None:
+        self.scope_locals[scope] = local_names
+        self.scope_globals[scope] = global_names
+        self.scope_nonlocals[scope] = nonlocal_names
+
+    def bind(
+        self,
+        name: str,
+        scope: tuple[str, ...],
+        *identity_collections,
+    ) -> tuple[str, ...]:
+        binding_scope = self.binding_scope(name, scope)
+        self.bindings.setdefault(binding_scope, set()).add(name)
+        key = (binding_scope, name)
+        for identities in identity_collections:
+            if isinstance(identities, dict):
+                identities.pop(key, None)
+            else:
+                identities.discard(key)
+        return binding_scope
+
+    def has_identity(self, name: str, scope: tuple[str, ...], identities) -> bool:
+        return self.lookup_identity_key(name, scope, identities) is not None
+
+    def lookup_mapping(self, name: str, scope: tuple[str, ...], identities: dict):
+        key = self.lookup_identity_key(name, scope, identities)
+        return identities.get(key) if key else None
+
+    def lookup_identity_key(self, name: str, scope: tuple[str, ...], identities):
+        for candidate in self.candidate_scopes(name, scope):
+            key = (candidate, name)
+            if key in identities:
+                return key
+            if name in self.scope_locals.get(candidate, set()) or name in self.bindings.get(candidate, set()):
+                return None
+        return None
+
+    def can_resolve_from_enclosing_scope(self, name: str, scope: tuple[str, ...]) -> bool:
+        if not scope or "." in name:
+            return False
+        if name in self.scope_globals.get(scope, set()):
+            return True
+        if name in self.scope_nonlocals.get(scope, set()):
+            return True
+        return name not in self.scope_locals.get(scope, set())
+
+    def binding_scope(self, name: str, scope: tuple[str, ...]) -> tuple[str, ...]:
+        if "." in name:
+            return scope
+        if name in self.scope_globals.get(scope, set()):
+            return ()
+        if name in self.scope_nonlocals.get(scope, set()):
+            candidates = self.candidate_scopes(name, scope, include_current=False, include_module=False)
+            for candidate in candidates:
+                if name in self.scope_locals.get(candidate, set()) or name in self.bindings.get(candidate, set()):
+                    return candidate
+        return scope
+
+    def candidate_scopes(
+        self,
+        name: str,
+        scope: tuple[str, ...],
+        *,
+        include_current: bool = True,
+        include_module: bool = True,
+    ) -> list[tuple[str, ...]]:
+        if "." in name:
+            return [scope] if include_current else []
+        if name in self.scope_globals.get(scope, set()):
+            return [()]
+
+        candidates = []
+        start = len(scope) if include_current else len(scope) - 1
+        nonlocal_only = name in self.scope_nonlocals.get(scope, set())
+        for length in range(start, -1, -1):
+            candidate = scope[:length]
+            if not candidate and (nonlocal_only or not include_module):
+                continue
+            if (
+                candidate
+                and candidate[-1].startswith("class:")
+                and any(
+                    part.startswith(
+                        (
+                            "function:",
+                            "async-function:",
+                            "lambda:",
+                            "list-comprehension:",
+                            "set-comprehension:",
+                            "dict-comprehension:",
+                            "generator-expression:",
+                        )
+                    )
+                    for part in scope[length:]
+                )
+            ):
+                continue
+            candidates.append(candidate)
+        return candidates
 
 
 class DetectContext:
@@ -83,11 +200,35 @@ class FrameworkDetector:
         """Return fresh per-file scratch state (import aliases, symbols)."""
         return None
 
-    def on_import(self, alias: ast.alias, file_state: Any, ctx: DetectContext) -> None:
+    def on_import(
+        self,
+        alias: ast.alias,
+        file_state: Any,
+        ctx: DetectContext,
+        scope: tuple[str, ...] = (),
+    ) -> None:
         """Handle ``import x`` / ``import x as y`` aliases."""
 
-    def on_import_from(self, module: str, aliases: list, file_state: Any, ctx: DetectContext) -> None:
+    def on_import_from(
+        self,
+        module: str,
+        aliases: list,
+        file_state: Any,
+        ctx: DetectContext,
+        scope: tuple[str, ...] = (),
+    ) -> None:
         """Handle ``from module import ...`` symbols."""
+
+    def on_scope(
+        self,
+        scope: tuple[str, ...],
+        local_names: set[str],
+        global_names: set[str],
+        nonlocal_names: set[str],
+        file_state: Any,
+        ctx: DetectContext,
+    ) -> None:
+        """Declare lexical bindings before a function, class, or lambda body is visited."""
 
     def on_class_definition(
         self,
@@ -96,10 +237,18 @@ class FrameworkDetector:
         lineno: Optional[int],
         file_state: Any,
         ctx: DetectContext,
+        scope: tuple[str, ...] = (),
     ) -> None:
         """Handle a class definition before its individual bases are visited."""
 
-    def on_class_base(self, base_name: str, lineno: Optional[int], file_state: Any, ctx: DetectContext) -> None:
+    def on_class_base(
+        self,
+        base_name: str,
+        lineno: Optional[int],
+        file_state: Any,
+        ctx: DetectContext,
+        scope: tuple[str, ...] = (),
+    ) -> None:
         """Handle a base class name in a ``class X(Base):`` definition."""
 
     def on_call(
@@ -122,19 +271,9 @@ class FrameworkDetector:
         scope: tuple[str, ...] = (),
     ) -> None:
         """Handle assignment and optional call construction in a lexical scope."""
-        if call_name:
-            self.on_assignment_call(target_names, call_name, lineno, file_state, ctx, scope)
 
-    def on_assignment_call(
-        self,
-        target_names: list[str],
-        call_name: str,
-        lineno: Optional[int],
-        file_state: Any,
-        ctx: DetectContext,
-        scope: tuple[str, ...] = (),
-    ) -> None:
-        """Handle assignment of a call result, such as ``trainer = Trainer(...)``."""
+    def finalize_file(self, file_state: Any, ctx: DetectContext) -> None:
+        """Resolve evidence that depends on bindings collected later in the file."""
 
     # --- cross-framework family resolution -------------------------------
 

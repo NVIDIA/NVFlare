@@ -39,6 +39,7 @@ def test_evidence_weights_are_aggregated_from_detectors():
     weights = frameworks.evidence_weights()
     assert weights["import"] == 1
     assert weights["pytorch_class"] == 3
+    assert weights["pytorch_data_call"] == 2
     assert weights["lightning_trainer"] == 3
     assert weights["huggingface_train"] == 4
 
@@ -63,23 +64,32 @@ def test_huggingface_candidate_falls_back_to_orient():
 
 
 def test_active_family_member_conflict_requires_two_specialized_trainers():
+    class Resolver:
+        @staticmethod
+        def tied_to_entry_context(evidence):
+            return bool(evidence)
+
+    resolver = Resolver()
     assert frameworks.has_active_family_member_conflict(
         {
             "pytorch_lightning": [{"kind": "lightning_trainer"}],
             "huggingface": [{"kind": "huggingface_train"}],
-        }
+        },
+        resolver,
     )
     assert not frameworks.has_active_family_member_conflict(
         {
             "pytorch": [{"kind": "pytorch_call"}],
             "huggingface": [{"kind": "huggingface_train"}],
-        }
+        },
+        resolver,
     )
     assert not frameworks.has_active_family_member_conflict(
         {
             "pytorch_lightning": [{"kind": "lightning_class"}],
             "huggingface": [{"kind": "huggingface_train"}],
-        }
+        },
+        resolver,
     )
 
 
@@ -107,6 +117,22 @@ def test_pytorch_detector_records_class_evidence():
     assert ("pytorch", "pytorch_class", "nn.Module") in evidence
 
 
+def test_pytorch_detector_preserves_aliased_data_helper_kind():
+    detector = PyTorchDetector()
+    state = detector.new_file_state()
+    ctx, evidence, _, _ = _emit_collector()
+
+    detector.on_import_from(
+        "torch.utils.data",
+        [ast.alias(name="DataLoader", asname="Loader")],
+        state,
+        ctx,
+    )
+    detector.on_call("Loader", 3, state, ctx)
+
+    assert ("pytorch", "pytorch_data_call", "Loader") in evidence
+
+
 def test_lightning_detector_records_patch_integration_signal():
     detector = LightningDetector()
     state = detector.new_file_state()
@@ -127,7 +153,7 @@ def test_huggingface_detector_records_trainer_and_patch_signals():
 
     detector.on_import_from("trl", [ast.alias(name="SFTTrainer", asname="Trainer")], state, ctx)
     detector.on_import(ast.alias(name="nvflare.client.hf", asname="flare"), state, ctx)
-    detector.on_assignment_call(["trainer"], "Trainer", 4, state, ctx)
+    detector.on_assignment(["trainer"], "Trainer", 4, state, ctx)
     detector.on_call("Trainer", 4, state, ctx)
     detector.on_call("trainer.train", 5, state, ctx)
     detector.on_call("flare.patch", 6, state, ctx)
@@ -146,7 +172,7 @@ def test_huggingface_detector_tracks_local_trainer_subclass():
     detector.on_import_from("transformers", [ast.alias(name="Trainer", asname=None)], state, ctx)
     detector.on_class_definition("Custom", ["Trainer"], 3, state, ctx)
     detector.on_class_base("Trainer", 3, state, ctx)
-    detector.on_assignment_call(["trainer"], "Custom", 5, state, ctx)
+    detector.on_assignment(["trainer"], "Custom", 5, state, ctx)
     detector.on_call("Custom", 5, state, ctx)
     detector.on_call("trainer.train", 6, state, ctx)
 
