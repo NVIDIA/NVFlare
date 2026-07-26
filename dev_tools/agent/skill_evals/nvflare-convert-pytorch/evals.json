@@ -754,6 +754,20 @@
       }
     },
     {
+      "id": "pytorch-negative-huggingface",
+      "prompt": "Convert my transformers.Trainer training script to an NVFLARE job. The Trainer owns optimization and evaluation.",
+      "expected_output": "The PyTorch conversion skill should not be the lead; route to nvflare-convert-huggingface because Hugging Face Trainer owns training.",
+      "files": [],
+      "assertions": [
+        "The selected skill is not nvflare-convert-pytorch.",
+        "The selected skill is nvflare-convert-huggingface."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-huggingface",
+        "negative_for": "nvflare-convert-pytorch"
+      }
+    },
+    {
       "id": "pytorch-global-negative-kubernetes",
       "prompt": "Deploy an existing FLARE startup kit to Kubernetes.",
       "expected_output": "No PyTorch conversion skill should trigger.",

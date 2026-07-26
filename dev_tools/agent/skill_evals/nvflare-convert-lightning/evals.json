@@ -567,6 +567,41 @@
       }
     },
     {
+      "id": "lightning-negative-huggingface",
+      "prompt": "Convert my transformers.Trainer training script to an NVFLARE job. There is no Lightning Trainer or LightningModule.",
+      "expected_output": "The Lightning conversion skill should not be the lead; route to nvflare-convert-huggingface because Hugging Face Trainer owns training.",
+      "files": [],
+      "assertions": [
+        "The selected skill is not nvflare-convert-lightning.",
+        "The selected skill is nvflare-convert-huggingface."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-huggingface",
+        "negative_for": "nvflare-convert-lightning"
+      }
+    },
+    {
+      "id": "lightning-negative-dual-trainer",
+      "prompt": "Convert a project that actively runs both lightning.Trainer.fit() and transformers.Trainer.train() entrypoints into one NVFLARE job.",
+      "expected_output": "The Lightning conversion skill does not patch both trainers. The request routes to nvflare-orient so the user can choose one training owner or split the entrypoints into separate jobs.",
+      "files": [],
+      "assertions": [
+        "The selected skill is nvflare-orient, not either framework converter.",
+        "The agent asks the user to select one training owner or split the entrypoints or jobs.",
+        "The agent does not apply both Lightning and Hugging Face Client API patches in one federated round loop."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-orient",
+        "negative_for": "nvflare-convert-lightning",
+        "prohibited_behavior": [
+          {
+            "id": "no-dual-trainer-patching-lightning",
+            "description": "does not patch both Lightning and Hugging Face Trainers in one federated training loop"
+          }
+        ]
+      }
+    },
+    {
       "id": "lightning-global-negative-kubernetes",
       "prompt": "Deploy an existing FLARE startup kit to Kubernetes.",
       "expected_output": "No Lightning conversion skill should trigger.",

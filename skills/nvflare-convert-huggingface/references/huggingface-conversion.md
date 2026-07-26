@@ -43,8 +43,7 @@ global parameters, and sends the result from rank 0.
 
 - Construct the model, tokenizer/processor, datasets, collator, Trainer
   arguments, callbacks, and Trainer once before the federated loop.
-- Preserve `compute_metrics` and evaluation datasets. Call `evaluate()` before
-  `train()` when the server needs metrics for the received global model.
+- Preserve `compute_metrics` and evaluation datasets.
 - Keep mid-training evaluation controlled by the Trainer's own evaluation
   strategy; it is not a separate FL task.
 - Preserve the source local budget. By default, the patch uses positive
@@ -54,7 +53,6 @@ global parameters, and sends the result from rank 0.
   explicit `local_steps`.
 - Keep local-only callbacks and reporting. Leave network trackers disabled
   during validation unless explicitly requested.
-- Patch only one Trainer per Python process.
 
 ## Recipe Integration
 

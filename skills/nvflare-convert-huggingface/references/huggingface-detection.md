@@ -29,17 +29,21 @@ as Trainer-style training without examining its entrypoint.
 - Route `LightningModule` or Lightning `Trainer` ownership to
   `nvflare-convert-lightning`, even when the module contains a Transformers
   model.
-- Route an entrypoint that actively runs both Lightning and Hugging Face
-  Trainers to `nvflare-orient`. Require one training-loop owner or separate
-  entrypoints/jobs; never patch both Trainers in one federated round loop.
+- Route an inspected project that actively contains both Lightning and Hugging
+  Face Trainer entrypoints to `nvflare-orient`. Require the user to select one
+  training-loop owner or separate the jobs; never patch both Trainers in one
+  federated round loop.
 - Keep pure preprocessing, model download, inference, evaluation reporting,
   serving, and deployment outside this conversion skill.
 - Treat Accelerate-only custom loops as manual PyTorch unless a supported
   Hugging Face `Trainer` still owns training.
 - Route a Trainer/configuration factory that static inspection cannot resolve
   to `nvflare-orient` rather than guessing Trainer ownership.
-- Treat cross-file or dynamically assigned Trainer ownership as unresolved
-  unless static inspection can bind the `train()` call to its construction.
+- Module-global and closure-captured Trainer instances are statically
+  resolvable when normal Python lexical lookup reaches their construction.
+- Attribute-held Trainers are resolvable only when construction and `train()`
+  occur in the same lexical scope. Cross-method, cross-file, and dynamically
+  assigned ownership remains unresolved.
 
 ## Facts To Extract
 

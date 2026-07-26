@@ -1,6 +1,6 @@
 ---
 name: nvflare-convert-lightning
-description: "Convert existing PyTorch Lightning training code into an NVFLARE federated job using the Lightning Client API patch, local validation, and job export; do not use for plain PyTorch, other frameworks, deployment, POC/production lifecycle, or experiment workflows."
+description: "Convert existing PyTorch Lightning training code into an NVFLARE federated job using the Lightning Client API patch, local validation, and job export; route projects with active Lightning and Hugging Face Trainer entrypoints to nvflare-orient, and do not use for plain PyTorch, other frameworks, deployment, POC/production lifecycle, or experiment workflows."
 license: Apache-2.0
 version: "0.1.0"
 metadata:
@@ -35,11 +35,11 @@ the same recipe `aggregator=` hook, and local validation and export.
 
 ## Do Not Use When
 
-Do not use for plain `torch.nn.Module` manual training loops without Lightning
-(route to `nvflare-convert-pytorch`), Hugging Face Trainer (route to `nvflare-convert-huggingface`), TensorFlow,
-XGBoost, scikit-learn, a failed job (route to `nvflare-diagnose-job`),
-federated statistics without training (route to `nvflare-fed-stats`), or
-generic Lightning debugging without FLARE intent. Out of
+Do not use for plain PyTorch loops (route to `nvflare-convert-pytorch`) or Hugging Face Trainer-only projects (route to `nvflare-convert-huggingface`). Active
+Lightning and Hugging Face Trainer entrypoints route to `nvflare-orient`.
+Do not use for TensorFlow, XGBoost, scikit-learn,
+a failed job (route to `nvflare-diagnose-job`), federated statistics without
+training (route to `nvflare-fed-stats`), or generic Lightning debugging. Out of
 conversion scope: production deployment, Kubernetes, POC lifecycle, deployment
 privacy/security policy design, custom distributed launch policies not
 expressible by product APIs, experiment tracking redesign, and experiment search

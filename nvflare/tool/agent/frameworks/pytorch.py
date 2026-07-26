@@ -23,21 +23,20 @@ from .base import DetectContext, FrameworkDetector
 FRAMEWORK = "pytorch"
 
 PYTORCH_MODULE_SYMBOLS = {"Module"}
-PYTORCH_TRAINING_SYMBOLS = {
+PYTORCH_DATA_SYMBOLS = {"DataLoader", "DistributedSampler", "TensorDataset"}
+PYTORCH_OPTIM_LOSS_SYMBOLS = {
     "Adagrad",
     "Adam",
     "AdamW",
     "BCELoss",
     "BCEWithLogitsLoss",
     "CrossEntropyLoss",
-    "DataLoader",
-    "DistributedSampler",
     "MSELoss",
     "NLLLoss",
     "RMSprop",
     "SGD",
-    "TensorDataset",
 }
+PYTORCH_TRAINING_SYMBOLS = PYTORCH_DATA_SYMBOLS | PYTORCH_OPTIM_LOSS_SYMBOLS
 
 
 @dataclass
@@ -47,19 +46,25 @@ class _PyTorchFileState:
     torch_optim_aliases: set = field(default_factory=set)
     torch_data_aliases: set = field(default_factory=set)
     module_symbols: set = field(default_factory=set)
-    training_symbols: set = field(default_factory=set)
+    training_symbols: dict = field(default_factory=dict)
 
 
 class PyTorchDetector(FrameworkDetector):
     name = FRAMEWORK
     import_roots = {"torch": FRAMEWORK, "torchvision": FRAMEWORK, "torchaudio": FRAMEWORK}
-    evidence_weights = {"import": 1, "pytorch_call": 2, "pytorch_class": 3}
+    evidence_weights = {"import": 1, "pytorch_call": 2, "pytorch_data_call": 2, "pytorch_class": 3}
     recommended_skill = "nvflare-convert-pytorch"
 
     def new_file_state(self) -> _PyTorchFileState:
         return _PyTorchFileState()
 
-    def on_import(self, alias: ast.alias, file_state: _PyTorchFileState, ctx: DetectContext) -> None:
+    def on_import(
+        self,
+        alias: ast.alias,
+        file_state: _PyTorchFileState,
+        ctx: DetectContext,
+        scope: tuple[str, ...] = (),
+    ) -> None:
         name = alias.name
         alias_name = alias.asname or name
         if name == "torch":
@@ -71,7 +76,14 @@ class PyTorchDetector(FrameworkDetector):
         elif name == "torch.utils.data":
             file_state.torch_data_aliases.add(alias_name)
 
-    def on_import_from(self, module: str, aliases: list, file_state: _PyTorchFileState, ctx: DetectContext) -> None:
+    def on_import_from(
+        self,
+        module: str,
+        aliases: list,
+        file_state: _PyTorchFileState,
+        ctx: DetectContext,
+        scope: tuple[str, ...] = (),
+    ) -> None:
         if module == "torch":
             for alias in aliases:
                 alias_name = alias.asname or alias.name
@@ -85,18 +97,23 @@ class PyTorchDetector(FrameworkDetector):
                 if alias.name in PYTORCH_MODULE_SYMBOLS:
                     file_state.module_symbols.add(alias_name)
                 elif alias.name in PYTORCH_TRAINING_SYMBOLS:
-                    file_state.training_symbols.add(alias_name)
+                    file_state.training_symbols[alias_name] = alias.name
         elif module == "torch.optim":
             for alias in aliases:
                 if alias.name in PYTORCH_TRAINING_SYMBOLS:
-                    file_state.training_symbols.add(alias.asname or alias.name)
+                    file_state.training_symbols[alias.asname or alias.name] = alias.name
         elif module == "torch.utils.data":
             for alias in aliases:
                 if alias.name in PYTORCH_TRAINING_SYMBOLS:
-                    file_state.training_symbols.add(alias.asname or alias.name)
+                    file_state.training_symbols[alias.asname or alias.name] = alias.name
 
     def on_class_base(
-        self, base_name: str, lineno: Optional[int], file_state: _PyTorchFileState, ctx: DetectContext
+        self,
+        base_name: str,
+        lineno: Optional[int],
+        file_state: _PyTorchFileState,
+        ctx: DetectContext,
+        scope: tuple[str, ...] = (),
     ) -> None:
         if self._is_pytorch_class_base(base_name, file_state):
             ctx.evidence(FRAMEWORK, "pytorch_class", base_name, lineno)
@@ -109,11 +126,16 @@ class PyTorchDetector(FrameworkDetector):
         ctx: DetectContext,
         scope: tuple[str, ...] = (),
     ) -> None:
-        if self._is_pytorch_activity_call(call_name, file_state):
-            ctx.evidence(FRAMEWORK, "pytorch_call", call_name, lineno)
+        symbol = self._pytorch_activity_symbol(call_name, file_state)
+        if symbol:
+            kind = "pytorch_data_call" if symbol in PYTORCH_DATA_SYMBOLS else "pytorch_call"
+            ctx.evidence(FRAMEWORK, kind, call_name, lineno)
 
     def is_active_evidence(self, evidence: dict) -> bool:
-        return evidence.get("kind") in {"pytorch_class", "pytorch_call"}
+        return evidence.get("kind") in {"pytorch_class", "pytorch_call", "pytorch_data_call"}
+
+    def is_training_owner_evidence(self, evidence: dict) -> bool:
+        return evidence.get("kind") == "pytorch_call"
 
     @staticmethod
     def _is_pytorch_class_base(base_name: str, file_state: _PyTorchFileState) -> bool:
@@ -132,21 +154,21 @@ class PyTorchDetector(FrameworkDetector):
         return False
 
     @staticmethod
-    def _is_pytorch_activity_call(call_name: str, file_state: _PyTorchFileState) -> bool:
+    def _pytorch_activity_symbol(call_name: str, file_state: _PyTorchFileState) -> Optional[str]:
         if call_name in file_state.training_symbols:
-            return True
+            return file_state.training_symbols[call_name]
         if "." not in call_name:
-            return False
+            return None
         prefix, _, symbol = call_name.rpartition(".")
         if symbol not in PYTORCH_TRAINING_SYMBOLS:
-            return False
+            return None
         if (
             prefix in file_state.torch_nn_aliases
             or prefix in file_state.torch_optim_aliases
             or prefix in file_state.torch_data_aliases
         ):
-            return True
+            return symbol
         for alias in file_state.torch_aliases:
             if prefix in {f"{alias}.nn", f"{alias}.optim", f"{alias}.utils.data"}:
-                return True
-        return False
+                return symbol
+        return None

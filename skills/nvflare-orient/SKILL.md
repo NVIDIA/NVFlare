@@ -1,6 +1,6 @@
 ---
 name: nvflare-orient
-description: "Route open-ended or ambiguous NVFLARE requests by inspecting the local project and recommending one specific workflow skill without editing files; do not use for an explicit conversion request, even when its framework still needs detection."
+description: "Route open-ended or ambiguous NVFLARE requests by inspecting the local project and recommending one specific workflow skill without editing files; explicit conversions normally route directly to a converter, except when inspection reports unresolved Trainer ownership or active Lightning and Hugging Face Trainer entrypoints."
 license: Apache-2.0
 version: "0.1.0"
 metadata:
@@ -24,7 +24,10 @@ metadata:
 ## Use When
 
 Use when the user asks where to start with NVFLARE, how a local project maps to
-FLARE workflows, or which FLARE skill should handle an ambiguous request.
+FLARE workflows, or which FLARE skill should handle an ambiguous request. Also
+use when inspection explicitly reports unresolved Hugging Face Trainer
+ownership or active Lightning and Hugging Face Trainer owners that require a
+user choice.
 
 ## Do Not Use When
 
@@ -32,9 +35,10 @@ Do not use when the user already names a specific workflow such as PyTorch
 conversion, federated statistics, job submission, production deployment,
 Kubernetes setup, log diagnosis, or optimization of an existing FLARE job.
 Route to the narrower skill instead. An explicit conversion request does not
-need orientation merely to detect the framework: the converter skill performs
-static inspection and selects the framework itself, so hand off directly
-rather than invoking orient first.
+need orientation merely to detect the framework when one training owner is
+clear: the converter skill performs static inspection and selects the framework
+itself. The exception is an inspector-reported ownership conflict or unresolved
+Trainer factory, which requires the read-only choice described above.
 
 ## Workflow
 

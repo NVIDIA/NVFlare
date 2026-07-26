@@ -119,15 +119,23 @@ def is_active_evidence(framework: str, evidence: dict) -> bool:
     return detector.is_active_evidence(evidence)
 
 
-def has_active_family_member_conflict(evidence_by_framework: dict) -> bool:
-    """Whether multiple specialized members actively claim the same framework family."""
+def is_training_owner_evidence(framework: str, evidence: dict) -> bool:
+    detector = _detector_by_name(framework)
+    if detector is None:
+        return False
+    return detector.is_training_owner_evidence(evidence)
+
+
+def has_active_family_member_conflict(evidence_by_framework: dict, resolver) -> bool:
+    """Whether reachable training owners from multiple specialized members claim one family."""
     active_by_family: dict[str, int] = {}
     for detector in _family_member_detectors():
         family = detector.family
         if not family:
             continue
         evidence = evidence_by_framework.get(detector.name, [])
-        if any(detector.is_training_owner_evidence(item) for item in evidence):
+        owner_evidence = [item for item in evidence if detector.is_training_owner_evidence(item)]
+        if owner_evidence and resolver.tied_to_entry_context(owner_evidence):
             active_by_family[family] = active_by_family.get(family, 0) + 1
     return any(count > 1 for count in active_by_family.values())
 
