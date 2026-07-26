@@ -96,7 +96,12 @@ class LightningDetector(FrameworkDetector):
             ctx.evidence(FRAMEWORK, "lightning_class", base_name, lineno)
 
     def on_call(
-        self, call_name: str, lineno: Optional[int], file_state: _LightningFileState, ctx: DetectContext
+        self,
+        call_name: str,
+        lineno: Optional[int],
+        file_state: _LightningFileState,
+        ctx: DetectContext,
+        scope: tuple[str, ...] = (),
     ) -> None:
         if call_name in file_state.patch_symbols or self._is_lightning_patch_call(call_name, file_state):
             ctx.flare_call(call_name)

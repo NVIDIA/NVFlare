@@ -102,8 +102,28 @@ class FrameworkDetector:
     def on_class_base(self, base_name: str, lineno: Optional[int], file_state: Any, ctx: DetectContext) -> None:
         """Handle a base class name in a ``class X(Base):`` definition."""
 
-    def on_call(self, call_name: str, lineno: Optional[int], file_state: Any, ctx: DetectContext) -> None:
+    def on_call(
+        self,
+        call_name: str,
+        lineno: Optional[int],
+        file_state: Any,
+        ctx: DetectContext,
+        scope: tuple[str, ...] = (),
+    ) -> None:
         """Handle a called name such as ``torch.optim.SGD`` or ``flare.patch``."""
+
+    def on_assignment(
+        self,
+        target_names: list[str],
+        call_name: Optional[str],
+        lineno: Optional[int],
+        file_state: Any,
+        ctx: DetectContext,
+        scope: tuple[str, ...] = (),
+    ) -> None:
+        """Handle assignment and optional call construction in a lexical scope."""
+        if call_name:
+            self.on_assignment_call(target_names, call_name, lineno, file_state, ctx, scope)
 
     def on_assignment_call(
         self,
@@ -112,6 +132,7 @@ class FrameworkDetector:
         lineno: Optional[int],
         file_state: Any,
         ctx: DetectContext,
+        scope: tuple[str, ...] = (),
     ) -> None:
         """Handle assignment of a call result, such as ``trainer = Trainer(...)``."""
 
