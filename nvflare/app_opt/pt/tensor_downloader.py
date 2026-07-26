@@ -53,6 +53,7 @@ class TensorDownloadable(CacheableObject):
         self.keys = list(tensors.keys())
         self._prefetch_lock = threading.Lock()
         self._prefetch_futures = {}
+        self._released = False
         super().__init__(tensors, max_chunk_size)
 
     def get_item_count(self) -> int:
@@ -64,24 +65,34 @@ class TensorDownloadable(CacheableObject):
             future = self._prefetch_futures.pop(index, None)
         if future:
             return future.result()
-        return save_tensors({key: self.base_obj[key]})
+        base_obj = self.base_obj
+        if base_obj is None:
+            raise RuntimeError(f"item {index} requested after tensors were released")
+        return save_tensors({key: base_obj[key]})
 
     def prefetch_item(self, index: int):
         with self._prefetch_lock:
-            if index in self._prefetch_futures:
+            if self._released or index in self._prefetch_futures:
+                return
+            base_obj = self.base_obj
+            if base_obj is None:
                 return
             key = self.keys[index]
-            tensor = self.base_obj[key]
+            tensor = base_obj[key]
             future = stream_thread_pool.submit(save_tensors, {key: tensor})
             if future:
                 self._prefetch_futures[index] = future
 
-    def get_item_size(self, index: int) -> int:
-        tensor = self.base_obj[self.keys[index]]
+    def get_item_size(self, index: int) -> Optional[int]:
+        base_obj = self.base_obj
+        if base_obj is None:
+            return None
+        tensor = base_obj[self.keys[index]]
         return tensor.numel() * tensor.element_size()
 
     def release(self):
         with self._prefetch_lock:
+            self._released = True
             futures = list(self._prefetch_futures.values())
             self._prefetch_futures.clear()
         for future in futures:

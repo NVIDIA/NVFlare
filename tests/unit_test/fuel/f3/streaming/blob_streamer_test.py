@@ -103,6 +103,23 @@ def test_blob_task_can_preserve_chunks_without_preallocation():
     assert future.result(timeout=0.1) == [b"ab", b"cd"]
 
 
+def test_read_stream_preserve_chunks_enforces_limit():
+    handler = BlobHandler(lambda future: None)
+    future = StreamFuture(stream_id=17)
+    blob_task = BlobTask(
+        future=future,
+        stream=_FakeStream(declared_size=0, chunks=[b"abcd", b"ef"]),
+        max_size=4,
+        preserve_chunks=True,
+    )
+
+    handler._read_stream(blob_task)
+
+    error = future.exception(timeout=0.1)
+    assert isinstance(error, StreamError)
+    assert "configured limit 4" in str(error)
+
+
 def test_fobs_streams_preserve_chunks(monkeypatch):
     captured = {}
 

@@ -24,6 +24,7 @@ streaming_retry_max_pending_bytes: 128M
 # Any native F3 comm_config option can be added here. Common flat options are:
 #
 # max_message_size: 1G
+# tcp_no_delay: true
 # allow_adhoc_conns: true
 # adhoc_conn_scheme: tcp
 # internal_conn_scheme: tcp

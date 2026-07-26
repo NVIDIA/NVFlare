@@ -113,10 +113,9 @@ class BlobHandler:
         length = len(buf)
         if blob_task.pre_allocated:
             return self._store_pre_allocated_chunk(blob_task, buf, buf_size, length, thread_id)
-        if blob_task.preserve_chunks:
-            blob_task.buffer.append(buf)
-            return True
 
+        # preserve_chunks uses a plain list buffer; append() works for both it
+        # and FastBuffer, and both must enforce the max_blob_size limit.
         return self._append_dynamic_chunk(blob_task, buf, buf_size, length, thread_id)
 
     def _store_pre_allocated_chunk(

@@ -18,6 +18,7 @@ Note: Deep copy protection is now handled at broadcast level in WFCommServer,
 not in TensorDownloadable itself. These tests verify the Downloadable's basic behavior.
 """
 
+import pytest
 import torch
 from safetensors.torch import load as load_tensors
 
@@ -89,3 +90,19 @@ class TestTensorDownloadableBasic:
         assert rc == ProduceRC.OK
         assert load_tensors(second_items[0])["second"].item() == 2.0
         assert not downloadable._prefetch_futures
+
+    def test_release_disables_prefetch_and_produce(self):
+        tensors = {
+            "first": torch.tensor([1.0]),
+            "second": torch.tensor([2.0]),
+        }
+        downloadable = TensorDownloadable(tensors=tensors, max_chunk_size=1)
+
+        downloadable.release()
+
+        assert downloadable.base_obj is None
+        downloadable.prefetch_item(1)
+        assert not downloadable._prefetch_futures
+        assert downloadable.get_item_size(0) is None
+        with pytest.raises(RuntimeError, match="released"):
+            downloadable.produce_item(0)

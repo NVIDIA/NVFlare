@@ -249,6 +249,7 @@ This is an example of comm_config.json file with default values for all the para
   {
     "comm_driver_path": "",
     "heartbeat_interval": 60,
+    "tcp_no_delay": true,
     "streaming_chunk_size": 1048576,
     "streaming_max_blob_size": 2144337904,
     "streaming_read_timeout": 60,
@@ -298,6 +299,17 @@ heartbeat_interval
 To keep the connection alive, FLARE exchanges a short message (PING/PONG) for each connection if no traffic is detected for a period of time.
 This is controlled through the parameter "heartbeat_interval". The unit is seconds and the default value is 60.
 
+tcp_no_delay
+------------
+
+Whether the TCP driver disables Nagle's algorithm (sets TCP_NODELAY) on its connections. The default is ``true``.
+
+Request/reply exchanges send small frames in a ping-pong pattern. With Nagle's algorithm enabled, each small frame can be
+delayed by the peer's delayed-ACK timer, adding tens to hundreds of milliseconds per exchange on real networks. Bulk
+streaming chunks are large, so disabling Nagle does not increase small-packet load on the data path. Set to ``false`` to
+restore the previous behavior. This setting only affects the tcp/stcp drivers; the gRPC and asyncio-based drivers already
+disable Nagle by default.
+
 ``"heartbeat_interval": 30``
 
 This parameter needs to be changed if the network closes idle connection too aggressively.
@@ -342,7 +354,7 @@ Following parameters are used to control the flow-control behavior.
 streaming_window_size
 ---------------------
 
-The sliding window size in bytes. The default is 16M. 
+The sliding window size in bytes. The default is 64M.
 
 The larger the window size, the smoother the flow of data  but the memory usage will be higher.
 
@@ -350,7 +362,7 @@ streaming_ack_interval
 ----------------------
 
 This parameter controls how often the receiver sends ACKs to the sender.
-he unit is bytes and the default value is 4M (1/4 of the window size).
+The unit is bytes and the default value is 16M (1/4 of the window size).
 
 The smaller the value, the smoother the sliding window moves, however it generates more messages.
 
