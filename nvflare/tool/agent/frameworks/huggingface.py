@@ -42,7 +42,6 @@ class _HuggingFaceFileState:
     trainer_symbols: dict = field(default_factory=dict)
     trainer_classes: set = field(default_factory=set)
     trainer_instances: set = field(default_factory=set)
-    pending_train_calls: dict = field(default_factory=dict)
     patch_symbols: set = field(default_factory=set)
     patch_modules: set = field(default_factory=set)
 
@@ -77,7 +76,7 @@ class HuggingFaceDetector(FrameworkDetector):
                     file_state.trainer_symbols[alias_name] = alias.name
                 elif alias.name in TRAINING_CONFIG_SYMBOLS:
                     file_state.config_symbols[alias_name] = alias.name
-                elif alias.name in HUGGINGFACE_TRAINER_SUBMODULES:
+                elif self._is_trainer_submodule(module, alias.name):
                     file_state.module_aliases[alias_name] = f"{module}.{alias.name}"
         if module == PATCH_MODULE:
             for alias in aliases:
@@ -106,7 +105,12 @@ class HuggingFaceDetector(FrameworkDetector):
             ctx.evidence(FRAMEWORK, "huggingface_trainer_class", base_name, lineno)
 
     def on_call(
-        self, call_name: str, lineno: Optional[int], file_state: _HuggingFaceFileState, ctx: DetectContext
+        self,
+        call_name: str,
+        lineno: Optional[int],
+        file_state: _HuggingFaceFileState,
+        ctx: DetectContext,
+        scope: tuple[str, ...] = (),
     ) -> None:
         if call_name in file_state.patch_symbols or self._is_patch_call(call_name, file_state):
             ctx.flare_call(call_name)
@@ -117,11 +121,23 @@ class HuggingFaceDetector(FrameworkDetector):
             ctx.evidence(FRAMEWORK, "huggingface_training_config", call_name, lineno)
         else:
             receiver = self._train_call_receiver(call_name)
-            if receiver:
-                if receiver in file_state.trainer_instances:
-                    ctx.evidence(FRAMEWORK, "huggingface_train", call_name, lineno)
-                else:
-                    file_state.pending_train_calls.setdefault(receiver, []).append((call_name, lineno))
+            if receiver and (scope, receiver) in file_state.trainer_instances:
+                ctx.evidence(FRAMEWORK, "huggingface_train", call_name, lineno)
+
+    def on_assignment(
+        self,
+        target_names: list[str],
+        call_name: Optional[str],
+        lineno: Optional[int],
+        file_state: _HuggingFaceFileState,
+        ctx: DetectContext,
+        scope: tuple[str, ...] = (),
+    ) -> None:
+        direct_targets = [name for name in target_names if "." not in name]
+        for target_name in direct_targets:
+            file_state.trainer_instances.discard((scope, target_name))
+        if call_name and self._is_trainer_name(call_name, file_state):
+            file_state.trainer_instances.update((scope, target_name) for target_name in direct_targets)
 
     def on_assignment_call(
         self,
@@ -130,27 +146,21 @@ class HuggingFaceDetector(FrameworkDetector):
         lineno: Optional[int],
         file_state: _HuggingFaceFileState,
         ctx: DetectContext,
+        scope: tuple[str, ...] = (),
     ) -> None:
-        if self._is_trainer_name(call_name, file_state):
-            file_state.trainer_instances.update(target_names)
-            for target_name in target_names:
-                for train_call, train_lineno in file_state.pending_train_calls.pop(target_name, []):
-                    ctx.evidence(FRAMEWORK, "huggingface_train", train_call, train_lineno)
+        self.on_assignment(target_names, call_name, lineno, file_state, ctx, scope)
 
     def is_active_evidence(self, evidence: dict) -> bool:
         return evidence.get("kind") == "huggingface_train"
 
     def promote_over_family(self, family_base: str, resolver) -> bool:
-        candidate_evidence = [
-            item for item in resolver.evidence(self.name) if item.get("kind") in TRAINER_CANDIDATE_EVIDENCE
-        ]
         active_huggingface = resolver.active_evidence(self.name)
         if not active_huggingface:
             # Import-only PyTorch evidence cannot claim training ownership.
             # Preserve Hugging Face when the base is inactive; an entry-owned
             # Trainer/config candidate then routes to nvflare-orient, while pure
             # inference remains detected without a conversion recommendation.
-            return resolver.tied_to_entry_context(candidate_evidence) or not resolver.active_evidence(family_base)
+            return not resolver.active_evidence(family_base)
         if resolver.tied_to_entry_context(active_huggingface):
             return True
         pytorch_outside_trainer_files = resolver.evidence_outside_files(
@@ -166,6 +176,12 @@ class HuggingFaceDetector(FrameworkDetector):
     @staticmethod
     def _is_huggingface_module(module: str) -> bool:
         return any(module == root or module.startswith(f"{root}.") for root in HUGGINGFACE_MODULES)
+
+    @staticmethod
+    def _is_trainer_submodule(module: str, symbol: str) -> bool:
+        if symbol in HUGGINGFACE_TRAINER_SUBMODULES:
+            return True
+        return (module == "trl.trainer" or module.startswith("trl.trainer.")) and symbol.endswith("_trainer")
 
     @staticmethod
     def _is_patch_call(call_name: str, file_state: _HuggingFaceFileState) -> bool:

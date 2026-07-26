@@ -101,7 +101,14 @@ class PyTorchDetector(FrameworkDetector):
         if self._is_pytorch_class_base(base_name, file_state):
             ctx.evidence(FRAMEWORK, "pytorch_class", base_name, lineno)
 
-    def on_call(self, call_name: str, lineno: Optional[int], file_state: _PyTorchFileState, ctx: DetectContext) -> None:
+    def on_call(
+        self,
+        call_name: str,
+        lineno: Optional[int],
+        file_state: _PyTorchFileState,
+        ctx: DetectContext,
+        scope: tuple[str, ...] = (),
+    ) -> None:
         if self._is_pytorch_activity_call(call_name, file_state):
             ctx.evidence(FRAMEWORK, "pytorch_call", call_name, lineno)
 

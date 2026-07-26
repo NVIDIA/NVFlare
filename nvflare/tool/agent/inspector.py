@@ -580,6 +580,7 @@ class _PythonInspector(ast.NodeVisitor):
         self.state = state
         self._detectors = frameworks.detectors()
         self._detector_states = {detector.name: detector.new_file_state() for detector in self._detectors}
+        self._scope_stack: list[str] = []
         self._ctx = DetectContext(
             self._emit_framework_evidence,
             self._add_flare_call,
@@ -616,7 +617,7 @@ class _PythonInspector(ast.NodeVisitor):
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         end_lineno = getattr(node, "end_lineno", None) or node.lineno
         self.state.class_body_ranges.setdefault(self.rel_path, []).append((node.lineno, end_lineno))
-        base_names = [base_name for base in node.bases if (base_name := _symbol_name(base))]
+        base_names = [name for name in (_symbol_name(base) for base in node.bases) if name]
         for detector in self._detectors:
             detector.on_class_definition(
                 node.name,
@@ -628,24 +629,39 @@ class _PythonInspector(ast.NodeVisitor):
         for base_name in base_names:
             for detector in self._detectors:
                 detector.on_class_base(base_name, node.lineno, self._detector_states[detector.name], self._ctx)
-        self.generic_visit(node)
+        self._visit_scoped(node, "class")
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_scoped(node, "function")
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_scoped(node, "async-function")
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        self._visit_scoped(node, "lambda")
 
     def visit_Call(self, node: ast.Call) -> None:
         call_name = _call_name(node.func)
         if call_name:
             self._record_call(call_name, node.lineno)
             for detector in self._detectors:
-                detector.on_call(call_name, node.lineno, self._detector_states[detector.name], self._ctx)
+                detector.on_call(
+                    call_name,
+                    node.lineno,
+                    self._detector_states[detector.name],
+                    self._ctx,
+                    tuple(self._scope_stack),
+                )
         self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign) -> None:
         self._inspect_secret_assignment(node.targets, node.value, getattr(node, "lineno", None))
-        self._record_assignment_call(node.targets, node.value, getattr(node, "lineno", None))
+        self._record_assignment(node.targets, node.value, getattr(node, "lineno", None))
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         self._inspect_secret_assignment([node.target], node.value, getattr(node, "lineno", None))
-        self._record_assignment_call([node.target], node.value, getattr(node, "lineno", None))
+        self._record_assignment([node.target], node.value, getattr(node, "lineno", None))
         self.generic_visit(node)
 
     def visit_Constant(self, node: ast.Constant) -> None:
@@ -708,21 +724,28 @@ class _PythonInspector(ast.NodeVisitor):
         self.state.flare_calls.add(call_name)
         self.state.flare_calls_by_file.setdefault(self.rel_path, set()).add(call_name)
 
-    def _record_assignment_call(self, targets: list[ast.AST], value: ast.AST, lineno: Optional[int]) -> None:
-        if not isinstance(value, ast.Call):
-            return
-        call_name = _call_name(value.func)
+    def _record_assignment(self, targets: list[ast.AST], value: ast.AST, lineno: Optional[int]) -> None:
+        call_name = _call_name(value.func) if isinstance(value, ast.Call) else None
         target_names = _assignment_target_names(targets)
-        if not call_name or not target_names:
+        if not target_names:
             return
         for detector in self._detectors:
-            detector.on_assignment_call(
+            detector.on_assignment(
                 target_names,
                 call_name,
                 lineno,
                 self._detector_states[detector.name],
                 self._ctx,
+                tuple(self._scope_stack),
             )
+
+    def _visit_scoped(self, node: ast.AST, kind: str) -> None:
+        name = getattr(node, "name", "<anonymous>")
+        self._scope_stack.append(f"{kind}:{name}:{getattr(node, 'lineno', 0)}")
+        try:
+            self.generic_visit(node)
+        finally:
+            self._scope_stack.pop()
 
     def _inspect_secret_assignment(self, targets: list[ast.AST], value: ast.AST, lineno: Optional[int]) -> None:
         if not isinstance(value, ast.Constant) or not isinstance(value.value, str):

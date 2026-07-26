@@ -446,7 +446,7 @@ def test_inspect_routes_evaluation_only_trainer_with_torch_import_to_orient(tmp_
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
 
 
-def test_inspect_detects_train_call_defined_before_trainer_assignment(tmp_path):
+def test_inspect_routes_indirect_train_call_to_orient(tmp_path):
     script = tmp_path / "train.py"
     script.write_text(
         "from transformers import Trainer, TrainingArguments\n"
@@ -462,7 +462,7 @@ def test_inspect_detects_train_call_defined_before_trainer_assignment(tmp_path):
     data = inspect_path(script)
 
     assert data["skill_selection"]["detected_framework"] == "huggingface"
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-huggingface"]
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
 
 
 def test_inspect_detects_local_trainer_subclass(tmp_path):
@@ -474,6 +474,101 @@ def test_inspect_detects_local_trainer_subclass(tmp_path):
         "    pass\n"
         "\n"
         "trainer = CustomTrainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+        "trainer.train()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["skill_selection"]["detected_framework"] == "huggingface"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-huggingface"]
+
+
+def test_inspect_prefers_active_manual_pytorch_over_evaluation_only_trainer(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "import torch\n"
+        "from transformers import Trainer, TrainingArguments\n"
+        "\n"
+        "model = torch.nn.Linear(2, 1)\n"
+        "optimizer = torch.optim.SGD(model.parameters(), lr=0.1)\n"
+        "optimizer.step()\n"
+        "trainer = Trainer(model=hf_model, args=TrainingArguments(output_dir='outputs'))\n"
+        "trainer.evaluate()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["skill_selection"]["detected_framework"] == "pytorch"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
+def test_inspect_does_not_bind_unrelated_function_parameter_to_trainer(tmp_path):
+    script = tmp_path / "evaluate.py"
+    script.write_text(
+        "from transformers import Trainer, TrainingArguments\n"
+        "\n"
+        "def train_other(trainer):\n"
+        "    trainer.train()\n"
+        "\n"
+        "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+        "trainer.evaluate()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["skill_selection"]["detected_framework"] == "huggingface"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
+
+
+def test_inspect_invalidates_reassigned_trainer_identity(tmp_path):
+    script = tmp_path / "evaluate.py"
+    script.write_text(
+        "from transformers import Trainer, TrainingArguments\n"
+        "\n"
+        "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+        "trainer = local_worker\n"
+        "trainer.train()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["skill_selection"]["detected_framework"] == "huggingface"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
+
+
+def test_inspect_treats_attribute_trainer_identity_as_unresolved(tmp_path):
+    script = tmp_path / "evaluate.py"
+    script.write_text(
+        "from transformers import Trainer, TrainingArguments\n"
+        "\n"
+        "class Evaluation:\n"
+        "    def __init__(self):\n"
+        "        self.trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+        "    def evaluate(self):\n"
+        "        self.trainer.evaluate()\n"
+        "\n"
+        "class Unrelated:\n"
+        "    def train(self):\n"
+        "        self.trainer.train()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["skill_selection"]["detected_framework"] == "huggingface"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
+
+
+def test_inspect_detects_trl_sft_trainer_submodule_alias(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "from trl.trainer import sft_trainer as trainer_module\n"
+        "\n"
+        "trainer = trainer_module.SFTTrainer(model=model, args=args, train_dataset=train_data)\n"
         "trainer.train()\n",
         encoding="utf-8",
     )
