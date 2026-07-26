@@ -40,7 +40,11 @@ policy, arbitrary controller rewrites, and experiment search.
    mutating work, first present a dry-run plan with files, commands, mutating
    steps, checkpoints, and estimated duration. Before the first write, copy
    every existing file to be changed into `.nvflare_bak/<timestamp>/`; never
-   remove that backup automatically. Make reruns idempotent.
+   remove that backup automatically. Make reruns idempotent. Load
+   `../nvflare-shared/references/conversion-workflow.md` for non-standard
+   rerun, data-location, authorization, or missing-semantics cases, and
+   `../nvflare-shared/references/runtime-output-guidance.md` for read-only
+   source roots or user-selected output destinations.
 2. Run `nvflare agent inspect <path> --format json`, then read the relevant
    files directly. Use `references/huggingface-detection.md` to confirm a
    Trainer-style workflow. Extract the entrypoint, Trainer subclass, model and
@@ -76,6 +80,8 @@ policy, arbitrary controller rewrites, and experiment search.
    required; otherwise run the train call and disable unsupported best-model
    selection. Do not add manual `flare.receive()`, `flare.send()`, or `FLModel`
    model exchange.
+   Load `../nvflare-shared/references/pytorch-model-exchange.md` only when
+   diagnosing PyTorch keyspace, dtype, or exchange-format compatibility.
 7. Keep `flare.patch(trainer)` simple by default. Preserve the source Trainer
    budget and let the patch infer `params_scope="auto"`. Set `local_epochs`,
    `local_steps`, `server_key_prefix`, `stream_metrics`, strict loading, or
@@ -98,7 +104,9 @@ policy, arbitrary controller rewrites, and experiment search.
    rung and report the product error rather than replacing unsupported behavior.
 10. Report the selected recipe, source facts, parameter scope, data partition,
     changed files, `backup_path`, validation commands and results, metrics,
-    artifact paths, environment limitations, and unresolved blockers.
+    artifact paths, environment limitations, and unresolved blockers. Load
+    `../nvflare-shared/references/metrics-and-artifact-reporting.md` when
+    interpreting metrics or reporting generated artifacts.
 
 ## Requirements
 
@@ -160,6 +168,5 @@ Load only references needed for the current phase. Use
 `references/huggingface-conversion.md` for the standard transformation,
 `references/huggingface-state-and-distributed.md` for PEFT/checkpoint/DDP
 details, and `references/huggingface-validation.md` for validation. Use shared
-dependency, recipe-selection, runtime-output, metrics, and validation references
-only when their stated condition applies. Do not depend on repository examples
-being installed in the user's environment.
+references only at the paths and under the conditions named above. Do not
+depend on repository examples being installed in the user's environment.

@@ -89,6 +89,16 @@ class FrameworkDetector:
     def on_import_from(self, module: str, aliases: list, file_state: Any, ctx: DetectContext) -> None:
         """Handle ``from module import ...`` symbols."""
 
+    def on_class_definition(
+        self,
+        class_name: str,
+        base_names: list[str],
+        lineno: Optional[int],
+        file_state: Any,
+        ctx: DetectContext,
+    ) -> None:
+        """Handle a class definition before its individual bases are visited."""
+
     def on_class_base(self, base_name: str, lineno: Optional[int], file_state: Any, ctx: DetectContext) -> None:
         """Handle a base class name in a ``class X(Base):`` definition."""
 
