@@ -2,20 +2,15 @@
 name: nvflare-shared
 description: Shared NVFLARE conversion references and templates used by the other NVFLARE agent skills (conversion workflow, validation ladder, dependency install, model exchange, metrics/artifact reporting, and the custom aggregator template). Not a user-triggered skill; loaded via references from the conversion skills.
 license: Apache-2.0
-version: "0.1.0"
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-  min_flare_version: "2.8.0"
+  min_flare_version: "2.9.0"
   blast_radius: read_only
   status: internal
-  tags:
-    - nvflare
-    - federated-learning
-    - shared-references
-  languages:
-    - python
-  frameworks:
-    - nvflare
+  version: "0.1.0"
+  tags: "nvflare, federated-learning, shared-references"
+  languages: "python"
+  frameworks: "nvflare"
   domain: ml
 ---
 

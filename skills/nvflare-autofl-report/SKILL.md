@@ -2,20 +2,15 @@
 name: nvflare-autofl-report
 description: "Generate a reproducible final report, literature-outcome synthesis, JSON summary, and refreshed progress plot for a stopped or interrupted NVFLARE Auto-FL campaign."
 license: Apache-2.0
-version: "0.1.0"
-compatibility: "Requires NVFLARE 2.8.0+, Python, and artifacts from an NVFLARE Auto-FL campaign."
+compatibility: "Requires NVFLARE 2.9.0+, Python, and artifacts from an NVFLARE Auto-FL campaign."
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-  min_flare_version: "2.8.0"
+  min_flare_version: "2.9.0"
   blast_radius: edits_files
   category: Reporting
-  tags:
-    - nvflare
-    - federated-learning
-    - optimization
-    - reporting
-  languages:
-    - python
+  version: "0.1.0"
+  tags: "nvflare, federated-learning, optimization, reporting"
+  languages: "python"
 ---
 
 # NVFLARE Auto-FL Report
