@@ -82,6 +82,11 @@ class LexicalScopeBindings:
     def can_resolve_from_enclosing_scope(self, name: str, scope: tuple[str, ...]) -> bool:
         if not scope or "." in name:
             return False
+        # A class body executes immediately and resolves names sequentially.
+        # Deferred finalization is only valid for function-like scopes whose
+        # bodies run after the enclosing scope has finished binding names.
+        if scope[-1].startswith("class:"):
+            return False
         if name in self.scope_globals.get(scope, set()):
             return True
         if name in self.scope_nonlocals.get(scope, set()):
@@ -239,7 +244,7 @@ class FrameworkDetector:
         ctx: DetectContext,
         scope: tuple[str, ...] = (),
     ) -> None:
-        """Handle a class definition before its individual bases are visited."""
+        """Handle a class definition after its expressions and body are visited."""
 
     def on_class_base(
         self,

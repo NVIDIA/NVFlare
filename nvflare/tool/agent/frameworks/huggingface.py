@@ -261,7 +261,7 @@ class HuggingFaceDetector(FrameworkDetector):
         file_state: _HuggingFaceFileState,
         scope: tuple[str, ...],
     ) -> bool:
-        prefix, _, symbol = call_name.rpartition(".")
+        _, _, symbol = call_name.rpartition(".")
         if symbol != "patch":
             return False
         identity_name = HuggingFaceDetector._patch_identity_name(call_name)

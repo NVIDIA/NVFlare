@@ -629,16 +629,29 @@ class _PythonInspector(ast.NodeVisitor):
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         end_lineno = getattr(node, "end_lineno", None) or node.lineno
         self.state.class_body_ranges.setdefault(self.rel_path, []).append((node.lineno, end_lineno))
-        base_names = [name for name in (_symbol_name(base) for base in node.bases) if name]
-        for base_name in base_names:
-            for detector in self._detectors:
-                detector.on_class_base(
-                    base_name,
-                    node.lineno,
-                    self._detector_states[detector.name],
-                    self._ctx,
-                    tuple(self._scope_stack),
-                )
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for type_param in getattr(node, "type_params", []):
+            self.visit(type_param)
+
+        base_names = []
+        for base in node.bases:
+            base_name = _symbol_name(base)
+            if base_name:
+                base_names.append(base_name)
+                for detector in self._detectors:
+                    detector.on_class_base(
+                        base_name,
+                        node.lineno,
+                        self._detector_states[detector.name],
+                        self._ctx,
+                        tuple(self._scope_stack),
+                    )
+            self.visit(base)
+        for keyword in node.keywords:
+            self.visit(keyword.value)
+
+        self._visit_body_in_scope(node, "class", predeclare_locals=False)
         for detector in self._detectors:
             detector.on_class_definition(
                 node.name,
@@ -648,18 +661,20 @@ class _PythonInspector(ast.NodeVisitor):
                 self._ctx,
                 tuple(self._scope_stack),
             )
-        self._visit_scoped(node, "class")
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_function_definition_expressions(node)
         self._record_binding_names([node.name], node.lineno)
-        self._visit_scoped(node, "function")
+        self._visit_body_in_scope(node, "function")
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_function_definition_expressions(node)
         self._record_binding_names([node.name], node.lineno)
-        self._visit_scoped(node, "async-function")
+        self._visit_body_in_scope(node, "async-function")
 
     def visit_Lambda(self, node: ast.Lambda) -> None:
-        self._visit_scoped(node, "lambda")
+        self._visit_argument_defaults(node.args)
+        self._visit_expression_in_scope(node, "lambda", node.body)
 
     def visit_For(self, node: ast.For) -> None:
         self.visit(node.iter)
@@ -688,6 +703,18 @@ class _PythonInspector(ast.NodeVisitor):
 
     def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
         self._visit_comprehension(node, "generator-expression")
+
+    def visit_Match(self, node: ast.Match) -> None:
+        self.visit(node.subject)
+        for case in node.cases:
+            self.visit(case.pattern)
+            collector = _LexicalBindingCollector()
+            collector.visit(case.pattern)
+            self._record_binding_names(sorted(collector.local_names), getattr(case.pattern, "lineno", None))
+            if case.guard:
+                self.visit(case.guard)
+            for statement in case.body:
+                self.visit(statement)
 
     def visit_Call(self, node: ast.Call) -> None:
         call_name = _call_name(node.func)
@@ -731,6 +758,7 @@ class _PythonInspector(ast.NodeVisitor):
             self.visit(item.context_expr)
             if item.optional_vars:
                 self._record_binding_targets([item.optional_vars], getattr(node, "lineno", None))
+                self.visit(item.optional_vars)
         for statement in node.body:
             self.visit(statement)
 
@@ -873,9 +901,60 @@ class _PythonInspector(ast.NodeVisitor):
         for detector in self._detectors:
             detector.finalize_file(self._detector_states[detector.name], self._ctx)
 
-    def _visit_scoped(self, node: ast.AST, kind: str) -> None:
+    def _visit_function_definition_expressions(self, node: ast.AST) -> None:
+        for decorator in getattr(node, "decorator_list", []):
+            self.visit(decorator)
+        for type_param in getattr(node, "type_params", []):
+            self.visit(type_param)
+        arguments = getattr(node, "args", None)
+        if isinstance(arguments, ast.arguments):
+            self._visit_argument_defaults(arguments)
+            self._visit_argument_annotations(arguments)
+        returns = getattr(node, "returns", None)
+        if returns:
+            self.visit(returns)
+
+    def _visit_argument_defaults(self, arguments: ast.arguments) -> None:
+        for default in arguments.defaults:
+            self.visit(default)
+        for default in arguments.kw_defaults:
+            if default:
+                self.visit(default)
+
+    def _visit_argument_annotations(self, arguments: ast.arguments) -> None:
+        parameters = arguments.posonlyargs + arguments.args + arguments.kwonlyargs
+        if arguments.vararg:
+            parameters.append(arguments.vararg)
+        if arguments.kwarg:
+            parameters.append(arguments.kwarg)
+        for parameter in parameters:
+            if parameter.annotation:
+                self.visit(parameter.annotation)
+
+    def _visit_body_in_scope(self, node: ast.AST, kind: str, *, predeclare_locals: bool = True) -> None:
         name = getattr(node, "name", "<anonymous>")
         self._scope_stack.append(f"{kind}:{name}:{getattr(node, 'lineno', 0)}")
+        try:
+            scope = tuple(self._scope_stack)
+            local_names, global_names, nonlocal_names = _lexical_bindings(node)
+            if not predeclare_locals:
+                local_names = set()
+            for detector in self._detectors:
+                detector.on_scope(
+                    scope,
+                    local_names,
+                    global_names,
+                    nonlocal_names,
+                    self._detector_states[detector.name],
+                    self._ctx,
+                )
+            for statement in getattr(node, "body", []):
+                self.visit(statement)
+        finally:
+            self._scope_stack.pop()
+
+    def _visit_expression_in_scope(self, node: ast.AST, kind: str, expression: ast.AST) -> None:
+        self._scope_stack.append(f"{kind}:<anonymous>:{getattr(node, 'lineno', 0)}")
         try:
             scope = tuple(self._scope_stack)
             local_names, global_names, nonlocal_names = _lexical_bindings(node)
@@ -888,7 +967,7 @@ class _PythonInspector(ast.NodeVisitor):
                     self._detector_states[detector.name],
                     self._ctx,
                 )
-            self.generic_visit(node)
+            self.visit(expression)
         finally:
             self._scope_stack.pop()
 
@@ -981,6 +1060,22 @@ class _LexicalBindingCollector(ast.NodeVisitor):
             self.local_names.add(node.name)
         for statement in node.body:
             self.visit(statement)
+
+    def visit_MatchAs(self, node: ast.MatchAs) -> None:
+        if node.pattern:
+            self.visit(node.pattern)
+        if node.name:
+            self.local_names.add(node.name)
+
+    def visit_MatchStar(self, node: ast.MatchStar) -> None:
+        if node.name:
+            self.local_names.add(node.name)
+
+    def visit_MatchMapping(self, node: ast.MatchMapping) -> None:
+        for pattern in node.patterns:
+            self.visit(pattern)
+        if node.rest:
+            self.local_names.add(node.rest)
 
 
 def _lexical_bindings(node: ast.AST) -> tuple[set[str], set[str], set[str]]:

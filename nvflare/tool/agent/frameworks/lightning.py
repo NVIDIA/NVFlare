@@ -70,7 +70,7 @@ class LightningDetector(FrameworkDetector):
     ) -> None:
         alias_name = alias.asname or alias.name.split(".", 1)[0]
         binding_scope = self._bind_name(alias_name, scope, file_state)
-        if alias.name in LIGHTNING_MODULES:
+        if self._is_lightning_import(alias.name):
             # ``import lightning.pytorch as pl`` -> pl points at lightning.pytorch;
             # ``import lightning as L`` -> L points at the bare lightning package.
             resolved_module = alias.name if alias.asname else alias_name
@@ -201,6 +201,16 @@ class LightningDetector(FrameworkDetector):
         return evidence.get("kind") == "lightning_trainer"
 
     @staticmethod
+    def _is_lightning_import(module: str) -> bool:
+        return (
+            module == "pytorch_lightning"
+            or module.startswith("pytorch_lightning.")
+            or module == "lightning"
+            or module == "lightning.pytorch"
+            or module.startswith("lightning.pytorch.")
+        )
+
+    @staticmethod
     def _prefix_exposes_lightning_symbols(
         prefix: str,
         file_state: _LightningFileState,
@@ -235,7 +245,7 @@ class LightningDetector(FrameworkDetector):
         file_state: _LightningFileState,
         scope: tuple[str, ...],
     ) -> bool:
-        prefix, _, symbol = call_name.rpartition(".")
+        _, _, symbol = call_name.rpartition(".")
         if symbol != "patch":
             return False
         identity_name = LightningDetector._patch_identity_name(call_name)
