@@ -24,9 +24,9 @@ Proceed only when the complete federated trainable state is represented by the
 patched Trainer's exchanged parameter scope; otherwise ask or fail closed.
 
 Use `ExchangeFormat.PYTORCH` for native tensor dtypes such as BF16. Keep dtype,
-quantization, and device-map behavior from source evidence. Do not enable
-`trust_remote_code`, BF16, FP16, or quantization merely because the selected
-model family commonly uses it.
+precision, quantization, and device-map behavior from source evidence rather
+than model-family assumptions. Follow the authorization rules in `SKILL.md` for
+remote code and download effects.
 
 ## Checkpoint Continuity
 
@@ -54,13 +54,10 @@ Initialize `torch.distributed` before `flare.patch(trainer)` whenever
 the initialized process group or global `RANK`, not `LOCAL_RANK`. Pass that rank
 to `flare.init()` if Client API context is needed before patching.
 
-Every rank must execute the same patched method sequence:
-
-```python
-while flare.is_running():
-    trainer.evaluate()
-    trainer.train()
-```
+Every rank must execute the same generated sequence of patched methods. If the
+source-backed loop evaluates before training, all ranks call
+`evaluate()` then `train()`; if the valid loop is train-only, all ranks use that
+same train-only sequence.
 
 Rank 0 owns FLARE receive/send; the patch broadcasts tasks and parameters.
 Default distributed parameter exchange is in-memory. File exchange is an
