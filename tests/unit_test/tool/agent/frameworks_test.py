@@ -40,20 +40,24 @@ def test_evidence_weights_are_aggregated_from_detectors():
     assert weights["import"] == 1
     assert weights["pytorch_class"] == 3
     assert weights["lightning_trainer"] == 3
-    assert weights["huggingface_trainer"] == 4
+    assert weights["huggingface_train"] == 4
 
 
 def test_recommended_skill_for():
-    assert frameworks.recommended_skill_for("pytorch") == "nvflare-convert-pytorch"
-    assert frameworks.recommended_skill_for("pytorch_lightning") == "nvflare-convert-lightning"
-    assert frameworks.recommended_skill_for("huggingface") == "nvflare-convert-huggingface"
+    assert frameworks.recommended_skill_for("pytorch", []) == "nvflare-convert-pytorch"
+    assert frameworks.recommended_skill_for("pytorch_lightning", []) == "nvflare-convert-lightning"
     assert frameworks.recommended_skill_for("huggingface", [{"kind": "import"}]) is None
     assert (
-        frameworks.recommended_skill_for("huggingface", [{"kind": "huggingface_trainer"}])
+        frameworks.recommended_skill_for("huggingface", [{"kind": "huggingface_train"}])
         == "nvflare-convert-huggingface"
     )
-    assert frameworks.recommended_skill_for("xgboost") is None
-    assert frameworks.recommended_skill_for(None) is None
+    assert frameworks.recommended_skill_for("xgboost", []) is None
+    assert frameworks.recommended_skill_for(None, []) is None
+
+
+def test_huggingface_candidate_falls_back_to_orient():
+    assert frameworks.fallback_skill_for("huggingface", [{"kind": "huggingface_training_config"}]) == "nvflare-orient"
+    assert frameworks.fallback_skill_for("huggingface", [{"kind": "import"}]) is None
 
 
 def _emit_collector():
@@ -100,9 +104,12 @@ def test_huggingface_detector_records_trainer_and_patch_signals():
 
     detector.on_import_from("trl", [ast.alias(name="SFTTrainer", asname="Trainer")], state, ctx)
     detector.on_import(ast.alias(name="nvflare.client.hf", asname="flare"), state, ctx)
+    detector.on_assignment_call(["trainer"], "Trainer", 4, state, ctx)
     detector.on_call("Trainer", 4, state, ctx)
-    detector.on_call("flare.patch", 5, state, ctx)
+    detector.on_call("trainer.train", 5, state, ctx)
+    detector.on_call("flare.patch", 6, state, ctx)
 
     assert ("huggingface", "huggingface_trainer", "Trainer") in evidence
+    assert ("huggingface", "huggingface_train", "trainer.train") in evidence
     assert "flare.patch" in flare_calls
     assert ("huggingface", "flare.patch") in signals

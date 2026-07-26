@@ -634,10 +634,12 @@ class _PythonInspector(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign) -> None:
         self._inspect_secret_assignment(node.targets, node.value, getattr(node, "lineno", None))
+        self._record_assignment_call(node.targets, node.value, getattr(node, "lineno", None))
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         self._inspect_secret_assignment([node.target], node.value, getattr(node, "lineno", None))
+        self._record_assignment_call([node.target], node.value, getattr(node, "lineno", None))
         self.generic_visit(node)
 
     def visit_Constant(self, node: ast.Constant) -> None:
@@ -699,6 +701,22 @@ class _PythonInspector(ast.NodeVisitor):
     def _add_flare_call(self, call_name: str) -> None:
         self.state.flare_calls.add(call_name)
         self.state.flare_calls_by_file.setdefault(self.rel_path, set()).add(call_name)
+
+    def _record_assignment_call(self, targets: list[ast.AST], value: ast.AST, lineno: Optional[int]) -> None:
+        if not isinstance(value, ast.Call):
+            return
+        call_name = _call_name(value.func)
+        target_names = _assignment_target_names(targets)
+        if not call_name or not target_names:
+            return
+        for detector in self._detectors:
+            detector.on_assignment_call(
+                target_names,
+                call_name,
+                lineno,
+                self._detector_states[detector.name],
+                self._ctx,
+            )
 
     def _inspect_secret_assignment(self, targets: list[ast.AST], value: ast.AST, lineno: Optional[int]) -> None:
         if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
@@ -1490,9 +1508,14 @@ def _skill_selection(
         # orient's job; an empty recommendation would strand the consumer.
         recommended.append("nvflare-orient")
     elif detected_framework and conversion_state == "not_converted":
-        skill = frameworks.recommended_skill_for(detected_framework, state.framework_evidence.get(detected_framework))
+        evidence = state.framework_evidence.get(detected_framework, [])
+        skill = frameworks.recommended_skill_for(detected_framework, evidence)
         if skill:
             recommended.append(skill)
+        else:
+            fallback = frameworks.fallback_skill_for(detected_framework, evidence)
+            if fallback:
+                recommended.append(fallback)
     if (
         (state.findings or _has_problematic_skips(state))
         and "nvflare-fed-stats" not in recommended
@@ -1531,9 +1554,14 @@ def _recommended_next_commands(
         # an argparse error on an unrelated repo.
         commands.append(f"python {shlex.quote(source_job.source_file)} --export --export-dir <job-dir>")
     elif detected_framework and conversion_state == "not_converted":
-        skill = frameworks.recommended_skill_for(detected_framework, state.framework_evidence.get(detected_framework))
+        evidence = state.framework_evidence.get(detected_framework, [])
+        skill = frameworks.recommended_skill_for(detected_framework, evidence)
         if skill:
             commands.append(f"Use the {skill} skill before editing.")
+        else:
+            fallback = frameworks.fallback_skill_for(detected_framework, evidence)
+            if fallback:
+                commands.append(f"Use the {fallback} skill before editing.")
     return commands
 
 
@@ -1654,3 +1682,17 @@ def _target_name(node: ast.AST) -> Optional[str]:
     if isinstance(node, ast.Attribute):
         return node.attr
     return None
+
+
+def _assignment_target_names(targets: list[ast.AST]) -> list[str]:
+    names = []
+    pending = list(targets)
+    while pending:
+        target = pending.pop()
+        if isinstance(target, (ast.Tuple, ast.List)):
+            pending.extend(target.elts)
+            continue
+        name = _call_name(target)
+        if name:
+            names.append(name)
+    return names

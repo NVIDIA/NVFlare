@@ -82,19 +82,22 @@ def framework_for_import(module: str) -> Optional[str]:
     return _IMPORT_ROOTS.get(module.split(".")[0])
 
 
-def recommended_skill_for(framework: Optional[str], evidence: Optional[list[dict]] = None) -> Optional[str]:
+def recommended_skill_for(framework: Optional[str], evidence: list[dict]) -> Optional[str]:
     if framework is None:
         return None
     for detector in _DETECTORS:
         if detector.name == framework:
-            if (
-                evidence is not None
-                and detector.recommendation_requires_active_evidence
-                and not any(detector.is_active_evidence(item) for item in evidence)
+            if detector.recommendation_requires_active_evidence and not any(
+                detector.is_active_evidence(item) for item in evidence
             ):
                 return None
             return detector.recommended_skill
     return None
+
+
+def fallback_skill_for(framework: Optional[str], evidence: list[dict]) -> Optional[str]:
+    detector = _detector_by_name(framework) if framework else None
+    return detector.fallback_skill_for(evidence) if detector else None
 
 
 def _family_member_detectors() -> list[FrameworkDetector]:
@@ -122,11 +125,22 @@ def resolve_primary_framework(primary: str, evidence_by_framework: dict, resolve
     when it is part of a family whose base and member both have evidence; the
     member detector owns the promotion decision.
     """
-    for member in _family_member_detectors():
-        base = member.family
-        if base in evidence_by_framework and member.name in evidence_by_framework:
-            if primary in {base, member.name}:
-                return member.name if member.promote_over_family(base, resolver) else base
+    primary_detector = _detector_by_name(primary)
+    if primary_detector and primary_detector.family:
+        base = primary_detector.family
+        if base in evidence_by_framework:
+            return primary if primary_detector.promote_over_family(base, resolver) else base
+        return primary
+
+    candidates = [
+        member
+        for member in _family_member_detectors()
+        if member.family == primary
+        and member.name in evidence_by_framework
+        and member.promote_over_family(primary, resolver)
+    ]
+    if candidates:
+        return max(candidates, key=lambda member: resolver.score(resolver.evidence(member.name))).name
     return primary
 
 

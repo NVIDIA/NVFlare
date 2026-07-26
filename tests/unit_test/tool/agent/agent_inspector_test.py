@@ -256,7 +256,8 @@ def test_inspect_detects_huggingface_trainer_and_recommends_huggingface_skill(tm
         "\n"
         "model = AutoModelForSequenceClassification.from_pretrained('local-model')\n"
         "args = TrainingArguments(output_dir='outputs')\n"
-        "trainer = Trainer(model=model, args=args)\n",
+        "trainer = Trainer(model=model, args=args)\n"
+        "trainer.train()\n",
         encoding="utf-8",
     )
 
@@ -266,6 +267,60 @@ def test_inspect_detects_huggingface_trainer_and_recommends_huggingface_skill(tm
     assert data["conversion_state"] == "not_converted"
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-huggingface"]
     assert any(item["kind"] == "huggingface_trainer" for item in data["frameworks"][0]["evidence"])
+
+
+def test_inspect_promotes_huggingface_trainer_over_realistic_pytorch_usage(tmp_path):
+    script = tmp_path / "train_hf.py"
+    script.write_text(
+        "import torch\n"
+        "from torch.utils.data import DataLoader\n"
+        "from transformers import AutoModelForSequenceClassification, Trainer, TrainingArguments\n"
+        "\n"
+        "class Rows(torch.utils.data.Dataset):\n"
+        "    def __len__(self):\n"
+        "        return 1\n"
+        "    def __getitem__(self, index):\n"
+        "        return {'input_ids': torch.tensor([index]), 'labels': index}\n"
+        "\n"
+        "model = AutoModelForSequenceClassification.from_pretrained('local-model')\n"
+        "args = TrainingArguments(output_dir='outputs')\n"
+        "loader = DataLoader(Rows())\n"
+        "trainer = Trainer(model=model, args=args, train_dataset=loader.dataset)\n"
+        "trainer.train()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "huggingface"
+    assert "pytorch" in {item["name"] for item in data["frameworks"]}
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-huggingface"]
+
+
+def test_inspect_promotes_huggingface_across_training_and_data_modules(tmp_path):
+    (tmp_path / "train.py").write_text(
+        "from transformers import Trainer, TrainingArguments\n"
+        "from data import train_data\n"
+        "\n"
+        "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'), train_dataset=train_data)\n"
+        "trainer.train()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "data.py").write_text(
+        "import torch\n"
+        "from torch.utils.data import DataLoader\n"
+        "\n"
+        "class Rows(torch.utils.data.Dataset):\n"
+        "    pass\n"
+        "\n"
+        "train_data = DataLoader(Rows()).dataset\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["frameworks"][0]["name"] == "huggingface"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-huggingface"]
 
 
 def test_inspect_classifies_huggingface_patch_as_client_api_converted(tmp_path):
@@ -287,6 +342,56 @@ def test_inspect_classifies_huggingface_patch_as_client_api_converted(tmp_path):
     assert data["conversion_state"] == "client_api_converted"
     assert data["skill_selection"]["recommended_skills"] == []
     assert "flare.patch" in data["flare_integration"]["calls"]
+
+
+def test_inspect_does_not_recommend_huggingface_conversion_for_evaluation_only_trainer(tmp_path):
+    script = tmp_path / "evaluate.py"
+    script.write_text(
+        "from transformers import Trainer, TrainingArguments\n"
+        "\n"
+        "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'), eval_dataset=eval_data)\n"
+        "trainer.evaluate()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
+    assert data["recommended_next_commands"] == ["Use the nvflare-orient skill before editing."]
+
+
+def test_inspect_routes_factory_built_trainer_candidate_to_orient(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "from transformers import TrainingArguments\n"
+        "from my_lib import build_trainer\n"
+        "\n"
+        "trainer = build_trainer(TrainingArguments(output_dir='outputs'))\n"
+        "trainer.train()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["skill_selection"]["detected_framework"] == "huggingface"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
+    assert data["recommended_next_commands"] == ["Use the nvflare-orient skill before editing."]
+
+
+def test_inspect_detects_huggingface_trainer_submodule_alias(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "from transformers import trainer as trainer_module\n"
+        "\n"
+        "trainer = trainer_module.Trainer(model=model, args=args, train_dataset=train_data)\n"
+        "trainer.train()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "huggingface"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-huggingface"]
 
 
 def test_inspect_keeps_manual_transformers_loop_with_pytorch_converter(tmp_path):

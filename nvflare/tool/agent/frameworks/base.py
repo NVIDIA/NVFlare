@@ -95,6 +95,16 @@ class FrameworkDetector:
     def on_call(self, call_name: str, lineno: Optional[int], file_state: Any, ctx: DetectContext) -> None:
         """Handle a called name such as ``torch.optim.SGD`` or ``flare.patch``."""
 
+    def on_assignment_call(
+        self,
+        target_names: list[str],
+        call_name: str,
+        lineno: Optional[int],
+        file_state: Any,
+        ctx: DetectContext,
+    ) -> None:
+        """Handle assignment of a call result, such as ``trainer = Trainer(...)``."""
+
     # --- cross-framework family resolution -------------------------------
 
     def is_active_evidence(self, evidence: dict) -> bool:
@@ -113,3 +123,7 @@ class FrameworkDetector:
         decision stays in the framework module. Default: never promote.
         """
         return False
+
+    def fallback_skill_for(self, evidence: list[dict]) -> Optional[str]:
+        """Return a safe fallback when evidence cannot justify the conversion skill."""
+        return None

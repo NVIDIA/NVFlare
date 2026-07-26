@@ -31,6 +31,8 @@ as Trainer-style training without examining its entrypoint.
   serving, and deployment outside this conversion skill.
 - Treat Accelerate-only custom loops as manual PyTorch unless a supported
   Hugging Face `Trainer` still owns training.
+- Route a Trainer/configuration factory that static inspection cannot resolve
+  to `nvflare-orient` rather than guessing Trainer ownership.
 
 ## Facts To Extract
 

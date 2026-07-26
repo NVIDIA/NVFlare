@@ -13,26 +13,16 @@
 # limitations under the License.
 
 from datasets import load_dataset
-from peft import LoraConfig, TaskType
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from model import MODEL_NAME, create_model_and_peft_config
+from transformers import AutoTokenizer
 from trl import SFTConfig, SFTTrainer
-
-MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
 
 
 def main():
-    model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
+    model, peft_config = create_model_and_peft_config()
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     train_data = load_dataset("json", data_files="train.jsonl", split="train")
     eval_data = load_dataset("json", data_files="valid.jsonl", split="train")
-    peft_config = LoraConfig(
-        r=8,
-        lora_alpha=16,
-        lora_dropout=0.05,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
-        bias="none",
-        task_type=TaskType.CAUSAL_LM,
-    )
     args = SFTConfig(
         output_dir="outputs",
         num_train_epochs=1,
