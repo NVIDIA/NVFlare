@@ -630,15 +630,6 @@ class _PythonInspector(ast.NodeVisitor):
         end_lineno = getattr(node, "end_lineno", None) or node.lineno
         self.state.class_body_ranges.setdefault(self.rel_path, []).append((node.lineno, end_lineno))
         base_names = [name for name in (_symbol_name(base) for base in node.bases) if name]
-        for detector in self._detectors:
-            detector.on_class_definition(
-                node.name,
-                base_names,
-                node.lineno,
-                self._detector_states[detector.name],
-                self._ctx,
-                tuple(self._scope_stack),
-            )
         for base_name in base_names:
             for detector in self._detectors:
                 detector.on_class_base(
@@ -648,6 +639,15 @@ class _PythonInspector(ast.NodeVisitor):
                     self._ctx,
                     tuple(self._scope_stack),
                 )
+        for detector in self._detectors:
+            detector.on_class_definition(
+                node.name,
+                base_names,
+                node.lineno,
+                self._detector_states[detector.name],
+                self._ctx,
+                tuple(self._scope_stack),
+            )
         self._visit_scoped(node, "class")
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
@@ -705,13 +705,18 @@ class _PythonInspector(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign) -> None:
         self._inspect_secret_assignment(node.targets, node.value, getattr(node, "lineno", None))
+        self.visit(node.value)
         self._record_assignment(node.targets, node.value, getattr(node, "lineno", None))
-        self.generic_visit(node)
+        for target in node.targets:
+            self.visit(target)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         self._inspect_secret_assignment([node.target], node.value, getattr(node, "lineno", None))
+        if node.value:
+            self.visit(node.value)
         self._record_assignment([node.target], node.value, getattr(node, "lineno", None))
-        self.generic_visit(node)
+        self.visit(node.target)
+        self.visit(node.annotation)
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
         self.generic_visit(node)
