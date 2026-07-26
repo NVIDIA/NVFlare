@@ -199,13 +199,6 @@ class HuggingFaceDetector(FrameworkDetector):
         ctx: DetectContext,
         scope: tuple[str, ...] = (),
     ) -> None:
-        if call_name and (
-            file_state.scopes.has_identity(call_name, scope, file_state.patch_symbols)
-            or self._is_patch_call(call_name, file_state, scope)
-        ):
-            # Assignment right-hand sides run before their targets are rebound.
-            ctx.flare_call(call_name)
-            ctx.integration_signal(FRAMEWORK, call_name)
         is_trainer = bool(call_name and self._is_trainer_name(call_name, file_state, scope))
         for target_name in target_names:
             binding_scope = self._bind_name(target_name, scope, file_state)
