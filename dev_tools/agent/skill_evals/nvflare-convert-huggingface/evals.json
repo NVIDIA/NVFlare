@@ -1,0 +1,246 @@
+{
+  "skill_name": "nvflare-convert-huggingface",
+  "evals": [
+    {
+      "id": "huggingface-convert-basic",
+      "prompt": "Convert this Hugging Face Trainer sequence-classification script into an NVFLARE FedAvg job for 2 simulated sites and 2 rounds. Preserve evaluation accuracy and run a bounded local validation.",
+      "expected_output": "A standard client.py/model.py/job.py conversion that statically inspects the source, uses the PyTorch FedAvg recipe, preserves the Trainer/model/datasets/compute_metrics setup, applies nvflare.client.hf.patch(trainer) once, evaluates the received global model before local training, uses site-local training partitions, preserves PyTorch tensor exchange, validates locally, and reports backups and exact artifact paths.",
+      "files": [
+        "files/trainer-basic/train.py"
+      ],
+      "assertions": [
+        "The agent runs nvflare agent inspect before editing and confirms active Hugging Face Trainer evidence.",
+        "The agent emits a dry-run plan and backs up existing files before changing them.",
+        "The generated client uses nvflare.client.hf and exactly one flare.patch(trainer) call.",
+        "The generated client does not implement manual FLModel receive/send model exchange.",
+        "The model, datasets, TrainingArguments, and Trainer are constructed once before the FL round loop.",
+        "The round loop calls trainer.evaluate() before trainer.train() so accuracy describes the received global model.",
+        "The generated job imports FedAvgRecipe from nvflare.app_opt.pt.recipes.fedavg after recipe show confirms it.",
+        "The generated recipe model is an explicit class_path and args mapping, not a live model instance.",
+        "The generated recipe uses ExchangeFormat.PYTORCH, enables tensor disk offload, quotes train_args, and packages the required model file.",
+        "The recipe key_metric is eval_accuracy, the exact source-backed key emitted by Trainer.evaluate(), rather than the unprefixed compute_metrics key.",
+        "The two simulated clients train on deterministic site-local partitions rather than the same full training dataset.",
+        "The agent validates through compile/import, recipe construction, bounded simulation, and result evidence, stopping on a real failure.",
+        "The final report includes source facts, changed files, backup_path, recipe, metrics, commands, validation status, and exact artifact paths."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-huggingface",
+        "mandatory_behavior": [
+          {
+            "id": "inspect-huggingface-trainer-first",
+            "description": "runs static agent inspection before editing and confirms Trainer or SFTTrainer ownership"
+          },
+          {
+            "id": "dry-run-and-backup",
+            "description": "presents a mutation plan and backs up every existing file before changing it"
+          },
+          {
+            "id": "use-huggingface-patched-trainer",
+            "description": "uses nvflare.client.hf.patch(trainer) as the sole model-exchange integration"
+          },
+          {
+            "id": "global-evaluation-before-training",
+            "description": "preserves source evaluation and calls trainer.evaluate before trainer.train when per-round global metrics are required"
+          },
+          {
+            "id": "use-pytorch-recipe-family",
+            "description": "uses the PyTorch recipe family selected through recipe show instead of inventing a Hugging Face recipe"
+          },
+          {
+            "id": "explicit-server-model-config",
+            "description": "uses an importable class_path plus args server model whose state-dict keyspace matches the Trainer exchange scope"
+          },
+          {
+            "id": "preserve-tensor-dtypes",
+            "description": "uses ExchangeFormat.PYTORCH and enables tensor disk offload when supported"
+          },
+          {
+            "id": "site-local-training-data",
+            "description": "preserves site data or creates deterministic site-local training partitions for multi-site simulation"
+          },
+          {
+            "id": "validate-and-report-evidence",
+            "description": "runs the validation ladder and reports commands, status, metrics, backups, and exact artifact paths"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-manual-flmodel-exchange",
+            "description": "does not add manual FLModel receive/send model exchange around a patched Trainer"
+          },
+          {
+            "id": "no-objects-inside-round-loop",
+            "description": "does not reconstruct the model, tokenizer, datasets, or Trainer inside each FL round"
+          },
+          {
+            "id": "no-invented-metric-semantics",
+            "description": "does not invent compute_metrics output, metric direction, labels, or denominators"
+          },
+          {
+            "id": "no-private-data-packaging",
+            "description": "does not copy site data into the generated or exported job"
+          },
+          {
+            "id": "no-poc-production-submit",
+            "description": "does not submit the conversion to POC or production"
+          }
+        ],
+        "process_metrics": [
+          {
+            "id": "first_pass_accepted",
+            "description": "whether the first conversion has correct Trainer patching, recipe construction, data isolation, and validation"
+          },
+          {
+            "id": "turns_to_acceptable",
+            "description": "number of turns before the conversion is accepted or explicitly blocked"
+          },
+          {
+            "id": "user_correction_count",
+            "description": "number of user corrections required for scope, patching, PEFT, metrics, or validation"
+          },
+          {
+            "id": "layout_violations",
+            "description": "count of generated source layout and runtime artifact placement violations"
+          },
+          {
+            "id": "validation_evidence_completeness",
+            "description": "whether commands, exit status, metrics, process mode, and exact paths are reported"
+          }
+        ]
+      }
+    },
+    {
+      "id": "huggingface-convert-peft-sft",
+      "prompt": "Convert this TRL SFTTrainer LoRA script to a two-site NVFLARE FedAvg job. Exchange adapters only, preserve the existing LoRA configuration, and do not add advanced patch options unless they are necessary.",
+      "expected_output": "A Hugging Face Client API conversion that keeps the existing SFTTrainer and LoRA configuration, calls flare.patch(trainer) with defaults, creates an adapter-shaped server model with the same PEFT keyspace, uses PyTorch tensor exchange and external execution, and validates exact adapter-key compatibility before simulation.",
+      "files": [
+        "files/peft-sft/train.py"
+      ],
+      "assertions": [
+        "The agent detects TRL SFTTrainer as Hugging Face Trainer-style training.",
+        "The generated client preserves every observed LoRA setting and does not infer target modules.",
+        "The generated client uses the simple flare.patch(trainer) call because auto scope resolves to adapter parameters.",
+        "The server model exposes adapter-only state with the same PEFT configuration and exact keyspace.",
+        "The agent does not use server_key_prefix or non-strict loading without an observed mismatch.",
+        "The agent validates the server and Trainer adapter key sets before simulation."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-huggingface",
+        "mandatory_behavior": [
+          {
+            "id": "preserve-peft-config",
+            "description": "preserves the observed PEFT type, target modules, rank, alpha, dropout, bias, and task type"
+          },
+          {
+            "id": "adapter-shaped-server-model",
+            "description": "makes the server model expose the same adapter-only state-dict keys as the patched Trainer"
+          },
+          {
+            "id": "simple-patch-default",
+            "description": "uses flare.patch(trainer) defaults when auto scope and matching keyspaces are sufficient"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-invented-lora-settings",
+            "description": "does not infer or replace LoRA target modules or other adapter settings"
+          },
+          {
+            "id": "no-nonstrict-keyspace-mask",
+            "description": "does not disable strict loading to hide an unexplained server and Trainer key mismatch"
+          }
+        ]
+      }
+    },
+    {
+      "id": "huggingface-ddp-contract",
+      "prompt": "Convert this Hugging Face Trainer job for torchrun with two GPU processes per site. Keep checkpoint state across FL rounds and explain any shared-storage requirement.",
+      "expected_output": "A Hugging Face conversion that preserves torchrun, initializes torch.distributed before flare.patch, uses global rank for FLARE, keeps every rank in the same is_running/evaluate/train sequence, uses external execution, and explains that in-memory parameter broadcast needs no shared output directory while restore_state checkpoint paths must be visible to every rank.",
+      "files": [
+        "files/trainer-basic/train.py"
+      ],
+      "assertions": [
+        "The generated client initializes torch.distributed before flare.patch when WORLD_SIZE is greater than one.",
+        "The generated client uses global RANK or the initialized process-group rank rather than LOCAL_RANK for FLARE.",
+        "Every rank calls is_running, evaluate, and train in identical order.",
+        "The agent preserves the user-provided torchrun process count and does not invent multi-node rendezvous settings.",
+        "The agent distinguishes default in-memory parameter broadcast from shared checkpoint-path requirements."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-huggingface",
+        "mandatory_behavior": [
+          {
+            "id": "initialize-distributed-before-patch",
+            "description": "initializes the distributed process group before patching when a multi-rank environment is declared"
+          },
+          {
+            "id": "rank-symmetric-trainer-loop",
+            "description": "keeps all ranks in the same patched Trainer call order"
+          },
+          {
+            "id": "checkpoint-storage-contract",
+            "description": "requires checkpoint paths to be visible to every rank when restore_state is enabled"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-local-rank-as-global-rank",
+            "description": "does not use LOCAL_RANK as the global FLARE process rank"
+          },
+          {
+            "id": "no-invented-distributed-launch",
+            "description": "does not invent node counts, rendezvous endpoints, scheduler commands, or rank assignments"
+          }
+        ]
+      }
+    },
+    {
+      "id": "huggingface-negative-manual-pytorch",
+      "prompt": "Convert this AutoModel-based manual torch optimizer and backward loop to an NVFLARE job. It does not use transformers.Trainer.",
+      "expected_output": "The Hugging Face conversion skill is not selected; the request routes to nvflare-convert-pytorch because a manual PyTorch loop owns training.",
+      "assertions": [
+        "The selected skill is nvflare-convert-pytorch, not nvflare-convert-huggingface."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-pytorch",
+        "negative_for": "nvflare-convert-huggingface",
+        "prohibited_behavior": [
+          {
+            "id": "no-patch-without-trainer",
+            "description": "does not add flare.patch when no Hugging Face Trainer owns training"
+          }
+        ]
+      }
+    },
+    {
+      "id": "huggingface-negative-lightning",
+      "prompt": "Convert my LightningModule that contains an AutoModel encoder and is trained by lightning.Trainer into an NVFLARE job.",
+      "expected_output": "The Hugging Face conversion skill is not selected; the request routes to nvflare-convert-lightning because Lightning Trainer owns the training lifecycle.",
+      "assertions": [
+        "The selected skill is nvflare-convert-lightning, not nvflare-convert-huggingface."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-lightning",
+        "negative_for": "nvflare-convert-huggingface",
+        "prohibited_behavior": [
+          {
+            "id": "no-hf-patch-for-lightning-owner",
+            "description": "does not replace the Lightning patch path merely because the model imports Transformers"
+          }
+        ]
+      }
+    },
+    {
+      "id": "huggingface-global-negative-serving",
+      "prompt": "Deploy a Hugging Face text-generation pipeline as a Kubernetes inference service with autoscaling.",
+      "expected_output": "No NVFLARE conversion skill triggers because this is inference serving and Kubernetes deployment, not federated Trainer conversion.",
+      "assertions": [
+        "The selected skill is not nvflare-convert-huggingface."
+      ],
+      "nvflare": {
+        "expected_skill": null,
+        "negative_for": "*"
+      }
+    }
+  ]
+}

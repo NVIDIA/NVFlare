@@ -248,6 +248,106 @@ def test_inspect_detects_pytorch_lightning_and_recommends_lightning_skill(tmp_pa
     assert any(item["kind"] == "lightning_class" for item in data["frameworks"][0]["evidence"])
 
 
+def test_inspect_detects_huggingface_trainer_and_recommends_huggingface_skill(tmp_path):
+    script = tmp_path / "train_hf.py"
+    script.write_text(
+        "import torch\n"
+        "from transformers import AutoModelForSequenceClassification, Trainer, TrainingArguments\n"
+        "\n"
+        "model = AutoModelForSequenceClassification.from_pretrained('local-model')\n"
+        "args = TrainingArguments(output_dir='outputs')\n"
+        "trainer = Trainer(model=model, args=args)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "huggingface"
+    assert data["conversion_state"] == "not_converted"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-huggingface"]
+    assert any(item["kind"] == "huggingface_trainer" for item in data["frameworks"][0]["evidence"])
+
+
+def test_inspect_classifies_huggingface_patch_as_client_api_converted(tmp_path):
+    script = tmp_path / "client.py"
+    script.write_text(
+        "from trl import SFTTrainer\n"
+        "from nvflare.client import hf as flare\n"
+        "\n"
+        "trainer = SFTTrainer(model=model, args=args, train_dataset=train_data)\n"
+        "flare.patch(trainer)\n"
+        "while flare.is_running():\n"
+        "    trainer.train()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "huggingface"
+    assert data["conversion_state"] == "client_api_converted"
+    assert data["skill_selection"]["recommended_skills"] == []
+    assert "flare.patch" in data["flare_integration"]["calls"]
+
+
+def test_inspect_keeps_manual_transformers_loop_with_pytorch_converter(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "import torch\n"
+        "from transformers import AutoModelForSequenceClassification\n"
+        "\n"
+        "model = AutoModelForSequenceClassification.from_pretrained('local-model')\n"
+        "optimizer = torch.optim.SGD(model.parameters(), lr=0.1)\n"
+        "loss = model(**batch).loss\n"
+        "loss.backward()\n"
+        "optimizer.step()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "pytorch"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
+def test_inspect_does_not_recommend_conversion_for_huggingface_inference_only(tmp_path):
+    script = tmp_path / "infer.py"
+    script.write_text(
+        "from transformers import pipeline\n"
+        "\n"
+        "generator = pipeline('text-generation', model='local-model')\n"
+        "print(generator('hello'))\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "huggingface"
+    assert data["skill_selection"]["recommended_skills"] == []
+    assert data["recommended_next_commands"] == []
+
+
+def test_inspect_keeps_transformers_model_under_lightning_converter(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "import lightning as L\n"
+        "from transformers import AutoModel\n"
+        "\n"
+        "class Model(L.LightningModule):\n"
+        "    def __init__(self):\n"
+        "        super().__init__()\n"
+        "        self.encoder = AutoModel.from_pretrained('local-model')\n"
+        "\n"
+        "trainer = L.Trainer(max_epochs=1)\n"
+        "trainer.fit(Model(), train_dataloaders=loader)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "pytorch_lightning"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
 def test_inspect_detects_lightning_pytorch_trainer_import(tmp_path):
     script = tmp_path / "train_lightning.py"
     script.write_text(
