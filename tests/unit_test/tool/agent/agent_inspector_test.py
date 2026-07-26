@@ -1868,6 +1868,281 @@ def test_inspect_does_not_emit_pytorch_owner_for_shadowing_optimizer_class(tmp_p
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "def configure(patch=patch(trainer)):\n"
+            "    patch = local_patch\n",
+            id="huggingface-default-before-body-local",
+        ),
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "@patch(trainer)\n"
+            "def patch():\n"
+            "    pass\n",
+            id="huggingface-decorator-before-function-name",
+        ),
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "def configure(value: patch(trainer)):\n"
+            "    pass\n",
+            id="huggingface-annotation",
+        ),
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "configure = lambda patch=patch(trainer): patch\n",
+            id="huggingface-lambda-default",
+        ),
+        pytest.param(
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n"
+            "async def configure(patch=patch(trainer)):\n"
+            "    patch = local_patch\n",
+            id="lightning-async-default-before-body-local",
+        ),
+        pytest.param(
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n"
+            "@patch(trainer)\n"
+            "class patch:\n"
+            "    pass\n",
+            id="lightning-class-decorator-before-class-name",
+        ),
+    ],
+)
+def test_inspect_resolves_patch_in_definition_time_enclosing_scope(tmp_path, source):
+    script = tmp_path / "client.py"
+    script.write_text(source, encoding="utf-8")
+
+    data = inspect_path(script)
+
+    assert data["conversion_state"] == "client_api_converted"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "def configure(value=patch(trainer)):\n"
+            "    pass\n"
+            "from nvflare.client.hf import patch\n",
+            id="huggingface",
+        ),
+        pytest.param(
+            "import lightning as L\n"
+            "trainer = L.Trainer(max_epochs=1)\n"
+            "def configure(value=patch(trainer)):\n"
+            "    pass\n"
+            "from nvflare.client.lightning import patch\n",
+            id="lightning",
+        ),
+    ],
+)
+def test_inspect_does_not_finalize_definition_time_patch_before_later_import(tmp_path, source):
+    script = tmp_path / "client.py"
+    script.write_text(source, encoding="utf-8")
+
+    data = inspect_path(script)
+
+    assert data["conversion_state"] == "partial_client_api"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "class Config:\n"
+            "    converted = patch(trainer)\n"
+            "    from nvflare.client.hf import patch\n",
+            id="huggingface",
+        ),
+        pytest.param(
+            "import lightning as L\n"
+            "trainer = L.Trainer(max_epochs=1)\n"
+            "class Config:\n"
+            "    converted = patch(trainer)\n"
+            "    from nvflare.client.lightning import patch\n",
+            id="lightning",
+        ),
+    ],
+)
+def test_inspect_does_not_finalize_class_body_patch_before_later_import(tmp_path, source):
+    script = tmp_path / "client.py"
+    script.write_text(source, encoding="utf-8")
+
+    data = inspect_path(script)
+
+    assert data["conversion_state"] == "partial_client_api"
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        pytest.param("[trainer]", id="match-as"),
+        pytest.param("[*trainer]", id="match-star"),
+        pytest.param("{'value': _, **trainer}", id="match-mapping-rest"),
+    ],
+)
+def test_inspect_does_not_reuse_trainer_identity_shadowed_by_match_capture(tmp_path, pattern):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "from transformers import Trainer, TrainingArguments\n"
+        "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+        "def run(value):\n"
+        "    match value:\n"
+        f"        case {pattern}:\n"
+        "            trainer.train()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+    huggingface = next(item for item in data["frameworks"] if item["name"] == "huggingface")
+
+    assert not any(item["kind"] == "huggingface_train" for item in huggingface["evidence"])
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
+
+
+def test_inspect_visits_calls_in_with_assignment_target(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "from torch.optim import SGD\n" "with manager() as outputs[SGD(params)]:\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+    pytorch = next(item for item in data["frameworks"] if item["name"] == "pytorch")
+
+    assert [item["value"] for item in pytorch["evidence"] if item["kind"] == "pytorch_call"] == ["SGD"]
+
+
+def test_inspect_resolves_pytorch_default_before_parameter_and_body_scope(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "from torch.optim import SGD\n" "def configure(SGD=SGD(params)):\n" "    SGD = LocalOptimizer\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+    pytorch = next(item for item in data["frameworks"] if item["name"] == "pytorch")
+
+    assert [item["value"] for item in pytorch["evidence"] if item["kind"] == "pytorch_call"] == ["SGD"]
+
+
+def test_inspect_resolves_lightning_default_before_parameter_and_body_scope(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "import lightning as L\n" "def configure(L=L.Trainer(max_epochs=1)):\n" "    L = local_lightning\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+    lightning = next(item for item in data["frameworks"] if item["name"] == "pytorch_lightning")
+
+    assert [item["value"] for item in lightning["evidence"] if item["kind"] == "lightning_trainer"] == ["L.Trainer"]
+
+
+@pytest.mark.parametrize(
+    ("source", "framework", "kind", "expected_value"),
+    [
+        pytest.param(
+            "from torch.optim import SGD\n"
+            "class Config:\n"
+            "    optimizer = SGD(params)\n"
+            "    SGD = LocalOptimizer\n"
+            "    other = SGD(params)\n",
+            "pytorch",
+            "pytorch_call",
+            "SGD",
+            id="pytorch",
+        ),
+        pytest.param(
+            "import lightning as L\n"
+            "class Config:\n"
+            "    trainer = L.Trainer(max_epochs=1)\n"
+            "    L = local_lightning\n"
+            "    other = L.Trainer(max_epochs=1)\n",
+            "pytorch_lightning",
+            "lightning_trainer",
+            "L.Trainer",
+            id="lightning",
+        ),
+    ],
+)
+def test_inspect_class_body_framework_bindings_are_sequential(tmp_path, source, framework, kind, expected_value):
+    script = tmp_path / "train.py"
+    script.write_text(source, encoding="utf-8")
+
+    data = inspect_path(script)
+    evidence = next(item for item in data["frameworks"] if item["name"] == framework)["evidence"]
+
+    assert [item["value"] for item in evidence if item["kind"] == kind] == [expected_value]
+
+
+def test_inspect_visits_nested_class_base_calls_in_enclosing_scope(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "import lightning as L\n" "class Config(factory(L.Trainer(max_epochs=1))):\n" "    L = local_lightning\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+    lightning = next(item for item in data["frameworks"] if item["name"] == "pytorch_lightning")
+
+    assert [item["value"] for item in lightning["evidence"] if item["kind"] == "lightning_trainer"] == ["L.Trainer"]
+
+
+@pytest.mark.parametrize(
+    ("module_import", "trainer_call"),
+    [
+        ("import pytorch_lightning.callbacks", "pytorch_lightning.Trainer(max_epochs=1)"),
+        ("import lightning.pytorch.callbacks", "lightning.pytorch.Trainer(max_epochs=1)"),
+    ],
+)
+def test_inspect_dotted_lightning_imports_establish_root_owner_identity(tmp_path, module_import, trainer_call):
+    script = tmp_path / "train.py"
+    script.write_text(
+        f"{module_import}\n"
+        "from transformers import Trainer, TrainingArguments\n"
+        f"lightning_trainer = {trainer_call}\n"
+        "hf_trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+        "hf_trainer.train()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
+
+
+def test_inspect_aliased_lightning_submodule_does_not_claim_root_trainer(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "import pytorch_lightning.callbacks as callbacks\n" "callbacks.Trainer(max_epochs=1)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+    lightning = next(item for item in data["frameworks"] if item["name"] == "pytorch_lightning")
+
+    assert not any(item["kind"] == "lightning_trainer" for item in lightning["evidence"])
+
+
 def test_inspect_does_not_route_unconverted_nemo_wrapper_as_lightning(tmp_path):
     script = tmp_path / "train.py"
     script.write_text(
