@@ -8,22 +8,9 @@ metadata:
   blast_radius: runs_simulator
   category: Conversion
   skill_version: "0.1.0"
-  tags:
-    - nvflare
-    - federated-learning
-    - huggingface
-    - transformers
-    - trl
-    - peft
-    - conversion
-  languages:
-    - python
-  frameworks:
-    - huggingface
-    - transformers
-    - trl
-    - pytorch
-    - nvflare
+  tags: "nvflare, federated-learning, huggingface, transformers, trl, peft, conversion"
+  languages: "python"
+  frameworks: "huggingface, transformers, trl, pytorch, nvflare"
   domain: ml
 ---
 
