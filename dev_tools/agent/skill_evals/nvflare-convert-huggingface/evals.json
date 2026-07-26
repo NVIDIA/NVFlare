@@ -236,6 +236,27 @@
       }
     },
     {
+      "id": "huggingface-negative-dual-trainer",
+      "prompt": "Convert an entrypoint that actively runs both lightning.Trainer.fit() and transformers.Trainer.train() on related models.",
+      "expected_output": "The Hugging Face conversion skill does not patch both trainers. The request routes to nvflare-orient to choose one training-loop owner or split the phases into separate entrypoints or NVFLARE jobs.",
+      "files": [],
+      "assertions": [
+        "The selected skill is nvflare-orient, not either framework converter.",
+        "The agent requires one Trainer owner or separate entrypoints/jobs.",
+        "The agent never applies both Lightning and Hugging Face Client API patches in one federated round loop."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-orient",
+        "negative_for": "nvflare-convert-huggingface",
+        "prohibited_behavior": [
+          {
+            "id": "no-dual-trainer-patching",
+            "description": "does not patch both Lightning and Hugging Face Trainers in one federated training loop"
+          }
+        ]
+      }
+    },
+    {
       "id": "huggingface-global-negative-serving",
       "prompt": "Deploy a Hugging Face text-generation pipeline as a Kubernetes inference service with autoscaling.",
       "expected_output": "No NVFLARE conversion skill triggers because this is inference serving and Kubernetes deployment, not federated Trainer conversion.",
