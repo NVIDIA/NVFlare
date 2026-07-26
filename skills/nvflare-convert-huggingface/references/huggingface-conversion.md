@@ -22,8 +22,10 @@ while flare.is_running():
     trainer.train()
 ```
 
-When the source has no valid evaluation dataset or metric and model selection
-is not requested, use a train-only loop and set `key_metric=""` in the recipe:
+When the source has no valid evaluation dataset or metric and neither
+per-round evaluation nor best-model selection is requested, use a train-only
+loop and set `key_metric=""` in the recipe. An empty key omits the automatic
+model selector; it is not a workaround for a required lower-is-better metric:
 
 ```python
 while flare.is_running():
@@ -60,6 +62,9 @@ Use the PyTorch recipe family. For FedAvg, use an explicit importable model
 configuration and preserve tensor dtypes:
 
 ```python
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.client.config import ExchangeFormat
+
 recipe = FedAvgRecipe(
     name="hf-trainer",
     model={
@@ -83,15 +88,20 @@ Quote every user-controlled path or model identifier included in the
 
 ## Data And Model Selection
 
-Pass data roots through client arguments or per-site configuration; never copy
-private site data into the job. For simulation from one source dataset, make
-deterministic site-local training partitions unless shared training data was
-explicitly requested.
+Follow the site-partitioning requirement in `SKILL.md`. Pass data roots through
+client arguments or per-site configuration; never copy private site data into
+the job.
 
 Use the exact higher-is-better key returned by `Trainer.evaluate()` for
 `key_metric`. Trainer commonly prefixes `compute_metrics` output, so
 `{"accuracy": ...}` often becomes `eval_accuracy`; verify the returned key
-instead of copying the unprefixed function key. If the Trainer only returns a
-lower-is-better loss and the recipe does not expose a lower-is-better selector,
-set `key_metric=""` or stop for a semantic decision. Do not silently treat
-increasing loss as improvement.
+instead of copying the unprefixed function key.
+
+`FedAvgRecipe` does not expose a lower-is-better direction flag. When a
+source-backed lower-is-better metric is returned by `compute_metrics`, preserve
+it and add an explicitly negated companion such as
+`{"wer": wer, "neg_wer": -wer}`, then select the prefixed key
+`eval_neg_wer`. If only Trainer-generated `eval_loss` exists and best-model
+selection is required, ask for a source-backed selection metric or fail closed.
+Use `key_metric=""` only when best-model selection is not requested. Never
+select raw loss as though increasing values were improvements.

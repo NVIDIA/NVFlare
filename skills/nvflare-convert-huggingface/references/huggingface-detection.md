@@ -30,9 +30,9 @@ as Trainer-style training without examining its entrypoint.
   `nvflare-convert-lightning`, even when the module contains a Transformers
   model.
 - Route an inspected project that actively contains both Lightning and Hugging
-  Face Trainer entrypoints to `nvflare-orient`. Require the user to select one
-  training-loop owner or separate the jobs; never patch both Trainers in one
-  federated round loop.
+  Face Trainer entrypoints to `nvflare-orient`; that skill owns the decision to
+  select one training-loop owner or separate the jobs. Do not patch either
+  Trainer in this skill.
 - Keep pure preprocessing, model download, inference, evaluation reporting,
   serving, and deployment outside this conversion skill.
 - Treat Accelerate-only custom loops as manual PyTorch unless a supported

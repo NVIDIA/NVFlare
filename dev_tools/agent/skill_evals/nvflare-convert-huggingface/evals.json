@@ -4,14 +4,14 @@
     {
       "id": "huggingface-convert-basic",
       "prompt": "Convert this Hugging Face Trainer sequence-classification script into an NVFLARE FedAvg job for 2 simulated sites and 2 rounds. Preserve evaluation accuracy and run a bounded local validation.",
-      "expected_output": "A standard client.py/model.py/job.py conversion that statically inspects the source, uses the PyTorch FedAvg recipe, preserves the Trainer/model/datasets/compute_metrics setup, applies nvflare.client.hf.patch(trainer) once, evaluates the received global model before local training, uses site-local training partitions, preserves PyTorch tensor exchange, validates locally, and reports backups and exact artifact paths.",
+      "expected_output": "A standard client.py/model.py/job.py conversion that statically inspects the source, uses the PyTorch FedAvg recipe, preserves the Trainer/model/datasets/compute_metrics setup, applies nvflare.client.hf.patch(trainer) once, evaluates the received global model before local training, uses site-local training partitions, preserves PyTorch tensor exchange, validates locally, preserves existing non-generated source, and reports exact artifact paths.",
       "files": [
         "files/trainer-basic/train.py",
         "files/trainer-basic/model.py"
       ],
       "assertions": [
         "The agent runs nvflare agent inspect before editing and confirms active Hugging Face Trainer evidence.",
-        "The agent emits a dry-run plan and backs up existing files before changing them.",
+        "The agent preserves existing non-generated source unless the user explicitly requested a specific overwrite.",
         "The generated client uses nvflare.client.hf and exactly one flare.patch(trainer) call.",
         "The generated client does not implement manual FLModel receive/send model exchange.",
         "The model, datasets, TrainingArguments, and Trainer are constructed once before the FL round loop.",
@@ -20,9 +20,9 @@
         "The generated recipe model is an explicit class_path and args mapping, not a live model instance.",
         "The generated recipe uses ExchangeFormat.PYTORCH, enables tensor disk offload, quotes train_args, and packages the required model file.",
         "The recipe key_metric is eval_accuracy, the exact source-backed key emitted by Trainer.evaluate(), rather than the unprefixed compute_metrics key.",
-        "The two simulated clients train on deterministic site-local partitions rather than the same full training dataset.",
+        "The two simulated clients train on deterministic seeded site-local partitions, stratified when labels exist, rather than the same full training dataset; the report names the split policy, seed, site count, and any shared-data request.",
         "The agent validates through compile/import, recipe construction, bounded simulation, and result evidence, stopping on a real failure.",
-        "The final report includes source facts, changed files, backup_path, recipe, metrics, commands, validation status, and exact artifact paths."
+        "The final report includes source facts, changed files, recipe, metrics, commands, validation status, and exact artifact paths."
       ],
       "nvflare": {
         "expected_skill": "nvflare-convert-huggingface",
@@ -32,8 +32,8 @@
             "description": "runs static agent inspection before editing and confirms Trainer or SFTTrainer ownership"
           },
           {
-            "id": "dry-run-and-backup",
-            "description": "presents a mutation plan and backs up every existing file before changing it"
+            "id": "preserve-existing-source",
+            "description": "preserves existing non-generated source unless a specific overwrite was explicitly requested"
           },
           {
             "id": "use-huggingface-patched-trainer",
@@ -57,11 +57,11 @@
           },
           {
             "id": "site-local-training-data",
-            "description": "preserves site data or creates deterministic site-local training partitions for multi-site simulation"
+            "description": "preserves site data or creates deterministic seeded site-local partitions, stratified when labels exist, and reports the split decision"
           },
           {
             "id": "validate-and-report-evidence",
-            "description": "runs the validation ladder and reports commands, status, metrics, backups, and exact artifact paths"
+            "description": "runs the validation ladder and reports commands, status, metrics, and exact artifact paths"
           }
         ],
         "prohibited_behavior": [
@@ -106,6 +106,42 @@
           {
             "id": "validation_evidence_completeness",
             "description": "whether commands, exit status, metrics, process mode, and exact paths are reported"
+          }
+        ]
+      }
+    },
+    {
+      "id": "huggingface-lower-is-better-metric",
+      "prompt": "Convert a Hugging Face Trainer whose compute_metrics returns word error rate as wer. Keep best-model selection, where lower WER is better.",
+      "expected_output": "A Hugging Face conversion that preserves the source wer metric, emits a source-backed negated companion such as neg_wer, selects the returned eval_neg_wer key, and does not treat raw loss/WER as higher-is-better or claim that FedAvgRecipe exposes a lower-is-better option.",
+      "files": [],
+      "assertions": [
+        "The generated metric function preserves wer and also emits neg_wer as -wer.",
+        "The recipe selects eval_neg_wer, the actual prefixed higher-is-better key returned by Trainer.evaluate().",
+        "The agent does not select raw eval_wer or eval_loss as higher-is-better.",
+        "The agent does not use key_metric=\"\" because best-model selection was requested.",
+        "The agent does not claim that FedAvgRecipe exposes a lower-is-better direction option."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-huggingface",
+        "mandatory_behavior": [
+          {
+            "id": "source-backed-negated-selection-metric",
+            "description": "preserves the lower-is-better metric, emits an explicitly negated companion, and selects its returned Trainer key"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-raw-lower-is-better-selection",
+            "description": "does not select raw WER or loss as though higher values were better"
+          },
+          {
+            "id": "no-disable-requested-model-selection",
+            "description": "does not disable best-model selection when the user requested it"
+          },
+          {
+            "id": "no-nonexistent-recipe-direction-option",
+            "description": "does not claim that FedAvgRecipe exposes a lower-is-better direction parameter"
           }
         ]
       }
