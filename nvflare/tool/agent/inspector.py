@@ -1536,6 +1536,9 @@ def _skill_selection(
         # Mixed data is definitionally ambiguous, and routing ambiguity is
         # orient's job; an empty recommendation would strand the consumer.
         recommended.append("nvflare-orient")
+    elif conversion_state == "not_converted" and frameworks.has_active_family_member_conflict(state.framework_evidence):
+        # Two specialized trainers in one family cannot both own one conversion.
+        recommended.append("nvflare-orient")
     elif detected_framework and conversion_state == "not_converted":
         evidence = state.framework_evidence.get(detected_framework, [])
         skill = frameworks.recommended_skill_for(detected_framework, evidence)
@@ -1582,6 +1585,8 @@ def _recommended_next_commands(
         # corroborating nvflare evidence this would ship a command that fails with
         # an argparse error on an unrelated repo.
         commands.append(f"python {shlex.quote(source_job.source_file)} --export --export-dir <job-dir>")
+    elif conversion_state == "not_converted" and frameworks.has_active_family_member_conflict(state.framework_evidence):
+        commands.append("Use the nvflare-orient skill before editing.")
     elif detected_framework and conversion_state == "not_converted":
         evidence = state.framework_evidence.get(detected_framework, [])
         skill = frameworks.recommended_skill_for(detected_framework, evidence)

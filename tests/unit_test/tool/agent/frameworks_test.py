@@ -62,6 +62,27 @@ def test_huggingface_candidate_falls_back_to_orient():
     assert frameworks.fallback_skill_for("huggingface", [{"kind": "import"}]) is None
 
 
+def test_active_family_member_conflict_requires_two_specialized_trainers():
+    assert frameworks.has_active_family_member_conflict(
+        {
+            "pytorch_lightning": [{"kind": "lightning_trainer"}],
+            "huggingface": [{"kind": "huggingface_train"}],
+        }
+    )
+    assert not frameworks.has_active_family_member_conflict(
+        {
+            "pytorch": [{"kind": "pytorch_call"}],
+            "huggingface": [{"kind": "huggingface_train"}],
+        }
+    )
+    assert not frameworks.has_active_family_member_conflict(
+        {
+            "pytorch_lightning": [{"kind": "lightning_class"}],
+            "huggingface": [{"kind": "huggingface_train"}],
+        }
+    )
+
+
 def _emit_collector():
     evidence = []
     flare_calls = []

@@ -146,6 +146,10 @@ class FrameworkDetector:
         """
         return evidence.get("kind") != "import"
 
+    def is_training_owner_evidence(self, evidence: dict) -> bool:
+        """Whether evidence claims ownership of the training lifecycle."""
+        return self.is_active_evidence(evidence)
+
     def promote_over_family(self, family_base: str, resolver) -> bool:
         """For a family member, decide whether to win over the family base.
 

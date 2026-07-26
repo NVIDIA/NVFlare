@@ -673,6 +673,44 @@ def test_inspect_keeps_transformers_model_under_lightning_converter(tmp_path):
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
+def test_inspect_routes_active_lightning_and_huggingface_trainers_to_orient(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "import lightning as L\n"
+        "from transformers import Trainer, TrainingArguments\n"
+        "\n"
+        "lightning_trainer = L.Trainer(max_epochs=1)\n"
+        "hf_trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+        "lightning_trainer.fit(lightning_model, train_dataloaders=loader)\n"
+        "hf_trainer.train()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
+    assert data["recommended_next_commands"] == ["Use the nvflare-orient skill before editing."]
+
+
+def test_inspect_routes_lightning_module_owned_by_huggingface_trainer_to_huggingface(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "import lightning as L\n"
+        "from transformers import Trainer, TrainingArguments\n"
+        "\n"
+        "class Model(L.LightningModule):\n"
+        "    pass\n"
+        "\n"
+        "trainer = Trainer(model=Model(), args=TrainingArguments(output_dir='outputs'))\n"
+        "trainer.train()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-huggingface"]
+
+
 def test_inspect_detects_lightning_pytorch_trainer_import(tmp_path):
     script = tmp_path / "train_lightning.py"
     script.write_text(

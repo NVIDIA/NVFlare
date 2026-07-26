@@ -112,6 +112,9 @@ class LightningDetector(FrameworkDetector):
     def is_active_evidence(self, evidence: dict) -> bool:
         return evidence.get("kind") in {"lightning_class", "lightning_trainer"}
 
+    def is_training_owner_evidence(self, evidence: dict) -> bool:
+        return evidence.get("kind") == "lightning_trainer"
+
     @staticmethod
     def _prefix_exposes_lightning_symbols(prefix: str, file_state: _LightningFileState) -> bool:
         # A module prefix exposes LightningModule/Trainer when it is (an alias of)

@@ -119,6 +119,19 @@ def is_active_evidence(framework: str, evidence: dict) -> bool:
     return detector.is_active_evidence(evidence)
 
 
+def has_active_family_member_conflict(evidence_by_framework: dict) -> bool:
+    """Whether multiple specialized members actively claim the same framework family."""
+    active_by_family: dict[str, int] = {}
+    for detector in _family_member_detectors():
+        family = detector.family
+        if not family:
+            continue
+        evidence = evidence_by_framework.get(detector.name, [])
+        if any(detector.is_training_owner_evidence(item) for item in evidence):
+            active_by_family[family] = active_by_family.get(family, 0) + 1
+    return any(count > 1 for count in active_by_family.values())
+
+
 def resolve_primary_framework(primary: str, evidence_by_framework: dict, resolver) -> str:
     """Disambiguate a family conflict (e.g. PyTorch vs PyTorch Lightning).
 

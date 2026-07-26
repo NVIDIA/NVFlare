@@ -28,8 +28,11 @@ Trainer callbacks and metrics, checkpoint continuity, and replicated
 
 Do not use for an `AutoModel` driven by a manual PyTorch loop without a
 Hugging Face Trainer (route to `nvflare-convert-pytorch`), PyTorch Lightning
-(route to `nvflare-convert-lightning`), inference-only pipelines, model
-serving, failed jobs (route to `nvflare-diagnose-job`), or federated statistics.
+(route to `nvflare-convert-lightning`, including Lightning modules that contain
+Transformers models), inference-only pipelines, model serving, failed jobs
+(route to `nvflare-diagnose-job`), or federated statistics. Route an entrypoint
+that actively runs both Lightning and Hugging Face Trainers to `nvflare-orient`;
+do not patch both.
 Out of scope: DeepSpeed, FSDP, production/POC deployment, privacy or security
 policy, arbitrary controller rewrites, and experiment search.
 
@@ -135,6 +138,10 @@ policy, arbitrary controller rewrites, and experiment search.
   statically available.
 - Must patch only one Trainer per Python process. Preserve a single Trainer
   lifecycle across rounds when `restore_state=True`.
+- Must identify one training-loop owner. When Lightning owns training, preserve
+  Hugging Face models, tokenizers, datasets, and collators under the Lightning
+  conversion. When both Lightning and Hugging Face Trainers actively run, ask
+  the user to split entrypoints/jobs or choose one owner; never patch both.
 - Must use explicit `local_steps` for a length-less iterable training dataset;
   do not infer epoch-to-step conversion when the dataloader has no length.
 - Must reject or report unsupported DeepSpeed, FSDP,
