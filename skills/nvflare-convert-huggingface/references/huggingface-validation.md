@@ -7,6 +7,9 @@ Run these checks after the shared validation ladder. Stop at the first failure.
 - Compile generated `client.py`, `model.py`, and `job.py`.
 - Confirm one `flare.patch(trainer)` call and one rank-symmetric
   `flare.is_running()` loop.
+- Confirm the generated FL client cannot bypass `flare.init()` or
+  `flare.patch(trainer)` through launch-environment detection; standalone mode,
+  when preserved, must use an explicit entry-point parameter.
 - Confirm no manual model `receive()`/`send()` path was added.
 - Confirm model, Trainer, datasets, and tokenizer are constructed outside the
   FL round loop.
@@ -48,7 +51,9 @@ Run these checks after the shared validation ladder. Stop at the first failure.
 - For DDP, run a reduced two-process test when available; otherwise report that
   distributed execution was not validated.
 - Inspect the exported job for `client.py`, `model.py`, dependencies, quoted
-  arguments, and absence of private data.
+  arguments, and absence of private data. If `model.py` is server-only, confirm
+  it is still packaged despite being referenced by `job.py` rather than called
+  from the Trainer path.
 
 ## Report
 

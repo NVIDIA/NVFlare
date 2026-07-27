@@ -86,13 +86,13 @@ unprotected recipe or present a disclaimer as implementation.
    seeded split, stratified when labels exist. Shared validation/test data is
    allowed only when source-backed; report the split policy, seed, site count,
    and any shared-data request.
-6. Convert model exchange with `references/huggingface-conversion.md`: import
-   `nvflare.client.hf as flare`, initialize distributed execution before
-   `flare.patch(trainer)`, initialize FLARE before any pre-patch Client API
-   context access, call `flare.patch(trainer)` once, then have every rank run
-   the same round-loop sequence. Follow the evaluation requirement below; do
-   not add manual `flare.receive()`, `flare.send()`, or `FLModel` model
-   exchange.
+6. Convert model exchange with `references/huggingface-conversion.md`: generate
+   an FL-only client entry that imports `nvflare.client.hf as flare`, initializes
+   distributed execution before `flare.patch(trainer)`, initializes FLARE before
+   pre-patch Client API context access, calls `flare.patch(trainer)` once, then
+   has every rank run the same round-loop sequence. Do not branch on launch
+   environment variables; keep any standalone path behind an explicit
+   non-client entry parameter. Do not add manual model receive/send exchange.
    Load `../nvflare-shared/references/pytorch-model-exchange.md` only when
    diagnosing PyTorch keyspace, dtype, or exchange-format compatibility.
 7. Keep `flare.patch(trainer)` simple by default. Preserve the source Trainer
@@ -102,9 +102,10 @@ unprotected recipe or present a disclaimer as implementation.
    needs. Load `references/huggingface-state-and-distributed.md` for PEFT key
    spaces, checkpoint constraints, DDP, or non-default patch settings.
 8. Add or update `job.py` with explicit model config
-   `{"class_path": ..., "args": ...}`, never a live model. Make the server model
-   expose the same exchanged keyspace as the patched Trainer: full state for
-   full-model training or adapter-only state for PEFT. Use
+   `{"class_path": ..., "args": ...}`, never a live model. Export packages the
+   `train_script` import closure; import server-only model modules from the
+   client entry or package them explicitly. Make the server model expose the
+   same exchanged keyspace as the patched Trainer: full state or PEFT adapters. Use
    `server_expected_format=ExchangeFormat.PYTORCH` to preserve dtypes, set
    `enable_tensor_disk_offload=True` when exposed, and follow
    `../nvflare-shared/references/pytorch-family-recipe-parameters.md` for
@@ -137,15 +138,16 @@ unprotected recipe or present a disclaimer as implementation.
   required, call `trainer.evaluate()` before `trainer.train()` on every rank.
   Do not invent `compute_metrics`, label mappings, averaging denominators, or
   metric direction.
-- Must align recipe model selection with the exact key returned by
-  `trainer.evaluate()` and sent to the server. Account for Trainer prefixes
-  such as `eval_accuracy`. For a source-backed lower-is-better metric emitted
-  through `compute_metrics`, preserve the original metric, also emit a negated
-  value such as `neg_wer`, and select that higher-is-better key. If
-  only Trainer-generated `eval_loss` exists and best-model selection is
+- Must preserve source metric names when practical. If the generated
+  `trainer.evaluate()` emits `accuracy`, set `key_metric="accuracy"`; if Trainer
+  emits a prefixed key such as `eval_accuracy`, set the server to that exact key
+  and report the source-to-server mapping. For a source-backed lower-is-better
+  metric from `compute_metrics`, preserve the original metric, also emit a
+  negated companion such as `neg_wer`, and select the higher-is-better emitted
+  key. If only Trainer-generated `eval_loss` exists and best-model selection is
   required, ask for a source-backed metric or fail closed; raw Trainer loss has
-  no safe conversion-owned negation hook. Use `key_metric=""` only when
-  best-model selection is not requested; it omits the automatic model selector.
+  no safe conversion-owned negation hook. Use `key_metric=""` only when best
+  model selection is not requested; it omits the automatic model selector.
   Never select raw loss as higher-is-better.
 - Must preserve PEFT configuration exactly and verify adapter key compatibility
   between the server model and patched Trainer. Do not infer LoRA target
@@ -192,8 +194,7 @@ unprotected recipe or present a disclaimer as implementation.
   local callbacks and logs. POC and production submission remain outside this
   skill.
 
-Load only phase-needed references: `references/huggingface-detection.md`,
+Load only phase-needed HF references: `references/huggingface-detection.md`,
 `references/huggingface-conversion.md`, `references/huggingface-state-and-distributed.md`,
-and `references/huggingface-validation.md`. Load
-`../nvflare-shared/references/pytorch-family-recipe-parameters.md` before recipe parameters.
+and `references/huggingface-validation.md`; load `../nvflare-shared/references/pytorch-family-recipe-parameters.md` before recipe parameters.
 Use other shared references only under the conditions above; do not depend on repository examples.
