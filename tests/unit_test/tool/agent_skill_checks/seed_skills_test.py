@@ -75,6 +75,20 @@ def test_diagnose_job_catalog_pins_recovery_categories():
     assert "before assigning root cause" in partial_logs["Next Action"]
     assert "do not classify the log-access problem as the job failure cause" in partial_logs["Next Action"]
 
+    datum_type_6 = rows["DATUM_OBJECT_TYPE_6"]
+    assert datum_type_6["Recovery Category"] == "`FIXABLE_BY_CONFIG`"
+    assert "cannot find handler for Datum Object Type 6" in datum_type_6["Evidence Signals"]
+    assert "no client receives the task" in datum_type_6["Next Action"]
+    assert "Do not recommend registering `TensorDecomposer` inside `client.py`" in normalized_catalog
+    assert "unless evidence proves that code runs before task deserialization" in normalized_catalog
+
+    exit_neg9 = rows["PROCESS_EXIT_NEG9"]
+    assert exit_neg9["Recovery Category"] == "`UNKNOWN`"
+    assert "`rc=-9`" in exit_neg9["Evidence Signals"]
+    assert "do not infer OOM from `-9` alone" in exit_neg9["Next Action"]
+    assert "at most one retry" in normalized_catalog
+    assert "changed causal factor" in normalized_catalog
+
 
 def test_diagnose_job_uses_one_post_load_scope_check():
     repo_root = Path(__file__).resolve().parents[4]
@@ -455,6 +469,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     )
     normalized_skill = " ".join(skill_text.split())
     normalized_conversion = " ".join(conversion_text.split())
+    normalized_validation = " ".join(validation_text.split())
     normalized_shared = " ".join(shared_workflow.split())
     normalized_pytorch = " ".join(pytorch_conversion.split())
     normalized_lightning = " ".join(lightning_conversion.split())
@@ -474,6 +489,8 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "FL-only Client API entry point" in normalized_lightning
     assert "FL-only client entry" in skill_text
     assert "Do not branch on launch environment variables" in normalized_skill
+    assert "`HfArgumentParser` parse-only preflight" in normalized_skill
+    assert "`TrainingArguments` fields missing from the installed Transformers version" in normalized_skill
     assert "client imports are not enough for per-site exports" in normalized_skill
     assert "generated or project-local server-only model module" in normalized_skill
     assert "server-only model module" in skill_text
@@ -482,14 +499,24 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "CLIENT_API_TYPE" in conversion_text
     assert "federated=True" in conversion_text
     assert "federated=False" in conversion_text
+    assert "Do not also add that same file through `recipe.add_client_file(...)`" in normalized_conversion
+    assert "Reject absolute `task_script_path` values" in normalized_conversion
     assert 'recipe.add_server_file("model.py")' in conversion_text
     assert "client import is not enough for per-site exports" in conversion_text
     assert "third-party class paths stay runtime dependencies" in normalized_conversion
     assert "server persistor will fail to construct the initial model" in normalized_conversion
+    assert "`HfArgumentParser` in parse-only mode" in validation_text
+    assert "Do not start simulation unless every argument is consumed" in normalized_validation
+    assert "one-round topology smoke test with the requested site count" in normalized_validation
+    assert "full-model validation blocked by host capacity" in validation_text
+    assert "estimate exchanged `state_dict` bytes" in validation_text
+    assert "Make at most one expensive real-model retry" in validation_text
     assert "standalone mode" in validation_text
     assert "model.py` is server-only" in validation_text
     assert "class_path`, train script, custom aggregator" in normalized_shared
     assert "Prefer preserving source metric names" in normalized_recipe
+    assert "Do not reduce simulator `num_threads` below the requested client count" in recipe_text
+    assert "guessed concurrency settings" in normalized_recipe
 
 
 def test_per_site_export_packages_server_class_path_file_with_server_targeted_api(tmp_path):

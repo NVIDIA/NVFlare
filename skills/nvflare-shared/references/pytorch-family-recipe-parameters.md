@@ -46,6 +46,16 @@ interactive mode or fail closed in unattended mode.
 Single-process multi-GPU `DataParallel` (`dp`) stays in-process; leave
 `launch_external_process` unset.
 
+## Simulator Concurrency
+
+Do not reduce simulator `num_threads` below the requested client count as a
+speculative memory workaround for an in-process Client API executor with tensor
+offload. Use a lower thread count only when the selected execution mode
+documents that behavior and a bounded smoke test verifies it. After partial
+aggregation, unexplained client disconnect, or process loss, inspect logs and
+reduce the model/data workload or report a resource blocker. Do not retry the
+same large payload with guessed concurrency settings.
+
 ## Tensor Disk Offload
 
 Set `enable_tensor_disk_offload=True` when the selected recipe exposes it and

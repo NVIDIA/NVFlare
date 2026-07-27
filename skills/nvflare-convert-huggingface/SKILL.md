@@ -115,12 +115,13 @@ unprotected recipe or present a disclaimer as implementation.
    exposes it. Quote generated `train_args`.
 9. Validate in the ladder from
    `../nvflare-shared/references/validation-evidence.md`, then apply
-   `references/huggingface-validation.md`. Run compile/import checks, recipe
-   construction, a bounded local simulation, and export inspection when
-   requested. If dependencies, data, or resources prevent full-run validation,
-   save a draft and report the blocker; do not call it complete. Stop at the
-   first failed rung and report the product error rather than replacing
-   unsupported behavior.
+   `references/huggingface-validation.md`. Before simulation, run exact
+   `HfArgumentParser` parse-only preflight for final `train_args`; no unused
+   args or `TrainingArguments` fields missing from the installed Transformers
+   version are allowed. Use the HF reference for topology-smoke/full-model
+   validation split and export inspection. If dependencies, data, or resources
+   block full validation, save a draft and report the blocker; do not call it
+   complete.
 10. Report the selected recipe, source facts, parameter scope, data partition,
     changed files, validation results, metrics, artifact paths, environment
     limitations, and unresolved blockers. Load
@@ -194,7 +195,6 @@ unprotected recipe or present a disclaimer as implementation.
   local callbacks and logs. POC and production submission remain outside this
   skill.
 
-Load only phase-needed HF references: `references/huggingface-detection.md`,
-`references/huggingface-conversion.md`, `references/huggingface-state-and-distributed.md`,
-and `references/huggingface-validation.md`; load `../nvflare-shared/references/pytorch-family-recipe-parameters.md` before recipe parameters.
-Use other shared references only under the conditions above; do not depend on repository examples.
+Load only phase-needed HF references by path: `references/huggingface-detection.md`,
+`references/huggingface-conversion.md`, `references/huggingface-state-and-distributed.md`, and `references/huggingface-validation.md`; load
+`../nvflare-shared/references/pytorch-family-recipe-parameters.md` before recipe parameters. Use other shared references only under the conditions above; do not depend on repository examples.

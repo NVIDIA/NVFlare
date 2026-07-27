@@ -97,6 +97,13 @@ requires it and the selected recipe exposes the parameter.
 Quote every user-controlled path or model identifier included in the
 `train_args` command string.
 
+The file named by `train_script` is already the primary client script. Do not
+also add that same file through `recipe.add_client_file(...)`; reserve
+`add_client_file()` for auxiliary imported modules. Export and inspect the job
+before simulation. Reject absolute `task_script_path` values in generated
+configs because exported apps must launch their packaged client script
+portably.
+
 Exported app folders are target-specific. If a generated or project-local server
 model module is referenced from `job.py` through
 `{"class_path": "model.ServerModel"}`, add it to the server app with
