@@ -580,6 +580,7 @@ def _inspect_file(path: Path, state: InspectState, max_file_bytes: int) -> None:
 @dataclass
 class _DeferredCallableBody:
     scope: tuple[str, ...]
+    bound_name_stack: tuple[frozenset[str], ...]
     kind: str
     node: ast.AST
     runs_on_call: bool
@@ -1163,7 +1164,10 @@ class _PythonInspector(ast.NodeVisitor):
             return None
         is_generator = kind in {"function", "async-function"} and self._function_contains_yield(node)
         runs_on_call = kind != "async-function" and not is_generator
-        deferred_body = _DeferredCallableBody(tuple(self._scope_stack), kind, node, runs_on_call, is_generator)
+        bound_name_stack = tuple(frozenset(bound_names) for bound_names in self._bound_name_stack)
+        deferred_body = _DeferredCallableBody(
+            tuple(self._scope_stack), bound_name_stack, kind, node, runs_on_call, is_generator
+        )
         self._class_deferred_bodies[-1].append(deferred_body)
         self._deferred_callables_by_node[id(node)] = deferred_body
         return deferred_body
@@ -1193,13 +1197,16 @@ class _PythonInspector(ast.NodeVisitor):
             return
         deferred_body.analyzed = True
         original_scope = self._scope_stack
+        original_bound_name_stack = self._bound_name_stack
         try:
             self._scope_stack = list(deferred_body.scope)
+            self._bound_name_stack = [set(bound_names) for bound_names in deferred_body.bound_name_stack]
             if deferred_body.kind == "lambda":
                 self._visit_expression_in_scope(deferred_body.node, deferred_body.kind, deferred_body.node.body)
             else:
                 self._visit_body_in_scope(deferred_body.node, deferred_body.kind)
         finally:
+            self._bound_name_stack = original_bound_name_stack
             self._scope_stack = original_scope
 
     def _class_callable_for_expression(self, expression: ast.AST) -> Optional[_DeferredCallableBody]:
@@ -1279,16 +1286,6 @@ class _PythonInspector(ast.NodeVisitor):
     def _direct_returned_callable(self, decorator_body: _DeferredCallableBody):
         """Resolve a single-level direct callable return from a tracked decorator body."""
         node = decorator_body.node
-        arguments = getattr(node, "args", None)
-        parameter_names = set()
-        if isinstance(arguments, ast.arguments):
-            parameter_names = {
-                argument.arg for argument in arguments.posonlyargs + arguments.args + arguments.kwonlyargs
-            }
-            if arguments.vararg:
-                parameter_names.add(arguments.vararg.arg)
-            if arguments.kwarg:
-                parameter_names.add(arguments.kwarg.arg)
 
         callable_names = {}
         for statement in getattr(node, "body", []):
@@ -1308,8 +1305,6 @@ class _PythonInspector(ast.NodeVisitor):
                 if isinstance(statement.value, ast.Name):
                     if statement.value.id in callable_names:
                         return callable_names[statement.value.id]
-                    if statement.value.id in parameter_names:
-                        return None
                     return None
                 if isinstance(statement.value, ast.Lambda):
                     return self._deferred_callables_by_node.get(id(statement.value))
