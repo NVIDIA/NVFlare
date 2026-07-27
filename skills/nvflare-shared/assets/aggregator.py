@@ -9,7 +9,10 @@ in ``job.py`` with the matching ``aggregator_data_kind`` and parameter transfer
 settings. This uses the product extension point rather than a skill-owned
 algorithm table, and it fits the standard ``FLModel`` exchange contract by
 carrying both params and finite numeric or boolean metrics into the aggregated
-``FLModel``. It needs no client-side change beyond sending step-count metadata.
+``FLModel``. If any client omits ``FLModel.metrics`` entirely, the round returns
+no metrics; when every client provides a metrics dictionary, each metric key is
+averaged over only the clients that reported that key. It needs no client-side
+change beyond sending step-count metadata.
 """
 
 import math

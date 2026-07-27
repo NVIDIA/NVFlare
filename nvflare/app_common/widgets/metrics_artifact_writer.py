@@ -421,10 +421,17 @@ class MetricsArtifactWriter(Widget):
 
     def _write_summary_if_needed(self, fl_ctx):
         if self._custom_aggregator_no_metric_rounds:
+            missing_rounds = self._custom_aggregator_no_metric_rounds
+            if len(missing_rounds) <= 10:
+                missing_rounds_summary = str(missing_rounds)
+            else:
+                missing_rounds_summary = (
+                    f"{len(missing_rounds)} rounds (first={missing_rounds[0]}, last={missing_rounds[-1]})"
+                )
             self.log_warning(
                 fl_ctx,
                 "MetricsArtifactWriter did not write metrics artifacts for custom aggregator round(s): "
-                f"{self._custom_aggregator_no_metric_rounds} because aggregator results did not include "
+                f"{missing_rounds_summary} because aggregator results did not include "
                 "FLModel.metrics. Custom aggregators must return aggregated metrics in FLModel.metrics for "
                 "server-side metric artifacts.",
                 fire_event=False,

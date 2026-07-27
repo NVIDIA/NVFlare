@@ -494,6 +494,8 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "third-party class paths stay runtime dependencies" in normalized_lightning
     assert "FL-only Client API entry point" in normalized_pytorch
     assert "FL-only Client API entry point" in normalized_lightning
+    assert "callback_metrics` prove local logging, not server delivery" in normalized_lightning
+    assert "external-process/DDP path does not" in normalized_lightning
     assert "FL-only client entry" in skill_text
     assert "Do not branch on launch environment variables" in normalized_skill
     assert "Load and apply `../nvflare-shared/references/validation-evidence.md`" in normalized_skill
