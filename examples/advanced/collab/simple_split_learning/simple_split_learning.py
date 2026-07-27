@@ -18,7 +18,7 @@ The client owns the images and bottom model. The server owns the labels and top
 model. Each step sends activations to the server and gradients back to the
 client, expressed as ordinary Python function calls.
 
-Run from the ``examples`` directory:
+Run from the ``examples/advanced`` directory:
 
     python -m collab.simple_split_learning.simple_split_learning
 """
