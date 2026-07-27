@@ -75,7 +75,6 @@ recipe = FedAvgRecipe(
     num_rounds=num_rounds,
     train_script="client.py",
     train_args=train_args,
-    launch_external_process=True,
     server_expected_format=ExchangeFormat.PYTORCH,
     enable_tensor_disk_offload=True,
     key_metric=key_metric,
@@ -83,6 +82,9 @@ recipe = FedAvgRecipe(
 ```
 
 Confirm every argument through `nvflare recipe show fedavg-pt --format json`.
+Leave `launch_external_process` unset for single-process Trainer scripts. Set
+`launch_external_process=True` only when distributed/external-launch evidence
+requires it and the selected recipe exposes the parameter.
 Quote every user-controlled path or model identifier included in the
 `train_args` command string.
 
@@ -102,6 +104,7 @@ source-backed lower-is-better metric is returned by `compute_metrics`, preserve
 it and add an explicitly negated companion such as
 `{"wer": wer, "neg_wer": -wer}`, then select the prefixed key
 `eval_neg_wer`. If only Trainer-generated `eval_loss` exists and best-model
-selection is required, ask for a source-backed selection metric or fail closed.
-Use `key_metric=""` only when best-model selection is not requested. Never
+selection is required, ask for a source-backed selection metric or fail closed;
+raw Trainer loss does not give the conversion a safe source-backed negation
+hook. Use `key_metric=""` only when best-model selection is not requested. Never
 select raw loss as though increasing values were improvements.

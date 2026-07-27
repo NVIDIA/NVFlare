@@ -93,6 +93,49 @@ def test_active_family_member_conflict_requires_two_specialized_trainers():
     )
 
 
+def test_resolve_primary_framework_consults_sibling_family_member_after_decline():
+    evidence_by_framework = {
+        "pytorch": [{"kind": "pytorch_call", "file": "train.py", "line": 9, "value": "Adam"}],
+        "huggingface": [
+            {"kind": "huggingface_trainer", "file": "train.py", "line": 5, "value": "Trainer"},
+            {"kind": "huggingface_training_config", "file": "train.py", "line": 4, "value": "TrainingArguments"},
+        ],
+        "pytorch_lightning": [{"kind": "lightning_trainer", "file": "train.py", "line": 8, "value": "Trainer"}],
+    }
+
+    class Resolver:
+        @staticmethod
+        def score(evidence):
+            return len(evidence)
+
+        @staticmethod
+        def tied_to_entry_context(evidence):
+            return any(item.get("kind") == "lightning_trainer" for item in evidence)
+
+        @staticmethod
+        def evidence_outside_files(evidence, reference_evidence):
+            return evidence
+
+        @staticmethod
+        def evidence_outside_class_bodies(evidence, class_evidence):
+            return evidence
+
+        @staticmethod
+        def has_inspected_file_or_entry_point():
+            return True
+
+        def evidence(self, framework):
+            return evidence_by_framework.get(framework, [])
+
+        def active_evidence(self, framework):
+            return [item for item in self.evidence(framework) if frameworks.is_active_evidence(framework, item)]
+
+        def training_owner_evidence(self, framework):
+            return [item for item in self.evidence(framework) if frameworks.is_training_owner_evidence(framework, item)]
+
+    assert frameworks.resolve_primary_framework("huggingface", evidence_by_framework, Resolver()) == "pytorch_lightning"
+
+
 def _emit_collector():
     evidence = []
     flare_calls = []

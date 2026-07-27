@@ -151,19 +151,37 @@ def resolve_primary_framework(primary: str, evidence_by_framework: dict, resolve
     if primary_detector and primary_detector.family:
         base = primary_detector.family
         if base in evidence_by_framework:
-            return primary if primary_detector.promote_over_family(base, resolver) else base
+            if primary_detector.promote_over_family(base, resolver):
+                return primary
+            promoted = _promoted_family_member(base, evidence_by_framework, resolver, exclude={primary})
+            return promoted.name if promoted else base
         return primary
 
+    promoted = _promoted_family_member(primary, evidence_by_framework, resolver)
+    if promoted:
+        return promoted.name
+    return primary
+
+
+def _promoted_family_member(
+    base: str,
+    evidence_by_framework: dict,
+    resolver,
+    *,
+    exclude: Optional[set[str]] = None,
+) -> Optional[FrameworkDetector]:
+    exclude = exclude or set()
     candidates = [
         member
         for member in _family_member_detectors()
-        if member.family == primary
+        if member.name not in exclude
+        and member.family == base
         and member.name in evidence_by_framework
-        and member.promote_over_family(primary, resolver)
+        and member.promote_over_family(base, resolver)
     ]
-    if candidates:
-        return max(candidates, key=lambda member: resolver.score(resolver.evidence(member.name))).name
-    return primary
+    if not candidates:
+        return None
+    return max(candidates, key=lambda member: resolver.score(resolver.evidence(member.name)))
 
 
 def family_base_has_member(base: Optional[str], evidence_by_framework: dict) -> Optional[str]:
