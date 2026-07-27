@@ -15,9 +15,11 @@ Run these checks after the shared validation ladder. Stop at the first failure.
   FL round loop.
 - Confirm generated `train_args` quote configurable model and data paths.
 - Pass the final generated `train_args` through the client entry's actual
-  `HfArgumentParser` in parse-only mode. Do not start simulation unless every
-  argument is consumed. Do not inject a `TrainingArguments` field that is absent
-  from the installed Transformers version.
+  argument mechanism in parse-only mode and reject any unused argument. If the
+  generated client uses `HfArgumentParser`, parse with that parser; if it
+  preserves `argparse` or another parser, use that parser instead. Do not inject
+  a `TrainingArguments` or `SFTConfig` field that is absent from the installed
+  Transformers/TRL version.
 - Confirm site data remains external to the exported job.
 
 ## Import And Contract Checks
@@ -44,16 +46,20 @@ Run these checks after the shared validation ladder. Stop at the first failure.
 
 ## Execution Checks
 
-- Before launching multiple CPU clients, estimate exchanged `state_dict` bytes
-  and available container memory. If the real model/data workload is too large
-  for the host, keep the generated job's default model unchanged and label any
-  reduced-checkpoint run as validation-only.
+- Before launching multiple CPU clients, estimate server exchange/offload memory
+  plus a conservative per-client training-memory bound multiplied by actual
+  worker concurrency. Include model copies, gradients, optimizer state,
+  activations, dataloaders/data, and framework overhead when they can be bounded.
+  If optimizer, activation, or data memory cannot be bounded, report the
+  full-model rung as capacity-unverified rather than treating `state_dict` fit
+  as sufficient.
 - First run a one-round topology smoke test with the requested site count,
   minimal samples, and an explicitly labelled reduced checkpoint only when the
   real model is too large for the host. Treat this as FL-wiring validation only.
-- Run the real model only when the resource estimate says it is feasible. If it
-  is not feasible, report "full-model validation blocked by host capacity" and
-  leave the job as a draft; do not call the conversion fully validated.
+- Run the real model only when the complete resource estimate says it is
+  feasible. If it is not feasible, report "full-model validation blocked by host
+  capacity" and leave the job as a draft; do not call the conversion fully
+  validated.
 - Require terminal completion evidence, positive per-round training step counts,
   and finite source-backed evaluation metrics for whichever validation stage is
   being claimed.
@@ -65,6 +71,10 @@ Run these checks after the shared validation ladder. Stop at the first failure.
   matches `restore_state`.
 - For DDP, run a reduced two-process test when available; otherwise report that
   distributed execution was not validated.
+- For exported-job validation, use the supported Recipe interface
+  `python job.py --export --export-dir <dir>`. Reject generated job-local export
+  aliases such as `--export_only` and manual `recipe.export()` branches that only
+  run for private flags.
 - Inspect the exported job for `client.py`, `model.py`, dependencies, quoted
   arguments, and absence of private data. If `model.py` is server-only, confirm
   it is still packaged despite being referenced by `job.py` rather than called

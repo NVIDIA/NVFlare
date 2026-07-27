@@ -13,6 +13,11 @@ Choose one final full-run path based on the artifact being validated:
   <exported-job-dir> -w <runtime-dir>/workspace -n <num_clients> -t
   <num_threads> -l concise` (or `-c site-1,site-2,...`).
 
+Do not accept a generated job-local export alias such as `--export_only` as a
+valid replacement for the NVFLARE Recipe interface. If a generated job manually
+branches on a private export flag or calls `recipe.export()` only for that flag,
+report it as a generated-code violation instead of treating the export as valid.
+
 Do not run both full simulations unless the first one failed and the second is a
 scoped rerun after a fix. Do not write Python code to call simulator APIs for
 exported-job validation.

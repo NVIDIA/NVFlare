@@ -78,7 +78,10 @@ def test_diagnose_job_catalog_pins_recovery_categories():
     datum_type_6 = rows["DATUM_OBJECT_TYPE_6"]
     assert datum_type_6["Recovery Category"] == "`FIXABLE_BY_CONFIG`"
     assert "cannot find handler for Datum Object Type 6" in datum_type_6["Evidence Signals"]
-    assert "no client receives the task" in datum_type_6["Next Action"]
+    assert "persists until attempt end" in datum_type_6["Evidence Signals"]
+    assert "no later task download, client update, or aggregation succeeds" in datum_type_6["Evidence Signals"]
+    assert "no client receives the task" in datum_type_6["Evidence Signals"]
+    assert "Do not select `DATUM_OBJECT_TYPE_6` for later-success cases" in normalized_catalog
     assert "Do not recommend registering `TensorDecomposer` inside `client.py`" in normalized_catalog
     assert "unless evidence proves that code runs before task deserialization" in normalized_catalog
 
@@ -455,6 +458,9 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     skill_text = skill_root.joinpath("SKILL.md").read_text(encoding="utf-8")
     conversion_text = skill_root.joinpath("references/huggingface-conversion.md").read_text(encoding="utf-8")
     validation_text = skill_root.joinpath("references/huggingface-validation.md").read_text(encoding="utf-8")
+    shared_validation = repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md").read_text(
+        encoding="utf-8"
+    )
     shared_workflow = repo_root.joinpath("skills/nvflare-shared/references/conversion-workflow.md").read_text(
         encoding="utf-8"
     )
@@ -470,6 +476,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     normalized_skill = " ".join(skill_text.split())
     normalized_conversion = " ".join(conversion_text.split())
     normalized_validation = " ".join(validation_text.split())
+    normalized_shared_validation = " ".join(shared_validation.split())
     normalized_shared = " ".join(shared_workflow.split())
     normalized_pytorch = " ".join(pytorch_conversion.split())
     normalized_lightning = " ".join(lightning_conversion.split())
@@ -489,8 +496,9 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "FL-only Client API entry point" in normalized_lightning
     assert "FL-only client entry" in skill_text
     assert "Do not branch on launch environment variables" in normalized_skill
-    assert "`HfArgumentParser` parse-only preflight" in normalized_skill
-    assert "`TrainingArguments` fields missing from the installed Transformers version" in normalized_skill
+    assert "generated client's actual parser" in normalized_skill
+    assert "Validate `TrainingArguments`/`SFTConfig` fields" in normalized_skill
+    assert "Export only with `python job.py --export --export-dir`" in normalized_skill
     assert "client imports are not enough for per-site exports" in normalized_skill
     assert "generated or project-local server-only model module" in normalized_skill
     assert "server-only model module" in skill_text
@@ -505,12 +513,25 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "client import is not enough for per-site exports" in conversion_text
     assert "third-party class paths stay runtime dependencies" in normalized_conversion
     assert "server persistor will fail to construct the initial model" in normalized_conversion
-    assert "`HfArgumentParser` in parse-only mode" in validation_text
-    assert "Do not start simulation unless every argument is consumed" in normalized_validation
+    assert "client entry's actual argument mechanism in parse-only mode" in normalized_validation
+    assert "generated client uses `HfArgumentParser`" in validation_text
+    assert "preserves `argparse` or another parser" in validation_text
+    assert "reject any unused argument" in normalized_validation
+    assert "absent from the installed Transformers/TRL version" in normalized_validation
     assert "one-round topology smoke test with the requested site count" in normalized_validation
-    assert "full-model validation blocked by host capacity" in validation_text
-    assert "estimate exchanged `state_dict` bytes" in validation_text
+    assert "full-model validation blocked by host capacity" in normalized_validation
+    assert "estimate server exchange/offload memory" in validation_text
+    assert "per-client training-memory bound multiplied by actual worker concurrency" in normalized_validation
+    assert "model copies, gradients, optimizer state, activations, dataloaders/data" in normalized_validation
+    assert "full-model rung as capacity-unverified" in normalized_validation
     assert "Make at most one expensive real-model retry" in validation_text
+    assert "`python job.py --export --export-dir <dir>`" in validation_text
+    assert "Reject generated job-local export aliases such as `--export_only`" in normalized_validation
+    assert "private flags" in normalized_validation
+    assert "`python job.py --export --export-dir <runtime-dir>/job_config`" in normalized_shared_validation
+    assert "Do not accept a generated job-local export alias such as `--export_only`" in normalized_shared_validation
+    assert "report it as a generated-code violation" in normalized_shared_validation
+    assert "invent alternate export flags such as `--export_only`" in normalized_shared
     assert "standalone mode" in validation_text
     assert "model.py` is server-only" in validation_text
     assert "class_path`, train script, custom aggregator" in normalized_shared

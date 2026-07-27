@@ -577,7 +577,8 @@ draft with that real failure as the blocker rather than looping on it.
 
 - Use `python job.py --export --export-dir <dir>` to export a generated job.
   These are NVFLARE job system arguments across recipes, algorithms, and
-  frameworks. Do not declare them as generated job-local arguments.
+  frameworks. Do not declare them as generated job-local arguments, and do not
+  invent alternate export flags such as `--export_only`.
 - If a generated `job.py` defines local command-line options, its local parser
   must tolerate NVFLARE system arguments such as `--export` and `--export-dir`.
   With `argparse`, use `parse_known_args()` or an equivalent approach. Do not
