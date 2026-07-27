@@ -61,10 +61,29 @@ def main(args):
     )
 
     summary_writer = SummaryWriter()
+    last_trained_params = None
     while flare.is_running():
         # Receive FLModel from NVFlare
         input_model = flare.receive()
         print(f"\n[Current Round={input_model.current_round}, Site = {flare.get_site_name()}]\n")
+
+        if flare.is_evaluate():
+            model.load_state_dict(input_model.params, strict=True)
+            model.to(DEVICE)
+            accuracy = evaluate(model, valid_loader)
+            print(f"Cross-site validation accuracy: {100 * accuracy:.2f} %")
+            flare.send(flare.FLModel(metrics={"accuracy": accuracy}))
+            continue
+
+        if flare.is_submit_model():
+            if last_trained_params is None:
+                raise RuntimeError("Cannot submit a local model before completing a training round")
+            flare.send(flare.FLModel(params=last_trained_params, params_type=ParamsType.FULL))
+            continue
+
+        if not flare.is_train():
+            raise RuntimeError(f"Unsupported task: {flare.get_task_name()}")
+
         fedprox_mu = get_fedprox_mu(input_model)
         criterion_prox = PTFedProxLoss(mu=fedprox_mu)
         print(f"Using FedProx loss with mu {fedprox_mu}")
@@ -153,6 +172,7 @@ def main(args):
 
         # compute delta model, global model has the primary key set
         model_diff, diff_norm = compute_model_diff(model, global_model)
+        last_trained_params = {name: value.detach().cpu().clone() for name, value in model.state_dict().items()}
         summary_writer.add_scalar(tag="diff_norm", scalar=diff_norm.item(), global_step=input_model.current_round)
 
         # Construct trained FL model
