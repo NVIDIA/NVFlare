@@ -1,0 +1,379 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Attach-only trainer session protocol used by :class:`CellClientAPI`."""
+
+import atexit
+import threading
+import uuid
+from collections import OrderedDict
+from typing import TYPE_CHECKING, Optional
+
+from nvflare.apis.fl_constant import ConnectionSecurity
+from nvflare.client.cell.attach import effective_connection_security, make_attach_trainer_fqcn
+from nvflare.client.cell.bootstrap import BootstrapKey
+from nvflare.client.cell.decomposers import register_framework_decomposers
+from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, ResultState, TaskState, Topic
+from nvflare.client.config import ConfigKey, ExchangeFormat
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
+from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
+from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
+
+if TYPE_CHECKING:
+    from nvflare.apis.shareable import Shareable
+    from nvflare.client.cell.api import CellClientAPI
+
+_RESULT_STATUS_TIMEOUT = 2.0
+_RESULT_SEND_ATTEMPTS = 2
+_TASK_STATUS_RECORD_LIMIT = 256
+
+
+class TrainerSessionError(RuntimeError):
+    """The trainer's Client API session ended or could not be established."""
+
+
+class AttachTrainerSession:
+    """Own attach rendezvous, retry, and deduplication state for one trainer API."""
+
+    def __init__(self, api: "CellClientAPI"):
+        self._api = api
+        config = api._config
+        self.attach_id = config[BootstrapKey.ATTACH_ID]
+        self.trainer_fqcn = make_attach_trainer_fqcn(api._site_name, self.attach_id)
+        self.connection_security = effective_connection_security(
+            config[BootstrapKey.CONNECT_URL],
+            config.get(BootstrapKey.CONNECTION_SECURITY),
+        )
+        self._opened = threading.Event()
+        self._open_error: Optional[str] = None
+        self._task_states = OrderedDict()
+        self._task_attempts = {}
+        self._current_result_id: Optional[str] = None
+        self._cleanup_registered = False
+
+    def cell_security(self) -> tuple[bool, dict]:
+        credentials = {DriverParams.CONNECTION_SECURITY.value: self.connection_security}
+        if self.connection_security != ConnectionSecurity.CLEAR:
+            ca_cert = self._api._config.get(BootstrapKey.CA_CERT)
+            if not ca_cert:
+                raise RuntimeError(
+                    f"attach profile using {self.connection_security!r} requires {BootstrapKey.CA_CERT!r}"
+                )
+            credentials[DriverParams.CA_CERT.value] = ca_cert
+        return self.connection_security != ConnectionSecurity.CLEAR, credentials
+
+    def register_callbacks(self, cell) -> None:
+        cell.register_request_cb(channel=CHANNEL, topic=Topic.SESSION_OPEN, cb=self._handle_session_open)
+        cell.register_request_cb(channel=CHANNEL, topic=Topic.TASK_STATUS, cb=self._handle_task_status)
+
+    def wait_for_open(self) -> None:
+        timeout = self._api._config.get(BootstrapKey.JOB_WAIT_TIMEOUT)
+        if not self._opened.wait(timeout):
+            raise TrainerSessionError(f"no SESSION_OPEN received within job_wait_timeout={timeout}s")
+        if self._open_error:
+            raise TrainerSessionError(self._open_error)
+        if not self._api._session_id:
+            raise TrainerSessionError("SESSION_OPEN wait was interrupted before a session was established")
+
+    def register_cleanup(self) -> None:
+        if not self._cleanup_registered:
+            atexit.register(self.cleanup)
+            self._cleanup_registered = True
+
+    def close(self) -> None:
+        if self._cleanup_registered:
+            atexit.unregister(self.cleanup)
+            self._cleanup_registered = False
+        self._opened.set()
+
+    def cleanup(self) -> None:
+        """Best-effort interpreter cleanup without preempting a live result source."""
+        with self._api._lock:
+            if self._api._result_send_active:
+                return
+        self._api.shutdown()
+
+    def mark_task_delivered(self, task_id: str) -> None:
+        with self._api._lock:
+            self._task_states[task_id] = TaskState.DELIVERED
+
+    def mark_result_publishing(self, task_id: str) -> str:
+        with self._api._lock:
+            self._task_states[task_id] = TaskState.RESULT_PUBLISHING
+            if not self._current_result_id:
+                self._current_result_id = uuid.uuid4().hex
+            return self._current_result_id
+
+    def mark_task_complete(self, task_id: str) -> None:
+        with self._api._lock:
+            self._task_states[task_id] = TaskState.COMPLETE
+            self._trim_task_status_records()
+
+    def clear_result(self) -> None:
+        self._current_result_id = None
+
+    def reserve_task(self, task_id, attempt_id):
+        """Reserve a logical task, returning an idempotent reply for a duplicate."""
+        if not isinstance(task_id, str) or not task_id:
+            return self._api._reply(Topic.TASK_FAILED, **{MsgKey.REASON: "TASK_READY requires task_id"})
+        if not isinstance(attempt_id, str) or not attempt_id:
+            return self._api._reply(
+                Topic.TASK_FAILED,
+                **{MsgKey.TASK_ID: task_id, MsgKey.REASON: "TASK_READY requires attempt_id"},
+            )
+        with self._api._lock:
+            known_state = self._task_states.get(task_id)
+            known_attempt = self._task_attempts.get(task_id)
+            if known_state is None:
+                self._task_states[task_id] = TaskState.QUEUED
+                self._task_states.move_to_end(task_id)
+                self._task_attempts[task_id] = attempt_id
+                self._trim_task_status_records()
+                return None
+        return self._api._reply(
+            Topic.TASK_ACCEPTED,
+            **{
+                MsgKey.TASK_ID: task_id,
+                MsgKey.ATTEMPT_ID: known_attempt,
+                MsgKey.TASK_STATE: known_state,
+            },
+        )
+
+    def forget_reserved_task(self, task_id, attempt_id) -> None:
+        with self._api._lock:
+            if self._task_attempts.get(task_id) == attempt_id:
+                self._task_states.pop(task_id, None)
+                self._task_attempts.pop(task_id, None)
+
+    def publish_result(
+        self,
+        task_id: str,
+        result_id: str,
+        shareable: "Shareable",
+        source_receiver_ids,
+        fobs_ctx_props: dict,
+    ) -> None:
+        """Publish one logical result with status recovery for a lost acceptance reply."""
+        api = self._api
+        last_error = None
+        for _ in range(_RESULT_SEND_ATTEMPTS):
+            request = new_cell_message(
+                {MessageHeaderKey.PASS_THROUGH: True},
+                {
+                    MsgKey.SESSION_ID: api._session_id,
+                    MsgKey.TASK_ID: task_id,
+                    MsgKey.RESULT_ID: result_id,
+                    MsgKey.ATTEMPT_ID: uuid.uuid4().hex,
+                    MsgKey.RESULT: shareable,
+                },
+            )
+            try:
+                reply = api._cell.send_request(
+                    channel=CHANNEL,
+                    topic=Topic.RESULT_READY,
+                    target=api._cj_fqcn,
+                    request=request,
+                    timeout=30.0,
+                    abort_signal=api._result_abort_signal,
+                    progress_wait_cb=api._has_pending_result_transfer,
+                    num_receivers=len(source_receiver_ids) if source_receiver_ids else 1,
+                    receiver_ids=source_receiver_ids,
+                    fobs_ctx_props=fobs_ctx_props,
+                )
+                api._check_result_accepted(reply)
+                return
+            except BaseException as e:
+                last_error = e
+                if self._result_was_accepted(task_id, result_id):
+                    return
+                api._delete_result_transfers(api._snapshot_result_transfer_waiters())
+                api._clear_result_transfer_waiters()
+        raise TrainerSessionError(f"result publication failed after status recovery: {last_error}") from last_error
+
+    def _result_was_accepted(self, task_id: str, result_id: str) -> bool:
+        api = self._api
+        try:
+            reply = api._cell.send_request(
+                channel=CHANNEL,
+                topic=Topic.RESULT_STATUS,
+                target=api._cj_fqcn,
+                request=new_cell_message(
+                    {},
+                    {
+                        MsgKey.SESSION_ID: api._session_id,
+                        MsgKey.TASK_ID: task_id,
+                        MsgKey.RESULT_ID: result_id,
+                    },
+                ),
+                timeout=_RESULT_STATUS_TIMEOUT,
+                optional=True,
+            )
+        except Exception:
+            return False
+        if reply is None or reply.get_header(MessageHeaderKey.RETURN_CODE) != CellReturnCode.OK:
+            return False
+        body = reply.payload
+        return (
+            isinstance(body, dict)
+            and body.get(MsgKey.REPLY_TOPIC) == Topic.RESULT_STATUS
+            and body.get(MsgKey.RESULT_STATE) == ResultState.ACCEPTED
+        )
+
+    def _handle_session_open(self, request):
+        payload = request.payload
+        if not isinstance(payload, dict):
+            return make_cell_reply(CellReturnCode.INVALID_REQUEST, error="SESSION_OPEN payload must be a dict")
+        api = self._api
+        origin = request.get_header(MessageHeaderKey.ORIGIN) or ""
+        session_id = payload.get(MsgKey.SESSION_ID)
+        rejection = self._validate_open(origin, session_id, payload)
+        if rejection:
+            if (
+                payload.get(MsgKey.ATTACH_ID) == self.attach_id
+                and payload.get(MsgKey.SITE_NAME) == api._site_name
+                and payload.get(MsgKey.PROTOCOL_VERSION) != PROTOCOL_VERSION
+            ):
+                self._open_error = rejection
+                self._opened.set()
+            return api._reply(
+                Topic.SESSION_REJECTED,
+                **{MsgKey.SESSION_ID: session_id, MsgKey.REASON: rejection},
+            )
+
+        with api._lock:
+            if api._session_id:
+                if api._session_id != session_id or api._cj_fqcn != origin:
+                    return api._reply(
+                        Topic.SESSION_REJECTED,
+                        **{
+                            MsgKey.SESSION_ID: session_id,
+                            MsgKey.REASON: "trainer is already bound to another CJ/session",
+                        },
+                    )
+            else:
+                runtime, rejection = self._runtime_settings(payload)
+                if rejection:
+                    self._open_error = rejection
+                    self._opened.set()
+                    return api._reply(
+                        Topic.SESSION_REJECTED,
+                        **{MsgKey.SESSION_ID: session_id, MsgKey.REASON: rejection},
+                    )
+                api._cj_fqcn = origin
+                api._session_id = session_id
+                api._job_id = payload.get(MsgKey.JOB_ID)
+                api._heartbeat_interval = runtime["heartbeat_interval"]
+                api._heartbeat_timeout = runtime["heartbeat_timeout"]
+                api._task_exchange = runtime["task_exchange"]
+                api._launch_once = True
+                api._memory_gc_rounds = runtime["memory_gc_rounds"]
+                api._cuda_empty_cache = bool(payload.get(MsgKey.CUDA_EMPTY_CACHE, False))
+                register_framework_decomposers(
+                    api._task_exchange.get(ConfigKey.EXCHANGE_FORMAT, ExchangeFormat.RAW),
+                    api._task_exchange.get(ConfigKey.SERVER_EXPECTED_FORMAT, ExchangeFormat.NUMPY),
+                    api.logger,
+                )
+                api._note_cj_activity()
+                self._opened.set()
+
+        return api._reply(
+            Topic.SESSION_ACCEPTED,
+            **{
+                MsgKey.SESSION_ID: session_id,
+                MsgKey.PROTOCOL_VERSION: PROTOCOL_VERSION,
+                MsgKey.CONNECT_URL: api._config[BootstrapKey.CONNECT_URL],
+                MsgKey.CONNECTION_SECURITY: self.connection_security,
+            },
+        )
+
+    def _validate_open(self, origin: str, session_id, payload: dict) -> Optional[str]:
+        api = self._api
+        if not origin:
+            return "SESSION_OPEN has no CJ origin"
+        if not isinstance(session_id, str) or not session_id:
+            return "SESSION_OPEN has no session id"
+        if payload.get(MsgKey.ATTACH_ID) != self.attach_id:
+            return "attach id mismatch"
+        if payload.get(MsgKey.SITE_NAME) != api._site_name:
+            return "site name mismatch"
+        if payload.get(MsgKey.TRAINER_FQCN) != self.trainer_fqcn:
+            return "trainer FQCN mismatch"
+        if payload.get(MsgKey.PROTOCOL_VERSION) != PROTOCOL_VERSION:
+            return f"unsupported protocol version {payload.get(MsgKey.PROTOCOL_VERSION)!r} (expect {PROTOCOL_VERSION})"
+        if str(payload.get(MsgKey.RANK)) != "0" or str(api._rank) != "0":
+            return "only rank 0 may bind an attach session"
+        return None
+
+    def _runtime_settings(self, payload: dict) -> tuple[Optional[dict], Optional[str]]:
+        try:
+            heartbeat_interval = self._api._valid_heartbeat_number(
+                MsgKey.HEARTBEAT_INTERVAL,
+                payload.get(MsgKey.HEARTBEAT_INTERVAL),
+                positive=True,
+            )
+            heartbeat_timeout = self._api._valid_heartbeat_number(
+                MsgKey.HEARTBEAT_TIMEOUT,
+                payload.get(MsgKey.HEARTBEAT_TIMEOUT),
+                positive=False,
+            )
+            if 0 < heartbeat_timeout <= heartbeat_interval:
+                raise TrainerSessionError(
+                    f"invalid heartbeat policy: interval {heartbeat_interval} must be less than timeout {heartbeat_timeout}"
+                )
+            task_exchange = payload.get(MsgKey.TASK_EXCHANGE)
+            if not isinstance(task_exchange, dict):
+                raise TrainerSessionError("SESSION_OPEN task_exchange must be a dict")
+            memory_gc_rounds = payload.get(MsgKey.MEMORY_GC_ROUNDS, 0)
+            if not isinstance(memory_gc_rounds, int) or isinstance(memory_gc_rounds, bool) or memory_gc_rounds < 0:
+                raise TrainerSessionError("SESSION_OPEN memory_gc_rounds must be an integer >= 0")
+        except TrainerSessionError as e:
+            return None, str(e)
+        return {
+            "heartbeat_interval": heartbeat_interval,
+            "heartbeat_timeout": heartbeat_timeout,
+            "task_exchange": dict(task_exchange),
+            "memory_gc_rounds": memory_gc_rounds,
+        }, None
+
+    def _handle_task_status(self, request):
+        payload = request.payload
+        if not isinstance(payload, dict):
+            return make_cell_reply(CellReturnCode.INVALID_REQUEST, error="TASK_STATUS payload must be a dict")
+        reject_reason = self._api._validate_cj_control(request, payload)
+        if reject_reason:
+            return self._api._reply(Topic.ERROR, **{MsgKey.REASON: reject_reason})
+        task_id = payload.get(MsgKey.TASK_ID)
+        with self._api._lock:
+            state = self._task_states.get(task_id, TaskState.UNKNOWN)
+            attempt_id = self._task_attempts.get(task_id)
+        return self._api._reply(
+            Topic.TASK_STATUS,
+            **{
+                MsgKey.TASK_ID: task_id,
+                MsgKey.TASK_STATE: state,
+                MsgKey.ACCEPTED_ATTEMPT_ID: attempt_id,
+            },
+        )
+
+    def _trim_task_status_records(self) -> None:
+        while len(self._task_states) > _TASK_STATUS_RECORD_LIMIT:
+            for task_id, state in tuple(self._task_states.items()):
+                if state == TaskState.COMPLETE:
+                    self._task_states.pop(task_id, None)
+                    self._task_attempts.pop(task_id, None)
+                    break
+            else:
+                return

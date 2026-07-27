@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "execution_mode": "attach",
+  "attach_id": "numpy_trainer",
+  "site_name": "site-1",
+  "connect_url": "grpc://127.0.0.1:8002",
+  "connection_security": "clear",
+  "job_wait_timeout": null
+}

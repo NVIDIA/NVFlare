@@ -34,13 +34,14 @@ from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.cell import api as cell_api
 from nvflare.client.cell.api import CellClientAPI, TrainerSessionError
 from nvflare.client.cell.bootstrap import (
+    ATTACH_EXECUTION_MODE,
     BOOTSTRAP_SCHEMA_VERSION,
     EXTERNAL_PROCESS_EXECUTION_MODE,
     BootstrapKey,
     read_bootstrap_config,
     write_bootstrap_config,
 )
-from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
+from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, ResultState, TaskState, Topic
 from nvflare.client.config import ConfigKey, ExchangeFormat
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
@@ -52,6 +53,8 @@ from nvflare.fuel.utils.fobs import FOBSContextKey
 CJ_FQCN = "site-1.job-1"
 TRAINER_FQCN = "site-1.job-1.client_api_trainer_1"
 SESSION_ID = "session-abc"
+ATTACH_ID = "trainer_a"
+ATTACH_TRAINER_FQCN = "site-1.-client_api_trainer_a"
 
 
 def _hello_accepted_reply(heartbeat_interval=0.05, heartbeat_timeout=0.0):
@@ -132,6 +135,36 @@ class FakeCell:
         return self.cbs[topic](new_cell_message({MessageHeaderKey.ORIGIN: origin}, payload))
 
 
+class AttachFakeCell(FakeCell):
+    def __init__(self):
+        super().__init__()
+        self.fqcn = ATTACH_TRAINER_FQCN
+        self.session_open_payload = {
+            MsgKey.SESSION_ID: SESSION_ID,
+            MsgKey.ATTACH_ID: ATTACH_ID,
+            MsgKey.JOB_ID: "job-1",
+            MsgKey.SITE_NAME: "site-1",
+            MsgKey.TRAINER_FQCN: ATTACH_TRAINER_FQCN,
+            MsgKey.PROTOCOL_VERSION: PROTOCOL_VERSION,
+            MsgKey.RANK: "0",
+            MsgKey.HEARTBEAT_INTERVAL: 0.05,
+            MsgKey.HEARTBEAT_TIMEOUT: 0.0,
+            MsgKey.TASK_EXCHANGE: {
+                ConfigKey.TRAIN_TASK_NAME: "train",
+                ConfigKey.EVAL_TASK_NAME: "validate",
+                ConfigKey.SUBMIT_MODEL_TASK_NAME: "submit_model",
+                ConfigKey.LAUNCH_ONCE: True,
+            },
+            MsgKey.MEMORY_GC_ROUNDS: 0,
+            MsgKey.CUDA_EMPTY_CACHE: False,
+        }
+        self.session_reply = None
+
+    def start(self):
+        super().start()
+        self.session_reply = self.deliver(Topic.SESSION_OPEN, CJ_FQCN, self.session_open_payload)
+
+
 @pytest.fixture
 def bootstrap_path(tmp_path):
     path = str(tmp_path / "bootstrap.json")
@@ -166,6 +199,35 @@ def env(bootstrap_path, monkeypatch):
     # Each real trainer is a dedicated process, but these tests construct many APIs in
     # one pytest process. Observe the F3 cleanup call without permanently shutting down
     # the process-global streaming executors used by later tests.
+    cell.shutdown_f3_streaming = MagicMock()
+    monkeypatch.setattr(cell_api, "_shutdown_f3_streaming", cell.shutdown_f3_streaming)
+    return cell
+
+
+@pytest.fixture
+def attach_bootstrap_path(tmp_path):
+    path = str(tmp_path / "attach.json")
+    write_bootstrap_config(
+        path,
+        {
+            BootstrapKey.SCHEMA_VERSION: BOOTSTRAP_SCHEMA_VERSION,
+            BootstrapKey.EXECUTION_MODE: ATTACH_EXECUTION_MODE,
+            BootstrapKey.ATTACH_ID: ATTACH_ID,
+            BootstrapKey.SITE_NAME: "site-1",
+            BootstrapKey.CONNECT_URL: "grpc://127.0.0.1:12345",
+            BootstrapKey.CONNECTION_SECURITY: "clear",
+            BootstrapKey.JOB_WAIT_TIMEOUT: 1.0,
+        },
+    )
+    return path
+
+
+@pytest.fixture
+def attach_env(attach_bootstrap_path, monkeypatch):
+    cell = AttachFakeCell()
+    cell_ctor = MagicMock(return_value=cell)
+    monkeypatch.setattr(cell_api, "Cell", cell_ctor)
+    cell.cell_ctor = cell_ctor
     cell.shutdown_f3_streaming = MagicMock()
     monkeypatch.setattr(cell_api, "_shutdown_f3_streaming", cell.shutdown_f3_streaming)
     return cell
@@ -221,6 +283,123 @@ def _wait_until(predicate, timeout=1.0):
             return True
         time.sleep(0.005)
     return predicate()
+
+
+def _deliver_attach_task(env, task_id="task-1", attempt_id="attempt-1"):
+    shareable = FLModelUtils.to_shareable(FLModel(params={"w": [1.0]}, params_type=ParamsType.FULL))
+    return env.deliver(
+        Topic.TASK_READY,
+        CJ_FQCN,
+        {
+            MsgKey.SESSION_ID: SESSION_ID,
+            MsgKey.TASK_ID: task_id,
+            MsgKey.ATTEMPT_ID: attempt_id,
+            MsgKey.TASK_NAME: "train",
+            MsgKey.MODEL: shareable,
+        },
+    )
+
+
+class TestAttachMode:
+    def test_init_waits_for_session_open_and_derives_site_level_fqcn(self, attach_bootstrap_path, attach_env):
+        api = _init_api(attach_bootstrap_path, attach_env)
+
+        assert api._cj_fqcn == CJ_FQCN
+        assert api._job_id == "job-1"
+        assert api._trainer_fqcn == ATTACH_TRAINER_FQCN
+        assert attach_env.session_reply.payload[MsgKey.REPLY_TOPIC] == Topic.SESSION_ACCEPTED
+        kwargs = attach_env.cell_ctor.call_args.kwargs
+        assert kwargs["fqcn"] == ATTACH_TRAINER_FQCN
+        assert kwargs["parent_url"] == "grpc://127.0.0.1:12345"
+        assert kwargs["secure"] is False
+        assert kwargs["credentials"]["connection_security"] == "clear"
+        api.shutdown()
+        assert not attach_env.shutdown_f3_streaming.called
+
+    def test_session_open_is_idempotent_and_rejects_second_cj(self, attach_bootstrap_path, attach_env):
+        api = _init_api(attach_bootstrap_path, attach_env)
+
+        duplicate = attach_env.deliver(Topic.SESSION_OPEN, CJ_FQCN, attach_env.session_open_payload)
+        foreign = attach_env.deliver(Topic.SESSION_OPEN, "site-1.other-job", attach_env.session_open_payload)
+
+        assert duplicate.payload[MsgKey.REPLY_TOPIC] == Topic.SESSION_ACCEPTED
+        assert foreign.payload[MsgKey.REPLY_TOPIC] == Topic.SESSION_REJECTED
+        assert api._cj_fqcn == CJ_FQCN
+
+    def test_secure_profile_passes_ca_for_cell_credential_discovery(self, attach_bootstrap_path, attach_env):
+        config = read_bootstrap_config(attach_bootstrap_path)
+        config[BootstrapKey.CONNECT_URL] = "grpcs://site.example:9000"
+        config[BootstrapKey.CONNECTION_SECURITY] = "mtls"
+        config[BootstrapKey.CA_CERT] = "/workspace/startup/rootCA.pem"
+        write_bootstrap_config(attach_bootstrap_path, config)
+
+        api = _init_api(attach_bootstrap_path, attach_env)
+
+        kwargs = attach_env.cell_ctor.call_args.kwargs
+        assert kwargs["secure"] is True
+        assert kwargs["credentials"] == {
+            "ca_cert": "/workspace/startup/rootCA.pem",
+            "connection_security": "mtls",
+        }
+        api.shutdown()
+
+    def test_duplicate_task_is_queued_once_and_status_is_recoverable(self, attach_bootstrap_path, attach_env):
+        api = _init_api(attach_bootstrap_path, attach_env)
+
+        first = _deliver_attach_task(attach_env)
+        duplicate = _deliver_attach_task(attach_env, attempt_id="attempt-2")
+        status = attach_env.deliver(
+            Topic.TASK_STATUS,
+            CJ_FQCN,
+            {MsgKey.SESSION_ID: SESSION_ID, MsgKey.TASK_ID: "task-1"},
+        )
+
+        assert first.payload[MsgKey.REPLY_TOPIC] == Topic.TASK_ACCEPTED
+        assert duplicate.payload[MsgKey.REPLY_TOPIC] == Topic.TASK_ACCEPTED
+        assert status.payload[MsgKey.TASK_STATE] == TaskState.QUEUED
+        assert api._task_queue.qsize() == 1
+        assert api.receive().params == {"w": [1.0]}
+        assert api._attach._task_states["task-1"] == TaskState.DELIVERED
+
+    def test_lost_result_acceptance_is_recovered_by_result_status(self, attach_bootstrap_path, attach_env):
+        api = _init_api(attach_bootstrap_path, attach_env)
+        _deliver_attach_task(attach_env)
+        assert api.receive() is not None
+        accepted_result_id = None
+
+        def _on_request(topic, target, request):
+            nonlocal accepted_result_id
+            if topic == Topic.RESULT_READY:
+                accepted_result_id = request.payload[MsgKey.RESULT_ID]
+                raise RuntimeError("acceptance reply lost")
+            if topic == Topic.RESULT_STATUS:
+                assert request.payload[MsgKey.RESULT_ID] == accepted_result_id
+                return make_cell_reply(
+                    CellReturnCode.OK,
+                    body={
+                        MsgKey.REPLY_TOPIC: Topic.RESULT_STATUS,
+                        MsgKey.RESULT_STATE: ResultState.ACCEPTED,
+                    },
+                )
+            return make_cell_reply(CellReturnCode.OK)
+
+        attach_env.on_request = _on_request
+        api.send(FLModel(params={"w": [2.0]}, params_type=ParamsType.FULL))
+
+        assert accepted_result_id
+        assert api._attach._task_states["task-1"] == TaskState.COMPLETE
+
+    def test_lifecycle_cleanup_defers_while_result_source_is_live(self, attach_bootstrap_path, attach_env):
+        api = _init_api(attach_bootstrap_path, attach_env)
+        api._result_send_active = True
+
+        api._attach.cleanup()
+
+        assert not attach_env.stopped
+        api._result_send_active = False
+        api._attach.cleanup()
+        assert attach_env.stopped
+        assert not attach_env.shutdown_f3_streaming.called
 
 
 def test_shutdown_f3_streaming_is_ordered_and_safe_to_repeat(monkeypatch):

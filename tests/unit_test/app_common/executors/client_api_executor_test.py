@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the ClientAPIExecutor interface-freeze skeleton (plan: EX-2).
+"""Tests for the ClientAPIExecutor public surface and mode dispatch.
 
 Covers the constructor-validation matrix, the per-mode dispatch failure behavior
 (NotImplementedError naming the follow-up PR + system_panic, no hang), the analytics-event
@@ -69,15 +69,17 @@ FROZEN_CONSTRUCTOR_PARAMS = [
     "params_transfer_type",
     "memory_gc_rounds",
     "cuda_empty_cache",
+    "attach_id",
     "attach_timeout",
     "allow_reconnect",
+    "allow_insecure_attach",
 ]
 
 # Minimal valid constructor kwargs per mode.
 MODE_KWARGS = {
     ExecutionMode.IN_PROCESS: {"execution_mode": "in_process"},
     ExecutionMode.EXTERNAL_PROCESS: {"execution_mode": "external_process", "command": "python custom/train.py"},
-    ExecutionMode.ATTACH: {"execution_mode": "attach"},
+    ExecutionMode.ATTACH: {"execution_mode": "attach", "attach_id": "trainer_a"},
 }
 
 
@@ -144,9 +146,22 @@ class TestConstructorValidation:
         assert executor._build_backend_context().launch_timeout == 300.0
 
     def test_valid_attach_with_attach_args(self):
-        executor = ClientAPIExecutor(execution_mode="attach", attach_timeout=60.0, allow_reconnect=True)
+        executor = ClientAPIExecutor(
+            execution_mode="attach",
+            attach_id="trainer_a",
+            attach_timeout=60.0,
+            allow_reconnect=True,
+            allow_insecure_attach=True,
+        )
+        assert executor._attach_id == "trainer_a"
         assert executor._attach_timeout == 60.0
         assert executor._allow_reconnect is True
+        assert executor._allow_insecure_attach is True
+
+    @pytest.mark.parametrize("attach_id", [None, "", "has.dot", "has space", "a" * 65])
+    def test_attach_requires_canonical_attach_id(self, attach_id):
+        with pytest.raises(ValueError, match="attach_id"):
+            ClientAPIExecutor(execution_mode="attach", attach_id=attach_id)
 
     def test_valid_full_surface(self):
         executor = ClientAPIExecutor(
@@ -279,7 +294,8 @@ class TestConstructorValidation:
     def test_empty_command_treated_as_unset_for_non_external_modes(self, mode, command):
         # An empty/whitespace command is "unset", not a wrong-mode command, so it must not be
         # rejected with the misleading "only valid for external_process" message.
-        executor = ClientAPIExecutor(execution_mode=mode, command=command)
+        kwargs = {"attach_id": "trainer_a"} if mode == "attach" else {}
+        executor = ClientAPIExecutor(execution_mode=mode, command=command, **kwargs)
         assert executor._command is None
 
     @pytest.mark.parametrize("command", ["", "   "])
@@ -418,14 +434,7 @@ class TestConstructorValidation:
 
 
 class TestDispatch:
-    """in_process and external_process now resolve real backends; attach remains
-    skeleton-only: resolving its backend at START_RUN must fail the job cleanly
-    (system_panic naming the mode), and execute() must reply with an error instead of
-    hanging. in_process START_RUN without a valid task_script_path — and external_process
-    START_RUN without a workspace/cell — fail the same clean way, so the all-modes panic
-    tests below still hold."""
-
-    NOT_IMPLEMENTED_MODES = [ExecutionMode.ATTACH]
+    """All modes resolve real backends and fail initialization cleanly."""
 
     def test_in_process_factory_returns_real_backend(self):
         from nvflare.app_common.executors.client_api.in_process_backend import InProcessBackend
@@ -439,17 +448,11 @@ class TestDispatch:
         executor = ClientAPIExecutor(**MODE_KWARGS[ExecutionMode.EXTERNAL_PROCESS])
         assert isinstance(executor._create_backend(), ExternalProcessBackend)
 
-    @pytest.mark.parametrize("mode", NOT_IMPLEMENTED_MODES)
-    def test_backend_factory_raises_not_implemented(self, mode):
-        # The user-facing message must not carry an internal plan id (EX-3/EP-4/AT-2); it names the
-        # mode and says "not yet implemented".
-        executor = ClientAPIExecutor(**MODE_KWARGS[mode])
-        with pytest.raises(NotImplementedError, match="not yet implemented") as exc_info:
-            executor._create_backend()
-        message = str(exc_info.value)
-        assert mode in message
-        for plan_id in ("EX-3", "EP-4", "AT-2"):
-            assert plan_id not in message
+    def test_attach_factory_returns_real_backend(self):
+        from nvflare.app_common.executors.client_api.attach_backend import AttachBackend
+
+        executor = ClientAPIExecutor(**MODE_KWARGS[ExecutionMode.ATTACH])
+        assert isinstance(executor._create_backend(), AttachBackend)
 
     @pytest.mark.parametrize("mode", list(ALL_EXECUTION_MODES))
     def test_start_run_panics_naming_the_mode(self, mode):
@@ -671,8 +674,10 @@ class TestSurfaceFreeze:
             "params_transfer_type": TransferType.FULL,
             "memory_gc_rounds": 0,
             "cuda_empty_cache": False,
+            "attach_id": None,
             "attach_timeout": None,
             "allow_reconnect": False,
+            "allow_insecure_attach": False,
         }
         actual_defaults = {name: p.default for name, p in sig.parameters.items() if name != "self"}
         actual_defaults.pop("execution_mode")

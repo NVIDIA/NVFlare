@@ -1,0 +1,65 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Export a one-client NumPy FedAvg job that waits for an attached trainer."""
+
+import argparse
+from pathlib import Path
+
+from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
+from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
+from nvflare.client.config import ExchangeFormat, TransferType
+
+
+class AttachNumpyFedAvgRecipe(NumpyFedAvgRecipe):
+    def __init__(self, attach_id: str, **kwargs):
+        self.attach_id = attach_id
+        super().__init__(**kwargs)
+
+    def _create_client_runner(self, site_config):
+        return ClientAPIExecutor(
+            execution_mode="attach",
+            attach_id=self.attach_id,
+            attach_timeout=300.0,
+            heartbeat_interval=5.0,
+            heartbeat_timeout=30.0,
+            task_wait_timeout=600.0,
+            params_exchange_format=ExchangeFormat.NUMPY,
+            server_expected_format=ExchangeFormat.NUMPY,
+            params_transfer_type=TransferType.FULL,
+        )
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--attach_id", default="numpy_trainer")
+    parser.add_argument("--job_dir", default="/tmp/nvflare/jobs")
+    args = parser.parse_args()
+
+    recipe = AttachNumpyFedAvgRecipe(
+        attach_id=args.attach_id,
+        name="client-api-attach",
+        min_clients=1,
+        num_rounds=3,
+        model=[[1, 2, 3], [4, 5, 6]],
+        # The recipe requires an entry-point resource, but Attach never launches it.
+        # The operator starts trainer.py independently with its connection profile.
+        train_script=str(Path(__file__).with_name("trainer.py")),
+    )
+    recipe.export(args.job_dir)
+    print(f"Exported {recipe.name!r} to {args.job_dir}")
+
+
+if __name__ == "__main__":
+    main()

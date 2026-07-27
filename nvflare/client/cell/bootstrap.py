@@ -11,10 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Owner-only bootstrap contract between ExternalProcessBackend and its trainer.
+"""Typed connection profiles for Cell-based Client API execution.
 
-The launch-scoped token and trainer FQCN reject stale processes. Key strings and schema
-versions are persisted protocol and must remain stable.
+External-process profiles are owner-written launch bootstraps. Attach profiles are
+pre-provisioned independently of a job. Key strings and schema versions are persisted
+protocol and must remain stable.
 """
 
 import json
@@ -28,8 +29,9 @@ CELL_API_TYPE = "CELL_API"
 # Bootstrap schema version is independent of the post-connection Cell protocol version.
 BOOTSTRAP_SCHEMA_VERSION = 1
 
-# Typed schema currently accepts launched external-process mode only.
+# Supported typed Cell Client API profile modes.
 EXTERNAL_PROCESS_EXECUTION_MODE = "external_process"
+ATTACH_EXECUTION_MODE = "attach"
 
 # Limit exposure of the launch token to the file owner.
 BOOTSTRAP_FILE_PERMISSION = 0o600
@@ -57,6 +59,11 @@ class BootstrapKey:
     JOB_ID = "job_id"
     SITE_NAME = "site_name"
     SECURE_MODE = "secure_mode"
+    CONNECTION_SECURITY = "connection_security"
+    CA_CERT = "ca_cert"
+
+    ATTACH_ID = "attach_id"
+    JOB_WAIT_TIMEOUT = "job_wait_timeout"
 
     # Legacy TASK_EXCHANGE shape needed before the first task arrives.
     TASK_EXCHANGE = "task_exchange"
@@ -65,13 +72,19 @@ class BootstrapKey:
     CUDA_EMPTY_CACHE = "cuda_empty_cache"
 
 
-_REQUIRED_STRING_FIELDS = (
+_EXTERNAL_REQUIRED_STRING_FIELDS = (
     BootstrapKey.CJ_FQCN,
     BootstrapKey.TRAINER_FQCN,
     BootstrapKey.JOB_ID,
     BootstrapKey.SITE_NAME,
     BootstrapKey.CONNECT_URL,
     BootstrapKey.LAUNCH_TOKEN,
+)
+
+_ATTACH_REQUIRED_STRING_FIELDS = (
+    BootstrapKey.ATTACH_ID,
+    BootstrapKey.SITE_NAME,
+    BootstrapKey.CONNECT_URL,
 )
 
 
@@ -97,21 +110,61 @@ def get_bootstrap_client_api_type(config: dict, path: str = "<bootstrap config>"
         )
 
     execution_mode = config[BootstrapKey.EXECUTION_MODE]
-    if execution_mode != EXTERNAL_PROCESS_EXECUTION_MODE:
+    if execution_mode not in (EXTERNAL_PROCESS_EXECUTION_MODE, ATTACH_EXECUTION_MODE):
         raise ValueError(
             f"unsupported Client API bootstrap execution_mode {execution_mode!r} in {path}; "
-            f"supported mode is {EXTERNAL_PROCESS_EXECUTION_MODE!r}"
+            f"supported modes are {EXTERNAL_PROCESS_EXECUTION_MODE!r} and {ATTACH_EXECUTION_MODE!r}"
         )
 
-    for field in _REQUIRED_STRING_FIELDS:
+    required_fields = (
+        _EXTERNAL_REQUIRED_STRING_FIELDS
+        if execution_mode == EXTERNAL_PROCESS_EXECUTION_MODE
+        else _ATTACH_REQUIRED_STRING_FIELDS
+    )
+    for field in required_fields:
         if field not in config:
             raise ValueError(f"invalid Client API bootstrap config {path}: missing required field {field!r}")
         if not isinstance(config[field], str) or not config[field].strip():
             raise ValueError(f"invalid Client API bootstrap config {path}: field {field!r} must be a non-empty string")
+    if execution_mode == ATTACH_EXECUTION_MODE:
+        from nvflare.apis.fl_constant import ConnectionSecurity
+        from nvflare.client.cell.attach import effective_connection_security, validate_attach_id
+
+        validate_attach_id(config[BootstrapKey.ATTACH_ID])
+        connection_security = effective_connection_security(
+            config[BootstrapKey.CONNECT_URL],
+            config.get(BootstrapKey.CONNECTION_SECURITY),
+        )
+        ca_cert = config.get(BootstrapKey.CA_CERT)
+        if ca_cert is not None and (not isinstance(ca_cert, str) or not ca_cert.strip()):
+            raise ValueError(
+                f"invalid Client API bootstrap config {path}: field "
+                f"{BootstrapKey.CA_CERT!r} must be a non-empty string"
+            )
+        if connection_security != ConnectionSecurity.CLEAR and not ca_cert:
+            raise ValueError(
+                f"invalid Client API bootstrap config {path}: "
+                f"{connection_security!r} attach requires field {BootstrapKey.CA_CERT!r}"
+            )
+        if BootstrapKey.SECURE_MODE in config:
+            expected_secure = connection_security != ConnectionSecurity.CLEAR
+            if config[BootstrapKey.SECURE_MODE] is not expected_secure:
+                raise ValueError(
+                    f"invalid Client API bootstrap config {path}: "
+                    f"{BootstrapKey.SECURE_MODE!r} disagrees with "
+                    f"{BootstrapKey.CONNECTION_SECURITY!r}"
+                )
     if BootstrapKey.SECURE_MODE in config and type(config[BootstrapKey.SECURE_MODE]) is not bool:
         raise ValueError(
             f"invalid Client API bootstrap config {path}: field {BootstrapKey.SECURE_MODE!r} must be a bool"
         )
+    if BootstrapKey.JOB_WAIT_TIMEOUT in config:
+        value = config[BootstrapKey.JOB_WAIT_TIMEOUT]
+        if value is not None and (not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0):
+            raise ValueError(
+                f"invalid Client API bootstrap config {path}: field "
+                f"{BootstrapKey.JOB_WAIT_TIMEOUT!r} must be a number >= 0 or None"
+            )
     return CELL_API_TYPE
 
 

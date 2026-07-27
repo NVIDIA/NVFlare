@@ -14,8 +14,8 @@
 
 """Client API executor with mode-specific trainer backends.
 
-``in_process`` and ``external_process`` are supported; ``attach`` is reserved. Parameter
-conversion and FULL/DIFF state are handled by the trainer-side Client API.
+All three execution modes are supported. Parameter conversion and FULL/DIFF state
+are handled by the trainer-side Client API.
 """
 
 import math
@@ -85,8 +85,10 @@ class ClientAPIExecutor(Executor):
         params_transfer_type: TransferType = TransferType.FULL,
         memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        attach_id: Optional[str] = None,
         attach_timeout: Optional[float] = None,
         allow_reconnect: bool = False,
+        allow_insecure_attach: bool = False,
     ):
         """Initializes the ClientAPIExecutor.
 
@@ -145,10 +147,14 @@ class ClientAPIExecutor(Executor):
                 model state and is independent of framework representation conversion.
             memory_gc_rounds (int): Force a GC cycle every N rounds (0 disables).
             cuda_empty_cache (bool): Whether to also empty the CUDA cache during memory cleanup.
+            attach_id (Optional[str]): attach only. Pre-provisioned rendezvous ID shared with
+                exactly one externally started trainer. It is a routing name, not a secret.
             attach_timeout (Optional[float]): attach only. Bound for the externally started
                 trainer to attach. None means no timeout.
             allow_reconnect (bool): attach only. Whether a trainer may re-attach to an existing
                 session after a disconnect.
+            allow_insecure_attach (bool): attach only. Explicitly allow a cleartext non-loopback
+                trainer route. Intended only for trusted development networks.
         """
         super().__init__()
 
@@ -221,12 +227,20 @@ class ClientAPIExecutor(Executor):
             )
 
         # --- attach-only knobs ---
-        if not is_attach:
+        if is_attach:
+            from nvflare.client.cell.attach import validate_attach_id
+
+            attach_id = validate_attach_id(attach_id)
+        else:
+            if attach_id is not None:
+                raise self._wrong_mode_error("attach_id", attach_id, "'attach'", execution_mode)
             if attach_timeout is not None:
                 raise self._wrong_mode_error("attach_timeout", attach_timeout, "'attach'", execution_mode)
             # Treat False and other falsy values as the unset default.
             if allow_reconnect:
                 raise self._wrong_mode_error("allow_reconnect", allow_reconnect, "'attach'", execution_mode)
+            if allow_insecure_attach:
+                raise self._wrong_mode_error("allow_insecure_attach", allow_insecure_attach, "'attach'", execution_mode)
 
         # Reject invalid bounds before they reach threading/subprocess primitives. In
         # particular, a negative Lock.acquire(timeout=...) can mean "wait forever",
@@ -273,8 +287,10 @@ class ClientAPIExecutor(Executor):
             ) from e
         self._memory_gc_rounds = memory_gc_rounds
         self._cuda_empty_cache = cuda_empty_cache
+        self._attach_id = attach_id
         self._attach_timeout = attach_timeout
         self._allow_reconnect = bool(allow_reconnect)
+        self._allow_insecure_attach = bool(allow_insecure_attach)
 
         self._backend: Optional[ClientAPIBackendSpec] = None
 
@@ -410,6 +426,10 @@ class ClientAPIExecutor(Executor):
             heartbeat_timeout=self._heartbeat_timeout,
             task_wait_timeout=self._task_wait_timeout,
             result_wait_timeout=self._result_wait_timeout,
+            attach_id=self._attach_id,
+            attach_timeout=self._attach_timeout,
+            allow_reconnect=self._allow_reconnect,
+            allow_insecure_attach=self._allow_insecure_attach,
             train_task_name=self._train_task_name,
             evaluate_task_name=self._evaluate_task_name,
             submit_model_task_name=self._submit_model_task_name,
@@ -427,7 +447,7 @@ class ClientAPIExecutor(Executor):
         if self._execution_mode == ExecutionMode.EXTERNAL_PROCESS:
             return self._create_external_process_backend()
         if self._execution_mode == ExecutionMode.ATTACH:
-            raise NotImplementedError("attach execution mode is not yet implemented in this release")
+            return self._create_attach_backend()
 
         raise ValueError(f"unexpected execution_mode {self._execution_mode!r}")
 
@@ -440,3 +460,8 @@ class ClientAPIExecutor(Executor):
         from nvflare.app_common.executors.client_api.external_process_backend import ExternalProcessBackend
 
         return ExternalProcessBackend()
+
+    def _create_attach_backend(self) -> ClientAPIBackendSpec:
+        from nvflare.app_common.executors.client_api.attach_backend import AttachBackend
+
+        return AttachBackend()

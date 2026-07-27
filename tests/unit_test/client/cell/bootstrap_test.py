@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the external_process bootstrap-config contract (nvflare/client/cell/bootstrap.py)."""
+"""Tests for Cell Client API bootstrap and attach-profile contracts."""
 
 import json
 import os
@@ -20,6 +20,7 @@ import os
 import pytest
 
 from nvflare.client.cell.bootstrap import (
+    ATTACH_EXECUTION_MODE,
     BOOTSTRAP_SCHEMA_VERSION,
     CELL_API_TYPE,
     EXTERNAL_PROCESS_EXECUTION_MODE,
@@ -39,6 +40,16 @@ CONFIG = {
     BootstrapKey.JOB_ID: "job-1",
     BootstrapKey.SITE_NAME: "site-1",
     BootstrapKey.TASK_EXCHANGE: {"train_task_name": "train"},
+}
+
+ATTACH_CONFIG = {
+    BootstrapKey.SCHEMA_VERSION: BOOTSTRAP_SCHEMA_VERSION,
+    BootstrapKey.EXECUTION_MODE: ATTACH_EXECUTION_MODE,
+    BootstrapKey.ATTACH_ID: "trainer_a",
+    BootstrapKey.SITE_NAME: "site-1",
+    BootstrapKey.CONNECT_URL: "grpc://127.0.0.1:56789",
+    BootstrapKey.CONNECTION_SECURITY: "clear",
+    BootstrapKey.JOB_WAIT_TIMEOUT: None,
 }
 
 
@@ -98,6 +109,59 @@ class TestBootstrapConfig:
 
     def test_typed_bootstrap_identifies_cell_api(self):
         assert get_bootstrap_client_api_type(CONFIG, "bootstrap.json") == CELL_API_TYPE
+        assert get_bootstrap_client_api_type(ATTACH_CONFIG, "attach.json") == CELL_API_TYPE
+
+    @pytest.mark.parametrize("field", [BootstrapKey.ATTACH_ID, BootstrapKey.SITE_NAME, BootstrapKey.CONNECT_URL])
+    def test_attach_profile_requires_rendezvous_fields(self, field):
+        config = dict(ATTACH_CONFIG)
+        del config[field]
+        with pytest.raises(ValueError, match=f"missing required field '{field}'"):
+            get_bootstrap_client_api_type(config, "attach.json")
+
+    @pytest.mark.parametrize("attach_id", ["", "has.dot", "has space", "a" * 65])
+    def test_attach_profile_rejects_bad_attach_id(self, attach_id):
+        with pytest.raises(ValueError, match="attach_id"):
+            get_bootstrap_client_api_type(
+                {**ATTACH_CONFIG, BootstrapKey.ATTACH_ID: attach_id},
+                "attach.json",
+            )
+
+    @pytest.mark.parametrize("value", [-1, "1", True])
+    def test_attach_profile_rejects_bad_job_wait_timeout(self, value):
+        with pytest.raises(ValueError, match="job_wait_timeout"):
+            get_bootstrap_client_api_type(
+                {**ATTACH_CONFIG, BootstrapKey.JOB_WAIT_TIMEOUT: value},
+                "attach.json",
+            )
+
+    def test_secure_attach_profile_requires_ca_and_consistent_secure_mode(self):
+        secure = {
+            **ATTACH_CONFIG,
+            BootstrapKey.CONNECT_URL: "grpcs://site.example:9000",
+            BootstrapKey.CONNECTION_SECURITY: "mtls",
+        }
+        with pytest.raises(ValueError, match="requires field 'ca_cert'"):
+            get_bootstrap_client_api_type(secure, "attach.json")
+        with pytest.raises(ValueError, match="secure_mode.*disagrees"):
+            get_bootstrap_client_api_type(
+                {
+                    **secure,
+                    BootstrapKey.CA_CERT: "/workspace/startup/rootCA.pem",
+                    BootstrapKey.SECURE_MODE: False,
+                },
+                "attach.json",
+            )
+        assert (
+            get_bootstrap_client_api_type(
+                {
+                    **secure,
+                    BootstrapKey.CA_CERT: "/workspace/startup/rootCA.pem",
+                    BootstrapKey.SECURE_MODE: True,
+                },
+                "attach.json",
+            )
+            == CELL_API_TYPE
+        )
 
     def test_untyped_legacy_config_is_not_a_bootstrap(self):
         assert get_bootstrap_client_api_type({"TASK_EXCHANGE": {}}, "legacy.json") is None
@@ -154,9 +218,9 @@ class TestBootstrapConfig:
             (
                 {
                     BootstrapKey.SCHEMA_VERSION: BOOTSTRAP_SCHEMA_VERSION,
-                    BootstrapKey.EXECUTION_MODE: "attach",
+                    BootstrapKey.EXECUTION_MODE: "bogus",
                 },
-                "unsupported Client API bootstrap execution_mode 'attach'",
+                "unsupported Client API bootstrap execution_mode 'bogus'",
             ),
             (
                 {
