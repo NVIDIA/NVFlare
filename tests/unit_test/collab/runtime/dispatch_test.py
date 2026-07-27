@@ -19,8 +19,8 @@ from unittest.mock import MagicMock, patch
 from nvflare.collab.api.app import ClientApp
 from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.decorators import publish
-from nvflare.collab.runtime.defs import CallReplyKey, ObjectCallKey
-from nvflare.collab.runtime.dispatch import _call_app_method, _submit_app_method
+from nvflare.collab.runtime.defs import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
+from nvflare.collab.runtime.dispatch import _call_app_method, _submit_app_method, prepare_for_remote_call
 from nvflare.fuel.f3.cellnet.cell import Adapter
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
@@ -53,6 +53,24 @@ class _ThreadCapturingClient:
     def run(self):
         self.thread_name = threading.current_thread().name
         return "result"
+
+
+def test_prepare_for_remote_call_registers_blob_callback():
+    cell = MagicMock()
+    app = MagicMock()
+    logger = MagicMock()
+    executor = MagicMock()
+
+    prepare_for_remote_call(cell, app, logger, executor)
+
+    kwargs = cell.register_blob_cb.call_args.kwargs
+    assert kwargs["channel"] == MSG_CHANNEL
+    assert kwargs["topic"] == MSG_TOPIC
+    assert callable(kwargs["blob_cb"])
+    assert "cb" not in kwargs
+    assert kwargs["app"] is app
+    assert kwargs["logger"] is logger
+    assert kwargs["executor"] is executor
 
 
 def test_remote_call_returns_secure_exception_detail():

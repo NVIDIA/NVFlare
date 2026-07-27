@@ -22,6 +22,7 @@ python -m collab.swarm.swarm --num-clients 3
 | `hello_fedavg` | The Collab API in one file: `@collab.main`, `@collab.publish`, `collab.clients.train(...)`, per-site config |
 | `async_aggregation` | In-time aggregation with a response callback |
 | `swarm` | Decentralized swarm learning with client-to-client calls |
+| [`pt_async_cifar10`](pt_async_cifar10/README.md) | Asynchronous PyTorch CIFAR-10 training with prepared logical-client shards |
 
 Every server object or module must define exactly one `@collab.main` entry
 point. A workflow with multiple stages should call them from that single entry
@@ -38,6 +39,9 @@ To use another deployment mode, execute the same recipe with `PocEnv` or
 abstraction.
 
 The NumPy examples run in a base installation; `hello_fedavg` needs PyTorch.
+`pt_async_cifar10` additionally needs torchvision and TensorBoard; follow its
+[setup and prepared-data workflow](pt_async_cifar10/README.md) before running
+the Collab recipe.
 
 For the design behind the API see the
 [Collab API design](../../docs/design/collab_api_design.md). For a step-by-step
