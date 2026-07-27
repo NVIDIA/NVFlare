@@ -579,13 +579,15 @@ draft with that real failure as the blocker rather than looping on it.
   These are NVFLARE job system arguments across recipes, algorithms, and
   frameworks. Do not declare them as generated job-local arguments, and do not
   invent alternate export flags such as `--export_only`.
-- If a generated `job.py` defines local command-line options, its local parser
-  must tolerate NVFLARE system arguments such as `--export` and `--export-dir`.
-  With `argparse`, use `parse_known_args()` or an equivalent approach. Do not
-  add local `--export` or `--export-dir` arguments, and do not let local
-  parsing reject or consume them before the NVFLARE job/export layer handles
-  export. Treat this as a generation-time requirement; validation should
-  confirm the behavior rather than discovering it through a failed export.
+- If a generated `job.py` defines local command-line options, import the
+  NVFLARE recipe API before local argument parsing. The recipe import removes
+  `--export` and `--export-dir` from `sys.argv`; the local parser must then use
+  strict parsing such as `argparse.ArgumentParser.parse_args()` and reject every
+  remaining unknown argument. Do not use `parse_known_args()` without checking
+  and rejecting its complete unknown-argument result. Do not add local
+  `--export` or `--export-dir` arguments or consume them in generated code.
+  Treat this as a generation-time requirement; validation should confirm both a
+  standard export invocation and rejection of a misspelled local option.
 - Default `<dir>` according to `runtime-output-guidance.md` unless the user
   provides an export directory.
 - If writing explicit Job API code without a recipe execution helper, call

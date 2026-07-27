@@ -496,9 +496,11 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "FL-only Client API entry point" in normalized_lightning
     assert "FL-only client entry" in skill_text
     assert "Do not branch on launch environment variables" in normalized_skill
-    assert "Load and apply the shared validation ladder" in normalized_skill
+    assert "Load and apply `../nvflare-shared/references/validation-evidence.md`" in normalized_skill
     assert "generated client's actual parser" in normalized_skill
-    assert "Validate `TrainingArguments`/`SFTConfig` fields" in normalized_skill
+    assert "actual parser and actual dataclass types" in normalized_skill
+    assert "Version-check only fields claimed to come from framework" in normalized_skill
+    assert "Preserve source-defined subclass fields" in normalized_skill
     assert "Export only with `python job.py --export --export-dir`" in normalized_skill
     assert "client imports are not enough for per-site exports" in normalized_skill
     assert "generated or project-local server-only model module" in normalized_skill
@@ -514,11 +516,17 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "client import is not enough for per-site exports" in conversion_text
     assert "third-party class paths stay runtime dependencies" in normalized_conversion
     assert "server persistor will fail to construct the initial model" in normalized_conversion
-    assert "client entry's actual argument mechanism in parse-only mode" in normalized_validation
+    assert (
+        "client entry's actual argument mechanism and actual dataclass types in parse-only mode"
+        in normalized_validation
+    )
     assert "generated client uses `HfArgumentParser`" in validation_text
+    assert "same project and framework dataclass types" in normalized_validation
     assert "preserves `argparse` or another parser" in validation_text
-    assert "reject any unused argument" in normalized_validation
-    assert "absent from the installed Transformers/TRL version" in normalized_validation
+    assert "reject every unused argument" in normalized_validation
+    assert "only for fields claimed to belong to a framework" in normalized_validation
+    assert "project-defined subclass field" in normalized_validation
+    assert "actual parser accepts it" in normalized_validation
     assert "one-round topology smoke test with the requested site count" in normalized_validation
     assert "full-model validation blocked by host capacity" in normalized_validation
     assert "estimate server exchange/offload memory" in validation_text
@@ -533,6 +541,9 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "Do not accept a generated job-local export alias such as `--export_only`" in normalized_shared_validation
     assert "report it as a generated-code violation" in normalized_shared_validation
     assert "invent alternate export flags such as `--export_only`" in normalized_shared
+    assert "import the NVFLARE recipe API before local argument parsing" in normalized_shared
+    assert "`argparse.ArgumentParser.parse_args()`" in normalized_shared
+    assert "rejecting its complete unknown-argument result" in normalized_shared
     assert "standalone mode" in validation_text
     assert "model.py` is server-only" in validation_text
     assert "class_path`, train script, custom aggregator" in normalized_shared

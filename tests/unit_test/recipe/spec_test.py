@@ -14,6 +14,7 @@
 
 """Tests for recipe utilities and ExecEnv script validation."""
 
+import argparse
 import importlib
 import json
 import logging
@@ -651,6 +652,38 @@ def test_recipe_spec_import_strips_export_dir_equals_form(monkeypatch):
 
     assert sys.argv == ["python", "job.py", "--other"]
     assert spec_module._peek_recipe_args() == (True, "out")
+
+
+@pytest.mark.parametrize(
+    ("local_flag", "should_parse"),
+    [
+        ("--model-name", True),
+        ("--modle-name", False),
+    ],
+)
+def test_recipe_export_flags_allow_strict_local_argument_parsing(monkeypatch, local_flag, should_parse):
+    import sys
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["job.py", "--export", "--export-dir", "/tmp/out", local_flag, "Qwen/Qwen2.5-0.5B"],
+    )
+
+    import nvflare.recipe.spec as spec_module
+
+    importlib.reload(spec_module)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model-name")
+
+    if should_parse:
+        args = parser.parse_args()
+        assert args.model_name == "Qwen/Qwen2.5-0.5B"
+        assert spec_module._peek_recipe_args() == (True, "/tmp/out")
+    else:
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args()
+        assert exc_info.value.code == 2
 
 
 def test_consume_recipe_args_dangling_export_dir_does_not_raise(monkeypatch):
