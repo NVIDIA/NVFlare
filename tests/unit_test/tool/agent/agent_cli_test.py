@@ -302,6 +302,19 @@ def test_agent_inspect_json_reports_static_framework_evidence(capsys, tmp_path):
     assert payload["data"]["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
+def test_agent_inspect_json_reports_deep_ast_without_aborting(capsys, tmp_path):
+    script = tmp_path / "generated.py"
+    script.write_text("x = " + "+".join(["a"] * 600) + "\n", encoding="utf-8")
+
+    exit_code = _run_main(["nvflare", "agent", "inspect", str(script), "--format", "json"])
+
+    assert exit_code == 0
+    payload = _load_single_stdout_json(capsys.readouterr())
+    _assert_envelope_shape(payload, "ok")
+    assert payload["data"]["classification_incomplete"] is True
+    assert [finding["code"] for finding in payload["data"]["findings"]] == ["PYTHON_AST_DEPTH_LIMIT"]
+
+
 def test_agent_inspect_json_reports_lightning_evidence_and_recommends_lightning_skill(capsys, tmp_path):
     script = tmp_path / "train_lightning.py"
     script.write_text(
