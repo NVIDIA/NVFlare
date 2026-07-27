@@ -2,7 +2,8 @@
 
 Use this reference after selecting a PyTorch-family recipe and running
 `nvflare recipe show <recipe-name> --format json`. It is the canonical owner of
-recipe-capability handling for both plain PyTorch and PyTorch Lightning.
+recipe-capability handling for plain PyTorch, PyTorch Lightning, and Hugging
+Face Trainer conversions.
 
 ## Derive A Capability Profile
 
@@ -75,6 +76,16 @@ missing, ask or fail closed rather than dropping the source process model.
 Multiple requested GPUs without evidence of how the source uses them is not
 enough to choose a process model; inspect the source, then ask or fail closed if
 it remains ambiguous.
+
+## Simulator Concurrency
+
+Do not reduce simulator `num_threads` below the requested client count as a
+speculative memory workaround for an in-process Client API executor with tensor
+offload. Use a lower thread count only when the selected execution mode
+documents that behavior and a bounded smoke test verifies it. After partial
+aggregation, unexplained client disconnect, or process loss, inspect logs and
+reduce the model/data workload or report a resource blocker. Do not retry the
+same large payload with guessed concurrency settings.
 
 ## Best-Model Filename
 

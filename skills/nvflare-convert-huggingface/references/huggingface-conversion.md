@@ -67,12 +67,17 @@ global parameters, and sends the result from rank 0.
 
 ## Recipe Integration
 
-Use the PyTorch recipe family. For FedAvg, use an explicit importable model
-configuration and preserve tensor dtypes:
+Use the PyTorch recipe family. Run `nvflare recipe show <recipe-name> --format
+json`, then load
+`../../nvflare-shared/references/pytorch-family-recipe-construction.md` before
+constructing the recipe. That shared reference owns capability checks,
+tensor-native transport and decomposer registration, disk offload, external
+process selection, and common metric-selection policy.
+
+For FedAvg, start with an explicit importable model configuration:
 
 ```python
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.client.config import ExchangeFormat
 
 recipe = FedAvgRecipe(
     name="hf-trainer",
@@ -84,16 +89,12 @@ recipe = FedAvgRecipe(
     num_rounds=num_rounds,
     train_script="client.py",
     train_args=train_args,
-    server_expected_format=ExchangeFormat.PYTORCH,
-    enable_tensor_disk_offload=True,
-    key_metric=key_metric,
 )
 ```
 
-Confirm every argument through `nvflare recipe show fedavg-pt --format json`.
-Leave `launch_external_process` unset for single-process Trainer scripts. Set
-`launch_external_process=True` only when distributed/external-launch evidence
-requires it and the selected recipe exposes the parameter.
+Add optional recipe arguments and decomposers only as directed by the selected
+recipe's capability profile and the shared construction reference. Do not copy
+the FedAvg constructor shape to another recipe.
 Quote every user-controlled path or model identifier included in the
 `train_args` command string.
 

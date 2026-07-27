@@ -146,6 +146,6 @@ plain PyTorch; the Lightning conversion reference for Lightning; the Hugging
 Face conversion reference for Trainer workflows). For common PyTorch-family
 recipe parameters such as `key_metric`, `launch_external_process`,
 `server_expected_format`, and `enable_tensor_disk_offload`, follow
-`pytorch-family-recipe-parameters.md`. Export handling is shared: follow
+`pytorch-family-recipe-construction.md`. Export handling is shared: follow
 `conversion-workflow.md` for `--export`, `--export-dir`, and local command-line
 parser behavior.

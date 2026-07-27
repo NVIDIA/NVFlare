@@ -263,7 +263,7 @@ def test_lightning_training_metrics_have_one_canonical_delivery_bridge():
     assert client_template.index("trainer.validate") < client_template.index("trainer.fit")
     assert "A terminal `Finished` state without that metric is incomplete validation" in normalized_validation
     assert "return them in the aggregated `FLModel.metrics`" in normalized_workflow
-    assert "metrics=averaged_metrics or None" in aggregator_template
+    assert "metrics=metrics or None" in aggregator_template
 
 
 def test_pytorch_recipe_capability_profiles_include_non_fedavg_without_disk_offload():
@@ -470,9 +470,9 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     lightning_conversion = repo_root.joinpath(
         "skills/nvflare-convert-lightning/references/lightning-conversion.md"
     ).read_text(encoding="utf-8")
-    recipe_text = repo_root.joinpath("skills/nvflare-shared/references/pytorch-family-recipe-parameters.md").read_text(
-        encoding="utf-8"
-    )
+    recipe_text = repo_root.joinpath(
+        "skills/nvflare-shared/references/pytorch-family-recipe-construction.md"
+    ).read_text(encoding="utf-8")
     normalized_skill = " ".join(skill_text.split())
     normalized_conversion = " ".join(conversion_text.split())
     normalized_validation = " ".join(validation_text.split())
@@ -494,8 +494,10 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "third-party class paths stay runtime dependencies" in normalized_lightning
     assert "FL-only Client API entry point" in normalized_pytorch
     assert "FL-only Client API entry point" in normalized_lightning
-    assert "callback_metrics` prove local logging, not server delivery" in normalized_lightning
-    assert "external-process/DDP path does not" in normalized_lightning
+    assert (
+        "establish Lightning-local metrics but do not by themselves establish server delivery" in normalized_lightning
+    )
+    assert "`MetaKey.INITIAL_METRICS` before `trainer.fit(...)`" in normalized_lightning
     assert "FL-only client entry" in skill_text
     assert "Do not branch on launch environment variables" in normalized_skill
     assert "Load and apply `../nvflare-shared/references/validation-evidence.md`" in normalized_skill
@@ -549,7 +551,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "standalone mode" in validation_text
     assert "model.py` is server-only" in validation_text
     assert "class_path`, train script, custom aggregator" in normalized_shared
-    assert "Prefer preserving source metric names" in normalized_recipe
+    assert "Its name must exactly match one key delivered by the client" in normalized_recipe
     assert "Do not reduce simulator `num_threads` below the requested client count" in recipe_text
     assert "guessed concurrency settings" in normalized_recipe
 
