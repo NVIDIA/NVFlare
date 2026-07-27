@@ -15,7 +15,7 @@
 
 Covers:
   1. _has_lazy_refs() correctly detects LazyDownloadRef in nested structures.
-  2. Swarm resolves learner input unless ClientAPIExecutor uses external_process.
+  2. Swarm resolves learner input according to the local executor and aggregation role.
   3. _scatter() preserves its local copy and requests PASS_THROUGH for remote tasks.
 """
 import unittest
@@ -25,6 +25,7 @@ import numpy as np
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.shareable import ReservedHeaderKey
+from nvflare.app_common.ccwf.common import Constant
 from nvflare.app_common.ccwf.swarm_client_ctl import SwarmClientController
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor, ExecutionMode
 from nvflare.fuel.utils.fobs import FOBSContextKey
@@ -124,9 +125,10 @@ class TestPrepareLearnTaskData(unittest.TestCase):
     """Swarm owns keep-versus-resolve policy at the learner boundary."""
 
     @staticmethod
-    def _prepare(task_data, learn_executor):
+    def _prepare(task_data, learn_executor, aggr="site-2"):
         ctl = _make_controller()
         ctl.learn_executor = learn_executor
+        task_data.set_header(Constant.AGGREGATOR, aggr)
 
         resolve_calls = []
         resolved_result = _make_shareable_with_real_arrays()
@@ -141,16 +143,30 @@ class TestPrepareLearnTaskData(unittest.TestCase):
         controller_data, learner_data = ctl._prepare_learn_task_data(task_data, fl_ctx)
         return resolve_calls, resolved_result, controller_data, learner_data
 
-    def test_external_process_keeps_refs_for_learner(self):
+    def test_external_process_non_aggregator_leaves_refs_for_trainer_as_sole_consumer(self):
         task_data = _make_shareable_with_lazy_refs()
         executor = ClientAPIExecutor(execution_mode=ExecutionMode.EXTERNAL_PROCESS, command="python train.py")
 
         resolve_calls, resolved, controller_data, learner_data = self._prepare(task_data, executor)
+        self.assertEqual(resolve_calls, [])
+        self.assertIsNot(controller_data, resolved)
+        self.assertIs(controller_data, task_data)
+        self.assertIs(learner_data, task_data)
+
+    def test_external_process_aggregator_resolves_once_for_controller_and_trainer(self):
+        task_data = _make_shareable_with_lazy_refs()
+        executor = ClientAPIExecutor(execution_mode=ExecutionMode.EXTERNAL_PROCESS, command="python train.py")
+
+        resolve_calls, resolved, controller_data, learner_data = self._prepare(
+            task_data,
+            executor,
+            aggr="site-1",
+        )
         self.assertEqual(len(resolve_calls), 1)
         self.assertIs(resolve_calls[0][0], task_data)
         self.assertFalse(resolve_calls[0][1]["enable_tensor_disk_offload"])
         self.assertIs(controller_data, resolved)
-        self.assertIs(learner_data, task_data)
+        self.assertIs(learner_data, resolved)
 
     def test_in_process_resolves_refs_for_learner(self):
         task_data = _make_shareable_with_lazy_refs()

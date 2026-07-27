@@ -784,12 +784,19 @@ class SwarmClientController(ClientSideController):
     def _prepare_learn_task_data(self, task_data: Shareable, fl_ctx: FLContext) -> tuple[Shareable, Shareable]:
         """Prepare the controller and learner views of an incoming learn task.
 
-        The controller always needs an in-memory model for GLOBAL_MODEL bookkeeping.
-        Only the external-process Client API backend has a following Cell hop that
-        can materialize LazyDownloadRef objects. All other executors are treated as
-        in-process and receive the resolved in-memory view.
+        An external-process trainer on a non-aggregation client is the sole
+        consumer of the incoming transport refs, so both views remain lazy. If
+        this client is the aggregator, the controller needs an in-memory base
+        model and resolves the task once; the external trainer receives that same
+        resolved payload instead of trying to consume the source refs a second
+        time. All other executors are treated as in-process and receive the
+        resolved in-memory view.
         """
         if not self._has_lazy_refs(task_data):
+            return task_data, task_data
+
+        aggr = task_data.get_header(Constant.AGGREGATOR)
+        if self._learn_executor_accepts_lazy_refs() and self.me != aggr:
             return task_data, task_data
 
         in_memory_task_data = self._resolve_lazy_refs(
@@ -797,8 +804,6 @@ class SwarmClientController(ClientSideController):
             fl_ctx,
             enable_tensor_disk_offload=False,
         )
-        if self._learn_executor_accepts_lazy_refs():
-            return in_memory_task_data, task_data
         return in_memory_task_data, in_memory_task_data
 
     def _resolve_lazy_refs(
