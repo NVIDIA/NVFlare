@@ -26,6 +26,7 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.streaming.stream_utils import callback_thread_pool
 from nvflare.fuel.f3.streaming.transfer_outcome import (  # noqa: F401 (re-exported legacy names)
     DownloadStatus,
     RefOutcome,
@@ -614,9 +615,9 @@ class ProduceRC:
 def _invoke_cb_safely(logger, what: str, cb, *args, **kwargs):
     """Invoke a user callback without letting its exception escape.
 
-    Termination callbacks run on the transaction monitor thread; a propagating
-    exception would kill that thread and stop all future transactions from
-    finishing or expiring, and would skip outcome recording and source release.
+    Termination callbacks run on a transaction-termination path (for example the
+    monitor or the receiver-confirm handler). A propagating exception would skip
+    outcome recording and source release and, on the monitor path, kill the monitor.
     """
     try:
         cb(*args, **kwargs)
@@ -865,8 +866,8 @@ class _Transaction:
         """Settles the transaction; returns the aggregate TransferOutcome.
 
         COMPLETED only when every expected receiver succeeded — FINISHED alone does
-        not certify that. Callback exceptions never propagate (they would kill the
-        monitor thread and skip source release). on_outcome (records the outcome,
+        not certify that. Callback exceptions never propagate (they would escape the
+        termination path and skip source release). on_outcome (records the outcome,
         releasing waiters) is invoked LAST, so acting on waiter.wait() returning can
         never preempt the callback chain or source release. Runs exactly once per
         transaction: every terminator unlinks it from _tx_table first.
@@ -946,8 +947,9 @@ class _Transaction:
             if outcome is not None and self.outcome_cb:
                 _invoke_cb_safely(self.logger, f"transfer outcome callback for tx {self.tid}", self.outcome_cb, outcome)
         except Exception as ex:
-            # the ceremony must never raise: a propagating exception would kill the
-            # monitor thread and skip the terminator's marker sync
+            # the ceremony must never raise: a propagating exception would escape the
+            # termination path and skip the terminator's marker sync (and would kill the
+            # transaction monitor when settlement originated there)
             self.logger.error(f"settlement of tx {self.tid} raised: {secure_format_exception(ex)}")
         finally:
             # PHASE: source release -- independent of everything above, so no failure
@@ -1218,6 +1220,52 @@ class DownloadService:
         if tx:
             tx.transaction_done(TransactionDoneStatus.DELETED, on_outcome=functools.partial(cls._record_outcome, tx=tx))
             cls._sync_termination_marker(tx)
+
+    @classmethod
+    def _finish_transaction_if_complete(cls, tx: _Transaction) -> bool:
+        """Atomically retire and schedule settlement for a completed transaction.
+
+        Receiver confirmations are terminal receiver truth. Waiting for the periodic
+        monitor to notice the last confirmation needlessly delays the outcome (and source
+        release) by up to one monitor interval. This helper gives the confirmation path the
+        same retirement/settlement sequence as the monitor while keeping delete, timeout,
+        shutdown, and concurrent confirmations single-winner under ``_tx_lock``.
+        """
+        with cls._tx_lock:
+            if cls._tx_table.get(tx.tid) is not tx or not tx.is_finished():
+                return False
+            cls._delete_tx(tx, tombstone_finished_refs=True)
+
+        cls._submit_finished_settlement(tx)
+        return True
+
+    @classmethod
+    def _submit_finished_settlement(cls, tx: _Transaction) -> None:
+        """Run callbacks/release off the Cell request thread after atomic retirement.
+
+        FINISHED callbacks use the shared streaming callback pool. They must not block:
+        a blocking callback consumes capacity used by the streaming data path.
+        """
+        try:
+            future = callback_thread_pool.submit(cls._settle_finished_transaction, tx)
+        except RuntimeError:
+            # The shared executor can race its process-wide shutdown between the
+            # stopped check and ThreadPoolExecutor.submit(). Complete cleanup rather
+            # than strand this transaction's source and termination marker.
+            future = None
+        if future is None:
+            # CheckedExecutor deliberately ignores submissions after shutdown. This
+            # edge is already in process teardown, where preserving cleanup is more
+            # important than keeping the request callback asynchronous.
+            cls._settle_finished_transaction(tx)
+
+    @classmethod
+    def _settle_finished_transaction(cls, tx: _Transaction) -> None:
+        tx.transaction_done(
+            TransactionDoneStatus.FINISHED,
+            on_outcome=functools.partial(cls._record_outcome, tx=tx),
+        )
+        cls._sync_termination_marker(tx)
 
     @classmethod
     def shutdown(cls):
@@ -1492,6 +1540,11 @@ class DownloadService:
                     ref.emit_progress(receiver_id=requester, state=TransferProgressState.ACTIVE, force=True)
                     body = {_PropKey.STATUS: rc, _PropKey.CONFIRM_EXPECTED: True, _PropKey.CONFIRM_NONCE: serve_nonce}
                 else:
+                    # A legacy/confirmation-disabled terminal serve is receiver truth,
+                    # but it cannot settle from this request callback: exposing the
+                    # producer-side outcome here could let the producer tear down its Cell
+                    # before this EOF/ERROR reply leaves the request path. The periodic
+                    # monitor is the post-reply settlement backstop for legacy peers.
                     ref.emit_progress(
                         receiver_id=requester,
                         state=TransferProgressState.COMPLETED if rc == ProduceRC.EOF else TransferProgressState.FAILED,
@@ -1542,13 +1595,22 @@ class DownloadService:
             cls._logger.debug(f"late confirmation for unknown ref {rid} from {requester} dropped")
             return make_reply(ReturnCode.OK)
         assert isinstance(ref, _Ref)
+        accepted = False
         try:
             # deliberately no unconditional mark_active/mark_receiver_active: a stale or
             # unsolicited confirm must not extend the transaction TTL nor reset idle budgets
-            if ref.obj_confirmed(requester, status, nonce):
+            accepted = ref.obj_confirmed(requester, status, nonce)
+            if accepted:
                 ref.mark_active()
         finally:
             ref.tx.end_op()
+
+        # A transaction may settle only after this confirmation operation leaves the
+        # activity gate: transaction_done() closes and drains that gate. The atomic live
+        # identity check in the helper makes this safe against monitor/delete/shutdown and
+        # against another final confirmation racing this one.
+        if accepted:
+            cls._finish_transaction_if_complete(ref.tx)
         return make_reply(ReturnCode.OK)
 
     @classmethod
@@ -1661,6 +1723,33 @@ class Consumer(ABC):
         pass
 
 
+def request_download_chunk(
+    from_fqcn: str,
+    ref_id: str,
+    state: dict,
+    per_request_timeout: float,
+    cell: Cell,
+    abort_signal: Signal = None,
+    secure=False,
+    optional=False,
+):
+    """Request one DownloadService chunk from a remote producer."""
+
+    payload = {_PropKey.REF_ID: ref_id}
+    if state is not None:
+        payload[_PropKey.STATE] = state
+    return cell.send_request(
+        channel=OBJ_DOWNLOADER_CHANNEL,
+        target=from_fqcn,
+        topic=OBJ_DOWNLOADER_TOPIC,
+        request=new_cell_message(headers={}, payload=payload),
+        timeout=per_request_timeout,
+        secure=secure,
+        optional=optional,
+        abort_signal=abort_signal,
+    )
+
+
 def download_object(
     from_fqcn: str,
     ref_id: str,
@@ -1767,21 +1856,17 @@ def download_object(
     _emit_progress("start", force=True)
 
     while True:
-        # Build a fresh request each iteration (including retries)
-        # to avoid re-encoding an already-encoded message.
+        start_time = time.time()
         request_payload = {_PropKey.REF_ID: ref_id}
         if confirm_enabled:
             request_payload[_PropKey.CONFIRM_CAPABLE] = True
         if current_state is not None:
             request_payload[_PropKey.STATE] = current_state
-        request = new_cell_message(headers={}, payload=request_payload)
-
-        start_time = time.time()
         reply = cell.send_request(
             channel=OBJ_DOWNLOADER_CHANNEL,
             target=from_fqcn,
             topic=OBJ_DOWNLOADER_TOPIC,
-            request=request,
+            request=new_cell_message(headers={}, payload=request_payload),
             timeout=per_request_timeout,
             secure=secure,
             optional=optional,

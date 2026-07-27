@@ -337,7 +337,7 @@ class TestTensorServerStreamer:
     @patch("nvflare.app_opt.tensor_stream.server.time")
     def test_wait_sending_task_data_all_clients(
         self,
-        mock_time,
+        mock_time_module,
         start_time,
         num_sent,
         num_skipped,
@@ -358,14 +358,14 @@ class TestTensorServerStreamer:
         streamer.system_panic = Mock()
 
         if time_progression:
-            mock_time.time.side_effect = time_progression
+            mock_time_module.time.side_effect = time_progression
 
         # Execute the method
         streamer.wait_sending_task_data_all_clients(num_clients, mock_fl_context)
 
         if should_timeout:
             # Should have called sleep and system_panic due to timeout
-            mock_time.sleep.assert_called_with(0.1)
+            mock_time_module.sleep.assert_called_with(0.1)
             streamer.system_panic.assert_called_once()
             args = streamer.system_panic.call_args[0]
             assert "Timeout waiting for all clients" in args[0]
@@ -373,7 +373,7 @@ class TestTensorServerStreamer:
             assert f"skipped {num_skipped}" in args[0]
         else:
             # Should sleep once and then exit since all clients are processed
-            mock_time.sleep.assert_called_once_with(0.1)
+            mock_time_module.sleep.assert_called_once_with(0.1)
             streamer.system_panic.assert_not_called()
 
     @pytest.mark.parametrize(

@@ -309,6 +309,20 @@ Below is a table overview of key Client APIs.
      - Patches the PyTorch Lightning Trainer for usage with FLARE.
      - :func:`patch<nvflare.app_opt.lightning.api.patch>`
 
+.. list-table:: HuggingFace APIs
+   :widths: 25 25 50
+   :header-rows: 1
+
+   * - API
+     - Description
+     - API Doc Link
+   * - patch
+     - Patches a HuggingFace ``Trainer`` or TRL ``SFTTrainer`` for usage with FLARE.
+     - :func:`patch<nvflare.app_opt.hf.api.patch>`
+   * - is_running
+     - Coordinates the FL loop for a patched HuggingFace trainer.
+     - :func:`is_running<nvflare.client.hf.is_running>`
+
 .. list-table:: Metrics Logger
    :widths: 25 25 50
    :header-rows: 1
@@ -346,6 +360,7 @@ Additional Resources
 
 * Client API Module: :mod:`nvflare.client.api` - Complete API reference
 * PyTorch Lightning API: :mod:`nvflare.app_opt.lightning.api` - Lightning-specific integration
+* HuggingFace Client API: :ref:`hf_client_api` - HuggingFace Trainer integration guide
 * Job Recipe Guide: :ref:`job_recipe` - How to define and run FL jobs
 
 **Guides:**
@@ -409,11 +424,12 @@ For complete working examples of using Client API with Job Recipes across differ
 - NumPy: :github_nvflare_link:`hello-numpy <examples/hello-world/hello-numpy>` - Basic FL concepts
 - PyTorch Lightning: :github_nvflare_link:`hello-lightning <examples/hello-world/hello-lightning>` - Lightning integration
 - TensorFlow: :ref:`hello_tf_job_api` - MNIST classification
+- HuggingFace Trainer: :github_nvflare_link:`hello-huggingface <examples/hello-world/hello-huggingface>` - Qwen SFT/PEFT with HuggingFace Client API
 - Flower: :github_nvflare_link:`hello-flower <examples/hello-world/hello-flower>` - Flower on FLARE
 
 **Advanced Examples:**
 
-- HuggingFace Transformers: :github_nvflare_link:`llm_hf <examples/llm_hf>` - Large language model training
+- HuggingFace LLM tuning: :github_nvflare_link:`llm_hf <examples/advanced/llm_hf>` - Large-model SFT/PEFT, quantization, and multi-GPU patterns
 - XGBoost: :github_nvflare_link:`xgboost examples <examples/advanced/xgboost>` - Tree-based federated learning
 - Scikit-learn: :github_nvflare_link:`sklearn-linear <examples/advanced/sklearn-linear>`, :github_nvflare_link:`sklearn-kmeans <examples/advanced/sklearn-kmeans>`, :github_nvflare_link:`sklearn-svm <examples/advanced/sklearn-svm>` - Traditional ML algorithms
 

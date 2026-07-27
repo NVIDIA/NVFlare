@@ -170,7 +170,8 @@ ScriptRunner args:
 
 * ``script``: the script to run, will automatically be added to the custom folder.
 * ``script_args``: arguments appended to the end of script.
-* ``launch_external_process``: two modes, default in-process (launch_external_process=False) and ex-process (launch_external_process=True).
+* ``launch_external_process``: selects the ClientAPIExecutor backend: default in-process
+  (``False``) or external-process (``True``).
 * ``command``: in the ex-process mode, command is prepended to the script (defaults to "python3").
 * ``framework``: determines what :class:`FrameworkType<nvflare.job_config.script_runner.FrameworkType>` to use for the script.
 
@@ -196,9 +197,10 @@ Example:
   job.to(external_process_runner, "site-2", tasks=["train"])
 
 
-For more details on how the ScriptRunner internally configures the ``InProcessClientAPIExecutor`` or ``ClientAPILauncherExecutor``, refer to its
+For more details on how ScriptRunner configures ``ClientAPIExecutor`` with an in-process or external-process backend, refer to its
 :func:`add_to_fed_job<nvflare.job_config.script_runner.ScriptRunner.add_to_fed_job>` implementation.
-A dictionary of component ids added is also returned to be used if needed.
+Code that passes ``pipe_connect_type`` explicitly or supplies a custom ``task_pipe`` must use
+``BaseScriptRunner``; ``ScriptRunner`` rejects these arguments.
 
 
 Executor

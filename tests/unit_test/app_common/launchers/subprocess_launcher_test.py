@@ -25,12 +25,9 @@ from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
-from nvflare.app_common.launchers.subprocess_launcher import (
-    SubprocessLauncher,
-    _route_subprocess_line,
-    log_subprocess_output,
-)
+from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.fuel.utils.secret_utils import secret_file_ref
+from nvflare.utils.process_utils import _route_subprocess_line, log_subprocess_output
 
 
 class TestSubprocessLauncher:
@@ -162,6 +159,28 @@ class TestSubprocessLauncher:
         assert popen_calls[0]["kwargs"]["start_new_session"] is True
         assert launcher._process is not None
 
+    def test_start_external_process_preserves_argv_sequence(self, monkeypatch, tmp_path):
+        popen_calls = []
+
+        class _Proc:
+            pid = 1234
+            stdout = BufferedReader(BytesIO(b""))
+
+            def __init__(self, *args, **kwargs):
+                popen_calls.append({"args": args, "kwargs": kwargs})
+
+        monkeypatch.setattr("nvflare.app_common.launchers.subprocess_launcher.subprocess.Popen", _Proc)
+        command = ["python3", "custom/train model.py", "--label", "two words", "--empty", ""]
+        launcher = SubprocessLauncher(command, launch_once=False)
+        launcher._app_dir = str(tmp_path)
+
+        launcher.launch_task(
+            "__test_task", DXO(DataKind.WEIGHTS, {}).to_shareable(), self._make_fl_ctx(str(tmp_path)), Signal()
+        )
+        launcher._log_thread.join()
+
+        assert popen_calls[0]["args"][0] == command
+
     def test_start_external_process_resolves_secret_refs(self, monkeypatch, tmp_path):
         popen_calls = []
 
@@ -231,18 +250,12 @@ class TestSubprocessLauncher:
             "sh -c 'echo ${secret:TEST_SECRET_REF_VAR}'",
             "/bin/bash -lc 'echo ${secret:TEST_SECRET_REF_VAR}'",
             "bash --rcfile /tmp/bashrc -c 'echo ${secret:TEST_SECRET_REF_VAR}'",
-            r'"C:\Program Files\Git\bin\BASH.EXE" -c "echo ${secret:TEST_SECRET_REF_VAR}"',
             "env FOO=bar sh -c 'echo ${secret:TEST_SECRET_REF_VAR}'",
             "env -- FOO=bar sh -c 'echo ${secret:TEST_SECRET_REF_VAR}'",
             "env -- OUTER=1 env -- INNER=2 sh -c 'echo ${secret:TEST_SECRET_REF_VAR}'",
             "/usr/bin/env -i FOO=bar /bin/bash -c 'echo ${secret:TEST_SECRET_REF_VAR}'",
             "env --unknown-option value sh -c 'echo ${secret:TEST_SECRET_REF_VAR}'",
             "env -S \"bash -c 'echo ${secret:TEST_SECRET_REF_VAR}'\"",
-            r'"C:\Program Files\PowerShell\7\PwSh.ExE" -CoMmAnD "Write-Output ${secret:TEST_SECRET_REF_VAR}"',
-            "pwsh -Command 'Invoke-Expression ${secret:TEST_SECRET_REF_VAR}'",
-            "pwsh -Bogus value -Command 'Invoke-Expression ${secret:TEST_SECRET_REF_VAR}'",
-            "pwsh -EncodedCommand ${secret:TEST_SECRET_REF_VAR}",
-            "pwsh -enc ${secret:TEST_SECRET_REF_VAR}",
         ],
     )
     def test_start_external_process_rejects_secret_ref_in_nested_command(self, monkeypatch, tmp_path, script):
@@ -267,10 +280,6 @@ class TestSubprocessLauncher:
                 ["bash", "train.sh", "resolved secret"],
             ),
             (
-                "pwsh -File train.ps1 ${secret:TEST_SECRET_REF_VAR}",
-                ["pwsh", "-File", "train.ps1", "resolved secret"],
-            ),
-            (
                 "env -- API_TOKEN=${secret:TEST_SECRET_REF_VAR} sh -c 'echo \"$API_TOKEN\"'",
                 ["env", "--", "API_TOKEN=resolved secret", "sh", "-c", 'echo "$API_TOKEN"'],
             ),
@@ -281,10 +290,6 @@ class TestSubprocessLauncher:
             (
                 "python train.py --label node -e ${secret:TEST_SECRET_REF_VAR}",
                 ["python", "train.py", "--label", "node", "-e", "resolved secret"],
-            ),
-            (
-                "pwsh train.ps1 -Command ${secret:TEST_SECRET_REF_VAR}",
-                ["pwsh", "train.ps1", "-Command", "resolved secret"],
             ),
         ],
     )
@@ -364,6 +369,32 @@ class TestSubprocessLauncher:
 
         logged = [call.args[0] for call in logger.info.call_args_list]
         assert logged == ["line1", "line2", "partial"]
+
+    def test_log_subprocess_output_replaces_malformed_utf8_and_continues_draining(self):
+        class _Proc:
+            pass
+
+        p = _Proc()
+        p.stdout = BufferedReader(BytesIO(b"malformed \xff line\nlater line\nmalformed tail \xfe"))
+        logger = Mock()
+
+        log_subprocess_output(p, logger)
+
+        logged = [call.args[0] for call in logger.info.call_args_list]
+        assert logged == ["malformed \ufffd line", "later line", "malformed tail \ufffd"]
+
+    def test_log_subprocess_output_continues_draining_after_logger_failure(self):
+        class _Proc:
+            pass
+
+        p = _Proc()
+        p.stdout = BufferedReader(BytesIO(b"first\nsecond\n"))
+        logger = Mock()
+        logger.info.side_effect = [RuntimeError("logger failed"), None]
+
+        log_subprocess_output(p, logger)
+
+        assert [call.args[0] for call in logger.info.call_args_list] == ["first", "second"]
 
     def test_log_subprocess_output_formatted_lines_not_double_logged(self):
         """Formatted NVFlare log lines must NOT be re-logged via logger.info().

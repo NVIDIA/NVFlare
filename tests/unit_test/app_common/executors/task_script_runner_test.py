@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import builtins
 import os
 import shutil
 import sys
@@ -158,6 +159,21 @@ class TestTaskScriptRunner(unittest.TestCase):
 
         assert sys.argv is original_argv
 
+    def test_run_skips_script_when_runtime_was_already_released(self):
+        wrapper = TaskScriptRunner(
+            custom_dir=self.nvflare_root,
+            script_path="nvflare/cli.py",
+            script_args="--api_key ${secret:TEST_UNSET_SECRET_VAR}",
+            redirect_print_to_log=False,
+        )
+        wrapper.release_runtime()
+        os.environ.pop("TEST_UNSET_SECRET_VAR", None)
+
+        with patch("nvflare.app_common.executors.task_script_runner.runpy.run_path") as mock_run_path:
+            wrapper.run()
+
+        mock_run_path.assert_not_called()
+
     def test_app_scripts_with_sub_dirs1(self):
         # curr_dir = os.getcwd()
         script_path = "nvflare/__init__.py"
@@ -228,6 +244,32 @@ class TestTaskScriptRunner(unittest.TestCase):
             wrapper.run()
         finally:
             sys.path = old_sys_path
+
+    def test_run_redirects_print_from_imported_module(self):
+        old_sys_path = sys.path.copy()
+        original_print = builtins.print
+        helper_module = "task_script_runner_print_helper"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            helper_path = os.path.join(temp_dir, f"{helper_module}.py")
+            script_path = os.path.join(temp_dir, "train.py")
+            with open(helper_path, "w", encoding="utf-8") as helper_file:
+                helper_file.write('print("helper output")\n')
+            with open(script_path, "w", encoding="utf-8") as script_file:
+                script_file.write(f'import {helper_module}\nprint("script output")\n')
+
+            sys.path.insert(0, temp_dir)
+            try:
+                wrapper = TaskScriptRunner(custom_dir=temp_dir, script_path="train.py")
+                with patch.object(wrapper.logger, "info") as mock_log:
+                    wrapper.run()
+
+                mock_log.assert_any_call("helper output")
+                mock_log.assert_any_call("script output")
+                assert builtins.print is original_print
+            finally:
+                sys.modules.pop(helper_module, None)
+                sys.path[:] = old_sys_path
 
     def test_run_scripts_with_sub_dirs2(self):
         old_sys_path = sys.path
