@@ -2425,6 +2425,127 @@ def test_inspect_class_callable_alias_preserves_identity(tmp_path, framework, so
 
 
 @pytest.mark.parametrize(
+    ("framework", "source_prefix", "activity"),
+    [
+        pytest.param(
+            "huggingface",
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n",
+            "trainer.train()\n",
+            id="huggingface",
+        ),
+        pytest.param(
+            "pytorch_lightning",
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n",
+            "trainer.fit(model)\n",
+            id="lightning",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "class_body",
+    [
+        pytest.param(
+            "class patch:\n"
+            "    def decorate(method):\n"
+            "        def wrapper():\n"
+            "            return patch(trainer)\n"
+            "        return wrapper\n"
+            "    @decorate\n"
+            "    def convert():\n"
+            "        pass\n"
+            "    converted = convert()\n",
+            id="decorator-wrapper",
+        ),
+        pytest.param(
+            "class patch:\n"
+            "    def convert():\n"
+            "        return patch(trainer)\n"
+            "    convert = staticmethod(convert)\n"
+            "    converted = convert()\n",
+            id="explicit-staticmethod",
+        ),
+        pytest.param(
+            "class patch:\n"
+            "    def decorate(method):\n"
+            "        return method\n"
+            "    @decorate\n"
+            "    def convert():\n"
+            "        return patch(trainer)\n"
+            "    converted = convert()\n",
+            id="identity-decorator",
+        ),
+    ],
+)
+def test_inspect_decorated_class_callable_preserves_bound_result(
+    tmp_path, framework, source_prefix, activity, class_body
+):
+    script = tmp_path / "client.py"
+    script.write_text(source_prefix + class_body + activity, encoding="utf-8")
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == framework
+    assert data["conversion_state"] == "client_api_converted"
+
+
+@pytest.mark.parametrize(
+    ("framework", "source_prefix", "activity"),
+    [
+        pytest.param(
+            "huggingface",
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n",
+            "trainer.train()\n",
+            id="huggingface",
+        ),
+        pytest.param(
+            "pytorch_lightning",
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n",
+            "trainer.fit(model)\n",
+            id="lightning",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "consumer",
+    [
+        pytest.param("converted = list(convert())", id="list"),
+        pytest.param("converted = tuple(convert())", id="tuple"),
+        pytest.param("converted = set(convert())", id="set"),
+        pytest.param("converted = dict(convert())", id="dict"),
+        pytest.param("converted = next(convert())", id="next"),
+        pytest.param("for converted in convert():\n        pass", id="for"),
+        pytest.param("converted = [item for item in convert()]", id="comprehension"),
+    ],
+)
+def test_inspect_eager_generator_consumer_uses_class_construction_binding(
+    tmp_path, framework, source_prefix, activity, consumer
+):
+    script = tmp_path / "client.py"
+    script.write_text(
+        source_prefix
+        + "class patch:\n"
+        + "    def convert():\n"
+        + "        yield ('model', patch(trainer))\n"
+        + f"    {consumer}\n"
+        + activity,
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == framework
+    assert data["conversion_state"] == "client_api_converted"
+
+
+@pytest.mark.parametrize(
     "assignment",
     [
         pytest.param("Trainer = trainer = Trainer(model=model, args=args)", id="direct-symbol-first"),
