@@ -243,13 +243,19 @@ into a function with an explicit parameter and have `client.py` pass the FL mode
 explicitly; keep standalone behavior behind a separate entry point or explicit
 argument.
 
-Exported `app/custom` content is built from the configured `train_script` and
-its import closure. A module used only by server-side recipe config, such as a
-`model.py` containing `{"class_path": "model.Net"}`, may not be packaged unless
-the client entry imports it or the job includes it explicitly. During export
-inspection, verify every server and client module referenced by `class_path`,
-train script, custom aggregator, data helper, or config is present in the
-exported app.
+Exported app content is target-specific. The configured `train_script` and its
+import closure populate client apps; they do not guarantee server-app packaging,
+especially when `set_per_site_config()` produces `app_server` plus per-site
+client apps. Every module referenced by server-side `class_path` config, such as
+a `model.py` containing `{"class_path": "model.Net"}`, must be added to the
+server app with `recipe.add_server_file("model.py")` or an equivalent
+server-targeted API regardless of whether the client imports it. Client-used
+modules must separately be reachable through the `train_script` import closure
+or added with `recipe.add_client_file(...)`. During export inspection, verify
+every server and client module referenced by `class_path`, train script, custom
+aggregator, data helper, or config is present in the correct exported app
+(`app_server/custom` for server-only modules and each client app's `custom`
+folder for client modules).
 
 Before treating an existing canonical filename as a collision, classify it by
 static source evidence. Derive the model, data-prep, download, and training

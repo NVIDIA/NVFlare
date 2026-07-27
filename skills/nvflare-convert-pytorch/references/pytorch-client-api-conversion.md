@@ -64,9 +64,11 @@ and requirements files. Avoid ad hoc entry-point names such as `fl_train.py`
 unless the user explicitly requests that naming, and use
 `../../nvflare-shared/references/runtime-output-guidance.md` for runtime
 workspaces, exported job directories, and validation output locations.
-During export inspection, verify modules referenced only by server-side
-`class_path` config are still packaged; the export follows the `train_script`
-import closure.
+During export inspection, verify modules referenced by server-side `class_path`
+config are packaged into the server app with `recipe.add_server_file(...)` or an
+equivalent server-targeted API. The `train_script` import closure packages
+client apps and is not enough for per-site exports that create `app_server`
+separately.
 
 For standard FedAvg, package shared generated files for all clients. Do not
 replace all-client deployment with explicit per-site deployment unless the
