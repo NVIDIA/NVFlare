@@ -198,6 +198,31 @@ class TestStaticFileBuilder:
         with pytest.raises(ValueError, match="require_signed_jobs must be a boolean"):
             StaticFileBuilder(require_signed_jobs="false")
 
+    @pytest.mark.parametrize(
+        ("template_section", "config_name"),
+        [("fed_server", "fed_server.json"), ("fed_client", "fed_client.json")],
+    )
+    def test_explicit_policy_rejects_legacy_custom_template(self, tmp_path, template_section, config_name):
+        server = Participant(type="server", name="server", org="org")
+        client = Participant(type="client", name="site-1", org="org")
+        project = Project(
+            name="proj",
+            description="desc",
+            participants=[server, client],
+            props={"api_version": 4},
+        )
+        ctx = ProvisionContext(str(tmp_path), project)
+        ctx.load_templates("master_template.yml")
+        ctx[CtxKey.TEMPLATE][template_section] = ctx[CtxKey.TEMPLATE][template_section].replace(
+            "{~~require_signed_jobs_config~~}", ""
+        )
+        for participant in (server, client):
+            Path(ctx.get_kit_dir(participant)).mkdir(parents=True)
+            Path(ctx.get_local_dir(participant)).mkdir(parents=True)
+
+        with pytest.raises(ValueError, match=rf"{config_name} did not render require_signed_jobs=False"):
+            StaticFileBuilder(require_signed_jobs=False).build(project, ctx)
+
     def test_auth_identity_config_omits_default_identity_fields(self):
         builder = StaticFileBuilder()
 

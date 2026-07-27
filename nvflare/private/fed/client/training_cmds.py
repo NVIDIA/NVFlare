@@ -125,10 +125,13 @@ class DeployProcessor(RequestProcessor):
 
                 sig_file = os.path.join(app_staging_dir, NVFLARE_SIG_FILE)
                 has_root_ca = os.path.exists(root_ca_path)
-                if os.path.exists(sig_file) and has_root_ca:
-                    if not verify_folder_signature(app_staging_dir, root_ca_path):
+                signed_jobs_required = require_signed_jobs(workspace, WorkspaceConstants.CLIENT_STARTUP_CONFIG)
+                if os.path.exists(sig_file):
+                    if not has_root_ca and signed_jobs_required:
+                        return error_reply("signature verification is required but rootCA.pem is missing")
+                    if has_root_ca and not verify_folder_signature(app_staging_dir, root_ca_path):
                         return error_reply(f"app {app_name} does not pass signature verification")
-                elif has_root_ca and require_signed_jobs(workspace, WorkspaceConstants.CLIENT_STARTUP_CONFIG):
+                elif signed_jobs_required:
                     return error_reply("unsigned job rejected - signed deploy is required")
 
         err = engine.deploy_app(

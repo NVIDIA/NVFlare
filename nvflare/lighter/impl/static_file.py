@@ -96,6 +96,19 @@ class StaticFileBuilder(Builder):
             return ""
         return f',\n  "require_signed_jobs": {json.dumps(self.require_signed_jobs)}'
 
+    def _validate_require_signed_jobs_config(self, dest_dir, config_name):
+        if self.require_signed_jobs is None:
+            return
+
+        config_path = os.path.join(dest_dir, config_name)
+        with open(config_path) as f:
+            config = json.load(f)
+        if config.get("require_signed_jobs") is not self.require_signed_jobs:
+            raise ValueError(
+                f"{config_name} did not render require_signed_jobs={self.require_signed_jobs}; "
+                "update master_template.yml to include {~~require_signed_jobs_config~~}"
+            )
+
     @staticmethod
     def _build_conn_properties(site: Participant, ctx: ProvisionContext):
         valid_values = [ConnSecurity.CLEAR, ConnSecurity.TLS, ConnSecurity.MTLS]
@@ -232,6 +245,7 @@ class StaticFileBuilder(Builder):
                 ),
             },
         )
+        self._validate_require_signed_jobs_config(dest_dir, ProvFileName.FED_SERVER_JSON)
 
         self._build_comm_config_for_internal_listener(server)
 
@@ -379,6 +393,7 @@ class StaticFileBuilder(Builder):
                 ),
             },
         )
+        self._validate_require_signed_jobs_config(dest_dir, ProvFileName.FED_CLIENT_JSON)
 
         # build internal comm
         self._build_comm_config_for_internal_listener(client)
