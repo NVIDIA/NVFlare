@@ -135,7 +135,7 @@ policy; route onward rather than substituting an unprotected recipe or adding on
   `references/pytorch-client-api-conversion.md`.
 - Custom aggregation must use recipe `aggregator=` with a `ModelAggregator` subclass in
   `aggregators.py`, adapting `../nvflare-shared/assets/aggregator.py`; carry finite
-  numeric client metrics into aggregated `FLModel.metrics`, or metric artifacts disappear.
+  numeric/bool client metrics into aggregated `FLModel.metrics`, or artifacts disappear.
   New exchange semantics need matching client transformation, or ask/fail.
 - Must follow the Source Of Truth Boundary: public checks can stop the skill
   path; they cannot license a replacement strategy discovered from NVFLARE
