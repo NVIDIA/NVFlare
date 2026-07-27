@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import argparse
-import shlex
 from pathlib import Path
 
 from model import LitNet
@@ -58,9 +57,9 @@ def main():
     n_clients = args.n_clients
     num_rounds = args.num_rounds
     batch_size = args.batch_size
-    train_args = (
-        f"--batch_size {batch_size} --data_root {shlex.quote(str(data_root))} --limit_batches {args.limit_batches}"
-    ) + (" --synthetic_data" if args.synthetic_data else "")
+    train_args = f"--batch_size {batch_size} --data_root {data_root} --limit_batches {args.limit_batches}" + (
+        " --synthetic_data" if args.synthetic_data else ""
+    )
     if args.algorithm == "fedavg":
         recipe = FedAvgRecipe(
             name="hello-lightning-fedavg",
