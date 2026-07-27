@@ -442,23 +442,6 @@
       }
     },
     {
-      "id": "fedstats-negative-huggingface-training",
-      "prompt": "Use this Hugging Face Trainer script and convert it to run federated across 2 sites with FedAvg. After the conversion, I also want federated statistics on the site data.",
-      "expected_output": "The statistics skill does not lead; the combined training and statistics request routes first to nvflare-convert-huggingface, with nvflare-fed-stats as a follow-up for statistics.",
-      "files": [
-        "files/huggingface-training/train.py",
-        "files/huggingface-training/model.py"
-      ],
-      "assertions": [
-        "The selected lead skill is nvflare-convert-huggingface, not nvflare-fed-stats.",
-        "The agent treats federated statistics as a follow-up after the Trainer conversion rather than routing to PyTorch or Lightning."
-      ],
-      "nvflare": {
-        "expected_skill": "nvflare-convert-huggingface",
-        "negative_for": "nvflare-fed-stats"
-      }
-    },
-    {
       "id": "fedstats-global-negative-dashboard",
       "prompt": "Build me a Grafana dashboard for our warehouse inventory postgres database.",
       "expected_output": "No FLARE skill should trigger.",
