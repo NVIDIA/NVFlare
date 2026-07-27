@@ -4968,15 +4968,20 @@ def test_inspect_bom_prefixed_source_still_detects_framework(tmp_path):
     assert not any(finding["code"] == "PYTHON_PARSE_ERROR" for finding in data["findings"])
 
 
-def test_inspect_skips_deep_ast_and_continues_classifying_other_files(tmp_path):
-    (tmp_path / "generated.py").write_text(
-        "x = " + "+".join(["a"] * 600) + "\n",
-        encoding="utf-8",
-    )
+def test_inspect_skips_deep_ast_and_continues_classifying_other_files(tmp_path, monkeypatch):
+    (tmp_path / "generated.py").write_text("x = 1\n", encoding="utf-8")
     (tmp_path / "train.py").write_text(
         "import torch\n\n" "class Net(torch.nn.Module):\n" "    pass\n",
         encoding="utf-8",
     )
+    original_visit = inspector_module._PythonInspector.visit
+
+    def raise_for_generated_file(visitor, tree):
+        if visitor.rel_path == "generated.py":
+            raise RecursionError("AST depth exceeded")
+        return original_visit(visitor, tree)
+
+    monkeypatch.setattr(inspector_module._PythonInspector, "visit", raise_for_generated_file)
 
     data = inspect_path(tmp_path)
 

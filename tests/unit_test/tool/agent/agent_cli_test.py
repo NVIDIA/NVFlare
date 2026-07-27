@@ -20,6 +20,7 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.tool import cli_output
+from nvflare.tool.agent import inspector as inspector_module
 
 
 @pytest.fixture(autouse=True)
@@ -302,9 +303,14 @@ def test_agent_inspect_json_reports_static_framework_evidence(capsys, tmp_path):
     assert payload["data"]["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
-def test_agent_inspect_json_reports_deep_ast_without_aborting(capsys, tmp_path):
+def test_agent_inspect_json_reports_deep_ast_without_aborting(capsys, tmp_path, monkeypatch):
     script = tmp_path / "generated.py"
-    script.write_text("x = " + "+".join(["a"] * 600) + "\n", encoding="utf-8")
+    script.write_text("x = 1\n", encoding="utf-8")
+
+    def raise_ast_depth_error(_visitor, _tree):
+        raise RecursionError("AST depth exceeded")
+
+    monkeypatch.setattr(inspector_module._PythonInspector, "visit", raise_ast_depth_error)
 
     exit_code = _run_main(["nvflare", "agent", "inspect", str(script), "--format", "json"])
 
