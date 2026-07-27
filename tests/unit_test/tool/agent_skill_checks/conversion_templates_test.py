@@ -379,7 +379,7 @@ def test_custom_aggregator_template_resets_between_rounds():
         aggregator.aggregate_model()
 
 
-def test_lightning_eval_template_exposes_local_validation_metric():
+def test_lightning_eval_template_delivers_validation_metric_to_server():
     torch = pytest.importorskip("torch")
     pl = pytest.importorskip("pytorch_lightning")
     from torch.utils.data import DataLoader, TensorDataset
@@ -409,12 +409,14 @@ def test_lightning_eval_template_exposes_local_validation_metric():
     model = ToyLightning()
     metrics = module.validate_global_model(trainer, model, dataloaders=loader)
 
-    # This template-level check proves local callback logging only. The
-    # train_with_evaluation executor contract controls server delivery.
     assert "val_loss" in metrics
-    from nvflare.app_common.abstract.fl_model import MetaKey
+    from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
+    from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 
     assert model.__fl_meta__[MetaKey.INITIAL_METRICS] == metrics
+    outgoing_model = FLModel(params=model.state_dict(), meta=model.__fl_meta__)
+    server_model = FLModelUtils.from_shareable(FLModelUtils.to_shareable(outgoing_model))
+    assert server_model.metrics == metrics
 
 
 def test_lightning_template_eval_only_mode_skips_training():
