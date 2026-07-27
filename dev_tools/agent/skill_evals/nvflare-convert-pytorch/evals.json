@@ -522,7 +522,7 @@
     {
       "id": "pytorch-convert-custom-aggregation",
       "prompt": "Convert this PyTorch training code to a FLARE job over 3 simulated sites, but aggregate the client updates with a custom weighted average that weights each client's update by its local step count instead of plain FedAvg averaging.",
-      "expected_output": "A FLARE PyTorch Client API conversion whose server-side aggregation uses the product extension point: a ModelAggregator subclass in aggregators.py implementing accept_model, aggregate_model, and reset_stats, weighting by FLModel.meta NUM_STEPS_CURRENT_ROUND, wired through the recipe aggregator= parameter with matching aggregator_data_kind, while the client keeps the standard Client API exchange.",
+      "expected_output": "A FLARE PyTorch Client API conversion whose server-side aggregation uses the product extension point: a ModelAggregator subclass in aggregators.py implementing accept_model, aggregate_model, and reset_stats, weighting by FLModel.meta NUM_STEPS_CURRENT_ROUND, preserving finite numeric and boolean client metrics in aggregated FLModel.metrics, warning or failing visibly when any client omits metrics, wired through the recipe aggregator= parameter with matching aggregator_data_kind, while the client keeps the standard Client API exchange.",
       "files": [
         "files/hello-pt/train.py",
         "files/hello-pt/model.py"
@@ -531,6 +531,8 @@
         "The agent generates aggregators.py with a ModelAggregator subclass implementing accept_model, aggregate_model, and reset_stats.",
         "The generated aggregator operates on FLModel.params and preserves or intentionally sets FLModel.params_type.",
         "The generated aggregator weights client contributions using FLModel.meta such as NUM_STEPS_CURRENT_ROUND.",
+        "The generated aggregator carries finite numeric and boolean client metrics into the aggregated FLModel.metrics with the same contribution weights used for parameters.",
+        "If any client omits FLModel.metrics, the generated aggregator warns or fails visibly instead of publishing a partial metric average as though all clients reported it.",
         "The generated aggregator logs concise accept/aggregate evidence through its FLComponent logger before the full simulation runs.",
         "The agent wires the aggregator through the recipe aggregator= parameter with matching aggregator_data_kind and parameter transfer settings.",
         "The client keeps the standard Client API exchange and sends step-count metadata the aggregator needs.",
@@ -551,6 +553,14 @@
           {
             "id": "meta-weighted-aggregation",
             "description": "uses FLModel.meta client contribution metadata such as NUM_STEPS_CURRENT_ROUND for weighting"
+          },
+          {
+            "id": "custom-aggregator-preserves-metrics",
+            "description": "carries finite numeric and boolean client metrics into aggregated FLModel.metrics using the same contribution weights as parameters"
+          },
+          {
+            "id": "custom-aggregator-missing-metrics-visible",
+            "description": "warns or fails visibly if any accepted client model omits FLModel.metrics, rather than producing silent partial metrics"
           },
           {
             "id": "aggregator-logs-runtime-evidence",
