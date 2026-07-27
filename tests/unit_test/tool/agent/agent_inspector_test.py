@@ -2312,6 +2312,119 @@ def test_inspect_named_class_callable_uses_invocation_phase_binding(
 
 
 @pytest.mark.parametrize(
+    ("framework", "source_prefix", "activity"),
+    [
+        pytest.param(
+            "huggingface",
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n",
+            "trainer.train()\n",
+            id="huggingface",
+        ),
+        pytest.param(
+            "pytorch_lightning",
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n",
+            "trainer.fit(model)\n",
+            id="lightning",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "class_body",
+    [
+        pytest.param(
+            "class patch:\n"
+            "    async def convert():\n"
+            "        return patch(trainer)\n"
+            "    converted = convert()\n",
+            id="coroutine",
+        ),
+        pytest.param(
+            "class patch:\n" "    def convert():\n" "        yield patch(trainer)\n" "    converted = convert()\n",
+            id="generator",
+        ),
+    ],
+)
+def test_inspect_lazy_class_callable_uses_post_class_binding(tmp_path, framework, source_prefix, activity, class_body):
+    script = tmp_path / "client.py"
+    script.write_text(source_prefix + class_body + activity, encoding="utf-8")
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == framework
+    assert data["conversion_state"] == "partial_client_api"
+
+
+@pytest.mark.parametrize(
+    ("framework", "source_prefix", "activity"),
+    [
+        pytest.param(
+            "huggingface",
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n",
+            "trainer.train()\n",
+            id="huggingface",
+        ),
+        pytest.param(
+            "pytorch_lightning",
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n",
+            "trainer.fit(model)\n",
+            id="lightning",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "class_body",
+    [
+        pytest.param(
+            "class patch:\n"
+            "    def convert():\n"
+            "        return patch(trainer)\n"
+            "    alias = convert\n"
+            "    converted = alias()\n",
+            id="function-alias",
+        ),
+        pytest.param(
+            "class patch:\n"
+            "    convert = lambda: patch(trainer)\n"
+            "    alias = convert\n"
+            "    converted = alias()\n",
+            id="lambda-alias",
+        ),
+        pytest.param(
+            "class patch:\n"
+            "    def convert(method):\n"
+            "        patch(trainer)\n"
+            "        return method\n"
+            "    alias = convert\n"
+            "    @alias\n"
+            "    def run(self):\n"
+            "        pass\n",
+            id="decorator-alias",
+        ),
+        pytest.param(
+            "class patch:\n" "    converted = (convert := lambda: patch(trainer))()\n",
+            id="walrus-lambda",
+        ),
+    ],
+)
+def test_inspect_class_callable_alias_preserves_identity(tmp_path, framework, source_prefix, activity, class_body):
+    script = tmp_path / "client.py"
+    script.write_text(source_prefix + class_body + activity, encoding="utf-8")
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == framework
+    assert data["conversion_state"] == "client_api_converted"
+
+
+@pytest.mark.parametrize(
     "assignment",
     [
         pytest.param("Trainer = trainer = Trainer(model=model, args=args)", id="direct-symbol-first"),
