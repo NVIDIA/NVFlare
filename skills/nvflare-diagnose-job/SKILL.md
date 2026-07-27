@@ -1,6 +1,6 @@
 ---
 name: nvflare-diagnose-job
-description: "Diagnose failed, stalled, or suspicious NVFLARE jobs in simulation, POC, or production by collecting bounded evidence and mapping failure patterns to recovery actions."
+description: "Use when the user asks why a reported NVFLARE job failure signal occurred: the job failed, stalled, timed out, lost clients, ended with EXECUTION_EXCEPTION, or produced suspicious errors. Diagnose in simulation, POC, or production by collecting bounded evidence and mapping failure patterns to recovery actions."
 license: Apache-2.0
 version: "0.1.0"
 metadata:
@@ -24,15 +24,17 @@ metadata:
 
 ## Use When
 
-Use when the user asks why an NVFLARE job failed, stalled, timed out, ended with
-`EXECUTION_EXCEPTION`, lost clients, produced suspicious logs, or needs failure
-evidence interpreted.
+Proceed only when the request includes a reported NVFLARE job failure signal as
+defined in the description. Follow the evidence workflow even when the likely
+cause appears obvious; do not diagnose from prior knowledge alone.
 
 ## Do Not Use When
 
-Do not use for creating jobs, converting training code, submitting healthy jobs,
-monitoring a normal run, downloading results, production deployment, or generic
-Python debugging without NVFLARE job context.
+Stop this skill path and return to normal handling when no reported NVFLARE job
+failure signal is present. This includes creating jobs, converting training
+code, submitting or monitoring healthy runs, downloading normal results from a
+successfully completed job, production deployment, and generic Python
+debugging.
 
 ## Workflow
 
@@ -51,9 +53,12 @@ Python debugging without NVFLARE job context.
    `round_metrics.jsonl` before falling back to logs for metric evidence.
 4. For POC/production mode, collect bounded job and system evidence through the
    FLARE CLI, using `--tail`, `--since`, or `--max-bytes` for logs. For
-   terminal jobs, use `nvflare job download <job_id> -o <dir> --format json`
-   and read `data.artifacts.global_model`, `data.artifacts.metrics_summary`,
-   and `data.artifacts.round_metrics` when present.
+   terminal jobs with the reported failure signal, use
+   `nvflare job download <job_id> -o <dir> --format json` and read
+   `data.artifacts.global_model`, `data.artifacts.metrics_summary`, and
+   `data.artifacts.round_metrics` when present. This is bounded failure-evidence
+   collection for diagnosis; do not download artifacts for a healthy,
+   successfully completed job.
 5. Match evidence against the packaged failure-pattern catalog before
    interpreting raw logs.
 6. Report observed status, evidence quality, matched pattern, likely cause,

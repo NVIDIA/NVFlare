@@ -22,6 +22,7 @@ nondeterministic LLM evals.
 
 import ast
 import importlib.util
+import inspect
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,30 @@ def _load_module(path: Path):
 class _FloatOverflow:
     def __float__(self):
         raise OverflowError("step count too large")
+
+
+def test_non_fedavg_tensor_profile_omits_unsupported_disk_offload(tmp_path):
+    pytest.importorskip("torch")
+    from nvflare.app_opt.pt.recipes.cyclic import CyclicRecipe
+    from nvflare.client.config import ExchangeFormat
+
+    train_script = tmp_path / "client.py"
+    train_script.write_text("pass\n", encoding="utf-8")
+    parameters = inspect.signature(CyclicRecipe).parameters
+
+    assert "server_expected_format" in parameters
+    assert "enable_tensor_disk_offload" not in parameters
+
+    recipe = CyclicRecipe(
+        name="skill-capability-test",
+        model={"class_path": "torch.nn.Linear", "args": {"in_features": 2, "out_features": 1}},
+        train_script=str(train_script),
+        min_clients=2,
+        server_expected_format=ExchangeFormat.PYTORCH,
+    )
+    recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])
+
+    assert recipe.server_expected_format == ExchangeFormat.PYTORCH
 
 
 def test_pytorch_eval_template_computes_metric_against_toy_model():
@@ -128,6 +153,34 @@ def test_custom_aggregator_template_step_weighted_average():
 
     # (2*1 + 4*3) / (1 + 3) = 14 / 4 = 3.5
     assert result.params["w"][0] == pytest.approx(3.5)
+
+
+def test_custom_aggregator_template_preserves_step_weighted_metrics():
+    import numpy as np
+
+    from nvflare.apis.dxo import MetaKey
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+
+    aggregator.accept_model(
+        FLModel(
+            params={"w": np.array([2.0])},
+            metrics={"val_auroc": 0.5},
+            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+    )
+    aggregator.accept_model(
+        FLModel(
+            params={"w": np.array([4.0])},
+            metrics={"val_auroc": 0.9},
+            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 3},
+        )
+    )
+    result = aggregator.aggregate_model()
+
+    assert result.metrics == {"val_auroc": pytest.approx(0.8)}
 
 
 def test_custom_aggregator_template_materializes_lazy_disk_offload_refs():
@@ -264,9 +317,13 @@ def test_lightning_eval_template_reports_validation_metric():
     loader = DataLoader(TensorDataset(torch.randn(6, 4), torch.randint(0, 2, (6,))), batch_size=3)
     trainer = pl.Trainer(logger=False, enable_checkpointing=False, enable_progress_bar=False, devices=1)
 
-    metrics = module.validate_global_model(trainer, ToyLightning(), dataloaders=loader)
+    model = ToyLightning()
+    metrics = module.validate_global_model(trainer, model, dataloaders=loader)
 
     assert "val_loss" in metrics
+    from nvflare.app_common.abstract.fl_model import MetaKey
+
+    assert model.__fl_meta__[MetaKey.INITIAL_METRICS] == metrics
 
 
 def test_lightning_template_eval_only_mode_skips_training():
@@ -281,11 +338,16 @@ def test_lightning_template_eval_only_mode_skips_training():
 
         def validate(self, *a, **k):
             calls.append("validate")
+            return [{"val_loss": 0.1}]
 
         def fit(self, *a, **k):
             calls.append("fit")
 
     fake = _FakeTrainer()
+
+    class _FakeModel:
+        pass
+
     import types
 
     fake_flare = types.SimpleNamespace(
@@ -297,7 +359,7 @@ def test_lightning_template_eval_only_mode_skips_training():
     module.flare = fake_flare  # patch the module-level flare handle
 
     try:
-        module.main(model=object(), datamodule=object(), trainer_factory=lambda: fake, evaluate_only=True)
+        module.main(model=_FakeModel(), datamodule=object(), trainer_factory=lambda: fake, evaluate_only=True)
     finally:
         pass
 
