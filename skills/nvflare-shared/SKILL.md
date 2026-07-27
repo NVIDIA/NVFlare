@@ -32,8 +32,9 @@ selected or invoked on its own.
   exchange details.
 - `references/pytorch-family-recipe-selection.md` — PyTorch-family recipe
   discovery, algorithm guide, and catalog-based selection rules.
-- `references/pytorch-family-recipe-parameters.md` — PyTorch-family
-  `key_metric`, external-process launch, and tensor offload parameter rules.
+- `references/pytorch-family-recipe-construction.md` — canonical
+  PyTorch-family recipe capability, metric, launch, transport, offload, and
+  simulator-concurrency rules.
 - `references/runtime-output-guidance.md` — runtime/export output locations.
 - `references/metrics-and-artifact-reporting.md` — metric and artifact reporting.
 - `assets/aggregator.py` — the custom weighted-aggregator template.

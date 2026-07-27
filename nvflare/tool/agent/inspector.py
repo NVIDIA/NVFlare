@@ -314,6 +314,10 @@ def inspect_path(
         if dataset and dataset["modality"] in ("tabular", "image"):
             target_type = f"{dataset['modality']}_dataset"
 
+    family_member_conflict = frameworks.has_active_family_member_conflict(
+        state.framework_evidence, _FamilyResolver(state)
+    )
+
     return {
         "schema_version": "1",
         "nvflare_version": nvflare.__version__,
@@ -361,8 +365,12 @@ def inspect_path(
         },
         "findings": state.findings[:MAX_EVIDENCE_PER_BUCKET],
         "dataset": dataset,
-        "skill_selection": _skill_selection(detected_framework, conversion_state, state, dataset),
-        "recommended_next_commands": _recommended_next_commands(detected_framework, conversion_state, source_job),
+        "skill_selection": _skill_selection(
+            detected_framework, conversion_state, state, dataset, family_member_conflict
+        ),
+        "recommended_next_commands": _recommended_next_commands(
+            detected_framework, conversion_state, source_job, state, family_member_conflict
+        ),
         "installed_skills": _installed_skills(target),
     }
 
@@ -2293,7 +2301,11 @@ def _strip_scalar(value: str) -> str:
 
 
 def _skill_selection(
-    detected_framework: Optional[str], conversion_state: str, state: InspectState, dataset: Optional[dict] = None
+    detected_framework: Optional[str],
+    conversion_state: str,
+    state: InspectState,
+    dataset: Optional[dict] = None,
+    family_member_conflict: bool = False,
 ) -> dict:
     recommended = []
     if conversion_state == "exported_job":
@@ -2314,9 +2326,7 @@ def _skill_selection(
         # Mixed data is definitionally ambiguous, and routing ambiguity is
         # orient's job; an empty recommendation would strand the consumer.
         recommended.append("nvflare-orient")
-    elif conversion_state in {"not_converted", "partial_client_api"} and frameworks.has_active_family_member_conflict(
-        state.framework_evidence, _FamilyResolver(state)
-    ):
+    elif conversion_state in {"not_converted", "partial_client_api"} and family_member_conflict:
         # Two specialized trainers in one family cannot both own one conversion.
         recommended.append("nvflare-orient")
     elif detected_framework and conversion_state in {"not_converted", "partial_client_api"}:
@@ -2355,6 +2365,8 @@ def _recommended_next_commands(
     detected_framework: Optional[str],
     conversion_state: str,
     source_job: Optional[_SourceJobCandidate],
+    state: InspectState,
+    family_member_conflict: bool,
 ) -> list[str]:
     commands = []
     if conversion_state == "exported_job":
@@ -2365,9 +2377,7 @@ def _recommended_next_commands(
         # corroborating nvflare evidence this would ship a command that fails with
         # an argparse error on an unrelated repo.
         commands.append(f"python {shlex.quote(source_job.source_file)} --export --export-dir <job-dir>")
-    elif conversion_state in {"not_converted", "partial_client_api"} and frameworks.has_active_family_member_conflict(
-        state.framework_evidence, _FamilyResolver(state)
-    ):
+    elif conversion_state in {"not_converted", "partial_client_api"} and family_member_conflict:
         commands.append("Use the nvflare-orient skill before editing.")
     elif detected_framework and conversion_state in {"not_converted", "partial_client_api"}:
         evidence = state.framework_evidence.get(detected_framework, [])
