@@ -16,17 +16,9 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 
-from nvflare.apis.job_launcher_spec import CREDENTIAL_ENV_NAMES
-from nvflare.app_common.multinode import (
-    CONTRACT_ENV_NAMES,
-    ENV_MASTER_ADDR,
-    ENV_MASTER_PORT,
-    ENV_NNODES,
-    ENV_NODE_RANK,
-    ENV_RUN_ID,
-)
 from nvflare.app_opt.job_launcher.slurm.config import (
     BATCH_FILE,
     NODE_FILE,
@@ -36,6 +28,58 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     LaunchPlan,
     SlurmConfig,
 )
+
+_ENV_NNODES = "NVFL_NNODES"
+_ENV_NODE_RANK = "NVFL_NODE_RANK"
+_ENV_MASTER_ADDR = "NVFL_MASTER_ADDR"
+_ENV_MASTER_PORT = "NVFL_MASTER_PORT"
+_ENV_RUN_ID = "NVFL_RUN_ID"
+_MULTINODE_BATCH_ENV = (_ENV_NNODES, _ENV_MASTER_ADDR, _ENV_MASTER_PORT, _ENV_RUN_ID)
+
+_TEMPLATE_TOKEN_PATTERN = re.compile(r"@@NVFLARE_[A-Z0-9_]+@@")
+
+_BATCH_SCRIPT_TEMPLATE = """#!/usr/bin/env bash
+set -euo pipefail
+
+_nvfl_secret=@@NVFLARE_SECRET_PATH@@
+_nvfl_cleanup() {
+  _nvfl_status=$?
+  rm -f -- "${_nvfl_secret}" || true
+  return "${_nvfl_status}"
+}
+trap _nvfl_cleanup EXIT
+
+[[ "${SLURM_RESTART_COUNT:-0}" == 0 ]] || {
+  echo "requeued NVFlare job refused" >&2
+  exit 101
+}
+
+@@NVFLARE_COMMON_ENVIRONMENT@@
+@@NVFLARE_BACKEND_ENVIRONMENT@@
+_nvfl_command=(@@NVFLARE_COMMAND@@)
+exec "${_nvfl_command[@]}"
+"""
+
+_NODE_SCRIPT_TEMPLATE = """#!/usr/bin/env bash
+set -euo pipefail
+
+export NVFL_NODE_RANK="$((10#${SLURM_NODEID}))"
+
+@@NVFLARE_BACKEND_SETUP@@
+if [[ "${NVFL_NODE_RANK}" == "0" ]]; then
+  _nvfl_command=(@@NVFLARE_RANK0_COMMAND@@)
+else
+@@NVFLARE_NONZERO_SETUP@@
+  _nvfl_command=(@@NVFLARE_NONZERO_COMMAND@@)
+fi
+
+exec "${_nvfl_command[@]}"
+"""
+
+
+def _render_shell_template(source: str, **values) -> str:
+    replacements = {f"@@NVFLARE_{key.upper()}@@": str(value) for key, value in values.items()}
+    return _TEMPLATE_TOKEN_PATTERN.sub(lambda match: replacements[match.group(0)], source)
 
 
 def _build_worker_words(plan: LaunchPlan) -> list[str]:
@@ -67,7 +111,7 @@ def _common_environment(plan: LaunchPlan, config: SlurmConfig) -> list[str]:
         lines.append(f"export {name}={shlex.quote(value)}")
     for name in plan.forward_env:
         lines.append(f"if [[ ${{{name}+x}} ]]; then export {name}; fi")
-    if plan.sandbox == "pyxis" or plan.node_command:
+    if plan.sandbox == "pyxis" or plan.additional_node_command:
         lines.append(_tool_assignment("NVFL_SRUN", config.executables.get("srun"), "srun"))
     return lines
 
@@ -113,10 +157,6 @@ def _apptainer_parts(plan: LaunchPlan, config: SlurmConfig, worker_words: list[s
     return _apptainer_environment(plan, config), _apptainer_exec_words(plan, plan.run_dir) + worker_words
 
 
-# ENV_NODE_RANK is exported per task by node.sh; the rest are batch-level.
-_MULTINODE_BATCH_ENV = tuple(name for name in CONTRACT_ENV_NAMES if name != ENV_NODE_RANK)
-
-
 def _multinode_srun_words(plan: LaunchPlan) -> list[str]:
     return [
         '"${NVFL_SRUN}"',
@@ -136,11 +176,11 @@ def _multinode_parts(plan: LaunchPlan, job_dir: str, config: SlurmConfig) -> tup
     port_start, port_end = config.multi_node_port_range
     port_count = port_end - port_start + 1
     environment = [
-        f'export {ENV_NNODES}="${{SLURM_JOB_NUM_NODES:?}}"',
+        f'export {_ENV_NNODES}="${{SLURM_JOB_NUM_NODES:?}}"',
         # The batch script always executes on the first node of the allocation.
-        f'export {ENV_MASTER_ADDR}="${{SLURMD_NODENAME:?}}"',
-        f'export {ENV_MASTER_PORT}="$(({port_start} + 10#${{SLURM_JOB_ID}} % {port_count}))"',
-        f'export {ENV_RUN_ID}="${{SLURM_JOB_ID}}"',
+        f'export {_ENV_MASTER_ADDR}="${{SLURMD_NODENAME:?}}"',
+        f'export {_ENV_MASTER_PORT}="$(({port_start} + 10#${{SLURM_JOB_ID}} % {port_count}))"',
+        f'export {_ENV_RUN_ID}="${{SLURM_JOB_ID:?}}"',
     ]
     node_script = shlex.quote(os.path.join(job_dir, NODE_FILE))
     container_words = []
@@ -161,53 +201,40 @@ def _render_node_script(plan: LaunchPlan, config: SlurmConfig) -> str:
     starts the per-node container itself.
     """
     worker_words = _build_worker_words(plan)
-    node_words = [shlex.quote(word) for word in plan.node_command]
-    nodes = plan.resources.nodes
-    lines = [
-        "#!/usr/bin/env bash",
-        "set -euo pipefail",
-        f'[[ "${{SLURM_JOB_NUM_NODES:-}}" == "{nodes}" && "${{SLURM_NODEID:-}}" =~ ^[0-9]+$ ]] '
-        '|| { echo "node group topology mismatch" >&2; exit 103; }',
-        f'(( 10#${{SLURM_NODEID}} < {nodes} )) || {{ echo "node rank outside node group" >&2; exit 103; }}',
-        f'export {ENV_NODE_RANK}="$((10#${{SLURM_NODEID}}))"',
-    ]
+    node_words = [shlex.quote(word) for word in plan.additional_node_command]
     if plan.sandbox == "apptainer":
-        # Bootstrap credentials are for the rank-0 CJ only (JobProcessEnv contract).
-        unset_names = CREDENTIAL_ENV_NAMES + tuple(
-            f"{prefix}{name}" for prefix in ("APPTAINERENV_", "SINGULARITYENV_") for name in CREDENTIAL_ENV_NAMES
-        )
-        lines.extend(
-            [
+        backend_setup = "\n".join(
+            (
                 _tool_assignment("NVFL_APPTAINER", config.executables.get("apptainer"), "apptainer"),
-                f'export APPTAINERENV_{ENV_NODE_RANK}="${{{ENV_NODE_RANK}}}"',
-                f'if [[ "${{{ENV_NODE_RANK}}}" == "0" ]]; then',
-                f"  _nvfl_command=({' '.join(_apptainer_exec_words(plan, plan.run_dir) + worker_words)})",
-                "else",
-                f"  unset {' '.join(unset_names)}",
-                # Env parity with the rank-0 training subprocess (SubprocessLauncher
-                # sets the same variable for its child).
-                "  export CLIENT_API_TYPE=EX_PROCESS_API APPTAINERENV_CLIENT_API_TYPE=EX_PROCESS_API",
-                f"  _nvfl_command=({' '.join(_apptainer_exec_words(plan, plan.node_app_dir) + node_words)})",
-                "fi",
-            ]
+                f'export APPTAINERENV_{_ENV_NODE_RANK}="${{{_ENV_NODE_RANK}}}"',
+            )
         )
+        rank0_command = _apptainer_exec_words(plan, plan.run_dir) + worker_words
+        nonzero_setup = (
+            # Env parity with the rank-0 training subprocess (SubprocessLauncher
+            # sets the same variable for its child).
+            "  export CLIENT_API_TYPE=EX_PROCESS_API APPTAINERENV_CLIENT_API_TYPE=EX_PROCESS_API"
+        )
+        nonzero_command = _apptainer_exec_words(plan, plan.node_app_dir) + node_words
     else:
-        lines.extend(
-            [
-                f'if [[ "${{{ENV_NODE_RANK}}}" == "0" ]]; then',
-                f"  _nvfl_command=({' '.join(worker_words)})",
-                "else",
-                f"  unset {' '.join(CREDENTIAL_ENV_NAMES)}",
+        backend_setup = ""
+        rank0_command = worker_words
+        nonzero_setup = "\n".join(
+            (
                 # Env parity with the rank-0 training subprocess (SubprocessLauncher
                 # sets the same variable for its child).
                 "  export CLIENT_API_TYPE=EX_PROCESS_API",
                 f"  cd {shlex.quote(plan.node_app_dir)}",
-                f"  _nvfl_command=({' '.join(node_words)})",
-                "fi",
-            ]
+            )
         )
-    lines.extend(['exec "${_nvfl_command[@]}"', ""])
-    return "\n".join(lines)
+        nonzero_command = node_words
+    return _render_shell_template(
+        _NODE_SCRIPT_TEMPLATE,
+        backend_setup=backend_setup,
+        rank0_command=" ".join(rank0_command),
+        nonzero_setup=nonzero_setup,
+        nonzero_command=" ".join(nonzero_command),
+    )
 
 
 def _pyxis_environment(plan: LaunchPlan, extra_names: tuple = ()) -> list[str]:
@@ -249,16 +276,7 @@ def _render_batch_script(
 ) -> tuple[str, dict]:
     secret_values = plan.study_secret_env
     secret_path = os.path.join(job_dir, SECRET_FILE)
-    lines = [
-        "#!/usr/bin/env bash",
-        "set -euo pipefail",
-        f"_nvfl_secret={shlex.quote(secret_path)}",
-        '_nvfl_cleanup() { _nvfl_status=$?; rm -f -- "${_nvfl_secret}" || true; return "${_nvfl_status}"; }',
-        "trap _nvfl_cleanup EXIT",
-        "[[ \"${SLURM_RESTART_COUNT:-0}\" == 0 ]] || { echo 'requeued NVFlare job refused' >&2; exit 101; }",
-    ]
-    lines.extend(_common_environment(plan, config))
-    if plan.node_command:
+    if plan.additional_node_command:
         environment, command_words = _multinode_parts(plan, job_dir, config)
     elif plan.sandbox == "apptainer":
         environment, command_words = _apptainer_parts(plan, config, _build_worker_words(plan))
@@ -267,16 +285,14 @@ def _render_batch_script(
     else:
         environment = []
         command_words = _build_worker_words(plan)
-    lines.extend(environment)
-
-    lines.extend(
-        [
-            f"_nvfl_command=({' '.join(command_words)})",
-            'exec "${_nvfl_command[@]}"',
-            "",
-        ]
+    script = _render_shell_template(
+        _BATCH_SCRIPT_TEMPLATE,
+        secret_path=shlex.quote(secret_path),
+        common_environment="\n".join(_common_environment(plan, config)),
+        backend_environment="\n".join(environment),
+        command=" ".join(command_words),
     )
-    return "\n".join(lines), secret_values
+    return script, secret_values
 
 
 def _render_secret_file(values: dict) -> str:

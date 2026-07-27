@@ -13,10 +13,9 @@
 # limitations under the License.
 """Run torchrun for one node of an NVFlare node group.
 
-PyTorch consumer of the scheduler-neutral node-group contract in
-:mod:`nvflare.app_common.multinode`. It translates the contract into torchrun
-rendezvous arguments, so the same command line works as the rank-0 training
-command and as the multi-node ``node_command``:
+This translates NVFlare's node-group environment into torchrun rendezvous
+arguments, so the same command line works as the rank-0 training command and
+as the command for the other nodes:
 
     python -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 -- custom/client.py --epochs 2
 
@@ -29,33 +28,59 @@ import os
 import sys
 from typing import Sequence
 
-from nvflare.app_common.multinode import NodeGroup, NodeGroupError, split_training_argv
-
 _DEFAULT_JOIN_TIMEOUT = 600
+_DEFAULT_MASTER_PORT = 29400
+
+_ENV_NNODES = "NVFL_NNODES"
+_ENV_NODE_RANK = "NVFL_NODE_RANK"
+_ENV_MASTER_ADDR = "NVFL_MASTER_ADDR"
+_ENV_MASTER_PORT = "NVFL_MASTER_PORT"
+_ENV_RUN_ID = "NVFL_RUN_ID"
+
+
+def _split_training_argv(argv: Sequence[str]) -> tuple:
+    try:
+        boundary = list(argv).index("--")
+    except ValueError as e:
+        raise ValueError("'--' is required before the training script") from e
+    training_argv = tuple(argv[boundary + 1 :])
+    if not training_argv or not training_argv[0]:
+        raise ValueError("training script must be specified after '--'")
+    return tuple(argv[:boundary]), training_argv
 
 
 def build_torchrun_argv(argv: Sequence[str], environ: dict) -> list:
-    option_argv, training_argv = split_training_argv(argv)
+    option_argv, training_argv = _split_training_argv(argv)
     parser = argparse.ArgumentParser(prog=f"{sys.executable} -m {__spec__.name if __spec__ else __name__}")
     parser.add_argument("--nproc-per-node", default="auto")
     parser.add_argument("--join-timeout", type=int, default=_DEFAULT_JOIN_TIMEOUT)
     options = parser.parse_args(option_argv)
     if options.join_timeout <= 0:
-        raise NodeGroupError("--join-timeout must be a positive integer")
+        raise ValueError("--join-timeout must be a positive integer")
 
-    group = NodeGroup.from_env(environ)
+    nnodes = int(environ.get(_ENV_NNODES, 1))
+    node_rank = int(environ.get(_ENV_NODE_RANK, 0))
+    if nnodes < 1 or not 0 <= node_rank < nnodes:
+        raise ValueError("invalid node-group topology")
+
     result = [sys.executable, "-u", "-m", "torch.distributed.run", f"--nproc_per_node={options.nproc_per_node}"]
-    if not group.is_multi_node:
+    if nnodes == 1:
         result.append("--standalone")
     else:
-        rdzv_id = group.run_id or "nvflare"
+        master_addr = environ.get(_ENV_MASTER_ADDR)
+        if not master_addr:
+            raise ValueError(f"{_ENV_MASTER_ADDR} must be set for a multi-node group")
+        master_port = environ.get(_ENV_MASTER_PORT, _DEFAULT_MASTER_PORT)
+        run_id = environ.get(_ENV_RUN_ID)
+        if not run_id:
+            raise ValueError(f"{_ENV_RUN_ID} must be set for a multi-node group")
         result.extend(
             [
-                f"--nnodes={group.nnodes}",
-                f"--node_rank={group.node_rank}",
+                f"--nnodes={nnodes}",
+                f"--node_rank={node_rank}",
                 "--rdzv_backend=c10d",
-                f"--rdzv_endpoint={group.master_addr}:{group.master_port}",
-                f"--rdzv_id={rdzv_id}",
+                f"--rdzv_endpoint={master_addr}:{master_port}",
+                f"--rdzv_id={run_id}",
                 # read_timeout bounds the wait for rank 0's store to come up (torch
                 # default 60s); join_timeout only applies after the store connects.
                 f"--rdzv_conf=join_timeout={options.join_timeout},read_timeout={options.join_timeout}",
@@ -68,7 +93,7 @@ def build_torchrun_argv(argv: Sequence[str], environ: dict) -> list:
 def main() -> None:
     try:
         torchrun_argv = build_torchrun_argv(sys.argv[1:], os.environ)
-    except NodeGroupError as e:
+    except ValueError as e:
         print(f"torchrun_node: {e}", file=sys.stderr)
         raise SystemExit(2) from e
     os.execv(sys.executable, torchrun_argv)

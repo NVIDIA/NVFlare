@@ -28,10 +28,11 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, add_launcher
 from nvflare.apis.utils.format_check import check_job_id
 from nvflare.apis.workspace import Workspace
-from nvflare.app_common.multinode import JOB_SPEC_NODE_COMMAND, JOB_SPEC_NODES
 from nvflare.app_opt.job_launcher.slurm.config import (
     _JOB_SLURM_KEYS,
     CONTAINER_RESOLV_CONF,
+    JOB_SPEC_ADDITIONAL_NODE_COMMAND,
+    JOB_SPEC_NODES,
     SLURM_CHILD_PROCESS_ENV,
     BindMount,
     JobResources,
@@ -93,11 +94,11 @@ def _resolve_resources(
     if unknown:
         raise SlurmLauncherError(f"unsupported job-owned Slurm key(s): {sorted(unknown)}")
 
-    nodes = _require_int(spec.get(JOB_SPEC_NODES, 1), "nodes")
-    if nodes > 1 and sandbox != "none" and spec.get(JOB_SPEC_NODE_COMMAND) is None:
+    nodes = _require_int(spec.get(JOB_SPEC_NODES, 1), JOB_SPEC_NODES)
+    if nodes > 1 and sandbox != "none" and spec.get(JOB_SPEC_ADDITIONAL_NODE_COMMAND) is None:
         raise SlurmLauncherError(
-            "multi-node Slurm jobs require effective sandbox 'none' unless node_command requests "
-            "a launcher-owned node group"
+            "multi-node Slurm jobs require effective sandbox 'none' unless additional_node_command requests "
+            "launcher-owned fan-out"
         )
 
     def optional_int(name: str) -> Optional[int]:
@@ -135,27 +136,27 @@ def _resolve_resources(
     )
 
 
-def _resolve_node_command(
+def _resolve_additional_node_command(
     job_spec: dict, nodes: int, workspace: Workspace, job_id: str, run_dir: str, supported: bool
 ) -> tuple[tuple, Optional[str]]:
-    raw = job_spec.get(JOB_SPEC_NODE_COMMAND)
+    raw = job_spec.get(JOB_SPEC_ADDITIONAL_NODE_COMMAND)
     if raw is None:
         return (), None
     if not supported:
-        raise SlurmLauncherError("node_command is only supported for client jobs")
-    raw = _require_string(raw, "node_command")
+        raise SlurmLauncherError("additional_node_command is only supported for client jobs")
+    raw = _require_string(raw, JOB_SPEC_ADDITIONAL_NODE_COMMAND)
     if "\n" in raw or "\r" in raw:
-        raise SlurmLauncherError("node_command must be a single line")
+        raise SlurmLauncherError("additional_node_command must be a single line")
     if has_secret_refs(raw):
-        raise SlurmLauncherError("node_command does not support secret references")
+        raise SlurmLauncherError("additional_node_command does not support secret references")
     if nodes < 2:
-        raise SlurmLauncherError("node_command requires nodes > 1")
+        raise SlurmLauncherError("additional_node_command requires nodes > 1")
     try:
         tokens = shlex.split(raw, posix=True)
     except ValueError as e:
-        raise SlurmLauncherError("malformed node_command") from e
+        raise SlurmLauncherError("malformed additional_node_command") from e
     if not tokens:
-        raise SlurmLauncherError("node_command must contain at least one word")
+        raise SlurmLauncherError("additional_node_command must contain at least one word")
     app_real = _validate_child_dir(run_dir, workspace.get_app_dir(job_id), "job app directory", "the run dir")
     return tuple(tokens), app_real
 
@@ -241,7 +242,7 @@ class SlurmJobLauncher(JobLauncherSpec):
     """Common lifecycle and launch-plan construction for client and server jobs."""
 
     EXE_MODULE: Optional[str] = None
-    SUPPORTS_NODE_COMMAND = False
+    SUPPORTS_ADDITIONAL_NODE_COMMAND = False
 
     def __init__(
         self,
@@ -436,13 +437,13 @@ class SlurmJobLauncher(JobLauncherSpec):
             self.config.pending_timeout,
             spec=job_spec,
         )
-        node_command, node_app_dir = _resolve_node_command(
+        additional_node_command, node_app_dir = _resolve_additional_node_command(
             job_spec,
             resources.nodes,
             workspace,
             job_id,
             run_dir,
-            self.SUPPORTS_NODE_COMMAND,
+            self.SUPPORTS_ADDITIONAL_NODE_COMMAND,
         )
         study_env, secret_env = self._study_environment(runtime)
         secret_env.update(get_credential_env(job_args))
@@ -470,7 +471,7 @@ class SlurmJobLauncher(JobLauncherSpec):
             python_path=self.config.python_path,
             python_env=self._python_environment(workspace, job_id),
             forward_env=self.config.forward_env,
-            node_command=node_command,
+            additional_node_command=additional_node_command,
             node_app_dir=node_app_dir,
         )
 
@@ -493,7 +494,7 @@ class SlurmJobLauncher(JobLauncherSpec):
 
 class ClientSlurmJobLauncher(SlurmJobLauncher):
     EXE_MODULE = "nvflare.private.fed.app.client.worker_process"
-    SUPPORTS_NODE_COMMAND = True
+    SUPPORTS_ADDITIONAL_NODE_COMMAND = True
 
     def get_module_args(self, job_args: dict) -> tuple:
         return _module_args(job_args, get_client_job_args(include_exe_module=False, include_set_options=True))

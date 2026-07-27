@@ -246,7 +246,7 @@ class SlurmJobManager:
                         "ro",
                     ),
                 )
-            if plan.sandbox == "pyxis" and plan.node_command:
+            if plan.sandbox == "pyxis" and plan.additional_node_command:
                 # srun starts node.sh inside the container, so its directory must be visible there.
                 launcher_mounts += (BindMount(job_dir, job_dir, "ro"),)
             plan = replace(plan, mounts=launcher_mounts + plan.mounts)
@@ -261,7 +261,7 @@ class SlurmJobManager:
             0o600,
         )
         _write_exclusive(os.path.join(job_dir, BATCH_FILE), script.encode("utf-8"), 0o700)
-        if plan.node_command:
+        if plan.additional_node_command:
             node_script = _render_node_script(plan, self.config)
             _write_exclusive(os.path.join(job_dir, NODE_FILE), node_script.encode("utf-8"), 0o700)
 

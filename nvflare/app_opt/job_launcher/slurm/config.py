@@ -24,7 +24,6 @@ from enum import Enum
 from pathlib import PurePosixPath
 from typing import Optional
 
-from nvflare.app_common.multinode import JOB_SPEC_NODE_COMMAND, JOB_SPEC_NODES
 from nvflare.app_opt.job_launcher.study_runtime import (
     SLURM_RESERVED_ENV_NAMES,
     SLURM_RESERVED_ENV_PREFIXES,
@@ -38,11 +37,11 @@ NODE_FILE = "node.sh"
 SANDBOX_ROOT = "sandbox_root"
 SLURM_CHILD_PROCESS_ENV = "NVFLARE_SLURM_CHILD_PROCESS"
 CONTAINER_RESOLV_CONF = "/etc/resolv.conf"
+JOB_SPEC_NODES = "nodes"
+JOB_SPEC_ADDITIONAL_NODE_COMMAND = "additional_node_command"
 
-# The node-group environment contract (nvflare.app_common.multinode) is
-# exported to every task of a launcher-owned multi-node job. How the port is
-# derived within the allocation is Slurm-launcher policy; sites override the
-# default range with multi_node_port_range.
+# The node-group environment is exported to every task of a launcher-owned
+# multi-node job. Sites can override the rendezvous port range.
 DEFAULT_MULTINODE_PORT_RANGE = (29400, 30399)
 
 SQUEUE_FORMAT = "%i|%T|%U|%k|%j"
@@ -65,7 +64,7 @@ _JOB_SLURM_KEYS = {
     "mem_per_node",
     "time",
     "pending_timeout",
-    JOB_SPEC_NODE_COMMAND,
+    JOB_SPEC_ADDITIONAL_NODE_COMMAND,
 }
 
 _PENDING_STATES = {"PENDING", "CONFIGURING", "REQUEUE_HOLD", "RESV_DEL_HOLD", "SPECIAL_EXIT"}
@@ -379,6 +378,12 @@ def normalize_slurm_launcher_settings(
     if not isinstance(forward_env, (list, tuple)):
         raise SlurmLauncherError("forward_env must be a list")
     validated_forward = tuple(_validate_env_name(name, "forward_env entry") for name in forward_env)
+    if multi_node_port_range is None:
+        multi_node_port_range = DEFAULT_MULTINODE_PORT_RANGE
+        start, end = multi_node_port_range
+        if start <= internal_port <= end:
+            width = end - start + 1
+            multi_node_port_range = (end + 1, end + width)
     return {
         "sandbox": sandbox,
         "python_path": python_path,
@@ -391,10 +396,8 @@ def normalize_slurm_launcher_settings(
         "parent_host": None if parent_host is None else _require_string(parent_host, "parent_host"),
         "poll_interval": poll_interval,
         "pending_timeout": pending_timeout,
-        # The default range is validated too: the internal_port exclusion is
-        # unconditional, however the range was chosen.
         "multi_node_port_range": normalize_multi_node_port_range(
-            DEFAULT_MULTINODE_PORT_RANGE if multi_node_port_range is None else multi_node_port_range,
+            multi_node_port_range,
             internal_port=internal_port,
         ),
     }
@@ -418,5 +421,5 @@ class LaunchPlan:
     python_path: str
     python_env: str
     forward_env: tuple
-    node_command: tuple = ()
+    additional_node_command: tuple = ()
     node_app_dir: Optional[str] = None

@@ -344,7 +344,7 @@ def test_pyxis_node_group_writes_node_script_and_mounts_job_artifacts(tmp_path):
         _plan(tmp_path, sandbox="pyxis"),
         image="/images/python.sqsh",
         resources=JobResources(nodes=2, pending_timeout=5),
-        node_command=("python3", "-m", "trainer"),
+        additional_node_command=("python3", "-m", "trainer"),
         node_app_dir=str(tmp_path / "job-1" / "app_site-1"),
     )
 

@@ -94,10 +94,26 @@ def test_resource_resolution_combines_portable_gpu_total():
     assert resources.nodes == 1
 
 
+def test_resource_resolution_uses_slurm_node_topology():
+    job_meta = {JobMetaKey.RESOURCE_SPEC.value: {"site-1": {"num_of_gpus": 16}}}
+
+    resources = _resolve_resources(
+        job_meta,
+        "site-1",
+        "apptainer",
+        600,
+        spec={"nodes": 2, "gpus_per_node": 8, "additional_node_command": "python3 train.py"},
+    )
+
+    assert resources.nodes == 2
+    assert resources.gpus_per_node == 8
+
+
 @pytest.mark.parametrize(
     "spec, message",
     [
         ({"unknown": 1}, "unsupported"),
+        ({"nodes": 0}, "greater than or equal to 1"),
         ({"nodes": 2}, "multi-node Slurm jobs require"),
         ({"pending_timeout": 601}, "may only reduce"),
     ],
@@ -258,14 +274,20 @@ def test_launch_plan_uses_fixed_worker_and_one_resolved_job_spec(tmp_path):
     assert plan.resources.nodes == 1
 
 
-def _multinode_meta(node_command="python3 -m nvflare.app_opt.pt.torchrun_node -- custom/client.py", nodes=2):
+def _multinode_meta(
+    additional_node_command="python3 -m nvflare.app_opt.pt.torchrun_node -- custom/client.py",
+    nodes=2,
+    **values,
+):
+    slurm = {"nodes": nodes, "additional_node_command": additional_node_command}
+    slurm.update(values)
     return {
         JobConstants.JOB_ID: "job-1",
-        JobMetaKey.JOB_LAUNCHER_SPEC.value: {"site-1": {"slurm": {"nodes": nodes, "node_command": node_command}}},
+        JobMetaKey.JOB_LAUNCHER_SPEC.value: {"site-1": {"slurm": slurm}},
     }
 
 
-def test_launch_plan_resolves_node_command_and_app_dir(tmp_path):
+def test_launch_plan_resolves_additional_node_command_and_app_dir(tmp_path):
     workspace = _workspace(tmp_path)
     app_dir = workspace / "job-1" / "app_site-1"
     app_dir.mkdir()
@@ -274,22 +296,29 @@ def test_launch_plan_resolves_node_command_and_app_dir(tmp_path):
     plan = launcher._build_launch_plan(_multinode_meta(), _fl_ctx(workspace))
 
     assert plan.resources.nodes == 2
-    assert plan.node_command == ("python3", "-m", "nvflare.app_opt.pt.torchrun_node", "--", "custom/client.py")
+    assert plan.additional_node_command == (
+        "python3",
+        "-m",
+        "nvflare.app_opt.pt.torchrun_node",
+        "--",
+        "custom/client.py",
+    )
     assert plan.node_app_dir == str(app_dir)
 
 
 @pytest.mark.parametrize(
     "meta_kwargs, message",
     [
-        ({"nodes": 1}, "node_command requires nodes > 1"),
-        ({"node_command": "python3 -m trainer --token ${secret:MY_TOKEN}"}, "secret references"),
-        ({"node_command": "unbalanced 'quote"}, "malformed node_command"),
-        ({"node_command": "python3\n-m trainer"}, "single line"),
-        ({"node_command": ""}, "non-empty string"),
-        ({"node_command": " "}, "at least one word"),
+        ({"nodes": 1}, "additional_node_command requires nodes > 1"),
+        ({"additional_node_command": "python3 -m trainer --token ${secret:MY_TOKEN}"}, "secret references"),
+        ({"additional_node_command": "unbalanced 'quote"}, "malformed additional_node_command"),
+        ({"additional_node_command": "python3\n-m trainer"}, "single line"),
+        ({"additional_node_command": ""}, "non-empty string"),
+        ({"additional_node_command": " "}, "at least one word"),
+        ({"unknown": True}, "unsupported job-owned Slurm key"),
     ],
 )
-def test_launch_plan_rejects_invalid_node_command(tmp_path, meta_kwargs, message):
+def test_launch_plan_rejects_invalid_additional_node_command(tmp_path, meta_kwargs, message):
     workspace = _workspace(tmp_path)
     (workspace / "job-1" / "app_site-1").mkdir()
     launcher = _launcher(tmp_path, workspace)
@@ -310,15 +339,15 @@ def test_launch_plan_allows_container_node_group(tmp_path):
     assert plan.sandbox == "apptainer"
     assert plan.image.endswith("python.sif")
     assert plan.resources.nodes == 2
-    assert plan.node_command[0] == "python3"
+    assert plan.additional_node_command[0] == "python3"
 
 
-def test_multinode_without_node_command_still_requires_bare_sandbox(tmp_path):
-    with pytest.raises(SlurmLauncherError, match="unless node_command"):
+def test_multinode_without_additional_node_command_still_requires_bare_sandbox(tmp_path):
+    with pytest.raises(SlurmLauncherError, match="unless additional_node_command"):
         _resolve_resources({}, "site-1", "pyxis", 600, spec={"nodes": 2})
 
 
-def test_launch_plan_rejects_node_command_without_deployed_app_dir(tmp_path):
+def test_launch_plan_rejects_node_group_without_deployed_app_dir(tmp_path):
     workspace = _workspace(tmp_path)
     launcher = _launcher(tmp_path, workspace)
 
@@ -326,7 +355,7 @@ def test_launch_plan_rejects_node_command_without_deployed_app_dir(tmp_path):
         launcher._build_launch_plan(_multinode_meta(), _fl_ctx(workspace))
 
 
-def test_server_launcher_rejects_node_command(tmp_path):
+def test_server_launcher_rejects_additional_node_command(tmp_path):
     workspace = _workspace(tmp_path)
     (workspace / "job-1" / "app_site-1").mkdir()
     launcher = _launcher(tmp_path, workspace, launcher_class=ServerSlurmJobLauncher)

@@ -67,8 +67,7 @@ by the runtime account, and dedicated to one NVFlare site or federation.
 For Apptainer, enable unprivileged user namespaces and install Apptainer on all
 eligible nodes. Validate its filesystem, process, cgroup, and GPU isolation on
 the production cluster. For Pyxis, install and configure Pyxis/Enroot on all
-eligible nodes and ensure ``srun`` is available after ``setup``. Launcher-owned
-multi-node fan-out (``node_command``) also requires ``srun`` after ``setup``.
+eligible nodes and ensure ``srun`` is available after ``setup``.
 
 The environment selected by ``python_path`` must contain a compatible NVFlare
 installation and the job dependencies. This applies to the host environment in
@@ -144,7 +143,8 @@ Important keys are:
    * - ``multi_node_port_range``
      - Optional ``"START-END"`` port range for the multi-node rendezvous
        endpoint (``NVFL_MASTER_PORT``); default ``29400-30399``. Must not
-       contain ``internal_port``.
+       contain ``internal_port``. If the existing ``internal_port`` is in the
+       implicit default range, the launcher uses ``30400-31399`` instead.
 
 ``setup`` starts with the minimal environment from ``sbatch --export=NIL``.
 Source module initialization explicitly. Put fixed values in study ``env``;
@@ -322,7 +322,8 @@ Jobs put portable GPU totals in ``resource_spec`` and Slurm-only settings in
 
 Supported job keys are ``image``, ``nodes``, ``gpus_per_node``,
 ``cpus_per_node``, ``mem_per_node`` (MiB), ``time``, ``pending_timeout``, and
-``node_command``. A job image requires normal BYOC authorization and takes
+``additional_node_command``.
+A job image requires normal BYOC authorization and takes
 precedence over the study and site images. Job and study images are rejected on
 any site whose effective sandbox is ``none``.
 
@@ -330,59 +331,42 @@ A positive multi-node ``num_of_gpus`` requires ``gpus_per_node``;
 whenever both are supplied, ``num_of_gpus`` must equal
 ``nodes * gpus_per_node``.
 
-A multi-node client job that also sets ``node_command`` requests a
-launcher-owned node group: the launcher starts one task per allocated node,
-runs the normal client job process on node rank 0, and runs ``node_command``
-on every other node with the node-group environment (``NVFL_NNODES``, ``NVFL_NODE_RANK``,
-``NVFL_MASTER_ADDR``, ``NVFL_MASTER_PORT``, ``NVFL_RUN_ID``) exported to all
-tasks. Node
-groups work under every sandbox: with ``apptainer`` or ``pyxis``, all user
-code on every node runs inside the configured container, exactly as in a
-single-node container job. ``node_command`` executes in the deployed job app
-directory as the submitting user, with the same trust as the job's own
-training code; secret references are not supported in it.
-
-Jobs built with the FedJob/Recipe API do not write ``node_command`` by hand:
-job export fills it from the site's external training command
-(``ScriptRunner``'s resolved ``command``) whenever a launcher block requests
-``nodes > 1``, and enforces ``launch_once=True`` (the ScriptRunner default).
-An explicit ``node_command`` always wins; for jobs that set it directly, the
-platform does not verify that it matches the rank-0 training command. For
-PyTorch jobs,
-``python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=<G> -- <script> <args>``
-maps this environment onto torchrun rendezvous arguments and is intended to be
-both the job's training command and its ``node_command``:
+A launcher-owned node group requires an explicit full
+``additional_node_command`` in its Slurm launcher block:
 
 .. code-block:: json
 
    {
-     "resource_spec": {
-       "site-1": {"num_of_gpus": 16}
-     },
      "launcher_spec": {
        "site-1": {
          "slurm": {
            "nodes": 2,
            "gpus_per_node": 8,
-           "node_command": "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 -- custom/client.py"
+           "additional_node_command": "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 -- custom/client.py"
          }
        }
      }
    }
 
-Non-zero tasks start before the client job process has prepared Client API
-runtime files. A hand-written ``node_command`` must therefore join its
-framework rendezvous before reading client-job-created runtime state; a wrapper
-must not call ``flare.init()`` before that rendezvous. ``torchrun_node``
-satisfies this ordering because torchrun blocks the training script at
-rendezvous until node rank 0 starts.
+The rank-0 training command remains part of the Recipe, ``ScriptRunner``, or
+other job application configuration. NVFlare does not infer or copy it into
+``additional_node_command``; when the commands should match, the job author is
+responsible for keeping them aligned.
 
-Without ``node_command``, a multi-node allocation keeps the client job process
-alone on the first node and the application owns any fan-out; this mode
-requires effective ``sandbox: none`` because only a bare client job process
-can reach ``srun``. To keep application-owned fan-out for a job that would
-otherwise get a generated ``node_command``, set ``"node_command": null``
-explicitly in the launcher block.
+The launcher starts one task per node. Rank 0 runs the normal client job
+process; every other rank runs ``additional_node_command`` in the deployed app
+directory.
+All ranks receive ``NVFL_NNODES``, ``NVFL_NODE_RANK``,
+``NVFL_MASTER_ADDR``, ``NVFL_MASTER_PORT``, and the per-allocation
+``NVFL_RUN_ID``. Under ``apptainer`` or ``pyxis``, all user code runs inside
+the configured container.
+
+Non-zero ranks start before rank 0 has prepared Client API runtime files, so a
+hand-written command must join its framework rendezvous before reading that
+state. ``torchrun_node`` provides this ordering. A hand-authored launcher block
+may provide the full ``additional_node_command`` directly. Without it, Slurm
+``nodes > 1`` retains application-owned fan-out behavior and requires effective
+``sandbox: none``.
 
 Security and Operations
 =======================

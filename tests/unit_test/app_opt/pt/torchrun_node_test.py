@@ -16,7 +16,6 @@ import sys
 
 import pytest
 
-from nvflare.app_common.multinode import NodeGroupError
 from nvflare.app_opt.pt.torchrun_node import build_torchrun_argv
 
 _GROUP_ENV = {
@@ -56,5 +55,25 @@ def test_node_group_environment_maps_to_rendezvous_arguments():
 
 
 def test_join_timeout_must_be_positive():
-    with pytest.raises(NodeGroupError, match="join-timeout"):
+    with pytest.raises(ValueError, match="join-timeout"):
         build_torchrun_argv(["--join-timeout=0", "--", "custom/client.py"], dict(_GROUP_ENV))
+
+
+@pytest.mark.parametrize("argv, message", [(["custom/client.py"], "'--' is required"), (["--"], "training script")])
+def test_training_command_requires_boundary_and_script(argv, message):
+    with pytest.raises(ValueError, match=message):
+        build_torchrun_argv(argv, {})
+
+
+@pytest.mark.parametrize(
+    "environ, message",
+    [
+        ({"NVFL_NNODES": "0"}, "node-group topology"),
+        ({"NVFL_NNODES": "2", "NVFL_NODE_RANK": "2"}, "node-group topology"),
+        ({"NVFL_NNODES": "2"}, "NVFL_MASTER_ADDR"),
+        ({"NVFL_NNODES": "2", "NVFL_MASTER_ADDR": "node-0"}, "NVFL_RUN_ID"),
+    ],
+)
+def test_invalid_node_group_environment_is_rejected(environ, message):
+    with pytest.raises(ValueError, match=message):
+        build_torchrun_argv(["--", "custom/client.py"], environ)

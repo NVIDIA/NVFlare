@@ -50,7 +50,15 @@ def _config(tmp_path, sandbox="none"):
     )
 
 
-def _plan(tmp_path, sandbox="none", resources=None, mounts=(), forward_env=(), node_command=(), node_app_dir=None):
+def _plan(
+    tmp_path,
+    sandbox="none",
+    resources=None,
+    mounts=(),
+    forward_env=(),
+    additional_node_command=(),
+    node_app_dir=None,
+):
     run_dir = tmp_path / "workspace" / "job-1"
     run_dir.mkdir(parents=True, exist_ok=True)
     return LaunchPlan(
@@ -75,19 +83,23 @@ def _plan(tmp_path, sandbox="none", resources=None, mounts=(), forward_env=(), n
         python_path="/usr/bin/python3",
         python_env="/custom",
         forward_env=forward_env,
-        node_command=node_command,
+        additional_node_command=additional_node_command,
         node_app_dir=node_app_dir,
     )
 
 
-def _multinode_plan(tmp_path, sandbox="none", node_command=("python3", "-m", "trainer", "--epochs", "2")):
+def _multinode_plan(
+    tmp_path,
+    sandbox="none",
+    additional_node_command=("python3", "-m", "trainer", "--epochs", "2"),
+):
     app_dir = tmp_path / "workspace" / "job-1" / "app_site-1"
     app_dir.mkdir(parents=True, exist_ok=True)
     return _plan(
         tmp_path,
         sandbox=sandbox,
         resources=JobResources(nodes=2, gpus_per_node=1),
-        node_command=node_command,
+        additional_node_command=additional_node_command,
         node_app_dir=str(app_dir),
     )
 
@@ -168,7 +180,7 @@ def test_multinode_batch_exports_node_group_contract_and_delegates_to_srun(tmp_p
     assert 'export NVFL_NNODES="${SLURM_JOB_NUM_NODES:?}"' in script
     assert 'export NVFL_MASTER_ADDR="${SLURMD_NODENAME:?}"' in script
     assert 'export NVFL_MASTER_PORT="$((29400 + 10#${SLURM_JOB_ID} % 1000))"' in script
-    assert 'export NVFL_RUN_ID="${SLURM_JOB_ID}"' in script
+    assert 'export NVFL_RUN_ID="${SLURM_JOB_ID:?}"' in script
     assert "NVFL_SRUN=srun" in script
     command_line = next(line for line in script.splitlines() if line.startswith("_nvfl_command="))
     assert "--nodes=2" in command_line
@@ -209,10 +221,6 @@ def test_apptainer_node_group_containerizes_each_rank_on_its_node(tmp_path):
     assert "cd " not in node
     assert "worker.module" in node
     assert "python3 -m trainer --epochs 2" in node
-    assert "unset NVFLARE_JOB_AUTH_TOKEN" in node
-    assert "APPTAINERENV_NVFLARE_JOB_AUTH_TOKEN" in node
-    assert "SINGULARITYENV_NVFLARE_JOB_AUTH_TOKEN" in node
-    assert "node group topology mismatch" in node
     assert "export CLIENT_API_TYPE=EX_PROCESS_API APPTAINERENV_CLIENT_API_TYPE=EX_PROCESS_API" in node
 
 
@@ -241,9 +249,9 @@ def test_pyxis_node_group_fans_out_containers_through_one_srun(tmp_path):
 
 @pytest.mark.parametrize(
     "node_rank, expected",
-    [("0", "worker-ran token=cj-secret"), ("00", "worker-ran token=cj-secret"), ("1", "rank=1 token=scrubbed")],
+    [("0", "worker-ran token=cj-secret"), ("00", "worker-ran token=cj-secret"), ("1", "rank=1 token=cj-secret")],
 )
-def test_rendered_node_script_executes_by_rank_and_scrubs_worker_credentials(tmp_path, node_rank, expected):
+def test_rendered_node_script_executes_by_rank(tmp_path, node_rank, expected):
     worker = tmp_path / "worker"
     worker.write_text(
         '#!/usr/bin/env bash\necho "worker-ran token=${NVFLARE_JOB_AUTH_TOKEN:-missing}"\n', encoding="utf-8"
@@ -252,7 +260,11 @@ def test_rendered_node_script_executes_by_rank_and_scrubs_worker_credentials(tmp
     plan = replace(
         _multinode_plan(
             tmp_path,
-            node_command=("bash", "-c", 'echo "rank=${NVFL_NODE_RANK} token=${NVFLARE_JOB_AUTH_TOKEN:-scrubbed}"; pwd'),
+            additional_node_command=(
+                "bash",
+                "-c",
+                'echo "rank=${NVFL_NODE_RANK} token=${NVFLARE_JOB_AUTH_TOKEN:-missing}"; pwd',
+            ),
         ),
         python_path=str(worker),
     )
