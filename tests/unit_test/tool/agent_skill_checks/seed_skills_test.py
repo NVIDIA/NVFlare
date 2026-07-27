@@ -454,6 +454,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
         encoding="utf-8"
     )
     normalized_skill = " ".join(skill_text.split())
+    normalized_conversion = " ".join(conversion_text.split())
     normalized_shared = " ".join(shared_workflow.split())
     normalized_pytorch = " ".join(pytorch_conversion.split())
     normalized_lightning = " ".join(lightning_conversion.split())
@@ -463,13 +464,18 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "auto-detect FL launch from environment variables" in shared_workflow
     assert "Exported app content is target-specific" in shared_workflow
     assert 'recipe.add_server_file("model.py")' in shared_workflow
+    assert "Every generated or project-local module referenced by server-side" in shared_workflow
+    assert "Installed NVFLARE, framework, and third-party modules referenced by `class_path`" in normalized_shared
     assert "client apps and is not enough for per-site exports" in normalized_pytorch
     assert "client apps and is not enough for per-site exports" in normalized_lightning
+    assert "third-party class paths stay runtime dependencies" in normalized_pytorch
+    assert "third-party class paths stay runtime dependencies" in normalized_lightning
     assert "FL-only Client API entry point" in normalized_pytorch
     assert "FL-only Client API entry point" in normalized_lightning
     assert "FL-only client entry" in skill_text
     assert "Do not branch on launch environment variables" in normalized_skill
     assert "client imports are not enough for per-site exports" in normalized_skill
+    assert "generated or project-local server-only model module" in normalized_skill
     assert "server-only model module" in skill_text
     assert "preserve source metric names" in skill_text
     assert "source-to-server mapping" in skill_text
@@ -478,7 +484,8 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "federated=False" in conversion_text
     assert 'recipe.add_server_file("model.py")' in conversion_text
     assert "client import is not enough for per-site exports" in conversion_text
-    assert "server persistor will fail to construct the initial model" in conversion_text
+    assert "third-party class paths stay runtime dependencies" in normalized_conversion
+    assert "server persistor will fail to construct the initial model" in normalized_conversion
     assert "standalone mode" in validation_text
     assert "model.py` is server-only" in validation_text
     assert "class_path`, train script, custom aggregator" in normalized_shared

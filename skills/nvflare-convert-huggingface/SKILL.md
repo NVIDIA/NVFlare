@@ -103,13 +103,13 @@ unprotected recipe or present a disclaimer as implementation.
    spaces, checkpoint constraints, DDP, or non-default patch settings.
 8. Add or update `job.py` with explicit model config
    `{"class_path": ..., "args": ...}`, never a live model. Package every
-   server-only model module into the server app with `recipe.add_server_file(...)`
-   or equivalent; client imports are not enough for per-site exports. Make the
-   server model expose the same exchanged keyspace as the patched Trainer: full
-   state or PEFT adapters. Use `server_expected_format=ExchangeFormat.PYTORCH`
-   to preserve dtypes, set `enable_tensor_disk_offload=True` when exposed, and follow
-   `../nvflare-shared/references/pytorch-family-recipe-parameters.md` for
-   `key_metric`, `launch_external_process`, and offload rules. Leave external
+   generated or project-local server-only model module into the server app with
+   `recipe.add_server_file(...)` or equivalent; client imports are not enough for
+   per-site exports. Make the server model expose the same exchanged keyspace as
+   the patched Trainer: full state or PEFT adapters. Use
+   `server_expected_format=ExchangeFormat.PYTORCH` to preserve dtypes, set `enable_tensor_disk_offload=True` when exposed; follow
+   `../nvflare-shared/references/pytorch-family-recipe-parameters.md` for `key_metric`,
+   `launch_external_process`, and offload rules. Leave external
    launch unset for single-process Trainer scripts; set it only for DDP/torchrun,
    scheduler-launched scripts, or explicit user intent when the selected recipe
    exposes it. Quote generated `train_args`.

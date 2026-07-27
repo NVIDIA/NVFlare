@@ -97,15 +97,18 @@ requires it and the selected recipe exposes the parameter.
 Quote every user-controlled path or model identifier included in the
 `train_args` command string.
 
-Exported app folders are target-specific. If the server model module is
-referenced from `job.py` through `{"class_path": "model.ServerModel"}`, add it
-to the server app with `recipe.add_server_file("model.py")` or the equivalent
-server-targeted API. A client import is not enough for per-site exports because
-`set_per_site_config()` creates `app_server` separately from each client app.
-Package client-used modules through `train_script`'s import closure or
-`recipe.add_client_file(...)`, then inspect the export for
-`app_server/custom/model.py` and each client app's required files; otherwise the
-server persistor will fail to construct the initial model.
+Exported app folders are target-specific. If a generated or project-local server
+model module is referenced from `job.py` through
+`{"class_path": "model.ServerModel"}`, add it to the server app with
+`recipe.add_server_file("model.py")` or the equivalent server-targeted API. A
+client import is not enough for per-site exports because `set_per_site_config()`
+creates `app_server` separately from each client app. Package client-used local
+modules through `train_script`'s import closure or `recipe.add_client_file(...)`,
+then inspect the export for `app_server/custom/model.py` and each client app's
+required files; otherwise the server persistor will fail to construct the initial
+model. Installed NVFLARE, framework, and third-party class paths stay runtime
+dependencies validated through requirements installation plus import/preflight
+checks.
 
 ## Data And Model Selection
 
