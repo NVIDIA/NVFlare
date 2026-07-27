@@ -115,13 +115,13 @@ unprotected recipe or present a disclaimer as implementation.
    exposes it. Quote generated `train_args`.
 9. Validate in the ladder from
    `../nvflare-shared/references/validation-evidence.md`, then apply
-   `references/huggingface-validation.md`. Before simulation, run exact
-   `HfArgumentParser` parse-only preflight for final `train_args`; no unused
-   args or `TrainingArguments` fields missing from the installed Transformers
-   version are allowed. Use the HF reference for topology-smoke/full-model
-   validation split and export inspection. If dependencies, data, or resources
-   block full validation, save a draft and report the blocker; do not call it
-   complete.
+   `references/huggingface-validation.md`. Before simulation, parse final
+   `train_args` through the generated client's actual parser; no unused args are
+   allowed. Validate `TrainingArguments`/`SFTConfig` fields against the installed
+   framework version. Export only with `python job.py --export --export-dir`;
+   do not add job-local export flags. Use the HF reference for topology-smoke,
+   full-model, and export inspection. If dependencies, data, or resources block
+   full validation, save a draft and report the blocker.
 10. Report the selected recipe, source facts, parameter scope, data partition,
     changed files, validation results, metrics, artifact paths, environment
     limitations, and unresolved blockers. Load
