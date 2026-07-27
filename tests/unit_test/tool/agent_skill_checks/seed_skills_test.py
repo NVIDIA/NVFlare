@@ -485,8 +485,12 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "generated `client.py` is an FL Client API entry point" in shared_workflow
     assert "auto-detect FL launch from environment variables" in shared_workflow
     assert "Exported app content is target-specific" in shared_workflow
+    assert "Before asserting paths, inspect the exported job root" in normalized_shared
+    assert "`app/custom`" in shared_workflow
+    assert "`app_server/custom` plus each `app_<site>/custom`" in normalized_shared
+    assert "Do not reuse a path assumption from another export" in normalized_shared
     assert 'recipe.add_server_file("model.py")' in shared_workflow
-    assert "Every generated or project-local module referenced by server-side" in shared_workflow
+    assert "Every generated or project-local module referenced by server-side" in normalized_shared
     assert "Installed NVFLARE, framework, and third-party modules referenced by `class_path`" in normalized_shared
     assert "client apps and is not enough for per-site exports" in normalized_pytorch
     assert "client apps and is not enough for per-site exports" in normalized_lightning
@@ -517,7 +521,11 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "Do not also add that same file through `recipe.add_client_file(...)`" in normalized_conversion
     assert "Reject absolute `task_script_path` values" in normalized_conversion
     assert 'recipe.add_server_file("model.py")' in conversion_text
-    assert "client import is not enough for per-site exports" in conversion_text
+    assert "client import is not enough when an export separates server and client apps" in normalized_conversion
+    assert "Before asserting paths, inspect the exported job root" in normalized_conversion
+    assert "`app/custom` for a unified export" in normalized_conversion
+    assert "`app_server/custom` and each `app_<site>/custom`" in normalized_conversion
+    assert "Do not reuse a path assumption from another export" in normalized_conversion
     assert "third-party class paths stay runtime dependencies" in normalized_conversion
     assert "server persistor will fail to construct the initial model" in normalized_conversion
     assert (
@@ -567,6 +575,30 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "Its name must exactly match one key delivered by the client" in normalized_recipe
     assert "Do not reduce simulator `num_threads` below the requested client count" in recipe_text
     assert "guessed concurrency settings" in normalized_recipe
+
+
+def test_unified_export_packages_server_class_path_file_with_server_targeted_api(tmp_path):
+    from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+
+    client_file = tmp_path / "client.py"
+    model_file = tmp_path / "model.py"
+    client_file.write_text("import model\n", encoding="utf-8")
+    model_file.write_text("class SimpleNetwork:\n    pass\n", encoding="utf-8")
+
+    recipe = FedAvgRecipe(
+        name="unified_server_file_export",
+        min_clients=2,
+        num_rounds=1,
+        model={"class_path": "model.SimpleNetwork", "args": {}},
+        train_script=str(client_file),
+    )
+    recipe.add_server_file(str(model_file))
+
+    export_root = tmp_path / "export"
+    recipe.export(str(export_root))
+    job_root = export_root / recipe.name
+
+    assert (job_root / "app" / "custom" / "model.py").is_file()
 
 
 def test_per_site_export_packages_server_class_path_file_with_server_targeted_api(tmp_path):

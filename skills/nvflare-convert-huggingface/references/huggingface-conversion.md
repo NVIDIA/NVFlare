@@ -105,18 +105,24 @@ before simulation. Reject absolute `task_script_path` values in generated
 configs because exported apps must launch their packaged client script
 portably.
 
-Exported app folders are target-specific. If a generated or project-local server
-model module is referenced from `job.py` through
+Exported app folders are target-specific, and the layout depends on the recipe
+configuration. Before asserting paths, inspect the exported job root and
+enumerate the app directories it actually contains. A standard unified export
+uses `app/custom`; a per-site export created through `set_per_site_config()`
+uses `app_server/custom` plus each `app_<site>/custom`.
+
+If a generated or project-local server model module is referenced from `job.py` through
 `{"class_path": "model.ServerModel"}`, add it to the server app with
 `recipe.add_server_file("model.py")` or the equivalent server-targeted API. A
-client import is not enough for per-site exports because `set_per_site_config()`
-creates `app_server` separately from each client app. Package client-used local
+client import is not enough when an export separates server and client apps.
+Package client-used local
 modules through `train_script`'s import closure or `recipe.add_client_file(...)`,
-then inspect the export for `app_server/custom/model.py` and each client app's
-required files; otherwise the server persistor will fail to construct the initial
-model. Installed NVFLARE, framework, and third-party class paths stay runtime
-dependencies validated through requirements installation plus import/preflight
-checks.
+then verify the required files under the discovered layout: `app/custom` for a
+unified export, or `app_server/custom` and each `app_<site>/custom` for a
+per-site export. Do not reuse a path assumption from another export. Otherwise,
+the server persistor will fail to construct the initial model. Installed
+NVFLARE, framework, and third-party class paths stay runtime dependencies
+validated through requirements installation plus import/preflight checks.
 
 ## Data And Model Selection
 
