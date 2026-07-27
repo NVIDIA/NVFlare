@@ -109,7 +109,9 @@ unprotected recipe or present a disclaimer as implementation.
    the patched Trainer: full state or PEFT adapters. After `recipe show`, follow
    `../nvflare-shared/references/pytorch-family-recipe-construction.md` for
    capability-checked metric, transport, decomposer, offload, and execution-mode
-   settings. Quote generated `train_args`.
+   settings. Quote generated `train_args`. For local `job.py` options, import the
+   recipe API first and use `ArgumentParser(allow_abbrev=False)` with strict
+   `parse_args()`; never `parse_known_args()` because recipe imports consume NVFLARE export flags.
 9. Load and apply `../nvflare-shared/references/validation-evidence.md` and
    `references/huggingface-validation.md`. Before simulation, parse final
    `train_args` through the generated client's actual parser and actual
@@ -195,5 +197,4 @@ unprotected recipe or present a disclaimer as implementation.
 Load only phase-needed HF references by path: `references/huggingface-detection.md`,
 `references/huggingface-conversion.md`, `references/huggingface-state-and-distributed.md`, and `references/huggingface-validation.md`; load
 `../nvflare-shared/references/pytorch-family-recipe-construction.md` after every
-`recipe show`; use other shared references only under the conditions above. Do
-not depend on repository examples.
+`recipe show`; use other shared references only under the conditions above. Do not depend on repository examples.
