@@ -33,7 +33,7 @@ _HELLO_COLLAB_ROOT = _EXAMPLES_ROOT / "hello-world" / "hello-collab"
 _EXAMPLES = [
     pytest.param(
         _HELLO_COLLAB_ROOT,
-        "hello_numpy_collab",
+        "job",
         SimpleNamespace(n_clients=2, num_rounds=3, update_type="full"),
         id="hello_numpy_collab",
     ),

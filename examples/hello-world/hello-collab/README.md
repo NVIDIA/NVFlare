@@ -15,7 +15,7 @@ experiment:
 Both examples create a recipe and execute it with `SimEnv`. The original
 example separates that Recipe API setup from a Client API training script.
 The Collab version keeps the complete application in
-[`hello_numpy_collab.py`](hello_numpy_collab.py):
+[`job.py`](job.py):
 
 | Original `hello-numpy` | Collab rewrite |
 |---|---|
@@ -49,15 +49,15 @@ its directory:
 
 ```bash
 cd examples/hello-world/hello-collab
-python hello_numpy_collab.py
+python job.py
 ```
 
 The Collab rewrite accepts the same core experiment options as the original.
 For example, send model differences or export the job configuration with:
 
 ```bash
-python hello_numpy_collab.py --update_type diff
-python hello_numpy_collab.py --export_config
+python job.py --update_type diff
+python job.py --export_config
 ```
 
 Other options are `--n_clients`, `--num_rounds`, and `--log_config`. After

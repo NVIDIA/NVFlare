@@ -222,7 +222,7 @@ Implement the same NumPy workflow with ordinary Python function calls.
 **Run it:**
 ```bash
 cd hello-collab
-python hello_numpy_collab.py
+python job.py
 ```
 
 ### Framework Integration

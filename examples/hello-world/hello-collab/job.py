@@ -20,7 +20,7 @@ there are no Shareable, DXO, or FLModel transport objects.
 
 Run from the ``examples/hello-world/hello-collab`` directory:
 
-    python hello_numpy_collab.py
+    python job.py
 """
 
 import argparse
