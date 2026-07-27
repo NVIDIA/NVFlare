@@ -24,7 +24,8 @@ as opaque.
 
 import ast
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from types import MappingProxyType
+from typing import Any, Mapping, Optional
 
 
 @dataclass
@@ -189,9 +190,9 @@ class FrameworkDetector:
     name: str = ""
     #: Top-level import module names that map to this framework's evidence
     #: bucket, e.g. ``{"torch": "pytorch"}``. Used for ranked import evidence.
-    import_roots: dict[str, str] = {}
+    import_roots: Mapping[str, str] = MappingProxyType({})
     #: Evidence-kind -> ranking weight contributed by this framework.
-    evidence_weights: dict[str, int] = {}
+    evidence_weights: Mapping[str, int] = MappingProxyType({})
     #: Conversion skill recommended when this framework is primary, or ``None``.
     recommended_skill: Optional[str] = None
     #: Whether inspector recommendations require active evidence rather than

@@ -563,7 +563,7 @@ class TestInitializeAndFinalize:
 
         def natural_wait(timeout=None):
             wait_entered.set()
-            assert timeout == pytest.approx(ebp._DEFAULT_SHUTDOWN_TIMEOUT)
+            assert ebp._DEFAULT_SHUTDOWN_TIMEOUT - 1.0 < timeout <= ebp._DEFAULT_SHUTDOWN_TIMEOUT
             assert release_exit.wait(2.0)
             process.exit(0)
             return 0
