@@ -17,6 +17,12 @@ import os
 from enum import Enum
 from typing import Optional
 
+from nvflare.client.cell.bootstrap import (
+    BOOTSTRAP_FILE_ENV_VAR,
+    CELL_API_TYPE,
+    get_bootstrap_client_api_type,
+    read_bootstrap_config,
+)
 from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.fuel.data_event.data_bus import DataBus
 
@@ -31,15 +37,18 @@ data_bus = DataBus()
 class ClientAPIType(Enum):
     IN_PROCESS_API = "IN_PROCESS_API"
     EX_PROCESS_API = "EX_PROCESS_API"
+    # Trainer-side Cell engine selected by ExternalProcessBackend's typed bootstrap.
+    CELL_API = CELL_API_TYPE
 
 
 class APIContext:
     def __init__(self, rank: Optional[str] = None, config_file: Optional[str] = None):
         self.rank = rank
         self.config_file = config_file if config_file else DEFAULT_CONFIG
+        self._explicit_config_file = bool(config_file)
+        self._typed_bootstrap_file = None
 
-        api_type_name = os.environ.get(CLIENT_API_TYPE_KEY, ClientAPIType.IN_PROCESS_API.value)
-        api_type = ClientAPIType(api_type_name)
+        api_type = self._resolve_api_type()
         self.api = self._create_client_api(api_type)
         self.api.init(rank=self.rank)
 
@@ -52,6 +61,44 @@ class APIContext:
             self.api.shutdown()
             self.api = None
 
+    def _resolve_api_type(self) -> ClientAPIType:
+        """Resolve the API engine from a typed bootstrap or the legacy type environment."""
+        typed_api_type = None
+        typed_config_path = None
+        if self._explicit_config_file:
+            typed_config_path = self.config_file
+            try:
+                config = read_bootstrap_config(self.config_file)
+            except (OSError, ValueError):
+                # Legacy config validation remains owned by the selected API engine; a
+                # readable typed envelope is validated below and never downgraded.
+                config = None
+            if config is not None:
+                typed_api_type = get_bootstrap_client_api_type(config, self.config_file)
+        if typed_api_type is None:
+            # The backend bootstrap supersedes a legacy config_file argument so launched
+            # trainers always use this run's Cell endpoint and token.
+            bootstrap_path = os.environ.get(BOOTSTRAP_FILE_ENV_VAR)
+            if bootstrap_path:
+                config = read_bootstrap_config(bootstrap_path)
+                typed_api_type = get_bootstrap_client_api_type(config, bootstrap_path)
+                if typed_api_type is None:
+                    raise ValueError(f"Client API bootstrap {bootstrap_path} is missing its typed envelope")
+                typed_config_path = bootstrap_path
+
+        env_api_type_name = os.environ.get(CLIENT_API_TYPE_KEY)
+        if typed_api_type is not None:
+            if env_api_type_name is not None and env_api_type_name != typed_api_type:
+                raise ValueError(
+                    f"Client API bootstrap {typed_config_path} declares {typed_api_type!r}, "
+                    f"but {CLIENT_API_TYPE_KEY} is {env_api_type_name!r}"
+                )
+            self._typed_bootstrap_file = typed_config_path
+            return ClientAPIType(typed_api_type)
+
+        api_type_name = env_api_type_name or ClientAPIType.IN_PROCESS_API.value
+        return ClientAPIType(api_type_name)
+
     def _create_client_api(self, api_type: ClientAPIType) -> APISpec:
         """Creates a new client_api based on the provided API type."""
         if api_type == ClientAPIType.IN_PROCESS_API:
@@ -59,5 +106,12 @@ class APIContext:
             if not isinstance(api, InProcessClientAPI):
                 raise RuntimeError(f"api {api} is not a valid InProcessClientAPI")
             return api
+        elif api_type == ClientAPIType.CELL_API:
+            # Keep cellnet/payload imports out of the other Client API modes.
+            from nvflare.client.cell.api import CellClientAPI
+
+            if self._typed_bootstrap_file:
+                return CellClientAPI(bootstrap_file=self._typed_bootstrap_file)
+            return CellClientAPI()
         else:
             return ExProcessClientAPI(config_file=self.config_file)

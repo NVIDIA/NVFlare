@@ -49,10 +49,14 @@ while flare.is_running():
     # Optional: call receive() only when round/site/task metadata is needed.
     # The patched trainer loads the global model internally.
     flare.receive()
-    trainer.validate(model, datamodule=datamodule)
+    validate_global_model(trainer, model, datamodule=datamodule)
     trainer.fit(model, datamodule=datamodule)
     trainer.test(ckpt_path="best", datamodule=datamodule)  # when test evidence is requested/available
 ```
+
+Adapt `validate_global_model` from `../assets/lightning_client.py`; it keeps
+evaluation Lightning-native and preserves training-result metrics on the
+patched exchange.
 
 For evaluation-only / FedEval conversions, run `trainer.validate(...)` (the
 patched trainer sends the validation metrics) and **do not call
@@ -86,9 +90,8 @@ Keep evaluation inside Lightning; do not reuse the raw PyTorch
   they are visible in the trainer callback metrics.
 - After `flare.patch(trainer)` and `flare.receive()`, call
   `trainer.validate(model, datamodule=...)` before `trainer.fit(...)` when
-  training-with-evaluation or server-side model selection needs validation
-  metrics; keep this inside the `while flare.is_running()` loop so the round
-  reports global-model metrics.
+  server-side model selection or round metrics need validation; keep this
+  inside the `while flare.is_running()` loop.
 - Use `trainer.test(...)` only when the source workflow already has test
   semantics or the user requests test reporting.
 - Rely on Lightning's validate/test loops to set evaluation mode and disable
@@ -97,6 +100,36 @@ Keep evaluation inside Lightning; do not reuse the raw PyTorch
 - If the source project lacks validation/test steps or dataloaders, ask in
   interactive mode or fail closed in unattended mode instead of inventing
   metric semantics.
+
+### Training-result metric delivery
+
+For a training task, `trainer.validate(...)` and `self.log(...)` establish
+Lightning-local metrics but do not by themselves establish server delivery.
+The selected recipe can generate an executor whose
+`train_with_evaluation` setting is disabled or not exposed as a recipe
+capability. In that case the patched callback sends trained parameters without
+putting its captured validation result in `FLModel.metrics`.
+
+When the conversion requires server metrics, capture the return value from the
+pre-fit `trainer.validate(...)`, require finite scalar values, and preserve it
+on the patched module's supported metadata channel under
+`MetaKey.INITIAL_METRICS` before `trainer.fit(...)`. Use
+`../assets/lightning_client.py` as the copyable implementation. Preserve any
+other dictionary entries already present in `model.__fl_meta__`; fail closed if
+that attribute is not a dictionary. This metadata travels with the one patched
+model exchange and is not a reason to add a manual `flare.send(...)`.
+
+The metric names placed under `MetaKey.INITIAL_METRICS` must be the same names
+used for recipe `key_metric` and artifact reporting. They must describe the
+received global model evaluated before local training, not post-fit local
+metrics.
+
+If a custom `ModelAggregator` is selected, it must also aggregate supported
+client `FLModel.metrics` values and return them in the aggregated
+`FLModel.metrics`. Follow the Custom Aggregation contract in
+`../../nvflare-shared/references/conversion-workflow.md` and adapt
+`../../nvflare-shared/assets/aggregator.py`; a parameters-only aggregate loses
+the server-level metric even when clients delivered it.
 
 This template is self-contained packaged guidance; do not depend on NVFLARE
 repository `examples/` being present in the user's environment. The runnable
