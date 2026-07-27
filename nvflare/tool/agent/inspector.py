@@ -574,6 +574,14 @@ def _inspect_file(path: Path, state: InspectState, max_file_bytes: int) -> None:
     _add_entry_point(path, rel_path, tree, state)
 
 
+@dataclass
+class _DeferredCallableBody:
+    scope: tuple[str, ...]
+    kind: str
+    node: ast.AST
+    analyzed: bool = False
+
+
 class _PythonInspector(ast.NodeVisitor):
     def __init__(self, path: Path, rel_path: str, state: InspectState):
         self.path = path
@@ -582,7 +590,8 @@ class _PythonInspector(ast.NodeVisitor):
         self._detectors = frameworks.detectors()
         self._detector_states = {detector.name: detector.new_file_state() for detector in self._detectors}
         self._scope_stack: list[str] = []
-        self._class_deferred_bodies: list[list[tuple[tuple[str, ...], str, ast.AST]]] = []
+        self._class_deferred_bodies: list[list[_DeferredCallableBody]] = []
+        self._class_callable_bindings: list[dict[str, _DeferredCallableBody]] = []
         self._ctx = DetectContext(
             self._emit_framework_evidence,
             self._add_flare_call,
@@ -606,6 +615,7 @@ class _PythonInspector(ast.NodeVisitor):
                     self._ctx,
                     tuple(self._scope_stack),
                 )
+            self._bind_class_callable_names([alias.asname or alias.name.split(".", 1)[0]])
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
@@ -621,6 +631,8 @@ class _PythonInspector(ast.NodeVisitor):
                 tuple(self._scope_stack),
             )
         for alias in node.names:
+            if alias.name != "*":
+                self._bind_class_callable_names([alias.asname or alias.name])
             if alias.name in {"FedJob", "FLModel", "SimEnv"}:
                 self.state.flare_imports.append(
                     _evidence(self.rel_path, node.lineno, "from_import", f"{module}.{alias.name}")
@@ -652,11 +664,13 @@ class _PythonInspector(ast.NodeVisitor):
         for keyword in node.keywords:
             self.visit(keyword.value)
 
-        deferred_bodies: list[tuple[tuple[str, ...], str, ast.AST]] = []
+        deferred_bodies: list[_DeferredCallableBody] = []
         self._class_deferred_bodies.append(deferred_bodies)
+        self._class_callable_bindings.append({})
         try:
             self._visit_body_in_scope(node, "class", predeclare_locals=False)
         finally:
+            self._class_callable_bindings.pop()
             self._class_deferred_bodies.pop()
         for detector in self._detectors:
             detector.on_class_definition(
@@ -667,6 +681,7 @@ class _PythonInspector(ast.NodeVisitor):
                 self._ctx,
                 tuple(self._scope_stack),
             )
+        self._bind_class_callable_names([node.name])
         if self._class_deferred_bodies:
             self._class_deferred_bodies[-1].extend(deferred_bodies)
         else:
@@ -675,22 +690,28 @@ class _PythonInspector(ast.NodeVisitor):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self._visit_function_definition_expressions(node)
         self._record_binding_names([node.name], node.lineno)
-        if self._defer_class_callable_body("function", node):
+        deferred_body = self._defer_class_callable_body("function", node)
+        self._bind_class_callable_names([node.name], deferred_body)
+        if deferred_body:
             return
         self._visit_body_in_scope(node, "function")
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         self._visit_function_definition_expressions(node)
         self._record_binding_names([node.name], node.lineno)
-        if self._defer_class_callable_body("async-function", node):
+        deferred_body = self._defer_class_callable_body("async-function", node)
+        self._bind_class_callable_names([node.name], deferred_body)
+        if deferred_body:
             return
         self._visit_body_in_scope(node, "async-function")
 
-    def visit_Lambda(self, node: ast.Lambda) -> None:
+    def visit_Lambda(self, node: ast.Lambda) -> Optional[_DeferredCallableBody]:
         self._visit_argument_defaults(node.args)
-        if self._defer_class_callable_body("lambda", node):
-            return
+        deferred_body = self._defer_class_callable_body("lambda", node)
+        if deferred_body:
+            return deferred_body
         self._visit_expression_in_scope(node, "lambda", node.body)
+        return None
 
     def visit_For(self, node: ast.For) -> None:
         self.visit(node.iter)
@@ -744,6 +765,14 @@ class _PythonInspector(ast.NodeVisitor):
                     self._ctx,
                     tuple(self._scope_stack),
                 )
+        class_callable = self._class_callable_for_expression(node.func)
+        if class_callable:
+            for argument in node.args:
+                self.visit(argument)
+            for keyword in node.keywords:
+                self.visit(keyword.value)
+            self._visit_callable_body(class_callable)
+            return
         if isinstance(node.func, ast.Lambda):
             self._visit_argument_defaults(node.func.args)
             for argument in node.args:
@@ -758,17 +787,34 @@ class _PythonInspector(ast.NodeVisitor):
         self._inspect_secret_assignment(node.targets, node.value, getattr(node, "lineno", None))
         call_name = _call_name(node.value.func) if isinstance(node.value, ast.Call) else None
         value_info = self._classify_assignment_value(call_name)
-        self.visit(node.value)
+        callable_body = self.visit(node.value)
+        if not isinstance(callable_body, _DeferredCallableBody):
+            callable_body = None
         for target in node.targets:
-            self._visit_assignment_target(target, getattr(node, "lineno", None), call_name, value_info)
+            self._visit_assignment_target(
+                target,
+                getattr(node, "lineno", None),
+                call_name,
+                value_info,
+                callable_body,
+            )
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         self._inspect_secret_assignment([node.target], node.value, getattr(node, "lineno", None))
         call_name = _call_name(node.value.func) if isinstance(node.value, ast.Call) else None
         value_info = self._classify_assignment_value(call_name)
+        callable_body = None
         if node.value:
-            self.visit(node.value)
-        self._visit_assignment_target(node.target, getattr(node, "lineno", None), call_name, value_info)
+            visited_value = self.visit(node.value)
+            if isinstance(visited_value, _DeferredCallableBody):
+                callable_body = visited_value
+        self._visit_assignment_target(
+            node.target,
+            getattr(node, "lineno", None),
+            call_name,
+            value_info,
+            callable_body,
+        )
         self.visit(node.annotation)
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
@@ -873,19 +919,23 @@ class _PythonInspector(ast.NodeVisitor):
         lineno: Optional[int],
         call_name: Optional[str] = None,
         value_info: Optional[dict[str, object]] = None,
+        callable_body: Optional[_DeferredCallableBody] = None,
     ) -> None:
         if isinstance(target, (ast.Tuple, ast.List)):
             for item in target.elts:
-                self._visit_assignment_target(item, lineno, call_name, value_info)
+                self._visit_assignment_target(item, lineno, call_name, value_info, callable_body)
             return
         if isinstance(target, ast.Starred):
-            self._visit_assignment_target(target.value, lineno, call_name, value_info)
+            self._visit_assignment_target(target.value, lineno, call_name, value_info, callable_body)
             return
         self.visit(target)
-        self._dispatch_assignment(_assignment_target_names([target]), call_name, lineno, value_info)
+        target_names = _assignment_target_names([target])
+        self._dispatch_assignment(target_names, call_name, lineno, value_info)
+        self._bind_class_callable_names(target_names, callable_body)
 
     def _record_binding_names(self, target_names: list[str], lineno: Optional[int]) -> None:
         self._dispatch_assignment(target_names, None, lineno)
+        self._bind_class_callable_names(target_names)
 
     def _classify_assignment_value(self, call_name: Optional[str]) -> dict[str, object]:
         scope = tuple(self._scope_stack)
@@ -974,30 +1024,67 @@ class _PythonInspector(ast.NodeVisitor):
         if returns:
             self.visit(returns)
 
-    def _defer_class_callable_body(self, kind: str, node: ast.AST) -> bool:
+    def _defer_class_callable_body(self, kind: str, node: ast.AST) -> Optional[_DeferredCallableBody]:
         if not self._class_deferred_bodies:
-            return False
-        self._class_deferred_bodies[-1].append((tuple(self._scope_stack), kind, node))
-        return True
+            return None
+        deferred_body = _DeferredCallableBody(tuple(self._scope_stack), kind, node)
+        self._class_deferred_bodies[-1].append(deferred_body)
+        return deferred_body
 
     def _visit_decorator_expression(self, decorator: ast.AST) -> None:
+        class_callable = self._class_callable_for_expression(decorator)
+        if class_callable:
+            self._visit_callable_body(class_callable)
+            return
         if isinstance(decorator, ast.Lambda):
             self._visit_argument_defaults(decorator.args)
             self._visit_expression_in_scope(decorator, "lambda", decorator.body)
             return
         self.visit(decorator)
 
-    def _visit_deferred_bodies(self, deferred_bodies: list[tuple[tuple[str, ...], str, ast.AST]]) -> None:
+    def _visit_deferred_bodies(self, deferred_bodies: list[_DeferredCallableBody]) -> None:
+        for deferred_body in deferred_bodies:
+            self._visit_callable_body(deferred_body)
+
+    def _visit_callable_body(self, deferred_body: _DeferredCallableBody) -> None:
+        if deferred_body.analyzed:
+            return
+        deferred_body.analyzed = True
         original_scope = self._scope_stack
         try:
-            for scope, kind, node in deferred_bodies:
-                self._scope_stack = list(scope)
-                if kind == "lambda":
-                    self._visit_expression_in_scope(node, kind, node.body)
-                else:
-                    self._visit_body_in_scope(node, kind)
+            self._scope_stack = list(deferred_body.scope)
+            if deferred_body.kind == "lambda":
+                self._visit_expression_in_scope(deferred_body.node, deferred_body.kind, deferred_body.node.body)
+            else:
+                self._visit_body_in_scope(deferred_body.node, deferred_body.kind)
         finally:
             self._scope_stack = original_scope
+
+    def _class_callable_for_expression(self, expression: ast.AST) -> Optional[_DeferredCallableBody]:
+        bindings = self._active_class_callable_bindings()
+        if bindings is None or not isinstance(expression, ast.Name):
+            return None
+        return bindings.get(expression.id)
+
+    def _bind_class_callable_names(
+        self,
+        names: list[str],
+        deferred_body: Optional[_DeferredCallableBody] = None,
+    ) -> None:
+        bindings = self._active_class_callable_bindings()
+        if bindings is None:
+            return
+        for name in names:
+            if "." in name:
+                continue
+            bindings.pop(name, None)
+            if deferred_body:
+                bindings[name] = deferred_body
+
+    def _active_class_callable_bindings(self) -> Optional[dict[str, _DeferredCallableBody]]:
+        if not self._class_callable_bindings or not self._scope_stack or not self._scope_stack[-1].startswith("class:"):
+            return None
+        return self._class_callable_bindings[-1]
 
     def _visit_argument_defaults(self, arguments: ast.arguments) -> None:
         for default in arguments.defaults:
