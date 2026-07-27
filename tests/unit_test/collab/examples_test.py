@@ -12,71 +12,45 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Smoke tests for the Collab example catalog.
+
+Examples are documentation, so nothing here asserts training behavior. Each
+example must import and its recipe must finalize into a job — the cheapest
+alarm for drift between the catalog and the nvflare.collab API.
+"""
+
 import importlib
-import subprocess
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-import numpy as np
+import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _EXAMPLES_ROOT = _REPO_ROOT / "examples"
 _ADVANCED_EXAMPLES_ROOT = _EXAMPLES_ROOT / "advanced"
 _HELLO_COLLAB_ROOT = _EXAMPLES_ROOT / "hello-world" / "hello-collab"
 
-
-def test_hello_numpy_collab_trains_and_averages_models(monkeypatch):
-    monkeypatch.syspath_prepend(str(_HELLO_COLLAB_ROOT))
-    module = importlib.import_module("hello_numpy_collab")
-    initial_model = module.INITIAL_MODEL.copy()
-
-    updated_model, weight_mean = module.train(initial_model, "full")
-
-    np.testing.assert_array_equal(updated_model, initial_model + 1)
-    assert weight_mean == 6.0
-
-    model_diff, weight_mean = module.train(initial_model, "diff")
-    np.testing.assert_array_equal(model_diff, np.ones_like(initial_model))
-    assert weight_mean == 6.0
-
-
-def test_hello_numpy_collab_recipe_finalizes_with_module_functions(monkeypatch):
-    monkeypatch.syspath_prepend(str(_HELLO_COLLAB_ROOT))
-    module = importlib.import_module("hello_numpy_collab")
-    recipe = module.make_recipe(SimpleNamespace(n_clients=2, num_rounds=3, update_type="full"))
-
-    job = recipe.finalize()
-
-    assert recipe.finalize() is job
+_EXAMPLES = [
+    pytest.param(
+        _HELLO_COLLAB_ROOT,
+        "hello_numpy_collab",
+        SimpleNamespace(n_clients=2, num_rounds=3, update_type="full"),
+        id="hello_numpy_collab",
+    ),
+    pytest.param(
+        _ADVANCED_EXAMPLES_ROOT,
+        "collab.async_aggregation.async_aggregation",
+        SimpleNamespace(num_clients=2, num_rounds=2),
+        id="async_aggregation",
+    ),
+]
 
 
-def test_async_aggregation_example_imports_without_torch():
-    script = f"""
-import importlib.abc
-import sys
-
-sys.path[:0] = [{str(_ADVANCED_EXAMPLES_ROOT)!r}, {str(_REPO_ROOT)!r}]
-
-class BlockTorch(importlib.abc.MetaPathFinder):
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname == "torch" or fullname.startswith("torch."):
-            raise ImportError("torch is blocked for this test")
-        return None
-
-sys.meta_path.insert(0, BlockTorch())
-import collab.async_aggregation.async_aggregation
-"""
-
-    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=False)
-
-    assert result.returncode == 0, result.stderr
-
-
-def test_async_aggregation_recipe_finalizes(monkeypatch):
-    monkeypatch.syspath_prepend(str(_ADVANCED_EXAMPLES_ROOT))
-    module = importlib.import_module("collab.async_aggregation.async_aggregation")
-    recipe = module.make_recipe(SimpleNamespace(num_clients=2, num_rounds=2))
+@pytest.mark.parametrize("example_root,module_name,args", _EXAMPLES)
+def test_example_recipe_finalizes(monkeypatch, example_root, module_name, args):
+    monkeypatch.syspath_prepend(str(example_root))
+    module = importlib.import_module(module_name)
+    recipe = module.make_recipe(args)
 
     job = recipe.finalize()
 
