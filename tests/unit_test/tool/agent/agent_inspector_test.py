@@ -2646,6 +2646,59 @@ def test_inspect_stored_generator_consumer_preserves_lazy_identity(
 @pytest.mark.parametrize(
     "consumer",
     [
+        pytest.param("first, second = convert()", id="direct-assignment-unpack"),
+        pytest.param("pending = convert()\n    first, second = pending", id="stored-assignment-unpack"),
+        pytest.param("consume(*convert())", id="starred-call"),
+        pytest.param("converted = [*convert()]", id="starred-list"),
+        pytest.param("converted = (*convert(),)", id="starred-tuple"),
+        pytest.param("converted = {*convert()}", id="starred-set"),
+    ],
+)
+def test_inspect_generator_unpacking_uses_class_construction_binding(
+    tmp_path, framework, source_prefix, activity, consumer
+):
+    script = tmp_path / "client.py"
+    script.write_text(
+        source_prefix
+        + "class patch:\n"
+        + "    def convert():\n"
+        + "        yield patch(trainer)\n"
+        + "        yield None\n"
+        + f"    {consumer}\n"
+        + activity,
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == framework
+    assert data["conversion_state"] == "client_api_converted"
+
+
+@pytest.mark.parametrize(
+    ("framework", "source_prefix", "activity"),
+    [
+        pytest.param(
+            "huggingface",
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n",
+            "trainer.train()\n",
+            id="huggingface",
+        ),
+        pytest.param(
+            "pytorch_lightning",
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n",
+            "trainer.fit(model)\n",
+            id="lightning",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "consumer",
+    [
         pytest.param("converted = dict(value=convert())", id="dict-keyword"),
         pytest.param("converted = next(iter(()), convert())", id="next-default"),
         pytest.param(
