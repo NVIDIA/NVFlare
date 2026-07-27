@@ -218,6 +218,35 @@ def test_custom_aggregator_template_disables_metrics_when_any_client_omits_them(
     assert result.metrics is None
 
 
+def test_custom_aggregator_template_uses_per_key_metric_denominators():
+    import numpy as np
+
+    from nvflare.apis.dxo import MetaKey
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+
+    aggregator.accept_model(
+        FLModel(
+            params={"w": np.array([2.0])},
+            metrics={"accuracy": 0.5, "loss": 2.0},
+            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+    )
+    aggregator.accept_model(
+        FLModel(
+            params={"w": np.array([4.0])},
+            metrics={"accuracy": 0.75},
+            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 3},
+        )
+    )
+    result = aggregator.aggregate_model()
+
+    assert result.metrics["accuracy"] == pytest.approx((0.5 * 1 + 0.75 * 3) / 4)
+    assert result.metrics["loss"] == pytest.approx(2.0)
+
+
 def test_custom_aggregator_template_materializes_lazy_disk_offload_refs():
     # With enable_tensor_disk_offload=True, params can arrive as lazy references
     # exposing materialize() instead of in-memory arrays. The template must
@@ -325,7 +354,7 @@ def test_custom_aggregator_template_resets_between_rounds():
         aggregator.aggregate_model()
 
 
-def test_lightning_eval_template_reports_validation_metric():
+def test_lightning_eval_template_exposes_local_validation_metric():
     torch = pytest.importorskip("torch")
     pl = pytest.importorskip("pytorch_lightning")
     from torch.utils.data import DataLoader, TensorDataset
@@ -355,6 +384,8 @@ def test_lightning_eval_template_reports_validation_metric():
     model = ToyLightning()
     metrics = module.validate_global_model(trainer, model, dataloaders=loader)
 
+    # This template-level check proves local callback logging only. The
+    # train_with_evaluation executor contract controls server delivery.
     assert "val_loss" in metrics
     from nvflare.app_common.abstract.fl_model import MetaKey
 

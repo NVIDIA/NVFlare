@@ -691,6 +691,47 @@ class TestMetricsArtifactWriterAggregationEvents:
         assert not summary_path.exists()
         assert not round_path.exists()
 
+    def test_builtin_aggregator_without_metrics_does_not_log_custom_aggregator_warning(self, tmp_path):
+        writer = MetricsArtifactWriter()
+        writer.log_warning = Mock()
+        run_dir = tmp_path / "run"
+        fl_ctx = _make_fl_ctx(run_dir)
+
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        _record_round(writer, fl_ctx, 1, metrics=None, use_contribution_sites=False)
+        _finish_run(writer, fl_ctx)
+
+        writer.log_warning.assert_not_called()
+
+    def test_custom_aggregator_warning_bounds_long_round_list(self, tmp_path):
+        writer = MetricsArtifactWriter()
+        writer.log_warning = Mock()
+        run_dir = tmp_path / "run"
+        fl_ctx = _make_fl_ctx(run_dir)
+
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        for round_num in range(1, 13):
+            aggr_result = FLModel(
+                metrics=None,
+                current_round=round_num,
+                meta={
+                    AppConstants.CURRENT_ROUND: round_num,
+                    _METRICS_AGGREGATION_INFO: {
+                        "metric_source": "custom_aggregator_flmodel_metrics",
+                        "use_contribution_sites": False,
+                    },
+                },
+            )
+            fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
+            writer.handle_event(AppEventType.AFTER_AGGREGATION, fl_ctx)
+        fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, None, private=True, sticky=False)
+        _finish_run(writer, fl_ctx)
+
+        writer.log_warning.assert_called_once()
+        warning = writer.log_warning.call_args.args[1]
+        assert "12 rounds (first=1, last=12)" in warning
+        assert "[1, 2, 3" not in warning
+
     def test_custom_aggregator_partial_missing_metrics_logs_warning(self, tmp_path):
         writer = MetricsArtifactWriter()
         writer.log_warning = Mock()
