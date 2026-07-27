@@ -331,8 +331,43 @@ A positive multi-node ``num_of_gpus`` requires ``gpus_per_node``;
 whenever both are supplied, ``num_of_gpus`` must equal
 ``nodes * gpus_per_node``.
 
-A launcher-owned node group requires an explicit full
-``additional_node_command`` in its Slurm launcher block:
+For jobs built with a managed external-process ``ScriptRunner``, an explicit
+site block that directly sets ``nodes > 1`` does not need to repeat the
+training command. Export copies the fully assembled shell-free ``command``,
+script path, and script arguments into ``additional_node_command``. Generation
+requires ``launch_once=True``. For example, this Recipe needs no
+``additional_node_command``:
+
+.. code-block:: python
+
+   from nvflare.apis.job_def import JobMetaKey
+   from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+   from nvflare.recipe import set_recipe_meta
+
+   recipe = FedAvgRecipe(
+       name="multi-node",
+       model=MyModel(),
+       train_script="client.py",
+       min_clients=1,
+       num_rounds=10,
+       launch_external_process=True,
+       command="python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 --",
+   )
+   set_recipe_meta(
+       recipe,
+       JobMetaKey.JOB_LAUNCHER_SPEC,
+       {
+           "site-1": {
+               "slurm": {
+                   "nodes": 2,
+                   "gpus_per_node": 8,
+               }
+           }
+       },
+   )
+
+Hand-authored jobs and custom launchers provide the full
+``additional_node_command`` in the Slurm launcher block:
 
 .. code-block:: json
 
@@ -348,10 +383,12 @@ A launcher-owned node group requires an explicit full
      }
    }
 
-The rank-0 training command remains part of the Recipe, ``ScriptRunner``, or
-other job application configuration. NVFlare does not infer or copy it into
-``additional_node_command``; when the commands should match, the job author is
-responsible for keeping them aligned.
+An explicit ``additional_node_command`` always wins. Set it to ``null`` to
+keep application-owned fan-out. Export does not infer commands for
+``launcher_spec["default"]`` or blocks that only inherit ``nodes`` from a
+default; provide the full command explicitly in those cases. Neither generated
+nor explicit additional-node commands support ``${secret:NAME}`` or
+``${secret:file:/path}`` references.
 
 The launcher starts one task per node. Rank 0 runs the normal client job
 process; every other rank runs ``additional_node_command`` in the deployed app

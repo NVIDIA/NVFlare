@@ -21,7 +21,7 @@ import torch.nn as nn
 
 from nvflare.apis.dxo import DataKind
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
@@ -35,7 +35,7 @@ from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.client.config import TransferType
 from nvflare.fuel.utils.secret_utils import UnsupportedSecretRefWarning
 from nvflare.job_config.base_fed_job import BaseFedJob
-from nvflare.recipe import set_per_site_config
+from nvflare.recipe import set_per_site_config, set_recipe_meta
 from nvflare.recipe.fedavg import FedAvgRecipe as BaseFedAvgRecipe
 
 
@@ -249,6 +249,33 @@ class TestFedAvgRecipe:
         assert ALL_SITES not in recipe._job._deploy_map
         assert get_client_executor(recipe, "site-1")._task_script_args == "--epochs 1"
         assert get_client_executor(recipe, "site-2")._task_script_args == "--epochs 10"
+
+    def test_external_command_fills_explicit_multinode_launcher_block(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "qa_client.py").write_text("# test trainer\n")
+        recipe = FedAvgRecipe(
+            name="test_multinode_command",
+            model={"class_path": "model.SimpleNetwork", "args": {}},
+            train_script="qa_client.py",
+            min_clients=1,
+            num_rounds=1,
+            launch_external_process=True,
+            command="python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=1 --",
+        )
+        launcher_spec = {
+            "site-multi": {"slurm": {"nodes": 2, "gpus_per_node": 1}},
+            "site-single": {"slurm": {"nodes": 1, "gpus_per_node": 1}},
+        }
+        set_recipe_meta(recipe, JobMetaKey.JOB_LAUNCHER_SPEC, launcher_spec)
+
+        recipe.export(str(tmp_path / "export"))
+
+        exported_meta = json.loads((tmp_path / "export" / recipe.name / "meta.json").read_text())
+        exported_spec = exported_meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]
+        assert exported_spec["site-multi"]["slurm"]["additional_node_command"] == (
+            "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=1 -- " "custom/qa_client.py"
+        )
+        assert "additional_node_command" not in exported_spec["site-single"]["slurm"]
 
     def test_set_per_site_config_snapshots_overrides_before_deferred_preparation(
         self, mock_file_system, base_recipe_params, simple_model

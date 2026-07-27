@@ -194,9 +194,14 @@ A client job opts into launcher-owned multi-node execution by setting `nodes > 1
 Node rank 0 runs the normal CJ worker unchanged; every other node runs `additional_node_command`. Extra nodes do
 not register separately with the server, and cross-node coordination belongs to the training framework.
 
-`additional_node_command` is an explicit full command in job launcher metadata. It is independent of the
-rank-0 `ScriptRunner` command, and the platform does not infer or copy one from the other. Omitting it keeps the
-previous application-owned fan-out behavior.
+For a managed external-process `ScriptRunner`, export copies its fully assembled shell-free command into
+`additional_node_command` when an explicit site launcher block directly declares `nodes > 1` and omits the field.
+An explicit value always wins; explicit `null` keeps application-owned fan-out. Generation requires
+`launch_once=True`. Neither generated nor explicit additional-node commands support secret references.
+Default/inherited launcher blocks and custom launchers are not inferred and must provide the full command
+explicitly. Omitting the field in those cases keeps the previous application-owned fan-out behavior. The export
+hook is launcher-mode-neutral so another launcher can adopt the same field later; Slurm is the only runtime
+consumer in this release.
 
 ### Environment contract
 
