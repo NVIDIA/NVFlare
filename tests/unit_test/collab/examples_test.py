@@ -20,6 +20,8 @@ alarm for drift between the catalog and the nvflare.collab API.
 """
 
 import importlib
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -48,6 +50,26 @@ _EXAMPLES = [
 
 @pytest.mark.parametrize("example_root,module_name,args", _EXAMPLES)
 def test_example_recipe_finalizes(monkeypatch, example_root, module_name, args):
+    if module_name == "collab.async_aggregation.async_aggregation":
+        script = f"""
+import importlib
+import importlib.abc
+import sys
+
+sys.path[:0] = [{str(example_root)!r}, {str(_REPO_ROOT)!r}]
+
+class BlockTorch(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "torch" or fullname.startswith("torch."):
+            raise ImportError("torch is blocked for this test")
+        return None
+
+sys.meta_path.insert(0, BlockTorch())
+importlib.import_module({module_name!r})
+"""
+        result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=False)
+        assert result.returncode == 0, result.stderr
+
     monkeypatch.syspath_prepend(str(example_root))
     module = importlib.import_module(module_name)
     recipe = module.make_recipe(args)
