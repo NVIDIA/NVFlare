@@ -579,7 +579,31 @@ class _DeferredCallableBody:
     scope: tuple[str, ...]
     kind: str
     node: ast.AST
+    runs_on_call: bool
     analyzed: bool = False
+
+
+class _YieldFinder(ast.NodeVisitor):
+    def __init__(self):
+        self.found = False
+
+    def visit_Yield(self, node: ast.Yield) -> None:
+        self.found = True
+
+    def visit_YieldFrom(self, node: ast.YieldFrom) -> None:
+        self.found = True
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        pass
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        pass
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        pass
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        pass
 
 
 class _PythonInspector(ast.NodeVisitor):
@@ -771,7 +795,17 @@ class _PythonInspector(ast.NodeVisitor):
                 self.visit(argument)
             for keyword in node.keywords:
                 self.visit(keyword.value)
-            self._visit_callable_body(class_callable)
+            if class_callable.runs_on_call:
+                self._visit_callable_body(class_callable)
+            return
+        if isinstance(node.func, ast.NamedExpr):
+            named_callable = self.visit(node.func)
+            for argument in node.args:
+                self.visit(argument)
+            for keyword in node.keywords:
+                self.visit(keyword.value)
+            if isinstance(named_callable, _DeferredCallableBody) and named_callable.runs_on_call:
+                self._visit_callable_body(named_callable)
             return
         if isinstance(node.func, ast.Lambda):
             self._visit_argument_defaults(node.func.args)
@@ -787,9 +821,10 @@ class _PythonInspector(ast.NodeVisitor):
         self._inspect_secret_assignment(node.targets, node.value, getattr(node, "lineno", None))
         call_name = _call_name(node.value.func) if isinstance(node.value, ast.Call) else None
         value_info = self._classify_assignment_value(call_name)
-        callable_body = self.visit(node.value)
-        if not isinstance(callable_body, _DeferredCallableBody):
-            callable_body = None
+        callable_body = self._class_callable_for_expression(node.value)
+        visited_value = self.visit(node.value)
+        if isinstance(visited_value, _DeferredCallableBody):
+            callable_body = visited_value
         for target in node.targets:
             self._visit_assignment_target(
                 target,
@@ -803,7 +838,7 @@ class _PythonInspector(ast.NodeVisitor):
         self._inspect_secret_assignment([node.target], node.value, getattr(node, "lineno", None))
         call_name = _call_name(node.value.func) if isinstance(node.value, ast.Call) else None
         value_info = self._classify_assignment_value(call_name)
-        callable_body = None
+        callable_body = self._class_callable_for_expression(node.value) if node.value else None
         if node.value:
             visited_value = self.visit(node.value)
             if isinstance(visited_value, _DeferredCallableBody):
@@ -821,9 +856,17 @@ class _PythonInspector(ast.NodeVisitor):
         self.generic_visit(node)
         self._record_binding_targets([node.target], getattr(node, "lineno", None))
 
-    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
-        self.visit(node.value)
-        self._record_binding_targets([node.target], getattr(node, "lineno", None))
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> Optional[_DeferredCallableBody]:
+        callable_body = self._class_callable_for_expression(node.value)
+        visited_value = self.visit(node.value)
+        if isinstance(visited_value, _DeferredCallableBody):
+            callable_body = visited_value
+        self._visit_assignment_target(
+            node.target,
+            getattr(node, "lineno", None),
+            callable_body=callable_body,
+        )
+        return callable_body
 
     def visit_With(self, node: ast.With) -> None:
         for item in node.items:
@@ -1027,14 +1070,16 @@ class _PythonInspector(ast.NodeVisitor):
     def _defer_class_callable_body(self, kind: str, node: ast.AST) -> Optional[_DeferredCallableBody]:
         if not self._class_deferred_bodies:
             return None
-        deferred_body = _DeferredCallableBody(tuple(self._scope_stack), kind, node)
+        runs_on_call = kind != "async-function" and not (kind == "function" and self._function_contains_yield(node))
+        deferred_body = _DeferredCallableBody(tuple(self._scope_stack), kind, node, runs_on_call)
         self._class_deferred_bodies[-1].append(deferred_body)
         return deferred_body
 
     def _visit_decorator_expression(self, decorator: ast.AST) -> None:
         class_callable = self._class_callable_for_expression(decorator)
         if class_callable:
-            self._visit_callable_body(class_callable)
+            if class_callable.runs_on_call:
+                self._visit_callable_body(class_callable)
             return
         if isinstance(decorator, ast.Lambda):
             self._visit_argument_defaults(decorator.args)
@@ -1085,6 +1130,15 @@ class _PythonInspector(ast.NodeVisitor):
         if not self._class_callable_bindings or not self._scope_stack or not self._scope_stack[-1].startswith("class:"):
             return None
         return self._class_callable_bindings[-1]
+
+    @staticmethod
+    def _function_contains_yield(node: ast.AST) -> bool:
+        finder = _YieldFinder()
+        for statement in getattr(node, "body", []):
+            finder.visit(statement)
+            if finder.found:
+                return True
+        return False
 
     def _visit_argument_defaults(self, arguments: ast.arguments) -> None:
         for default in arguments.defaults:
