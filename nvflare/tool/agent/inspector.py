@@ -575,14 +575,33 @@ def _inspect_file(path: Path, state: InspectState, max_file_bytes: int) -> None:
             }
         )
         return
+    except RecursionError:
+        _record_python_ast_depth_limit(state, rel_path)
+        return
 
     # Register every successfully parsed Python file, including leaf modules
     # with no imports, so local imports can resolve to the complete scanned graph.
     state.file_imports.setdefault(rel_path, set())
     visitor = _PythonInspector(path, rel_path, state)
-    visitor.visit(tree)
-    visitor.finalize()
-    _add_entry_point(path, rel_path, tree, state)
+    try:
+        visitor.visit(tree)
+        visitor.finalize()
+        _add_entry_point(path, rel_path, tree, state)
+    except RecursionError:
+        _record_python_ast_depth_limit(state, rel_path)
+
+
+def _record_python_ast_depth_limit(state: InspectState, rel_path: str) -> None:
+    state.classification_incomplete = True
+    state.findings.append(
+        {
+            "code": "PYTHON_AST_DEPTH_LIMIT",
+            "severity": "warning",
+            "file": rel_path,
+            "line": None,
+            "message": "Python file exceeds the safe static-inspection AST depth.",
+        }
+    )
 
 
 @dataclass

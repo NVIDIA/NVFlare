@@ -4968,6 +4968,33 @@ def test_inspect_bom_prefixed_source_still_detects_framework(tmp_path):
     assert not any(finding["code"] == "PYTHON_PARSE_ERROR" for finding in data["findings"])
 
 
+def test_inspect_skips_deep_ast_and_continues_classifying_other_files(tmp_path):
+    (tmp_path / "generated.py").write_text(
+        "x = " + "+".join(["a"] * 600) + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "train.py").write_text(
+        "import torch\n\n" "class Net(torch.nn.Module):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["classification_incomplete"] is True
+    assert data["skill_selection"]["detected_framework"] == "pytorch"
+    assert "nvflare-convert-pytorch" in data["skill_selection"]["recommended_skills"]
+    findings = [finding for finding in data["findings"] if finding["code"] == "PYTHON_AST_DEPTH_LIMIT"]
+    assert findings == [
+        {
+            "code": "PYTHON_AST_DEPTH_LIMIT",
+            "severity": "warning",
+            "file": "generated.py",
+            "line": None,
+            "message": "Python file exceeds the safe static-inspection AST depth.",
+        }
+    ]
+
+
 def test_inspect_name_only_job_py_without_flare_evidence_is_not_flare_job(tmp_path):
     # A plain training repo that happens to have a launcher named job.py (a common
     # SLURM filename) and no nvflare imports must route to conversion, not be
