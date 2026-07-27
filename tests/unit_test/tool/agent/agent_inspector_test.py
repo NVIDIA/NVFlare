@@ -2187,6 +2187,131 @@ def test_inspect_class_callable_uses_execution_phase_binding(tmp_path, source, e
 
 
 @pytest.mark.parametrize(
+    ("source", "expected_framework", "expected_state"),
+    [
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "class patch:\n"
+            "    def convert():\n"
+            "        return patch(trainer)\n"
+            "    converted = convert()\n"
+            "trainer.train()\n",
+            "huggingface",
+            "client_api_converted",
+            id="huggingface-named-class-call",
+        ),
+        pytest.param(
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n"
+            "class patch:\n"
+            "    def convert():\n"
+            "        return patch(trainer)\n"
+            "    converted = convert()\n"
+            "trainer.fit(model)\n",
+            "pytorch_lightning",
+            "client_api_converted",
+            id="lightning-named-class-call",
+        ),
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "class patch:\n"
+            "    def converted(method):\n"
+            "        patch(trainer)\n"
+            "        return method\n"
+            "    @converted\n"
+            "    def run(self):\n"
+            "        pass\n"
+            "trainer.train()\n",
+            "huggingface",
+            "client_api_converted",
+            id="huggingface-named-decorator",
+        ),
+        pytest.param(
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n"
+            "class patch:\n"
+            "    def converted(method):\n"
+            "        patch(trainer)\n"
+            "        return method\n"
+            "    @converted\n"
+            "    def run(self):\n"
+            "        pass\n"
+            "trainer.fit(model)\n",
+            "pytorch_lightning",
+            "client_api_converted",
+            id="lightning-named-decorator",
+        ),
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "class patch:\n"
+            "    convert = lambda: patch(trainer)\n"
+            "    converted = convert()\n"
+            "trainer.train()\n",
+            "huggingface",
+            "client_api_converted",
+            id="huggingface-lambda-alias",
+        ),
+        pytest.param(
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n"
+            "class patch:\n"
+            "    convert = lambda: patch(trainer)\n"
+            "    converted = convert()\n"
+            "trainer.fit(model)\n",
+            "pytorch_lightning",
+            "client_api_converted",
+            id="lightning-lambda-alias",
+        ),
+        pytest.param(
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "class patch:\n"
+            "    def convert():\n"
+            "        return patch(trainer)\n"
+            "patch.convert()\n"
+            "trainer.train()\n",
+            "huggingface",
+            "partial_client_api",
+            id="huggingface-later-method-call",
+        ),
+        pytest.param(
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n"
+            "class patch:\n"
+            "    def convert():\n"
+            "        return patch(trainer)\n"
+            "patch.convert()\n"
+            "trainer.fit(model)\n",
+            "pytorch_lightning",
+            "partial_client_api",
+            id="lightning-later-method-call",
+        ),
+    ],
+)
+def test_inspect_named_class_callable_uses_invocation_phase_binding(
+    tmp_path, source, expected_framework, expected_state
+):
+    script = tmp_path / "client.py"
+    script.write_text(source, encoding="utf-8")
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == expected_framework
+    assert data["conversion_state"] == expected_state
+
+
+@pytest.mark.parametrize(
     "assignment",
     [
         pytest.param("Trainer = trainer = Trainer(model=model, args=args)", id="direct-symbol-first"),
