@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 from unittest.mock import MagicMock
 
 import nvflare.fuel.f3.cellnet.cell as cell_module
@@ -42,6 +43,26 @@ def _make_cell():
     cell.decode_pass_through_topics = set()
     cell.get_fobs_context = MagicMock(return_value={})
     return cell
+
+
+def test_unknown_reply_warning_does_not_log_headers(caplog):
+    cell = _make_cell()
+    cell.logger = logging.getLogger("test_unknown_reply_warning")
+    future = MagicMock()
+    future.headers = {
+        cell_module.StreamHeaderKey.STREAM_REQ_ID: "late-request",
+        "__token__": "secret-token-sentinel",
+        "__token_signature__": "secret-signature-sentinel",
+        "other": "other-secret-sentinel",
+    }
+
+    with caplog.at_level(logging.WARNING, logger=cell.logger.name):
+        cell._process_reply(future)
+
+    assert "Receiving unknown req_id='late-request'" in caplog.text
+    assert "secret-token-sentinel" not in caplog.text
+    assert "secret-signature-sentinel" not in caplog.text
+    assert "other-secret-sentinel" not in caplog.text
 
 
 def test_encode_message_can_stamp_receiver_ids_for_multi_receiver_download_refs(monkeypatch):
