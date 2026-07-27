@@ -38,9 +38,6 @@ CONTRACT_ENV_NAMES = (ENV_NNODES, ENV_NODE_RANK, ENV_MASTER_ADDR, ENV_MASTER_POR
 JOB_SPEC_NODES = "nodes"
 JOB_SPEC_NODE_COMMAND = "node_command"
 
-# Launcher modes that implement node groups; adopting launchers add themselves.
-NODE_GROUP_MODES = ("slurm",)
-
 DEFAULT_MASTER_PORT = 29400
 
 
