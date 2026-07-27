@@ -2462,6 +2462,16 @@ def test_inspect_class_callable_alias_preserves_identity(tmp_path, framework, so
         ),
         pytest.param(
             "class patch:\n"
+            "    def decorate(method):\n"
+            "        return lambda: patch(trainer)\n"
+            "    @decorate\n"
+            "    def convert():\n"
+            "        pass\n"
+            "    converted = convert()\n",
+            id="decorator-direct-lambda",
+        ),
+        pytest.param(
+            "class patch:\n"
             "    def convert():\n"
             "        return patch(trainer)\n"
             "    convert = staticmethod(convert)\n"
@@ -2543,6 +2553,125 @@ def test_inspect_eager_generator_consumer_uses_class_construction_binding(
 
     assert data["frameworks"][0]["name"] == framework
     assert data["conversion_state"] == "client_api_converted"
+
+
+@pytest.mark.parametrize(
+    ("framework", "source_prefix", "activity"),
+    [
+        pytest.param(
+            "huggingface",
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n",
+            "trainer.train()\n",
+            id="huggingface",
+        ),
+        pytest.param(
+            "pytorch_lightning",
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n",
+            "trainer.fit(model)\n",
+            id="lightning",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("consumer", "expected_state"),
+    [
+        pytest.param("pending = convert()\n    converted = list(pending)", "client_api_converted", id="assigned"),
+        pytest.param(
+            "pending: object = convert()\n    converted = tuple(pending)", "client_api_converted", id="annotated"
+        ),
+        pytest.param(
+            "pending = alias = convert()\n    converted = set(alias)",
+            "client_api_converted",
+            id="chained",
+        ),
+        pytest.param(
+            "pending = convert()\n    alias = pending\n    converted = list(alias)",
+            "client_api_converted",
+            id="alias",
+        ),
+        pytest.param("converted = list(pending := convert())", "client_api_converted", id="walrus"),
+        pytest.param(
+            "pending = convert()\n    pending = None\n    converted = list(pending)",
+            "partial_client_api",
+            id="invalidated",
+        ),
+        pytest.param("pending = convert()", "partial_client_api", id="stored-unused"),
+    ],
+)
+def test_inspect_stored_generator_consumer_preserves_lazy_identity(
+    tmp_path, framework, source_prefix, activity, consumer, expected_state
+):
+    script = tmp_path / "client.py"
+    script.write_text(
+        source_prefix
+        + "class patch:\n"
+        + "    def convert():\n"
+        + "        yield ('model', patch(trainer))\n"
+        + f"    {consumer}\n"
+        + activity,
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == framework
+    assert data["conversion_state"] == expected_state
+
+
+@pytest.mark.parametrize(
+    ("framework", "source_prefix", "activity"),
+    [
+        pytest.param(
+            "huggingface",
+            "from transformers import Trainer, TrainingArguments\n"
+            "from nvflare.client.hf import patch\n"
+            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n",
+            "trainer.train()\n",
+            id="huggingface",
+        ),
+        pytest.param(
+            "pytorch_lightning",
+            "import lightning as L\n"
+            "from nvflare.client.lightning import patch\n"
+            "trainer = L.Trainer(max_epochs=1)\n",
+            "trainer.fit(model)\n",
+            id="lightning",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "consumer",
+    [
+        pytest.param("converted = dict(value=convert())", id="dict-keyword"),
+        pytest.param("converted = next(iter(()), convert())", id="next-default"),
+        pytest.param(
+            "def keep(value):\n        return value\n    list = keep\n    converted = list(convert())",
+            id="shadowed-list",
+        ),
+    ],
+)
+def test_inspect_eager_generator_consumer_does_not_consume_stored_arguments(
+    tmp_path, framework, source_prefix, activity, consumer
+):
+    script = tmp_path / "client.py"
+    script.write_text(
+        source_prefix
+        + "class patch:\n"
+        + "    def convert():\n"
+        + "        yield ('model', patch(trainer))\n"
+        + f"    {consumer}\n"
+        + activity,
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == framework
+    assert data["conversion_state"] == "partial_client_api"
 
 
 @pytest.mark.parametrize(
