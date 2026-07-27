@@ -170,11 +170,10 @@ unprotected recipe or present a disclaimer as implementation.
 - Must initialize `torch.distributed` before patching when rank environment
   variables declare multiple ranks. All ranks must call patched Trainer methods
   in identical order.
-- Custom aggregation must use the selected recipe's `aggregator=` hook with a
-  `ModelAggregator` subclass in `aggregators.py`, adapting
-  `../nvflare-shared/assets/aggregator.py`, with compatible client/server
-  parameter semantics. If the algorithm needs new exchange semantics, include
-  the matching client transformation or ask/fail closed.
+- Custom aggregation must use recipe `aggregator=` with a `ModelAggregator` subclass in
+  `aggregators.py`, adapting `../nvflare-shared/assets/aggregator.py`; carry finite
+  numeric client metrics into `FLModel.metrics`, or metric artifacts disappear. New
+  exchange semantics need matching client transformation or ask/fail closed.
 - Must follow the source-of-truth boundary: public product inspection and
   validation may stop the conversion but cannot license private API
   replacements discovered from NVFLARE implementation source.

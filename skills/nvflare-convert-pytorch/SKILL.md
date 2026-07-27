@@ -133,10 +133,10 @@ policy; route onward rather than substituting an unprotected recipe or adding on
 - Must load checkpoints with `torch.load(..., weights_only=True)`; a
   checkpoint that needs full unpickling is ask/fail, per
   `references/pytorch-client-api-conversion.md`.
-- Custom aggregation must use the recipe `aggregator=` hook with a
-  `ModelAggregator` subclass in `aggregators.py`, adapting
-  `../nvflare-shared/assets/aggregator.py`; algorithms needing new client/server
-  exchange semantics also need the matching client transformation, or ask/fail.
+- Custom aggregation must use recipe `aggregator=` with a `ModelAggregator` subclass in
+  `aggregators.py`, adapting `../nvflare-shared/assets/aggregator.py`; carry finite
+  numeric client metrics into aggregated `FLModel.metrics`, or metric artifacts disappear.
+  New exchange semantics need matching client transformation, or ask/fail.
 - Must follow the Source Of Truth Boundary: public checks can stop the skill
   path; they cannot license a replacement strategy discovered from NVFLARE
   source or docstrings.

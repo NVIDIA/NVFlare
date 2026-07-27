@@ -40,10 +40,13 @@ or "will be notified" basis.
 
 Required success evidence is process exit code 0, terminal FL evidence such as
 the server log reaching a Finished state, and metrics evidence such as
-`metrics_summary.json` or a concrete explanation for why metrics are
-unavailable. Progress messages, scheduled wakeups, "standing by"/"I'll wait"
-statements, and active processes are not completion evidence and are not valid
-final answers.
+`metrics_summary.json`. When a run exits 0 and reaches a terminal finished
+state, a missing server-side metrics artifact is a validation failure unless
+the selected workflow is explicitly metrics-free. A prose explanation can
+substitute for metrics only for blocked/timed-out runs or workflows that truly
+cannot produce metrics. Progress messages, scheduled wakeups, "standing
+by"/"I'll wait" statements, and active processes are not completion evidence
+and are not valid final answers.
 
 Do not pipe the final validation command through `tail`, `grep`, or another
 command that can hide the simulator or `python job.py` exit status. Redirect the
@@ -113,8 +116,9 @@ Before calling a generated job correct, report:
 - local validation command, process exit code, and terminal-state evidence;
 - export command, export directory, and exported folder inspection result when
   export is in scope;
-- metric values from metrics artifacts, or a clear explanation that metrics
-  were unavailable;
+- metric values from metrics artifacts; for exit-0 terminal runs, treat missing
+  server-side metrics as failed validation unless the workflow is explicitly
+  metrics-free;
 - exact evidence paths for simulation workspace, generated result files,
   server-side metrics artifacts, server/client logs, and global-model artifacts
   when present;
