@@ -287,6 +287,19 @@ class TestFindPotentialSecrets:
             assert secret_value not in finding.location
             assert secret_value not in finding.reason
 
+    def test_argv_list_preserves_secret_flag_value_detection(self):
+        secret_value = "hunter22x"
+
+        findings = find_potential_secrets(
+            ["python", "train model.py", "--password", secret_value], location="command argv"
+        )
+
+        assert any(finding.reason == "value of a secret-named flag" for finding in findings)
+        for finding in findings:
+            assert secret_value not in finding.preview
+            assert secret_value not in finding.location
+            assert secret_value not in finding.reason
+
     def test_secret_like_mapping_key_is_masked_in_all_findings(self):
         findings = find_potential_secrets(
             {FAKE_GITHUB_TOKEN: {"password": "abcdefgh1234"}},

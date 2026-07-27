@@ -40,6 +40,7 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     LazyDownloadRef,
     _CtxKey,
     _LazyBatchInfo,
+    _LazyRelayDownloadable,
     _RefKey,
 )
 
@@ -51,6 +52,7 @@ _SERVER_FQCN = "server/app_server"
 _REF_ID = "deadbeef-0000-1111-2222-333333333333"
 _ITEM_ID_0 = "T0"
 _ITEM_ID_1 = "T1"
+_CJ_FQCN = "site-1/job-1"
 
 
 def _make_decomposer():
@@ -64,6 +66,11 @@ def _make_manager(fobs_ctx: dict = None) -> DatumManager:
     """Return a DatumManager with an optional pre-populated fobs_ctx."""
     ctx = fobs_ctx if fobs_ctx is not None else {}
     return DatumManager(threshold=1024, fobs_ctx=ctx)
+
+
+class _FakeCell:
+    def get_fqcn(self):
+        return _CJ_FQCN
 
 
 def _ref_datum(fqcn: str = _SERVER_FQCN, ref_id: str = _REF_ID) -> Datum:
@@ -86,6 +93,7 @@ class TestLazyDownloadRef:
         assert lazy.fqcn == _SERVER_FQCN
         assert lazy.ref_id == _REF_ID
         assert lazy.item_id == _ITEM_ID_0
+        assert lazy.relay is False
 
     def test_slots_prevent_arbitrary_attributes(self):
         lazy = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0)
@@ -111,6 +119,7 @@ class TestLazyBatchInfo:
         info = _LazyBatchInfo(fqcn=_SERVER_FQCN, ref_id=_REF_ID)
         assert info.fqcn == _SERVER_FQCN
         assert info.ref_id == _REF_ID
+        assert info.relay is False
 
     def test_slots_prevent_arbitrary_attributes(self):
         info = _LazyBatchInfo(fqcn=_SERVER_FQCN, ref_id=_REF_ID)
@@ -148,6 +157,20 @@ class TestProcessDatumPassThrough:
         ), f"Expected _LazyBatchInfo in fobs_ctx[{decomposer.items_key!r}], got {type(items)}"
         assert items.fqcn == _SERVER_FQCN
         assert items.ref_id == _REF_ID
+        assert items.relay is False
+
+    def test_relay_pass_through_marks_lazy_batch_info(self):
+        decomposer = _make_decomposer()
+        fobs_ctx = {FOBSContextKey.PASS_THROUGH: True, FOBSContextKey.RELAY_PASS_THROUGH: True}
+        mgr = _make_manager(fobs_ctx)
+
+        with patch.object(decomposer, "_download_from_remote_cell") as mock_dl:
+            decomposer.process_datum(_ref_datum(), mgr)
+            mock_dl.assert_not_called()
+
+        items = fobs_ctx.get(decomposer.items_key)
+        assert isinstance(items, _LazyBatchInfo)
+        assert items.relay is True
 
     def test_does_not_store_raw_tuple(self):
         """items_key must never hold a plain tuple — that was the fragile old design."""
@@ -208,6 +231,7 @@ class TestRecomposePassThrough:
 
         assert result.fqcn == _SERVER_FQCN
         assert result.ref_id == _REF_ID
+        assert result.relay is False
 
     def test_lazy_ref_carries_correct_item_id(self):
         decomposer, fobs_ctx = self._ctx_with_lazy_batch()
@@ -329,6 +353,25 @@ class TestDecomposeWithLazyDownloadRef:
         ref = json.loads(datums[0].value)
         assert ref[_RefKey.FQCN] == _SERVER_FQCN
         assert ref[_RefKey.REF_ID] == _REF_ID
+
+    def test_finalize_relay_lazy_batch_creates_local_ref_without_materializing(self):
+        decomposer = _make_decomposer()
+        mgr = _make_manager({FOBSContextKey.CELL: _FakeCell()})
+        lazy = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0, relay=True)
+
+        decomposer.decompose(lazy, mgr)
+        with patch.object(decomposer, "_finalize_download_tx") as finalize_download_tx:
+            mgr.post_process()
+
+        finalize_download_tx.assert_called_once_with(mgr)
+        datums = list(mgr.get_datums().values())
+        assert len(datums) == 1
+        ref = json.loads(datums[0].value)
+        assert ref[_RefKey.FQCN] == _CJ_FQCN
+        assert ref[_RefKey.REF_ID] != _REF_ID
+        objects = mgr.fobs_ctx[_CtxKey.OBJECTS]
+        assert len(objects) == 1
+        assert isinstance(objects[0][1], _LazyRelayDownloadable)
 
     def test_finalize_lazy_batch_datum_dot_matches_decomposer(self):
         """The datum DOT must equal the decomposer's download DOT."""
