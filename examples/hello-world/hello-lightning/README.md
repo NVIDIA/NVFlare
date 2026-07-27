@@ -32,32 +32,36 @@ then navigate to the hello-lightning directory:
     |-- client.py        # client local training script
     |-- model.py         # model definition
     |-- job.py           # job recipe that defines client and server configurations
+    |-- prepare_data.py  # one-time CIFAR-10 download
     |-- requirements.txt # dependencies
-    |-- prepare_data.sh  # prepare data utils 
 ```
 
 ## Data
 This example uses the CIFAR-10 dataset
 
-In a real FL experiment, each client would have their own dataset used for their local training. You can download the CIFAR10 dataset from the Internet via torchvision's datasets module, You can split the datasets for different clients, so that each client has its own dataset. Here for simplicity's sake, the same dataset we will be using on each client.
+In a real FL experiment, each client would have their own dataset used for local training. For simplicity, this
+example uses the same CIFAR-10 dataset on every client.
 
-The pytorch data module can download the datasets directly. since we have every site to download the same dataset, there are case, the training happens before the data is ready, which could lead to error. We can pre-download the data before we start the training by running from command line in a terminal
+Download CIFAR-10 once before the first non-synthetic run. The client and job load the prepared files with
+`download=False`, so later runs do not repeat data preparation.
 
 ```
-./prepare_data.sh
+python prepare_data.py
 ```
+
+The default destination is `/tmp/nvflare/data`. To use another location, pass the same `--data_root` value to
+`prepare_data.py` and `job.py`.
 
 In PyTorch Lightning, a LightningDataModule is a standardized way to handle data loading and processing. It encapsulates all the steps required to prepare data for training, validation, and testing, making it easier to manage datasets and data loaders in a clean and organized manner. This abstraction helps separate data-related logic from the model and training code, promoting better code organization and reusability.
 
 ### LightningDataModule
-* **Purpose**: The LightningDataModule is designed to encapsulate all data-related operations, including downloading, transforming, and splitting datasets, as well as providing data loaders for training, validation, testing, and prediction.
-* **Key Methods**: - prepare_data(): Used for downloading and preparing data. This method is called only once and is not distributed across multiple GPUs or nodes. - setup(stage): Used to set up datasets for different stages (e.g., 'fit', 'validate', 'test', 'predict'). This method is called on every GPU or node. - train_dataloader(), val_dataloader(), test_dataloader(), predict_dataloader(): These methods return the respective data loaders for each stage.
+* **Purpose**: The LightningDataModule encapsulates transforming and splitting datasets and provides data loaders for training, validation, testing, and prediction.
+* **Key Methods**: - setup(stage): Used to set up datasets for different stages (e.g., 'fit', 'validate', 'test', 'predict'). This method is called on every GPU or node. - train_dataloader(), val_dataloader(), test_dataloader(), predict_dataloader(): These methods return the respective data loaders for each stage.
 
 ### Setup of DataModule
 In the CIFAR10DataModule, we have implemented the following:
 
 * **Initialization (`__init__`)** : The constructor initializes the data directory and batch size, which are used throughout the data module.
-* **Data Preparation (`prepare_data`)** : This method downloads the CIFAR-10 dataset if it is not already available in the specified directory. It prepares both the training and test datasets.
 * **Setup (`setup`)**: This method assigns datasets for different stages: - For the 'fit' and 'validate' stages, it splits the CIFAR-10 training dataset into training and validation sets. - For the 'test' and 'predict' stages, it assigns the test dataset.
 * **Data Loaders**: The module provides data loaders for training, validation, testing, and prediction, each configured with the specified batch size.
 By using a LightningDataModule, the data handling logic is neatly encapsulated, making it easier to manage and modify data-related operations without affecting the rest of the training code.
@@ -162,11 +166,11 @@ Notice the training code is almost identical to the pytorch lightning standard t
 
 The main flow of the code logic in the client.py file involves running a federated learning (FL) training logics locally on each client using PyTorch Lightning and NVFlare. Here's a breakdown of the key steps:
 
-1 **Argument Parsing**: - The define_parser() function is used to parse command-line arguments, specifically the --batch_size argument, which sets the batch size for data loading.
+1 **Argument Parsing**: - The define_parser() function parses the batch size, prepared-data root, optional batch limit, and synthetic-data mode.
 
 2 **Initialization**: - The main() function begins by parsing the command-line arguments to get the batch size. - The flare.init() function is called to initialize the NVFlare client, which is necessary for using certain NVFlare functions like flare.get_site_name().
 
-3 **Model and Data Module Setup**: - An instance of LitNet, a PyTorch Lightning model, is created. - An instance of CIFAR10DataModule is created with the specified batch size to handle data loading and processing.
+3 **Model and Data Module Setup**: - An instance of LitNet, a PyTorch Lightning model, is created. - An instance of CIFAR10DataModule is created with the specified data root and batch size to handle data loading and processing.
 
 4 **Trainer Configuration**: - A PyTorch Lightning Trainer is configured. If a GPU is available, it is set to use it; otherwise, it defaults to CPU.
 
@@ -261,10 +265,11 @@ In this example, we will directly use the default federated averaging algorithm 
 The job recipe code is used to define the client and server configurations.
 
 ## Run FL Job
-This section provides the command to execute the federated learning job using the job recipe defined above. Run this command in your terminal. First, run the following command to download the data:
+This section provides the command to execute the federated learning job using the job recipe defined above. Before
+the first non-synthetic run, prepare the data once:
 
 ```
-./prepare_data.sh
+python prepare_data.py
 ```
 
 ## Command to execute the FL job

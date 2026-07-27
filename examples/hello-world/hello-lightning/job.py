@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import argparse
+import shlex
+from pathlib import Path
 
-import torchvision.datasets as datasets
 from model import LitNet
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
@@ -30,6 +31,7 @@ def define_parser():
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=2)
     parser.add_argument("--batch_size", type=int, default=24)
+    parser.add_argument("--data_root", type=str, default=DATASET_ROOT)
     parser.add_argument("--limit_batches", type=int, default=0)
     parser.add_argument("--synthetic_data", action="store_true")
     parser.add_argument(
@@ -42,22 +44,23 @@ def define_parser():
     return parser.parse_args()
 
 
-def download_data():
-    datasets.CIFAR10(root=DATASET_ROOT, train=True, download=True)
-    datasets.CIFAR10(root=DATASET_ROOT, train=False, download=True)
+def validate_data(data_root: Path):
+    if not (data_root / "cifar-10-batches-py").is_dir():
+        raise FileNotFoundError(f"Missing CIFAR-10 under {data_root}. Run `python prepare_data.py` first.")
 
 
 def main():
     args = define_parser()
+    data_root = Path(args.data_root).expanduser().resolve()
     if not args.synthetic_data:
-        download_data()
+        validate_data(data_root)
 
     n_clients = args.n_clients
     num_rounds = args.num_rounds
     batch_size = args.batch_size
-    train_args = f"--batch_size {batch_size} --limit_batches {args.limit_batches}" + (
-        " --synthetic_data" if args.synthetic_data else ""
-    )
+    train_args = (
+        f"--batch_size {batch_size} --data_root {shlex.quote(str(data_root))} --limit_batches {args.limit_batches}"
+    ) + (" --synthetic_data" if args.synthetic_data else "")
     if args.algorithm == "fedavg":
         recipe = FedAvgRecipe(
             name="hello-lightning-fedavg",
