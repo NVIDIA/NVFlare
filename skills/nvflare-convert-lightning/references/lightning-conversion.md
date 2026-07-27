@@ -80,9 +80,11 @@ are sent can train an unwanted round or block the task. The packaged
   `flare.init()` before the first such Client API context access.
 - Use `flare.receive()` in the patched loop only for FL task progression,
   round/site logging, or task metadata, never for manual model loading.
-- During export inspection, verify modules referenced only by server-side
-  `class_path` config are still packaged; the export follows the `train_script`
-  import closure.
+- During export inspection, verify modules referenced by server-side
+  `class_path` config are packaged into the server app with
+  `recipe.add_server_file(...)` or an equivalent server-targeted API. The
+  `train_script` import closure packages client apps and is not enough for
+  per-site exports that create `app_server` separately.
 
 ## Lightning Evaluation Template
 

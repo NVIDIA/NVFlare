@@ -461,26 +461,57 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
 
     assert "generated `client.py` is an FL Client API entry point" in shared_workflow
     assert "auto-detect FL launch from environment variables" in shared_workflow
-    assert "Exported `app/custom` content is built from the configured `train_script`" in shared_workflow
+    assert "Exported app content is target-specific" in shared_workflow
+    assert 'recipe.add_server_file("model.py")' in shared_workflow
+    assert "client apps and is not enough for per-site exports" in normalized_pytorch
+    assert "client apps and is not enough for per-site exports" in normalized_lightning
     assert "FL-only Client API entry point" in normalized_pytorch
     assert "FL-only Client API entry point" in normalized_lightning
-    assert "modules referenced only by server-side `class_path` config" in normalized_pytorch
-    assert "modules referenced only by server-side `class_path` config" in normalized_lightning
     assert "FL-only client entry" in skill_text
     assert "Do not branch on launch environment variables" in normalized_skill
-    assert "train_script` import closure" in normalized_skill
-    assert "server-only model modules" in skill_text
+    assert "client imports are not enough for per-site exports" in normalized_skill
+    assert "server-only model module" in skill_text
     assert "preserve source metric names" in skill_text
     assert "source-to-server mapping" in skill_text
     assert "CLIENT_API_TYPE" in conversion_text
     assert "federated=True" in conversion_text
     assert "federated=False" in conversion_text
-    assert "app/custom` folder is built from `train_script`'s import closure" in conversion_text
+    assert 'recipe.add_server_file("model.py")' in conversion_text
+    assert "client import is not enough for per-site exports" in conversion_text
     assert "server persistor will fail to construct the initial model" in conversion_text
     assert "standalone mode" in validation_text
     assert "model.py` is server-only" in validation_text
     assert "class_path`, train script, custom aggregator" in normalized_shared
     assert "Prefer preserving source metric names" in normalized_recipe
+
+
+def test_per_site_export_packages_server_class_path_file_with_server_targeted_api(tmp_path):
+    from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+    from nvflare.recipe import set_per_site_config
+
+    client_file = tmp_path / "client.py"
+    model_file = tmp_path / "model.py"
+    client_file.write_text("import model\n", encoding="utf-8")
+    model_file.write_text("class SimpleNetwork:\n    pass\n", encoding="utf-8")
+
+    recipe = FedAvgRecipe(
+        name="server_file_export",
+        min_clients=2,
+        num_rounds=1,
+        model={"class_path": "model.SimpleNetwork", "args": {}},
+        train_script=str(client_file),
+    )
+    set_per_site_config(recipe, {"site-1": {"train_args": ""}, "site-2": {"train_args": ""}})
+    recipe.add_server_file(str(model_file))
+    recipe.add_client_file(str(model_file), clients=["site-1", "site-2"])
+
+    export_root = tmp_path / "export"
+    recipe.export(str(export_root))
+    job_root = export_root / recipe.name
+
+    assert (job_root / "app_server" / "custom" / "model.py").is_file()
+    assert (job_root / "app_site-1" / "custom" / "model.py").is_file()
+    assert (job_root / "app_site-2" / "custom" / "model.py").is_file()
 
 
 def test_pytorch_family_validation_and_custom_aggregation_metric_contracts():

@@ -19,7 +19,7 @@
         "The round loop calls trainer.evaluate() before trainer.train() so accuracy describes the received global model.",
         "The generated job imports FedAvgRecipe from nvflare.app_opt.pt.recipes.fedavg after recipe show confirms it.",
         "The generated recipe model is an explicit class_path and args mapping, not a live model instance.",
-        "The generated recipe uses ExchangeFormat.PYTORCH, enables tensor disk offload, quotes train_args, and packages the required model file, including a server-only model.py that would otherwise be outside train_script's import closure.",
+        "The generated recipe uses ExchangeFormat.PYTORCH, enables tensor disk offload, quotes train_args, and packages the required model file into the server app with recipe.add_server_file or an equivalent server-targeted API, including a server-only model.py that would otherwise be outside each client app's train_script import closure.",
         "The recipe key_metric preserves the source metric name accuracy when the generated evaluate call emits accuracy; if Trainer emits eval_accuracy, the recipe uses that exact key and reports the source-to-server metric mapping.",
         "The two simulated clients train on deterministic seeded site-local partitions, stratified when labels exist, rather than the same full training dataset; the report names the split policy, seed, site count, and any shared-data request.",
         "The agent validates through compile/import, recipe construction, bounded simulation, and result evidence, stopping on a real failure.",
