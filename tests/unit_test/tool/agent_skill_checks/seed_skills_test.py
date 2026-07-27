@@ -551,6 +551,15 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "unknown and abbreviated options fail" in normalized_shared
     assert "`ArgumentParser(allow_abbrev=False)` with strict `parse_args()`" in normalized_skill
     assert "`parse_known_args()` because recipe imports consume NVFLARE export flags" in normalized_skill
+    assert "`recipe show` validates only the selected recipe's module, class" in normalized_recipe
+    assert "It does not advertise other symbols from `nvflare.recipe`" in normalized_recipe
+    assert "use `SimEnv` with `recipe.execute(...)`" in normalized_recipe
+    assert "Do not guess or directly import additional recipe-adjacent symbols" in normalized_recipe
+    assert "Do not replace a failed local public check with web search" in normalized_recipe
+    assert "Run intentional rejection checks" in normalized_shared_validation
+    assert "through an assertion wrapper" in normalized_shared_validation
+    assert "expected child failure as a failed top-level validation command" in normalized_shared_validation
+    assert "Using the shared assertion-wrapper rule" in normalized_validation
     assert "unique-prefix abbreviation fail" in normalized_validation
     assert "standalone mode" in validation_text
     assert "model.py` is server-only" in validation_text

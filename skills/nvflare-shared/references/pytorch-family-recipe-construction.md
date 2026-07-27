@@ -16,6 +16,20 @@ another recipe.
 Only pass a recipe keyword when its name is in the exposed-name set. Do not copy
 the FedAvg constructor shape to Cyclic, FedEval, Swarm, or another recipe.
 
+## Recipe API Boundary
+
+`recipe show` validates only the selected recipe's module, class, and listed
+constructor parameters. It does not advertise other symbols from
+`nvflare.recipe` or define a separate export environment. For supported local
+conversion validation, use `SimEnv` with `recipe.execute(...)`; export through
+`python job.py --export --export-dir <dir>`.
+
+Do not guess or directly import additional recipe-adjacent symbols. When the
+selected public workflow genuinely requires another symbol, first use a
+non-failing module attribute check such as `hasattr`; if it is absent, report a
+version or skill-contract gap. Do not replace a failed local public check with
+web search or SDK-source discovery.
+
 ## Tensor-Native Transport
 
 When `server_expected_format` is exposed, pass

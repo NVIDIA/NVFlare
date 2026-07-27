@@ -89,6 +89,12 @@ eligible requirements into the validation environment first. Do not run a probe
 that is expected to fail with `ModuleNotFoundError` as a way to discover already
 declared dependencies.
 
+Run intentional rejection checks, such as misspelled or abbreviated argument
+tests, through an assertion wrapper. The wrapper must check the child process's
+expected nonzero status and diagnostic, then exit 0 only when the rejection is
+correct. Do not leave an expected child failure as a failed top-level validation
+command, where it is indistinguishable from an unexpected failure and recovery.
+
 Before spending time on full simulation, run cheap checks when applicable:
 
 - compile generated Python files;
