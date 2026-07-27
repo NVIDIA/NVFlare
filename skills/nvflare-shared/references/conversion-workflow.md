@@ -344,7 +344,7 @@ A generated custom aggregator must:
 
 - implement `accept_model()`, `aggregate_model()`, and `reset_stats()`;
 - operate on `FLModel.params`, preserve or intentionally set
-  `FLModel.params_type`, and carry finite numeric client metrics into the
+  `FLModel.params_type`, and carry finite numeric/bool client metrics into the
   aggregated `FLModel.metrics`;
 - use `FLModel.meta` such as `NUM_STEPS_CURRENT_ROUND` when weighting needs
   client contribution metadata;

@@ -42,9 +42,10 @@ Required success evidence is process exit code 0, terminal FL evidence such as
 the server log reaching a Finished state, and metrics evidence such as
 `metrics_summary.json`. When a run exits 0 and reaches a terminal finished
 state, a missing server-side metrics artifact is a validation failure unless
-the selected workflow is explicitly metrics-free. A prose explanation can
-substitute for metrics only for blocked/timed-out runs or workflows that truly
-cannot produce metrics. Progress messages, scheduled wakeups, "standing
+the selected workflow is explicitly metrics-free: it has no validation metric
+path and no metric-writer component by design. A prose explanation can
+substitute for metrics only for blocked/timed-out runs or those explicitly
+metrics-free workflows. Progress messages, scheduled wakeups, "standing
 by"/"I'll wait" statements, and active processes are not completion evidence
 and are not valid final answers.
 
@@ -117,8 +118,8 @@ Before calling a generated job correct, report:
 - export command, export directory, and exported folder inspection result when
   export is in scope;
 - metric values from metrics artifacts; for exit-0 terminal runs, treat missing
-  server-side metrics as failed validation unless the workflow is explicitly
-  metrics-free;
+  server-side metrics as failed validation unless the workflow has no
+  validation metric path and no metric-writer component by design;
 - exact evidence paths for simulation workspace, generated result files,
   server-side metrics artifacts, server/client logs, and global-model artifacts
   when present;

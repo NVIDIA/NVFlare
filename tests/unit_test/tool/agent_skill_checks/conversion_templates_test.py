@@ -148,7 +148,7 @@ def test_custom_aggregator_template_step_weighted_average():
     aggregator = module.WeightedAggregator()
 
     aggregator.accept_model(FLModel(params={"w": np.array([2.0])}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1}))
-    aggregator.accept_model(FLModel(params={"w": np.array([4.0])}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 3}))
+    aggregator.accept_model(FLModel(params={"w": np.array([4.0])}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: "3"}))
     result = aggregator.aggregate_model()
 
     # (2*1 + 4*3) / (1 + 3) = 14 / 4 = 3.5
@@ -167,7 +167,13 @@ def test_custom_aggregator_template_carries_weighted_metrics():
     aggregator.accept_model(
         FLModel(
             params={"w": np.array([2.0])},
-            metrics={"accuracy": 0.5, "loss": 2.0, "nan_metric": float("nan"), "flag": True, "note": "skip"},
+            metrics={
+                "accuracy": 0.5,
+                "loss": 2.0,
+                "nan_metric": float("nan"),
+                "flag": True,
+                "numeric_string": "0.95",
+            },
             meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1},
         )
     )
@@ -182,9 +188,34 @@ def test_custom_aggregator_template_carries_weighted_metrics():
 
     assert result.metrics["accuracy"] == pytest.approx((0.5 * 1 + 0.75 * 3) / 4)
     assert result.metrics["loss"] == pytest.approx((2.0 * 1 + 1.0 * 3) / 4)
+    assert result.metrics["flag"] == pytest.approx(1.0)
     assert "nan_metric" not in result.metrics
-    assert "flag" not in result.metrics
-    assert "note" not in result.metrics
+    assert "numeric_string" not in result.metrics
+
+
+def test_custom_aggregator_template_disables_metrics_when_any_client_omits_them():
+    import numpy as np
+
+    from nvflare.apis.dxo import MetaKey
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+
+    aggregator.accept_model(
+        FLModel(
+            params={"w": np.array([2.0])},
+            metrics={"accuracy": 0.5},
+            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+    )
+    aggregator.accept_model(
+        FLModel(params={"w": np.array([4.0])}, metrics=None, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 3})
+    )
+    result = aggregator.aggregate_model()
+
+    assert result.params["w"][0] == pytest.approx(3.5)
+    assert result.metrics is None
 
 
 def test_custom_aggregator_template_materializes_lazy_disk_offload_refs():

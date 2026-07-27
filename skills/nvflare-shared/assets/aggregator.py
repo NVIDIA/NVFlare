@@ -8,7 +8,7 @@ needs custom aggregation. Wire it through the recipe ``aggregator=`` parameter
 in ``job.py`` with the matching ``aggregator_data_kind`` and parameter transfer
 settings. This uses the product extension point rather than a skill-owned
 algorithm table, and it fits the standard ``FLModel`` exchange contract by
-carrying both params and finite numeric metrics into the aggregated
+carrying both params and finite numeric or boolean metrics into the aggregated
 ``FLModel``. It needs no client-side change beyond sending step-count metadata.
 """
 
@@ -19,8 +19,10 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 
 
-def _finite_number(value):
-    if isinstance(value, bool) or value is None:
+def _finite_number(value, allow_bool=False, allow_string=True):
+    if isinstance(value, bool):
+        return float(value) if allow_bool else None
+    if value is None or (isinstance(value, str) and not allow_string):
         return None
     try:
         number = float(value)
@@ -65,11 +67,12 @@ class WeightedAggregator(ModelAggregator):
         self._key_weight = {}
         self._metric_sum = {}
         self._metric_weight = {}
+        self._all_metrics = True
         self._params_type = None
         self._accepted = 0
 
     def _add_weighted_metric(self, name, value, weight):
-        number = _finite_number(value)
+        number = _finite_number(value, allow_bool=True, allow_string=False)
         if number is None:
             return
         self._metric_sum[name] = self._metric_sum.get(name, 0.0) + number * weight
@@ -86,8 +89,11 @@ class WeightedAggregator(ModelAggregator):
             else:
                 self._weighted_sum[key] = value * weight
                 self._key_weight[key] = weight
-        for name, value in (model.metrics or {}).items():
-            self._add_weighted_metric(name, value, weight)
+        if model.metrics is None:
+            self._all_metrics = False
+        elif self._all_metrics:
+            for name, value in model.metrics.items():
+                self._add_weighted_metric(name, value, weight)
         self._accepted += 1
         self.log_info(
             self.fl_ctx,
@@ -104,6 +110,19 @@ class WeightedAggregator(ModelAggregator):
             for name in self._metric_sum
             if self._metric_weight[name] > 0
         }
+        if not self._all_metrics:
+            self.log_warning(
+                self.fl_ctx,
+                f"{self.__class__.__name__} will not return aggregated metrics because at least one "
+                "accepted client model omitted FLModel.metrics.",
+            )
+            metrics = {}
+        elif not metrics:
+            self.log_warning(
+                self.fl_ctx,
+                f"{self.__class__.__name__} accepted {self._accepted} models but found no finite numeric "
+                "or boolean FLModel.metrics to aggregate.",
+            )
         result = FLModel(params=averaged, params_type=self._params_type, metrics=metrics or None)
         self.log_info(
             self.fl_ctx,
