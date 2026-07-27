@@ -15,7 +15,7 @@
 import json
 import os
 import tempfile
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -622,3 +622,41 @@ class TestExecutionModeSelection:
         assert app.app_config.components == {}
         # the script rides along as an app resource
         assert "client.py" in app.app_config.ext_scripts
+
+    def test_in_process_gpu_simulator_exports_subdirectory_script_sibling(self, tmp_path, monkeypatch):
+        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+        from nvflare.job_config.api import FedJob
+
+        source_dir = tmp_path / "src"
+        source_dir.mkdir()
+        script = os.path.join("src", "poc_executor.py")
+        (source_dir / "poc_executor.py").write_text("from net import Net\n")
+        (source_dir / "net.py").write_text("class Net:\n    pass\n")
+        monkeypatch.chdir(tmp_path)
+
+        job = FedJob(name="job_api_basic_gpu")
+        job.to_server(ScatterAndGather(min_clients=2, num_rounds=2, wait_time_after_min_received=0))
+        job.to_clients(ScriptRunner(script=script, framework=FrameworkType.PYTORCH))
+
+        process = Mock()
+        process.wait.return_value = 0
+
+        def start_simulator(command, **kwargs):
+            job_dir = next(arg for arg in command if arg.endswith(os.sep + job.name))
+            custom_dir = os.path.join(job_dir, "app", "custom")
+            assert os.path.isfile(os.path.join(custom_dir, script))
+            assert os.path.isfile(os.path.join(custom_dir, "net.py"))
+            assert not os.path.exists(os.path.join(custom_dir, "src", "net.py"))
+
+            config_path = os.path.join(job_dir, "app", "config", "config_fed_client.json")
+            with open(config_path) as config_file:
+                executor_args = json.load(config_file)["executors"][0]["executor"]["args"]
+            assert executor_args["execution_mode"] == "in_process"
+            assert executor_args["task_script_path"] == script
+            assert command[command.index("-gpu") + 1] == "0,1"
+            return process
+
+        with patch("nvflare.job_config.fed_job_config.subprocess.Popen", side_effect=start_simulator):
+            result = job.simulator_run(str(tmp_path / "workspace"), n_clients=2, gpu="0,1")
+
+        assert result == 0
