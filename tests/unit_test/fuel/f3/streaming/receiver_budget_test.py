@@ -200,9 +200,9 @@ class TestMultiRefAcquisition:
         tx_id, rid = _new_tx(service, receiver_idle_timeout=5.0)
         terminal = _pull_to_terminal(service, rid, "r1", confirm_capable=True)
         ref = service._ref_table[rid]
+        tx = service._tx_table[tx_id]
         service._handle_download(confirm_request(rid, "r1", DownloadStatus.SUCCESS, serve_nonce(terminal)))
 
-        tx = service._tx_table[tx_id]
         with tx._stats_lock:
             tx_last_active = dict(tx._receiver_last_active)
         enforced = ref.enforce_budgets(

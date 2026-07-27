@@ -19,7 +19,7 @@ Design: docs/design/client_api_execution_modes.md ("Overview", "Execution Modes"
 
 - in_process: trainer runs inside the Client Job (CJ) process over DataBus
 - external_process: NVFlare launches and owns the trainer process tree over Cell
-- attach: an externally owned trainer attaches over Cell
+- attach: reserved by the public executor but not implemented
 
 This module is internal to NVFlare. It is not a user extension point; users configure
 ``ClientAPIExecutor(execution_mode=...)`` only.
@@ -27,12 +27,13 @@ This module is internal to NVFlare. It is not a user extension point; users conf
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Union
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.client.config import ExchangeFormat, TransferType
 
 if TYPE_CHECKING:
     # Import for typing only; avoids a runtime import cycle
@@ -45,13 +46,13 @@ class ClientAPIBackendContext:
     """Immutable config a ClientAPIExecutor hands to its backend at ``initialize()``.
 
     Rationale: the executor's frozen constructor args live in private attributes and the backend
-    factories are zero-arg, so a backend previously had no clean way to read the heartbeat/timeout/
-    converter/task-name config it needs, nor a supported reference back to the executor's analytics
-    hook. This frozen snapshot is that supported channel - a backend reads its config from here
+    factories are zero-arg, so a backend previously had no clean way to read the heartbeat,
+    timeout, model-state, and task-name config it needs, nor a supported reference back to the
+    executor's analytics hook. This frozen snapshot is that supported channel - a backend reads its config from here
     rather than reaching into ``ClientAPIExecutor`` private attributes.
 
-    The fields mirror the frozen ``ClientAPIExecutor`` constructor surface one-to-one. ``executor``
-    is a back-reference so a backend can:
+    The fields contain only settings consumed by the implemented backends. ``executor`` is a
+    back-reference so a backend can:
 
     - call ``executor.fire_log_analytics(fl_ctx, dxo)`` for every trainer LOG message (the single
       LOG-to-analytics ownership point; see design "Configuration Surface"), and
@@ -62,14 +63,13 @@ class ClientAPIBackendContext:
     """
 
     executor: "ClientAPIExecutor"
-    execution_mode: str
     # in_process entry point
     task_script_path: Optional[str] = None
     task_script_args: str = ""
     # external_process launch
-    command: Optional[str] = None
+    command: Optional[Union[str, list[str]]] = None
     launch_once: bool = True
-    launch_timeout: Optional[float] = None
+    launch_timeout: Optional[float] = 300.0
     shutdown_timeout: Optional[float] = None
     stop_grace_period: float = 30.0
     # session / protocol (out-of-process)
@@ -77,11 +77,12 @@ class ClientAPIBackendContext:
     heartbeat_timeout: float = 30.0
     task_wait_timeout: Optional[float] = None
     result_wait_timeout: Optional[float] = None
-    # NOTE: params_exchange_format / params_transfer_type / server_expected_format and the
-    # from/to_nvflare_converter ids are intentionally NOT here: the Client API boundary is
-    # pass-through, and format conversion between the aggregation representation and the
-    # framework-native training representation belongs to send/receive filters at the client
-    # edge. Transfer type (FULL/DIFF) is a model-registry concern.
+    # Declarative API-boundary representation contract. Backends transport these values in
+    # TASK_EXCHANGE; conversion happens in the trainer-side Client API, never in the executor.
+    params_exchange_format: ExchangeFormat = ExchangeFormat.RAW
+    server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
+    # FULL/DIFF is model state owned by the trainer-side Client API.
+    params_transfer_type: TransferType = TransferType.FULL
     # task-name / rank contract (all modes)
     train_task_name: str = AppConstants.TASK_TRAIN
     evaluate_task_name: str = AppConstants.TASK_VALIDATION
@@ -90,9 +91,6 @@ class ClientAPIBackendContext:
     # memory management (all modes)
     memory_gc_rounds: int = 0
     cuda_empty_cache: bool = False
-    # attach
-    attach_timeout: Optional[float] = None
-    allow_reconnect: bool = False
 
 
 class ClientAPIBackendSpec(ABC):
@@ -103,8 +101,7 @@ class ClientAPIBackendSpec(ABC):
     - in_process: the backend runs the trainer inside the CJ process and owns its thread.
     - external_process: the backend launches and owns the external trainer process tree; it must
       not stop the trainer before the payload transfer of a pending result reaches terminal state.
-    - attach: the external system owns the trainer process; the backend owns only the attach
-      session, token validation, and heartbeat lease.
+    The reserved attach mode has no backend yet and therefore no lifecycle contract here.
     """
 
     @abstractmethod
@@ -114,11 +111,11 @@ class ClientAPIBackendSpec(ABC):
         ``context`` is the frozen snapshot of the executor's configuration plus a back-reference to
         the executor (for ``fire_log_analytics`` and logging). A backend should read all of its
         config from ``context`` rather than from executor private attributes, and should retain what
-        it needs for ``execute``/``handle_event``/``finalize``.
+        it needs for ``execute``/``finalize``.
 
         The backend sets up its control plane here (DataBus wiring for in_process; Cell session
         machinery, bootstrap config, and - per launch_once policy - trainer launch for
-        external_process; attach listener/token for attach).
+        external_process).
 
         Contract: raise an exception on any setup failure. The executor converts the exception
         into system_panic so the job fails cleanly instead of hanging while tasks wait on a
@@ -162,27 +159,13 @@ class ClientAPIBackendSpec(ABC):
         """
 
     @abstractmethod
-    def handle_event(self, event_type: str, fl_ctx: FLContext) -> None:
-        """Handles an FL event relayed by the executor.
-
-        The executor relays events other than START_RUN/END_RUN (those are mapped to
-        initialize/finalize). Backends use this for mode-specific bookkeeping.
-
-        Contract: must not raise; log and continue on internal errors.
-
-        Args:
-            event_type: the fired event type.
-            fl_ctx: the FLContext of the event.
-        """
-
-    @abstractmethod
     def finalize(self, fl_ctx: FLContext) -> None:
         """Releases backend resources. Called when the executor handles END_RUN.
 
         The backend tears down per its mode's lifecycle ownership: stop the in-process trainer
         thread; send SHUTDOWN and stop the owned process tree (honoring the executor's
         shutdown_timeout and stop_grace_period, and pending payload terminal state) for
-        external_process; close the session lease (without killing the trainer) for attach.
+        external_process.
 
         Contract: must be idempotent and must not raise. Not called if ``initialize()`` raised
         (see the cleanup-on-failure contract on ``initialize()``).

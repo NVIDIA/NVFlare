@@ -27,6 +27,7 @@ from nvflare.fuel.utils.constants import FrameworkType  # noqa: F401 - re-export
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe, Mode
 from nvflare.fuel.utils.pipe.pipe import Pipe
+from nvflare.fuel.utils.secret_utils import split_command_preserving_secret_refs
 from nvflare.fuel.utils.validation_utils import check_str
 
 from .api import FedJob, validate_object_for_job
@@ -44,14 +45,27 @@ _PIPE_CONNECT_URL = {
     PipeConnectType.VIA_ROOT: "{" + SystemVarName.ROOT_URL + "}",
 }
 
+_CommandArg = Union[str, list[str]]
+
+
+def _to_external_process_argv(value: _CommandArg, arg_name: str) -> list[str]:
+    """Return shell-free argv while preserving pre-tokenized values exactly."""
+    if isinstance(value, str):
+        return split_command_preserving_secret_refs(value, posix=True)
+    if not isinstance(value, list):
+        raise ValueError(f"{arg_name} must be a string or list of strings, but got {type(value).__name__}")
+    if not all(isinstance(arg, str) for arg in value):
+        raise ValueError(f"{arg_name} argv must contain only strings")
+    return list(value)
+
 
 class BaseScriptRunner:
     def __init__(
         self,
         script: str,
-        script_args: str = "",
+        script_args: _CommandArg = "",
         launch_external_process: bool = False,
-        command: str = "python3 -u",
+        command: _CommandArg = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         framework: FrameworkType = FrameworkType.PYTORCH,
         params_transfer_type: TransferType = TransferType.FULL,
@@ -80,13 +94,15 @@ class BaseScriptRunner:
 
         Args:
             script (str): Script to run. For in-process must be a python script path. For ex-process can be any script support by `command`.
-            script_args (str): Optional arguments for script (appended to script). The string is written in
-                clear text into the generated job config, so it must never contain actual secret values;
-                use :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
-                :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The
-                executing site resolves the placeholder at runtime.
+            script_args (Union[str, list[str]]): Optional arguments appended to the script. External-process
+                runners also accept pre-tokenized argv when exact argument boundaries must be preserved.
+                Values are written in clear text into the generated job config, so they must never contain actual secrets; use
+                :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
+                :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The executing site
+                resolves the placeholder at runtime.
             launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
-            command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
+            command (Union[str, list[str]]): If launch_external_process=True, command prepended to the script.
+                Pass pre-tokenized argv to preserve exact argument boundaries. Defaults to "python3 -u".
             framework (str): Framework is used to determine the `params_exchange_format`. Defaults to FrameworkType.PYTORCH.
             server_expected_format (str): What format to exchange the parameters between server and client.
             params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
@@ -125,13 +141,15 @@ class BaseScriptRunner:
 
             execution_mode (Optional[str]): Selects the new ClientAPIExecutor
                 (design: docs/design/client_api_execution_modes.md) instead of the legacy
-                executor stack. Currently only "in_process" is available; "external_process"
-                and "attach" land with their backends. When set, the params boundary is
-                pass-through (no ParamsConverters): `framework`,
-                `server_expected_format` and `params_transfer_type` are not used, and the
-                legacy stack args (`launch_external_process`, `executor`, `task_pipe`,
-                `launcher`, `metric_relay`, `metric_pipe`) must not be set. Defaults to None
-                (legacy behavior, unchanged).
+                executor stack. ``in_process`` and ``external_process`` are available;
+                ``attach`` lands with its backend. When set, the recipe declares framework and
+                server representations in ``TASK_EXCHANGE``; the trainer-side Client API adapts
+                at receive/send without constructing ParamsConverters. ``params_transfer_type``
+                is applied by the Client API model state. The
+                legacy stack args (`executor`, `task_pipe`, `launcher`, `metric_relay`,
+                `metric_pipe`, `pipe_connect_type`) must not be set. If
+                ``launch_external_process=True``, the mode must be ``external_process``.
+                Defaults to None (legacy BaseScriptRunner behavior).
         """
         self._script = script
         self._script_args = script_args
@@ -147,20 +165,26 @@ class BaseScriptRunner:
         if execution_mode is not None:
             if execution_mode not in ALL_EXECUTION_MODES:
                 raise ValueError(f"invalid execution_mode '{execution_mode}': must be one of {ALL_EXECUTION_MODES}")
-            if execution_mode != ExecutionMode.IN_PROCESS:
+            _available_modes = (ExecutionMode.IN_PROCESS, ExecutionMode.EXTERNAL_PROCESS)
+            if execution_mode not in _available_modes:
                 raise ValueError(
                     f"execution_mode '{execution_mode}' is not yet available via ScriptRunner: "
-                    f"only '{ExecutionMode.IN_PROCESS}' is supported until the corresponding backend lands"
+                    f"supported modes are {list(_available_modes)} until the corresponding backend lands"
+                )
+            if launch_external_process and execution_mode != ExecutionMode.EXTERNAL_PROCESS:
+                raise ValueError(
+                    "launch_external_process=True requires execution_mode='external_process', "
+                    f"but got execution_mode='{execution_mode}'"
                 )
             conflicts = {
-                "launch_external_process": launch_external_process or None,
                 "executor": executor,
                 "task_pipe": task_pipe,
                 "launcher": launcher,
                 "metric_relay": metric_relay,
                 "metric_pipe": metric_pipe,
+                "pipe_connect_type": pipe_connect_type,
             }
-            set_conflicts = [name for name, value in conflicts.items() if value]
+            set_conflicts = [name for name, value in conflicts.items() if value is not None]
             if set_conflicts:
                 raise ValueError(
                     f"execution_mode is mutually exclusive with the legacy executor stack args: {set_conflicts}"
@@ -169,11 +193,19 @@ class BaseScriptRunner:
 
         self._params_exchange_format = None
 
-        # The new-executor path is pass-through (no ParamsConverters), so the
-        # framework format resolution -- including its torch/tensorflow import checks -- is
-        # skipped entirely when execution_mode is set.
+        # The new-executor path does not instantiate ParamsConverters or import a framework
+        # during job construction. It declares the trainer-native representation so the
+        # trainer-side Client API can adapt lazily at receive/send.
         if execution_mode is not None:
-            pass
+            format_by_framework = {
+                FrameworkType.PYTORCH: ExchangeFormat.PYTORCH,
+                FrameworkType.TENSORFLOW: ExchangeFormat.KERAS_LAYER_WEIGHTS,
+                FrameworkType.NUMPY: ExchangeFormat.NUMPY,
+                FrameworkType.RAW: ExchangeFormat.RAW,
+            }
+            self._params_exchange_format = format_by_framework.get(self._framework)
+            if self._params_exchange_format is None:
+                raise ValueError(f"Framework {self._framework} unsupported")
         elif self._framework == FrameworkType.PYTORCH:
             _, torch_ok = optional_import(module="torch")
             if torch_ok:
@@ -253,13 +285,36 @@ class BaseScriptRunner:
         comp_ids = {}
 
         if self._execution_mode is not None:
-            executor = ClientAPIExecutor(
-                execution_mode=self._execution_mode,
-                task_script_path=self._script,
-                task_script_args=self._script_args,
-                memory_gc_rounds=self._memory_gc_rounds,
-                cuda_empty_cache=self._cuda_empty_cache,
-            )
+            if self._execution_mode == ExecutionMode.EXTERNAL_PROCESS:
+                # external_process launches the trainer as its own process, named by a
+                # shell-free argv, not by an in-CJ-process task_script_path. Parse the
+                # user-authored strings once here so the exported config carries stable
+                # argv boundaries to each target site.
+                command = _to_external_process_argv(self._command, "command")
+                command.append(f"custom/{self._script}")
+                command.extend(_to_external_process_argv(self._script_args, "script_args"))
+                executor = ClientAPIExecutor(
+                    execution_mode=self._execution_mode,
+                    command=command,
+                    launch_once=self._launch_once,
+                    shutdown_timeout=self._shutdown_timeout,
+                    params_exchange_format=self._params_exchange_format,
+                    server_expected_format=self._server_expected_format,
+                    params_transfer_type=self._params_transfer_type,
+                    memory_gc_rounds=self._memory_gc_rounds,
+                    cuda_empty_cache=self._cuda_empty_cache,
+                )
+            else:
+                executor = ClientAPIExecutor(
+                    execution_mode=self._execution_mode,
+                    task_script_path=self._script,
+                    task_script_args=self._script_args,
+                    params_exchange_format=self._params_exchange_format,
+                    server_expected_format=self._server_expected_format,
+                    params_transfer_type=self._params_transfer_type,
+                    memory_gc_rounds=self._memory_gc_rounds,
+                    cuda_empty_cache=self._cuda_empty_cache,
+                )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
             job.add_resources(resources=[self._script], ctx=ctx)
             return comp_ids
@@ -269,15 +324,17 @@ class BaseScriptRunner:
             task_pipe_id = job.add_component("pipe", task_pipe, ctx)
             comp_ids["pipe_id"] = task_pipe_id
 
-            launcher = (
-                self._launcher
-                if self._launcher
-                else SubprocessLauncher(
-                    script=self._command + " custom/" + self._script + " " + self._script_args,
+            if self._launcher:
+                launcher = self._launcher
+            else:
+                command = _to_external_process_argv(self._command, "command")
+                command.append(f"custom/{self._script}")
+                command.extend(_to_external_process_argv(self._script_args, "script_args"))
+                launcher = SubprocessLauncher(
+                    script=command,
                     launch_once=self._launch_once,
                     shutdown_timeout=self._shutdown_timeout,
                 )
-            )
             launcher_id = job.add_component("launcher", launcher, ctx)
             comp_ids["launcher_id"] = launcher_id
 
@@ -364,13 +421,13 @@ class ScriptRunner(BaseScriptRunner):
     def __init__(
         self,
         script: str,
-        script_args: str = "",
+        script_args: _CommandArg = "",
         launch_external_process: bool = False,
-        command: str = "python3 -u",
+        command: _CommandArg = "python3 -u",
         framework: FrameworkType = FrameworkType.PYTORCH,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
-        pipe_connect_type: PipeConnectType = PipeConnectType.VIA_CP,
+        pipe_connect_type: Optional[PipeConnectType] = None,
         task_pipe: Optional[Pipe] = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
@@ -380,34 +437,52 @@ class ScriptRunner(BaseScriptRunner):
     ):
         """ScriptRunner is used with FedJob API to run or launch a script.
 
-        in-process `launch_external_process=False` uses InProcessClientAPIExecutor (default).
-        ex-process `launch_external_process=True` uses ClientAPILauncherExecutor.
+        ``launch_external_process=False`` uses ``ClientAPIExecutor(in_process)`` (default).
+        ``launch_external_process=True`` uses ``ClientAPIExecutor(external_process)``.
 
         Args:
             script (str): Script to run. For in-process must be a python script path. For ex-process can be any script support by `command`.
-            script_args (str): Optional arguments for script (appended to script). The string is written in
-                clear text into the generated job config, so it must never contain actual secret values;
-                use :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
-                :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The
-                executing site resolves the placeholder at runtime.
+            script_args (Union[str, list[str]]): Optional arguments appended to the script. External-process
+                runners also accept pre-tokenized argv when exact argument boundaries must be preserved.
+                Values are written in clear text into the generated job config, so they must never contain actual secrets; use
+                :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
+                :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The executing site
+                resolves the placeholder at runtime.
             launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
-            command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
+            command (Union[str, list[str]]): If launch_external_process=True, command prepended to the script.
+                Pass pre-tokenized argv to preserve exact argument boundaries. Defaults to "python3 -u".
             framework (str): Framework is used to determine the `params_exchange_format`. Defaults to FrameworkType.PYTORCH.
             server_expected_format (str): What format to exchange the parameters between server and client.
             params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
                 DIFF means that only the difference is sent. Defaults to TransferType.FULL.
-            pipe_connect_type (str): how pipe peers are to be connected
+            pipe_connect_type (str): Legacy pipe connection configuration. It is not supported
+                by ScriptRunner's ClientAPIExecutor path; use BaseScriptRunner when an explicit
+                legacy Pipe/Launcher stack is required.
             task_pipe (Optional[Pipe]): Optional Pipe instance for task exchange between
-                ClientAPILauncherExecutor and the client API. Only used if
-                `launch_external_process` is True. Defaults to None (CellPipe is created).
+                ClientAPILauncherExecutor and the client API. It is not supported by
+                ScriptRunner's ClientAPIExecutor path; use BaseScriptRunner for legacy custom
+                pipes.
             launch_once (bool): Whether the external process will be launched only once at the beginning
                 or on each task. Only used if `launch_external_process` is True. Defaults to True.
             shutdown_timeout (float): If provided, will wait for this number of seconds before shutdown.
                 Only used if `launch_external_process` is True. Defaults to 0.0.
-            execution_mode (Optional[str]): Selects the new ClientAPIExecutor instead of the
-                legacy executor stack; only "in_process" is currently available. See
-                BaseScriptRunner for the full contract. Defaults to None (legacy behavior).
+            execution_mode (Optional[str]): Explicit ClientAPIExecutor mode override.
+                ``in_process`` and ``external_process`` are available. When omitted, the mode is
+                derived from ``launch_external_process``. See BaseScriptRunner for the full
+                contract.
         """
+        legacy_args = [
+            name
+            for name, value in {"task_pipe": task_pipe, "pipe_connect_type": pipe_connect_type}.items()
+            if value is not None
+        ]
+        if legacy_args:
+            raise ValueError(
+                f"ScriptRunner uses ClientAPIExecutor and does not support legacy arguments {legacy_args}; "
+                "use BaseScriptRunner for an explicit legacy Pipe/Launcher stack"
+            )
+        if execution_mode is None:
+            execution_mode = ExecutionMode.EXTERNAL_PROCESS if launch_external_process else ExecutionMode.IN_PROCESS
         super().__init__(
             script=script,
             script_args=script_args,

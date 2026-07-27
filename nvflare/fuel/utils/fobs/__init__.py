@@ -62,6 +62,9 @@ class FOBSContextKey:
     # forwarding node (the CJ) and is the foundation of the B1 pass-through
     # architecture.
     PASS_THROUGH = "pass_through"
+    # When PASS_THROUGH is active, preserve laziness but relay future downloads
+    # through this Cell instead of re-emitting the original source reference.
+    RELAY_PASS_THROUGH = "relay_pass_through"
     # Optional callable set by FlareAgent before serialising a result message
     # when reverse PASS_THROUGH is active (subprocess → CJ → server).  Signature:
     #   cb(tx_id: str, status: str, base_objs: list) -> None
