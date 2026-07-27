@@ -45,6 +45,17 @@ def _step_weight(model: FLModel) -> float:
     return weight if weight > 0 else 1.0
 
 
+def _merge_log_weight(old_log_weight, weight):
+    new_log_weight = math.log(weight)
+    if old_log_weight == new_log_weight:
+        return old_log_weight + math.log(2.0), 0.5
+    max_log_weight = max(old_log_weight, new_log_weight)
+    total_log_weight = max_log_weight + math.log1p(
+        math.exp(min(old_log_weight, new_log_weight) - max_log_weight)
+    )
+    return total_log_weight, math.exp(new_log_weight - total_log_weight)
+
+
 def _materialize(value):
     # Disk-offloaded params (enable_tensor_disk_offload=True) may arrive as lazy
     # references rather than in-memory tensors. materialize() loads the tensor
@@ -63,11 +74,11 @@ class WeightedAggregator(ModelAggregator):
         self.reset_stats()
 
     def reset_stats(self):
-        self._weighted_sum = {}
+        self._param_mean = {}
         # Per-key weight so a parameter present in only some clients is averaged
         # over just those clients (not diluted by the full round weight), and a
         # key missing from the first client does not raise KeyError.
-        self._key_weight = {}
+        self._key_log_weight = {}
         self._metric_mean = {}
         self._metric_log_weight = {}
         self._all_metrics = True
@@ -83,17 +94,7 @@ class WeightedAggregator(ModelAggregator):
             self._metric_log_weight[name] = math.log(weight)
             return
 
-        old_log_weight = self._metric_log_weight[name]
-        new_log_weight = math.log(weight)
-        if old_log_weight == new_log_weight:
-            total_log_weight = old_log_weight + math.log(2.0)
-            new_fraction = 0.5
-        else:
-            max_log_weight = max(old_log_weight, new_log_weight)
-            total_log_weight = max_log_weight + math.log1p(
-                math.exp(min(old_log_weight, new_log_weight) - max_log_weight)
-            )
-            new_fraction = math.exp(new_log_weight - total_log_weight)
+        total_log_weight, new_fraction = _merge_log_weight(self._metric_log_weight[name], weight)
         mean = math.fsum(
             (
                 self._metric_mean[name] * (1.0 - new_fraction),
@@ -114,12 +115,15 @@ class WeightedAggregator(ModelAggregator):
         self._params_type = model.params_type
         for key, value in model.params.items():
             value = _materialize(value)
-            if key in self._weighted_sum:
-                self._weighted_sum[key] = self._weighted_sum[key] + value * weight
-                self._key_weight[key] += weight
+            if key in self._param_mean:
+                total_log_weight, new_fraction = _merge_log_weight(self._key_log_weight[key], weight)
+                self._param_mean[key] = (
+                    self._param_mean[key] * (1.0 - new_fraction) + value * new_fraction
+                )
+                self._key_log_weight[key] = total_log_weight
             else:
-                self._weighted_sum[key] = value * weight
-                self._key_weight[key] = weight
+                self._param_mean[key] = value * 1.0
+                self._key_log_weight[key] = math.log(weight)
         if model.metrics is None:
             self._all_metrics = False
         elif self._all_metrics:
@@ -133,9 +137,9 @@ class WeightedAggregator(ModelAggregator):
         )
 
     def aggregate_model(self) -> FLModel:
-        if not self._weighted_sum:
+        if not self._param_mean:
             raise RuntimeError("no client models accepted this round")
-        averaged = {key: self._weighted_sum[key] / self._key_weight[key] for key in self._weighted_sum}
+        averaged = dict(self._param_mean)
         metrics = dict(self._metric_mean)
         if not self._all_metrics:
             self.log_warning(
