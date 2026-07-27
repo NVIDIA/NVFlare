@@ -64,8 +64,11 @@ class TestTransferWaiter:
     def test_waiter_after_termination_resolves_immediately(self):
         service = _make_service()
         tx_id, rid = _new_tx(service)
+        completion_waiter = service.get_transfer_waiter(tx_id)
         _pull_to_terminal(service, rid, "r1")
+        assert not completion_waiter.done()
         run_monitor_once(service, now=time.time())
+        assert completion_waiter.wait(timeout=5.0).completed
 
         waiter = service.get_transfer_waiter(tx_id)
         assert waiter.done()

@@ -293,10 +293,18 @@ def test_sft_recipe_exports_modern_full_transfer_config(tmp_path):
     with open(job_dir / "app_server" / "config" / "config_fed_server.json") as f:
         server_config = json.load(f)
 
-    launcher_args = next(c for c in client_config["components"] if c["id"] == "launcher")["args"]
-    assert "custom/automodel_sft_client.py" in launcher_args["script"]
-    assert "--backend mock" in launcher_args["script"]
-    assert "sft data/site-1_train.jsonl" in launcher_args["script"]
+    executor = next(
+        entry["executor"]
+        for entry in client_config["executors"]
+        if entry["executor"]["path"].endswith(".ClientAPIExecutor")
+    )
+    executor_args = executor["args"]
+    assert executor_args["execution_mode"] == "external_process"
+    command = executor_args["command"]
+    assert "custom/automodel_sft_client.py" in command
+    assert command[command.index("--backend") + 1] == "mock"
+    assert command[command.index("--train_file") + 1].endswith("sft data/site-1_train.jsonl")
+    assert executor_args["launch_once"] is False
     assert (job_dir / "app_site-1" / "custom" / "automodel_sft_dataset.py").exists()
     assert (job_dir / "app_site-1" / "custom" / "automodel_full_model_loader.py").exists()
     assert (job_dir / "app_site-1" / "custom" / "model_checkpoint.py").exists()

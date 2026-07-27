@@ -42,21 +42,57 @@ Order is mandatory:
 3. only then run Python import probes, recipe-construction preflights, export,
    simulation, or `python job.py`.
 
+Package inventory before installation may use installer metadata or
+`importlib.metadata`, but the command must not import user, framework, product,
+or declared dependency modules. A compound Python command containing any such
+import is an import-level preflight and belongs after installation.
+
 Do not run an import-level preflight first to discover a missing package when an
 applicable requirements file is already present. A `ModuleNotFoundError` from
 such a preflight is an ordering error, not validation evidence.
 
+## Build One Combined Install Plan
+
+Before running an installer, identify every applicable dependency input for the
+conversion:
+
+- include every applicable requirements file, using one `-r <file>` argument
+  per file;
+- include applicable constraints with one `-c <file>` argument per file;
+- when `nvflare` is absent from the host-provided environment and is not
+  supplied by those files, append `nvflare` to the same command;
+- include any other statically declared direct package inputs not already
+  supplied by the selected files.
+
+One command may contain multiple requirements, constraints, and direct package
+arguments. These are parts of one planned install, not retries. For example, a
+combined invocation can contain
+`-r <requirements-a> -r <requirements-b> -c <constraints> nvflare`.
+
 ## Installer Choice
 
-- Prefer `uv pip install -r <file>` when `uv` is available and the host-provided
-  environment is active.
-- If that environment is not active, use `uv pip install --python <python> -r
-  <file>` with its Python interpreter.
-- If `uv` is unavailable, use `<python> -m pip install -r <file>` with the
-  host-provided environment's interpreter.
+- Prefer `uv pip install <combined-inputs>` when `uv` is available and the
+  host-provided environment is active.
+- If that environment is not active, use
+  `uv pip install --python <python> <combined-inputs>` with its Python
+  interpreter.
+- If `uv` is unavailable, use
+  `<python> -m pip install <combined-inputs>` with the host-provided
+  environment's interpreter.
 
-When an import still fails after installation, verify which interpreter received
-the packages before rerunning the failed check.
+Run the selected combined canonical install command once. If it returns a
+nonzero exit, stop dependency installation and validation for this conversion
+run. Preserve any generated source as an unvalidated draft and report a
+redacted form of the command and product error. Command reporting must strip URL
+userinfo, query strings, and fragments, replace credential-bearing option or
+environment values with `<redacted>`, and never reproduce a secret. Do not retry
+with another installer, index, backend, package version, or package-by-package
+install; do not purge caches, uninstall packages, or mutate `site-packages`
+directly. A later user-directed run may retry after the reported blocker is
+resolved.
+
+Only after an install exits successfully, if an import still fails, verify which
+interpreter received the packages before rerunning that import check.
 
 ## Blockers To Report
 

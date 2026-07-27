@@ -41,6 +41,7 @@ from nvflare.app_common.executors.client_api_executor import (
     ClientAPIExecutor,
     ExecutionMode,
 )
+from nvflare.client.config import ExchangeFormat, TransferType
 
 # The frozen V1 constructor surface (design: "Configuration Surface" in
 # docs/design/client_api_execution_modes.md, plus the load-bearing args added beyond that list -
@@ -63,6 +64,9 @@ FROZEN_CONSTRUCTOR_PARAMS = [
     "evaluate_task_name",
     "submit_model_task_name",
     "train_with_evaluation",
+    "params_exchange_format",
+    "server_expected_format",
+    "params_transfer_type",
     "memory_gc_rounds",
     "cuda_empty_cache",
     "attach_timeout",
@@ -111,9 +115,6 @@ class _StubBackend(ClientAPIBackendSpec):
         self.calls.append(("execute", task_name))
         return self.result
 
-    def handle_event(self, event_type, fl_ctx):
-        self.calls.append(("handle_event", event_type))
-
     def finalize(self, fl_ctx):
         self.calls.append("finalize")
 
@@ -136,6 +137,12 @@ class TestConstructorValidation:
         assert isinstance(executor, Executor)
         assert executor._execution_mode == kwargs["execution_mode"]
 
+    def test_external_process_default_launch_timeout_is_bounded(self):
+        executor = ClientAPIExecutor(execution_mode="external_process", command="python custom/train.py")
+
+        assert executor._launch_timeout == 300.0
+        assert executor._build_backend_context().launch_timeout == 300.0
+
     def test_valid_attach_with_attach_args(self):
         executor = ClientAPIExecutor(execution_mode="attach", attach_timeout=60.0, allow_reconnect=True)
         assert executor._attach_timeout == 60.0
@@ -157,6 +164,9 @@ class TestConstructorValidation:
             evaluate_task_name="my_eval",
             submit_model_task_name="my_submit",
             train_with_evaluation=True,
+            params_exchange_format=ExchangeFormat.PYTORCH,
+            server_expected_format=ExchangeFormat.NUMPY,
+            params_transfer_type=TransferType.DIFF,
             memory_gc_rounds=5,
             cuda_empty_cache=True,
         )
@@ -166,6 +176,9 @@ class TestConstructorValidation:
         assert executor._evaluate_task_name == "my_eval"
         assert executor._submit_model_task_name == "my_submit"
         assert executor._train_with_evaluation is True
+        assert executor._params_exchange_format == ExchangeFormat.PYTORCH
+        assert executor._server_expected_format == ExchangeFormat.NUMPY
+        assert executor._params_transfer_type == TransferType.DIFF
         assert executor._memory_gc_rounds == 5
         assert executor._cuda_empty_cache is True
 
@@ -177,8 +190,21 @@ class TestConstructorValidation:
         assert executor._evaluate_task_name == AppConstants.TASK_VALIDATION
         assert executor._submit_model_task_name == AppConstants.TASK_SUBMIT_MODEL
         assert executor._train_with_evaluation is False
+        assert executor._params_exchange_format == ExchangeFormat.RAW
+        assert executor._server_expected_format == ExchangeFormat.NUMPY
+        assert executor._params_transfer_type == TransferType.FULL
         assert executor._memory_gc_rounds == 0
         assert executor._cuda_empty_cache is False
+
+    def test_invalid_or_unsupported_format_declaration_is_rejected(self):
+        with pytest.raises(ValueError, match="invalid params_exchange_format"):
+            ClientAPIExecutor(execution_mode="in_process", params_exchange_format="unknown")
+        with pytest.raises(ValueError, match="unsupported parameter format conversion"):
+            ClientAPIExecutor(
+                execution_mode="in_process",
+                params_exchange_format=ExchangeFormat.PYTORCH,
+                server_expected_format=ExchangeFormat.KERAS_LAYER_WEIGHTS,
+            )
 
     def test_in_process_accepts_task_script(self):
         # in_process names its script via task_script_path/args; command names the external_process
@@ -206,9 +232,22 @@ class TestConstructorValidation:
         with pytest.raises(ValueError, match="command is only valid for execution_mode 'external_process'"):
             ClientAPIExecutor(execution_mode=mode, command="python custom/train.py")
 
-    @pytest.mark.parametrize("command", [None, ""])
+    @pytest.mark.parametrize("command", [None, "", []])
     def test_external_process_requires_command(self, command):
         with pytest.raises(ValueError, match="'external_process' requires a non-empty command"):
+            ClientAPIExecutor(execution_mode="external_process", command=command)
+
+    def test_external_process_accepts_and_copies_command_argv(self):
+        command = ["python", "custom/train model.py", "--label", "two words", ""]
+
+        executor = ClientAPIExecutor(execution_mode="external_process", command=command)
+        command[1] = "changed.py"
+
+        assert executor._command == ["python", "custom/train model.py", "--label", "two words", ""]
+
+    @pytest.mark.parametrize("command", [[""], ["python", 1], {"executable": "python"}])
+    def test_external_process_rejects_invalid_command_argv(self, command):
+        with pytest.raises(ValueError, match="command"):
             ClientAPIExecutor(execution_mode="external_process", command=command)
 
     @pytest.mark.parametrize(
@@ -302,12 +341,63 @@ class TestConstructorValidation:
         assert executor._heartbeat_interval == 2.0
         assert executor._heartbeat_timeout == 20.0
 
+    @pytest.mark.parametrize(
+        "heartbeat_interval,heartbeat_timeout,match",
+        [
+            (0.0, 30.0, "heartbeat_interval must > 0"),
+            (5.0, -1.0, "heartbeat_timeout must >= 0"),
+            (5.0, 5.0, "must be less than heartbeat_timeout"),
+            (float("nan"), 30.0, "finite number"),
+            (5.0, float("inf"), "finite number"),
+        ],
+    )
+    def test_invalid_heartbeat_policy_rejected(self, heartbeat_interval, heartbeat_timeout, match):
+        with pytest.raises(ValueError, match=match):
+            ClientAPIExecutor(
+                execution_mode="external_process",
+                command="python custom/train.py",
+                heartbeat_interval=heartbeat_interval,
+                heartbeat_timeout=heartbeat_timeout,
+            )
+
+    def test_zero_heartbeat_timeout_disables_lease(self):
+        executor = ClientAPIExecutor(
+            execution_mode="external_process",
+            command="python custom/train.py",
+            heartbeat_interval=5.0,
+            heartbeat_timeout=0.0,
+        )
+        assert executor._heartbeat_timeout == 0.0
+
+    @pytest.mark.parametrize(
+        "name,value",
+        [
+            ("launch_timeout", -1.0),
+            ("shutdown_timeout", float("nan")),
+            ("stop_grace_period", -0.1),
+            ("task_wait_timeout", float("inf")),
+            ("result_wait_timeout", -1.0),
+        ],
+    )
+    def test_invalid_external_process_bounds_are_rejected(self, name, value):
+        with pytest.raises(ValueError, match=rf"{name} must be a finite number >= 0"):
+            ClientAPIExecutor(
+                execution_mode="external_process",
+                command="python custom/train.py",
+                **{name: value},
+            )
+
+    @pytest.mark.parametrize("value", [-1, 1.5, True])
+    def test_invalid_memory_gc_rounds_is_rejected(self, value):
+        with pytest.raises(ValueError, match="memory_gc_rounds must be an integer >= 0"):
+            ClientAPIExecutor(execution_mode="in_process", memory_gc_rounds=value)
+
     @pytest.mark.parametrize("mode", ["in_process", "attach"])
     def test_external_process_defaults_accepted_for_other_modes(self, mode):
         # The frozen defaults for external_process-only knobs are indistinguishable from "not set"
         # and must be accepted in every mode.
         kwargs = dict(MODE_KWARGS[mode])
-        ClientAPIExecutor(launch_once=True, stop_grace_period=30.0, **kwargs)
+        ClientAPIExecutor(launch_once=True, launch_timeout=300.0, stop_grace_period=30.0, **kwargs)
 
     @pytest.mark.parametrize("mode", ["in_process", "external_process"])
     def test_allow_reconnect_default_value_accepted_for_non_attach_modes(self, mode):
@@ -328,19 +418,26 @@ class TestConstructorValidation:
 
 
 class TestDispatch:
-    """in_process now resolves a real backend (EX-3); external_process/attach remain
-    skeleton-only: resolving those backends at START_RUN must fail the job cleanly
-    (system_panic naming the mode), and execute() must reply with an error instead of hanging.
-    in_process START_RUN without a valid task_script_path fails the same clean way, so the
-    all-modes panic tests below still hold."""
+    """in_process and external_process now resolve real backends; attach remains
+    skeleton-only: resolving its backend at START_RUN must fail the job cleanly
+    (system_panic naming the mode), and execute() must reply with an error instead of
+    hanging. in_process START_RUN without a valid task_script_path — and external_process
+    START_RUN without a workspace/cell — fail the same clean way, so the all-modes panic
+    tests below still hold."""
 
-    NOT_IMPLEMENTED_MODES = [ExecutionMode.EXTERNAL_PROCESS, ExecutionMode.ATTACH]
+    NOT_IMPLEMENTED_MODES = [ExecutionMode.ATTACH]
 
     def test_in_process_factory_returns_real_backend(self):
         from nvflare.app_common.executors.client_api.in_process_backend import InProcessBackend
 
         executor = ClientAPIExecutor(**MODE_KWARGS[ExecutionMode.IN_PROCESS])
         assert isinstance(executor._create_backend(), InProcessBackend)
+
+    def test_external_process_factory_returns_real_backend(self):
+        from nvflare.app_common.executors.client_api.external_process_backend import ExternalProcessBackend
+
+        executor = ClientAPIExecutor(**MODE_KWARGS[ExecutionMode.EXTERNAL_PROCESS])
+        assert isinstance(executor._create_backend(), ExternalProcessBackend)
 
     @pytest.mark.parametrize("mode", NOT_IMPLEMENTED_MODES)
     def test_backend_factory_raises_not_implemented(self, mode):
@@ -395,8 +492,8 @@ class TestDispatch:
 
 class TestBackendPlumbing:
     """With a working backend registered (as EX-3/EP-4/AT-2 will do), the executor drives the
-    ClientAPIBackendSpec lifecycle: initialize at START_RUN, execute per task, handle_event for
-    other events, finalize at END_RUN."""
+    ClientAPIBackendSpec lifecycle: initialize at START_RUN, execute per task, and finalize at
+    END_RUN."""
 
     def _make_started_executor(self):
         backend = _StubBackend()
@@ -417,18 +514,13 @@ class TestBackendPlumbing:
         assert reply is backend.result
         assert ("execute", "train") in backend.calls
 
-    def test_other_events_forwarded_to_backend(self):
+    def test_unrelated_events_are_not_relayed_to_backend(self):
         executor, backend, fl_ctx, _ = self._make_started_executor()
-        executor.handle_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
-        assert ("handle_event", EventType.ABOUT_TO_END_RUN) in backend.calls
-
-    def test_backend_event_exception_is_logged_and_ignored(self):
-        executor, backend, fl_ctx, _ = self._make_started_executor()
-        backend.handle_event = Mock(side_effect=RuntimeError("event failed"))
+        backend.handle_event = Mock()
 
         executor.handle_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
 
-        assert executor._backend is backend
+        backend.handle_event.assert_not_called()
 
     def test_end_run_finalizes_and_clears_backend(self):
         executor, backend, fl_ctx, _ = self._make_started_executor()
@@ -482,6 +574,8 @@ class TestBackendPlumbing:
             execution_mode="in_process",
             task_script_path="custom/train.py",
             train_task_name="my_train",
+            params_exchange_format=ExchangeFormat.PYTORCH,
+            server_expected_format=ExchangeFormat.NUMPY,
             memory_gc_rounds=7,
         )
         engine, _ = _make_recording_engine()
@@ -490,9 +584,10 @@ class TestBackendPlumbing:
         ctx = backend.context
         assert isinstance(ctx, ClientAPIBackendContext)
         assert ctx.executor is executor
-        assert ctx.execution_mode == "in_process"
         assert ctx.task_script_path == "custom/train.py"
         assert ctx.train_task_name == "my_train"
+        assert ctx.params_exchange_format == ExchangeFormat.PYTORCH
+        assert ctx.server_expected_format == ExchangeFormat.NUMPY
         assert ctx.memory_gc_rounds == 7
 
     def test_backend_context_is_frozen(self):
@@ -500,21 +595,11 @@ class TestBackendPlumbing:
         executor = _StubbedInProcessExecutor(backend, execution_mode="in_process")
         executor.handle_event(EventType.START_RUN, _make_fl_ctx(_make_recording_engine()[0]))
         with pytest.raises(Exception):
-            backend.context.execution_mode = "attach"
+            backend.context.task_script_path = "other.py"
 
     def test_backend_spec_is_abstract(self):
         with pytest.raises(TypeError):
             ClientAPIBackendSpec()
-
-    def test_missing_backend_factory_reports_registered_modes(self, monkeypatch):
-        executor = ClientAPIExecutor(execution_mode="in_process")
-        registry = Mock(return_value={})
-        monkeypatch.setattr(executor, "_backend_registry", registry)
-
-        with pytest.raises(ValueError, match=r"registered modes are \[\]"):
-            executor._create_backend()
-
-        registry.assert_called_once_with()
 
 
 class TestAnalyticsOwnership:
@@ -570,7 +655,7 @@ class TestSurfaceFreeze:
             "task_script_path": None,
             "task_script_args": "",
             "launch_once": True,
-            "launch_timeout": None,
+            "launch_timeout": 300.0,
             "shutdown_timeout": None,
             "stop_grace_period": 30.0,
             "heartbeat_interval": 5.0,
@@ -581,6 +666,9 @@ class TestSurfaceFreeze:
             "evaluate_task_name": AppConstants.TASK_VALIDATION,
             "submit_model_task_name": AppConstants.TASK_SUBMIT_MODEL,
             "train_with_evaluation": False,
+            "params_exchange_format": ExchangeFormat.RAW,
+            "server_expected_format": ExchangeFormat.NUMPY,
+            "params_transfer_type": TransferType.FULL,
             "memory_gc_rounds": 0,
             "cuda_empty_cache": False,
             "attach_timeout": None,

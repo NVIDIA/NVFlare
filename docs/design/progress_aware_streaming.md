@@ -8,6 +8,38 @@ The default behavior should be:
 
 > If a streamed transfer is making monotonic progress, do not fail or resend solely because wall-clock time is long. If progress stops for the idle timeout, fail clearly.
 
+## Scope Relative To `ExternalProcessBackend`
+
+The sections below that name `TaskExchanger`, `FlareAgent`, `Pipe`, or the
+`_STREAM_PROGRESS_` topic describe progress-aware protection for the legacy subprocess
+path. That path remains available during the `ClientAPIExecutor` migration, so those
+requirements are still relevant to it.
+
+The new `ClientAPIExecutor(execution_mode="external_process")` path does not carry a
+Client-API-specific payload wrapper or progress event over Pipe. Task and result
+`Shareable` objects ride directly in Cell requests; Cell/FOBS chooses inline encoding or
+`ViaDownloader`, and the sender observes the real `DownloadService` transactions through
+call-scoped FOBS context. The task is materialized at the trainer before its Cell handler
+runs. A result reaches the CJ as inline values and/or lazy references. `ClientRunner`
+retains its existing behavior and does not introduce a filter-driven materialization step;
+when the references remain unchanged, the downstream server/workflow pulls directly from
+the trainer. The trainer waits on the real
+`DownloadService` terminal outcome, so CJ envelope acceptance cannot end the source lifetime. The
+last accepted receiver confirmation eagerly settles a completed transaction instead of waiting
+for the periodic monitor. A terminal serve to a confirmation-disabled or legacy receiver remains
+monitor-settled so producer completion cannot overtake delivery of that terminal reply. An
+orderly SHUTDOWN uses a distinct task-download cancellation signal and therefore cannot cancel an
+accepted result publication. END_RUN also waits for the active result-publication barrier's
+truthful natural exit before ClientRunner tears down streaming and the CJ Cell. This barrier covers
+the acceptance-reply race for inline results as well as downstream pulls for streamed results. The
+transfer's own idle/receiver budgets bound stalls without imposing a total-duration cutoff while
+bytes continue to make progress.
+
+The shared lower-layer rules in this document—monotonic progress, receiver-scoped
+transaction status, idle detection, and terminal outcomes—apply to both paths. The Pipe
+event schema and TaskExchanger/FlareAgent wait ownership do not apply to
+`ExternalProcessBackend`.
+
 ## Current Problem
 
 The parent client job (CJ) could hit `peer_read_timeout` while the subprocess is still downloading/materializing the task payload. The CJ then resends the task even though the previous task payload is still active. Under congestion this creates duplicate work, stale state, and eventually corrupt or premature receive behavior.
