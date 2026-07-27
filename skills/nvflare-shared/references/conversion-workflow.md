@@ -243,10 +243,16 @@ into a function with an explicit parameter and have `client.py` pass the FL mode
 explicitly; keep standalone behavior behind a separate entry point or explicit
 argument.
 
-Exported app content is target-specific. The configured `train_script` and its
-import closure populate client apps; they do not guarantee server-app packaging,
-especially when `set_per_site_config()` produces `app_server` plus per-site
-client apps. Every generated or project-local module referenced by server-side
+Exported app content is target-specific, and its directory layout depends on
+the recipe configuration. Before asserting paths, inspect the exported job root
+and enumerate the app directories it actually contains. A standard unified
+export uses `app/custom`; an export using `set_per_site_config()` uses
+`app_server/custom` plus each `app_<site>/custom`. Do not reuse a path assumption
+from another export.
+
+The configured `train_script` and its import closure populate client content;
+they do not guarantee separately targeted server-app packaging. Every generated
+or project-local module referenced by server-side
 `class_path` config, such as a `model.py` containing
 `{"class_path": "model.Net"}`, must be added to the server app with
 `recipe.add_server_file("model.py")` or an equivalent server-targeted API
@@ -258,8 +264,8 @@ dependencies; verify them with applicable requirements installation and
 import/preflight checks, not by copying them under `custom/`. During export
 inspection, verify every generated or project-local server and client module
 referenced by `class_path`, train script, custom aggregator, data helper, or
-config is present in the correct exported app (`app_server/custom` for
-server-only modules and each client app's `custom` folder for client modules).
+config is present under the discovered layout: `app/custom` for a unified app,
+or `app_server/custom` and each `app_<site>/custom` for a per-site export.
 
 Before treating an existing canonical filename as a collision, classify it by
 static source evidence. Derive the model, data-prep, download, and training
