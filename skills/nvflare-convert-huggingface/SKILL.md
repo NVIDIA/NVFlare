@@ -113,12 +113,13 @@ unprotected recipe or present a disclaimer as implementation.
    launch unset for single-process Trainer scripts; set it only for DDP/torchrun,
    scheduler-launched scripts, or explicit user intent when the selected recipe
    exposes it. Quote generated `train_args`.
-9. Load and apply the shared validation ladder from
-   `../nvflare-shared/references/validation-evidence.md`, then load and apply
+9. Load and apply `../nvflare-shared/references/validation-evidence.md` and
    `references/huggingface-validation.md`. Before simulation, parse final
-   `train_args` through the generated client's actual parser; no unused args are
-   allowed. Validate `TrainingArguments`/`SFTConfig` fields against the installed
-   framework version. Export only with `python job.py --export --export-dir`;
+   `train_args` through the generated client's actual parser and actual
+   dataclass types; reject unused args. Version-check only fields claimed to
+   come from framework `TrainingArguments` or
+   `SFTConfig` base classes. Preserve source-defined subclass fields that the
+   actual parser accepts. Export only with `python job.py --export --export-dir`;
    do not add job-local export flags. Use the HF reference for topology-smoke,
    full-model, and export inspection. If blocked, save a draft and report why.
 10. Report the selected recipe, source facts, parameter scope, data partition,

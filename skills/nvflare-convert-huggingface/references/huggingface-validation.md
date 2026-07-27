@@ -15,11 +15,15 @@ Run these checks after the shared validation ladder. Stop at the first failure.
   FL round loop.
 - Confirm generated `train_args` quote configurable model and data paths.
 - Pass the final generated `train_args` through the client entry's actual
-  argument mechanism in parse-only mode and reject any unused argument. If the
-  generated client uses `HfArgumentParser`, parse with that parser; if it
-  preserves `argparse` or another parser, use that parser instead. Do not inject
-  a `TrainingArguments` or `SFTConfig` field that is absent from the installed
-  Transformers/TRL version.
+  argument mechanism and actual dataclass types in parse-only mode; reject every
+  unused argument. If the generated client uses `HfArgumentParser`, parse with
+  the same project and framework dataclass types that the client constructs; if
+  it preserves `argparse` or another parser, use that parser instead. Check the
+  installed Transformers/TRL version only for fields claimed to belong to a
+  framework `TrainingArguments` or `SFTConfig` base class. Do not reject or
+  remove a project-defined subclass field merely because the base class lacks
+  it; preserve the field when its source definition is verified and the actual
+  parser accepts it.
 - Confirm site data remains external to the exported job.
 
 ## Import And Contract Checks
