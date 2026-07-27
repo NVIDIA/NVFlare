@@ -252,8 +252,8 @@
     },
     {
       "id": "diagnose-negative-healthy-job-lifecycle",
-      "prompt": "Monitor my healthy running job and download the final model when it completes.",
-      "expected_output": "The diagnosis skill should not trigger because the request is normal job lifecycle management, not failure diagnosis. No lifecycle skill exists; the agent handles lifecycle requests with product APIs directly.",
+      "prompt": "Monitor my healthy running NVFLARE job and tell me when it completes.",
+      "expected_output": "The diagnosis skill should not trigger because the request is normal monitoring of a healthy job, not failure diagnosis. No lifecycle skill exists; the agent handles lifecycle requests with product APIs directly.",
       "files": [],
       "assertions": [
         "The selected skill is not nvflare-diagnose-job."
@@ -267,6 +267,32 @@
             "description": "does not use the diagnosis skill for creating jobs, converting training code, submitting or monitoring a healthy job, downloading normal results, deployment, or generic Python debugging without failed NVFLARE job context"
           }
         ]
+      }
+    },
+    {
+      "id": "diagnose-negative-create-job",
+      "prompt": "Create a new NVFLARE federated learning job for my existing training code.",
+      "expected_output": "The diagnosis skill should not trigger because the request is job creation or conversion, not failure diagnosis.",
+      "files": [],
+      "assertions": [
+        "The selected skill is not nvflare-diagnose-job."
+      ],
+      "nvflare": {
+        "expected_skill": null,
+        "negative_for": "nvflare-diagnose-job"
+      }
+    },
+    {
+      "id": "diagnose-negative-download-completed-results",
+      "prompt": "My NVFLARE job completed successfully. Download its final model and results.",
+      "expected_output": "The diagnosis skill should not trigger because the request is normal result retrieval for a successfully completed job, not failure diagnosis.",
+      "files": [],
+      "assertions": [
+        "The selected skill is not nvflare-diagnose-job."
+      ],
+      "nvflare": {
+        "expected_skill": null,
+        "negative_for": "nvflare-diagnose-job"
       }
     },
     {

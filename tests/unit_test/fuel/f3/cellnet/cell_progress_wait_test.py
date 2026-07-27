@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 from unittest.mock import MagicMock
 
 import nvflare.fuel.f3.cellnet.cell as cell_module
@@ -20,6 +21,7 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.fobs import FOBSContextKey
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
 from nvflare.fuel.utils.waiter_utils import WaiterRC
 
 
@@ -38,8 +40,29 @@ def _make_cell():
     cell.send_blob = MagicMock(return_value=object())
     cell._future_wait = MagicMock(return_value=True)
     cell.decode_pass_through_channels = set()
+    cell.decode_pass_through_topics = set()
     cell.get_fobs_context = MagicMock(return_value={})
     return cell
+
+
+def test_unknown_reply_warning_does_not_log_headers(caplog):
+    cell = _make_cell()
+    cell.logger = logging.getLogger("test_unknown_reply_warning")
+    future = MagicMock()
+    future.headers = {
+        cell_module.StreamHeaderKey.STREAM_REQ_ID: "late-request",
+        "__token__": "secret-token-sentinel",
+        "__token_signature__": "secret-signature-sentinel",
+        "other": "other-secret-sentinel",
+    }
+
+    with caplog.at_level(logging.WARNING, logger=cell.logger.name):
+        cell._process_reply(future)
+
+    assert "Receiving unknown req_id='late-request'" in caplog.text
+    assert "secret-token-sentinel" not in caplog.text
+    assert "secret-signature-sentinel" not in caplog.text
+    assert "other-secret-sentinel" not in caplog.text
 
 
 def test_encode_message_can_stamp_receiver_ids_for_multi_receiver_download_refs(monkeypatch):
@@ -62,6 +85,31 @@ def test_encode_message_can_stamp_receiver_ids_for_multi_receiver_download_refs(
 
     assert captured[FOBSContextKey.NUM_RECEIVERS] == 2
     assert captured[FOBSContextKey.RECEIVER_IDS] == ["receiver-a", "receiver-b"]
+
+
+def test_encode_message_applies_call_scoped_fobs_props_without_mutating_them(monkeypatch):
+    cell = _make_cell()
+    captured = {}
+    cell.get_fobs_context.side_effect = lambda props=None: props
+    callback = MagicMock()
+    call_props = {RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: callback}
+
+    monkeypatch.setattr(
+        cell_module,
+        "encode_payload",
+        lambda _msg, _encoding_key, fobs_ctx: captured.update(fobs_ctx) or 0,
+    )
+
+    cell._encode_message(
+        Message(headers={}, payload=None),
+        abort_signal=Signal(),
+        receiver_ids=("receiver-a",),
+        fobs_ctx_props=call_props,
+    )
+
+    assert captured[RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY] is callback
+    assert captured[FOBSContextKey.RECEIVER_IDS] == ("receiver-a",)
+    assert call_props == {RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: callback}
 
 
 def test_remote_processing_wait_continues_without_resend_while_progress_callback_is_true(monkeypatch):
