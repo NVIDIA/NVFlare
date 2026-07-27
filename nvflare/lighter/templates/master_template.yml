@@ -105,7 +105,7 @@ local_client_resources: |
 
 fed_client: |
   {
-    "format_version": 2,
+    "format_version": 2{~~require_signed_jobs_config~~},
     "servers": [
       {
         "name": "{~~name~~}",
@@ -260,7 +260,7 @@ comm_config: |
 
 fed_server: |
   {
-    "format_version": 2,
+    "format_version": 2{~~require_signed_jobs_config~~},
     "servers": [
         {
             "name": "{~~name~~}",
