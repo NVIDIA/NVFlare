@@ -20,7 +20,7 @@ import re
 import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import nvflare
 from nvflare.tool.agent import dataset_inspect, frameworks
@@ -56,8 +56,9 @@ _SECONDARY_PROJECT_DIR_NAMES = {
     "vendors",
     "vendored",
 }
+# Bounded eager consumers whose first positional argument is the iterable they
+# exhaust. Add names here only with signature-specific tests.
 _EAGER_ITERABLE_CONSUMERS = {"dict", "list", "next", "set", "tuple"}
-_DECORATOR_IDENTITY = object()
 
 PYTHON_SUFFIXES = {".py"}
 SKIPPED_DIR_NAMES = {
@@ -591,6 +592,9 @@ class _LazyCallableResult:
     body: _DeferredCallableBody
 
 
+_VisitorValue = Optional[Union[_DeferredCallableBody, _LazyCallableResult]]
+
+
 class _YieldFinder(ast.NodeVisitor):
     def __init__(self):
         self.found = False
@@ -622,8 +626,12 @@ class _PythonInspector(ast.NodeVisitor):
         self._detectors = frameworks.detectors()
         self._detector_states = {detector.name: detector.new_file_state() for detector in self._detectors}
         self._scope_stack: list[str] = []
+        self._bound_name_stack: list[set[str]] = [set()]
         self._class_deferred_bodies: list[list[_DeferredCallableBody]] = []
         self._class_callable_bindings: list[dict[str, _DeferredCallableBody]] = []
+        self._class_lazy_bindings: list[dict[str, _LazyCallableResult]] = []
+        # AST nodes stay alive and are not cloned during one file visit, so
+        # id(node) is stable for decorator-return inference.
         self._deferred_callables_by_node: dict[int, _DeferredCallableBody] = {}
         self._ctx = DetectContext(
             self._emit_framework_evidence,
@@ -648,7 +656,9 @@ class _PythonInspector(ast.NodeVisitor):
                     self._ctx,
                     tuple(self._scope_stack),
                 )
-            self._bind_class_callable_names([alias.asname or alias.name.split(".", 1)[0]])
+            bound_names = [alias.asname or alias.name.split(".", 1)[0]]
+            self._mark_bound_names(bound_names)
+            self._bind_class_callable_names(bound_names)
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
@@ -665,7 +675,9 @@ class _PythonInspector(ast.NodeVisitor):
             )
         for alias in node.names:
             if alias.name != "*":
-                self._bind_class_callable_names([alias.asname or alias.name])
+                bound_names = [alias.asname or alias.name]
+                self._mark_bound_names(bound_names)
+                self._bind_class_callable_names(bound_names)
             if alias.name in {"FedJob", "FLModel", "SimEnv"}:
                 self.state.flare_imports.append(
                     _evidence(self.rel_path, node.lineno, "from_import", f"{module}.{alias.name}")
@@ -700,9 +712,11 @@ class _PythonInspector(ast.NodeVisitor):
         deferred_bodies: list[_DeferredCallableBody] = []
         self._class_deferred_bodies.append(deferred_bodies)
         self._class_callable_bindings.append({})
+        self._class_lazy_bindings.append({})
         try:
             self._visit_body_in_scope(node, "class", predeclare_locals=False)
         finally:
+            self._class_lazy_bindings.pop()
             self._class_callable_bindings.pop()
             self._class_deferred_bodies.pop()
         for detector in self._detectors:
@@ -715,6 +729,7 @@ class _PythonInspector(ast.NodeVisitor):
                 tuple(self._scope_stack),
             )
         self._bind_class_callable_names([node.name])
+        self._mark_bound_names([node.name])
         if self._class_deferred_bodies:
             self._class_deferred_bodies[-1].extend(deferred_bodies)
         else:
@@ -790,7 +805,7 @@ class _PythonInspector(ast.NodeVisitor):
             for statement in case.body:
                 self.visit(statement)
 
-    def visit_Call(self, node: ast.Call):
+    def visit_Call(self, node: ast.Call) -> Optional[_LazyCallableResult]:
         call_name = _call_name(node.func)
         if call_name:
             self._record_call(call_name, node.lineno)
@@ -823,11 +838,8 @@ class _PythonInspector(ast.NodeVisitor):
             self._visit_call_arguments(node)
             self._visit_expression_in_scope(node.func, "lambda", node.func.body)
             return None
-        if call_name in _EAGER_ITERABLE_CONSUMERS:
-            lazy_results = self._visit_call_arguments(node)
-            for lazy_result in lazy_results:
-                if self._is_sync_generator_result(lazy_result):
-                    self._visit_callable_body(lazy_result.body)
+        if self._is_unshadowed_eager_consumer(call_name):
+            self._visit_eager_iterable_consumer_call(node)
             return None
         self.generic_visit(node)
         return None
@@ -846,9 +858,14 @@ class _PythonInspector(ast.NodeVisitor):
         call_name = _call_name(node.value.func) if isinstance(node.value, ast.Call) else None
         value_info = self._classify_assignment_value(call_name)
         callable_body = self._class_callable_value(node.value)
+        lazy_result = self._class_lazy_value(node.value)
         visited_value = self.visit(node.value)
         if isinstance(visited_value, _DeferredCallableBody):
             callable_body = visited_value
+            lazy_result = None
+        elif isinstance(visited_value, _LazyCallableResult):
+            callable_body = None
+            lazy_result = visited_value
         for target in node.targets:
             self._visit_assignment_target(
                 target,
@@ -856,6 +873,7 @@ class _PythonInspector(ast.NodeVisitor):
                 call_name,
                 value_info,
                 callable_body,
+                lazy_result,
             )
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
@@ -863,16 +881,22 @@ class _PythonInspector(ast.NodeVisitor):
         call_name = _call_name(node.value.func) if isinstance(node.value, ast.Call) else None
         value_info = self._classify_assignment_value(call_name)
         callable_body = self._class_callable_value(node.value) if node.value else None
+        lazy_result = self._class_lazy_value(node.value) if node.value else None
         if node.value:
             visited_value = self.visit(node.value)
             if isinstance(visited_value, _DeferredCallableBody):
                 callable_body = visited_value
+                lazy_result = None
+            elif isinstance(visited_value, _LazyCallableResult):
+                callable_body = None
+                lazy_result = visited_value
         self._visit_assignment_target(
             node.target,
             getattr(node, "lineno", None),
             call_name,
             value_info,
             callable_body,
+            lazy_result,
         )
         self.visit(node.annotation)
 
@@ -880,17 +904,28 @@ class _PythonInspector(ast.NodeVisitor):
         self.generic_visit(node)
         self._record_binding_targets([node.target], getattr(node, "lineno", None))
 
-    def visit_NamedExpr(self, node: ast.NamedExpr) -> Optional[_DeferredCallableBody]:
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> _VisitorValue:
         callable_body = self._class_callable_value(node.value)
+        lazy_result = self._class_lazy_value(node.value)
         visited_value = self.visit(node.value)
         if isinstance(visited_value, _DeferredCallableBody):
             callable_body = visited_value
+            lazy_result = None
+        elif isinstance(visited_value, _LazyCallableResult):
+            callable_body = None
+            lazy_result = visited_value
         self._visit_assignment_target(
             node.target,
             getattr(node, "lineno", None),
             callable_body=callable_body,
+            lazy_result=lazy_result,
         )
-        return callable_body
+        return callable_body or lazy_result
+
+    def visit_Name(self, node: ast.Name) -> Optional[_LazyCallableResult]:
+        if isinstance(node.ctx, ast.Load):
+            return self._class_lazy_for_expression(node)
+        return None
 
     def visit_With(self, node: ast.With) -> None:
         for item in node.items:
@@ -987,21 +1022,24 @@ class _PythonInspector(ast.NodeVisitor):
         call_name: Optional[str] = None,
         value_info: Optional[dict[str, object]] = None,
         callable_body: Optional[_DeferredCallableBody] = None,
+        lazy_result: Optional[_LazyCallableResult] = None,
     ) -> None:
         if isinstance(target, (ast.Tuple, ast.List)):
             for item in target.elts:
-                self._visit_assignment_target(item, lineno, call_name, value_info, callable_body)
+                self._visit_assignment_target(item, lineno, call_name, value_info, callable_body, lazy_result)
             return
         if isinstance(target, ast.Starred):
-            self._visit_assignment_target(target.value, lineno, call_name, value_info, callable_body)
+            self._visit_assignment_target(target.value, lineno, call_name, value_info, callable_body, lazy_result)
             return
         self.visit(target)
         target_names = _assignment_target_names([target])
         self._dispatch_assignment(target_names, call_name, lineno, value_info)
-        self._bind_class_callable_names(target_names, callable_body)
+        self._mark_bound_names(target_names)
+        self._bind_class_callable_names(target_names, callable_body, lazy_result)
 
     def _record_binding_names(self, target_names: list[str], lineno: Optional[int]) -> None:
         self._dispatch_assignment(target_names, None, lineno)
+        self._mark_bound_names(target_names)
         self._bind_class_callable_names(target_names)
 
     def _classify_assignment_value(self, call_name: Optional[str]) -> dict[str, object]:
@@ -1035,6 +1073,13 @@ class _PythonInspector(ast.NodeVisitor):
                 value_info.get(detector.name) if value_info is not None else None,
             )
 
+    def _mark_bound_names(self, target_names: list[str]) -> None:
+        if not self._bound_name_stack:
+            return
+        for name in target_names:
+            if "." not in name:
+                self._bound_name_stack[-1].add(name)
+
     def _visit_comprehension(self, node: ast.AST, kind: str) -> None:
         generators = getattr(node, "generators", [])
         if not generators:
@@ -1045,6 +1090,7 @@ class _PythonInspector(ast.NodeVisitor):
         first_result = self.visit(generators[0].iter)
         self._visit_iteration_result(first_result, is_async=bool(generators[0].is_async))
         self._scope_stack.append(f"{kind}:<anonymous>:{getattr(node, 'lineno', 0)}")
+        self._bound_name_stack.append(set())
         try:
             scope = tuple(self._scope_stack)
             target_names = {
@@ -1062,6 +1108,7 @@ class _PythonInspector(ast.NodeVisitor):
                     self._detector_states[detector.name],
                     self._ctx,
                 )
+            self._bound_name_stack[-1].update(target_names)
             for index, generator in enumerate(generators):
                 if index:
                     lazy_result = self.visit(generator.iter)
@@ -1074,6 +1121,7 @@ class _PythonInspector(ast.NodeVisitor):
             else:
                 self.visit(node.elt)
         finally:
+            self._bound_name_stack.pop()
             self._scope_stack.pop()
 
     def finalize(self) -> None:
@@ -1113,7 +1161,7 @@ class _PythonInspector(ast.NodeVisitor):
                 return self._direct_returned_callable(class_callable)
             return None
         if isinstance(decorator, ast.Name) and decorator.id == "staticmethod":
-            return _DECORATOR_IDENTITY
+            return None
         if isinstance(decorator, ast.Lambda):
             self._visit_argument_defaults(decorator.args)
             self._visit_expression_in_scope(decorator, "lambda", decorator.body)
@@ -1145,6 +1193,12 @@ class _PythonInspector(ast.NodeVisitor):
             return None
         return bindings.get(expression.id)
 
+    def _class_lazy_for_expression(self, expression: ast.AST) -> Optional[_LazyCallableResult]:
+        bindings = self._active_class_lazy_bindings()
+        if bindings is None or not isinstance(expression, ast.Name):
+            return None
+        return bindings.get(expression.id)
+
     def _class_callable_value(self, expression: ast.AST) -> Optional[_DeferredCallableBody]:
         class_callable = self._class_callable_for_expression(expression)
         if class_callable:
@@ -1160,40 +1214,55 @@ class _PythonInspector(ast.NodeVisitor):
             return self._class_callable_for_expression(expression.args[0])
         return None
 
+    def _class_lazy_value(self, expression: Optional[ast.AST]) -> Optional[_LazyCallableResult]:
+        if expression is None:
+            return None
+        return self._class_lazy_for_expression(expression)
+
     def _bind_class_callable_names(
         self,
         names: list[str],
         deferred_body: Optional[_DeferredCallableBody] = None,
+        lazy_result: Optional[_LazyCallableResult] = None,
     ) -> None:
-        bindings = self._active_class_callable_bindings()
-        if bindings is None:
+        callable_bindings = self._active_class_callable_bindings()
+        lazy_bindings = self._active_class_lazy_bindings()
+        if callable_bindings is None or lazy_bindings is None:
             return
         for name in names:
             if "." in name:
                 continue
-            bindings.pop(name, None)
+            callable_bindings.pop(name, None)
+            lazy_bindings.pop(name, None)
             if deferred_body:
-                bindings[name] = deferred_body
+                callable_bindings[name] = deferred_body
+            elif lazy_result:
+                lazy_bindings[name] = lazy_result
 
     def _active_class_callable_bindings(self) -> Optional[dict[str, _DeferredCallableBody]]:
         if not self._class_callable_bindings or not self._scope_stack or not self._scope_stack[-1].startswith("class:"):
             return None
         return self._class_callable_bindings[-1]
 
+    def _active_class_lazy_bindings(self) -> Optional[dict[str, _LazyCallableResult]]:
+        if not self._class_lazy_bindings or not self._scope_stack or not self._scope_stack[-1].startswith("class:"):
+            return None
+        return self._class_lazy_bindings[-1]
+
     @staticmethod
     def _apply_decorator_results(
         original_body: Optional[_DeferredCallableBody],
         decorator_results: list[object],
     ) -> Optional[_DeferredCallableBody]:
+        """Apply simple resolved decorators; unknown decorators are treated as identity."""
         bound_body = original_body
         for result in reversed(decorator_results):
             if isinstance(result, _DeferredCallableBody):
                 bound_body = result
-            elif result is _DECORATOR_IDENTITY:
-                continue
         return bound_body
 
     def _direct_returned_callable(self, decorator_body: _DeferredCallableBody):
+        """Resolve a single-level direct callable return from a tracked decorator body."""
         node = decorator_body.node
         arguments = getattr(node, "args", None)
         parameter_names = set()
@@ -1220,11 +1289,15 @@ class _PythonInspector(ast.NodeVisitor):
                     if nested_body:
                         for name in _assignment_target_names(targets):
                             callable_names[name] = nested_body
-            elif isinstance(statement, ast.Return) and isinstance(statement.value, ast.Name):
-                if statement.value.id in callable_names:
-                    return callable_names[statement.value.id]
-                if statement.value.id in parameter_names:
-                    return _DECORATOR_IDENTITY
+            elif isinstance(statement, ast.Return):
+                if isinstance(statement.value, ast.Name):
+                    if statement.value.id in callable_names:
+                        return callable_names[statement.value.id]
+                    if statement.value.id in parameter_names:
+                        return None
+                    return None
+                if isinstance(statement.value, ast.Lambda):
+                    return self._deferred_callables_by_node.get(id(statement.value))
                 return None
         return None
 
@@ -1255,6 +1328,20 @@ class _PythonInspector(ast.NodeVisitor):
             not is_async and self._is_sync_generator_result(value)
         ):
             self._visit_callable_body(value.body)
+
+    def _visit_eager_iterable_consumer_call(self, node: ast.Call) -> None:
+        argument_results = []
+        for argument in node.args:
+            argument_results.append(self.visit(argument))
+        for keyword in node.keywords:
+            self.visit(keyword.value)
+        if argument_results and self._is_sync_generator_result(argument_results[0]):
+            self._visit_callable_body(argument_results[0].body)
+
+    def _is_unshadowed_eager_consumer(self, call_name: Optional[str]) -> bool:
+        if call_name not in _EAGER_ITERABLE_CONSUMERS:
+            return False
+        return not any(call_name in bound_names for bound_names in self._bound_name_stack)
 
     @staticmethod
     def _function_contains_yield(node: ast.AST) -> bool:
@@ -1290,6 +1377,7 @@ class _PythonInspector(ast.NodeVisitor):
             local_names, global_names, nonlocal_names = _lexical_bindings(node)
             if not predeclare_locals:
                 local_names = set()
+            self._bound_name_stack.append(set(local_names))
             for detector in self._detectors:
                 detector.on_scope(
                     scope,
@@ -1302,6 +1390,7 @@ class _PythonInspector(ast.NodeVisitor):
             for statement in getattr(node, "body", []):
                 self.visit(statement)
         finally:
+            self._bound_name_stack.pop()
             self._scope_stack.pop()
 
     def _visit_expression_in_scope(self, node: ast.AST, kind: str, expression: ast.AST) -> None:
@@ -1309,6 +1398,7 @@ class _PythonInspector(ast.NodeVisitor):
         try:
             scope = tuple(self._scope_stack)
             local_names, global_names, nonlocal_names = _lexical_bindings(node)
+            self._bound_name_stack.append(set(local_names))
             for detector in self._detectors:
                 detector.on_scope(
                     scope,
@@ -1320,6 +1410,7 @@ class _PythonInspector(ast.NodeVisitor):
                 )
             self.visit(expression)
         finally:
+            self._bound_name_stack.pop()
             self._scope_stack.pop()
 
     def _inspect_secret_assignment(self, targets: list[ast.AST], value: ast.AST, lineno: Optional[int]) -> None:
