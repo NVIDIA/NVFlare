@@ -481,3 +481,36 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "model.py` is server-only" in validation_text
     assert "class_path`, train script, custom aggregator" in normalized_shared
     assert "Prefer preserving source metric names" in normalized_recipe
+
+
+def test_pytorch_family_validation_and_custom_aggregation_metric_contracts():
+    repo_root = Path(__file__).resolve().parents[4]
+    validation_text = repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md").read_text(
+        encoding="utf-8"
+    )
+    normalized_validation = " ".join(validation_text.split())
+
+    assert "workflow-native metric evidence" in validation_text
+    assert "FedAvg/FedOpt/FedProx/SCAFFOLD-style training workflows" in validation_text
+    assert "For FedEval" in validation_text
+    assert "Cyclic or Swarm workflows" in validation_text
+    expected_metrics_artifact_rule = (
+        "missing expected metrics artifact is a validation failure only if the selected recipe/workflow installs"
+    )
+    assert expected_metrics_artifact_rule in normalized_validation
+
+    eval_root = repo_root / "dev_tools" / "agent" / "skill_evals"
+    for skill_name, case_id in {
+        "nvflare-convert-pytorch": "pytorch-convert-custom-aggregation",
+        "nvflare-convert-lightning": "lightning-convert-custom-aggregation",
+        "nvflare-convert-huggingface": "huggingface-convert-custom-aggregation",
+    }.items():
+        suite = json.loads(eval_root.joinpath(skill_name, "evals.json").read_text(encoding="utf-8"))
+        case = next(item for item in suite["evals"] if item["id"] == case_id)
+        behavior_ids = {item["id"] for item in case["nvflare"]["mandatory_behavior"]}
+        assertions_text = " ".join(case["assertions"])
+
+        assert "custom-aggregator-preserves-metrics" in behavior_ids
+        assert "custom-aggregator-missing-metrics-visible" in behavior_ids
+        assert "finite numeric and boolean client metrics" in assertions_text
+        assert "publishing a partial metric average" in assertions_text

@@ -39,15 +39,23 @@ confirm completion before reporting success — never finalize on a still-runnin
 or "will be notified" basis.
 
 Required success evidence is process exit code 0, terminal FL evidence such as
-the server log reaching a Finished state, and metrics evidence such as
-`metrics_summary.json`. When a run exits 0 and reaches a terminal finished
-state, a missing server-side metrics artifact is a validation failure unless
-the selected workflow is explicitly metrics-free: it has no validation metric
-path and no metric-writer component by design. A prose explanation can
-substitute for metrics only for blocked/timed-out runs or those explicitly
-metrics-free workflows. Progress messages, scheduled wakeups, "standing
-by"/"I'll wait" statements, and active processes are not completion evidence
-and are not valid final answers.
+the server log reaching a Finished state, and workflow-native metric evidence.
+For FedAvg/FedOpt/FedProx/SCAFFOLD-style training workflows that install the
+metrics artifact writer or emit aggregation events, this means server-side
+artifacts such as `metrics_summary.json` or `round_metrics.jsonl`. For public
+recipes whose contract does not emit those artifacts by default, collect the
+native evidence instead: for FedEval, one-shot validation-result logs or
+artifacts showing returned per-site metrics; for Cyclic or Swarm workflows,
+their documented result logs, workflow artifacts, or other selected-recipe
+metric outputs. When a run exits 0 and reaches a terminal finished state, a
+missing expected metrics artifact is a validation failure only if the selected
+recipe/workflow installs that writer or otherwise documents that artifact as an
+output. A prose explanation can substitute for metrics only for blocked/timed-out
+runs, explicitly metrics-free workflows, or metric-bearing workflows whose
+selected public recipe exposes only non-artifact metric evidence; in the last
+case cite the recipe and the exact native evidence used. Progress messages,
+scheduled wakeups, "standing by"/"I'll wait" statements, and active processes
+are not completion evidence and are not valid final answers.
 
 Do not pipe the final validation command through `tail`, `grep`, or another
 command that can hide the simulator or `python job.py` exit status. Redirect the
@@ -117,9 +125,12 @@ Before calling a generated job correct, report:
 - local validation command, process exit code, and terminal-state evidence;
 - export command, export directory, and exported folder inspection result when
   export is in scope;
-- metric values from metrics artifacts; for exit-0 terminal runs, treat missing
-  server-side metrics as failed validation unless the workflow has no
-  validation metric path and no metric-writer component by design;
+- metric values from the workflow-native metric evidence; for exit-0 terminal
+  runs, treat missing server-side metrics artifacts as failed validation only
+  when the selected recipe/workflow installs those artifacts or documents them
+  as outputs. For FedEval, Cyclic, Swarm, and similar workflows without those
+  artifacts by default, report the recipe-native metric logs/artifacts used
+  instead;
 - exact evidence paths for simulation workspace, generated result files,
   server-side metrics artifacts, server/client logs, and global-model artifacts
   when present;

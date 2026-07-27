@@ -503,6 +503,58 @@
       }
     },
     {
+      "id": "lightning-convert-custom-aggregation",
+      "prompt": "Convert this Lightning training code to a three-site NVFLARE job and weight client updates by each client's local step count.",
+      "expected_output": "A FLARE Lightning Client API conversion with a ModelAggregator subclass in aggregators.py adapted from the shared template, preserving finite numeric and boolean validation metrics in aggregated FLModel.metrics, warning or failing visibly when any client omits metrics, and wired through the selected recipe aggregator= hook while flare.patch(trainer) retains standard Lightning model exchange.",
+      "files": [
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
+      ],
+      "assertions": [
+        "The agent generates aggregators.py with a ModelAggregator subclass implementing accept_model, aggregate_model, and reset_stats.",
+        "The aggregator weights FLModel updates using NUM_STEPS_CURRENT_ROUND metadata.",
+        "The aggregator carries finite numeric and boolean client metrics into the aggregated FLModel.metrics with the same contribution weights used for parameters.",
+        "If any client omits FLModel.metrics, the aggregator warns or fails visibly instead of publishing a partial metric average as though all clients reported it.",
+        "The generated job wires the aggregator through the selected recipe aggregator= parameter.",
+        "The patched Lightning Trainer retains the standard Lightning Client API exchange."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-lightning",
+        "mandatory_behavior": [
+          {
+            "id": "model-aggregator-subclass",
+            "description": "generates aggregators.py with a ModelAggregator subclass adapted from the shared aggregator asset"
+          },
+          {
+            "id": "aggregator-recipe-wiring",
+            "description": "uses the selected recipe aggregator hook with compatible parameter semantics"
+          },
+          {
+            "id": "custom-aggregator-preserves-metrics",
+            "description": "carries finite numeric and boolean client metrics into aggregated FLModel.metrics using the same contribution weights as parameters"
+          },
+          {
+            "id": "custom-aggregator-missing-metrics-visible",
+            "description": "warns or fails visibly if any accepted client model omits FLModel.metrics, rather than producing silent partial metrics"
+          },
+          {
+            "id": "use-lightning-patched-trainer",
+            "description": "Lightning conversion retains flare.patch(trainer) while adding server-side custom aggregation"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-manual-flmodel-exchange-lightning",
+            "description": "does not replace the patched Lightning Trainer exchange with a manual FLModel training loop"
+          },
+          {
+            "id": "no-new-exchange-semantics-without-client-transform",
+            "description": "does not introduce aggregation semantics requiring a different client payload without the matching client transformation"
+          }
+        ]
+      }
+    },
+    {
       "id": "lightning-eval-only",
       "prompt": "I just want to evaluate this Lightning checkpoint across 3 sites and collect validation metrics, no training updates.",
       "expected_output": "The agent treats this as evaluation-only and selects the PyTorch FedEval recipe, passing the repo-supplied checkpoint as the required eval_ckpt. It patches the trainer and runs a single trainer.validate(model) on the received global model (FedEval sends one validate task per site, not a training round loop, not trainer.fit, and not trainer.test), treats the supplied checkpoint as untrusted input requiring safe handling, and reports one-shot per-site validation metrics and result paths.",

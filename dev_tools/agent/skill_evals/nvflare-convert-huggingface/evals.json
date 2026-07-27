@@ -311,7 +311,7 @@
     {
       "id": "huggingface-convert-custom-aggregation",
       "prompt": "Convert this Hugging Face Trainer code to a three-site NVFLARE job and weight client updates by each client's local step count.",
-      "expected_output": "A Hugging Face Trainer conversion with a ModelAggregator subclass in aggregators.py adapted from the shared template, wired through the selected recipe aggregator= hook with matching parameter semantics while the patched Trainer retains standard model exchange.",
+      "expected_output": "A Hugging Face Trainer conversion with a ModelAggregator subclass in aggregators.py adapted from the shared template, preserving finite numeric and boolean Trainer metrics in aggregated FLModel.metrics, warning or failing visibly when any client omits metrics, and wired through the selected recipe aggregator= hook with matching parameter semantics while the patched Trainer retains standard model exchange.",
       "files": [
         "files/trainer-basic/train.py",
         "files/trainer-basic/model.py"
@@ -319,6 +319,8 @@
       "assertions": [
         "The agent generates aggregators.py with a ModelAggregator subclass implementing the required lifecycle methods.",
         "The aggregator weights FLModel updates using NUM_STEPS_CURRENT_ROUND metadata.",
+        "The aggregator carries finite numeric and boolean client metrics into the aggregated FLModel.metrics with the same contribution weights used for parameters.",
+        "If any client omits FLModel.metrics, the aggregator warns or fails visibly instead of publishing a partial metric average as though all clients reported it.",
         "The generated job wires the aggregator through the selected recipe aggregator= parameter.",
         "The patched Trainer retains the standard Hugging Face Client API exchange.",
         "If the algorithm required different client/server exchange semantics, the agent would add the matching client transformation or ask/fail closed."
@@ -333,6 +335,14 @@
           {
             "id": "aggregator-recipe-wiring",
             "description": "uses the selected recipe aggregator hook with compatible parameter semantics"
+          },
+          {
+            "id": "custom-aggregator-preserves-metrics",
+            "description": "carries finite numeric and boolean client metrics into aggregated FLModel.metrics using the same contribution weights as parameters"
+          },
+          {
+            "id": "custom-aggregator-missing-metrics-visible",
+            "description": "warns or fails visibly if any accepted client model omits FLModel.metrics, rather than producing silent partial metrics"
           }
         ],
         "prohibited_behavior": [
