@@ -343,8 +343,9 @@ with the matching `aggregator_data_kind` and parameter transfer settings.
 A generated custom aggregator must:
 
 - implement `accept_model()`, `aggregate_model()`, and `reset_stats()`;
-- operate on `FLModel.params` and preserve or intentionally set
-  `FLModel.params_type`;
+- operate on `FLModel.params`, preserve or intentionally set
+  `FLModel.params_type`, and carry finite numeric client metrics into the
+  aggregated `FLModel.metrics`;
 - use `FLModel.meta` such as `NUM_STEPS_CURRENT_ROUND` when weighting needs
   client contribution metadata;
 - when accepted client models contain supported scalar `FLModel.metrics`,
@@ -352,6 +353,12 @@ A generated custom aggregator must:
   them in the aggregated `FLModel.metrics`. A parameters-only result prevents
   aggregate metric artifacts and server model selection even though training
   itself can finish.
+
+When a recipe uses a custom `aggregator=`, the controller cannot safely
+synthesize per-site metric aggregation metadata for an unknown algorithm. If
+the custom aggregator drops `FLModel.metrics`, server-side metrics artifacts
+such as `metrics_summary.json` can silently disappear even though training
+finished successfully.
 
 When the aggregator weights by client contribution, the client must send that
 metadata; the plain Client API does not populate it automatically. Include it

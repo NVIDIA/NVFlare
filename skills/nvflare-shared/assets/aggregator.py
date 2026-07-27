@@ -7,9 +7,9 @@ Copy and adapt this into a generated ``aggregators.py`` when the conversion
 needs custom aggregation. Wire it through the recipe ``aggregator=`` parameter
 in ``job.py`` with the matching ``aggregator_data_kind`` and parameter transfer
 settings. This uses the product extension point rather than a skill-owned
-algorithm table, and it fits the standard ``FLModel`` exchange contract. It
-preserves scalar client metrics in the aggregated ``FLModel.metrics`` so server
-metric writers and model selection can observe them.
+algorithm table, and it fits the standard ``FLModel`` exchange contract by
+carrying both params and finite numeric metrics into the aggregated
+``FLModel``. It needs no client-side change beyond sending step-count metadata.
 """
 
 import math
@@ -19,19 +19,25 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 
 
+def _finite_number(value):
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) else None
+
+
 def _step_weight(model: FLModel) -> float:
     # Mirror the product's base_fedavg._get_num_steps_weight: use the client's
     # step count only when it is a finite positive number; otherwise fall back
     # to 1.0. Reject bool (a bool is an int in Python) and non-numeric/None, and
     # never let negative or non-finite metadata corrupt the weighted average.
-    value = (model.meta or {}).get(MetaKey.NUM_STEPS_CURRENT_ROUND)
-    if isinstance(value, bool) or value is None:
+    weight = _finite_number((model.meta or {}).get(MetaKey.NUM_STEPS_CURRENT_ROUND))
+    if weight is None:
         return 1.0
-    try:
-        weight = float(value)
-    except (TypeError, ValueError, OverflowError):
-        return 1.0
-    return weight if math.isfinite(weight) and weight > 0 else 1.0
+    return weight if weight > 0 else 1.0
 
 
 def _materialize(value):
@@ -57,10 +63,17 @@ class WeightedAggregator(ModelAggregator):
         # over just those clients (not diluted by the full round weight), and a
         # key missing from the first client does not raise KeyError.
         self._key_weight = {}
-        self._metric_weighted_sum = {}
+        self._metric_sum = {}
         self._metric_weight = {}
         self._params_type = None
         self._accepted = 0
+
+    def _add_weighted_metric(self, name, value, weight):
+        number = _finite_number(value)
+        if number is None:
+            return
+        self._metric_sum[name] = self._metric_sum.get(name, 0.0) + number * weight
+        self._metric_weight[name] = self._metric_weight.get(name, 0.0) + weight
 
     def accept_model(self, model: FLModel):
         weight = _step_weight(model)
@@ -73,49 +86,29 @@ class WeightedAggregator(ModelAggregator):
             else:
                 self._weighted_sum[key] = value * weight
                 self._key_weight[key] = weight
-
-        for key, value in (model.metrics or {}).items():
-            if isinstance(value, bool):
-                continue
-            item_fn = getattr(value, "item", None)
-            if callable(item_fn):
-                value = item_fn()
-            try:
-                metric = float(value)
-            except (TypeError, ValueError, OverflowError):
-                continue
-            if not math.isfinite(metric):
-                continue
-            self._metric_weighted_sum[key] = (
-                self._metric_weighted_sum.get(key, 0.0) + metric * weight
-            )
-            self._metric_weight[key] = self._metric_weight.get(key, 0.0) + weight
-
+        for name, value in (model.metrics or {}).items():
+            self._add_weighted_metric(name, value, weight)
         self._accepted += 1
         self.log_info(
             self.fl_ctx,
             f"{self.__class__.__name__} accepted model #{self._accepted} "
-            f"(weight={weight}, tensors={len(model.params)}, "
-            f"metrics={len(model.metrics or {})})",
+            f"(weight={weight}, tensors={len(model.params)}, metrics={len(model.metrics or {})})",
         )
 
     def aggregate_model(self) -> FLModel:
         if not self._weighted_sum:
             raise RuntimeError("no client models accepted this round")
         averaged = {key: self._weighted_sum[key] / self._key_weight[key] for key in self._weighted_sum}
-        averaged_metrics = {
-            key: self._metric_weighted_sum[key] / self._metric_weight[key]
-            for key in self._metric_weighted_sum
+        metrics = {
+            name: self._metric_sum[name] / self._metric_weight[name]
+            for name in self._metric_sum
+            if self._metric_weight[name] > 0
         }
-        result = FLModel(
-            params=averaged,
-            params_type=self._params_type,
-            metrics=averaged_metrics or None,
-        )
+        result = FLModel(params=averaged, params_type=self._params_type, metrics=metrics or None)
         self.log_info(
             self.fl_ctx,
             f"{self.__class__.__name__} aggregated {self._accepted} models "
-            f"into {len(averaged)} tensors and {len(averaged_metrics)} metrics",
+            f"into {len(averaged)} tensors and {len(metrics)} metrics",
         )
         self.reset_stats()
         return result

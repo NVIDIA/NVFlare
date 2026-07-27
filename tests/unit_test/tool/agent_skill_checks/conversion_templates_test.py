@@ -155,7 +155,7 @@ def test_custom_aggregator_template_step_weighted_average():
     assert result.params["w"][0] == pytest.approx(3.5)
 
 
-def test_custom_aggregator_template_preserves_step_weighted_metrics():
+def test_custom_aggregator_template_carries_weighted_metrics():
     import numpy as np
 
     from nvflare.apis.dxo import MetaKey
@@ -167,20 +167,24 @@ def test_custom_aggregator_template_preserves_step_weighted_metrics():
     aggregator.accept_model(
         FLModel(
             params={"w": np.array([2.0])},
-            metrics={"val_auroc": 0.5},
+            metrics={"accuracy": 0.5, "loss": 2.0, "nan_metric": float("nan"), "flag": True, "note": "skip"},
             meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1},
         )
     )
     aggregator.accept_model(
         FLModel(
             params={"w": np.array([4.0])},
-            metrics={"val_auroc": 0.9},
+            metrics={"accuracy": 0.75, "loss": 1.0},
             meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 3},
         )
     )
     result = aggregator.aggregate_model()
 
-    assert result.metrics == {"val_auroc": pytest.approx(0.8)}
+    assert result.metrics["accuracy"] == pytest.approx((0.5 * 1 + 0.75 * 3) / 4)
+    assert result.metrics["loss"] == pytest.approx((2.0 * 1 + 1.0 * 3) / 4)
+    assert "nan_metric" not in result.metrics
+    assert "flag" not in result.metrics
+    assert "note" not in result.metrics
 
 
 def test_custom_aggregator_template_materializes_lazy_disk_offload_refs():
