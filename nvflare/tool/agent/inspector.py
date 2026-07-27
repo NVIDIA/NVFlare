@@ -56,6 +56,8 @@ _SECONDARY_PROJECT_DIR_NAMES = {
     "vendors",
     "vendored",
 }
+_EAGER_ITERABLE_CONSUMERS = {"dict", "list", "next", "set", "tuple"}
+_DECORATOR_IDENTITY = object()
 
 PYTHON_SUFFIXES = {".py"}
 SKIPPED_DIR_NAMES = {
@@ -580,7 +582,13 @@ class _DeferredCallableBody:
     kind: str
     node: ast.AST
     runs_on_call: bool
+    is_generator: bool
     analyzed: bool = False
+
+
+@dataclass(frozen=True)
+class _LazyCallableResult:
+    body: _DeferredCallableBody
 
 
 class _YieldFinder(ast.NodeVisitor):
@@ -616,6 +624,7 @@ class _PythonInspector(ast.NodeVisitor):
         self._scope_stack: list[str] = []
         self._class_deferred_bodies: list[list[_DeferredCallableBody]] = []
         self._class_callable_bindings: list[dict[str, _DeferredCallableBody]] = []
+        self._deferred_callables_by_node: dict[int, _DeferredCallableBody] = {}
         self._ctx = DetectContext(
             self._emit_framework_evidence,
             self._add_flare_call,
@@ -712,19 +721,21 @@ class _PythonInspector(ast.NodeVisitor):
             self._visit_deferred_bodies(deferred_bodies)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        self._visit_function_definition_expressions(node)
+        decorator_results = self._visit_function_definition_expressions(node)
         self._record_binding_names([node.name], node.lineno)
         deferred_body = self._defer_class_callable_body("function", node)
-        self._bind_class_callable_names([node.name], deferred_body)
+        bound_body = self._apply_decorator_results(deferred_body, decorator_results)
+        self._bind_class_callable_names([node.name], bound_body)
         if deferred_body:
             return
         self._visit_body_in_scope(node, "function")
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        self._visit_function_definition_expressions(node)
+        decorator_results = self._visit_function_definition_expressions(node)
         self._record_binding_names([node.name], node.lineno)
         deferred_body = self._defer_class_callable_body("async-function", node)
-        self._bind_class_callable_names([node.name], deferred_body)
+        bound_body = self._apply_decorator_results(deferred_body, decorator_results)
+        self._bind_class_callable_names([node.name], bound_body)
         if deferred_body:
             return
         self._visit_body_in_scope(node, "async-function")
@@ -738,7 +749,8 @@ class _PythonInspector(ast.NodeVisitor):
         return None
 
     def visit_For(self, node: ast.For) -> None:
-        self.visit(node.iter)
+        lazy_result = self.visit(node.iter)
+        self._visit_iteration_result(lazy_result, is_async=False)
         self._visit_assignment_target(node.target, getattr(node, "lineno", None))
         for statement in node.body:
             self.visit(statement)
@@ -746,7 +758,8 @@ class _PythonInspector(ast.NodeVisitor):
             self.visit(statement)
 
     def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
-        self.visit(node.iter)
+        lazy_result = self.visit(node.iter)
+        self._visit_iteration_result(lazy_result, is_async=True)
         self._visit_assignment_target(node.target, getattr(node, "lineno", None))
         for statement in node.body:
             self.visit(statement)
@@ -777,7 +790,7 @@ class _PythonInspector(ast.NodeVisitor):
             for statement in case.body:
                 self.visit(statement)
 
-    def visit_Call(self, node: ast.Call) -> None:
+    def visit_Call(self, node: ast.Call):
         call_name = _call_name(node.func)
         if call_name:
             self._record_call(call_name, node.lineno)
@@ -791,37 +804,48 @@ class _PythonInspector(ast.NodeVisitor):
                 )
         class_callable = self._class_callable_for_expression(node.func)
         if class_callable:
-            for argument in node.args:
-                self.visit(argument)
-            for keyword in node.keywords:
-                self.visit(keyword.value)
+            self._visit_call_arguments(node)
             if class_callable.runs_on_call:
                 self._visit_callable_body(class_callable)
-            return
+                return None
+            return _LazyCallableResult(class_callable)
         if isinstance(node.func, ast.NamedExpr):
             named_callable = self.visit(node.func)
-            for argument in node.args:
-                self.visit(argument)
-            for keyword in node.keywords:
-                self.visit(keyword.value)
+            self._visit_call_arguments(node)
             if isinstance(named_callable, _DeferredCallableBody) and named_callable.runs_on_call:
                 self._visit_callable_body(named_callable)
-            return
+                return None
+            if isinstance(named_callable, _DeferredCallableBody):
+                return _LazyCallableResult(named_callable)
+            return None
         if isinstance(node.func, ast.Lambda):
             self._visit_argument_defaults(node.func.args)
-            for argument in node.args:
-                self.visit(argument)
-            for keyword in node.keywords:
-                self.visit(keyword.value)
+            self._visit_call_arguments(node)
             self._visit_expression_in_scope(node.func, "lambda", node.func.body)
-            return
+            return None
+        if call_name in _EAGER_ITERABLE_CONSUMERS:
+            lazy_results = self._visit_call_arguments(node)
+            for lazy_result in lazy_results:
+                if self._is_sync_generator_result(lazy_result):
+                    self._visit_callable_body(lazy_result.body)
+            return None
         self.generic_visit(node)
+        return None
+
+    def visit_Await(self, node: ast.Await) -> None:
+        lazy_result = self.visit(node.value)
+        if (
+            isinstance(lazy_result, _LazyCallableResult)
+            and lazy_result.body.kind == "async-function"
+            and not lazy_result.body.is_generator
+        ):
+            self._visit_callable_body(lazy_result.body)
 
     def visit_Assign(self, node: ast.Assign) -> None:
         self._inspect_secret_assignment(node.targets, node.value, getattr(node, "lineno", None))
         call_name = _call_name(node.value.func) if isinstance(node.value, ast.Call) else None
         value_info = self._classify_assignment_value(call_name)
-        callable_body = self._class_callable_for_expression(node.value)
+        callable_body = self._class_callable_value(node.value)
         visited_value = self.visit(node.value)
         if isinstance(visited_value, _DeferredCallableBody):
             callable_body = visited_value
@@ -838,7 +862,7 @@ class _PythonInspector(ast.NodeVisitor):
         self._inspect_secret_assignment([node.target], node.value, getattr(node, "lineno", None))
         call_name = _call_name(node.value.func) if isinstance(node.value, ast.Call) else None
         value_info = self._classify_assignment_value(call_name)
-        callable_body = self._class_callable_for_expression(node.value) if node.value else None
+        callable_body = self._class_callable_value(node.value) if node.value else None
         if node.value:
             visited_value = self.visit(node.value)
             if isinstance(visited_value, _DeferredCallableBody):
@@ -857,7 +881,7 @@ class _PythonInspector(ast.NodeVisitor):
         self._record_binding_targets([node.target], getattr(node, "lineno", None))
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> Optional[_DeferredCallableBody]:
-        callable_body = self._class_callable_for_expression(node.value)
+        callable_body = self._class_callable_value(node.value)
         visited_value = self.visit(node.value)
         if isinstance(visited_value, _DeferredCallableBody):
             callable_body = visited_value
@@ -1018,7 +1042,8 @@ class _PythonInspector(ast.NodeVisitor):
         # Python evaluates the first iterable in the enclosing scope; loop
         # targets and all remaining expressions live in the comprehension's
         # implicit scope.
-        self.visit(generators[0].iter)
+        first_result = self.visit(generators[0].iter)
+        self._visit_iteration_result(first_result, is_async=bool(generators[0].is_async))
         self._scope_stack.append(f"{kind}:<anonymous>:{getattr(node, 'lineno', 0)}")
         try:
             scope = tuple(self._scope_stack)
@@ -1039,7 +1064,8 @@ class _PythonInspector(ast.NodeVisitor):
                 )
             for index, generator in enumerate(generators):
                 if index:
-                    self.visit(generator.iter)
+                    lazy_result = self.visit(generator.iter)
+                    self._visit_iteration_result(lazy_result, is_async=bool(generator.is_async))
                 for condition in generator.ifs:
                     self.visit(condition)
             if isinstance(node, ast.DictComp):
@@ -1054,9 +1080,10 @@ class _PythonInspector(ast.NodeVisitor):
         for detector in self._detectors:
             detector.finalize_file(self._detector_states[detector.name], self._ctx)
 
-    def _visit_function_definition_expressions(self, node: ast.AST) -> None:
+    def _visit_function_definition_expressions(self, node: ast.AST) -> list[object]:
+        decorator_results = []
         for decorator in getattr(node, "decorator_list", []):
-            self._visit_decorator_expression(decorator)
+            decorator_results.append(self._visit_decorator_expression(decorator))
         for type_param in getattr(node, "type_params", []):
             self.visit(type_param)
         arguments = getattr(node, "args", None)
@@ -1066,26 +1093,33 @@ class _PythonInspector(ast.NodeVisitor):
         returns = getattr(node, "returns", None)
         if returns:
             self.visit(returns)
+        return decorator_results
 
     def _defer_class_callable_body(self, kind: str, node: ast.AST) -> Optional[_DeferredCallableBody]:
         if not self._class_deferred_bodies:
             return None
-        runs_on_call = kind != "async-function" and not (kind == "function" and self._function_contains_yield(node))
-        deferred_body = _DeferredCallableBody(tuple(self._scope_stack), kind, node, runs_on_call)
+        is_generator = kind in {"function", "async-function"} and self._function_contains_yield(node)
+        runs_on_call = kind != "async-function" and not is_generator
+        deferred_body = _DeferredCallableBody(tuple(self._scope_stack), kind, node, runs_on_call, is_generator)
         self._class_deferred_bodies[-1].append(deferred_body)
+        self._deferred_callables_by_node[id(node)] = deferred_body
         return deferred_body
 
-    def _visit_decorator_expression(self, decorator: ast.AST) -> None:
+    def _visit_decorator_expression(self, decorator: ast.AST):
         class_callable = self._class_callable_for_expression(decorator)
         if class_callable:
             if class_callable.runs_on_call:
                 self._visit_callable_body(class_callable)
-            return
+                return self._direct_returned_callable(class_callable)
+            return None
+        if isinstance(decorator, ast.Name) and decorator.id == "staticmethod":
+            return _DECORATOR_IDENTITY
         if isinstance(decorator, ast.Lambda):
             self._visit_argument_defaults(decorator.args)
             self._visit_expression_in_scope(decorator, "lambda", decorator.body)
-            return
+            return None
         self.visit(decorator)
+        return None
 
     def _visit_deferred_bodies(self, deferred_bodies: list[_DeferredCallableBody]) -> None:
         for deferred_body in deferred_bodies:
@@ -1111,6 +1145,21 @@ class _PythonInspector(ast.NodeVisitor):
             return None
         return bindings.get(expression.id)
 
+    def _class_callable_value(self, expression: ast.AST) -> Optional[_DeferredCallableBody]:
+        class_callable = self._class_callable_for_expression(expression)
+        if class_callable:
+            return class_callable
+        if (
+            isinstance(expression, ast.Call)
+            and isinstance(expression.func, ast.Name)
+            and expression.func.id == "staticmethod"
+            and len(expression.args) == 1
+            and not expression.keywords
+            and self._class_callable_for_expression(expression.func) is None
+        ):
+            return self._class_callable_for_expression(expression.args[0])
+        return None
+
     def _bind_class_callable_names(
         self,
         names: list[str],
@@ -1130,6 +1179,82 @@ class _PythonInspector(ast.NodeVisitor):
         if not self._class_callable_bindings or not self._scope_stack or not self._scope_stack[-1].startswith("class:"):
             return None
         return self._class_callable_bindings[-1]
+
+    @staticmethod
+    def _apply_decorator_results(
+        original_body: Optional[_DeferredCallableBody],
+        decorator_results: list[object],
+    ) -> Optional[_DeferredCallableBody]:
+        bound_body = original_body
+        for result in reversed(decorator_results):
+            if isinstance(result, _DeferredCallableBody):
+                bound_body = result
+            elif result is _DECORATOR_IDENTITY:
+                continue
+        return bound_body
+
+    def _direct_returned_callable(self, decorator_body: _DeferredCallableBody):
+        node = decorator_body.node
+        arguments = getattr(node, "args", None)
+        parameter_names = set()
+        if isinstance(arguments, ast.arguments):
+            parameter_names = {
+                argument.arg for argument in arguments.posonlyargs + arguments.args + arguments.kwonlyargs
+            }
+            if arguments.vararg:
+                parameter_names.add(arguments.vararg.arg)
+            if arguments.kwarg:
+                parameter_names.add(arguments.kwarg.arg)
+
+        callable_names = {}
+        for statement in getattr(node, "body", []):
+            if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                nested_body = self._deferred_callables_by_node.get(id(statement))
+                if nested_body:
+                    callable_names[statement.name] = nested_body
+            elif isinstance(statement, (ast.Assign, ast.AnnAssign)):
+                value = statement.value
+                if isinstance(value, ast.Lambda):
+                    nested_body = self._deferred_callables_by_node.get(id(value))
+                    targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+                    if nested_body:
+                        for name in _assignment_target_names(targets):
+                            callable_names[name] = nested_body
+            elif isinstance(statement, ast.Return) and isinstance(statement.value, ast.Name):
+                if statement.value.id in callable_names:
+                    return callable_names[statement.value.id]
+                if statement.value.id in parameter_names:
+                    return _DECORATOR_IDENTITY
+                return None
+        return None
+
+    def _visit_call_arguments(self, node: ast.Call) -> list[_LazyCallableResult]:
+        lazy_results = []
+        for argument in node.args:
+            result = self.visit(argument)
+            if isinstance(result, _LazyCallableResult):
+                lazy_results.append(result)
+        for keyword in node.keywords:
+            result = self.visit(keyword.value)
+            if isinstance(result, _LazyCallableResult):
+                lazy_results.append(result)
+        return lazy_results
+
+    @staticmethod
+    def _is_sync_generator_result(value) -> bool:
+        return isinstance(value, _LazyCallableResult) and value.body.kind == "function" and value.body.is_generator
+
+    @staticmethod
+    def _is_async_generator_result(value) -> bool:
+        return (
+            isinstance(value, _LazyCallableResult) and value.body.kind == "async-function" and value.body.is_generator
+        )
+
+    def _visit_iteration_result(self, value, *, is_async: bool) -> None:
+        if (is_async and self._is_async_generator_result(value)) or (
+            not is_async and self._is_sync_generator_result(value)
+        ):
+            self._visit_callable_body(value.body)
 
     @staticmethod
     def _function_contains_yield(node: ast.AST) -> bool:
