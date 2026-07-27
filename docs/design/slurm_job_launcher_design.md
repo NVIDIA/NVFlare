@@ -113,7 +113,8 @@ Launch proceeds as follows:
 
 1. Resolve one launch plan and reject a duplicate live handle for the same job.
 2. Create the job artifact directory and render its batch and secret-environment files.
-3. Invoke `sbatch --parsable` once with structured arguments and a scrubbed scheduler environment.
+3. Invoke `sbatch --parsable` once with structured arguments, a scrubbed scheduler environment, and the configured
+   `submit_timeout`.
 4. Accept exactly one parsed bare job ID, add its handle to the live-handle map, and return it.
 
 An invocation timeout, exception, or output other than one line matching the Slurm job-ID format fails the launch.
@@ -165,7 +166,7 @@ any in-progress submission boundary; it does not perform a second cancellation s
   FL-layer rejection.
 - An `sbatch` timeout fails the FL dispatch even if Slurm accepted the job, matching a timed-out Docker or Kubernetes
   create. Removing `secret.env` prevents a pending allocation from starting unless a later launch of the same
-  job ID recreates that deterministic path first.
+  job ID recreates that deterministic path first. Sites can increase `submit_timeout` to reduce this risk.
 
 ## Execution backends and secrets
 
