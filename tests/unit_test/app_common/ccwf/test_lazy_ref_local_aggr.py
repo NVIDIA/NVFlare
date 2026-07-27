@@ -69,6 +69,7 @@ def _make_controller():
     # identity
     ctl.me = "site-1"
     # attributes set by __init__
+    ctl.enable_tensor_disk_offload = True
     ctl.metric_comparator = None
     ctl.metric_comparator_id = None
     ctl.report_learn_result_task_name = "swarm_report_learn_result"
@@ -170,6 +171,10 @@ class TestResolveRef(unittest.TestCase):
         self.assertFalse(
             props.get(FOBSContextKey.PASS_THROUGH, True), "get_fobs_context must be called with PASS_THROUGH=False"
         )
+        self.assertTrue(
+            props.get(FOBSContextKey.TENSOR_DISK_OFFLOAD, False),
+            "local aggregation result resolution must opt in to tensor disk offload",
+        )
 
         # fobs.loads must receive the decode context as fobs_ctx kwarg
         load_kwargs = mock_loads.call_args.kwargs
@@ -179,6 +184,23 @@ class TestResolveRef(unittest.TestCase):
             "fobs.loads must receive the decode context from cell.get_fobs_context()",
         )
         self.assertIs(out, real_result)
+
+    def test_resolve_lazy_refs_can_disable_disk_offload_for_trainer_input(self):
+        ctl = _make_controller()
+        lazy_result = _make_shareable_with_lazy_refs()
+        mock_cell = MagicMock()
+        mock_cell.get_fobs_context.return_value = {}
+        mock_fl_ctx = MagicMock()
+        mock_fl_ctx.get_engine.return_value.get_cell.return_value = mock_cell
+
+        with (
+            patch("nvflare.fuel.utils.fobs.dumps", return_value=b"encoded"),
+            patch("nvflare.fuel.utils.fobs.loads", return_value=_make_shareable_with_real_arrays()),
+        ):
+            ctl._resolve_lazy_refs(lazy_result, mock_fl_ctx, enable_tensor_disk_offload=False)
+
+        props = mock_cell.get_fobs_context.call_args.kwargs["props"]
+        self.assertFalse(props[FOBSContextKey.TENSOR_DISK_OFFLOAD])
 
 
 class TestLocalAggregationPath(unittest.TestCase):
@@ -241,9 +263,8 @@ class TestLocalAggregationPath(unittest.TestCase):
         task_data.get_cookie_jar.return_value = {}
         return task_data
 
-    def test_local_aggr_resolve_called_before_process(self):
-        """When aggr == self.me, _resolve_lazy_refs() is called and the resolved result
-        (with real arrays) is what reaches _process_learn_result()."""
+    def test_external_process_local_aggr_resolves_lazy_result_before_process(self):
+        """An external-process trainer/aggregator resolves its local lazy result."""
         ctl, real_result = self._build_local_aggr_ctl()
         lazy_result = _make_shareable_with_lazy_refs()
         ctl.execute_learn_task = MagicMock(return_value=lazy_result)
@@ -272,6 +293,24 @@ class TestLocalAggregationPath(unittest.TestCase):
             real_result,
             "_process_learn_result must receive the real-array result from _resolve_lazy_refs",
         )
+
+    def test_in_process_local_aggr_offloads_in_memory_result_before_process(self):
+        """An in-process trainer/aggregator also uses the terminal disk-offload path."""
+        ctl, resolved_result = self._build_local_aggr_ctl()
+        in_memory_result = _make_shareable_with_real_arrays()
+        ctl.execute_learn_task = MagicMock(return_value=in_memory_result)
+
+        fl_ctx = self._make_fl_ctx(aggr_site="site-1")
+        task_data = self._make_task_data(aggr_site="site-1")
+        abort_signal = MagicMock()
+        abort_signal.triggered = False
+
+        with patch("nvflare.app_common.ccwf.swarm_client_ctl.Gatherer") as mock_gatherer:
+            mock_gatherer.return_value = MagicMock()
+            ctl.do_learn_task("learn", task_data, fl_ctx, abort_signal)
+
+        self.assertEqual(ctl._resolve_calls, [in_memory_result])
+        self.assertEqual(ctl._process_calls, [resolved_result])
 
     def test_local_aggr_no_resolve_if_execute_fails(self):
         """If execute_learn_task() returns an error RC, _resolve_lazy_refs() must NOT be called."""
@@ -341,6 +380,45 @@ class TestRemotePathUnchanged(unittest.TestCase):
 
         self.assertEqual(resolve_called, [], "_resolve_lazy_refs must NOT be called for remote aggregator path")
         ctl.broadcast_and_wait.assert_called_once()
+
+    def test_in_process_result_is_forwarded_to_remote_aggregator_without_local_offload(self):
+        ctl = _make_controller()
+        ctl.me = "site-1"
+        ctl.is_trainer = True
+        ctl.trainers = ["site-1", "site-2"]
+
+        resolve_called = []
+        ctl._resolve_lazy_refs = lambda result, ctx: resolve_called.append(result) or result
+        in_memory_result = _make_shareable_with_real_arrays()
+        ctl.execute_learn_task = MagicMock(return_value=in_memory_result)
+
+        fl_ctx = MagicMock()
+        fl_ctx.get_prop.return_value = MagicMock()
+        granted = make_reply(ReturnCode.OK)
+        fl_ctx.get_engine.return_value.send_aux_request.return_value = {"site-2": granted}
+        ctl.broadcast_and_wait = MagicMock(return_value={"site-2": make_reply(ReturnCode.OK)})
+
+        abort_signal = MagicMock()
+        abort_signal.triggered = False
+        task_data = self._make_remote_task_data()
+
+        ctl.do_learn_task("learn", task_data, fl_ctx, abort_signal)
+
+        self.assertEqual(resolve_called, [])
+        sent_result = ctl.broadcast_and_wait.call_args.kwargs["task"].data
+        self.assertIs(sent_result, in_memory_result)
+
+    @staticmethod
+    def _make_remote_task_data():
+        from nvflare.app_common.app_constant import AppConstants
+        from nvflare.app_common.ccwf.common import Constant
+
+        headers = {Constant.AGGREGATOR: "site-2", AppConstants.CURRENT_ROUND: 0}
+        task_data = MagicMock()
+        task_data.get_header.side_effect = lambda key, *default: headers.get(key, default[0] if default else None)
+        task_data.set_header = MagicMock()
+        task_data.get_cookie_jar.return_value = {}
+        return task_data
 
 
 class TestDefensiveGuardInEndGather(unittest.TestCase):

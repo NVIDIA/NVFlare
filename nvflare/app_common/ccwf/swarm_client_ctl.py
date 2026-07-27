@@ -15,10 +15,11 @@ import copy
 import random
 import threading
 import time
+from typing import Optional
 
 from nvflare.apis.controller_spec import Task
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -29,6 +30,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
 from nvflare.app_common.ccwf.common import Constant, NumberMetricComparator, ResultType, make_task_name
+from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor, ExecutionMode
 from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_disk_offload, setup_tensor_disk_offload
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.fobs import FOBSContextKey
@@ -38,6 +40,7 @@ from nvflare.fuel.utils.validation_utils import (
     check_positive_int,
     check_positive_number,
 )
+from nvflare.private.defs import CellChannel
 from nvflare.security.logging import secure_format_traceback
 
 
@@ -395,6 +398,7 @@ class SwarmClientController(ClientSideController):
         self.last_aggr_round_done = -1
         self.enable_tensor_disk_offload = enable_tensor_disk_offload
         self._tensor_disk_offload_context = None
+        self._owned_tensor_forward_relay_route = None
         self.memory_gc_rounds = memory_gc_rounds
         self.cuda_empty_cache = cuda_empty_cache
         self._aggr_round_count = 0
@@ -440,6 +444,12 @@ class SwarmClientController(ClientSideController):
                 "enable_tensor_disk_offload=True but no active cell is available; "
                 "falling back to in-memory tensor download",
             )
+        if self.enable_tensor_disk_offload and fl_ctx.get_prop(FLContextKey.SECURE_MODE, False) is True:
+            cell = self.engine.get_cell()
+            route = (CellChannel.AUX_COMMUNICATION, ReservedTopic.DO_TASK)
+            if cell and route not in cell.decode_pass_through_relay_topics:
+                cell.decode_pass_through_relay_topics.add(route)
+                self._owned_tensor_forward_relay_route = route
         self.aggregator = self.engine.get_component(self.aggregator_id)
         if not isinstance(self.aggregator, Aggregator):
             self.system_panic(
@@ -469,6 +479,15 @@ class SwarmClientController(ClientSideController):
     def finalize(self, fl_ctx: FLContext):
         context = self._tensor_disk_offload_context
         self._tensor_disk_offload_context = None
+        route = self._owned_tensor_forward_relay_route
+        self._owned_tensor_forward_relay_route = None
+        try:
+            if route:
+                cell = self.engine.get_cell()
+                if cell:
+                    cell.decode_pass_through_relay_topics.discard(route)
+        except Exception:
+            self.log_warning(fl_ctx, f"failed to remove tensor forwarding relay route: {secure_format_traceback()}")
         try:
             cleanup_tensor_disk_offload(engine=getattr(self, "engine", None), context=context)
         except Exception:
@@ -562,8 +581,6 @@ class SwarmClientController(ClientSideController):
         if should_queue_locally:
             self.log_info(fl_ctx, f"queuing learn task locally for round {for_round}")
             local_task_data = copy.deepcopy(task_data)
-            if self._has_lazy_refs(local_task_data):
-                local_task_data = self._resolve_lazy_refs(local_task_data, fl_ctx)
             if not self.set_learn_task(task_data=local_task_data, fl_ctx=fl_ctx):
                 self.log_error(fl_ctx, f"failed to queue learn task locally for round {for_round}")
                 return False
@@ -574,6 +591,11 @@ class SwarmClientController(ClientSideController):
                 fl_ctx,
                 f"broadcasting learn task of round {for_round} to {remote_targets}; aggregation happens on {aggr}",
             )
+            if getattr(self, "enable_tensor_disk_offload", False):
+                # Keep the client job as a forwarding hop. The external trainer
+                # downloads tensors from the originating source instead of
+                # receiving process-local disk refs from the client job.
+                task_data.set_header(ReservedHeaderKey.PASS_THROUGH, True)
             if not self.send_learn_task(targets=remote_targets, request=task_data, fl_ctx=fl_ctx):
                 return False
 
@@ -752,44 +774,80 @@ class SwarmClientController(ClientSideController):
             return any(SwarmClientController._has_lazy_refs(v) for v in obj)
         return False
 
-    def _resolve_lazy_refs(self, result: Shareable, fl_ctx: FLContext) -> Shareable:
-        """Resolve any LazyDownloadRef objects in result by downloading from subprocess.
+    def _learn_executor_accepts_lazy_refs(self) -> bool:
+        """Whether the learner has another Cell hop that can materialize transport refs."""
+        return (
+            isinstance(self.learn_executor, ClientAPIExecutor)
+            and self.learn_executor.execution_mode == ExecutionMode.EXTERNAL_PROCESS
+        )
 
-        When the subprocess sends its result via CellPipe with pass_through_on_send=True,
-        Adapter.call() decodes the message with PASS_THROUGH=True and creates
-        LazyDownloadRef objects (one per large tensor) instead of downloading the tensors.
-        These placeholders carry the subprocess's fqcn and ref_id so that a downstream
-        hop can download from the subprocess DownloadService on demand.
+    def _prepare_learn_task_data(self, task_data: Shareable, fl_ctx: FLContext) -> tuple[Shareable, Shareable]:
+        """Prepare the controller and learner views of an incoming learn task.
 
-        For the remote aggregator path this download is triggered automatically by the
-        FOBS encode/decode inside broadcast_and_wait() (Fix 14).  For the local
-        aggregation path (aggr == self.me) there is no encode/decode, so we must
-        trigger the download explicitly here before the result reaches the gatherer.
+        The controller always needs an in-memory model for GLOBAL_MODEL bookkeeping.
+        Only the external-process Client API backend has a following Cell hop that
+        can materialize LazyDownloadRef objects. All other executors are treated as
+        in-process and receive the resolved in-memory view.
+        """
+        if not self._has_lazy_refs(task_data):
+            return task_data, task_data
+
+        in_memory_task_data = self._resolve_lazy_refs(
+            task_data,
+            fl_ctx,
+            enable_tensor_disk_offload=False,
+        )
+        if self._learn_executor_accepts_lazy_refs():
+            return in_memory_task_data, task_data
+        return in_memory_task_data, in_memory_task_data
+
+    def _resolve_lazy_refs(
+        self,
+        payload: Shareable,
+        fl_ctx: FLContext,
+        enable_tensor_disk_offload: Optional[bool] = None,
+    ) -> Shareable:
+        """Resolve LazyDownloadRef objects for a terminal local consumer.
+
+        PASS_THROUGH decoding creates one LazyDownloadRef per large tensor instead
+        of downloading it at an intermediate client job. These placeholders carry
+        the source FQCN and ref ID so the next hop can download on demand.
+
+        A local aggregator resolves with the workflow's disk-offload setting. A
+        controller or in-process learner resolves with disk offload disabled because
+        those consumers require ordinary in-memory tensors.
 
         Uses an FOBS round-trip:
-          encode: LazyDownloadRefDecomposer.decompose() re-emits the original subprocess
+          encode: LazyDownloadRefDecomposer.decompose() re-emits the original source
                   datum (fqcn + ref_id) as a TEXT datum — no CELL needed in the encode ctx.
           decode: process_datum() with PASS_THROUGH=False calls _download_from_remote_cell()
-                  which downloads real numpy arrays from the subprocess DownloadService.
+                  which downloads tensors from the source DownloadService.
                   cell.get_fobs_context() supplies the CELL so the download can route to
-                  the subprocess via the cell network.
+                  the source via the cell network.
         """
         import nvflare.fuel.utils.fobs as fobs
 
         engine = fl_ctx.get_engine()
         if not engine:
-            return result
+            return payload
         # Not all engine implementations expose get_cell() (e.g. test stubs).
         # If the method is absent or returns None, skip the download — there is
         # no cell network available to route the download through.
         get_cell = getattr(engine, "get_cell", None)
         if not get_cell:
-            return result
+            return payload
         cell = get_cell()
         if not cell:
-            return result
-        encoded = fobs.dumps(result)
-        decode_ctx = cell.get_fobs_context(props={fobs.FOBSContextKey.PASS_THROUGH: False})
+            return payload
+        encoded = fobs.dumps(payload)
+        if enable_tensor_disk_offload is None:
+            enable_tensor_disk_offload = getattr(self, "enable_tensor_disk_offload", False)
+        decode_ctx = cell.get_fobs_context(
+            props={
+                fobs.FOBSContextKey.PASS_THROUGH: False,
+                fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: enable_tensor_disk_offload,
+            }
+        )
         return fobs.loads(encoded, fobs_ctx=decode_ctx)
 
     def _get_aggregation_client_fqcn(self, aggr: str, fl_ctx: FLContext):
@@ -921,11 +979,9 @@ class SwarmClientController(ClientSideController):
         # If task_data contains LazyDownloadRef (receiver-side decode_pass_through
         # was active), resolve before shareable_to_learnable so GLOBAL_MODEL gets
         # real tensors — required by the WEIGHT_DIFF branch of _end_gather().
-        # task_data itself keeps its refs intact for execute_learn_task() below so
-        # the subprocess can download directly from the source DownloadService.
-        task_data_for_model = (
-            self._resolve_lazy_refs(task_data, fl_ctx) if self._has_lazy_refs(task_data) else task_data
-        )
+        # Keep the original transport refs available for an external-process
+        # ClientAPIExecutor, but never expose them to an in-process or legacy learner.
+        task_data_for_model, trainer_task_data = self._prepare_learn_task_data(task_data, fl_ctx)
         global_weights = self.shareable_generator.shareable_to_learnable(task_data_for_model, fl_ctx)
 
         self.log_debug(fl_ctx, f"current global model: {global_weights}")
@@ -967,7 +1023,7 @@ class SwarmClientController(ClientSideController):
         # execute the task
         if self.is_trainer:
             # update status
-            result = self.execute_learn_task(task_data, fl_ctx, abort_signal)
+            result = self.execute_learn_task(trainer_task_data, fl_ctx, abort_signal)
 
             rc = result.get_return_code(ReturnCode.OK)
             if rc != ReturnCode.OK:

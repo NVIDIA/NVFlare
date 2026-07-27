@@ -77,6 +77,15 @@ reference through the same active Cell context. In both cases tensor disk
 offload yields lazy tensor refs, and the built-in
 `InTimeAccumulateWeightedAggregator` materializes one tensor at a time.
 
+The Swarm controller owns the decision to preserve or resolve transport refs.
+It keeps refs when the local learn executor is
+`ClientAPIExecutor(execution_mode="external_process")`, because that backend has
+another Cell hop that materializes the task in the trainer process. It resolves
+the task into memory for `in_process`, `attach`, and non-`ClientAPIExecutor`
+learners. This conservative fallback also supports jobs where sites use different
+learner execution modes. Disk-backed aggregation refs remain local to the
+aggregation client and are never passed to a learner.
+
 `SwarmLearningRecipe` defaults to NumPy exchange for compatibility. Disk offload
 therefore requires `server_expected_format=ExchangeFormat.PYTORCH`; streamed
 NumPy arrays are not handled by `TensorDecomposer`.

@@ -298,6 +298,35 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
     ) -> tuple[str, dict]:
         pass
 
+    def download_with_context(
+        self,
+        from_fqcn: str,
+        ref_id: str,
+        per_request_timeout: float,
+        cell: Cell,
+        fobs_ctx: dict,
+        secure=False,
+        optional=False,
+        abort_signal=None,
+        progress_cb=None,
+    ) -> tuple[str, dict]:
+        """Download with access to the per-message FOBS context.
+
+        The default preserves the existing decomposer API. Subclasses that need
+        per-message behavior can override this method without breaking custom
+        decomposers that implement only download().
+        """
+        return self.download(
+            from_fqcn=from_fqcn,
+            ref_id=ref_id,
+            per_request_timeout=per_request_timeout,
+            cell=cell,
+            secure=secure,
+            optional=optional,
+            abort_signal=abort_signal,
+            progress_cb=progress_cb,
+        )
+
     def supported_dots(self):
         return [self.get_download_dot()]
 
@@ -884,11 +913,12 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         stream_progress_cb = self._make_stream_progress_cb(fobs_ctx, ref_id)
 
         self.logger.debug(f"trying to download: {ref_id=} {fqcn=}")
-        err, items = self.download(
+        err, items = self.download_with_context(
             from_fqcn=fqcn,
             ref_id=ref_id,
             per_request_timeout=req_timeout,
             cell=cell,
+            fobs_ctx=fobs_ctx,
             abort_signal=abort_signal,
             progress_cb=stream_progress_cb,
         )

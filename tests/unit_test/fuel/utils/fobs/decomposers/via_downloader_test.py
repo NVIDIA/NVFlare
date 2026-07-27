@@ -515,3 +515,33 @@ class TestConcreteViaDownloaderProgressCallback:
         assert result is not None
         assert observed["progress_cb"] is progress_cb
         result.cleanup()
+
+    def test_tensor_decomposer_honors_call_scoped_disk_offload(self, monkeypatch, tmp_path):
+        pytest.importorskip("torch")
+        from nvflare.app_opt.pt import tensor_downloader
+        from nvflare.app_opt.pt.decomposers import TensorDecomposer
+
+        class FakeCell:
+            def get_fobs_context(self):
+                return {
+                    fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: False,
+                    tensor_downloader._TENSOR_DISK_OFFLOAD_ROOT_DIR: str(tmp_path),
+                }
+
+        def fake_download_object(**kwargs):
+            kwargs["consumer"].result = {}
+            kwargs["consumer"].download_completed(kwargs["ref_id"])
+
+        monkeypatch.setattr(tensor_downloader, "download_object", fake_download_object)
+
+        err, result = TensorDecomposer().download_with_context(
+            from_fqcn="trainer",
+            ref_id="result-ref",
+            per_request_timeout=1.0,
+            cell=FakeCell(),
+            fobs_ctx={fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: True},
+        )
+
+        assert err is None
+        assert result is not None
+        result.cleanup()

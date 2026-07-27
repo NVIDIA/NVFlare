@@ -17,14 +17,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.fl_constant import FLContextKey, ReservedTopic
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
 from nvflare.app_common.ccwf.swarm_client_ctl import SwarmClientController
+from nvflare.private.defs import CellChannel
 
 
 class _MockCell:
     def __init__(self):
         self.ctx = {"enable_tensor_disk_offload": False}
+        self.decode_pass_through_relay_topics = set()
 
     def get_fobs_context(self):
         return dict(self.ctx)
@@ -52,6 +55,7 @@ def test_swarm_controller_scopes_tensor_disk_offload_to_run():
     controller.log_debug = MagicMock()
     fl_ctx = MagicMock()
     fl_ctx.get_job_id.return_value = "swarm-job"
+    fl_ctx.get_prop.return_value = False
 
     with (
         patch.object(ClientSideController, "start_run", autospec=True),
@@ -77,3 +81,25 @@ def test_swarm_controller_scopes_tensor_disk_offload_to_run():
 def test_swarm_controller_rejects_non_boolean_tensor_disk_offload():
     with pytest.raises(TypeError, match="enable_tensor_disk_offload"):
         SwarmClientController(enable_tensor_disk_offload="yes")
+
+
+def test_secure_swarm_relays_forwarded_learn_tensors_through_client_job():
+    cell = _MockCell()
+    controller = SwarmClientController(enable_tensor_disk_offload=True)
+    controller.engine = _MockEngine(cell, InTimeAccumulateWeightedAggregator())
+    controller.log_debug = MagicMock()
+    fl_ctx = MagicMock()
+    fl_ctx.get_job_id.return_value = "swarm-job"
+    fl_ctx.get_prop.side_effect = lambda key, default=None: key == FLContextKey.SECURE_MODE
+    route = (CellChannel.AUX_COMMUNICATION, ReservedTopic.DO_TASK)
+
+    with (
+        patch.object(ClientSideController, "start_run", autospec=True),
+        patch.object(ClientSideController, "finalize", autospec=True),
+        patch("nvflare.app_common.ccwf.swarm_client_ctl.threading.Thread"),
+    ):
+        controller.start_run(fl_ctx)
+        assert route in cell.decode_pass_through_relay_topics
+        controller.finalize(fl_ctx)
+
+    assert route not in cell.decode_pass_through_relay_topics
