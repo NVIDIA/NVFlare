@@ -380,6 +380,29 @@ def test_inspect_does_not_recommend_huggingface_conversion_for_evaluation_only_t
     assert data["recommended_next_commands"] == ["Use the nvflare-orient skill before editing."]
 
 
+def test_inspect_lightning_owner_still_wins_when_huggingface_candidate_declines(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "import torch\n"
+        "import pytorch_lightning as pl\n"
+        "from transformers import Trainer, TrainingArguments\n"
+        "\n"
+        "model = object()\n"
+        "args = TrainingArguments(output_dir='outputs')\n"
+        "hf_trainer = Trainer(model=model, args=args)\n"
+        "hf_eval = Trainer(model=model, args=args)\n"
+        "lit_trainer = pl.Trainer(max_epochs=1)\n"
+        "optimizer = torch.optim.Adam([])\n"
+        "lit_trainer.fit(model)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["skill_selection"]["detected_framework"] == "pytorch_lightning"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
 def test_inspect_routes_factory_built_trainer_candidate_to_orient(tmp_path):
     script = tmp_path / "train.py"
     script.write_text(

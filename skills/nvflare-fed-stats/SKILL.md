@@ -33,11 +33,12 @@ images: count, failure_count, pixel-intensity histograms. Both paths use
 
 ## Do Not Use When
 
-Do not use for model training conversion (route to `nvflare-convert-pytorch`
-or `nvflare-convert-lightning`), a failed or stalled existing job (route to
-`nvflare-diagnose-job`), or generic pandas/data-science help without
-federated intent. A request combining training and statistics is two
-sequential skills: the converter leads, this skill follows for statistics.
+Do not use for model training conversion (route to `nvflare-convert-pytorch`,
+`nvflare-convert-lightning`, or `nvflare-convert-huggingface`), a failed or
+stalled existing job (route to `nvflare-diagnose-job`), or generic
+pandas/data-science help without federated intent. A request combining training
+and statistics is two sequential skills: the converter leads, this skill follows
+for statistics.
 Hierarchical statistics, production deployment, Kubernetes, POC lifecycle,
 and privacy-policy design beyond the recipe's built-in knobs are out of
 scope. Statistics outside the supported set — categorical counts,

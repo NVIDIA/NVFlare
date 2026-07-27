@@ -221,6 +221,8 @@ class LightningDetector(FrameworkDetector):
         # a Lightning module -- ``lightning`` re-exports them at the top level, so
         # a bare ``lightning`` alias counts too -- or the ``.pytorch`` submodule of
         # a bare ``lightning`` alias (``import lightning as L`` -> ``L.pytorch``).
+        # Require an actual import binding instead of treating arbitrary local
+        # names as Lightning symbols.
         if file_state.scopes.lookup_mapping(prefix, scope, file_state.aliases) in LIGHTNING_MODULES:
             return True
         head, _, rest = prefix.partition(".")

@@ -37,8 +37,10 @@ Run these checks after the shared validation ladder. Stop at the first failure.
 
 ## Execution Checks
 
-- Run a bounded simulation with the requested site count when model/data
-  artifacts and resources are available.
+- Run a bounded simulation with the requested site count. If model/data
+  artifacts, dependencies, or compute resources are unavailable, do not declare
+  the conversion complete; report the concrete blocker and leave the generated
+  job as a draft.
 - Require terminal completion evidence, positive per-round training step
   counts, and finite source-backed evaluation metrics.
 - For more than one round, verify metrics advance and checkpoint behavior
@@ -52,4 +54,4 @@ Run these checks after the shared validation ladder. Stop at the first failure.
 
 Report commands, exit codes, terminal status, metric keys/values, parameter
 scope, checkpoint mode, process/rank count, exact workspace/export/result paths,
-and skipped checks with concrete reasons.
+and unresolved validation blockers with concrete reasons.

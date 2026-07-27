@@ -20,9 +20,8 @@ Python AST once and dispatches every node to the registered
 roots, symbols, evidence kinds and weights, the recommended conversion skill,
 and cross-framework family/promotion rules -- lives in a detector module here.
 
-Adding a framework (XGBoost, TensorFlow, ...) means adding a
-detector module and registering it in ``registry.py``; the engine does not
-change.
+To add a framework (XGBoost, TensorFlow, ...), add a detector module and
+register it in ``registry.py``; the engine does not change.
 """
 
 from .base import DetectContext, FrameworkDetector

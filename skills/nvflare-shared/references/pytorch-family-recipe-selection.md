@@ -1,11 +1,12 @@
 # PyTorch-Family Recipe Selection
 
-This reference is shared by every PyTorch-family conversion skill (plain PyTorch
-and Lightning). Lightning is a PyTorch-family training framework, not a separate
-recipe family, so both select from the same catalog. The training framework
-identifies the client-side conversion; it does not determine the federated
-workflow. Choose the recipe from the user's FL intent and aggregation,
-state-exchange, privacy, and site-role requirements.
+This reference is shared by every PyTorch-family conversion skill: plain
+PyTorch, PyTorch Lightning, and Hugging Face Trainer. Lightning and Hugging Face
+Trainer are PyTorch-family training frameworks, not separate recipe families, so
+they select from the same catalog. The training framework identifies the
+client-side conversion; it does not determine the federated workflow. Choose the
+recipe from the user's FL intent and aggregation, state-exchange, privacy, and
+site-role requirements.
 
 ## Discover Recipes
 
@@ -141,6 +142,10 @@ This reference covers recipe discovery, algorithm choice, and selection rules.
 For the framework-specific `job.py` construction — the fast-path recipe code,
 model config, portable imports, per-site deployment, and execution mode — follow
 the loading skill's own recipe reference (the recipe-selection reference for
-plain PyTorch; the Lightning conversion reference for Lightning). Export handling is
-shared: follow `conversion-workflow.md` for `--export`, `--export-dir`, and
-local command-line parser behavior.
+plain PyTorch; the Lightning conversion reference for Lightning; the Hugging
+Face conversion reference for Trainer workflows). For common PyTorch-family
+recipe parameters such as `key_metric`, `launch_external_process`,
+`server_expected_format`, and `enable_tensor_disk_offload`, follow
+`pytorch-family-recipe-parameters.md`. Export handling is shared: follow
+`conversion-workflow.md` for `--export`, `--export-dir`, and local command-line
+parser behavior.
