@@ -206,8 +206,8 @@ and delegates to one `srun --nodes=N --ntasks=N --ntasks-per-node=1` invocation 
 | `NVFL_NNODES` | `SLURM_JOB_NUM_NODES` |
 | `NVFL_NODE_RANK` | `SLURM_NODEID`, exported per task by `node.sh` |
 | `NVFL_MASTER_ADDR` | `SLURMD_NODENAME` of the batch node, which is node rank 0 |
-| `NVFL_MASTER_PORT` | rank 0's framework-rendezvous listening port; `batch.sh` computes `range start + SLURM_JOB_ID % range size` within the site-owned `multi_node_port_range` (default `29400-30399`) before starting `srun`, and every task inherits it |
-| `NVFL_RUN_ID` | framework-rendezvous group ID; `batch.sh` exports `SLURM_JOB_ID`, and `torchrun_node` passes it as `--rdzv_id` so every task joins this job's worker group |
+| `NVFL_MASTER_PORT` | derived from `SLURM_JOB_ID` within the site-owned `multi_node_port_range` (default `29400-30399`) |
+| `NVFL_RUN_ID` | `SLURM_JOB_ID`; a per-run token suitable as a framework rendezvous ID |
 
 Distinct concurrent jobs that share a node can map to the same port; a collision surfaces as a rendezvous bind
 failure on rank 0. Sites that co-locate allocations pin `multi_node_port_range` in `slurm.yaml` (it must not
