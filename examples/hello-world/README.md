@@ -222,7 +222,6 @@ Implement the same NumPy workflow with ordinary Python function calls.
 **Run it:**
 ```bash
 cd hello-collab
-pip install -r requirements.txt
 python job.py
 ```
 
