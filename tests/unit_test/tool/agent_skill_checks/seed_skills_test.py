@@ -546,8 +546,12 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "report it as a generated-code violation" in normalized_shared_validation
     assert "invent alternate export flags such as `--export_only`" in normalized_shared
     assert "import the NVFLARE recipe API before local argument parsing" in normalized_shared
-    assert "`argparse.ArgumentParser.parse_args()`" in normalized_shared
-    assert "rejecting its complete unknown-argument result" in normalized_shared
+    assert "`argparse.ArgumentParser(allow_abbrev=False)`" in normalized_shared
+    assert "`parse_known_args()` is not needed" in normalized_shared
+    assert "unknown and abbreviated options fail" in normalized_shared
+    assert "`ArgumentParser(allow_abbrev=False)` with strict `parse_args()`" in normalized_skill
+    assert "`parse_known_args()` because recipe imports consume NVFLARE export flags" in normalized_skill
+    assert "unique-prefix abbreviation fail" in normalized_validation
     assert "standalone mode" in validation_text
     assert "model.py` is server-only" in validation_text
     assert "class_path`, train script, custom aggregator" in normalized_shared

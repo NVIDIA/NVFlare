@@ -14,6 +14,10 @@ Run these checks after the shared validation ladder. Stop at the first failure.
 - Confirm model, Trainer, datasets, and tokenizer are constructed outside the
   FL round loop.
 - Confirm generated `train_args` quote configurable model and data paths.
+- If generated `job.py` defines local options, confirm it imports the recipe API
+  before parsing, constructs `ArgumentParser(allow_abbrev=False)`, and calls
+  strict `parse_args()`. Verify both an unknown typo and a unique-prefix
+  abbreviation fail; `parse_known_args()` must not hide either.
 - Pass the final generated `train_args` through the client entry's actual
   argument mechanism and actual dataclass types in parse-only mode; reject every
   unused argument. If the generated client uses `HfArgumentParser`, parse with

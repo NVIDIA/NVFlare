@@ -657,8 +657,9 @@ def test_recipe_spec_import_strips_export_dir_equals_form(monkeypatch):
 @pytest.mark.parametrize(
     ("local_flag", "should_parse"),
     [
-        ("--model-name", True),
-        ("--modle-name", False),
+        ("--max_train_samples", True),
+        ("--max_train_sample", False),
+        ("--max_trian_samples", False),
     ],
 )
 def test_recipe_export_flags_allow_strict_local_argument_parsing(monkeypatch, local_flag, should_parse):
@@ -667,18 +668,18 @@ def test_recipe_export_flags_allow_strict_local_argument_parsing(monkeypatch, lo
     monkeypatch.setattr(
         sys,
         "argv",
-        ["job.py", "--export", "--export-dir", "/tmp/out", local_flag, "Qwen/Qwen2.5-0.5B"],
+        ["job.py", "--export", "--export-dir", "/tmp/out", local_flag, "100"],
     )
 
     import nvflare.recipe.spec as spec_module
 
     importlib.reload(spec_module)
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model-name")
+    parser = argparse.ArgumentParser(allow_abbrev=False)
+    parser.add_argument("--max_train_samples", type=int)
 
     if should_parse:
         args = parser.parse_args()
-        assert args.model_name == "Qwen/Qwen2.5-0.5B"
+        assert args.max_train_samples == 100
         assert spec_module._peek_recipe_args() == (True, "/tmp/out")
     else:
         with pytest.raises(SystemExit) as exc_info:
