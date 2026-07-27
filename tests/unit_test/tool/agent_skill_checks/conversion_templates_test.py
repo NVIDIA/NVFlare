@@ -247,6 +247,31 @@ def test_custom_aggregator_template_uses_per_key_metric_denominators():
     assert result.metrics["loss"] == pytest.approx(2.0)
 
 
+def test_custom_aggregator_template_keeps_extreme_weighted_metrics_finite():
+    import math
+
+    import numpy as np
+
+    from nvflare.apis.dxo import MetaKey
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+
+    for score in (1e308, -1e308):
+        aggregator.accept_model(
+            FLModel(
+                params={"w": np.array([0.0])},
+                metrics={"score": score},
+                meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1e308},
+            )
+        )
+    result = aggregator.aggregate_model()
+
+    assert math.isfinite(result.metrics["score"])
+    assert result.metrics["score"] == pytest.approx(0.0)
+
+
 def test_custom_aggregator_template_materializes_lazy_disk_offload_refs():
     # With enable_tensor_disk_offload=True, params can arrive as lazy references
     # exposing materialize() instead of in-memory arrays. The template must

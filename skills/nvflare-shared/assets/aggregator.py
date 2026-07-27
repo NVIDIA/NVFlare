@@ -68,8 +68,8 @@ class WeightedAggregator(ModelAggregator):
         # over just those clients (not diluted by the full round weight), and a
         # key missing from the first client does not raise KeyError.
         self._key_weight = {}
-        self._metric_sum = {}
-        self._metric_weight = {}
+        self._metric_mean = {}
+        self._metric_log_weight = {}
         self._all_metrics = True
         self._params_type = None
         self._accepted = 0
@@ -78,8 +78,36 @@ class WeightedAggregator(ModelAggregator):
         number = _finite_number(value, allow_bool=True, allow_string=False)
         if number is None:
             return
-        self._metric_sum[name] = self._metric_sum.get(name, 0.0) + number * weight
-        self._metric_weight[name] = self._metric_weight.get(name, 0.0) + weight
+        if name not in self._metric_mean:
+            self._metric_mean[name] = number
+            self._metric_log_weight[name] = math.log(weight)
+            return
+
+        old_log_weight = self._metric_log_weight[name]
+        new_log_weight = math.log(weight)
+        if old_log_weight == new_log_weight:
+            total_log_weight = old_log_weight + math.log(2.0)
+            new_fraction = 0.5
+        else:
+            max_log_weight = max(old_log_weight, new_log_weight)
+            total_log_weight = max_log_weight + math.log1p(
+                math.exp(min(old_log_weight, new_log_weight) - max_log_weight)
+            )
+            new_fraction = math.exp(new_log_weight - total_log_weight)
+        mean = math.fsum(
+            (
+                self._metric_mean[name] * (1.0 - new_fraction),
+                number * new_fraction,
+            )
+        )
+        if not math.isfinite(mean):
+            self.log_warning(
+                self.fl_ctx,
+                f"{self.__class__.__name__} ignored metric {name!r} because its weighted mean is non-finite.",
+            )
+            return
+        self._metric_mean[name] = mean
+        self._metric_log_weight[name] = total_log_weight
 
     def accept_model(self, model: FLModel):
         weight = _step_weight(model)
@@ -108,11 +136,7 @@ class WeightedAggregator(ModelAggregator):
         if not self._weighted_sum:
             raise RuntimeError("no client models accepted this round")
         averaged = {key: self._weighted_sum[key] / self._key_weight[key] for key in self._weighted_sum}
-        metrics = {
-            name: self._metric_sum[name] / self._metric_weight[name]
-            for name in self._metric_sum
-            if self._metric_weight[name] > 0
-        }
+        metrics = dict(self._metric_mean)
         if not self._all_metrics:
             self.log_warning(
                 self.fl_ctx,
