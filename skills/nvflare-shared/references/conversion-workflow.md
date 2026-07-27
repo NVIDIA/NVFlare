@@ -234,6 +234,23 @@ Generated conversion jobs must use FLARE's standard source layout:
 
 Do not generate ad hoc FLARE entry-point names such as `train_fl.py`.
 
+The generated `client.py` is an FL Client API entry point. It must always reach
+the framework's FLARE initialization and model-exchange integration path; do not
+auto-detect FL launch from environment variables such as `CLIENT_API_TYPE`.
+Launchers may remove or change those variables before spawning the trainer. If
+the source has a standalone CLI that should remain usable, factor shared setup
+into a function with an explicit parameter and have `client.py` pass the FL mode
+explicitly; keep standalone behavior behind a separate entry point or explicit
+argument.
+
+Exported `app/custom` content is built from the configured `train_script` and
+its import closure. A module used only by server-side recipe config, such as a
+`model.py` containing `{"class_path": "model.Net"}`, may not be packaged unless
+the client entry imports it or the job includes it explicitly. During export
+inspection, verify every server and client module referenced by `class_path`,
+train script, custom aggregator, data helper, or config is present in the
+exported app.
+
 Before treating an existing canonical filename as a collision, classify it by
 static source evidence. Derive the model, data-prep, download, and training
 source files from the detected training entry point and import graph; do not

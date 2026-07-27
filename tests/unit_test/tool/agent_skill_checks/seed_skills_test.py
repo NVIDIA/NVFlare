@@ -435,21 +435,40 @@ def test_fedstats_reuses_named_sites_for_recipe_and_simulation():
         assert "SimEnv(clients=sites" in example_text
 
 
-def test_huggingface_conversion_documents_fl_entry_packaging_and_metric_keys():
+def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys():
     repo_root = Path(__file__).resolve().parents[4]
     skill_root = repo_root / "skills" / "nvflare-convert-huggingface"
     skill_text = skill_root.joinpath("SKILL.md").read_text(encoding="utf-8")
     conversion_text = skill_root.joinpath("references/huggingface-conversion.md").read_text(encoding="utf-8")
     validation_text = skill_root.joinpath("references/huggingface-validation.md").read_text(encoding="utf-8")
+    shared_workflow = repo_root.joinpath("skills/nvflare-shared/references/conversion-workflow.md").read_text(
+        encoding="utf-8"
+    )
+    pytorch_conversion = repo_root.joinpath(
+        "skills/nvflare-convert-pytorch/references/pytorch-client-api-conversion.md"
+    ).read_text(encoding="utf-8")
+    lightning_conversion = repo_root.joinpath(
+        "skills/nvflare-convert-lightning/references/lightning-conversion.md"
+    ).read_text(encoding="utf-8")
     recipe_text = repo_root.joinpath("skills/nvflare-shared/references/pytorch-family-recipe-parameters.md").read_text(
         encoding="utf-8"
     )
     normalized_skill = " ".join(skill_text.split())
+    normalized_shared = " ".join(shared_workflow.split())
+    normalized_pytorch = " ".join(pytorch_conversion.split())
+    normalized_lightning = " ".join(lightning_conversion.split())
     normalized_recipe = " ".join(recipe_text.split())
 
+    assert "generated `client.py` is an FL Client API entry point" in shared_workflow
+    assert "auto-detect FL launch from environment variables" in shared_workflow
+    assert "Exported `app/custom` content is built from the configured `train_script`" in shared_workflow
+    assert "FL-only Client API entry point" in normalized_pytorch
+    assert "FL-only Client API entry point" in normalized_lightning
+    assert "modules referenced only by server-side `class_path` config" in normalized_pytorch
+    assert "modules referenced only by server-side `class_path` config" in normalized_lightning
     assert "FL-only client entry" in skill_text
     assert "Do not branch on launch environment variables" in normalized_skill
-    assert "train_script` import closure" in skill_text
+    assert "train_script` import closure" in normalized_skill
     assert "server-only model modules" in skill_text
     assert "preserve source metric names" in skill_text
     assert "source-to-server mapping" in skill_text
@@ -460,4 +479,5 @@ def test_huggingface_conversion_documents_fl_entry_packaging_and_metric_keys():
     assert "server persistor will fail to construct the initial model" in conversion_text
     assert "standalone mode" in validation_text
     assert "model.py` is server-only" in validation_text
+    assert "class_path`, train script, custom aggregator" in normalized_shared
     assert "Prefer preserving source metric names" in normalized_recipe

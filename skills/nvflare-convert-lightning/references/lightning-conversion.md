@@ -28,6 +28,8 @@ instead of generating or running an HE `job.py`.
 
 Follow the shared Source Of Truth Boundary in
 `../../nvflare-shared/references/conversion-workflow.md`.
+Follow the shared generated-entry rule there too: `client.py` is an FL-only
+Client API entry point, not a standalone/FL auto-detecting launcher.
 
 ## Conversion Pattern
 
@@ -78,6 +80,9 @@ are sent can train an unwanted round or block the task. The packaged
   `flare.init()` before the first such Client API context access.
 - Use `flare.receive()` in the patched loop only for FL task progression,
   round/site logging, or task metadata, never for manual model loading.
+- During export inspection, verify modules referenced only by server-side
+  `class_path` config are still packaged; the export follows the `train_script`
+  import closure.
 
 ## Lightning Evaluation Template
 
