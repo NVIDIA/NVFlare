@@ -1164,7 +1164,9 @@ class _PythonInspector(ast.NodeVisitor):
             return None
         is_generator = kind in {"function", "async-function"} and self._function_contains_yield(node)
         runs_on_call = kind != "async-function" and not is_generator
-        bound_name_stack = tuple(frozenset(bound_names) for bound_names in self._bound_name_stack)
+        bound_name_stack = tuple(
+            frozenset(bound_names & _EAGER_ITERABLE_CONSUMERS) for bound_names in self._bound_name_stack
+        )
         deferred_body = _DeferredCallableBody(
             tuple(self._scope_stack), bound_name_stack, kind, node, runs_on_call, is_generator
         )

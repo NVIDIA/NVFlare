@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from nvflare.tool.agent import inspector as inspector_module
 from nvflare.tool.agent.frameworks.lightning import LightningDetector
 from nvflare.tool.agent.inspector import (
     InspectState,
@@ -2673,6 +2674,28 @@ def test_inspect_generator_unpacking_uses_class_construction_binding(
 
     assert data["frameworks"][0]["name"] == framework
     assert data["conversion_state"] == "client_api_converted"
+
+
+def test_deferred_class_callable_snapshots_only_eager_consumer_names(monkeypatch, tmp_path):
+    retained_name_counts = []
+    original_defer = inspector_module._PythonInspector._defer_class_callable_body
+
+    def record_deferred_body(self, kind, node):
+        deferred_body = original_defer(self, kind, node)
+        if deferred_body:
+            retained_name_counts.append(sum(len(frame) for frame in deferred_body.bound_name_stack))
+        return deferred_body
+
+    monkeypatch.setattr(inspector_module._PythonInspector, "_defer_class_callable_body", record_deferred_body)
+    script = tmp_path / "generated.py"
+    module_bindings = [f"name_{index} = None" for index in range(300)]
+    methods = [f"    def method_{index}():\n        return None" for index in range(300)]
+    script.write_text("\n".join(module_bindings + ["list = object()", "class Generated:"] + methods), encoding="utf-8")
+
+    inspect_path(script)
+
+    assert len(retained_name_counts) == 300
+    assert max(retained_name_counts) == 1
 
 
 @pytest.mark.parametrize(
