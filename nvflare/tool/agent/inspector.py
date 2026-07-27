@@ -853,6 +853,11 @@ class _PythonInspector(ast.NodeVisitor):
         ):
             self._visit_callable_body(lazy_result.body)
 
+    def visit_Starred(self, node: ast.Starred) -> None:
+        value = self.visit(node.value)
+        if isinstance(node.ctx, ast.Load):
+            self._visit_iteration_result(value, is_async=False)
+
     def visit_Assign(self, node: ast.Assign) -> None:
         self._inspect_secret_assignment(node.targets, node.value, getattr(node, "lineno", None))
         call_name = _call_name(node.value.func) if isinstance(node.value, ast.Call) else None
@@ -866,6 +871,7 @@ class _PythonInspector(ast.NodeVisitor):
         elif isinstance(visited_value, _LazyCallableResult):
             callable_body = None
             lazy_result = visited_value
+        lazy_result = self._consume_unpacked_assignment_value(node.targets, lazy_result)
         for target in node.targets:
             self._visit_assignment_target(
                 target,
@@ -890,6 +896,7 @@ class _PythonInspector(ast.NodeVisitor):
             elif isinstance(visited_value, _LazyCallableResult):
                 callable_body = None
                 lazy_result = visited_value
+        lazy_result = self._consume_unpacked_assignment_value([node.target], lazy_result)
         self._visit_assignment_target(
             node.target,
             getattr(node, "lineno", None),
@@ -1036,6 +1043,14 @@ class _PythonInspector(ast.NodeVisitor):
         self._dispatch_assignment(target_names, call_name, lineno, value_info)
         self._mark_bound_names(target_names)
         self._bind_class_callable_names(target_names, callable_body, lazy_result)
+
+    def _consume_unpacked_assignment_value(
+        self, targets: list[ast.AST], lazy_result: Optional[_LazyCallableResult]
+    ) -> Optional[_LazyCallableResult]:
+        if lazy_result and any(isinstance(target, (ast.Tuple, ast.List)) for target in targets):
+            self._visit_iteration_result(lazy_result, is_async=False)
+            return None
+        return lazy_result
 
     def _record_binding_names(self, target_names: list[str], lineno: Optional[int]) -> None:
         self._dispatch_assignment(target_names, None, lineno)
