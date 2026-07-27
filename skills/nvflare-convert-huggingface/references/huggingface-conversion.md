@@ -15,12 +15,21 @@ trainer = Trainer(
     compute_metrics=compute_metrics,
 )
 
+flare.init()
 flare.patch(trainer)
 
 while flare.is_running():
     trainer.evaluate()
     trainer.train()
 ```
+
+The generated `client.py` entry point is FL-only: it always reaches
+`flare.init()` and `flare.patch(trainer)`. Do not infer FL launch from
+`CLIENT_API_TYPE` or another environment variable; the launcher does not expose
+a reliable branch signal to the trainer. If preserving a standalone CLI is
+required, factor shared setup into an explicit function parameter and have the
+generated client call that function with `federated=True`; keep the standalone
+path behind an entry point that passes `federated=False` explicitly.
 
 When the source has no valid evaluation dataset or metric and neither
 per-round evaluation nor best-model selection is requested, use a train-only
@@ -88,16 +97,24 @@ requires it and the selected recipe exposes the parameter.
 Quote every user-controlled path or model identifier included in the
 `train_args` command string.
 
+The exported `app/custom` folder is built from `train_script`'s import closure.
+If the server model module is referenced only from `job.py` through
+`{"class_path": "model.ServerModel"}`, import that module from the client entry
+point or include it explicitly; otherwise export can omit `model.py` and the
+server persistor will fail to construct the initial model.
+
 ## Data And Model Selection
 
 Follow the site-partitioning requirement in `SKILL.md`. Pass data roots through
 client arguments or per-site configuration; never copy private site data into
 the job.
 
-Use the exact higher-is-better key returned by `Trainer.evaluate()` for
-`key_metric`. Trainer commonly prefixes `compute_metrics` output, so
-`{"accuracy": ...}` often becomes `eval_accuracy`; verify the returned key
-instead of copying the unprefixed function key.
+Prefer preserving source metric names in the client metrics output. If the
+generated evaluation call emits `accuracy`, configure `key_metric="accuracy"`.
+Trainer commonly prefixes `compute_metrics` output, so `{"accuracy": ...}` can
+become `eval_accuracy`; when that is the returned client key, configure the
+server with `key_metric="eval_accuracy"` and report the mapping from source
+metric name to server metric key.
 
 `FedAvgRecipe` does not expose a lower-is-better direction flag. When a
 source-backed lower-is-better metric is returned by `compute_metrics`, preserve

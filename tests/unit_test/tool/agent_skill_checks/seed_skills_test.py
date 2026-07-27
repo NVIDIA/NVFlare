@@ -433,3 +433,31 @@ def test_fedstats_reuses_named_sites_for_recipe_and_simulation():
         example_text = repo_root.joinpath(relative_path).read_text(encoding="utf-8")
         assert "sites=sites" in example_text
         assert "SimEnv(clients=sites" in example_text
+
+
+def test_huggingface_conversion_documents_fl_entry_packaging_and_metric_keys():
+    repo_root = Path(__file__).resolve().parents[4]
+    skill_root = repo_root / "skills" / "nvflare-convert-huggingface"
+    skill_text = skill_root.joinpath("SKILL.md").read_text(encoding="utf-8")
+    conversion_text = skill_root.joinpath("references/huggingface-conversion.md").read_text(encoding="utf-8")
+    validation_text = skill_root.joinpath("references/huggingface-validation.md").read_text(encoding="utf-8")
+    recipe_text = repo_root.joinpath("skills/nvflare-shared/references/pytorch-family-recipe-parameters.md").read_text(
+        encoding="utf-8"
+    )
+    normalized_skill = " ".join(skill_text.split())
+    normalized_recipe = " ".join(recipe_text.split())
+
+    assert "FL-only client entry" in skill_text
+    assert "Do not branch on launch environment variables" in normalized_skill
+    assert "train_script` import closure" in skill_text
+    assert "server-only model modules" in skill_text
+    assert "preserve source metric names" in skill_text
+    assert "source-to-server mapping" in skill_text
+    assert "CLIENT_API_TYPE" in conversion_text
+    assert "federated=True" in conversion_text
+    assert "federated=False" in conversion_text
+    assert "app/custom` folder is built from `train_script`'s import closure" in conversion_text
+    assert "server persistor will fail to construct the initial model" in conversion_text
+    assert "standalone mode" in validation_text
+    assert "model.py` is server-only" in validation_text
+    assert "Prefer preserving source metric names" in normalized_recipe

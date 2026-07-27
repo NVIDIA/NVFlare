@@ -14,8 +14,10 @@ must mean a better model.
 - Plain PyTorch clients send `FLModel.metrics`.
 - Lightning clients expose metrics logged through Lightning, usually
   `self.log(...)` and `trainer.callback_metrics`.
-- Hugging Face clients expose the keys returned by `trainer.evaluate()`, often
-  with Trainer prefixes such as `eval_accuracy`.
+- Hugging Face clients expose the keys returned by `trainer.evaluate()`. Prefer
+  preserving source metric names when the generated evaluation call can emit
+  them; if Trainer prefixes a metric such as `accuracy` to `eval_accuracy`,
+  configure the server to the exact emitted key and report the mapping.
 
 For source-backed lower-is-better metrics that the converted client controls,
 emit an explicitly negated companion metric and select that higher-is-better
