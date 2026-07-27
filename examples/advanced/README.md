@@ -4,7 +4,8 @@ This folder contains advanced examples for NVFlare.
 
 Please make sure you set up a virtual environment and install JupyterLab following the [example root readme](../README.md).
 
-Please also install "./requirements.txt" in each example folder.
+Please also install "./requirements.txt" in each example folder where it is
+provided.
 
 ## Custom workflows
 * [Collab API](./collab/README.md)
