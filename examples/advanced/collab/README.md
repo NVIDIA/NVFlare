@@ -44,9 +44,9 @@ The NumPy examples run in a base installation; `hello_fedavg` needs PyTorch.
 `simple_split_learning` needs PyTorch and torchvision and downloads MNIST on
 its first run.
 
-Collab examples run against an NVFlare installation from this repository and
-intentionally have no per-folder `requirements.txt` files. Add those files
-once Collab is available in a released NVFlare package.
+The advanced Collab examples run against an NVFlare installation from this
+repository and intentionally have no per-folder `requirements.txt` files. Add
+those files once Collab is available in a released NVFlare package.
 
 For the design behind the API see the
 [Collab API design](../../../docs/design/collab_api_design.md). For a step-by-step
