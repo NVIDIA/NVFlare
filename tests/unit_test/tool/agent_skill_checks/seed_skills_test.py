@@ -496,6 +496,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "FL-only Client API entry point" in normalized_lightning
     assert "FL-only client entry" in skill_text
     assert "Do not branch on launch environment variables" in normalized_skill
+    assert "Load and apply the shared validation ladder" in normalized_skill
     assert "generated client's actual parser" in normalized_skill
     assert "Validate `TrainingArguments`/`SFTConfig` fields" in normalized_skill
     assert "Export only with `python job.py --export --export-dir`" in normalized_skill
