@@ -94,6 +94,9 @@ resource (network, package index, system library, accelerator), no applicable
 dependency entry for a missing import, or a missing required semantic decision
 above. A conversion request that ends `not_started` because the agent waited for
 approval that never came is a failure, not a valid blocked result.
+Proceeding by default authorizes the first canonical install attempt, not
+autonomous retries or environment repair after a nonzero exit; follow
+`dependency-install.md` and report the conversion as an unvalidated draft.
 
 ## Source Trust Boundary
 
@@ -316,14 +319,11 @@ supports it.
 
 ## Conversion Defaults
 
-Set `enable_tensor_disk_offload=True` in generated recipe invocations whenever
-the selected recipe exposes that parameter; confirm with
-`nvflare recipe show <recipe-name> --format json`. Do not add the parameter to
-recipes that do not expose it. The offload applies to streamed PyTorch tensors
-only: when the recipe also exposes `server_expected_format`, pair it with
-`server_expected_format=ExchangeFormat.PYTORCH` (the PyTorch-family preference
-in `pytorch-model-exchange.md`); with a NumPy exchange format the parameter is
-a warned no-op.
+For PyTorch-family jobs, run `recipe show` and load
+`pytorch-family-recipe-construction.md` before constructing the selected
+recipe. That reference owns capability-gated tensor transport, decomposer
+registration, the separate server disk-offload optimization, best-model
+selection, and process-model selection for both plain PyTorch and Lightning.
 
 Device placement follows the source project: CPU source training stays on CPU,
 GPU source training stays on GPU, and a source that selects the device
@@ -346,7 +346,12 @@ A generated custom aggregator must:
 - operate on `FLModel.params` and preserve or intentionally set
   `FLModel.params_type`;
 - use `FLModel.meta` such as `NUM_STEPS_CURRENT_ROUND` when weighting needs
-  client contribution metadata.
+  client contribution metadata;
+- when accepted client models contain supported scalar `FLModel.metrics`,
+  aggregate those metrics with the intended contribution weights and return
+  them in the aggregated `FLModel.metrics`. A parameters-only result prevents
+  aggregate metric artifacts and server model selection even though training
+  itself can finish.
 
 When the aggregator weights by client contribution, the client must send that
 metadata; the plain Client API does not populate it automatically. Include it
@@ -368,10 +373,10 @@ from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 
 class WeightedAggregator(ModelAggregator):
     def accept_model(self, model: FLModel):
-        ...  # accumulate model.params using model.meta weights
+        ...  # accumulate model.params and supported model.metrics using model.meta weights
 
     def aggregate_model(self) -> FLModel:
-        ...  # return aggregated FLModel; keep params_type consistent
+        ...  # return params and aggregated metrics; keep params_type consistent
 
     def reset_stats(self):
         ...  # clear accumulators between rounds
@@ -413,6 +418,19 @@ each site frame with `df.iloc[positions]` or equivalent. Do not apply generic
 array chunking directly to the `DataFrame` object; library versions can return
 chunks that no longer behave like data frames and can break concatenation,
 validation, or metric checks.
+
+Make every array passed to an in-place shuffle writable. For label-stratified
+partitioning, derive positional indices from the observed label column and copy
+them before shuffling, for example:
+
+```python
+positions = np.flatnonzero(frame[label_column].to_numpy() == label).copy()
+rng.shuffle(positions)
+site_frame = frame.iloc[positions]
+```
+
+Do not shuffle a possibly read-only array returned by `Index.to_numpy()`, and do
+not pass positional indices to `DataFrame.loc`.
 
 Report the split policy, seed, site count, and any reason stratification was
 not used. Do not copy private site data into generated artifacts unless the user
@@ -462,11 +480,10 @@ site-1,site-2,...`). Do not write Python code to call simulator APIs such as
 
 `PocEnv` and `ProdEnv` are outside conversion scope; do not generate or run
 them from a conversion skill. Homomorphic-encryption recipes reject `SimEnv` and
-require those provisioned environments, so HE is not supported by conversion —
-see the HE rule in `pytorch-family-recipe-selection.md`. If any other selected
-recipe rejects `SimEnv`, follow the selecting reference's ask/fail-closed rule
-and report the job as unvalidated instead of switching recipes or environments
-to force a run.
+require those provisioned environments, so HE is not supported by conversion.
+If any other selected recipe rejects `SimEnv`, follow the selecting reference's
+ask/fail-closed rule and report the job as unvalidated instead of switching
+recipes or environments to force a run.
 
 - Choose one final full-run path based on the artifact being validated. Use
   `python job.py` for local recipe or first-user simulation validation. Use
@@ -487,9 +504,8 @@ to force a run.
   a blocker before an install attempt: install it into the host-provided
   environment per `dependency-install.md` instead of running a command you know
   will fail.
-- Keep validation commands single-purpose. Run cleanup, dependency install,
-  export, and simulation as separate commands; do not combine destructive
-  cleanup and execution in one compound command.
+- Follow `validation-evidence.md` for validation command isolation and terminal
+  evidence.
 - Never run destructive cleanup against the source tree or its git state, such
   as git clean/reset/checkout operations or recursive deletion over source or
   user files. Scope any cleanup to generated runtime or output directories under
@@ -586,5 +602,4 @@ local-validation job carries no deployment-reviewed privacy or security policy
 (no differential privacy, access control, or production approval) unless a
 separate workflow explicitly added one. If the user requested homomorphic
 encryption or encrypted aggregation, report that it is not supported by
-conversion and was routed to provisioning/deployment (no HE job was generated),
-per the HE rule in `pytorch-family-recipe-selection.md`.
+conversion and was routed to provisioning/deployment; no HE job was generated.
