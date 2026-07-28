@@ -8,7 +8,7 @@ FOBS path as `TENSOR_DOWNLOAD` (Datum Object Type 6), and the generic
 Run it with:
 
 ```bash
-nvflare simulator tests/integration_test/jobs/pt_in_process_dot6 \
+nvflare simulator tests/integration_test/data/jobs/pt_in_process_dot6 \
   -w /tmp/nvflare/pt_in_process_dot6 \
   -n 2 \
   -t 2
