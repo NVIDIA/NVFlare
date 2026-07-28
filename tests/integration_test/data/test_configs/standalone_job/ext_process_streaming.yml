@@ -1,9 +1,8 @@
 # Regression tests for external-process Client API streaming (NVBug 6371056).
-# np_loop_external_process is the small-payload launch-once control,
-# pt_large_model_pass_through exercises DownloadService-backed tensors, and
-# swarm_external_process_relay covers external trainer result relay in Swarm.
-# All jobs use the ClientAPIExecutor external-process backend. This file is the
-# only home of these test cases; test_configs.yml lists it under both the
+# np_loop_external_process is the small-payload launch-once control, while
+# pt_large_model_pass_through exercises DownloadService-backed tensors. Both
+# jobs use the ClientAPIExecutor external-process backend. This file is the only
+# home of these two test cases; test_configs.yml lists it under both the
 # client_api group and the ext_process_streaming group, so the streaming path
 # can also be exercised on its own:
 #   NVFLARE_TEST_FRAMEWORK=ext_process_streaming pytest system_test.py
@@ -53,26 +52,3 @@ tests:
             - "Traceback (most recent call last)"
             - "EXECUTION_EXCEPTION"
             - "unauthenticated msg"
-  - test_name: "run swarm-external-process-relay"
-    event_sequence:
-      - "trigger":
-          "type": "server_log"
-          "data": "Server started"
-        "actions": [ "submit_job swarm_external_process_relay" ]
-        "result":
-          "type": "job_submit_success"
-      - "trigger":
-          "type": "run_state"
-          "data": { "run_finished": True }
-        "actions": [ "ensure_current_job_done" ]
-        "result":
-          "type": "run_state"
-          "data": { "run_finished": True }
-    validators:
-      - path: tests.integration_test.src.validators.LogPatternValidator
-        args:
-          required_patterns:
-            - "swarm external trainer sent round 0 result shape=(1024, 1024)"
-          forbidden_patterns:
-            - "cannot relay LazyDownloadRef because no Cell is available in fobs context"
-            - "EXECUTION_EXCEPTION"

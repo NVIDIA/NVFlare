@@ -16,12 +16,26 @@ Without the fix, the local leg fails while re-encoding
 cannot relay LazyDownloadRef because no Cell is available in fobs context
 ```
 
-Run it through the secure external-process integration project:
+## Important: secure mode is required
+
+Do not run this reproducer with Simulator or a non-secure POC. External-process
+results only get `relay=True` in secure mode; without it, the affected branch is
+not executed and unmodified `main` will pass.
+
+Run the dedicated integration target, which provisions a secure project and
+submits only this job:
 
 ```bash
 cd tests/integration_test
-NVFLARE_TEST_FRAMEWORK=ext_process_streaming pytest -s system_test.py
+NVFLARE_TEST_FRAMEWORK=swarm_external_process_relay pytest -s system_test.py
 ```
+
+Expected result when this fixture is run against the unmodified `main`
+implementation: the test fails with `FINISHED:EXECUTION_EXCEPTION`, and the
+site-2 log contains
+`RuntimeError: exception from post_cb _finalize_lazy_batch`.
+
+Expected result with the fix: the test passes.
 
 The NumPy model is synthetic and CPU-only. A positive
 `np_download_chunk_size` enables DownloadService-backed array encoding; the

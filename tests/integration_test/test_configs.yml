@@ -26,9 +26,13 @@ test_configs:
   client_api:
     - ./data/test_configs/standalone_job/client_api.yml
     - ./data/test_configs/standalone_job/ext_process_streaming.yml
+    - ./data/test_configs/standalone_job/swarm_external_process_relay.yml
   client_api_qa:
     - ./data/test_configs/standalone_job/client_api_qa.yml
   model_controller_api:
     - ./data/test_configs/standalone_job/model_controller_api.yml
   ext_process_streaming:
     - ./data/test_configs/standalone_job/ext_process_streaming.yml
+    - ./data/test_configs/standalone_job/swarm_external_process_relay.yml
+  swarm_external_process_relay:
+    - ./data/test_configs/standalone_job/swarm_external_process_relay.yml
