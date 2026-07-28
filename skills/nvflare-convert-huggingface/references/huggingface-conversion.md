@@ -1,27 +1,22 @@
 # Hugging Face Trainer Conversion
 
-## Standard Transformation
+## Canonical Path
 
-Keep normal Trainer construction intact and add one integration point:
+Use this path for a standard Trainer conversion:
 
-```python
-import nvflare.client.hf as flare
+1. Confirm Hugging Face Trainer ownership with `nvflare agent inspect`.
+2. Run `nvflare recipe show` and apply the shared PyTorch-family construction
+   profile.
+3. Adapt `../assets/client_with_eval.py` into `client.py`, preserving the
+   source Trainer factory and metric behavior.
+4. Generate `job.py` with the selected recipe and explicit server model config.
+5. Follow the shared validation ladder with the HF-specific validation delta.
 
-trainer = Trainer(
-    model=model,
-    args=training_args,
-    train_dataset=train_dataset,
-    eval_dataset=eval_dataset,
-    compute_metrics=compute_metrics,
-)
-
-flare.init()
-flare.patch(trainer)
-
-while flare.is_running():
-    trainer.evaluate()
-    trainer.train()
-```
+The maintained asset is the canonical patch and round-loop shape. Adapt its
+Trainer factory and evaluation switch rather than drafting another loop or
+writing a separate AST program to prove equivalent structure. It initializes
+FLARE before site-aware setup, constructs one persistent Trainer, patches it
+once, evaluates the received global model when required, and then trains.
 
 The generated `client.py` entry point is FL-only: it always reaches
 `flare.init()` and `flare.patch(trainer)`. Do not infer FL launch from
@@ -32,14 +27,10 @@ generated client call that function with `federated=True`; keep the standalone
 path behind an entry point that passes `federated=False` explicitly.
 
 When the source has no valid evaluation dataset or metric and neither
-per-round evaluation nor best-model selection is requested, use a train-only
-loop and set `key_metric=""` in the recipe. An empty key omits the automatic
-model selector; it is not a workaround for a required lower-is-better metric:
-
-```python
-while flare.is_running():
-    trainer.train()
-```
+per-round evaluation nor best-model selection is requested, adapt the asset
+with `evaluate_before_train=False` and set `key_metric=""` in the recipe. An
+empty key omits the automatic model selector; it is not a workaround for a
+required lower-is-better metric.
 
 Call `flare.init(rank=rank)` explicitly before `flare.get_site_name()`,
 `flare.get_config()`, or other Client API context access that occurs before

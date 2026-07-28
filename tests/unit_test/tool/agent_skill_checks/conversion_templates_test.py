@@ -14,10 +14,9 @@
 
 """Deterministic tests for the packaged conversion templates.
 
-These run the shipped PyTorch evaluation template, the custom
-``ModelAggregator`` template, and the Lightning evaluation template against
-toy models so template rot is caught here rather than only in expensive,
-nondeterministic LLM evals.
+These run the shipped PyTorch, Lightning, and Hugging Face client templates
+plus the custom ``ModelAggregator`` template against toy models so template rot
+is caught here rather than only in expensive, nondeterministic LLM evals.
 """
 
 import ast
@@ -31,6 +30,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 SKILLS_ROOT = REPO_ROOT / "skills"
 PT_TEMPLATES = SKILLS_ROOT / "nvflare-convert-pytorch" / "assets"
 LIGHTNING_TEMPLATES = SKILLS_ROOT / "nvflare-convert-lightning" / "assets"
+HF_TEMPLATES = SKILLS_ROOT / "nvflare-convert-huggingface" / "assets"
 SHARED_TEMPLATES = SKILLS_ROOT / "nvflare-shared" / "assets"
 
 
@@ -136,6 +136,58 @@ def test_pytorch_eval_template_initializes_flare_before_training_setup():
     assert setup_line is not None
     assert loop_line is not None
     assert init_line < setup_line < loop_line
+
+
+@pytest.mark.parametrize(
+    "evaluate_before_train, expected_events",
+    [
+        (True, ["init", "factory", "patch", "is_running", "evaluate", "train", "is_running"]),
+        (False, ["init", "factory", "patch", "is_running", "train", "is_running"]),
+    ],
+)
+def test_huggingface_client_template_preserves_trainer_sequence(monkeypatch, evaluate_before_train, expected_events):
+    module = _load_module(HF_TEMPLATES / "client_with_eval.py")
+    events = []
+
+    class _Trainer:
+        def evaluate(self):
+            events.append("evaluate")
+
+        def train(self):
+            events.append("train")
+
+    def trainer_factory():
+        events.append("factory")
+        return _Trainer()
+
+    running = iter((True, False))
+    monkeypatch.setattr(module.flare, "init", lambda rank=0: events.append("init"))
+    monkeypatch.setattr(module.flare, "patch", lambda trainer: events.append("patch"))
+    monkeypatch.setattr(
+        module.flare,
+        "is_running",
+        lambda: events.append("is_running") or next(running),
+    )
+
+    module.main(trainer_factory, evaluate_before_train=evaluate_before_train)
+
+    assert events == expected_events
+
+
+def test_huggingface_client_template_has_one_patch_and_no_manual_exchange():
+    source = (HF_TEMPLATES / "client_with_eval.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "flare"
+    ]
+
+    assert [node.func.attr for node in calls].count("patch") == 1
+    assert not {node.func.attr for node in calls} & {"receive", "send"}
 
 
 def test_custom_aggregator_template_step_weighted_average():

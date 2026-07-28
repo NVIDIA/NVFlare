@@ -481,6 +481,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     lightning_conversion = repo_root.joinpath(
         "skills/nvflare-convert-lightning/references/lightning-conversion.md"
     ).read_text(encoding="utf-8")
+    client_template = skill_root.joinpath("assets/client_with_eval.py").read_text(encoding="utf-8")
     recipe_text = repo_root.joinpath(
         "skills/nvflare-shared/references/pytorch-family-recipe-construction.md"
     ).read_text(encoding="utf-8")
@@ -513,17 +514,25 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
         "establish Lightning-local metrics but do not by themselves establish server delivery" in normalized_lightning
     )
     assert "`MetaKey.INITIAL_METRICS` before `trainer.fit(...)`" in normalized_lightning
-    assert "FL-only client entry" in skill_text
-    assert "Do not branch on launch environment variables" in normalized_skill
-    assert "Load and apply `../nvflare-shared/references/validation-evidence.md`" in normalized_skill
-    assert "generated client's actual parser" in normalized_skill
-    assert "actual parser and actual dataclass types" in normalized_skill
-    assert "Version-check only fields claimed to come from framework" in normalized_skill
-    assert "Preserve source-defined subclass fields" in normalized_skill
-    assert "Export only with `python job.py --export --export-dir`" in normalized_skill
-    assert "client imports are not enough for per-site exports" in normalized_skill
-    assert "generated or project-local server-only model module" in normalized_skill
-    assert "server-only model module" in skill_text
+    phase_markers = [
+        "Inspect before editing",
+        "Read applicable requirements",
+        "Select the recipe from FL intent",
+        "Convert with `references/huggingface-conversion.md`",
+        "Add or update `job.py`",
+        "Only after generated files exist",
+        "Report the recipe",
+    ]
+    phase_positions = [skill_text.index(marker) for marker in phase_markers]
+    assert phase_positions == sorted(phase_positions)
+    assert "Complete each workflow phase before loading the next phase's reference" in normalized_skill
+    assert (
+        "Do not preload validation, state/DDP, broad workflow, dependency, or reporting references" in normalized_skill
+    )
+    assert "adapt `assets/client_with_eval.py` rather than drafting a new round loop" in normalized_skill
+    assert "Do not inspect Recipe source or signatures" in normalized_skill
+    assert "do not depend on repository examples" in normalized_skill.lower()
+    assert "FL-only" in conversion_text
     assert "preserve source metric names" in skill_text
     assert "source-to-server mapping" in skill_text
     assert "CLIENT_API_TYPE" in conversion_text
@@ -539,29 +548,33 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "Do not reuse a path assumption from another export" in normalized_conversion
     assert "third-party class paths stay runtime dependencies" in normalized_conversion
     assert "server persistor will fail to construct the initial model" in normalized_conversion
+    assert "Adapt `../assets/client_with_eval.py`" in normalized_conversion
+    assert "writing a separate AST program" in normalized_conversion
+    assert "flare.patch(trainer)" in client_template
+    assert "while flare.is_running()" in client_template
     assert (
         "client entry's actual argument mechanism and actual dataclass types in parse-only mode"
         in normalized_validation
     )
     assert "generated client uses `HfArgumentParser`" in validation_text
     assert "same project and framework dataclass types" in normalized_validation
-    assert "preserves `argparse` or another parser" in validation_text
+    assert "When it preserves `argparse` or another parser" in normalized_validation
     assert "reject every unused argument" in normalized_validation
     assert "`HfArgumentParser.parse_args_into_dataclasses()` can raise `ValueError`" in shared_validation
-    assert "the wrapper itself must exit zero" in normalized_validation
-    assert "only for fields claimed to belong to a framework" in normalized_validation
+    assert "the wrapper itself exits zero" in normalized_validation
+    assert "Version-check only fields claimed to belong to a framework" in normalized_validation
     assert "project-defined subclass field" in normalized_validation
     assert "actual parser accepts it" in normalized_validation
     assert "one-round topology smoke test with the requested site count" in normalized_validation
-    assert "full-model validation blocked by host capacity" in normalized_validation
-    assert "estimate server exchange/offload memory" in validation_text
+    assert "full-model validation blocked" in normalized_validation
+    assert "estimate server exchange/offload" in validation_text
     assert "per-client training-memory bound multiplied by actual worker concurrency" in normalized_validation
     assert "model copies, gradients, optimizer state, activations, dataloaders/data" in normalized_validation
     assert "full-model rung as capacity-unverified" in normalized_validation
     assert "Capability-check optional host diagnostics such as `free` or `nvidia-smi`" in validation_text
     assert "`shutil.which()` or `command -v`" in validation_text
-    assert "Run optional diagnostics separately from parser, partition, model-keyspace" in normalized_validation
-    assert "capacity evidence is unavailable; it is not a conversion failure" in normalized_validation
+    assert "Run them separately from correctness checks" in normalized_validation
+    assert "capacity evidence is unavailable, not conversion failure" in normalized_validation
     assert "reported default `max_steps=10`" in normalized_skill
     assert "Resolve exactly one per-round budget and encode it in one place" in conversion_text
     assert "user-requested local steps become generated `TrainingArguments.max_steps`" in normalized_conversion
@@ -572,10 +585,8 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "whole-job target in its progress bar" in normalized_conversion
     assert "`NUM_STEPS_CURRENT_ROUND`" in validation_text
     assert "expected cumulative scheduler target, not multiplied local work" in normalized_validation
-    assert "Make at most one expensive real-model retry" in validation_text
-    assert "`python job.py --export --export-dir <dir>`" in validation_text
-    assert "Reject generated job-local export aliases such as `--export_only`" in normalized_validation
-    assert "private flags" in normalized_validation
+    assert "make at most one expensive real-model retry" in normalized_validation
+    assert "Do not write a one-off AST or Recipe-source introspection program" in normalized_validation
     assert "`python job.py --export --export-dir <runtime-dir>/job_config`" in normalized_shared_validation
     assert "Do not accept a generated job-local export alias such as `--export_only`" in normalized_shared_validation
     assert "report it as a generated-code violation" in normalized_shared_validation
@@ -588,8 +599,8 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "`argparse.ArgumentParser(allow_abbrev=False)`" in normalized_shared
     assert "`parse_known_args()` is not needed" in normalized_shared
     assert "unknown and abbreviated options fail" in normalized_shared
-    assert "`ArgumentParser(allow_abbrev=False)` with strict `parse_args()`" in normalized_skill
-    assert "`parse_known_args()` because recipe imports consume NVFLARE export flags" in normalized_skill
+    assert "`ArgumentParser(allow_abbrev=False)`" in normalized_skill
+    assert "use strict `parse_args()`; do not use `parse_known_args()`" in normalized_skill
     assert "`recipe show` validates only the selected recipe's module, class" in normalized_recipe
     assert "It does not advertise other symbols from `nvflare.recipe`" in normalized_recipe
     assert "use `SimEnv` with `recipe.execute(...)`" in normalized_recipe
@@ -598,10 +609,12 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "Run intentional rejection checks" in normalized_shared_validation
     assert "through an assertion wrapper" in normalized_shared_validation
     assert "expected child failure as a failed top-level validation command" in normalized_shared_validation
-    assert "Using the shared assertion-wrapper rule" in normalized_validation
-    assert "unique-prefix abbreviation fail" in normalized_validation
-    assert "standalone mode" in validation_text
-    assert "model.py` is server-only" in validation_text
+    assert "shared assertion-wrapper rule" in normalized_validation
+    assert "typo and abbreviation rejection cases" in normalized_validation
+    assert "explicit non-client entry parameter" in normalized_validation
+    assert "same resolved local model path and cache configuration" in normalized_validation
+    assert "Extract server and Trainer exchange key sets without training" in validation_text
+    assert "exact full-model or adapter-key agreement" in normalized_validation
     assert "class_path`, train script, custom aggregator" in normalized_shared
     assert "Its name must exactly match one key delivered by the client" in normalized_recipe
     assert "Do not reduce simulator `num_threads` below the requested client count" in recipe_text
