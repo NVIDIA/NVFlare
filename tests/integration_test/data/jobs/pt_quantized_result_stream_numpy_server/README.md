@@ -13,6 +13,10 @@ The trainer exchange is `raw`, so Client API does not convert the NumPy task.
 `server_expected_format` remains `pytorch` because the result path under test is
 a PyTorch payload. `VerifyTaskParams` confirms the actual task representation.
 
+This job requires `bitsandbytes`: the quantizer and dequantizer import it even
+for `float16`. NVFlare's `app_opt_mac` extra intentionally omits that dependency,
+so this job is not supported by the standard macOS installation.
+
 Run it with:
 
 ```bash
@@ -39,8 +43,10 @@ Successful runs contain `VERIFIED_SERVER_TASK_FORMAT`,
 mismatch fails the task filter and therefore fails the job.
 
 Without the in-process decomposer registration, the NumPy task still reaches
-the trainer, but the server fails while decoding the streamed PyTorch
-`submit_update` with:
+the trainer. The server-side receiver already has `TensorDecomposer`, so it
+enters `recompose()`, but the in-process client sender did not register the
+matching decomposer. The server therefore fails while decoding the incomplete
+streamed PyTorch `submit_update` with:
 
 ```text
 TensorDecomposer - ERROR - missing 'data' property from the recompose data

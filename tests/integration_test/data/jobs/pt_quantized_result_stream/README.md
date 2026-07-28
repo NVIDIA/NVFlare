@@ -9,6 +9,10 @@ trainer returns PyTorch tensors, `ModelQuantizer` converts the client result to
 native PyTorch tensors. `VerifyTaskParams` only checks that representation; it
 does not transform the task.
 
+This job requires `bitsandbytes`: the quantizer and dequantizer import it even
+for `float16`. NVFlare's `app_opt_mac` extra intentionally omits that dependency,
+so this job is not supported by the standard macOS installation.
+
 Run it with:
 
 ```bash
