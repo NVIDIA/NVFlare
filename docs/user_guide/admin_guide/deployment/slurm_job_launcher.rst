@@ -342,7 +342,7 @@ A positive multi-node ``num_of_gpus`` requires ``gpus_per_node``;
 whenever both are supplied, ``num_of_gpus`` must equal
 ``nodes * gpus_per_node``.
 
-For jobs built with a managed external-process ``ScriptRunner``, an explicit
+For jobs built with a managed typed external-process ``ScriptRunner``, an explicit
 site block that directly sets ``nodes > 1`` does not need to repeat the
 training command. Export copies the fully assembled shell-free ``command``,
 script path, and script arguments into ``additional_node_command``. Generation
@@ -407,7 +407,8 @@ directory.
 All ranks receive ``NVFL_NNODES``, ``NVFL_NODE_RANK``,
 ``NVFL_MASTER_ADDR``, ``NVFL_MASTER_PORT``, and the per-allocation
 ``NVFL_RUN_ID``. Under ``apptainer`` or ``pyxis``, all user code runs inside
-the configured container.
+the configured container. Non-zero ranks use the typed Cell API bootstrap;
+legacy Client API multi-node execution is not supported.
 
 Non-zero ranks start before rank 0 has prepared Client API runtime files, so a
 hand-written command must join its framework rendezvous before reading that

@@ -558,6 +558,21 @@ class TestExecutionModeSelection:
         assert launcher_spec["site-1"]["slurm"]["additional_node_command"] == "python3 -u custom/client.py"
         assert "additional_node_command" not in launcher_spec["site-2"]["slurm"]
 
+    def test_legacy_external_process_does_not_generate_additional_node_command(self):
+        from nvflare.job_config.api import FedJob
+
+        block = {"nodes": 2}
+        job = FedJob(
+            name="legacy-command",
+            meta_props={JobMetaKey.JOB_LAUNCHER_SPEC.value: {"site-1": {"slurm": block}}},
+        )
+        runner = BaseScriptRunner(script="client.py", launch_external_process=True)
+
+        with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
+            job.to_clients(runner)
+
+        assert "additional_node_command" not in block
+
     @pytest.mark.parametrize("explicit_value", [None, "custom-worker --arg"])
     def test_explicit_additional_node_command_wins(self, explicit_value):
         from nvflare.job_config.api import FedJob

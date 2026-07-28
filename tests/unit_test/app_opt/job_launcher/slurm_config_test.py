@@ -84,6 +84,9 @@ def test_implicit_multi_node_port_range_moves_around_existing_internal_port():
         setup="",
         forward_env=None,
         parent_host="parent",
+        submit_timeout=10,
+        query_timeout=10,
+        cancel_timeout=10,
         poll_interval=10,
         pending_timeout=600,
     )

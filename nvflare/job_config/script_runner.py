@@ -362,7 +362,6 @@ class BaseScriptRunner:
                 launcher = self._launcher
             else:
                 command = self._external_process_argv()
-                _fill_additional_node_command(job, ctx.target, command, self._launch_once)
                 launcher = SubprocessLauncher(
                     script=command,
                     launch_once=self._launch_once,

@@ -28,6 +28,8 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     LaunchPlan,
     SlurmConfig,
 )
+from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
+from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR, CELL_API_TYPE, bootstrap_file_name
 
 _ENV_NNODES = "NVFL_NNODES"
 _ENV_NODE_RANK = "NVFL_NODE_RANK"
@@ -202,6 +204,10 @@ def _render_node_script(plan: LaunchPlan, config: SlurmConfig) -> str:
     """
     worker_words = _build_worker_words(plan)
     node_words = [shlex.quote(word) for word in plan.additional_node_command]
+    nonzero_setup = [
+        f"  export {CLIENT_API_TYPE_KEY}={CELL_API_TYPE}",
+        f"  export {BOOTSTRAP_FILE_ENV_VAR}={shlex.quote(bootstrap_file_name(1))}",
+    ]
     if plan.sandbox == "apptainer":
         backend_setup = "\n".join(
             (
@@ -210,29 +216,19 @@ def _render_node_script(plan: LaunchPlan, config: SlurmConfig) -> str:
             )
         )
         rank0_command = _apptainer_exec_words(plan, plan.run_dir) + worker_words
-        nonzero_setup = (
-            # Env parity with the rank-0 training subprocess (SubprocessLauncher
-            # sets the same variable for its child).
-            "  export CLIENT_API_TYPE=EX_PROCESS_API APPTAINERENV_CLIENT_API_TYPE=EX_PROCESS_API"
-        )
+        nonzero_setup.append(f'  export APPTAINERENV_{CLIENT_API_TYPE_KEY}="${{{CLIENT_API_TYPE_KEY}}}"')
+        nonzero_setup.append(f'  export APPTAINERENV_{BOOTSTRAP_FILE_ENV_VAR}="${{{BOOTSTRAP_FILE_ENV_VAR}}}"')
         nonzero_command = _apptainer_exec_words(plan, plan.node_app_dir) + node_words
     else:
         backend_setup = ""
         rank0_command = worker_words
-        nonzero_setup = "\n".join(
-            (
-                # Env parity with the rank-0 training subprocess (SubprocessLauncher
-                # sets the same variable for its child).
-                "  export CLIENT_API_TYPE=EX_PROCESS_API",
-                f"  cd {shlex.quote(plan.node_app_dir)}",
-            )
-        )
+        nonzero_setup.append(f"  cd {shlex.quote(plan.node_app_dir)}")
         nonzero_command = node_words
     return _render_shell_template(
         _NODE_SCRIPT_TEMPLATE,
         backend_setup=backend_setup,
         rank0_command=" ".join(rank0_command),
-        nonzero_setup=nonzero_setup,
+        nonzero_setup="\n".join(nonzero_setup),
         nonzero_command=" ".join(nonzero_command),
     )
 

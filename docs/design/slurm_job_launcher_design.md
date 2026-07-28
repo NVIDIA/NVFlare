@@ -195,14 +195,14 @@ A client job opts into launcher-owned multi-node execution by setting `nodes > 1
 Node rank 0 runs the normal CJ worker unchanged; every other node runs `additional_node_command`. Extra nodes do
 not register separately with the server, and cross-node coordination belongs to the training framework.
 
-For a managed external-process `ScriptRunner`, export copies its fully assembled shell-free command into
+For a managed typed external-process `ScriptRunner`, export copies its fully assembled shell-free command into
 `additional_node_command` when an explicit site launcher block directly declares `nodes > 1` and omits the field.
 An explicit value always wins; explicit `null` keeps application-owned fan-out. Generation requires
 `launch_once=True`. Neither generated nor explicit additional-node commands support secret references.
-Default/inherited launcher blocks and custom launchers are not inferred and must provide the full command
-explicitly. Omitting the field in those cases keeps the previous application-owned fan-out behavior. The export
-hook is launcher-mode-neutral so another launcher can adopt the same field later; Slurm is the only runtime
-consumer in this release.
+Legacy `BaseScriptRunner`, default/inherited launcher blocks, and custom launchers are not inferred and must
+provide the full command explicitly. Omitting the field in those cases keeps the previous application-owned
+fan-out behavior. The export hook is launcher-mode-neutral so another launcher can adopt the same field later;
+Slurm is the only runtime consumer in this release.
 
 ### Environment contract
 
@@ -228,8 +228,10 @@ parent and reports the result exactly as a single-node job; every other rank exe
 `additional_node_command` in the deployed job app directory. The fan-out `srun` uses `--label`, so output carries
 its node rank. Both paths inherit the batch environment because the script exports `SLURM_EXPORT_ENV=ALL` before
 fan-out. Pyxis tasks instead receive the explicit `--export` list, so `setup`-created variables reach bare and
-Apptainer node groups but not Pyxis ranks (use study env or `forward_env` there). Non-zero ranks export
-`CLIENT_API_TYPE=EX_PROCESS_API` for parity with the rank-0 training subprocess.
+Apptainer node groups but not Pyxis ranks (use study env or `forward_env` there). Non-zero ranks receive the
+launch-once typed Cell API bootstrap path. The CJ writes that bootstrap before starting rank 0's training
+process, and the framework rendezvous delays every training script until the file exists. Legacy Client API
+multi-node execution is not supported.
 
 The command is job-owned and validated at the launch boundary: it must be a single-line, shell-lexable,
 non-empty string without secret references. It is split once into argv, rendered fully quoted, and never

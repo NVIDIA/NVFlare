@@ -221,7 +221,10 @@ def test_apptainer_node_group_containerizes_each_rank_on_its_node(tmp_path):
     assert "cd " not in node
     assert "worker.module" in node
     assert "python3 -m trainer --epochs 2" in node
-    assert "export CLIENT_API_TYPE=EX_PROCESS_API APPTAINERENV_CLIENT_API_TYPE=EX_PROCESS_API" in node
+    assert "export CLIENT_API_TYPE=CELL_API" in node
+    assert 'export APPTAINERENV_CLIENT_API_TYPE="${CLIENT_API_TYPE}"' in node
+    assert "export NVFLARE_CLIENT_API_BOOTSTRAP=client_api_bootstrap_1.json" in node
+    assert 'export APPTAINERENV_NVFLARE_CLIENT_API_BOOTSTRAP="${NVFLARE_CLIENT_API_BOOTSTRAP}"' in node
 
 
 def test_pyxis_node_group_fans_out_containers_through_one_srun(tmp_path):
@@ -244,7 +247,8 @@ def test_pyxis_node_group_fans_out_containers_through_one_srun(tmp_path):
     assert "apptainer" not in node
     assert f"cd {plan.node_app_dir}" in node
     assert "worker.module" in node
-    assert "export CLIENT_API_TYPE=EX_PROCESS_API" in node
+    assert "export CLIENT_API_TYPE=CELL_API" in node
+    assert "export NVFLARE_CLIENT_API_BOOTSTRAP=client_api_bootstrap_1.json" in node
 
 
 @pytest.mark.parametrize(
@@ -263,7 +267,8 @@ def test_rendered_node_script_executes_by_rank(tmp_path, node_rank, expected):
             additional_node_command=(
                 "bash",
                 "-c",
-                'echo "rank=${NVFL_NODE_RANK} token=${NVFLARE_JOB_AUTH_TOKEN:-missing}"; pwd',
+                'echo "rank=${NVFL_NODE_RANK} token=${NVFLARE_JOB_AUTH_TOKEN:-missing} '
+                'bootstrap=${NVFLARE_CLIENT_API_BOOTSTRAP:-missing}"; pwd',
             ),
         ),
         python_path=str(worker),
@@ -287,6 +292,7 @@ def test_rendered_node_script_executes_by_rank(tmp_path, node_rank, expected):
     assert completed.returncode == 0
     assert expected in completed.stdout
     if node_rank == "1":
+        assert "bootstrap=client_api_bootstrap_1.json" in completed.stdout
         assert plan.node_app_dir in completed.stdout
 
 
