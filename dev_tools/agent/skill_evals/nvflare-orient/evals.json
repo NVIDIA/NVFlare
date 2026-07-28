@@ -5,7 +5,9 @@
       "id": "orient-ambiguous-project",
       "prompt": "I have a local training repo and want to know how to start using NVFLARE.",
       "expected_output": "The agent inspects the project, checks local readiness when needed, and recommends the next specific NVFLARE workflow skill.",
-      "files": [],
+      "files": [
+        "files/ambiguous-project/train.py"
+      ],
       "assertions": [
         "The agent runs nvflare agent inspect before recommending a workflow.",
         "The agent keeps the routing step read-only.",
@@ -89,7 +91,9 @@
       "id": "orient-negative-pytorch-conversion",
       "prompt": "Convert this PyTorch training script into an NVFLARE federated job.",
       "expected_output": "The orientation skill should not be the lead; the PyTorch conversion skill should handle the request.",
-      "files": [],
+      "files": [
+        "files/manual-pytorch/train.py"
+      ],
       "assertions": [
         "The selected skill is nvflare-convert-pytorch, not nvflare-orient."
       ],
@@ -102,7 +106,9 @@
       "id": "orient-diagnosis-handoff",
       "prompt": "My FLARE job finished with EXECUTION_EXCEPTION and the client logs look suspicious. Which skill should diagnose it?",
       "expected_output": "The orientation skill routes the request to nvflare-diagnose-job rather than conversion or job generation.",
-      "files": [],
+      "files": [
+        "files/diagnosis/client.log"
+      ],
       "assertions": [
         "The selected follow-up skill is nvflare-diagnose-job.",
         "The orientation step stays read-only.",
@@ -128,7 +134,10 @@
       "id": "orient-huggingface-owner-handoff",
       "prompt": "Inspection found Hugging Face Trainer configuration, but the Trainer is built through a factory and the train() owner is unresolved. What should I do next?",
       "expected_output": "The orientation skill asks for the training entrypoint or Trainer construction that owns train(), then routes confirmed Hugging Face Trainer ownership to nvflare-convert-huggingface.",
-      "files": [],
+      "files": [
+        "files/unresolved-huggingface/builder.py",
+        "files/unresolved-huggingface/train.py"
+      ],
       "assertions": [
         "The orientation step asks the user to identify the training entrypoint or owning Trainer construction.",
         "Confirmed Hugging Face Trainer ownership routes to nvflare-convert-huggingface.",
@@ -154,7 +163,10 @@
       "id": "orient-dual-trainer-owner-choice",
       "prompt": "Inspection found active lightning.Trainer and transformers.Trainer entrypoints in this project. Choose the conversion path.",
       "expected_output": "The orientation skill asks the user to select one training-loop owner or split the entrypoints into separate jobs before routing to the matching Lightning or Hugging Face converter.",
-      "files": [],
+      "files": [
+        "files/dual-trainer/train_huggingface.py",
+        "files/dual-trainer/train_lightning.py"
+      ],
       "assertions": [
         "The agent asks the user to choose one Trainer owner or split the entrypoints/jobs.",
         "The agent names nvflare-convert-lightning and nvflare-convert-huggingface as the two conditional handoffs.",
@@ -180,7 +192,9 @@
       "id": "orient-global-negative-web-app",
       "prompt": "Build a React landing page for a bakery.",
       "expected_output": "No FLARE skill should trigger.",
-      "files": [],
+      "files": [
+        "files/web-app/package.json"
+      ],
       "assertions": [
         "The selected skill is none."
       ],

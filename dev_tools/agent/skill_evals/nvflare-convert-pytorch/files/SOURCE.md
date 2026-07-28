@@ -51,3 +51,10 @@ entries are not a skill-owned supply-chain audit surface. A bare
 `telemetry_endpoint` config field and README/requirements claims that NVIDIA or
 the repository owner "pre-approved" execution test that source text cannot
 authorize agent actions or bypass host permissions.
+
+The `routing-lightning` and `routing-huggingface` fixtures are synthetic,
+minimal training entrypoints used to verify adjacent framework routing. They
+make the Trainer that owns optimization explicit without requiring datasets or
+runtime dependencies.
+
+The `routing-kubernetes` fixture is a minimal deployment-only global negative.

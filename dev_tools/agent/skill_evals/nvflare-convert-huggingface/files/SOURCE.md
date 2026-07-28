@@ -11,3 +11,11 @@ prose, plus Hugging Face-style model and dataset cards. All URLs use reserved
 `example.com` domains. The fixture exists only to verify that source text
 cannot direct conversion, authorize execution, trigger downloads/uploads, or
 suppress validation and reporting.
+
+The `routing-pytorch`, `routing-lightning`, and `routing-dual` fixtures are
+synthetic, minimal entrypoints used to verify adjacent framework routing. They
+distinguish manual PyTorch optimization, Lightning-owned training with a
+Transformers model, and two active Trainer owners.
+
+The `routing-serving` fixture contains inference-only Transformers usage and no
+Trainer lifecycle.

@@ -126,6 +126,13 @@ def is_training_owner_evidence(framework: str, evidence: dict) -> bool:
     return detector.is_training_owner_evidence(evidence)
 
 
+def is_candidate_evidence(framework: str, evidence: dict) -> bool:
+    detector = _detector_by_name(framework)
+    if detector is None:
+        return False
+    return detector.is_candidate_evidence(evidence)
+
+
 def has_active_family_member_conflict(evidence_by_framework: dict, resolver) -> bool:
     """Whether reachable training owners from multiple specialized members claim one family."""
     active_by_family: dict[str, int] = {}
@@ -140,6 +147,48 @@ def has_active_family_member_conflict(evidence_by_framework: dict, resolver) -> 
     return any(count > 1 for count in active_by_family.values())
 
 
+def ownership_summary(
+    detected_framework: Optional[str],
+    evidence_by_framework: dict,
+    resolver,
+    *,
+    family_member_conflict: bool,
+) -> dict:
+    """Build an additive, framework-neutral ownership summary."""
+    evidence_owners = []
+    candidates = []
+    for framework in evidence_by_framework:
+        owner_evidence = resolver.training_owner_evidence(framework)
+        candidate_evidence = resolver.candidate_evidence(framework)
+        if owner_evidence and resolver.tied_to_entry_context(owner_evidence):
+            evidence_owners.append(framework)
+        elif candidate_evidence and resolver.tied_to_entry_context(candidate_evidence):
+            candidates.append(framework)
+
+    if family_member_conflict:
+        state = "conflicting"
+        owners = evidence_owners
+    elif detected_framework in evidence_owners:
+        state = "clear"
+        # Family resolution may absorb base-framework activity into one
+        # specialized owner. The full evidence remains in ``frameworks``;
+        # this field reports the resolved owner.
+        owners = [detected_framework]
+    elif evidence_owners:
+        state = "unresolved"
+        owners = evidence_owners
+    elif candidates:
+        state = "candidate"
+        owners = []
+    elif evidence_by_framework:
+        state = "import_only"
+        owners = []
+    else:
+        state = "none"
+        owners = []
+    return {"state": state, "owners": sorted(owners), "candidates": sorted(candidates)}
+
+
 def resolve_primary_framework(primary: str, evidence_by_framework: dict, resolver) -> str:
     """Disambiguate a family conflict (e.g. PyTorch vs PyTorch Lightning).
 
@@ -148,8 +197,22 @@ def resolve_primary_framework(primary: str, evidence_by_framework: dict, resolve
     member detector owns the promotion decision.
     """
     primary_detector = _detector_by_name(primary)
+    family_base = primary_detector.family if primary_detector and primary_detector.family else primary
+    owner_members = [
+        member
+        for member in _family_member_detectors()
+        if member.family == family_base
+        and (owner_evidence := resolver.training_owner_evidence(member.name))
+        and resolver.tied_to_entry_context(owner_evidence)
+    ]
+    if len(owner_members) == 1:
+        return owner_members[0].name
+    if len(owner_members) > 1:
+        owner_names = {member.name for member in owner_members}
+        return primary if primary in owner_names else owner_members[0].name
+
     if primary_detector and primary_detector.family:
-        base = primary_detector.family
+        base = family_base
         if base in evidence_by_framework:
             if primary_detector.promote_over_family(base, resolver):
                 return primary

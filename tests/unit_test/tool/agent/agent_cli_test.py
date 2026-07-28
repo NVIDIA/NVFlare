@@ -300,7 +300,8 @@ def test_agent_inspect_json_reports_static_framework_evidence(capsys, tmp_path):
     assert payload["data"]["static_only"] is True
     assert payload["data"]["frameworks"][0]["name"] == "pytorch"
     assert payload["data"]["conversion_state"] == "not_converted"
-    assert payload["data"]["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+    assert payload["data"]["skill_selection"]["recommended_skills"] == []
+    assert payload["data"]["framework_ownership"] == {"state": "import_only", "owners": [], "candidates": []}
 
 
 def test_agent_inspect_json_reports_deep_ast_without_aborting(capsys, tmp_path, monkeypatch):

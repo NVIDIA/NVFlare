@@ -35,7 +35,9 @@ from .registry import (
     framework_for_import,
     has_active_family_member_conflict,
     is_active_evidence,
+    is_candidate_evidence,
     is_training_owner_evidence,
+    ownership_summary,
     recommended_skill_for,
     resolve_primary_framework,
 )
@@ -52,7 +54,9 @@ __all__ = [
     "framework_for_import",
     "has_active_family_member_conflict",
     "is_active_evidence",
+    "is_candidate_evidence",
     "is_training_owner_evidence",
+    "ownership_summary",
     "recommended_skill_for",
     "resolve_primary_framework",
 ]

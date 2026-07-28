@@ -18,18 +18,13 @@ import ast
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .base import DetectContext, FrameworkDetector, LexicalScopeBindings
+from .base import DetectContext, EvidenceStrength, FrameworkDetector, LexicalScopeBindings
 
 FRAMEWORK = "huggingface"
 
 HUGGINGFACE_MODULES = {"transformers", "trl"}
 HUGGINGFACE_TRAINER_SUBMODULES = {"trainer", "trainer_seq2seq"}
 TRAINING_CONFIG_SYMBOLS = {"TrainingArguments", "Seq2SeqTrainingArguments", "SFTConfig"}
-TRAINER_CANDIDATE_EVIDENCE = {
-    "huggingface_trainer",
-    "huggingface_trainer_class",
-    "huggingface_training_config",
-}
 PATCH_PARENT_MODULE = "nvflare.client"
 PATCH_SUBMODULE = "hf"
 PATCH_MODULE = f"{PATCH_PARENT_MODULE}.{PATCH_SUBMODULE}"
@@ -43,7 +38,12 @@ class _HuggingFaceFileState:
     trainer_classes: set = field(default_factory=set)
     trainer_instances: set = field(default_factory=set)
     scopes: LexicalScopeBindings = field(default_factory=LexicalScopeBindings)
+    pending_trainer_calls: list = field(default_factory=list)
+    pending_config_calls: list = field(default_factory=list)
+    pending_trainer_assignments: list = field(default_factory=list)
     pending_train_calls: list = field(default_factory=list)
+    latest_assignments: dict = field(default_factory=dict)
+    assignment_sequence: int = 0
     patch_symbols: set = field(default_factory=set)
     patch_modules: set = field(default_factory=set)
     pending_patch_calls: list = field(default_factory=list)
@@ -57,6 +57,12 @@ class HuggingFaceDetector(FrameworkDetector):
         "huggingface_trainer": 2,
         "huggingface_trainer_class": 2,
         "huggingface_training_config": 1,
+    }
+    evidence_strengths = {
+        "huggingface_train": EvidenceStrength.TRAINING_OWNER,
+        "huggingface_trainer": EvidenceStrength.CANDIDATE,
+        "huggingface_trainer_class": EvidenceStrength.CANDIDATE,
+        "huggingface_training_config": EvidenceStrength.CANDIDATE,
     }
     recommended_skill = "nvflare-convert-huggingface"
     recommendation_requires_active_evidence = True
@@ -159,20 +165,36 @@ class HuggingFaceDetector(FrameworkDetector):
         ctx: DetectContext,
         scope: tuple[str, ...] = (),
     ) -> None:
-        is_patch_call = file_state.scopes.has_identity(
-            call_name, scope, file_state.patch_symbols
-        ) or self._is_patch_call(call_name, file_state, scope)
-        if is_patch_call:
+        patch_key = self._patch_identity_key(call_name, file_state, scope)
+        if patch_key and (patch_key[0] == scope or not file_state.scopes.has_deferred_function_scope(scope)):
             ctx.flare_call(call_name)
             ctx.integration_signal(FRAMEWORK, call_name)
         else:
             identity_name = self._patch_identity_name(call_name)
-            if identity_name and file_state.scopes.can_resolve_from_enclosing_scope(identity_name, scope):
+            if patch_key or (
+                identity_name and file_state.scopes.can_resolve_from_enclosing_scope(identity_name, scope)
+            ):
                 file_state.pending_patch_calls.append((call_name, scope))
-        if self._is_trainer_name(call_name, file_state, scope):
-            ctx.evidence(FRAMEWORK, "huggingface_trainer", call_name, lineno)
+        is_trainer_call = self._is_trainer_name(call_name, file_state, scope)
+        if is_trainer_call:
+            if file_state.scopes.has_deferred_function_scope(scope):
+                file_state.pending_trainer_calls.append((call_name, scope, lineno))
+            else:
+                ctx.evidence(FRAMEWORK, "huggingface_trainer", call_name, lineno)
+        elif file_state.scopes.has_deferred_function_scope(scope) and self._is_trainer_symbol(
+            call_name.rpartition(".")[2]
+        ):
+            file_state.pending_trainer_calls.append((call_name, scope, lineno))
         elif self._is_training_config_name(call_name, file_state, scope):
-            ctx.evidence(FRAMEWORK, "huggingface_training_config", call_name, lineno)
+            if file_state.scopes.has_deferred_function_scope(scope):
+                file_state.pending_config_calls.append((call_name, scope, lineno))
+            else:
+                ctx.evidence(FRAMEWORK, "huggingface_training_config", call_name, lineno)
+        elif (
+            file_state.scopes.has_deferred_function_scope(scope)
+            and call_name.rpartition(".")[2] in TRAINING_CONFIG_SYMBOLS
+        ):
+            file_state.pending_config_calls.append((call_name, scope, lineno))
         else:
             receiver = self._train_call_receiver(call_name)
             if receiver:
@@ -188,6 +210,8 @@ class HuggingFaceDetector(FrameworkDetector):
                     # Calls resolved through an enclosing scope are finalized
                     # after the full file is visited so later lexical bindings
                     # cannot change the result based on source order.
+                    file_state.pending_train_calls.append((receiver, scope, call_name, lineno))
+                elif self._has_pending_trainer_assignment(receiver, scope, file_state):
                     file_state.pending_train_calls.append((receiver, scope, call_name, lineno))
 
     def classify_assignment_value(
@@ -215,22 +239,51 @@ class HuggingFaceDetector(FrameworkDetector):
         )
         for target_name in target_names:
             binding_scope = self._bind_name(target_name, scope, file_state)
+            assignment_key = (binding_scope, target_name)
+            file_state.assignment_sequence += 1
+            assignment_sequence = file_state.assignment_sequence
+            file_state.latest_assignments[assignment_key] = assignment_sequence
             if is_trainer:
-                file_state.trainer_instances.add((binding_scope, target_name))
+                file_state.trainer_instances.add(assignment_key)
+            elif (
+                call_name
+                and file_state.scopes.has_deferred_function_scope(scope)
+                and self._is_trainer_symbol(call_name.rpartition(".")[2])
+            ):
+                file_state.pending_trainer_assignments.append(
+                    (target_name, binding_scope, call_name, scope, lineno, assignment_sequence)
+                )
 
     def finalize_file(self, file_state: _HuggingFaceFileState, ctx: DetectContext) -> None:
+        for call_name, scope, lineno in file_state.pending_trainer_calls:
+            if self._is_trainer_name(call_name, file_state, scope):
+                ctx.evidence(FRAMEWORK, "huggingface_trainer", call_name, lineno)
+        for call_name, scope, lineno in file_state.pending_config_calls:
+            if self._is_training_config_name(call_name, file_state, scope):
+                ctx.evidence(FRAMEWORK, "huggingface_training_config", call_name, lineno)
+        for (
+            target_name,
+            binding_scope,
+            call_name,
+            scope,
+            _lineno,
+            assignment_sequence,
+        ) in file_state.pending_trainer_assignments:
+            assignment_key = (binding_scope, target_name)
+            if file_state.latest_assignments.get(assignment_key) == assignment_sequence and self._is_trainer_name(
+                call_name, file_state, scope
+            ):
+                file_state.trainer_instances.add(assignment_key)
         for receiver, scope, call_name, lineno in file_state.pending_train_calls:
             if self._has_identity(receiver, scope, file_state.trainer_instances, file_state):
                 ctx.evidence(FRAMEWORK, "huggingface_train", call_name, lineno)
         for call_name, scope in file_state.pending_patch_calls:
-            if file_state.scopes.has_identity(call_name, scope, file_state.patch_symbols) or self._is_patch_call(
-                call_name, file_state, scope
-            ):
+            if self._patch_identity_key(call_name, file_state, scope):
                 ctx.flare_call(call_name)
                 ctx.integration_signal(FRAMEWORK, call_name)
 
     def is_active_evidence(self, evidence: dict) -> bool:
-        return evidence.get("kind") == "huggingface_train"
+        return self.is_training_owner_evidence(evidence)
 
     def promote_over_family(self, family_base: str, resolver) -> bool:
         active_huggingface = resolver.active_evidence(self.name)
@@ -242,9 +295,7 @@ class HuggingFaceDetector(FrameworkDetector):
             # converter while pure inference remains recommendation-free.
             if resolver.training_owner_evidence(family_base):
                 return False
-            candidate_evidence = [
-                item for item in resolver.evidence(self.name) if item.get("kind") in TRAINER_CANDIDATE_EVIDENCE
-            ]
+            candidate_evidence = resolver.candidate_evidence(self.name)
             return bool(candidate_evidence) or not resolver.active_evidence(family_base)
         if resolver.tied_to_entry_context(active_huggingface):
             return True
@@ -254,9 +305,22 @@ class HuggingFaceDetector(FrameworkDetector):
         return resolver.score(active_huggingface) > resolver.score(pytorch_outside_trainer_files)
 
     def fallback_skill_for(self, evidence: list[dict]) -> Optional[str]:
-        if any(item.get("kind") in TRAINER_CANDIDATE_EVIDENCE for item in evidence):
+        if any(self.is_candidate_evidence(item) for item in evidence):
             return "nvflare-orient"
         return None
+
+    @staticmethod
+    def _has_pending_trainer_assignment(
+        receiver: str,
+        scope: tuple[str, ...],
+        file_state: _HuggingFaceFileState,
+    ) -> bool:
+        return any(
+            target_name == receiver and binding_scope == scope
+            for target_name, binding_scope, _call_name, _assignment_scope, _lineno, _sequence in (
+                file_state.pending_trainer_assignments
+            )
+        )
 
     @staticmethod
     def _is_huggingface_module(module: str) -> bool:
@@ -279,6 +343,20 @@ class HuggingFaceDetector(FrameworkDetector):
             return False
         identity_name = HuggingFaceDetector._patch_identity_name(call_name)
         return bool(identity_name and file_state.scopes.has_identity(identity_name, scope, file_state.patch_modules))
+
+    @staticmethod
+    def _patch_identity_key(
+        call_name: str,
+        file_state: _HuggingFaceFileState,
+        scope: tuple[str, ...],
+    ):
+        direct_key = file_state.scopes.lookup_identity_key(call_name, scope, file_state.patch_symbols)
+        if direct_key:
+            return direct_key
+        identity_name = HuggingFaceDetector._patch_identity_name(call_name)
+        if not identity_name:
+            return None
+        return file_state.scopes.lookup_identity_key(identity_name, scope, file_state.patch_modules)
 
     @staticmethod
     def _patch_identity_name(call_name: str) -> Optional[str]:

@@ -754,7 +754,9 @@
       "id": "pytorch-negative-lightning",
       "prompt": "Convert my PyTorch Lightning Trainer and LightningModule to an NVFLARE workflow.",
       "expected_output": "The PyTorch conversion skill should not be the lead; route to the Lightning conversion skill when available.",
-      "files": [],
+      "files": [
+        "files/routing-lightning/train.py"
+      ],
       "assertions": [
         "The selected skill is not nvflare-convert-pytorch."
       ],
@@ -767,7 +769,9 @@
       "id": "pytorch-negative-huggingface",
       "prompt": "Convert my transformers.Trainer training script to an NVFLARE job. The Trainer owns optimization and evaluation.",
       "expected_output": "The PyTorch conversion skill should not be the lead; route to nvflare-convert-huggingface because Hugging Face Trainer owns training.",
-      "files": [],
+      "files": [
+        "files/routing-huggingface/train.py"
+      ],
       "assertions": [
         "The selected skill is not nvflare-convert-pytorch.",
         "The selected skill is nvflare-convert-huggingface."
@@ -781,7 +785,9 @@
       "id": "pytorch-global-negative-kubernetes",
       "prompt": "Deploy an existing FLARE startup kit to Kubernetes.",
       "expected_output": "No PyTorch conversion skill should trigger.",
-      "files": [],
+      "files": [
+        "files/routing-kubernetes/deployment.yaml"
+      ],
       "assertions": [
         "The selected skill is not nvflare-convert-pytorch."
       ],

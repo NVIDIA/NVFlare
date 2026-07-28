@@ -18,7 +18,7 @@ import ast
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .base import DetectContext, FrameworkDetector, LexicalScopeBindings
+from .base import DetectContext, EvidenceStrength, FrameworkDetector, LexicalScopeBindings
 
 FRAMEWORK = "pytorch"
 
@@ -47,6 +47,7 @@ class _PyTorchFileState:
     torch_data_aliases: set = field(default_factory=set)
     module_symbols: set = field(default_factory=set)
     training_symbols: dict = field(default_factory=dict)
+    pending_activity_calls: list = field(default_factory=list)
     scopes: LexicalScopeBindings = field(default_factory=LexicalScopeBindings)
 
 
@@ -54,7 +55,13 @@ class PyTorchDetector(FrameworkDetector):
     name = FRAMEWORK
     import_roots = {"torch": FRAMEWORK, "torchvision": FRAMEWORK, "torchaudio": FRAMEWORK}
     evidence_weights = {"import": 1, "pytorch_call": 2, "pytorch_data_call": 2, "pytorch_class": 3}
+    evidence_strengths = {
+        "pytorch_class": EvidenceStrength.CANDIDATE,
+        "pytorch_data_call": EvidenceStrength.CANDIDATE,
+        "pytorch_call": EvidenceStrength.TRAINING_OWNER,
+    }
     recommended_skill = "nvflare-convert-pytorch"
+    recommendation_requires_active_evidence = True
 
     def new_file_state(self) -> _PyTorchFileState:
         return _PyTorchFileState()
@@ -162,8 +169,12 @@ class PyTorchDetector(FrameworkDetector):
     ) -> None:
         symbol = self._pytorch_activity_symbol(call_name, file_state, scope)
         if symbol:
-            kind = "pytorch_data_call" if symbol in PYTORCH_DATA_SYMBOLS else "pytorch_call"
-            ctx.evidence(FRAMEWORK, kind, call_name, lineno)
+            if file_state.scopes.has_deferred_function_scope(scope):
+                file_state.pending_activity_calls.append((call_name, scope, lineno))
+            else:
+                self._emit_activity(call_name, symbol, lineno, ctx)
+        elif file_state.scopes.has_deferred_function_scope(scope) and self._could_be_activity_call(call_name):
+            file_state.pending_activity_calls.append((call_name, scope, lineno))
 
     def on_assignment(
         self,
@@ -178,11 +189,23 @@ class PyTorchDetector(FrameworkDetector):
         for target_name in target_names:
             self._bind_name(target_name, scope, file_state)
 
+    def finalize_file(self, file_state: _PyTorchFileState, ctx: DetectContext) -> None:
+        for call_name, scope, lineno in file_state.pending_activity_calls:
+            symbol = self._pytorch_activity_symbol(call_name, file_state, scope)
+            if symbol:
+                self._emit_activity(call_name, symbol, lineno, ctx)
+
+    @staticmethod
+    def _emit_activity(call_name: str, symbol: str, lineno: Optional[int], ctx: DetectContext) -> None:
+        kind = "pytorch_data_call" if symbol in PYTORCH_DATA_SYMBOLS else "pytorch_call"
+        ctx.evidence(FRAMEWORK, kind, call_name, lineno)
+
+    @staticmethod
+    def _could_be_activity_call(call_name: str) -> bool:
+        return call_name.rpartition(".")[2] in PYTORCH_TRAINING_SYMBOLS
+
     def is_active_evidence(self, evidence: dict) -> bool:
         return evidence.get("kind") in {"pytorch_class", "pytorch_call", "pytorch_data_call"}
-
-    def is_training_owner_evidence(self, evidence: dict) -> bool:
-        return evidence.get("kind") == "pytorch_call"
 
     @staticmethod
     def _is_pytorch_class_base(

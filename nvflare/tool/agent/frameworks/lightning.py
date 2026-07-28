@@ -23,7 +23,7 @@ import ast
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .base import DetectContext, FrameworkDetector, LexicalScopeBindings
+from .base import DetectContext, EvidenceStrength, FrameworkDetector, LexicalScopeBindings
 
 FRAMEWORK = "pytorch_lightning"
 BASE_FAMILY = "pytorch"
@@ -49,13 +49,21 @@ class _LightningFileState:
     patch_symbols: set = field(default_factory=set)
     patch_modules: set = field(default_factory=set)
     pending_patch_calls: list = field(default_factory=list)
+    pending_trainer_calls: list = field(default_factory=list)
 
 
 class LightningDetector(FrameworkDetector):
     name = FRAMEWORK
     import_roots = {"pytorch_lightning": FRAMEWORK, "lightning": FRAMEWORK}
     evidence_weights = {"lightning_class": 3, "lightning_trainer": 3}
+    evidence_strengths = {
+        "lightning_class": EvidenceStrength.CANDIDATE,
+        # Trainer construction is the existing static proxy for lifecycle
+        # ownership. Refining this to bound fit() calls is a separate change.
+        "lightning_trainer": EvidenceStrength.TRAINING_OWNER,
+    }
     recommended_skill = "nvflare-convert-lightning"
+    recommendation_requires_active_evidence = True
     family = BASE_FAMILY
 
     def new_file_state(self) -> _LightningFileState:
@@ -159,18 +167,24 @@ class LightningDetector(FrameworkDetector):
         ctx: DetectContext,
         scope: tuple[str, ...] = (),
     ) -> None:
-        is_patch_call = file_state.scopes.has_identity(
-            call_name, scope, file_state.patch_symbols
-        ) or self._is_lightning_patch_call(call_name, file_state, scope)
-        if is_patch_call:
+        patch_key = self._patch_identity_key(call_name, file_state, scope)
+        if patch_key and (patch_key[0] == scope or not file_state.scopes.has_deferred_function_scope(scope)):
             ctx.flare_call(call_name)
             ctx.integration_signal(FRAMEWORK, call_name)
         else:
             identity_name = self._patch_identity_name(call_name)
-            if identity_name and file_state.scopes.can_resolve_from_enclosing_scope(identity_name, scope):
+            if patch_key or (
+                identity_name and file_state.scopes.can_resolve_from_enclosing_scope(identity_name, scope)
+            ):
                 file_state.pending_patch_calls.append((call_name, scope))
-        if self._is_lightning_trainer_call(call_name, file_state, scope):
-            ctx.evidence(FRAMEWORK, "lightning_trainer", call_name, lineno)
+        is_trainer_call = self._is_lightning_trainer_call(call_name, file_state, scope)
+        if is_trainer_call:
+            if file_state.scopes.has_deferred_function_scope(scope):
+                file_state.pending_trainer_calls.append((call_name, scope, lineno))
+            else:
+                ctx.evidence(FRAMEWORK, "lightning_trainer", call_name, lineno)
+        elif file_state.scopes.has_deferred_function_scope(scope) and call_name.rpartition(".")[2] == "Trainer":
+            file_state.pending_trainer_calls.append((call_name, scope, lineno))
 
     def on_assignment(
         self,
@@ -186,20 +200,16 @@ class LightningDetector(FrameworkDetector):
             self._bind_name(target_name, scope, file_state)
 
     def finalize_file(self, file_state: _LightningFileState, ctx: DetectContext) -> None:
+        for call_name, scope, lineno in file_state.pending_trainer_calls:
+            if self._is_lightning_trainer_call(call_name, file_state, scope):
+                ctx.evidence(FRAMEWORK, "lightning_trainer", call_name, lineno)
         for call_name, scope in file_state.pending_patch_calls:
-            if file_state.scopes.has_identity(
-                call_name, scope, file_state.patch_symbols
-            ) or self._is_lightning_patch_call(call_name, file_state, scope):
+            if self._patch_identity_key(call_name, file_state, scope):
                 ctx.flare_call(call_name)
                 ctx.integration_signal(FRAMEWORK, call_name)
 
     def is_active_evidence(self, evidence: dict) -> bool:
         return evidence.get("kind") in {"lightning_class", "lightning_trainer"}
-
-    def is_training_owner_evidence(self, evidence: dict) -> bool:
-        # A LightningModule can be trained by another framework; Trainer owns
-        # the loop when resolving mixed Lightning/Hugging Face projects.
-        return evidence.get("kind") == "lightning_trainer"
 
     @staticmethod
     def _is_lightning_import(module: str) -> bool:
@@ -253,6 +263,20 @@ class LightningDetector(FrameworkDetector):
             return False
         identity_name = LightningDetector._patch_identity_name(call_name)
         return bool(identity_name and file_state.scopes.has_identity(identity_name, scope, file_state.patch_modules))
+
+    @staticmethod
+    def _patch_identity_key(
+        call_name: str,
+        file_state: _LightningFileState,
+        scope: tuple[str, ...],
+    ):
+        direct_key = file_state.scopes.lookup_identity_key(call_name, scope, file_state.patch_symbols)
+        if direct_key:
+            return direct_key
+        identity_name = LightningDetector._patch_identity_name(call_name)
+        if not identity_name:
+            return None
+        return file_state.scopes.lookup_identity_key(identity_name, scope, file_state.patch_modules)
 
     @classmethod
     def _is_lightning_trainer_call(
@@ -314,22 +338,27 @@ class LightningDetector(FrameworkDetector):
         #   4. Model-only/no-entry contexts use weighted evidence fallback.
         active_lightning_evidence = resolver.active_evidence(self.name)
         active_pytorch_evidence = resolver.active_evidence(family_base)
+        lightning_owner_evidence = resolver.training_owner_evidence(self.name)
+        pytorch_owner_evidence = resolver.training_owner_evidence(family_base)
+        active_lightning_class_evidence = [
+            item for item in active_lightning_evidence if item.get("kind") == "lightning_class"
+        ]
+        standalone_pytorch_owner_evidence = resolver.evidence_outside_class_bodies(
+            pytorch_owner_evidence, active_lightning_class_evidence
+        )
 
-        # An active Lightning model reachable from the entry context means the
-        # project is a Lightning project -> route to the superset. torch used to
-        # build or train that model (optimizers, losses, dataloaders, and helper
-        # nn.Module submodules composed by the LightningModule) does not demote
-        # it, so a realistic Lightning repo is not mis-scored as PyTorch-dominant.
-        #
-        # DESIGN DECISION (do not re-add a "standalone torch dominates -> base"
-        # guard here): a reachable LightningModule wins even when co-located with
-        # dominant plain-torch code. This deliberately favors the common case
-        # (real Lightning projects that compose torch submodules and heavy torch
-        # usage) over the rare edge of a stray/empty leftover LightningModule in a
-        # torch-only repo. Routing that rare edge to the Lightning skill is
-        # low-harm (the conversion still works); mis-routing real Lightning repos
-        # to the PyTorch skill is not. The stray-leftover case is intentionally
-        # accepted, not a bug to "fix" by demoting reachable Lightning.
+        # A real manual-PyTorch owner beats a Lightning model candidate. Calls
+        # inside a LightningModule are excluded because they are normal
+        # Lightning implementation details. A reachable Lightning Trainer still
+        # owns the lifecycle when both frameworks have owner-strength evidence.
+        if resolver.tied_to_entry_context(standalone_pytorch_owner_evidence) and not resolver.tied_to_entry_context(
+            lightning_owner_evidence
+        ):
+            return False
+
+        # Otherwise an active Lightning model reachable from the entry context
+        # routes to the superset. PyTorch used inside that model does not demote
+        # it, so normal Lightning projects are not mis-scored as PyTorch.
         if resolver.tied_to_entry_context(active_lightning_evidence):
             return True
         # Any PyTorch evidence (not only active) tied to the entry context keeps
@@ -347,9 +376,6 @@ class LightningDetector(FrameworkDetector):
         # only active PyTorch outside those bodies competes as standalone base
         # usage; a sibling plain-torch model or module-level training code
         # co-located with a stray Lightning class still counts as genuine base use.
-        active_lightning_class_evidence = [
-            item for item in active_lightning_evidence if item.get("kind") == "lightning_class"
-        ]
         standalone_active_pytorch_evidence = resolver.evidence_outside_class_bodies(
             active_pytorch_evidence, active_lightning_class_evidence
         )

@@ -24,8 +24,17 @@ as opaque.
 
 import ast
 from dataclasses import dataclass, field
+from enum import Enum
 from types import MappingProxyType
 from typing import Any, Mapping, Optional
+
+
+class EvidenceStrength(str, Enum):
+    """Framework-neutral meaning of one static evidence item."""
+
+    IMPORT = "import"
+    CANDIDATE = "candidate"
+    TRAINING_OWNER = "training_owner"
 
 
 @dataclass
@@ -93,6 +102,11 @@ class LexicalScopeBindings:
         if name in self.scope_nonlocals.get(scope, set()):
             return True
         return name not in self.scope_locals.get(scope, set())
+
+    @staticmethod
+    def has_deferred_function_scope(scope: tuple[str, ...]) -> bool:
+        """Whether an enclosing function-like body executes after surrounding bindings settle."""
+        return any(part.startswith(("function:", "async-function:", "lambda:")) for part in scope)
 
     def binding_scope(self, name: str, scope: tuple[str, ...]) -> tuple[str, ...]:
         if "." in name:
@@ -193,6 +207,8 @@ class FrameworkDetector:
     import_roots: Mapping[str, str] = MappingProxyType({})
     #: Evidence-kind -> ranking weight contributed by this framework.
     evidence_weights: Mapping[str, int] = MappingProxyType({})
+    #: Evidence-kind -> framework-neutral routing strength.
+    evidence_strengths: Mapping[str, EvidenceStrength] = MappingProxyType({})
     #: Conversion skill recommended when this framework is primary, or ``None``.
     recommended_skill: Optional[str] = None
     #: Whether inspector recommendations require active evidence rather than
@@ -293,6 +309,13 @@ class FrameworkDetector:
 
     # --- cross-framework family resolution -------------------------------
 
+    def evidence_strength(self, evidence: dict) -> EvidenceStrength:
+        """Return the routing meaning of one evidence item."""
+        kind = evidence.get("kind")
+        if kind == "import":
+            return EvidenceStrength.IMPORT
+        return self.evidence_strengths.get(kind, EvidenceStrength.CANDIDATE)
+
     def is_active_evidence(self, evidence: dict) -> bool:
         """Whether an evidence item counts as active (in-use) for this framework.
 
@@ -303,7 +326,11 @@ class FrameworkDetector:
 
     def is_training_owner_evidence(self, evidence: dict) -> bool:
         """Whether evidence claims ownership of the training lifecycle."""
-        return self.is_active_evidence(evidence)
+        return self.evidence_strength(evidence) == EvidenceStrength.TRAINING_OWNER
+
+    def is_candidate_evidence(self, evidence: dict) -> bool:
+        """Whether evidence identifies a framework object without loop ownership."""
+        return self.evidence_strength(evidence) == EvidenceStrength.CANDIDATE
 
     def promote_over_family(self, family_base: str, resolver) -> bool:
         """For a family member, decide whether to win over the family base.

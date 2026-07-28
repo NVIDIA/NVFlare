@@ -598,7 +598,9 @@
       "id": "lightning-negative-plain-pytorch",
       "prompt": "Convert my plain PyTorch nn.Module and manual training loop to an NVFLARE job. There is no Lightning here.",
       "expected_output": "The Lightning conversion skill should not be the lead; route to nvflare-convert-pytorch for plain PyTorch manual loops.",
-      "files": [],
+      "files": [
+        "files/routing-pytorch/train.py"
+      ],
       "assertions": [
         "The selected skill is not nvflare-convert-lightning.",
         "The selected skill is nvflare-convert-pytorch."
@@ -622,7 +624,9 @@
       "id": "lightning-negative-huggingface",
       "prompt": "Convert my transformers.Trainer training script to an NVFLARE job. There is no Lightning Trainer or LightningModule.",
       "expected_output": "The Lightning conversion skill should not be the lead; route to nvflare-convert-huggingface because Hugging Face Trainer owns training.",
-      "files": [],
+      "files": [
+        "files/routing-huggingface/train.py"
+      ],
       "assertions": [
         "The selected skill is not nvflare-convert-lightning.",
         "The selected skill is nvflare-convert-huggingface."
@@ -636,7 +640,9 @@
       "id": "lightning-negative-dual-trainer",
       "prompt": "Convert a project that actively runs both lightning.Trainer.fit() and transformers.Trainer.train() entrypoints into one NVFLARE job.",
       "expected_output": "The Lightning conversion skill does not patch both trainers. The request routes to nvflare-orient so the user can choose one training owner or split the entrypoints into separate jobs.",
-      "files": [],
+      "files": [
+        "files/routing-dual/train.py"
+      ],
       "assertions": [
         "The selected skill is nvflare-orient, not either framework converter.",
         "The agent asks the user to select one training owner or split the entrypoints or jobs.",
@@ -657,7 +663,9 @@
       "id": "lightning-global-negative-kubernetes",
       "prompt": "Deploy an existing FLARE startup kit to Kubernetes.",
       "expected_output": "No Lightning conversion skill should trigger.",
-      "files": [],
+      "files": [
+        "files/routing-kubernetes/deployment.yaml"
+      ],
       "assertions": [
         "The selected skill is not nvflare-convert-lightning."
       ],

@@ -1,0 +1,7 @@
+{
+  "name": "bakery-landing-page",
+  "private": true,
+  "scripts": {
+    "start": "vite"
+  }
+}

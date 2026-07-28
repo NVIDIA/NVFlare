@@ -34,3 +34,10 @@ The `hello-lightning` fixture's `LitNet` includes `validation_step` with
 `self.log("val_loss", ...)` and the training entry point builds a validation
 dataloader, so evaluation-focused evals can assert Lightning-native evaluation
 (`trainer.validate` before `trainer.fit`) without a separate fixture.
+
+The `routing-pytorch`, `routing-huggingface`, and `routing-dual` fixtures are
+synthetic, minimal entrypoints used to verify adjacent framework routing. They
+make manual optimization, one Trainer owner, or two active Trainer owners
+explicit without requiring runtime dependencies.
+
+The `routing-kubernetes` fixture is a minimal deployment-only global negative.

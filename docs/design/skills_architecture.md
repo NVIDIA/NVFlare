@@ -190,7 +190,7 @@ flowchart TB
     subgraph NVFLARESurface["NVFLARE command surface"]
         direction TB
         AgentCLI["nvflare agent runtime commands"] --> Info["info: command surface metadata"]
-        AgentCLI --> Inspect["inspect: static AST scan + installed-skill discovery"]
+        AgentCLI --> Inspect["inspect: bounded static evidence scan + installed-skill discovery"]
         Recipes["recipes / job.py / simulator / job CLI"]
     end
 
@@ -258,11 +258,13 @@ Runtime (installed on the user's machine):
 
 - Agent-facing CLI: `nvflare/tool/agent/agent_cli.py`
 - Command surface metadata: `nvflare/tool/agent/command_registry.py`
-- Static inspection engine: `nvflare/tool/agent/inspector.py` (framework-agnostic
-  AST walk and evidence ranking; also reports installed skills discovered from
-  agent skill directories)
+- Static inspection engine: `nvflare/tool/agent/inspector.py` (framework-neutral
+  bounded AST traversal, direct lexical facts, routing, and installed-skill
+  discovery)
 - Per-framework detectors: `nvflare/tool/agent/frameworks/` (one module per
-  framework; add a framework here, not in the engine)
+  framework; detectors classify static evidence as import, candidate, or
+  training owner and report integration separately; add a framework here, not
+  in the engine)
 - Implemented skills: `nvflare-orient`, `nvflare-convert-pytorch`, `nvflare-convert-lightning`,
   `nvflare-convert-huggingface`, and `nvflare-diagnose-job`
 
@@ -273,3 +275,9 @@ Separate:
 The important boundary is that NVFLARE does not run a custom agent runtime for
 these skills. NVFLARE packages, installs, validates, and measures skill files;
 Codex and Claude load those files through their own skill mechanisms.
+
+The inspector is a conservative evidence engine, not a Python execution model.
+It recognizes direct imports, aliases, classes, calls, assignments, and lexical
+rebinding. Factories, dynamic wrappers, and unresolved cross-file ownership
+remain explicitly unresolved and route to orientation instead of being
+simulated.

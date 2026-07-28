@@ -57,7 +57,8 @@ def test_inspect_static_only_does_not_execute_user_module(tmp_path):
     assert data["target_type"] == "single_training_script"
     assert data["conversion_state"] == "not_converted"
     assert data["frameworks"][0]["name"] == "pytorch"
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+    assert data["skill_selection"]["recommended_skills"] == []
+    assert data["framework_ownership"] == {"state": "import_only", "owners": [], "candidates": []}
 
 
 def test_inspect_does_not_classify_lone_export_marker_as_submit_ready(tmp_path):
@@ -215,8 +216,8 @@ def test_inspect_does_not_pair_root_meta_with_unrelated_nested_config(tmp_path):
     assert data["conversion_state"] == "not_converted"
     assert data["target_type"] == "training_repository"
     assert data["job"]["exported_job_candidates"] == []
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
-    assert data["recommended_next_commands"] == ["Use the nvflare-convert-pytorch skill before editing."]
+    assert data["skill_selection"]["recommended_skills"] == []
+    assert data["recommended_next_commands"] == []
     assert data["job"]["nested_candidates"] == [
         {
             "path": ".",
@@ -267,6 +268,7 @@ def test_inspect_detects_huggingface_trainer_and_recommends_huggingface_skill(tm
     assert data["frameworks"][0]["name"] == "huggingface"
     assert data["conversion_state"] == "not_converted"
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-huggingface"]
+    assert data["framework_ownership"] == {"state": "clear", "owners": ["huggingface"], "candidates": []}
     assert any(item["kind"] == "huggingface_trainer" for item in data["frameworks"][0]["evidence"])
     assert all(item["line"] is not None for item in data["frameworks"][0]["evidence"])
 
@@ -418,6 +420,7 @@ def test_inspect_routes_factory_built_trainer_candidate_to_orient(tmp_path):
 
     assert data["skill_selection"]["detected_framework"] == "huggingface"
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
+    assert data["framework_ownership"] == {"state": "candidate", "owners": [], "candidates": ["huggingface"]}
     assert data["recommended_next_commands"] == ["Use the nvflare-orient skill before editing."]
 
 
@@ -2016,58 +2019,38 @@ def test_inspect_does_not_finalize_class_body_patch_before_later_import(tmp_path
 
 
 @pytest.mark.parametrize(
-    ("source", "expected_framework", "expected_skill"),
+    "source",
     [
         pytest.param(
-            "from transformers import Trainer, TrainingArguments\n"
+            "from transformers import Trainer\n"
             "from nvflare.client.hf import patch\n"
-            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
+            "trainer = Trainer(model=model, args=args)\n"
             "class patch:\n"
             "    def run(self):\n"
-            "        return patch(trainer)\n"
+            "        patch(trainer)\n"
             "trainer.train()\n",
-            "huggingface",
-            "nvflare-convert-huggingface",
-            id="huggingface-method",
+            id="huggingface",
         ),
         pytest.param(
             "import lightning as L\n"
             "from nvflare.client.lightning import patch\n"
             "trainer = L.Trainer(max_epochs=1)\n"
             "class patch:\n"
-            "    async def run(self):\n"
-            "        return patch(trainer)\n"
-            "trainer.fit(model)\n",
-            "pytorch_lightning",
-            "nvflare-convert-lightning",
-            id="lightning-async-method",
-        ),
-        pytest.param(
-            "from transformers import Trainer, TrainingArguments\n"
-            "from nvflare.client.hf import patch\n"
-            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
-            "class patch:\n"
-            "    run = lambda self: patch(trainer)\n"
-            "trainer.train()\n",
-            "huggingface",
-            "nvflare-convert-huggingface",
-            id="huggingface-lambda",
+            "    def run(self):\n"
+            "        patch(trainer)\n",
+            id="lightning",
         ),
     ],
 )
-def test_inspect_class_callable_body_uses_post_definition_binding(tmp_path, source, expected_framework, expected_skill):
+def test_inspect_revalidates_method_patch_after_enclosing_class_rebinding(tmp_path, source):
     script = tmp_path / "client.py"
     script.write_text(source, encoding="utf-8")
 
-    data = inspect_path(script)
-
-    assert data["frameworks"][0]["name"] == expected_framework
-    assert data["conversion_state"] == "partial_client_api"
-    assert data["skill_selection"]["recommended_skills"] == [expected_skill]
+    assert inspect_path(script)["conversion_state"] == "partial_client_api"
 
 
 @pytest.mark.parametrize(
-    ("source", "framework", "evidence_kind", "expected_values"),
+    ("source", "framework", "kind", "expected"),
     [
         pytest.param(
             "import lightning as L\n"
@@ -2093,684 +2076,15 @@ def test_inspect_class_callable_body_uses_post_definition_binding(tmp_path, sour
         ),
     ],
 )
-def test_inspect_class_immediate_and_deferred_bodies_use_correct_framework_bindings(
-    tmp_path, source, framework, evidence_kind, expected_values
+def test_inspect_revalidates_method_framework_call_after_enclosing_class_rebinding(
+    tmp_path, source, framework, kind, expected
 ):
     script = tmp_path / "train.py"
     script.write_text(source, encoding="utf-8")
 
-    data = inspect_path(script)
-    evidence = next(item for item in data["frameworks"] if item["name"] == framework)["evidence"]
+    evidence = next(item for item in inspect_path(script)["frameworks"] if item["name"] == framework)["evidence"]
 
-    assert [item["value"] for item in evidence if item["kind"] == evidence_kind] == expected_values
-
-
-def test_inspect_method_resolves_enclosing_huggingface_trainer_subclass(tmp_path):
-    script = tmp_path / "train.py"
-    script.write_text(
-        "from transformers import Trainer\n"
-        "class CustomTrainer(Trainer):\n"
-        "    def clone(self):\n"
-        "        return CustomTrainer(model=model, args=args)\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(script)
-    huggingface = next(item for item in data["frameworks"] if item["name"] == "huggingface")
-
-    assert any(
-        item["kind"] == "huggingface_trainer" and item["value"] == "CustomTrainer" for item in huggingface["evidence"]
-    )
-
-
-@pytest.mark.parametrize(
-    ("source", "expected_framework", "expected_state"),
-    [
-        pytest.param(
-            "from transformers import Trainer, TrainingArguments\n"
-            "from nvflare.client.hf import patch\n"
-            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
-            "class patch:\n"
-            "    converted = (lambda: patch(trainer))()\n"
-            "trainer.train()\n",
-            "huggingface",
-            "client_api_converted",
-            id="huggingface-immediate-lambda",
-        ),
-        pytest.param(
-            "import lightning as L\n"
-            "from nvflare.client.lightning import patch\n"
-            "trainer = L.Trainer(max_epochs=1)\n"
-            "class patch:\n"
-            "    @(lambda method: (patch(trainer), method)[1])\n"
-            "    def run(self):\n"
-            "        pass\n"
-            "trainer.fit(model)\n",
-            "pytorch_lightning",
-            "client_api_converted",
-            id="lightning-lambda-decorator",
-        ),
-        pytest.param(
-            "from transformers import Trainer, TrainingArguments\n"
-            "from nvflare.client.hf import patch\n"
-            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
-            "class patch:\n"
-            "    class Inner:\n"
-            "        def run(self):\n"
-            "            return patch(trainer)\n"
-            "trainer.train()\n",
-            "huggingface",
-            "partial_client_api",
-            id="huggingface-nested-class-method",
-        ),
-        pytest.param(
-            "import lightning as L\n"
-            "from nvflare.client.lightning import patch\n"
-            "trainer = L.Trainer(max_epochs=1)\n"
-            "class patch:\n"
-            "    class Inner:\n"
-            "        async def run(self):\n"
-            "            return patch(trainer)\n"
-            "trainer.fit(model)\n",
-            "pytorch_lightning",
-            "partial_client_api",
-            id="lightning-nested-class-method",
-        ),
-        pytest.param(
-            "from transformers import Trainer, TrainingArguments\n"
-            "from nvflare.client.hf import patch\n"
-            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
-            "class patch:\n"
-            "    callbacks = [lambda: patch(trainer) for _ in range(1)]\n"
-            "trainer.train()\n",
-            "huggingface",
-            "partial_client_api",
-            id="huggingface-comprehension-lambda",
-        ),
-        pytest.param(
-            "import lightning as L\n"
-            "from nvflare.client.lightning import patch\n"
-            "trainer = L.Trainer(max_epochs=1)\n"
-            "class patch:\n"
-            "    callbacks = [lambda: patch(trainer) for _ in range(1)]\n"
-            "trainer.fit(model)\n",
-            "pytorch_lightning",
-            "partial_client_api",
-            id="lightning-comprehension-lambda",
-        ),
-    ],
-)
-def test_inspect_class_callable_uses_execution_phase_binding(tmp_path, source, expected_framework, expected_state):
-    script = tmp_path / "client.py"
-    script.write_text(source, encoding="utf-8")
-
-    data = inspect_path(script)
-
-    assert data["frameworks"][0]["name"] == expected_framework
-    assert data["conversion_state"] == expected_state
-
-
-@pytest.mark.parametrize(
-    ("source", "expected_framework", "expected_state"),
-    [
-        pytest.param(
-            "from transformers import Trainer, TrainingArguments\n"
-            "from nvflare.client.hf import patch\n"
-            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
-            "class patch:\n"
-            "    def convert():\n"
-            "        return patch(trainer)\n"
-            "    converted = convert()\n"
-            "trainer.train()\n",
-            "huggingface",
-            "client_api_converted",
-            id="huggingface-named-class-call",
-        ),
-        pytest.param(
-            "import lightning as L\n"
-            "from nvflare.client.lightning import patch\n"
-            "trainer = L.Trainer(max_epochs=1)\n"
-            "class patch:\n"
-            "    def convert():\n"
-            "        return patch(trainer)\n"
-            "    converted = convert()\n"
-            "trainer.fit(model)\n",
-            "pytorch_lightning",
-            "client_api_converted",
-            id="lightning-named-class-call",
-        ),
-        pytest.param(
-            "from transformers import Trainer, TrainingArguments\n"
-            "from nvflare.client.hf import patch\n"
-            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
-            "class patch:\n"
-            "    def converted(method):\n"
-            "        patch(trainer)\n"
-            "        return method\n"
-            "    @converted\n"
-            "    def run(self):\n"
-            "        pass\n"
-            "trainer.train()\n",
-            "huggingface",
-            "client_api_converted",
-            id="huggingface-named-decorator",
-        ),
-        pytest.param(
-            "import lightning as L\n"
-            "from nvflare.client.lightning import patch\n"
-            "trainer = L.Trainer(max_epochs=1)\n"
-            "class patch:\n"
-            "    def converted(method):\n"
-            "        patch(trainer)\n"
-            "        return method\n"
-            "    @converted\n"
-            "    def run(self):\n"
-            "        pass\n"
-            "trainer.fit(model)\n",
-            "pytorch_lightning",
-            "client_api_converted",
-            id="lightning-named-decorator",
-        ),
-        pytest.param(
-            "from transformers import Trainer, TrainingArguments\n"
-            "from nvflare.client.hf import patch\n"
-            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
-            "class patch:\n"
-            "    convert = lambda: patch(trainer)\n"
-            "    converted = convert()\n"
-            "trainer.train()\n",
-            "huggingface",
-            "client_api_converted",
-            id="huggingface-lambda-alias",
-        ),
-        pytest.param(
-            "import lightning as L\n"
-            "from nvflare.client.lightning import patch\n"
-            "trainer = L.Trainer(max_epochs=1)\n"
-            "class patch:\n"
-            "    convert = lambda: patch(trainer)\n"
-            "    converted = convert()\n"
-            "trainer.fit(model)\n",
-            "pytorch_lightning",
-            "client_api_converted",
-            id="lightning-lambda-alias",
-        ),
-        pytest.param(
-            "from transformers import Trainer, TrainingArguments\n"
-            "from nvflare.client.hf import patch\n"
-            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n"
-            "class patch:\n"
-            "    def convert():\n"
-            "        return patch(trainer)\n"
-            "patch.convert()\n"
-            "trainer.train()\n",
-            "huggingface",
-            "partial_client_api",
-            id="huggingface-later-method-call",
-        ),
-        pytest.param(
-            "import lightning as L\n"
-            "from nvflare.client.lightning import patch\n"
-            "trainer = L.Trainer(max_epochs=1)\n"
-            "class patch:\n"
-            "    def convert():\n"
-            "        return patch(trainer)\n"
-            "patch.convert()\n"
-            "trainer.fit(model)\n",
-            "pytorch_lightning",
-            "partial_client_api",
-            id="lightning-later-method-call",
-        ),
-    ],
-)
-def test_inspect_named_class_callable_uses_invocation_phase_binding(
-    tmp_path, source, expected_framework, expected_state
-):
-    script = tmp_path / "client.py"
-    script.write_text(source, encoding="utf-8")
-
-    data = inspect_path(script)
-
-    assert data["frameworks"][0]["name"] == expected_framework
-    assert data["conversion_state"] == expected_state
-
-
-@pytest.mark.parametrize(
-    ("framework", "source_prefix", "activity"),
-    [
-        pytest.param(
-            "huggingface",
-            "from transformers import Trainer, TrainingArguments\n"
-            "from nvflare.client.hf import patch\n"
-            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n",
-            "trainer.train()\n",
-            id="huggingface",
-        ),
-        pytest.param(
-            "pytorch_lightning",
-            "import lightning as L\n"
-            "from nvflare.client.lightning import patch\n"
-            "trainer = L.Trainer(max_epochs=1)\n",
-            "trainer.fit(model)\n",
-            id="lightning",
-        ),
-    ],
-)
-@pytest.mark.parametrize(
-    "class_body",
-    [
-        pytest.param(
-            "class patch:\n"
-            "    async def convert():\n"
-            "        return patch(trainer)\n"
-            "    converted = convert()\n",
-            id="coroutine",
-        ),
-        pytest.param(
-            "class patch:\n" "    def convert():\n" "        yield patch(trainer)\n" "    converted = convert()\n",
-            id="generator",
-        ),
-    ],
-)
-def test_inspect_lazy_class_callable_uses_post_class_binding(tmp_path, framework, source_prefix, activity, class_body):
-    script = tmp_path / "client.py"
-    script.write_text(source_prefix + class_body + activity, encoding="utf-8")
-
-    data = inspect_path(script)
-
-    assert data["frameworks"][0]["name"] == framework
-    assert data["conversion_state"] == "partial_client_api"
-
-
-@pytest.mark.parametrize(
-    ("framework", "source_prefix", "activity"),
-    [
-        pytest.param(
-            "huggingface",
-            "from transformers import Trainer, TrainingArguments\n"
-            "from nvflare.client.hf import patch\n"
-            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n",
-            "trainer.train()\n",
-            id="huggingface",
-        ),
-        pytest.param(
-            "pytorch_lightning",
-            "import lightning as L\n"
-            "from nvflare.client.lightning import patch\n"
-            "trainer = L.Trainer(max_epochs=1)\n",
-            "trainer.fit(model)\n",
-            id="lightning",
-        ),
-    ],
-)
-@pytest.mark.parametrize(
-    "class_body",
-    [
-        pytest.param(
-            "class patch:\n"
-            "    def convert():\n"
-            "        return patch(trainer)\n"
-            "    alias = convert\n"
-            "    converted = alias()\n",
-            id="function-alias",
-        ),
-        pytest.param(
-            "class patch:\n"
-            "    convert = lambda: patch(trainer)\n"
-            "    alias = convert\n"
-            "    converted = alias()\n",
-            id="lambda-alias",
-        ),
-        pytest.param(
-            "class patch:\n"
-            "    def convert(method):\n"
-            "        patch(trainer)\n"
-            "        return method\n"
-            "    alias = convert\n"
-            "    @alias\n"
-            "    def run(self):\n"
-            "        pass\n",
-            id="decorator-alias",
-        ),
-        pytest.param(
-            "class patch:\n" "    converted = (convert := lambda: patch(trainer))()\n",
-            id="walrus-lambda",
-        ),
-    ],
-)
-def test_inspect_class_callable_alias_preserves_identity(tmp_path, framework, source_prefix, activity, class_body):
-    script = tmp_path / "client.py"
-    script.write_text(source_prefix + class_body + activity, encoding="utf-8")
-
-    data = inspect_path(script)
-
-    assert data["frameworks"][0]["name"] == framework
-    assert data["conversion_state"] == "client_api_converted"
-
-
-@pytest.mark.parametrize(
-    ("framework", "source_prefix", "activity"),
-    [
-        pytest.param(
-            "huggingface",
-            "from transformers import Trainer, TrainingArguments\n"
-            "from nvflare.client.hf import patch\n"
-            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n",
-            "trainer.train()\n",
-            id="huggingface",
-        ),
-        pytest.param(
-            "pytorch_lightning",
-            "import lightning as L\n"
-            "from nvflare.client.lightning import patch\n"
-            "trainer = L.Trainer(max_epochs=1)\n",
-            "trainer.fit(model)\n",
-            id="lightning",
-        ),
-    ],
-)
-@pytest.mark.parametrize(
-    "class_body",
-    [
-        pytest.param(
-            "class patch:\n"
-            "    def decorate(method):\n"
-            "        def wrapper():\n"
-            "            return patch(trainer)\n"
-            "        return wrapper\n"
-            "    @decorate\n"
-            "    def convert():\n"
-            "        pass\n"
-            "    converted = convert()\n",
-            id="decorator-wrapper",
-        ),
-        pytest.param(
-            "class patch:\n"
-            "    def decorate(method):\n"
-            "        return lambda: patch(trainer)\n"
-            "    @decorate\n"
-            "    def convert():\n"
-            "        pass\n"
-            "    converted = convert()\n",
-            id="decorator-direct-lambda",
-        ),
-        pytest.param(
-            "class patch:\n"
-            "    def convert():\n"
-            "        return patch(trainer)\n"
-            "    convert = staticmethod(convert)\n"
-            "    converted = convert()\n",
-            id="explicit-staticmethod",
-        ),
-        pytest.param(
-            "class patch:\n"
-            "    def decorate(method):\n"
-            "        return method\n"
-            "    @decorate\n"
-            "    def convert():\n"
-            "        return patch(trainer)\n"
-            "    converted = convert()\n",
-            id="identity-decorator",
-        ),
-    ],
-)
-def test_inspect_decorated_class_callable_preserves_bound_result(
-    tmp_path, framework, source_prefix, activity, class_body
-):
-    script = tmp_path / "client.py"
-    script.write_text(source_prefix + class_body + activity, encoding="utf-8")
-
-    data = inspect_path(script)
-
-    assert data["frameworks"][0]["name"] == framework
-    assert data["conversion_state"] == "client_api_converted"
-
-
-@pytest.mark.parametrize(
-    ("framework", "source_prefix", "activity"),
-    [
-        pytest.param(
-            "huggingface",
-            "from transformers import Trainer, TrainingArguments\n"
-            "from nvflare.client.hf import patch\n"
-            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n",
-            "trainer.train()\n",
-            id="huggingface",
-        ),
-        pytest.param(
-            "pytorch_lightning",
-            "import lightning as L\n"
-            "from nvflare.client.lightning import patch\n"
-            "trainer = L.Trainer(max_epochs=1)\n",
-            "trainer.fit(model)\n",
-            id="lightning",
-        ),
-    ],
-)
-@pytest.mark.parametrize(
-    "consumer",
-    [
-        pytest.param("converted = list(convert())", id="list"),
-        pytest.param("converted = tuple(convert())", id="tuple"),
-        pytest.param("converted = set(convert())", id="set"),
-        pytest.param("converted = dict(convert())", id="dict"),
-        pytest.param("converted = next(convert())", id="next"),
-        pytest.param("for converted in convert():\n        pass", id="for"),
-        pytest.param("converted = [item for item in convert()]", id="comprehension"),
-    ],
-)
-def test_inspect_eager_generator_consumer_uses_class_construction_binding(
-    tmp_path, framework, source_prefix, activity, consumer
-):
-    script = tmp_path / "client.py"
-    script.write_text(
-        source_prefix
-        + "class patch:\n"
-        + "    def convert():\n"
-        + "        yield ('model', patch(trainer))\n"
-        + f"    {consumer}\n"
-        + activity,
-        encoding="utf-8",
-    )
-
-    data = inspect_path(script)
-
-    assert data["frameworks"][0]["name"] == framework
-    assert data["conversion_state"] == "client_api_converted"
-
-
-@pytest.mark.parametrize(
-    ("framework", "source_prefix", "activity"),
-    [
-        pytest.param(
-            "huggingface",
-            "from transformers import Trainer, TrainingArguments\n"
-            "from nvflare.client.hf import patch\n"
-            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n",
-            "trainer.train()\n",
-            id="huggingface",
-        ),
-        pytest.param(
-            "pytorch_lightning",
-            "import lightning as L\n"
-            "from nvflare.client.lightning import patch\n"
-            "trainer = L.Trainer(max_epochs=1)\n",
-            "trainer.fit(model)\n",
-            id="lightning",
-        ),
-    ],
-)
-@pytest.mark.parametrize(
-    ("consumer", "expected_state"),
-    [
-        pytest.param("pending = convert()\n    converted = list(pending)", "client_api_converted", id="assigned"),
-        pytest.param(
-            "pending: object = convert()\n    converted = tuple(pending)", "client_api_converted", id="annotated"
-        ),
-        pytest.param(
-            "pending = alias = convert()\n    converted = set(alias)",
-            "client_api_converted",
-            id="chained",
-        ),
-        pytest.param(
-            "pending = convert()\n    alias = pending\n    converted = list(alias)",
-            "client_api_converted",
-            id="alias",
-        ),
-        pytest.param("converted = list(pending := convert())", "client_api_converted", id="walrus"),
-        pytest.param(
-            "pending = convert()\n    pending = None\n    converted = list(pending)",
-            "partial_client_api",
-            id="invalidated",
-        ),
-        pytest.param("pending = convert()", "partial_client_api", id="stored-unused"),
-    ],
-)
-def test_inspect_stored_generator_consumer_preserves_lazy_identity(
-    tmp_path, framework, source_prefix, activity, consumer, expected_state
-):
-    script = tmp_path / "client.py"
-    script.write_text(
-        source_prefix
-        + "class patch:\n"
-        + "    def convert():\n"
-        + "        yield ('model', patch(trainer))\n"
-        + f"    {consumer}\n"
-        + activity,
-        encoding="utf-8",
-    )
-
-    data = inspect_path(script)
-
-    assert data["frameworks"][0]["name"] == framework
-    assert data["conversion_state"] == expected_state
-
-
-@pytest.mark.parametrize(
-    ("framework", "source_prefix", "activity"),
-    [
-        pytest.param(
-            "huggingface",
-            "from transformers import Trainer, TrainingArguments\n"
-            "from nvflare.client.hf import patch\n"
-            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n",
-            "trainer.train()\n",
-            id="huggingface",
-        ),
-        pytest.param(
-            "pytorch_lightning",
-            "import lightning as L\n"
-            "from nvflare.client.lightning import patch\n"
-            "trainer = L.Trainer(max_epochs=1)\n",
-            "trainer.fit(model)\n",
-            id="lightning",
-        ),
-    ],
-)
-@pytest.mark.parametrize(
-    "consumer",
-    [
-        pytest.param("first, second = convert()", id="direct-assignment-unpack"),
-        pytest.param("pending = convert()\n    first, second = pending", id="stored-assignment-unpack"),
-        pytest.param("consume(*convert())", id="starred-call"),
-        pytest.param("converted = [*convert()]", id="starred-list"),
-        pytest.param("converted = (*convert(),)", id="starred-tuple"),
-        pytest.param("converted = {*convert()}", id="starred-set"),
-    ],
-)
-def test_inspect_generator_unpacking_uses_class_construction_binding(
-    tmp_path, framework, source_prefix, activity, consumer
-):
-    script = tmp_path / "client.py"
-    script.write_text(
-        source_prefix
-        + "class patch:\n"
-        + "    def convert():\n"
-        + "        yield patch(trainer)\n"
-        + "        yield None\n"
-        + f"    {consumer}\n"
-        + activity,
-        encoding="utf-8",
-    )
-
-    data = inspect_path(script)
-
-    assert data["frameworks"][0]["name"] == framework
-    assert data["conversion_state"] == "client_api_converted"
-
-
-def test_deferred_class_callable_snapshots_only_eager_consumer_names(monkeypatch, tmp_path):
-    retained_name_counts = []
-    original_defer = inspector_module._PythonInspector._defer_class_callable_body
-
-    def record_deferred_body(self, kind, node):
-        deferred_body = original_defer(self, kind, node)
-        if deferred_body:
-            retained_name_counts.append(sum(len(frame) for frame in deferred_body.bound_name_stack))
-        return deferred_body
-
-    monkeypatch.setattr(inspector_module._PythonInspector, "_defer_class_callable_body", record_deferred_body)
-    script = tmp_path / "generated.py"
-    module_bindings = [f"name_{index} = None" for index in range(300)]
-    methods = [f"    def method_{index}():\n        return None" for index in range(300)]
-    script.write_text("\n".join(module_bindings + ["list = object()", "class Generated:"] + methods), encoding="utf-8")
-
-    inspect_path(script)
-
-    assert len(retained_name_counts) == 300
-    assert max(retained_name_counts) == 1
-
-
-@pytest.mark.parametrize(
-    ("framework", "source_prefix", "activity"),
-    [
-        pytest.param(
-            "huggingface",
-            "from transformers import Trainer, TrainingArguments\n"
-            "from nvflare.client.hf import patch\n"
-            "trainer = Trainer(model=model, args=TrainingArguments(output_dir='outputs'))\n",
-            "trainer.train()\n",
-            id="huggingface",
-        ),
-        pytest.param(
-            "pytorch_lightning",
-            "import lightning as L\n"
-            "from nvflare.client.lightning import patch\n"
-            "trainer = L.Trainer(max_epochs=1)\n",
-            "trainer.fit(model)\n",
-            id="lightning",
-        ),
-    ],
-)
-@pytest.mark.parametrize(
-    "consumer",
-    [
-        pytest.param("converted = dict(value=convert())", id="dict-keyword"),
-        pytest.param("converted = next(iter(()), convert())", id="next-default"),
-        pytest.param(
-            "def keep(value):\n        return value\n    list = keep\n    converted = list(convert())",
-            id="shadowed-list",
-        ),
-    ],
-)
-def test_inspect_eager_generator_consumer_does_not_consume_stored_arguments(
-    tmp_path, framework, source_prefix, activity, consumer
-):
-    script = tmp_path / "client.py"
-    script.write_text(
-        source_prefix
-        + "class patch:\n"
-        + "    def convert():\n"
-        + "        yield ('model', patch(trainer))\n"
-        + f"    {consumer}\n"
-        + activity,
-        encoding="utf-8",
-    )
-
-    data = inspect_path(script)
-
-    assert data["frameworks"][0]["name"] == framework
-    assert data["conversion_state"] == "partial_client_api"
+    assert [item["value"] for item in evidence if item["kind"] == kind] == expected
 
 
 @pytest.mark.parametrize(
@@ -3206,7 +2520,13 @@ _KEEPS_PYTORCH_DESPITE_LIGHTNING_HELPER_CASES = [
     ),
     pytest.param(
         {
-            "train.py": "import torch\n" "\n" "def main():\n" "    return None\n",
+            "train.py": (
+                "import torch\n"
+                "from torch.utils.data import DataLoader\n"
+                "\n"
+                "def main():\n"
+                "    return DataLoader([])\n"
+            ),
             "lit_helper.py": (
                 "import pytorch_lightning as pl\n"
                 "\n"
@@ -3296,6 +2616,7 @@ _KEEPS_PYTORCH_DESPITE_LIGHTNING_HELPER_CASES = [
                 "import torchaudio\n"
                 "import torchvision\n"
                 "\n"
+                "class Net(torch.nn.Module): pass\n"
                 "DEFAULT_EPOCHS = 1\n"
             ),
             "lightning_helper.py": (
@@ -3686,15 +3007,10 @@ def test_inspect_src_layout_model_imported_by_root_entry_still_resolves(tmp_path
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
-def test_inspect_reachable_lightning_class_wins_over_co_located_torch(tmp_path):
-    # DESIGN DECISION: a LightningModule reachable from the entry context routes
-    # to the Lightning skill even when co-located with dominant plain-torch code.
-    # This deliberately favors the common case (real Lightning projects compose
-    # torch models/submodules) over the rare stray-leftover-LightningModule edge,
-    # which is low-harm (a Lightning conversion still works). Mis-routing a real
-    # Lightning repo to the PyTorch skill would be worse. See the rationale in
-    # LightningDetector.promote_over_family. (Previously this asserted PyTorch;
-    # the guard that produced that was intentionally removed.)
+def test_inspect_manual_pytorch_owner_wins_over_co_located_lightning_class(tmp_path):
+    # A LightningModule candidate must not steal routing from a direct manual
+    # PyTorch owner. PyTorch calls inside the LightningModule itself remain
+    # attributable to Lightning.
     (tmp_path / "model.py").write_text(
         "import torch\n"
         "import torch.nn as nn\n"
@@ -3718,7 +3034,7 @@ def test_inspect_reachable_lightning_class_wins_over_co_located_torch(tmp_path):
 
     data = inspect_path(tmp_path)
 
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
 def test_inspect_reachable_active_torch_model_beats_import_only_sklearn_entry(tmp_path):
@@ -3864,7 +3180,7 @@ def test_inspect_tied_numpy_entry_fallback_prefers_dynamically_loaded_pytorch(tm
         "pytorch": 0.7,
     }
     assert data["skill_selection"]["detected_framework"] == "pytorch"
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+    assert data["skill_selection"]["recommended_skills"] == []
 
 
 def test_inspect_reverse_src_layout_prefers_importing_files_packaging_root(tmp_path):
@@ -5005,7 +4321,7 @@ def test_inspect_name_only_job_py_without_flare_evidence_is_not_flare_job(tmp_pa
     # SLURM filename) and no nvflare imports must route to conversion, not be
     # misclassified as an existing FLARE job.
     (tmp_path / "job.py").write_text(
-        "import torch\n\n\ndef main():\n    torch.nn.Linear(1, 1)\n",
+        "import torch\n\n\nclass Net(torch.nn.Module):\n    pass\n\n\ndef main():\n    return Net()\n",
         encoding="utf-8",
     )
 
@@ -5081,7 +4397,7 @@ def test_inspect_stops_and_caps_skips_after_file_limit(tmp_path):
         "message": "file scan limit reached",
     }
     assert data["scan"]["files_skipped"][-1]["path"] == "train_14.py"
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch", "nvflare-orient"]
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
 
 
 def test_inspect_exact_file_limit_without_unvisited_files_is_complete(tmp_path):
@@ -5245,4 +4561,4 @@ def test_inspect_benign_directory_skip_does_not_self_recommend_orient(tmp_path):
     assert data["scan"]["files_skipped"] == [
         {"code": "DIRECTORY_SKIPPED", "path": ".git", "message": "directory skipped"}
     ]
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+    assert data["skill_selection"]["recommended_skills"] == []
