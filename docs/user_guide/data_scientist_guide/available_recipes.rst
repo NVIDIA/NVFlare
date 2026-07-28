@@ -341,19 +341,28 @@ mid-round trainability changes. For an unpatched or manual client loop, use ``PT
 
     while flare.is_running():
         input_model = flare.receive()
-        mu = get_fedprox_mu(input_model)
-        model.load_state_dict(input_model.params)
-        global_model = copy.deepcopy(model)
-        fedprox_loss = PTFedProxLoss(mu=mu)
+        if flare.is_evaluate():
+            # Evaluate the received model and send metrics.
+            ...
+        elif flare.is_submit_model():
+            # Send the requested model.
+            ...
+        elif flare.is_train():
+            mu = get_fedprox_mu(input_model)
+            model.load_state_dict(input_model.params)
+            global_model = copy.deepcopy(model)
+            fedprox_loss = PTFedProxLoss(mu=mu)
 
-        for data, target in train_loader:
-            optimizer.zero_grad()
-            output = model(data)
-            ce_loss = criterion(output, target)
-            prox_loss = fedprox_loss(model, global_model)
-            loss = ce_loss + prox_loss
-            loss.backward()
-            optimizer.step()
+            for data, target in train_loader:
+                optimizer.zero_grad()
+                output = model(data)
+                ce_loss = criterion(output, target)
+                prox_loss = fedprox_loss(model, global_model)
+                loss = ce_loss + prox_loss
+                loss.backward()
+                optimizer.step()
+        else:
+            raise RuntimeError("Unsupported task")
 
 **Examples:**
 
