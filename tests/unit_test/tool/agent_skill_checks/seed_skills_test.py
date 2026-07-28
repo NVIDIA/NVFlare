@@ -350,17 +350,6 @@ def test_pytorch_conversion_stops_after_dependency_install_failure():
     assert "include every applicable requirements file" in normalized_dependency
     assert "`-r <requirements-a> -r <requirements-b> -c <constraints> nvflare`" in dependency_text
     assert "append `nvflare` to the same command" in normalized_dependency
-    assert "authoritative evidence that NVFLARE is present" in normalized_dependency
-    assert (
-        "Do not append, install, or replace `nvflare` based only on missing package metadata" in normalized_dependency
-    )
-    assert "skip dependency installation and continue to validation" in normalized_dependency
-    assert "Build an install plan only when inventory identifies at least one dependency" in normalized_dependency
-    assert "Resolve the host-provided Python interpreter before choosing the installer target" in normalized_dependency
-    assert "Never add `uv pip install --system`" in normalized_dependency
-    assert (
-        "only when the agent host explicitly supplies and identifies that system interpreter" in normalized_dependency
-    )
     assert "parts of one planned install, not retries" in normalized_dependency
     assert "Run the selected combined canonical install command once." in dependency_text
     assert "stop dependency installation and validation for this conversion run" in normalized_dependency

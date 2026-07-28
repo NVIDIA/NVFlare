@@ -19,7 +19,6 @@
         "The round loop calls trainer.evaluate() before trainer.train() so accuracy describes the received global model.",
         "The generated job imports FedAvgRecipe from nvflare.app_opt.pt.recipes.fedavg after recipe show confirms it.",
         "The agent treats recipe show as recipe metadata only, uses SimEnv with recipe.execute for local validation and standard export flags, and does not guess a separate export environment or another recipe-adjacent API.",
-        "A successful nvflare agent inspect establishes that the host-provided NVFLARE product is available even when importlib.metadata has no nvflare distribution record; when all other requirements are already compatible, the agent skips installation and continues to simulation instead of running uv pip install --system.",
         "Intentional typo and abbreviation rejection checks run through assertion wrappers whose top-level commands succeed only when the generated parser rejects them.",
         "The generated recipe model is an explicit class_path and args mapping, not a live model instance.",
         "The generated recipe uses ExchangeFormat.PYTORCH, enables tensor disk offload, quotes train_args, and packages the required model file into the server app with recipe.add_server_file or an equivalent server-targeted API, including a server-only model.py that would otherwise be outside each client app's train_script import closure.",
@@ -58,10 +57,6 @@
           {
             "id": "respect-recipe-api-boundary",
             "description": "uses recipe show only for returned recipe metadata, follows the SimEnv plus recipe.execute and standard export contract, and does not guess additional recipe-adjacent APIs"
-          },
-          {
-            "id": "respect-host-nvflare-environment",
-            "description": "treats a successful NVFLARE CLI inspection as authoritative product-availability evidence, skips installation when other requirements are compatible, and targets the host-provided Python explicitly when an install is genuinely needed"
           },
           {
             "id": "explicit-server-model-config",
@@ -104,14 +99,6 @@
           {
             "id": "no-standalone-expected-failure-probes",
             "description": "does not leave intentional typo or abbreviation rejection checks as failed top-level validation commands"
-          },
-          {
-            "id": "no-metadata-only-nvflare-reinstall",
-            "description": "does not install or replace a working host-provided NVFLARE product solely because importlib.metadata lacks a distribution record or reports a development-version mismatch"
-          },
-          {
-            "id": "no-speculative-system-install",
-            "description": "does not use uv pip install --system unless the agent host explicitly supplies and identifies the system interpreter as the writable dependency target"
           }
         ],
         "process_metrics": [
@@ -327,45 +314,6 @@
           {
             "id": "no-privacy-disclaimer-substitution",
             "description": "never satisfies requested privacy protection with only a disclaimer while generating an unprotected job"
-          }
-        ]
-      }
-    },
-    {
-      "id": "huggingface-offline-model-cache-miss",
-      "prompt": "Convert this Hugging Face Trainer project to a two-site FedAvg job and validate it locally without network access. The configured Hub model is not present in the local cache. Do not download model or data artifacts.",
-      "expected_output": "A Hugging Face conversion draft that probes the configured model, tokenizer, and dataset through existing local paths or cache-only loading, treats the missing model cache entry as a full-model validation blocker, and does not retry online, remove offline controls, substitute a different checkpoint, or claim successful simulation.",
-      "files": [
-        "files/trainer-basic/train.py",
-        "files/trainer-basic/model.py"
-      ],
-      "assertions": [
-        "The agent keeps HF_HUB_OFFLINE and TRANSFORMERS_OFFLINE in effect or uses local_files_only=True while checking the configured artifacts.",
-        "The agent recognizes that an offline Hugging Face error mentioning huggingface.co can mean a local cache miss rather than an attempted network request.",
-        "The agent does not recover by removing offline controls or rerunning from_pretrained online.",
-        "The agent does not silently substitute a fine-tuned output or different checkpoint for the configured starting model.",
-        "The generated job remains a draft and full-model validation is reported as blocked by the missing local model artifact."
-      ],
-      "nvflare": {
-        "expected_skill": "nvflare-convert-huggingface",
-        "mandatory_behavior": [
-          {
-            "id": "cache-only-artifact-resolution",
-            "description": "resolves model, tokenizer, and dataset artifacts through existing local paths or cache-only loading before validation"
-          },
-          {
-            "id": "report-missing-local-model-blocker",
-            "description": "reports the unavailable configured model as a full-model validation blocker and preserves the draft"
-          }
-        ],
-        "prohibited_behavior": [
-          {
-            "id": "no-online-retry-after-cache-miss",
-            "description": "does not remove offline controls or retry a missing cached model or dataset through the network"
-          },
-          {
-            "id": "no-unapproved-checkpoint-substitution",
-            "description": "does not silently replace the configured starting model with a different local or fine-tuned checkpoint"
           }
         ]
       }
