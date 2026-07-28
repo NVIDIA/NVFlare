@@ -558,6 +558,16 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "per-client training-memory bound multiplied by actual worker concurrency" in normalized_validation
     assert "model copies, gradients, optimizer state, activations, dataloaders/data" in normalized_validation
     assert "full-model rung as capacity-unverified" in normalized_validation
+    assert "reported default `max_steps=10`" in normalized_skill
+    assert "Resolve exactly one per-round budget and encode it in one place" in conversion_text
+    assert "user-requested local steps become generated `TrainingArguments.max_steps`" in normalized_conversion
+    assert "user-requested local epochs become generated" in normalized_conversion
+    assert "bounded generated default `max_steps=10`" in normalized_conversion
+    assert "Do not also pass the same value through patch `local_steps` or `local_epochs`" in normalized_conversion
+    assert "budget is not duplicated in patch" in normalized_validation
+    assert "whole-job target in its progress bar" in normalized_conversion
+    assert "`NUM_STEPS_CURRENT_ROUND`" in validation_text
+    assert "expected cumulative scheduler target, not multiplied local work" in normalized_validation
     assert "Make at most one expensive real-model retry" in validation_text
     assert "`python job.py --export --export-dir <dir>`" in validation_text
     assert "Reject generated job-local export aliases such as `--export_only`" in normalized_validation

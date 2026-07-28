@@ -17,6 +17,7 @@
         "The generated FL client entry cannot bypass flare.init() or flare.patch(trainer) through CLIENT_API_TYPE or other launch-environment detection; any preserved standalone path is behind an explicit non-client entry parameter.",
         "The generated client does not implement manual FLModel receive/send model exchange.",
         "The model, datasets, TrainingArguments, and Trainer are constructed once before the FL round loop.",
+        "The agent encodes a prompt-specified local budget once in Trainer max_steps or num_train_epochs and lets flare.patch infer it; when the prompt is silent it reports max_steps=10 unless source-budget preservation was requested, and it does not interrupt a valid run because cumulative max_steps covers all rounds.",
         "The round loop calls trainer.evaluate() before trainer.train() so accuracy describes the received global model.",
         "The generated job imports FedAvgRecipe from nvflare.app_opt.pt.recipes.fedavg after recipe show confirms it.",
         "The agent treats recipe show as recipe metadata only, uses SimEnv with recipe.execute for local validation and standard export flags, and does not guess a separate export environment, private class-loader helper, internal command splitter, or another recipe-adjacent API.",
@@ -51,6 +52,10 @@
           {
             "id": "global-evaluation-before-training",
             "description": "preserves source evaluation and calls trainer.evaluate before trainer.train when per-round global metrics are required"
+          },
+          {
+            "id": "single-per-round-training-budget",
+            "description": "encodes one prompt, explicitly preserved source, or max_steps=10 default budget in Trainer arguments without duplicating it in flare.patch, then verifies per-round step deltas"
           },
           {
             "id": "use-pytorch-recipe-family",

@@ -57,11 +57,26 @@ global parameters, and sends the result from rank 0.
 - Preserve `compute_metrics` and evaluation datasets.
 - Keep mid-training evaluation controlled by the Trainer's own evaluation
   strategy; it is not a separate FL task.
-- Preserve the source local budget. By default, the patch uses positive
-  `max_steps`; otherwise it converts `num_train_epochs` from the real
-  dataloader. Use one explicit `local_steps` or `local_epochs` only when the user
-  requests a different per-round budget. A length-less iterable dataset requires
-  explicit `local_steps`.
+- Resolve exactly one per-round budget and encode it in one place:
+  1. user-requested local steps become generated `TrainingArguments.max_steps`;
+  2. user-requested local epochs become generated
+     `TrainingArguments.num_train_epochs`, with a conflicting positive
+     `max_steps` cleared because Hugging Face gives steps precedence;
+  3. when the user explicitly asks to preserve the source budget, leave its
+     positive `max_steps` or `num_train_epochs` unchanged;
+  4. otherwise use the bounded generated default `max_steps=10` and report it.
+- Let `flare.patch(trainer)` infer that Trainer budget. Do not also pass the same
+  value through patch `local_steps` or `local_epochs`; that duplicate expression
+  is misleading even though the patch option owns the runtime budget. Use a
+  patch budget option only when the Trainer's argument surface cannot express
+  the requirement, and then do not encode the same budget in Trainer arguments.
+  A length-less iterable dataset requires a step budget.
+- With `restore_state=True`, the patch sets the Trainer's cumulative
+  `max_steps` target to `per_round_budget_steps * total_rounds` so optimizer and
+  scheduler progress continues across rounds. Hugging Face may display that
+  whole-job target in its progress bar, while the NVFLARE callback still stops
+  each `trainer.train()` call after one per-round budget. Do not interpret the
+  progress-bar denominator as work for the current round.
 - Keep local-only callbacks and reporting. Leave network trackers disabled
   during validation unless explicitly requested.
 

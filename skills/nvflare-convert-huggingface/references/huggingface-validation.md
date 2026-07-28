@@ -106,6 +106,15 @@ Run these checks after the shared validation ladder. Stop at the first failure.
 - Require terminal completion evidence, positive per-round training step counts,
   and finite source-backed evaluation metrics for whichever validation stage is
   being claimed.
+- Calculate the expected per-round optimizer-step delta from the selected
+  `max_steps` or from `num_train_epochs`, the real dataloader length, and
+  gradient accumulation. Confirm the budget is not duplicated in patch
+  `local_steps`/`local_epochs`. Verify the completed round's
+  `NUM_STEPS_CURRENT_ROUND` or equivalent round evidence against that delta.
+  Under `restore_state=True`, a progress denominator or `args.max_steps` equal
+  to the per-round delta times total FL rounds is the expected cumulative
+  scheduler target, not multiplied local work. Do not interrupt the run or
+  rewrite the original budget based only on that cumulative value.
 - After a partial aggregation, unexplained client disconnect, or exit `-9`,
   inspect logs and either reduce the model/data workload with a changed causal
   factor or report a resource blocker. Do not retry the same large payload with

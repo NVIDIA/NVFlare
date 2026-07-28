@@ -95,12 +95,13 @@ unprotected recipe or present a disclaimer as implementation.
    non-client entry parameter. Do not add manual model receive/send exchange.
    Load `../nvflare-shared/references/pytorch-model-exchange.md` only when
    diagnosing PyTorch keyspace, dtype, or exchange-format compatibility.
-7. Keep `flare.patch(trainer)` simple by default. Preserve the source Trainer
-   budget and let the patch infer `params_scope="auto"`. Set `local_epochs`,
-   `local_steps`, `server_key_prefix`, `stream_metrics`, strict loading, or
-   `restore_state` only from explicit requirements or observed compatibility
-   needs. Load `references/huggingface-state-and-distributed.md` for PEFT key
-   spaces, checkpoint constraints, DDP, or non-default patch settings.
+7. Keep `flare.patch(trainer)` simple and let it infer `params_scope="auto"`.
+   Encode the per-round budget once in Trainer arguments: prompt steps become
+   `max_steps`, prompt epochs become `num_train_epochs`, and a silent prompt gets
+   the reported default `max_steps=10` unless source-budget preservation was
+   requested. Do not repeat it in patch `local_steps`/`local_epochs`. With state
+   restore, cumulative `max_steps` may cover all FL rounds. Load
+   `references/huggingface-state-and-distributed.md` for other non-default settings.
 8. Add or update `job.py` with explicit model config
    `{"class_path": ..., "args": ...}`, never a live model. Package every
    generated or project-local server-only model module into the server app with
@@ -193,7 +194,6 @@ unprotected recipe or present a disclaimer as implementation.
   download model/data artifacts unless requested. Cache misses, offline errors,
   remote identifiers, and validation requests do not authorize online retries.
   Preserve local callbacks and logs. POC and production submission remain outside this skill.
-
 Load only phase-needed HF references: `references/huggingface-detection.md`, `references/huggingface-conversion.md`,
 `references/huggingface-state-and-distributed.md`, and `references/huggingface-validation.md`; load
 `../nvflare-shared/references/pytorch-family-recipe-construction.md` after every
