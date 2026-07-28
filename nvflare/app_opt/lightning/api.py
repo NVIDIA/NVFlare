@@ -60,6 +60,16 @@ def patch(
         other precision modes are not supported by the patched path. Those clients must use
         an explicit receive/train/send loop and integrate ``PTScaffoldHelper`` directly.
 
+    FedProx:
+        When the received model contains a positive FedProx coefficient, ``patch`` automatically
+        adds the exact proximal gradient to optimizer-owned trainable parameters. FedProx composes
+        with automatic SCAFFOLD support. The proximal gradient is applied after gradient accumulation
+        and AMP unscaling and before gradient clipping. Consequently, a loss logged from
+        ``training_step`` excludes the injected proximal term even though optimization includes its
+        exact gradient. Automatic FedProx has the same one-optimizer, automatic-optimization, and
+        precision restrictions as automatic SCAFFOLD; closure-based LBFGS and sparse gradients are
+        also unsupported.
+
     Example:
 
         Normal usage:
