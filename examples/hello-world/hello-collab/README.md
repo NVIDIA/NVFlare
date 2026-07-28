@@ -1,7 +1,7 @@
 # Hello NumPy Collab
 
 This is a Collab API rewrite of
-[`examples/hello-world/hello-numpy`](../../hello-world/hello-numpy/README.md).
+[`examples/hello-world/hello-numpy`](../hello-numpy/README.md).
 It uses the same Recipe API and performs the same small federated averaging
 experiment:
 
@@ -15,7 +15,7 @@ experiment:
 Both examples create a recipe and execute it with `SimEnv`. The original
 example separates that Recipe API setup from a Client API training script.
 The Collab version keeps the complete application in
-[`hello_numpy_collab.py`](hello_numpy_collab.py):
+[`job.py`](job.py):
 
 | Original `hello-numpy` | Collab rewrite |
 |---|---|
@@ -44,19 +44,30 @@ model = model + averaged_update if update_type == "diff" else averaged_update
 
 ## Run it
 
-Install NVFlare from this repository, then run the module from the `examples`
-directory:
+> [!IMPORTANT]
+> The `nvflare~=2.9.0rc` entry in `requirements.txt` records the first
+> compatible release. Until that package is published, install NVFlare from
+> this repository instead.
+
+Then run the self-contained script from its directory:
 
 ```bash
-python -m collab.hello_numpy_collab.hello_numpy_collab
+cd examples/hello-world/hello-collab
+python job.py
+```
+
+Once NVFlare 2.9 is available, install the example directly with:
+
+```bash
+python -m pip install -r requirements.txt
 ```
 
 The Collab rewrite accepts the same core experiment options as the original.
 For example, send model differences or export the job configuration with:
 
 ```bash
-python -m collab.hello_numpy_collab.hello_numpy_collab --update_type diff
-python -m collab.hello_numpy_collab.hello_numpy_collab --export_config
+python job.py --update_type diff
+python job.py --export_config
 ```
 
 Other options are `--n_clients`, `--num_rounds`, and `--log_config`. After
@@ -67,3 +78,6 @@ three rounds the final model is:
  [ 7.  8.  9.]
  [10. 11. 12.]]
 ```
+
+For response callbacks, in-time aggregation, and decentralized workflows,
+continue with the [advanced Collab examples](../../advanced/collab/README.md).

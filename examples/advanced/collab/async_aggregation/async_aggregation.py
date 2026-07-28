@@ -17,7 +17,7 @@
 The server aggregates each client result as it arrives instead of waiting for
 the complete group call to finish.
 
-Run from the ``examples`` directory:
+Run from the ``examples/advanced`` directory:
 
     python -m collab.async_aggregation.async_aggregation
 """
