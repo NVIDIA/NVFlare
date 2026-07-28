@@ -28,6 +28,7 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.streaming.cacheable import CacheableObject, ItemConsumer
 from nvflare.fuel.f3.streaming.download_service import download_object
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
+from nvflare.fuel.f3.streaming.stream_utils import stream_thread_pool
 
 from .lazy_tensor_dict import LazyTensorDict, _cleanup_temp_dir
 
@@ -50,6 +51,9 @@ class TensorDownloadable(CacheableObject):
     def __init__(self, tensors: dict[str, torch.Tensor], max_chunk_size: int):
         self.size = len(tensors)
         self.keys = list(tensors.keys())
+        self._prefetch_lock = threading.Lock()
+        self._prefetch_futures = {}
+        self._released = False
         super().__init__(tensors, max_chunk_size)
 
     def get_item_count(self) -> int:
@@ -57,8 +61,43 @@ class TensorDownloadable(CacheableObject):
 
     def produce_item(self, index: int) -> bytes:
         key = self.keys[index]
-        tensor_to_send = {key: self.base_obj[key]}
-        return save_tensors(tensor_to_send)
+        with self._prefetch_lock:
+            future = self._prefetch_futures.pop(index, None)
+        if future:
+            return future.result()
+        base_obj = self.base_obj
+        if base_obj is None:
+            raise RuntimeError(f"item {index} requested after tensors were released")
+        return save_tensors({key: base_obj[key]})
+
+    def prefetch_item(self, index: int):
+        with self._prefetch_lock:
+            if self._released or index in self._prefetch_futures:
+                return
+            base_obj = self.base_obj
+            if base_obj is None:
+                return
+            key = self.keys[index]
+            tensor = base_obj[key]
+            future = stream_thread_pool.submit(save_tensors, {key: tensor})
+            if future:
+                self._prefetch_futures[index] = future
+
+    def get_item_size(self, index: int) -> Optional[int]:
+        base_obj = self.base_obj
+        if base_obj is None:
+            return None
+        tensor = base_obj[self.keys[index]]
+        return tensor.numel() * tensor.element_size()
+
+    def release(self):
+        with self._prefetch_lock:
+            self._released = True
+            futures = list(self._prefetch_futures.values())
+            self._prefetch_futures.clear()
+        for future in futures:
+            future.cancel()
+        super().release()
 
 
 class TensorConsumer(ItemConsumer):

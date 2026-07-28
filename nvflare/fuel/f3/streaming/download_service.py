@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import concurrent.futures
 import dataclasses
 import functools
 import threading
@@ -1855,130 +1856,177 @@ def download_object(
 
     _emit_progress("start", force=True)
 
-    while True:
-        start_time = time.time()
-        request_payload = {_PropKey.REF_ID: ref_id}
+    # Build and fire one DownloadService request (no retry logic here).
+    def _do_request(req_state):
+        req_payload = {_PropKey.REF_ID: ref_id}
         if confirm_enabled:
-            request_payload[_PropKey.CONFIRM_CAPABLE] = True
-        if current_state is not None:
-            request_payload[_PropKey.STATE] = current_state
-        reply = cell.send_request(
+            req_payload[_PropKey.CONFIRM_CAPABLE] = True
+        if req_state is not None:
+            req_payload[_PropKey.STATE] = req_state
+        return cell.send_request(
             channel=OBJ_DOWNLOADER_CHANNEL,
             target=from_fqcn,
             topic=OBJ_DOWNLOADER_TOPIC,
-            request=new_cell_message(headers={}, payload=request_payload),
+            request=new_cell_message(headers={}, payload=req_payload),
             timeout=per_request_timeout,
             secure=secure,
             optional=optional,
             abort_signal=abort_signal,
         )
-        duration = time.time() - start_time
 
-        if abort_signal and abort_signal.triggered:
-            consumer.download_failed(ref_id, f"download aborted after {duration} secs")
-            _emit_progress("aborted", force=True)
-            return
+    # Pipelined download loop.
+    #
+    # Profiling shows each cycle on the receiver's stream-callback thread is:
+    #   send_request blocking wait  ~55 %  (network RTT + sender serialisation stall)
+    #   BufferList.read_bytes       ~19 %  (reply payload join, inside send_request)
+    #   consumer.consume            ~20 %  (safetensors.load / disk write)
+    #   loop overhead               ~ 6 %
+    #
+    # By launching the NEXT request immediately after the current one returns
+    # (before consume), the ~20 % inline consume cost is overlapped with the
+    # following send_request.  Each cycle's wall time shrinks from
+    # (send_request + consume) to max(send_request, consume) ≈ send_request.
+    #
+    # Thread-safety: ItemConsumer.consume() returns the received `state` unchanged.
+    # Other consumers may return a value-equivalent dict, so only relaunch when
+    # consume() changes the state values needed by the next request.
+    _pipeline = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="dl_pipe")
+    _pending_future = _pipeline.submit(_do_request, current_state)  # pre-launch first request
 
-        assert isinstance(reply, Message)
-        rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
-        if rc != ReturnCode.OK:
-            # Retry on TIMEOUT: streaming transport may intermittently lose
-            # responses.  Resending the same state re-generates the same
-            # chunk, making retry data-safe (see docstring for caveats).
-            if rc == ReturnCode.TIMEOUT:
-                if consecutive_timeouts < max_retries:
-                    consecutive_timeouts += 1
-                    backoff = min(2.0 * (2 ** (consecutive_timeouts - 1)), 60.0)
-                    logger.warning(
-                        f"[DOWNLOAD_RETRY] Request to {from_fqcn} timed out after {duration:.1f}s "
-                        f"(ref={ref_id}, retry {consecutive_timeouts}/{max_retries}, "
-                        f"backoff={backoff:.1f}s). Resending same state to re-request the chunk."
-                    )
-                    # Check abort signal before sleeping to minimise delay
-                    if abort_signal and abort_signal.triggered:
-                        consumer.download_failed(ref_id, f"download aborted after {duration} secs")
-                        _emit_progress("aborted", force=True)
-                        return
-                    time.sleep(backoff)
-                    if abort_signal and abort_signal.triggered:
-                        consumer.download_failed(ref_id, f"download aborted after {duration} secs")
-                        _emit_progress("aborted", force=True)
-                        return
-                    continue
-                else:
-                    logger.warning(
-                        f"[DOWNLOAD_FAILED] Max retries ({max_retries}) exhausted for {from_fqcn}, "
-                        f"ref={ref_id}. Giving up."
-                    )
-            consumer.download_failed(ref_id, f"error requesting data from {from_fqcn} after {duration} secs: {rc}")
-            _emit_progress("failed", force=True)
-            return
+    try:
+        while True:
+            start_time = time.time()
+            reply = _pending_future.result()
+            _pending_future = None
+            duration = time.time() - start_time
 
-        # Log recovery if we were retrying
-        if consecutive_timeouts > 0:
-            logger.warning(
-                f"[DOWNLOAD_RECOVERED] Download from {from_fqcn} recovered after "
-                f"{consecutive_timeouts} timeout(s) (ref={ref_id})."
-            )
-        consecutive_timeouts = 0
+            if abort_signal and abort_signal.triggered:
+                consumer.download_failed(ref_id, f"download aborted after {duration} secs")
+                _emit_progress("aborted", force=True)
+                return
 
-        payload = reply.payload
-        assert isinstance(payload, dict)
-        if payload.get(_PropKey.CONFIRM_EXPECTED):
-            producer_expects_confirm = True
-            confirm_nonce = payload.get(_PropKey.CONFIRM_NONCE)
-        status = payload.get(_PropKey.STATUS)
-        if status == ProduceRC.EOF:
-            elapsed = time.time() - download_start
-            size_mb = total_bytes / (1024 * 1024)
-            logger.info(
-                f"[client] download ref={ref_id} done: elapsed={elapsed:.2f}s "
-                f"size={size_mb:.1f}MB ({total_bytes:,} bytes)"
-            )
-            try:
-                consumer.download_completed(ref_id)
-            except Exception:
-                # receiver-side finalization failed AFTER the last chunk (e.g. disk-offload
-                # finalize): exactly what receiver-confirmed completion exists to surface --
-                # the producer must not certify this receiver on its served EOF
-                _send_confirm(DownloadStatus.FAILED)
+            assert isinstance(reply, Message)
+            rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+            if rc != ReturnCode.OK:
+                # Retry on TIMEOUT: streaming transport may intermittently lose
+                # responses.  Resending the same state re-generates the same
+                # chunk, making retry data-safe (see docstring for caveats).
+                if rc == ReturnCode.TIMEOUT:
+                    if consecutive_timeouts < max_retries:
+                        consecutive_timeouts += 1
+                        backoff = min(2.0 * (2 ** (consecutive_timeouts - 1)), 60.0)
+                        logger.warning(
+                            f"[DOWNLOAD_RETRY] Request to {from_fqcn} timed out after {duration:.1f}s "
+                            f"(ref={ref_id}, retry {consecutive_timeouts}/{max_retries}, "
+                            f"backoff={backoff:.1f}s). Resending same state to re-request the chunk."
+                        )
+                        # Check abort signal before sleeping to minimise delay
+                        if abort_signal and abort_signal.triggered:
+                            consumer.download_failed(ref_id, f"download aborted after {duration} secs")
+                            _emit_progress("aborted", force=True)
+                            return
+                        time.sleep(backoff)
+                        if abort_signal and abort_signal.triggered:
+                            consumer.download_failed(ref_id, f"download aborted after {duration} secs")
+                            _emit_progress("aborted", force=True)
+                            return
+                        # Retry: relaunch with the same current_state (safe: same chunk)
+                        _pending_future = _pipeline.submit(_do_request, current_state)
+                        continue
+                    else:
+                        logger.warning(
+                            f"[DOWNLOAD_FAILED] Max retries ({max_retries}) exhausted for {from_fqcn}, "
+                            f"ref={ref_id}. Giving up."
+                        )
+                consumer.download_failed(ref_id, f"error requesting data from {from_fqcn} after {duration} secs: {rc}")
                 _emit_progress("failed", force=True)
-                raise
-            _send_confirm(DownloadStatus.SUCCESS)
-            _emit_progress("completed", force=True)
-            return
-        elif status == ProduceRC.ERROR:
-            _send_confirm(DownloadStatus.FAILED)
-            consumer.download_failed(ref_id, f"producer error after {duration} secs")
-            _emit_progress("failed", force=True)
-            return
+                return
 
-        # continue
-        # CacheableObject sends a list of byte-chunks; FileDownloader sends raw bytes.
-        data = payload.get(_PropKey.DATA)
-        if data is not None:
-            total_bytes += sum(len(c) for c in data) if isinstance(data, list) else len(data)
-            if isinstance(data, list):
-                total_items = (total_items or 0) + len(data)
-        state = payload.get(_PropKey.STATE)
-        try:
-            new_state = consumer.consume(ref_id, state, data)
-        except Exception as ex:
-            consumer.download_failed(ref_id, f"exception when consuming data: {secure_format_exception(ex)}")
-            _emit_progress("failed", force=True)
-            return
+            # Log recovery if we were retrying
+            if consecutive_timeouts > 0:
+                logger.warning(
+                    f"[DOWNLOAD_RECOVERED] Download from {from_fqcn} recovered after "
+                    f"{consecutive_timeouts} timeout(s) (ref={ref_id})."
+                )
+            consecutive_timeouts = 0
 
-        if not isinstance(new_state, dict):
-            consumer.download_failed(ref_id, f"consumer error: new_state should be dict but got {type(new_state)}")
-            _emit_progress("failed", force=True)
-            return
+            payload = reply.payload
+            assert isinstance(payload, dict)
+            if payload.get(_PropKey.CONFIRM_EXPECTED):
+                producer_expects_confirm = True
+                confirm_nonce = payload.get(_PropKey.CONFIRM_NONCE)
+            status = payload.get(_PropKey.STATUS)
+            if status == ProduceRC.EOF:
+                elapsed = time.time() - download_start
+                size_mb = total_bytes / (1024 * 1024)
+                logger.info(
+                    f"[client] download ref={ref_id} done: elapsed={elapsed:.2f}s "
+                    f"size={size_mb:.1f}MB ({total_bytes:,} bytes)"
+                )
+                try:
+                    consumer.download_completed(ref_id)
+                except Exception:
+                    # receiver-side finalization failed AFTER the last chunk (e.g. disk-offload
+                    # finalize): exactly what receiver-confirmed completion exists to surface --
+                    # the producer must not certify this receiver on its served EOF
+                    _send_confirm(DownloadStatus.FAILED)
+                    _emit_progress("failed", force=True)
+                    raise
+                _send_confirm(DownloadStatus.SUCCESS)
+                _emit_progress("completed", force=True)
+                return
+            elif status == ProduceRC.ERROR:
+                _send_confirm(DownloadStatus.FAILED)
+                consumer.download_failed(ref_id, f"producer error after {duration} secs")
+                _emit_progress("failed", force=True)
+                return
 
-        if abort_signal and abort_signal.triggered:
-            consumer.download_failed(ref_id, "download aborted")
-            _emit_progress("aborted", force=True)
-            return
+            # Good DATA reply — pipeline the next request.
+            # CacheableObject sends a list of byte-chunks; FileDownloader sends raw bytes.
+            data = payload.get(_PropKey.DATA)
+            if data is not None:
+                total_bytes += sum(len(c) for c in data) if isinstance(data, list) else len(data)
+                if isinstance(data, list):
+                    total_items = (total_items or 0) + len(data)
+            state = payload.get(_PropKey.STATE)
 
-        _emit_progress("active")
+            # Launch the next request BEFORE consuming current data so that the
+            # ~20 % consume cost overlaps with the following send_request.
+            # For ItemConsumer, consume() returns `state` unchanged, so launching
+            # with `state` is always correct.  In the rare case a consumer changes
+            # the state values, detect that and relaunch below.
+            current_state = state
+            _pending_future = _pipeline.submit(_do_request, current_state)
 
-        # Update state for next request
-        current_state = new_state
+            try:
+                new_state = consumer.consume(ref_id, state, data)
+            except Exception as ex:
+                _pending_future.cancel()
+                consumer.download_failed(ref_id, f"exception when consuming data: {secure_format_exception(ex)}")
+                _emit_progress("failed", force=True)
+                return
+
+            if not isinstance(new_state, dict):
+                _pending_future.cancel()
+                consumer.download_failed(ref_id, f"consumer error: new_state should be dict but got {type(new_state)}")
+                _emit_progress("failed", force=True)
+                return
+
+            if abort_signal and abort_signal.triggered:
+                _pending_future.cancel()
+                consumer.download_failed(ref_id, "download aborted")
+                _emit_progress("aborted", force=True)
+                return
+
+            # If consume changed the state values, cancel the speculative request
+            # and relaunch with the correct state. A fresh but value-equivalent dict
+            # (as returned by the file consumer) does not require another request.
+            if new_state != state:
+                _pending_future.cancel()
+                current_state = new_state
+                _pending_future = _pipeline.submit(_do_request, current_state)
+
+            _emit_progress("active")
+            # Loop: next iteration waits on _pending_future
+    finally:
+        _pipeline.shutdown(wait=False, cancel_futures=True)

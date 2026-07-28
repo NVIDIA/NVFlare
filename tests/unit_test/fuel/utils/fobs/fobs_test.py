@@ -136,6 +136,17 @@ class TestFobs:
         data = fobs.loads(buf)
         assert data["number"] == TestFobs.NUMBER
 
+    def test_buffer_list_reassembles_externalized_bytes_from_network_chunks(self):
+        expected = b"x" * 2048
+        encoded = fobs.dumps({"blob": expected}, buffer_list=True, max_value_size=1024)
+        wire_data = b"".join(encoded)
+        network_chunks = [memoryview(wire_data)[start : start + 127] for start in range(0, len(wire_data), 127)]
+
+        data = fobs.loads(network_chunks)
+
+        assert type(data["blob"]) is bytes
+        assert data["blob"] == expected
+
 
 class ExampleClass:
     def __init__(self, number):
