@@ -31,6 +31,8 @@ from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.streaming.download_service import DownloadService
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
 
 if TYPE_CHECKING:
     from nvflare.apis.shareable import Shareable
@@ -38,11 +40,14 @@ if TYPE_CHECKING:
 
 _RESULT_STATUS_TIMEOUT = 2.0
 _RESULT_SEND_ATTEMPTS = 2
-_TASK_STATUS_RECORD_LIMIT = 256
 
 
 class TrainerSessionError(RuntimeError):
     """The trainer's Client API session ended or could not be established."""
+
+
+class _UncertainResultReply(RuntimeError):
+    """RESULT_READY may have committed even though its acknowledgement is unavailable."""
 
 
 class AttachTrainerSession:
@@ -58,7 +63,6 @@ class AttachTrainerSession:
             config.get(BootstrapKey.CONNECTION_SECURITY),
         )
         self._opened = threading.Event()
-        self._open_error: Optional[str] = None
         self._task_states = OrderedDict()
         self._task_attempts = {}
         self._current_result_id: Optional[str] = None
@@ -83,8 +87,6 @@ class AttachTrainerSession:
         timeout = self._api._config.get(BootstrapKey.JOB_WAIT_TIMEOUT)
         if not self._opened.wait(timeout):
             raise TrainerSessionError(f"no SESSION_OPEN received within job_wait_timeout={timeout}s")
-        if self._open_error:
-            raise TrainerSessionError(self._open_error)
         if not self._api._session_id:
             raise TrainerSessionError("SESSION_OPEN wait was interrupted before a session was established")
 
@@ -112,6 +114,8 @@ class AttachTrainerSession:
 
     def mark_result_publishing(self, task_id: str) -> str:
         with self._api._lock:
+            if self._task_states.get(task_id) == TaskState.COMPLETE:
+                raise TrainerSessionError(f"a result was already published for task {task_id!r}")
             self._task_states[task_id] = TaskState.RESULT_PUBLISHING
             if not self._current_result_id:
                 self._current_result_id = uuid.uuid4().hex
@@ -120,7 +124,6 @@ class AttachTrainerSession:
     def mark_task_complete(self, task_id: str) -> None:
         with self._api._lock:
             self._task_states[task_id] = TaskState.COMPLETE
-            self._trim_task_status_records()
 
     def clear_result(self) -> None:
         self._current_result_id = None
@@ -141,7 +144,6 @@ class AttachTrainerSession:
                 self._task_states[task_id] = TaskState.QUEUED
                 self._task_states.move_to_end(task_id)
                 self._task_attempts[task_id] = attempt_id
-                self._trim_task_status_records()
                 return None
         return self._api._reply(
             Topic.TASK_ACCEPTED,
@@ -169,14 +171,29 @@ class AttachTrainerSession:
         """Publish one logical result with status recovery for a lost acceptance reply."""
         api = self._api
         last_error = None
+        attempt_waiters = {}
         for _ in range(_RESULT_SEND_ATTEMPTS):
+            attempt_id = uuid.uuid4().hex
+            waiters = []
+            attempt_waiters[attempt_id] = waiters
+
+            def _on_transaction_created(transaction, attempt_waiters=waiters):
+                waiter = DownloadService.get_transfer_waiter(transaction.tx_id)
+                attempt_waiters.append(waiter)
+                api._add_result_transfer_waiter(waiter)
+
+            def _has_pending_attempt_transfer(attempt_waiters=waiters):
+                return any(not waiter.done() for waiter in attempt_waiters)
+
+            attempt_fobs_ctx = dict(fobs_ctx_props)
+            attempt_fobs_ctx[RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY] = _on_transaction_created
             request = new_cell_message(
                 {MessageHeaderKey.PASS_THROUGH: True},
                 {
                     MsgKey.SESSION_ID: api._session_id,
                     MsgKey.TASK_ID: task_id,
                     MsgKey.RESULT_ID: result_id,
-                    MsgKey.ATTEMPT_ID: uuid.uuid4().hex,
+                    MsgKey.ATTEMPT_ID: attempt_id,
                     MsgKey.RESULT: shareable,
                 },
             )
@@ -188,22 +205,60 @@ class AttachTrainerSession:
                     request=request,
                     timeout=30.0,
                     abort_signal=api._result_abort_signal,
-                    progress_wait_cb=api._has_pending_result_transfer,
+                    progress_wait_cb=_has_pending_attempt_transfer,
                     num_receivers=len(source_receiver_ids) if source_receiver_ids else 1,
                     receiver_ids=source_receiver_ids,
-                    fobs_ctx_props=fobs_ctx_props,
+                    fobs_ctx_props=attempt_fobs_ctx,
                 )
-                api._check_result_accepted(reply)
-                return
-            except BaseException as e:
+                accepted_attempt_id = self._accepted_result_attempt(reply, result_id)
+            except _UncertainResultReply as e:
                 last_error = e
-                if self._result_was_accepted(task_id, result_id):
-                    return
-                api._delete_result_transfers(api._snapshot_result_transfer_waiters())
-                api._clear_result_transfer_waiters()
+                session_end = api._session_end_reason()
+                if session_end:
+                    raise TrainerSessionError(session_end) from e
+                accepted_attempt_id = self._accepted_result_attempt_from_status(task_id, result_id)
+            except TrainerSessionError:
+                raise
+            except Exception as e:
+                # A transport exception does not prove that the CJ failed to
+                # canonicalize this attempt. Preserve its lazy sources while
+                # resolving authority through RESULT_STATUS or a duplicate send.
+                last_error = e
+                session_end = api._session_end_reason()
+                if session_end:
+                    raise TrainerSessionError(session_end) from e
+                accepted_attempt_id = self._accepted_result_attempt_from_status(task_id, result_id)
+            if accepted_attempt_id:
+                self._keep_canonical_attempt(accepted_attempt_id, attempt_waiters)
+                return
         raise TrainerSessionError(f"result publication failed after status recovery: {last_error}") from last_error
 
-    def _result_was_accepted(self, task_id: str, result_id: str) -> bool:
+    @staticmethod
+    def _accepted_result_attempt(reply, result_id: str) -> str:
+        if reply is None:
+            raise _UncertainResultReply("no reply to RESULT_READY from the CJ")
+        rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+        if rc != CellReturnCode.OK:
+            raise _UncertainResultReply(f"cell-level failure on RESULT_READY: {rc}")
+        body = reply.payload
+        if not isinstance(body, dict):
+            raise TrainerSessionError(f"invalid RESULT_READY reply payload: {body!r}")
+        topic = body.get(MsgKey.REPLY_TOPIC)
+        if topic == Topic.RESULT_REJECTED:
+            raise TrainerSessionError(f"result was rejected by the CJ: {body.get(MsgKey.REASON)}")
+        if topic != Topic.RESULT_ACCEPTED:
+            raise TrainerSessionError(f"invalid RESULT_READY reply topic {topic!r}")
+        reply_result_id = body.get(MsgKey.RESULT_ID)
+        if reply_result_id != result_id:
+            raise TrainerSessionError(
+                f"RESULT_ACCEPTED result id mismatch: expected {result_id!r}, got {reply_result_id!r}"
+            )
+        accepted_attempt_id = body.get(MsgKey.ACCEPTED_ATTEMPT_ID)
+        if not isinstance(accepted_attempt_id, str) or not accepted_attempt_id:
+            raise TrainerSessionError("RESULT_ACCEPTED carried no accepted attempt id")
+        return accepted_attempt_id
+
+    def _accepted_result_attempt_from_status(self, task_id: str, result_id: str) -> Optional[str]:
         api = self._api
         try:
             reply = api._cell.send_request(
@@ -222,15 +277,30 @@ class AttachTrainerSession:
                 optional=True,
             )
         except Exception:
-            return False
+            return None
         if reply is None or reply.get_header(MessageHeaderKey.RETURN_CODE) != CellReturnCode.OK:
-            return False
+            return None
         body = reply.payload
-        return (
-            isinstance(body, dict)
-            and body.get(MsgKey.REPLY_TOPIC) == Topic.RESULT_STATUS
-            and body.get(MsgKey.RESULT_STATE) == ResultState.ACCEPTED
-        )
+        if not isinstance(body, dict) or body.get(MsgKey.REPLY_TOPIC) != Topic.RESULT_STATUS:
+            return None
+        state = body.get(MsgKey.RESULT_STATE)
+        if state == ResultState.REJECTED:
+            raise TrainerSessionError(f"result was rejected by the CJ: {body.get(MsgKey.REASON)}")
+        if state != ResultState.ACCEPTED:
+            return None
+        accepted_attempt_id = body.get(MsgKey.ACCEPTED_ATTEMPT_ID)
+        if not isinstance(accepted_attempt_id, str) or not accepted_attempt_id:
+            raise TrainerSessionError("accepted RESULT_STATUS carried no accepted attempt id")
+        return accepted_attempt_id
+
+    def _keep_canonical_attempt(self, accepted_attempt_id: str, attempt_waiters: dict) -> None:
+        canonical_waiters = attempt_waiters.get(accepted_attempt_id)
+        if canonical_waiters is None:
+            raise TrainerSessionError(f"CJ selected unknown result attempt {accepted_attempt_id!r}")
+        for attempt_id, waiters in attempt_waiters.items():
+            if attempt_id != accepted_attempt_id:
+                self._api._delete_result_transfers(waiters)
+        self._api._replace_result_transfer_waiters(canonical_waiters)
 
     def _handle_session_open(self, request):
         payload = request.payload
@@ -241,13 +311,6 @@ class AttachTrainerSession:
         session_id = payload.get(MsgKey.SESSION_ID)
         rejection = self._validate_open(origin, session_id, payload)
         if rejection:
-            if (
-                payload.get(MsgKey.ATTACH_ID) == self.attach_id
-                and payload.get(MsgKey.SITE_NAME) == api._site_name
-                and payload.get(MsgKey.PROTOCOL_VERSION) != PROTOCOL_VERSION
-            ):
-                self._open_error = rejection
-                self._opened.set()
             return api._reply(
                 Topic.SESSION_REJECTED,
                 **{MsgKey.SESSION_ID: session_id, MsgKey.REASON: rejection},
@@ -266,8 +329,6 @@ class AttachTrainerSession:
             else:
                 runtime, rejection = self._runtime_settings(payload)
                 if rejection:
-                    self._open_error = rejection
-                    self._opened.set()
                     return api._reply(
                         Topic.SESSION_REJECTED,
                         **{MsgKey.SESSION_ID: session_id, MsgKey.REASON: rejection},
@@ -367,13 +428,3 @@ class AttachTrainerSession:
                 MsgKey.ACCEPTED_ATTEMPT_ID: attempt_id,
             },
         )
-
-    def _trim_task_status_records(self) -> None:
-        while len(self._task_states) > _TASK_STATUS_RECORD_LIMIT:
-            for task_id, state in tuple(self._task_states.items()):
-                if state == TaskState.COMPLETE:
-                    self._task_states.pop(task_id, None)
-                    self._task_attempts.pop(task_id, None)
-                    break
-            else:
-                return

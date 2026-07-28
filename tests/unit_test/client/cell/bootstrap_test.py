@@ -163,6 +163,18 @@ class TestBootstrapConfig:
             == CELL_API_TYPE
         )
 
+    def test_bare_ca_tls_attach_profile_is_rejected(self):
+        with pytest.raises(ValueError, match="bare-CA TLS attach is not supported"):
+            get_bootstrap_client_api_type(
+                {
+                    **ATTACH_CONFIG,
+                    BootstrapKey.CONNECT_URL: "grpcs://site.example:9000",
+                    BootstrapKey.CONNECTION_SECURITY: "tls",
+                    BootstrapKey.CA_CERT: "/workspace/startup/rootCA.pem",
+                },
+                "attach.json",
+            )
+
     def test_untyped_legacy_config_is_not_a_bootstrap(self):
         assert get_bootstrap_client_api_type({"TASK_EXCHANGE": {}}, "legacy.json") is None
 

@@ -42,3 +42,8 @@ def test_literal_loopback_and_shared_file_do_not_need_insecure_opt_in():
 
 def test_tls_network_route_is_accepted():
     assert validate_attach_transport("grpcs://host.example:9000", "mtls", False) == "mtls"
+
+
+def test_bare_ca_tls_network_route_is_rejected():
+    with pytest.raises(ValueError, match="bare-CA TLS attach is not supported"):
+        validate_attach_transport("grpcs://host.example:9000", "tls", False)

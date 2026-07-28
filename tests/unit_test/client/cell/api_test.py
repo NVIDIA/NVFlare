@@ -159,10 +159,12 @@ class AttachFakeCell(FakeCell):
             MsgKey.CUDA_EMPTY_CACHE: False,
         }
         self.session_reply = None
+        self.open_on_start = True
 
     def start(self):
         super().start()
-        self.session_reply = self.deliver(Topic.SESSION_OPEN, CJ_FQCN, self.session_open_payload)
+        if self.open_on_start:
+            self.session_reply = self.deliver(Topic.SESSION_OPEN, CJ_FQCN, self.session_open_payload)
 
 
 @pytest.fixture
@@ -326,6 +328,55 @@ class TestAttachMode:
         assert foreign.payload[MsgKey.REPLY_TOPIC] == Topic.SESSION_REJECTED
         assert api._cj_fqcn == CJ_FQCN
 
+    def test_rejected_session_open_does_not_poison_waiting_init(self, attach_bootstrap_path, attach_env):
+        attach_env.open_on_start = False
+        api = CellClientAPI(bootstrap_file=attach_bootstrap_path)
+        init_errors = []
+
+        def _init():
+            try:
+                api.init(rank="0")
+            except BaseException as e:
+                init_errors.append(e)
+
+        init_thread = threading.Thread(target=_init)
+        init_thread.start()
+        assert _wait_until(lambda: Topic.SESSION_OPEN in attach_env.cbs)
+
+        invalid_opens = []
+        for key, value in (
+            (MsgKey.ATTACH_ID, "other"),
+            (MsgKey.SITE_NAME, "other-site"),
+            (MsgKey.TRAINER_FQCN, "site-1.-client_api_other"),
+            (MsgKey.PROTOCOL_VERSION, PROTOCOL_VERSION + 1),
+            (MsgKey.RANK, "1"),
+            (MsgKey.HEARTBEAT_INTERVAL, 0),
+            (MsgKey.TASK_EXCHANGE, "not-a-dict"),
+            (MsgKey.MEMORY_GC_ROUNDS, -1),
+        ):
+            payload = dict(attach_env.session_open_payload)
+            payload[key] = value
+            invalid_opens.append((CJ_FQCN, payload))
+        missing_session = dict(attach_env.session_open_payload)
+        missing_session.pop(MsgKey.SESSION_ID)
+        invalid_opens.extend([("", dict(attach_env.session_open_payload)), (CJ_FQCN, missing_session)])
+
+        for origin, payload in invalid_opens:
+            reply = attach_env.deliver(Topic.SESSION_OPEN, origin, payload)
+            assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.SESSION_REJECTED
+            assert api._session_id is None
+            assert not api._attach._opened.is_set()
+            assert init_thread.is_alive()
+
+        accepted = attach_env.deliver(Topic.SESSION_OPEN, CJ_FQCN, attach_env.session_open_payload)
+        init_thread.join(timeout=1.0)
+
+        assert accepted.payload[MsgKey.REPLY_TOPIC] == Topic.SESSION_ACCEPTED
+        assert not init_thread.is_alive()
+        assert init_errors == []
+        assert api._session_id == SESSION_ID
+        api.shutdown()
+
     def test_secure_profile_passes_ca_for_cell_credential_discovery(self, attach_bootstrap_path, attach_env):
         config = read_bootstrap_config(attach_bootstrap_path)
         config[BootstrapKey.CONNECT_URL] = "grpcs://site.example:9000"
@@ -366,11 +417,13 @@ class TestAttachMode:
         _deliver_attach_task(attach_env)
         assert api.receive() is not None
         accepted_result_id = None
+        accepted_attempt_id = None
 
         def _on_request(topic, target, request):
-            nonlocal accepted_result_id
+            nonlocal accepted_attempt_id, accepted_result_id
             if topic == Topic.RESULT_READY:
                 accepted_result_id = request.payload[MsgKey.RESULT_ID]
+                accepted_attempt_id = request.payload[MsgKey.ATTEMPT_ID]
                 raise RuntimeError("acceptance reply lost")
             if topic == Topic.RESULT_STATUS:
                 assert request.payload[MsgKey.RESULT_ID] == accepted_result_id
@@ -379,6 +432,7 @@ class TestAttachMode:
                     body={
                         MsgKey.REPLY_TOPIC: Topic.RESULT_STATUS,
                         MsgKey.RESULT_STATE: ResultState.ACCEPTED,
+                        MsgKey.ACCEPTED_ATTEMPT_ID: accepted_attempt_id,
                     },
                 )
             return make_cell_reply(CellReturnCode.OK)
@@ -388,6 +442,99 @@ class TestAttachMode:
 
         assert accepted_result_id
         assert api._attach._task_states["task-1"] == TaskState.COMPLETE
+
+    def test_uncertain_result_preserves_canonical_attempt_and_cancels_only_duplicate(
+        self, attach_bootstrap_path, attach_env, monkeypatch
+    ):
+        api = _init_api(attach_bootstrap_path, attach_env)
+        _deliver_attach_task(attach_env)
+        assert api.receive() is not None
+
+        waiters = {}
+        for tx_id in ("tx-1", "tx-2"):
+            waiter = MagicMock()
+            waiter.transaction_id = tx_id
+            waiter.done.return_value = True
+            waiter.wait.return_value = SimpleNamespace(
+                status=TransferProgressState.COMPLETED,
+                reason="all_receivers_succeeded",
+            )
+            waiters[tx_id] = waiter
+        monkeypatch.setattr(cell_api.DownloadService, "get_transfer_waiter", lambda tx_id: waiters[tx_id])
+        delete_transaction = MagicMock()
+        monkeypatch.setattr(cell_api.DownloadService, "delete_transaction", delete_transaction)
+
+        attempts = []
+
+        def _on_request(topic, target, request):
+            if topic == Topic.RESULT_READY:
+                attempts.append(request.payload[MsgKey.ATTEMPT_ID])
+                index = attach_env.request_messages.index(request)
+                tx_created = attach_env.request_kwargs[index]["fobs_ctx_props"][
+                    cell_api.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
+                ]
+                tx_created(SimpleNamespace(tx_id=f"tx-{len(attempts)}"))
+                if len(attempts) == 1:
+                    raise RuntimeError("acceptance reply lost")
+                return make_cell_reply(
+                    CellReturnCode.OK,
+                    body={
+                        MsgKey.REPLY_TOPIC: Topic.RESULT_ACCEPTED,
+                        MsgKey.RESULT_ID: request.payload[MsgKey.RESULT_ID],
+                        MsgKey.ACCEPTED_ATTEMPT_ID: attempts[0],
+                    },
+                )
+            if topic == Topic.RESULT_STATUS:
+                return None
+            return make_cell_reply(CellReturnCode.OK)
+
+        attach_env.on_request = _on_request
+        api.send(FLModel(params={"w": [2.0]}, params_type=ParamsType.FULL))
+
+        assert len(attempts) == 2
+        delete_transaction.assert_called_once_with("tx-2")
+        waiters["tx-1"].wait.assert_called()
+        waiters["tx-2"].wait.assert_not_called()
+
+    def test_second_send_for_completed_attach_task_raises_even_without_cache_clear(
+        self, attach_bootstrap_path, attach_env
+    ):
+        api = _init_api(attach_bootstrap_path, attach_env)
+        _deliver_attach_task(attach_env)
+        assert api.receive() is not None
+
+        def _on_request(topic, target, request):
+            if topic == Topic.RESULT_READY:
+                return make_cell_reply(
+                    CellReturnCode.OK,
+                    body={
+                        MsgKey.REPLY_TOPIC: Topic.RESULT_ACCEPTED,
+                        MsgKey.RESULT_ID: request.payload[MsgKey.RESULT_ID],
+                        MsgKey.ACCEPTED_ATTEMPT_ID: request.payload[MsgKey.ATTEMPT_ID],
+                    },
+                )
+            return make_cell_reply(CellReturnCode.OK)
+
+        attach_env.on_request = _on_request
+        result = FLModel(params={"w": [2.0]}, params_type=ParamsType.FULL)
+        api.send(result, clear_cache=False)
+
+        with pytest.raises(TrainerSessionError, match="already published"):
+            api.send(result, clear_cache=False)
+        assert [topic for topic, _, _ in attach_env.requests].count(Topic.RESULT_READY) == 1
+
+    def test_completed_task_ledger_is_retained_for_the_session(self, attach_bootstrap_path, attach_env):
+        api = _init_api(attach_bootstrap_path, attach_env)
+
+        for index in range(300):
+            task_id = f"task-{index}"
+            assert api._attach.reserve_task(task_id, f"attempt-{index}") is None
+            api._attach.mark_task_complete(task_id)
+
+        duplicate = api._attach.reserve_task("task-0", "delayed-attempt")
+        assert duplicate.payload[MsgKey.REPLY_TOPIC] == Topic.TASK_ACCEPTED
+        assert duplicate.payload[MsgKey.TASK_STATE] == TaskState.COMPLETE
+        assert len(api._attach._task_states) == 300
 
     def test_lifecycle_cleanup_defers_while_result_source_is_live(self, attach_bootstrap_path, attach_env):
         api = _init_api(attach_bootstrap_path, attach_env)

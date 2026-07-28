@@ -140,6 +140,7 @@ class TestDefs:
         assert _public_str_values(ResultState) == {
             "UNKNOWN": "UNKNOWN",
             "ACCEPTED": "ACCEPTED",
+            "REJECTED": "REJECTED",
         }
 
     def test_msg_key_names_present(self):

@@ -167,6 +167,7 @@ class CellBackendBase(ClientAPIBackendSpec):
             return make_cell_reply(CellReturnCode.INVALID_REQUEST, error="RESULT_READY payload must be a dict")
         session, reason = self._validate_session_msg(request, payload)
         if reason:
+            self.logger.warning(f"rejecting RESULT_READY: {reason}")
             return self._protocol_reply(Topic.RESULT_REJECTED, **{MsgKey.REASON: reason})
 
         task_id = payload.get(MsgKey.TASK_ID)
@@ -201,9 +202,11 @@ class CellBackendBase(ClientAPIBackendSpec):
 
             task = self._current_task
             if task is None or task.task_id != task_id:
+                reason = f"no current task matching task_id {task_id!r}"
+                self.logger.warning(f"rejecting RESULT_READY: {reason}")
                 return self._protocol_reply(
                     Topic.RESULT_REJECTED,
-                    **{MsgKey.REASON: f"no current task matching task_id {task_id!r}"},
+                    **{MsgKey.REASON: reason},
                 )
             if task.result is not None:
                 return self._protocol_reply(
@@ -291,13 +294,17 @@ class CellBackendBase(ClientAPIBackendSpec):
             return make_cell_reply(CellReturnCode.INVALID_REQUEST, error="HEARTBEAT payload must be a dict")
         session, reason = self._validate_session_msg(request, payload)
         if reason:
+            self.logger.warning(f"rejecting HEARTBEAT: {reason}")
             return self._protocol_reply(Topic.ERROR, **{MsgKey.REASON: reason})
-        source_live = payload.get(MsgKey.RESULT_SOURCE_LIVE)
-        if source_live is True:
-            session.result_source_live.set()
-        elif source_live is False:
-            session.result_source_live.clear()
-            if self.result_attempts:
+        # Only attach uses heartbeat source-liveness for result-attempt authority.
+        # External-process teardown owns its result barrier and must not have that
+        # already-shipped behavior changed by a delayed heartbeat.
+        if self.result_attempts:
+            source_live = payload.get(MsgKey.RESULT_SOURCE_LIVE)
+            if source_live is True:
+                session.result_source_live.set()
+            elif source_live is False:
+                session.result_source_live.clear()
                 with self._task_lock:
                     self._trim_result_authority()
         return self._protocol_reply(Topic.HEARTBEAT, **{MsgKey.SESSION_ID: session.session_id})

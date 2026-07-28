@@ -90,6 +90,11 @@ class AttachBackend(CellBackendBase):
     def initialize(self, context: ClientAPIBackendContext, fl_ctx: FLContext) -> None:
         if not context.attach_id:
             raise ValueError("attach mode requires attach_id")
+        if context.heartbeat_timeout == 0 and context.result_wait_timeout is None:
+            raise ValueError(
+                "attach mode requires heartbeat_timeout > 0 or a finite result_wait_timeout "
+                "because it does not own a trainer process for liveness detection"
+            )
         try:
             self._initialize_cell(context, fl_ctx, "attach")
             self._trainer_fqcn = make_attach_trainer_fqcn(self._site_name, context.attach_id)
@@ -397,9 +402,12 @@ class AttachBackend(CellBackendBase):
                         RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: _on_transaction_created,
                     },
                 )
-                last_reason = self._check_task_accepted(reply)
+                last_reason, terminal = self._check_task_accepted(reply)
                 if last_reason is None:
                     return True, None
+                if terminal:
+                    self._delete_transfers(waiters)
+                    return False, last_reason
             except Exception as e:
                 last_reason = str(e)
             state = self._query_task_status(
@@ -443,17 +451,22 @@ class AttachBackend(CellBackendBase):
         return body.get(MsgKey.TASK_STATE) if isinstance(body, dict) else None
 
     @staticmethod
-    def _check_task_accepted(reply) -> Optional[str]:
+    def _check_task_accepted(reply) -> Tuple[Optional[str], bool]:
         if reply is None:
-            return "no reply from trainer"
+            return "no reply from trainer", False
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
         if rc != CellReturnCode.OK:
-            return f"cell-level failure delivering TASK_READY: {rc}"
+            return f"cell-level failure delivering TASK_READY: {rc}", False
         body = reply.payload
-        if not isinstance(body, dict) or body.get(MsgKey.REPLY_TOPIC) != Topic.TASK_ACCEPTED:
-            reason = body.get(MsgKey.REASON) if isinstance(body, dict) else body
-            return f"trainer rejected TASK_READY: {reason}"
-        return None
+        if not isinstance(body, dict):
+            return f"invalid TASK_READY reply payload: {body!r}", True
+        topic = body.get(MsgKey.REPLY_TOPIC)
+        if topic == Topic.TASK_ACCEPTED:
+            return None, False
+        reason = body.get(MsgKey.REASON)
+        if topic == Topic.TASK_FAILED:
+            return f"trainer rejected TASK_READY: {reason}", True
+        return f"invalid TASK_READY reply topic {topic!r}: {reason}", True
 
     @staticmethod
     def _delete_transfers(waiters) -> None:

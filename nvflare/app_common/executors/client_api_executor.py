@@ -231,6 +231,11 @@ class ClientAPIExecutor(Executor):
             from nvflare.client.cell.attach import validate_attach_id
 
             attach_id = validate_attach_id(attach_id)
+            if heartbeat_timeout == 0 and result_wait_timeout is None:
+                raise ValueError(
+                    "attach mode requires heartbeat_timeout > 0 or a finite result_wait_timeout "
+                    "because it does not own a trainer process for liveness detection"
+                )
         else:
             if attach_id is not None:
                 raise self._wrong_mode_error("attach_id", attach_id, "'attach'", execution_mode)

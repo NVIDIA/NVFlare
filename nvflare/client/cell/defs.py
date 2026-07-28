@@ -106,3 +106,4 @@ class TaskState:
 class ResultState:
     UNKNOWN = "UNKNOWN"
     ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"

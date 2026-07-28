@@ -135,6 +135,11 @@ def get_bootstrap_client_api_type(config: dict, path: str = "<bootstrap config>"
             config[BootstrapKey.CONNECT_URL],
             config.get(BootstrapKey.CONNECTION_SECURITY),
         )
+        if connection_security == ConnectionSecurity.TLS:
+            raise ValueError(
+                f"invalid Client API bootstrap config {path}: "
+                "bare-CA TLS attach is not supported; use mTLS or a non-network driver"
+            )
         ca_cert = config.get(BootstrapKey.CA_CERT)
         if ca_cert is not None and (not isinstance(ca_cert, str) or not ca_cert.strip()):
             raise ValueError(

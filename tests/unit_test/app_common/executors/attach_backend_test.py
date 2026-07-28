@@ -14,6 +14,7 @@
 
 """Tests for the non-owning Client API Attach backend."""
 
+import threading
 import time
 import uuid
 from unittest.mock import MagicMock
@@ -48,6 +49,8 @@ class FakeCell:
         self.deliver_session = True
         self.connected = True
         self.lose_task_reply = False
+        self.deliver_result = True
+        self.task_reply_topic = Topic.TASK_ACCEPTED
         self.task_ready_count = 0
 
     def register_request_cb(self, channel, topic, cb):
@@ -76,6 +79,10 @@ class FakeCell:
         if topic == Topic.TASK_READY:
             self.task_ready_count += 1
             task = request.payload
+            if self.task_reply_topic == Topic.TASK_FAILED:
+                return _accepted(Topic.TASK_FAILED, **{MsgKey.REASON: "unsupported task"})
+            if not self.deliver_result:
+                return _accepted(Topic.TASK_ACCEPTED)
             result_reply = self.deliver(
                 Topic.RESULT_READY,
                 target,
@@ -140,6 +147,15 @@ def _wait_ready(backend, timeout=2.0):
     raise AssertionError("attach session was not established")
 
 
+def _wait_until(predicate, timeout=2.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return predicate()
+
+
 def test_attach_session_executes_task_and_finalize_only_closes_protocol():
     cell = FakeCell()
     backend = AttachBackend()
@@ -192,6 +208,92 @@ def test_lost_task_acceptance_uses_status_without_redelivery():
     assert result["answer"] == 42
     assert cell.task_ready_count == 1
     assert any(topic == Topic.TASK_STATUS for topic, _, _ in cell.sent)
+
+
+def test_semantic_task_rejection_is_not_retried():
+    cell = FakeCell()
+    cell.task_reply_topic = Topic.TASK_FAILED
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell)
+    backend.initialize(_context(), fl_ctx)
+    _wait_ready(backend)
+
+    result = backend.execute("unsupported", Shareable(), fl_ctx, Signal())
+    backend.finalize(fl_ctx)
+
+    assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+    assert cell.task_ready_count == 1
+    assert not any(topic == Topic.TASK_STATUS for topic, _, _ in cell.sent)
+
+
+def test_session_loss_is_terminal_when_reconnect_is_disabled():
+    cell = FakeCell()
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell)
+    backend.initialize(_context(heartbeat_interval=0.01, heartbeat_timeout=0.05), fl_ctx)
+    session = _wait_ready(backend)
+
+    with session._activity_lock:
+        session._last_peer_activity = time.monotonic() - 1.0
+
+    assert _wait_until(lambda: bool(session.error))
+    assert backend._get_session() is session
+    backend.finalize(fl_ctx)
+
+
+def test_reconnect_uses_fresh_session_and_rejects_stale_traffic():
+    cell = FakeCell()
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell)
+    backend.initialize(
+        _context(allow_reconnect=True, heartbeat_interval=0.01, heartbeat_timeout=0.05),
+        fl_ctx,
+    )
+    first = _wait_ready(backend)
+
+    with first._activity_lock:
+        first._last_peer_activity = time.monotonic() - 1.0
+
+    assert _wait_until(lambda: backend._get_session() is not first and backend._get_session().ready.is_set())
+    second = backend._get_session()
+    assert second.session_id != first.session_id
+
+    stale = cell.deliver(
+        Topic.HEARTBEAT,
+        TRAINER_FQCN,
+        {MsgKey.SESSION_ID: first.session_id},
+    )
+    assert stale.payload[MsgKey.REPLY_TOPIC] == Topic.ERROR
+    assert "session id" in stale.payload[MsgKey.REASON]
+    backend.finalize(fl_ctx)
+
+
+def test_reconnect_does_not_replay_task_interrupted_by_session_loss():
+    cell = FakeCell()
+    cell.deliver_result = False
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell)
+    backend.initialize(
+        _context(allow_reconnect=True, heartbeat_interval=0.01, heartbeat_timeout=0.05),
+        fl_ctx,
+    )
+    first = _wait_ready(backend)
+    result_box = {}
+    execution = threading.Thread(
+        target=lambda: result_box.setdefault("result", backend.execute("train", Shareable(), fl_ctx, Signal()))
+    )
+    execution.start()
+    assert _wait_until(lambda: cell.task_ready_count == 1)
+
+    with first._activity_lock:
+        first._last_peer_activity = time.monotonic() - 1.0
+
+    execution.join(timeout=2.0)
+    assert not execution.is_alive()
+    assert result_box["result"].get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+    assert _wait_until(lambda: backend._get_session() is not first and backend._get_session().ready.is_set())
+    assert cell.task_ready_count == 1
+    backend.finalize(fl_ctx)
 
 
 def test_cleartext_non_loopback_route_requires_explicit_opt_in():

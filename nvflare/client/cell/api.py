@@ -417,11 +417,11 @@ class CellClientAPI(APISpec):
         source_receiver_ids = (self._cj_fqcn,) if self._secure_mode else self._result_receiver_ids
 
         result_accepted = False
+        result_id = self._attach.mark_result_publishing(task.get(MsgKey.TASK_ID)) if self._attach else None
         # Serialize publication with SHUTDOWN; an admitted send owns the transfer barrier.
         with self._lock:
             self._check_session_alive()
             self._result_send_active = True
-        result_id = self._attach.mark_result_publishing(task.get(MsgKey.TASK_ID)) if self._attach else None
         try:
             self._clear_result_transfer_waiters()
             if self._attach:
@@ -873,6 +873,10 @@ class CellClientAPI(APISpec):
     def _clear_result_transfer_waiters(self) -> None:
         with self._liveness_lock:
             self._result_transfer_waiters = ()
+
+    def _replace_result_transfer_waiters(self, result_waiters) -> None:
+        with self._liveness_lock:
+            self._result_transfer_waiters = tuple(result_waiters)
 
     def _snapshot_result_transfer_waiters(self):
         with self._liveness_lock:

@@ -41,10 +41,10 @@ declares `ClientAPIExecutor(execution_mode="attach")`. The payoff:
 - **A deprecation path.** Once attach and external-process coverage is green,
   `FlareAgent`/`IPCAgent`/`IPCExchanger`/Pipe can be removed in a later change.
 
-The trade is explicit: V1 attach is **as safe as legacy IPCAgent, not safer** —
-same rendezvous-by-id and same site-trust-boundary assumption. It is a
-UX/consistency/maintenance win that is security-neutral versus IPCAgent, with an
-additive path to stronger authentication later.
+The trade is explicit: V1 attach uses the same rendezvous-by-id and site-trust-boundary
+assumption as legacy IPCAgent. Its secure network path is deliberately narrower:
+network attach requires mTLS, while bare-CA one-way TLS is rejected. It is a
+UX/consistency/maintenance win with an additive path to stronger authentication later.
 
 ## Decision Summary
 
@@ -98,15 +98,15 @@ Two consequences of adopting the IPCAgent topology keep V1 small:
    after connect, and no change to the shared Cell overlay or connection manager
    are required.
 
-2. **V1 security equals legacy IPCAgent, over existing F3 (no F3 change).** The
+2. **V1 security uses the provisioned IPCAgent path over existing F3 (no F3
+   change).** The
    secure-network path is a **provisioned-trainer mutual TLS** on the site's existing
    backbone (IPCAgent's credential path: `{CA_CERT}` + auto-discovered client cert),
    where F3's existing mTLS registration binds the cert to the trainer FQCN before it
    is routable; `attach_id` at `SESSION_OPEN` then selects which trainer. A **bare-CA**
-   (CA-only) trainer is supported only as a **trusted-network compatibility mode** —
-   a one-way-TLS listener does not authenticate the peer before registration — never as
-   the default secure path. There is no application-layer secret, cryptographic proof,
-   or broker in V1; `attach_id` match plus transport is the bar, identical to IPCAgent. A hardened
+   (CA-only) trainer is rejected in V1 because a one-way-TLS listener does not
+   authenticate the peer before registration. There is no application-layer secret,
+   cryptographic proof, or broker in V1; `attach_id` match plus transport is the bar. A hardened
    mode that adds a site-local shared secret and mutual proof is deliberately
    deferred (see Non-Goals); because rendezvous and the task/result protocol are
    independent of it, that mode is purely additive.
@@ -317,9 +317,10 @@ optional job_wait_timeout
 ```
 
 `site_name` is the authoritative site identity for the attach rendezvous and is used to
-derive the trainer FQCN. If `connect_url` also encodes a host/identity, the profile
-must be self-consistent; a `site_name` that disagrees with the rest of the profile
-is a provisioning error and is rejected rather than silently reconciled.
+derive the trainer FQCN. A generic URL host or filesystem path is not treated as an
+NVFlare site name. If a future driver exposes an authoritative peer/site identity,
+the profile must validate it against `site_name`; Attach does not guess that identity
+from `connect_url`.
 
 Job-specific values such as job ID, CJ FQCN, session ID, heartbeat policy,
 task-exchange settings, `memory_gc_rounds`, and `cuda_empty_cache` arrive in the
@@ -400,62 +401,38 @@ the **same connection legacy IPCAgent already uses** to reach the site. The URL
 scheme and exported site connection properties select the driver; the attach
 implementation must not assume that every connection is a TCP/TLS socket.
 
-V1's security posture is **exactly that of legacy IPCAgent**: protection comes from
-the transport plus the operator keeping the trainer's connection to the site inside
-the site's trust boundary. There is no application-layer secret. Concretely, anyone
-who can both reach the site's attach connection and present a matching `attach_id`
-can bind the session — so the deployment is responsible for ensuring that
-connection is reachable only from within the trusted site (loopback, a same-cluster
-network policy, or a TLS endpoint not exposed to untrusted peers). This is the same
-assumption IPCAgent already relies on, and `attach_id`, like `agent_id`, was always
-distributable through the job — so job-embedded `attach_id` is no weaker than
-IPCAgent. A hardened mode that adds a shared secret and mutual proof is future work
-for deployments that cannot make the trust-boundary assumption.
+V1 adopts legacy IPCAgent's rendezvous trust model: protection comes from the
+transport plus the operator keeping the trainer's connection to the site inside
+the site's trust boundary. There is no application-layer secret. Secure network
+attach additionally requires mTLS so F3 authenticates and FQCN-binds the trainer
+before it is routable. Cleartext remains limited to loopback unless the operator
+explicitly enables a trusted development network. `attach_id`, like `agent_id`, is
+distributable through the job and is not a credential. A hardened mode that adds a
+shared secret and mutual proof is future work for deployments that cannot make the
+trust-boundary assumption.
 
 V1 needs **no new F3 capability API** to make its transport decisions. F3 does not
 expose per-driver security properties today (`driver.py` capabilities do not report
 configured boundary/authentication), and adding that would contradict the
 zero-F3-change scope. Instead the backend derives policy from what it already has:
 the parsed `connect_url` (network vs loopback vs `file://`) and the profile's
-`connection_security` (`mtls` / `tls` / clear). A generalized "normalized security
+`connection_security` (`mtls` / clear; `tls` is rejected). A generalized "normalized security
 description" from Cell/F3 is deferred to the work that introduces the custom/`file://`
 drivers. For the V1 driver (TLS network + loopback) the policy is:
 
-- For a TLS network driver, V1 uses **exactly IPCAgent's credential handling** — same
+- For a TLS network driver, V1 uses **IPCAgent's provisioned credential handling** — same
   code path, no attach-specific transport story. The trainer runs from a provisioned
   workspace containing `rootCA.pem`, constructs its Cell with
   `credentials = {CA_CERT: rootCA.pem}`, and the Cell ctor's `enhance_credential_info`
   (`nvflare/fuel/f3/drivers/net_utils.py`) auto-discovers `client.crt`/`client.key`
-  from that same folder *if present*. Two provisioning cases, both identical to
-  IPCAgent:
-    - **Provisioned client startup kit — the V1 secure-network path** (folder has
-      `rootCA.pem` + `client.crt` + `client.key`): the trainer presents the
-      auto-discovered project-CA client cert → **shared-CA mutual TLS over the site's
-      normal (mTLS) backbone**, no dedicated listener. Crucially, under mTLS F3 binds
-      the certificate CN to the claimed FQCN at registration
-      (`ConnManager.update_endpoint`, gated on the mTLS connection), so the peer is
-      authenticated as a project member **and FQCN-bound before it becomes routable**;
-      *then* `SESSION_OPEN`'s `attach_id` selects which trainer. The cert proves
-      project membership, not `attach_id` (`check_hostname=False`), so it complements —
-      does not replace — rendezvous-by-name. This is genuinely secure and uses existing
-      F3 unchanged.
-    - **Bare-CA workspace — a trusted-network compatibility mode, NOT generally
-      secure** (only `rootCA.pem`): no client cert, so the trainer connects CA-only
-      against a `connection_security=tls` (`CERT_NONE`) listener (the default `mtls`
-      listener rejects a cert-less client). A one-way-TLS listener does **not**
-      authenticate the connecting peer, and F3 binds identity only for mTLS
-      (`conn_manager.py`), so a bare-CA peer is registered as a **routable endpoint
-      before** `SESSION_OPEN` checks `attach_id`. That is safe only when the operator
-      guarantees the listener is reachable exclusively by trusted peers (private
-      network / loopback). V1 therefore classifies bare-CA network attach as a
-      trusted-network compatibility mode, gated behind an explicit operator
-      acknowledgment, never the default secure path. Closing this pre-check window for
-      an untrusted network needs a dedicated restricted attach listener with
-      pre-registration admission — an F3 change that belongs to the deferred
-      confined/hardened mode, not V1.
-  In both cases the trainer verifies the site's certificate chain / `connect_url`
-  identity. If a proxy or relay terminates and re-originates TLS, the trainer
-  authenticates that proxy/relay; such a topology is not a supported V1 attach path.
+  from that same folder. The trainer presents the project-CA client cert over the
+  site's normal mTLS backbone; no dedicated listener is needed. F3 binds the
+  certificate CN to the claimed FQCN at registration
+  (`ConnManager.update_endpoint`, gated on the mTLS connection), so the peer is
+  authenticated as a project member and FQCN-bound before it becomes routable.
+  `SESSION_OPEN`'s `attach_id` then selects which trainer. A profile specifying
+  `connection_security=tls` is rejected: supporting a cert-less client would require
+  a separately gated listener/admission design and is deferred.
 - For the future `file://` driver, there is no TLS handshake and no CA.
   Confidentiality and integrity depend on the configured directory's ownership and
   ACLs. That driver, not Attach, validates that the path is absolute, provisioned
@@ -479,10 +456,8 @@ Because attach reuses the existing site connection path and routing (the same on
 IPCAgent dials), V1 needs **no change to the shared connection manager, overlay
 admission, or routing** — the transport-core "zero change" thesis holds — and it
 needs **no per-job and no dedicated attach listener**: a provisioned trainer rides
-the site's **existing (mTLS) backbone** exactly as a provisioned IPCAgent does. A
-dedicated one-way-TLS (`connection_security=tls`) listener is required **only** for
-the bare-CA (no-client-cert) deployment, which is the weaker end of IPCAgent's own
-range — not an attach-specific extra requirement.
+the site's **existing (mTLS) backbone** exactly as a provisioned IPCAgent does.
+Bare-CA one-way TLS is not a supported Attach deployment in V1.
 
 ## Session Establishment
 
@@ -862,8 +837,8 @@ the same connection legacy IPCAgent dials — provisioned in the trainer profile
 is no new per-job listener to bind and no per-slot address to allocate; attach reuses
 the site connection the client already runs. A provisioned trainer authenticates with
 an auto-discovered project-CA client cert over the existing mTLS backbone (the same
-`{CA_CERT}` + `enhance_credential_info` path IPCAgent uses); only a bare-CA trainer
-needs a `connection_security=tls` (`CERT_NONE`) listener.
+`{CA_CERT}` + `enhance_credential_info` path IPCAgent uses). A bare-CA trainer and
+`connection_security=tls` are rejected in V1.
 
 `attach_id`, `attach_timeout`, and `allow_reconnect` must be represented in
 `ClientAPIBackendContext`. #4906 correctly omitted active attach behavior while no
@@ -877,6 +852,10 @@ route. Local loopback and policy-compliant `file://` attach do not require the f
 For attach only, `task_wait_timeout=None` is normalized to the finite 600-second
 absolute materialization ceiling shown above. External-process mode retains its #4906
 timeout semantics.
+
+Attach must always have a result-liveness bound. `heartbeat_timeout=0` is valid only
+when `result_wait_timeout` is finite; otherwise a dead externally owned trainer could
+leave the CJ waiting forever.
 
 The following remain invalid in attach mode because they express process ownership:
 
@@ -905,8 +884,8 @@ Expected production changes:
      `SESSION_OPEN` (IPCExchanger-style), retrying until reachable or `attach_timeout`;
    - implement attach wait, reconnect on the same attach_id, absolute
      task-materialization timing, the transport-security policy derived from
-     `connect_url` + `connection_security` (mTLS secure path vs. bare-CA
-     trusted-network mode; no new F3 API), and non-owning teardown.
+     `connect_url` + `connection_security` (mTLS secure path, bare-CA TLS rejected;
+     no new F3 API), and non-owning teardown.
 4. `nvflare/app_common/executors/client_api/backend_spec.py`
    - add the public attach ID, restore attach settings, and add the insecure-route
      policy to `ClientAPIBackendContext`;
@@ -934,9 +913,8 @@ Expected production changes:
    - document attach-ID generation and independent provisioning to the job and trainer;
    - document that secure network attach uses IPCAgent's credential path
      (`{CA_CERT}` + `enhance_credential_info` auto-discovery from the trainer's
-     workspace): a provisioned trainer rides the existing mTLS backbone; only a
-     bare-CA trainer needs a dedicated one-way-TLS (`connection_security=tls`,
-     `CERT_NONE`) listener;
+     workspace): a provisioned trainer rides the existing mTLS backbone, while
+     bare-CA one-way TLS is rejected;
    - document the V1 (IPCAgent-equivalent) trust boundary the operator must maintain;
    - add attach examples using the standard Client API, without exposing legacy IPC
      classes.
@@ -951,11 +929,12 @@ CJ-rooted identity; that is out of scope here.)
 ### Unit Tests
 
 - Connection-profile schema accepts both supported Cell modes and rejects unknown
-  modes; a `site_name` inconsistent with the rest of the profile is rejected.
+  modes. Driver-provided authoritative peer identity, when available, must agree
+  with `site_name`; no identity is guessed from a generic URL.
 - The backend derives transport policy from the parsed `connect_url` and the profile's
   `connection_security` (no new F3 capability API): a network route with `mtls` is the
-  secure path; `tls` (bare-CA) is accepted only in the trusted-network compatibility
-  mode; a cleartext non-loopback route is rejected unless explicitly opted in.
+  secure path; `tls` (bare-CA) is rejected; a cleartext non-loopback route is rejected
+  unless explicitly opted in.
 - Attach ID format validation accepts a canonical rendezvous ID, rejects
   malformed/empty IDs, and never generates a fallback in the CJ.
 - The CJ derives the same trainer FQCN, `<site>.-client_api_<attach_id>`, that the
@@ -966,10 +945,8 @@ CJ-rooted identity; that is out of scope here.)
   consulted for `file://`.
 - Secure attach builds trainer credentials as `{CA_CERT: rootCA.pem}` and relies on
   `enhance_credential_info` auto-discovery: a provisioned startup-kit workspace presents
-  the project-CA client cert and completes **mTLS** on the normal backbone; a bare-CA
-  workspace connects CA-only and is accepted only by a `connection_security=tls`
-  (`CERT_NONE`) listener, not the default `mtls`. Missing CA (not missing client cert)
-  is the only hard error.
+  the project-CA client cert and completes **mTLS** on the normal backbone. A bare-CA
+  profile is rejected.
 - When the replacement file driver is available, a `file://` profile requires no CA or
   TLS fields, waits until the site listener artifact is present, accepts a protected
   shared directory, and is rejected by the driver for relative, symlinked,
@@ -1043,8 +1020,8 @@ CJ-rooted identity; that is out of scope here.)
 - `torchrun --nproc_per_node=2` establishes one session from global rank 0.
 - Secure-mode attach with a provisioned trainer workspace completes **shared-CA mTLS
   over the existing site backbone** (auto-discovered project-CA client cert, exactly as
-  IPCAgent does); a bare-CA trainer completes CA-only against a one-way-TLS listener.
-  Regular mTLS connections remain unchanged.
+  IPCAgent does); a bare-CA trainer is rejected. Regular mTLS connections remain
+  unchanged.
 - When the replacement driver lands, `file://` attach runs the same Cell/session
   protocol without a CA or TLS and passes only when the shared path satisfies the
   driver's local filesystem policy. This acceptance test may live in that driver's PR

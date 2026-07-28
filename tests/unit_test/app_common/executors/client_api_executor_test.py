@@ -163,6 +163,22 @@ class TestConstructorValidation:
         with pytest.raises(ValueError, match="attach_id"):
             ClientAPIExecutor(execution_mode="attach", attach_id=attach_id)
 
+    def test_attach_requires_a_liveness_bound_for_result_wait(self):
+        with pytest.raises(ValueError, match="heartbeat_timeout > 0 or a finite result_wait_timeout"):
+            ClientAPIExecutor(
+                execution_mode="attach",
+                attach_id="trainer_a",
+                heartbeat_timeout=0,
+                result_wait_timeout=None,
+            )
+
+        ClientAPIExecutor(
+            execution_mode="attach",
+            attach_id="trainer_a",
+            heartbeat_timeout=0,
+            result_wait_timeout=10,
+        )
+
     def test_valid_full_surface(self):
         executor = ClientAPIExecutor(
             execution_mode="external_process",

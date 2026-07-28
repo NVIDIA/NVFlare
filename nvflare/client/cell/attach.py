@@ -72,6 +72,8 @@ def validate_attach_transport(
 
     File transports are protected by their filesystem policy. Clear network routes
     are local-only unless the executor explicitly opts into an insecure deployment.
+    V1 network attach supports mTLS only: one-way TLS needs a separate, explicitly
+    gated listener policy and is intentionally deferred.
     """
     if not isinstance(connect_url, str) or not connect_url.strip():
         raise ValueError("connect_url must be a non-empty string")
@@ -82,7 +84,9 @@ def validate_attach_transport(
         return ConnectionSecurity.CLEAR
 
     security = effective_connection_security(connect_url, connection_security)
-    if security != ConnectionSecurity.CLEAR:
+    if security == ConnectionSecurity.TLS:
+        raise ValueError("bare-CA TLS attach is not supported; use mTLS or a non-network driver")
+    if security == ConnectionSecurity.MTLS:
         return security
 
     try:
