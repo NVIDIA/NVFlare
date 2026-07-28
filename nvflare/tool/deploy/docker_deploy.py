@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from nvflare.app_opt.job_launcher.study_runtime import RESERVED_DOCKER_KWARGS
+from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.tool.deploy.deploy_common import (
     COMM_CONFIG_JSON,
     DOCKER_CLIENT_LAUNCHER,
@@ -119,6 +120,12 @@ def _patch_comm_config_for_docker(kit_dir: Path) -> None:
     comm_config_path = kit_dir / "local" / COMM_CONFIG_JSON
     comm_config = _load_or_default_comm_config(comm_config_path)
     internal = comm_config.setdefault("internal", {})
+    if isinstance(internal, dict) and internal.get("scheme") == SHARED_FILE_SCHEME:
+        _fail(
+            "INVALID_KIT",
+            f"Docker runtime does not support internal.scheme '{SHARED_FILE_SCHEME}'.",
+            "Use internal.scheme 'tcp', run the original kit in process mode, or choose the Slurm runtime.",
+        )
     internal["scheme"] = "tcp"
     resources = _internal_resources(comm_config)
     resources["host"] = "0.0.0.0"
