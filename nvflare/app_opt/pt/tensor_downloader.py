@@ -241,12 +241,18 @@ def download_tensors_to_disk(
     optional=False,
     abort_signal=None,
     progress_cb=None,
+    root_dir: Optional[str] = None,
 ) -> Tuple[str, Optional[LazyTensorDict]]:
     """Download tensors to disk instead of memory.
 
+    Args:
+        root_dir: optional call-scoped destination root. When omitted, use the
+            root configured on the Cell for backward compatibility.
+
     Returns: tuple of (error message if any, LazyTensorDict for lazy access).
     """
-    root_dir = cell.get_fobs_context().get(_TENSOR_DISK_OFFLOAD_ROOT_DIR)
+    if root_dir is None:
+        root_dir = cell.get_fobs_context().get(_TENSOR_DISK_OFFLOAD_ROOT_DIR)
     if not root_dir:
         raise RuntimeError(f"{_TENSOR_DISK_OFFLOAD_ROOT_DIR} is not set in FOBS context")
     temp_dir = tempfile.mkdtemp(prefix="nvflare_tensors_", dir=root_dir)

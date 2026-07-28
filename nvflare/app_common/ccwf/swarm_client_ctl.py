@@ -31,7 +31,11 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
 from nvflare.app_common.ccwf.common import Constant, NumberMetricComparator, ResultType, make_task_name
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor, ExecutionMode
-from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_disk_offload, setup_tensor_disk_offload
+from nvflare.app_common.utils.tensor_disk_offload_context import (
+    _TENSOR_DISK_OFFLOAD_ROOT_DIR,
+    cleanup_tensor_disk_offload,
+    setup_tensor_disk_offload,
+)
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.validation_utils import (
@@ -828,7 +832,8 @@ class SwarmClientController(ClientSideController):
           decode: process_datum() with PASS_THROUGH=False calls _download_from_remote_cell()
                   which downloads tensors from the source DownloadService.
                   cell.get_fobs_context() supplies the CELL so the download can route to
-                  the source via the cell network.
+                  the source via the cell network; this call supplies the workflow-owned
+                  disk root explicitly when offload is selected.
         """
         import nvflare.fuel.utils.fobs as fobs
 
@@ -847,12 +852,23 @@ class SwarmClientController(ClientSideController):
         encoded = fobs.dumps(payload)
         if enable_tensor_disk_offload is None:
             enable_tensor_disk_offload = getattr(self, "enable_tensor_disk_offload", False)
-        decode_ctx = cell.get_fobs_context(
-            props={
-                fobs.FOBSContextKey.PASS_THROUGH: False,
-                fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: enable_tensor_disk_offload,
-            }
-        )
+        decode_props = {
+            fobs.FOBSContextKey.PASS_THROUGH: False,
+            fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: enable_tensor_disk_offload,
+        }
+        if enable_tensor_disk_offload:
+            context = getattr(self, "_tensor_disk_offload_context", None)
+            root_dir = context.root_dir if context and context.applied else None
+            if root_dir:
+                # The terminal aggregation download may use a different Cell
+                # wrapper than the one on which the workflow context was
+                # installed. Carry the resource explicitly with this decode.
+                decode_props[_TENSOR_DISK_OFFLOAD_ROOT_DIR] = root_dir
+            else:
+                # start_run() already reports the missing context. Keep this
+                # resolution usable instead of selecting disk without a root.
+                decode_props[fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD] = False
+        decode_ctx = cell.get_fobs_context(props=decode_props)
         return fobs.loads(encoded, fobs_ctx=decode_ctx)
 
     def _get_aggregation_client_fqcn(self, aggr: str, fl_ctx: FLContext):
@@ -909,14 +925,15 @@ class SwarmClientController(ClientSideController):
             current_round = request.get_header(AppConstants.CURRENT_ROUND)
             self.log_info(fl_ctx, f"got training result from {client_name} for round {current_round}")
 
-            # Remote trainer results arrive on CellChannel.AUX_COMMUNICATION, which is
-            # never in decode_pass_through_channels, so Adapter.call() uses PASS_THROUGH=False
-            # and tensors are downloaded inline — request already contains real tensors here.
-            # This check is a defensive guard: if a future caller path omits the pre-resolve
-            # step (as the local path does above), lazy refs are still resolved before the
-            # gatherer rather than crashing downstream.
+            # With disk offload enabled, the sending Swarm controller stamps
+            # PASS_THROUGH so this aggregation controller—not the Cell receive
+            # callback—is the terminal consumer. The local self-submit path also
+            # enters here after resolving explicitly.
             if self._has_lazy_refs(request):
                 request = self._resolve_lazy_refs(request, fl_ctx)
+                # PASS_THROUGH is a transport instruction for this one hop, not
+                # part of the model result's semantic metadata.
+                request.set_header(ReservedHeaderKey.PASS_THROUGH, False)
 
             # to be compatible with some widgets that rely on peer_ctx to get result
             peer_ctx.set_prop(FLContextKey.SHAREABLE, request, private=True, sticky=True)
@@ -1108,9 +1125,8 @@ class SwarmClientController(ClientSideController):
                 self.log_info(fl_ctx, "submitting training result locally (aggregation client is self)")
                 # The subprocess result arrives at CJ as LazyDownloadRef (subprocess-side
                 # CellPipe has pass_through_on_send=True).  Resolve before local aggregation.
-                # The remote path goes through AUX_COMMUNICATION (not the pipe channel), so
-                # Adapter.call() downloads tensors inline and _process_learn_result() receives
-                # real tensors; its own _has_lazy_refs guard is purely defensive.
+                # The remote path is stamped PASS_THROUGH below and is resolved by
+                # _process_learn_result() on the aggregation client's CJ.
                 result = self._resolve_lazy_refs(result, fl_ctx)
                 engine = fl_ctx.get_engine()
                 local_fl_ctx = fl_ctx.clone()
@@ -1118,6 +1134,12 @@ class SwarmClientController(ClientSideController):
                 reply = self._process_learn_result(result, local_fl_ctx, abort_signal)
             else:
                 self.log_info(fl_ctx, f"sending training result to aggregation client {aggr}")
+
+                if getattr(self, "enable_tensor_disk_offload", False):
+                    # The aggregation client is the terminal consumer. Preserve
+                    # tensor transport refs through AUX decoding so its
+                    # controller can resolve them with its own offload root.
+                    result.set_header(ReservedHeaderKey.PASS_THROUGH, True)
 
                 task = Task(
                     name=self.report_learn_result_task_name,

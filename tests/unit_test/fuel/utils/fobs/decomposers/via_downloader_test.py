@@ -525,7 +525,6 @@ class TestConcreteViaDownloaderProgressCallback:
             def get_fobs_context(self):
                 return {
                     fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: False,
-                    tensor_downloader._TENSOR_DISK_OFFLOAD_ROOT_DIR: str(tmp_path),
                 }
 
         def fake_download_object(**kwargs):
@@ -539,7 +538,10 @@ class TestConcreteViaDownloaderProgressCallback:
             ref_id="result-ref",
             per_request_timeout=1.0,
             cell=FakeCell(),
-            fobs_ctx={fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: True},
+            fobs_ctx={
+                fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: True,
+                tensor_downloader._TENSOR_DISK_OFFLOAD_ROOT_DIR: str(tmp_path),
+            },
         )
 
         assert err is None

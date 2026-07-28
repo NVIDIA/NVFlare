@@ -13,21 +13,25 @@
 # limitations under the License.
 """Tests for Fix 17: resolve LazyDownloadRefs before local swarm aggregation.
 
-Covers three scenarios:
+Covers four scenarios:
   1. _resolve_lazy_refs(): FOBS round-trip with PASS_THROUGH=False in decode context.
   2. Self-aggregation local path: LazyDownloadRefs resolved before _process_learn_result().
-  3. Remote P2P path: _resolve_lazy_refs() NOT called (resolution handled by Fix 14).
+  3. Remote P2P path: trainer CJ preserves refs for explicit aggregation-CJ resolution.
   4. Defensive guard in _end_gather(): fires, calls system_panic (invariant violation).
 """
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 
 from nvflare.apis.dxo import DXO, DataKind
-from nvflare.apis.fl_constant import ReturnCode
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.fl_constant import ReservedKey, ReturnCode
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.ccwf.swarm_client_ctl import SwarmClientController
+from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
@@ -70,6 +74,10 @@ def _make_controller():
     ctl.me = "site-1"
     # attributes set by __init__
     ctl.enable_tensor_disk_offload = True
+    ctl._tensor_disk_offload_context = SimpleNamespace(
+        applied=True,
+        root_dir="/tmp/swarm-offload",
+    )
     ctl.metric_comparator = None
     ctl.metric_comparator_id = None
     ctl.report_learn_result_task_name = "swarm_report_learn_result"
@@ -174,6 +182,11 @@ class TestResolveRef(unittest.TestCase):
         self.assertTrue(
             props.get(FOBSContextKey.TENSOR_DISK_OFFLOAD, False),
             "local aggregation result resolution must opt in to tensor disk offload",
+        )
+        self.assertEqual(
+            props.get(_TENSOR_DISK_OFFLOAD_ROOT_DIR),
+            "/tmp/swarm-offload",
+            "the terminal resolution must carry the workflow-owned root explicitly",
         )
 
         # fobs.loads must receive the decode context as fobs_ctx kwarg
@@ -294,8 +307,8 @@ class TestLocalAggregationPath(unittest.TestCase):
             "_process_learn_result must receive the real-array result from _resolve_lazy_refs",
         )
 
-    def test_in_process_local_aggr_offloads_in_memory_result_before_process(self):
-        """An in-process trainer/aggregator also uses the terminal disk-offload path."""
+    def test_in_process_local_aggr_routes_in_memory_result_through_terminal_resolution(self):
+        """An in-process local result remains under the controller's terminal-consumer policy."""
         ctl, resolved_result = self._build_local_aggr_ctl()
         in_memory_result = _make_shareable_with_real_arrays()
         ctl.execute_learn_task = MagicMock(return_value=in_memory_result)
@@ -331,10 +344,53 @@ class TestLocalAggregationPath(unittest.TestCase):
         self.assertEqual(ctl._resolve_calls, [], "_resolve_lazy_refs must NOT be called when execute_learn_task fails")
 
 
-class TestRemotePathUnchanged(unittest.TestCase):
+class TestRemoteAggregationPath(unittest.TestCase):
     """For aggr != self.me, _resolve_lazy_refs() must NOT be called on the trainer CJ.
-    Resolution for the remote path happens inside broadcast_and_wait() (Fix 14).
+    The result is marked PASS_THROUGH so resolution happens explicitly on the
+    aggregation client's CJ.
     """
+
+    def test_aggregation_client_resolves_passed_through_result_before_gather(self):
+        class _FakeGatherer:
+            for_round = 0
+
+            def __init__(self):
+                self.gathered_result = None
+
+            def gather(self, _client_name, request, _fl_ctx):
+                self.gathered_result = request
+                return make_reply(ReturnCode.OK)
+
+        ctl = _make_controller()
+        ctl.me = "site-2"
+        ctl.gatherer = _FakeGatherer()
+
+        lazy_result = _make_shareable_with_lazy_refs()
+        lazy_result.set_header(AppConstants.CURRENT_ROUND, 0)
+        lazy_result.set_header(ReservedHeaderKey.PASS_THROUGH, True)
+        resolved_result = _make_shareable_with_real_arrays()
+        resolve_calls = []
+
+        def resolve(result, fl_ctx):
+            resolve_calls.append(result)
+            return resolved_result
+
+        ctl._resolve_lazy_refs = resolve
+        fl_ctx = MagicMock()
+        peer_ctx = FLContext()
+        peer_ctx.set_prop(ReservedKey.IDENTITY_NAME, "site-1", private=True, sticky=False)
+        fl_ctx.get_peer_context.return_value = peer_ctx
+        abort_signal = MagicMock()
+        abort_signal.triggered = False
+
+        with patch("nvflare.app_common.ccwf.swarm_client_ctl.Gatherer", _FakeGatherer):
+            reply = ctl._process_learn_result(lazy_result, fl_ctx, abort_signal)
+
+        self.assertEqual(reply.get_return_code(), ReturnCode.OK)
+        self.assertEqual(resolve_calls, [lazy_result])
+        gathered_result = ctl.gatherer.gathered_result
+        self.assertIs(gathered_result, resolved_result)
+        self.assertFalse(gathered_result.get_header(ReservedHeaderKey.PASS_THROUGH))
 
     def test_remote_aggr_does_not_call_resolve(self):
         """Remote aggregation path must not eagerly materialise tensors on the trainer CJ."""
@@ -380,6 +436,8 @@ class TestRemotePathUnchanged(unittest.TestCase):
 
         self.assertEqual(resolve_called, [], "_resolve_lazy_refs must NOT be called for remote aggregator path")
         ctl.broadcast_and_wait.assert_called_once()
+        sent_result = ctl.broadcast_and_wait.call_args.kwargs["task"].data
+        self.assertTrue(sent_result.get_header(ReservedHeaderKey.PASS_THROUGH))
 
     def test_in_process_result_is_forwarded_to_remote_aggregator_without_local_offload(self):
         ctl = _make_controller()
@@ -407,6 +465,7 @@ class TestRemotePathUnchanged(unittest.TestCase):
         self.assertEqual(resolve_called, [])
         sent_result = ctl.broadcast_and_wait.call_args.kwargs["task"].data
         self.assertIs(sent_result, in_memory_result)
+        self.assertTrue(sent_result.get_header(ReservedHeaderKey.PASS_THROUGH))
 
     @staticmethod
     def _make_remote_task_data():

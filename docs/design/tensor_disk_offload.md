@@ -52,7 +52,11 @@ Lazy refs in payload tree
         +--> aggregator consumes lazy refs (materialize on demand)
 ```
 
-`tensor_disk_offload_context` checks `run_manager.cell` directly when available, then falls back to `engine.get_cell()`. This applies workflow-level FOBS context updates to the active job runner cell in the normal run path.
+`tensor_disk_offload_context` checks `run_manager.cell` directly when available,
+then falls back to `engine.get_cell()`. Workflows that explicitly resolve a
+transport ref also put the job-scoped root in that call's FOBS decode context;
+the disk destination therefore does not depend on mutable state in whichever
+Cell wrapper performs the download.
 
 ## Runtime Behavior
 
@@ -70,11 +74,13 @@ The built-in weighted path remains lazy-friendly and memory-efficient.
 ### Swarm/CCWF
 
 `ClientAPIExecutor` preserves the Cell/FOBS large-payload references between an
-external trainer and the CCWF controller. For remote aggregation, the selected
-aggregation client downloads the peer's tensor stream directly. For local
-aggregation, `SwarmClientController._resolve_lazy_refs()` resolves the trainer
-reference through the same active Cell context. In both cases tensor disk
-offload yields lazy tensor refs, and the built-in
+external trainer and the CCWF controller. When a training result is sent to a
+remote aggregation client, `SwarmClientController` requests PASS_THROUGH on that
+message. The aggregation controller therefore receives refs instead of
+materializing the tensors inside the Cell receive callback, and explicitly
+resolves them with its job-scoped disk root. The local aggregation path uses the
+same explicit resolution. In both cases tensor disk offload yields lazy tensor
+refs, and the built-in
 `InTimeAccumulateWeightedAggregator` materializes one tensor at a time.
 
 The Swarm controller owns the decision to preserve or resolve transport refs.
@@ -88,6 +94,17 @@ into memory for `in_process`, `attach`, and non-`ClientAPIExecutor` learners.
 This conservative fallback supports jobs where sites use different learner
 execution modes. Disk-backed aggregation refs remain local to the aggregation
 client and are never passed to a learner.
+
+The external trainer's IPC Cell is intentionally not configured for disk
+offload. It is a terminal consumer of learn-task refs and the Client API expects
+ordinary in-memory tensors for model loading. The trainer Cell only transports
+refs according to the decision made by `SwarmClientController`; it does not
+decide aggregation policy.
+
+If an in-process learner is also the local aggregation client, its own result is
+already an in-memory object with no transport ref to preserve. That one local
+contribution remains in memory; remote contributions still use terminal
+aggregation-CJ disk offload.
 
 `SwarmLearningRecipe` defaults to NumPy exchange for compatibility. Disk offload
 therefore requires `server_expected_format=ExchangeFormat.PYTORCH`; streamed
