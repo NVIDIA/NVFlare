@@ -51,6 +51,15 @@ not run parent server or client processes.
 The input kit is treated as read-only. Runtime-specific files are written to
 the prepared output directory.
 
+.. note::
+
+   Docker and Kubernetes preparation support only the TCP internal transport.
+   If the input kit's ``local/comm_config.json`` explicitly sets
+   ``internal.scheme`` to ``shared-file``, ``deploy prepare`` stops with an
+   ``INVALID_KIT`` error instead of rewriting the scheme to TCP. Run the
+   original kit in process mode or use the Slurm runtime for shared-file
+   transport (see :ref:`slurm_shared_file_channel`).
+
 *************
 Docker Config
 *************
