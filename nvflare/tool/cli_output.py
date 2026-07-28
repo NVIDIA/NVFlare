@@ -70,22 +70,27 @@ _SENSITIVE_KEY_NAMES = {
     "secret_key",
     "session_token",
 }
+_SENSITIVE_TEXT_VALUE_PATTERN = r'"(?:\\.|[^"\\])*(?:"|$)|' r"'(?:\\.|[^'\\])*(?:'|$)|" r"[^\s,;]+"
 _SENSITIVE_ASSIGNMENT_PATTERN = re.compile(
-    r"(?i)\b("
+    r"(?i)\b(?P<prefix>(?:"
     r"password|passwd|passphrase|credential|credentials|"
     r"access[-_ ]?token|refresh[-_ ]?token|id[-_ ]?token|session[-_ ]?token|auth[-_ ]?token|"
     r"api[-_ ]?key|private[-_ ]?key|secret[-_ ]?key|client[-_ ]?secret"
-    r")(\s*[:=]\s*)([\"']?)([^\"'\s,;]+)([\"']?)"
+    r")[\"']?\s*[:=]\s*)"
+    rf"(?P<value>{_SENSITIVE_TEXT_VALUE_PATTERN})"
 )
 _SENSITIVE_CLI_OPTION_PATTERN = re.compile(
-    r"(?i)(--(?:"
+    r"(?i)(?P<prefix>--(?:"
     r"password|passwd|passphrase|credential|credentials|"
     r"access[-_]?token|refresh[-_]?token|id[-_]?token|session[-_]?token|auth[-_]?token|"
     r"api[-_]?key|private[-_]?key|secret[-_]?key|client[-_]?secret"
-    r")(?:\s+|=))([\"']?)([^\"'\s,;]+)([\"']?)"
+    r")(?:\s+|=))"
+    rf"(?P<value>{_SENSITIVE_TEXT_VALUE_PATTERN})"
 )
 _BEARER_TOKEN_PATTERN = re.compile(r"(?i)\b(authorization\s*:\s*bearer\s+)([A-Za-z0-9._~+/=-]+)")
-_AUTH_VALUE_PATTERN = re.compile(r"(?i)\b(authorization\s*[:=]\s*)(?!bearer\s+)([\"']?)([^\"'\s,;]+)([\"']?)")
+_AUTH_VALUE_PATTERN = re.compile(
+    rf"(?i)(?P<prefix>\bauthorization\s*[:=]\s*)(?!bearer\s+)" rf"(?P<value>{_SENSITIVE_TEXT_VALUE_PATTERN})"
+)
 _PEM_PRIVATE_KEY_PATTERN = re.compile(
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
     re.DOTALL,
@@ -169,13 +174,23 @@ def _is_sensitive_key(key: Any) -> bool:
     return bool(key_parts & _SENSITIVE_KEY_PARTS)
 
 
+def _redact_sensitive_match(match: re.Match) -> str:
+    prefix = match.group("prefix")
+    value = match.group("value")
+    if value.startswith(('"', "'")):
+        quote = value[0]
+        closing_quote = quote if len(value) > 1 and value.endswith(quote) else ""
+        return f"{prefix}{quote}{_REDACTED}{closing_quote}"
+    return f"{prefix}{_REDACTED}"
+
+
 def _redact_sensitive_text(text: str) -> str:
     redacted = _PEM_PRIVATE_KEY_PATTERN.sub(_REDACTED, text)
     redacted = _BEARER_TOKEN_PATTERN.sub(r"\1" + _REDACTED, redacted)
-    redacted = _AUTH_VALUE_PATTERN.sub(r"\1\2" + _REDACTED + r"\4", redacted)
+    redacted = _AUTH_VALUE_PATTERN.sub(_redact_sensitive_match, redacted)
     redacted = _URL_PASSWORD_PATTERN.sub(r"\1" + _REDACTED + r"\3", redacted)
-    redacted = _SENSITIVE_CLI_OPTION_PATTERN.sub(r"\1\2" + _REDACTED + r"\4", redacted)
-    return _SENSITIVE_ASSIGNMENT_PATTERN.sub(r"\1\2\3" + _REDACTED + r"\5", redacted)
+    redacted = _SENSITIVE_CLI_OPTION_PATTERN.sub(_redact_sensitive_match, redacted)
+    return _SENSITIVE_ASSIGNMENT_PATTERN.sub(_redact_sensitive_match, redacted)
 
 
 def _sanitize_for_cli_output(value: Any, key: Any = None) -> Any:

@@ -592,6 +592,21 @@ class TestOutputError:
 
 
 class TestSensitiveOutputRedaction:
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ('password="correct horse battery staple"', 'password="<redacted>"'),
+            (
+                '{"client_secret": "alpha beta gamma", "safe": true}',
+                '{"client_secret": "<redacted>", "safe": true}',
+            ),
+            ("--client-secret='alpha beta gamma' --verbose", "--client-secret='<redacted>' --verbose"),
+            ("Authorization: 'alpha beta gamma'", "Authorization: '<redacted>'"),
+        ],
+    )
+    def test_redacts_quoted_sensitive_text_values(self, text, expected):
+        assert cli_output.sanitize_cli_output(text) == expected
+
     def test_output_json_redacts_sensitive_fields(self, capsys):
         output({"credential": "cred-secret", "status": "ok"}, "json")
         payload = json.loads(capsys.readouterr().out)
