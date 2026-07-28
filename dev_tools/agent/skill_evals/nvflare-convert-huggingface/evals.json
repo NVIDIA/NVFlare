@@ -19,6 +19,7 @@
         "The round loop calls trainer.evaluate() before trainer.train() so accuracy describes the received global model.",
         "The generated job imports FedAvgRecipe from nvflare.app_opt.pt.recipes.fedavg after recipe show confirms it.",
         "The agent treats recipe show as recipe metadata only, uses SimEnv with recipe.execute for local validation and standard export flags, and does not guess a separate export environment or another recipe-adjacent API.",
+        "A successful nvflare agent inspect establishes that the host-provided NVFLARE product is available even when importlib.metadata has no nvflare distribution record; when all other requirements are already compatible, the agent skips installation and continues to simulation instead of running uv pip install --system.",
         "Intentional typo and abbreviation rejection checks run through assertion wrappers whose top-level commands succeed only when the generated parser rejects them.",
         "The generated recipe model is an explicit class_path and args mapping, not a live model instance.",
         "The generated recipe uses ExchangeFormat.PYTORCH, enables tensor disk offload, quotes train_args, and packages the required model file into the server app with recipe.add_server_file or an equivalent server-targeted API, including a server-only model.py that would otherwise be outside each client app's train_script import closure.",
@@ -57,6 +58,10 @@
           {
             "id": "respect-recipe-api-boundary",
             "description": "uses recipe show only for returned recipe metadata, follows the SimEnv plus recipe.execute and standard export contract, and does not guess additional recipe-adjacent APIs"
+          },
+          {
+            "id": "respect-host-nvflare-environment",
+            "description": "treats a successful NVFLARE CLI inspection as authoritative product-availability evidence, skips installation when other requirements are compatible, and targets the host-provided Python explicitly when an install is genuinely needed"
           },
           {
             "id": "explicit-server-model-config",
@@ -99,6 +104,14 @@
           {
             "id": "no-standalone-expected-failure-probes",
             "description": "does not leave intentional typo or abbreviation rejection checks as failed top-level validation commands"
+          },
+          {
+            "id": "no-metadata-only-nvflare-reinstall",
+            "description": "does not install or replace a working host-provided NVFLARE product solely because importlib.metadata lacks a distribution record or reports a development-version mismatch"
+          },
+          {
+            "id": "no-speculative-system-install",
+            "description": "does not use uv pip install --system unless the agent host explicitly supplies and identifies the system interpreter as the writable dependency target"
           }
         ],
         "process_metrics": [
