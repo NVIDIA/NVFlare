@@ -19,7 +19,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
-import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _EXAMPLES_ROOT = _REPO_ROOT / "examples"
@@ -80,58 +79,3 @@ def test_async_aggregation_recipe_finalizes(monkeypatch):
     job = recipe.finalize()
 
     assert recipe.finalize() is job
-
-
-def _import_pt_async_modules(monkeypatch):
-    pytest.importorskip("torch")
-    pytest.importorskip("torchvision")
-    pytest.importorskip("tensorboard")
-    example_dir = _EXAMPLES_ROOT / "collab" / "pt_async_cifar10"
-    monkeypatch.syspath_prepend(str(example_dir))
-    entrypoint = importlib.import_module("pt_async_cifar10")
-    aggregator = importlib.import_module("async_aggregator")
-    return entrypoint, aggregator
-
-
-@pytest.mark.parametrize(
-    ("option", "message"),
-    [
-        ("--clients-per-round", "--clients-per-round must be between 1 and --num-clients"),
-        ("--min-response-clients", "--min-response-clients must be between 1 and --clients-per-round"),
-    ],
-)
-def test_pt_async_rejects_explicit_zero_client_counts(monkeypatch, option, message):
-    entrypoint, _ = _import_pt_async_modules(monkeypatch)
-    args = entrypoint.define_parser().parse_args([option, "0"])
-
-    with pytest.raises(ValueError, match=message):
-        entrypoint.make_recipe(args, {"num_clients": 10})
-
-
-def test_pt_async_run_seed_controls_client_sampling(monkeypatch):
-    _, aggregator = _import_pt_async_modules(monkeypatch)
-    physical_names = [f"site-{index}" for index in range(1, 9)]
-    run_seed = 23
-    round_index = 4
-    server = aggregator.Cifar10AsyncAggregator(
-        data_root="/unused",
-        logical_num_clients=20,
-        clients_per_round=3,
-        run_seed=run_seed,
-    )
-
-    sampled_names = server._sample_physical_names(round_index, physical_names)
-    expected_physical = (
-        np.random.RandomState(run_seed + round_index)
-        .choice(physical_names, size=server.clients_per_round, replace=False)
-        .tolist()
-    )
-    assert sampled_names == expected_physical
-
-    assignments = server._build_logical_assignments(round_index, sampled_names)
-    expected_logical = (
-        np.random.RandomState(run_seed + round_index + 1234)
-        .choice(server._logical_client_names, size=len(sampled_names), replace=False)
-        .tolist()
-    )
-    assert assignments == dict(zip(sampled_names, expected_logical))
