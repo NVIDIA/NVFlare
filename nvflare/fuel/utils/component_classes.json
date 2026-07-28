@@ -204,21 +204,6 @@
     "SVTPrivacy": [
         "nvflare.app_common.filters.svt_privacy"
     ],
-    "HubAppDeployer": [
-        "nvflare.app_common.hub.hub_app_deployer"
-    ],
-    "BcastOperator": [
-        "nvflare.app_common.hub.hub_controller"
-    ],
-    "HubController": [
-        "nvflare.app_common.hub.hub_controller"
-    ],
-    "RelayOperator": [
-        "nvflare.app_common.hub.hub_controller"
-    ],
-    "HubExecutor": [
-        "nvflare.app_common.hub.hub_executor"
-    ],
     "DefaultJobScheduler": [
         "nvflare.app_common.job_schedulers.job_scheduler"
     ],
