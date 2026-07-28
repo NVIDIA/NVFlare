@@ -22,12 +22,12 @@ Do not run this reproducer with Simulator or a non-secure POC. External-process
 results only get `relay=True` in secure mode; without it, the affected branch is
 not executed and unmodified `main` will pass.
 
-Run the dedicated integration target, which provisions a secure project and
-submits only this job:
+The test is registered under the `client_api` integration framework. Select its
+configuration by name to provision a secure project and submit only this job:
 
 ```bash
 cd tests/integration_test
-NVFLARE_TEST_FRAMEWORK=swarm_external_process_relay pytest -s system_test.py
+NVFLARE_TEST_FRAMEWORK=client_api pytest -s system_test.py -k swarm_external_process_relay
 ```
 
 Expected result when this fixture is run against the unmodified `main`

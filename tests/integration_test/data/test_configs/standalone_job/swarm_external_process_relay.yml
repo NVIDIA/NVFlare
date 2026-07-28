@@ -1,7 +1,8 @@
 # Regression test for secure external-process result relay in Swarm.
-# This is intentionally separate from ext_process_streaming.yml so it can be
-# run alone when verifying the failure on an unmodified main branch:
-#   NVFLARE_TEST_FRAMEWORK=swarm_external_process_relay pytest -s system_test.py
+# This is registered under the client_api framework and uses a provisioned
+# project because secure mode is required to create relay=True lazy refs.
+# To select only this config:
+#   NVFLARE_TEST_FRAMEWORK=client_api pytest -s system_test.py -k swarm_external_process_relay
 project_yaml: ./data/projects/client_api.yml
 jobs_root_dir: ./data/jobs
 cleanup: True
