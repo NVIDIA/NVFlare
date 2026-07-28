@@ -38,9 +38,17 @@ or returned by:
 
    nvflare recipe show <recipe-name> --format json
 
-The base ``Recipe`` type defines behavior shared by concrete recipes. Most
-scripts do not instantiate the base type directly. The public constructor
-surface is the documented constructor of each concrete recipe.
+The base ``Recipe`` type is an implementation base shared by concrete recipes;
+it is not a user-facing job constructor. Application entrypoints should import
+and instantiate a named concrete recipe rather than importing ``Recipe`` from
+``nvflare.recipe.spec`` or passing around its generated job. The public
+constructor surface is the documented constructor of each concrete recipe.
+
+Recipe documentation and the lower-level :ref:`fed_job_api` documentation are
+intentionally separate. Use recipes for supported high-level workflows. Use
+``FedJob`` when implementing an advanced workflow that requires arbitrary
+component placement or custom job construction, and keep that assembly behind
+a dedicated recipe when exposing a reusable high-level entrypoint.
 
 Recipe Execution
 ----------------

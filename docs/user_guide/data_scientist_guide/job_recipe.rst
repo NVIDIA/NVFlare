@@ -8,9 +8,13 @@ This tutorial covers how to use Job Recipes in NVFlare to simplify federated lea
 Job Recipes provide a simplified abstraction that hides the complexity of low-level job configurations while exposing only the key arguments users should care about.
 
 .. note::
-   This is a technical preview. Not all algorithms are currently implemented with recipes.
+   Recipe documentation intentionally focuses on concrete, high-level recipe
+   entry points. The lower-level :ref:`fed_job_api` is documented separately
+   for advanced workflows that require arbitrary component placement or custom
+   job construction.
 
-For the stable public Recipe surface, see :ref:`recipe_api`.
+For the stable public Recipe surface and available customization helpers, see
+:ref:`recipe_api`.
 
 
 Motivation for Using JobRecipe
