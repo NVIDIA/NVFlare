@@ -207,6 +207,20 @@ def test_fedce_rejects_updates_without_common_trainable_parameters():
         aggregator.aggregate_model()
 
 
+def test_fedce_rejects_updates_with_inconsistent_parameter_sets():
+    aggregator = FedCEModelAggregator()
+    aggregator.accept_model(_result("site-1", [1.0], 0.5))
+    site_2 = _result("site-2", [2.0], 0.5)
+    site_2.params["bias"] = torch.tensor([1.0])
+    aggregator.accept_model(site_2)
+
+    with pytest.raises(
+        ValueError,
+        match=r"client 'site-2' parameters do not match client 'site-1'.*unexpected=\['bias'\]",
+    ):
+        aggregator.aggregate_model()
+
+
 def test_fedce_materializes_lazy_parameters():
     class LazyValue:
         @staticmethod

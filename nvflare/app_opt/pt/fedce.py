@@ -84,8 +84,6 @@ def _normalize(values: List[float], epsilon: float) -> List[float]:
         raise ValueError(f"FedCE contribution values must be finite, got {values}")
     clipped = [max(float(value), epsilon) for value in values]
     total = sum(clipped)
-    if total <= 0.0:
-        return [1.0 / len(values)] * len(values)
     return [value / total for value in clipped]
 
 
@@ -225,9 +223,17 @@ class FedCEModelAggregator(ModelAggregator):
         )
 
     def _get_cosine_param_names(self, clients: List[str]) -> List[str]:
-        common = set(self._results[clients[0]].params)
+        reference_client = clients[0]
+        common = set(self._results[reference_client].params)
         for client in clients[1:]:
-            common.intersection_update(self._results[client].params)
+            client_params = set(self._results[client].params)
+            if client_params != common:
+                missing = sorted(common - client_params)
+                unexpected = sorted(client_params - common)
+                raise ValueError(
+                    f"FedCE client {client!r} parameters do not match client {reference_client!r}: "
+                    f"missing={missing}, unexpected={unexpected}"
+                )
         if self.trainable_param_names:
             common.intersection_update(self.trainable_param_names)
         if not common:

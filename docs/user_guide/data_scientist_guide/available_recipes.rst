@@ -212,8 +212,10 @@ then uses those estimates as aggregation weights.
 FedCE requires a compatible client training script. The script must return model differences and set
 ``FLModel.meta["fedce_minus_val"]``. The ``PTFedCEHelper`` utility constructs the minus model,
 reads the prior contribution weight from the received model metadata, and attaches the score to the result.
-The score should increase with estimated contribution, matching the research implementation's
-``1 - minus-model validation metric`` convention.
+The score must increase with estimated contribution, regardless of the validation metric's direction.
+For a higher-is-better metric such as Dice, use ``1 - minus_model_dice`` so a larger performance drop
+produces a larger score, matching the research implementation. For a lower-is-better metric such as loss,
+use ``minus_model_loss`` because a larger loss after removing the client already indicates greater contribution.
 When ``model`` is supplied as a dict config, pass ``trainable_param_names`` explicitly so contribution
 estimation excludes non-trainable state such as BatchNorm running statistics and counters.
 FedCE is therefore a dedicated algorithm recipe, not a passive option on ``FedAvgRecipe``.
