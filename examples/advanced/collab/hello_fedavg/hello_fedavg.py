@@ -123,13 +123,18 @@ def make_recipe(args):
     return recipe
 
 
+def make_env(recipe):
+    return SimEnv(clients=recipe.configured_sites())
+
+
 def main():
     parser = argparse.ArgumentParser(description="Hello-world FedAvg with the Collab API")
     parser.add_argument("--num-clients", type=int, default=2)
     parser.add_argument("--num-rounds", type=int, default=3)
     args = parser.parse_args()
     simple_logging()
-    run = make_recipe(args).execute(SimEnv(num_clients=args.num_clients))
+    recipe = make_recipe(args)
+    run = recipe.execute(make_env(recipe))
     print("Job Status:", run.get_status())
     print("Results at:", run.get_result())
 
