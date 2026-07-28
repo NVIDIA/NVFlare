@@ -465,18 +465,16 @@ class FedJobConfig:
         shutil.copyfile(source_file, dest_file)
 
         source_dir = os.path.dirname(source_file)
+        is_flat_external_script = is_external_script and not os.path.isfile(os.path.join(source_dir, "__init__.py"))
+        search_source_dir = is_flat_external_script or (not is_external_script and "." not in module)
         for import_source, level in import_specs:
             import_module = self._resolve_import_module(module, import_source, level, source_file)
             if not import_module:
                 continue
             import_path = os.path.join(*self._module_parts(import_module)) + ".py"
             search_roots = [source_root]
-            # Registered scripts and non-package modules can resolve unqualified imports from source-dir siblings.
-            if (
-                level == 0
-                and (is_external_script or "." not in module)
-                and os.path.basename(source_file) != "__init__.py"
-            ):
+            # Flat registered scripts and non-package modules can resolve unqualified imports from source-dir siblings.
+            if level == 0 and search_source_dir and os.path.basename(source_file) != "__init__.py":
                 search_roots.insert(0, source_dir)
             checked_roots = set()
             for search_root in search_roots:
