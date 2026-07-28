@@ -2,7 +2,9 @@
 
 ## Objective
 
-Reduce aggregation peak memory for large PyTorch model updates by streaming tensor payloads to disk and resolving tensors lazily end-to-end.
+Reduce aggregation peak memory for large PyTorch model updates by materializing
+incoming streamed tensor payloads on disk and resolving them lazily during
+aggregation.
 
 ## Scope
 
@@ -10,6 +12,14 @@ Reduce aggregation peak memory for large PyTorch model updates by streaming tens
 - Controlled by `enable_tensor_disk_offload` in the receiving FedAvg or Swarm workflow/controller config.
 - Default is `False` (legacy in-memory behavior).
 - If model updates are converted to NumPy before transport, tensor disk offload is not engaged.
+
+Tensor streaming, ref pass-through, and tensor disk offload are separate
+behaviors. The sender's `TensorDownloadable` remains memory-backed while it
+serves a transport ref. An intermediate process may preserve that ref without
+downloading it. Disk offload applies when the receiving aggregation workflow
+terminates the ref and downloads its tensor chunks. It does not spool the
+trainer's model or training result to disk at the source, and it does not reduce
+the memory required to load or train the model in the trainer.
 
 ## How To Enable
 
@@ -78,9 +88,10 @@ external trainer and the CCWF controller. When a training result is sent to a
 remote aggregation client, `SwarmClientController` requests PASS_THROUGH on that
 message. The aggregation controller therefore receives refs instead of
 materializing the tensors inside the Cell receive callback, and explicitly
-resolves them with its job-scoped disk root. The local aggregation path uses the
-same explicit resolution. In both cases tensor disk offload yields lazy tensor
-refs, and the built-in
+resolves them with its job-scoped disk root. A result returned by a local
+external trainer also crosses a Cell boundary as a ref and is resolved by the
+local aggregation controller with the same disk root. In both cases tensor disk
+offload yields lazy tensor refs, and the built-in
 `InTimeAccumulateWeightedAggregator` materializes one tensor at a time.
 
 The Swarm controller owns the decision to preserve or resolve transport refs.
@@ -95,11 +106,14 @@ This conservative fallback supports jobs where sites use different learner
 execution modes. Disk-backed aggregation refs remain local to the aggregation
 client and are never passed to a learner.
 
-The external trainer's IPC Cell is intentionally not configured for disk
-offload. It is a terminal consumer of learn-task refs and the Client API expects
-ordinary in-memory tensors for model loading. The trainer Cell only transports
-refs according to the decision made by `SwarmClientController`; it does not
-decide aggregation policy.
+The external trainer process's Cell is not configured as a disk-offload
+receiver. It is the terminal consumer of an incoming learn task, and the Client
+API materializes ordinary in-memory tensors for model loading. For an outgoing
+training result, `TensorDownloadable` still holds the tensors in trainer memory
+while serving a transport ref. `ClientAPIExecutor` and the client job preserve
+and route that ref; the selected aggregation controller decides whether its
+terminal download is materialized on disk. Source-side tensor spooling is not
+part of this feature.
 
 If an in-process learner is also the local aggregation client, its own result is
 already an in-memory object with no transport ref to preserve. That one local

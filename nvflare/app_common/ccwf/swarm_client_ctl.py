@@ -338,8 +338,9 @@ class SwarmClientController(ClientSideController):
             cuda_empty_cache: also call torch.cuda.empty_cache() during aggregator-side cleanup.
                 In swarm learning the aggregator runs on the same client as the trainer, so GPU
                 memory may be relevant. Defaults to False.
-            enable_tensor_disk_offload: download streamed PyTorch tensors to temporary disk files and pass
-                lazy tensor refs to the aggregator. Defaults to False.
+            enable_tensor_disk_offload: download incoming streamed PyTorch tensors to temporary disk files
+                on the selected aggregation client and pass lazy tensor refs to the aggregator. The trainer's
+                source tensors remain in memory. Defaults to False.
 
         Note that if the max_concurrent_submissions is set to 1, it practically means that all training results
         will be submitted to the aggregation client sequentially. This lowers the resource pressure on

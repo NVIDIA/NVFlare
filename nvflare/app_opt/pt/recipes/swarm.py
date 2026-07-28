@@ -197,8 +197,9 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         server_expected_format: Parameter representation used by the CCWF controllers and aggregator.
             Use ``ExchangeFormat.PYTORCH`` to keep tensors on the streaming path. Defaults to
             ``ExchangeFormat.NUMPY`` for backward compatibility.
-        enable_tensor_disk_offload: Download streamed PyTorch tensors to temporary disk files on
-            aggregation clients and materialize them lazily during aggregation. This requires
+        enable_tensor_disk_offload: Download incoming streamed PyTorch tensors to temporary disk
+            files on aggregation clients and materialize them lazily during aggregation. The
+            trainer's source tensors remain in memory. This requires
             ``server_expected_format=ExchangeFormat.PYTORCH`` to take effect. Defaults to False.
 
     Example:

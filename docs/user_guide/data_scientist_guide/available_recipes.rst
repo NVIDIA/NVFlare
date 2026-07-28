@@ -991,7 +991,9 @@ Decentralized federated learning without a central server.
    - For PyTorch tensor streaming with lower aggregation-client memory pressure, set
      ``server_expected_format=ExchangeFormat.PYTORCH`` and
      ``enable_tensor_disk_offload=True``. Configure ``tensor_download_chunk_size``
-     and streaming timeouts through ``recipe.add_client_config({...})``.
+     and streaming timeouts through ``recipe.add_client_config({...})``. This
+     offloads the receiving aggregation path, not the trainer's in-memory model
+     or outgoing result tensors.
    - ``pipe_type`` (default ``"cell_pipe"``): set to ``"file_pipe"`` when cell networking
      is unavailable or for third-party subprocess integrations.
    - ``submit_result_timeout``, ``download_complete_timeout``,

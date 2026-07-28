@@ -554,7 +554,9 @@ For large PyTorch models, use
 ``server_expected_format=ExchangeFormat.PYTORCH`` together with
 ``enable_tensor_disk_offload=True``. The first keeps CCWF payloads on the
 PyTorch tensor streaming path; the second writes incoming streamed tensors to
-disk on whichever client is selected as the aggregator.
+disk on whichever client is selected as the aggregator. This is a receiving
+aggregation-side optimization: the trainer still keeps the model and outgoing
+training result tensors in memory while serving their transport ref.
 
 For advanced customization, use ``BaseSwarmLearningRecipe`` with explicit server and client configurations:
 
@@ -849,7 +851,8 @@ The following SwarmClientController parameters are particularly important for la
    set ``server_expected_format=ExchangeFormat.PYTORCH``; NumPy payloads still
    stream, but they do not use tensor disk offload. Temporary data follows
    Python's ``TMPDIR`` setting, so point ``TMPDIR`` to a disk-backed mount
-   rather than RAM-backed ``tmpfs``.
+   rather than RAM-backed ``tmpfs`` on every client that can be selected as the
+   aggregator. This setting does not offload the trainer's source tensors.
 
 **Example client config for large models:**
 
@@ -880,7 +883,9 @@ The following SwarmClientController parameters are particularly important for la
 
 - ``np_download_chunk_size``: Chunk size for numpy array downloads. **Default: 2097152 (2MB)**. Value 0 disables streaming and uses native serialization which can spike memory.
 - ``tensor_download_chunk_size``: Chunk size for PyTorch tensor downloads. **Default: 2097152 (2MB)**. Value 0 disables streaming.
-- Tensor disk offload only applies to the ``tensor_download_chunk_size`` path. The built-in weighted aggregator materializes one lazy tensor at a time.
+- Tensor disk offload only applies when the aggregation controller receives the
+  ``tensor_download_chunk_size`` path. The sender remains memory-backed, and the
+  built-in weighted aggregator materializes one lazy tensor at a time.
 
 .. code-block::
 
