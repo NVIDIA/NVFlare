@@ -54,6 +54,7 @@ class _DummyViaDownloader(ViaDownloaderDecomposer):
         optional=False,
         abort_signal=None,
         progress_cb=None,
+        fobs_ctx: dict = None,
     ) -> tuple[str, dict]:
         raise NotImplementedError
 
@@ -533,7 +534,7 @@ class TestConcreteViaDownloaderProgressCallback:
 
         monkeypatch.setattr(tensor_downloader, "download_object", fake_download_object)
 
-        err, result = TensorDecomposer().download_with_context(
+        err, result = TensorDecomposer().download(
             from_fqcn="trainer",
             ref_id="result-ref",
             per_request_timeout=1.0,

@@ -59,36 +59,11 @@ class TensorDecomposer(ViaDownloaderDecomposer):
         optional=False,
         abort_signal=None,
         progress_cb=None,
+        fobs_ctx: dict = None,
     ) -> Tuple[str, Union[dict, LazyTensorDict]]:
         cell_ctx = cell.get_fobs_context()
         default_use_disk = cell_ctx.get(FOBSContextKey.TENSOR_DISK_OFFLOAD, False)
-        return self._download(
-            from_fqcn=from_fqcn,
-            ref_id=ref_id,
-            per_request_timeout=per_request_timeout,
-            cell=cell,
-            use_disk=default_use_disk,
-            root_dir=cell_ctx.get(_TENSOR_DISK_OFFLOAD_ROOT_DIR),
-            secure=secure,
-            optional=optional,
-            abort_signal=abort_signal,
-            progress_cb=progress_cb,
-        )
-
-    def download_with_context(
-        self,
-        from_fqcn: str,
-        ref_id: str,
-        per_request_timeout: float,
-        cell: Cell,
-        fobs_ctx: dict,
-        secure=False,
-        optional=False,
-        abort_signal=None,
-        progress_cb=None,
-    ) -> Tuple[str, Union[dict, LazyTensorDict]]:
-        cell_ctx = cell.get_fobs_context()
-        default_use_disk = cell_ctx.get(FOBSContextKey.TENSOR_DISK_OFFLOAD, False)
+        fobs_ctx = fobs_ctx or {}
         return self._download(
             from_fqcn=from_fqcn,
             ref_id=ref_id,
