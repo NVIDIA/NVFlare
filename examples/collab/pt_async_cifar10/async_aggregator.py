@@ -186,15 +186,11 @@ class Cifar10AsyncAggregator:
     def _do_one_round(self, round_index: int, global_model: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         all_clients = collab.clients
         physical_names = [client.name for client in all_clients]
-        desired_clients = min(self.clients_per_round or len(all_clients), len(all_clients))
-        if desired_clients < 1:
-            raise RuntimeError("No clients are available for training")
+        sampled_names = self._sample_physical_names(round_index, physical_names)
+        desired_clients = len(sampled_names)
         if desired_clients < len(all_clients):
-            rng = np.random.RandomState(round_index)
-            sampled_names = rng.choice(physical_names, size=desired_clients, replace=False).tolist()
             group = collab.get_clients(sampled_names)
         else:
-            sampled_names = physical_names
             group = all_clients
 
         min_required = self.min_response_clients if self.min_response_clients is not None else desired_clients
@@ -242,13 +238,25 @@ class Cifar10AsyncAggregator:
         self._round_base_model = None
         return result
 
+    def _sample_physical_names(self, round_index: int, physical_names: list[str]) -> list[str]:
+        desired_clients = (
+            len(physical_names) if self.clients_per_round is None else min(self.clients_per_round, len(physical_names))
+        )
+        if desired_clients < 1:
+            raise RuntimeError("No clients are available for training")
+        if desired_clients == len(physical_names):
+            return physical_names
+
+        rng = np.random.RandomState(self.run_seed + round_index)
+        return rng.choice(physical_names, size=desired_clients, replace=False).tolist()
+
     def _build_logical_assignments(self, round_index: int, physical_names: list[str]) -> dict[str, str]:
         if len(self._logical_client_names) < len(physical_names):
             raise ValueError(
                 f"Only {len(self._logical_client_names)} prepared logical clients are available for "
                 f"{len(physical_names)} physical clients"
             )
-        rng = np.random.RandomState(round_index + 1234)
+        rng = np.random.RandomState(self.run_seed + round_index + 1234)
         logical_names = rng.choice(self._logical_client_names, size=len(physical_names), replace=False).tolist()
         return dict(zip(physical_names, logical_names))
 

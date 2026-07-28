@@ -87,10 +87,10 @@ def make_recipe(args, manifest: dict) -> CollabRecipe:
     if args.max_parallel < 0:
         raise ValueError("--max-parallel must be >= 0")
 
-    clients_per_round = args.clients_per_round or args.num_clients
+    clients_per_round = args.num_clients if args.clients_per_round is None else args.clients_per_round
     if not 1 <= clients_per_round <= args.num_clients:
         raise ValueError("--clients-per-round must be between 1 and --num-clients")
-    min_response_clients = args.min_response_clients or clients_per_round
+    min_response_clients = clients_per_round if args.min_response_clients is None else args.min_response_clients
     if not 1 <= min_response_clients <= clients_per_round:
         raise ValueError("--min-response-clients must be between 1 and --clients-per-round")
 
@@ -139,17 +139,19 @@ def main():
     args.data_root = str(Path(args.data_root).expanduser().resolve())
     manifest = validate_prepared_data(args.data_root)
     simple_logging(logging.INFO)
+    recipe = make_recipe(args, manifest)
+    clients_per_round = args.num_clients if args.clients_per_round is None else args.clients_per_round
 
     print("=" * 80)
     print("CIFAR-10 COLLAB ASYNC")
     print(f"  Prepared logical clients: {manifest['num_clients']}")
     print(f"  Physical simulator clients: {args.num_clients}")
-    print(f"  Clients per round: {args.clients_per_round or args.num_clients}")
+    print(f"  Clients per round: {clients_per_round}")
     print(f"  Rounds: {args.num_rounds}")
     print(f"  Data root: {args.data_root}")
     print("=" * 80)
 
-    run = make_recipe(args, manifest).execute(SimEnv(num_clients=args.num_clients, workspace_root=args.workspace_root))
+    run = recipe.execute(SimEnv(num_clients=args.num_clients, workspace_root=args.workspace_root))
     print("Job Status:", run.get_status())
     print("Results at:", run.get_result())
 
