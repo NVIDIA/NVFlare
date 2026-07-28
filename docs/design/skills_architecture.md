@@ -258,9 +258,14 @@ Runtime (installed on the user's machine):
 
 - Agent-facing CLI: `nvflare/tool/agent/agent_cli.py`
 - Command surface metadata: `nvflare/tool/agent/command_registry.py`
-- Static inspection engine: `nvflare/tool/agent/inspector.py` (framework-neutral
-  bounded AST traversal, direct lexical facts, routing, and installed-skill
-  discovery)
+- Static inspection entry point: `nvflare/tool/agent/inspector.py` (public
+  orchestration and result serialization)
+- Static inspection internals: `nvflare/tool/agent/inspection/`
+  - `scanner.py` owns bounded filesystem traversal and immutable scan facts.
+  - `python_scanner.py` owns framework-neutral AST traversal and lexical facts.
+  - `project.py` owns the single reusable import graph and project authority.
+  - `routing.py` owns framework, conversion-state, skill, and command decisions.
+  - `skill_discovery.py` owns installed-skill discovery.
 - Per-framework detectors: `nvflare/tool/agent/frameworks/` (one module per
   framework; detectors classify static evidence as import, candidate, or
   training owner and report integration separately; add a framework here, not

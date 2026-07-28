@@ -20,7 +20,7 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.tool import cli_output
-from nvflare.tool.agent import inspector as inspector_module
+from nvflare.tool.agent.inspection import python_scanner
 
 
 @pytest.fixture(autouse=True)
@@ -311,7 +311,7 @@ def test_agent_inspect_json_reports_deep_ast_without_aborting(capsys, tmp_path, 
     def raise_ast_depth_error(_visitor, _tree):
         raise RecursionError("AST depth exceeded")
 
-    monkeypatch.setattr(inspector_module._PythonInspector, "visit", raise_ast_depth_error)
+    monkeypatch.setattr(python_scanner._PythonInspector, "visit", raise_ast_depth_error)
 
     exit_code = _run_main(["nvflare", "agent", "inspect", str(script), "--format", "json"])
 

@@ -633,6 +633,7 @@ def test_inspect_path_routes_tabular_dataset_to_fed_stats(tmp_path):
     assert result["target_type"] == "tabular_dataset"
     assert result["dataset"]["modality"] == "tabular"
     assert result["skill_selection"]["recommended_skills"] == ["nvflare-fed-stats"]
+    assert result["recommended_next_commands"] == ["Use the nvflare-fed-stats skill before editing."]
 
 
 def test_inspect_path_routes_image_dataset_to_fed_stats(tmp_path):
@@ -644,6 +645,7 @@ def test_inspect_path_routes_image_dataset_to_fed_stats(tmp_path):
 
     assert result["target_type"] == "image_dataset"
     assert result["skill_selection"]["recommended_skills"] == ["nvflare-fed-stats"]
+    assert result["recommended_next_commands"] == ["Use the nvflare-fed-stats skill before editing."]
 
 
 def test_truncated_dataset_recommends_only_fed_stats(tmp_path, monkeypatch):
@@ -661,6 +663,7 @@ def test_truncated_dataset_recommends_only_fed_stats(tmp_path, monkeypatch):
 
     assert result["target_type"] == "tabular_dataset"
     assert result["skill_selection"]["recommended_skills"] == ["nvflare-fed-stats"]
+    assert result["recommended_next_commands"] == ["Use the nvflare-fed-stats skill before editing."]
 
 
 def test_inspect_path_max_files_flows_to_dataset_walk(tmp_path):
