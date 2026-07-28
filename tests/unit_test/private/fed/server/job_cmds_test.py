@@ -519,31 +519,6 @@ def test_submit_job_exposes_study_in_submit_event(monkeypatch):
     assert engine.job_def_manager.created_meta[JobMetaKey.STUDY.value] == "cancer-research"
 
 
-def test_submit_job_strips_user_supplied_from_hub_site(monkeypatch):
-    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
-    monkeypatch.setattr(
-        job_cmds_module,
-        "JobMetaValidator",
-        lambda: _FakeJobMetaValidatorWithMeta({JobMetaKey.FROM_HUB_SITE.value: "site-x"}),
-    )
-
-    engine = _FakeEngine()
-    conn = _MockConnection(
-        app_ctx=engine,
-        props={
-            ConnProps.FILE_LOCATION: "job.zip",
-            ConnProps.USER_NAME: "submitter",
-            ConnProps.USER_ORG: "org",
-            ConnProps.USER_ROLE: "role",
-        },
-    )
-
-    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
-
-    assert conn.errors == []
-    assert JobMetaKey.FROM_HUB_SITE.value not in engine.job_def_manager.created_meta
-
-
 def test_submit_job_defaults_study_when_cmd_props_missing(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidator)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)

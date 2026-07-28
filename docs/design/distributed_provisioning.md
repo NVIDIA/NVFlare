@@ -1184,9 +1184,6 @@ This document covers standard (non-Confidential Computing) deployments.
   [HE Deployments](#he-deployments).
 - **Hierarchical FL (relay nodes)** - relay node ownership is ambiguous in a distributed
   model. Use `nvflare provision` for relay topologies.
-- **HUB / Hierarchy Unification Bridge** - HUB is deprecated and not enhanced by this
-  design. Distributed provisioning does not add HUB-specific enrollment, approval, or
-  packaging behavior.
 - **Multi-root-CA federations** - all participants share one root CA per project.
 - **Key rotation** - out of scope for this iteration.
 - **Online approval service** - the exchange is intentionally out-of-band.
@@ -1246,23 +1243,6 @@ when `rootCA.pem` is present). To allow unsigned jobs, operators must set
 kits with the `StaticFileBuilder` argument `require_signed_jobs: false`. Distributed sites
 can set the same builder argument in their own participant definition, so the opt-out is
 site-controlled rather than carried in the server's deploy request.
-
-### HUB Job Forwarding
-
-HUB is deprecated and outside the distributed provisioning scope. Distributed provisioning
-must not introduce new HUB behavior.
-
-Existing HUB job forwarding has a separate signature-handling concern: T1 receives an
-originator-signed job, rewrites it into a T2-style job definition, and injects that
-rewritten job into the T2 job store. If HUB remains supported, the HUB path must verify
-the original T1 payload before any rewrite and remove the stale originator
-`__nvfl_sig.json` before packaging the T2 payload. A rewritten T2 payload must not carry a
-signature that was produced for the pre-rewrite T1 files.
-
-If HUB remains deprecated and unused, this should be handled as a separate HUB
-deprecation/cleanup decision, not as part of distributed provisioning.
-
----
 
 ## Code Changes
 
