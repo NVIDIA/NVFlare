@@ -126,6 +126,10 @@ fields, or model-state keys, inspect the actual object (`df.columns`, JSON keys,
 from that evidence. Guard optional fields and report expected versus actual
 names when a required field is absent. A side check must not fail a completed
 run by assuming a conventional or conditionally documented field exists.
+For generated Python structure, validate semantic AST nodes rather than textual
+occurrences. Scope traversal to the field being checked; for example, inspect a
+loop's condition and body separately. Do not run a speculative assertion that
+valid code is expected to fail and then repair the verification command.
 
 ## Evidence To Report
 

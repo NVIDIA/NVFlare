@@ -483,6 +483,25 @@ def test_inspect_does_not_route_huggingface_inference_with_torch_import_to_pytor
     assert data["skill_selection"]["recommended_skills"] == []
 
 
+def test_inspect_does_not_route_huggingface_inference_with_pytorch_data_loader_to_pytorch(tmp_path):
+    script = tmp_path / "infer.py"
+    script.write_text(
+        "from torch.utils.data import DataLoader\n"
+        "from transformers import pipeline\n"
+        "\n"
+        "loader = DataLoader(dataset)\n"
+        "generator = pipeline('text-generation')\n"
+        "for batch in loader:\n"
+        "    generator(batch)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["skill_selection"]["detected_framework"] == "huggingface"
+    assert data["skill_selection"]["recommended_skills"] == []
+
+
 def test_inspect_routes_cross_file_trainer_ownership_to_orient(tmp_path):
     (tmp_path / "train.py").write_text(
         "import torch\n" "from builder import build_trainer\n" "\n" "trainer = build_trainer()\n" "trainer.train()\n",

@@ -5,8 +5,15 @@ Run these checks after the shared validation ladder. Stop at the first failure.
 ## Static Checks
 
 - Compile generated `client.py`, `model.py`, and `job.py`.
-- Confirm one `flare.patch(trainer)` call and one rank-symmetric
-  `flare.is_running()` loop.
+- Verify executable structure with Python AST nodes, not raw source-string
+  counts. Comments, docstrings, and examples do not count as calls.
+- Confirm exactly one executable `flare.patch(trainer)` call and one
+  rank-symmetric `while flare.is_running():` loop.
+- Inspect `While.test` separately from `While.body`; `ast.walk(while_node)`
+  includes the loop condition. Confirm required patched Trainer calls occur in
+  the source-prescribed order. Do not require the loop body's complete call set
+  to equal `{"evaluate", "train"}`; source-preserved logging and bookkeeping
+  are allowed.
 - Confirm the generated FL client cannot bypass `flare.init()` or
   `flare.patch(trainer)` through launch-environment detection; standalone mode,
   when preserved, must use an explicit entry-point parameter.

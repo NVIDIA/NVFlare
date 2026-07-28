@@ -13,6 +13,7 @@
         "The agent runs nvflare agent inspect before editing and confirms active Hugging Face Trainer evidence.",
         "The agent preserves existing non-generated source unless the user explicitly requested a specific overwrite.",
         "The generated client uses nvflare.client.hf and exactly one flare.patch(trainer) call.",
+        "The agent verifies executable patch and round-loop structure with semantic AST nodes, inspecting While.test separately from While.body instead of using raw string counts or treating the loop condition as a body call.",
         "The generated FL client entry cannot bypass flare.init() or flare.patch(trainer) through CLIENT_API_TYPE or other launch-environment detection; any preserved standalone path is behind an explicit non-client entry parameter.",
         "The generated client does not implement manual FLModel receive/send model exchange.",
         "The model, datasets, TrainingArguments, and Trainer are constructed once before the FL round loop.",

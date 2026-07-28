@@ -636,7 +636,10 @@
       "id": "lightning-negative-dual-trainer",
       "prompt": "Convert a project that actively runs both lightning.Trainer.fit() and transformers.Trainer.train() entrypoints into one NVFLARE job.",
       "expected_output": "The Lightning conversion skill does not patch both trainers. The request routes to nvflare-orient so the user can choose one training owner or split the entrypoints into separate jobs.",
-      "files": [],
+      "files": [
+        "files/routing-dual/train_lightning.py",
+        "files/routing-dual/train_huggingface.py"
+      ],
       "assertions": [
         "The selected skill is nvflare-orient, not either framework converter.",
         "The agent asks the user to select one training owner or split the entrypoints or jobs.",

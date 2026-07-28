@@ -31,11 +31,12 @@ Do not use for plain `torch.nn.Module` manual training loops without Lightning
 (route to `nvflare-convert-pytorch`), Hugging Face Trainer (route to `nvflare-convert-huggingface`), TensorFlow,
 XGBoost, scikit-learn, a failed job (route to `nvflare-diagnose-job`),
 federated statistics without training (route to `nvflare-fed-stats`), or
-generic Lightning debugging without FLARE intent; when an entrypoint actively runs both Lightning and Hugging Face Trainers, route to `nvflare-orient`. Out of
-conversion scope: production deployment, Kubernetes, POC lifecycle, deployment
-privacy/security policy design, custom distributed launch policies not
-expressible by product APIs, experiment tracking redesign, and experiment search
-across recipes. Privacy-protection requests — homomorphic encryption (HE) /
+generic Lightning debugging without FLARE intent; when the inspected project
+actively contains both Lightning and Hugging Face Trainer entrypoints, route to
+`nvflare-orient`. Out of conversion scope: production deployment, Kubernetes,
+POC lifecycle, deployment privacy/security policy design, custom distributed
+launch policies not expressible by product APIs, experiment tracking redesign,
+and experiment search across recipes. Privacy-protection requests — homomorphic encryption (HE) /
 encrypted aggregation, differential privacy, and privacy filters — are not
 supported: they require provisioning or deployment policy beyond conversion
 scope, so report such a request as unsupported and route it to
@@ -60,7 +61,8 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
    plus direct reading; fact extraction is static. Use
    `references/lightning-detection.md` to confirm Lightning versus plain
    PyTorch and hand off to `nvflare-convert-pytorch` when no Lightning evidence
-   exists.
+   exists. If inspection recommends `nvflare-orient` for active Lightning and
+   Hugging Face Trainer owners, stop and hand off before editing.
 3. Read applicable requirements and install missing dependencies into the
    host-provided environment before import-level preflight, recipe
    construction, export, or simulation. Load

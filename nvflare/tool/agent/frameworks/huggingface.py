@@ -237,15 +237,18 @@ class HuggingFaceDetector(FrameworkDetector):
         if not active_huggingface:
             # Import-only PyTorch evidence cannot claim training ownership.
             # A Trainer/config candidate outranks shared data plumbing or a
-            # model class and routes safely to nvflare-orient. Without a
-            # Trainer candidate, active base evidence keeps the PyTorch
-            # converter while pure inference remains recommendation-free.
+            # model class and routes safely to nvflare-orient. Hugging Face
+            # inference with only PyTorch data plumbing also remains
+            # recommendation-free. Without either signal, active model or
+            # training evidence keeps the PyTorch converter.
             if resolver.training_owner_evidence(family_base):
                 return False
             candidate_evidence = [
                 item for item in resolver.evidence(self.name) if item.get("kind") in TRAINER_CANDIDATE_EVIDENCE
             ]
-            return bool(candidate_evidence) or not resolver.active_evidence(family_base)
+            active_base_evidence = resolver.active_evidence(family_base)
+            base_has_model_evidence = any(item.get("kind") != "pytorch_data_call" for item in active_base_evidence)
+            return bool(candidate_evidence) or not base_has_model_evidence
         if resolver.tied_to_entry_context(active_huggingface):
             return True
         pytorch_outside_trainer_files = resolver.evidence_outside_files(
