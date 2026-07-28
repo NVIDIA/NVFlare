@@ -52,7 +52,6 @@ from nvflare.fuel.common.exit_codes import ProcessExitCode
 
 _HEALTHY_MISSES = 5
 _ACCOUNTING_RETRY_INTERVAL = 6.0
-_COMMAND_TIMEOUT = 10.0
 _MIN_SLURM_VERSION = (23, 2)
 _SLURM_VERSION_RE = re.compile(r"^slurm\s+(\d+)\.(\d+)", re.IGNORECASE)
 _JOB_NAME_SITE_LENGTH = 32
@@ -274,7 +273,7 @@ class SlurmJobManager:
                             self._marker(plan.job_id),
                             self.config,
                         ),
-                        _COMMAND_TIMEOUT,
+                        self.config.submit_timeout,
                     )
                 except Exception as e:
                     raise SlurmLauncherError("sbatch submission failed") from e
@@ -287,7 +286,7 @@ class SlurmJobManager:
                         outcome = self.adapter.cancel_suffix(
                             submission.job_id,
                             submission.cluster,
-                            timeout=_COMMAND_TIMEOUT,
+                            timeout=self.config.cancel_timeout,
                         ).status.value
                     except Exception as e:
                         outcome = type(e).__name__
@@ -351,7 +350,7 @@ class SlurmJobManager:
         result = self.adapter.accounting_by_id(
             handle.job_id,
             handle.job_name,
-            timeout=_COMMAND_TIMEOUT,
+            timeout=self.config.query_timeout,
         )
         if result.status == LookupStatus.UNAVAILABLE:
             return JobReturnCode.UNKNOWN
@@ -379,7 +378,7 @@ class SlurmJobManager:
                 handle.job_id,
                 handle.job_name,
                 self._marker(handle.nvflare_job_id),
-                timeout=_COMMAND_TIMEOUT,
+                timeout=self.config.query_timeout,
             )
             if active.status == LookupStatus.UNAVAILABLE:
                 return JobReturnCode.UNKNOWN
@@ -390,7 +389,7 @@ class SlurmJobManager:
             if _is_terminal(record.state):
                 return self._poll_accounting(handle)
             if handle.cancel_requested:
-                self.adapter.cancel(handle.job_id, timeout=_COMMAND_TIMEOUT)
+                self.adapter.cancel(handle.job_id, timeout=self.config.cancel_timeout)
                 return JobReturnCode.UNKNOWN
             if record.state in _PENDING_STATES:
                 now = self._monotonic()
@@ -400,7 +399,7 @@ class SlurmJobManager:
                     self.logger.warning("Slurm job %s exceeded pending_timeout", handle.job_id)
                     handle._request_cancel()
             if handle.cancel_requested:
-                self.adapter.cancel(handle.job_id, timeout=_COMMAND_TIMEOUT)
+                self.adapter.cancel(handle.job_id, timeout=self.config.cancel_timeout)
             return JobReturnCode.UNKNOWN
 
     def _abort_handle(self, handle: "SlurmJobHandle") -> None:
