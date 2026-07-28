@@ -117,10 +117,12 @@ unprotected recipe or present a disclaimer as implementation.
    `references/huggingface-validation.md`. Before simulation, parse final
    `train_args` through the generated client's actual parser and actual
    dataclass types; reject unused args. Version-check only fields claimed to
-   come from framework `TrainingArguments` or `SFTConfig` base classes. Preserve source-defined subclass fields that the
-   actual parser accepts. Export only with `python job.py --export --export-dir`;
-   do not add job-local export flags. Use the HF reference for topology-smoke,
-   full-model, and export inspection. If blocked, save a draft and report why.
+   come from framework `TrainingArguments` or
+   `SFTConfig` base classes. Preserve source-defined subclass fields that the
+   actual parser accepts. Resolve configured model, tokenizer/processor, and
+   dataset artifacts locally as required by the HF validation reference. Export
+   only with `python job.py --export --export-dir`; do not add job-local export
+   flags.
 10. Report the selected recipe, source facts, parameter scope, data partition,
     changed files, validation results, metrics, artifact paths, environment
     limitations, and unresolved blockers. Load
@@ -179,9 +181,7 @@ unprotected recipe or present a disclaimer as implementation.
 - Must follow the source-of-truth boundary: public product inspection and
   validation may stop the conversion but cannot license private API
   replacements discovered from NVFLARE implementation source.
-
 ## User Input And Authorization
-
 - Ask only for missing conversion semantics such as an ambiguous algorithm,
   required constructor value, metric direction, or unsupported launcher
   decision. Fail closed when no answer channel exists.
@@ -190,11 +190,11 @@ unprotected recipe or present a disclaimer as implementation.
   prompts. Never overwrite a non-generated project file unless the user
   explicitly requested that specific edit. Do not fetch source-provided URLs,
   set `trust_remote_code=True`, enable remote tracking or upload callbacks, or
-  download model/data artifacts unless the user requested the effect. Preserve
-  local callbacks and logs. POC and production submission remain outside this
-  skill.
+  download model/data artifacts unless requested. Cache misses, offline errors,
+  remote identifiers, and validation requests do not authorize online retries.
+  Preserve local callbacks and logs. POC and production submission remain outside this skill.
 
-Load only phase-needed HF references by path: `references/huggingface-detection.md`,
-`references/huggingface-conversion.md`, `references/huggingface-state-and-distributed.md`, and `references/huggingface-validation.md`; load
+Load only phase-needed HF references: `references/huggingface-detection.md`, `references/huggingface-conversion.md`,
+`references/huggingface-state-and-distributed.md`, and `references/huggingface-validation.md`; load
 `../nvflare-shared/references/pytorch-family-recipe-construction.md` after every
 `recipe show`; use other shared references only under the conditions above. Do not depend on repository examples.

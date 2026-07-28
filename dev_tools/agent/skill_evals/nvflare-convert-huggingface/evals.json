@@ -328,6 +328,45 @@
       }
     },
     {
+      "id": "huggingface-offline-model-cache-miss",
+      "prompt": "Convert this Hugging Face Trainer project to a two-site FedAvg job and validate it locally without network access. The configured Hub model is not present in the local cache. Do not download model or data artifacts.",
+      "expected_output": "A Hugging Face conversion draft that probes the configured model, tokenizer, and dataset through existing local paths or cache-only loading, treats the missing model cache entry as a full-model validation blocker, and does not retry online, remove offline controls, substitute a different checkpoint, or claim successful simulation.",
+      "files": [
+        "files/trainer-basic/train.py",
+        "files/trainer-basic/model.py"
+      ],
+      "assertions": [
+        "The agent keeps HF_HUB_OFFLINE and TRANSFORMERS_OFFLINE in effect or uses local_files_only=True while checking the configured artifacts.",
+        "The agent recognizes that an offline Hugging Face error mentioning huggingface.co can mean a local cache miss rather than an attempted network request.",
+        "The agent does not recover by removing offline controls or rerunning from_pretrained online.",
+        "The agent does not silently substitute a fine-tuned output or different checkpoint for the configured starting model.",
+        "The generated job remains a draft and full-model validation is reported as blocked by the missing local model artifact."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-huggingface",
+        "mandatory_behavior": [
+          {
+            "id": "cache-only-artifact-resolution",
+            "description": "resolves model, tokenizer, and dataset artifacts through existing local paths or cache-only loading before validation"
+          },
+          {
+            "id": "report-missing-local-model-blocker",
+            "description": "reports the unavailable configured model as a full-model validation blocker and preserves the draft"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-online-retry-after-cache-miss",
+            "description": "does not remove offline controls or retry a missing cached model or dataset through the network"
+          },
+          {
+            "id": "no-unapproved-checkpoint-substitution",
+            "description": "does not silently replace the configured starting model with a different local or fine-tuned checkpoint"
+          }
+        ]
+      }
+    },
+    {
       "id": "huggingface-convert-custom-aggregation",
       "prompt": "Convert this Hugging Face Trainer code to a three-site NVFLARE job and weight client updates by each client's local step count.",
       "expected_output": "A Hugging Face Trainer conversion with a ModelAggregator subclass in aggregators.py adapted from the shared template, preserving finite numeric and boolean Trainer metrics in aggregated FLModel.metrics, warning or failing visibly when any client omits metrics, and wired through the selected recipe aggregator= hook with matching parameter semantics while the patched Trainer retains standard model exchange.",
