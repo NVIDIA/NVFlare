@@ -28,7 +28,7 @@ _GROUP_ENV = {
 
 
 def test_single_node_defaults_to_standalone_torchrun():
-    argv = build_torchrun_argv(["--", "custom/client.py", "--epochs", "2"], {})
+    argv = build_torchrun_argv(["custom/client.py", "--epochs", "2"], {})
 
     assert argv[:4] == [sys.executable, "-u", "-m", "torch.distributed.run"]
     assert "--standalone" in argv
@@ -38,16 +38,16 @@ def test_single_node_defaults_to_standalone_torchrun():
 
 
 def test_node_group_environment_maps_to_rendezvous_arguments():
-    argv = build_torchrun_argv(["--nproc-per-node=8", "--", "custom/client.py"], dict(_GROUP_ENV))
+    argv = build_torchrun_argv(["--nproc-per-node=8", "custom/client.py"], dict(_GROUP_ENV))
 
     for expected in (
         "--nproc_per_node=8",
         "--nnodes=2",
         "--node_rank=1",
-        "--rdzv_backend=c10d",
+        "--rdzv_backend=static",
         "--rdzv_endpoint=node-0:29512",
         "--rdzv_id=4242",
-        "--rdzv_conf=join_timeout=600,read_timeout=600",
+        "--rdzv_conf=timeout=600",
     ):
         assert expected in argv
     assert "--standalone" not in argv
@@ -56,13 +56,12 @@ def test_node_group_environment_maps_to_rendezvous_arguments():
 
 def test_join_timeout_must_be_positive():
     with pytest.raises(ValueError, match="join-timeout"):
-        build_torchrun_argv(["--join-timeout=0", "--", "custom/client.py"], dict(_GROUP_ENV))
+        build_torchrun_argv(["--join-timeout=0", "custom/client.py"], dict(_GROUP_ENV))
 
 
-@pytest.mark.parametrize("argv, message", [(["custom/client.py"], "'--' is required"), (["--"], "training script")])
-def test_training_command_requires_boundary_and_script(argv, message):
-    with pytest.raises(ValueError, match=message):
-        build_torchrun_argv(argv, {})
+def test_training_command_requires_script():
+    with pytest.raises(ValueError, match="training script must be specified directly"):
+        build_torchrun_argv([], {})
 
 
 @pytest.mark.parametrize(
@@ -76,4 +75,4 @@ def test_training_command_requires_boundary_and_script(argv, message):
 )
 def test_invalid_node_group_environment_is_rejected(environ, message):
     with pytest.raises(ValueError, match=message):
-        build_torchrun_argv(["--", "custom/client.py"], environ)
+        build_torchrun_argv(["custom/client.py"], environ)

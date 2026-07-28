@@ -530,14 +530,14 @@ class TestExecutionModeSelection:
             script="client.py",
             script_args=["--label", "two words"],
             launch_external_process=True,
-            command=["python3", "-m", "nvflare.app_opt.pt.torchrun_node", "--nproc-per-node=1", "--"],
+            command=["python3", "-m", "nvflare.app_opt.pt.torchrun_node", "--nproc-per-node=1"],
         )
 
         with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
             job.to_clients(runner)
 
         assert launcher_spec["site-multi"]["slurm"]["additional_node_command"] == (
-            "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=1 -- " "custom/client.py --label 'two words'"
+            "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=1 custom/client.py --label 'two words'"
         )
         assert "additional_node_command" not in launcher_spec["default"]["slurm"]
         assert "additional_node_command" not in launcher_spec["site-single"]["slurm"]

@@ -37,7 +37,6 @@ NODE_FILE = "node.sh"
 SANDBOX_ROOT = "sandbox_root"
 SLURM_CHILD_PROCESS_ENV = "NVFLARE_SLURM_CHILD_PROCESS"
 CONTAINER_RESOLV_CONF = "/etc/resolv.conf"
-JOB_SPEC_NODES = "nodes"
 JOB_SPEC_ADDITIONAL_NODE_COMMAND = "additional_node_command"
 
 # The node-group environment is exported to every task of a launcher-owned
@@ -58,7 +57,7 @@ SLURM_COMPUTE_EXECUTABLES = ("apptainer", "srun")
 
 _JOB_SLURM_KEYS = {
     "image",
-    JOB_SPEC_NODES,
+    "nodes",
     "gpus_per_node",
     "cpus_per_node",
     "mem_per_node",

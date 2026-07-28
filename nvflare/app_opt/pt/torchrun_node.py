@@ -17,7 +17,7 @@ This translates NVFlare's node-group environment into torchrun rendezvous
 arguments, so the same command line works as the rank-0 training command and
 as the command for the other nodes:
 
-    python -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 -- custom/client.py --epochs 2
+    python -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 custom/client.py --epochs 2
 
 Without the contract in the environment it degrades to standalone single-node
 torchrun, so one command also covers plain single-node runs.
@@ -38,25 +38,16 @@ _ENV_MASTER_PORT = "NVFL_MASTER_PORT"
 _ENV_RUN_ID = "NVFL_RUN_ID"
 
 
-def _split_training_argv(argv: Sequence[str]) -> tuple:
-    try:
-        boundary = list(argv).index("--")
-    except ValueError as e:
-        raise ValueError("'--' is required before the training script") from e
-    training_argv = tuple(argv[boundary + 1 :])
-    if not training_argv or not training_argv[0]:
-        raise ValueError("training script must be specified after '--'")
-    return tuple(argv[:boundary]), training_argv
-
-
 def build_torchrun_argv(argv: Sequence[str], environ: dict) -> list:
-    option_argv, training_argv = _split_training_argv(argv)
     parser = argparse.ArgumentParser(prog=f"{sys.executable} -m {__spec__.name if __spec__ else __name__}")
     parser.add_argument("--nproc-per-node", default="auto")
     parser.add_argument("--join-timeout", type=int, default=_DEFAULT_JOIN_TIMEOUT)
-    options = parser.parse_args(option_argv)
+    parser.add_argument("training_argv", nargs=argparse.REMAINDER)
+    options = parser.parse_args(argv)
     if options.join_timeout <= 0:
         raise ValueError("--join-timeout must be a positive integer")
+    if not options.training_argv:
+        raise ValueError("training script must be specified directly after torchrun_node options")
 
     nnodes = int(environ.get(_ENV_NNODES, 1))
     node_rank = int(environ.get(_ENV_NODE_RANK, 0))
@@ -78,15 +69,15 @@ def build_torchrun_argv(argv: Sequence[str], environ: dict) -> list:
             [
                 f"--nnodes={nnodes}",
                 f"--node_rank={node_rank}",
-                "--rdzv_backend=c10d",
+                # Elastic c10d assigns node ranks dynamically and ignores
+                # --node_rank. Static rendezvous keeps the CJ node at global rank 0.
+                "--rdzv_backend=static",
                 f"--rdzv_endpoint={master_addr}:{master_port}",
                 f"--rdzv_id={run_id}",
-                # read_timeout bounds the wait for rank 0's store to come up (torch
-                # default 60s); join_timeout only applies after the store connects.
-                f"--rdzv_conf=join_timeout={options.join_timeout},read_timeout={options.join_timeout}",
+                f"--rdzv_conf=timeout={options.join_timeout}",
             ]
         )
-    result.extend(training_argv)
+    result.extend(options.training_argv)
     return result
 
 

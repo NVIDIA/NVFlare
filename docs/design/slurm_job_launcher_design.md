@@ -195,7 +195,7 @@ A client job opts into launcher-owned multi-node execution by setting `nodes > 1
 Node rank 0 runs the normal CJ worker unchanged; every other node runs `additional_node_command`. Extra nodes do
 not register separately with the server, and cross-node coordination belongs to the training framework.
 
-For a managed typed external-process `ScriptRunner`, export copies its fully assembled shell-free command into
+For an external-process `ScriptRunner`, export copies its fully assembled shell-free command into
 `additional_node_command` when an explicit site launcher block directly declares `nodes > 1` and omits the field.
 An explicit value always wins; explicit `null` keeps application-owned fan-out. Generation requires
 `launch_once=True`. Neither generated nor explicit additional-node commands support secret references.
@@ -229,7 +229,7 @@ parent and reports the result exactly as a single-node job; every other rank exe
 its node rank. Both paths inherit the batch environment because the script exports `SLURM_EXPORT_ENV=ALL` before
 fan-out. Pyxis tasks instead receive the explicit `--export` list, so `setup`-created variables reach bare and
 Apptainer node groups but not Pyxis ranks (use study env or `forward_env` there). Non-zero ranks receive the
-launch-once typed Cell API bootstrap path. The CJ writes that bootstrap before starting rank 0's training
+launch-once Cell API bootstrap path. The CJ writes that bootstrap before starting rank 0's training
 process, and the framework rendezvous delays every training script until the file exists. Legacy Client API
 multi-node execution is not supported.
 
@@ -272,11 +272,12 @@ rounds the non-zero ranks hold their nodes idle, which is inherent to a static a
 ### Framework helpers
 
 The environment contract is the minimal single-coordinator rendezvous set that framework helpers can translate.
-`nvflare.app_opt.pt.torchrun_node` maps it onto torchrun c10d arguments. Its `--join-timeout` bounds both
-rendezvous join and store connection. Without the contract it degrades to standalone single-node torchrun.
+`nvflare.app_opt.pt.torchrun_node` maps it onto torchrun's static TCP rendezvous so Slurm node rank 0 remains
+the global-rank-0 node. Its `--join-timeout` bounds the store connection and rendezvous. Without the contract it
+degrades to standalone single-node torchrun.
 
 ```text
-python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 -- custom/client.py --epochs 2
+python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 custom/client.py --epochs 2
 ```
 
 Non-zero tasks start before the CJ has prepared Client API runtime files. A hand-written command must therefore

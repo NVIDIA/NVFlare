@@ -283,7 +283,7 @@ def test_launch_plan_uses_fixed_worker_and_one_resolved_job_spec(tmp_path):
 
 
 def _multinode_meta(
-    additional_node_command="python3 -m nvflare.app_opt.pt.torchrun_node -- custom/client.py",
+    additional_node_command="python3 -m nvflare.app_opt.pt.torchrun_node custom/client.py",
     nodes=2,
     **values,
 ):
@@ -308,7 +308,6 @@ def test_launch_plan_resolves_additional_node_command_and_app_dir(tmp_path):
         "python3",
         "-m",
         "nvflare.app_opt.pt.torchrun_node",
-        "--",
         "custom/client.py",
     )
     assert plan.node_app_dir == str(app_dir)

@@ -342,7 +342,7 @@ A positive multi-node ``num_of_gpus`` requires ``gpus_per_node``;
 whenever both are supplied, ``num_of_gpus`` must equal
 ``nodes * gpus_per_node``.
 
-For jobs built with a managed typed external-process ``ScriptRunner``, an explicit
+For jobs built with an external-process ``ScriptRunner``, an explicit
 site block that directly sets ``nodes > 1`` does not need to repeat the
 training command. Export copies the fully assembled shell-free ``command``,
 script path, and script arguments into ``additional_node_command``. Generation
@@ -362,7 +362,7 @@ requires ``launch_once=True``. For example, this Recipe needs no
        min_clients=1,
        num_rounds=10,
        launch_external_process=True,
-       command="python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 --",
+       command="python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8",
    )
    set_recipe_meta(
        recipe,
@@ -388,7 +388,7 @@ Hand-authored jobs and custom launchers provide the full
          "slurm": {
            "nodes": 2,
            "gpus_per_node": 8,
-           "additional_node_command": "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 -- custom/client.py"
+           "additional_node_command": "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 custom/client.py"
          }
        }
      }
@@ -407,15 +407,14 @@ directory.
 All ranks receive ``NVFL_NNODES``, ``NVFL_NODE_RANK``,
 ``NVFL_MASTER_ADDR``, ``NVFL_MASTER_PORT``, and the per-allocation
 ``NVFL_RUN_ID``. Under ``apptainer`` or ``pyxis``, all user code runs inside
-the configured container. Non-zero ranks use the typed Cell API bootstrap;
+the configured container. Non-zero ranks use the Cell API bootstrap;
 legacy Client API multi-node execution is not supported.
 
 Non-zero ranks start before rank 0 has prepared Client API runtime files, so a
 hand-written command must join its framework rendezvous before reading that
-state. ``torchrun_node`` provides this ordering. A hand-authored launcher block
-may provide the full ``additional_node_command`` directly. Without it, Slurm
-``nodes > 1`` retains application-owned fan-out behavior and requires effective
-``sandbox: none``.
+state. ``torchrun_node`` provides this ordering. Without
+``additional_node_command``, Slurm ``nodes > 1`` retains application-owned
+fan-out behavior and requires effective ``sandbox: none``.
 
 Security and Operations
 =======================

@@ -32,7 +32,6 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     _JOB_SLURM_KEYS,
     CONTAINER_RESOLV_CONF,
     JOB_SPEC_ADDITIONAL_NODE_COMMAND,
-    JOB_SPEC_NODES,
     SLURM_CHILD_PROCESS_ENV,
     BindMount,
     JobResources,
@@ -94,7 +93,7 @@ def _resolve_resources(
     if unknown:
         raise SlurmLauncherError(f"unsupported job-owned Slurm key(s): {sorted(unknown)}")
 
-    nodes = _require_int(spec.get(JOB_SPEC_NODES, 1), JOB_SPEC_NODES)
+    nodes = _require_int(spec.get("nodes", 1), "nodes")
     if nodes > 1 and sandbox != "none" and spec.get(JOB_SPEC_ADDITIONAL_NODE_COMMAND) is None:
         raise SlurmLauncherError(
             "multi-node Slurm jobs require effective sandbox 'none' unless additional_node_command requests "

@@ -260,7 +260,7 @@ class TestFedAvgRecipe:
             min_clients=1,
             num_rounds=1,
             launch_external_process=True,
-            command="python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=1 --",
+            command="python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=1",
         )
         launcher_spec = {
             "site-multi": {"slurm": {"nodes": 2, "gpus_per_node": 1}},
@@ -273,7 +273,7 @@ class TestFedAvgRecipe:
         exported_meta = json.loads((tmp_path / "export" / recipe.name / "meta.json").read_text())
         exported_spec = exported_meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]
         assert exported_spec["site-multi"]["slurm"]["additional_node_command"] == (
-            "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=1 -- " "custom/qa_client.py"
+            "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=1 custom/qa_client.py"
         )
         assert "additional_node_command" not in exported_spec["site-single"]["slurm"]
 
