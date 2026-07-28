@@ -9,7 +9,8 @@ aggregation.
 ## Scope
 
 - Applies to streamed **PyTorch tensor** payloads handled by `TensorDecomposer`.
-- Controlled by `enable_tensor_disk_offload` in the receiving FedAvg or Swarm workflow/controller config.
+- Controlled by `enable_tensor_disk_offload` in a supported receiving workflow/controller config:
+  FedAvg (including FedProx), FedOpt, SCAFFOLD, or Swarm.
 - Default is `False` (legacy in-memory behavior).
 - If model updates are converted to NumPy before transport, tensor disk offload is not engaged.
 
@@ -28,6 +29,14 @@ FedAvg:
 - `nvflare/recipe/fedavg.py` -> `FedAvgRecipe(..., enable_tensor_disk_offload=True)`
 - `nvflare/app_opt/pt/recipes/fedavg.py` -> PT recipe forwards the same flag
 - `nvflare/app_common/workflows/fedavg.py` -> `FedAvg(..., enable_tensor_disk_offload=True)`
+- PyTorch FedProx uses the same FedAvg recipe and server aggregation path
+
+Other server-controlled workflows:
+
+- `nvflare/app_opt/pt/recipes/fedopt.py` -> `FedOptRecipe(..., enable_tensor_disk_offload=True)`
+- `nvflare/app_opt/pt/recipes/scaffold.py` -> `ScaffoldRecipe(..., enable_tensor_disk_offload=True)`
+- both require `server_expected_format=ExchangeFormat.PYTORCH`; custom configurations can enable
+  the same setting directly on `ScatterAndGather` or `Scaffold`
 
 Swarm/CCWF:
 
@@ -63,13 +72,14 @@ Lazy refs in payload tree
         +--> aggregator consumes lazy refs (materialize on demand)
 ```
 
-FedAvg workflows install their disk-offload setting on the receiving server
-Cell. Swarm does not enable disk offload globally on its client Cells because
-the same Cells also receive learner tasks and final-result broadcasts. Instead,
-the selected aggregation controller puts the setting and its job-scoped root in
-the terminal result download's FOBS decode context. The destination therefore
-does not depend on mutable Cell-wide state, and non-aggregation deliveries
-remain ordinary in-memory tensors.
+Server-controlled FedAvg/FedProx, FedOpt, and SCAFFOLD workflows install their
+disk-offload setting on the receiving server Cell. Swarm does not enable disk
+offload globally on its client Cells because the same Cells also receive
+learner tasks and final-result broadcasts. Instead, the selected aggregation
+controller puts the setting and its job-scoped root in the terminal result
+download's FOBS decode context. The destination therefore does not depend on
+mutable Cell-wide state, and non-aggregation deliveries remain ordinary
+in-memory tensors.
 
 ## Runtime Behavior
 

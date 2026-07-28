@@ -441,6 +441,12 @@ PyTorch SCAFFOLD
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
 
+.. note::
+   PyTorch SCAFFOLD supports ``enable_tensor_disk_offload=True`` for streamed PyTorch tensor updates.
+   Import ``ExchangeFormat`` from ``nvflare.client.config`` and configure
+   ``server_expected_format=ExchangeFormat.PYTORCH`` so the server path preserves tensors instead of converting
+   updates to NumPy before aggregation.
+
 PyTorch Lightning clients can use the same patched training script for FedAvg and SCAFFOLD:
 
 .. code-block:: python
