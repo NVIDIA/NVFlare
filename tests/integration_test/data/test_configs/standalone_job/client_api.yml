@@ -1,6 +1,5 @@
-# Client API coverage with a secure ProvisionSiteLauncher project.
-# Keep the tests list in sync with client_api_poc.yml.
-project_yaml: ./data/projects/client_api.yml
+n_servers: 1
+n_clients: 2
 jobs_root_dir: ./data/jobs
 cleanup: True
 
