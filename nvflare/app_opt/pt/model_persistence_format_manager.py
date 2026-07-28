@@ -108,13 +108,6 @@ class PTModelPersistenceFormatManager(object):
         processed_vars = self._get_processed_vars()
         weights_dict = OrderedDict()
         for k, v in self.var_dict.items():
-            # Tensor disk offload uses lightweight runtime refs whose backing
-            # files are job-scoped and temporary. Checkpoints must contain the
-            # tensor value, never the ephemeral ref object.
-            materialize_fn = getattr(v, "materialize", None)
-            if callable(materialize_fn):
-                v = materialize_fn()
-
             is_processed = processed_vars.get(k, False)
             if not is_processed and self._allow_numpy_conversion:
                 # convert back to tensor

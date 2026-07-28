@@ -35,8 +35,9 @@ Swarm/CCWF:
   `SwarmLearningRecipe(server_expected_format=ExchangeFormat.PYTORCH, enable_tensor_disk_offload=True)`
 - `nvflare/app_common/ccwf/ccwf_job.py` -> use
   `SwarmClientConfig(..., enable_tensor_disk_offload=True)` for custom Job API configurations
-- `nvflare/app_common/ccwf/swarm_client_ctl.py` applies the offload context to each
-  client because the aggregation role moves between clients
+- `nvflare/app_common/ccwf/swarm_client_ctl.py` owns an offload root on each
+  eligible client because the aggregation role moves between clients, but
+  enables disk materialization only for terminal aggregation downloads
 
 If no active Cell is available, the offload context is not enabled and the runtime falls back to in-memory download.
 
@@ -62,11 +63,13 @@ Lazy refs in payload tree
         +--> aggregator consumes lazy refs (materialize on demand)
 ```
 
-`tensor_disk_offload_context` checks `run_manager.cell` directly when available,
-then falls back to `engine.get_cell()`. Workflows that explicitly resolve a
-transport ref also put the job-scoped root in that call's FOBS decode context;
-the disk destination therefore does not depend on mutable state in whichever
-Cell wrapper performs the download.
+FedAvg workflows install their disk-offload setting on the receiving server
+Cell. Swarm does not enable disk offload globally on its client Cells because
+the same Cells also receive learner tasks and final-result broadcasts. Instead,
+the selected aggregation controller puts the setting and its job-scoped root in
+the terminal result download's FOBS decode context. The destination therefore
+does not depend on mutable Cell-wide state, and non-aggregation deliveries
+remain ordinary in-memory tensors.
 
 ## Runtime Behavior
 
@@ -143,9 +146,6 @@ Custom aggregators are responsible for:
 - Lazy download directories are reclaimed when their refs are released, with GC as
   a fallback. Workflow finalization restores the prior FOBS context and removes
   the job-scoped root deterministically.
-- PyTorch persistence materializes any remaining offload refs while constructing
-  the checkpoint dictionary. Saved checkpoints therefore contain tensors rather
-  than process-local references to temporary files.
 
 ## Failure Behavior
 

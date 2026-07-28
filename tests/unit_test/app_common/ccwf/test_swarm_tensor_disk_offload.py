@@ -48,7 +48,7 @@ class _MockEngine:
         return self.aggregator
 
 
-def test_swarm_controller_scopes_tensor_disk_offload_to_run():
+def test_swarm_controller_owns_offload_root_without_enabling_cell_globally():
     cell = _MockCell()
     controller = SwarmClientController(enable_tensor_disk_offload=True)
     controller.engine = _MockEngine(cell, InTimeAccumulateWeightedAggregator())
@@ -64,17 +64,18 @@ def test_swarm_controller_scopes_tensor_disk_offload_to_run():
     ):
         controller.start_run(fl_ctx)
 
-        offload_root = cell.ctx["tensor_disk_offload_root_dir"]
-        assert cell.ctx["enable_tensor_disk_offload"] is True
+        offload_root = controller._tensor_disk_offload_root_dir
+        assert cell.ctx["enable_tensor_disk_offload"] is False
+        assert "tensor_disk_offload_root_dir" not in cell.ctx
         assert os.path.isdir(offload_root)
         thread_cls.return_value.start.assert_called_once_with()
 
         controller.finalize(fl_ctx)
 
     assert cell.ctx["enable_tensor_disk_offload"] is False
-    assert cell.ctx["tensor_disk_offload_root_dir"] is None
+    assert "tensor_disk_offload_root_dir" not in cell.ctx
     assert not os.path.exists(offload_root)
-    assert controller._tensor_disk_offload_context is None
+    assert controller._tensor_disk_offload_root_dir is None
     super_finalize.assert_called_once_with(controller, fl_ctx)
 
 

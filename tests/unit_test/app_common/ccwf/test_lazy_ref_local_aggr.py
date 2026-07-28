@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Tests for Fix 17: resolve LazyDownloadRefs before local swarm aggregation.
+"""Tests for resolving LazyDownloadRefs at the Swarm aggregation boundary.
 
 Covers four scenarios:
   1. _resolve_lazy_refs(): FOBS round-trip with PASS_THROUGH=False in decode context.
@@ -20,7 +20,6 @@ Covers four scenarios:
   4. Defensive guard in _end_gather(): fires, calls system_panic (invariant violation).
 """
 import unittest
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -74,10 +73,7 @@ def _make_controller():
     ctl.me = "site-1"
     # attributes set by __init__
     ctl.enable_tensor_disk_offload = True
-    ctl._tensor_disk_offload_context = SimpleNamespace(
-        applied=True,
-        root_dir="/tmp/swarm-offload",
-    )
+    ctl._tensor_disk_offload_root_dir = "/tmp/swarm-offload"
     ctl.metric_comparator = None
     ctl.metric_comparator_id = None
     ctl.report_learn_result_task_name = "swarm_report_learn_result"
@@ -170,12 +166,12 @@ class TestResolveRef(unittest.TestCase):
         ):
             out = ctl._resolve_lazy_refs(lazy_result, mock_fl_ctx)
 
-        mock_dumps.assert_called_once_with(lazy_result)
+        mock_dumps.assert_called_once_with(lazy_result, fobs_ctx=fake_decode_ctx)
         mock_loads.assert_called_once()
 
         # cell.get_fobs_context must be called with props containing PASS_THROUGH=False
-        mock_cell.get_fobs_context.assert_called_once()
-        props = mock_cell.get_fobs_context.call_args.kwargs.get("props", {})
+        self.assertEqual(mock_cell.get_fobs_context.call_count, 2)
+        props = mock_cell.get_fobs_context.call_args_list[1].kwargs.get("props", {})
         self.assertFalse(
             props.get(FOBSContextKey.PASS_THROUGH, True), "get_fobs_context must be called with PASS_THROUGH=False"
         )
@@ -416,7 +412,8 @@ class TestRemoteAggregationPath(unittest.TestCase):
         abort_signal = MagicMock()
         abort_signal.triggered = False
 
-        # Remote submit goes through broadcast_and_wait (Fix 14 handles resolution there)
+        # The sending CJ preserves the refs; the remote aggregation controller
+        # resolves them after receiving the submission.
         ok_reply = Shareable()
         ok_reply.set_return_code(ReturnCode.OK)
         ctl.broadcast_and_wait = MagicMock(return_value={"site-2": ok_reply})

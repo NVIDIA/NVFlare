@@ -437,7 +437,9 @@ class TestSwarmLearningRecipeTensorDiskOffload:
         persistor = client_app.app_config.components["persistor"]
         return client_controller, train_executor, persistor
 
-    def test_pytorch_streaming_with_disk_offload_is_wired_end_to_end(self, mock_file_system, simple_pt_model):
+    def test_pytorch_streaming_with_disk_offload_is_wired_to_aggregation_controller(
+        self, mock_file_system, simple_pt_model
+    ):
         from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
         recipe = SwarmLearningRecipe(

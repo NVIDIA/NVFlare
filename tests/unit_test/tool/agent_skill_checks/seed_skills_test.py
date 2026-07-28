@@ -249,7 +249,7 @@ def test_lightning_training_metrics_have_one_canonical_delivery_bridge():
     assert "metrics=averaged_metrics or None" in aggregator_template
 
 
-def test_pytorch_recipe_capability_profiles_include_non_fedavg_without_disk_offload():
+def test_pytorch_recipe_capability_profiles_match_tensor_disk_offload_support():
     from nvflare.tool.recipe.recipe_cli import _load_catalog, _recipe_detail
 
     catalog = {entry["name"]: entry for entry in _load_catalog()}

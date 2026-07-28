@@ -13,6 +13,8 @@
 # limitations under the License.
 import copy
 import random
+import shutil
+import tempfile
 import threading
 import time
 from typing import Optional
@@ -31,11 +33,7 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
 from nvflare.app_common.ccwf.common import Constant, NumberMetricComparator, ResultType, make_task_name
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor, ExecutionMode
-from nvflare.app_common.utils.tensor_disk_offload_context import (
-    _TENSOR_DISK_OFFLOAD_ROOT_DIR,
-    cleanup_tensor_disk_offload,
-    setup_tensor_disk_offload,
-)
+from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.validation_utils import (
@@ -402,7 +400,7 @@ class SwarmClientController(ClientSideController):
         self.is_aggr = False
         self.last_aggr_round_done = -1
         self.enable_tensor_disk_offload = enable_tensor_disk_offload
-        self._tensor_disk_offload_context = None
+        self._tensor_disk_offload_root_dir = None
         self._owned_tensor_forward_relay_route = None
         self.memory_gc_rounds = memory_gc_rounds
         self.cuda_empty_cache = cuda_empty_cache
@@ -438,21 +436,22 @@ class SwarmClientController(ClientSideController):
 
     def start_run(self, fl_ctx: FLContext):
         super().start_run(fl_ctx)
-        self._tensor_disk_offload_context = setup_tensor_disk_offload(
-            engine=self.engine,
-            enabled=self.enable_tensor_disk_offload,
-            job_id=fl_ctx.get_job_id("job"),
-        )
-        if self.enable_tensor_disk_offload and not self._tensor_disk_offload_context.applied:
-            self.log_warning(
-                fl_ctx,
-                "enable_tensor_disk_offload=True but no active cell is available; "
-                "falling back to in-memory tensor download",
-            )
-        if self.enable_tensor_disk_offload and fl_ctx.get_prop(FLContextKey.SECURE_MODE, False) is True:
-            cell = self.engine.get_cell()
+        cell = None
+        if self.enable_tensor_disk_offload:
+            get_cell = getattr(self.engine, "get_cell", None)
+            cell = get_cell() if callable(get_cell) else None
+            if cell:
+                job_id = fl_ctx.get_job_id("job")
+                self._tensor_disk_offload_root_dir = tempfile.mkdtemp(prefix=f"nvflare_tensor_offload_{job_id}_")
+            else:
+                self.log_warning(
+                    fl_ctx,
+                    "enable_tensor_disk_offload=True but no active cell is available; "
+                    "falling back to in-memory tensor download",
+                )
+        if self.enable_tensor_disk_offload and cell and fl_ctx.get_prop(FLContextKey.SECURE_MODE, False) is True:
             route = (CellChannel.AUX_COMMUNICATION, ReservedTopic.DO_TASK)
-            if cell and route not in cell.decode_pass_through_relay_topics:
+            if route not in cell.decode_pass_through_relay_topics:
                 cell.decode_pass_through_relay_topics.add(route)
                 self._owned_tensor_forward_relay_route = route
         self.aggregator = self.engine.get_component(self.aggregator_id)
@@ -482,8 +481,8 @@ class SwarmClientController(ClientSideController):
         self.log_debug(fl_ctx, "started aggregator thread")
 
     def finalize(self, fl_ctx: FLContext):
-        context = self._tensor_disk_offload_context
-        self._tensor_disk_offload_context = None
+        root_dir = self._tensor_disk_offload_root_dir
+        self._tensor_disk_offload_root_dir = None
         route = self._owned_tensor_forward_relay_route
         self._owned_tensor_forward_relay_route = None
         try:
@@ -494,7 +493,8 @@ class SwarmClientController(ClientSideController):
         except Exception:
             self.log_warning(fl_ctx, f"failed to remove tensor forwarding relay route: {secure_format_traceback()}")
         try:
-            cleanup_tensor_disk_offload(engine=getattr(self, "engine", None), context=context)
+            if root_dir:
+                shutil.rmtree(root_dir, ignore_errors=True)
         except Exception:
             self.log_warning(fl_ctx, f"failed to clean up tensor disk offload: {secure_format_traceback()}")
         finally:
@@ -829,7 +829,9 @@ class SwarmClientController(ClientSideController):
 
         Uses an FOBS round-trip:
           encode: LazyDownloadRefDecomposer.decompose() re-emits the original source
-                  datum (fqcn + ref_id) as a TEXT datum — no CELL needed in the encode ctx.
+                  datum (fqcn + ref_id) as a TEXT datum. The Cell in the encode
+                  context supports secure relay refs when direct source routing
+                  is unavailable.
           decode: process_datum() with PASS_THROUGH=False calls _download_from_remote_cell()
                   which downloads tensors from the source DownloadService.
                   cell.get_fobs_context() supplies the CELL so the download can route to
@@ -850,7 +852,7 @@ class SwarmClientController(ClientSideController):
         cell = get_cell()
         if not cell:
             return payload
-        encoded = fobs.dumps(payload)
+        encoded = fobs.dumps(payload, fobs_ctx=cell.get_fobs_context())
         if enable_tensor_disk_offload is None:
             enable_tensor_disk_offload = getattr(self, "enable_tensor_disk_offload", False)
         decode_props = {
@@ -858,15 +860,14 @@ class SwarmClientController(ClientSideController):
             fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: enable_tensor_disk_offload,
         }
         if enable_tensor_disk_offload:
-            context = getattr(self, "_tensor_disk_offload_context", None)
-            root_dir = context.root_dir if context and context.applied else None
+            root_dir = getattr(self, "_tensor_disk_offload_root_dir", None)
             if root_dir:
                 # The terminal aggregation download may use a different Cell
-                # wrapper than the one on which the workflow context was
-                # installed. Carry the resource explicitly with this decode.
+                # wrapper than the controller's Cell. Carry the workflow-owned
+                # resource explicitly with this decode.
                 decode_props[_TENSOR_DISK_OFFLOAD_ROOT_DIR] = root_dir
             else:
-                # start_run() already reports the missing context. Keep this
+                # start_run() already reports the missing Cell. Keep this
                 # resolution usable instead of selecting disk without a root.
                 decode_props[fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD] = False
         decode_ctx = cell.get_fobs_context(props=decode_props)
