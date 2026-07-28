@@ -96,6 +96,12 @@ Run these checks after the shared validation ladder. Stop at the first failure.
   If optimizer, activation, or data memory cannot be bounded, report the
   full-model rung as capacity-unverified rather than treating `state_dict` fit
   as sufficient.
+- Capability-check optional host diagnostics such as `free` or `nvidia-smi`
+  before invoking them, for example with `shutil.which()` or `command -v`.
+  Run optional diagnostics separately from parser, partition, model-keyspace,
+  and other correctness checks, or guard their absence so they cannot turn a
+  passing validation command into a failure. A missing diagnostic means that
+  capacity evidence is unavailable; it is not a conversion failure.
 - First run a one-round topology smoke test with the requested site count,
   minimal samples, and an explicitly labelled reduced checkpoint only when the
   real model is too large for the host. Treat this as FL-wiring validation only.

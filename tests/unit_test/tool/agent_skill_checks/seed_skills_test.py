@@ -558,6 +558,10 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "per-client training-memory bound multiplied by actual worker concurrency" in normalized_validation
     assert "model copies, gradients, optimizer state, activations, dataloaders/data" in normalized_validation
     assert "full-model rung as capacity-unverified" in normalized_validation
+    assert "Capability-check optional host diagnostics such as `free` or `nvidia-smi`" in validation_text
+    assert "`shutil.which()` or `command -v`" in validation_text
+    assert "Run optional diagnostics separately from parser, partition, model-keyspace" in normalized_validation
+    assert "capacity evidence is unavailable; it is not a conversion failure" in normalized_validation
     assert "reported default `max_steps=10`" in normalized_skill
     assert "Resolve exactly one per-round budget and encode it in one place" in conversion_text
     assert "user-requested local steps become generated `TrainingArguments.max_steps`" in normalized_conversion
