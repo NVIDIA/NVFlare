@@ -25,6 +25,7 @@ from train_utils import compute_model_diff, evaluate, get_lr_values
 # Import nvflare client API
 import nvflare.client as flare
 from nvflare.app_common.abstract.fl_model import ParamsType
+from nvflare.app_common.utils.fedprox_utils import get_fedprox_mu
 from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
 
 # Stream metrics to server
@@ -49,10 +50,6 @@ def main(args):
     # (need total_rounds for CosineAnnealingLR)
     scheduler = None
 
-    if args.fedproxloss_mu > 0:
-        print(f"using FedProx loss with mu {args.fedproxloss_mu}")
-        criterion_prox = PTFedProxLoss(mu=args.fedproxloss_mu)
-
     # Initializes NVFlare client API
     flare.init()
     site_name = flare.get_site_name()
@@ -64,10 +61,32 @@ def main(args):
     )
 
     summary_writer = SummaryWriter()
+    last_trained_params = None
     while flare.is_running():
         # Receive FLModel from NVFlare
         input_model = flare.receive()
         print(f"\n[Current Round={input_model.current_round}, Site = {flare.get_site_name()}]\n")
+
+        if flare.is_evaluate():
+            model.load_state_dict(input_model.params, strict=True)
+            model.to(DEVICE)
+            accuracy = evaluate(model, valid_loader)
+            print(f"Cross-site validation accuracy: {100 * accuracy:.2f} %")
+            flare.send(flare.FLModel(metrics={"accuracy": accuracy}))
+            continue
+
+        if flare.is_submit_model():
+            if last_trained_params is None:
+                raise RuntimeError("Cannot submit a local model before completing a training round")
+            flare.send(flare.FLModel(params=last_trained_params, params_type=ParamsType.FULL))
+            continue
+
+        if not flare.is_train():
+            raise RuntimeError(f"Unsupported task: {flare.get_task_name()}")
+
+        fedprox_mu = get_fedprox_mu(input_model)
+        criterion_prox = PTFedProxLoss(mu=fedprox_mu)
+        print(f"Using FedProx loss with mu {fedprox_mu}")
 
         # Initialize cosine annealing scheduler on first round
         if scheduler is None and not args.no_lr_scheduler:
@@ -116,9 +135,8 @@ def main(args):
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
 
-                if args.fedproxloss_mu > 0:
-                    fed_prox_loss = criterion_prox(model, global_model)
-                    loss += fed_prox_loss
+                fed_prox_loss = criterion_prox(model, global_model)
+                loss += fed_prox_loss
 
                 loss.backward()
                 optimizer.step()
@@ -154,6 +172,7 @@ def main(args):
 
         # compute delta model, global model has the primary key set
         model_diff, diff_norm = compute_model_diff(model, global_model)
+        last_trained_params = {name: value.detach().cpu().clone() for name, value in model.state_dict().items()}
         summary_writer.add_scalar(tag="diff_norm", scalar=diff_norm.item(), global_step=input_model.current_round)
 
         # Construct trained FL model
@@ -196,7 +215,6 @@ if __name__ == "__main__":
         default=0.01,
         help="Minimum learning rate as a factor of the initial learning rate for cosine annealing scheduler. Default is 0.01 (or 1%).",
     )
-    parser.add_argument("--fedproxloss_mu", type=float, default=0.0, help="FedProx loss mu. Default is 0.")
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training. Default is 64.")
     parser.add_argument("--num_workers", type=int, default=2, help="Number of workers for data loading. Default is 2.")
     parser.add_argument(
