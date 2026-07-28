@@ -2,20 +2,41 @@
 Hello Pytorch Lightning
 =======================
 
-This example demonstrates how to use NVIDIA FLARE with PyTorch lightning to train an image classifier using
-federated averaging (FedAvg). The complete example code can be found in the :github_nvflare_link:`hello-lightning directory <examples/hello-world/hello-lightning>`.
+This example demonstrates how to use NVIDIA FLARE with PyTorch Lightning to train an image classifier using
+federated averaging (FedAvg) or SCAFFOLD. The complete example code can be found in the
+:github_nvflare_link:`hello-lightning directory <examples/hello-world/hello-lightning>`.
+
+.. note::
+
+   Automatic Lightning SCAFFOLD support is introduced for NVFlare 2.9.0. Until that package is published,
+   install NVFlare from this repository and install the remaining example dependencies separately.
+
 It is recommended to create a virtual environment and run everything within a virtualenv.
 
 
 NVIDIA FLARE Installation
 -------------------------
 
-for the complete installation instructions, see :doc:`Installation </installation>`
+For the complete installation instructions, see :doc:`Installation </installation>`. On a released branch:
 
 .. code-block:: text
 
     pip install nvflare
 
+For the current ``main`` branch, install from the repository root so the automatic SCAFFOLD support is available:
+
+.. code-block:: text
+
+    python -m pip install -e .
+    python -m pip install torch torchvision "jsonargparse[signatures]>=4.17.0" pytorch_lightning tensorboard
+
+
+The ``nvflare~=2.9.0rc`` entry in ``requirements.txt`` intentionally records the first compatible release.
+After NVFlare 2.9.0 is published, install the complete environment with:
+
+.. code-block:: bash
+
+   python -m pip install -r requirements.txt
 
 get the example code from github:
 
@@ -29,12 +50,6 @@ then navigate to the hello-lightning directory:
 
     git switch <release branch>
     cd examples/hello-world/hello-lightning
-
-Install the dependency
-
-.. code-block:: bash
-
-   pip install -r requirements.txt
 
 Code Structure
 --------------
@@ -195,6 +210,9 @@ Here's a breakdown of the key steps:
 5. **NVFlare Integration:**
 
    - The `flare.patch(trainer)` function is called to integrate NVFlare with the PyTorch Lightning trainer. This allows the trainer to handle federated learning tasks.
+   - When ``ScaffoldRecipe`` sends SCAFFOLD controls, the patch automatically applies the required
+     ``PTScaffoldHelper`` updates and returns the control difference. This path requires Lightning automatic
+     optimization with one optimizer.
 
 6. **Federated Learning Loop:**
 
@@ -271,6 +289,22 @@ number of rounds, batch size, and number of clients.
 .. code-block:: text
 
   python job.py --num_rounds 2 --batch_size 16
+
+FedAvg is the default. The same client can run SCAFFOLD without changing its training loop:
+
+.. code-block:: text
+
+  python job.py --algorithm scaffold --num_rounds 2 --batch_size 16
+
+For manual Lightning optimization, use an explicit receive/train/send loop without ``flare.patch(trainer)``
+and integrate ``PTScaffoldHelper`` directly.
+
+The automatic path supports one optimizer with ``precision="32-true"`` or ``precision="bf16-mixed"`` and
+equal finite, non-negative learning rates across parameter groups at every step. Starting with NVFlare 2.9.0,
+PyTorch SCAFFOLD control differences contain trainable parameters only; buffers such as BatchNorm running
+statistics remain ordinary model state. Custom SCAFFOLD aggregators must accept sparse control dictionaries.
+Trainability may change between rounds, which resets newly trainable local controls to zero, but
+``requires_grad`` must not change during a round.
 
 
 output

@@ -26,17 +26,9 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from nvflare.tool.deploy.deploy_commands import (
-    GPU_RESOURCE_CONSUMER,
-    GPU_RESOURCE_MANAGER,
-    HELM_RELEASE_NAME_MAX_LENGTH,
-    K8S_PARENT_PYTHON_PATH,
-    PROCESS_CLIENT_LAUNCHER,
-    _k8s_release_name,
-    prepare_deployment,
-    stage_k8_deployment,
-    unstage_k8_deployment,
-)
+from nvflare.tool.deploy.deploy_commands import prepare_deployment, stage_k8_deployment, unstage_k8_deployment
+from nvflare.tool.deploy.deploy_common import GPU_RESOURCE_CONSUMER, GPU_RESOURCE_MANAGER, PROCESS_CLIENT_LAUNCHER
+from nvflare.tool.deploy.k8s_deploy import HELM_RELEASE_NAME_MAX_LENGTH, K8S_PARENT_PYTHON_PATH, _k8s_release_name
 
 
 def _write_json(path, data):
@@ -210,7 +202,7 @@ def _capture_kubectl(monkeypatch, returncode=0, fail_on=None):
             return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
         return subprocess.CompletedProcess(cmd, returncode, stdout="ok", stderr="")
 
-    monkeypatch.setattr("nvflare.tool.deploy.deploy_commands.subprocess.run", fake_run)
+    monkeypatch.setattr("nvflare.tool.deploy.k8s_stage.subprocess.run", fake_run)
     return calls
 
 
@@ -268,7 +260,11 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
     assert not (output / "startup" / "sub_start.sh").exists()
     assert not (output / "startup" / "stop_fl.sh").exists()
     assert not (output / "startup" / "docker.sh").exists()
-    script = (output / "startup" / "start_docker.sh").read_text()
+    script_path = output / "startup" / "start_docker.sh"
+    script_bytes = script_path.read_bytes()
+    assert script_path.stat().st_mode & 0o777 == 0o755
+    script = script_bytes.decode()
+    assert "@@NVFLARE_" not in script
     assert "repo/nvflare:dev" in script
     assert 'NETWORK_NAME="nvflare-test"' in script
     assert "--network-alias" not in script
@@ -296,7 +292,10 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
 
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"]["resources"]["host"] == "0.0.0.0"
-    study_runtime = yaml.safe_load((output / "local" / "study_runtime.yaml").read_text())
+    study_runtime_path = output / "local" / "study_runtime.yaml"
+    study_runtime_text = study_runtime_path.read_text()
+    assert "@@NVFLARE_" not in study_runtime_text
+    study_runtime = yaml.safe_load(study_runtime_text)
     assert study_runtime == {"format_version": 2, "studies": {}}
     assert not (output / "local" / "study_data.yaml").exists()
 
@@ -1125,6 +1124,17 @@ def test_deploy_cli_routes_k8_unstage(alias, monkeypatch):
     assert calls == [args]
 
 
+def test_deploy_cli_does_not_register_slurm_stage():
+    from nvflare.tool.deploy.deploy_cli import def_deploy_cli_parser
+
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="sub_command")
+    def_deploy_cli_parser(subparsers)
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["deploy", "slurm", "stage", "/tmp/prepared-kit"])
+
+
 def test_stage_k8_reports_kubectl_failure(tmp_path, capsys, monkeypatch):
     kit = _make_client_kit(tmp_path)
     output = tmp_path / "site-1-k8s"
@@ -1164,7 +1174,7 @@ def test_stage_k8_reports_kubectl_launch_os_error(tmp_path, capsys, monkeypatch)
     def fake_run(_cmd, **_kwargs):
         raise PermissionError("denied")
 
-    monkeypatch.setattr("nvflare.tool.deploy.deploy_commands.subprocess.run", fake_run)
+    monkeypatch.setattr("nvflare.tool.deploy.k8s_stage.subprocess.run", fake_run)
 
     with pytest.raises(SystemExit):
         stage_k8_deployment(_stage_k8_args(output, namespace="nvflare"))

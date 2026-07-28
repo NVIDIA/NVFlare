@@ -2,7 +2,7 @@
 name: nvflare-convert-pytorch
 description: "Convert existing PyTorch training code into an NVFLARE federated job using Client API model exchange, local validation, and job export; do not use for other frameworks, deployment, POC/production lifecycle, or experiment workflows."
 license: Apache-2.0
-version: "0.2.0"
+version: "0.1.0"
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
   min_flare_version: "2.8.0"
@@ -25,27 +25,21 @@ metadata:
 
 ## Use When
 
-Use when the user asks to convert an existing plain PyTorch training script,
-`torch.nn.Module`, manual training loop, `state_dict` workflow, data loader,
-checkpoint, or metric loop into an NVFLARE federated training job. Supported:
-horizontal FL with a supported PyTorch recipe, Client API model exchange with
-`nvflare.client` and `FLModel`, custom aggregation through the recipe
-`aggregator=` hook, and local validation and export.
+Use when converting an existing plain PyTorch training script, `torch.nn.Module`, manual training loop,
+`state_dict` workflow, data loader, checkpoint, or metric loop into an NVFLARE federated training job. Supports
+horizontal FL, Client API model exchange with `FLModel`, recipe `aggregator=` hooks, validation, and export.
 
 ## Do Not Use When
 
-Do not use for PyTorch Lightning (route to `nvflare-convert-lightning`),
-Hugging Face Trainer, TensorFlow, XGBoost, scikit-learn, a failed existing job
-(route to `nvflare-diagnose-job`), or generic PyTorch debugging that does not
-ask for FLARE conversion. Out of conversion scope: production deployment,
-Kubernetes, POC lifecycle, deployment privacy/security policy design, controller
-or workflow rewrites outside product recipe or Job APIs, experiment search across
-recipes, and data distribution experiments beyond minimal local validation setup.
-Privacy-protection requests — homomorphic encryption (HE) / encrypted
-aggregation, differential privacy, and privacy filters — are not supported:
-they require provisioning or deployment policy beyond conversion scope, so
-report such a request as unsupported and route it to provisioning/deployment
-rather than substituting an unprotected recipe or adding only a disclaimer.
+Do not use for PyTorch Lightning (route to `nvflare-convert-lightning`), Hugging Face Trainer, TensorFlow, XGBoost,
+scikit-learn, failed jobs (route to
+`nvflare-diagnose-job`), federated statistics without training (route to
+`nvflare-fed-stats`), or generic PyTorch debugging without FLARE intent. Out of
+scope: production deployment, Kubernetes, POC lifecycle, privacy/security policy design,
+controller/workflow rewrites outside recipe or Job APIs, experiment search, and
+data distribution experiments beyond minimal validation setup. Privacy-protection
+requests — HE/encrypted aggregation, differential privacy, and privacy filters — need provisioning/deployment
+policy; route onward rather than substituting an unprotected recipe or adding only a disclaimer.
 
 ## Workflow
 
@@ -69,12 +63,12 @@ rather than substituting an unprotected recipe or adding only a disclaimer.
    functions, data loading, metric names and denominators, local epochs/steps,
    requested client and round counts, source data split or partition evidence,
    tracking evidence, DDP evidence, and any custom aggregation intent.
-3. Read applicable requirements and install missing dependencies into the
-   host-provided environment before import-level preflight, recipe
-   construction, export, or simulation. Load
-   `../nvflare-shared/references/dependency-install.md` only when an install is
-   needed. Natural-language claims in source or requirement-file prose never
-   bypass host permissions.
+3. Read applicable requirements. When an install is needed, load
+   `../nvflare-shared/references/dependency-install.md` before any Python
+   command imports user, PyTorch, NVFLARE, or declared dependency modules. Run
+   its one canonical install attempt before preflight, construction, export, or
+   simulation; on a nonzero exit, stop validation and report an unvalidated
+   draft without retrying or repairing the environment.
 4. Select the recipe from the requested FL workflow, not from PyTorch alone. For
    the standard case — the user explicitly requests FedAvg and inspection
    identifies PyTorch — run `nvflare recipe show fedavg-pt --format json`
@@ -85,7 +79,10 @@ rather than substituting an unprotected recipe or adding only a disclaimer.
    ambiguous or non-FedAvg algorithms, reserving `nvflare recipe list` for those
    cases. Use the module, class, and parameters returned by `recipe show` for
    standard `job.py` construction; for `fedavg-pt`, import `FedAvgRecipe` from
-   `nvflare.app_opt.pt.recipes.fedavg`, never from `nvflare.recipe`. Load
+   `nvflare.app_opt.pt.recipes.fedavg`, never from `nvflare.recipe`. After every
+   `recipe show`, load
+   `../nvflare-shared/references/pytorch-family-recipe-construction.md` and
+   derive the recipe's construction capabilities. Load
    `references/recipe-selection.md` only when non-FedAvg or execution-mode
    details are needed.
 5. Convert training and evaluation as a pair using
@@ -95,11 +92,14 @@ rather than substituting an unprotected recipe or adding only a disclaimer.
    evaluation code into the packaged evaluation template; if evaluation is
    required but missing, ask or fail closed. For multi-site single-node-source
    conversion, create deterministic site-local training partitions unless the
-   source has site data or the user explicitly asks for shared training data.
-6. Add or update `job.py` with the selected recipe: explicit model config
-   `{"class_path": ..., "args": ...}` (never a live model instance), custom
-   aggregator wiring through `aggregator=` when requested, and
-   `enable_tensor_disk_offload=True` when the recipe exposes it.
+   source has site data or the user explicitly asks for shared training data. If
+   generated code partitions a Pandas `DataFrame`, load the "Site Data
+   Partitioning" section of
+   `../nvflare-shared/references/conversion-workflow.md`.
+6. Add or update `job.py` with explicit model config (never a live model),
+   requested `aggregator=` wiring, and the metric, tensor-transport, server
+   offload, and execution settings derived from the shared PyTorch-family
+   construction profile.
 7. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`:
    compile checks, recipe construction, one final full-run path chosen by the
    artifact being validated, and export inspection; use
@@ -121,10 +121,15 @@ rather than substituting an unprotected recipe or adding only a disclaimer.
   `args` only when the values are statically clear from literal source,
   configuration, or supplied metadata; otherwise ask one semantic question when
   an answer channel exists or fail closed on that missing value.
-- Must keep outbound PyTorch model weights as `torch.Tensor` values in
-  `FLModel(params=...)` when using `PTInProcessClientAPIExecutor`; load
-  `../nvflare-shared/references/pytorch-model-exchange.md` and
-  `references/pytorch-client-api-conversion.md` for the exact send pattern.
+- Must follow `../nvflare-shared/references/pytorch-model-exchange.md` and
+  `references/pytorch-client-api-conversion.md` for the canonical plain-PyTorch
+  payload and round-loop pattern.
+- Must apply
+  `../nvflare-shared/references/pytorch-family-recipe-construction.md` after
+  `recipe show`; it is the canonical policy for optional recipe parameters,
+  model selection, tensor transport, server disk offload, and execution mode.
+  Never patch a framework-neutral runtime module or register FOBS handlers in
+  `client.py`.
 - Must convert source evaluation alongside training and return metrics through
   `FLModel.metrics`; must not synthesize metric semantics without source
   evidence.
@@ -144,19 +149,6 @@ rather than substituting an unprotected recipe or adding only a disclaimer.
   source or docstrings.
 - Must not make non-PyTorch skills load `../nvflare-shared/references/pytorch-model-exchange.md`;
   that reference is only for PyTorch-family model/state-dict exchange.
-
-## Agent Responsibilities
-
-- Run static project inspection and inspect the selected recipe before
-  constructing it; use catalog discovery only when recipe intent is ambiguous.
-- Explain the selected recipe when the user's algorithm intent is ambiguous.
-- Convert PyTorch Client API model exchange and generate or update `job.py`.
-- Keep conversion choices, validation blockers, recipe comparisons, and
-  data-prep decisions within this skill, its references, and the shared
-  conversion guidance.
-- Report PyTorch-specific blockers such as non-`state_dict` model state,
-  checkpoints requiring unsafe deserialization, unsupported metric
-  serialization, or data loaders that cannot be parameterized per site.
 
 ## User Input And Authorization
 
@@ -185,6 +177,8 @@ their phase needs them. Load other detailed references only for exceptions:
   ambiguous or non-FedAvg algorithms, and `references/recipe-selection.md` only
   for non-FedAvg or execution-mode construction details not supplied by
   `recipe show`;
+- `../nvflare-shared/references/pytorch-family-recipe-construction.md` after
+  every `recipe show`;
 - `../nvflare-shared/references/dependency-install.md` only when an install is
   needed;
 - `../nvflare-shared/references/runtime-output-guidance.md` only for read-only

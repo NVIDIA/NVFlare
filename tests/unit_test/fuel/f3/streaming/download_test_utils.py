@@ -26,7 +26,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from nvflare.fuel.f3.streaming.download_service import Downloadable, DownloadService, ProduceRC
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.streaming.download_service import Downloadable, DownloadService, ProduceRC, _PropKey
 
 
 class MockDownloadable(Downloadable):
@@ -83,14 +85,61 @@ def make_isolated_download_service():
         _ref_table = {}
         _finished_refs = {}
         _tx_outcomes = {}
-        _tx_incarnations = {}
+        _outcome_owners = {}
+        _tx_waiters = {}
+        _terminating_txs = {}
         _outcome_lock = threading.Lock()
-        _accept_outcomes = True
         _logger = Mock()
         _tx_lock = threading.Lock()
         _initialized_cells = weakref.WeakKeyDictionary()
 
     return IsolatedDownloadService
+
+
+def make_service_no_monitor():
+    """An isolated service with the real monitor thread suppressed.
+
+    Not confirm-specific: use for any test that must not race the real 5s monitor
+    loop (budgets, confirms, waiters, lifecycle); drive monitor passes explicitly
+    via run_monitor_once."""
+    service = make_isolated_download_service()
+    service._tx_monitor = Mock()
+    return service
+
+
+def pull_request(rid, requester, confirm_capable=False, state=None):
+    """Builds one downloader pull request as it appears on the wire."""
+    payload = {_PropKey.REF_ID: rid}
+    if confirm_capable:
+        payload[_PropKey.CONFIRM_CAPABLE] = True
+    if state is not None:
+        payload[_PropKey.STATE] = state
+    return new_cell_message(headers={MessageHeaderKey.ORIGIN: requester}, payload=payload)
+
+
+def confirm_request(rid, requester, status, nonce=None):
+    """Builds one receiver-confirmation message as it appears on the wire."""
+    payload = {_PropKey.REF_ID: rid, _PropKey.CONFIRM: status}
+    if nonce is not None:
+        payload[_PropKey.CONFIRM_NONCE] = nonce
+    return new_cell_message(headers={MessageHeaderKey.ORIGIN: requester}, payload=payload)
+
+
+def serve_nonce(terminal_reply):
+    """The per-serve nonce a confirmation must echo (from the producer's terminal reply)."""
+    return terminal_reply.payload.get(_PropKey.CONFIRM_NONCE)
+
+
+def pull_to_terminal(service, rid, requester, confirm_capable=False):
+    """Drives the pull loop for one receiver until the producer serves a terminal status."""
+    state = None
+    for _ in range(50):
+        reply = service._handle_download(pull_request(rid, requester, confirm_capable=confirm_capable, state=state))
+        status = reply.payload.get(_PropKey.STATUS)
+        if status in (ProduceRC.EOF, ProduceRC.ERROR):
+            return reply
+        state = reply.payload.get(_PropKey.STATE)
+    raise AssertionError("pull loop never reached a terminal status")
 
 
 def run_monitor_once(service_cls, now):

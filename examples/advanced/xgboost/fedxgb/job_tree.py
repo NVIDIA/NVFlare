@@ -17,7 +17,7 @@ import argparse
 from higgs_data_loader import HIGGSDataLoader
 
 from nvflare.app_opt.xgboost.recipes import XGBBaggingRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, set_per_site_config
 
 
 def define_parser():
@@ -118,8 +118,8 @@ def main():
         use_gpus=args.use_gpus,
         nthread=args.nthread,
         lr_mode=args.lr_mode,
-        per_site_config=per_site_config,
     )
+    set_per_site_config(recipe, per_site_config)
 
     # Run simulation with explicit client list (required when using per_site_config)
     clients = list(per_site_config.keys())

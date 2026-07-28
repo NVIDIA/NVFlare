@@ -1400,7 +1400,38 @@ def test_get_job_log_truncates_large_output(tmp_path, monkeypatch):
     JobCommandModule().get_job_log(conn, ["get_job_log", "job-1"])
 
     payload, _meta = conn.dicts[0]
-    assert "truncated after 16 bytes" in payload["logs"]["server"]
+    assert "truncated to last 16 bytes" in payload["logs"]["server"]
+    assert payload["logs"]["server"].endswith("aa\n" + "b" * 12 + "\n")
+
+
+def test_decode_job_log_data_honors_zero_byte_cap(monkeypatch):
+    monkeypatch.setattr(JobCommandModule, "MAX_RETURNED_JOB_LOG_BYTES", 0)
+
+    result = JobCommandModule()._decode_job_log_data(b"discard all log bytes")
+
+    assert result == "... output truncated to last 0 bytes ...\n"
+
+
+def test_collect_job_log_lines_keeps_true_end_past_byte_cap(tmp_path, monkeypatch):
+    log_file = tmp_path / "long.log"
+    log_file.write_text("old-data\n" * 4 + "FINAL ERROR\n", encoding="utf-8")
+    monkeypatch.setattr(JobCommandModule, "MAX_RETURNED_JOB_LOG_BYTES", 20)
+
+    result = "".join(JobCommandModule()._collect_job_log_lines(str(log_file)))
+
+    assert result.endswith("FINAL ERROR\n")
+    assert "old-data\nold-data\n" not in result
+
+
+def test_collect_job_log_lines_keeps_tail_of_single_oversized_line(tmp_path, monkeypatch):
+    log_file = tmp_path / "single-line.log"
+    log_file.write_text("discard-this-true-end", encoding="utf-8")
+    monkeypatch.setattr(JobCommandModule, "MAX_RETURNED_JOB_LOG_BYTES", len("true-end"))
+
+    result = "".join(JobCommandModule()._collect_job_log_lines(str(log_file)))
+
+    assert result.endswith("true-end")
+    assert "discard-this" not in result
 
 
 def test_get_job_log_reads_server_log_from_stored_workspace_when_live_log_is_gone(tmp_path, monkeypatch):
@@ -1418,6 +1449,24 @@ def test_get_job_log_reads_server_log_from_stored_workspace_when_live_log_is_gon
     payload, _meta = conn.dicts[0]
     assert payload["logs"]["server"] == "stored server log\n"
     engine.job_def_manager.get_storage_component.assert_called_once()
+
+
+def test_get_job_log_keeps_end_of_large_stored_workspace_log(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    engine.job_def_manager.get_storage_component.return_value = _zip_bytes(
+        {WorkspaceConstants.LOG_FILE_NAME: "discard-this-FINAL ERROR\n"}
+    )
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+    monkeypatch.setattr(JobCommandModule, "MAX_RETURNED_JOB_LOG_BYTES", len("FINAL ERROR\n"))
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "server"])
+
+    payload, _meta = conn.dicts[0]
+    assert payload["logs"]["server"].endswith("FINAL ERROR\n")
+    assert "discard-this" not in payload["logs"]["server"]
 
 
 def test_get_job_log_reads_nested_server_log_from_stored_workspace(tmp_path, monkeypatch):
@@ -1446,7 +1495,7 @@ def test_get_job_log_client_target_truncates_large_log(tmp_path, monkeypatch):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     workspace = _FakeWorkspace(tmp_path)
     engine = _FakeServerEngine(workspace)
-    engine.job_def_manager.get_client_data.return_value = b"a" * 20
+    engine.job_def_manager.get_client_data.return_value = b"discard-this-FINAL-END"
     conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
 
     monkeypatch.setattr(JobCommandModule, "MAX_RETURNED_JOB_LOG_BYTES", 16)
@@ -1454,8 +1503,9 @@ def test_get_job_log_client_target_truncates_large_log(tmp_path, monkeypatch):
     JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "site-1"])
 
     payload, _meta = conn.dicts[0]
-    assert payload["logs"]["site-1"].startswith("a" * 16)
-    assert "truncated after 16 bytes" in payload["logs"]["site-1"]
+    assert payload["logs"]["site-1"].endswith("this-FINAL-END")
+    assert "discard" not in payload["logs"]["site-1"]
+    assert "truncated to last 16 bytes" in payload["logs"]["site-1"]
 
 
 def test_get_job_log_client_target_returns_structured_error_for_invalid_job_def_manager(tmp_path, monkeypatch):

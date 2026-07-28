@@ -259,10 +259,58 @@ _GCV_MODULE = "nvflare.app_common.executors.client_api_launcher_executor.get_cli
 def _make_gcv_stub(overrides: dict):
     """Return a get_client_config_value replacement that answers from *overrides*."""
 
-    def _gcv(fl_ctx, key, default=None):
+    def _gcv(fl_ctx, key, default=None, *, resolve_refs=True):
         return overrides.get(key, default)
 
     return _gcv
+
+
+def test_client_config_secret_ref_is_rejected_with_key_context(monkeypatch):
+    from nvflare.client.config import ConfigKey
+
+    errors = []
+    calls = []
+
+    def _return_raw_ref(fl_ctx, key, default=None, *, resolve_refs=True):
+        calls.append((key, resolve_refs))
+        return "${secret:SITE_API_KEY}"
+
+    monkeypatch.setattr(_GCV_MODULE, _return_raw_ref)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_error", lambda self, fl_ctx, msg: errors.append(msg))
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+
+    with pytest.raises(ValueError, match="Secret references are not supported.*'submit_result_timeout'"):
+        executor._get_client_config_override(MagicMock(), ConfigKey.SUBMIT_RESULT_TIMEOUT)
+
+    assert calls == [(ConfigKey.SUBMIT_RESULT_TIMEOUT, False)]
+    assert errors == [
+        "Secret references are not supported for client config override 'submit_result_timeout' "
+        "because this value is written to runtime configuration"
+    ]
+
+
+def test_client_config_secret_ref_is_never_resolved_or_written(monkeypatch):
+    from nvflare.client.config import ConfigKey
+
+    resolved_secret = "synthetic-resolved-secret-value"
+    writes = []
+    monkeypatch.setenv("SITE_API_KEY", resolved_secret)
+    monkeypatch.setattr(
+        _GCV_MODULE,
+        _make_gcv_stub({ConfigKey.SUBMIT_RESULT_TIMEOUT: "${secret:SITE_API_KEY}"}),
+    )
+    monkeypatch.setattr(
+        "nvflare.app_common.executors.client_api_launcher_executor.write_config_to_file",
+        lambda config_data, config_file_path: writes.append(config_data),
+    )
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_error", lambda self, fl_ctx, msg: None)
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+
+    with pytest.raises(ValueError, match="Secret references are not supported.*'submit_result_timeout'"):
+        executor.initialize(_FakeFLContext(_FakeCell()))
+
+    assert writes == []
+    assert resolved_secret not in repr(writes)
 
 
 class _RecordingLock:

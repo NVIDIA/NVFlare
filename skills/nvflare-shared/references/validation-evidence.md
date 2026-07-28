@@ -84,6 +84,13 @@ Before spending time on full simulation, run cheap checks when applicable:
 - run the framework-specific model compatibility check defined by the framework
   skill.
 
+For a generated partition, validate properties rather than guessed site sizes:
+track source positions and verify complete, non-overlapping coverage,
+determinism for the same seed, and any stratification or balance guarantee the
+generated algorithm actually makes. Assert exact per-site row counts only when
+the user, source, or a programmatic calculation specifies them; do not hard-code
+counts inferred by hand from one dataset.
+
 Use preflight results to fix packaging, config, or model-state issues before
 running a full simulation.
 

@@ -211,6 +211,8 @@ Protection
 
   .. code-block:: python
 
+     from nvflare.recipe import set_per_site_config
+
      recipe = XGBHorizontalRecipe(
          name="xgb_higgs_horizontal",
          min_clients=2,
@@ -222,8 +224,8 @@ Protection
              "eval_metric": "auc",
              "min_child_weight": 100,  # increase for coarser trees and reduced privacy exposure
          },
-         per_site_config=per_site_config,
      )
+     set_per_site_config(recipe, per_site_config)
 
 Closest Reconstructed Samples (CreditCard)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

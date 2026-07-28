@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
+
 import pytest
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
@@ -88,6 +90,27 @@ class TestInTimeModelSelector:
             handler.handle_event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT, fl_ctx)
         handler.handle_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
         assert (engine.last_event == AppEventType.GLOBAL_BEST_MODEL_AVAILABLE) == expected
+
+    @pytest.mark.parametrize(
+        "key_metric,negate_key_metric,expect_warning",
+        [
+            ("val_loss", False, True),
+            ("error_rate", False, True),
+            ("val_mse", False, True),
+            ("rmse", False, True),
+            ("val_ce", False, True),
+            ("perplexity", False, True),
+            ("val_loss", True, False),
+            ("val_accuracy", False, False),
+            ("dice", False, False),
+        ],
+    )
+    def test_loss_like_key_metric_warning(self, caplog, key_metric, negate_key_metric, expect_warning):
+        logger_name = f"{IntimeModelSelector.__module__}.{IntimeModelSelector.__qualname__}"
+        with caplog.at_level(logging.WARNING, logger=logger_name):
+            IntimeModelSelector(key_metric=key_metric, negate_key_metric=negate_key_metric)
+        warned = any("looks like a lower-is-better metric" in record.getMessage() for record in caplog.records)
+        assert warned == expect_warning
 
     def test_model_selection_publishes_metrics_selection_info(self):
         handler = IntimeModelSelector(key_metric="loss", negate_key_metric=True)

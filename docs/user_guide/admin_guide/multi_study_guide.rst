@@ -11,8 +11,9 @@ sites participate and what role each admin user has. Study-aware job and client-
 are scoped to the active study. The default study (``"default"``) is the fallback session context:
 it uses the certificate-based role and scopes visibility to jobs in the default study.
 
-If ``studies:`` is absent from ``project.yml``, the deployment is single-tenant and only the
-``default`` study can be used at login.
+If ``studies:`` is absent from ``project.yml``, the deployment starts single-tenant: only the
+``default`` study can be used at login until studies are registered at runtime (see
+:ref:`updating_studies`).
 
 Configuring Studies in project.yml
 ==================================
@@ -66,7 +67,8 @@ Validation rules:
 - Admins listed in a study must reference existing admin participants.
 - Study names use lowercase alphanumeric characters plus hyphens or underscores, 1-63 characters, and must start and end with an alphanumeric character.
 - ``"default"`` is reserved and cannot be used as a study name.
-- Provisioning generates ``study_registry.json`` in the server's ``local/`` folder.
+- Provisioning generates ``study_registry.json`` in the server's ``local/`` folder, which seeds the
+  runtime registry on first server start (see :ref:`updating_studies`).
 
 Per-Study Role Resolution
 =========================
@@ -151,12 +153,28 @@ Multi-study is suited for scenarios where organizations share trust (same PKI, s
 want logical isolation of experiments. For stronger isolation — separate PKI, separate blast
 radius — use separate NVFlare deployments.
 
+.. _updating_studies:
+
 Updating Studies
 ================
 
-Study site enrollment and user membership can be updated at runtime using the ``nvflare study``
-command family without reprovisioning or restarting the server. See :ref:`study_command` for the
-full command reference.
+The ``nvflare study`` command family manages the server-side study registry at runtime, without
+reprovisioning or restarting the server: ``register`` creates or merges a study, ``add-site`` /
+``remove-site`` change site enrollment, ``add-user`` / ``remove-user`` manage study-user
+membership, and ``remove`` deletes a study. See :ref:`study_command` for the full command
+reference.
 
-Changing the core study definition (adding new studies or altering the base provisioned
-configuration) requires reprovisioning and a server restart.
+These commands change only the server's view of a study — enrollment, login membership, and job
+scoping. They do not configure the participating sites: sites must already be provisioned and
+connected to be enrolled (adding a new site or admin identity to the deployment still requires
+provisioning, since certificates must be issued), and per-site runtime resources for a study —
+data mounts, job images, and related settings in each site's ``local/study_runtime.yaml`` — are
+managed by each site's operator, not by these commands. Until a site defines runtime resources for
+a study, jobs for that study run at that site without any study-specific data mounts or settings.
+
+Runtime study mutations are persisted to ``study_registry.json`` in the server workspace root, not
+in the ``local/`` folder. The provisioned copy under ``local/`` is only a first-start seed: once a
+runtime mutation has been persisted, the workspace-root copy is authoritative, shadows the seed,
+and survives server restarts. Because writes never target ``local/``, runtime study management also
+works in deployments where ``local/`` is mounted read-only, such as Kubernetes deployments that
+stage ``local/`` as a ConfigMap.

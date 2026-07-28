@@ -21,7 +21,8 @@ import pytest
 
 from nvflare.app_common.np.np_model_locator import NPModelLocator
 from nvflare.fuel.common.excepts import ConfigError
-from nvflare.fuel.utils.wfconf import Configurator, get_component_refs
+from nvflare.fuel.utils.json_scanner import JsonScanner
+from nvflare.fuel.utils.wfconf import Configurator, get_component_refs, resolve_var_refs
 
 
 @pytest.fixture
@@ -166,3 +167,11 @@ class TestGetComponentRefs:
             component = {key: ""}
             with pytest.raises(ConfigError, match="must not be empty"):
                 get_component_refs(component)
+
+
+def test_resolve_var_refs_preserves_secret_ref_while_expanding_system_var():
+    config = {"script_args": "--site {SITE_NAME} --api-key ${secret:API_KEY}"}
+
+    resolve_var_refs(JsonScanner(config), {"SITE_NAME": "site-1"})
+
+    assert config["script_args"] == "--site site-1 --api-key ${secret:API_KEY}"

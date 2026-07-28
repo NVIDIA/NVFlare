@@ -45,7 +45,8 @@ class FedAvgJob(BaseFedJob):
             mandatory_clients (List[str], optional): mandatory clients to run the job. Default None.
             key_metric (str, optional): Metric used to determine if the model is globally best.
                 if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
-                Defaults to "accuracy".
+                Higher values must indicate a better model; for lower-is-better metrics such as a loss,
+                report a negated value from the client (e.g., "neg_loss"). Defaults to "accuracy".
         """
         if not isinstance(initial_model, nn.Module):
             raise ValueError(f"Expected initial model to be nn.Module, but got type {type(initial_model)}.")

@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
+
 import numpy as np
 
 from nvflare.apis.dxo import DataKind, MetaKey, from_shareable
@@ -23,6 +25,19 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.widget import Widget
+
+# Best-effort heuristic for lower-is-better metric names; not exhaustive.
+# Substring hints catch compound names like "val_loss" or "error_rate"; token hints
+# catch short names such as "mse" that are unsafe to match as substrings ("dice" contains "ce").
+_LOWER_IS_BETTER_SUBSTRING_HINTS = ("loss", "err")
+_LOWER_IS_BETTER_TOKEN_HINTS = {"bce", "ce", "cer", "mae", "mse", "nll", "perplexity", "ppl", "rmse", "wer"}
+
+
+def _looks_lower_is_better(metric_name: str) -> bool:
+    name = metric_name.lower()
+    if any(hint in name for hint in _LOWER_IS_BETTER_SUBSTRING_HINTS):
+        return True
+    return any(token in _LOWER_IS_BETTER_TOKEN_HINTS for token in re.split(r"[^a-z0-9]+", name))
 
 
 class IntimeModelSelector(Widget):
@@ -42,8 +57,10 @@ class IntimeModelSelector(Widget):
             validation_metric_name (str, optional): key used to save initial validation metric in the
                 DXO meta properties (defaults to MetaKey.INITIAL_METRICS).
             key_metric: if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
-                Defaults to "val_accuracy".
-            negate_key_metric: Whether to invert the key metric. Should be used if key metric is a loss. Defaults to `False`.
+                Defaults to "val_accuracy". Higher values are treated as better unless `negate_key_metric` is set.
+            negate_key_metric: Whether to invert the key metric. Must be `True` if the key metric is
+                lower-is-better (e.g., a loss); otherwise the model with the worst metric would be selected
+                as the global best. Defaults to `False`.
         """
         super().__init__()
 
@@ -54,6 +71,14 @@ class IntimeModelSelector(Widget):
         self.aggregation_weights = aggregation_weights or {}
         self.key_metric = key_metric
         self.negate_key_metric = negate_key_metric
+
+        if not self.negate_key_metric and _looks_lower_is_better(self.key_metric):
+            self.logger.warning(
+                f"key_metric '{self.key_metric}' looks like a lower-is-better metric, but model selection "
+                f"treats higher values as better. If lower values indicate a better model, set "
+                f"negate_key_metric=True or report a negated metric from the client (e.g., "
+                f"'neg_{self.key_metric}'); otherwise the worst global model will be selected as the best."
+            )
 
         self.logger.info(f"model selection weights control: {aggregation_weights}")
         self._reset_stats()

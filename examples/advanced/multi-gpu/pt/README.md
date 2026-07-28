@@ -103,14 +103,16 @@ distributed job, while `LOCAL_RANK` is only unique on the current node.
 ### Multiple Clients on Same Machine
 When running multiple clients on the same machine, use different master ports:
 ```python
-per_site_config={
+from nvflare.recipe import set_per_site_config
+
+set_per_site_config(recipe, {
     "site-1": {
         "command": "... --master_port=7777",
     },
     "site-2": {
         "command": "... --master_port=8888",
     },
-}
+})
 ```
 
 ## Troubleshooting

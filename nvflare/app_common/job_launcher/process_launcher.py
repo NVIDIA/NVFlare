@@ -23,7 +23,7 @@ from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
-from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
+from nvflare.utils.job_launcher_utils import add_custom_dir_to_path, get_credential_env
 from nvflare.utils.process_utils import ProcessAdapter, spawn_process
 
 JOB_RETURN_CODE_MAPPING = {0: JobReturnCode.SUCCESS, 1: JobReturnCode.EXECUTION_ERROR, 9: JobReturnCode.ABORTED}
@@ -71,6 +71,8 @@ class ProcessJobLauncher(JobLauncherSpec):
         app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
         if app_custom_folder != "":
             add_custom_dir_to_path(app_custom_folder, new_env)
+
+        new_env.update(get_credential_env(fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS) or {}))
 
         command = self.get_command(job_meta, fl_ctx)
         argv = shlex.split(command, True)

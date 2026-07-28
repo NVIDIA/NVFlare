@@ -25,7 +25,7 @@ from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST, ComponentPathAuthorizer
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.job_config.api import FedJob
-from nvflare.recipe.sim_env import SimEnv
+from nvflare.recipe.sim_env import SIMULATOR_WORKSPACE_ROOT_ENV_VAR, SimEnv
 
 
 class _ResourcesWorkspace:
@@ -80,6 +80,19 @@ def test_sim_env_validation():
     env = SimEnv(num_clients=0, clients=["client1", "client2", "client3"])
     assert env.num_clients == 3
     assert env.num_threads == 3
+
+
+def test_sim_env_process_workspace_override_takes_precedence(tmp_path, monkeypatch):
+    job = _make_job()
+    isolated_workspace = tmp_path / "isolated"
+    monkeypatch.setenv(SIMULATOR_WORKSPACE_ROOT_ENV_VAR, str(isolated_workspace))
+    with pytest.warns(RuntimeWarning, match="overrides SimEnv workspace_root"):
+        env = SimEnv(num_clients=2, workspace_root=str(tmp_path / "configured"))
+
+    mock_run = _deploy_with_mocked_simulator(env, job)
+
+    assert env.workspace_root == str(isolated_workspace)
+    assert mock_run.call_args.kwargs["workspace"] == str(isolated_workspace / job.name)
 
 
 def test_sim_env_deploy_with_explicit_clients_does_not_pass_n_clients(tmp_path):

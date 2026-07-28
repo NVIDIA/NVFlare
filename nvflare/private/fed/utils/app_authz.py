@@ -46,7 +46,7 @@ class AppAuthzService(object):
 
     @staticmethod
     def derive_local_app_info(app_info: dict, job_meta: dict, site_name: str) -> dict:
-        for mode in ("docker", "k8s"):
+        for mode in ("docker", "k8s", "slurm"):
             spec = get_job_launcher_spec(job_meta, site_name, mode)
             if "image" in spec or "python_path" in spec:
                 app_info = copy.deepcopy(app_info)

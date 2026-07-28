@@ -46,6 +46,11 @@ class _ScaffoldValidator(BaseModel):
 class ScaffoldRecipe(Recipe):
     """A recipe for implementing SCAFFOLD in NVFlare with TensorFlow.
 
+    Recipe parameters, including ``train_args``, become part of the generated job
+    definition and must never contain actual secret values. Read secrets from site environment
+    variables or mounted files; references are supported only where documented in
+    :mod:`nvflare.recipe.secrets`.
+
     Implements the training algorithm proposed in
     Karimireddy et al. "SCAFFOLD: Stochastic Controlled Averaging for Federated Learning"
     (https://arxiv.org/abs/1910.06378).

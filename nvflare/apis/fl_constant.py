@@ -327,6 +327,7 @@ class ServerCommandKey:
 class FedEventHeader:
 
     TIMESTAMP = "_timestamp"
+    EVENT_ID = "_event_id"
     EVENT_TYPE = "_event_type"
     DIRECTION = "_direction"
     ORIGIN = "_origin"
@@ -453,6 +454,7 @@ class WorkspaceConstants:
     PRIVACY_CONFIG = "privacy.json"
     SAMPLE_PRIVACY_CONFIG = PRIVACY_CONFIG + ".sample"
     JOB_RESOURCES_CONFIG = "job_resources.json"
+    STUDY_REGISTRY_CONFIG = "study_registry.json"
 
     ADMIN_STARTUP_CONFIG = "fed_admin.json"
 
