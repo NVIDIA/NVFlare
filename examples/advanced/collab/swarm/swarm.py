@@ -31,6 +31,11 @@ from nvflare.recipe import SimEnv
 
 
 def make_recipe(args):
+    if args.num_clients < 2:
+        raise ValueError("Swarm learning requires at least 2 clients.")
+    if args.num_rounds < 1:
+        raise ValueError("Swarm learning requires at least 1 round.")
+
     return CollabRecipe(
         job_name="collab_swarm",
         server=NPSwarm(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=args.num_rounds),

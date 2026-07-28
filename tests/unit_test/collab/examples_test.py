@@ -12,70 +12,98 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Smoke tests for the Collab example catalog.
+
+Examples are documentation, so nothing here asserts training behavior. Each
+example must import and its recipe must finalize into a job — the cheapest
+alarm for drift between the catalog and the nvflare.collab API.
+"""
+
 import importlib
-import subprocess
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-import numpy as np
+import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _EXAMPLES_ROOT = _REPO_ROOT / "examples"
+_ADVANCED_EXAMPLES_ROOT = _EXAMPLES_ROOT / "advanced"
+_HELLO_COLLAB_ROOT = _EXAMPLES_ROOT / "hello-world" / "hello-collab"
+
+_EXAMPLES = [
+    pytest.param(
+        _HELLO_COLLAB_ROOT,
+        "job",
+        SimpleNamespace(n_clients=2, num_rounds=3, update_type="full"),
+        (),
+        id="hello_numpy_collab",
+    ),
+    pytest.param(
+        _ADVANCED_EXAMPLES_ROOT,
+        "collab.hello_fedavg.hello_fedavg",
+        SimpleNamespace(num_clients=2, num_rounds=3),
+        ("torch",),
+        id="hello_fedavg",
+    ),
+    pytest.param(
+        _ADVANCED_EXAMPLES_ROOT,
+        "collab.simple_split_learning.simple_split_learning",
+        None,
+        ("torch", "torchvision"),
+        id="simple_split_learning",
+    ),
+    pytest.param(
+        _ADVANCED_EXAMPLES_ROOT,
+        "collab.async_aggregation.async_aggregation",
+        SimpleNamespace(num_clients=2, num_rounds=2),
+        (),
+        id="async_aggregation",
+    ),
+    pytest.param(
+        _ADVANCED_EXAMPLES_ROOT,
+        "collab.swarm.swarm",
+        SimpleNamespace(num_clients=3, num_rounds=5),
+        (),
+        id="swarm",
+    ),
+]
 
 
-def test_hello_numpy_collab_trains_and_averages_models(monkeypatch):
-    monkeypatch.syspath_prepend(str(_EXAMPLES_ROOT))
-    module = importlib.import_module("collab.hello_numpy_collab.hello_numpy_collab")
-    initial_model = module.INITIAL_MODEL.copy()
+@pytest.mark.parametrize("example_root,module_name,args,required_modules", _EXAMPLES)
+def test_example_recipe_finalizes(monkeypatch, example_root, module_name, args, required_modules):
+    for required_module in required_modules:
+        pytest.importorskip(required_module)
 
-    updated_model, weight_mean = module.train(initial_model, "full")
-
-    np.testing.assert_array_equal(updated_model, initial_model + 1)
-    assert weight_mean == 6.0
-
-    model_diff, weight_mean = module.train(initial_model, "diff")
-    np.testing.assert_array_equal(model_diff, np.ones_like(initial_model))
-    assert weight_mean == 6.0
-
-
-def test_hello_numpy_collab_recipe_finalizes_with_module_functions(monkeypatch):
-    monkeypatch.syspath_prepend(str(_EXAMPLES_ROOT))
-    module = importlib.import_module("collab.hello_numpy_collab.hello_numpy_collab")
-    recipe = module.make_recipe(SimpleNamespace(n_clients=2, num_rounds=3, update_type="full"))
-
-    job = recipe.finalize()
-
-    assert recipe.finalize() is job
-
-
-def test_async_aggregation_example_imports_without_torch():
-    script = f"""
-import importlib.abc
-import sys
-
-sys.path[:0] = [{str(_EXAMPLES_ROOT)!r}, {str(_REPO_ROOT)!r}]
-
-class BlockTorch(importlib.abc.MetaPathFinder):
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname == "torch" or fullname.startswith("torch."):
-            raise ImportError("torch is blocked for this test")
-        return None
-
-sys.meta_path.insert(0, BlockTorch())
-import collab.async_aggregation.async_aggregation
-"""
-
-    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=False)
-
-    assert result.returncode == 0, result.stderr
-
-
-def test_async_aggregation_recipe_finalizes(monkeypatch):
-    monkeypatch.syspath_prepend(str(_EXAMPLES_ROOT))
-    module = importlib.import_module("collab.async_aggregation.async_aggregation")
-    recipe = module.make_recipe(SimpleNamespace(num_clients=2, num_rounds=2))
+    monkeypatch.syspath_prepend(str(example_root))
+    module = importlib.import_module(module_name)
+    recipe = module.make_recipe(args) if args is not None else module.make_recipe()
 
     job = recipe.finalize()
 
     assert recipe.finalize() is job
+
+
+def test_hello_fedavg_sim_env_uses_configured_clients(monkeypatch):
+    pytest.importorskip("torch")
+    monkeypatch.syspath_prepend(str(_ADVANCED_EXAMPLES_ROOT))
+    module = importlib.import_module("collab.hello_fedavg.hello_fedavg")
+    recipe = module.make_recipe(SimpleNamespace(num_clients=2, num_rounds=3))
+
+    env = module.make_env(recipe)
+
+    assert env.clients == recipe.configured_sites() == ["site-1", "site-2"]
+
+
+@pytest.mark.parametrize(
+    "args,error",
+    [
+        (SimpleNamespace(num_clients=1, num_rounds=5), "at least 2 clients"),
+        (SimpleNamespace(num_clients=3, num_rounds=0), "at least 1 round"),
+    ],
+)
+def test_swarm_rejects_invalid_topology(monkeypatch, args, error):
+    monkeypatch.syspath_prepend(str(_ADVANCED_EXAMPLES_ROOT))
+    module = importlib.import_module("collab.swarm.swarm")
+
+    with pytest.raises(ValueError, match=error):
+        module.make_recipe(args)

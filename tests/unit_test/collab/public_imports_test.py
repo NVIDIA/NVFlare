@@ -126,7 +126,7 @@ def test_collab_public_surface_does_not_require_torch():
         "from nvflare.collab.api import Context, GroupCallContext\n"
         "import nvflare.collab.runtime.controller\n"
         "import nvflare.collab.runtime.executor\n"
-        "from nvflare.collab import simple_logging\n"
+        "from nvflare.collab import CollabRecipe, simple_logging\n"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
 

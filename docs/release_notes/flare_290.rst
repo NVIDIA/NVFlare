@@ -28,6 +28,10 @@ Compatibility and Migration Notes
   multi-optimizer FedAvg client reports their combined step count unless it
   supplies ``NUM_STEPS_CURRENT_ROUND`` explicitly; explicit client metadata is
   still preserved.
+- Recipe discovery now exposes the concrete PyTorch ``FedProxRecipe`` as
+  ``fedprox-pt`` and no longer advertises the ``fedprox-tf`` manual pattern as
+  a concrete recipe. TensorFlow clients can continue to combine a FedAvg
+  recipe with ``TFFedProxLoss`` explicitly.
 - CellPipe cell names now keep the runtime token and pipe mode in one
   explicitly marked, ``~``-delimited FQCN leaf segment
   (``site-1.cellpipe~plain~<job-id>~active``, or
