@@ -21,6 +21,7 @@ batch-loop is_running() semantics, and ABORT/SHUTDOWN session ends."""
 import threading
 import time
 import uuid
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -32,6 +33,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.cell import api as cell_api
+from nvflare.client.cell import attach_session as attach_session_module
 from nvflare.client.cell.api import CellClientAPI, TrainerSessionError
 from nvflare.client.cell.bootstrap import (
     ATTACH_EXECUTION_MODE,
@@ -377,11 +379,55 @@ class TestAttachMode:
         assert api._session_id == SESSION_ID
         api.shutdown()
 
-    def test_secure_profile_passes_ca_for_cell_credential_discovery(self, attach_bootstrap_path, attach_env):
+    def test_decomposer_failure_does_not_half_bind_session(self, attach_bootstrap_path, attach_env, monkeypatch):
+        attach_env.open_on_start = False
+        api = CellClientAPI(bootstrap_file=attach_bootstrap_path)
+        init_errors = []
+
+        def _init():
+            try:
+                api.init(rank="0")
+            except BaseException as e:
+                init_errors.append(e)
+
+        init_thread = threading.Thread(target=_init)
+        init_thread.start()
+        assert _wait_until(lambda: Topic.SESSION_OPEN in attach_env.cbs)
+
+        register_decomposers = MagicMock(side_effect=RuntimeError("torch is unavailable"))
+        monkeypatch.setattr(attach_session_module, "register_framework_decomposers", register_decomposers)
+        rejected = attach_env.deliver(Topic.SESSION_OPEN, CJ_FQCN, attach_env.session_open_payload)
+
+        assert rejected.payload[MsgKey.REPLY_TOPIC] == Topic.SESSION_REJECTED
+        assert "torch is unavailable" in rejected.payload[MsgKey.REASON]
+        assert api._cj_fqcn is None
+        assert api._session_id is None
+        assert not api._attach._opened.is_set()
+        assert init_thread.is_alive()
+
+        register_decomposers.side_effect = None
+        accepted = attach_env.deliver(Topic.SESSION_OPEN, CJ_FQCN, attach_env.session_open_payload)
+        init_thread.join(timeout=1.0)
+
+        assert accepted.payload[MsgKey.REPLY_TOPIC] == Topic.SESSION_ACCEPTED
+        assert not init_thread.is_alive()
+        assert init_errors == []
+        assert api._cj_fqcn == CJ_FQCN
+        assert api._session_id == SESSION_ID
+        api.shutdown()
+
+    def test_secure_profile_requires_and_passes_mtls_credentials(self, attach_bootstrap_path, attach_env):
+        profile_dir = Path(attach_bootstrap_path).parent
+        ca_cert = profile_dir / "rootCA.pem"
+        client_cert = profile_dir / "client.crt"
+        client_key = profile_dir / "client.key"
+        for path in (ca_cert, client_cert, client_key):
+            path.write_text("test credential", encoding="utf-8")
+
         config = read_bootstrap_config(attach_bootstrap_path)
         config[BootstrapKey.CONNECT_URL] = "grpcs://site.example:9000"
         config[BootstrapKey.CONNECTION_SECURITY] = "mtls"
-        config[BootstrapKey.CA_CERT] = "/workspace/startup/rootCA.pem"
+        config[BootstrapKey.CA_CERT] = str(ca_cert)
         write_bootstrap_config(attach_bootstrap_path, config)
 
         api = _init_api(attach_bootstrap_path, attach_env)
@@ -389,10 +435,27 @@ class TestAttachMode:
         kwargs = attach_env.cell_ctor.call_args.kwargs
         assert kwargs["secure"] is True
         assert kwargs["credentials"] == {
-            "ca_cert": "/workspace/startup/rootCA.pem",
+            "ca_cert": str(ca_cert),
+            "client_cert": str(client_cert),
+            "client_key": str(client_key),
             "connection_security": "mtls",
         }
         api.shutdown()
+
+    def test_secure_profile_rejects_missing_mtls_client_credentials(self, attach_bootstrap_path, attach_env):
+        ca_cert = Path(attach_bootstrap_path).parent / "rootCA.pem"
+        ca_cert.write_text("test credential", encoding="utf-8")
+        config = read_bootstrap_config(attach_bootstrap_path)
+        config[BootstrapKey.CONNECT_URL] = "grpcs://site.example:9000"
+        config[BootstrapKey.CONNECTION_SECURITY] = "mtls"
+        config[BootstrapKey.CA_CERT] = str(ca_cert)
+        write_bootstrap_config(attach_bootstrap_path, config)
+
+        api = CellClientAPI(bootstrap_file=attach_bootstrap_path)
+        with pytest.raises(RuntimeError, match=r"missing or unreadable: client_cert, client_key"):
+            api.init(rank="0")
+
+        attach_env.cell_ctor.assert_not_called()
 
     def test_duplicate_task_is_queued_once_and_status_is_recoverable(self, attach_bootstrap_path, attach_env):
         api = _init_api(attach_bootstrap_path, attach_env)
@@ -441,6 +504,62 @@ class TestAttachMode:
         api.send(FLModel(params={"w": [2.0]}, params_type=ParamsType.FULL))
 
         assert accepted_result_id
+        assert api._attach._task_states["task-1"] == TaskState.COMPLETE
+
+    def test_lost_result_acceptance_is_recovered_after_routine_shutdown(
+        self, attach_bootstrap_path, attach_env, monkeypatch
+    ):
+        api = _init_api(attach_bootstrap_path, attach_env)
+        _deliver_attach_task(attach_env)
+        assert api.receive() is not None
+
+        waiter = MagicMock()
+        waiter.transaction_id = "canonical-tx"
+        waiter.done.return_value = True
+        waiter.wait.return_value = SimpleNamespace(
+            status=TransferProgressState.COMPLETED,
+            reason="all_receivers_succeeded",
+        )
+        monkeypatch.setattr(cell_api.DownloadService, "get_transfer_waiter", lambda tx_id: waiter)
+        delete_transaction = MagicMock()
+        monkeypatch.setattr(cell_api.DownloadService, "delete_transaction", delete_transaction)
+        accepted_result_id = None
+        accepted_attempt_id = None
+
+        def _on_request(topic, target, request):
+            nonlocal accepted_attempt_id, accepted_result_id
+            if topic == Topic.RESULT_READY:
+                accepted_result_id = request.payload[MsgKey.RESULT_ID]
+                accepted_attempt_id = request.payload[MsgKey.ATTEMPT_ID]
+                index = attach_env.request_messages.index(request)
+                tx_created = attach_env.request_kwargs[index]["fobs_ctx_props"][
+                    cell_api.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
+                ]
+                tx_created(SimpleNamespace(tx_id="canonical-tx"))
+                attach_env.deliver(
+                    Topic.SHUTDOWN,
+                    CJ_FQCN,
+                    {MsgKey.SESSION_ID: SESSION_ID},
+                )
+                raise RuntimeError("acceptance reply lost")
+            if topic == Topic.RESULT_STATUS:
+                assert request.payload[MsgKey.RESULT_ID] == accepted_result_id
+                return make_cell_reply(
+                    CellReturnCode.OK,
+                    body={
+                        MsgKey.REPLY_TOPIC: Topic.RESULT_STATUS,
+                        MsgKey.RESULT_STATE: ResultState.ACCEPTED,
+                        MsgKey.ACCEPTED_ATTEMPT_ID: accepted_attempt_id,
+                    },
+                )
+            return make_cell_reply(CellReturnCode.OK)
+
+        attach_env.on_request = _on_request
+        api.send(FLModel(params={"w": [2.0]}, params_type=ParamsType.FULL))
+
+        delete_transaction.assert_not_called()
+        waiter.wait.assert_called_once()
+        assert attach_env.stopped
         assert api._attach._task_states["task-1"] == TaskState.COMPLETE
 
     def test_uncertain_result_preserves_canonical_attempt_and_cancels_only_duplicate(

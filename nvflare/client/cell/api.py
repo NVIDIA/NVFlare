@@ -793,6 +793,19 @@ class CellClientAPI(APISpec):
             return "session stopped"
         return None
 
+    def _result_publication_end_reason(self) -> Optional[str]:
+        """Return only terminal conditions that may revoke an admitted result send.
+
+        Routine SHUTDOWN sets ``_stopped`` to prevent new work, but the Cell stays
+        alive until an already-admitted result resolves its canonical attempt and
+        finishes serving lazy transfers.
+        """
+        if self._abort:
+            return f"session aborted: {self._abort_reason}"
+        if self._closed:
+            return "session closed"
+        return None
+
     def _validate_cj_control(self, request, payload: dict) -> Optional[str]:
         origin = request.get_header(MessageHeaderKey.ORIGIN) or ""
         if origin != self._cj_fqcn:

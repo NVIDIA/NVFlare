@@ -102,14 +102,16 @@ Two consequences of adopting the IPCAgent topology keep V1 small:
    change).** The
    secure-network path is a **provisioned-trainer mutual TLS** on the site's existing
    backbone (IPCAgent's credential path: `{CA_CERT}` + auto-discovered client cert),
-   where F3's existing mTLS registration binds the cert to the trainer FQCN before it
-   is routable; `attach_id` at `SESSION_OPEN` then selects which trainer. A **bare-CA**
-   (CA-only) trainer is rejected in V1 because a one-way-TLS listener does not
-   authenticate the peer before registration. There is no application-layer secret,
-   cryptographic proof, or broker in V1; `attach_id` match plus transport is the bar. A hardened
-   mode that adds a site-local shared secret and mutual proof is deliberately
-   deferred (see Non-Goals); because rendezvous and the task/result protocol are
-   independent of it, that mode is purely additive.
+   where Attach verifies that the CA, client certificate, and client key are all
+   present and readable before Cell construction. F3's existing mTLS registration
+   binds the cert to the trainer FQCN before it is routable; `attach_id` at
+   `SESSION_OPEN` then selects which trainer. A **bare-CA** (CA-only) trainer is
+   rejected in V1 because a one-way-TLS listener does not authenticate the peer
+   before registration. There is no application-layer secret, cryptographic proof,
+   or broker in V1; `attach_id` match plus transport is the bar. A hardened mode that
+   adds a site-local shared secret and mutual proof is deliberately deferred (see
+   Non-Goals); because rendezvous and the task/result protocol are independent of it,
+   that mode is purely additive.
 
 The legacy classes remain compatibility references only:
 
@@ -425,9 +427,11 @@ drivers. For the V1 driver (TLS network + loopback) the policy is:
   workspace containing `rootCA.pem`, constructs its Cell with
   `credentials = {CA_CERT: rootCA.pem}`, and the Cell ctor's `enhance_credential_info`
   (`nvflare/fuel/f3/drivers/net_utils.py`) auto-discovers `client.crt`/`client.key`
-  from that same folder. The trainer presents the project-CA client cert over the
-  site's normal mTLS backbone; no dedicated listener is needed. F3 binds the
-  certificate CN to the claimed FQCN at registration
+  from that same folder. Attach then fails before Cell construction unless the CA,
+  client certificate, and client key paths all name readable regular files; the
+  `mtls` policy label alone is not sufficient. The trainer presents the project-CA
+  client cert over the site's normal mTLS backbone; no dedicated listener is needed.
+  F3 binds the certificate CN to the claimed FQCN at registration
   (`ConnManager.update_endpoint`, gated on the mTLS connection), so the peer is
   authenticated as a project member and FQCN-bound before it becomes routable.
   `SESSION_OPEN`'s `attach_id` then selects which trainer. A profile specifying
@@ -491,9 +495,13 @@ that error class and treats the first `SESSION_ACCEPTED` as proof the trainer ha
 appeared. The CJ generates a fresh CSPRNG `session_id` for the logical open and
 reuses it on retries. The trainer's handler records the CJ's FQCN from the request
 origin as its bound peer, applies the job-specific settings, and returns
-`SESSION_ACCEPTED`. Every subsequent message in either direction must match both the
-bound peer FQCN and the current `session_id`; attach protocol fields are removed
-before a result is forwarded beyond the CJ.
+`SESSION_ACCEPTED`. Runtime validation, including framework decomposer registration,
+must complete before any peer/session binding state is committed. A failure returns
+`SESSION_REJECTED` while leaving the trainer unbound and able to accept a later valid
+open; binding and `_opened` publication are one atomic success transition. Every
+subsequent message in either direction must match both the bound peer FQCN and the
+current `session_id`; attach protocol fields are removed before a result is forwarded
+beyond the CJ.
 
 After `SESSION_ACCEPTED`, the session runs the unchanged #4906 loop: the CJ
 **pushes** `TASK_READY`, the trainer's `receive()` returns it from its handler queue
@@ -652,6 +660,13 @@ This handles the critical race where attempt 1 was accepted by the CJ, its
 being forwarded to the server. Deleting attempt 1 before discovering the CJ's
 canonical choice would corrupt the accepted result.
 
+After a lost or uncertain result reply, the trainer probes `RESULT_STATUS` before
+honoring a concurrent orderly SHUTDOWN. Routine SHUTDOWN prevents new work but does
+not revoke an already-admitted send: the trainer keeps its Cell and attempt transfers
+alive until it resolves the CJ's canonical choice and the canonical publication
+barrier settles. ABORT and terminal transport/session failure remain allowed to end
+that recovery.
+
 `RESULT_ACCEPTED` canonicalizes the result envelope; it is not durable delivery of
 unresolved lazy references. Terminal delivery requires the externally owned trainer
 to remain alive and attached until receiver-confirmed transfer success. An orderly
@@ -761,10 +776,11 @@ association, not automatic reconnect behavior.
 - exception text contains a safe reason but never the complete profile.
 
 Attach also adds an idempotent trainer-side lifecycle guard to `CellClientAPI`. It
-registers `atexit` cleanup and a main-thread/session watcher. On heartbeat loss,
-session-bound ABORT/SHUTDOWN, or terminal session failure, the guard triggers the
-task/result abort signals, wakes blocked `receive()`/`send()` calls, stops the session
-Cell, and marks `is_running()` false. When the main thread returns without an explicit
+registers `atexit` cleanup and a main-thread/session watcher. Heartbeat loss, ABORT,
+or terminal session failure triggers the task/result abort signals, wakes blocked
+Client API calls, stops the session Cell, and marks `is_running()` false. Orderly
+SHUTDOWN stops admission and wakes `receive()`, but it does not abort a result send
+that was already admitted. When the main thread returns without an explicit
 `flare.shutdown()`, it requests the same cleanup. Orderly cleanup must defer Cell
 shutdown while a canonical accepted result source is still being served; it waits for
 that transfer's receiver-confirmed terminal outcome or failure first. Because the
@@ -840,6 +856,12 @@ an auto-discovered project-CA client cert over the existing mTLS backbone (the s
 `{CA_CERT}` + `enhance_credential_info` path IPCAgent uses). A bare-CA trainer and
 `connection_security=tls` are rejected in V1.
 
+That endpoint is an operator-provisioned deployment value, not the federation server
+port and not a value inferred from a submitted job. A stock local POC client's
+internal listener may use a dynamically selected port and does not automatically
+export an attach profile; such a POC is not attach-ready until the site platform
+publishes a reachable child endpoint to the trainer.
+
 `attach_id`, `attach_timeout`, and `allow_reconnect` must be represented in
 `ClientAPIBackendContext`. #4906 correctly omitted active attach behavior while no
 attach backend existed.
@@ -904,7 +926,7 @@ Expected production changes:
    - construct the trainer Cell from `(site, attach_id)` and connect to the site
      (`parent_url=connect_url`), mirroring `IPCAgent`;
    - accept the CJ-initiated `SESSION_OPEN`, bind the CJ origin/session, and apply
-     runtime settings;
+     runtime settings only after decomposer/runtime validation succeeds;
    - implement task deduplication and TASK_STATUS;
    - implement result attempts, RESULT_STATUS, and canonical transfer cleanup;
    - add bounded failure cleanup plus the attach lifecycle guard;
@@ -913,8 +935,9 @@ Expected production changes:
    - document attach-ID generation and independent provisioning to the job and trainer;
    - document that secure network attach uses IPCAgent's credential path
      (`{CA_CERT}` + `enhance_credential_info` auto-discovery from the trainer's
-     workspace): a provisioned trainer rides the existing mTLS backbone, while
-     bare-CA one-way TLS is rejected;
+     workspace): a provisioned trainer rides the existing mTLS backbone only after
+     the CA, client certificate, and client key are validated, while bare-CA one-way
+     TLS is rejected;
    - document the V1 (IPCAgent-equivalent) trust boundary the operator must maintain;
    - add attach examples using the standard Client API, without exposing legacy IPC
      classes.
@@ -943,10 +966,11 @@ CJ-rooted identity; that is out of scope here.)
 - A cleartext non-loopback network route is rejected unless `allow_insecure_attach=True`;
   loopback classification rejects wildcard and arbitrary DNS hosts. This option is not
   consulted for `file://`.
-- Secure attach builds trainer credentials as `{CA_CERT: rootCA.pem}` and relies on
-  `enhance_credential_info` auto-discovery: a provisioned startup-kit workspace presents
-  the project-CA client cert and completes **mTLS** on the normal backbone. A bare-CA
-  profile is rejected.
+- Secure attach builds trainer credentials as `{CA_CERT: rootCA.pem}`, uses
+  `enhance_credential_info` auto-discovery, and rejects the profile before Cell
+  construction unless the CA, client certificate, and client key are all present and
+  readable. A provisioned startup-kit workspace presents the project-CA client cert
+  and completes **mTLS** on the normal backbone; a bare-CA profile is rejected.
 - When the replacement file driver is available, a `file://` profile requires no CA or
   TLS fields, waits until the site listener artifact is present, accepts a protected
   shared directory, and is rejected by the driver for relative, symlinked,
@@ -956,6 +980,8 @@ CJ-rooted identity; that is out of scope here.)
   idempotent.
 - Wrong site/attach ID, wrong rank, or incompatible protocol version is rejected without
   disturbing the bound/waiting state.
+- A framework decomposer/runtime setup failure rejects SESSION_OPEN without committing
+  peer/session state; a later valid open can bind and release `flare.init()`.
 - Attach mode makes no change to the shared connection-manager admission path for
   existing cells (no regression to non-attach connections).
 - Nonzero global ranks do not construct a Cell; `LOCAL_RANK=0` does not elect a nonzero
@@ -1013,6 +1039,9 @@ CJ-rooted identity; that is out of scope here.)
   the canonical transfer/task rather than reporting durable success.
 - Injected loss of TASK_ACCEPTED does not execute the task twice.
 - Injected loss of RESULT_ACCEPTED does not invalidate the result accepted by the CJ.
+- Injected loss of RESULT_ACCEPTED followed by orderly SHUTDOWN still recovers the
+  canonical attempt through RESULT_STATUS, preserves its lazy transfers through
+  receiver confirmation, and only then stops the trainer Cell.
 - Killing the trainer before RESULT_READY fails the task without hanging.
 - Heartbeat loss does not revoke a progressing transfer but does revoke a stalled/idle
   session.

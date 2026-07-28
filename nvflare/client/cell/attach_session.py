@@ -15,6 +15,7 @@
 """Attach-only trainer session protocol used by :class:`CellClientAPI`."""
 
 import atexit
+import os
 import threading
 import uuid
 from collections import OrderedDict
@@ -23,14 +24,15 @@ from typing import TYPE_CHECKING, Optional
 from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.client.cell.attach import effective_connection_security, make_attach_trainer_fqcn
 from nvflare.client.cell.bootstrap import BootstrapKey
-from nvflare.client.cell.decomposers import register_framework_decomposers
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, ResultState, TaskState, Topic
 from nvflare.client.config import ConfigKey, ExchangeFormat
+from nvflare.client.decomposers import register_framework_decomposers
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.drivers.net_utils import enhance_credential_info
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
 
@@ -77,6 +79,19 @@ class AttachTrainerSession:
                     f"attach profile using {self.connection_security!r} requires {BootstrapKey.CA_CERT!r}"
                 )
             credentials[DriverParams.CA_CERT.value] = ca_cert
+        if self.connection_security == ConnectionSecurity.MTLS:
+            enhance_credential_info(credentials)
+            missing = [
+                param.value
+                for param in (DriverParams.CA_CERT, DriverParams.CLIENT_CERT, DriverParams.CLIENT_KEY)
+                if not os.path.isfile(credentials.get(param.value, ""))
+                or not os.access(credentials[param.value], os.R_OK)
+            ]
+            if missing:
+                raise RuntimeError(
+                    "mTLS attach requires readable ca_cert, client_cert, and client_key files; "
+                    f"missing or unreadable: {', '.join(missing)}"
+                )
         return self.connection_security != ConnectionSecurity.CLEAR, credentials
 
     def register_callbacks(self, cell) -> None:
@@ -213,10 +228,11 @@ class AttachTrainerSession:
                 accepted_attempt_id = self._accepted_result_attempt(reply, result_id)
             except _UncertainResultReply as e:
                 last_error = e
-                session_end = api._session_end_reason()
-                if session_end:
-                    raise TrainerSessionError(session_end) from e
                 accepted_attempt_id = self._accepted_result_attempt_from_status(task_id, result_id)
+                if not accepted_attempt_id:
+                    session_end = api._result_publication_end_reason()
+                    if session_end:
+                        raise TrainerSessionError(session_end) from e
             except TrainerSessionError:
                 raise
             except Exception as e:
@@ -224,10 +240,11 @@ class AttachTrainerSession:
                 # canonicalize this attempt. Preserve its lazy sources while
                 # resolving authority through RESULT_STATUS or a duplicate send.
                 last_error = e
-                session_end = api._session_end_reason()
-                if session_end:
-                    raise TrainerSessionError(session_end) from e
                 accepted_attempt_id = self._accepted_result_attempt_from_status(task_id, result_id)
+                if not accepted_attempt_id:
+                    session_end = api._result_publication_end_reason()
+                    if session_end:
+                        raise TrainerSessionError(session_end) from e
             if accepted_attempt_id:
                 self._keep_canonical_attempt(accepted_attempt_id, attempt_waiters)
                 return
@@ -333,6 +350,20 @@ class AttachTrainerSession:
                         Topic.SESSION_REJECTED,
                         **{MsgKey.SESSION_ID: session_id, MsgKey.REASON: rejection},
                     )
+                try:
+                    register_framework_decomposers(
+                        runtime["task_exchange"].get(ConfigKey.EXCHANGE_FORMAT, ExchangeFormat.RAW),
+                        runtime["task_exchange"].get(ConfigKey.SERVER_EXPECTED_FORMAT, ExchangeFormat.NUMPY),
+                        api.logger,
+                    )
+                except Exception as e:
+                    return api._reply(
+                        Topic.SESSION_REJECTED,
+                        **{
+                            MsgKey.SESSION_ID: session_id,
+                            MsgKey.REASON: f"failed to configure trainer runtime: {e}",
+                        },
+                    )
                 api._cj_fqcn = origin
                 api._session_id = session_id
                 api._job_id = payload.get(MsgKey.JOB_ID)
@@ -342,11 +373,6 @@ class AttachTrainerSession:
                 api._launch_once = True
                 api._memory_gc_rounds = runtime["memory_gc_rounds"]
                 api._cuda_empty_cache = bool(payload.get(MsgKey.CUDA_EMPTY_CACHE, False))
-                register_framework_decomposers(
-                    api._task_exchange.get(ConfigKey.EXCHANGE_FORMAT, ExchangeFormat.RAW),
-                    api._task_exchange.get(ConfigKey.SERVER_EXPECTED_FORMAT, ExchangeFormat.NUMPY),
-                    api.logger,
-                )
                 api._note_cj_activity()
                 self._opened.set()
 

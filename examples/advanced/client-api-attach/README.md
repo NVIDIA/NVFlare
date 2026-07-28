@@ -4,9 +4,14 @@ This example runs the ordinary Client API loop in an externally owned process.
 The trainer may start before or after the NVFlare job; both sides rendezvous on
 `attach_id=numpy_trainer`.
 
-The included profile is a same-host, cleartext example. Replace `connect_url` with
-the existing Cell endpoint exported by `site-1`. For a provisioned secure site, use
-the secure endpoint and add:
+`attach_profile.json` is a template, not a ready-made POC profile. Before running
+the trainer, replace its `connect_url` with the existing Cell child endpoint
+exported by `site-1`. The endpoint is a deployment value: the site operator must
+make the site's internal listener reachable by the trainer and provision its URL
+outside the submitted job. The template uses port `0` deliberately so it cannot
+silently connect to an unrelated service.
+
+For a provisioned secure site, use the secure endpoint and add:
 
 ```json
 {
@@ -16,44 +21,47 @@ the secure endpoint and add:
 ```
 
 Keep `client.crt` and `client.key` beside `rootCA.pem`; Cell discovers them using
-the same credential path as `IPCAgent`. Bare-CA one-way TLS
+the same credential path as `IPCAgent`. Attach validates that all three files are
+present and readable before constructing the Cell. Bare-CA one-way TLS
 (`connection_security=tls`) is not supported. A cleartext non-loopback endpoint
 is rejected unless the job explicitly sets `allow_insecure_attach=True`.
 
-Attach itself is driver-neutral. To use the shared-filesystem driver, set
-`connect_url` to the provisioned site endpoint such as
-`shared-file://0/absolute/shared/directory` and omit the TLS/CA fields. The
-shared-file driver enforces its own path and permission policy.
+The attach protocol itself is driver-neutral. When the replacement
+shared-filesystem driver lands, its profile can use a provisioned endpoint such as
+`shared-file://0/absolute/shared/directory` and omit the TLS/CA fields. That driver
+will enforce its own path and permission policy; it is not included in this change.
 
-The commands below use a one-client local POC system. The bundled cleartext profile
-expects the trainer and `site-1` to run on the same host and the site's Cell endpoint
-to be `grpc://127.0.0.1:8002`.
+The stock one-client POC is not a complete attach deployment: its client Cell
+listener uses a dynamically selected internal port and that port is not exported
+as a trainer profile. In particular, `grpc://127.0.0.1:8002` is the POC server's
+federation endpoint, not the `site-1` Cell endpoint. Do not use it as
+`connect_url`.
 
-Install this repository, prepare the POC, and export the job:
+After the site operator has provisioned a reachable site Cell endpoint and updated
+`attach_profile.json`, install this repository and export the job:
 
 ```bash
 python -m pip install -e .
 python -m pip install -r examples/advanced/client-api-attach/requirements.txt
-nvflare poc prepare -n 1
-nvflare poc start
 python examples/advanced/client-api-attach/job.py --job_dir /tmp/nvflare/jobs
 ```
 
-Start the trainer in a second terminal:
+Submit the exported job through that deployment's normal admin connection:
+
+```bash
+nvflare job submit -j /tmp/nvflare/jobs/client-api-attach
+```
+
+Start the independently managed trainer:
 
 ```bash
 cd examples/advanced/client-api-attach
 python trainer.py --config attach_profile.json
 ```
 
-Submit the exported job in a third terminal:
-
-```bash
-nvflare job submit -j /tmp/nvflare/jobs/client-api-attach
-```
-
-The trainer may start before or after job submission, but the site must already be
-running so the trainer can connect to its Cell endpoint.
+The last two steps may be reversed: the trainer may start before or after job
+submission, but the site and its provisioned Cell endpoint must already be
+available.
 
 `flare.send()` does not return until any lazy result payload has reached
 receiver-confirmed terminal success. Keep the trainer process alive through that
