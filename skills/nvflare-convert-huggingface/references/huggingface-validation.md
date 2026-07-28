@@ -44,6 +44,23 @@ Run these checks after the shared validation ladder. Stop at the first failure.
   installed.
 - Construct the selected recipe and let product validation reject unsupported
   arguments.
+- Before constructing a model, tokenizer/processor, or dataset, resolve its
+  configured identifier to an existing local path or verify that every required
+  file is present in the intended cache. Probe remote-style identifiers with
+  `local_files_only=True` or the existing offline environment. A Hugging Face
+  error that mentions `https://huggingface.co` during an offline probe can mean
+  only that the local cache entry is missing; it is not evidence that a network
+  request occurred.
+- Never recover from an offline/cache-only miss by removing
+  `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`, dropping `local_files_only=True`, or
+  rerunning the loader online unless the user explicitly requested the
+  model/data download. Do not silently substitute a different local checkpoint,
+  including a fine-tuned output, because that changes starting semantics. When
+  no compatible local artifact exists, keep the generated job as a draft and
+  report full-model validation blocked by the missing artifact.
+- Pass the same resolved local model path and cache configuration to the server
+  model and every client. Do not validate with a cached Hub identifier and then
+  export a job that depends on an unverified online lookup.
 - Construct the Trainer with a minimized local model/dataset when practical;
   do not replace the user's final model merely to make the generated job pass.
 - Verify `flare.patch()` accepts the Trainer configuration.
