@@ -20,7 +20,11 @@ Run these checks after the shared validation ladder. Stop at the first failure.
 - Confirm no manual model `receive()`/`send()` path was added.
 - Confirm model, Trainer, datasets, and tokenizer are constructed outside the
   FL round loop.
-- Confirm generated `train_args` quote configurable model and data paths.
+- Confirm generated `train_args` follows the selected execution mode's public
+  argument contract. For the default in-process executor, require unquoted
+  whitespace-free values; do not assume shell parsing or call internal
+  command-splitting helpers. If a required value contains whitespace and no
+  documented structured argument surface is available, fail closed.
 - If generated `job.py` defines local options, confirm it imports the recipe API
   before parsing, constructs `ArgumentParser(allow_abbrev=False)`, and calls
   strict `parse_args()`. Using the shared assertion-wrapper rule, verify both an
@@ -31,6 +35,9 @@ Run these checks after the shared validation ladder. Stop at the first failure.
   unused argument. If the generated client uses `HfArgumentParser`, parse with
   the same project and framework dataclass types that the client constructs; if
   it preserves `argparse` or another parser, use that parser instead. Check the
+  exact rejected-argument diagnostic and treat `ValueError` from
+  `parse_args_into_dataclasses()` as an expected rejection when it reports
+  unused arguments; the wrapper itself must exit zero. Check the
   installed Transformers/TRL version only for fields claimed to belong to a
   framework `TrainingArguments` or `SFTConfig` base class. Do not reject or
   remove a project-defined subclass field merely because the base class lacks
@@ -44,6 +51,9 @@ Run these checks after the shared validation ladder. Stop at the first failure.
   installed.
 - Construct the selected recipe and let product validation reject unsupported
   arguments.
+- Validate model `class_path` loading through public recipe construction,
+  export, and bounded execution; do not import or guess internal class-loader
+  helpers.
 - Construct the Trainer with a minimized local model/dataset when practical;
   do not replace the user's final model merely to make the generated job pass.
 - Verify `flare.patch()` accepts the Trainer configuration.

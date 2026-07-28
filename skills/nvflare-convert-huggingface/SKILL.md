@@ -108,16 +108,16 @@ unprotected recipe or present a disclaimer as implementation.
    per-site exports. Make the server model expose the same exchanged keyspace as
    the patched Trainer: full state or PEFT adapters. After `recipe show`, follow
    `../nvflare-shared/references/pytorch-family-recipe-construction.md` for
-   capability-checked metric, transport, decomposer, offload, and execution-mode
-   settings. Quote generated `train_args`. For local `job.py` options, import the
-   recipe API first and use `ArgumentParser(allow_abbrev=False)` with strict
-   `parse_args()`; never `parse_known_args()` because recipe imports consume NVFLARE export flags.
+   capability-checked settings and execution-mode-aware `train_args`; do not
+   assume shell parsing or call internal argument splitters. For local `job.py`
+   options, import the recipe API first and use
+   `ArgumentParser(allow_abbrev=False)` with strict `parse_args()`, never
+   `parse_known_args()` because recipe imports consume NVFLARE export flags.
 9. Load and apply `../nvflare-shared/references/validation-evidence.md` and
    `references/huggingface-validation.md`. Before simulation, parse final
    `train_args` through the generated client's actual parser and actual
    dataclass types; reject unused args. Version-check only fields claimed to
-   come from framework `TrainingArguments` or
-   `SFTConfig` base classes. Preserve source-defined subclass fields that the
+   come from framework `TrainingArguments` or `SFTConfig` base classes. Preserve source-defined subclass fields that the
    actual parser accepts. Export only with `python job.py --export --export-dir`;
    do not add job-local export flags. Use the HF reference for topology-smoke,
    full-model, and export inspection. If blocked, save a draft and report why.

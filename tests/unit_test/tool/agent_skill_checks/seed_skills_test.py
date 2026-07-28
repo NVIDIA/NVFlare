@@ -536,6 +536,8 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "same project and framework dataclass types" in normalized_validation
     assert "preserves `argparse` or another parser" in validation_text
     assert "reject every unused argument" in normalized_validation
+    assert "`HfArgumentParser.parse_args_into_dataclasses()` can raise `ValueError`" in shared_validation
+    assert "the wrapper itself must exit zero" in normalized_validation
     assert "only for fields claimed to belong to a framework" in normalized_validation
     assert "project-defined subclass field" in normalized_validation
     assert "actual parser accepts it" in normalized_validation
@@ -552,6 +554,10 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "`python job.py --export --export-dir <runtime-dir>/job_config`" in normalized_shared_validation
     assert "Do not accept a generated job-local export alias such as `--export_only`" in normalized_shared_validation
     assert "report it as a generated-code violation" in normalized_shared_validation
+    assert "not automatically as a POSIX shell command" in normalized_recipe
+    assert "default in-process Client API executor" in normalized_recipe
+    assert "Do not import or call internal command-splitting helpers" in normalized_recipe
+    assert "Do not import internal class loader helpers" in normalized_recipe
     assert "invent alternate export flags such as `--export_only`" in normalized_shared
     assert "import the NVFLARE recipe API before local argument parsing" in normalized_shared
     assert "`argparse.ArgumentParser(allow_abbrev=False)`" in normalized_shared

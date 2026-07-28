@@ -95,8 +95,12 @@ recipe = FedAvgRecipe(
 Add optional recipe arguments and decomposers only as directed by the selected
 recipe's capability profile and the shared construction reference. Do not copy
 the FedAvg constructor shape to another recipe.
-Quote every user-controlled path or model identifier included in the
-`train_args` command string.
+Follow the shared construction reference's client-argument transport rule.
+`train_args` is not necessarily shell parsed: use unquoted whitespace-free
+tokens for the default in-process executor, and use shell quoting only for a
+documented POSIX-tokenizing launcher. Ask or fail closed when a required value
+cannot be represented by the selected public argument surface. Do not probe
+internal command-splitting helpers.
 
 The file named by `train_script` is already the primary client script. Do not
 also add that same file through `recipe.add_client_file(...)`; reserve

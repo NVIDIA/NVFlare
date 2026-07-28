@@ -30,6 +30,29 @@ non-failing module attribute check such as `hasattr`; if it is absent, report a
 version or skill-contract gap. Do not replace a failed local public check with
 web search or SDK-source discovery.
 
+Validate a recipe model's `class_path` through the public recipe construction,
+export inspection, and bounded execution path. Do not import internal class
+loader helpers, guess helper names, or inspect implementation source to build a
+parallel validation path.
+
+## Client Argument Transport
+
+Treat `train_args` as a recipe-owned argument string, not automatically as a
+POSIX shell command. Encode it according to the selected public execution
+surface:
+
+- For the default in-process Client API executor, pass whitespace-free values
+  as unquoted tokens. Ordinary quote characters may be preserved literally.
+- Use shell quoting such as `shlex.quote()` only when the selected documented
+  launcher explicitly uses POSIX command tokenization.
+- If a required path or identifier contains whitespace and the selected recipe
+  exposes no documented structured or per-site argument surface, ask or fail
+  closed rather than switching launch modes or inventing an encoding.
+
+Do not import or call internal command-splitting helpers to predict argument
+delivery. Validate the exact generated `train_args` end to end through the
+selected recipe path and the generated client's actual parser.
+
 ## Tensor-Native Transport
 
 When `server_expected_format` is exposed, pass

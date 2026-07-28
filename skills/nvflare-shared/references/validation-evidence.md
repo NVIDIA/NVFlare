@@ -94,6 +94,11 @@ tests, through an assertion wrapper. The wrapper must check the child process's
 expected nonzero status and diagnostic, then exit 0 only when the rejection is
 correct. Do not leave an expected child failure as a failed top-level validation
 command, where it is indistinguishable from an unexpected failure and recovery.
+Match the parser's documented rejection type: for example,
+`HfArgumentParser.parse_args_into_dataclasses()` can raise `ValueError` for
+unused arguments instead of `SystemExit`. Accept only the expected exception and
+confirm its diagnostic identifies the rejected argument; another exception or
+diagnostic is a real validation failure.
 
 Before spending time on full simulation, run cheap checks when applicable:
 
