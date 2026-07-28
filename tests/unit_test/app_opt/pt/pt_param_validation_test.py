@@ -15,12 +15,16 @@
 """Unit tests for PyTorch model param validation during exchange and persistence."""
 
 import logging
+from collections import OrderedDict
 
 import pytest
 import torch
 import torch.nn as nn
+from safetensors.torch import save_file
 
+from nvflare.apis.dxo import MetaKey
 from nvflare.app_common.abstract.model import make_model_learnable
+from nvflare.app_opt.pt.lazy_tensor_dict import _LazyRef, _TempDirRef
 from nvflare.app_opt.pt.model_persistence_format_manager import PTModelPersistenceFormatManager
 from nvflare.app_opt.pt.utils import feed_vars
 
@@ -152,6 +156,41 @@ def test_persistence_manager_bootstraps_empty_complex_checkpoint_from_first_upda
         == data[PTModelPersistenceFormatManager.PERSISTENCE_KEY_TRAIN_CONF]
     )
     assert persistence_dict["extra_prop"] == "kept"
+
+
+def test_persistence_manager_materializes_disk_offload_refs_before_safe_checkpoint_save(tmp_path):
+    expected = torch.arange(8, dtype=torch.float32)
+    offload_dir = tmp_path / "offload"
+    offload_dir.mkdir()
+    tensor_path = offload_dir / "tensor.safetensors"
+    save_file({"weight": expected}, str(tensor_path))
+    lazy_ref = _LazyRef(
+        file_path=str(tensor_path),
+        key="weight",
+        temp_ref=_TempDirRef(str(offload_dir)),
+    )
+
+    manager = PTModelPersistenceFormatManager(
+        {
+            PTModelPersistenceFormatManager.PERSISTENCE_KEY_MODEL: {"weight": torch.zeros_like(expected)},
+        }
+    )
+    manager.update(
+        make_model_learnable(
+            weights={"weight": lazy_ref},
+            meta_props={MetaKey.PROCESSED_KEYS: {"weight": True}},
+        )
+    )
+
+    persistence_dict = manager.to_persistence_dict()
+    persisted_weight = persistence_dict[PTModelPersistenceFormatManager.PERSISTENCE_KEY_MODEL]["weight"]
+    assert torch.equal(persisted_weight, expected)
+
+    checkpoint_path = tmp_path / "model.pt"
+    torch.save(persistence_dict, checkpoint_path)
+    loaded = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+    assert isinstance(loaded, OrderedDict)
+    assert torch.equal(loaded[PTModelPersistenceFormatManager.PERSISTENCE_KEY_MODEL]["weight"], expected)
 
 
 def test_persistence_manager_rejects_client_keys_outside_server_schema():

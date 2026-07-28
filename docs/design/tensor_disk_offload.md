@@ -112,6 +112,9 @@ Custom aggregators are responsible for:
 - Lazy download directories are reclaimed when their refs are released, with GC as
   a fallback. Workflow finalization restores the prior FOBS context and removes
   the job-scoped root deterministically.
+- PyTorch persistence materializes any remaining offload refs while constructing
+  the checkpoint dictionary. Saved checkpoints therefore contain tensors rather
+  than process-local references to temporary files.
 
 ## Failure Behavior
 
