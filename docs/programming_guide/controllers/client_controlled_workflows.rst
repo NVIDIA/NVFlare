@@ -573,6 +573,7 @@ For advanced customization, use ``BaseSwarmLearningRecipe`` with explicit server
         name="custom_swarm",
         server_config=server_config,
         client_config=client_config,
+        min_clients=3,
     )
 
 .. note::
@@ -580,6 +581,9 @@ For advanced customization, use ``BaseSwarmLearningRecipe`` with explicit server
    ``learn_task_ack_timeout`` and ``final_result_ack_timeout`` manually for large
    models. With ``SwarmLearningRecipe``, prefer the corresponding named parameters;
    ``round_timeout`` can still set both values as a compatibility shortcut.
+   ``min_clients`` on the recipe controls job scheduling; configure workflow
+   quorum independently with ``SwarmServerConfig.min_clients`` and
+   ``SwarmClientConfig.min_responses_required``.
 
 Client Dropout Tolerance (min_clients)
 ---------------------------------------

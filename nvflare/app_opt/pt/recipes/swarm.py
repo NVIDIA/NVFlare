@@ -71,8 +71,7 @@ class BaseSwarmLearningRecipe(Recipe):
         server_config: Swarm server configuration.
         client_config: Swarm client configuration.
         cse_config: Optional cross-site evaluation configuration.
-        job: Optional pre-created CCWFJob. If None, a new one is created.
-            Subclasses may create the job early to add files before building configs.
+        min_clients: Minimum number of clients required to schedule the job.
     """
 
     def __init__(
@@ -81,10 +80,9 @@ class BaseSwarmLearningRecipe(Recipe):
         server_config: SwarmServerConfig,
         client_config: SwarmClientConfig,
         cse_config: CrossSiteEvalConfig = None,
-        job: CCWFJob = None,
+        min_clients: int = 1,
     ):
-        if job is None:
-            job = CCWFJob(name=name)
+        job = CCWFJob(name=name, min_clients=min_clients)
         job.add_swarm(
             server_config=server_config,
             client_config=client_config,
@@ -369,11 +367,14 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             if conflicts:
                 raise ValueError(f"train_args contains reserved keys that conflict with ScriptRunner: {conflicts}")
 
-        # Create job early so prepare_initial_ckpt can bundle files into it
-        from nvflare.recipe.utils import prepare_initial_ckpt
-
-        job = CCWFJob(name=name, min_clients=min_clients)
-        ckpt_path = prepare_initial_ckpt(initial_ckpt, job)
+        # The persistor uses the exported basename for a relative checkpoint. The
+        # source file is added to the generated server app after the base recipe
+        # creates its backing job.
+        ckpt_path = (
+            os.path.basename(initial_ckpt)
+            if initial_ckpt is not None and not os.path.isabs(initial_ckpt)
+            else initial_ckpt
+        )
 
         server_config_args = merge_config_overrides(
             {
@@ -430,4 +431,13 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             check_positive_number("learn_task_abort_timeout", client_config_args["learn_task_abort_timeout"])
         client_config = SwarmClientConfig(**client_config_args)
 
-        BaseSwarmLearningRecipe.__init__(self, name, server_config, client_config, cse_config, job=job)
+        BaseSwarmLearningRecipe.__init__(
+            self,
+            name,
+            server_config,
+            client_config,
+            cse_config,
+            min_clients=min_clients,
+        )
+        if initial_ckpt is not None and not os.path.isabs(initial_ckpt):
+            self.add_server_file(initial_ckpt)
