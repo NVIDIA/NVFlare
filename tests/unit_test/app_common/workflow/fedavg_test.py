@@ -1177,39 +1177,6 @@ class TestScaffoldControlValues:
         controller.run()
         return controller, sent
 
-    @pytest.mark.parametrize(("fedprox_mu", "expected"), [(None, None), (0.0, None), (0.25, 0.25)])
-    def test_fedprox_metadata_is_set_or_omitted_with_scaffold_on_every_round(self, fedprox_mu, expected):
-        from nvflare.app_common.workflows.scaffold import Scaffold
-
-        controller = Scaffold(num_clients=1, num_rounds=2, fedprox_mu=fedprox_mu)
-        controller.fl_ctx = FLContext()
-        controller.model = FLModel(params={"w": 1.0}, meta={AlgorithmConstants.FEDPROX_MU: 99.0})
-        controller._global_ctrl_weights = {"w": 0.0}
-        controller.sample_clients = lambda _: ["site-1"]
-        sent_metadata = []
-
-        def send_model_and_wait(targets, data):
-            sent_metadata.append(dict(data.meta))
-            return []
-
-        controller.send_model_and_wait = send_model_and_wait
-        controller.aggregate = lambda results, aggregate_fn=None: FLModel(
-            params={"w": 1.0},
-            meta={AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"w": 0.0}},
-        )
-        controller.update_model = lambda model, aggr_result: model
-        controller.save_model = lambda model: None
-
-        controller.run()
-
-        assert len(sent_metadata) == 2
-        for metadata in sent_metadata:
-            if expected is None:
-                assert AlgorithmConstants.FEDPROX_MU not in metadata
-            else:
-                assert metadata[AlgorithmConstants.FEDPROX_MU] == expected
-            assert AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL in metadata
-
     def test_initialize_keeps_numpy_control_values_as_arrays(self):
         params = {"w": np.array([1.0, np.nan], dtype=np.float32)}
 

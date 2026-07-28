@@ -3,8 +3,8 @@ Hello Pytorch Lightning
 =======================
 
 This example demonstrates how to use NVIDIA FLARE with PyTorch Lightning to train an image classifier using
-federated averaging (FedAvg), FedProx, SCAFFOLD, or SCAFFOLD combined with FedProx. The same patched client
-works with all four configurations. The complete example code can be found in the
+federated averaging (FedAvg), FedProx, or SCAFFOLD. The same patched client works with all three configurations.
+The complete example code can be found in the
 :github_nvflare_link:`hello-lightning directory <examples/hello-world/hello-lightning>`.
 
 It is recommended to create a virtual environment and run everything within a virtualenv.
@@ -195,7 +195,7 @@ Here's a breakdown of the key steps:
      ``PTScaffoldHelper`` updates and returns the control difference. This path requires Lightning automatic
      optimization with one optimizer.
    - When a PyTorch recipe sends a positive ``fedprox_mu``, the patch automatically injects the FedProx
-     proximal gradient. It composes with SCAFFOLD without changing this client script.
+     proximal gradient.
 
 6. **Federated Learning Loop:**
 
@@ -279,7 +279,6 @@ FedAvg is the default. The same client can run every configuration without chang
 
   python job.py --algorithm fedprox --fedprox_mu 0.01 --num_rounds 2 --batch_size 16
   python job.py --algorithm scaffold --num_rounds 2 --batch_size 16
-  python job.py --algorithm scaffold_fedprox --fedprox_mu 0.01 --num_rounds 2 --batch_size 16
 
 For a quick simulator smoke test without downloading CIFAR-10, add
 ``--synthetic_data --limit_batches 1``. Normal runs use CIFAR-10, and the default batch limit ``0`` runs every
@@ -288,8 +287,7 @@ batch.
 ``FedProxRecipe(fedprox_mu=...)`` sends the coefficient on every training round. The patch snapshots the global
 optimizer-owned trainable parameters and injects ``mu * (local - global)`` after gradient accumulation and AMP
 unscaling but before gradient clipping. The loss returned or logged by ``training_step`` excludes the injected
-proximal term, while optimization includes its exact gradient. Setting ``fedprox_mu`` on ``ScaffoldRecipe``
-combines this with SCAFFOLD.
+proximal term, while optimization includes its exact gradient.
 
 Automatic injection requires ``flare.patch(trainer)``. Setting ``fedprox_mu`` does not change an unpatched or raw
 PyTorch client; integrate ``PTFedProxLoss`` explicitly in that case. While a positive coefficient is active, the
@@ -300,12 +298,12 @@ Custom controllers may change the coefficient between rounds and must keep sendi
 For manual Lightning optimization, use an explicit receive/train/send loop without ``flare.patch(trainer)``
 and integrate the selected algorithms directly.
 
-The automatic path supports one optimizer with ``precision="32-true"`` or ``precision="bf16-mixed"`` and
-equal finite, non-negative learning rates across parameter groups at every step. Starting with NVFlare 2.9.0,
-PyTorch SCAFFOLD control differences contain trainable parameters only; buffers such as BatchNorm running
-statistics remain ordinary model state. Custom SCAFFOLD aggregators must accept sparse control dictionaries.
-Trainability may change between rounds, which resets newly trainable local controls to zero, but
-``requires_grad`` must not change during a round.
+The automatic FedProx and SCAFFOLD paths support one optimizer with ``precision="32-true"`` or
+``precision="bf16-mixed"``. SCAFFOLD additionally requires equal finite, non-negative learning rates across
+parameter groups at every step. Starting with NVFlare 2.9.0, PyTorch SCAFFOLD control differences contain
+trainable parameters only; buffers such as BatchNorm running statistics remain ordinary model state. Custom
+SCAFFOLD aggregators must accept sparse control dictionaries. Trainability may change between rounds, which
+resets newly trainable local controls to zero, but ``requires_grad`` must not change during a round.
 
 
 output

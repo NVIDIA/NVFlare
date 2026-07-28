@@ -14,6 +14,7 @@
 
 """Tests for ScaffoldRecipe with initial_ckpt support."""
 
+import inspect
 from unittest.mock import patch
 
 import pytest
@@ -72,36 +73,12 @@ class TestPTScaffoldRecipe:
         assert recipe.model == simple_model
         assert recipe._job is not None
 
-    @pytest.mark.parametrize(("fedprox_mu", "expected"), [(None, None), (0.0, None), (0.2, 0.2)])
-    def test_fedprox_mu_configures_scaffold_controller(
-        self, mock_file_system, base_recipe_params, simple_model, fedprox_mu, expected
-    ):
-        from nvflare.apis.job_def import SERVER_SITE_NAME
+    def test_constructors_do_not_expose_fedprox_mu(self):
+        from nvflare.app_common.workflows.scaffold import Scaffold
         from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
 
-        recipe = ScaffoldRecipe(
-            name="test_scaffold_fedprox",
-            model=simple_model,
-            fedprox_mu=fedprox_mu,
-            **base_recipe_params,
-        )
-
-        server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
-        controller = server_app.app_config.workflows[0].controller
-        assert recipe.fedprox_mu == expected
-        assert controller.fedprox_mu == expected
-
-    @pytest.mark.parametrize("fedprox_mu", [-0.1, float("inf"), float("nan"), True, "0.1"])
-    def test_fedprox_mu_rejects_invalid_values(self, mock_file_system, base_recipe_params, simple_model, fedprox_mu):
-        from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
-
-        with pytest.raises((TypeError, ValueError), match="finite non-negative number"):
-            ScaffoldRecipe(
-                name="test_invalid_scaffold_fedprox",
-                model=simple_model,
-                fedprox_mu=fedprox_mu,
-                **base_recipe_params,
-            )
+        assert "fedprox_mu" not in inspect.signature(Scaffold).parameters
+        assert "fedprox_mu" not in inspect.signature(ScaffoldRecipe).parameters
 
     def test_enable_tensor_disk_offload_configures_controller(self, mock_file_system, base_recipe_params, simple_model):
         """Test PT ScaffoldRecipe passes tensor disk offload settings to the Scaffold controller."""

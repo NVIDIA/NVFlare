@@ -35,7 +35,7 @@ def define_parser():
     parser.add_argument("--synthetic_data", action="store_true")
     parser.add_argument(
         "--algorithm",
-        choices=("fedavg", "fedprox", "scaffold", "scaffold_fedprox"),
+        choices=("fedavg", "fedprox", "scaffold"),
         default="fedavg",
     )
     parser.add_argument("--fedprox_mu", type=float, default=0.01)
@@ -82,7 +82,7 @@ def main():
             train_args=train_args,
             fedprox_mu=args.fedprox_mu,
         )
-    elif args.algorithm == "scaffold":
+    else:
         recipe = ScaffoldRecipe(
             name="hello-lightning-scaffold",
             min_clients=n_clients,
@@ -90,16 +90,6 @@ def main():
             model=LitNet(),
             train_script="client.py",
             train_args=train_args,
-        )
-    else:
-        recipe = ScaffoldRecipe(
-            name="hello-lightning-scaffold-fedprox",
-            min_clients=n_clients,
-            num_rounds=num_rounds,
-            model=LitNet(),
-            train_script="client.py",
-            train_args=train_args,
-            fedprox_mu=args.fedprox_mu,
         )
 
     env = SimEnv(num_clients=n_clients, num_threads=n_clients)

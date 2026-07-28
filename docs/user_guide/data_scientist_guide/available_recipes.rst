@@ -480,22 +480,6 @@ rate at each step and have positive total learning-rate exposure per round. Supp
 ``32-true`` and ``bf16-mixed``. Manual optimization must use an explicit receive/train/send loop without
 ``flare.patch`` and integrate ``PTScaffoldHelper`` directly.
 
-SCAFFOLD can be combined with automatic FedProx by setting ``fedprox_mu`` on the same recipe:
-
-.. code-block:: python
-
-    recipe = ScaffoldRecipe(
-        name="scaffold-fedprox-pt",
-        min_clients=2,
-        num_rounds=5,
-        model=MyModel(),
-        train_script="client.py",
-        fedprox_mu=0.01,
-    )
-
-The patched Lightning client injects the FedProx gradient before the optimizer step and retains SCAFFOLD's
-post-step model correction and returned control difference.
-
 .. note::
 
    Starting with NVFlare 2.9.0, PyTorch SCAFFOLD control differences contain trainable parameters only.
