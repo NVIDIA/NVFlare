@@ -168,6 +168,61 @@ class TestStaticFileBuilder:
             resources = json.loads(resources_file.read_text())
             assert resources["class_allow_list"] == list(DEFAULT_CLASS_ALLOW_LIST)
 
+    @pytest.mark.parametrize("require_signed_jobs", [None, True, False])
+    def test_build_configures_require_signed_jobs_for_server_and_client(self, tmp_path, require_signed_jobs):
+        server = Participant(type="server", name="server", org="org")
+        client = Participant(type="client", name="site-1", org="org")
+        project = Project(
+            name="proj",
+            description="desc",
+            participants=[server, client],
+            props={"api_version": 4},
+        )
+        ctx = ProvisionContext(str(tmp_path), project)
+        ctx.load_templates("master_template.yml")
+        for participant in (server, client):
+            Path(ctx.get_kit_dir(participant)).mkdir(parents=True)
+            Path(ctx.get_local_dir(participant)).mkdir(parents=True)
+
+        StaticFileBuilder(require_signed_jobs=require_signed_jobs).build(project, ctx)
+
+        for participant, config_name in ((server, "fed_server.json"), (client, "fed_client.json")):
+            config_path = Path(ctx.get_kit_dir(participant)) / config_name
+            config = json.loads(config_path.read_text())
+            if require_signed_jobs is None:
+                assert "require_signed_jobs" not in config
+            else:
+                assert config["require_signed_jobs"] is require_signed_jobs
+
+    def test_require_signed_jobs_builder_arg_must_be_boolean(self):
+        with pytest.raises(ValueError, match="require_signed_jobs must be a boolean"):
+            StaticFileBuilder(require_signed_jobs="false")
+
+    @pytest.mark.parametrize(
+        ("template_section", "config_name"),
+        [("fed_server", "fed_server.json"), ("fed_client", "fed_client.json")],
+    )
+    def test_explicit_policy_rejects_legacy_custom_template(self, tmp_path, template_section, config_name):
+        server = Participant(type="server", name="server", org="org")
+        client = Participant(type="client", name="site-1", org="org")
+        project = Project(
+            name="proj",
+            description="desc",
+            participants=[server, client],
+            props={"api_version": 4},
+        )
+        ctx = ProvisionContext(str(tmp_path), project)
+        ctx.load_templates("master_template.yml")
+        ctx[CtxKey.TEMPLATE][template_section] = ctx[CtxKey.TEMPLATE][template_section].replace(
+            "{~~require_signed_jobs_config~~}", ""
+        )
+        for participant in (server, client):
+            Path(ctx.get_kit_dir(participant)).mkdir(parents=True)
+            Path(ctx.get_local_dir(participant)).mkdir(parents=True)
+
+        with pytest.raises(ValueError, match=rf"{config_name} did not render require_signed_jobs=False"):
+            StaticFileBuilder(require_signed_jobs=False).build(project, ctx)
+
     def test_auth_identity_config_omits_default_identity_fields(self):
         builder = StaticFileBuilder()
 

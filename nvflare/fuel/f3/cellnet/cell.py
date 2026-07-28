@@ -561,7 +561,7 @@ class Cell(StreamCell):
         try:
             waiter = self.requests_dict[req_id]
         except KeyError as e:
-            self.logger.warning(f"Receiving unknown {req_id=}, discarded: {e} headers: {headers}")
+            self.logger.warning(f"Receiving unknown {req_id=}, discarded: {e}")
             return
         waiter.receiving_future = future
         waiter.in_receiving.set()
