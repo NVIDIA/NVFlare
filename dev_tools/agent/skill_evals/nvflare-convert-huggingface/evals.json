@@ -1,0 +1,98 @@
+{
+  "skill_name": "nvflare-convert-huggingface",
+  "evals": [
+    {
+      "id": "huggingface-convert-basic",
+      "prompt": "Convert this Hugging Face Trainer script into an NVFLARE FedAvg job for two simulated sites.",
+      "expected_output": "A source-preserving conversion that uses nvflare.client.hf.patch(trainer), the public PyTorch FedAvg recipe, site-local data, and bounded validation.",
+      "files": [],
+      "assertions": [
+        "The agent identifies the active Hugging Face Trainer from direct source evidence.",
+        "The generated client patches the trainer once and does not add manual FLModel model exchange.",
+        "The generated job uses public recipe capabilities and explicit server model configuration.",
+        "The agent preserves site-local training data and validates the generated job.",
+        "The final report cites routing, validation, metrics, blockers, and artifact evidence."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-huggingface",
+        "mandatory_behavior": [
+          {
+            "id": "route-from-training-owner",
+            "description": "selects Hugging Face from the active trainer call path and cites source evidence"
+          },
+          {
+            "id": "use-huggingface-patch",
+            "description": "uses nvflare.client.hf.patch(trainer) as the model-exchange integration"
+          },
+          {
+            "id": "validate-and-report",
+            "description": "runs bounded validation and reports exact evidence and blockers"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-manual-flmodel-exchange",
+            "description": "does not add manual model receive or send around the patched trainer"
+          },
+          {
+            "id": "no-private-data-packaging",
+            "description": "does not package private site data"
+          }
+        ],
+        "process_metrics": [
+          {
+            "id": "first_pass_accepted",
+            "description": "whether routing, trainer patching, recipe construction, and validation are correct on the first pass"
+          },
+          {
+            "id": "turns_to_acceptable",
+            "description": "number of turns before the conversion is accepted or explicitly blocked"
+          },
+          {
+            "id": "validation_evidence_completeness",
+            "description": "whether commands, status, metrics, blockers, and exact paths are reported"
+          }
+        ]
+      }
+    },
+    {
+      "id": "huggingface-negative-lightning",
+      "prompt": "Convert this LightningModule trained by a Lightning Trainer into an NVFLARE job.",
+      "expected_output": "Use the Lightning converter because the Lightning Trainer owns training.",
+      "files": [],
+      "assertions": [
+        "The selected skill is nvflare-convert-lightning."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-lightning",
+        "negative_for": "nvflare-convert-huggingface"
+      }
+    },
+    {
+      "id": "huggingface-negative-manual-pytorch",
+      "prompt": "Convert this manual PyTorch batch, backward, and optimizer loop into an NVFLARE job.",
+      "expected_output": "Use the plain PyTorch converter because user code owns training.",
+      "files": [],
+      "assertions": [
+        "The selected skill is nvflare-convert-pytorch."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-pytorch",
+        "negative_for": "nvflare-convert-huggingface"
+      }
+    },
+    {
+      "id": "huggingface-global-negative",
+      "prompt": "Build a static website for a neighborhood bakery.",
+      "expected_output": "No NVFLARE skill should trigger.",
+      "files": [],
+      "assertions": [
+        "The selected skill is none."
+      ],
+      "nvflare": {
+        "expected_skill": null,
+        "negative_for": "*"
+      }
+    }
+  ]
+}

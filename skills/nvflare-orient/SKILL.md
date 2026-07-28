@@ -1,6 +1,6 @@
 ---
 name: nvflare-orient
-description: "Route open-ended or ambiguous NVFLARE requests by inspecting the local project and recommending one specific workflow skill without editing files; do not use for an explicit conversion request, even when its framework still needs detection."
+description: "Route open-ended or ambiguous NVFLARE requests by reading the local project and recommending one workflow skill without editing files; use when a conversion has conflicting or unresolved training-loop ownership."
 license: Apache-2.0
 version: "0.1.0"
 metadata:
@@ -24,25 +24,24 @@ metadata:
 ## Use When
 
 Use when the user asks where to start with NVFLARE, how a local project maps to
-FLARE workflows, or which FLARE skill should handle an ambiguous request.
+FLARE workflows, which skill should handle an ambiguous request, or which of
+multiple or unresolved training entry points should be federated.
 
 ## Do Not Use When
 
 Do not use when the user already names a specific workflow such as PyTorch
 conversion, federated statistics, job submission, production deployment,
 Kubernetes setup, log diagnosis, or optimization of an existing FLARE job.
-Route to the narrower skill instead. An explicit conversion request does not
-need orientation merely to detect the framework: the converter skill performs
-static inspection and selects the framework itself, so hand off directly
-rather than invoking orient first.
+Route to the narrower skill instead. An explicit conversion request with one
+clear training-loop owner routes directly to its converter.
 
 ## Workflow
 
 1. Clarify the target path or use the current workspace when the user already
    gives enough context.
-2. Run `nvflare agent inspect <path> --format json` for static project evidence,
-   including detected framework routing, FLARE integration, local readiness, and
-   the recommended skill.
+2. Read the active entry point without executing it. For PyTorch-family
+   conversion, apply
+   `../nvflare-shared/references/framework-routing.md`.
 3. Classify the request into one next action: conversion, optimization, local
    validation, POC workflow, production workflow, diagnosis, deployment, or no
    FLARE skill.
@@ -61,5 +60,4 @@ rather than invoking orient first.
 - Must not edit files, start POC systems, submit jobs, or inspect credential
   material.
 
-Load `references/orientation-routing.md` when routing is ambiguous or when the
-inspect output names multiple possible workflow families.
+Load `references/orientation-routing.md` when routing is ambiguous.

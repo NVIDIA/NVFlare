@@ -31,7 +31,8 @@ horizontal FL, Client API model exchange with `FLModel`, recipe `aggregator=` ho
 
 ## Do Not Use When
 
-Do not use for PyTorch Lightning (route to `nvflare-convert-lightning`), Hugging Face Trainer, TensorFlow, XGBoost,
+Do not use for PyTorch Lightning (route to `nvflare-convert-lightning`), Hugging Face Trainer (route to
+`nvflare-convert-huggingface`), TensorFlow, XGBoost,
 scikit-learn, failed jobs (route to
 `nvflare-diagnose-job`), federated statistics without training (route to
 `nvflare-fed-stats`), or generic PyTorch debugging without FLARE intent. Out of
@@ -56,9 +57,10 @@ policy; route onward rather than substituting an unprotected recipe or adding on
    authorization, or missing-semantics guidance. Load
    `../nvflare-shared/references/runtime-output-guidance.md` only for a read-only
    source root or a user-chosen output destination.
-2. Inspect before editing with `nvflare agent inspect <path> --format json`
-   plus direct reading. Fact extraction is static; do not import or execute
-   user training modules to discover fields. Extract: training entrypoint,
+2. Read the active training entry point and apply
+   `../nvflare-shared/references/framework-routing.md`. Continue only when user
+   code owns a manual PyTorch loop. Do not import or execute user training
+   modules to discover fields. Extract: training entrypoint,
    model class path and constructor args, checkpoint behavior, train/eval
    functions, data loading, metric names and denominators, local epochs/steps,
    requested client and round counts, source data split or partition evidence,

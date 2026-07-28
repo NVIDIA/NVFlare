@@ -36,7 +36,8 @@ the same recipe `aggregator=` hook, and local validation and export.
 ## Do Not Use When
 
 Do not use for plain `torch.nn.Module` manual training loops without Lightning
-(route to `nvflare-convert-pytorch`), Hugging Face Trainer, TensorFlow,
+(route to `nvflare-convert-pytorch`), Hugging Face Trainer (route to
+`nvflare-convert-huggingface`), TensorFlow,
 XGBoost, scikit-learn, a failed job (route to `nvflare-diagnose-job`),
 federated statistics without training (route to `nvflare-fed-stats`), or
 generic Lightning debugging without FLARE intent. Out of
@@ -64,11 +65,9 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
    authorization, or missing-semantics guidance. Load
    `../nvflare-shared/references/runtime-output-guidance.md` only for a read-only
    source root or a user-chosen output destination.
-2. Inspect before editing with `nvflare agent inspect <path> --format json`
-   plus direct reading; fact extraction is static. Use
-   `references/lightning-detection.md` to confirm Lightning versus plain
-   PyTorch and hand off to `nvflare-convert-pytorch` when no Lightning evidence
-   exists.
+2. Read the active training entry point and apply
+   `../nvflare-shared/references/framework-routing.md`. Continue only when a
+   Lightning `Trainer` owns the loop.
 3. Read applicable requirements and install missing dependencies into the
    host-provided environment before import-level preflight, recipe
    construction, export, or simulation. Load
@@ -195,6 +194,7 @@ Always read this converter SKILL.md. Load detailed references only at their name
 `../nvflare-shared/references/metrics-and-artifact-reporting.md` only when metrics are absent or inconsistent;
 `../nvflare-shared/references/validation-evidence.md` before validation;
 `../nvflare-shared/references/pytorch-model-exchange.md` for PyTorch-family exchange.
-For Lightning work load `references/lightning-detection.md`, `references/lightning-conversion.md`,
-`references/lightning-validation.md`, or `references/lightning-ddp-and-tracking.md` only as needed.
+For Lightning work load `references/lightning-conversion.md`,
+`references/lightning-validation.md`, or
+`references/lightning-ddp-and-tracking.md` only as needed.
 Do not depend on NVFLARE repository examples being present.

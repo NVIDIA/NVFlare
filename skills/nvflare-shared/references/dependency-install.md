@@ -31,9 +31,9 @@ package entries. If a dependency entry must be mentioned in a report, strip URL
 userinfo (`user:token@`), query strings, and fragments before disclosure, note
 that a credential was redacted, and never reproduce its value.
 
-Install `nvflare` into the host-provided environment if it is not already
-present, and run `nvflare` commands, import probes, export, and simulation from
-that same environment.
+Treat either the `nvflare` or `nvflare-nightly` distribution as an installed
+NVFLARE runtime; never overlay one with the other. If neither is present,
+install `nvflare`, then run all probes and validation in that same environment.
 
 Order is mandatory:
 

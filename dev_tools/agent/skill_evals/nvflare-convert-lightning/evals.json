@@ -10,7 +10,7 @@
         "files/hello-lightning/model.py"
       ],
       "assertions": [
-        "The agent runs nvflare agent inspect before editing and extracts source facts statically without importing or executing user training modules during planning.",
+        "The agent reads the active entry point before editing, identifies Lightning training ownership, and does not import or execute user modules during planning.",
         "The agent edits only training, model, job, or small config files.",
         "The agent integrates through flare.patch(trainer) and lets the patched trainer own model exchange.",
         "The agent does not generate a manual FLModel send/receive path as the default Lightning exchange.",
@@ -41,8 +41,8 @@
         "expected_skill": "nvflare-convert-lightning",
         "mandatory_behavior": [
           {
-            "id": "inspect-first",
-            "description": "runs nvflare agent inspect before editing and keeps planning-phase fact extraction static"
+            "id": "route-from-training-owner",
+            "description": "reads the active entry point before editing, identifies Lightning training ownership, and keeps planning-phase fact extraction static"
           },
           {
             "id": "scoped-edits",

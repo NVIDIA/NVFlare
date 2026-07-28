@@ -5,20 +5,26 @@ turn project evidence and user intent into one narrow next action.
 
 ## Evidence Sources
 
-- `nvflare agent inspect <path> --format json` for framework routing, FLARE
-  usage, conversion state, safety findings, local readiness, and recommended
-  skills.
-- User-provided target files, job folders, logs, or stated deployment context.
+- The user-named entry point and the source files it directly uses.
+- User-provided job folders, logs, artifacts, or deployment context.
+- `../../nvflare-shared/references/framework-routing.md` for PyTorch-family
+  training-loop ownership.
 
 ## Routing Rules
 
-- Existing PyTorch training loop needing FLARE conversion:
+- Hugging Face or supported TRL trainer owning training:
+  `nvflare-convert-huggingface`.
+- Lightning `Trainer` owning training: `nvflare-convert-lightning`.
+- Manual PyTorch training loop:
   `nvflare-convert-pytorch`.
+- Conflicting owners or a trainer factory/wrapper whose owner is unclear: ask
+  which entry point to federate before selecting a converter.
 - Statistics, data summaries, histograms, or quantiles across sites, or an
   inspect result with `target_type` `tabular_dataset`/`image_dataset`
   (data-only targets recommend `nvflare-fed-stats` directly):
   `nvflare-fed-stats`.
-- Generic "help me use FLARE here" with no clear workflow: inspect first, then
+- Generic "help me use FLARE here" with no clear workflow: read the relevant
+  entry point, then
   recommend the narrowest skill.
 - Existing FLARE job that fails or produces suspicious logs:
   `nvflare-diagnose-job`, not conversion.
