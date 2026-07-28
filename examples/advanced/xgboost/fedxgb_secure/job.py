@@ -101,7 +101,7 @@ def main():
     set_per_site_config(recipe, per_site_config)
 
     # Export and run
-    env = SimEnv(clients=recipe.configured_sites())
+    env = SimEnv(num_clients=args.site_num)
     run = recipe.execute(env)
     run.export_job(f"/tmp/nvflare/workspace/fedxgb_secure/train_fl/jobs/{job_name}")
 
