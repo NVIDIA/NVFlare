@@ -16,13 +16,12 @@
 
 import ast
 import os
-import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from types import MappingProxyType
 from typing import Optional
 
-from nvflare.tool.agent.inspection.models import MAX_EVIDENCE_PER_BUCKET, InspectionFacts
+from nvflare.tool.agent.inspection.models import MAX_EVIDENCE_PER_BUCKET, InspectionFacts, redact_literal
 from nvflare.tool.agent.inspection.python_scanner import _PythonInspector
 
 DEFAULT_MAX_FILES = 250
@@ -49,7 +48,6 @@ SKIPPED_DIR_NAMES = {
 }
 SENSITIVE_FILE_SUFFIXES = {".key", ".pem", ".p12", ".pfx"}
 SENSITIVE_FILE_NAMES = {"id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"}
-SECRET_NAME_PATTERN = re.compile(r"(api[_-]?key|secret|token|password|passwd|credential|access[_-]?key)", re.I)
 _INCOMPLETE_SCAN_SKIP_CODES = {
     "DIRECTORY_NOT_SCANNED_FILE_LIMIT",
     "FILE_LIMIT_REACHED",
@@ -107,50 +105,21 @@ class _InspectStateBuilder:
 
     def freeze(self) -> InspectionFacts:
         return InspectionFacts(
-            root=self.root,
-            redact=self.redact,
-            entries_visited=self.entries_visited,
-            files_considered=self.files_considered,
-            files_scanned=self.files_scanned,
-            bytes_scanned=self.bytes_scanned,
-            files_skipped_count=self.files_skipped_count,
-            file_limit_reached=self.file_limit_reached,
-            file_limit_accounted_skips=self.file_limit_accounted_skips,
-            file_limit_skip_accounting_truncated=self.file_limit_skip_accounting_truncated,
-            classification_incomplete=self.classification_incomplete,
-            files_skipped=tuple(self.files_skipped),
-            findings=tuple(self.findings),
-            framework_evidence=MappingProxyType(
-                {framework: tuple(evidence) for framework, evidence in self.framework_evidence.items()}
-            ),
-            flare_imports=tuple(self.flare_imports),
-            flare_calls=frozenset(self.flare_calls),
-            flare_calls_by_file=MappingProxyType(
-                {file_path: frozenset(calls) for file_path, calls in self.flare_calls_by_file.items()}
-            ),
-            integration_signals=MappingProxyType(
-                {framework: frozenset(signals) for framework, signals in self.integration_signals.items()}
-            ),
-            integration_signal_files=frozenset(self.integration_signal_files),
-            file_imports=MappingProxyType(
-                {file_path: frozenset(imports) for file_path, imports in self.file_imports.items()}
-            ),
-            entry_points=tuple(self.entry_points),
-            job_py=self.job_py,
-            job_py_paths=tuple(self.job_py_paths),
-            sim_env_used=self.sim_env_used,
-            sim_env_files=frozenset(self.sim_env_files),
-            export_support=self.export_support,
-            export_support_files=frozenset(self.export_support_files),
-            exported_job_markers=tuple(self.exported_job_markers),
-            exported_job_marker_paths=tuple(self.exported_job_marker_paths),
-            distributed_patterns=tuple(self.distributed_patterns),
-            dynamic_patterns=tuple(self.dynamic_patterns),
-            absolute_path_findings=tuple(self.absolute_path_findings),
-            class_body_ranges=MappingProxyType(
-                {file_path: tuple(ranges) for file_path, ranges in self.class_body_ranges.items()}
-            ),
+            **{
+                fact_field.name: _freeze_fact_value(getattr(self, fact_field.name))
+                for fact_field in fields(InspectionFacts)
+            }
         )
+
+
+def _freeze_fact_value(value):
+    if isinstance(value, list):
+        return tuple(value)
+    if isinstance(value, set):
+        return frozenset(value)
+    if isinstance(value, dict):
+        return MappingProxyType({key: _freeze_fact_value(item) for key, item in value.items()})
+    return value
 
 
 def scan_path(
@@ -445,7 +414,7 @@ def _symlink_skip_entry(path: Path, state: _InspectStateBuilder) -> dict:
     return {
         "code": "SYMLINK_SKIPPED",
         "path": _display_path(path, state.root, state.redact),
-        "target": _redact_literal(target, state.redact),
+        "target": redact_literal(target, state.redact),
         "message": "symlink was not followed during static inspection",
     }
 
@@ -495,17 +464,3 @@ def _inspected_target_path(path: Path) -> str:
 
 def _normalized_inspect_target(path: Path | str) -> Path:
     return Path(_inspected_target_path(Path(path).expanduser()))
-
-
-def _redact_literal(value: str, redact: bool) -> str:
-    if not redact:
-        return value
-    if _looks_like_absolute_path(value):
-        return "<REDACTED_PATH>"
-    if SECRET_NAME_PATTERN.search(value):
-        return "<REDACTED>"
-    return value
-
-
-def _looks_like_absolute_path(value: str) -> bool:
-    return value.startswith(("/", "~")) or bool(re.match(r"^[A-Za-z]:[\\/]", value))

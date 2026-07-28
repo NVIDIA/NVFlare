@@ -27,7 +27,6 @@ from nvflare.tool.agent.inspection.project import (
     evidence_tied_to_entry_context as _framework_evidence_tied_to_entry_context,
 )
 from nvflare.tool.agent.inspection.routing import FamilyResolver as _FamilyResolver
-from nvflare.tool.agent.inspection.routing import evidence_score as _evidence_score
 from nvflare.tool.agent.inspection.routing import routing_decision as _routing_decision
 from nvflare.tool.agent.inspector import inspect_path
 
@@ -3398,7 +3397,7 @@ def test_lightning_routing_helper_defensive_branches(tmp_path):
     assert not _framework_evidence_tied_to_entry_context(state, state.framework_evidence["pytorch_lightning"])
     assert not _framework_evidence_tied_to_entry_context(state, state.framework_evidence["pytorch"])
     assert not _entry_point_imports_file(state, "README.md")
-    assert _evidence_score([{"kind": "unknown"}]) == 1
+    assert _FamilyResolver(state).score([{"kind": "unknown"}]) == 1
 
 
 def test_lightning_routing_fallback_prefers_active_lightning_over_pytorch_imports(tmp_path):

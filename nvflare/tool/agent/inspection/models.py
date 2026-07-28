@@ -14,11 +14,27 @@
 
 """Read-only facts and decisions shared by inspector implementation modules."""
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
 MAX_EVIDENCE_PER_BUCKET = 12
+SECRET_NAME_PATTERN = re.compile(r"(api[_-]?key|secret|token|password|passwd|credential|access[_-]?key)", re.I)
+
+
+def looks_like_absolute_path(value: str) -> bool:
+    return value.startswith(("/", "~")) or bool(re.match(r"^[A-Za-z]:[\\/]", value))
+
+
+def redact_literal(value: str, redact: bool) -> str:
+    if not redact:
+        return value
+    if looks_like_absolute_path(value):
+        return "<REDACTED_PATH>"
+    if SECRET_NAME_PATTERN.search(value):
+        return "<REDACTED>"
+    return value
 
 
 @dataclass(frozen=True)

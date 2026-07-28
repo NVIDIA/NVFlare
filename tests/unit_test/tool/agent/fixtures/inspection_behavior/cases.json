@@ -1,0 +1,433 @@
+{
+  "cases": [
+    {
+      "id": "plain_pytorch",
+      "path": "plain_pytorch",
+      "expected": {
+        "detected_framework": "pytorch",
+        "conversion_state": "not_converted",
+        "recommended_skills": ["nvflare-convert-pytorch"],
+        "ownership_state": "clear",
+        "owners": ["pytorch"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "plain_lightning",
+      "path": "plain_lightning",
+      "expected": {
+        "detected_framework": "pytorch_lightning",
+        "conversion_state": "not_converted",
+        "recommended_skills": ["nvflare-convert-lightning"],
+        "ownership_state": "clear",
+        "owners": ["pytorch_lightning"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "plain_huggingface",
+      "path": "plain_huggingface",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "not_converted",
+        "recommended_skills": ["nvflare-convert-huggingface"],
+        "ownership_state": "clear",
+        "owners": ["huggingface"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "lightning_with_hf_model",
+      "path": "lightning_with_hf_model",
+      "expected": {
+        "detected_framework": "pytorch_lightning",
+        "conversion_state": "not_converted",
+        "recommended_skills": ["nvflare-convert-lightning"],
+        "ownership_state": "clear",
+        "owners": ["pytorch_lightning"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "hf_with_lightning_candidate",
+      "path": "hf_with_lightning_candidate",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "not_converted",
+        "recommended_skills": ["nvflare-convert-huggingface"],
+        "ownership_state": "clear",
+        "owners": ["huggingface"],
+        "candidates": ["pytorch_lightning"]
+      }
+    },
+    {
+      "id": "dual_trainers",
+      "path": "dual_trainers",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "not_converted",
+        "recommended_skills": ["nvflare-orient"],
+        "ownership_state": "conflicting",
+        "owners": ["huggingface", "pytorch_lightning"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "module_global_trainer",
+      "path": "module_global_trainer",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "not_converted",
+        "recommended_skills": ["nvflare-convert-huggingface"],
+        "ownership_state": "clear",
+        "owners": ["huggingface"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "closure_trainer",
+      "path": "closure_trainer",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "not_converted",
+        "recommended_skills": ["nvflare-convert-huggingface"],
+        "ownership_state": "clear",
+        "owners": ["huggingface"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "global_trainer",
+      "path": "global_trainer",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "not_converted",
+        "recommended_skills": ["nvflare-convert-huggingface"],
+        "ownership_state": "clear",
+        "owners": ["huggingface"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "nonlocal_trainer",
+      "path": "nonlocal_trainer",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "not_converted",
+        "recommended_skills": ["nvflare-convert-huggingface"],
+        "ownership_state": "clear",
+        "owners": ["huggingface"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "definition_time_patch",
+      "path": "definition_time_patch",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "client_api_converted",
+        "recommended_skills": [],
+        "ownership_state": "clear",
+        "owners": ["huggingface"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "definition_time_late_patch",
+      "path": "definition_time_late_patch",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "partial_client_api",
+        "recommended_skills": ["nvflare-convert-huggingface"],
+        "ownership_state": "clear",
+        "owners": ["huggingface"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "deferred_late_patch",
+      "path": "deferred_late_patch",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "client_api_converted",
+        "recommended_skills": [],
+        "ownership_state": "clear",
+        "owners": ["huggingface"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "chained_assignment",
+      "path": "chained_assignment",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "not_converted",
+        "recommended_skills": ["nvflare-convert-huggingface"],
+        "ownership_state": "clear",
+        "owners": ["huggingface"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "trainer_rebinding",
+      "path": "trainer_rebinding",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "not_converted",
+        "recommended_skills": ["nvflare-orient"],
+        "ownership_state": "candidate",
+        "owners": [],
+        "candidates": ["huggingface"]
+      }
+    },
+    {
+      "id": "assignment_target_rebinding",
+      "path": "assignment_target_rebinding",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "client_api_converted",
+        "recommended_skills": [],
+        "ownership_state": "clear",
+        "owners": ["huggingface"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "with_unpacking",
+      "path": "with_unpacking",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "client_api_converted",
+        "recommended_skills": [],
+        "ownership_state": "candidate",
+        "owners": [],
+        "candidates": ["huggingface"]
+      }
+    },
+    {
+      "id": "for_unpacking",
+      "path": "for_unpacking",
+      "expected": {
+        "detected_framework": "pytorch",
+        "conversion_state": "not_converted",
+        "recommended_skills": ["nvflare-convert-pytorch"],
+        "ownership_state": "clear",
+        "owners": ["pytorch"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "local_trainer_subclass",
+      "path": "local_trainer_subclass",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "not_converted",
+        "recommended_skills": ["nvflare-convert-huggingface"],
+        "ownership_state": "clear",
+        "owners": ["huggingface"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "aliased_trainer_symbol",
+      "path": "aliased_trainer_symbol",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "not_converted",
+        "recommended_skills": ["nvflare-convert-huggingface"],
+        "ownership_state": "clear",
+        "owners": ["huggingface"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "patch_direct",
+      "path": "patch_direct",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "client_api_converted",
+        "recommended_skills": [],
+        "ownership_state": "clear",
+        "owners": ["huggingface"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "patch_module_alias",
+      "path": "patch_module_alias",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "client_api_converted",
+        "recommended_skills": [],
+        "ownership_state": "clear",
+        "owners": ["huggingface"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "patch_fully_qualified",
+      "path": "patch_fully_qualified",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "client_api_converted",
+        "recommended_skills": [],
+        "ownership_state": "clear",
+        "owners": ["huggingface"],
+        "candidates": []
+      }
+    },
+    {
+      "id": "shadow_assignment",
+      "path": "shadow_assignment",
+      "expected": {
+        "detected_framework": "pytorch_lightning",
+        "conversion_state": "not_converted",
+        "recommended_skills": [],
+        "ownership_state": "import_only",
+        "owners": [],
+        "candidates": [],
+        "forbidden_evidence_kinds": {"pytorch_lightning": ["lightning_trainer"]}
+      }
+    },
+    {
+      "id": "shadow_reimport",
+      "path": "shadow_reimport",
+      "expected": {
+        "detected_framework": "pytorch_lightning",
+        "conversion_state": "not_converted",
+        "recommended_skills": [],
+        "ownership_state": "import_only",
+        "owners": [],
+        "candidates": [],
+        "forbidden_evidence_kinds": {"pytorch_lightning": ["lightning_trainer"]}
+      }
+    },
+    {
+      "id": "shadow_loop",
+      "path": "shadow_loop",
+      "expected": {
+        "detected_framework": "pytorch_lightning",
+        "conversion_state": "not_converted",
+        "recommended_skills": [],
+        "ownership_state": "import_only",
+        "owners": [],
+        "candidates": [],
+        "forbidden_evidence_kinds": {"pytorch_lightning": ["lightning_trainer"]}
+      }
+    },
+    {
+      "id": "shadow_comprehension",
+      "path": "shadow_comprehension",
+      "expected": {
+        "detected_framework": "pytorch_lightning",
+        "conversion_state": "not_converted",
+        "recommended_skills": [],
+        "ownership_state": "import_only",
+        "owners": [],
+        "candidates": [],
+        "forbidden_evidence_kinds": {"pytorch_lightning": ["lightning_trainer"]}
+      }
+    },
+    {
+      "id": "shadow_parameter",
+      "path": "shadow_parameter",
+      "expected": {
+        "detected_framework": "pytorch_lightning",
+        "conversion_state": "not_converted",
+        "recommended_skills": [],
+        "ownership_state": "import_only",
+        "owners": [],
+        "candidates": [],
+        "forbidden_evidence_kinds": {"pytorch_lightning": ["lightning_trainer"]}
+      }
+    },
+    {
+      "id": "shadow_match",
+      "path": "shadow_match",
+      "expected": {
+        "detected_framework": "pytorch_lightning",
+        "conversion_state": "not_converted",
+        "recommended_skills": [],
+        "ownership_state": "import_only",
+        "owners": [],
+        "candidates": [],
+        "forbidden_evidence_kinds": {"pytorch_lightning": ["lightning_trainer"]}
+      }
+    },
+    {
+      "id": "shadow_with",
+      "path": "shadow_with",
+      "expected": {
+        "detected_framework": "pytorch_lightning",
+        "conversion_state": "not_converted",
+        "recommended_skills": [],
+        "ownership_state": "import_only",
+        "owners": [],
+        "candidates": [],
+        "forbidden_evidence_kinds": {"pytorch_lightning": ["lightning_trainer"]}
+      }
+    },
+    {
+      "id": "shadow_exception",
+      "path": "shadow_exception",
+      "expected": {
+        "detected_framework": "pytorch_lightning",
+        "conversion_state": "not_converted",
+        "recommended_skills": [],
+        "ownership_state": "import_only",
+        "owners": [],
+        "candidates": [],
+        "forbidden_evidence_kinds": {"pytorch_lightning": ["lightning_trainer"]}
+      }
+    },
+    {
+      "id": "shadow_class_body",
+      "path": "shadow_class_body",
+      "expected": {
+        "detected_framework": "pytorch_lightning",
+        "conversion_state": "not_converted",
+        "recommended_skills": [],
+        "ownership_state": "import_only",
+        "owners": [],
+        "candidates": [],
+        "forbidden_evidence_kinds": {"pytorch_lightning": ["lightning_trainer"]}
+      }
+    },
+    {
+      "id": "evaluation_only",
+      "path": "evaluation_only",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "not_converted",
+        "recommended_skills": ["nvflare-orient"],
+        "ownership_state": "import_only",
+        "owners": [],
+        "candidates": []
+      }
+    },
+    {
+      "id": "unused_trainer",
+      "path": "unused_trainer",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "not_converted",
+        "recommended_skills": ["nvflare-orient"],
+        "ownership_state": "import_only",
+        "owners": [],
+        "candidates": []
+      }
+    },
+    {
+      "id": "inference_only",
+      "path": "inference_only",
+      "expected": {
+        "detected_framework": "huggingface",
+        "conversion_state": "not_converted",
+        "recommended_skills": [],
+        "ownership_state": "import_only",
+        "owners": [],
+        "candidates": []
+      }
+    }
+  ]
+}

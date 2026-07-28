@@ -15,16 +15,16 @@
 """Framework-neutral Python AST traversal for agent inspection."""
 
 import ast
-import re
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
 from nvflare.tool.agent import frameworks
 from nvflare.tool.agent.frameworks.base import DetectContext
+from nvflare.tool.agent.inspection.models import SECRET_NAME_PATTERN, looks_like_absolute_path, redact_literal
 from nvflare.tool.agent.inspection.project import _resolve_import_from_module
 
 MAX_EVIDENCE_COLLECT = 10000
-SECRET_NAME_PATTERN = re.compile(r"(api[_-]?key|secret|token|password|passwd|credential|access[_-]?key)", re.I)
 
 
 class _PythonInspector(ast.NodeVisitor):
@@ -137,12 +137,7 @@ class _PythonInspector(ast.NodeVisitor):
             self.visit(statement)
 
     def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
-        self.visit(node.iter)
-        self._visit_assignment_target(node.target, getattr(node, "lineno", None))
-        for statement in node.body:
-            self.visit(statement)
-        for statement in node.orelse:
-            self.visit(statement)
+        self.visit_For(node)
 
     def visit_ListComp(self, node: ast.ListComp) -> None:
         self._visit_comprehension(node, "list-comprehension")
@@ -184,8 +179,7 @@ class _PythonInspector(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign) -> None:
         self._inspect_secret_assignment(node.targets, node.value, getattr(node, "lineno", None))
-        call_name = _call_name(node.value.func) if isinstance(node.value, ast.Call) else None
-        value_info = self._classify_assignment_value(call_name)
+        call_name, value_info = self._assignment_value_info(node.value)
         self.visit(node.value)
         for target in node.targets:
             self._visit_assignment_target(
@@ -197,8 +191,7 @@ class _PythonInspector(ast.NodeVisitor):
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         self._inspect_secret_assignment([node.target], node.value, getattr(node, "lineno", None))
-        call_name = _call_name(node.value.func) if isinstance(node.value, ast.Call) else None
-        value_info = self._classify_assignment_value(call_name)
+        call_name, value_info = self._assignment_value_info(node.value)
         if node.value:
             self.visit(node.value)
         self._visit_assignment_target(
@@ -331,6 +324,10 @@ class _PythonInspector(ast.NodeVisitor):
             for detector in self._detectors
         }
 
+    def _assignment_value_info(self, value: Optional[ast.AST]) -> tuple[Optional[str], dict[str, object]]:
+        call_name = _call_name(value.func) if isinstance(value, ast.Call) else None
+        return call_name, self._classify_assignment_value(call_name)
+
     def _dispatch_assignment(
         self,
         target_names: list[str],
@@ -425,8 +422,25 @@ class _PythonInspector(ast.NodeVisitor):
                 self.visit(parameter.annotation)
 
     def _visit_body_in_scope(self, node: ast.AST, kind: str, *, predeclare_locals: bool = True) -> None:
-        name = getattr(node, "name", "<anonymous>")
-        self._scope_stack.append(f"{kind}:{name}:{getattr(node, 'lineno', 0)}")
+        with self._inspection_scope(node, kind, predeclare_locals=predeclare_locals):
+            for statement in getattr(node, "body", []):
+                self.visit(statement)
+
+    def _visit_expression_in_scope(self, node: ast.AST, kind: str, expression: ast.AST) -> None:
+        with self._inspection_scope(node, kind, name="<anonymous>"):
+            self.visit(expression)
+
+    @contextmanager
+    def _inspection_scope(
+        self,
+        node: ast.AST,
+        kind: str,
+        *,
+        name: Optional[str] = None,
+        predeclare_locals: bool = True,
+    ) -> Iterator[None]:
+        scope_name = name if name is not None else getattr(node, "name", "<anonymous>")
+        self._scope_stack.append(f"{kind}:{scope_name}:{getattr(node, 'lineno', 0)}")
         try:
             scope = tuple(self._scope_stack)
             local_names, global_names, nonlocal_names = _lexical_bindings(node)
@@ -441,26 +455,7 @@ class _PythonInspector(ast.NodeVisitor):
                     self._detector_states[detector.name],
                     self._ctx,
                 )
-            for statement in getattr(node, "body", []):
-                self.visit(statement)
-        finally:
-            self._scope_stack.pop()
-
-    def _visit_expression_in_scope(self, node: ast.AST, kind: str, expression: ast.AST) -> None:
-        self._scope_stack.append(f"{kind}:<anonymous>:{getattr(node, 'lineno', 0)}")
-        try:
-            scope = tuple(self._scope_stack)
-            local_names, global_names, nonlocal_names = _lexical_bindings(node)
-            for detector in self._detectors:
-                detector.on_scope(
-                    scope,
-                    local_names,
-                    global_names,
-                    nonlocal_names,
-                    self._detector_states[detector.name],
-                    self._ctx,
-                )
-            self.visit(expression)
+            yield
         finally:
             self._scope_stack.pop()
 
@@ -482,7 +477,7 @@ class _PythonInspector(ast.NodeVisitor):
                 )
 
     def _inspect_string_literal(self, value: str, lineno: Optional[int]) -> None:
-        if _looks_like_absolute_path(value):
+        if looks_like_absolute_path(value):
             self.state.absolute_path_findings.append(
                 {
                     "code": "ABSOLUTE_DATA_PATH",
@@ -490,7 +485,7 @@ class _PythonInspector(ast.NodeVisitor):
                     "file": self.rel_path,
                     "line": lineno,
                     "pattern_type": "absolute_path_literal",
-                    "value": _redact_literal(value, self.state.redact),
+                    "value": redact_literal(value, self.state.redact),
                 }
             )
 
@@ -641,17 +636,3 @@ def _assignment_target_names(targets: list[ast.AST]) -> list[str]:
         if name:
             names.append(name)
     return names
-
-
-def _redact_literal(value: str, redact: bool) -> str:
-    if not redact:
-        return value
-    if _looks_like_absolute_path(value):
-        return "<REDACTED_PATH>"
-    if SECRET_NAME_PATTERN.search(value):
-        return "<REDACTED>"
-    return value
-
-
-def _looks_like_absolute_path(value: str) -> bool:
-    return value.startswith(("/", "~")) or bool(re.match(r"^[A-Za-z]:[\\/]", value))

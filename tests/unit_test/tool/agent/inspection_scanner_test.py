@@ -14,12 +14,30 @@
 
 import json
 import os
+from dataclasses import fields
 from pathlib import Path
 
 import pytest
 
 from nvflare.tool.agent.inspection import python_scanner
+from nvflare.tool.agent.inspection.models import InspectionFacts
+from nvflare.tool.agent.inspection.scanner import _InspectStateBuilder
 from nvflare.tool.agent.inspector import inspect_path
+
+
+def test_inspection_facts_freeze_covers_every_builder_field(tmp_path):
+    builder = _InspectStateBuilder(root=tmp_path, redact=True)
+    evidence = {"file": "train.py", "line": 1, "kind": "import", "value": "torch"}
+    builder.framework_evidence["pytorch"] = [evidence]
+    builder.flare_calls.add("flare.init")
+
+    facts = builder.freeze()
+
+    assert {item.name for item in fields(_InspectStateBuilder)} == {item.name for item in fields(InspectionFacts)}
+    assert facts.framework_evidence["pytorch"] == (evidence,)
+    assert facts.flare_calls == frozenset({"flare.init"})
+    with pytest.raises(TypeError):
+        facts.framework_evidence["pytorch"] = ()
 
 
 def test_inspect_directory_reports_inspected_target_path(tmp_path):

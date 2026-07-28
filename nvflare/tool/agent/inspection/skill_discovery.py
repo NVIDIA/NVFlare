@@ -59,9 +59,8 @@ def _installed_skill_search_roots(target: Path) -> list[tuple[Path, str]]:
     if project_root is not None:
         for rel in _PROJECT_SKILL_DIRS:
             roots.append((project_root / rel, "project"))
-    home = Path.home()
     for rel in _GLOBAL_SKILL_DIRS:
-        roots.append((Path(rel).expanduser() if rel.startswith("~") else home / rel, "global"))
+        roots.append((Path(rel).expanduser(), "global"))
     return roots
 
 

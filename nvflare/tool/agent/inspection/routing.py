@@ -130,9 +130,7 @@ def routing_decision(
     family_member_conflict: bool = False,
 ) -> RoutingDecision:
     recommended = []
-    if current_conversion_state == "exported_job":
-        pass
-    elif current_conversion_state == "flare_job":
+    if current_conversion_state == "flare_job":
         recommended.append("nvflare-autofl")
     elif current_conversion_state == "ambiguous":
         recommended.append("nvflare-orient")
@@ -197,7 +195,8 @@ class FamilyResolver:
         return [item for item in self.evidence(framework) if frameworks.is_candidate_evidence(framework, item)]
 
     def score(self, evidence: list[dict]) -> int:
-        return evidence_score(evidence)
+        weights = frameworks.evidence_weights()
+        return sum(weights.get(item["kind"], 1) for item in evidence)
 
     def tied_to_entry_context(self, evidence: list[dict]) -> bool:
         return evidence_tied_to_entry_context(self._facts, evidence, self._import_graph)
@@ -221,11 +220,6 @@ class FamilyResolver:
         return [
             item for item in evidence if not _line_within_ranges(item.get("line"), ranges_by_file.get(item["file"]))
         ]
-
-
-def evidence_score(evidence: list[dict]) -> int:
-    weights = frameworks.evidence_weights()
-    return sum(weights.get(item["kind"], 1) for item in evidence)
 
 
 def _primary_by_confidence_and_entry_context(
