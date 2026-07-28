@@ -60,17 +60,20 @@ def test_prepare_for_remote_call_registers_blob_callback():
     app = MagicMock()
     logger = MagicMock()
     executor = MagicMock()
+    callback = MagicMock()
+    adapter = MagicMock(call=callback)
 
-    prepare_for_remote_call(cell, app, logger, executor)
+    with patch("nvflare.collab.runtime.dispatch.Adapter", return_value=adapter):
+        prepare_for_remote_call(cell, app, logger, executor)
 
-    kwargs = cell.register_blob_cb.call_args.kwargs
-    assert kwargs["channel"] == MSG_CHANNEL
-    assert kwargs["topic"] == MSG_TOPIC
-    assert callable(kwargs["blob_cb"])
-    assert "cb" not in kwargs
-    assert kwargs["app"] is app
-    assert kwargs["logger"] is logger
-    assert kwargs["executor"] is executor
+    cell.register_blob_cb.assert_called_once_with(
+        channel=MSG_CHANNEL,
+        topic=MSG_TOPIC,
+        blob_cb=callback,
+        app=app,
+        logger=logger,
+        executor=executor,
+    )
 
 
 def test_remote_call_returns_secure_exception_detail():

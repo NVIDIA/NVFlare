@@ -10,6 +10,7 @@ cd examples   # makes the collab package available to module imports
 
 python -m collab.hello_numpy_collab.hello_numpy_collab
 python -m collab.hello_fedavg.hello_fedavg
+python -m collab.simple_split_learning.simple_split_learning
 python -m collab.async_aggregation.async_aggregation
 python -m collab.swarm.swarm --num-clients 3
 ```
@@ -20,6 +21,7 @@ python -m collab.swarm.swarm --num-clients 3
 |---|---|
 | `hello_numpy_collab` | Same Recipe API/`SimEnv` flow as `hello-world/hello-numpy`, using direct calls instead of Client API messaging |
 | `hello_fedavg` | The Collab API in one file: `@collab.main`, `@collab.publish`, `collab.clients.train(...)`, per-site config |
+| `simple_split_learning` | Split learning on MNIST with client-side images and bottom model, server-side labels and top model, and direct activation/gradient exchange |
 | `async_aggregation` | In-time aggregation with a response callback |
 | `swarm` | Decentralized swarm learning with client-to-client calls |
 | [`pt_async_cifar10`](pt_async_cifar10/README.md) | Asynchronous PyTorch CIFAR-10 training with prepared logical-client shards |
@@ -42,6 +44,8 @@ The NumPy examples run in a base installation; `hello_fedavg` needs PyTorch.
 `pt_async_cifar10` additionally needs torchvision and TensorBoard; follow its
 [setup and prepared-data workflow](pt_async_cifar10/README.md) before running
 the Collab recipe.
+`simple_split_learning` needs PyTorch and torchvision and downloads MNIST on
+its first run.
 
 For the design behind the API see the
 [Collab API design](../../docs/design/collab_api_design.md). For a step-by-step

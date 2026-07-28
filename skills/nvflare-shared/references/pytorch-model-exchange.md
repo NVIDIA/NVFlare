@@ -6,10 +6,9 @@ non-PyTorch framework skills.
 
 ## Tensor Payload Rule
 
-For `PTInProcessClientAPIExecutor`, outbound `FLModel(params=...)` must contain
+For PyTorch Client API training, outbound `FLModel(params=...)` must contain
 `torch.Tensor` values from the trained model state. Do not convert outbound
-weights to NumPy before sending. `PTSendParamsConverter` excludes non-tensor
-params.
+weights to NumPy before sending.
 
 The manual `flare.send` snippet below applies only to plain PyTorch, where
 client code builds the payload itself:
@@ -25,16 +24,15 @@ not write this snippet in Lightning client code. The tensor-not-NumPy rule still
 applies to the PyTorch family, but Lightning enforces it through recipe/job
 configuration rather than manual client payload construction.
 
-## Exchange Format Recipe Settings
+## Related Recipe Construction
 
-Tensor-preserving exchange is a `job.py`/recipe setting, not something to infer
-by reading NVFLARE library source. Confirm the selected recipe parameters with
-`nvflare recipe show <recipe-name> --format json`.
-
-If the selected recipe exposes `server_expected_format`, prefer
-`ExchangeFormat.PYTORCH` for PyTorch-family tensor-preserving exchange. If the
-recipe exposes `params_transfer_type`, choose the mode that matches the user's
-intent: `FULL` sends whole tensors; `DIFF` sends tensor differences.
+After `recipe show`, follow `pytorch-family-recipe-construction.md`. That
+reference owns capability-gated tensor transport, decomposer, transfer-mode,
+best-model, and execution-mode settings. It separately owns
+`enable_tensor_disk_offload` as a server memory optimization; disk offload is
+not part of the model payload or exchange-format contract. Do not copy settings
+from a different recipe or move decomposer registration into a
+framework-neutral executor or generated trainer code.
 
 ## State-Dict Compatibility
 
