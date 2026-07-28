@@ -28,7 +28,7 @@ Start With A Concrete Recipe
 ----------------------------
 
 Start recipe scripts by creating a concrete recipe class. Examples include
-``FedAvgRecipe``, ``CyclicRecipe``, ``FedOptRecipe``, ``FedStatsRecipe``, and
+``FedAvgRecipe``, ``FedProxRecipe``, ``CyclicRecipe``, ``FedOptRecipe``, ``FedStatsRecipe``, and
 the XGBoost recipes listed by ``nvflare recipe list``.
 
 Constructor parameters are public when they are documented in the recipe guide

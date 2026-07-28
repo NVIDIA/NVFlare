@@ -14,6 +14,7 @@
 
 """Tests for ScaffoldRecipe with initial_ckpt support."""
 
+import inspect
 from unittest.mock import patch
 
 import pytest
@@ -71,6 +72,13 @@ class TestPTScaffoldRecipe:
         assert recipe.name == "test_scaffold"
         assert recipe.model == simple_model
         assert recipe._job is not None
+
+    def test_constructors_do_not_expose_fedprox_mu(self):
+        from nvflare.app_common.workflows.scaffold import Scaffold
+        from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
+
+        assert "fedprox_mu" not in inspect.signature(Scaffold).parameters
+        assert "fedprox_mu" not in inspect.signature(ScaffoldRecipe).parameters
 
     def test_enable_tensor_disk_offload_configures_controller(self, mock_file_system, base_recipe_params, simple_model):
         """Test PT ScaffoldRecipe passes tensor disk offload settings to the Scaffold controller."""
