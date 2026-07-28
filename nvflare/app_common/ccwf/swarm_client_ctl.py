@@ -1123,11 +1123,13 @@ class SwarmClientController(ClientSideController):
             if aggr == self.me:
                 # Avoid synchronous self-message path through CoreCell._send_direct_message.
                 self.log_info(fl_ctx, "submitting training result locally (aggregation client is self)")
-                # The subprocess result arrives at CJ as LazyDownloadRef (subprocess-side
-                # CellPipe has pass_through_on_send=True).  Resolve before local aggregation.
-                # The remote path is stamped PASS_THROUGH below and is resolved by
-                # _process_learn_result() on the aggregation client's CJ.
-                result = self._resolve_lazy_refs(result, fl_ctx)
+                # An external-process result arrives at CJ as LazyDownloadRef
+                # (subprocess-side CellPipe has pass_through_on_send=True), so
+                # resolve it before local aggregation. An in-process result is
+                # already materialized in CJ memory and must not take a full
+                # FOBS serialization round-trip.
+                if self._has_lazy_refs(result):
+                    result = self._resolve_lazy_refs(result, fl_ctx)
                 engine = fl_ctx.get_engine()
                 local_fl_ctx = fl_ctx.clone()
                 local_fl_ctx.set_peer_context(engine.new_context())

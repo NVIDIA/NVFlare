@@ -322,6 +322,9 @@ def test_two_round_aggregation_switch_covers_execution_mode_matrix(site_1_mode, 
             for record in controllers[aggregator].resolve_records
             if record["kind"] == _LOCAL_RESULT and record["round"] == current_round
         ]
-        assert len(local_resolutions) == 1
-        assert local_resolutions[0]["use_disk"] is True
-        assert local_resolutions[0]["was_lazy"] is (modes[aggregator] == ExecutionMode.EXTERNAL_PROCESS)
+        if modes[aggregator] == ExecutionMode.EXTERNAL_PROCESS:
+            assert len(local_resolutions) == 1
+            assert local_resolutions[0]["use_disk"] is True
+            assert local_resolutions[0]["was_lazy"] is True
+        else:
+            assert local_resolutions == []

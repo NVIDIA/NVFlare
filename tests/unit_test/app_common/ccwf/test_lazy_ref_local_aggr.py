@@ -307,9 +307,9 @@ class TestLocalAggregationPath(unittest.TestCase):
             "_process_learn_result must receive the real-array result from _resolve_lazy_refs",
         )
 
-    def test_in_process_local_aggr_routes_in_memory_result_through_terminal_resolution(self):
-        """An in-process local result remains under the controller's terminal-consumer policy."""
-        ctl, resolved_result = self._build_local_aggr_ctl()
+    def test_in_process_local_aggr_keeps_materialized_result_in_memory(self):
+        """An in-process local result bypasses the LazyDownloadRef resolution path."""
+        ctl, _ = self._build_local_aggr_ctl()
         in_memory_result = _make_shareable_with_real_arrays()
         ctl.execute_learn_task = MagicMock(return_value=in_memory_result)
 
@@ -322,8 +322,8 @@ class TestLocalAggregationPath(unittest.TestCase):
             mock_gatherer.return_value = MagicMock()
             ctl.do_learn_task("learn", task_data, fl_ctx, abort_signal)
 
-        self.assertEqual(ctl._resolve_calls, [in_memory_result])
-        self.assertEqual(ctl._process_calls, [resolved_result])
+        self.assertEqual(ctl._resolve_calls, [])
+        self.assertEqual(ctl._process_calls, [in_memory_result])
 
     def test_local_aggr_no_resolve_if_execute_fails(self):
         """If execute_learn_task() returns an error RC, _resolve_lazy_refs() must NOT be called."""
