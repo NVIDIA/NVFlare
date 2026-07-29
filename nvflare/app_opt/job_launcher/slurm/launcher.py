@@ -195,12 +195,13 @@ def _rewrite_parent_url(job_args: dict, parent_host: Optional[str], internal_por
 
 def _file_parent_mount(parent_url: str, workspace_path: str) -> Optional[BindMount]:
     """Bind mount for a shared-file transport parent URL so the CJ container can reach the
-    listener directory at the same absolute path as the CP."""
+    transport parent at the same absolute path as the CP."""
     if urlsplit(str(parent_url)).scheme != SHARED_FILE_SCHEME:
         return None
     listen_dir = parse_file_url(str(parent_url))
-    destination = _validate_mount_destination(listen_dir, "shared-file parent directory")
-    source = _validate_mount_source(listen_dir, workspace_path, "shared-file parent directory")
+    transport_parent = os.path.dirname(listen_dir)
+    destination = _validate_mount_destination(transport_parent, "shared-file transport parent")
+    source = _validate_mount_source(transport_parent, workspace_path, "shared-file transport parent")
     return BindMount(source, destination, "rw")
 
 

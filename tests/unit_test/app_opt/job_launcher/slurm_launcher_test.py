@@ -203,15 +203,16 @@ def test_containerized_slurm_mounts_shared_file_parent_directory_read_write(tmp_
     workspace = _workspace(tmp_path)
     image = tmp_path / ("image.sqsh" if sandbox == "pyxis" else "image.sif")
     image.write_text("image", encoding="utf-8")
-    listener = tmp_path / "cellnet" / "lst_12345678"
+    transport_parent = tmp_path / "cellnet"
+    listener = transport_parent / "lst_12345678"
     listener.mkdir(parents=True)
     launcher = _launcher(tmp_path, workspace, sandbox=sandbox, image=str(image))
 
     plan = launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _file_parent_context(workspace, listener))
 
     assert len(plan.mounts) == 1
-    assert plan.mounts[0].source == str(listener)
-    assert plan.mounts[0].destination == str(listener)
+    assert plan.mounts[0].source == str(transport_parent)
+    assert plan.mounts[0].destination == str(transport_parent)
     assert plan.mounts[0].mode == "rw"
 
 
@@ -226,14 +227,31 @@ def test_bare_slurm_does_not_mount_shared_file_parent_directory(tmp_path):
     assert plan.mounts == ()
 
 
+@pytest.mark.parametrize("sandbox", ["pyxis", "apptainer"])
+def test_containerized_slurm_does_not_add_transport_mount_for_tcp(tmp_path, sandbox):
+    workspace = _workspace(tmp_path)
+    image = tmp_path / ("image.sqsh" if sandbox == "pyxis" else "image.sif")
+    image.write_text("image", encoding="utf-8")
+    launcher = _launcher(tmp_path, workspace, sandbox=sandbox, image=str(image))
+
+    plan = launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _fl_ctx(workspace))
+
+    assert plan.mounts == ()
+
+
 def test_shared_file_parent_overlapping_study_mount_is_rejected(tmp_path, monkeypatch):
     workspace = _workspace(tmp_path)
     image = tmp_path / "image.sqsh"
     image.write_text("image", encoding="utf-8")
-    listener = tmp_path / "cellnet" / "lst_12345678"
+    transport_parent = tmp_path / "cellnet"
+    listener = transport_parent / "lst_12345678"
     listener.mkdir(parents=True)
     launcher = _launcher(tmp_path, workspace, sandbox="pyxis", image=str(image))
-    monkeypatch.setattr(launcher, "_study_mounts", lambda runtime: (BindMount(str(listener), str(listener), "ro"),))
+    monkeypatch.setattr(
+        launcher,
+        "_study_mounts",
+        lambda runtime: (BindMount(str(transport_parent), str(transport_parent), "ro"),),
+    )
 
     with pytest.raises(SlurmLauncherError, match="overlaps a study mount"):
         launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _file_parent_context(workspace, listener))
