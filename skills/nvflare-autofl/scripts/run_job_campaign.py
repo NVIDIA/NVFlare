@@ -388,6 +388,43 @@ def process_group_exists(process_group_id: int) -> bool:
     return True
 
 
+class TrialProcessCleanupError(RuntimeError):
+    pass
+
+
+def pidfd_functions():
+    pidfd_open = getattr(os, "pidfd_open", None)
+    pidfd_send_signal = getattr(signal, "pidfd_send_signal", None)
+    if not callable(pidfd_open) or not callable(pidfd_send_signal):
+        raise TrialProcessCleanupError(
+            "Linux pidfd_open and pidfd_send_signal support is required for race-safe trial cleanup"
+        )
+    return pidfd_open, pidfd_send_signal
+
+
+def ensure_trial_process_pidfd_support() -> None:
+    if not sys.platform.startswith("linux"):
+        return
+    pidfd_open, pidfd_send_signal = pidfd_functions()
+    try:
+        pidfd = pidfd_open(os.getpid(), 0)
+    except OSError as e:
+        raise TrialProcessCleanupError(f"cannot open the Linux pidfd required for race-safe trial cleanup: {e}") from e
+    try:
+        while True:
+            try:
+                pidfd_send_signal(pidfd, 0)
+                break
+            except InterruptedError:
+                continue
+            except OSError as e:
+                raise TrialProcessCleanupError(
+                    f"cannot signal through the Linux pidfd required for race-safe trial cleanup: {e}"
+                ) from e
+    finally:
+        os.close(pidfd)
+
+
 def trial_process_ids(trial_token: Optional[str]) -> List[int]:
     """Return Linux processes that inherited this runner-owned trial token."""
     if not trial_token or not sys.platform.startswith("linux"):
@@ -427,14 +464,17 @@ def process_has_trial_token(process_id: int, marker: bytes) -> bool:
 
 
 def open_trial_process_pidfd(process_id: int, marker: bytes) -> Optional[int]:
-    pidfd_open = getattr(os, "pidfd_open", None)
-    pidfd_send_signal = getattr(signal, "pidfd_send_signal", None)
-    if not callable(pidfd_open) or not callable(pidfd_send_signal):
-        return None
-    try:
-        pidfd = pidfd_open(process_id, 0)
-    except OSError:
-        return None
+    pidfd_open, _ = pidfd_functions()
+    while True:
+        try:
+            pidfd = pidfd_open(process_id, 0)
+            break
+        except ProcessLookupError:
+            return None
+        except InterruptedError:
+            continue
+        except OSError as e:
+            raise TrialProcessCleanupError(f"cannot open pidfd for trial process {process_id}: {e}") from e
     if (
         pidfd_process_id(pidfd) != process_id
         or not process_has_trial_token(process_id, marker)
@@ -448,17 +488,36 @@ def open_trial_process_pidfd(process_id: int, marker: bytes) -> Optional[int]:
 def signal_trial_processes(trial_token: Optional[str], sig: int) -> None:
     if not trial_token:
         return
+    process_ids = trial_process_ids(trial_token)
+    if not process_ids:
+        return
+    _, pidfd_send_signal = pidfd_functions()
     marker = f"{TRIAL_PROCESS_TOKEN_ENV_VAR}={trial_token}".encode("utf-8")
-    for process_id in trial_process_ids(trial_token):
-        pidfd = open_trial_process_pidfd(process_id, marker)
+    errors = []
+    for process_id in process_ids:
+        try:
+            pidfd = open_trial_process_pidfd(process_id, marker)
+        except TrialProcessCleanupError as e:
+            errors.append(str(e))
+            continue
         if pidfd is None:
             continue
         try:
-            signal.pidfd_send_signal(pidfd, sig)
-        except OSError:
-            pass
+            while True:
+                try:
+                    pidfd_send_signal(pidfd, sig)
+                    break
+                except ProcessLookupError:
+                    break
+                except InterruptedError:
+                    continue
+                except OSError as e:
+                    errors.append(f"cannot signal trial process {process_id} through pidfd: {e}")
+                    break
         finally:
             os.close(pidfd)
+    if errors:
+        raise TrialProcessCleanupError("; ".join(errors))
 
 
 def wait_for_process_tree(
@@ -481,6 +540,7 @@ def wait_for_process_tree(
 def terminate_process(
     process: subprocess.Popen, process_group_id: Optional[int] = None, trial_token: Optional[str] = None
 ) -> None:
+    cleanup_errors = []
     if os.name != "nt" and process_group_id is not None:
         try:
             os.killpg(process_group_id, signal.SIGTERM)
@@ -492,7 +552,10 @@ def terminate_process(
                 process.terminate()
     elif process.poll() is None:
         process.terminate()
-    signal_trial_processes(trial_token, signal.SIGTERM)
+    try:
+        signal_trial_processes(trial_token, signal.SIGTERM)
+    except TrialProcessCleanupError as e:
+        cleanup_errors.append(str(e))
 
     if wait_for_process_tree(process, process_group_id, timeout=10, trial_token=trial_token):
         return
@@ -507,8 +570,19 @@ def terminate_process(
                 process.kill()
     elif process.poll() is None:
         process.kill()
-    signal_trial_processes(trial_token, signal.SIGKILL)
-    wait_for_process_tree(process, process_group_id, timeout=10, trial_token=trial_token)
+    try:
+        signal_trial_processes(trial_token, signal.SIGKILL)
+    except TrialProcessCleanupError as e:
+        cleanup_errors.append(str(e))
+    tree_exited = wait_for_process_tree(process, process_group_id, timeout=10, trial_token=trial_token)
+    remaining_trial_processes = trial_process_ids(trial_token)
+    if remaining_trial_processes:
+        detail = f"; pidfd errors: {'; '.join(cleanup_errors)}" if cleanup_errors else ""
+        raise TrialProcessCleanupError(
+            f"trial cleanup could not terminate detached processes {remaining_trial_processes}{detail}"
+        )
+    if not tree_exited and cleanup_errors:
+        raise TrialProcessCleanupError(f"trial cleanup did not complete: {'; '.join(cleanup_errors)}")
 
 
 def append_output_tail(current: str, value: str) -> str:
@@ -626,6 +700,7 @@ def run(
     simulator_no_progress_timeout: int = DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT,
     env: Optional[Dict[str, str]] = None,
 ) -> Tuple[int, str, float]:
+    ensure_trial_process_pidfd_support()
     started = time.monotonic()
     next_stall_check = started
     last_progress_check = started

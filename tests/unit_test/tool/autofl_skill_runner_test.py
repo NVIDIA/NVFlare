@@ -644,6 +644,74 @@ def test_signal_trial_processes_uses_pidfds_and_revalidates_identity(monkeypatch
     assert closed == [10, 11]
 
 
+def test_signal_trial_processes_reports_pidfd_open_failure(monkeypatch):
+    runner = _load_runner()
+
+    monkeypatch.setattr(runner, "trial_process_ids", lambda _token: [123])
+    monkeypatch.setattr(
+        runner.os,
+        "pidfd_open",
+        lambda _process_id, _flags: (_ for _ in ()).throw(PermissionError("pidfd denied")),
+        raising=False,
+    )
+    monkeypatch.setattr(runner.signal, "pidfd_send_signal", lambda _pidfd, _sig: None, raising=False)
+
+    with pytest.raises(runner.TrialProcessCleanupError, match="cannot open pidfd for trial process 123"):
+        runner.signal_trial_processes("trial-token", runner.signal.SIGTERM)
+
+
+def test_terminate_process_retries_pidfd_failure_with_sigkill(monkeypatch):
+    runner = _load_runner()
+    signals = []
+    waits = iter([False, True])
+
+    class ExitedProcess:
+        @staticmethod
+        def poll():
+            return 0
+
+    def signal_trial_processes(_trial_token, sig):
+        signals.append(sig)
+        if sig == runner.signal.SIGTERM:
+            raise runner.TrialProcessCleanupError("temporary pidfd failure")
+
+    monkeypatch.setattr(runner, "signal_trial_processes", signal_trial_processes)
+    monkeypatch.setattr(runner, "wait_for_process_tree", lambda *_args, **_kwargs: next(waits))
+    monkeypatch.setattr(runner, "trial_process_ids", lambda _trial_token: [])
+
+    runner.terminate_process(ExitedProcess(), trial_token="trial-token")
+
+    assert signals == [runner.signal.SIGTERM, runner.signal.SIGKILL]
+
+
+def test_run_requires_pidfds_before_starting_linux_process(tmp_path, monkeypatch):
+    runner = _load_runner()
+    started = False
+
+    def fail_start(*_args, **_kwargs):
+        nonlocal started
+        started = True
+        raise AssertionError("process must not start without race-safe cleanup support")
+
+    monkeypatch.setattr(runner.sys, "platform", "linux")
+    monkeypatch.setattr(
+        runner,
+        "ensure_trial_process_pidfd_support",
+        lambda: (_ for _ in ()).throw(runner.TrialProcessCleanupError("pidfds unavailable")),
+    )
+    monkeypatch.setattr(runner.subprocess, "Popen", fail_start)
+
+    with pytest.raises(runner.TrialProcessCleanupError, match="pidfds unavailable"):
+        runner.run(
+            [sys.executable, "-c", "print('must not run')"],
+            tmp_path,
+            timeout=10,
+            log_path=tmp_path / "run.log",
+        )
+
+    assert not started
+
+
 @pytest.mark.skipif(os.name == "nt", reason="process-group cleanup uses POSIX process groups")
 @pytest.mark.parametrize("monitor_error", [KeyboardInterrupt(), RuntimeError("monitor failed")])
 def test_run_terminates_child_process_group_when_monitor_raises(tmp_path, monkeypatch, monitor_error):
