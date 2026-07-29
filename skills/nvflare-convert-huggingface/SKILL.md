@@ -157,8 +157,8 @@ unprotected recipe or present a disclaimer as implementation.
   statically available.
 - Must patch only one Trainer per Python process. Preserve a single Trainer
   lifecycle across rounds when `restore_state=True`.
-- Must use explicit `local_steps` for a length-less iterable training dataset;
-  do not infer epoch-to-step conversion when the dataloader has no length.
+- Must use a positive `TrainingArguments.max_steps` budget for a length-less
+  iterable training dataset and let `flare.patch(trainer)` infer it.
 - Must reject or report DeepSpeed, FSDP, `save_only_model=True` with
   `restore_state=True`, `load_best_model_at_end=True`, explicit
   `launch_once=False` with `restore_state=True`, prebuilt optimizer/scheduler

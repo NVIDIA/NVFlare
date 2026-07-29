@@ -63,7 +63,9 @@ global parameters, and sends the result from rank 0.
   is misleading even though the patch option owns the runtime budget. Use a
   patch budget option only when the Trainer's argument surface cannot express
   the requirement, and then do not encode the same budget in Trainer arguments.
-  A length-less iterable dataset requires a step budget.
+  A length-less iterable dataset requires a positive
+  `TrainingArguments.max_steps` budget; let the patch infer it without also
+  setting patch `local_steps`.
 - With `restore_state=True`, the patch sets the Trainer's cumulative
   `max_steps` target to `per_round_budget_steps * total_rounds` so optimizer and
   scheduler progress continues across rounds. Hugging Face may display that
@@ -95,11 +97,17 @@ Recipe source to reconcile those representations.
 
 Copy the adapted `job.py`, `client.py`, and `server_model.py` into the same
 writable source directory as packaged project-local modules such as `model.py`.
-Keep the asset's local file names in `train_script`, `add_server_file()`, and
-`add_client_file()`. Do not move the generated files into a child package and
-refer back with `../model.py`: NVFLARE rejects parent-traversal external-script
-paths. For an exceptional non-co-located module, pass its existing resolved
-absolute source path to the packaging API.
+Keep the asset's `SOURCE_DIR = Path(__file__).resolve().parent` resolution for
+`add_server_file()` and `add_client_file()` so construction works from any
+caller working directory. Keep `train_script="client.py"` as the portable
+app-local runtime path, and explicitly package its source with
+`recipe.add_client_file(str(SOURCE_DIR / "client.py"))`. The maintained asset
+enters `SOURCE_DIR` only while the Recipe validates and records those resources,
+then restores the caller's working directory before returning. Do not move
+generated files into a child package and refer back with `../model.py`:
+NVFLARE rejects parent-traversal external-script paths. For an exceptional
+non-co-located module, pass its existing resolved absolute source path to the
+packaging API.
 
 Add optional recipe arguments and decomposers only as directed by the selected
 recipe's capability profile and the shared construction reference. Do not copy
@@ -111,12 +119,12 @@ documented POSIX-tokenizing launcher. Ask or fail closed when a required value
 cannot be represented by the selected public argument surface. Do not probe
 internal command-splitting helpers.
 
-The file named by `train_script` is already the primary client script. Do not
-also add that same file through `recipe.add_client_file(...)`; reserve
-`add_client_file()` for auxiliary imported modules. Export and inspect the job
-before simulation. Reject absolute `task_script_path` values in generated
-configs because exported apps must launch their packaged client script
-portably.
+`train_script` names the primary client entry point in the runtime config; it
+does not provide a separate source root for caller-cwd-independent packaging.
+Use its portable app-local name in the constructor and add the resolved source
+once with `recipe.add_client_file(...)`. Export and inspect the job before
+simulation. Reject absolute `task_script_path` values in generated configs
+because exported apps must launch their packaged client script portably.
 
 Exported app folders are target-specific, and the layout depends on the recipe
 configuration. Before asserting paths, inspect the exported job root and

@@ -11,12 +11,28 @@ traversal paths.
 """
 
 import argparse
+import math
+import os
+from contextlib import contextmanager
+from numbers import Integral, Real
 from pathlib import Path
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
 
 DEFAULT_MAX_STEPS = 10
+SOURCE_DIR = Path(__file__).resolve().parent
+
+
+@contextmanager
+def _source_directory():
+    """Resolve Recipe resources beside this job without retaining a cwd change."""
+    original_cwd = Path.cwd()
+    os.chdir(SOURCE_DIR)
+    try:
+        yield
+    finally:
+        os.chdir(original_cwd)
 
 
 def _token(value, name: str) -> str:
@@ -24,6 +40,26 @@ def _token(value, name: str) -> str:
     if not text or any(char.isspace() for char in text):
         raise ValueError(f"{name} must be a non-empty whitespace-free value")
     return text
+
+
+def _positive_int_arg(value: str) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError("must be a positive integer") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
+def _positive_float_arg(value: str) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError("must be a finite positive number") from exc
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a finite positive number")
+    return parsed
 
 
 def build_train_args(
@@ -40,12 +76,15 @@ def build_train_args(
         raise ValueError("preserve_source_budget cannot be combined with max_steps or num_train_epochs")
     if max_steps is not None and num_train_epochs is not None:
         raise ValueError("specify only one of max_steps or num_train_epochs")
-    if max_steps is not None and (isinstance(max_steps, bool) or max_steps <= 0):
+    if max_steps is not None and (isinstance(max_steps, bool) or not isinstance(max_steps, Integral) or max_steps <= 0):
         raise ValueError("max_steps must be a positive integer")
     if num_train_epochs is not None and (
-        isinstance(num_train_epochs, bool) or num_train_epochs <= 0
+        isinstance(num_train_epochs, bool)
+        or not isinstance(num_train_epochs, Real)
+        or not math.isfinite(num_train_epochs)
+        or num_train_epochs <= 0
     ):
-        raise ValueError("num_train_epochs must be positive")
+        raise ValueError("num_train_epochs must be a finite positive number")
 
     args = [
         "--model_name_or_path",
@@ -87,22 +126,24 @@ def build_recipe(
         num_train_epochs=num_train_epochs,
         preserve_source_budget=preserve_source_budget,
     )
-    recipe = FedAvgRecipe(
-        name=name,
-        model={
-            "class_path": "server_model.ServerModel",
-            "args": {"model_name_or_path": model_name_or_path},
-        },
-        min_clients=num_clients,
-        num_rounds=num_rounds,
-        train_script="client.py",
-        train_args=train_args,
-        key_metric=key_metric,
-        **(recipe_options or {}),
-    )
-    recipe.add_server_file("server_model.py")
-    recipe.add_server_file("model.py")
-    recipe.add_client_file("model.py")
+    with _source_directory():
+        recipe = FedAvgRecipe(
+            name=name,
+            model={
+                "class_path": "server_model.ServerModel",
+                "args": {"model_name_or_path": model_name_or_path},
+            },
+            min_clients=num_clients,
+            num_rounds=num_rounds,
+            train_script="client.py",
+            train_args=train_args,
+            key_metric=key_metric,
+            **(recipe_options or {}),
+        )
+        recipe.add_server_file(str(SOURCE_DIR / "server_model.py"))
+        recipe.add_server_file(str(SOURCE_DIR / "model.py"))
+        recipe.add_client_file(str(SOURCE_DIR / "client.py"))
+        recipe.add_client_file(str(SOURCE_DIR / "model.py"))
     return recipe
 
 
@@ -116,8 +157,8 @@ def main():
     parser.add_argument("--num_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=2)
     budget = parser.add_mutually_exclusive_group()
-    budget.add_argument("--max_steps", type=int)
-    budget.add_argument("--num_train_epochs", type=float)
+    budget.add_argument("--max_steps", type=_positive_int_arg)
+    budget.add_argument("--num_train_epochs", type=_positive_float_arg)
     budget.add_argument("--preserve_source_budget", action="store_true")
     parser.add_argument("--key_metric", required=True)
     parser.add_argument("--workspace_root", type=Path, default=Path("/tmp/nvflare/hf-trainer"))

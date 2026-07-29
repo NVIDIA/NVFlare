@@ -540,7 +540,8 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "CLIENT_API_TYPE" in conversion_text
     assert "federated=True" in conversion_text
     assert "federated=False" in conversion_text
-    assert "Do not also add that same file through `recipe.add_client_file(...)`" in normalized_conversion
+    assert '`train_script="client.py"`' in normalized_conversion
+    assert '`recipe.add_client_file(str(SOURCE_DIR / "client.py"))`' in normalized_conversion
     assert "Reject absolute `task_script_path` values" in normalized_conversion
     assert "client import is not enough when an export separates server and client apps" in normalized_conversion
     assert "Before asserting paths, inspect the exported job root" in normalized_conversion
@@ -559,8 +560,9 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "while flare.is_running()" in client_template
     assert "return model" in server_model_template
     assert '"class_path": "server_model.ServerModel"' in job_template
-    assert 'recipe.add_server_file("server_model.py")' in job_template
-    assert 'recipe.add_server_file("model.py")' in job_template
+    assert 'recipe.add_server_file(str(SOURCE_DIR / "server_model.py"))' in job_template
+    assert 'recipe.add_server_file(str(SOURCE_DIR / "model.py"))' in job_template
+    assert 'recipe.add_client_file(str(SOURCE_DIR / "client.py"))' in job_template
     assert "../model.py" not in job_template
     assert "SimEnv(" in job_template
     assert "recipe.execute(" in job_template

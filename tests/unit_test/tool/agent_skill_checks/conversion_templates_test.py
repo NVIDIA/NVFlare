@@ -22,6 +22,7 @@ is caught here rather than only in expensive, nondeterministic LLM evals.
 import ast
 import importlib.util
 import inspect
+import json
 import sys
 import types
 from dataclasses import dataclass
@@ -240,8 +241,8 @@ def test_huggingface_job_template_uses_pytorch_fast_path_and_packages_model_file
     assert recipe.kwargs["min_clients"] == 2
     assert recipe.kwargs["num_rounds"] == 3
     assert recipe.kwargs["key_metric"] == "eval_accuracy"
-    assert recipe.server_files == ["server_model.py", "model.py"]
-    assert recipe.client_files == ["model.py"]
+    assert [Path(path).name for path in recipe.server_files] == ["server_model.py", "model.py"]
+    assert [Path(path).name for path in recipe.client_files] == ["client.py", "model.py"]
     assert "--max_steps 10" in recipe.kwargs["train_args"]
     assert "--num_train_epochs" not in recipe.kwargs["train_args"]
 
@@ -264,11 +265,95 @@ def test_huggingface_job_template_supports_one_resolved_budget_mode():
         module.build_train_args("local-model", "/tmp/data", 2, max_steps=7, num_train_epochs=3.0)
 
 
+@pytest.mark.parametrize("max_steps", [True, 0, -1, 1.5])
+def test_huggingface_job_template_rejects_invalid_programmatic_step_budgets(max_steps):
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    with pytest.raises(ValueError, match="positive integer"):
+        module.build_train_args("local-model", "/tmp/data", 2, max_steps=max_steps)
+
+
+@pytest.mark.parametrize("num_train_epochs", [True, 0, -1, float("nan"), float("inf")])
+def test_huggingface_job_template_rejects_invalid_programmatic_epoch_budgets(num_train_epochs):
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    with pytest.raises(ValueError, match="finite positive number"):
+        module.build_train_args("local-model", "/tmp/data", 2, num_train_epochs=num_train_epochs)
+
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("--max_steps", "0"),
+        ("--max_steps", "-1"),
+        ("--max_steps", "1.5"),
+        ("--num_train_epochs", "0"),
+        ("--num_train_epochs", "-1"),
+        ("--num_train_epochs", "nan"),
+        ("--num_train_epochs", "inf"),
+    ],
+)
+def test_huggingface_job_template_cli_rejects_invalid_budgets(monkeypatch, option, value):
+    module = _load_module(HF_TEMPLATES / "job.py")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "job.py",
+            "--model_name_or_path",
+            "local-model",
+            "--data_root",
+            "/tmp/data",
+            "--key_metric",
+            "eval_accuracy",
+            option,
+            value,
+        ],
+    )
+
+    with pytest.raises(SystemExit, match="2"):
+        module.main()
+
+
 def test_huggingface_job_template_rejects_unrepresentable_in_process_arguments():
     module = _load_module(HF_TEMPLATES / "job.py")
 
     with pytest.raises(ValueError, match="whitespace-free"):
         module.build_train_args("model with spaces", "/tmp/data", 2)
+
+
+def test_huggingface_job_template_exports_colocated_files_from_another_working_directory(tmp_path, monkeypatch):
+    generated_dir = tmp_path / "generated"
+    generated_dir.mkdir()
+    job_path = generated_dir / "job.py"
+    job_path.write_text((HF_TEMPLATES / "job.py").read_text(encoding="utf-8"), encoding="utf-8")
+    (generated_dir / "client.py").write_text("import model\n", encoding="utf-8")
+    (generated_dir / "model.py").write_text("class Model:\n    pass\n", encoding="utf-8")
+    (generated_dir / "server_model.py").write_text("from model import Model\n", encoding="utf-8")
+
+    caller_dir = tmp_path / "caller"
+    caller_dir.mkdir()
+    monkeypatch.chdir(caller_dir)
+    module = _load_module(job_path)
+    recipe = module.build_recipe(
+        name="hf-cwd-independent",
+        model_name_or_path="local-model",
+        data_root="/tmp/data",
+        num_clients=2,
+        num_rounds=1,
+        key_metric="eval_accuracy",
+    )
+    assert Path.cwd() == caller_dir
+    export_root = tmp_path / "export"
+    recipe.export(str(export_root))
+
+    app_dir = export_root / recipe.name / "app"
+    assert (app_dir / "custom" / "client.py").is_file()
+    assert (app_dir / "custom" / "server_model.py").is_file()
+    assert (app_dir / "custom" / "model.py").is_file()
+    client_config = json.loads((app_dir / "config" / "config_fed_client.json").read_text(encoding="utf-8"))
+    executor_args = client_config["executors"][0]["executor"]["args"]
+    assert executor_args["task_script_path"] == "client.py"
 
 
 def test_huggingface_client_template_rejects_abbreviated_hf_arguments():
