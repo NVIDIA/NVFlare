@@ -221,12 +221,67 @@ def test_fedce_rejects_updates_with_inconsistent_parameter_sets():
         aggregator.aggregate_model()
 
 
+@pytest.mark.parametrize(
+    ("site_1_update", "site_2_update", "expected_shape", "received_shape"),
+    [
+        ([1.0, 2.0], [[1.0, 2.0, 3.0]], "(2,)", "(1, 3)"),
+        ([[1.0, 2.0], [3.0, 4.0]], [1.0, 2.0, 3.0, 4.0], "(2, 2)", "(4,)"),
+    ],
+)
+def test_fedce_rejects_updates_with_inconsistent_parameter_shapes(
+    site_1_update, site_2_update, expected_shape, received_shape
+):
+    aggregator = FedCEModelAggregator()
+    aggregator.accept_model(_result("site-1", site_1_update, 0.5))
+    aggregator.accept_model(_result("site-2", site_2_update, 0.5))
+
+    with pytest.raises(ValueError, match=r"client 'site-2' parameter 'weight' shape does not match") as exc_info:
+        aggregator.aggregate_model()
+
+    assert f"expected={expected_shape}" in str(exc_info.value)
+    assert f"got={received_shape}" in str(exc_info.value)
+
+
+def test_fedce_rejects_buffer_shape_mismatch_outside_scoring_set():
+    aggregator = FedCEModelAggregator(trainable_param_names=["weight"])
+    site_1 = _result("site-1", [1.0], 0.5)
+    site_1.params["running_mean"] = torch.tensor([1.0, 2.0])
+    site_2 = _result("site-2", [2.0], 0.5)
+    site_2.params["running_mean"] = torch.tensor([[1.0, 2.0]])
+    aggregator.accept_model(site_1)
+    aggregator.accept_model(site_2)
+
+    with pytest.raises(ValueError, match=r"parameter 'running_mean' shape does not match"):
+        aggregator.aggregate_model()
+
+
+def test_fedce_rejects_lazy_parameter_shape_mismatch():
+    class LazyValue:
+        def __init__(self, value):
+            self.value = torch.tensor(value)
+
+        def materialize(self):
+            return self.value
+
+    aggregator = FedCEModelAggregator()
+    site_1 = _result("site-1", [1.0], 0.5)
+    site_1.params["weight"] = LazyValue([1.0, 2.0])
+    site_2 = _result("site-2", [2.0], 0.5)
+    site_2.params["weight"] = LazyValue([[1.0, 2.0]])
+    aggregator.accept_model(site_1)
+    aggregator.accept_model(site_2)
+
+    with pytest.raises(ValueError, match=r"parameter 'weight' shape does not match"):
+        aggregator.aggregate_model()
+
+
 def test_fedce_materializes_lazy_parameters():
     class LazyValue:
         @staticmethod
         def materialize():
             return torch.tensor([1.0, 2.0])
 
+    assert FedCEModelAggregator._get_param_shape(LazyValue()) == (2,)
     flattened = FedCEModelAggregator._flatten_params({"weight": LazyValue()}, ["weight"])
 
     assert flattened.tolist() == [1.0, 2.0]

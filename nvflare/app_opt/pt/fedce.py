@@ -97,6 +97,11 @@ class FedCEModelAggregator(ModelAggregator):
 
     Client results must use ``ParamsType.DIFF`` and include
     ``FLModel.meta[FedCEConstants.MINUS_MODEL_SCORE]``.
+
+    All clients in a round must return the same parameter names and matching
+    shapes. Contribution scores are computed from the configured trainable
+    parameter subset, while the resulting contribution weights are applied to
+    every returned parameter, including non-trainable buffers.
     """
 
     MODES = ("plus", "times")
@@ -234,6 +239,19 @@ class FedCEModelAggregator(ModelAggregator):
                     f"FedCE client {client!r} parameters do not match client {reference_client!r}: "
                     f"missing={missing}, unexpected={unexpected}"
                 )
+
+        param_names = sorted(common)
+        reference_shapes = {
+            name: self._get_param_shape(self._results[reference_client].params[name]) for name in param_names
+        }
+        for client in clients[1:]:
+            for name in param_names:
+                client_shape = self._get_param_shape(self._results[client].params[name])
+                if client_shape != reference_shapes[name]:
+                    raise ValueError(
+                        f"FedCE client {client!r} parameter {name!r} shape does not match "
+                        f"client {reference_client!r}: expected={reference_shapes[name]}, got={client_shape}"
+                    )
         if self.trainable_param_names:
             common.intersection_update(self.trainable_param_names)
         if not common:
@@ -251,6 +269,13 @@ class FedCEModelAggregator(ModelAggregator):
             weighted = weights[client] * vector
             result = weighted if result is None else result + weighted
         return result
+
+    @staticmethod
+    def _get_param_shape(value) -> tuple:
+        materialize = getattr(value, "materialize", None)
+        if callable(materialize):
+            value = materialize()
+        return tuple(torch.as_tensor(value).shape)
 
     @staticmethod
     def _flatten_params(params: Dict, param_names: List[str]) -> torch.Tensor:
