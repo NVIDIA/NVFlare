@@ -13,8 +13,7 @@ Job Recipes provide a simplified abstraction that hides the complexity of low-le
    for advanced workflows that require arbitrary component placement or custom
    job construction.
 
-For the stable public Recipe surface and available customization helpers, see
-:ref:`recipe_api`.
+For the stable public Recipe surface and available customization helpers, see :ref:`recipe_api`.
 
 
 Motivation for Using JobRecipe

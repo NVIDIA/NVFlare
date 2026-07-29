@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Optional
+
 from server import KM
 from server_he import KM_HE
 
@@ -29,10 +31,14 @@ class KaplanMeierRecipe(Recipe):
         num_clients: int,
         encryption: bool = False,
         data_root: str = "/tmp/nvflare/dataset/km_data",
-        he_context_path_client: str = "/tmp/nvflare/he_context/he_context_client.txt",
-        he_context_path_server: str = "/tmp/nvflare/he_context/he_context_server.txt",
+        he_context_path_client: Optional[str] = "/tmp/nvflare/he_context/he_context_client.txt",
+        he_context_path_server: Optional[str] = "/tmp/nvflare/he_context/he_context_server.txt",
     ):
         if encryption:
+            if not he_context_path_client:
+                raise ValueError("he_context_path_client must be provided when encryption=True")
+            if not he_context_path_server:
+                raise ValueError("he_context_path_server must be provided when encryption=True")
             job_name = "KM_HE"
             train_script = "client_he.py"
             script_args = f"--data_root {data_root} --he_context_path {he_context_path_client}"
