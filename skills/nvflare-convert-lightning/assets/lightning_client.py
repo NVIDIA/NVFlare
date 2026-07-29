@@ -49,14 +49,17 @@ def _scalar_validation_metrics(validation_results):
     return metrics
 
 
-def add_negated_metrics(metrics, lower_is_better_keys):
-    """Add a ``neg_<key>`` companion for each lower-is-better metric.
+def add_higher_is_better_metrics(metrics, make_higher_is_better):
+    """Derive a higher-is-better ``neg_<key>`` companion for each named metric.
 
-    ``FedAvgRecipe.key_metric`` selects on higher-is-better values only, so a
-    lower-is-better metric such as ``val_loss`` must be delivered as an
-    explicitly negated companion and selected by that companion key (for
-    example ``key_metric="neg_val_loss"``). This is the Lightning counterpart of
-    the framework-neutral rule in
+    ``key_metric`` selects on higher-is-better values only, so what the client
+    delivers and the recipe selects must be a higher-is-better value. Name the
+    source metrics whose direction must be flipped — typically a loss — and this
+    returns them alongside a negated companion that *is* higher-is-better:
+    ``("val_loss",)`` produces ``neg_val_loss``, selected as
+    ``key_metric="neg_val_loss"``.
+
+    This is the Lightning counterpart of the framework-neutral rule in
     ``../../nvflare-shared/references/pytorch-family-recipe-construction.md``.
 
     Pass only source-backed keys whose direction the source establishes. Returns
@@ -64,17 +67,17 @@ def add_negated_metrics(metrics, lower_is_better_keys):
     input mapping is left unchanged.
     """
     result = dict(metrics)
-    for key in lower_is_better_keys:
+    for key in make_higher_is_better:
         if key not in result:
-            raise RuntimeError(f"lower-is-better metric {key!r} is not in the validation results")
+            raise RuntimeError(f"metric {key!r} is not in the validation results")
         companion = f"neg_{key}"
         if companion in result:
-            raise RuntimeError(f"negated companion {companion!r} already exists")
+            raise RuntimeError(f"higher-is-better companion {companion!r} already exists")
         result[companion] = -result[key]
     return result
 
 
-def validate_global_model(trainer, model, datamodule=None, dataloaders=None, lower_is_better_keys=()):
+def validate_global_model(trainer, model, datamodule=None, dataloaders=None, make_higher_is_better=()):
     """Validate the received global model and return the trainer callback metrics.
 
     Call this before ``trainer.fit`` inside the round loop. Metrics come from
@@ -83,9 +86,10 @@ def validate_global_model(trainer, model, datamodule=None, dataloaders=None, low
     training result even when the selected executor leaves
     ``train_with_evaluation`` disabled.
 
-    Pass ``lower_is_better_keys`` for source-backed lower-is-better metrics such
-    as ``("val_loss",)``; each gains a ``neg_`` companion that the recipe can
-    select with ``key_metric``.
+    Pass ``make_higher_is_better`` for source metrics whose direction must be
+    flipped before selection, such as ``("val_loss",)``. Each gains a ``neg_``
+    companion that is higher-is-better; select that companion with
+    ``key_metric``, never the original.
     """
     if datamodule is not None:
         validation_results = trainer.validate(model, datamodule=datamodule)
@@ -93,8 +97,8 @@ def validate_global_model(trainer, model, datamodule=None, dataloaders=None, low
         validation_results = trainer.validate(model, dataloaders=dataloaders)
 
     metrics = _scalar_validation_metrics(validation_results)
-    if lower_is_better_keys:
-        metrics = add_negated_metrics(metrics, lower_is_better_keys)
+    if make_higher_is_better:
+        metrics = add_higher_is_better_metrics(metrics, make_higher_is_better)
     fl_meta = getattr(model, "__fl_meta__", {})
     if not isinstance(fl_meta, dict):
         raise RuntimeError("LightningModule.__fl_meta__ must be a dictionary")
@@ -103,7 +107,7 @@ def validate_global_model(trainer, model, datamodule=None, dataloaders=None, low
     return metrics
 
 
-def main(model, datamodule, trainer_factory, evaluate_only=False, lower_is_better_keys=()):
+def main(model, datamodule, trainer_factory, evaluate_only=False, make_higher_is_better=()):
     """Lightning Client API round loop with validate-before-fit.
 
     ``trainer_factory`` constructs the source project's ``Trainer``. Set
@@ -111,11 +115,11 @@ def main(model, datamodule, trainer_factory, evaluate_only=False, lower_is_bette
     runs ``trainer.validate`` so the patched trainer sends validation metrics,
     and skips local training. Do not call ``trainer.fit`` in that mode.
 
-    Pass ``lower_is_better_keys`` when best-model selection uses a source-backed
-    lower-is-better metric, for example ``("val_loss",)``. Each named metric
-    gains a ``neg_`` companion that the recipe selects with ``key_metric``; keep
-    this threaded through when adapting the loop, or the negated key never
-    reaches the server.
+    Pass ``make_higher_is_better`` when best-model selection uses a source
+    metric whose direction must be flipped, for example ``("val_loss",)``. Each
+    named metric gains a higher-is-better ``neg_`` companion that the recipe
+    selects with ``key_metric``; keep this threaded through when adapting the
+    loop, or the higher-is-better key never reaches the server.
     """
     trainer = trainer_factory()
     flare.patch(trainer)
@@ -128,7 +132,7 @@ def main(model, datamodule, trainer_factory, evaluate_only=False, lower_is_bette
             trainer,
             model,
             datamodule=datamodule,
-            lower_is_better_keys=lower_is_better_keys,
+            make_higher_is_better=make_higher_is_better,
         )
         if evaluate_only:
             continue

@@ -403,7 +403,7 @@
         "files/hello-lightning/model.py"
       ],
       "assertions": [
-        "The generated client preserves val_loss and adds neg_val_loss as -val_loss in the same MetaKey.INITIAL_METRICS dict, for example via validate_global_model(..., lower_is_better_keys=(\"val_loss\",)).",
+        "The generated client preserves val_loss and adds a higher-is-better neg_val_loss as -val_loss in the same MetaKey.INITIAL_METRICS dict, for example via validate_global_model(..., make_higher_is_better=(\"val_loss\",)).",
         "The recipe selects key_metric=\"neg_val_loss\".",
         "The agent does not select raw val_loss as higher-is-better.",
         "The agent does not pass key_metric=\"\" or otherwise disable best-model selection because only a loss is available."

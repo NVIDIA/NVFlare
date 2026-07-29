@@ -216,6 +216,18 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     assert "without a best-model artifact" in normalized_construction
     assert "Report it as a known limitation" in normalized_construction
 
+    # The selector's lower-is-better name heuristic matches the "loss" substring and a
+    # neg_ prefix does not clear it, so the recommended negated key trips a false
+    # positive.  The guidance must say so, or an agent "fixes" it by selecting the
+    # un-negated metric and silently picks the worst global model.
+    from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better
+
+    assert _looks_lower_is_better("neg_val_loss") is True
+    assert _looks_lower_is_better("eval_neg_loss") is True
+    assert "known\nfalse positive on a negated key" in construction_text
+    assert "a `neg_` prefix does not clear" in normalized_construction
+    assert "that selects the worst global model" in normalized_construction
+
     hf_root = repo_root / "skills" / "nvflare-convert-huggingface"
     hf_skill_text = hf_root.joinpath("SKILL.md").read_text(encoding="utf-8")
     hf_conversion_text = hf_root.joinpath("references/huggingface-conversion.md").read_text(encoding="utf-8")
@@ -234,18 +246,18 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     assert "applies unchanged" in normalized_hf_conversion
     assert 'metrics["eval_neg_loss"] = -metrics["eval_loss"]' in hf_conversion_text
     assert 'key_metric="eval_neg_loss"' in hf_conversion_text
-    assert "lower_is_better_keys" in lightning_asset_text
-    assert "def add_negated_metrics" in lightning_asset_text
-    assert 'lower_is_better_keys=("val_loss",)' in normalized_lightning_conversion
+    assert "make_higher_is_better" in lightning_asset_text
+    assert "def add_higher_is_better_metrics" in lightning_asset_text
+    assert 'make_higher_is_better=("val_loss",)' in normalized_lightning_conversion
     assert 'key_metric="neg_val_loss"' in lightning_conversion_text
     assert "never a reason to fail closed" in normalized_lightning_conversion
     # main() is the loop agents copy verbatim; if it does not thread
-    # lower_is_better_keys into validate_global_model, the negated key never
+    # make_higher_is_better into validate_global_model, the negated key never
     # reaches the server no matter what the reference says.
-    assert "def main(model, datamodule, trainer_factory, evaluate_only=False, lower_is_better_keys=())" in (
+    assert "def main(model, datamodule, trainer_factory, evaluate_only=False, make_higher_is_better=())" in (
         lightning_asset_text
     )
-    assert "lower_is_better_keys=lower_is_better_keys" in lightning_asset_text
+    assert "make_higher_is_better=make_higher_is_better" in lightning_asset_text
 
     for consumer_text in (skill_text, recipe_text, client_text, validation_text, hf_skill_text, hf_conversion_text):
         assert "pytorch-family-recipe-construction.md" in consumer_text

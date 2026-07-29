@@ -784,7 +784,7 @@ def test_lightning_eval_template_delivers_validation_metric_to_server():
         trainer,
         model,
         dataloaders=loader,
-        lower_is_better_keys=("val_loss",),
+        make_higher_is_better=("val_loss",),
     )
 
     assert "val_loss" in metrics
@@ -858,7 +858,7 @@ def test_lightning_negated_metric_helper_does_not_mutate_and_is_threaded_through
     """The negation helper must be copy-safe, and main() must actually pass the keys.
 
     ``main`` is the round loop a generated ``client.py`` copies verbatim. If it does
-    not forward ``lower_is_better_keys`` to ``validate_global_model``, a lower-is-better
+    not forward ``make_higher_is_better`` to ``validate_global_model``, a lower-is-better
     conversion silently never delivers the negated key the recipe selects on.
     """
     import inspect as _inspect
@@ -866,16 +866,16 @@ def test_lightning_negated_metric_helper_does_not_mutate_and_is_threaded_through
     module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
 
     source = {"val_loss": 0.25, "val_acc": 0.9}
-    negated = module.add_negated_metrics(source, ("val_loss",))
+    negated = module.add_higher_is_better_metrics(source, ("val_loss",))
 
     assert negated == {"val_loss": 0.25, "val_acc": 0.9, "neg_val_loss": -0.25}
     assert source == {"val_loss": 0.25, "val_acc": 0.9}, "helper must not mutate its input"
 
     with pytest.raises(RuntimeError, match="not in the validation results"):
-        module.add_negated_metrics({"val_acc": 1.0}, ("val_loss",))
+        module.add_higher_is_better_metrics({"val_acc": 1.0}, ("val_loss",))
     with pytest.raises(RuntimeError, match="already exists"):
-        module.add_negated_metrics({"val_loss": 1.0, "neg_val_loss": 0.0}, ("val_loss",))
+        module.add_higher_is_better_metrics({"val_loss": 1.0, "neg_val_loss": 0.0}, ("val_loss",))
 
-    assert "lower_is_better_keys" in _inspect.signature(module.main).parameters
+    assert "make_higher_is_better" in _inspect.signature(module.main).parameters
     main_source = _inspect.getsource(module.main)
-    assert "lower_is_better_keys=lower_is_better_keys" in main_source
+    assert "make_higher_is_better=make_higher_is_better" in main_source
