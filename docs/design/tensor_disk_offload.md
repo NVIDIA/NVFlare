@@ -41,7 +41,7 @@ Other server-controlled workflows:
 Swarm/CCWF:
 
 - `nvflare/app_opt/pt/recipes/swarm.py` -> use
-  `SwarmLearningRecipe(server_expected_format=ExchangeFormat.PYTORCH, enable_tensor_disk_offload=True)`
+  `SwarmLearningRecipe(aggregation_format=ExchangeFormat.PYTORCH, enable_tensor_disk_offload=True)`
 - `nvflare/app_common/ccwf/ccwf_job.py` -> use
   `SwarmClientConfig(..., enable_tensor_disk_offload=True)` for custom Job API configurations
 - `nvflare/app_common/ccwf/swarm_client_ctl.py` owns an offload root on each
@@ -134,7 +134,7 @@ contribution remains in memory; remote contributions still use terminal
 aggregation-CJ disk offload.
 
 `SwarmLearningRecipe` defaults to NumPy exchange for compatibility. Disk offload
-therefore requires `server_expected_format=ExchangeFormat.PYTORCH`; streamed
+therefore requires `aggregation_format=ExchangeFormat.PYTORCH`; streamed
 NumPy arrays are not handled by `TensorDecomposer`.
 
 ## Custom Aggregator Contract

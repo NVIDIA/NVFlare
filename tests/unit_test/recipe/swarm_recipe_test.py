@@ -448,18 +448,18 @@ class TestSwarmLearningRecipeTensorDiskOffload:
             num_rounds=1,
             train_script="train.py",
             min_clients=2,
-            server_expected_format=ExchangeFormat.PYTORCH,
+            aggregation_format=ExchangeFormat.PYTORCH,
             enable_tensor_disk_offload=True,
         )
 
         client_controller, train_executor, persistor = self._get_client_components(recipe)
-        assert recipe.server_expected_format == ExchangeFormat.PYTORCH
+        assert recipe.aggregation_format == ExchangeFormat.PYTORCH
         assert recipe.enable_tensor_disk_offload is True
         assert client_controller.enable_tensor_disk_offload is True
         assert train_executor._server_expected_format == ExchangeFormat.PYTORCH
         assert persistor._allow_numpy_conversion is False
 
-    def test_string_server_expected_format_is_normalized(self, mock_file_system, simple_pt_model):
+    def test_string_aggregation_format_is_normalized(self, mock_file_system, simple_pt_model):
         from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
         recipe = SwarmLearningRecipe(
@@ -468,27 +468,27 @@ class TestSwarmLearningRecipeTensorDiskOffload:
             num_rounds=1,
             train_script="train.py",
             min_clients=2,
-            server_expected_format="pytorch",
+            aggregation_format="pytorch",
             enable_tensor_disk_offload=True,
         )
 
         client_controller, train_executor, persistor = self._get_client_components(recipe)
-        assert recipe.server_expected_format == ExchangeFormat.PYTORCH
+        assert recipe.aggregation_format == ExchangeFormat.PYTORCH
         assert client_controller.enable_tensor_disk_offload is True
         assert train_executor._server_expected_format == ExchangeFormat.PYTORCH
         assert persistor._allow_numpy_conversion is False
 
-    def test_invalid_server_expected_format_is_rejected(self, mock_file_system, simple_pt_model):
+    def test_invalid_aggregation_format_is_rejected(self, mock_file_system, simple_pt_model):
         from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-        with pytest.raises(ValueError, match="invalid server_expected_format"):
+        with pytest.raises(ValueError, match="invalid aggregation_format"):
             SwarmLearningRecipe(
                 name="test_swarm_invalid_exchange_format",
                 model=simple_pt_model,
                 num_rounds=1,
                 train_script="train.py",
                 min_clients=2,
-                server_expected_format="pt",
+                aggregation_format="pt",
             )
 
     def test_non_boolean_disk_offload_override_is_rejected(self, mock_file_system, simple_pt_model):

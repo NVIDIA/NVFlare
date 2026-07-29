@@ -194,13 +194,13 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             the directory is treated as a runtime path and does not need to exist on the
             machine that builds or exports the job. ``{JOB_ID}/{SITE_NAME}`` is always
             appended so concurrent jobs and sites remain isolated. Ignored for ``"cell_pipe"``.
-        server_expected_format: Parameter representation used by the CCWF controllers and aggregator.
+        aggregation_format: Parameter representation used by the CCWF controllers and aggregator.
             Use ``ExchangeFormat.PYTORCH`` to keep tensors on the streaming path. Defaults to
             ``ExchangeFormat.NUMPY`` for backward compatibility.
         enable_tensor_disk_offload: Download incoming streamed PyTorch tensors to temporary disk
             files on aggregation clients and materialize them lazily during aggregation. The
             trainer's source tensors remain in memory. This requires
-            ``server_expected_format=ExchangeFormat.PYTORCH`` to take effect. Defaults to False.
+            ``aggregation_format=ExchangeFormat.PYTORCH`` to take effect. Defaults to False.
 
     Example:
         Using nn.Module instance:
@@ -258,13 +258,13 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         client_config_overrides: Optional[Dict[str, Any]] = None,
         pipe_type: str = "cell_pipe",
         pipe_root_path: Optional[str] = None,
-        server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
+        aggregation_format: ExchangeFormat = ExchangeFormat.NUMPY,
         enable_tensor_disk_offload: bool = False,
     ):
         _SwarmValidator(initial_ckpt=initial_ckpt)
         warn_on_potential_secrets(command, context="recipe parameter 'command'")
-        server_expected_format = normalize_exchange_format(server_expected_format, "server_expected_format")
-        self.server_expected_format = server_expected_format
+        aggregation_format = normalize_exchange_format(aggregation_format, "aggregation_format")
+        self.aggregation_format = aggregation_format
 
         if train_args:
             warn_on_potential_secrets(train_args, context="recipe parameter 'train_args'")
@@ -375,6 +375,7 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 "launch_external_process",
                 "command",
                 "framework",
+                "aggregation_format",
                 "server_expected_format",
                 "memory_gc_rounds",
                 "cuda_empty_cache",
@@ -413,7 +414,7 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 command=command,
                 memory_gc_rounds=memory_gc_rounds,
                 cuda_empty_cache=cuda_empty_cache,
-                server_expected_format=server_expected_format,
+                server_expected_format=aggregation_format,
                 params_transfer_type=params_transfer_type,
                 task_pipe=task_pipe,
                 **train_args,
@@ -422,7 +423,7 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             "persistor": PTFileModelPersistor(
                 model=model,
                 source_ckpt_file_full_name=ckpt_path,
-                allow_numpy_conversion=server_expected_format != ExchangeFormat.PYTORCH,
+                allow_numpy_conversion=aggregation_format != ExchangeFormat.PYTORCH,
             ),
             "shareable_generator": SimpleModelShareableGenerator(),
             "enable_tensor_disk_offload": enable_tensor_disk_offload,
@@ -449,11 +450,11 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             bool,
         )
         self.enable_tensor_disk_offload = client_config_args["enable_tensor_disk_offload"]
-        if self.enable_tensor_disk_offload and self.server_expected_format != ExchangeFormat.PYTORCH:
+        if self.enable_tensor_disk_offload and self.aggregation_format != ExchangeFormat.PYTORCH:
             warnings.warn(
                 "enable_tensor_disk_offload=True only applies to streamed PyTorch tensors. "
-                "Set server_expected_format=ExchangeFormat.PYTORCH to enable tensor disk offload; "
-                f"current server_expected_format={self.server_expected_format!r} will not offload NumPy payloads.",
+                "Set aggregation_format=ExchangeFormat.PYTORCH to enable tensor disk offload; "
+                f"current aggregation_format={self.aggregation_format!r} will not offload NumPy payloads.",
                 UserWarning,
                 stacklevel=2,
             )

@@ -525,7 +525,7 @@ Use ``SwarmLearningRecipe`` for a streamlined swarm learning setup:
         learn_task_ack_timeout=3600,   # P2P task-transfer ACK budget
         final_result_ack_timeout=3600, # P2P final-result ACK budget
         max_concurrent_submissions=1,
-        server_expected_format=ExchangeFormat.PYTORCH,
+        aggregation_format=ExchangeFormat.PYTORCH,
         enable_tensor_disk_offload=True,
     )
 
@@ -551,7 +551,7 @@ executor, aggregator, persistor, shareable generator, or
 or quorum settings. Set ``min_clients`` only through the named parameter so the
 scheduler, server controller, and client aggregation quorums remain aligned.
 For large PyTorch models, use
-``server_expected_format=ExchangeFormat.PYTORCH`` together with
+``aggregation_format=ExchangeFormat.PYTORCH`` together with
 ``enable_tensor_disk_offload=True``. The first keeps CCWF payloads on the
 PyTorch tensor streaming path; the second writes incoming streamed tensors to
 disk on whichever client is selected as the aggregator. This is a receiving
@@ -848,7 +848,7 @@ The following SwarmClientController parameters are particularly important for la
 .. warning::
 
    Tensor disk offload requires PyTorch payloads. With ``SwarmLearningRecipe``,
-   set ``server_expected_format=ExchangeFormat.PYTORCH``; NumPy payloads still
+   set ``aggregation_format=ExchangeFormat.PYTORCH``; NumPy payloads still
    stream, but they do not use tensor disk offload. Temporary data follows
    Python's ``TMPDIR`` setting, so point ``TMPDIR`` to a disk-backed mount
    rather than RAM-backed ``tmpfs`` on every client that can be selected as the
@@ -942,7 +942,7 @@ If you only adjust a few parameters for large models, start with:
 3. ``request_to_submit_result_max_wait`` - Provides adequate aggregation window
 4. ``progress_timeout`` - Prevents premature workflow termination
 5. ``np_download_chunk_size`` and ``tensor_download_chunk_size`` - Enables memory-efficient streaming
-6. ``server_expected_format=ExchangeFormat.PYTORCH`` and ``enable_tensor_disk_offload=True`` - Keep PyTorch tensors streamed and offload aggregation inputs to disk
+6. ``aggregation_format=ExchangeFormat.PYTORCH`` and ``enable_tensor_disk_offload=True`` - Keep PyTorch tensors streamed and offload aggregation inputs to disk
 
 .. _ccwf_cross_site_evaluation:
 

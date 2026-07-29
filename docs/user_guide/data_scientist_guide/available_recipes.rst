@@ -1041,7 +1041,7 @@ Decentralized federated learning without a central server.
         learn_task_ack_timeout=3600,
         final_result_ack_timeout=3600,
         max_concurrent_submissions=1,
-        server_expected_format=ExchangeFormat.PYTORCH,
+        aggregation_format=ExchangeFormat.PYTORCH,
         enable_tensor_disk_offload=True,
     )
     env = SimEnv(num_clients=3)
@@ -1057,7 +1057,7 @@ Decentralized federated learning without a central server.
    - ``progress_timeout`` (default 3600 s): maximum time without workflow progress.
    - ``max_concurrent_submissions`` (default 1, minimum 1): concurrent aggregation submissions.
    - For PyTorch tensor streaming with lower aggregation-client memory pressure, set
-     ``server_expected_format=ExchangeFormat.PYTORCH`` and
+     ``aggregation_format=ExchangeFormat.PYTORCH`` and
      ``enable_tensor_disk_offload=True``. Configure ``tensor_download_chunk_size``
      and streaming timeouts through ``recipe.add_client_config({...})``. This
      offloads the receiving aggregation path, not the trainer's in-memory model

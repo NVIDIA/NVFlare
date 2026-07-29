@@ -73,6 +73,6 @@ Compatibility and Migration Notes
   and dispatch on the Client API task name.
 - PyTorch swarm learning can now combine client-to-client tensor streaming with
   aggregation-client tensor disk offload. Set
-  ``server_expected_format=ExchangeFormat.PYTORCH`` and
+  ``aggregation_format=ExchangeFormat.PYTORCH`` and
   ``enable_tensor_disk_offload=True`` on ``SwarmLearningRecipe``. The same
   offload flag is available on ``SwarmClientConfig`` for Job API users.

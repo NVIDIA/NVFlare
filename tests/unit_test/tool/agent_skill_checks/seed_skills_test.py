@@ -184,11 +184,12 @@ def test_pytorch_family_construction_policy_is_canonical_and_capability_based():
     assert construction_path in lightning_skill
     assert "whose `name` field is the public constructor keyword" in normalized_construction
     assert "Only pass a recipe keyword when its name is in the exposed-name set" in normalized_construction
-    assert "When `server_expected_format` is exposed" in normalized_construction
+    assert "When `aggregation_format` is exposed" in normalized_construction
+    assert "when `server_expected_format` is exposed" in normalized_construction
     assert "When tensor-native transport was selected" in normalized_construction
-    assert "Disk offload is a server memory optimization, not a model-exchange format" in normalized_construction
-    assert "downloaded to server-side temporary files and materialized lazily" in normalized_construction
-    assert "optimization only with `server_expected_format=ExchangeFormat.PYTORCH`" in normalized_construction
+    assert "Disk offload is an aggregation-workflow memory optimization" in normalized_construction
+    assert "temporary files on the aggregation host and materialized lazily" in normalized_construction
+    assert "only when the exposed workflow-side format is `ExchangeFormat.PYTORCH`" in normalized_construction
     assert "When `params_transfer_type` is exposed" in normalized_construction
     assert "single-process multi-GPU `torch.nn.DataParallel` stay in-process" in normalized_construction
     assert "Do not also pass `save_filename`" in normalized_construction
@@ -262,7 +263,8 @@ def test_pytorch_recipe_capability_profiles_match_tensor_disk_offload_support():
     for recipe_name in ("cyclic-pt", "fedeval-pt"):
         assert "server_expected_format" in parameter_names[recipe_name]
         assert "enable_tensor_disk_offload" not in parameter_names[recipe_name]
-    assert {"server_expected_format", "enable_tensor_disk_offload"} <= parameter_names["swarm-pt"]
+    assert {"aggregation_format", "enable_tensor_disk_offload"} <= parameter_names["swarm-pt"]
+    assert "server_expected_format" not in parameter_names["swarm-pt"]
 
 
 def test_pytorch_family_capability_evals_cover_fedeval_and_dataparallel():
