@@ -52,8 +52,8 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
    workspace, export, models, and logs in a host-provided runtime directory or
    one temporary directory and report their paths. Load
    `../nvflare-shared/references/conversion-workflow.md` only
-   for a non-standard case that needs its detailed rerun, data-location,
-   authorization, or missing-semantics guidance. Load
+   for a non-standard case that needs its detailed rerun, authorization, or
+   missing-semantics guidance. Load
    `../nvflare-shared/references/runtime-output-guidance.md` only for a read-only
    source root or a user-chosen output destination.
 2. Inspect before editing with `nvflare agent inspect <path> --format json`
@@ -95,7 +95,10 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
    are missing. Create deterministic site-local training partitions unless the
    source provides site data or requests shared data. For generated Pandas
    partitions, load the "Site Data Partitioning" section of
-   `../nvflare-shared/references/conversion-workflow.md`.
+   `../nvflare-shared/references/conversion-workflow.md`. When source training
+   reads a file or directory, load and apply
+   `../nvflare-shared/references/data-location.md` before generating
+   `client.py` or `job.py`.
 7. Add or update `job.py` with explicit model config
    `{"class_path": ..., "args": ...}` (never a live `LightningModule`),
    requested `aggregator=` wiring, and the metric, tensor-transport, server

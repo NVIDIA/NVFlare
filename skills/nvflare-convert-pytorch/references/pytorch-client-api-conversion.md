@@ -158,8 +158,8 @@ it.
 
 - Keep user model architecture and loss function unless the user asks for a
   change.
-- Keep data loading local to the site and do not add code that copies private
-  data into generated artifacts.
+- Follow `../../nvflare-shared/references/data-location.md` for site-local
+  configurable paths and the data-packaging boundary.
 - For checkpoints, preserve user checkpoint semantics and document what is
   federated versus site-local.
 - For metrics, send scalar summaries in the `metrics` field. Use

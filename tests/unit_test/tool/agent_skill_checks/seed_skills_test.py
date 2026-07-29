@@ -154,7 +154,6 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     assert "Only pass a source-derived `key_metric`" in normalized_lightning_ddp
     assert "unprotected recipe or adding only a disclaimer" in skill_text
     assert "key_metric=metric_name" not in recipe_text
-    assert "when the selected execution path delivers that metric to the server" in recipe_text
     for consumer_text in (skill_text, recipe_text, client_text, validation_text):
         assert "pytorch-family-recipe-construction.md" in consumer_text
         assert 'metrics={"neg_loss": -loss}' not in consumer_text
@@ -222,7 +221,10 @@ def test_pytorch_family_construction_policy_is_canonical_and_capability_based():
     assert 'recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])' not in recipe_text
     assert "server_expected_format=" not in hello_pt_job
     assert "enable_tensor_disk_offload=" not in hello_pt_job
-    assert "single source of truth" in recipe_text
+    assert "shared construction reference owns the standard FedAvg constructor" in recipe_text
+    assert "Before constructing or probing `FedAvgRecipe`" in construction_text
+    assert '"model": recipe_model' in construction_text
+    assert "Do not instantiate an intentionally incomplete recipe" in normalized_construction
     assert "cannot find handler for Datum Object Type 6" in normalized_validation
     assert "tensor-transport/decomposer configuration" in normalized_validation
     assert "server disk offload as an optimization" in normalized_validation
@@ -400,8 +402,49 @@ def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
     assert "validate properties rather than guessed site sizes" in normalized_validation
     assert "complete, non-overlapping coverage" in normalized_validation
     assert "Assert exact per-site row counts only when" in validation_text
+    assert "Do not use feature values, encoded samples, or their uniqueness" in normalized_validation
     assert {"safe-pandas-partitioning", "invariant-based-partition-validation"} <= mandatory_ids
     assert {"no-deprecated-save-filename-alias", "no-hardcoded-guessed-partition-counts"} <= prohibited_ids
+
+
+def test_pytorch_family_converters_share_relative_data_location_policy_and_evals():
+    repo_root = Path(__file__).resolve().parents[4]
+    data_location_path = repo_root / "skills" / "nvflare-shared" / "references" / "data-location.md"
+    data_location_text = data_location_path.read_text(encoding="utf-8")
+    normalized_data_location = " ".join(data_location_text.split())
+    eval_root = repo_root / "dev_tools" / "agent" / "skill_evals"
+    expected_cases = {
+        "nvflare-convert-pytorch": "pytorch-convert-relative-project-data",
+        "nvflare-convert-lightning": "lightning-convert-relative-project-data",
+        "nvflare-convert-huggingface": "huggingface-convert-relative-project-data",
+    }
+
+    assert 'data_dir = (source_root / "data").resolve()' in data_location_text
+    assert "do not pass a bare relative value" in normalized_data_location
+    assert "inside an exported or simulated job, `__file__` identifies the packaged app" in normalized_data_location
+    assert "Do not copy project or private site data" in normalized_data_location
+    assert "use a fresh runtime workspace" in normalized_data_location
+
+    for skill_name, case_id in expected_cases.items():
+        skill_text = repo_root.joinpath("skills", skill_name, "SKILL.md").read_text(encoding="utf-8")
+        suite = json.loads(eval_root.joinpath(skill_name, "evals.json").read_text(encoding="utf-8"))
+        case = next(item for item in suite["evals"] if item["id"] == case_id)
+        mandatory_ids = {item["id"] for item in case["nvflare"]["mandatory_behavior"]}
+        prohibited_ids = {item["id"] for item in case["nvflare"]["prohibited_behavior"]}
+
+        assert "../nvflare-shared/references/data-location.md" in skill_text
+        assert {
+            "resolve-source-relative-data-in-job",
+            "validate-effective-data-path",
+            "valid-fedavg-model-source",
+        } <= mandatory_ids
+        assert {
+            "no-client-app-relative-data-rebase",
+            "no-project-data-packaging",
+            "no-incomplete-fedavg-probe",
+        } <= prohibited_ids
+        for fixture in case["files"]:
+            assert eval_root.joinpath(skill_name, fixture).is_file()
 
 
 def test_fedstats_reuses_named_sites_for_recipe_and_simulation():

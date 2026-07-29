@@ -126,9 +126,9 @@ validated through requirements installation plus import/preflight checks.
 
 ## Data And Model Selection
 
-Follow the site-partitioning requirement in `SKILL.md`. Pass data roots through
-client arguments or per-site configuration; never copy private site data into
-the job.
+Follow the site-partitioning requirement in `SKILL.md` and the canonical data
+path and packaging policy in
+`../../nvflare-shared/references/data-location.md`.
 
 Prefer preserving source metric names in the client metrics output. If the
 generated evaluation call emits `accuracy`, configure `key_metric="accuracy"`.

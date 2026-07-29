@@ -14,66 +14,12 @@ Follow
 them before constructing `job.py`. This file covers only the plain-PyTorch
 `job.py` construction details.
 
-## Standard FedAvg Fast Path
+## Plain-PyTorch Job API Fallback
 
-For a normal PyTorch-to-FedAvg conversion, keep the `job.py` recipe construction
-small and portable. Run `recipe show fedavg-pt --format json` first and follow
-`../../nvflare-shared/references/pytorch-family-recipe-construction.md`. The
-example below contains only the workflow-specific constructor values; add
-optional recipe keywords and decomposers only as directed by that capability
-profile:
-
-```python
-from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe.sim_env import SimEnv
-
-model_args = {"input_size": input_size, "num_classes": num_classes}
-recipe_model = {"class_path": "model.ModelClass", "args": model_args}
-
-recipe_kwargs = dict(
-    name=job_name,
-    min_clients=num_clients,
-    num_rounds=num_rounds,
-    model=recipe_model,
-    train_script="client.py",
-    train_args=train_args,
-)
-# Add only capability-gated keywords confirmed by recipe show, including
-# key_metric when the selected execution path delivers that metric to the server.
-recipe = FedAvgRecipe(**recipe_kwargs)
-# Apply per-site configuration, then capability-gated decomposers, if required.
-
-env = SimEnv(num_clients=num_clients, workspace_root=workspace_root)
-run = recipe.execute(env)
-```
-
-Prefer a recipe model dict with the same constructor arguments used by the
-client-side model:
-
-```python
-model={"class_path": "model.ModelClass", "args": model_args}
-```
-
-Prefer `class_path` at recipe construction time; `path` is the normalized key
-used in exported job config, and recipes accept it as an alias.
-
-The maintained `hello-pt` example uses the in-process recipe defaults. The
-conversion profile may intentionally differ by selecting tensor-native
-transport and, independently, enabling the server-side disk-offload
-optimization when the selected recipe exposes those capabilities. The shared
-construction reference is the single source of truth for their prerequisites,
-ordering, and decomposer-registration rules.
-
-The server-side recipe model and the client-side training model must construct
-the same architecture. If the model constructor needs dimensions, class counts,
-dropout settings, embedding sizes, or other architecture arguments, pass the
-same values on both sides. Prefer a small shared constant, JSON/config file, or
-explicit `train_args` values over hard-coded divergent defaults.
-
-Follow the shared construction reference for `key_metric` capability, exact
-client-metric matching, and lower-is-better metric direction.
-
-Use these portable imports when writing custom Job API code:
+The shared construction reference owns the standard FedAvg constructor,
+required model source, capability-gated options, and execution pattern. Use
+these portable imports only when the selected workflow requires custom Job API
+code:
 
 ```python
 from nvflare.job_config.api import FedJob
@@ -101,7 +47,7 @@ Follow
 `../../nvflare-shared/references/pytorch-family-recipe-construction.md` for
 every selected recipe. It owns the capability checks for tensor settings,
 decomposer registration, best-model naming, and process-based execution mode;
-do not copy the FedAvg constructor above to a non-FedAvg recipe.
+do not copy the shared FedAvg constructor to a non-FedAvg recipe.
 
 ## Export Behavior
 

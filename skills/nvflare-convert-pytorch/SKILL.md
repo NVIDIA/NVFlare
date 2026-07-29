@@ -45,8 +45,8 @@ policy; route onward rather than substituting an unprotected recipe or adding on
    workspace, export, models, and logs in a host-provided runtime directory or
    one temporary directory and report their paths. Load
    `../nvflare-shared/references/conversion-workflow.md` only
-   for a non-standard case that needs its detailed rerun, data-location,
-   authorization, or missing-semantics guidance. Load
+   for a non-standard case that needs its detailed rerun, authorization, or
+   missing-semantics guidance. Load
    `../nvflare-shared/references/runtime-output-guidance.md` only for a read-only
    source root or a user-chosen output destination.
 2. Inspect before editing with `nvflare agent inspect <path> --format json`
@@ -88,7 +88,10 @@ policy; route onward rather than substituting an unprotected recipe or adding on
    source has site data or the user explicitly asks for shared training data. If
    generated code partitions a Pandas `DataFrame`, load the "Site Data
    Partitioning" section of
-   `../nvflare-shared/references/conversion-workflow.md`.
+   `../nvflare-shared/references/conversion-workflow.md`. When source training
+   reads a file or directory, load and apply
+   `../nvflare-shared/references/data-location.md` before generating
+   `client.py` or `job.py`.
 6. Add or update `job.py` with explicit model config (never a live model),
    requested `aggregator=` wiring, and the metric, tensor-transport, server
    offload, and execution settings derived from the shared PyTorch-family
@@ -174,6 +177,8 @@ their phase needs them. Load other detailed references only for exceptions:
   every `recipe show`;
 - `../nvflare-shared/references/dependency-install.md` only when an install is
   needed;
+- `../nvflare-shared/references/data-location.md` when source training reads a
+  file or directory;
 - `../nvflare-shared/references/runtime-output-guidance.md` only for read-only
   source roots or user-chosen output destinations;
 - `../nvflare-shared/references/metrics-and-artifact-reporting.md` only when

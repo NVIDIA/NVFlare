@@ -30,6 +30,31 @@ non-failing module attribute check such as `hasattr`; if it is absent, report a
 version or skill-contract gap. Do not replace a failed local public check with
 web search or SDK-source discovery.
 
+## Required FedAvg Model Source
+
+Before constructing or probing `FedAvgRecipe`, provide at least one valid model
+source: `model`, `initial_ckpt`, or `model_persistor`. A normal source conversion
+uses an explicit model dictionary whose class and arguments match the client:
+
+```python
+recipe_model = {"class_path": "model.ModelClass", "args": model_args}
+recipe_kwargs = {
+    "name": job_name,
+    "min_clients": num_clients,
+    "num_rounds": num_rounds,
+    "model": recipe_model,
+    "train_script": "client.py",
+    "train_args": train_args,
+}
+recipe = FedAvgRecipe(**recipe_kwargs)
+```
+
+Add optional keywords only when the capability profile exposes them. Do not
+instantiate an intentionally incomplete recipe merely to inspect its methods or
+signature; use `recipe show`, class-level `hasattr`, or `inspect.signature` on
+the selected class. Recipe construction is a validation rung and must exit
+successfully.
+
 ## Tensor-Native Transport
 
 When `server_expected_format` is exposed, pass

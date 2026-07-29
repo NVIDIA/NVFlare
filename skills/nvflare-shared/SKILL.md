@@ -23,8 +23,10 @@ selected or invoked on its own.
 
 ## Contents
 
-- `references/conversion-workflow.md` — non-standard conversion, rerun,
-  data-location, export, and authorization guidance.
+- `references/conversion-workflow.md` — non-standard conversion, rerun, export,
+  and authorization guidance.
+- `references/data-location.md` — canonical source-relative, site-overridable
+  data-path and validation policy.
 - `references/validation-evidence.md` — the local validation ladder.
 - `references/dependency-install.md` — dependency ordering and host-permission
   guidance.

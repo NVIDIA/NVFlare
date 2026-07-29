@@ -473,26 +473,13 @@ Do not shuffle a possibly read-only array returned by `Index.to_numpy()`, and do
 not pass positional indices to `DataFrame.loc`.
 
 Report the split policy, seed, site count, and any reason stratification was
-not used. Do not copy private site data into generated artifacts unless the user
-explicitly requests it.
+not used.
 
 ## Data Location
 
-Pass the data location into the generated client as a configurable value — a
-`train_args` argument (or `per_site_config` when sites need different paths) —
-never a path hardcoded inside `client.py`. Keep it site-overridable so the
-conversion ports to real multi-site deployment, where each site's data lives at
-a different location. Point at the original dataset, not at a copy inside the
-NVFLARE run workspace: that workspace path is run-specific and disappears
-between runs.
-
-An absolute path is acceptable only as the runtime-supplied value or default of
-that configurable argument — for example, in single-machine simulation every
-site can resolve to the same default. A hardcoded absolute path baked into the
-generated code, or a path that points into the run workspace, is a
-conversion-quality defect. Preserve the user's data paths, but expose them as
-this configurable argument rather than embedding them, and report that real
-deployment requires each site to set its own data location.
+Load `data-location.md` when source training reads a file or directory. It is
+the canonical owner of source-relative path resolution, site overrides,
+data-packaging boundaries, and path validation.
 
 ## Execution Environment And Local Validation
 

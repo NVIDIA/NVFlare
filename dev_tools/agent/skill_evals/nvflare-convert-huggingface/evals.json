@@ -126,6 +126,60 @@
       }
     },
     {
+      "id": "huggingface-convert-relative-project-data",
+      "prompt": "Convert this Hugging Face Trainer project to a three-site NVFLARE FedAvg job for three rounds. The source is launched from its project root and loads train.jsonl and valid.jsonl from a relative data/ directory. Validate from a fresh simulation workspace and keep each site's dataset directory overridable.",
+      "expected_output": "A Hugging Face patched-Trainer conversion whose job builder resolves the source-relative dataset directory against the original project root before recipe construction, passes the resolved local-simulation value through quoted train_args or per_site_config, and leaves the generated client and datasets loader to consume it unchanged. The conversion does not depend on simulator cwd, rebase data against packaged client.py, or package the project JSONL files into the NVFLARE job.",
+      "files": [
+        "files/relative-data-hf/train.py",
+        "files/relative-data-hf/model.py",
+        "files/relative-data-hf/data/train.jsonl",
+        "files/relative-data-hf/data/valid.jsonl"
+      ],
+      "assertions": [
+        "The generated job resolves the source data directory against the original project root before constructing the recipe.",
+        "The resolved local-simulation directory remains configurable through quoted train_args or per_site_config.",
+        "The generated client and datasets loader consume the configured directory as given rather than resolving it against client.py or process cwd.",
+        "The conversion does not copy the project JSONL files into an exported or simulated app custom directory.",
+        "Validation uses a fresh runtime workspace, checks the effective path, and retains Hugging Face patched-Trainer exchange.",
+        "Every FedAvg construction or probe supplies an explicit model source; method inspection does not instantiate an incomplete recipe."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-huggingface",
+        "mandatory_behavior": [
+          {
+            "id": "resolve-source-relative-data-in-job",
+            "description": "resolves a source-relative Hugging Face dataset directory against the original project root in job.py before passing it as a configurable client argument"
+          },
+          {
+            "id": "use-huggingface-patched-trainer",
+            "description": "keeps nvflare.client.hf.patch(trainer) as the sole model-exchange owner"
+          },
+          {
+            "id": "validate-effective-data-path",
+            "description": "validates the effective configured client path in a fresh runtime workspace"
+          },
+          {
+            "id": "valid-fedavg-model-source",
+            "description": "supplies an explicit model source for every FedAvg construction used by generated code or validation"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-client-app-relative-data-rebase",
+            "description": "does not resolve configured site data against packaged client.py or rely on the simulator process working directory"
+          },
+          {
+            "id": "no-project-data-packaging",
+            "description": "does not package project or private site data into the generated NVFLARE job"
+          },
+          {
+            "id": "no-incomplete-fedavg-probe",
+            "description": "does not instantiate FedAvgRecipe without a model source merely to inspect methods or signatures"
+          }
+        ]
+      }
+    },
+    {
       "id": "huggingface-lower-is-better-metric",
       "prompt": "Convert a Hugging Face Trainer whose compute_metrics returns word error rate as wer. Keep best-model selection, where lower WER is better.",
       "expected_output": "A Hugging Face conversion that preserves the source wer metric, emits a source-backed negated companion such as neg_wer, selects the returned eval_neg_wer key, and does not treat raw loss/WER as higher-is-better or claim that FedAvgRecipe exposes a lower-is-better option.",

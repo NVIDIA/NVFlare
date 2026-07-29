@@ -102,6 +102,9 @@ Before spending time on full simulation, run cheap checks when applicable:
 - export to a temporary directory;
 - inspect exported server/client app folders and expected config files;
 - verify generated files required by server and client code are packaged;
+- when source training reads files or directories, apply `data-location.md` and
+  verify the effective client argument without relying on process working
+  directory or packaged private data;
 - run local partition sanity checks when generated site splits or data
   partitions are introduced;
 - run the framework-specific model compatibility check defined by the framework
@@ -113,6 +116,11 @@ determinism for the same seed, and any stratification or balance guarantee the
 generated algorithm actually makes. Assert exact per-site row counts only when
 the user, source, or a programmatic calculation specifies them; do not hard-code
 counts inferred by hand from one dataset.
+
+Do not use feature values, encoded samples, or their uniqueness to prove
+partition non-overlap: valid source rows can contain duplicate values and
+different values can collide after encoding or truncation. Track source
+positions or an observed stable row identifier.
 
 Use preflight results to fix packaging, config, or model-state issues before
 running a full simulation.

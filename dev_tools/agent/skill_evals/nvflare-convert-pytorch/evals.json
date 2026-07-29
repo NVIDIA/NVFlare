@@ -467,6 +467,55 @@
       }
     },
     {
+      "id": "pytorch-convert-relative-project-data",
+      "prompt": "Convert this PyTorch training project to a three-site NVFLARE FedAvg job for three rounds. The source is launched from its project root and reads data/train.csv through a relative path. Run the simulation from a fresh workspace and keep the site data location overridable.",
+      "expected_output": "A plain-PyTorch Client API conversion whose job builder resolves the source-relative data path against the original project root before recipe construction, passes the resolved local-simulation value through quoted train_args or per_site_config, and leaves client.py to consume that configured value unchanged. The conversion does not depend on simulator cwd, rebase the data path against packaged client.py, or package the project dataset into the NVFLARE job.",
+      "files": [
+        "files/relative-data-pt/train.py",
+        "files/relative-data-pt/model.py",
+        "files/relative-data-pt/data/train.csv"
+      ],
+      "assertions": [
+        "The generated job resolves data/train.csv against the original source root before constructing the recipe.",
+        "The resolved local-simulation path remains configurable through quoted train_args or per_site_config so real sites can override it.",
+        "The generated client consumes the configured path as given rather than resolving it against client.py or the process working directory.",
+        "The generated job does not copy the project CSV into an exported or simulated app custom directory.",
+        "Validation uses a fresh runtime workspace and checks the effective configured path.",
+        "Every FedAvg construction or probe supplies an explicit model source; method inspection does not instantiate an incomplete recipe."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-pytorch",
+        "mandatory_behavior": [
+          {
+            "id": "resolve-source-relative-data-in-job",
+            "description": "resolves a source-relative data path against the original project root in job.py before passing it as a configurable client argument"
+          },
+          {
+            "id": "validate-effective-data-path",
+            "description": "validates the effective configured client path in a fresh runtime workspace"
+          },
+          {
+            "id": "valid-fedavg-model-source",
+            "description": "supplies an explicit model source for every FedAvg construction used by generated code or validation"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-client-app-relative-data-rebase",
+            "description": "does not resolve configured site data against packaged client.py or rely on the simulator process working directory"
+          },
+          {
+            "id": "no-project-data-packaging",
+            "description": "does not package project or private site data into the generated NVFLARE job"
+          },
+          {
+            "id": "no-incomplete-fedavg-probe",
+            "description": "does not instantiate FedAvgRecipe without a model source merely to inspect methods or signatures"
+          }
+        ]
+      }
+    },
+    {
       "id": "pytorch-convert-with-eval",
       "prompt": "Convert this PyTorch training code to a FLARE FedAvg job over 2 simulated sites for 2 rounds. Keep the validation accuracy reporting so I can see per-round accuracy.",
       "expected_output": "A FLARE PyTorch Client API conversion that adapts the source evaluate() function and validation loader into the packaged evaluation pattern: evaluate the received global model after flare.receive() under model.eval() and torch.no_grad(), keep the source accuracy metric and denominator, fail on empty evaluation data, and return the metric through FLModel.metrics alongside the trained update.",

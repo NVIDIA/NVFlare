@@ -55,7 +55,7 @@ unprotected recipe or present a disclaimer as implementation.
    models, and logs in a host-provided runtime directory or one temporary
    directory and report their paths. Load
    `../nvflare-shared/references/conversion-workflow.md` for non-standard
-   rerun, data-location, authorization, or missing-semantics cases, and
+   rerun, authorization, or missing-semantics cases, and
    `../nvflare-shared/references/runtime-output-guidance.md` for read-only
    source roots or user-selected output destinations.
 2. Run `nvflare agent inspect <path> --format json`, then read the relevant
@@ -80,9 +80,9 @@ unprotected recipe or present a disclaimer as implementation.
    `../nvflare-shared/references/pytorch-family-recipe-selection.md` only for
    ambiguous, evaluation-only, or non-FedAvg requests.
 5. Preserve model, tokenizer/processor, dataset, collator, Trainer arguments,
-   callbacks, and metric semantics. Keep site data outside the FLARE run
-   workspace and pass its location through configurable `train_args` or
-   per-site config. Preserve existing site splits; otherwise use a deterministic
+   callbacks, and metric semantics. For file/directory data, apply
+   `../nvflare-shared/references/data-location.md` before generating client or
+   job code. Preserve existing site splits; otherwise use a deterministic
    seeded split, stratified when labels exist. Shared validation/test data is
    allowed only when source-backed; report the split policy, seed, site count,
    and any shared-data request.
@@ -197,4 +197,4 @@ unprotected recipe or present a disclaimer as implementation.
 Load only phase-needed HF references by path: `references/huggingface-detection.md`,
 `references/huggingface-conversion.md`, `references/huggingface-state-and-distributed.md`, and `references/huggingface-validation.md`; load
 `../nvflare-shared/references/pytorch-family-recipe-construction.md` after every
-`recipe show`; use other shared references only under the conditions above. Do not depend on repository examples.
+`recipe show`. Do not depend on repository examples.
