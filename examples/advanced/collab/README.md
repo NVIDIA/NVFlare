@@ -15,6 +15,7 @@ python -m collab.hello_fedavg.hello_fedavg
 python -m collab.simple_split_learning.simple_split_learning
 python -m collab.async_aggregation.async_aggregation
 python -m collab.swarm.swarm --num-clients 3
+# pt_llm_sft has a prepare-data step; see its README.
 ```
 
 ## Examples
@@ -25,6 +26,13 @@ python -m collab.swarm.swarm --num-clients 3
 | `simple_split_learning` | Split learning on MNIST with client-side images and bottom model, server-side labels and top model, and direct activation/gradient exchange |
 | `async_aggregation` | In-time aggregation with a response callback |
 | `swarm` | Decentralized swarm learning with client-to-client calls |
+| [`pt_llm_sft`](pt_llm_sft/README.md) | Full-parameter Hugging Face SFT with frequent direct PyTorch tensor exchange and server-side FedAvg |
+
+## Benchmarks
+
+The [`benchmarks`](benchmarks/README.md) directory compares the standard
+NVFlare simulator path used by the Hugging Face LLM example with the Collab
+simulator's direct function-call path on a matched full-parameter SFT workload.
 
 Every server object or module must define exactly one `@collab.main` entry
 point. A workflow with multiple stages should call them from that single entry
@@ -42,11 +50,13 @@ abstraction.
 
 The NumPy examples run in a base installation; `hello_fedavg` needs PyTorch.
 `simple_split_learning` needs PyTorch and torchvision and downloads MNIST on
-its first run.
+its first run. `pt_llm_sft` has additional Hugging Face dependencies and a
+prepare-data-first workflow documented in its README.
 
 The advanced Collab examples run against an NVFlare installation from this
-repository and intentionally have no per-folder `requirements.txt` files. Add
-those files once Collab is available in a released NVFlare package.
+repository. The LLM example's `requirements.txt` lists only its additional
+training dependencies; NVFlare itself is supplied by the repository
+installation.
 
 For the design behind the API see the
 [Collab API design](../../../docs/design/collab_api_design.md). For a step-by-step
