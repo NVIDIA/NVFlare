@@ -120,6 +120,23 @@ def test_read_stream_preserve_chunks_enforces_limit():
     assert "configured limit 4" in str(error)
 
 
+def test_read_stream_preserve_chunks_enforces_declared_size():
+    handler = BlobHandler(lambda future: None)
+    future = StreamFuture(stream_id=18)
+    blob_task = BlobTask(
+        future=future,
+        stream=_FakeStream(declared_size=4, chunks=[b"abcd", b"ef"]),
+        max_size=8,
+        preserve_chunks=True,
+    )
+
+    handler._read_stream(blob_task)
+
+    error = future.exception(timeout=0.1)
+    assert isinstance(error, StreamError)
+    assert "declared size 4" in str(error)
+
+
 def test_fobs_streams_preserve_chunks(monkeypatch):
     captured = {}
 

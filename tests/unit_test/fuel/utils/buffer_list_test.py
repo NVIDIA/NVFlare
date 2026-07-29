@@ -39,6 +39,24 @@ def test_read_bytes_within_one_buffer_returns_bytes():
     assert result == b"bcde"
 
 
+def test_read_bytes_rejects_end_past_available_data():
+    with pytest.raises(ValueError, match="exceeds available data"):
+        BufferList([b"abc"]).read_bytes(0, 4)
+
+
+def test_discard_before_releases_complete_buffers_and_keeps_absolute_offsets():
+    buffers = [b"abc", b"def", b"ghi"]
+    buffer_list = BufferList(buffers)
+
+    buffer_list.discard_before(6)
+
+    assert buffer_list.get_list() == [b"ghi"]
+    assert buffer_list.start_offset == 6
+    assert buffer_list.read_bytes(6, 9) == b"ghi"
+    with pytest.raises(ValueError, match="precedes discarded data"):
+        buffer_list.read_bytes(0, 1)
+
+
 @pytest.mark.parametrize(
     "start,end,error",
     [

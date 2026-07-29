@@ -11,12 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.fuel.utils.buffer_list import BufferList
+from nvflare.fuel.utils.buffer_list import BufferList, ConsumableBufferList
 
 
 class BufListStream:
     def __init__(self, buf_list: list = None):
         self.buffer_list = BufferList(buf_list)
+        self.release_consumed = isinstance(buf_list, ConsumableBufferList)
         self.pos = 0
         self.size = self.buffer_list.get_size()
 
@@ -33,5 +34,10 @@ class BufListStream:
 
         result = self.buffer_list.read_bytes(self.pos, end)
         self.pos = end
+        # FOBS reads forward only. Once a section has been copied into its
+        # immutable bytes result, release complete network chunks behind it so
+        # a large section does not coexist with the entire original blob.
+        if self.release_consumed:
+            self.buffer_list.discard_before(self.pos)
 
         return result

@@ -24,7 +24,7 @@ from nvflare.fuel.f3.streaming.byte_streamer import STREAM_CHUNK_SIZE, STREAM_TY
 from nvflare.fuel.f3.streaming.stream_const import EOS, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
 from nvflare.fuel.f3.streaming.stream_utils import FastBuffer, callback_thread_pool, stream_thread_pool, wrap_view
-from nvflare.fuel.utils.buffer_list import BufferList
+from nvflare.fuel.utils.buffer_list import BufferList, ConsumableBufferList
 from nvflare.security.logging import secure_format_traceback
 
 log = logging.getLogger(__name__)
@@ -87,7 +87,7 @@ class BlobTask:
         if self.pre_allocated:
             self.buffer = wrap_view(bytearray(self.size))
         elif self.preserve_chunks:
-            self.buffer = []
+            self.buffer = ConsumableBufferList()
         else:
             self.buffer = FastBuffer()
 
@@ -138,12 +138,16 @@ class BlobHandler:
         self, blob_task: BlobTask, buf: BytesAlike, buf_size: int, length: int, thread_id: int
     ) -> bool:
         next_size = buf_size + length
+        limit = blob_task.max_size
+        if blob_task.size > 0:
+            limit = blob_task.size if limit <= 0 else min(limit, blob_task.size)
+
         # read() already pulled this chunk, so rejection can overshoot by one chunk at most.
-        if blob_task.max_size > 0 and next_size > blob_task.max_size:
-            log.error(f"{blob_task} Size limit exceeded: {thread_id=} {next_size=} limit={blob_task.max_size}")
+        if limit > 0 and next_size > limit:
+            log.error(f"{blob_task} Size limit exceeded: {thread_id=} {next_size=} {limit=}")
+            limit_kind = "declared size" if blob_task.size > 0 and limit == blob_task.size else "configured limit"
             error = StreamError(
-                f"Blob received more data than configured limit {blob_task.max_size}: "
-                f"received at least {next_size} bytes"
+                f"Blob received more data than {limit_kind} {limit}: received at least {next_size} bytes"
             )
             self._fail(blob_task.stream, blob_task.future, error)
             return False

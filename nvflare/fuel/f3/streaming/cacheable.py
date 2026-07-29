@@ -212,17 +212,29 @@ class CacheableObject(Downloadable):
 
         next_index = start + len(result)
         if should_prefetch:
-            # Prefetch the next 2 items ahead (depth 2) to hide sender serialisation cost.
-            # Depth 1 (previous default) left the largest tensors partially un-hidden; depth 2
-            # keeps a bigger pipeline in-flight without wasting significant thread-pool capacity.
+            # Keep up to two items ahead without allowing two oversized
+            # serializations to multiply peak RSS. The first item is always
+            # eligible because an individual item may legitimately exceed
+            # max_chunk_size; additional items must fit in the byte budget.
+            prefetched_size = 0
             for _pi in range(next_index, min(next_index + 2, self.size)):
+                estimated_size = self.get_item_size(_pi)
+                if prefetched_size and (
+                    estimated_size is None or prefetched_size + estimated_size > self.max_chunk_size
+                ):
+                    break
                 self.prefetch_item(_pi)
+                if estimated_size is None:
+                    break
+                prefetched_size += estimated_size
 
         self.logger.debug(f"produced {len(result)} items for {requester}: {total_size} bytes")
         return ProduceRC.OK, result, {_StateKey.START: start, _StateKey.COUNT: len(result)}
 
 
 class ItemConsumer(Consumer):
+
+    supports_pipelining = True
 
     def __init__(self):
         super().__init__()

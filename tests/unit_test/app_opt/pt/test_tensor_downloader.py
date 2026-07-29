@@ -91,6 +91,20 @@ class TestTensorDownloadableBasic:
         assert load_tensors(second_items[0])["second"].item() == 2.0
         assert not downloadable._prefetch_futures
 
+    def test_prefetch_does_not_queue_two_oversized_tensors(self):
+        tensors = {
+            "first": torch.tensor([1.0]),
+            "second": torch.zeros(1024),
+            "third": torch.zeros(1024),
+        }
+        downloadable = TensorDownloadable(tensors=tensors, max_chunk_size=1)
+
+        downloadable.produce({}, "receiver")
+
+        assert 1 in downloadable._prefetch_futures
+        assert 2 not in downloadable._prefetch_futures
+        downloadable.release()
+
     def test_release_disables_prefetch_and_produce(self):
         tensors = {
             "first": torch.tensor([1.0]),

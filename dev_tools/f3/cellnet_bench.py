@@ -89,9 +89,9 @@ DEFAULT_TCP_SIZE = 100 * GB
 DEFAULT_TCP_WARMUP_SIZE = GB
 DEFAULT_TARGET_GBPS = 25.0
 DEFAULT_F3_CHUNK_SIZE = MB
-DEFAULT_F3_WINDOW_SIZE = 64 * MB
+DEFAULT_F3_WINDOW_SIZE = 16 * MB
 
-BYTE_SIZE_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([KMGT]?)(?:I?B)?\s*$", re.IGNORECASE)
+BYTE_SIZE_PATTERN = re.compile(r"\s*(\d+(?:\.\d+)?)\s*([KMGT]?)(?:I?B)?\s*", re.IGNORECASE)
 BYTE_SIZE_MULTIPLIERS = {
     "": 1,
     "K": 1024,
@@ -575,42 +575,42 @@ def run_sender(url: str, size: int, reliable: Optional[bool]):
     cell = CoreCell(TX_FQCN, url, secure=False, credentials={})
     cell.set_cell_connected_cb(lambda agent: connected.set())
     stream_cell = StreamCell(cell)
-    cell.start()
-
-    print(f"[send] connecting to {url} ...")
-    if not connected.wait(timeout=30):
-        cell.stop()
-        raise SystemExit(f"[send] ERROR: could not connect to receiver at {url} within 30 seconds")
-
-    effective_reliable = CommConfigurator().get_streaming_reliable(False) if reliable is None else reliable
-    chunk_size = stream_cell.get_chunk_size()
-    print(
-        f"[send] connected, sending {size / GB:.2f} GB with reliable={effective_reliable}, "
-        f"chunk_size={chunk_size / MB:,.1f} MiB"
-    )
-    stream = GeneratedStream(size, block_size=chunk_size)
-    mem = MemSampler()
-    mem.start()
-    start = time.perf_counter()
-    future = stream_cell.send_stream(CHANNEL, TOPIC, RX_FQCN, Message(None, stream), reliable=reliable)
-
+    mem = None
+    mem_stopped = False
     stop_progress = threading.Event()
 
-    def report_progress():
-        while not stop_progress.wait(5.0):
-            sent = future.get_progress()
-            elapsed = time.perf_counter() - start
-            print(
-                f"[send] progress: {sent / GB:.2f} GB in {elapsed:,.1f}s "
-                f"({rate(sent, elapsed)}) rss={rss_bytes() / MB:,.1f} MB"
-            )
-
-    threading.Thread(target=report_progress, daemon=True).start()
-
     try:
+        cell.start()
+        print(f"[send] connecting to {url} ...")
+        if not connected.wait(timeout=30):
+            raise SystemExit(f"[send] ERROR: could not connect to receiver at {url} within 30 seconds")
+
+        effective_reliable = CommConfigurator().get_streaming_reliable(False) if reliable is None else reliable
+        chunk_size = stream_cell.get_chunk_size()
+        print(
+            f"[send] connected, sending {size / GB:.2f} GB with reliable={effective_reliable}, "
+            f"chunk_size={chunk_size / MB:,.1f} MiB"
+        )
+        stream = GeneratedStream(size, block_size=chunk_size)
+        mem = MemSampler()
+        mem.start()
+        start = time.perf_counter()
+        future = stream_cell.send_stream(CHANNEL, TOPIC, RX_FQCN, Message(None, stream), reliable=reliable)
+
+        def report_progress():
+            while not stop_progress.wait(5.0):
+                sent = future.get_progress()
+                elapsed = time.perf_counter() - start
+                print(
+                    f"[send] progress: {sent / GB:.2f} GB in {elapsed:,.1f}s "
+                    f"({rate(sent, elapsed)}) rss={rss_bytes() / MB:,.1f} MB"
+                )
+
+        threading.Thread(target=report_progress, daemon=True).start()
         bytes_sent = future.result()
         elapsed = time.perf_counter() - start
         mem.stop()
+        mem_stopped = True
         print(
             f"[send] RESULT reliable={effective_reliable}: sent {bytes_sent:,} bytes "
             f"in {elapsed:,.2f} seconds ({rate(bytes_sent, elapsed)})"
@@ -618,10 +618,11 @@ def run_sender(url: str, size: int, reliable: Optional[bool]):
         print(f"[send] MEMORY reliable={effective_reliable}: {mem.summary()}")
     finally:
         stop_progress.set()
-
-    # Give the last ACK exchange a moment to settle before tearing the cell down
-    time.sleep(2)
-    cell.stop()
+        if mem is not None and not mem_stopped:
+            mem.stop()
+        # Give the last ACK exchange a moment to settle before tearing the cell down.
+        time.sleep(2)
+        cell.stop()
 
 
 def main():

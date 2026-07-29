@@ -27,6 +27,8 @@ from nvflare.fuel.f3.streaming.download_service import Consumer, ProduceRC, down
 class MockConsumer(Consumer):
     """Mock consumer for testing."""
 
+    supports_pipelining = True
+
     def __init__(self, consume_exc: Exception = None):
         super().__init__()
         self.consumed_data = []
@@ -132,6 +134,45 @@ class TestDownloadObject:
         assert consumer.completed
         assert consumer.consumed_data == [b"c1"]
         assert cell.send_request.call_count == 2
+
+    def test_state_transforming_consumer_uses_stop_and_wait(self, cell):
+        class TransformingConsumer(MockConsumer):
+            supports_pipelining = False
+
+            def consume(self, ref_id, state, data):
+                self.consumed_data.append(data)
+                return {"start": 99, "count": 1}
+
+        consumer = TransformingConsumer()
+        cell.send_request.side_effect = [
+            _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=b"c1", state={"start": 0, "count": 1}),
+            _make_reply(ReturnCode.OK, status=ProduceRC.EOF),
+        ]
+
+        download_object("server.site-1", "ref-001", 10.0, cell, consumer)
+
+        assert consumer.completed
+        assert consumer.consumed_data == [b"c1"]
+        assert cell.send_request.call_count == 2
+        assert cell.send_request.call_args_list[1].kwargs["request"].payload["state"] == {"start": 99, "count": 1}
+
+    def test_pipelined_consumer_cannot_hide_in_place_state_mutation(self, cell, consumer):
+        def mutate_state(ref_id, state, data):
+            consumer.consumed_data.append(data)
+            state["start"] = 99
+            return state
+
+        consumer.consume = mutate_state
+        cell.send_request.side_effect = [
+            _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=b"c1", state={"start": 0, "count": 1}),
+            _make_reply(ReturnCode.OK, status=ProduceRC.EOF),
+        ]
+
+        download_object("server.site-1", "ref-001", 10.0, cell, consumer)
+
+        assert consumer.failed
+        assert "changed state despite enabling download pipelining" in consumer.failure_reason
+        assert cell.send_request.call_count <= 2
 
     def test_progress_callback_reports_start_progress_and_completion(self, cell, consumer):
         """Test download progress callback emits monotonic bytes/items and terminal completion."""

@@ -48,6 +48,9 @@ import torch
 from safetensors.torch import save as save_tensors
 
 import nvflare.fuel.utils.fobs as fobs
+
+# This repository-local benchmark intentionally follows the internal disk-offload
+# context keys so it exercises the same path as production workflows.
 from nvflare.app_common.utils.tensor_disk_offload_context import (
     _ENABLE_TENSOR_DISK_OFFLOAD,
     _TENSOR_DISK_OFFLOAD_ROOT_DIR,

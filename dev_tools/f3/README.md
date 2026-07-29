@@ -11,6 +11,8 @@ two machines, plus a sample tuning config.
 
 Start the receiver on the destination machine first; then start the sender.
 Use the same Python environment (`nvflare` must be importable) on both hosts.
+The cellnet benchmark's RSS sampler reads Linux ``/proc/self/statm``; run it on
+Linux when memory reporting is required.
 
 ---
 
