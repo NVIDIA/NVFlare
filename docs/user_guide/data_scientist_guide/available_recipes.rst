@@ -189,6 +189,41 @@ FedAvg with secure aggregation using homomorphic encryption.
 
 - `examples/advanced/cifar10/pt/cifar10-real-world#secure-aggregation-using-homomorphic-encryption <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/pt/cifar10-real-world#42-secure-aggregation-using-homomorphic-encryption>`_
 
+FedCE
+=====
+
+``FedCERecipe`` implements contribution-aware aggregation for PyTorch. It estimates each client's
+contribution from gradient-direction novelty and a client-computed leave-one-out (minus-model) score,
+then uses those estimates as aggregation weights.
+
+.. code-block:: python
+
+    from nvflare.app_opt.pt.recipes import FedCERecipe
+
+    recipe = FedCERecipe(
+        name="fedce-pt",
+        model=MyModel(),
+        min_clients=3,
+        num_rounds=10,
+        train_script="client.py",
+        fedce_mode="plus",
+    )
+
+FedCE requires a compatible client training script. The script must return model differences and set
+``FLModel.meta["fedce_minus_val"]``. The ``PTFedCEHelper`` utility constructs the minus model,
+reads the prior contribution weight from the received model metadata, and attaches the score to the result.
+The score must increase with estimated contribution, regardless of the validation metric's direction.
+For a higher-is-better metric such as Dice, use ``1 - minus_model_dice`` so a larger performance drop
+produces a larger score, matching the research implementation. For a lower-is-better metric such as loss,
+use ``minus_model_loss`` because a larger loss after removing the client already indicates greater contribution.
+When ``model`` is supplied as a dict config, pass ``trainable_param_names`` explicitly so contribution
+estimation excludes non-trainable state such as BatchNorm running statistics and counters.
+FedCE is therefore a dedicated algorithm recipe, not a passive option on ``FedAvgRecipe``.
+
+**Example:**
+
+- `research/fed-ce <https://github.com/NVIDIA/NVFlare/tree/main/research/fed-ce>`_
+
 WEIGHT_DIFF Compatibility
 -------------------------
 

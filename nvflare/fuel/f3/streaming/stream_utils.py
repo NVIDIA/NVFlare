@@ -22,6 +22,7 @@ from nvflare.fuel.f3.mpm import MainProcessMonitor
 
 STREAM_THREAD_POOL_SIZE = 128
 CALLBACK_THREAD_POOL_SIZE = 64
+DOWNLOAD_REQUEST_THREAD_POOL_SIZE = 64
 ONE_MB = 1024 * 1024
 MILLION = 1000000
 
@@ -52,6 +53,7 @@ class CheckedExecutor(ThreadPoolExecutor):
 
 stream_thread_pool = CheckedExecutor(STREAM_THREAD_POOL_SIZE, "stm")
 callback_thread_pool = CheckedExecutor(CALLBACK_THREAD_POOL_SIZE, "stm_cb")
+download_request_thread_pool = CheckedExecutor(DOWNLOAD_REQUEST_THREAD_POOL_SIZE, "stm_dl")
 
 
 def wrap_view(buffer: BytesAlike) -> memoryview:
@@ -126,6 +128,7 @@ def stream_stats_category(fqcn: str, channel: str, topic: str, stream_type: str 
 
 
 def stream_shutdown():
+    download_request_thread_pool.shutdown(wait=True)
     callback_thread_pool.shutdown(wait=True)
     stream_thread_pool.shutdown(wait=True)
 

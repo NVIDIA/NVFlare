@@ -7,6 +7,11 @@ What's New in FLARE v2.9.0
 Compatibility and Migration Notes
 =================================
 
+- F3 retains its 16 MiB streaming-window and 4 MiB ACK-interval defaults for
+  compatibility and bounded per-stream memory. High-bandwidth deployments may
+  opt into larger values on all endpoints; ``dev_tools/f3/comm_config.yml``
+  provides a 64 MiB/16 MiB tuning example. TCP connections now enable
+  ``TCP_NODELAY`` by default to reduce request/ACK latency.
 - Job-process bootstrap credentials (auth token, token signature, session ID)
   are no longer passed as command-line arguments. Launchers deliver them
   through the job process environment; on Kubernetes they ride a per-job

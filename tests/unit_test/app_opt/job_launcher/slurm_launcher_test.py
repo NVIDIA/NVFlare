@@ -95,10 +95,26 @@ def test_resource_resolution_combines_portable_gpu_total():
     assert resources.nodes == 1
 
 
+def test_resource_resolution_uses_slurm_node_topology():
+    job_meta = {JobMetaKey.RESOURCE_SPEC.value: {"site-1": {"num_of_gpus": 16}}}
+
+    resources = _resolve_resources(
+        job_meta,
+        "site-1",
+        "apptainer",
+        600,
+        spec={"nodes": 2, "gpus_per_node": 8, "additional_node_command": "python3 train.py"},
+    )
+
+    assert resources.nodes == 2
+    assert resources.gpus_per_node == 8
+
+
 @pytest.mark.parametrize(
     "spec, message",
     [
         ({"unknown": 1}, "unsupported"),
+        ({"nodes": 0}, "greater than or equal to 1"),
         ({"nodes": 2}, "multi-node Slurm jobs require"),
         ({"pending_timeout": 601}, "may only reduce"),
     ],
@@ -203,15 +219,16 @@ def test_containerized_slurm_mounts_shared_file_parent_directory_read_write(tmp_
     workspace = _workspace(tmp_path)
     image = tmp_path / ("image.sqsh" if sandbox == "pyxis" else "image.sif")
     image.write_text("image", encoding="utf-8")
-    listener = tmp_path / "cellnet" / "lst_12345678"
+    transport_parent = tmp_path / "cellnet"
+    listener = transport_parent / "lst_12345678"
     listener.mkdir(parents=True)
     launcher = _launcher(tmp_path, workspace, sandbox=sandbox, image=str(image))
 
     plan = launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _file_parent_context(workspace, listener))
 
     assert len(plan.mounts) == 1
-    assert plan.mounts[0].source == str(listener)
-    assert plan.mounts[0].destination == str(listener)
+    assert plan.mounts[0].source == str(transport_parent)
+    assert plan.mounts[0].destination == str(transport_parent)
     assert plan.mounts[0].mode == "rw"
 
 
@@ -226,14 +243,31 @@ def test_bare_slurm_does_not_mount_shared_file_parent_directory(tmp_path):
     assert plan.mounts == ()
 
 
+@pytest.mark.parametrize("sandbox", ["pyxis", "apptainer"])
+def test_containerized_slurm_does_not_add_transport_mount_for_tcp(tmp_path, sandbox):
+    workspace = _workspace(tmp_path)
+    image = tmp_path / ("image.sqsh" if sandbox == "pyxis" else "image.sif")
+    image.write_text("image", encoding="utf-8")
+    launcher = _launcher(tmp_path, workspace, sandbox=sandbox, image=str(image))
+
+    plan = launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _fl_ctx(workspace))
+
+    assert plan.mounts == ()
+
+
 def test_shared_file_parent_overlapping_study_mount_is_rejected(tmp_path, monkeypatch):
     workspace = _workspace(tmp_path)
     image = tmp_path / "image.sqsh"
     image.write_text("image", encoding="utf-8")
-    listener = tmp_path / "cellnet" / "lst_12345678"
+    transport_parent = tmp_path / "cellnet"
+    listener = transport_parent / "lst_12345678"
     listener.mkdir(parents=True)
     launcher = _launcher(tmp_path, workspace, sandbox="pyxis", image=str(image))
-    monkeypatch.setattr(launcher, "_study_mounts", lambda runtime: (BindMount(str(listener), str(listener), "ro"),))
+    monkeypatch.setattr(
+        launcher,
+        "_study_mounts",
+        lambda runtime: (BindMount(str(transport_parent), str(transport_parent), "ro"),),
+    )
 
     with pytest.raises(SlurmLauncherError, match="overlaps a study mount"):
         launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _file_parent_context(workspace, listener))
@@ -264,6 +298,95 @@ def test_launch_plan_uses_fixed_worker_and_one_resolved_job_spec(tmp_path):
     assert plan.study_secret_env[JobProcessEnv.TOKEN_SIGNATURE] == "secret-signature"
     assert plan.study_secret_env[JobProcessEnv.SSID] == "secret-ssid"
     assert plan.resources.nodes == 1
+
+
+def _multinode_meta(
+    additional_node_command="python3 -m nvflare.app_opt.pt.torchrun_node custom/client.py",
+    nodes=2,
+    **values,
+):
+    slurm = {"nodes": nodes, "additional_node_command": additional_node_command}
+    slurm.update(values)
+    return {
+        JobConstants.JOB_ID: "job-1",
+        JobMetaKey.JOB_LAUNCHER_SPEC.value: {"site-1": {"slurm": slurm}},
+    }
+
+
+def test_launch_plan_resolves_additional_node_command_and_app_dir(tmp_path):
+    workspace = _workspace(tmp_path)
+    app_dir = workspace / "job-1" / "app_site-1"
+    app_dir.mkdir()
+    launcher = _launcher(tmp_path, workspace)
+
+    plan = launcher._build_launch_plan(_multinode_meta(), _fl_ctx(workspace))
+
+    assert plan.resources.nodes == 2
+    assert plan.additional_node_command == (
+        "python3",
+        "-m",
+        "nvflare.app_opt.pt.torchrun_node",
+        "custom/client.py",
+    )
+    assert plan.node_app_dir == str(app_dir)
+
+
+@pytest.mark.parametrize(
+    "meta_kwargs, message",
+    [
+        ({"nodes": 1}, "additional_node_command requires nodes > 1"),
+        ({"additional_node_command": "python3 -m trainer --token ${secret:MY_TOKEN}"}, "secret references"),
+        ({"additional_node_command": "unbalanced 'quote"}, "malformed additional_node_command"),
+        ({"additional_node_command": "python3\n-m trainer"}, "single line"),
+        ({"additional_node_command": ""}, "non-empty string"),
+        ({"additional_node_command": " "}, "at least one word"),
+        ({"unknown": True}, "unsupported job-owned Slurm key"),
+    ],
+)
+def test_launch_plan_rejects_invalid_additional_node_command(tmp_path, meta_kwargs, message):
+    workspace = _workspace(tmp_path)
+    (workspace / "job-1" / "app_site-1").mkdir()
+    launcher = _launcher(tmp_path, workspace)
+
+    with pytest.raises(SlurmLauncherError, match=message):
+        launcher._build_launch_plan(_multinode_meta(**meta_kwargs), _fl_ctx(workspace))
+
+
+def test_launch_plan_allows_container_node_group(tmp_path):
+    workspace = _workspace(tmp_path)
+    (workspace / "job-1" / "app_site-1").mkdir()
+    image = tmp_path / "python.sif"
+    image.write_bytes(b"sif")
+    launcher = _launcher(tmp_path, workspace, sandbox="apptainer", image=str(image))
+
+    plan = launcher._build_launch_plan(_multinode_meta(), _fl_ctx(workspace))
+
+    assert plan.sandbox == "apptainer"
+    assert plan.image.endswith("python.sif")
+    assert plan.resources.nodes == 2
+    assert plan.additional_node_command[0] == "python3"
+
+
+def test_multinode_without_additional_node_command_still_requires_bare_sandbox(tmp_path):
+    with pytest.raises(SlurmLauncherError, match="unless additional_node_command"):
+        _resolve_resources({}, "site-1", "pyxis", 600, spec={"nodes": 2})
+
+
+def test_launch_plan_rejects_node_group_without_deployed_app_dir(tmp_path):
+    workspace = _workspace(tmp_path)
+    launcher = _launcher(tmp_path, workspace)
+
+    with pytest.raises(SlurmLauncherError, match="app directory"):
+        launcher._build_launch_plan(_multinode_meta(), _fl_ctx(workspace))
+
+
+def test_server_launcher_rejects_additional_node_command(tmp_path):
+    workspace = _workspace(tmp_path)
+    (workspace / "job-1" / "app_site-1").mkdir()
+    launcher = _launcher(tmp_path, workspace, launcher_class=ServerSlurmJobLauncher)
+
+    with pytest.raises(SlurmLauncherError, match="only supported for client jobs"):
+        launcher._build_launch_plan(_multinode_meta(), _fl_ctx(workspace))
 
 
 def test_concrete_launchers_select_client_and_server_module_arguments(tmp_path):

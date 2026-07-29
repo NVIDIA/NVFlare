@@ -20,6 +20,7 @@ from nvflare.apis.fl_constant import ConfigVarName
 from nvflare.fuel.f3.streaming.download_service import Downloadable, ProduceRC
 from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT, STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposers import via_downloader as via_downloader_module
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     RESULT_UPLOAD_PROGRESS_CTX_KEY,
@@ -548,3 +549,14 @@ class TestConcreteViaDownloaderProgressCallback:
         assert err is None
         assert result is not None
         result.cleanup()
+
+
+def test_repeated_first_item_registers_post_callback_once():
+    decomposer = _DummyViaDownloader()
+    manager = DatumManager(fobs_ctx={fobs.FOBSContextKey.CELL: object()})
+    shared_item = object()
+
+    for _ in range(28):
+        decomposer.decompose(shared_item, manager)
+
+    assert len(manager.post_cbs) == 1
