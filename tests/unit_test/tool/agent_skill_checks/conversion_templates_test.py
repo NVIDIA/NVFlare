@@ -22,6 +22,8 @@ is caught here rather than only in expensive, nondeterministic LLM evals.
 import ast
 import importlib.util
 import inspect
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -188,6 +190,78 @@ def test_huggingface_client_template_has_one_patch_and_no_manual_exchange():
 
     assert [node.func.attr for node in calls].count("patch") == 1
     assert not {node.func.attr for node in calls} & {"receive", "send"}
+
+
+def test_huggingface_server_model_template_returns_source_model_without_wrapper_prefix(monkeypatch):
+    torch = pytest.importorskip("torch")
+    expected_model = torch.nn.Linear(4, 2)
+    source_model_module = types.ModuleType("model")
+    source_model_module.load_model = lambda model_name_or_path, **kwargs: expected_model
+    monkeypatch.setitem(sys.modules, "model", source_model_module)
+
+    module = _load_module(HF_TEMPLATES / "server_model.py")
+    server_model = module.ServerModel("local-model")
+
+    assert server_model is expected_model
+    assert set(server_model.state_dict()) == {"weight", "bias"}
+
+
+def test_huggingface_job_template_uses_pytorch_fast_path_and_packages_model_files(monkeypatch):
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    class _Recipe:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.server_files = []
+            self.client_files = []
+
+        def add_server_file(self, path):
+            self.server_files.append(path)
+
+        def add_client_file(self, path):
+            self.client_files.append(path)
+
+    monkeypatch.setattr(module, "FedAvgRecipe", _Recipe)
+    recipe = module.build_recipe(
+        name="hf-test",
+        model_name_or_path="local-model",
+        data_root="/tmp/data",
+        num_clients=2,
+        num_rounds=3,
+        num_train_epochs=1.0,
+        key_metric="eval_accuracy",
+    )
+
+    assert recipe.kwargs["model"] == {
+        "class_path": "server_model.ServerModel",
+        "args": {"model_name_or_path": "local-model"},
+    }
+    assert recipe.kwargs["train_script"] == "client.py"
+    assert recipe.kwargs["min_clients"] == 2
+    assert recipe.kwargs["num_rounds"] == 3
+    assert recipe.kwargs["key_metric"] == "eval_accuracy"
+    assert recipe.server_files == ["server_model.py", "model.py"]
+    assert recipe.client_files == ["model.py"]
+    assert recipe.kwargs["train_args"].count("--num_train_epochs") == 1
+
+
+def test_huggingface_job_template_rejects_unrepresentable_in_process_arguments():
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    with pytest.raises(ValueError, match="whitespace-free"):
+        module.build_train_args("model with spaces", "/tmp/data", 2, 1.0)
+
+
+def test_huggingface_job_template_uses_public_recipe_execution_without_internal_probes():
+    source = (HF_TEMPLATES / "job.py").read_text(encoding="utf-8")
+
+    assert "FedAvgRecipe(" in source
+    assert "SimEnv(" in source
+    assert "recipe.execute(" in source
+    assert "from nvflare.recipe import SimEnv" in source
+    assert "inspect." not in source
+    assert "PTModel" not in source
+    assert "persistor" not in source.lower()
 
 
 def test_custom_aggregator_template_step_weighted_average():

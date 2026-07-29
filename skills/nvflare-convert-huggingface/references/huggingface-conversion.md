@@ -9,14 +9,16 @@ Use this path for a standard Trainer conversion:
    profile.
 3. Adapt `../assets/client_with_eval.py` into `client.py`, preserving the
    source Trainer factory and metric behavior.
-4. Generate `job.py` with the selected recipe and explicit server model config.
+4. Adapt `../assets/server_model.py` and `../assets/job.py` for the source model
+   factory, client arguments, selected metric, and capability-gated options.
 5. Follow the shared validation ladder with the HF-specific validation delta.
 
-The maintained asset is the canonical patch and round-loop shape. Adapt its
-Trainer factory and evaluation switch rather than drafting another loop or
-writing a separate AST program to prove equivalent structure. It initializes
-FLARE before site-aware setup, constructs one persistent Trainer, patches it
-once, evaluates the received global model when required, and then trains.
+The maintained assets are the canonical standard path. The client asset owns
+the patch and round-loop shape. The server asset returns the source model
+directly so no wrapper prefix changes its state-dict keys. The job asset owns
+the required FedAvg constructor, server/client packaging, `SimEnv`, and
+`recipe.execute()` shape. Adapt these surfaces rather than drafting
+replacements or inspecting NVFLARE implementation source.
 
 The generated `client.py` entry point is FL-only: it always reaches
 `flare.init()` and `flare.patch(trainer)`. Do not infer FL launch from
@@ -80,23 +82,13 @@ constructing the recipe. That shared reference owns capability checks,
 tensor-native transport and decomposer registration, disk offload, external
 process selection, and common metric-selection policy.
 
-For FedAvg, start with an explicit importable model configuration:
-
-```python
-from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-
-recipe = FedAvgRecipe(
-    name="hf-trainer",
-    model={
-        "class_path": "model.ServerModel",
-        "args": {"model_name_or_path": model_name_or_path},
-    },
-    min_clients=n_clients,
-    num_rounds=num_rounds,
-    train_script="client.py",
-    train_args=train_args,
-)
-```
+For FedAvg, adapt `../assets/job.py`. Its required structure matches the plain
+PyTorch fast path: `FedAvgRecipe(...)`, explicit importable model config,
+`SimEnv(...)`, and `recipe.execute(...)`. It uses
+`{"class_path": "server_model.ServerModel", ...}` at recipe construction time.
+`class_path` is the public recipe key; `path` is the normalized key in exported
+job configuration. Do not inspect `PTModel`, persistors, class loaders, or
+Recipe source to reconcile those representations.
 
 Add optional recipe arguments and decomposers only as directed by the selected
 recipe's capability profile and the shared construction reference. Do not copy
@@ -121,18 +113,15 @@ enumerate the app directories it actually contains. A standard unified export
 uses `app/custom`; a per-site export created through `set_per_site_config()`
 uses `app_server/custom` plus each `app_<site>/custom`.
 
-If a generated or project-local server model module is referenced from `job.py` through
-`{"class_path": "model.ServerModel"}`, add it to the server app with
-`recipe.add_server_file("model.py")` or the equivalent server-targeted API. A
-client import is not enough when an export separates server and client apps.
-Package client-used local
-modules through `train_script`'s import closure or `recipe.add_client_file(...)`,
-then verify the required files under the discovered layout: `app/custom` for a
-unified export, or `app_server/custom` and each `app_<site>/custom` for a
-per-site export. Do not reuse a path assumption from another export. Otherwise,
-the server persistor will fail to construct the initial model. Installed
-NVFLARE, framework, and third-party class paths stay runtime dependencies
-validated through requirements installation plus import/preflight checks.
+Preserve the job asset's explicit packaging of `server_model.py` and the source
+model module into the server app, and package source modules imported by the
+client. A client import is not enough when an export separates server and
+client apps. Verify the required files under the discovered layout:
+`app/custom` for a unified export, or `app_server/custom` and each
+`app_<site>/custom` for a per-site export. Do not reuse a path assumption from
+another export. Installed NVFLARE, framework, and third-party class paths stay
+runtime dependencies validated through requirements installation plus
+import/preflight checks.
 
 ## Data And Model Selection
 

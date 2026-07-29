@@ -482,6 +482,8 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
         "skills/nvflare-convert-lightning/references/lightning-conversion.md"
     ).read_text(encoding="utf-8")
     client_template = skill_root.joinpath("assets/client_with_eval.py").read_text(encoding="utf-8")
+    server_model_template = skill_root.joinpath("assets/server_model.py").read_text(encoding="utf-8")
+    job_template = skill_root.joinpath("assets/job.py").read_text(encoding="utf-8")
     recipe_text = repo_root.joinpath(
         "skills/nvflare-shared/references/pytorch-family-recipe-construction.md"
     ).read_text(encoding="utf-8")
@@ -519,7 +521,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
         "Read applicable requirements",
         "Select the recipe from FL intent",
         "Convert with `references/huggingface-conversion.md`",
-        "Add or update `job.py`",
+        "Adapt `assets/server_model.py` and `assets/job.py`",
         "Only after generated files exist",
         "Report the recipe",
     ]
@@ -530,7 +532,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
         "Do not preload validation, state/DDP, broad workflow, dependency, or reporting references" in normalized_skill
     )
     assert "adapt `assets/client_with_eval.py` rather than drafting a new round loop" in normalized_skill
-    assert "Do not inspect Recipe source or signatures" in normalized_skill
+    assert "do not inspect recipe source or signatures" in normalized_skill.lower()
     assert "do not depend on repository examples" in normalized_skill.lower()
     assert "FL-only" in conversion_text
     assert "preserve source metric names" in skill_text
@@ -540,18 +542,25 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "federated=False" in conversion_text
     assert "Do not also add that same file through `recipe.add_client_file(...)`" in normalized_conversion
     assert "Reject absolute `task_script_path` values" in normalized_conversion
-    assert 'recipe.add_server_file("model.py")' in conversion_text
     assert "client import is not enough when an export separates server and client apps" in normalized_conversion
     assert "Before asserting paths, inspect the exported job root" in normalized_conversion
     assert "`app/custom` for a unified export" in normalized_conversion
     assert "`app_server/custom` and each `app_<site>/custom`" in normalized_conversion
     assert "Do not reuse a path assumption from another export" in normalized_conversion
     assert "third-party class paths stay runtime dependencies" in normalized_conversion
-    assert "server persistor will fail to construct the initial model" in normalized_conversion
+    assert "Do not inspect `PTModel`, persistors, class loaders" in normalized_conversion
     assert "Adapt `../assets/client_with_eval.py`" in normalized_conversion
-    assert "writing a separate AST program" in normalized_conversion
+    assert "Adapt `../assets/server_model.py` and `../assets/job.py`" in normalized_conversion
+    assert "inspecting NVFLARE implementation source" in normalized_conversion
     assert "flare.patch(trainer)" in client_template
     assert "while flare.is_running()" in client_template
+    assert "return model" in server_model_template
+    assert '"class_path": "server_model.ServerModel"' in job_template
+    assert 'recipe.add_server_file("server_model.py")' in job_template
+    assert 'recipe.add_server_file("model.py")' in job_template
+    assert "SimEnv(" in job_template
+    assert "recipe.execute(" in job_template
+    assert "PTModel" not in job_template
     assert (
         "client entry's actual argument mechanism and actual dataclass types in parse-only mode"
         in normalized_validation
@@ -565,15 +574,10 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "Version-check only fields claimed to belong to a framework" in normalized_validation
     assert "project-defined subclass field" in normalized_validation
     assert "actual parser accepts it" in normalized_validation
-    assert "one-round topology smoke test with the requested site count" in normalized_validation
+    assert "reduced one-round topology smoke" in normalized_validation
     assert "full-model validation blocked" in normalized_validation
-    assert "estimate server exchange/offload" in validation_text
-    assert "per-client training-memory bound multiplied by actual worker concurrency" in normalized_validation
-    assert "model copies, gradients, optimizer state, activations, dataloaders/data" in normalized_validation
-    assert "full-model rung as capacity-unverified" in normalized_validation
-    assert "Capability-check optional host diagnostics such as `free` or `nvidia-smi`" in validation_text
-    assert "`shutil.which()` or `command -v`" in validation_text
-    assert "Run them separately from correctness checks" in normalized_validation
+    assert "estimate server and concurrent client memory" in normalized_validation
+    assert "Capability-check optional diagnostics such as `free` or `nvidia-smi`" in normalized_validation
     assert "capacity evidence is unavailable, not conversion failure" in normalized_validation
     assert "reported default `max_steps=10`" in normalized_skill
     assert "Resolve exactly one per-round budget and encode it in one place" in conversion_text
@@ -581,12 +585,10 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "user-requested local epochs become generated" in normalized_conversion
     assert "bounded generated default `max_steps=10`" in normalized_conversion
     assert "Do not also pass the same value through patch `local_steps` or `local_epochs`" in normalized_conversion
-    assert "budget is not duplicated in patch" in normalized_validation
+    assert "requested budget appears once" in normalized_validation
     assert "whole-job target in its progress bar" in normalized_conversion
-    assert "`NUM_STEPS_CURRENT_ROUND`" in validation_text
-    assert "expected cumulative scheduler target, not multiplied local work" in normalized_validation
     assert "make at most one expensive real-model retry" in normalized_validation
-    assert "Do not write a one-off AST or Recipe-source introspection program" in normalized_validation
+    assert "do not write one-off AST, class-loader, persistor, Recipe-source" in normalized_validation
     assert "`python job.py --export --export-dir <runtime-dir>/job_config`" in normalized_shared_validation
     assert "Do not accept a generated job-local export alias such as `--export_only`" in normalized_shared_validation
     assert "report it as a generated-code violation" in normalized_shared_validation
@@ -600,7 +602,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "`parse_known_args()` is not needed" in normalized_shared
     assert "unknown and abbreviated options fail" in normalized_shared
     assert "`ArgumentParser(allow_abbrev=False)`" in normalized_skill
-    assert "use strict `parse_args()`; do not use `parse_known_args()`" in normalized_skill
+    assert "strict `parse_args()`; do not use `parse_known_args()`" in normalized_skill
     assert "`recipe show` validates only the selected recipe's module, class" in normalized_recipe
     assert "It does not advertise other symbols from `nvflare.recipe`" in normalized_recipe
     assert "use `SimEnv` with `recipe.execute(...)`" in normalized_recipe
@@ -613,8 +615,8 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "typo and abbreviation rejection cases" in normalized_validation
     assert "explicit non-client entry parameter" in normalized_validation
     assert "same resolved local model path and cache configuration" in normalized_validation
-    assert "Extract server and Trainer exchange key sets without training" in validation_text
-    assert "exact full-model or adapter-key agreement" in normalized_validation
+    assert "Instantiate the adapted `server_model.ServerModel`" in validation_text
+    assert "exact full-model key agreement" in normalized_validation
     assert "class_path`, train script, custom aggregator" in normalized_shared
     assert "Its name must exactly match one key delivered by the client" in normalized_recipe
     assert "Do not reduce simulator `num_threads` below the requested client count" in recipe_text

@@ -7,11 +7,13 @@ reaches the applicable phase, and stop at the first failure.
 
 ## Generated Trainer Contract
 
-- Adapt `../assets/client_with_eval.py` rather than drafting a new patch/round
-  loop. Confirm by direct review that the generated client keeps one persistent
-  Trainer, one `flare.patch(trainer)` call, no manual model receive/send path,
-  and the source-prescribed evaluate/train sequence. Do not write a one-off AST
-  or Recipe-source introspection program to re-prove the maintained template.
+- Adapt `../assets/client_with_eval.py`, `../assets/server_model.py`, and
+  `../assets/job.py` rather than drafting replacements. Review the generated
+  differences and exercise the asset functions directly; do not write one-off
+  AST, class-loader, persistor, Recipe-source, or simulator-source probes.
+- Confirm the generated client keeps one persistent Trainer, one
+  `flare.patch(trainer)` call, no manual model receive/send path, and the
+  source-prescribed evaluate/train sequence.
 - Keep model, tokenizer/processor, datasets, collator, Trainer arguments, and
   callbacks outside the FL round loop. The generated FL client must always
   reach `flare.init()` and `flare.patch(trainer)`; preserve standalone behavior
@@ -57,47 +59,42 @@ reaches the applicable phase, and stop at the first failure.
 
 ## Parameter Checks
 
-- Extract server and Trainer exchange key sets without training.
-- Require exact full-model or adapter-key agreement after the documented prefix
-  transformation.
-- For PEFT, verify both sides use the same adapter configuration and only
-  adapter parameters are exchanged.
-- Confirm PyTorch exchange format for BF16/FP16 or other dtype-sensitive models.
+- Instantiate the adapted `server_model.ServerModel` and the source Trainer
+  model factory with the same local constructor values, then compare their
+  state-dict key sets and shapes without training. Do not inspect NVFLARE
+  persistors or class loaders; the exported job and final simulation validate
+  product-side construction.
+- Require exact full-model key agreement after any documented prefix
+  transformation. For PEFT or auxiliary trainable models, load
+  `huggingface-state-and-distributed.md` and run its adapter/ownership checks.
+- Confirm tensor-native exchange only when selected by the capability profile.
 
-## Execution Checks
+## Standard Execution Checks
 
-- Before launching multiple CPU clients, estimate server exchange/offload
-  memory plus a conservative per-client training-memory bound multiplied by
-  actual worker concurrency. Include model copies, gradients, optimizer state,
-  activations, dataloaders/data, and framework overhead when they can be
-  bounded. If optimizer, activation, or data memory cannot be bounded, report
-  the full-model rung as capacity-unverified rather than treating `state_dict`
-  fit as sufficient.
-- Capability-check optional host diagnostics such as `free` or `nvidia-smi`
-  before invoking them, for example with `shutil.which()` or `command -v`. Run
-  them separately from correctness checks, or guard their absence. A missing
-  diagnostic means capacity evidence is unavailable, not conversion failure.
-- Use a one-round topology smoke test with the requested site count, minimal
-  samples, and an explicitly labelled reduced checkpoint only when the real
-  model is too large for the host. This validates FL wiring only; leave the
-  generated job's default model unchanged. Otherwise run the requested real
-  model and round count once.
+- Follow the shared compile, construction, export, package-inspection, and one
+  final foreground simulation path. Do not add separate Recipe-method,
+  argument-transport, simulator-process, or export-dispatch probes when the
+  maintained job asset compiles and the public validation rungs pass.
 - Require terminal completion evidence, positive per-round training step
   counts, and finite source-backed evaluation metrics for the claimed stage.
-- Calculate the expected per-round optimizer-step delta from `max_steps` or
-  from `num_train_epochs`, real dataloader length, and gradient accumulation.
-  Confirm the budget is not duplicated in patch `local_steps`/`local_epochs`.
-  Verify `NUM_STEPS_CURRENT_ROUND` or equivalent round evidence against that
-  delta. Under `restore_state=True`, a progress denominator or `args.max_steps`
-  equal to the per-round delta times total FL rounds is the expected cumulative
-  scheduler target, not multiplied local work.
+- Confirm the requested budget appears once, metrics advance across requested
+  rounds, and server artifacts contain the selected metric.
+
+## Conditional Execution Checks
+
+- When the real model may exceed host capacity, estimate server and concurrent
+  client memory before simulation. Capability-check optional diagnostics such
+  as `free` or `nvidia-smi`; missing diagnostics mean capacity evidence is
+  unavailable, not conversion failure. Use a reduced one-round topology smoke
+  only when the real model cannot fit, keep the generated default unchanged,
+  and report full-model validation blocked.
 - After partial aggregation, unexplained disconnect, or exit `-9`, inspect logs
   and either reduce workload with a changed causal factor or report a resource
   blocker. Do not retry the same payload with guessed concurrency settings, and
   make at most one expensive real-model retry.
-- For multiple rounds, verify metrics advance and checkpoint behavior matches
-  `restore_state`. For DDP, run a reduced two-process test when available;
-  otherwise report that distributed execution was not validated.
+- For non-default checkpoint/restore behavior, PEFT, auxiliary trainable
+  models, or DDP, load `huggingface-state-and-distributed.md` and run only its
+  applicable checks.
 
 ## Report
 

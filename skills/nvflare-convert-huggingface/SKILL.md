@@ -72,10 +72,13 @@ unprotected recipe or present a disclaimer as implementation.
 4. Select the recipe from FL intent. For explicit FedAvg, run `nvflare recipe
    show fedavg-pt --format json`, then immediately load
    `../nvflare-shared/references/pytorch-family-recipe-construction.md` and use
-   the returned module, class, and parameters. Import `FedAvgRecipe` from
-   `nvflare.app_opt.pt.recipes.fedavg`, never from `nvflare.recipe`. Do not
-   inspect Recipe source or signatures, guess adjacent symbols, or add per-site
-   recipe config unless sites genuinely differ. Load
+   the returned module, class, and parameters with the required construction
+   and execution shape in `assets/job.py`. Import `FedAvgRecipe` from
+   `nvflare.app_opt.pt.recipes.fedavg`, never from `nvflare.recipe`. Treat
+   `class_path` as the public recipe key and `path` as its normalized exported
+   representation; do not inspect Recipe source or signatures to reconcile
+   them. Do not guess adjacent symbols or add per-site recipe config unless
+   sites genuinely differ. Load
    `../nvflare-shared/references/pytorch-family-recipe-selection.md` only for
    ambiguous, evaluation-only, or non-FedAvg requests.
 5. Convert with `references/huggingface-conversion.md` and adapt
@@ -90,22 +93,24 @@ unprotected recipe or present a disclaimer as implementation.
    `num_train_epochs`, and a silent prompt uses the reported default
    `max_steps=10` unless source-budget preservation was requested. Do not
    duplicate the budget in patch `local_steps`/`local_epochs`.
-6. Add or update `job.py` with explicit model config, never a live model.
-   Package generated or project-local server-only model modules with
-   `recipe.add_server_file(...)` or equivalent, and keep the server and patched
-   Trainer exchange keyspaces identical. Apply only capability-confirmed
-   metric, transport, decomposer, offload, and execution settings from the
-   construction reference loaded in step 4. For local options, import the
-   recipe API before constructing `ArgumentParser(allow_abbrev=False)` and use
+6. Adapt `assets/server_model.py` and `assets/job.py` instead of inventing
+   server-model instantiation, packaging, export, or `SimEnv` wiring. Keep the
+   source model factory shared by the server and patched Trainer so their
+   exchange keyspaces match without a wrapper prefix. Keep explicit model
+   config, never a live model. Apply only capability-confirmed metric,
+   transport, decomposer, offload, and execution settings from the construction
+   reference loaded in step 4. For local options, preserve the job asset's
+   recipe-before-parser ordering, `ArgumentParser(allow_abbrev=False)`, and
    strict `parse_args()`; do not use `parse_known_args()`.
 7. Only after generated files exist, load
    `../nvflare-shared/references/validation-evidence.md`, then
    `references/huggingface-validation.md`. Follow the shared compile,
    construction, export, package-inspection, simulation, and terminal-evidence
-   ladder; apply only the Trainer-specific deltas from the HF reference. Stop
-   at the first failed rung. Do not inspect NVFLARE implementation source,
-   improvise Recipe API probes, or write one-off AST programs to re-prove the
-   maintained client template. Use `references/huggingface-state-and-distributed.md`
+   ladder; apply only the standard Trainer checks from the HF reference. Stop
+   at the first failed rung. Review and exercise the maintained assets directly;
+   do not inspect NVFLARE implementation source, improvise Recipe API probes, or
+   write one-off AST programs to re-prove them. Use
+   `references/huggingface-state-and-distributed.md`
    only when inspection found PEFT, DDP, checkpoint/restore overrides,
    auxiliary trainable models, or another non-default patch setting.
 8. Report the recipe, source facts, parameter scope, data partition, changed

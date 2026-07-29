@@ -14,7 +14,7 @@
         "The agent preserves existing non-generated source unless the user explicitly requested a specific overwrite.",
         "The generated client uses nvflare.client.hf and exactly one flare.patch(trainer) call.",
         "The agent completes inspect, dependency handling, recipe show and capability construction, conversion, job construction, and validation in order without preloading advanced or validation references.",
-        "The generated client adapts the maintained HF client_with_eval.py template instead of drafting another loop or writing a one-off AST or Recipe-source introspection program.",
+        "The generated conversion adapts the maintained HF client_with_eval.py, server_model.py, and job.py assets instead of drafting another loop or probing Recipe, persistor, class-loader, simulator, or argument-transport implementation source.",
         "The generated FL client entry cannot bypass flare.init() or flare.patch(trainer) through CLIENT_API_TYPE or other launch-environment detection; any preserved standalone path is behind an explicit non-client entry parameter.",
         "The generated client does not implement manual FLModel receive/send model exchange.",
         "The model, datasets, TrainingArguments, and Trainer are constructed once before the FL round loop.",
@@ -25,6 +25,7 @@
         "A successful nvflare agent inspect establishes that the host-provided NVFLARE product is available even when importlib.metadata has no nvflare distribution record; when all other requirements are already compatible, the agent skips installation and continues to simulation instead of running uv pip install --system.",
         "Intentional typo and abbreviation rejection checks run through assertion wrappers whose top-level commands succeed only when the generated parser rejects them; the HfArgumentParser wrapper accepts an expected unused-argument ValueError only when its diagnostic names the rejected argument.",
         "The generated recipe model is an explicit class_path and args mapping, not a live model instance.",
+        "The generated job preserves the maintained PyTorch-family fast path: FedAvgRecipe with class_path, SimEnv, recipe.execute, and explicit server/client model-file packaging.",
         "The generated recipe uses ExchangeFormat.PYTORCH, enables tensor disk offload, encodes train_args for the selected public execution mode without assuming shell parsing, and packages the required model file into the server app with recipe.add_server_file or an equivalent server-targeted API, including a server-only model.py that would otherwise be outside each client app's train_script import closure.",
         "The recipe key_metric preserves the source metric name accuracy when the generated evaluate call emits accuracy; if Trainer emits eval_accuracy, the recipe uses that exact key and reports the source-to-server metric mapping.",
         "The two simulated clients train on deterministic seeded site-local partitions, stratified when labels exist, rather than the same full training dataset; the report names the split policy, seed, site count, and any shared-data request.",
@@ -45,7 +46,7 @@
           },
           {
             "id": "use-huggingface-patched-trainer",
-            "description": "adapts the maintained HF client template and uses nvflare.client.hf.patch(trainer) as the sole model-exchange integration"
+            "description": "adapts the maintained HF client, server-model, and job assets and uses nvflare.client.hf.patch(trainer) as the sole model-exchange integration"
           },
           {
             "id": "phase-gated-reference-loading",
