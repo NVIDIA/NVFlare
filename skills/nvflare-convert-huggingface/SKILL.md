@@ -59,7 +59,7 @@ user's purpose is to understand data distribution; handle conversion later as a 
    callbacks, checkpoint and PEFT settings, precision, local budget,
    distributed launcher, site/round counts, data location, and aggregation
    intent. Do not import or execute user training modules to discover them.
-3. Apply the dependency-install ordering rule in `conversion-common.md` before
+3. Apply the dependency-install ordering rule in `../nvflare-shared/references/conversion-common.md` before
    any Python command imports user, framework, NVFLARE, or declared dependency
    modules.
 4. Select the recipe from FL intent. For explicit FedAvg, run `nvflare recipe
@@ -78,7 +78,7 @@ user's purpose is to understand data distribution; handle conversion later as a 
    `assets/client_with_eval.py` rather than drafting a new round loop. Preserve
    model, tokenizer/processor, datasets, collator, Trainer arguments,
    callbacks, and metrics. Partition site data per the "Site Data Partitioning"
-   rule in `conversion-common.md`. Import the Client API as
+   rule in `../nvflare-shared/references/conversion-common.md`. Import the Client API as
    `import nvflare.client.hf as flare`, so `flare.init()`, `flare.patch()`, and
    `flare.is_running()` resolve to `nvflare.client.hf`. Keep
    `flare.patch(trainer)` simple with inferred `params_scope="auto"` and encode
@@ -120,7 +120,7 @@ user's purpose is to understand data distribution; handle conversion later as a 
   inside a patched loop may inspect task metadata only; it must not load a
   second copy of the global model.
 - Must pass the distributed rank to `flare.init(rank=rank)`; Client API
-  initialization order otherwise follows `conversion-common.md`.
+  initialization order otherwise follows `../nvflare-shared/references/conversion-common.md`.
 - Must preserve source evaluation. When per-round global-model evaluation is
   required, call `trainer.evaluate()` before `trainer.train()` on every rank.
   Do not invent `compute_metrics`, label mappings, averaging denominators, or

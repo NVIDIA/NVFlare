@@ -59,17 +59,19 @@ def add_negated_metrics(metrics, lower_is_better_keys):
     the framework-neutral rule in
     ``../../nvflare-shared/references/pytorch-family-recipe-construction.md``.
 
-    Pass only source-backed keys whose direction the source establishes; the
-    original metric is preserved alongside the companion.
+    Pass only source-backed keys whose direction the source establishes. Returns
+    a new dict; the original metric is preserved alongside the companion and the
+    input mapping is left unchanged.
     """
+    result = dict(metrics)
     for key in lower_is_better_keys:
-        if key not in metrics:
+        if key not in result:
             raise RuntimeError(f"lower-is-better metric {key!r} is not in the validation results")
         companion = f"neg_{key}"
-        if companion in metrics:
+        if companion in result:
             raise RuntimeError(f"negated companion {companion!r} already exists")
-        metrics[companion] = -metrics[key]
-    return metrics
+        result[companion] = -result[key]
+    return result
 
 
 def validate_global_model(trainer, model, datamodule=None, dataloaders=None, lower_is_better_keys=()):
@@ -101,13 +103,19 @@ def validate_global_model(trainer, model, datamodule=None, dataloaders=None, low
     return metrics
 
 
-def main(model, datamodule, trainer_factory, evaluate_only=False):
+def main(model, datamodule, trainer_factory, evaluate_only=False, lower_is_better_keys=()):
     """Lightning Client API round loop with validate-before-fit.
 
     ``trainer_factory`` constructs the source project's ``Trainer``. Set
     ``evaluate_only=True`` for FedEval / evaluation-only conversions: the round
     runs ``trainer.validate`` so the patched trainer sends validation metrics,
     and skips local training. Do not call ``trainer.fit`` in that mode.
+
+    Pass ``lower_is_better_keys`` when best-model selection uses a source-backed
+    lower-is-better metric, for example ``("val_loss",)``. Each named metric
+    gains a ``neg_`` companion that the recipe selects with ``key_metric``; keep
+    this threaded through when adapting the loop, or the negated key never
+    reaches the server.
     """
     trainer = trainer_factory()
     flare.patch(trainer)
@@ -116,7 +124,12 @@ def main(model, datamodule, trainer_factory, evaluate_only=False):
         # receive() is optional metadata/task-progression access only; the
         # patched trainer loads the global model internally.
         flare.receive()
-        validate_global_model(trainer, model, datamodule=datamodule)
+        validate_global_model(
+            trainer,
+            model,
+            datamodule=datamodule,
+            lower_is_better_keys=lower_is_better_keys,
+        )
         if evaluate_only:
             continue
         trainer.fit(model, datamodule=datamodule)

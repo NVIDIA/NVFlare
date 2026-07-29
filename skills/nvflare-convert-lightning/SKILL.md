@@ -61,7 +61,7 @@ distribution; handle conversion later as a separate request.
    PyTorch and hand off to `nvflare-convert-pytorch` when no Lightning evidence
    exists. If inspection recommends `nvflare-orient` for active Lightning and
    Hugging Face Trainer owners, stop and hand off before editing.
-3. Apply the dependency-install ordering rule in `conversion-common.md` before
+3. Apply the dependency-install ordering rule in `../nvflare-shared/references/conversion-common.md` before
    any Python command imports user, Lightning, NVFLARE, or declared dependency
    modules.
 4. Identify the existing `LightningModule`, `LightningDataModule`, trainer
@@ -90,7 +90,7 @@ distribution; handle conversion later as a separate request.
    results under `MetaKey.INITIAL_METRICS`; calling `trainer.validate(...)`
    alone does not prove delivery. Ask or fail closed when validation semantics
    are missing. Partition site data per the "Site Data Partitioning" rule in
-   `conversion-common.md`.
+   `../nvflare-shared/references/conversion-common.md`.
 7. Add or update `job.py` with explicit model config
    `{"class_path": ..., "args": ...}` (never a live `LightningModule`),
    requested `aggregator=` wiring, and the metric, tensor-transport, server

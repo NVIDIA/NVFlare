@@ -176,3 +176,11 @@ When best-model selection is not requested, or no source-backed override is
 justified, leave `key_metric` unspecified and retain the recipe's documented
 default. Do not add a skill-specific sentinel or claim that omitting the
 argument disables the recipe's model selector.
+
+Retaining the default leaves the recipe's model selector active on that default
+key. When the generated client does not deliver that key, the selector logs a
+per-round warning naming the missing metric and the run finishes without a
+best-model artifact. The run still succeeds; this is expected behavior, not a
+conversion failure. Report it as a known limitation of the selected metric
+configuration instead of suppressing the warning, renaming a client metric to
+match the default, or switching recipes.

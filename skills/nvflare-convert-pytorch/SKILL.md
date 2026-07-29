@@ -54,7 +54,7 @@ distribution; handle conversion later as a separate request.
    functions, data loading, metric names and denominators, local epochs/steps,
    requested client and round counts, source data split or partition evidence,
    tracking evidence, DDP evidence, and any custom aggregation intent.
-3. Apply the dependency-install ordering rule in `conversion-common.md` before
+3. Apply the dependency-install ordering rule in `../nvflare-shared/references/conversion-common.md` before
    any Python command imports user, PyTorch, NVFLARE, or declared dependency
    modules.
 4. Select the recipe from the requested FL workflow, not from PyTorch alone. For
@@ -79,7 +79,7 @@ distribution; handle conversion later as a separate request.
    send an `FLModel` with updated `params` and `metrics`. Adapt the user's
    evaluation code into the packaged evaluation template; if evaluation is
    required but missing, ask or fail closed. Partition site data per the "Site
-   Data Partitioning" rule in `conversion-common.md`.
+   Data Partitioning" rule in `../nvflare-shared/references/conversion-common.md`.
 6. Add or update `job.py` with explicit model config (never a live model),
    requested `aggregator=` wiring, and the metric, tensor-transport, server
    offload, and execution settings derived from the shared PyTorch-family

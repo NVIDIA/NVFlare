@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 import json
 import sys
 from pathlib import Path
@@ -203,6 +204,18 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     assert "retain the recipe's documented default" in normalized_construction
     assert "Do not add a skill-specific sentinel" in construction_text
 
+    # Retaining the default leaves the selector ACTIVE on that default key: BaseFedJob
+    # installs IntimeModelSelector for any truthy key_metric, and the selector logs a
+    # warning and skips the client when the key is absent from the delivered metrics.
+    # The guidance must state that observable consequence so the agent can report it.
+    from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+
+    assert inspect.signature(FedAvgRecipe).parameters["key_metric"].default == "accuracy"
+    assert "leaves the recipe's model selector active on that default key" in normalized_construction
+    assert "logs a per-round warning naming the missing metric" in normalized_construction
+    assert "without a best-model artifact" in normalized_construction
+    assert "Report it as a known limitation" in normalized_construction
+
     hf_root = repo_root / "skills" / "nvflare-convert-huggingface"
     hf_skill_text = hf_root.joinpath("SKILL.md").read_text(encoding="utf-8")
     hf_conversion_text = hf_root.joinpath("references/huggingface-conversion.md").read_text(encoding="utf-8")
@@ -226,6 +239,13 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     assert 'lower_is_better_keys=("val_loss",)' in normalized_lightning_conversion
     assert 'key_metric="neg_val_loss"' in lightning_conversion_text
     assert "never a reason to fail closed" in normalized_lightning_conversion
+    # main() is the loop agents copy verbatim; if it does not thread
+    # lower_is_better_keys into validate_global_model, the negated key never
+    # reaches the server no matter what the reference says.
+    assert "def main(model, datamodule, trainer_factory, evaluate_only=False, lower_is_better_keys=())" in (
+        lightning_asset_text
+    )
+    assert "lower_is_better_keys=lower_is_better_keys" in lightning_asset_text
 
     for consumer_text in (skill_text, recipe_text, client_text, validation_text, hf_skill_text, hf_conversion_text):
         assert "pytorch-family-recipe-construction.md" in consumer_text

@@ -852,3 +852,30 @@ class _DummyModel:
 
     def __call__(self, *_args, **_kwargs):  # pragma: no cover - never reached on empty loader
         raise AssertionError("model should not be called when the loader is empty")
+
+
+def test_lightning_negated_metric_helper_does_not_mutate_and_is_threaded_through_main():
+    """The negation helper must be copy-safe, and main() must actually pass the keys.
+
+    ``main`` is the round loop a generated ``client.py`` copies verbatim. If it does
+    not forward ``lower_is_better_keys`` to ``validate_global_model``, a lower-is-better
+    conversion silently never delivers the negated key the recipe selects on.
+    """
+    import inspect as _inspect
+
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+
+    source = {"val_loss": 0.25, "val_acc": 0.9}
+    negated = module.add_negated_metrics(source, ("val_loss",))
+
+    assert negated == {"val_loss": 0.25, "val_acc": 0.9, "neg_val_loss": -0.25}
+    assert source == {"val_loss": 0.25, "val_acc": 0.9}, "helper must not mutate its input"
+
+    with pytest.raises(RuntimeError, match="not in the validation results"):
+        module.add_negated_metrics({"val_acc": 1.0}, ("val_loss",))
+    with pytest.raises(RuntimeError, match="already exists"):
+        module.add_negated_metrics({"val_loss": 1.0, "neg_val_loss": 0.0}, ("val_loss",))
+
+    assert "lower_is_better_keys" in _inspect.signature(module.main).parameters
+    main_source = _inspect.getsource(module.main)
+    assert "lower_is_better_keys=lower_is_better_keys" in main_source
