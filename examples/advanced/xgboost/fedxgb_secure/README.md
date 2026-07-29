@@ -228,8 +228,8 @@ recipe = XGBVerticalRecipe(
 )
 set_per_site_config(recipe, per_site_config)
 
-# Run simulation
-env = SimEnv(num_clients=3)
+# Run simulation with the clients configured on the recipe
+env = SimEnv(clients=recipe.configured_sites())
 run = recipe.execute(env)
 run.simulator_run("/tmp/nvflare/workspace/works/vertical_secure")
 ```
@@ -283,7 +283,7 @@ recipe = XGBHorizontalRecipe(
 set_per_site_config(recipe, per_site_config)
 
 # Export job (simulator run requires additional context setup for secure horizontal)
-env = SimEnv(num_clients=3)
+env = SimEnv(clients=recipe.configured_sites())
 run = recipe.execute(env)
 run.export_job("/tmp/nvflare/workspace/jobs/horizontal_secure")
 ```

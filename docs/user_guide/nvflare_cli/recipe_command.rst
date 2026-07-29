@@ -105,7 +105,7 @@ Algorithm values:
      - ``pytorch``, ``tensorflow``
      - ``nvflare recipe list --filter algorithm=fedopt``
    * - ``fedprox``
-     - ``pytorch``, ``tensorflow``
+     - ``pytorch``
      - ``nvflare recipe list --filter algorithm=fedprox``
    * - ``fedstats``
      - ``core``

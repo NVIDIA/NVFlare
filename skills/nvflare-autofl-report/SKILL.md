@@ -20,6 +20,12 @@ metadata:
 
 # NVFLARE Auto-FL Report
 
+## Purpose
+
+Turn the recorded evidence from a stopped NVFLARE Auto-FL campaign into a
+reproducible Markdown report, machine-readable JSON summary, and refreshed
+progress plot without changing the campaign or its results.
+
 ## Use When
 
 Use this skill after an NVFLARE Auto-FL campaign has stopped, reached an
@@ -33,6 +39,16 @@ Do not use this skill to start or continue optimization, invent missing
 results, or finalize a campaign that is still running. Use `nvflare-autofl` for
 the active candidate loop. Do not stop an active campaign merely because the
 user asks for a status snapshot.
+
+## Available Scripts
+
+| Script | Purpose | Arguments |
+| --- | --- | --- |
+| `scripts/generate_report.py` | Validate stopped campaign evidence and generate the report, JSON summary, and optional progress plot. | Campaign job directory; optional evidence/output paths, interruption confirmation, plot settings, and agent context. Run `python scripts/generate_report.py --help` for the complete CLI. |
+
+Run this bundled CLI directly with Python. This skill has no NVFLARE or agent
+`run_script()` helper; do not invent or call one. Resolve the script from the
+directory containing this `SKILL.md`, as shown in the workflow.
 
 ## Workflow
 
@@ -97,6 +113,16 @@ terminal value (`keep`, `discard`, `crash`, or `abandoned`) also blocks. Missing
 unknown, or unreadable status is unfinished evidence because completion cannot
 be established. The agent must finalize or abandon that candidate first.
 
+## Troubleshooting
+
+| Error or symptom | Cause | Solution |
+| --- | --- | --- |
+| Reporting is refused because `final_response_allowed=false`. | The campaign may still be active, or persisted state may be stale after an interruption. | Confirm no campaign or job process remains. If a human confirmed the interruption, rerun with `--confirm-interrupted`; otherwise continue or stop the campaign through `nvflare-autofl`. |
+| Reporting is refused for a pending candidate or unknown manifest status. | The recorded evidence cannot establish that candidate execution finished. | Finalize or abandon the candidate through `nvflare-autofl`, then regenerate the report. |
+| The campaign lock is busy. | Another campaign or reporting process holds the lifecycle lock. | Identify and wait for the active process. Never bypass or delete a live lock. |
+| The JSON says `progress_plot_available=false`. | Plotting dependencies are unavailable or the generated artifact is not a valid PNG. | Use the completed Markdown and JSON reports, review their warning, and install the campaign's plotting dependencies before retrying if a plot is required. |
+| An output path is rejected. | The path aliases protected campaign evidence, source, or another output. | Choose distinct writable output paths outside protected campaign inputs and rerun. |
+
 ## Report Contract
 
 The final report must include:
@@ -139,6 +165,18 @@ It does not infer algorithm families or mechanisms from candidate names.
 
 Read [report-contract.md](references/report-contract.md) when interpreting
 lineage, literature outcomes, budget warnings, or interrupted state.
+
+## Limitations
+
+- The report is only as complete as the persisted ledger, campaign state, and
+  candidate manifests; it does not validate or reconstruct unrecorded claims.
+- Results from a single campaign do not establish robustness or
+  generalization.
+- The helper does not start, stop, resume, or resubmit campaign jobs.
+- Progress plotting remains optional, so Markdown and JSON may be produced
+  without an embeddable PNG.
+- Copied campaign archives may retain only partial provenance when recorded
+  absolute manifest paths are no longer available.
 
 ## Requirements
 

@@ -24,6 +24,7 @@ from typing import Any
 
 import yaml
 
+from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.tool.deploy.deploy_common import (
     COMM_CONFIG_JSON,
     FED_CLIENT_JSON,
@@ -174,6 +175,13 @@ def _patch_comm_config_for_k8s(
 ) -> None:
     comm_config_path = kit_dir / "local" / COMM_CONFIG_JSON
     comm_config = _load_or_default_comm_config(comm_config_path)
+    internal = comm_config.setdefault("internal", {})
+    if isinstance(internal, dict) and internal.get("scheme") == SHARED_FILE_SCHEME:
+        _fail(
+            "INVALID_KIT",
+            f"Kubernetes runtime does not support internal.scheme '{SHARED_FILE_SCHEME}'.",
+            "Use internal.scheme 'tcp', run the original kit in process mode, or choose the Slurm runtime.",
+        )
     resources = _internal_resources(comm_config)
     resources.update(
         {
@@ -182,7 +190,6 @@ def _patch_comm_config_for_k8s(
             "connection_security": "clear",
         }
     )
-    internal = comm_config.setdefault("internal", {})
     internal["scheme"] = "tcp"
     _write_json(comm_config_path, comm_config)
 

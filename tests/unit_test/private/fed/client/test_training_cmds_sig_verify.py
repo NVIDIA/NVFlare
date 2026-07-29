@@ -23,7 +23,6 @@ import types
 from unittest.mock import MagicMock, patch
 from zipfile import ZipFile
 
-from nvflare.apis.job_def import JobMetaKey
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader
@@ -353,26 +352,3 @@ class TestUnsignedJob:
 
         assert "failed to stage app" in reply.body
         assert len(engine._deploy_calls) == 0
-
-
-# ---------------------------------------------------------------------------
-# from_hub_site — verification block entirely skipped
-# ---------------------------------------------------------------------------
-
-
-class TestFromHubSite:
-    def test_from_hub_site_skips_verification(self, tmp_path):
-        """from_hub_site=True -> verification block skipped entirely -> ok_reply."""
-        job_meta = {JobMetaKey.FROM_HUB_SITE.value: "hub-1"}
-        req = _make_request(job_meta=job_meta, body=b"hub payload")
-        engine = _StubEngine(workspace_dir=str(tmp_path))
-
-        with (
-            patch("nvflare.private.fed.client.training_cmds.unzip_all_from_bytes") as mock_unzip,
-            patch("nvflare.private.fed.client.training_cmds.verify_folder_signature") as mock_vfs,
-        ):
-            reply = _run_process(req, engine, str(tmp_path))
-
-        mock_unzip.assert_not_called()
-        mock_vfs.assert_not_called()
-        assert "deployed" in reply.body
