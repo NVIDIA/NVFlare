@@ -623,6 +623,27 @@ def test_run_terminates_detached_descendant_that_escapes_process_group(tmp_path,
         pytest.fail(f"detached descendant process {child_pid} survived trial-token cleanup")
 
 
+def test_signal_trial_processes_uses_pidfds_and_revalidates_identity(monkeypatch):
+    runner = _load_runner()
+    identities = {10: [123, 123], 11: [456, -1]}
+    sent = []
+    closed = []
+
+    monkeypatch.setattr(runner, "trial_process_ids", lambda _token: [123, 456])
+    monkeypatch.setattr(runner, "process_has_trial_token", lambda _process_id, _marker: True)
+    monkeypatch.setattr(runner, "pidfd_process_id", lambda pidfd: identities[pidfd].pop(0))
+    monkeypatch.setattr(
+        runner.os, "pidfd_open", lambda process_id, _flags: {123: 10, 456: 11}[process_id], raising=False
+    )
+    monkeypatch.setattr(runner.os, "close", closed.append)
+    monkeypatch.setattr(runner.signal, "pidfd_send_signal", lambda pidfd, sig: sent.append((pidfd, sig)), raising=False)
+
+    runner.signal_trial_processes("trial-token", runner.signal.SIGTERM)
+
+    assert sent == [(10, runner.signal.SIGTERM)]
+    assert closed == [10, 11]
+
+
 @pytest.mark.skipif(os.name == "nt", reason="process-group cleanup uses POSIX process groups")
 @pytest.mark.parametrize("monitor_error", [KeyboardInterrupt(), RuntimeError("monitor failed")])
 def test_run_terminates_child_process_group_when_monitor_raises(tmp_path, monkeypatch, monitor_error):

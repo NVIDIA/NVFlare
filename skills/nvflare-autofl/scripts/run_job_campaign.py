@@ -405,14 +405,60 @@ def trial_process_ids(trial_token: Optional[str]) -> List[int]:
     return sorted(process_ids)
 
 
+def pidfd_process_id(pidfd: int) -> Optional[int]:
+    try:
+        lines = Path(f"/proc/self/fdinfo/{pidfd}").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        if line.startswith("Pid:"):
+            try:
+                return int(line.partition(":")[2].strip())
+            except ValueError:
+                return None
+    return None
+
+
+def process_has_trial_token(process_id: int, marker: bytes) -> bool:
+    try:
+        return marker in Path(f"/proc/{process_id}/environ").read_bytes().split(b"\0")
+    except OSError:
+        return False
+
+
+def open_trial_process_pidfd(process_id: int, marker: bytes) -> Optional[int]:
+    pidfd_open = getattr(os, "pidfd_open", None)
+    pidfd_send_signal = getattr(signal, "pidfd_send_signal", None)
+    if not callable(pidfd_open) or not callable(pidfd_send_signal):
+        return None
+    try:
+        pidfd = pidfd_open(process_id, 0)
+    except OSError:
+        return None
+    if (
+        pidfd_process_id(pidfd) != process_id
+        or not process_has_trial_token(process_id, marker)
+        or pidfd_process_id(pidfd) != process_id
+    ):
+        os.close(pidfd)
+        return None
+    return pidfd
+
+
 def signal_trial_processes(trial_token: Optional[str], sig: int) -> None:
+    if not trial_token:
+        return
+    marker = f"{TRIAL_PROCESS_TOKEN_ENV_VAR}={trial_token}".encode("utf-8")
     for process_id in trial_process_ids(trial_token):
-        try:
-            # A PID could be recycled between the /proc scan and this kill; the token match plus the
-            # sub-second window makes that acceptable for cleanup.
-            os.kill(process_id, sig)
-        except (PermissionError, ProcessLookupError):
+        pidfd = open_trial_process_pidfd(process_id, marker)
+        if pidfd is None:
             continue
+        try:
+            signal.pidfd_send_signal(pidfd, sig)
+        except OSError:
+            pass
+        finally:
+            os.close(pidfd)
 
 
 def wait_for_process_tree(
