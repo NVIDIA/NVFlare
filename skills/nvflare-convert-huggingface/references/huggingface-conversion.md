@@ -111,7 +111,17 @@ packaging API.
 
 Add optional recipe arguments and decomposers only as directed by the selected
 recipe's capability profile and the shared construction reference. Do not copy
-the FedAvg constructor shape to another recipe.
+the FedAvg constructor shape to another recipe. When sites genuinely need
+different non-entrypoint settings, such as complete `train_args` or
+source-backed launcher values, pass the resolved site mapping through the
+asset's `per_site_config` argument. It calls
+`set_per_site_config(recipe, per_site_config)` immediately after construction
+and before any client file or configuration is added. Do not pass the deprecated
+Recipe constructor `per_site_config` option through `recipe_options`.
+Every site uses the same packaged `client.py`; do not include `train_script` in
+the per-site mapping. The asset rejects both relative and absolute site-specific
+script overrides because it cannot package them while preserving one portable
+app-local runtime path.
 Follow the shared construction reference's client-argument transport rule.
 `train_args` is not necessarily shell parsed: use unquoted whitespace-free
 tokens for the default in-process executor, and use shell quoting only for a

@@ -30,16 +30,18 @@ Hugging Face Trainer (route to `nvflare-convert-pytorch`), PyTorch Lightning
 (route to `nvflare-convert-lightning`, including Lightning modules that contain
 Transformers models), inference-only pipelines, model serving, failed jobs
 (route to `nvflare-diagnose-job`), or federated statistics without training
-(route to `nvflare-fed-stats`). Route an inspected project with active Lightning
-and Hugging Face Trainer entrypoints to
-`nvflare-orient`; that routing skill owns the choice of one training-loop owner
-or separate jobs. Route unresolved Trainer ownership, such as a Trainer factory
-without a bound owner call, to `nvflare-orient` rather than guessing. Do not
-patch either Trainer in this skill.
+(route to `nvflare-fed-stats`). Route a project with active Lightning and
+Hugging Face Trainer entrypoints to `nvflare-orient` to select one training-loop
+owner or separate jobs. Route unresolved Trainer ownership, such as a Trainer
+factory without a bound owner call, to `nvflare-orient`; do not patch either Trainer.
 Out of scope: DeepSpeed, FSDP, production/POC deployment, controller rewrites,
 experiment search, and privacy-protection requests such as HE, encrypted
 aggregation, differential privacy, or privacy filters; never substitute an
 unprotected recipe or present a disclaimer as implementation.
+If a request combines federated statistics and model-training conversion, treat it as two independent jobs and
+workflows: do not merge or automatically chain them, do not route the combination to `nvflare-orient`, and ask which
+workflow to run first before generating or running either job. Recommend `nvflare-fed-stats` first only when the
+user's purpose is to understand data distribution; handle conversion later as a separate request.
 
 ## Workflow
 

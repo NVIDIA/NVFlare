@@ -18,7 +18,7 @@ from numbers import Integral, Real
 from pathlib import Path
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, set_per_site_config
 
 DEFAULT_MAX_STEPS = 10
 SOURCE_DIR = Path(__file__).resolve().parent
@@ -115,6 +115,7 @@ def build_recipe(
     max_steps: int | None = None,
     num_train_epochs: float | None = None,
     preserve_source_budget: bool = False,
+    per_site_config: dict[str, dict] | None = None,
     recipe_options: dict | None = None,
 ):
     """Build FedAvg using only options confirmed by ``recipe show``."""
@@ -126,6 +127,19 @@ def build_recipe(
         num_train_epochs=num_train_epochs,
         preserve_source_budget=preserve_source_budget,
     )
+    options = dict(recipe_options or {})
+    if "per_site_config" in options:
+        raise ValueError(
+            "pass per_site_config to build_recipe instead of using the deprecated recipe constructor option"
+        )
+    if isinstance(per_site_config, dict) and any(
+        isinstance(site_config, dict) and "train_script" in site_config for site_config in per_site_config.values()
+    ):
+        raise ValueError(
+            "per_site_config must use the shared train_script='client.py'; "
+            "site-specific train_script overrides are not supported by this job template"
+        )
+
     with _source_directory():
         recipe = FedAvgRecipe(
             name=name,
@@ -138,8 +152,10 @@ def build_recipe(
             train_script="client.py",
             train_args=train_args,
             key_metric=key_metric,
-            **(recipe_options or {}),
+            **options,
         )
+        if per_site_config is not None:
+            set_per_site_config(recipe, per_site_config)
         recipe.add_server_file(str(SOURCE_DIR / "server_model.py"))
         recipe.add_server_file(str(SOURCE_DIR / "model.py"))
         recipe.add_client_file(str(SOURCE_DIR / "client.py"))

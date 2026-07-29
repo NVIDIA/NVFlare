@@ -41,6 +41,12 @@ encrypted aggregation, differential privacy, and privacy filters — are not
 supported: they require provisioning or deployment policy beyond conversion
 scope, so report such a request as unsupported and route it to
 provisioning/deployment, never substituting an unprotected recipe or disclaimer.
+If a request combines federated statistics and model-training conversion,
+treat it as two independent jobs and workflows: do not merge or automatically
+chain them, do not route the combination to `nvflare-orient`, and ask which
+workflow to run first before generating or running either job. Recommend
+`nvflare-fed-stats` first only when the user's purpose is to understand data
+distribution; handle conversion later as a separate request.
 
 ## Workflow
 

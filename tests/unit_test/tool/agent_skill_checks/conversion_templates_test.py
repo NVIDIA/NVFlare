@@ -356,6 +356,108 @@ def test_huggingface_job_template_exports_colocated_files_from_another_working_d
     assert executor_args["task_script_path"] == "client.py"
 
 
+def test_huggingface_job_template_exports_per_site_files_from_another_working_directory(tmp_path, monkeypatch):
+    generated_dir = tmp_path / "generated"
+    generated_dir.mkdir()
+    job_path = generated_dir / "job.py"
+    job_path.write_text((HF_TEMPLATES / "job.py").read_text(encoding="utf-8"), encoding="utf-8")
+    (generated_dir / "client.py").write_text("import model\n", encoding="utf-8")
+    (generated_dir / "model.py").write_text("class Model:\n    pass\n", encoding="utf-8")
+    (generated_dir / "server_model.py").write_text("from model import Model\n", encoding="utf-8")
+
+    caller_dir = tmp_path / "caller"
+    caller_dir.mkdir()
+    monkeypatch.chdir(caller_dir)
+    module = _load_module(job_path)
+    site_args = {
+        "site-1": {"train_args": module.build_train_args("local-model", "/data/site-1", 2, max_steps=2)},
+        "site-2": {"train_args": module.build_train_args("local-model", "/data/site-2", 2, max_steps=3)},
+    }
+    recipe = module.build_recipe(
+        name="hf-per-site-cwd-independent",
+        model_name_or_path="local-model",
+        data_root="/tmp/data",
+        num_clients=2,
+        num_rounds=1,
+        key_metric="eval_accuracy",
+        per_site_config=site_args,
+    )
+    assert Path.cwd() == caller_dir
+    export_root = tmp_path / "export"
+    recipe.export(str(export_root))
+
+    job_root = export_root / recipe.name
+    assert (job_root / "app_server" / "custom" / "server_model.py").is_file()
+    assert (job_root / "app_server" / "custom" / "model.py").is_file()
+    for site_name, expected in site_args.items():
+        app_dir = job_root / f"app_{site_name}"
+        assert (app_dir / "custom" / "client.py").is_file()
+        assert (app_dir / "custom" / "model.py").is_file()
+        client_config = json.loads((app_dir / "config" / "config_fed_client.json").read_text(encoding="utf-8"))
+        executor_args = client_config["executors"][0]["executor"]["args"]
+        assert executor_args["task_script_path"] == "client.py"
+        assert executor_args["task_script_args"] == expected["train_args"]
+
+
+def test_huggingface_job_template_rejects_deprecated_per_site_constructor_option():
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    with pytest.raises(ValueError, match="pass per_site_config to build_recipe"):
+        module.build_recipe(
+            name="hf-deprecated-per-site",
+            model_name_or_path="local-model",
+            data_root="/tmp/data",
+            num_clients=2,
+            num_rounds=1,
+            key_metric="eval_accuracy",
+            recipe_options={"per_site_config": {"site-1": {}, "site-2": {}}},
+        )
+
+
+@pytest.mark.parametrize(
+    "train_script",
+    ["client_site_2.py", str(HF_TEMPLATES / "client_with_eval.py")],
+)
+def test_huggingface_job_template_rejects_per_site_train_script_overrides(tmp_path, monkeypatch, train_script):
+    caller_dir = tmp_path / "caller"
+    caller_dir.mkdir()
+    monkeypatch.chdir(caller_dir)
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    with pytest.raises(ValueError, match="must use the shared train_script='client.py'"):
+        module.build_recipe(
+            name="hf-per-site-script",
+            model_name_or_path="local-model",
+            data_root="/tmp/data",
+            num_clients=2,
+            num_rounds=1,
+            key_metric="eval_accuracy",
+            per_site_config={"site-1": {}, "site-2": {"train_script": train_script}},
+        )
+
+    assert Path.cwd() == caller_dir
+
+
+def test_huggingface_job_template_restores_cwd_when_per_site_config_is_invalid(tmp_path, monkeypatch):
+    caller_dir = tmp_path / "caller"
+    caller_dir.mkdir()
+    monkeypatch.chdir(caller_dir)
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    with pytest.raises(ValueError, match="min_clients=2"):
+        module.build_recipe(
+            name="hf-invalid-per-site",
+            model_name_or_path="local-model",
+            data_root="/tmp/data",
+            num_clients=2,
+            num_rounds=1,
+            key_metric="eval_accuracy",
+            per_site_config={"site-1": {}},
+        )
+
+    assert Path.cwd() == caller_dir
+
+
 def test_huggingface_client_template_rejects_abbreviated_hf_arguments():
     transformers = pytest.importorskip("transformers")
 

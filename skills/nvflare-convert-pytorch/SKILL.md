@@ -33,6 +33,12 @@ controller/workflow rewrites outside recipe or Job APIs, experiment search, and
 data distribution experiments beyond minimal validation setup. Privacy-protection
 requests — HE/encrypted aggregation, differential privacy, and privacy filters — need provisioning/deployment
 policy; route onward rather than substituting an unprotected recipe or adding only a disclaimer.
+If a request combines federated statistics and model-training conversion,
+treat it as two independent jobs and workflows: do not merge or automatically
+chain them, do not route the combination to `nvflare-orient`, and ask which
+workflow to run first before generating or running either job. Recommend
+`nvflare-fed-stats` first only when the user's purpose is to understand data
+distribution; handle conversion later as a separate request.
 
 ## Workflow
 

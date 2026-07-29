@@ -2,6 +2,38 @@
   "skill_name": "nvflare-convert-pytorch",
   "evals": [
     {
+      "id": "pytorch-combined-fedstats-workflow-boundary",
+      "prompt": "Convert my plain PyTorch training loop into an NVFLARE job and also run federated statistics over the site data in this same request. I have not chosen which workflow should run first.",
+      "expected_output": "The agent does not generate or run either job yet. It explains that federated statistics and model-training conversion are two independent jobs and workflows, asks which workflow to run first without recommending FedStats because no data-distribution purpose was stated, and does not route to nvflare-orient or automatically chain the jobs.",
+      "files": [],
+      "assertions": [
+        "The agent states that federated statistics and PyTorch training conversion are two independent jobs and workflows.",
+        "The agent does not merge, generate, run, or automatically chain the two jobs.",
+        "The agent asks which workflow to run first without selecting one for the user.",
+        "The agent does not recommend nvflare-fed-stats first because the prompt does not state a data-distribution purpose.",
+        "The agent does not route the combined request to nvflare-orient."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-pytorch",
+        "mandatory_behavior": [
+          {
+            "id": "separate-training-and-statistics-workflows",
+            "description": "explains that federated statistics and model-training conversion are independent jobs and asks which to run first"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-combined-or-auto-chained-jobs",
+            "description": "does not merge or automatically chain statistics and PyTorch conversion jobs"
+          },
+          {
+            "id": "no-orient-for-combined-workflow",
+            "description": "does not route the combined statistics and training request to nvflare-orient"
+          }
+        ]
+      }
+    },
+    {
       "id": "pytorch-convert-basic",
       "prompt": "Here is my PyTorch training code. Convert it to FLARE FL code, run the converted job with 3 simulated sites using this dataset, split the dataset evenly for the 3 sites, use FedAvg, and train for 3 rounds.",
       "expected_output": "A FLARE-compatible PyTorch Client API conversion following inspect -> recipe show -> fill -> transform -> construct -> validate: standard client.py/job.py/model.py layout, a runnable job.py that constructs FedAvg with explicit class_path model config for 3 simulated sites and 3 rounds, local validation evidence, and metric evidence. Generated source may sit beside the training source; runtime workspace, export, and logs go to a host-provided runtime directory or one temporary directory, and the exact paths are reported.",

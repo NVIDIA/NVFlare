@@ -22,6 +22,10 @@ sys.path.insert(0, str(CHECKS_PARENT))
 from checks.lints import run_v1_lints  # noqa: E402
 
 
+def _eval_by_id(eval_data, eval_id):
+    return next(item for item in eval_data["evals"] if item["id"] == eval_id)
+
+
 def test_seed_skills_pass_v1_admission_lints():
     repo_root = Path(__file__).resolve().parents[4]
 
@@ -30,6 +34,41 @@ def test_seed_skills_pass_v1_admission_lints():
     assert result["status"] == "ok"
     assert result["summary"]["skill_count"] >= 2
     assert result["findings"] == []
+
+
+def test_training_conversion_and_fedstats_remain_separate_user_ordered_workflows():
+    repo_root = Path(__file__).resolve().parents[4]
+    skill_names = (
+        "nvflare-fed-stats",
+        "nvflare-convert-pytorch",
+        "nvflare-convert-lightning",
+        "nvflare-convert-huggingface",
+    )
+    required_text = (
+        "treat it as two independent jobs and workflows: do not merge or automatically "
+        "chain them, do not route the combination to `nvflare-orient`, and ask which "
+        "workflow to run first"
+    )
+
+    for skill_name in skill_names:
+        skill_text = repo_root.joinpath("skills", skill_name, "SKILL.md").read_text(encoding="utf-8")
+        normalized_skill = " ".join(skill_text.split())
+        assert required_text in normalized_skill
+        assert (
+            "Recommend `nvflare-fed-stats` first only when the user's purpose is to understand data distribution"
+            in normalized_skill
+        )
+
+        eval_data = json.loads(
+            repo_root.joinpath("dev_tools", "agent", "skill_evals", skill_name, "evals.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        boundary_eval = next(item for item in eval_data["evals"] if "combined" in item["id"])
+        mandatory_ids = {item["id"] for item in boundary_eval["nvflare"]["mandatory_behavior"]}
+        prohibited_ids = {item["id"] for item in boundary_eval["nvflare"]["prohibited_behavior"]}
+        assert "separate-training-and-statistics-workflows" in mandatory_ids
+        assert {"no-combined-or-auto-chained-jobs", "no-orient-for-combined-workflow"} <= prohibited_ids
 
 
 def test_diagnose_job_catalog_pins_recovery_categories():
@@ -337,11 +376,10 @@ def test_pytorch_conversion_stops_after_dependency_install_failure():
     normalized_skill = " ".join(skill_text.split())
     normalized_dependency = " ".join(dependency_text.split())
     normalized_workflow = " ".join(workflow_text.split())
-    mandatory_by_id = {
-        item["id"]: item["description"] for item in eval_data["evals"][0]["nvflare"]["mandatory_behavior"]
-    }
+    basic_eval = _eval_by_id(eval_data, "pytorch-convert-basic")["nvflare"]
+    mandatory_by_id = {item["id"]: item["description"] for item in basic_eval["mandatory_behavior"]}
     mandatory_ids = set(mandatory_by_id)
-    prohibited_ids = {item["id"] for item in eval_data["evals"][0]["nvflare"]["prohibited_behavior"]}
+    prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
 
     assert (
         "before any Python command imports user, PyTorch, NVFLARE, or declared dependency modules" in normalized_skill
@@ -398,8 +436,9 @@ def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
     normalized_construction = " ".join(construction_text.split())
     normalized_workflow = " ".join(workflow_text.split())
     normalized_validation = " ".join(validation_text.split())
-    mandatory_ids = {item["id"] for item in eval_data["evals"][0]["nvflare"]["mandatory_behavior"]}
-    prohibited_ids = {item["id"] for item in eval_data["evals"][0]["nvflare"]["prohibited_behavior"]}
+    basic_eval = _eval_by_id(eval_data, "pytorch-convert-basic")["nvflare"]
+    mandatory_ids = {item["id"] for item in basic_eval["mandatory_behavior"]}
+    prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
 
     assert "pass `best_model_filename` only" in normalized_construction
     assert "Do not also pass `save_filename`" in normalized_construction
@@ -424,9 +463,9 @@ def test_fedstats_reuses_named_sites_for_recipe_and_simulation():
     eval_data = json.loads(
         repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-fed-stats/evals.json").read_text(encoding="utf-8")
     )
-    first_eval = eval_data["evals"][0]["nvflare"]
-    mandatory_ids = {item["id"] for item in first_eval["mandatory_behavior"]}
-    prohibited_ids = {item["id"] for item in first_eval["prohibited_behavior"]}
+    basic_eval = _eval_by_id(eval_data, "fedstats-per-site-and-global")["nvflare"]
+    mandatory_ids = {item["id"] for item in basic_eval["mandatory_behavior"]}
+    prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
     normalized_skill = " ".join(skill_text.split())
     normalized_validation = " ".join(validation_text.split())
 
@@ -563,6 +602,8 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert 'recipe.add_server_file(str(SOURCE_DIR / "server_model.py"))' in job_template
     assert 'recipe.add_server_file(str(SOURCE_DIR / "model.py"))' in job_template
     assert 'recipe.add_client_file(str(SOURCE_DIR / "client.py"))' in job_template
+    assert "set_per_site_config(recipe, per_site_config)" in job_template
+    assert "site-specific train_script overrides are not supported" in job_template
     assert "../model.py" not in job_template
     assert "SimEnv(" in job_template
     assert "recipe.execute(" in job_template

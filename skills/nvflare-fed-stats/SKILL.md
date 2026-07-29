@@ -37,6 +37,12 @@ Do not use for model training conversion (route to `nvflare-convert-pytorch`,
 `nvflare-convert-lightning`, or `nvflare-convert-huggingface`), a failed or
 stalled existing job (route to `nvflare-diagnose-job`), or generic
 pandas/data-science help without federated intent.
+If a request combines federated statistics and model-training conversion,
+treat it as two independent jobs and workflows: do not merge or automatically
+chain them, do not route the combination to `nvflare-orient`, and ask which
+workflow to run first before generating or running either job. Recommend
+`nvflare-fed-stats` first only when the user's purpose is to understand data
+distribution; handle conversion later as a separate request.
 Hierarchical statistics, production deployment, Kubernetes, POC lifecycle,
 and privacy-policy design beyond the recipe's built-in knobs are out of
 scope. Statistics outside the supported set — categorical counts,
