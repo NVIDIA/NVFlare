@@ -16,6 +16,14 @@ another recipe.
 Only pass a recipe keyword when its name is in the exposed-name set. Do not copy
 the FedAvg constructor shape to Cyclic, FedEval, Swarm, or another recipe.
 
+Every recipe construction or construction preflight must include one model
+source accepted by the selected recipe, such as `model`, `initial_ckpt`, or
+`model_persistor`, and that keyword must be exposed by its capability profile.
+For an ordinary conversion, use the explicit model `class_path` and `args`
+mapping. Never instantiate an incomplete `FedAvgRecipe` merely to inspect
+attributes or discover constructor behavior; use `recipe show` and non-raising
+module/class attribute checks for capability discovery.
+
 ## Recipe API Boundary
 
 `recipe show` validates only the selected recipe's module, class, and listed

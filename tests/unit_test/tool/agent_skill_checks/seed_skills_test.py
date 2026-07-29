@@ -308,6 +308,10 @@ def test_pytorch_family_construction_policy_is_canonical_and_capability_based():
     assert construction_path in lightning_skill
     assert "whose `name` field is the public constructor keyword" in normalized_construction
     assert "Only pass a recipe keyword when its name is in the exposed-name set" in normalized_construction
+    assert (
+        "Every recipe construction or construction preflight must include one model source" in normalized_construction
+    )
+    assert "Never instantiate an incomplete `FedAvgRecipe`" in normalized_construction
     assert "When `server_expected_format` is exposed" in normalized_construction
     assert "When tensor-native transport was selected" in normalized_construction
     assert "Disk offload is a server memory optimization, not a model-exchange format" in normalized_construction
@@ -498,6 +502,42 @@ def test_pytorch_conversion_stops_after_dependency_install_failure():
     assert "no-dependency-install-retry-or-environment-surgery" in prohibited_ids
 
 
+def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recoveries():
+    repo_root = Path(__file__).resolve().parents[4]
+    dependency_text = repo_root.joinpath("skills/nvflare-shared/references/dependency-install.md").read_text(
+        encoding="utf-8"
+    )
+    validation_text = repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md").read_text(
+        encoding="utf-8"
+    )
+    metrics_text = repo_root.joinpath("skills/nvflare-shared/references/metrics-and-artifact-reporting.md").read_text(
+        encoding="utf-8"
+    )
+    hf_root = repo_root / "skills" / "nvflare-convert-huggingface"
+    hf_skill = hf_root.joinpath("SKILL.md").read_text(encoding="utf-8")
+    hf_validation = hf_root.joinpath("references/huggingface-validation.md").read_text(encoding="utf-8")
+    eval_data = json.loads(
+        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-convert-huggingface/evals.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    basic_eval = _eval_by_id(eval_data, "huggingface-convert-basic")["nvflare"]
+    mandatory_ids = {item["id"] for item in basic_eval["mandatory_behavior"]}
+    prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
+
+    assert "same interpreter selected for installation and validation" in " ".join(dependency_text.split())
+    assert "make the inventory command exit zero" in " ".join(dependency_text.split())
+    assert "optional capability or host-diagnostic utility as evidence" in " ".join(validation_text.split())
+    assert "Do not append platform-specific utilities" in " ".join(validation_text.split())
+    assert "invoke the selected library's normal cache-aware load or download once" in " ".join(hf_validation.split())
+    assert "`snapshot_download(..., local_files_only=True)`" in hf_validation
+    assert "`<metric-name> = <numeric-value> (<source>)`" in metrics_text
+    assert "Naming the metric without its numeric value" in " ".join(metrics_text.split())
+    assert "report each observed primary scalar with its metric name, numeric value" in " ".join(hf_skill.split())
+    assert {"cache-aware-authorized-model-resolution", "numeric-primary-metric-reporting"} <= mandatory_ids
+    assert {"no-raising-cache-only-model-probe", "no-unguarded-platform-specific-diagnostic"} <= prohibited_ids
+
+
 def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
     repo_root = Path(__file__).resolve().parents[4]
     construction_text = repo_root.joinpath(
@@ -533,6 +573,9 @@ def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
     assert "validate properties rather than guessed site sizes" in normalized_validation
     assert "complete, non-overlapping coverage" in normalized_validation
     assert "Assert exact per-site row counts only when" in validation_text
+    assert "resolve it in `job.py` against the original source-project root" in normalized_workflow
+    assert "the simulator process working directory" in normalized_workflow
+    assert "Validate relative-path conversions from a fresh caller working directory" in workflow_text
     assert {"safe-pandas-partitioning", "invariant-based-partition-validation"} <= mandatory_ids
     assert {"no-deprecated-save-filename-alias", "no-hardcoded-guessed-partition-counts"} <= prohibited_ids
 

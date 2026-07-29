@@ -486,6 +486,14 @@ a different location. Point at the original dataset, not at a copy inside the
 NVFLARE run workspace: that workspace path is run-specific and disappears
 between runs.
 
+When the source uses a relative data path, resolve it in `job.py` against the
+original source-project root before recipe construction, then pass that resolved
+value through `train_args` or `per_site_config`; the client must consume the
+configured value unchanged. Do not reinterpret it relative to packaged
+`client.py`, the export directory, or the simulator process working directory.
+Validate relative-path conversions from a fresh caller working directory so the
+source data remains reachable after packaging.
+
 An absolute path is acceptable only as the runtime-supplied value or default of
 that configurable argument — for example, in single-machine simulation every
 site can resolve to the same default. A hardcoded absolute path baked into the

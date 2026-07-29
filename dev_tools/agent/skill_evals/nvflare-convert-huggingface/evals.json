@@ -55,15 +55,16 @@
         "The generated job imports FedAvgRecipe from nvflare.app_opt.pt.recipes.fedavg after recipe show confirms it.",
         "The agent treats recipe show as recipe metadata only, uses SimEnv with recipe.execute for local validation and standard export flags, and does not guess a separate export environment, private class-loader helper, internal command splitter, or another recipe-adjacent API.",
         "The agent establishes host-provided NVFLARE availability separately through nvflare agent inspect, nvflare --version, or a public capability check before generic package inventory; it never includes nvflare in a batch of importlib.metadata lookups, handles missing non-product metadata as an inventory result rather than a failed command, and skips installation when all applicable requirements are already compatible.",
+        "When public checkpoint download is authorized if uncached, the agent uses one normal cache-aware load or download instead of an unguarded cache-only probe that fails on a normal miss.",
         "A generated or preserved HfArgumentParser is constructed with allow_abbrev=False. Intentional typo and abbreviation rejection checks run through assertion wrappers whose top-level commands succeed only when the generated parser rejects them; the wrapper accepts an expected unused-argument ValueError only when its diagnostic names the rejected argument.",
         "The generated recipe model is an explicit class_path and args mapping, not a live model instance.",
         "The generated job preserves the maintained PyTorch-family fast path: FedAvgRecipe with class_path, SimEnv, recipe.execute, and explicit server/client model-file packaging.",
         "The generated recipe uses ExchangeFormat.PYTORCH, enables tensor disk offload, encodes train_args for the selected public execution mode without assuming shell parsing, and packages the required model file into the server app with recipe.add_server_file or an equivalent server-targeted API, including a server-only model.py that would otherwise be outside each client app's train_script import closure.",
         "The recipe key_metric preserves the source metric name accuracy when the generated evaluate call emits accuracy; if Trainer emits eval_accuracy, the recipe uses that exact key and reports the source-to-server metric mapping.",
         "The two simulated clients train on deterministic seeded site-local partitions, stratified when labels exist, rather than the same full training dataset; the report names the split policy, seed, site count, and any shared-data request.",
-        "The agent capability-checks optional host diagnostics such as free or nvidia-smi and runs them separately or guards their absence so a missing utility cannot fail otherwise successful parser, partition, or model-keyspace validation.",
+        "The agent capability-checks optional host diagnostics such as free or nvidia-smi, runs them separately from required validation, and makes their absence an exit-zero evidence result so a missing utility cannot fail otherwise successful parser, partition, or model-keyspace validation.",
         "The agent validates through compile/import, recipe construction, bounded simulation, and result evidence, stopping on a real failure.",
-        "The final report includes source facts, changed files, recipe, metrics, commands, validation status, and exact artifact paths."
+        "The final report includes source facts, changed files, recipe, commands, validation status, and exact artifact paths, and writes every artifact-backed primary metric as its name, numeric scalar, and source."
       ],
       "nvflare": {
         "expected_skill": "nvflare-convert-huggingface",
@@ -117,6 +118,10 @@
             "description": "treats a successful NVFLARE CLI inspection as authoritative product-availability evidence, skips installation when other requirements are compatible, and targets the host-provided Python explicitly when an install is genuinely needed"
           },
           {
+            "id": "cache-aware-authorized-model-resolution",
+            "description": "uses one normal cache-aware model load or download when an uncached public checkpoint download is authorized"
+          },
+          {
             "id": "explicit-server-model-config",
             "description": "uses an importable class_path plus args server model whose state-dict keyspace matches the Trainer exchange scope and ensures server-only model modules are exported"
           },
@@ -135,6 +140,10 @@
           {
             "id": "validate-and-report-evidence",
             "description": "runs the validation ladder and reports commands, status, metrics, and exact artifact paths"
+          },
+          {
+            "id": "numeric-primary-metric-reporting",
+            "description": "reports every observed primary metric with its numeric scalar and artifact or bounded-log source"
           }
         ],
         "prohibited_behavior": [
@@ -169,6 +178,14 @@
           {
             "id": "no-failing-nvflare-metadata-probe",
             "description": "checks host-provided NVFLARE separately through its CLI or a public capability probe, excludes nvflare from generic distribution-metadata batches, and handles missing non-product metadata without a failed top-level inventory command"
+          },
+          {
+            "id": "no-raising-cache-only-model-probe",
+            "description": "does not run an unguarded local-files-only checkpoint lookup before an authorized cache-aware download"
+          },
+          {
+            "id": "no-unguarded-platform-specific-diagnostic",
+            "description": "does not append an unavailable optional host utility to a required validation command"
           },
           {
             "id": "no-speculative-system-install",

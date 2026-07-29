@@ -110,9 +110,10 @@ user's purpose is to understand data distribution; handle conversion later as a 
    only when inspection found PEFT, DDP, checkpoint/restore overrides,
    auxiliary trainable models, or another non-default patch setting.
 8. Report the recipe, source facts, parameter scope, data partition, changed
-   files, validation status, metrics, and exact artifact paths. Load
-   `../nvflare-shared/references/metrics-and-artifact-reporting.md` only when
-   normal metric artifacts are absent or inconsistent.
+   files, validation status, and exact artifact paths. When validation produces
+   metrics, load `../nvflare-shared/references/metrics-and-artifact-reporting.md`
+   before the final response and report each observed primary scalar with its
+   metric name, numeric value, and artifact or bounded-log source.
 
 ## Requirements
 

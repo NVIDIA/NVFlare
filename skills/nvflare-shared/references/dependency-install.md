@@ -60,8 +60,11 @@ or declared dependency modules. A compound Python command containing any such
 import is an import-level preflight and belongs after installation.
 Inventory only non-product dependencies this way. Handle a missing distribution
 record per package as an inventory result that identifies a dependency to
-install; do not let `PackageNotFoundError` make the inventory command itself
-fail.
+install. Run the inventory with the same interpreter selected for installation
+and validation, catch `PackageNotFoundError` around version lookups, and make
+the inventory command exit zero after reporting an absent package or unknown
+version. Missing distribution metadata alone does not prove that a module or
+CLI supplied by a source checkout, `PYTHONPATH`, or another path is unavailable.
 Metadata absence is not authoritative for a host-provided NVFLARE product whose
 CLI already succeeded. If every applicable non-product requirement is already
 installed at a compatible version and NVFLARE availability is established by

@@ -41,10 +41,18 @@ reaches the applicable phase, and stop at the first failure.
 
 - Before constructing a model, tokenizer/processor, or dataset, resolve its
   configured identifier to an existing local path or verify that every required
-  file is present in the intended cache. Probe remote-style identifiers with
-  `local_files_only=True` or the existing offline environment. An error that
-  mentions `https://huggingface.co` during an offline probe can mean only that
-  the local cache entry is missing; it is not evidence of a network request.
+  file is present in the intended cache. Without download authorization, probe
+  remote-style identifiers with `local_files_only=True` or the existing offline
+  environment. An error that mentions `https://huggingface.co` during an offline
+  probe can mean only that the local cache entry is missing; it is not evidence
+  of a network request.
+- When the user authorizes downloading a public checkpoint if it is not cached,
+  invoke the selected library's normal cache-aware load or download once. Do
+  not first run an unguarded
+  `snapshot_download(..., local_files_only=True)` probe: a normal cache miss
+  raises and creates false recovery evidence. When validation must remain
+  cache-only, catch `LocalEntryNotFoundError` inside an exit-zero wrapper,
+  report the miss as a blocker, and do not download without authorization.
 - Never recover from an offline/cache-only miss by removing
   `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`, dropping `local_files_only=True`, or
   rerunning online unless the user explicitly requested the download. Do not
@@ -85,10 +93,11 @@ reaches the applicable phase, and stop at the first failure.
 
 - When the real model may exceed host capacity, estimate server and concurrent
   client memory before simulation. Capability-check optional diagnostics such
-  as `free` or `nvidia-smi`; missing diagnostics mean capacity evidence is
-  unavailable, not conversion failure. Use a reduced one-round topology smoke
-  only when the real model cannot fit, keep the generated default unchanged,
-  and report full-model validation blocked.
+  as `free` or `nvidia-smi`, run them separately from correctness checks, and
+  make absence an exit-zero result; missing diagnostics mean capacity evidence
+  is unavailable, not conversion failure. Use a reduced one-round topology
+  smoke only when the real model cannot fit, keep the generated default
+  unchanged, and report full-model validation blocked.
 - After partial aggregation, unexplained disconnect, or exit `-9`, inspect logs
   and either reduce workload with a changed causal factor or report a resource
   blocker. Do not retry the same payload with guessed concurrency settings, and
