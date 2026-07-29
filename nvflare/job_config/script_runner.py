@@ -16,7 +16,7 @@ from enum import Enum
 from typing import Optional, Type, Union
 
 from nvflare.apis.fl_constant import SystemVarName
-from nvflare.apis.job_def import ALL_SITES, JobMetaKey
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.app_common.abstract.launcher import Launcher
 from nvflare.app_common.executors.client_api_executor import ALL_EXECUTION_MODES, ClientAPIExecutor, ExecutionMode
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
@@ -71,7 +71,11 @@ def _fill_additional_node_command(job: FedJob, target: str, command: list[str], 
 
     command_text = None
     for site_name, site_spec in launcher_spec.items():
-        if site_name == "default" or (target != ALL_SITES and site_name != target) or not isinstance(site_spec, dict):
+        if (
+            site_name in ("default", SERVER_SITE_NAME)
+            or (target != ALL_SITES and site_name != target)
+            or not isinstance(site_spec, dict)
+        ):
             continue
         for block in site_spec.values():
             nodes = block.get("nodes") if isinstance(block, dict) else None

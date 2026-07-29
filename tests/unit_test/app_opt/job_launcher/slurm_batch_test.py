@@ -225,6 +225,10 @@ def test_apptainer_node_group_containerizes_each_rank_on_its_node(tmp_path):
     assert 'export APPTAINERENV_CLIENT_API_TYPE="${CLIENT_API_TYPE}"' in node
     assert "export NVFLARE_CLIENT_API_BOOTSTRAP=client_api_bootstrap_1.json" in node
     assert 'export APPTAINERENV_NVFLARE_CLIENT_API_BOOTSTRAP="${NVFLARE_CLIENT_API_BOOTSTRAP}"' in node
+    credential_mirrors = " ".join(
+        f"APPTAINERENV_{name}" for name in (JobProcessEnv.AUTH_TOKEN, JobProcessEnv.TOKEN_SIGNATURE, JobProcessEnv.SSID)
+    )
+    assert f"unset {credential_mirrors}" in node
 
 
 def test_pyxis_node_group_fans_out_containers_through_one_srun(tmp_path):
@@ -253,7 +257,7 @@ def test_pyxis_node_group_fans_out_containers_through_one_srun(tmp_path):
 
 @pytest.mark.parametrize(
     "node_rank, expected",
-    [("0", "worker-ran token=cj-secret"), ("00", "worker-ran token=cj-secret"), ("1", "rank=1 token=cj-secret")],
+    [("0", "worker-ran token=cj-secret"), ("00", "worker-ran token=cj-secret"), ("1", "rank=1 token=missing")],
 )
 def test_rendered_node_script_executes_by_rank(tmp_path, node_rank, expected):
     worker = tmp_path / "worker"
@@ -267,6 +271,9 @@ def test_rendered_node_script_executes_by_rank(tmp_path, node_rank, expected):
             additional_node_command=(
                 "bash",
                 "-c",
+                'test -z "${NVFLARE_JOB_AUTH_TOKEN+x}" && '
+                'test -z "${NVFLARE_JOB_TOKEN_SIGNATURE+x}" && '
+                'test -z "${NVFLARE_JOB_SSID+x}" && '
                 'echo "rank=${NVFL_NODE_RANK} token=${NVFLARE_JOB_AUTH_TOKEN:-missing} '
                 'bootstrap=${NVFLARE_CLIENT_API_BOOTSTRAP:-missing}"; pwd',
             ),
@@ -286,6 +293,8 @@ def test_rendered_node_script_executes_by_rank(tmp_path, node_rank, expected):
             "SLURM_NODEID": node_rank,
             "SLURM_JOB_NUM_NODES": "2",
             "NVFLARE_JOB_AUTH_TOKEN": "cj-secret",
+            "NVFLARE_JOB_TOKEN_SIGNATURE": "cj-signature",
+            "NVFLARE_JOB_SSID": "cj-ssid",
         },
     )
 

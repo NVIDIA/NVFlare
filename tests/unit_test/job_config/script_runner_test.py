@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_def import SERVER_SITE_NAME, JobMetaKey
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import BaseScriptRunner, FrameworkType, PipeConnectType, ScriptRunner
@@ -522,6 +522,7 @@ class TestExecutionModeSelection:
 
         launcher_spec = {
             "default": {"slurm": {"nodes": 4}},
+            SERVER_SITE_NAME: {"slurm": {"nodes": 2}},
             "site-multi": {"slurm": {"nodes": 2, "gpus_per_node": 1}},
             "site-single": {"slurm": {"nodes": 1, "gpus_per_node": 1}},
         }
@@ -540,6 +541,7 @@ class TestExecutionModeSelection:
             "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=1 custom/client.py --label 'two words'"
         )
         assert "additional_node_command" not in launcher_spec["default"]["slurm"]
+        assert "additional_node_command" not in launcher_spec[SERVER_SITE_NAME]["slurm"]
         assert "additional_node_command" not in launcher_spec["site-single"]["slurm"]
 
     def test_external_process_command_fills_only_matching_site(self):

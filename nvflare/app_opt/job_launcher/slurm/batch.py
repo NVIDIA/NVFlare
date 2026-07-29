@@ -19,6 +19,7 @@ import os
 import re
 import shlex
 
+from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.app_opt.job_launcher.slurm.config import (
     BATCH_FILE,
     NODE_FILE,
@@ -204,7 +205,9 @@ def _render_node_script(plan: LaunchPlan, config: SlurmConfig) -> str:
     """
     worker_words = _build_worker_words(plan)
     node_words = [shlex.quote(word) for word in plan.additional_node_command]
+    credential_names = (JobProcessEnv.AUTH_TOKEN, JobProcessEnv.TOKEN_SIGNATURE, JobProcessEnv.SSID)
     nonzero_setup = [
+        f"  unset {' '.join(credential_names)}",
         f"  export {CLIENT_API_TYPE_KEY}={CELL_API_TYPE}",
         f"  export {BOOTSTRAP_FILE_ENV_VAR}={shlex.quote(bootstrap_file_name(1))}",
     ]
@@ -216,6 +219,7 @@ def _render_node_script(plan: LaunchPlan, config: SlurmConfig) -> str:
             )
         )
         rank0_command = _apptainer_exec_words(plan, plan.run_dir) + worker_words
+        nonzero_setup.append(f"  unset {' '.join(f'APPTAINERENV_{name}' for name in credential_names)}")
         nonzero_setup.append(f'  export APPTAINERENV_{CLIENT_API_TYPE_KEY}="${{{CLIENT_API_TYPE_KEY}}}"')
         nonzero_setup.append(f'  export APPTAINERENV_{BOOTSTRAP_FILE_ENV_VAR}="${{{BOOTSTRAP_FILE_ENV_VAR}}}"')
         nonzero_command = _apptainer_exec_words(plan, plan.node_app_dir) + node_words
