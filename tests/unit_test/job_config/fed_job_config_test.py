@@ -63,6 +63,21 @@ class TestFedJobConfig:
 
         assert (custom_dir / "helper.py").is_file()
 
+    def test_copy_ext_script_finds_top_level_import_from_package_directory(self, tmp_path, monkeypatch):
+        package_dir = tmp_path / "pkg"
+        package_dir.mkdir()
+        (package_dir / "__init__.py").write_text("", encoding="utf-8")
+        (package_dir / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (package_dir / "client.py").write_text("import helper\n", encoding="utf-8")
+        monkeypatch.chdir(package_dir)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["client.py"])
+
+        assert (custom_dir / "client.py").is_file()
+        assert (custom_dir / "helper.py").is_file()
+
     def test_copy_ext_script_finds_unqualified_sibling_import_in_subdirectory(self, tmp_path, monkeypatch):
         script_dir = tmp_path / "src"
         script_dir.mkdir()
@@ -128,6 +143,22 @@ class TestFedJobConfig:
 
         assert (custom_dir / "pkg" / "client.py").is_file()
         assert not (custom_dir / "traceback.py").exists()
+
+    def test_copy_ext_script_resolves_qualified_package_sibling(self, tmp_path, monkeypatch):
+        package_dir = tmp_path / "pkg"
+        package_dir.mkdir()
+        (package_dir / "__init__.py").write_text("", encoding="utf-8")
+        (package_dir / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (package_dir / "client.py").write_text("import pkg.helper\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["pkg/client.py"])
+
+        assert (custom_dir / "pkg" / "client.py").is_file()
+        assert (custom_dir / "pkg" / "helper.py").is_file()
+        assert not (custom_dir / "helper.py").exists()
 
     def test_copy_ext_script_resolves_valid_multi_level_relative_import(self, tmp_path, monkeypatch):
         package_dir = tmp_path / "pkg"

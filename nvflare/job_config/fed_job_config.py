@@ -466,7 +466,7 @@ class FedJobConfig:
 
         source_dir = os.path.dirname(source_file)
         is_flat_external_script = is_external_script and not os.path.isfile(os.path.join(source_dir, "__init__.py"))
-        search_source_dir = is_flat_external_script or (not is_external_script and "." not in module)
+        search_source_dir = is_flat_external_script or "." not in module
         for import_source, level in import_specs:
             import_module = self._resolve_import_module(module, import_source, level, source_file)
             if not import_module:
