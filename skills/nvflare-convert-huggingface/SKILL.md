@@ -93,7 +93,8 @@ unprotected recipe or present a disclaimer as implementation.
    Trainer arguments: requested steps use `max_steps`, requested epochs use
    `num_train_epochs`, and a silent prompt uses the reported default
    `max_steps=10` unless source-budget preservation was requested. Do not
-   duplicate the budget in patch `local_steps`/`local_epochs`.
+   duplicate the budget in patch `local_steps`/`local_epochs`. When the client
+   uses `HfArgumentParser`, construct it with `allow_abbrev=False`.
 6. Adapt `assets/server_model.py` and `assets/job.py` instead of inventing
    server-model, packaging, export, or `SimEnv` wiring. Keep generated and
    packaged project-local modules in the same writable source directory. Never

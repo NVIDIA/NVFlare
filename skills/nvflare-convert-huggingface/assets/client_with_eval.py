@@ -16,6 +16,13 @@ train-only source path.
 import nvflare.client.hf as flare
 
 
+def make_hf_argument_parser(dataclass_types):
+    """Create a strict parser for generated clients that use Hugging Face dataclasses."""
+    from transformers import HfArgumentParser
+
+    return HfArgumentParser(dataclass_types, allow_abbrev=False)
+
+
 def main(trainer_factory, rank=0, evaluate_before_train=True):
     """Run one persistent patched Trainer across federated rounds."""
     flare.init(rank=rank)

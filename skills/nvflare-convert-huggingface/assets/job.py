@@ -16,6 +16,8 @@ from pathlib import Path
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
 
+DEFAULT_MAX_STEPS = 10
+
 
 def _token(value, name: str) -> str:
     text = str(value)
@@ -28,21 +30,39 @@ def build_train_args(
     model_name_or_path: str,
     data_root: str,
     num_clients: int,
-    num_train_epochs: float,
+    *,
+    max_steps: int | None = None,
+    num_train_epochs: float | None = None,
+    preserve_source_budget: bool = False,
 ) -> str:
     """Build arguments consumed by the generated client's strict parser."""
-    return " ".join(
-        (
-            "--model_name_or_path",
-            _token(model_name_or_path, "model_name_or_path"),
-            "--data_root",
-            _token(data_root, "data_root"),
-            "--num_clients",
-            str(num_clients),
-            "--num_train_epochs",
-            str(num_train_epochs),
-        )
-    )
+    if preserve_source_budget and (max_steps is not None or num_train_epochs is not None):
+        raise ValueError("preserve_source_budget cannot be combined with max_steps or num_train_epochs")
+    if max_steps is not None and num_train_epochs is not None:
+        raise ValueError("specify only one of max_steps or num_train_epochs")
+    if max_steps is not None and (isinstance(max_steps, bool) or max_steps <= 0):
+        raise ValueError("max_steps must be a positive integer")
+    if num_train_epochs is not None and (
+        isinstance(num_train_epochs, bool) or num_train_epochs <= 0
+    ):
+        raise ValueError("num_train_epochs must be positive")
+
+    args = [
+        "--model_name_or_path",
+        _token(model_name_or_path, "model_name_or_path"),
+        "--data_root",
+        _token(data_root, "data_root"),
+        "--num_clients",
+        str(num_clients),
+    ]
+    if not preserve_source_budget:
+        if max_steps is None and num_train_epochs is None:
+            max_steps = DEFAULT_MAX_STEPS
+        if max_steps is not None:
+            args.extend(("--max_steps", str(max_steps)))
+        else:
+            args.extend(("--num_train_epochs", str(num_train_epochs)))
+    return " ".join(args)
 
 
 def build_recipe(
@@ -52,12 +72,21 @@ def build_recipe(
     data_root: str,
     num_clients: int,
     num_rounds: int,
-    num_train_epochs: float,
     key_metric: str,
+    max_steps: int | None = None,
+    num_train_epochs: float | None = None,
+    preserve_source_budget: bool = False,
     recipe_options: dict | None = None,
 ):
     """Build FedAvg using only options confirmed by ``recipe show``."""
-    train_args = build_train_args(model_name_or_path, data_root, num_clients, num_train_epochs)
+    train_args = build_train_args(
+        model_name_or_path,
+        data_root,
+        num_clients,
+        max_steps=max_steps,
+        num_train_epochs=num_train_epochs,
+        preserve_source_budget=preserve_source_budget,
+    )
     recipe = FedAvgRecipe(
         name=name,
         model={
@@ -86,7 +115,10 @@ def main():
     parser.add_argument("--data_root", required=True)
     parser.add_argument("--num_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=2)
-    parser.add_argument("--num_train_epochs", type=float, default=1.0)
+    budget = parser.add_mutually_exclusive_group()
+    budget.add_argument("--max_steps", type=int)
+    budget.add_argument("--num_train_epochs", type=float)
+    budget.add_argument("--preserve_source_budget", action="store_true")
     parser.add_argument("--key_metric", required=True)
     parser.add_argument("--workspace_root", type=Path, default=Path("/tmp/nvflare/hf-trainer"))
     args = parser.parse_args()
@@ -97,7 +129,9 @@ def main():
         data_root=args.data_root,
         num_clients=args.num_clients,
         num_rounds=args.num_rounds,
+        max_steps=args.max_steps,
         num_train_epochs=args.num_train_epochs,
+        preserve_source_budget=args.preserve_source_budget,
         key_metric=args.key_metric,
     )
     run = recipe.execute(

@@ -23,7 +23,7 @@
         "The generated job imports FedAvgRecipe from nvflare.app_opt.pt.recipes.fedavg after recipe show confirms it.",
         "The agent treats recipe show as recipe metadata only, uses SimEnv with recipe.execute for local validation and standard export flags, and does not guess a separate export environment, private class-loader helper, internal command splitter, or another recipe-adjacent API.",
         "A successful nvflare agent inspect establishes that the host-provided NVFLARE product is available even when importlib.metadata has no nvflare distribution record; when all other requirements are already compatible, the agent skips installation and continues to simulation instead of running uv pip install --system.",
-        "Intentional typo and abbreviation rejection checks run through assertion wrappers whose top-level commands succeed only when the generated parser rejects them; the HfArgumentParser wrapper accepts an expected unused-argument ValueError only when its diagnostic names the rejected argument.",
+        "A generated or preserved HfArgumentParser is constructed with allow_abbrev=False. Intentional typo and abbreviation rejection checks run through assertion wrappers whose top-level commands succeed only when the generated parser rejects them; the wrapper accepts an expected unused-argument ValueError only when its diagnostic names the rejected argument.",
         "The generated recipe model is an explicit class_path and args mapping, not a live model instance.",
         "The generated job preserves the maintained PyTorch-family fast path: FedAvgRecipe with class_path, SimEnv, recipe.execute, and explicit server/client model-file packaging.",
         "The generated recipe uses ExchangeFormat.PYTORCH, enables tensor disk offload, encodes train_args for the selected public execution mode without assuming shell parsing, and packages the required model file into the server app with recipe.add_server_file or an equivalent server-targeted API, including a server-only model.py that would otherwise be outside each client app's train_script import closure.",
@@ -78,7 +78,7 @@
           },
           {
             "id": "wrap-hf-parser-rejections",
-            "description": "wraps intentional HfArgumentParser rejection checks so an expected unused-argument ValueError with the correct diagnostic yields a successful top-level validation command"
+            "description": "constructs HfArgumentParser with allow_abbrev=False and wraps intentional rejection checks so an expected unused-argument ValueError with the correct diagnostic yields a successful top-level validation command"
           },
           {
             "id": "respect-host-nvflare-environment",

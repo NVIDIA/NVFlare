@@ -555,6 +555,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "rejects parent-traversal external-script paths" in normalized_conversion
     assert "inspecting NVFLARE implementation source" in normalized_conversion
     assert "flare.patch(trainer)" in client_template
+    assert "HfArgumentParser(dataclass_types, allow_abbrev=False)" in client_template
     assert "while flare.is_running()" in client_template
     assert "return model" in server_model_template
     assert '"class_path": "server_model.ServerModel"' in job_template

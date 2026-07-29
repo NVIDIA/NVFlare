@@ -24,6 +24,7 @@ import importlib.util
 import inspect
 import sys
 import types
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -228,7 +229,6 @@ def test_huggingface_job_template_uses_pytorch_fast_path_and_packages_model_file
         data_root="/tmp/data",
         num_clients=2,
         num_rounds=3,
-        num_train_epochs=1.0,
         key_metric="eval_accuracy",
     )
 
@@ -242,14 +242,50 @@ def test_huggingface_job_template_uses_pytorch_fast_path_and_packages_model_file
     assert recipe.kwargs["key_metric"] == "eval_accuracy"
     assert recipe.server_files == ["server_model.py", "model.py"]
     assert recipe.client_files == ["model.py"]
-    assert recipe.kwargs["train_args"].count("--num_train_epochs") == 1
+    assert "--max_steps 10" in recipe.kwargs["train_args"]
+    assert "--num_train_epochs" not in recipe.kwargs["train_args"]
+
+
+def test_huggingface_job_template_supports_one_resolved_budget_mode():
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    requested_steps = module.build_train_args("local-model", "/tmp/data", 2, max_steps=7)
+    requested_epochs = module.build_train_args("local-model", "/tmp/data", 2, num_train_epochs=3.0)
+    preserved_source = module.build_train_args("local-model", "/tmp/data", 2, preserve_source_budget=True)
+
+    assert "--max_steps 7" in requested_steps
+    assert "--num_train_epochs" not in requested_steps
+    assert "--num_train_epochs 3.0" in requested_epochs
+    assert "--max_steps" not in requested_epochs
+    assert "--max_steps" not in preserved_source
+    assert "--num_train_epochs" not in preserved_source
+
+    with pytest.raises(ValueError, match="only one"):
+        module.build_train_args("local-model", "/tmp/data", 2, max_steps=7, num_train_epochs=3.0)
 
 
 def test_huggingface_job_template_rejects_unrepresentable_in_process_arguments():
     module = _load_module(HF_TEMPLATES / "job.py")
 
     with pytest.raises(ValueError, match="whitespace-free"):
-        module.build_train_args("model with spaces", "/tmp/data", 2, 1.0)
+        module.build_train_args("model with spaces", "/tmp/data", 2)
+
+
+def test_huggingface_client_template_rejects_abbreviated_hf_arguments():
+    transformers = pytest.importorskip("transformers")
+
+    @dataclass
+    class ProjectArguments:
+        max_train_samples: int | None = None
+
+    module = _load_module(HF_TEMPLATES / "client_with_eval.py")
+    parser = module.make_hf_argument_parser((ProjectArguments, transformers.TrainingArguments))
+
+    parsed, _ = parser.parse_args_into_dataclasses(args=["--output_dir", "/tmp/output", "--max_train_samples", "7"])
+    assert parsed.max_train_samples == 7
+
+    with pytest.raises(ValueError, match="max_train_samp"):
+        parser.parse_args_into_dataclasses(args=["--output_dir", "/tmp/output", "--max_train_samp", "7"])
 
 
 def test_huggingface_job_template_uses_public_recipe_execution_without_internal_probes():

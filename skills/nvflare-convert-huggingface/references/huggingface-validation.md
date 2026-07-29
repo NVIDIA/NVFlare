@@ -20,9 +20,10 @@ reaches the applicable phase, and stop at the first failure.
   only behind an explicit non-client entry parameter.
 - Pass the final generated `train_args` through the client entry's actual
   argument mechanism and actual dataclass types in parse-only mode; reject every
-  unused argument. When the generated client uses `HfArgumentParser`, parse with
-  the same project and framework dataclass types. When it preserves `argparse`
-  or another parser, use that parser instead.
+  unused argument. When the generated client uses `HfArgumentParser`, construct
+  it with `allow_abbrev=False` and parse with the same project and framework
+  dataclass types. When it preserves `argparse` or another parser, use that
+  parser instead.
 - Run intentional typo and abbreviation rejection cases through the shared
   assertion-wrapper rule. `HfArgumentParser.parse_args_into_dataclasses()` may
   raise `ValueError` for unused arguments; accept it only when its diagnostic

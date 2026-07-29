@@ -70,6 +70,9 @@ global parameters, and sends the result from rank 0.
   whole-job target in its progress bar, while the NVFLARE callback still stops
   each `trainer.train()` call after one per-round budget. Do not interpret the
   progress-bar denominator as work for the current round.
+- When the generated or preserved client uses `HfArgumentParser`, construct it
+  with `allow_abbrev=False`, using the actual project and framework dataclass
+  types. Other client parsers retain their own strict-parser mechanism.
 - Keep local-only callbacks and reporting. Leave network trackers disabled
   during validation unless explicitly requested.
 
