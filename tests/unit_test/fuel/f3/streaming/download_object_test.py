@@ -27,6 +27,8 @@ from nvflare.fuel.f3.streaming.download_service import Consumer, ProduceRC, down
 class MockConsumer(Consumer):
     """Mock consumer for testing."""
 
+    supports_pipelining = True
+
     def __init__(self, consume_exc: Exception = None):
         super().__init__()
         self.consumed_data = []
@@ -113,6 +115,64 @@ class TestDownloadObject:
 
         assert consumer.completed
         assert consumer.consumed_data == [b"c1", b"c2", b"c3"]
+
+    def test_value_equal_new_state_does_not_resubmit(self, cell, consumer):
+        """Test a fresh but value-equivalent consumer state keeps the speculative request."""
+
+        def consume_with_fresh_state(ref_id, state, data):
+            consumer.consumed_data.append(data)
+            return dict(state)
+
+        consumer.consume = consume_with_fresh_state
+        cell.send_request.side_effect = [
+            _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=b"c1", state={"received_bytes": 2}),
+            _make_reply(ReturnCode.OK, status=ProduceRC.EOF),
+        ]
+
+        download_object("server.site-1", "ref-001", 10.0, cell, consumer)
+
+        assert consumer.completed
+        assert consumer.consumed_data == [b"c1"]
+        assert cell.send_request.call_count == 2
+
+    def test_state_transforming_consumer_uses_stop_and_wait(self, cell):
+        class TransformingConsumer(MockConsumer):
+            supports_pipelining = False
+
+            def consume(self, ref_id, state, data):
+                self.consumed_data.append(data)
+                return {"start": 99, "count": 1}
+
+        consumer = TransformingConsumer()
+        cell.send_request.side_effect = [
+            _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=b"c1", state={"start": 0, "count": 1}),
+            _make_reply(ReturnCode.OK, status=ProduceRC.EOF),
+        ]
+
+        download_object("server.site-1", "ref-001", 10.0, cell, consumer)
+
+        assert consumer.completed
+        assert consumer.consumed_data == [b"c1"]
+        assert cell.send_request.call_count == 2
+        assert cell.send_request.call_args_list[1].kwargs["request"].payload["state"] == {"start": 99, "count": 1}
+
+    def test_pipelined_consumer_cannot_hide_in_place_state_mutation(self, cell, consumer):
+        def mutate_state(ref_id, state, data):
+            consumer.consumed_data.append(data)
+            state["start"] = 99
+            return state
+
+        consumer.consume = mutate_state
+        cell.send_request.side_effect = [
+            _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=b"c1", state={"start": 0, "count": 1}),
+            _make_reply(ReturnCode.OK, status=ProduceRC.EOF),
+        ]
+
+        download_object("server.site-1", "ref-001", 10.0, cell, consumer)
+
+        assert consumer.failed
+        assert "changed state despite enabling download pipelining" in consumer.failure_reason
+        assert cell.send_request.call_count <= 2
 
     def test_progress_callback_reports_start_progress_and_completion(self, cell, consumer):
         """Test download progress callback emits monotonic bytes/items and terminal completion."""
@@ -261,17 +321,15 @@ class TestDownloadObject:
     def test_retry_resends_same_state(self, cell, consumer):
         """Test retry resends the same state so producer re-generates the same chunk.
 
-        Uses a consumer that transforms state (appends a marker) to prove that
-        the retry carries the *consumer-returned* state, not the raw producer state.
+        The pipelined implementation speculatively launches the next request as soon
+        as a good reply arrives (before consume).  For ItemConsumer, consume() returns
+        the producer's `state` unchanged, so the speculative request carries the
+        correct state and the TIMEOUT+retry pair both carry that same state.
         """
-        producer_state = {"start": 0, "count": 1}
-        # Consumer transforms state by adding a marker
-        consumer_returned_state = {"start": 0, "count": 1, "consumed": True}
-        consumer.consume = lambda ref_id, state, data: consumer_returned_state
-
+        next_state = {"start": 0, "count": 1}
         cell.send_request.side_effect = [
-            _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=b"c1", state=producer_state),
-            _make_reply(ReturnCode.TIMEOUT),
+            _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=b"c1", state=next_state),
+            _make_reply(ReturnCode.TIMEOUT),  # speculative req for chunk 2 times out
             _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=b"c2", state={"start": 1, "count": 1}),
             _make_reply(ReturnCode.OK, status=ProduceRC.EOF),
         ]
@@ -279,18 +337,18 @@ class TestDownloadObject:
         download_object("server.site-1", "ref-001", 10.0, cell, consumer)
 
         assert consumer.completed
+        assert consumer.consumed_data == [b"c1", b"c2"]
         calls = cell.send_request.call_args_list
+        assert len(calls) == 4
 
         # calls[0]: initial request (no state)
-        # calls[1]: request after consuming c1, carries consumer-returned state (got TIMEOUT)
-        # calls[2]: retry of calls[1], should carry the SAME consumer-returned state
-        payload_timeout = calls[1].kwargs["request"].payload
+        # calls[1]: speculative request for chunk 2 — got TIMEOUT
+        # calls[2]: retry of calls[1] — must carry the SAME state as calls[1]
+        # calls[3]: speculative request for chunk 3 (returns EOF)
+        payload_timed_out = calls[1].kwargs["request"].payload
         payload_retry = calls[2].kwargs["request"].payload
-        # Core contract: TIMEOUT request and its retry carry identical state
-        assert payload_timeout.get("state") == payload_retry.get("state")
-        # The state must be what consumer.consume() returned, not the raw producer state
-        assert payload_retry.get("state") == consumer_returned_state
-        assert payload_retry.get("state") != producer_state  # explicitly different
+        # Core contract: the timed-out request and its retry carry identical state
+        assert payload_timed_out.get("state") == payload_retry.get("state") == next_state
 
     def test_non_timeout_error_fails_immediately(self, cell, consumer):
         """Test non-TIMEOUT errors are not retried."""

@@ -38,8 +38,28 @@ class SocketConnection(Connection):
         self.sock = sock
         self.secure = secure
         self.closing = False
+        config = CommConfigurator()
+        if config.get_tcp_no_delay(True):
+            self._set_tcp_no_delay()
         self.conn_props = self._get_socket_properties()
-        self.send_timeout = CommConfigurator().get_streaming_send_timeout(30.0)
+        self.send_timeout = config.get_streaming_send_timeout(30.0)
+
+    def _set_tcp_no_delay(self):
+        """Disable Nagle's algorithm.
+
+        The cellnet request/reply pattern ping-pongs small frames (requests,
+        final chunks, stream ACKs). With Nagle enabled, each such frame can
+        stall behind the peer's delayed ACK (40-200ms), which dominates
+        per-request latency on real networks. Bulk chunk frames are ~1MiB,
+        so disabling Nagle does not increase small-packet load on the data
+        path. Can be turned off with tcp_no_delay: false in comm_config.
+        """
+        if getattr(self.sock, "family", None) not in (socket.AF_INET, socket.AF_INET6):
+            return
+        try:
+            self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError as ex:
+            log.debug(f"cannot set TCP_NODELAY on connection: {ex}")
 
     def get_conn_properties(self) -> dict:
         return self.conn_props

@@ -7,6 +7,11 @@ What's New in FLARE v2.9.0
 Compatibility and Migration Notes
 =================================
 
+- F3 retains its 16 MiB streaming-window and 4 MiB ACK-interval defaults for
+  compatibility and bounded per-stream memory. High-bandwidth deployments may
+  opt into larger values on all endpoints; ``dev_tools/f3/comm_config.yml``
+  provides a 64 MiB/16 MiB tuning example. TCP connections now enable
+  ``TCP_NODELAY`` by default to reduce request/ACK latency.
 - Job-process bootstrap credentials (auth token, token signature, session ID)
   are no longer passed as command-line arguments. Launchers deliver them
   through the job process environment; on Kubernetes they ride a per-job
@@ -28,6 +33,10 @@ Compatibility and Migration Notes
   multi-optimizer FedAvg client reports their combined step count unless it
   supplies ``NUM_STEPS_CURRENT_ROUND`` explicitly; explicit client metadata is
   still preserved.
+- Recipe discovery now exposes the concrete PyTorch ``FedProxRecipe`` as
+  ``fedprox-pt`` and no longer advertises the ``fedprox-tf`` manual pattern as
+  a concrete recipe. TensorFlow clients can continue to combine a FedAvg
+  recipe with ``TFFedProxLoss`` explicitly.
 - CellPipe cell names now keep the runtime token and pipe mode in one
   explicitly marked, ``~``-delimited FQCN leaf segment
   (``site-1.cellpipe~plain~<job-id>~active``, or

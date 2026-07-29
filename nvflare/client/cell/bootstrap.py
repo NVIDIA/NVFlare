@@ -35,6 +35,11 @@ EXTERNAL_PROCESS_EXECUTION_MODE = "external_process"
 BOOTSTRAP_FILE_PERMISSION = 0o600
 
 
+def bootstrap_file_name(seq: int) -> str:
+    """Return a launch-scoped bootstrap name so stale processes retain stale credentials."""
+    return f"client_api_bootstrap_{seq}.json"
+
+
 class BootstrapKey:
     """Stable keys shared by the backend and trainer."""
 
