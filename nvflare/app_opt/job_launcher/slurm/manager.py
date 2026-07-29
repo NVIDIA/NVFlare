@@ -318,12 +318,12 @@ class SlurmJobManager:
 
     def _result_for(self, handle: "SlurmJobHandle", record: SlurmRecord) -> int:
         if record.state in _INFRASTRUCTURE_TERMINAL_STATES:
-            return ProcessExitCode.EXCEPTION
+            return ProcessExitCode.INFRASTRUCTURE_ERROR
         # Preserve user intent when cooperative abort completes before scancel wins the race.
         if handle.user_abort and record.state in {"CANCELLED", "COMPLETED"}:
             return JobReturnCode.ABORTED
         if record.state == "CANCELLED":
-            return ProcessExitCode.EXCEPTION
+            return ProcessExitCode.INFRASTRUCTURE_ERROR
         if record.exit_status or record.exit_signal:
             return JobReturnCode.EXECUTION_ERROR
         return JobReturnCode.SUCCESS if record.state == "COMPLETED" else JobReturnCode.EXECUTION_ERROR
@@ -362,7 +362,7 @@ class SlurmJobManager:
                 "Slurm accounting has no record after five healthy retries: job_id=%s",
                 handle.job_id,
             )
-            return self._finish(handle, ProcessExitCode.EXCEPTION)
+            return self._finish(handle, ProcessExitCode.INFRASTRUCTURE_ERROR)
         handle.accounting_misses = 0
         record = result.records[0]
         if _is_terminal(record.state):

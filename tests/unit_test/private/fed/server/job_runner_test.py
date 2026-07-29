@@ -306,10 +306,15 @@ def test_get_finished_job_status_maps_aborted_launcher_return_code_to_finished_a
 
 
 @pytest.mark.parametrize(
-    "failure_code",
-    [ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION, JobReturnCode.EXECUTION_ERROR],
+    "failure_code, expected_status",
+    [
+        (ProcessExitCode.CONFIG_ERROR, RunStatus.FINISHED_EXECUTION_EXCEPTION),
+        (ProcessExitCode.EXCEPTION, RunStatus.FINISHED_EXECUTION_EXCEPTION),
+        (JobReturnCode.EXECUTION_ERROR, RunStatus.FINISHED_EXECUTION_EXCEPTION),
+        (ProcessExitCode.INFRASTRUCTURE_ERROR, RunStatus.FINISHED_ABNORMAL),
+    ],
 )
-def test_get_finished_job_status_maps_exception_return_code_to_finished_execution_exception(failure_code):
+def test_get_finished_job_status_maps_failure_return_code(failure_code, expected_status):
     runner = JobRunner(workspace_root="/tmp")
     runner.log_info = MagicMock()
     runner.abort_client_run = MagicMock()
@@ -330,7 +335,7 @@ def test_get_finished_job_status_maps_exception_return_code_to_finished_executio
 
     status = runner._get_finished_job_status(engine, job, fl_ctx)
 
-    assert status == RunStatus.FINISHED_EXECUTION_EXCEPTION
+    assert status == expected_status
     job_manager.set_status.assert_not_called()
     runner.abort_client_run.assert_called_once_with("job-1", [], fl_ctx)
 

@@ -36,6 +36,7 @@ EXPECTED_REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: "exception",
     ProcessExitCode.UNSAFE_COMPONENT: "unsafe component",
     ProcessExitCode.CONFIG_ERROR: "config error",
+    ProcessExitCode.INFRASTRUCTURE_ERROR: "infrastructure error",
     JobReturnCode.ABORTED: "aborted",
 }
 
