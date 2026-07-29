@@ -45,9 +45,9 @@ from nvflare.client.cell.bootstrap import (
     BootstrapKey,
     write_bootstrap_config,
 )
-from nvflare.client.cell.decomposers import register_framework_decomposers
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
 from nvflare.client.config import ConfigKey
+from nvflare.client.decomposers import register_framework_decomposers
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
