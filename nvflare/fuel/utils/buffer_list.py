@@ -13,11 +13,16 @@
 # limitations under the License.
 
 
+class ConsumableBufferList(list):
+    """Buffer list whose owner permits readers to release consumed entries."""
+
+
 class BufferList:
     """A buffer list that can be treated as a single buffer"""
 
     def __init__(self, buf_list: list):
         self.buf_list = buf_list
+        self.start_offset = 0
 
     def get_size(self):
 
@@ -66,6 +71,65 @@ class BufferList:
             view_start = view_end
 
         return buffer
+
+    def read_bytes(self, start: int, end: int) -> bytes:
+        """Read a range into one immutable bytes allocation.
+
+        Unlike ``read()``, this method does not first assemble a multi-buffer
+        range into a bytearray. This matters for large streamed FOBS sections:
+        callers that require bytes would otherwise copy the complete range
+        once into a bytearray and a second time into bytes.
+        """
+        if start < 0:
+            raise ValueError(f"start must be non-negative, got {start}")
+        if start < self.start_offset:
+            raise ValueError(f"start {start} precedes discarded data at offset {self.start_offset}")
+        if end < start:
+            raise ValueError(f"end {end} must not be less than start {start}")
+        available_end = self.start_offset + self.get_size()
+        if end > available_end:
+            raise ValueError(f"end {end} exceeds available data ending at {available_end}")
+        if start == end:
+            return b""
+
+        parts = []
+        view_start = self.start_offset
+        for buffer in self.buf_list or []:
+            view_end = view_start + len(buffer)
+            if view_end <= start:
+                view_start = view_end
+                continue
+            if view_start >= end:
+                break
+
+            part_start = max(start, view_start) - view_start
+            part_end = min(end, view_end) - view_start
+            parts.append(memoryview(buffer)[part_start:part_end])
+            view_start = view_end
+
+        if not parts:
+            return b""
+        if len(parts) == 1:
+            return parts[0].tobytes()
+        return b"".join(parts)
+
+    def discard_before(self, offset: int) -> None:
+        """Release complete buffers ending at or before an absolute offset."""
+        if offset < self.start_offset:
+            raise ValueError(f"offset {offset} precedes discarded data at {self.start_offset}")
+
+        discard_count = 0
+        discarded_size = 0
+        for buffer in self.buf_list or []:
+            buffer_end = self.start_offset + discarded_size + len(buffer)
+            if buffer_end > offset:
+                break
+            discard_count += 1
+            discarded_size += len(buffer)
+
+        if discard_count:
+            del self.buf_list[:discard_count]
+            self.start_offset += discarded_size
 
     def flatten(self):
 
