@@ -106,6 +106,13 @@ unused arguments instead of `SystemExit`. Accept only the expected exception and
 confirm its diagnostic identifies the rejected argument; another exception or
 diagnostic is a real validation failure.
 
+Do not call Client API lifecycle or round methods from a standalone Python
+preflight. Calls such as `flare.init()`, `flare.patch()`, `flare.is_running()`,
+`flare.receive()`, or `flare.send()` require a launcher-created Client API
+context. Validate their generated source shape and public signatures
+statically; validate runtime acceptance only through the recipe or simulator
+that launches the client context.
+
 Before spending time on full simulation, run cheap checks when applicable:
 
 - compile generated Python files;

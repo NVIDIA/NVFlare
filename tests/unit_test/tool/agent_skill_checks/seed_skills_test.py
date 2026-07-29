@@ -747,6 +747,14 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "reject every unused argument" in normalized_validation
     assert "`HfArgumentParser.parse_args_into_dataclasses()` can raise `ValueError`" in shared_validation
     assert "the wrapper itself exits zero" in normalized_validation
+    assert "must catch that exact `ValueError`" in normalized_validation
+    assert "A wrapper that catches only `SystemExit` is invalid" in normalized_validation
+    assert (
+        "Do not call Client API lifecycle or round methods from a standalone Python preflight"
+        in normalized_shared_validation
+    )
+    assert "Do not call `flare.init()`, `flare.patch()`, `flare.is_running()`" in normalized_validation
+    assert "let the first bounded simulation validate runtime patch acceptance" in normalized_validation
     assert "Version-check only fields claimed to belong to a framework" in normalized_validation
     assert "project-defined subclass field" in normalized_validation
     assert "actual parser accepts it" in normalized_validation

@@ -57,6 +57,7 @@
         "The agent establishes host-provided NVFLARE availability separately through nvflare agent inspect, nvflare --version, or a public capability check before generic package inventory; it never includes nvflare in a batch of importlib.metadata lookups, handles missing non-product metadata as an inventory result rather than a failed command, and skips installation when all applicable requirements are already compatible.",
         "When public checkpoint download is authorized if uncached, the agent uses one normal cache-aware load or download instead of an unguarded cache-only probe that fails on a normal miss.",
         "A generated or preserved HfArgumentParser is constructed with allow_abbrev=False. Intentional typo and abbreviation rejection checks run through assertion wrappers whose top-level commands succeed only when the generated parser rejects them; the wrapper accepts an expected unused-argument ValueError only when its diagnostic names the rejected argument.",
+        "Standalone preflight may construct the Trainer but does not call flare.init(), flare.patch(), flare.is_running(), or patched Trainer methods without a launcher-created Client API context; the first bounded simulation validates runtime patch acceptance.",
         "The generated recipe model is an explicit class_path and args mapping, not a live model instance.",
         "The generated job preserves the maintained PyTorch-family fast path: FedAvgRecipe with class_path, SimEnv, recipe.execute, and explicit server/client model-file packaging.",
         "The generated recipe uses ExchangeFormat.PYTORCH, enables tensor disk offload, encodes train_args for the selected public execution mode without assuming shell parsing, and packages the required model file into the server app with recipe.add_server_file or an equivalent server-targeted API, including a server-only model.py that would otherwise be outside each client app's train_script import closure.",
@@ -142,6 +143,10 @@
             "description": "runs the validation ladder and reports commands, status, metrics, and exact artifact paths"
           },
           {
+            "id": "validate-patch-in-client-context",
+            "description": "validates runtime flare.patch acceptance through the launched recipe or simulator client rather than a standalone Python preflight without Client API context"
+          },
+          {
             "id": "numeric-primary-metric-reporting",
             "description": "reports every observed primary metric with its numeric scalar and artifact or bounded-log source"
           }
@@ -170,6 +175,10 @@
           {
             "id": "no-standalone-expected-failure-probes",
             "description": "does not leave intentional typo or abbreviation rejection checks as failed top-level validation commands"
+          },
+          {
+            "id": "no-standalone-client-api-probe",
+            "description": "does not call flare.init, flare.patch, flare.is_running, or patched Trainer methods from a standalone Python preflight without a launcher-created Client API context"
           },
           {
             "id": "no-metadata-only-nvflare-reinstall",

@@ -26,8 +26,10 @@ reaches the applicable phase, and stop at the first failure.
   parser instead.
 - Run intentional typo and abbreviation rejection cases through the shared
   assertion-wrapper rule. `HfArgumentParser.parse_args_into_dataclasses()` may
-  raise `ValueError` for unused arguments; accept it only when its diagnostic
-  names the rejected argument and the wrapper itself exits zero.
+  raise `ValueError` for unused arguments rather than `SystemExit`; the wrapper
+  must catch that exact `ValueError`, confirm its diagnostic names the rejected
+  argument, and treat the rejection as success so the wrapper itself exits zero.
+  A wrapper that catches only `SystemExit` is invalid.
 - Version-check only fields claimed to belong to a framework
   `TrainingArguments` or `SFTConfig` base class. Preserve a project-defined
   subclass field when its source definition is verified and the actual parser
@@ -61,10 +63,14 @@ reaches the applicable phase, and stop at the first failure.
 - Pass the same resolved local model path and cache configuration to the server
   model and every client. Do not validate with a cached Hub identifier and
   export a job that depends on an unverified online lookup.
-- Verify `flare.patch()` accepts the actual Trainer configuration. Reject or
-  report DeepSpeed, FSDP, best-model-at-end, save-only-model, prebuilt
-  optimizer/scheduler, and checkpoint/restore combinations identified in
-  `huggingface-state-and-distributed.md`.
+- Do not call `flare.init()`, `flare.patch()`, `flare.is_running()`, or patched
+  Trainer methods in a standalone preflight; they require the Client API context
+  created by the recipe or simulator launcher. Construct the Trainer without
+  patching, inspect the generated patch call and supported public signature
+  statically, and let the first bounded simulation validate runtime patch
+  acceptance. Reject or report DeepSpeed, FSDP, best-model-at-end,
+  save-only-model, prebuilt optimizer/scheduler, and checkpoint/restore
+  combinations identified in `huggingface-state-and-distributed.md`.
 
 ## Parameter Checks
 
