@@ -31,6 +31,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.slurm.config import (
     _JOB_SLURM_KEYS,
     CONTAINER_RESOLV_CONF,
+    JOB_SPEC_ADDITIONAL_NODE_COMMAND,
     SLURM_CHILD_PROCESS_ENV,
     BindMount,
     JobResources,
@@ -58,6 +59,7 @@ from nvflare.app_opt.job_launcher.study_runtime import (
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.fuel.f3.drivers.file_driver import parse_file_url
+from nvflare.fuel.utils.secret_utils import has_secret_refs
 from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
     get_credential_env,
@@ -66,14 +68,17 @@ from nvflare.utils.job_launcher_utils import (
 )
 
 
+def _validate_child_dir(parent_real: str, path: str, what: str, parent_desc: str) -> str:
+    if os.path.islink(path) or not os.path.isdir(path):
+        raise SlurmLauncherError(f"{what} must be an existing non-symlink directory: {path}")
+    real = os.path.realpath(path)
+    if os.path.dirname(real) != parent_real:
+        raise SlurmLauncherError(f"{what} must be an immediate child of {parent_desc}: {path}")
+    return real
+
+
 def _validate_run_dir(workspace_path: str, run_dir: str) -> str:
-    if os.path.islink(run_dir) or not os.path.isdir(run_dir):
-        raise SlurmLauncherError(f"job run directory must be an existing non-symlink directory: {run_dir}")
-    workspace_real = os.path.realpath(workspace_path)
-    run_real = os.path.realpath(run_dir)
-    if os.path.dirname(run_real) != workspace_real:
-        raise SlurmLauncherError(f"job run directory must be an immediate child of workspace_path: {run_dir}")
-    return run_real
+    return _validate_child_dir(os.path.realpath(workspace_path), run_dir, "job run directory", "workspace_path")
 
 
 def _resolve_resources(
@@ -89,8 +94,11 @@ def _resolve_resources(
         raise SlurmLauncherError(f"unsupported job-owned Slurm key(s): {sorted(unknown)}")
 
     nodes = _require_int(spec.get("nodes", 1), "nodes")
-    if nodes > 1 and sandbox != "none":
-        raise SlurmLauncherError("multi-node Slurm jobs require effective sandbox 'none'")
+    if nodes > 1 and sandbox != "none" and spec.get(JOB_SPEC_ADDITIONAL_NODE_COMMAND) is None:
+        raise SlurmLauncherError(
+            "multi-node Slurm jobs require effective sandbox 'none' unless additional_node_command requests "
+            "launcher-owned fan-out"
+        )
 
     def optional_int(name: str) -> Optional[int]:
         value = spec.get(name)
@@ -125,6 +133,31 @@ def _resolve_resources(
         time_limit=time_limit,
         pending_timeout=pending_timeout,
     )
+
+
+def _resolve_additional_node_command(
+    job_spec: dict, nodes: int, workspace: Workspace, job_id: str, run_dir: str, supported: bool
+) -> tuple[tuple, Optional[str]]:
+    raw = job_spec.get(JOB_SPEC_ADDITIONAL_NODE_COMMAND)
+    if raw is None:
+        return (), None
+    if not supported:
+        raise SlurmLauncherError("additional_node_command is only supported for client jobs")
+    raw = _require_string(raw, JOB_SPEC_ADDITIONAL_NODE_COMMAND)
+    if "\n" in raw or "\r" in raw:
+        raise SlurmLauncherError("additional_node_command must be a single line")
+    if has_secret_refs(raw):
+        raise SlurmLauncherError("additional_node_command does not support secret references")
+    if nodes < 2:
+        raise SlurmLauncherError("additional_node_command requires nodes > 1")
+    try:
+        tokens = shlex.split(raw, posix=True)
+    except ValueError as e:
+        raise SlurmLauncherError("malformed additional_node_command") from e
+    if not tokens:
+        raise SlurmLauncherError("additional_node_command must contain at least one word")
+    app_real = _validate_child_dir(run_dir, workspace.get_app_dir(job_id), "job app directory", "the run dir")
+    return tuple(tokens), app_real
 
 
 def _module_args(job_args: dict, arg_names: list[str]) -> tuple:
@@ -209,6 +242,7 @@ class SlurmJobLauncher(JobLauncherSpec):
     """Common lifecycle and launch-plan construction for client and server jobs."""
 
     EXE_MODULE: Optional[str] = None
+    SUPPORTS_ADDITIONAL_NODE_COMMAND = False
 
     def __init__(
         self,
@@ -228,6 +262,7 @@ class SlurmJobLauncher(JobLauncherSpec):
         cancel_timeout: float = 10.0,
         poll_interval: float = 10.0,
         pending_timeout: float = 600.0,
+        multi_node_port_range=None,
     ):
         super().__init__()
         if not self.EXE_MODULE:
@@ -250,6 +285,7 @@ class SlurmJobLauncher(JobLauncherSpec):
                 cancel_timeout=cancel_timeout,
                 poll_interval=poll_interval,
                 pending_timeout=pending_timeout,
+                multi_node_port_range=multi_node_port_range,
             ),
         )
         self.manager = None
@@ -407,6 +443,14 @@ class SlurmJobLauncher(JobLauncherSpec):
             self.config.pending_timeout,
             spec=job_spec,
         )
+        additional_node_command, node_app_dir = _resolve_additional_node_command(
+            job_spec,
+            resources.nodes,
+            workspace,
+            job_id,
+            run_dir,
+            self.SUPPORTS_ADDITIONAL_NODE_COMMAND,
+        )
         study_env, secret_env = self._study_environment(runtime)
         secret_env.update(get_credential_env(job_args))
         mounts = list(self._study_mounts(runtime)) if sandbox != "none" else []
@@ -433,6 +477,8 @@ class SlurmJobLauncher(JobLauncherSpec):
             python_path=self.config.python_path,
             python_env=self._python_environment(workspace, job_id),
             forward_env=self.config.forward_env,
+            additional_node_command=additional_node_command,
+            node_app_dir=node_app_dir,
         )
 
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
@@ -454,6 +500,7 @@ class SlurmJobLauncher(JobLauncherSpec):
 
 class ClientSlurmJobLauncher(SlurmJobLauncher):
     EXE_MODULE = "nvflare.private.fed.app.client.worker_process"
+    SUPPORTS_ADDITIONAL_NODE_COMMAND = True
 
     def get_module_args(self, job_args: dict) -> tuple:
         return _module_args(job_args, get_client_job_args(include_exe_module=False, include_set_options=True))
