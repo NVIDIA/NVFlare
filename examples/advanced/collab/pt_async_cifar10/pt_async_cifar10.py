@@ -14,7 +14,7 @@
 
 """Run asynchronous CIFAR-10 training with ``CollabRecipe``.
 
-From the ``examples/collab/pt_async_cifar10`` directory:
+From the ``examples/advanced/collab/pt_async_cifar10`` directory:
 
     python prepare_data.py
     python -m pt_async_cifar10

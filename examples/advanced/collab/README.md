@@ -42,15 +42,16 @@ To use another deployment mode, execute the same recipe with `PocEnv` or
 abstraction.
 
 The NumPy examples run in a base installation; `hello_fedavg` needs PyTorch.
-`pt_async_cifar10` additionally needs torchvision and TensorBoard; follow its
-[setup and prepared-data workflow](pt_async_cifar10/README.md) before running
-the Collab recipe.
 `simple_split_learning` needs PyTorch and torchvision and downloads MNIST on
 its first run.
+`pt_async_cifar10` additionally needs TensorBoard; follow its
+[setup and prepared-data workflow](pt_async_cifar10/README.md) before running
+the Collab recipe.
 
 The advanced Collab examples run against an NVFlare installation from this
-repository and intentionally have no per-folder `requirements.txt` files. Add
-those files once Collab is available in a released NVFlare package.
+repository. The `pt_async_cifar10` requirements file contains only its
+additional framework dependencies; add NVFlare package pins once Collab is
+available in a released package.
 
 For the design behind the API see the
 [Collab API design](../../../docs/design/collab_api_design.md). For a step-by-step

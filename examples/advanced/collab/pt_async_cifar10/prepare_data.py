@@ -14,8 +14,8 @@
 
 """Download CIFAR-10 once and prepare deterministic logical-client splits.
 
-Run from the ``examples/collab/pt_async_cifar10`` directory before starting
-the Collab recipe:
+Run from the ``examples/advanced/collab/pt_async_cifar10`` directory before
+starting the Collab recipe:
 
     python prepare_data.py
 """

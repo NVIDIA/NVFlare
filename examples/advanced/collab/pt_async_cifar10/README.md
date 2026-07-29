@@ -12,7 +12,7 @@ The data lifecycle follows the current standard workflow:
 2. `pt_async_cifar10.py` builds a `CollabRecipe`; clients only load prepared
    data and never download or repartition it during execution.
 
-From the `examples/collab` directory, enter this example first:
+From the `examples/advanced/collab` directory, enter this example first:
 
 ```bash
 cd pt_async_cifar10
@@ -25,6 +25,9 @@ Install the example dependencies:
 ```bash
 python -m pip install -r requirements.txt
 ```
+
+This installs only the example's additional framework dependencies. Run the
+example against the NVFlare installation from this repository.
 
 ## Prepare data
 
