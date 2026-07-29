@@ -67,11 +67,13 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             Defaults to TransferType.FULL.
         model_persistor: Custom model persistor. If None, PTFileModelPersistor will be used.
         model_locator: Custom model locator. If None, PTFileModelLocator will be used.
-        per_site_config: Per-site configuration for the federated learning job. Nested
-            values become part of the generated job definition and must not contain secrets.
+        per_site_config: Deprecated constructor form. New code should call
+            ``set_per_site_config(recipe, config)`` immediately after construction.
         launch_once: Whether external process is launched once or per task. Defaults to True.
         shutdown_timeout: Seconds to wait before shutdown. Defaults to 0.0.
-        key_metric: Metric used to determine if the model is globally best. Defaults to "accuracy".
+        key_metric: Metric used to determine if the model is globally best. Higher values must indicate
+            a better model; for lower-is-better metrics such as a loss, report a negated value from the
+            client (e.g., "neg_loss"). Defaults to "accuracy".
         stop_cond: Early stopping condition based on metric. String literal in the format of
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
@@ -81,7 +83,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
         enable_tensor_disk_offload: Enable disk-backed tensor offload for incoming streamed payloads.
-
     Example:
         Basic usage with early stopping:
 

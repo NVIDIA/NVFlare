@@ -115,7 +115,7 @@ function dry_run() {
 }
 
 function check_license() {
-    folders_to_check_license=("nvflare" "examples" "tests" "integration" "research")
+    folders_to_check_license=("nvflare" "examples" "tests" "integration" "research" "skills")
     echo "checking license header in folder: ${folders_to_check_license[*]}"
     status=0
     python3 ci/check_license_header.py "${folders_to_check_license[@]}" || status="$?"

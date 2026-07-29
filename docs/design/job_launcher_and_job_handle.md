@@ -2,7 +2,8 @@
 
 ## 1. Overview
 
-NVFlare runs each federated job as an isolated execution unit — a subprocess, Docker container, or Kubernetes pod. Two abstractions govern this:
+NVFlare runs each federated job as a backend execution unit — a subprocess, Docker container, Kubernetes pod, or
+Slurm batch allocation. Two abstractions govern this:
 
 - **JobLauncherSpec** — starts a job and returns a handle.
 - **JobHandleSpec** — represents the running job and provides lifecycle control (poll, wait, terminate).
@@ -31,6 +32,11 @@ The upper layers (server engine, client executor) program exclusively against th
 └─────────────────┘  └─────────────────┘  └─────────────────┘
     subprocess           Docker container       K8s Pod
 ```
+
+The Slurm strategy follows the same interface: ``ClientSlurmJobLauncher`` or
+``ServerSlurmJobLauncher`` returns a manager-backed ``SlurmJobHandle`` for a
+scheduler allocation. It is omitted from the compact diagram only
+to keep the three-column layout readable.
 
 ---
 
@@ -119,24 +125,32 @@ def get_job_launcher(job_meta, fl_ctx) -> JobLauncherSpec:
     return job_launcher[0]
 ```
 
-Every registered `FLComponent` receives `BEFORE_JOB_LAUNCH`. All three launchers unconditionally call `add_launcher(self, fl_ctx)` — none inspect `job_meta` to decide whether to register. The site's `resources.json` contains exactly one launcher type; that launcher always handles every job on that site.
+Every registered `FLComponent` receives `BEFORE_JOB_LAUNCH`. Every launcher unconditionally calls
+`add_launcher(self, fl_ctx)` — none inspect `job_meta` to decide whether to register. The site's `resources.json`
+contains exactly one launcher type; that launcher always handles every job on that site.
 
-If a job lacks required configuration for the site's launcher (e.g. no image on a Docker/K8s site), `launch_job` raises a `RuntimeError` with a clear error message. There is no silent fallback to a different launcher.
+If a job or resolved site/study policy lacks required configuration for the site's launcher (for example, no
+effective image on a container backend), `launch_job` raises a clear launch error. There is no silent fallback to a
+different launcher.
 
 ### 3.2 Job-Level Launcher Configuration (`launcher_spec`)
 
-`launcher_spec` is an optional top-level key in `meta.json` that carries per-launcher runtime configuration for the job — the container image, CPU/memory limits, shared memory size, etc. It is **not** used for launcher selection.
+`launcher_spec` is an optional top-level key in `meta.json` that carries per-launcher runtime configuration for the
+job — container settings for Docker/K8s and image/resource settings for Slurm. It is **not** used for launcher
+selection.
 
 ```json
 {
   "launcher_spec": {
     "default": {
       "docker": { "image": "nvflare-pt:2.7" },
-      "k8s":    { "image": "nvflare-pt:2.7" }
+      "k8s":    { "image": "nvflare-pt:2.7" },
+      "slurm":  { "image": "/shared/images/nvflare-job.sif", "time": "02:00:00", "pending_timeout": 300 }
     },
     "site-1": {
       "docker": { "image": "nvflare-pt:2.7", "shm_size": "8g" },
-      "k8s":    { "image": "nvflare-pt:2.7", "cpu": "4", "memory": "16Gi", "ephemeral_storage": "8Gi" }
+      "k8s":    { "image": "nvflare-pt:2.7", "cpu": "4", "memory": "16Gi", "ephemeral_storage": "8Gi" },
+      "slurm":  { "cpus_per_node": 16, "mem_per_node": 131072 }
     }
   },
   "resource_spec": {
@@ -150,9 +164,14 @@ If a job lacks required configuration for the site's launcher (e.g. no image on 
 Resolution model for new job metadata:
 
 1. Merge `launcher_spec["default"][mode]` with `launcher_spec[site_name][mode]` (site wins on conflict).
-2. Keep `resource_spec` separate from launcher settings; it is not a place for new Docker or K8s launcher configuration.
+2. Keep `resource_spec` separate from launcher settings; it is not a place for new backend-specific configuration.
 
-`resource_spec` (distinct from `launcher_spec`) is scheduler-facing: the scheduler reads it at job admission time to decide if the site has the required hardware. Docker and K8s use flat `resource_spec[site]["num_of_gpus"]` for GPU requests.
+`resource_spec` (distinct from `launcher_spec`) is scheduler-facing: the scheduler reads it at job admission time to
+decide if the site has the required hardware. Docker, K8s, and Slurm use flat
+`resource_spec[site]["num_of_gpus"]` as the portable GPU total. Slurm permits only `nodes`, `gpus_per_node`,
+`image`, `cpus_per_node`, `mem_per_node`, `time`, and reduce-only `pending_timeout` in its job block. A job image
+requires BYOC authorization and overrides study/site image defaults. Routing, account, QOS, sandbox, setup, and raw
+Slurm flags remain site/study-owned.
 
 ### 3.3 Server Side (`ServerEngine`)
 
@@ -202,9 +221,12 @@ start_app(job_id, job_meta, ...)
 1. **File-based** — Check for `FLMetaKey.PROCESS_RC_FILE` in the job's run directory. The child writes its own return code here before exiting.
 2. **Handle-based** — Fall back to `job_handle.poll()`.
 
+The Slurm manager resolves and caches the scheduler-aware terminal result before waking waiters. After `wait()`,
+the generic function uses `_process_rc.txt` when the worker wrote it and otherwise polls that cached handle result.
+
 ---
 
-## 4. The Three Implementations
+## 4. The Four Implementations
 
 ### 4.1 Process Launcher (Subprocess)
 
@@ -231,9 +253,10 @@ Wraps a `ProcessAdapter` that manages a `subprocess.Popen` or a PID.
 | Step | Action |
 |------|--------|
 | 1 | Copy `os.environ`. If `app_custom_folder` is non-empty, call `add_custom_dir_to_path()`. |
-| 2 | Call `self.get_command(job_meta, fl_ctx)` (abstract). |
-| 3 | `shlex.split(command)`, spawn via `spawn_process(argv, new_env)`. |
-| 4 | Return `ProcessHandle`. |
+| 2 | Merge `get_credential_env(JOB_PROCESS_ARGS)` into the child env — bootstrap credentials travel in the environment, never in argv (see `job_process_credential_transport_design.md`). |
+| 3 | Call `self.get_command(job_meta, fl_ctx)` (abstract). |
+| 4 | `shlex.split(command)`, spawn via `spawn_process(argv, new_env)`. |
+| 5 | Return `ProcessHandle`. |
 
 **Event registration** — unconditionally registers:
 
@@ -298,7 +321,7 @@ Launch sequence:
 |------|--------|
 | 1 | Read `job_image` from `get_job_launcher_spec(job_meta, site_name, "docker").get("image")`. Raise `RuntimeError` if absent. |
 | 2 | Override `PARENT_URL`: replace `localhost` with the site container name so SJ/CJ connects back via Docker DNS. |
-| 3 | Build `command = [python_path, "-u", "-m", exe_module] + module_args`, using `launcher_spec[site][docker].python_path` when present and `default_python_path` otherwise. |
+| 3 | Build `command = [python_path, "-u", "-m", exe_module] + module_args`, using `launcher_spec[site][docker].python_path` when present and `default_python_path` otherwise. Module args exclude bootstrap credentials, which are merged into the container `environment` via `get_credential_env(job_args)` — never into the command. |
 | 4 | Resolve `num_of_gpus` from the flat `resource_spec[site]` GPU resource requirement. |
 | 5 | Merge `default_job_container_kwargs` with job-level `launcher_spec` keys (job wins). Set `device_requests` from `num_of_gpus` if not already in merged kwargs. |
 | 6 | `docker_client.containers.run(job_image, command=..., network=..., volumes=..., **merged_kwargs)`. |
@@ -391,10 +414,11 @@ Launch sequence:
 | 1 | Sanitize job ID via `uuid4_to_rfc1123`. Extract `site_name`, `job_image` from `get_job_launcher_spec(job_meta, site_name, "k8s")`. Raise if `WORKSPACE_OBJECT` missing. |
 | 2 | Read `JOB_PROCESS_ARGS`; raise if absent or `EXE_MODULE` missing. If `<workspace>/local/study_runtime.yaml` exists, parse it (strict v2) and resolve the job study's datasets, env, secret_env, secret_mounts, container name, and pod template from it; coexistence with a v1 study data file is a hard error. Otherwise resolve dataset PVC mounts from `study_data_pvc_file_path` when configured and the YAML file contains entries for the job study. |
 | 3 | Build `job_config`: name, image, args from `get_module_args()`. Use `launcher_spec[site][k8s].python_path` for the pod command when present, falling back to `default_python_path`. Mount the job workspace at `workspace_mount_path`, mount the startup-kit Secret at `<workspace_mount_path>/startup`, and set custom-code `PYTHONPATH` under `workspace_mount_path`. Add the workspace `emptyDir.sizeLimit` and `resources.requests/limits["ephemeral-storage"]` from `launcher_spec[site][k8s].ephemeral_storage` when present, falling back to the launcher default. Add K8s CPU and memory limits from `launcher_spec`; add GPU limits from the flat `resource_spec[site].num_of_gpus` GPU resource requirement. Apply `launcher_spec[site][k8s].pending_timeout` when present. Missing study entries skip data PVC mounts and log a warning. If a pod template is resolved, preserve template pod fields and sidecars while replacing NVFlare-owned fields such as pod name, job container image/command/args, workspace mounts, transfer env vars, image pull secrets, and resources. |
-| 4 | Create `K8sJobHandle`. |
-| 5 | `core_v1.create_namespaced_pod()`. On any exception: set `terminal_state = TERMINATED`, preserve `EXCEPTION` as the return code, and return handle. |
+| 3.5 | Create the per-job credential Secret `nvflare-cred-<pod_name>` (bootstrap credentials plus the workspace transfer token) and reference it from the job container via `env[].valueFrom.secretKeyRef` — credential values never appear in the pod object. |
+| 4 | Create `K8sJobHandle` (carries the credential Secret name). |
+| 5 | `core_v1.create_namespaced_pod()`, then patch the credential Secret with an ownerReference to the created pod (GC backstop). On any exception: delete the credential Secret if the pod was never created, set `terminal_state = TERMINATED`, preserve `EXCEPTION` as the return code, and return handle. |
 | 6 | `job_handle.enter_states([RUNNING])`. On any `BaseException`: `terminate()` then re-raise. |
-| 7 | Return handle. |
+| 7 | Return handle. The handle deletes the credential Secret when the job reaches a terminal state (completed pods are not deleted, so ownerReference GC alone would not fire on success). |
 
 The K8s launcher loads the v1 `study_data_pvc_file_path` file once per launcher
 instance; restart the parent site process to pick up hand edits. The v2
@@ -416,6 +440,20 @@ def handle_event(self, event_type, fl_ctx):
         add_launcher(self, fl_ctx)
 ```
 
+### 4.4 Slurm Launcher
+
+`ClientSlurmJobLauncher` and `ServerSlurmJobLauncher` return a manager-backed `SlurmJobHandle`. One manager per
+parent submits, monitors, and cancels scheduler allocations. Its live-handle map prevents duplicate submissions
+within that parent. A launch succeeds only when `sbatch --parsable` returns exactly one job ID; otherwise it removes
+the transient job artifacts and reports failure.
+
+The deploy tool prepares the appropriate client or server launcher directly in the shared workspace selected by
+`--output`. Bootstrap validates the workspace and required Slurm accounting service. Apptainer and Pyxis are single-node;
+multi-node allocations require bare mode and application-owned fan-out.
+
+See [`slurm_job_launcher_design.md`](slurm_job_launcher_design.md) for the design and
+`docs/user_guide/admin_guide/deployment/slurm_job_launcher.rst` for operator configuration.
+
 ---
 
 ## 5. Object-Oriented Design Summary
@@ -426,7 +464,8 @@ def handle_event(self, event_type, fl_ctx):
 JobHandleSpec (ABC)
 ├── ProcessHandle          (wraps ProcessAdapter / subprocess.Popen)
 ├── DockerJobHandle        (wraps Docker container + terminal_state pattern)
-└── K8sJobHandle           (wraps CoreV1Api + pod name + terminal_state pattern)
+├── K8sJobHandle           (wraps CoreV1Api + pod name + terminal_state pattern)
+└── SlurmJobHandle         (manager-backed live scheduler allocation)
 
 JobLauncherSpec (FLComponent, ABC)
 ├── ProcessJobLauncher     (abstract: get_command)
@@ -435,9 +474,12 @@ JobLauncherSpec (FLComponent, ABC)
 ├── DockerJobLauncher      (abstract: get_module_args)
 │   ├── ServerDockerJobLauncher
 │   └── ClientDockerJobLauncher
-└── K8sJobLauncher         (abstract: get_module_args)
-    ├── ServerK8sJobLauncher
-    └── ClientK8sJobLauncher
+├── K8sJobLauncher         (abstract: get_module_args)
+│   ├── ServerK8sJobLauncher
+│   └── ClientK8sJobLauncher
+└── SlurmJobLauncher
+    ├── ServerSlurmJobLauncher
+    └── ClientSlurmJobLauncher
 ```
 
 ### 5.2 Design Patterns
@@ -451,29 +493,29 @@ JobLauncherSpec (FLComponent, ABC)
 | `ProcessJobLauncher` | `get_command(job_meta, fl_ctx)` | Shell command string |
 | `DockerJobLauncher` | `get_module_args(job_args)` | `{flag: value}` dict |
 | `K8sJobLauncher` | `get_module_args(job_id, fl_ctx)` | `{flag: value}` dict |
+| `SlurmJobLauncher` | `get_module_args(job_args)` | Structured argument tuple |
 
 **Observer Pattern** — Launchers register for `BEFORE_JOB_LAUNCH` through the `FLComponent` event system. Decouples launcher registration from the engine's control flow.
 
 ---
 
-## 6. Comparison: Process vs Docker vs Kubernetes
+## 6. Comparison: Process vs Docker vs Kubernetes vs Slurm
 
-| Aspect | Process | Docker | Kubernetes |
-|--------|---------|--------|------------|
-| **Execution unit** | OS subprocess | Docker container | K8s Pod |
-| **Isolation** | Shared host env | Per-job image; own env | Per-job image; pod isolation |
-| **Image required** | No | Yes — `launcher_spec[site][docker][image]` | Yes — `launcher_spec[site][k8s][image]` |
-| **No-image behavior** | N/A | `launch_job` raises `RuntimeError` | `launch_job` raises `RuntimeError` |
-| **Workspace access** | Direct filesystem | Host bind mount → `/var/tmp/nvflare/workspace` | PersistentVolumeClaims |
-| **Data access** | Direct filesystem | Optional dataset bind mounts from `study_data.yaml` | Optional dataset PVC mounts from `study_data.yaml` |
-| **PARENT_URL** | `tcp://localhost:port` | Derived at runtime: `tcp://<site_name>:<port>` (Docker DNS) | Baked into comm_config at provision time |
-| **GPU config** | `GPUResourceManager` → `CUDA_VISIBLE_DEVICES` | `device_requests` via `launcher_spec` or flat `resource_spec` | `nvidia.com/gpu` limit via `launcher_spec` or flat `resource_spec` |
-| **Resource manager** | `GPUResourceManager` | `PassthroughResourceManager` | `PassthroughResourceManager` |
-| **Start verification** | None | `enter_states(["running"])` with timeout | `enter_states([RUNNING])` with stuck detection |
-| **Terminate** | `SIGTERM`/`SIGKILL` | `container.stop()` + `container.remove()` | `delete_namespaced_pod(grace_period=0)` |
-| **Command format** | Shell string (`sys.executable -m ...`) | `[python, "-u", "-m", module] + args` list | `command: [python]` + `args` list in pod spec |
-| **Dependencies** | stdlib only | `docker` Python SDK | `kubernetes` Python SDK + kubeconfig |
-| **Typical use** | Simulator, single-machine POC | Multi-job isolation on bare metal / VM | Production cluster |
+| Aspect | Process | Docker | Kubernetes | Slurm |
+|--------|---------|--------|------------|-------|
+| **Execution unit** | OS subprocess | Docker container | K8s Pod | Slurm batch allocation |
+| **Isolation** | Shared host env | Per-job image; own env | Per-job image; pod isolation | Apptainer sandbox, trusted Pyxis, or trusted bare process |
+| **Image required** | No | Job/study image | Job/study image | Job/study/site image for container backends |
+| **Workspace access** | Direct filesystem | Host bind mount | PersistentVolumeClaims | Shared POSIX filesystem; explicit binds in container modes |
+| **Data access** | Direct filesystem | Study host-path binds | Study PVC mounts | Validated study host-path binds in container modes |
+| **PARENT_URL** | Local parent | Docker DNS rewrite | Prepared comm config | Runtime compute-reachable `parent_host:internal_port` rewrite |
+| **GPU config** | `GPUResourceManager` / `CUDA_VISIBLE_DEVICES` | `device_requests` | `nvidia.com/gpu` limit | `--gres=gpu:N` from flat total/topology |
+| **Resource manager** | `GPUResourceManager` | `PassthroughResourceManager` | `PassthroughResourceManager` | `PassthroughResourceManager`; Slurm enforces allocation |
+| **Start verification** | None | Container running timeout | Pod pending/stuck detection | Parsed submission ID plus pending timeout |
+| **Terminate** | Process signals | Stop/remove container | Delete pod | Exact-marker/UID verification then retried `scancel` |
+| **Command format** | Shell-derived process argv | Container argv list | Pod command/args | Structured Slurm CLI argv plus generated batch script |
+| **Dependencies** | stdlib only | Docker SDK/daemon | Kubernetes SDK/API | Slurm CLI; selected compute backend |
+| **Typical use** | Simulator, single-machine POC | Isolated jobs on VM/bare metal | Kubernetes cluster | Scheduler-native HPC deployment |
 
 ---
 
@@ -481,7 +523,8 @@ JobLauncherSpec (FLComponent, ABC)
 
 ### 7.1 PassthroughResourceManager
 
-`PassthroughResourceManager` always approves resource requests and performs no local tracking. Use with Docker or K8s launchers where the container runtime handles actual resource allocation.
+`PassthroughResourceManager` always approves resource requests and performs no local tracking. Use with Docker, K8s,
+or Slurm launchers where the runtime or scheduler handles actual resource allocation.
 
 | Method | Behavior |
 |--------|----------|
@@ -595,6 +638,12 @@ study-alpha:
 
 For K8s, each dataset `source` is a trusted PVC claim name that is inserted into the pod manifest. For Docker, the same YAML shape is used but `source` is a trusted host path instead of a PVC claim name. Site operators should validate these site-local values before running jobs.
 
+### 9.4 Slurm Launcher
+
+Do not hand-author the Slurm launcher component. `nvflare deploy prepare` writes the client or server launcher and
+`PassthroughResourceManager` directly into the runtime workspace selected by `--output`. See
+`docs/user_guide/admin_guide/deployment/slurm_job_launcher.rst` for public configuration.
+
 ---
 
 ## 10. Future Improvements
@@ -603,10 +652,11 @@ For K8s, each dataset `source` is a trusted PVC claim name that is inserted into
 
 2. **Consistent timeout policy** — The Process launcher has no start timeout. Docker and K8s launchers both call `enter_states` with a configurable timeout.
 
-3. **Singularity/Apptainer support** — HPC environments where Docker is unavailable. Would share the `DockerJobLauncher` template method structure but replace the Docker SDK calls with CLI invocations (`singularity exec`). No daemon, runs in host network, so `PARENT_URL = localhost:port`.
+3. **`ContainerJobLauncher` base class** — If Docker and Kubernetes acquire enough common behavior, extract a base
+with `_run_container()` / `_get_status()` / `_stop_container()` as the runtime-specific interface. Slurm remains a
+scheduler-native strategy rather than a subclass of the Docker launcher.
 
-4. **`ContainerJobLauncher` base class** — When a second container runtime needs support, extract a base with `_run_container()` / `_get_status()` / `_stop_container()` as the runtime-specific interface. Everything above (PARENT_URL override, PYTHONPATH, GPU, event handling) is runtime-agnostic.
+4. **Observability** — Add optional `get_info()` to `JobHandleSpec` so the engine can log launcher-specific details (pod name, namespace, PID, container ID, or Slurm job ID) for debugging.
 
-5. **Observability** — Add optional `get_info()` to `JobHandleSpec` so the engine can log launcher-specific details (pod name, namespace, PID, container ID) for debugging.
-
-6. **Orphaned container recovery** — On SP/CP restart, scan for and terminate job containers from the previous session that are still running.
+5. **Orphaned workload recovery** — Docker, Kubernetes, and Slurm do not terminate workloads that survive an SP/CP
+restart. A future common policy could add optional discovery and cleanup.

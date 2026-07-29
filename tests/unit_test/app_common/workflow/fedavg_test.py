@@ -28,7 +28,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import AggregationStatsKey
-from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.utils.tensor_disk_offload_context import (
@@ -128,6 +128,7 @@ class TestFedAvgInit:
         assert controller.save_filename == "FL_global_model.pt"
         assert controller.exclude_vars is None
         assert controller.aggregation_weights == {}
+        assert controller.fedprox_mu is None
 
     def test_custom_initialization(self):
         """Test FedAvg with custom parameters."""
@@ -157,6 +158,20 @@ class TestFedAvgInit:
         assert controller.save_filename == "best_model.pt"
         assert controller.exclude_vars == "bn.*"
         assert controller.aggregation_weights == {"site-1": 2.0, "site-2": 1.0}
+
+    @pytest.mark.parametrize("fedprox_mu", [None, 0.0, 0])
+    def test_fedprox_disabled_values(self, fedprox_mu):
+        assert FedAvg(fedprox_mu=fedprox_mu).fedprox_mu is None
+
+    @pytest.mark.parametrize("fedprox_mu", [-0.1, float("inf"), float("-inf"), float("nan")])
+    def test_invalid_fedprox_numeric_values(self, fedprox_mu):
+        with pytest.raises(ValueError, match="finite non-negative number"):
+            FedAvg(fedprox_mu=fedprox_mu)
+
+    @pytest.mark.parametrize("fedprox_mu", [True, False, "0.1", object()])
+    def test_invalid_fedprox_types(self, fedprox_mu):
+        with pytest.raises(TypeError, match="finite non-negative number"):
+            FedAvg(fedprox_mu=fedprox_mu)
 
 
 class TestBaseFedAvgMetricsAggregationInfo:
@@ -1238,6 +1253,81 @@ class TestScaffoldControlValues:
         assert controller._global_ctrl_weights["w"] is control
         np.testing.assert_array_equal(control, np.ones_like(control))
 
+    def test_round_accepts_parameter_only_delta_and_leaves_numpy_integer_buffer_control_unchanged(self):
+        from nvflare.app_common.app_constant import AlgorithmConstants
+        from nvflare.app_common.workflows.scaffold import Scaffold
+
+        weight_control = np.zeros(2, dtype=np.float32)
+        buffer_control = np.zeros((), dtype=np.int64)
+        controller = Scaffold(num_clients=1, num_rounds=1)
+        controller.fl_ctx = FLContext()
+        controller.model = FLModel(
+            params={"weight": np.ones(2, dtype=np.float32), "num_batches_tracked": np.ones((), dtype=np.int64)}
+        )
+        controller._global_ctrl_weights = {
+            "weight": weight_control,
+            "num_batches_tracked": buffer_control,
+        }
+        controller.sample_clients = lambda _: ["site-1"]
+        controller.send_model_and_wait = lambda targets, data: []
+        controller.aggregate = lambda results, aggregate_fn=None: FLModel(
+            params=controller.model.params,
+            meta={AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"weight": np.ones(2, dtype=np.float32)}},
+        )
+        controller.update_model = lambda model, aggr_result: model
+        controller.save_model = lambda model: None
+
+        controller.run()
+
+        np.testing.assert_array_equal(controller._global_ctrl_weights["weight"], np.ones_like(weight_control))
+        assert controller._global_ctrl_weights["num_batches_tracked"] is buffer_control
+        assert buffer_control.dtype == np.int64
+        assert buffer_control == 0
+
+    def test_round_initializes_control_for_newly_aggregated_parameter(self):
+        from nvflare.app_common.app_constant import AlgorithmConstants
+        from nvflare.app_common.workflows.scaffold import Scaffold
+
+        controller = Scaffold(num_clients=1, num_rounds=1)
+        controller.fl_ctx = FLContext()
+        controller.model = FLModel(params={"weight": np.zeros(2, dtype=np.float32)})
+        controller._global_ctrl_weights = {"weight": np.zeros(2, dtype=np.float32)}
+        controller.sample_clients = lambda _: ["site-1"]
+        controller.send_model_and_wait = lambda targets, data: []
+        controller.aggregate = lambda results, aggregate_fn=None: FLModel(
+            params={
+                "weight": np.ones(2, dtype=np.float32),
+                "head": np.ones(1, dtype=np.float32),
+            },
+            meta={AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"head": np.array([0.5], dtype=np.float32)}},
+        )
+        controller.update_model = lambda model, aggr_result: aggr_result
+        controller.save_model = lambda model: None
+
+        controller.run()
+
+        np.testing.assert_array_equal(controller._global_ctrl_weights["head"], np.array([0.5], dtype=np.float32))
+
+    def test_round_rejects_control_delta_for_unknown_model_parameter(self):
+        from nvflare.app_common.app_constant import AlgorithmConstants
+        from nvflare.app_common.workflows.scaffold import Scaffold
+
+        controller = Scaffold(num_clients=1, num_rounds=1)
+        controller.fl_ctx = FLContext()
+        controller.model = FLModel(params={"weight": np.zeros(2, dtype=np.float32)})
+        controller._global_ctrl_weights = {"weight": np.zeros(2, dtype=np.float32)}
+        controller.sample_clients = lambda _: ["site-1"]
+        controller.send_model_and_wait = lambda targets, data: []
+        controller.aggregate = lambda results, aggregate_fn=None: FLModel(
+            params={"weight": np.ones(2, dtype=np.float32)},
+            meta={AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"unknown": np.ones(1, dtype=np.float32)}},
+        )
+        controller.update_model = lambda model, aggr_result: aggr_result
+        controller.save_model = lambda model: None
+
+        with pytest.raises(RuntimeError, match="unknown model parameter 'unknown'"):
+            controller.run()
+
     def test_round_keeps_cuda_tensor_controls_when_client_delta_is_numpy(self):
         torch = pytest.importorskip("torch")
         if not torch.cuda.is_available():
@@ -1254,6 +1344,35 @@ class TestScaffoldControlValues:
 
 
 class TestFedAvgWorkflowEvents:
+    @pytest.mark.parametrize(
+        ("fedprox_mu", "expected"),
+        [(None, None), (0.0, None), (0.25, 0.25)],
+    )
+    def test_fedprox_metadata_is_set_or_omitted_on_every_training_round(self, fedprox_mu, expected):
+        initial_model = FLModel(
+            params={"w": 1.0},
+            meta={AlgorithmConstants.FEDPROX_MU: 99.0},
+        )
+        controller = FedAvg(num_clients=1, num_rounds=2, model=initial_model, fedprox_mu=fedprox_mu)
+        controller.fl_ctx = FLContext()
+        controller.abort_signal = Signal()
+        controller.sample_clients = lambda _: ["site-1"]
+        sent_metadata = []
+        controller.send_model = lambda **kwargs: sent_metadata.append(dict(kwargs["data"].meta))
+        controller.get_num_standing_tasks = lambda: 0
+        controller._get_aggregated_result = lambda: FLModel(params={"w": 1.0})
+        controller.update_model = lambda model, aggr_result: model
+        controller.save_model = lambda model: None
+
+        controller.run()
+
+        assert len(sent_metadata) == 2
+        for metadata in sent_metadata:
+            if expected is None:
+                assert AlgorithmConstants.FEDPROX_MU not in metadata
+            else:
+                assert metadata[AlgorithmConstants.FEDPROX_MU] == expected
+
     def test_run_fires_round_started_and_before_aggregation_once_per_round(self):
         controller = FedAvg(num_clients=1, num_rounds=2, model={"w": 1.0})
         controller.fl_ctx = FLContext()

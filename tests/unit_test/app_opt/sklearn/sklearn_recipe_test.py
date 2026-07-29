@@ -121,9 +121,11 @@ class TestSklearnFedAvgRecipe:
         recipe = SklearnFedAvgRecipe(
             name="test_sklearn_per_site",
             model_params={"n_classes": 2},
-            per_site_config=per_site_config,
             **base_recipe_params,
         )
+        from nvflare.recipe import set_per_site_config
+
+        set_per_site_config(recipe, per_site_config)
 
         assert recipe.per_site_config == per_site_config
 

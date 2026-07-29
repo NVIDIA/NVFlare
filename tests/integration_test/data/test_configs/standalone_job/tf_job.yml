@@ -1,49 +1,63 @@
+# TensorFlow hello-world tests exported directly by the current recipe entrypoints.
+
 n_servers: 1
 n_clients: 2
-jobs_root_dir: ./data/jobs
-cleanup: True
-
+jobs_root_dir: ./data/recipe_jobs/tensorflow
+cleanup: true
+poll_period: 1
+event_sequence_timeout: 900
 
 tests:
-  - test_name: "run hello-cyclic"
+  - test_name: Run current hello-cyclic example
+    setup:
+      - rm -rf ./data/recipe_jobs/tensorflow/cyclic
+      - /bin/sh -c "cd ../../examples/hello-world/hello-cyclic && python job.py --export --export-dir ../../../tests/integration_test/data/recipe_jobs/tensorflow --n_clients 2 --num_rounds 1"
+      - python -c "import tensorflow as tf; tf.keras.datasets.mnist.load_data()"
     event_sequence:
-      - "trigger":
-          "type": "server_log"
-          "data": "Server started"
-        "actions": [ "submit_job hello-cyclic" ]
-        "result":
-          "type": "job_submit_success"
-      - "trigger":
-          "type": "run_state"
-          "data": { "run_finished": True }
-        "actions": [ "ensure_current_job_done" ]
-        "result":
-          "type": "run_state"
-          "data": { "run_finished": True }
+      - trigger:
+          type: server_log
+          data: Server started
+        actions: [ "submit_job cyclic" ]
+        result:
+          type: job_submit_success
+      - trigger:
+          type: run_state
+          data: { "run_finished": true }
+        actions: [ "ensure_current_job_done" ]
+        result:
+          type: run_state
+          data: { "run_finished": true }
     validators:
       - path: tests.integration_test.src.validators.TFModelValidator
-    setup:
-      - python -c "import tensorflow as tf; tf.keras.datasets.mnist.load_data()"
+        args: { model_file_name: "tf_model.weights.h5" }
     teardown:
-      - rm ~/.keras/datasets/mnist.npz
-  - test_name: "run hello-tf2"
+      - rm -rf ./data/recipe_jobs/tensorflow/cyclic
+      - rm -f ~/.keras/datasets/mnist.npz
+
+  - test_name: Run current hello-tf example
+    setup:
+      - rm -rf ./data/recipe_jobs/tensorflow/hello-tf_fedavg
+      - /bin/sh -c "cd ../../examples/hello-world/hello-tf && python job.py --export --export-dir ../../../tests/integration_test/data/recipe_jobs/tensorflow --n_clients 2 --num_rounds 1"
+      - python -c "import tensorflow as tf; tf.keras.datasets.mnist.load_data()"
     event_sequence:
-      - "trigger":
-          "type": "server_log"
-          "data": "Server started"
-        "actions": [ "submit_job hello-tf2" ]
-        "result":
-          "type": "job_submit_success"
-      - "trigger":
-          "type": "run_state"
-          "data": { "run_finished": True }
-        "actions": [ "ensure_current_job_done" ]
-        "result":
-          "type": "run_state"
-          "data": { "run_finished": True }
+      - trigger:
+          type: server_log
+          data: Server started
+        actions: [ "submit_job hello-tf_fedavg" ]
+        result:
+          type: job_submit_success
+      - trigger:
+          type: run_state
+          data: { "run_finished": true }
+        actions: [ "ensure_current_job_done" ]
+        result:
+          type: run_state
+          data: { "run_finished": true }
     validators:
       - path: tests.integration_test.src.validators.TFModelValidator
-    setup:
-      - python -c "import tensorflow as tf; tf.keras.datasets.mnist.load_data()"
+        args: { model_file_name: "tf_model.weights.h5" }
+      - path: tests.integration_test.src.validators.TBResultValidator
+        args: { require_result_on_client: false }
     teardown:
-      - rm ~/.keras/datasets/mnist.npz
+      - rm -rf ./data/recipe_jobs/tensorflow/hello-tf_fedavg
+      - rm -f ~/.keras/datasets/mnist.npz

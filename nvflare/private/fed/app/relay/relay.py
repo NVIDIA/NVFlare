@@ -224,7 +224,7 @@ def main(args):
             local_cell_fqcn=my_fqcn,
         )
 
-    logger.info(f"Successfully authenticated to {server_identity}: {token=} {ssid=}")
+    logger.info(f"Successfully authenticated to {server_identity}: {ssid=}")
 
     # wait until stopped
     logger.info(f"Started relay {my_identity=} {my_fqcn=} {root_url=} {parent_url=} {parent_fqcn=}")

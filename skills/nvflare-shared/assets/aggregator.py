@@ -1,16 +1,5 @@
-# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 
 """Packaged custom-aggregation template: a step-weighted ``ModelAggregator``.
 
@@ -18,8 +7,9 @@ Copy and adapt this into a generated ``aggregators.py`` when the conversion
 needs custom aggregation. Wire it through the recipe ``aggregator=`` parameter
 in ``job.py`` with the matching ``aggregator_data_kind`` and parameter transfer
 settings. This uses the product extension point rather than a skill-owned
-algorithm table, and it fits the standard ``FLModel`` exchange contract, so it
-needs no client-side change beyond sending step-count metadata.
+algorithm table, and it fits the standard ``FLModel`` exchange contract. It
+preserves scalar client metrics in the aggregated ``FLModel.metrics`` so server
+metric writers and model selection can observe them.
 """
 
 import math
@@ -67,6 +57,8 @@ class WeightedAggregator(ModelAggregator):
         # over just those clients (not diluted by the full round weight), and a
         # key missing from the first client does not raise KeyError.
         self._key_weight = {}
+        self._metric_weighted_sum = {}
+        self._metric_weight = {}
         self._params_type = None
         self._accepted = 0
 
@@ -81,22 +73,49 @@ class WeightedAggregator(ModelAggregator):
             else:
                 self._weighted_sum[key] = value * weight
                 self._key_weight[key] = weight
+
+        for key, value in (model.metrics or {}).items():
+            if isinstance(value, bool):
+                continue
+            item_fn = getattr(value, "item", None)
+            if callable(item_fn):
+                value = item_fn()
+            try:
+                metric = float(value)
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if not math.isfinite(metric):
+                continue
+            self._metric_weighted_sum[key] = (
+                self._metric_weighted_sum.get(key, 0.0) + metric * weight
+            )
+            self._metric_weight[key] = self._metric_weight.get(key, 0.0) + weight
+
         self._accepted += 1
         self.log_info(
             self.fl_ctx,
             f"{self.__class__.__name__} accepted model #{self._accepted} "
-            f"(weight={weight}, tensors={len(model.params)})",
+            f"(weight={weight}, tensors={len(model.params)}, "
+            f"metrics={len(model.metrics or {})})",
         )
 
     def aggregate_model(self) -> FLModel:
         if not self._weighted_sum:
             raise RuntimeError("no client models accepted this round")
         averaged = {key: self._weighted_sum[key] / self._key_weight[key] for key in self._weighted_sum}
-        result = FLModel(params=averaged, params_type=self._params_type)
+        averaged_metrics = {
+            key: self._metric_weighted_sum[key] / self._metric_weight[key]
+            for key in self._metric_weighted_sum
+        }
+        result = FLModel(
+            params=averaged,
+            params_type=self._params_type,
+            metrics=averaged_metrics or None,
+        )
         self.log_info(
             self.fl_ctx,
             f"{self.__class__.__name__} aggregated {self._accepted} models "
-            f"into {len(averaged)} tensors",
+            f"into {len(averaged)} tensors and {len(averaged_metrics)} metrics",
         )
         self.reset_stats()
         return result

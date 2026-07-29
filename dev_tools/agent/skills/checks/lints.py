@@ -871,7 +871,9 @@ def _lint_fixtures(context: LintContext) -> None:
                         )
                     )
                     continue
-                if not fixture_path.is_file():
+                # A fixture may be one file or a dataset directory (e.g. an
+                # image folder); a directory must contain at least one file.
+                if not fixture_path.is_file() and not (fixture_path.is_dir() and _has_files(fixture_path)):
                     context.findings.append(
                         _finding(
                             LINT_SKILL_FIXTURE,
@@ -879,7 +881,8 @@ def _lint_fixtures(context: LintContext) -> None:
                             record.evals_path,
                             f"eval fixture does not exist: {rel_path}",
                             "Place deterministic fixtures under the eval root "
-                            "(dev_tools/agent/skill_evals/<skill>/files/) and reference existing files.",
+                            "(dev_tools/agent/skill_evals/<skill>/files/) and reference existing "
+                            "files or non-empty dataset directories.",
                             code="skill-fixture-file-missing",
                             skill=record.name,
                         )

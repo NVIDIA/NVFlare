@@ -24,6 +24,7 @@ from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedCont
 from nvflare.app_opt.xgboost.histogram_based_v2.fed_executor import FedXGBHistogramExecutor
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import Recipe
+from nvflare.recipe.utils import _apply_legacy_constructor_config, _validate_per_site_targets
 
 
 # Internal — not part of the public API
@@ -80,17 +81,15 @@ class XGBHorizontalRecipe(Recipe):
             tree_method='hist', nthread=16.
         data_loader_id (str, optional): ID of the data loader component. Default is 'dataloader'.
         metrics_writer_id (str, optional): ID of the metrics writer component. Default is 'metrics_writer'.
-        per_site_config (dict): Per-site configuration mapping site names to config dicts.
-            Each config dict must contain 'data_loader' key with XGBDataLoader instance.
-            Nested values become part of the generated job definition and must not contain secrets.
-            Example: {"site-1": {"data_loader": CSVDataLoader(...)}, "site-2": {...}}
+        per_site_config (dict, optional): Deprecated constructor form of per-site configuration.
+            New code should call ``set_per_site_config(recipe, config)`` immediately after construction.
 
     Example:
         .. code-block:: python
 
             from nvflare.app_opt.xgboost.recipes import XGBHorizontalRecipe
             from nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader import CSVDataLoader
-            from nvflare.recipe import SimEnv
+            from nvflare.recipe import SimEnv, set_per_site_config
 
             # Build per-site configuration with data loaders
             per_site_config = {
@@ -109,8 +108,8 @@ class XGBHorizontalRecipe(Recipe):
                     "objective": "binary:logistic",
                     "eval_metric": "auc",
                 },
-                per_site_config=per_site_config,
             )
+            set_per_site_config(recipe, per_site_config)
 
             # Run simulation with explicit client list
             clients = list(per_site_config.keys())
@@ -118,9 +117,9 @@ class XGBHorizontalRecipe(Recipe):
             run = recipe.execute(env)
 
     Note:
-        - Data loaders must be configured via per_site_config parameter.
-        - TensorBoard tracking is automatically configured for both server and clients.
-        - Executor and metrics components are automatically added to all clients.
+        - Data loaders must be configured with ``set_per_site_config`` before export or execution.
+        - TensorBoard tracking is automatically configured for the server and configured sites.
+        - Executor and metrics components are automatically added to each configured site.
     """
 
     _UNSUPPORTED_SECRET_REF_ATTRS = Recipe._UNSUPPORTED_SECRET_REF_ATTRS | {"per_site_config"}
@@ -174,18 +173,16 @@ class XGBHorizontalRecipe(Recipe):
         self.xgb_params = v.xgb_params
         self.data_loader_id = v.data_loader_id
         self.metrics_writer_id = v.metrics_writer_id
-        self.per_site_config = per_site_config
+        legacy_per_site_config = per_site_config
+        self.per_site_config = None
 
-        # Validate per_site_config is provided
-        if per_site_config is None:
-            raise ValueError(
-                "per_site_config is required for XGBHorizontalRecipe. "
-                "Each site must specify a 'data_loader' in the config dictionary."
-            )
-
-        # Configure the job
+        # Configure site-independent job components first. Site apps are added
+        # once per-site configuration is known.
         job = self.configure()
         Recipe.__init__(self, job)
+
+        if legacy_per_site_config is not None:
+            _apply_legacy_constructor_config(self, legacy_per_site_config)
 
     def configure(self):
         """Configure the federated job for XGBoost histogram-based training."""
@@ -214,7 +211,9 @@ class XGBHorizontalRecipe(Recipe):
         tb_receiver = TBAnalyticsReceiver(tb_folder="tb_events")
         job.to_server(tb_receiver, id="tb_receiver")
 
-        # Prepare common client components
+        return job
+
+    def _add_client_components(self, job: FedJob, site_name: str, site_config: dict) -> None:
         executor_params = {
             "data_loader_id": self.data_loader_id,
             "metrics_writer_id": self.metrics_writer_id,
@@ -222,28 +221,28 @@ class XGBHorizontalRecipe(Recipe):
         if self.secure:
             executor_params["in_process"] = True
 
-        # Add all components per site (executor, metrics, event converter, data loader)
+        job.to(FedXGBHistogramExecutor(**executor_params), site_name, id="xgb_executor")
+        job.to(TBWriter(event_type="analytix_log_stats"), site_name, id=self.metrics_writer_id)
+        job.to(
+            ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed."),
+            site_name,
+            id="event_to_fed",
+        )
+        job.to(site_config["data_loader"], site_name, id=self.data_loader_id)
+
+    def _apply_per_site_config(self, config: dict[str, dict]) -> None:
+        _validate_per_site_targets(config, self.min_clients)
+        for site_name, site_config in config.items():
+            if site_config.get("data_loader") is None:
+                raise ValueError(f"per_site_config for {site_name!r} must include 'data_loader' key")
+
+        self.per_site_config = config
+
+    def _prepare_client_apps(self) -> None:
+        self._validate_before_use()
         for site_name, site_config in self.per_site_config.items():
-            data_loader = site_config.get("data_loader")
-            if data_loader is None:
-                raise ValueError(f"per_site_config for '{site_name}' must include 'data_loader' key")
+            self._add_client_components(self._job, site_name, site_config)
 
-            # Add executor
-            executor = FedXGBHistogramExecutor(**executor_params)
-            job.to(executor, site_name, id="xgb_executor")
-
-            # Add metrics writer
-            metrics_writer = TBWriter(event_type="analytix_log_stats")
-            job.to(metrics_writer, site_name, id=self.metrics_writer_id)
-
-            # Add event converter
-            event_to_fed = ConvertToFedEvent(
-                events_to_convert=["analytix_log_stats"],
-                fed_event_prefix="fed.",
-            )
-            job.to(event_to_fed, site_name, id="event_to_fed")
-
-            # Add data loader
-            job.to(data_loader, site_name, id=self.data_loader_id)
-
-        return job
+    def _validate_before_use(self) -> None:
+        if not self.configured_sites():
+            raise RuntimeError("XGBHorizontalRecipe requires set_per_site_config() before export or execution")

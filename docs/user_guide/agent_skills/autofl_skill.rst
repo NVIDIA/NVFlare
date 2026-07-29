@@ -124,3 +124,63 @@ and NVFlare-distributed classes ending in ``Job``. Generic, local, and
 non-NVFlare job or recipe classes remain unresolved. Ambiguous scripts and
 dynamic safety-critical comparison fields block baseline execution rather than
 being guessed.
+
+Final Report After Stop
+=======================
+
+After a campaign stops cleanly, reaches its explicit cap, or ends at a hard
+blocker, select the companion report skill:
+
+.. code-block:: text
+
+   Select: NVFlare Auto-FL Report skill
+   Prompt: Generate the final report for the stopped campaign in ./job.
+
+The report skill verifies that authoritative campaign state allows a final
+response and that no ledger row or candidate manifest remains pending. For an
+abrupt interruption, the human must first confirm that no campaign process is
+running; this confirmation bypasses stale stop state only and never unfinished
+candidate evidence. An available candidate manifest is complete only with
+``keep``, ``discard``, ``crash``, or ``abandoned`` status; missing, unknown, or
+unreadable status blocks reporting.
+
+Report generation holds the same campaign lifecycle lock as the active Auto-FL
+runner. It refuses concurrent lifecycle activity and rejects custom plot,
+Markdown, or JSON output paths that alias campaign evidence, ``job.py``,
+trust-contract source paths, or one another. Outputs within the campaign
+directory must not match the trust contract's allowed source-creation patterns.
+The persisted POSIX lock file does not by itself mean a campaign is active, so
+a read-only campaign archive can be reported when that lock file already exists
+and the three output paths are explicitly writable.
+
+The skill refreshes ``progress.png`` when plotting is available and generates:
+
+- ``autofl_final_report.md`` with a selected-candidate rationale, concise
+  summaries of what helped and what did not help, the major trajectory,
+  retained-best provenance, lineage, literature outcomes, grouped failures,
+  commands, and comparability warnings;
+- ``autofl_report_summary.json`` with the same evidence under the skill-local
+  ``nvflare.autofl.report.v1`` schema.
+
+Literature outcomes use the ``literature_event_id`` written by the campaign
+runner rather than inferring relationships from ledger position. Baselines are
+identified strictly by ``status=baseline``; ``best`` includes only a scored
+baseline or ``keep`` row, while a better unretained ``discard`` is reported as
+``best_observed``. If a valid plot cannot be produced, the Markdown and JSON
+reports are still generated with an explicit plot-availability warning.
+
+The concise synthesis follows the same evidence rules. "What helped" contains
+only strict improvements that were retained. "What did not help" presents
+representative scored discards by their recorded algorithm family and
+literature event, plus grouped crashes. Missing family metadata stays
+``unclassified``; the report does not guess mechanisms from candidate names.
+The trajectory keeps the first and final running best and the largest measured
+objective improvements rather than evenly sampling the campaign.
+
+The product campaign and report contracts support metric maximization only.
+The report also surfaces abandoned-candidate state and warns if the state's
+ledger pointer, candidate-attempt, baseline, or improvement accounting
+disagrees with the ledger.
+
+As with active Auto-FL, users invoke the skill through their coding agent and
+do not run scripts from the installed skill directory themselves.

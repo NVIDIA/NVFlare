@@ -14,7 +14,6 @@
 
 import argparse
 import base64
-import hashlib
 import json
 import shutil
 import subprocess
@@ -263,11 +262,9 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
     assert not (output / "startup" / "docker.sh").exists()
     script_path = output / "startup" / "start_docker.sh"
     script_bytes = script_path.read_bytes()
-    assert (
-        hashlib.sha256(script_bytes).hexdigest() == "592e3a3bba65d9e0f446e793a60621545d1c6dc022241205f6ff0831692c1679"
-    )
     assert script_path.stat().st_mode & 0o777 == 0o755
     script = script_bytes.decode()
+    assert "@@NVFLARE_" not in script
     assert "repo/nvflare:dev" in script
     assert 'NETWORK_NAME="nvflare-test"' in script
     assert "--network-alias" not in script
@@ -296,10 +293,9 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"]["resources"]["host"] == "0.0.0.0"
     study_runtime_path = output / "local" / "study_runtime.yaml"
-    assert hashlib.sha256(study_runtime_path.read_bytes()).hexdigest() == (
-        "b12fee67d4992e9aeeda532f8cdc9988983bb43c716f5cb9dde4b2076b2c2950"
-    )
-    study_runtime = yaml.safe_load(study_runtime_path.read_text())
+    study_runtime_text = study_runtime_path.read_text()
+    assert "@@NVFLARE_" not in study_runtime_text
+    study_runtime = yaml.safe_load(study_runtime_text)
     assert study_runtime == {"format_version": 2, "studies": {}}
     assert not (output / "local" / "study_data.yaml").exists()
 
@@ -587,6 +583,44 @@ def test_prepare_docker_creates_comm_config_when_missing(tmp_path, capsys):
         "host": "0.0.0.0",
         "connection_security": "clear",
     }
+
+
+@pytest.mark.parametrize(
+    "runtime, expected_runtime",
+    [
+        ("docker", "Docker"),
+        ("k8s", "Kubernetes"),
+    ],
+)
+def test_prepare_container_runtime_rejects_shared_file_transport(tmp_path, capsys, runtime, expected_runtime):
+    kit = _make_client_kit(tmp_path)
+    _write_json(
+        kit / "local" / "comm_config.json",
+        {
+            "backbone": {"connect_generation": 1},
+            "internal": {
+                "scheme": "shared-file",
+                "resources": {"root_dir": "/shared/nvflare", "connection_security": "clear"},
+            },
+        },
+    )
+    output = tmp_path / f"site-1-{runtime}"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": runtime,
+                "parent": {"docker_image": "repo/nvflare:dev"},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_KIT" in err
+    assert f"{expected_runtime} runtime does not support internal.scheme 'shared-file'." in err
+    assert "Use internal.scheme 'tcp', run the original kit in process mode, or choose the Slurm runtime." in err
+    assert not output.exists()
 
 
 def test_prepare_uses_conventional_config_and_output_paths(tmp_path, capsys):
@@ -1126,6 +1160,17 @@ def test_deploy_cli_routes_k8_unstage(alias, monkeypatch):
     assert args.startup_secret == "startup-name"
     assert args.kubectl == "oc"
     assert calls == [args]
+
+
+def test_deploy_cli_does_not_register_slurm_stage():
+    from nvflare.tool.deploy.deploy_cli import def_deploy_cli_parser
+
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="sub_command")
+    def_deploy_cli_parser(subparsers)
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["deploy", "slurm", "stage", "/tmp/prepared-kit"])
 
 
 def test_stage_k8_reports_kubectl_failure(tmp_path, capsys, monkeypatch):

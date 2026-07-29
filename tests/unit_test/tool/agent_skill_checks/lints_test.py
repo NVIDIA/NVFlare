@@ -330,6 +330,37 @@ def test_run_v1_lints_reports_missing_fixture_file(tmp_path):
     _assert_structured_findings(result)
 
 
+def test_run_v1_lints_accepts_directory_fixture_with_files(tmp_path):
+    # A dataset directory (e.g. an image folder) is a valid fixture when it
+    # contains at least one file; an empty directory is not.
+    evals = _default_evals("nvflare-fixture-skill")
+    evals["evals"][0]["files"] = ["files/images/site-1"]
+    _write_skill(tmp_path / "skills", "nvflare-fixture-skill", evals=evals, write_fixture=False)
+    files_dir = tmp_path / "dev_tools" / "agent" / "skill_evals" / "nvflare-fixture-skill" / "files"
+    site_dir = files_dir / "images" / "site-1"
+    site_dir.mkdir(parents=True)
+    site_dir.joinpath("img_0001.png").write_bytes(b"\x89PNG fake")
+    files_dir.joinpath("README.md").write_text("# Fixtures\nsynthetic images\n", encoding="utf-8")
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_FIXTURE])
+
+    assert not _has_finding(result, LINT_SKILL_FIXTURE, "skill-fixture-file-missing")
+
+
+def test_run_v1_lints_rejects_empty_directory_fixture(tmp_path):
+    evals = _default_evals("nvflare-fixture-skill")
+    evals["evals"][0]["files"] = ["files/images/site-1"]
+    _write_skill(tmp_path / "skills", "nvflare-fixture-skill", evals=evals, write_fixture=False)
+    files_dir = tmp_path / "dev_tools" / "agent" / "skill_evals" / "nvflare-fixture-skill" / "files"
+    (files_dir / "images" / "site-1").mkdir(parents=True)
+    files_dir.joinpath("README.md").write_text("# Fixtures\n", encoding="utf-8")
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_FIXTURE])
+
+    assert _has_finding(result, LINT_SKILL_FIXTURE, "skill-fixture-file-missing")
+    _assert_structured_findings(result)
+
+
 def test_run_v1_lints_fixture_file_check_ignores_symlink_loop(tmp_path):
     evals = _default_evals("nvflare-fixture-skill")
     evals["evals"][0]["files"] = ["files/input.py"]

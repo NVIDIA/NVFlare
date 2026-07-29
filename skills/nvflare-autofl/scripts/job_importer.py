@@ -34,6 +34,13 @@ import yaml
 AUTOFL_CONFIG_SCHEMA_VERSION = "nvflare.autofl.config.v1"
 IMPORTER_VERSION = "nvflare-autofl-job-importer/v1"
 ALLOWED_CREATE_PATTERNS = ["**/*.py"]
+# Keep this text aligned with campaign_guard.MODE_MAX_ONLY_MESSAGE; the importer stays standalone.
+MODE_MAX_ONLY_MESSAGE = (
+    "Auto-FL campaigns only support mode 'max'; minimization is not supported because NVFLARE "
+    "best-model selection treats higher key_metric values as better. Report a negated metric "
+    "from the job (for example neg_val_loss) so that higher is better, matching the "
+    "IntimeModelSelector negate_key_metric guidance."
+)
 
 SUPPORTED_ENV_NAMES = {"PocEnv", "ProdEnv", "SimEnv"}
 NON_OPTIMIZATION_RECIPE_NAMES = {"FedEvalRecipe", "FedStatsRecipe", "NumpyCrossSiteEvalRecipe"}
@@ -97,6 +104,7 @@ class CallInfo:
     assignments: Dict[str, ast.AST]
     source: str
     function_name: Optional[str] = None
+    branch_conditions: Tuple[Tuple[ast.AST, bool], ...] = ()
 
 
 class JobImportError(ValueError):
@@ -150,7 +158,8 @@ class DeterministicJobImporter:
         Args:
             job_path: Path to ``job.py`` or a directory containing ``job.py``.
             metric: Optional optimization metric requested by the user.
-            mode: ``max`` or ``min`` objective direction.
+            mode: Objective direction; only ``max`` is supported. Kept for command-shape
+                compatibility so callers report negated metrics instead of minimizing.
             target_env: Optional target environment, such as ``sim`` or ``prod``.
             max_candidates: Optional fixed candidate budget.
             job_args: Optional job CLI arguments used to resolve argparse defaults
@@ -160,8 +169,8 @@ class DeterministicJobImporter:
             A deterministic, YAML-serializable mapping.
         """
 
-        if mode not in {"max", "min"}:
-            raise JobImportError("mode must be 'max' or 'min'")
+        if mode != "max":
+            raise JobImportError(MODE_MAX_ONLY_MESSAGE)
 
         source_path = self._resolve_job_path(job_path)
         try:
@@ -172,7 +181,7 @@ class DeterministicJobImporter:
             raise JobImportError(f"failed to parse {source_path}: {e}") from e
 
         parser_args, reachable_functions = _reachable_parser_args(tree, index, job_args or [])
-        job_call = index.first_job_call(reachable_functions)
+        job_call = index.first_job_call(reachable_functions, parser_args)
         env_call = index.first_env_call(reachable_functions)
         train_script = self._resolve_train_script(
             source_path, job_call, index, parser_args, source_text, reachable_functions
@@ -196,7 +205,7 @@ class DeterministicJobImporter:
             unresolved.append(_unresolved("job.train_script", "no train_script was found or resolved"))
 
         metric_name, metric_source, metric_issue = self._resolve_metric(metric, job_call, parser_args)
-        objective = _objective_contract(metric_name, mode, metric_source)
+        objective = _objective_contract(metric_name, metric_source)
         if metric_issue:
             unresolved.append(metric_issue)
 
@@ -428,7 +437,7 @@ class DeterministicJobImporter:
         source_text: str,
     ) -> Dict[str, Any]:
         requested = target_env or (_env_name_to_profile(env_call.name) if env_call else "sim")
-        environment: Dict[str, Any] = {"requested": requested, "profiles": {}}
+        environment: Dict[str, Any] = {"requested": requested, "profiles": {}, "simulator_env_passthrough": []}
         if env_call and env_call.name == "SimEnv":
             sim_profile: Dict[str, Any] = {}
             if "num_clients" in env_call.keywords:
@@ -572,6 +581,7 @@ class _ImportIndex(ast.NodeVisitor):
         self.module_assignments: Dict[str, ast.AST] = {}
         self._local_assignments_stack: List[Dict[str, ast.AST]] = []
         self._function_stack: List[str] = []
+        self._branch_conditions: List[Tuple[ast.AST, bool]] = []
         self._argparse_parser_names: Set[Tuple[Optional[str], str]] = set()
         self._argparse_subparser_names: Set[Tuple[Optional[str], str]] = set()
         self.job_calls: List[CallInfo] = []
@@ -585,8 +595,12 @@ class _ImportIndex(ast.NodeVisitor):
         index.visit(tree)
         return index
 
-    def first_job_call(self, reachable_functions: Optional[Set[str]] = None) -> Optional[CallInfo]:
-        return _first_reachable_call(self.job_calls, reachable_functions)
+    def first_job_call(
+        self,
+        reachable_functions: Optional[Set[str]] = None,
+        parser_args: Optional[Dict[str, ArgSpec]] = None,
+    ) -> Optional[CallInfo]:
+        return _first_reachable_call(self.job_calls, reachable_functions, parser_args)
 
     def first_env_call(self, reachable_functions: Optional[Set[str]] = None) -> Optional[CallInfo]:
         return _first_reachable_call(self.env_calls, reachable_functions)
@@ -651,6 +665,17 @@ class _ImportIndex(ast.NodeVisitor):
             self._current_assignments()[node.target.id] = node
         self.generic_visit(node)
 
+    def visit_If(self, node: ast.If) -> None:
+        self.visit(node.test)
+        self._visit_conditional_branch(node.body, node.test, True)
+        self._visit_conditional_branch(node.orelse, node.test, False)
+
+    def _visit_conditional_branch(self, statements: Sequence[ast.stmt], condition: ast.AST, expected: bool) -> None:
+        self._branch_conditions.append((condition, expected))
+        for statement in statements:
+            self.visit(statement)
+        self._branch_conditions.pop()
+
     def visit_Call(self, node: ast.Call) -> None:
         call_name = _call_name(node.func)
         if self._is_argparse_add_argument_call(call_name):
@@ -672,6 +697,7 @@ class _ImportIndex(ast.NodeVisitor):
                 assignments=self._resolution_assignments(),
                 source=_source_segment(self.source_text, node),
                 function_name=self._function_stack[-1] if self._function_stack else None,
+                branch_conditions=tuple(self._branch_conditions),
             )
             if is_environment:
                 self.env_calls.append(call_info)
@@ -726,15 +752,29 @@ class _ImportIndex(ast.NodeVisitor):
         return assignments
 
 
-def _first_reachable_call(calls: Sequence[CallInfo], reachable_functions: Optional[Set[str]]) -> Optional[CallInfo]:
+def _first_reachable_call(
+    calls: Sequence[CallInfo],
+    reachable_functions: Optional[Set[str]],
+    parser_args: Optional[Dict[str, ArgSpec]] = None,
+) -> Optional[CallInfo]:
     if not calls:
         return None
-    if reachable_functions is None:
-        return calls[0]
+    arg_values = {name: spec.default for name, spec in (parser_args or {}).items() if not spec.default_unresolved}
     reachable_calls = [
-        call for call in calls if call.function_name is None or call.function_name in reachable_functions
+        call
+        for call in calls
+        if (reachable_functions is None or call.function_name is None or call.function_name in reachable_functions)
+        and _matches_static_branch_conditions(call, arg_values)
     ]
     return reachable_calls[0] if reachable_calls else None
+
+
+def _matches_static_branch_conditions(call: CallInfo, arg_values: Dict[str, Any]) -> bool:
+    for condition, expected in call.branch_conditions:
+        value = _static_condition_value(condition, arg_values)
+        if value is not None and value != expected:
+            return False
+    return True
 
 
 def _arg_spec_signature(spec: ArgSpec) -> Tuple[Any, ...]:
@@ -1200,13 +1240,14 @@ def _trust_extracted(
     return extracted
 
 
-def _objective_contract(metric_name: str, mode: str, source: str) -> Dict[str, Any]:
+def _objective_contract(metric_name: str, source: str) -> Dict[str, Any]:
     return {
         "metric": metric_name,
         "requested_metric": metric_name,
         "optimization_metric": metric_name,
         "metric_extraction_order": [metric_name],
-        "mode": mode,
+        # Constant for schema stability: campaigns always maximize the optimization metric.
+        "mode": "max",
         "metric_contract_source": source,
     }
 

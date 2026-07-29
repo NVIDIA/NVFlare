@@ -21,8 +21,9 @@ from typing import Any
 import nvflare.fuel.utils.app_config_utils as acu
 from nvflare.apis.fl_constant import ConfigVarName, FLMetaKey
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
-from nvflare.fuel.f3.streaming.download_service import Downloadable
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.streaming.download_service import Downloadable, ProduceRC, _PropKey, request_download_chunk
 from nvflare.fuel.f3.streaming.file_downloader import ObjectDownloader
 from nvflare.fuel.f3.streaming.transfer_progress import (
     DEFAULT_STREAMING_IDLE_TIMEOUT,
@@ -140,13 +141,14 @@ class LazyDownloadRef:
                  deserialisation to the correct handler.
     """
 
-    __slots__ = ("fqcn", "ref_id", "item_id", "dot")
+    __slots__ = ("fqcn", "ref_id", "item_id", "dot", "relay")
 
-    def __init__(self, fqcn: str, ref_id: str, item_id: str, dot: int = 0):
+    def __init__(self, fqcn: str, ref_id: str, item_id: str, dot: int = 0, relay: bool = False):
         self.fqcn = fqcn
         self.ref_id = ref_id
         self.item_id = item_id
         self.dot = dot
+        self.relay = relay
 
 
 class _LazyBatchInfo:
@@ -159,12 +161,13 @@ class _LazyBatchInfo:
     type collisions.
     """
 
-    __slots__ = ("fqcn", "ref_id", "dot")
+    __slots__ = ("fqcn", "ref_id", "dot", "relay")
 
-    def __init__(self, fqcn: str, ref_id: str, dot: int = 0):
+    def __init__(self, fqcn: str, ref_id: str, dot: int = 0, relay: bool = False):
         self.fqcn = fqcn
         self.ref_id = ref_id
         self.dot = dot
+        self.relay = relay
 
 
 # fobs_ctx key used to carry the fqcn/ref_id batch info in PASS_THROUGH mode
@@ -215,6 +218,44 @@ class _DecomposeCtx:
 
     def get_item_count(self):
         return len(self.target_items)
+
+
+class _LazyRelayDownloadable(Downloadable):
+    def __init__(self, source_fqcn: str, source_ref_id: str, cell: Cell, per_request_timeout: float, abort_signal=None):
+        super().__init__({"fqcn": source_fqcn, "ref_id": source_ref_id})
+        self.source_fqcn = source_fqcn
+        self.source_ref_id = source_ref_id
+        self.cell = cell
+        self.per_request_timeout = per_request_timeout
+        self.abort_signal = abort_signal
+        self.logger = get_obj_logger(self)
+
+    def produce(self, state: dict, requester: str):
+        reply = request_download_chunk(
+            from_fqcn=self.source_fqcn,
+            ref_id=self.source_ref_id,
+            state=state,
+            per_request_timeout=self.per_request_timeout,
+            cell=self.cell,
+            abort_signal=self.abort_signal,
+        )
+        if self.abort_signal and self.abort_signal.triggered:
+            return ProduceRC.ERROR, None, None
+        if not isinstance(reply, Message):
+            self.logger.warning(f"lazy relay got invalid reply type {type(reply)} from {self.source_fqcn}")
+            return ProduceRC.ERROR, None, None
+        rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+        if rc != ReturnCode.OK:
+            self.logger.warning(f"lazy relay request to {self.source_fqcn} failed: {rc}")
+            return ProduceRC.ERROR, None, None
+        if not isinstance(reply.payload, dict):
+            self.logger.warning(f"lazy relay got invalid payload type {type(reply.payload)} from {self.source_fqcn}")
+            return ProduceRC.ERROR, None, None
+        return (
+            reply.payload.get(_PropKey.STATUS),
+            reply.payload.get(_PropKey.DATA),
+            reply.payload.get(_PropKey.STATE),
+        )
 
 
 class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
@@ -334,15 +375,20 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                 # First LazyDownloadRef of this batch: register a post-callback
                 # that will add the single shared datum (fqcn + ref_id) after all
                 # items have been serialised.
-                fobs_ctx[lazy_batch_key] = {"fqcn": target.fqcn, "ref_id": target.ref_id}
+                fobs_ctx[lazy_batch_key] = {"fqcn": target.fqcn, "ref_id": target.ref_id, "relay": target.relay}
                 manager.register_post_cb(self._finalize_lazy_batch)
             else:
                 lazy_batch = fobs_ctx[lazy_batch_key]
-                if lazy_batch["fqcn"] != target.fqcn or lazy_batch["ref_id"] != target.ref_id:
+                if (
+                    lazy_batch["fqcn"] != target.fqcn
+                    or lazy_batch["ref_id"] != target.ref_id
+                    or lazy_batch.get("relay", False) != target.relay
+                ):
                     raise RuntimeError(
                         "LazyDownloadRef payload mixes download batches: "
                         f"existing fqcn={lazy_batch['fqcn']} ref_id={lazy_batch['ref_id']}, "
-                        f"new fqcn={target.fqcn} ref_id={target.ref_id}"
+                        f"relay={lazy_batch.get('relay', False)}, "
+                        f"new fqcn={target.fqcn} ref_id={target.ref_id} relay={target.relay}"
                     )
 
             self.logger.debug(
@@ -390,8 +436,8 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         # Subscribing caused a race: delete_transaction() removed refs from _ref_table
         # before blob_cb could finish its _download_from_remote_cell() calls, producing
         # "no ref found" FATAL_SYSTEM_ERROR (RC12 Bug 1).
-        # _monitor_tx() polls is_finished() every 5s and cleans up within 5s of the last
-        # receiver completing all chunk downloads — sufficient for all model sizes.
+        # The final accepted receiver confirmation retires a completed transaction
+        # immediately; _monitor_tx() remains the timeout/budget backstop.
         msg_root_id, msg_root_ttl = self._determine_msg_root(fobs_ctx)
 
         # The generic streaming idle timeout is the default lifetime floor for streamed
@@ -660,11 +706,39 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         if callable(get_error) and get_error():
             return
         ref = {_RefKey.FQCN: lazy_batch["fqcn"], _RefKey.REF_ID: lazy_batch["ref_id"]}
+        relay_batch = lazy_batch.get("relay", False)
+        if relay_batch:
+            cell = fobs_ctx.get(fobs.FOBSContextKey.CELL)
+            if not cell:
+                raise RuntimeError("cannot relay LazyDownloadRef because no Cell is available in fobs context")
+            req_timeout = fobs_ctx.get(fobs.FOBSContextKey.DOWNLOAD_REQ_TIMEOUT, None)
+            if not req_timeout:
+                req_timeout = acu.get_positive_float_var(
+                    self._config_var_name(ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT), 600.0
+                )
+            relay = _LazyRelayDownloadable(
+                source_fqcn=lazy_batch["fqcn"],
+                source_ref_id=lazy_batch["ref_id"],
+                cell=cell,
+                per_request_timeout=req_timeout,
+                abort_signal=fobs_ctx.get(fobs.FOBSContextKey.ABORT_SIGNAL),
+            )
+            relay_ref_id = str(uuid.uuid4())
+            downloadable_objs = fobs_ctx.get(_CtxKey.OBJECTS)
+            if not downloadable_objs:
+                downloadable_objs = []
+                fobs_ctx[_CtxKey.OBJECTS] = downloadable_objs
+            downloadable_objs.append((relay_ref_id, relay))
+            ref = {_RefKey.FQCN: cell.get_fqcn(), _RefKey.REF_ID: relay_ref_id}
         datum = Datum(datum_type=DatumType.TEXT, value=json.dumps(ref), dot=self.get_download_dot())
         self.logger.debug(
             f"ViaDownloader: finalized lazy batch datum for {lazy_batch['fqcn']=} {lazy_batch['ref_id']=}"
         )
         mgr.add_datum(datum)
+        if relay_batch:
+            if not fobs_ctx.get(_CtxKey.FINAL_CB_REGISTERED):
+                mgr.register_post_cb(self._finalize_download_tx)
+                fobs_ctx[_CtxKey.FINAL_CB_REGISTERED] = True
 
     def process_datum(self, datum: Datum, manager: DatumManager):
         """This is called by the manager to process a datum that has a DOT.
@@ -694,7 +768,12 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             # from the originating source cell.
             ref = json.loads(datum.value)
             self.logger.debug(f"ViaDownloader PASS_THROUGH: preserving lazy ref {ref} instead of downloading")
-            fobs_ctx[self.items_key] = _LazyBatchInfo(ref[_RefKey.FQCN], ref[_RefKey.REF_ID], datum.dot)
+            fobs_ctx[self.items_key] = _LazyBatchInfo(
+                ref[_RefKey.FQCN],
+                ref[_RefKey.REF_ID],
+                datum.dot,
+                relay=bool(fobs_ctx.get(fobs.FOBSContextKey.RELAY_PASS_THROUGH)),
+            )
             return
 
         # data is to be downloaded
@@ -740,7 +819,9 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         # Carry items.dot so that LazyDownloadRefDecomposer can route back to the
         # correct ViaDownloaderDecomposer subclass during subprocess recompose().
         if isinstance(items, _LazyBatchInfo):
-            lazy = LazyDownloadRef(fqcn=items.fqcn, ref_id=items.ref_id, item_id=item_id, dot=items.dot)
+            lazy = LazyDownloadRef(
+                fqcn=items.fqcn, ref_id=items.ref_id, item_id=item_id, dot=items.dot, relay=items.relay
+            )
             self.logger.debug(
                 f"ViaDownloader PASS_THROUGH: created LazyDownloadRef {item_id=} "
                 f"{items.fqcn=} {items.ref_id=} {items.dot=}"

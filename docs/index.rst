@@ -29,6 +29,7 @@ NVIDIA FLARE
    :caption: User Guide
 
    user_guide/data_scientist_guide/client_api_usage
+   HuggingFace Client API <user_guide/data_scientist_guide/hf_client_api>
    user_guide/data_scientist_guide/job_recipe
    user_guide/data_scientist_guide/recipe_api
    user_guide/data_scientist_guide/available_recipes
@@ -86,6 +87,7 @@ NVIDIA FLARE
    Deploy Prepare <user_guide/nvflare_cli/deploy_command>
    Running FLARE in Docker <user_guide/admin_guide/deployment/containerized_deployment>
    Running FLARE in Kubernetes <user_guide/admin_guide/deployment/helm_chart>
+   Running FLARE on Slurm <user_guide/admin_guide/deployment/slurm_job_launcher>
    Deploying FLARE on OpenShift <user_guide/admin_guide/deployment/openshift>
    Brev Scripted Deployment Quickstart <user_guide/admin_guide/deployment/brev_scripted_deployment>
    Brev Kubernetes Helm Deployment <user_guide/admin_guide/deployment/brev_deployment>

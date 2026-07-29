@@ -2,20 +2,23 @@
 Hello Pytorch Lightning
 =======================
 
-This example demonstrates how to use NVIDIA FLARE with PyTorch lightning to train an image classifier using
-federated averaging (FedAvg). The complete example code can be found in the :github_nvflare_link:`hello-lightning directory <examples/hello-world/hello-lightning>`.
+This example demonstrates how to use NVIDIA FLARE with PyTorch Lightning to train an image classifier using
+federated averaging (FedAvg), FedProx, or SCAFFOLD. The same patched client works with all three configurations.
+The complete example code can be found in the
+:github_nvflare_link:`hello-lightning directory <examples/hello-world/hello-lightning>`.
+
 It is recommended to create a virtual environment and run everything within a virtualenv.
 
 
 NVIDIA FLARE Installation
 -------------------------
 
-for the complete installation instructions, see :doc:`Installation </installation>`
+For the complete installation instructions, see :doc:`Installation </installation>`. Install the example
+dependencies with:
 
-.. code-block:: text
+.. code-block:: bash
 
-    pip install nvflare
-
+   python -m pip install -r requirements.txt
 
 get the example code from github:
 
@@ -30,12 +33,6 @@ then navigate to the hello-lightning directory:
     git switch <release branch>
     cd examples/hello-world/hello-lightning
 
-Install the dependency
-
-.. code-block:: bash
-
-   pip install -r requirements.txt
-
 Code Structure
 --------------
 
@@ -46,41 +43,40 @@ Code Structure
     |
     |-- client.py        # client local training script
     |-- model.py         # model definition
-    |-- job.py              # job recipe that defines client and server configurations
-    |-- requirements.txt    # dependencies
+    |-- job.py           # job recipe that defines client and server configurations
+    |-- prepare_data.py  # one-time CIFAR-10 download
+    |-- requirements.txt # dependencies
 
 Data
 -----------------
 This example uses the `CIFAR-10 <https://www.cs.toronto.edu/~kriz/cifar.html>`_ dataset
 
-In a real FL experiment, each client would have their own dataset used for their local training.
-You can download the CIFAR10 dataset from the Internet via torchvision's datasets module,
-You can split the datasets for different clients, so that each client has its own dataset.
-Here for simplicity's sake, the same dataset we will be using on each client.
+In a real FL experiment, each client would have their own dataset used for local training.
+For simplicity, this example uses the same CIFAR-10 dataset on every client.
 
-The pytorch data module can download the datasets directly. since we have every site to download the same dataset,
-there are case, the training happens before the data is ready, which could lead to error. We can pre-download the data
-before we start the training by running from command line in a terminal
+Download CIFAR-10 once before the first non-synthetic run. The client and job load the prepared files with
+``download=False``, so later runs do not repeat data preparation.
 
 .. code-block:: text
 
-    ./prepare_data.sh
+    python prepare_data.py
 
+The default destination is ``/tmp/nvflare/data``. To use another location, pass the same ``--data_root`` value
+to ``prepare_data.py`` and ``job.py``.
 
-.. literalinclude:: ../../../examples/hello-world/hello-lightning/prepare_data.sh
-    :language: bash
+.. literalinclude:: ../../../examples/hello-world/hello-lightning/prepare_data.py
+    :language: python
     :linenos:
-    :caption: prepare_data.sh
+    :caption: prepare_data.py
 
 In PyTorch Lightning, a `LightningDataModule` is a standardized way to handle data loading and processing. It encapsulates all the steps required to prepare data for training, validation, and testing, making it easier to manage datasets and data loaders in a clean and organized manner. This abstraction helps separate data-related logic from the model and training code, promoting better code organization and reusability.
 
 `LightningDataModule`
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-- **Purpose:** The `LightningDataModule` is designed to encapsulate all data-related operations, including downloading, transforming, and splitting datasets, as well as providing data loaders for training, validation, testing, and prediction.
+- **Purpose:** The `LightningDataModule` encapsulates transforming and splitting datasets and provides data loaders for training, validation, testing, and prediction.
 
 - **Key Methods:**
-  - `prepare_data()`: Used for downloading and preparing data. This method is called only once and is not distributed across multiple GPUs or nodes.
   - `setup(stage)`: Used to set up datasets for different stages (e.g., 'fit', 'validate', 'test', 'predict'). This method is called on every GPU or node.
   - `train_dataloader()`, `val_dataloader()`, `test_dataloader()`, `predict_dataloader()`: These methods return the respective data loaders for each stage.
 
@@ -90,8 +86,6 @@ Setup of `DataModule`
 In the `CIFAR10DataModule`, we have implemented the following:
 
 - **Initialization (`__init__`):** The constructor initializes the data directory and batch size, which are used throughout the data module.
-
-- **Data Preparation (`prepare_data`):** This method downloads the CIFAR-10 dataset if it is not already available in the specified directory. It prepares both the training and test datasets.
 
 - **Setup (`setup`):** This method assigns datasets for different stages:
   - For the 'fit' and 'validate' stages, it splits the CIFAR-10 training dataset into training and validation sets.
@@ -105,7 +99,7 @@ By using a `LightningDataModule`, the data handling logic is neatly encapsulated
     :language: python
     :linenos:
     :caption: data module
-    :lines: 14-70
+    :lines: 16-74
 
 
 Model
@@ -168,7 +162,7 @@ We mark all the changed code with number 0 to 4 to make it easier to understand.
     :language: python
     :linenos:
     :caption: client.py
-    :lines: 71-
+    :lines: 77-
 
 
 The main flow of the code logic in the `client.py` file involves running a federated learning (FL) training logics locally on each client using PyTorch Lightning and NVFlare. 
@@ -176,7 +170,8 @@ Here's a breakdown of the key steps:
 
 1. **Argument Parsing:**
 
-   - The `define_parser()` function is used to parse command-line arguments, specifically the `--batch_size` argument, which sets the batch size for data loading.
+   - The `define_parser()` function parses the batch size, prepared-data root, optional batch limit, and
+     synthetic-data mode.
 
 2. **Initialization:**
 
@@ -186,7 +181,8 @@ Here's a breakdown of the key steps:
 3. **Model and Data Module Setup:**
 
    - An instance of `LitNet`, a PyTorch Lightning model, is created.
-   - An instance of `CIFAR10DataModule` is created with the specified batch size to handle data loading and processing.
+   - An instance of `CIFAR10DataModule` is created with the specified data root and batch size to handle data
+     loading and processing.
 
 4. **Trainer Configuration:**
 
@@ -195,6 +191,11 @@ Here's a breakdown of the key steps:
 5. **NVFlare Integration:**
 
    - The `flare.patch(trainer)` function is called to integrate NVFlare with the PyTorch Lightning trainer. This allows the trainer to handle federated learning tasks.
+   - When ``ScaffoldRecipe`` sends SCAFFOLD controls, the patch automatically applies the required
+     ``PTScaffoldHelper`` updates and returns the control difference. This path requires Lightning automatic
+     optimization with one optimizer.
+   - When a PyTorch recipe sends a positive ``fedprox_mu``, the patch automatically injects the FedProx
+     proximal gradient.
 
 6. **Federated Learning Loop:**
 
@@ -255,11 +256,11 @@ Run FL Job
 
 This section provides the command to execute the federated learning job
 using the job recipe defined above. Run this command in your terminal.
-First, run the following command to download the data:
+Before the first non-synthetic run, prepare the data once:
 
 .. code-block:: text
 
-  ./prepare_data.sh
+  python prepare_data.py
 
 
 **Command to execute the FL job**
@@ -271,6 +272,38 @@ number of rounds, batch size, and number of clients.
 .. code-block:: text
 
   python job.py --num_rounds 2 --batch_size 16
+
+FedAvg is the default. The same client can run every configuration without changing its training loop:
+
+.. code-block:: text
+
+  python job.py --algorithm fedprox --fedprox_mu 0.01 --num_rounds 2 --batch_size 16
+  python job.py --algorithm scaffold --num_rounds 2 --batch_size 16
+
+For a quick simulator smoke test without downloading CIFAR-10, add
+``--synthetic_data --limit_batches 1``. Normal runs use CIFAR-10, and the default batch limit ``0`` runs every
+batch.
+
+``FedProxRecipe(fedprox_mu=...)`` sends the coefficient on every training round. The patch snapshots the global
+optimizer-owned trainable parameters and injects ``mu * (local - global)`` after gradient accumulation and AMP
+unscaling but before gradient clipping. The loss returned or logged by ``training_step`` excludes the injected
+proximal term, while optimization includes its exact gradient.
+
+Automatic injection requires ``flare.patch(trainer)``. Setting ``fedprox_mu`` does not change an unpatched or raw
+PyTorch client; integrate ``PTFedProxLoss`` explicitly in that case. While a positive coefficient is active, the
+patch keeps an additional device-resident snapshot of every optimizer-owned trainable parameter for the round.
+Custom controllers may change the coefficient between rounds and must keep sending ``FEDPROX_MU``: use an explicit
+``0.0`` to disable a scheduled round. Omitting the key after the schedule has started raises an error.
+
+For manual Lightning optimization, use an explicit receive/train/send loop without ``flare.patch(trainer)``
+and integrate the selected algorithms directly.
+
+The automatic FedProx and SCAFFOLD paths support one optimizer with ``precision="32-true"`` or
+``precision="bf16-mixed"``. SCAFFOLD additionally requires equal finite, non-negative learning rates across
+parameter groups at every step. Starting with NVFlare 2.9.0, PyTorch SCAFFOLD control differences contain
+trainable parameters only; buffers such as BatchNorm running statistics remain ordinary model state. Custom
+SCAFFOLD aggregators must accept sparse control dictionaries. Trainability may change between rounds, which
+resets newly trainable local controls to zero, but ``requires_grad`` must not change during a round.
 
 
 output

@@ -45,46 +45,29 @@ def _record(plotter, index, score, status="discard", name=None, runtime=300.0, k
     )
 
 
-def test_robust_y_limits_focus_on_improvement_region_for_maximize():
+def test_robust_y_limits_focus_on_improvement_region():
     plotter = _load_plotter()
     scores = [0.50, 0.55, 0.687] + [0.70 + index * 0.002 for index in range(20)]
 
-    lower, upper = plotter.default_y_limits(scores, baseline=0.687, mode="max")
+    lower, upper = plotter.default_y_limits(scores, baseline=0.687)
 
     assert lower > 0.60
     assert lower < 0.687
     assert upper > max(scores)
 
 
-def test_robust_y_limits_focus_on_improvement_region_for_minimize():
+def test_milestone_selection_tracks_the_running_maximum():
     plotter = _load_plotter()
-    scores = [2.0, 1.8, 0.90] + [0.80 - index * 0.01 for index in range(20)]
-
-    lower, upper = plotter.default_y_limits(scores, baseline=0.90, mode="min")
-
-    assert lower < min(scores)
-    assert upper > 0.90
-    assert upper < 1.5
-
-
-@pytest.mark.parametrize(
-    "mode,scores,expected_best",
-    [
-        ("max", [0.5, 0.6, 0.55, 0.7, 0.69, 0.8], 0.8),
-        ("min", [0.8, 0.7, 0.75, 0.6, 0.62, 0.5], 0.5),
-    ],
-)
-def test_milestone_selection_supports_both_objective_directions(mode, scores, expected_best):
-    plotter = _load_plotter()
+    scores = [0.5, 0.6, 0.55, 0.7, 0.69, 0.8]
     records = [
         _record(plotter, index, score, status="baseline" if index == 0 else "keep")
         for index, score in enumerate(scores)
     ]
 
-    milestones = plotter.select_observed_milestones(records, mode=mode, max_labels=3)
+    milestones = plotter.select_observed_milestones(records, max_labels=3)
 
     assert len(milestones) <= 3
-    assert milestones[-1][1].score == expected_best
+    assert milestones[-1][1].score == 0.8
 
 
 def test_load_results_uses_productized_ledger_fields(tmp_path):
@@ -223,7 +206,7 @@ def test_rich_progress_plot_renders_png(tmp_path):
     records.insert(10, _record(plotter, 10, None, status="literature", name="literature_review_1", runtime=45.0))
     output = tmp_path / "progress.png"
 
-    baseline, best = plotter.plot_progress(records, output, mode="max", metric_label="test_accuracy")
+    baseline, best = plotter.plot_progress(records, output, metric_label="test_accuracy")
 
     assert baseline == pytest.approx(0.687)
     assert best == pytest.approx(0.73)
@@ -244,9 +227,21 @@ def test_progress_plot_distinguishes_candidate_kinds(tmp_path):
     ]
     output = tmp_path / "progress.png"
 
-    baseline, best = plotter.plot_progress(records, output, mode="max", metric_label="test_accuracy")
+    baseline, best = plotter.plot_progress(records, output, metric_label="test_accuracy")
 
     assert baseline == pytest.approx(0.687)
     assert best == pytest.approx(0.75)
     assert output.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     assert output.stat().st_size > 20_000
+
+
+def test_plot_cli_has_no_mode_flag(tmp_path, capsys):
+    plotter = _load_plotter()
+    ledger = tmp_path / "results.tsv"
+    ledger.write_text("status\tname\tscore\nbaseline\tbaseline\t0.5\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as excinfo:
+        plotter.main([str(ledger), "--output", str(tmp_path / "progress.png"), "--mode", "min"])
+
+    assert excinfo.value.code == 2
+    assert "unrecognized arguments: --mode" in capsys.readouterr().err

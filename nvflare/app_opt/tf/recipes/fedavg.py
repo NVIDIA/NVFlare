@@ -65,8 +65,9 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             calculation for full-model client results. A client's FLModel.params_type remains authoritative.
             Defaults to TransferType.FULL.
         model_persistor: Custom model persistor. If None, TFModelPersistor will be used.
-        per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
-            site names to configuration dicts. Each config dict can contain optional overrides:
+        per_site_config: Deprecated constructor form. New code should call
+            ``set_per_site_config(recipe, config)`` immediately after construction. Each config dict can
+            contain optional overrides:
             train_script, train_args, launch_external_process, command, framework,
             server_expected_format, params_transfer_type, launch_once, shutdown_timeout.
             Nested values become part of the generated job definition and must not contain secrets.
@@ -77,7 +78,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             Only used if `launch_external_process` is True. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
             key_metric selects the metric used for global model selection by the IntimeModelSelector.
-            Defaults to "accuracy".
+            Higher values must indicate a better model; for lower-is-better metrics such as a loss,
+            report a negated value from the client (e.g., "neg_loss"). Defaults to "accuracy".
         best_model_filename: Filename for saving the best model. Accepted for API compatibility.
             The default TensorFlow persistor does not currently create a separate best-model artifact.
         save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.

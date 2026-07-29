@@ -57,8 +57,12 @@ def def_agent_cli_parser(sub_cmd) -> dict:
 
     inspect_parser = agent_subparser.add_parser(
         CMD_AGENT_INSPECT,
-        description="Statically inspect local code or FLARE job artifacts for agent routing.",
-        help="statically inspect local code or FLARE job artifacts",
+        description=(
+            "Statically inspect local code, FLARE job artifacts, or data directories for agent "
+            "routing. Data directories are classified by reading bounded file headers "
+            "(metadata only - names, dtypes, counts; never cell values)."
+        ),
+        help="statically inspect local code, job artifacts, or data directories",
     )
     inspect_parser.add_argument("path", help="local file or directory to inspect without executing user code")
     inspect_parser.add_argument(
@@ -67,12 +71,34 @@ def def_agent_cli_parser(sub_cmd) -> dict:
         default="on",
         help="redact secret-like literals and sensitive absolute paths (default: on)",
     )
+    inspect_parser.add_argument(
+        "--max-files",
+        type=_positive_int,
+        default=None,
+        help="walk limit; for datasets this counts data files - raise it when a dataset "
+        "exceeds the default and counts come back approximate (default: 250)",
+    )
+    inspect_parser.add_argument(
+        "--max-file-bytes",
+        type=_positive_int,
+        default=None,
+        help="per-file read cap in bytes for code scans and text/image data reads (default: 524288)",
+    )
     inspect_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
     _agent_sub_cmd_parsers[CMD_AGENT_INSPECT] = inspect_parser
 
     _agent_parser = parser
     return {"agent": parser}
+
+
+def _positive_int(value: str) -> int:
+    import argparse
+
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError(f"must be a positive integer, got {value}")
+    return parsed
 
 
 def _agent_info_data() -> dict:
@@ -147,8 +173,13 @@ def _handle_agent_inspect_cmd(args, handle_schema_flag, output_error_message, ou
         mutating=False,
         idempotent=True,
     )
+    inspect_kwargs = {"redact": getattr(args, "redact", "on") != "off"}
+    if getattr(args, "max_files", None):
+        inspect_kwargs["max_files"] = args.max_files
+    if getattr(args, "max_file_bytes", None):
+        inspect_kwargs["max_file_bytes"] = args.max_file_bytes
     try:
-        data = inspect_path(args.path, redact=getattr(args, "redact", "on") != "off")
+        data = inspect_path(args.path, **inspect_kwargs)
     except FileNotFoundError as e:
         output_error_message(
             "AGENT_INSPECT_PATH_NOT_FOUND",

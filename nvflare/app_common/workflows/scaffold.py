@@ -132,6 +132,10 @@ class Scaffold(BaseFedAvg):
             # update SCAFFOLD global controls
             ctr_diff = aggregate_results.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]
             for v_name, v_value in ctr_diff.items():
+                if v_name not in self._global_ctrl_weights:
+                    if v_name not in self.model.params:
+                        raise RuntimeError(f"SCAFFOLD control delta contains unknown model parameter '{v_name}'.")
+                    self._global_ctrl_weights[v_name] = _zero_control_value(copy.deepcopy(self.model.params[v_name]))
                 self._global_ctrl_weights[v_name] = _add_control_delta(self._global_ctrl_weights[v_name], v_value)
 
             self.save_model(self.model)

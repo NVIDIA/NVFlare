@@ -31,7 +31,7 @@ This generates a workspace under `workspace/docker_test_project/` relative to th
 
 ## Step 2: Prepare Docker runtime kits
 
-Prepare the server and site-1 startup kits for Docker mode:
+Prepare the server and both client startup kits for Docker mode:
 
 ```bash
 nvflare deploy prepare \
@@ -43,6 +43,11 @@ nvflare deploy prepare \
   workspace/docker_test_project/prod_00/site-1 \
   --config docker.yaml \
   --output workspace/docker_test_project/prepared/site-1
+
+nvflare deploy prepare \
+  workspace/docker_test_project/prod_00/site-2 \
+  --config docker.yaml \
+  --output workspace/docker_test_project/prepared/site-2
 ```
 
 The prepared kits include `startup/start_docker.sh`, Docker launcher resources,
@@ -60,9 +65,8 @@ to `/etc/hosts` so the admin CLI can reach the server container by name:
 
 ## Step 4: Start server and clients
 
-This example runs in **hybrid mode**: site-1 uses Docker job launcher (`start_docker.sh`),
-site-2 runs in process mode (`start.sh`). This tests that both modes work together in the
-same federation.
+The server and both clients run in Docker mode. Their parent containers use
+`start_docker.sh`, and each site launches its per-job process in a separate Docker container.
 
 The first `start_docker.sh` command creates `nvflare-network` if it does not
 already exist, so no separate `docker network create` command is required.
@@ -79,8 +83,8 @@ Start all three parent processes from the `examples/docker` directory:
   nohup bash startup/start_docker.sh > site-1.log 2>&1 < /dev/null &
 )
 (
-  cd workspace/docker_test_project/prod_00/site-2
-  nohup bash startup/start.sh > site-2.log 2>&1 < /dev/null &
+  cd workspace/docker_test_project/prepared/site-2
+  nohup bash startup/start_docker.sh > site-2.log 2>&1 < /dev/null &
 )
 ```
 
@@ -90,7 +94,7 @@ You can watch startup logs with:
 tail -f \
   workspace/docker_test_project/prepared/server/server.log \
   workspace/docker_test_project/prepared/site-1/site-1.log \
-  workspace/docker_test_project/prod_00/site-2/site-2.log
+  workspace/docker_test_project/prepared/site-2/site-2.log
 ```
 
 ## Step 5: Submit a job
@@ -116,14 +120,16 @@ Available jobs:
   the same way as process-mode jobs. Example:
   ```json
   "launcher_spec": {
-    "site-1": {"docker": {"image": "nvflare-job:latest", "shm_size": "8g"}}
+    "site-1": {"docker": {"image": "nvflare-job:latest", "shm_size": "8g"}},
+    "site-2": {"docker": {"image": "nvflare-job:latest", "shm_size": "8g"}}
   },
   "resource_spec": {
-    "site-1": {"num_of_gpus": 1}
+    "site-1": {"num_of_gpus": 1},
+    "site-2": {"num_of_gpus": 1}
   }
   ```
-  Sites without a `docker` entry (e.g. `site-2` in these examples) run in process mode. Both
-  modes can coexist in the same job.
+  Every site configured with a Docker job launcher needs either a site-specific `docker`
+  entry or a `launcher_spec.default.docker` entry that supplies the job image.
 - Site-level Docker defaults (e.g. `shm_size`, `ipc_mode`) can be set via
   `default_job_container_kwargs` in `resources.json` — job-level
   `launcher_spec[site][docker]` takes precedence on conflict.

@@ -17,26 +17,31 @@ them before constructing `job.py`. This file covers only the plain-PyTorch
 ## Standard FedAvg Fast Path
 
 For a normal PyTorch-to-FedAvg conversion, keep the `job.py` recipe construction
-small and portable:
+small and portable. Run `recipe show fedavg-pt --format json` first and follow
+`../../nvflare-shared/references/pytorch-family-recipe-construction.md`. The
+example below contains only the workflow-specific constructor values; add
+optional recipe keywords and decomposers only as directed by that capability
+profile:
 
 ```python
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.client.config import ExchangeFormat
 from nvflare.recipe.sim_env import SimEnv
 
 model_args = {"input_size": input_size, "num_classes": num_classes}
 recipe_model = {"class_path": "model.ModelClass", "args": model_args}
 
-recipe = FedAvgRecipe(
+recipe_kwargs = dict(
     name=job_name,
     min_clients=num_clients,
     num_rounds=num_rounds,
     model=recipe_model,
     train_script="client.py",
     train_args=train_args,
-    server_expected_format=ExchangeFormat.PYTORCH,
-    enable_tensor_disk_offload=True,
 )
+# Add only capability-gated keywords confirmed by recipe show, including
+# key_metric when the selected execution path delivers that metric to the server.
+recipe = FedAvgRecipe(**recipe_kwargs)
+# Apply per-site configuration, then capability-gated decomposers, if required.
 
 env = SimEnv(num_clients=num_clients, workspace_root=workspace_root)
 run = recipe.execute(env)
@@ -50,17 +55,23 @@ model={"class_path": "model.ModelClass", "args": model_args}
 ```
 
 Prefer `class_path` at recipe construction time; `path` is the normalized key
-used in exported job config, and recipes accept it as an alias. Set
-`enable_tensor_disk_offload=True` when the selected recipe exposes it, paired
-with `server_expected_format=ExchangeFormat.PYTORCH`, per
-`../../nvflare-shared/references/conversion-workflow.md` ("Conversion Defaults") and
-`../../nvflare-shared/references/pytorch-model-exchange.md`.
+used in exported job config, and recipes accept it as an alias.
+
+The maintained `hello-pt` example uses the in-process recipe defaults. The
+conversion profile may intentionally differ by selecting tensor-native
+transport and, independently, enabling the server-side disk-offload
+optimization when the selected recipe exposes those capabilities. The shared
+construction reference is the single source of truth for their prerequisites,
+ordering, and decomposer-registration rules.
 
 The server-side recipe model and the client-side training model must construct
 the same architecture. If the model constructor needs dimensions, class counts,
 dropout settings, embedding sizes, or other architecture arguments, pass the
 same values on both sides. Prefer a small shared constant, JSON/config file, or
 explicit `train_args` values over hard-coded divergent defaults.
+
+Follow the shared construction reference for `key_metric` capability, exact
+client-metric matching, and lower-is-better metric direction.
 
 Use these portable imports when writing custom Job API code:
 
@@ -84,31 +95,13 @@ For non-FedAvg workflows, use the matching recipe from the catalog (see the
 shared reference above) and keep the PyTorch Client API exchange aligned with
 that recipe's expected task names, metadata, and parameter format.
 
-## Execution Mode (In-Process vs External)
+## Recipe Capabilities And Execution Mode
 
-Match the recipe's execution mode to the source project's process model:
-
-- Single-process training — CPU or a single GPU with no distributed launch —
-  runs in-process; leave `launch_external_process` unset so the recipe applies
-  its own default (the in-process Client API). Do not force it on for
-  single-process training.
-- Multi-process / multi-GPU evidence — `torch.distributed` / DDP, `torchrun` or
-  `torch.distributed.run`, `DistributedDataParallel`, or an explicit user request
-  for multi-GPU — needs the external-process executor: set
-  `launch_external_process=True`, because distributed workers cannot run inside
-  the in-process executor. Also preserve the source launch model by setting the
-  recipe's documented launch command or launcher parameter, such as
-  `command="torchrun ..."` when the source requires `torchrun` or
-  multi-process arguments. Do not rely on the recipe's default external command
-  when the source project needs distributed launch arguments.
-
-Confirm the selected recipe exposes `launch_external_process` with
-`nvflare recipe show <recipe> --format json` before setting it. For distributed
-launches, also confirm the recipe exposes a documented `command`, `launcher`, or
-equivalent launch-argument surface that can express the source launch command;
-if either surface is missing, report the gap and ask or fail closed rather than
-assuming or silently dropping the source launch model. This section is for plain
-PyTorch conversions; Lightning conversions follow their own DDP guidance.
+Follow
+`../../nvflare-shared/references/pytorch-family-recipe-construction.md` for
+every selected recipe. It owns the capability checks for tensor settings,
+decomposer registration, best-model naming, and process-based execution mode;
+do not copy the FedAvg constructor above to a non-FedAvg recipe.
 
 ## Export Behavior
 

@@ -32,16 +32,22 @@ transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5
 
 
 class CIFAR10DataModule(LightningDataModule):
-    def __init__(self, data_dir: str = DATASET_PATH, batch_size: int = BATCH_SIZE):
+    def __init__(self, data_dir: str = DATASET_PATH, batch_size: int = BATCH_SIZE, synthetic_data: bool = False):
         super().__init__()
         self.data_dir = data_dir
         self.batch_size = batch_size
-
-    def prepare_data(self):
-        torchvision.datasets.CIFAR10(root=self.data_dir, train=True, download=True, transform=transform)
-        torchvision.datasets.CIFAR10(root=self.data_dir, train=False, download=True, transform=transform)
+        self.synthetic_data = synthetic_data
 
     def setup(self, stage: str):
+        if self.synthetic_data:
+            dataset_args = {"image_size": (3, 32, 32), "num_classes": 10, "transform": transform}
+            if stage == "fit" or stage == "validate":
+                self.cifar_train = torchvision.datasets.FakeData(size=32, **dataset_args)
+                self.cifar_val = torchvision.datasets.FakeData(size=16, **dataset_args)
+            if stage == "test" or stage == "predict":
+                self.cifar_test = torchvision.datasets.FakeData(size=16, **dataset_args)
+            return
+
         # Assign train/val datasets for use in dataloaders
         if stage == "fit" or stage == "validate":
             cifar_full = torchvision.datasets.CIFAR10(
@@ -71,6 +77,9 @@ class CIFAR10DataModule(LightningDataModule):
 def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--data_root", type=str, default=DATASET_PATH)
+    parser.add_argument("--limit_batches", type=int, default=0)
+    parser.add_argument("--synthetic_data", action="store_true")
 
     return parser.parse_args()
 
@@ -84,8 +93,20 @@ def main():
     print(f"batch_size={batch_size}, site={flare.get_site_name()}")
 
     model = LitNet()
-    cifar10_dm = CIFAR10DataModule(batch_size=batch_size)
-    trainer = Trainer(max_epochs=1, accelerator="auto", devices="auto")
+    cifar10_dm = CIFAR10DataModule(
+        data_dir=args.data_root,
+        batch_size=batch_size,
+        synthetic_data=args.synthetic_data,
+    )
+    trainer_args = {"max_epochs": 1, "accelerator": "auto", "devices": "auto"}
+    if args.limit_batches > 0:
+        trainer_args.update(
+            limit_train_batches=args.limit_batches,
+            limit_val_batches=args.limit_batches,
+            limit_test_batches=args.limit_batches,
+            limit_predict_batches=args.limit_batches,
+        )
+    trainer = Trainer(**trainer_args)
 
     # (2) patch the lightning trainer
     flare.patch(trainer)

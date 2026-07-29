@@ -569,7 +569,7 @@ class Communicator:
             )
             return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
             if return_code == ReturnCode.UNAUTHENTICATED:
-                self.logger.info(f"Client token: {token} has been removed from the server.")
+                self.logger.info("Client token has been removed from the server.")
 
             server_message = result.get_header(CellMessageHeaderKeys.MESSAGE)
 

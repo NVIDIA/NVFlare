@@ -29,11 +29,12 @@ FLARE workflows, or which FLARE skill should handle an ambiguous request.
 ## Do Not Use When
 
 Do not use when the user already names a specific workflow such as PyTorch
-conversion, job submission, production deployment, Kubernetes setup, or log
-diagnosis. Route to the narrower skill instead. An explicit conversion request
-does not need orientation merely to detect the framework: the converter skill
-performs static inspection and selects the framework itself, so hand off
-directly rather than invoking orient first.
+conversion, federated statistics, job submission, production deployment,
+Kubernetes setup, log diagnosis, or optimization of an existing FLARE job.
+Route to the narrower skill instead. An explicit conversion request does not
+need orientation merely to detect the framework: the converter skill performs
+static inspection and selects the framework itself, so hand off directly
+rather than invoking orient first.
 
 ## Workflow
 
@@ -42,8 +43,9 @@ directly rather than invoking orient first.
 2. Run `nvflare agent inspect <path> --format json` for static project evidence,
    including detected framework routing, FLARE integration, local readiness, and
    the recommended skill.
-3. Classify the request into one next action: conversion, local validation,
-   POC workflow, production workflow, diagnosis, deployment, or no FLARE skill.
+3. Classify the request into one next action: conversion, optimization, local
+   validation, POC workflow, production workflow, diagnosis, deployment, or no
+   FLARE skill.
 4. Recommend one lead skill and only mention supporting skills when the next
    step clearly needs them.
 
@@ -56,7 +58,8 @@ directly rather than invoking orient first.
 - Must report the evidence used for routing.
 - Must prefer a specific workflow skill over broad FLARE advice.
 - Must say when no FLARE skill should trigger.
-- Must not edit files, start POC systems, submit jobs, or read private keys.
+- Must not edit files, start POC systems, submit jobs, or inspect credential
+  material.
 
 Load `references/orientation-routing.md` when routing is ambiguous or when the
 inspect output names multiple possible workflow families.

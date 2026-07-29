@@ -227,9 +227,9 @@ add_experiment_tracking(
 )
 ```
 
-If sites need different tracking URIs, credentials, or experiment names, construct
-the recipe with per-site client apps (for example,
-`per_site_config={"site-1": {}, "site-2": {}}`) and call
+If sites need different tracking URIs, credentials, or experiment names, call
+`set_per_site_config(recipe, {"site-1": {}, "site-2": {}})` immediately
+after recipe construction to create per-site client apps, then call
 `add_experiment_tracking()` once per configuration with `clients=[site_name]`.
 The `clients` argument requires that per-site topology; it intentionally rejects a
 recipe whose client app is deployed through the default `@ALL` target.

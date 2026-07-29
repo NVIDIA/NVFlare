@@ -37,7 +37,7 @@ import os
 import pytest
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, set_per_site_config
 from nvflare.recipe.utils import add_experiment_tracking
 
 INTEGRATION_TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -122,8 +122,8 @@ class TestExperimentTrackingRecipes:
             num_rounds=1,
             model={"class_path": "model.SimpleNetwork", "args": {}},
             train_script=self.client_script_path,
-            per_site_config=self._per_site_config(str(tmp_path / "data"), str(tmp_path)),
         )
+        set_per_site_config(recipe, self._per_site_config(str(tmp_path / "data"), str(tmp_path)))
         self._add_model_to_apps(recipe)
 
         # Exercise the same mutation path as the runtime tests.
@@ -143,8 +143,8 @@ class TestExperimentTrackingRecipes:
                 num_rounds=1,
                 model={"class_path": "model.SimpleNetwork", "args": {}},
                 train_script=self.client_script_path,
-                per_site_config=self._per_site_config(cifar10_data_root, tmpdir),
             )
+            set_per_site_config(recipe, self._per_site_config(cifar10_data_root, tmpdir))
             self._add_model_to_apps(recipe)
 
             # Add TensorBoard tracking
@@ -168,8 +168,8 @@ class TestExperimentTrackingRecipes:
                 num_rounds=1,
                 model={"class_path": "model.SimpleNetwork", "args": {}},
                 train_script=self.mlflow_client_script_path,
-                per_site_config=self._per_site_config(cifar10_data_root, tmpdir),
             )
+            set_per_site_config(recipe, self._per_site_config(cifar10_data_root, tmpdir))
             self._add_model_to_apps(recipe, self.mlflow_client_model_path)
 
             # Exercise the zero-config MLflow path: local storage and names derived from the recipe.
@@ -206,8 +206,8 @@ class TestExperimentTrackingRecipes:
                 num_rounds=1,
                 model={"class_path": "model.SimpleNetwork", "args": {}},
                 train_script=self.mlflow_client_script_path,
-                per_site_config=self._per_site_config(cifar10_data_root, tmpdir),
             )
+            set_per_site_config(recipe, self._per_site_config(cifar10_data_root, tmpdir))
             self._add_model_to_apps(recipe, self.mlflow_client_model_path)
 
             add_experiment_tracking(recipe, "mlflow", client_side=True, server_side=False)

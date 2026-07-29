@@ -135,6 +135,28 @@ tests:
           "data": { "run_finished": True }
     setup:
       - python tools/prepare_cifar10.py --root /tmp/nvflare/data
+  - test_name: "run lightning-scaffold-client-api"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job hello-lightning-scaffold" ]
+        "result":
+          "type": "job_submit_success"
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    validators:
+      - path: tests.integration_test.src.validators.PTModelValidator
+    setup:
+      - python tools/prepare_cifar10.py --root /tmp/nvflare/data
+      - python tools/export_recipe_job.py --recipe_dir ../../examples/hello-world/hello-lightning --output_dir ./data/jobs --recipe_args "--algorithm scaffold --n_clients 2 --num_rounds 2"
+    teardown:
+      - rm -rf ./data/jobs/hello-lightning-scaffold
   - test_name: "run pt-client-api-in-process"
     event_sequence:
       - "trigger":

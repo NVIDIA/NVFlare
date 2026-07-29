@@ -18,7 +18,7 @@ import os
 import tempfile
 from typing import List
 
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
@@ -28,7 +28,7 @@ from nvflare.private.admin_defs import Message, error_reply, ok_reply
 from nvflare.private.defs import RequestHeader, ScopeInfoKey, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
-from nvflare.private.fed.utils.fed_utils import get_scope_info
+from nvflare.private.fed.utils.fed_utils import get_scope_info, require_signed_jobs
 from nvflare.security.logging import secure_format_exception
 
 logger = logging.getLogger(__name__)
@@ -109,28 +109,27 @@ class DeployProcessor(RequestProcessor):
         if not job_meta:
             return error_reply("missing job meta")
 
-        from_hub_site = job_meta.get(JobMetaKey.FROM_HUB_SITE.value)
-        if not from_hub_site:
-            workspace = Workspace(root_dir=engine.args.workspace, site_name=client_name)
-            root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
-            # Verify the received bytes before deploying them. AppDeployer will
-            # extract these same bytes into the run directory.
-            with tempfile.TemporaryDirectory() as app_staging_dir:
-                try:
-                    unzip_all_from_bytes(req.body, app_staging_dir)
-                except Exception as e:
-                    logger.warning("failed to stage app %s: %s", app_name, secure_format_exception(e))
-                    return error_reply(f"failed to stage app {app_name}")
+        workspace = Workspace(root_dir=engine.args.workspace, site_name=client_name)
+        root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
+        # Verify the received bytes before deploying them. AppDeployer will
+        # extract these same bytes into the run directory.
+        with tempfile.TemporaryDirectory() as app_staging_dir:
+            try:
+                unzip_all_from_bytes(req.body, app_staging_dir)
+            except Exception as e:
+                logger.warning("failed to stage app %s: %s", app_name, secure_format_exception(e))
+                return error_reply(f"failed to stage app {app_name}")
 
-                sig_file = os.path.join(app_staging_dir, NVFLARE_SIG_FILE)
-                has_root_ca = os.path.exists(root_ca_path)
-                if os.path.exists(sig_file) and has_root_ca:
-                    if not verify_folder_signature(app_staging_dir, root_ca_path):
-                        return error_reply(f"app {app_name} does not pass signature verification")
-                elif has_root_ca:
-                    # Client startup kits do not carry the server's require_signed_jobs override.
-                    # With a local trust root, direct-deploy bytes must be signed and fail closed.
-                    return error_reply("unsigned job rejected - signed deploy is required")
+            sig_file = os.path.join(app_staging_dir, NVFLARE_SIG_FILE)
+            has_root_ca = os.path.exists(root_ca_path)
+            signed_jobs_required = require_signed_jobs(workspace, WorkspaceConstants.CLIENT_STARTUP_CONFIG)
+            if os.path.exists(sig_file):
+                if not has_root_ca and signed_jobs_required:
+                    return error_reply("signature verification is required but rootCA.pem is missing")
+                if has_root_ca and not verify_folder_signature(app_staging_dir, root_ca_path):
+                    return error_reply(f"app {app_name} does not pass signature verification")
+            elif signed_jobs_required:
+                return error_reply("unsigned job rejected - signed deploy is required")
 
         err = engine.deploy_app(
             app_name=app_name, job_id=job_id, job_meta=job_meta, client_name=client_name, app_data=req.body
