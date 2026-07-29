@@ -602,10 +602,20 @@ class TestSensitiveOutputRedaction:
             ),
             ("--client-secret='alpha beta gamma' --verbose", "--client-secret='<redacted>' --verbose"),
             ("Authorization: 'alpha beta gamma'", "Authorization: '<redacted>'"),
+            ("Authorization: Basic dXNlcjpwYXNz", "Authorization: <redacted>"),
+            (
+                '{"Authorization": "Bearer sk-live-abc123"}',
+                '{"Authorization": "Bearer <redacted>"}',
+            ),
         ],
     )
-    def test_redacts_quoted_sensitive_text_values(self, text, expected):
+    def test_redacts_sensitive_text_values(self, text, expected):
         assert cli_output.sanitize_cli_output(text) == expected
+
+    def test_redacts_authorization_dict_value(self):
+        value = {"headers": {"Authorization": "Bearer sk-live-abc123"}}
+
+        assert cli_output.sanitize_cli_output(value) == {"headers": {"Authorization": "<redacted>"}}
 
     def test_output_json_redacts_sensitive_fields(self, capsys):
         output({"credential": "cred-secret", "status": "ok"}, "json")
