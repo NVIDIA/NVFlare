@@ -285,7 +285,10 @@ class GroupCallContext:
 
             # swap caller/callee
             original_caller = ctx.caller
-            ctx.caller = ctx.callee
+            # The callback observes the remote logical site as its caller.
+            # Keep self.target_name fully qualified for routing and diagnostics,
+            # but do not expose the target object suffix as caller identity.
+            ctx.caller = ResultWaiter._get_site_name(self.target_name)
             ctx.callee = original_caller
 
             if not isinstance(result, Exception):

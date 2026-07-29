@@ -47,6 +47,9 @@ class CellDispatcher(_InvocationDispatcher):
     ):
         set_call_context(context)
 
+        if call_opt.secure and not self.cell.core_cell.supports_secure_messages():
+            raise RuntimeError("secure Collab call requires a Cell configured with certificates")
+
         payload = {
             ObjectCallKey.CALLER: self.caller,
             ObjectCallKey.TARGET_NAME: target_name,

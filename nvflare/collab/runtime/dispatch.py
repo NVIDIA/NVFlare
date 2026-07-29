@@ -65,7 +65,7 @@ def _error_reply(error: str, logger, error_type: str = None, traceback_text: str
 
 
 def _preprocess(app: App, caller, target_obj_name, target_name, func_name, func, args, kwargs):
-    ctx = app.new_context(caller=caller, callee=app.name)
+    ctx = app.new_context(caller=caller, callee=target_name)
 
     # make sure the final kwargs conforms to func interface
     obj_itf = app.get_target_object_publish_interface(target_obj_name)

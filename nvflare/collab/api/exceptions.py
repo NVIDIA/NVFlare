@@ -30,9 +30,11 @@ class CollabCallError(Exception):
         cause_type: str = None,
         remote_traceback: str = None,
     ):
+        self.target = site
+        self.target_name = site
         self.site = site.split(".", 1)[0]
         self.func_name = func_name
         self.cause = cause
         self.cause_type = cause_type or type(cause).__name__
         self.remote_traceback = remote_traceback
-        super().__init__(f"call to {self.site}.{func_name} failed: {cause}")
+        super().__init__(f"call to {self.target_name}.{func_name} failed: {cause}")
