@@ -60,6 +60,27 @@ When the user does not name a metric, a deterministic ``key_metric`` extracted
 from ``job.py`` takes precedence. The default user experience does not require
 editing ``autofl.yaml``.
 
+Strict Comparison Budgets
+=========================
+
+Fixed command arguments and deterministic import establish declared
+comparability, but they cannot prove the runtime behavior of arbitrary Python
+training loops. When a campaign requires strict semantic equality, the job may
+emit task-defined counters or identities such as optimizer steps, examples
+seen, forward/backward passes, or a data-partition hash.
+
+The task declares the relative JSON artifact and exact fields through
+``comparison_budget_evidence`` in ``mutation_schema.yaml``. Initialization
+copies the contract into ``autofl.yaml`` as
+``budget.observed_training_budget``. The scored baseline establishes the
+expected values. A simulation, POC, or production candidate with missing,
+malformed, or different evidence is recorded as a failed attempt and its score
+cannot be retained.
+
+This evidence contract is optional and task-defined. The skill does not infer
+optimizer-step equality from source inspection or campaign-specific argument
+names.
+
 Simulation Execution Permission
 ===============================
 
@@ -93,6 +114,11 @@ For every candidate, NVFlare-owned helper code:
   failure evidence;
 - retains an improved candidate or restores the previous best source.
 
+Each simulation uses an isolated workspace. On Linux, the runner also tags
+every child with a random per-trial ownership token so timeout and interruption
+cleanup can terminate simulator workers that detached into another process
+group or session without matching unrelated campaigns by command name.
+
 POC and production candidates use the normal ``nvflare job submit``, ``job
 wait``, and ``job download`` lifecycle with configured startup-kit policy. The
 skill does not bypass authentication or site policy.
@@ -103,7 +129,8 @@ Campaign Artifacts
 The job directory contains the human-reviewable and reproducibility artifacts:
 
 - ``autofl.yaml``: imported campaign and trust contract;
-- ``results.tsv``: atomic candidate ledger with metric provenance;
+- ``results.tsv``: atomic candidate ledger with metric and optional observed
+  comparison-budget provenance;
 - ``progress.png``: campaign trajectory;
 - ``autofl_report.md``: current campaign summary;
 - ``.nvflare/autofl/campaign_state.json``: next action and stop status;

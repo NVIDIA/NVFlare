@@ -249,6 +249,54 @@ def test_missing_or_escaping_preferred_targets_remain_unresolved(tmp_path):
     assert any(reason.startswith("../shared/custom_aggregators.py:") for reason in unresolved_reasons)
 
 
+def test_initialize_persists_observed_budget_contract_and_baseline_evidence(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    tmp_path.joinpath("mutation_schema.yaml").write_text(
+        "comparison_budget_evidence:\n"
+        "  artifact: server/autofl_budget_summary.json\n"
+        "  fields: [optimizer_steps, partition_sha256]\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(runner, "import_job_config", lambda *args, **kwargs: deepcopy(_campaign_config()))
+    monkeypatch.setattr(runner, "job_help", lambda *args, **kwargs: "")
+    monkeypatch.setattr(runner, "write_progress", lambda path, *args: path.write_bytes(b"progress"))
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            run_def.status,
+            run_def.name,
+            0.5,
+            1.0,
+            "none",
+            run_def.description,
+            "python job.py",
+            "/tmp/baseline",
+            observed_budget='{"optimizer_steps": 20, "partition_sha256": "abc"}',
+            observed_budget_artifact="/tmp/baseline/server/autofl_budget_summary.json",
+        ),
+    )
+
+    assert runner.main(["initialize", str(job)]) == 0
+
+    config = runner.read_yaml(tmp_path / "autofl.yaml")
+    assert config["budget"]["observed_training_budget"] == {
+        "artifact": "server/autofl_budget_summary.json",
+        "fields": ["optimizer_steps", "partition_sha256"],
+        "enforcement": "exact_match_to_baseline",
+    }
+    metadata = runner.read_json(tmp_path / ".nvflare/autofl/campaign.json")
+    assert metadata["observed_training_budget"]["values"] == {
+        "optimizer_steps": 20,
+        "partition_sha256": "abc",
+    }
+    assert metadata["observed_budget_contract_sha256"] == runner.sha256_json(
+        config["budget"]["observed_training_budget"]
+    )
+
+
 def test_runner_prefers_explicit_test_accuracy_alias(tmp_path):
     runner = _load_runner()
     result_path = tmp_path / "cross_val_results.json"
@@ -425,6 +473,29 @@ def test_comparison_budget_suppresses_duplicate_imported_fixed_budget_args():
     assert runner.build_base_args(args, help_text, schema) == ["--n_clients", "8", "--num_rounds", "20"]
 
 
+def test_comparison_budget_evidence_contract_is_explicit_and_safe():
+    runner = _load_runner()
+
+    contract = runner.comparison_budget_evidence_contract(
+        {
+            "comparison_budget_evidence": {
+                "artifact": "server/autofl_budget_summary.json",
+                "fields": ["optimizer_steps", "partition_sha256", "optimizer_steps"],
+            }
+        }
+    )
+
+    assert contract == {
+        "artifact": "server/autofl_budget_summary.json",
+        "fields": ["optimizer_steps", "partition_sha256"],
+        "enforcement": "exact_match_to_baseline",
+    }
+    with pytest.raises(ValueError, match="stay under"):
+        runner.comparison_budget_evidence_contract(
+            {"comparison_budget_evidence": {"artifact": "../budget.json", "fields": ["optimizer_steps"]}}
+        )
+
+
 def test_build_base_args_never_injects_dataset_flags_for_synthetic_capable_jobs():
     runner = _load_runner()
     help_text = "usage: job.py [--synthetic_data] [--train_size TRAIN_SIZE] [--test_size TEST_SIZE]"
@@ -578,6 +649,46 @@ def test_run_terminates_inherited_stdout_descendant_after_leader_exits(tmp_path)
         runner.time.sleep(0.05)
     else:
         pytest.fail(f"descendant process {child_pid} survived process-group cleanup")
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="escaped-process cleanup uses Linux /proc ownership")
+def test_run_terminates_detached_descendant_that_escapes_process_group(tmp_path):
+    runner = _load_runner()
+    child_pid_path = tmp_path / "detached.pid"
+    child_code = (
+        "import os, pathlib, time; "
+        f"pathlib.Path({str(child_pid_path)!r}).write_text(str(os.getpid())); "
+        "print('detached descendant started', flush=True); time.sleep(30)"
+    )
+    parent_code = (
+        "import subprocess, sys; "
+        f"subprocess.Popen([sys.executable, '-c', {child_code!r}], start_new_session=True); "
+        "print('leader exits', flush=True)"
+    )
+
+    rc, output, runtime = runner.run(
+        [sys.executable, "-c", parent_code],
+        tmp_path,
+        timeout=1,
+        log_path=tmp_path / "run.log",
+    )
+
+    assert rc == 124
+    assert runtime < 5
+    assert "leader exits" in output
+    child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+    deadline = runner.time.monotonic() + 5
+    while runner.time.monotonic() < deadline:
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            break
+        proc_stat = Path(f"/proc/{child_pid}/stat")
+        if proc_stat.is_file() and proc_stat.read_text(encoding="utf-8").split()[2] == "Z":
+            break
+        runner.time.sleep(0.05)
+    else:
+        pytest.fail(f"detached descendant process {child_pid} survived trial-token cleanup")
 
 
 @pytest.mark.skipif(os.name == "nt", reason="process-group cleanup uses POSIX process groups")
@@ -1361,6 +1472,70 @@ def test_run_job_uses_a_fresh_simulator_workspace_for_each_trial(tmp_path, monke
 
     assert workspaces[0] != workspaces[1]
     assert all(not workspace.exists() for workspace in workspaces)
+
+
+@pytest.mark.parametrize(
+    ("actual_steps", "expected_steps", "expected_status", "expected_score"),
+    [
+        (20, 20, "candidate", 0.8),
+        (21, 20, "crash", None),
+    ],
+)
+def test_run_job_enforces_observed_training_budget(
+    tmp_path, monkeypatch, actual_steps, expected_steps, expected_status, expected_score
+):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    config = {
+        "job": {"recipe_args": {"name": {"value": "fixed-job", "confidence": "high"}}},
+        "budget": {
+            "observed_training_budget": {
+                "artifact": "server/autofl_budget_summary.json",
+                "fields": ["optimizer_steps", "partition_sha256"],
+                "enforcement": "exact_match_to_baseline",
+            }
+        },
+    }
+
+    def fake_run(*args, **kwargs):
+        workspace = Path(kwargs["env"][runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR])
+        result = workspace / "fixed-job"
+        server = result / "server"
+        server.mkdir(parents=True)
+        result.joinpath("metrics_summary.json").write_text(json.dumps({"accuracy": 0.8}), encoding="utf-8")
+        server.joinpath("autofl_budget_summary.json").write_text(
+            json.dumps({"values": {"optimizer_steps": actual_steps, "partition_sha256": "abc"}}),
+            encoding="utf-8",
+        )
+        return 0, f"Result can be found in : {result}\n", 0.1
+
+    monkeypatch.setattr(runner, "run", fake_run)
+    record = runner.run_job(
+        runner.JobRun("candidate", [], "candidate"),
+        python=sys.executable,
+        job=job,
+        cwd=tmp_path,
+        help_text="",
+        fixed_args=[],
+        base_args=[],
+        output_root=tmp_path / "runs",
+        timeout=10,
+        simulator_no_progress_timeout=0,
+        metrics=["accuracy"],
+        config=config,
+        expected_observed_budget={"optimizer_steps": expected_steps, "partition_sha256": "abc"},
+    )
+
+    assert record.status == expected_status
+    assert record.score == expected_score
+    assert json.loads(record.observed_budget) == {
+        "optimizer_steps": actual_steps,
+        "partition_sha256": "abc",
+    }
+    assert Path(record.observed_budget_artifact).name == "autofl_budget_summary.json"
+    if expected_status == "crash":
+        assert "observed training budget differs from baseline" in record.failure_reason
 
 
 def test_run_stops_on_nvflare_simulator_stall_log(tmp_path):
@@ -2534,6 +2709,8 @@ def test_results_roundtrip_preserves_candidate_provenance(tmp_path):
             candidate_kind="source_edit",
             algorithm_family="fedyogi",
             literature_event_id="lit-0001",
+            observed_budget='{"optimizer_steps": 20}',
+            observed_budget_artifact="/tmp/run/server/autofl_budget_summary.json",
         ),
     ]
     results_path = tmp_path / "results.tsv"
@@ -2544,6 +2721,8 @@ def test_results_roundtrip_preserves_candidate_provenance(tmp_path):
     assert loaded[-1].candidate_kind == "source_edit"
     assert loaded[-1].algorithm_family == "fedyogi"
     assert loaded[-1].literature_event_id == "lit-0001"
+    assert json.loads(loaded[-1].observed_budget) == {"optimizer_steps": 20}
+    assert loaded[-1].observed_budget_artifact.endswith("autofl_budget_summary.json")
     assert loaded[0].candidate_kind == ""
 
 
@@ -2940,6 +3119,66 @@ def test_external_candidate_uses_standard_job_result_recording(tmp_path, monkeyp
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["status"] == "keep"
     assert manifest["artifacts"]["job_id"] == "job-candidate"
+
+
+def test_external_candidate_rejects_observed_training_budget_drift(tmp_path, monkeypatch):
+    runner = _load_runner()
+    tmp_path.joinpath("mutation_schema.yaml").write_text(
+        "comparison_budget_evidence:\n"
+        "  artifact: server/autofl_budget_summary.json\n"
+        "  fields: [optimizer_steps]\n",
+        encoding="utf-8",
+    )
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, target_env="prod")
+    baseline_artifacts = tmp_path / "baseline-artifacts"
+    baseline_artifacts.joinpath("server").mkdir(parents=True)
+    baseline_artifacts.joinpath("server/autofl_budget_summary.json").write_text(
+        json.dumps({"values": {"optimizer_steps": 20}}), encoding="utf-8"
+    )
+    assert (
+        runner.main(
+            [
+                "record",
+                str(job),
+                "--baseline",
+                "--score",
+                "0.5",
+                "--artifacts",
+                str(baseline_artifacts),
+            ]
+        )
+        == 0
+    )
+    assert runner.main(["prepare", str(job), "--name", "prod_algo", "--hypothesis", "production algorithm"]) == 0
+    draft = tmp_path / ".nvflare" / "autofl" / "candidates" / "prod_algo" / "source"
+    draft.joinpath("client.py").write_text("ALGORITHM = 'production'\n", encoding="utf-8")
+    assert runner.main(["evaluate", str(job)]) == 0
+
+    candidate_artifacts = tmp_path / "candidate-artifacts"
+    candidate_artifacts.joinpath("server").mkdir(parents=True)
+    candidate_artifacts.joinpath("server/autofl_budget_summary.json").write_text(
+        json.dumps({"values": {"optimizer_steps": 21}}), encoding="utf-8"
+    )
+    manifest_path = tmp_path / ".nvflare" / "autofl" / "candidates" / "prod_algo" / "candidate_manifest.json"
+    assert (
+        runner.main(
+            [
+                "record",
+                str(job),
+                "--manifest",
+                str(manifest_path),
+                "--score",
+                "0.8",
+                "--artifacts",
+                str(candidate_artifacts),
+            ]
+        )
+        == 0
+    )
+
+    records = runner.load_results(tmp_path / "results.tsv")
+    assert [(record.status, record.score) for record in records] == [("baseline", 0.5), ("crash", None)]
+    assert "observed training budget differs from baseline" in records[-1].failure_reason
 
 
 def test_external_candidate_record_reimports_fixed_budget(tmp_path, monkeypatch):

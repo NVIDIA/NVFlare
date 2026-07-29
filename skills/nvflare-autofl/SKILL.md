@@ -116,8 +116,8 @@ files, diff summary, run command, metric result, artifacts, and failure reason.
 reflects them in the trust contract; surface unresolved targets.
 - You may create and register new Python server aggregators through `job.py`;
 do not limit exploration to existing FedAvg/FedAvgM/FedAdam/FedOpt/SCAFFOLD choices.
-- Preserve `budget.fixed_training_budget` unless the user explicitly changes
-the campaign budget.
+- Preserve `budget.fixed_training_budget`; when strict semantic equality is requested, require the job's configured
+`budget.observed_training_budget` evidence to match the baseline exactly.
 - If the environment provides `PYTHON`, `VIRTUAL_ENV`, or a venv on `PATH`,
 treat that prepared runtime as authoritative: verify it, then use it for import, validation, execution, metric
 extraction, plotting, and reporting. Do not search for alternate interpreters or install dependencies unless the user
