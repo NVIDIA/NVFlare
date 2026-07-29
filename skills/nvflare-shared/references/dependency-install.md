@@ -42,10 +42,20 @@ Order is mandatory:
 3. only then run Python import probes, recipe-construction preflights, export,
    simulation, or `python job.py`.
 
-Package inventory before installation may use installer metadata or
-`importlib.metadata`, but the command must not import user, framework, product,
-or declared dependency modules. A compound Python command containing any such
-import is an import-level preflight and belongs after installation.
+Package inventory before installation may use installer metadata,
+`importlib.metadata`, or non-importing `importlib.util.find_spec(...)`, but run
+it with the same interpreter selected for installation and validation. An
+absent package or missing distribution metadata is an inventory result, not a
+failed command: the probe must exit zero and report the package as absent or
+its version as unknown. Catch `PackageNotFoundError` around
+`importlib.metadata.version(...)`; never use an unguarded version lookup as a
+presence check. Missing distribution metadata alone does not prove that a
+module or CLI supplied by a source checkout, `PYTHONPATH`, or another path is
+unavailable.
+
+The inventory command must not import user, framework, product, or declared
+dependency modules. A compound Python command containing any such import is an
+import-level preflight and belongs after installation.
 
 Do not run an import-level preflight first to discover a missing package when an
 applicable requirements file is already present. A `ModuleNotFoundError` from

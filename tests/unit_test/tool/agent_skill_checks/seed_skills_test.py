@@ -368,6 +368,37 @@ def test_pytorch_conversion_stops_after_dependency_install_failure():
     assert "no-dependency-install-retry-or-environment-surgery" in prohibited_ids
 
 
+def test_huggingface_inventory_and_primary_metric_reporting_are_non_ambiguous():
+    repo_root = Path(__file__).resolve().parents[4]
+    dependency_text = repo_root.joinpath("skills/nvflare-shared/references/dependency-install.md").read_text(
+        encoding="utf-8"
+    )
+    metrics_text = repo_root.joinpath("skills/nvflare-shared/references/metrics-and-artifact-reporting.md").read_text(
+        encoding="utf-8"
+    )
+    skill_text = repo_root.joinpath("skills/nvflare-convert-huggingface/SKILL.md").read_text(encoding="utf-8")
+    eval_data = json.loads(
+        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-convert-huggingface/evals.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    basic = next(item for item in eval_data["evals"] if item["id"] == "huggingface-convert-basic")["nvflare"]
+    mandatory_ids = {item["id"] for item in basic["mandatory_behavior"]}
+    prohibited_ids = {item["id"] for item in basic["prohibited_behavior"]}
+    normalized_dependency = " ".join(dependency_text.split())
+    normalized_metrics = " ".join(metrics_text.split())
+    normalized_skill = " ".join(skill_text.split())
+
+    assert "the probe must exit zero" in normalized_dependency
+    assert "Catch `PackageNotFoundError`" in dependency_text
+    assert "never use an unguarded version lookup as a presence check" in normalized_dependency
+    assert "`<metric-name> = <numeric-value> (<source>)`" in metrics_text
+    assert "Naming the metric without its numeric value" in normalized_metrics
+    assert "report every observed primary scalar as its metric name, numeric value" in normalized_skill
+    assert {"non-raising-dependency-inventory", "numeric-primary-metric-reporting"} <= mandatory_ids
+    assert "no-unguarded-package-metadata-probe" in prohibited_ids
+
+
 def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
     repo_root = Path(__file__).resolve().parents[4]
     construction_text = repo_root.joinpath(

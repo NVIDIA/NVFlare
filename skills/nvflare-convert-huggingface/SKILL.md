@@ -121,10 +121,11 @@ unprotected recipe or present a disclaimer as implementation.
    actual parser accepts. Export only with `python job.py --export --export-dir`;
    do not add job-local export flags. Use the HF reference for topology-smoke,
    full-model, and export inspection. If blocked, save a draft and report why.
-10. Report the selected recipe, source facts, parameter scope, data partition,
-    changed files, validation results, metrics, artifact paths, environment
-    limitations, and unresolved blockers. Load
-    `../nvflare-shared/references/metrics-and-artifact-reporting.md` when needed.
+10. Report recipe, source facts, parameter scope, data partition, changed files,
+    validation, artifacts, limitations, and blockers. When validation produces
+    metrics, load `../nvflare-shared/references/metrics-and-artifact-reporting.md`
+    before the final response; report every observed primary scalar as its metric
+    name, numeric value, and artifact or bounded-log source.
 
 ## Requirements
 
@@ -194,7 +195,6 @@ unprotected recipe or present a disclaimer as implementation.
   local callbacks and logs. POC and production submission remain outside this
   skill.
 
-Load only phase-needed HF references by path: `references/huggingface-detection.md`,
+Load only phase-needed HF references: `references/huggingface-detection.md`,
 `references/huggingface-conversion.md`, `references/huggingface-state-and-distributed.md`, and `references/huggingface-validation.md`; load
-`../nvflare-shared/references/pytorch-family-recipe-construction.md` after every
-`recipe show`. Do not depend on repository examples.
+`../nvflare-shared/references/pytorch-family-recipe-construction.md` after every `recipe show`. Do not depend on repository examples.
