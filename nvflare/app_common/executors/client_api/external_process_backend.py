@@ -43,6 +43,7 @@ from nvflare.client.cell.bootstrap import (
     BOOTSTRAP_SCHEMA_VERSION,
     EXTERNAL_PROCESS_EXECUTION_MODE,
     BootstrapKey,
+    bootstrap_file_name,
     write_bootstrap_config,
 )
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
@@ -75,11 +76,6 @@ _LOG_THREAD_JOIN_TIMEOUT = 5.0
 
 # A fresh FQCN prevents stale trainer cells from colliding with later launches.
 _TRAINER_LEAF_PREFIX = "client_api_trainer"
-
-
-def bootstrap_file_name(seq: int) -> str:
-    """Return a launch-scoped bootstrap name so stale processes retain stale credentials."""
-    return f"client_api_bootstrap_{seq}.json"
 
 
 class _LaunchAborted(Exception):
