@@ -224,6 +224,7 @@ class DiskTensorConsumer(ItemConsumer):
         self._temp_dir = temp_dir
         self._cleaned = False
         self._file_counter = 0
+        self._io_lock = threading.Lock()
         with _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK:
             _ACTIVE_DISK_TENSOR_CONSUMERS.add(self)
 
@@ -233,13 +234,17 @@ class DiskTensorConsumer(ItemConsumer):
             self._cleaned = True
 
     def cleanup(self) -> None:
-        with _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK:
-            if self._cleaned:
-                return
-            self._cleaned = True
-            _ACTIVE_DISK_TENSOR_CONSUMERS.discard(self)
+        # Pipelined downloads can have a chunk write in progress while workflow
+        # finalization aborts active consumers. Wait for that write to finish so
+        # rmtree cannot race an open/create operation and leave a partial directory.
+        with self._io_lock:
+            with _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK:
+                if self._cleaned:
+                    return
+                self._cleaned = True
+                _ACTIVE_DISK_TENSOR_CONSUMERS.discard(self)
 
-        _cleanup_temp_dir(self._temp_dir)
+            _cleanup_temp_dir(self._temp_dir)
 
     def consume_items(self, items: List[Any], result: Any) -> Any:
         if not isinstance(items, list):
@@ -247,19 +252,20 @@ class DiskTensorConsumer(ItemConsumer):
         if result is None:
             result = {}
 
-        for item in items:
-            keys = _extract_safetensors_keys(item)
-            file_path = os.path.join(self._temp_dir, f"chunk_{self._file_counter}.safetensors")
-            self._file_counter += 1
-            with open(file_path, "wb") as f:
-                f.write(item)
-            for key in keys:
-                if key in result:
-                    raise ValueError(
-                        f"Duplicate tensor key '{key}' seen in multiple safetensors chunks; "
-                        "streaming data may be malformed."
-                    )
-                result[key] = (file_path, key)
+        with self._io_lock:
+            for item in items:
+                keys = _extract_safetensors_keys(item)
+                file_path = os.path.join(self._temp_dir, f"chunk_{self._file_counter}.safetensors")
+                self._file_counter += 1
+                with open(file_path, "wb") as f:
+                    f.write(item)
+                for key in keys:
+                    if key in result:
+                        raise ValueError(
+                            f"Duplicate tensor key '{key}' seen in multiple safetensors chunks; "
+                            "streaming data may be malformed."
+                        )
+                    result[key] = (file_path, key)
 
         return result
 
