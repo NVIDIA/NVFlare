@@ -368,11 +368,17 @@ def test_pytorch_conversion_stops_after_dependency_install_failure():
     assert "no-dependency-install-retry-or-environment-surgery" in prohibited_ids
 
 
-def test_huggingface_inventory_and_primary_metric_reporting_are_non_ambiguous():
+def test_huggingface_preflight_and_primary_metric_reporting_are_non_ambiguous():
     repo_root = Path(__file__).resolve().parents[4]
     dependency_text = repo_root.joinpath("skills/nvflare-shared/references/dependency-install.md").read_text(
         encoding="utf-8"
     )
+    validation_text = repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md").read_text(
+        encoding="utf-8"
+    )
+    hf_validation_text = repo_root.joinpath(
+        "skills/nvflare-convert-huggingface/references/huggingface-validation.md"
+    ).read_text(encoding="utf-8")
     metrics_text = repo_root.joinpath("skills/nvflare-shared/references/metrics-and-artifact-reporting.md").read_text(
         encoding="utf-8"
     )
@@ -386,6 +392,8 @@ def test_huggingface_inventory_and_primary_metric_reporting_are_non_ambiguous():
     mandatory_ids = {item["id"] for item in basic["mandatory_behavior"]}
     prohibited_ids = {item["id"] for item in basic["prohibited_behavior"]}
     normalized_dependency = " ".join(dependency_text.split())
+    normalized_validation = " ".join(validation_text.split())
+    normalized_hf_validation = " ".join(hf_validation_text.split())
     normalized_metrics = " ".join(metrics_text.split())
     normalized_skill = " ".join(skill_text.split())
 
@@ -395,8 +403,21 @@ def test_huggingface_inventory_and_primary_metric_reporting_are_non_ambiguous():
     assert "`<metric-name> = <numeric-value> (<source>)`" in metrics_text
     assert "Naming the metric without its numeric value" in normalized_metrics
     assert "report every observed primary scalar as its metric name, numeric value" in normalized_skill
-    assert {"non-raising-dependency-inventory", "numeric-primary-metric-reporting"} <= mandatory_ids
-    assert "no-unguarded-package-metadata-probe" in prohibited_ids
+    assert "optional capability or host-diagnostic utility as evidence" in normalized_validation
+    assert "Do not append platform-specific utilities" in normalized_validation
+    assert "invoke the selected library's normal cache-aware load or download once" in normalized_hf_validation
+    assert "`snapshot_download(..., local_files_only=True)`" in hf_validation_text
+    assert {
+        "non-raising-dependency-inventory",
+        "numeric-primary-metric-reporting",
+        "cache-aware-authorized-model-resolution",
+        "non-raising-optional-host-diagnostics",
+    } <= mandatory_ids
+    assert {
+        "no-unguarded-package-metadata-probe",
+        "no-raising-cache-only-model-probe",
+        "no-unguarded-platform-specific-diagnostic",
+    } <= prohibited_ids
 
 
 def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():

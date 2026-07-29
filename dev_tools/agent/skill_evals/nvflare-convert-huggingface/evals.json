@@ -26,6 +26,8 @@
         "The two simulated clients train on deterministic seeded site-local partitions, stratified when labels exist, rather than the same full training dataset; the report names the split policy, seed, site count, and any shared-data request.",
         "The agent validates through compile/import, recipe construction, bounded simulation, and result evidence, stopping on a real failure.",
         "Dependency inventory uses the validation interpreter and treats an absent package or missing distribution metadata as a non-raising inventory result rather than a failed command.",
+        "When public checkpoint download is authorized if uncached, the agent uses one normal cache-aware load or download instead of an unguarded cache-only probe that fails on a normal miss.",
+        "Optional host diagnostics are availability-checked, run separately from required validation, and exit successfully when a platform-specific utility is absent.",
         "The final report includes source facts, changed files, recipe, commands, validation status, and exact artifact paths, and writes every artifact-backed primary metric as its name, numeric scalar, and source."
       ],
       "nvflare": {
@@ -82,6 +84,14 @@
           {
             "id": "numeric-primary-metric-reporting",
             "description": "reports every observed primary metric with its numeric scalar and artifact or bounded-log source"
+          },
+          {
+            "id": "cache-aware-authorized-model-resolution",
+            "description": "uses one normal cache-aware model load or download when an uncached public checkpoint download is authorized"
+          },
+          {
+            "id": "non-raising-optional-host-diagnostics",
+            "description": "availability-checks optional platform utilities, runs them separately, and treats absence as an exit-zero evidence result"
           }
         ],
         "prohibited_behavior": [
@@ -112,6 +122,14 @@
           {
             "id": "no-unguarded-package-metadata-probe",
             "description": "does not use an unguarded importlib.metadata.version lookup whose normal missing-package result exits nonzero"
+          },
+          {
+            "id": "no-raising-cache-only-model-probe",
+            "description": "does not run an unguarded local-files-only checkpoint lookup before an authorized cache-aware download"
+          },
+          {
+            "id": "no-unguarded-platform-specific-diagnostic",
+            "description": "does not append an unavailable optional host utility to a required validation command"
           }
         ],
         "process_metrics": [

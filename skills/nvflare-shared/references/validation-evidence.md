@@ -25,6 +25,12 @@ exported-job validation.
   unavailable.
 - Keep validation commands single-purpose. Run dependency installation, cleanup,
   export, and simulation as separate commands.
+- Treat an unavailable optional capability or host-diagnostic utility as
+  evidence, not a failed validation command. Check tool availability first,
+  keep optional diagnostics separate from required import or recipe checks, and
+  make the optional probe exit zero when the tool is absent. Do not append
+  platform-specific utilities such as `free`, `sysctl`, or `nvidia-smi` to a
+  required command where their absence changes its exit status.
 - If validation cannot run, save the conversion as a draft and report the
   concrete blocker.
 

@@ -46,6 +46,13 @@ Run these checks after the shared validation ladder. Stop at the first failure.
   arguments.
 - Construct the Trainer with a minimized local model/dataset when practical;
   do not replace the user's final model merely to make the generated job pass.
+- When the user authorizes downloading a public checkpoint only if it is not
+  cached, invoke the selected library's normal cache-aware load or download
+  once. Do not first run an unguarded
+  `snapshot_download(..., local_files_only=True)` probe: a normal cache miss
+  raises and creates false recovery evidence. When validation must remain
+  cache-only, catch `LocalEntryNotFoundError` inside an exit-zero wrapper,
+  report the miss as a blocker, and do not download without authorization.
 - Verify `flare.patch()` accepts the Trainer configuration.
 - Verify DeepSpeed, FSDP, best-model-at-end, save-only-model, and prebuilt
   optimizer/checkpoint constraints before simulation.
