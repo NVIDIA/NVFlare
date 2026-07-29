@@ -551,6 +551,8 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "Do not inspect `PTModel`, persistors, class loaders" in normalized_conversion
     assert "Adapt `../assets/client_with_eval.py`" in normalized_conversion
     assert "Adapt `../assets/server_model.py` and `../assets/job.py`" in normalized_conversion
+    assert "same writable source directory" in normalized_conversion
+    assert "rejects parent-traversal external-script paths" in normalized_conversion
     assert "inspecting NVFLARE implementation source" in normalized_conversion
     assert "flare.patch(trainer)" in client_template
     assert "while flare.is_running()" in client_template
@@ -558,6 +560,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert '"class_path": "server_model.ServerModel"' in job_template
     assert 'recipe.add_server_file("server_model.py")' in job_template
     assert 'recipe.add_server_file("model.py")' in job_template
+    assert "../model.py" not in job_template
     assert "SimEnv(" in job_template
     assert "recipe.execute(" in job_template
     assert "PTModel" not in job_template

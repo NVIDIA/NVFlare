@@ -90,6 +90,14 @@ PyTorch fast path: `FedAvgRecipe(...)`, explicit importable model config,
 job configuration. Do not inspect `PTModel`, persistors, class loaders, or
 Recipe source to reconcile those representations.
 
+Copy the adapted `job.py`, `client.py`, and `server_model.py` into the same
+writable source directory as packaged project-local modules such as `model.py`.
+Keep the asset's local file names in `train_script`, `add_server_file()`, and
+`add_client_file()`. Do not move the generated files into a child package and
+refer back with `../model.py`: NVFLARE rejects parent-traversal external-script
+paths. For an exceptional non-co-located module, pass its existing resolved
+absolute source path to the packaging API.
+
 Add optional recipe arguments and decomposers only as directed by the selected
 recipe's capability profile and the shared construction reference. Do not copy
 the FedAvg constructor shape to another recipe.

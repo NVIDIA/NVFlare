@@ -3,8 +3,11 @@
 
 """Standard Hugging Face Trainer FedAvg job template.
 
-Adapt the client argument names and capability-gated recipe options to the
-source project. Keep the required Recipe, packaging, and execution structure.
+Copy this file beside ``client.py``, ``server_model.py``, and packaged
+project-local modules such as ``model.py``. Adapt the client argument names and
+capability-gated recipe options to the source project. Keep the required Recipe,
+packaging, and execution structure; do not replace local file names with parent
+traversal paths.
 """
 
 import argparse
