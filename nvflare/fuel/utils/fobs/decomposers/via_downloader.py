@@ -209,12 +209,14 @@ class _DecomposeCtx:
         with self.lock:
             target_id = id(item)
             item_id = self.target_to_item.get(target_id)
+            first_item = False
             if not item_id:
                 item_id = f"T{self.last_item_id}"
+                first_item = self.last_item_id == 0
                 self.last_item_id += 1
                 self.target_items[item_id] = item
                 self.target_to_item[target_id] = item_id
-            return item_id, target_id
+            return item_id, target_id, first_item
 
     def get_item_count(self):
         return len(self.target_items)
@@ -322,8 +324,8 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         # create a reference item for the target object. The ref item represents the target object in
         # the serialized payload.
         dc = fobs_ctx.get(self.decompose_ctx_key)
-        item_id, target_id = dc.add_item(target)
-        if dc.get_item_count() == 1:
+        item_id, target_id, first_item = dc.add_item(target)
+        if first_item:
             # register the post_process callback to further process these items.
             # only register cb once!
             manager.register_post_cb(self._process_items_to_datum)
