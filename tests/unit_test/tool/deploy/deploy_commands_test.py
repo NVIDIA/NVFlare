@@ -585,6 +585,44 @@ def test_prepare_docker_creates_comm_config_when_missing(tmp_path, capsys):
     }
 
 
+@pytest.mark.parametrize(
+    "runtime, expected_runtime",
+    [
+        ("docker", "Docker"),
+        ("k8s", "Kubernetes"),
+    ],
+)
+def test_prepare_container_runtime_rejects_shared_file_transport(tmp_path, capsys, runtime, expected_runtime):
+    kit = _make_client_kit(tmp_path)
+    _write_json(
+        kit / "local" / "comm_config.json",
+        {
+            "backbone": {"connect_generation": 1},
+            "internal": {
+                "scheme": "shared-file",
+                "resources": {"root_dir": "/shared/nvflare", "connection_security": "clear"},
+            },
+        },
+    )
+    output = tmp_path / f"site-1-{runtime}"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": runtime,
+                "parent": {"docker_image": "repo/nvflare:dev"},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_KIT" in err
+    assert f"{expected_runtime} runtime does not support internal.scheme 'shared-file'." in err
+    assert "Use internal.scheme 'tcp', run the original kit in process mode, or choose the Slurm runtime." in err
+    assert not output.exists()
+
+
 def test_prepare_uses_conventional_config_and_output_paths(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
     output = kit / "prepared" / "docker"

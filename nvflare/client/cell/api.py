@@ -40,10 +40,10 @@ from nvflare.client.cell.bootstrap import (
     get_bootstrap_client_api_type,
     read_bootstrap_config,
 )
-from nvflare.client.cell.decomposers import register_framework_decomposers
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
 from nvflare.client.converter_utils import convert_params
+from nvflare.client.decomposers import register_framework_decomposers
 from nvflare.client.utils import DIFF_FUNCS
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
