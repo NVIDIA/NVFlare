@@ -20,7 +20,7 @@ Covers three scenarios:
   4. Defensive guard in _end_gather(): fires, calls system_panic (invariant violation).
 """
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import numpy as np
 
@@ -32,11 +32,11 @@ from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
 
-def _make_shareable_with_lazy_refs():
+def _make_shareable_with_lazy_refs(relay=False):
     """Return a WEIGHT_DIFF Shareable whose values are LazyDownloadRef placeholders."""
     lazy_data = {
-        "layer.weight": LazyDownloadRef(fqcn="site-1.subprocess", ref_id="ref-abc", item_id="T0"),
-        "layer.bias": LazyDownloadRef(fqcn="site-1.subprocess", ref_id="ref-abc", item_id="T1"),
+        "layer.weight": LazyDownloadRef(fqcn="site-1.subprocess", ref_id="ref-abc", item_id="T0", relay=relay),
+        "layer.bias": LazyDownloadRef(fqcn="site-1.subprocess", ref_id="ref-abc", item_id="T1", relay=relay),
     }
     dxo = DXO(data_kind=DataKind.WEIGHT_DIFF, data=lazy_data)
     return dxo.to_shareable()
@@ -142,15 +142,15 @@ class TestResolveRef(unittest.TestCase):
         self.assertIs(out, lazy_result)
 
     def test_resolve_lazy_refs_calls_fobs_round_trip(self):
-        """_resolve_lazy_refs() must call fobs.dumps then fobs.loads with PASS_THROUGH=False
-        in the decode context supplied by cell.get_fobs_context()."""
+        """Relay refs must be encoded with a Cell and decoded with PASS_THROUGH=False."""
         ctl = _make_controller()
-        lazy_result = _make_shareable_with_lazy_refs()
+        lazy_result = _make_shareable_with_lazy_refs(relay=True)
         real_result = _make_shareable_with_real_arrays()
 
         mock_cell = MagicMock()
+        fake_encode_ctx = {FOBSContextKey.CELL: mock_cell}
         fake_decode_ctx = {FOBSContextKey.PASS_THROUGH: False, FOBSContextKey.CELL: mock_cell}
-        mock_cell.get_fobs_context.return_value = fake_decode_ctx
+        mock_cell.get_fobs_context.side_effect = [fake_encode_ctx, fake_decode_ctx]
 
         mock_fl_ctx = MagicMock()
         mock_fl_ctx.get_engine.return_value.get_cell.return_value = mock_cell
@@ -161,12 +161,14 @@ class TestResolveRef(unittest.TestCase):
         ):
             out = ctl._resolve_lazy_refs(lazy_result, mock_fl_ctx)
 
-        mock_dumps.assert_called_once_with(lazy_result)
+        mock_dumps.assert_called_once_with(lazy_result, fobs_ctx=fake_encode_ctx)
         mock_loads.assert_called_once()
 
-        # cell.get_fobs_context must be called with props containing PASS_THROUGH=False
-        mock_cell.get_fobs_context.assert_called_once()
-        props = mock_cell.get_fobs_context.call_args.kwargs.get("props", {})
+        # Encode and decode need separate contexts because FOBS mutates its context
+        # with operation-local state.
+        mock_cell.get_fobs_context.assert_has_calls([call(), call(props={FOBSContextKey.PASS_THROUGH: False})])
+        self.assertIsNot(fake_encode_ctx, fake_decode_ctx)
+        props = mock_cell.get_fobs_context.call_args_list[1].kwargs.get("props", {})
         self.assertFalse(
             props.get(FOBSContextKey.PASS_THROUGH, True), "get_fobs_context must be called with PASS_THROUGH=False"
         )

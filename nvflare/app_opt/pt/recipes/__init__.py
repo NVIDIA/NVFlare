@@ -16,6 +16,7 @@ from .cyclic import CyclicRecipe
 from .fedavg import FedAvgRecipe
 from .fedeval import FedEvalRecipe
 from .fedopt import FedOptRecipe
+from .fedprox import FedProxRecipe
 from .scaffold import ScaffoldRecipe
 
 
@@ -41,6 +42,7 @@ __all__ = [
     "FedCERecipe",
     "CyclicRecipe",
     "FedOptRecipe",
+    "FedProxRecipe",
     "ScaffoldRecipe",
     "FedAvgRecipeWithHE",
     "FedEvalRecipe",
