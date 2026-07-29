@@ -463,6 +463,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
             meta[JobMetaKey.START_TIME.value] = str(datetime.datetime.now())
         elif status in [
             RunStatus.FINISHED_ABORTED.value,
+            RunStatus.FINISHED_ABNORMAL.value,
             RunStatus.FINISHED_COMPLETED.value,
             RunStatus.FINISHED_EXECUTION_EXCEPTION.value,
             RunStatus.FINISHED_CANT_SCHEDULE.value,

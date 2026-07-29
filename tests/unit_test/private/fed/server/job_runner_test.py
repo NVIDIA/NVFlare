@@ -429,6 +429,34 @@ def test_fail_run_preserves_existing_exception_process_entry_under_engine_lock()
     assert live_run_process.get(RunProcessKey.PROCESS_RETURN_CODE) is None
 
 
+@pytest.mark.parametrize(
+    "first_code, second_code",
+    [
+        (ProcessExitCode.INFRASTRUCTURE_ERROR, ProcessExitCode.EXCEPTION),
+        (ProcessExitCode.EXCEPTION, ProcessExitCode.INFRASTRUCTURE_ERROR),
+    ],
+)
+def test_fail_run_gives_infrastructure_error_precedence(first_code, second_code):
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_info = MagicMock()
+    runner._stop_run = MagicMock()
+
+    run_process = {
+        RunProcessKey.PARTICIPANTS: {},
+        RunProcessKey.PROCESS_RETURN_CODE: first_code,
+    }
+    engine = MagicMock()
+    engine.lock = MagicMock()
+    engine.exception_run_processes = {"job-1": run_process}
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = engine
+    runner.running_jobs = {"job-1": MagicMock()}
+
+    assert runner.fail_run("job-1", second_code, fl_ctx) == ""
+
+    assert run_process[RunProcessKey.PROCESS_RETURN_CODE] == ProcessExitCode.INFRASTRUCTURE_ERROR
+
+
 def test_stop_run_does_not_publish_terminal_status_before_completion():
     runner = JobRunner(workspace_root="/tmp")
     runner.log_info = MagicMock()
