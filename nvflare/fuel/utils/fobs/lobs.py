@@ -198,6 +198,12 @@ def _get_one_section(stream: BinaryIO, expect_datum: bool):
 
     if len(data) != header.size:
         raise RuntimeError(f"expect {header.size} bytes but got {len(data)}")
+    if not isinstance(data, bytes):
+        # BufListStream may assemble a section from network chunks into a
+        # bytearray (or return a memoryview into one chunk). FOBS has always
+        # exposed serialized sections as bytes, and consumers such as
+        # safetensors require that exact type.
+        data = bytes(data)
 
     return header, datum_id, data
 
