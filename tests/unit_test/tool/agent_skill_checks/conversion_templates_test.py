@@ -780,9 +780,15 @@ def test_lightning_eval_template_delivers_validation_metric_to_server():
     trainer = pl.Trainer(logger=False, enable_checkpointing=False, enable_progress_bar=False, devices=1)
 
     model = ToyLightning()
-    metrics = module.validate_global_model(trainer, model, dataloaders=loader)
+    metrics = module.validate_global_model(
+        trainer,
+        model,
+        dataloaders=loader,
+        lower_is_better_keys=("val_loss",),
+    )
 
     assert "val_loss" in metrics
+    assert metrics["neg_val_loss"] == pytest.approx(-metrics["val_loss"])
     from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
     from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 

@@ -194,9 +194,45 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     assert "unprotected recipe or adding only a disclaimer" in skill_text
     assert "key_metric=metric_name" not in recipe_text
     assert "when the selected execution path delivers that metric to the server" in recipe_text
-    for consumer_text in (skill_text, recipe_text, client_text, validation_text):
+
+    # The negate-the-loss rule is framework-neutral when best-model selection is
+    # requested. No converter may carve itself out of it.
+    assert "This applies to loss in every framework" in normalized_construction
+    assert "do not fail closed merely because loss is the only available metric" in normalized_construction
+    assert "leave `key_metric` unspecified" in normalized_construction
+    assert "retain the recipe's documented default" in normalized_construction
+    assert "Do not add a skill-specific sentinel" in construction_text
+
+    hf_root = repo_root / "skills" / "nvflare-convert-huggingface"
+    hf_skill_text = hf_root.joinpath("SKILL.md").read_text(encoding="utf-8")
+    hf_conversion_text = hf_root.joinpath("references/huggingface-conversion.md").read_text(encoding="utf-8")
+    lightning_conversion_text = repo_root.joinpath(
+        "skills/nvflare-convert-lightning/references/lightning-conversion.md"
+    ).read_text(encoding="utf-8")
+    lightning_asset_text = repo_root.joinpath("skills/nvflare-convert-lightning/assets/lightning_client.py").read_text(
+        encoding="utf-8"
+    )
+    normalized_hf_conversion = " ".join(hf_conversion_text.split())
+    normalized_lightning_conversion = " ".join(lightning_conversion_text.split())
+
+    # Every PyTorch-family converter needs a concrete way to satisfy the shared
+    # negate-the-loss rule, not just a restatement of it.
+    assert "the shared rule in" in normalized_hf_conversion
+    assert "applies unchanged" in normalized_hf_conversion
+    assert 'metrics["eval_neg_loss"] = -metrics["eval_loss"]' in hf_conversion_text
+    assert 'key_metric="eval_neg_loss"' in hf_conversion_text
+    assert "lower_is_better_keys" in lightning_asset_text
+    assert "def add_negated_metrics" in lightning_asset_text
+    assert 'lower_is_better_keys=("val_loss",)' in normalized_lightning_conversion
+    assert 'key_metric="neg_val_loss"' in lightning_conversion_text
+    assert "never a reason to fail closed" in normalized_lightning_conversion
+
+    for consumer_text in (skill_text, recipe_text, client_text, validation_text, hf_skill_text, hf_conversion_text):
         assert "pytorch-family-recipe-construction.md" in consumer_text
         assert 'metrics={"neg_loss": -loss}' not in consumer_text
+        assert 'key_metric=""' not in consumer_text
+        # No skill may carve itself out of the negate-the-loss rule.
+        assert "no safe conversion-owned negation hook" not in consumer_text
 
 
 def test_pytorch_model_exchange_owns_plain_pytorch_send_pattern():
@@ -381,10 +417,25 @@ def test_pytorch_conversion_stops_after_dependency_install_failure():
     mandatory_ids = set(mandatory_by_id)
     prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
 
+    common_text = repo_root.joinpath("skills/nvflare-shared/references/conversion-common.md").read_text(
+        encoding="utf-8"
+    )
+    normalized_common = " ".join(common_text.split())
+
     assert (
         "before any Python command imports user, PyTorch, NVFLARE, or declared dependency modules" in normalized_skill
     )
-    assert "on a nonzero exit, stop validation" in normalized_skill
+    # The ordering rule and its terminal-failure behavior are authored once in
+    # conversion-common.md; converters state only which modules their step-3 guard covers.
+    assert (
+        "before any Python command imports user, framework, NVFLARE, or declared dependency modules"
+        in normalized_common
+    )
+    assert "on a nonzero exit, stop validation and report an unvalidated draft" in normalized_common
+    for converter in ("nvflare-convert-pytorch", "nvflare-convert-lightning", "nvflare-convert-huggingface"):
+        converter_text = repo_root.joinpath(f"skills/{converter}/SKILL.md").read_text(encoding="utf-8")
+        assert "conversion-common.md" in converter_text
+        assert "on a nonzero exit, stop validation" not in " ".join(converter_text.split())
     assert "include every applicable requirements file" in normalized_dependency
     assert "`-r <requirements-a> -r <requirements-b> -c <constraints> nvflare`" in dependency_text
     assert "append `nvflare` to the same command" in normalized_dependency
@@ -557,7 +608,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "`MetaKey.INITIAL_METRICS` before `trainer.fit(...)`" in normalized_lightning
     phase_markers = [
         "Inspect before editing",
-        "Read applicable requirements",
+        "Apply the dependency-install ordering rule",
         "Select the recipe from FL intent",
         "Convert with `references/huggingface-conversion.md`",
         "Adapt `assets/server_model.py` and `assets/job.py`",
@@ -583,7 +634,10 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert '`recipe.add_client_file(str(SOURCE_DIR / "client.py"))`' in normalized_conversion
     assert "Reject absolute `task_script_path` values" in normalized_conversion
     assert "client import is not enough when an export separates server and client apps" in normalized_conversion
-    assert "Before asserting paths, inspect the exported job root" in normalized_conversion
+    # Exported app layout is authored once in conversion-workflow.md; the HF reference
+    # points at it and states only which files the job asset must package.
+    assert "Exported app layout is owned by" in normalized_conversion
+    assert "inspect the exported job root and enumerate the app directories" in normalized_conversion
     assert "`app/custom` for a unified export" in normalized_conversion
     assert "`app_server/custom` and each `app_<site>/custom`" in normalized_conversion
     assert "Do not reuse a path assumption from another export" in normalized_conversion

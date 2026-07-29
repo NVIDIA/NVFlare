@@ -114,6 +114,16 @@ Multiple requested GPUs without evidence of how the source uses them is not
 enough to choose a process model; inspect the source, then ask or fail closed if
 it remains ambiguous.
 
+`launch_once` is the companion Client API knob and is framework-neutral: it
+selects whether the external client process is launched once for the whole job
+and reused for every task, or relaunched for each task/round. It belongs to the
+recipe, not to any framework integration, and applies only when
+`launch_external_process=True`. Confirm it is exposed before passing it and keep
+the recipe default (`True`) unless the source genuinely requires a fresh process
+per task. A framework integration may constrain this value — an integration that
+keeps one persistent trainer alive across rounds cannot use `launch_once=False`
+— so check the framework skill's delta before overriding the default.
+
 ## Simulator Concurrency
 
 Do not reduce simulator `num_threads` below the requested client count as a
@@ -147,8 +157,22 @@ means a better model. Its name must exactly match one key delivered by the
 client in `FLModel.metrics` (or by the Lightning integration). For example, a
 delivered client metric named `f1` uses `key_metric="f1"`.
 
-For a lower-is-better source metric such as loss, send its negated value under a
-clear key such as `metrics={"neg_loss": -loss}` and use
-`key_metric="neg_loss"`. Do not rely on a recipe default unless the client emits
-that exact metric, and ask or fail closed when the metric direction is unclear.
+When best-model selection is requested for a lower-is-better source metric, send
+its negated value under a clear key and select that key. This applies to loss in
+every framework, whether the client computes it or the framework's own
+evaluation call emits it: send `metrics={"neg_loss": -loss}` and use
+`key_metric="neg_loss"`. When the loss is produced by a framework integration
+rather than user code, add the negated companion through that framework's
+documented metric hook before the value is delivered — the framework skill
+names the hook. Never select a raw loss key as though larger values were better,
+and do not fail closed merely because loss is the only available metric.
+
+Do not rely on a recipe default when explicitly selecting a source metric unless
+the client emits that exact metric, and ask or fail closed when the metric
+direction is unclear — not merely because the only available metric is a loss.
 Do not pass `key_metric` when the recipe does not expose it.
+
+When best-model selection is not requested, or no source-backed override is
+justified, leave `key_metric` unspecified and retain the recipe's documented
+default. Do not add a skill-specific sentinel or claim that omitting the
+argument disables the recipe's model selector.

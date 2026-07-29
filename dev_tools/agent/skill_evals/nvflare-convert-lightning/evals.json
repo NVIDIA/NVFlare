@@ -395,6 +395,36 @@
       }
     },
     {
+      "id": "lightning-loss-only-selection-metric",
+      "prompt": "Convert this Lightning training code to a FLARE FedAvg job over 2 sites for 2 rounds. The module only logs val_loss, and lower val_loss is better. Keep best-model selection.",
+      "expected_output": "A Lightning conversion that preserves val_loss and delivers an explicitly negated neg_val_loss companion under MetaKey.INITIAL_METRICS, selects key_metric=\"neg_val_loss\", and neither fails closed nor disables best-model selection because the only source metric is a loss.",
+      "files": [
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
+      ],
+      "assertions": [
+        "The generated client preserves val_loss and adds neg_val_loss as -val_loss in the same MetaKey.INITIAL_METRICS dict, for example via validate_global_model(..., lower_is_better_keys=(\"val_loss\",)).",
+        "The recipe selects key_metric=\"neg_val_loss\".",
+        "The agent does not select raw val_loss as higher-is-better.",
+        "The agent does not pass key_metric=\"\" or otherwise disable best-model selection because only a loss is available."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-lightning",
+        "mandatory_behavior": [
+          {
+            "id": "negated-loss-selection-metric",
+            "description": "delivers a negated companion for the source lower-is-better val_loss and selects that key, applying the shared framework-neutral rule"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-fail-closed-on-loss-only-metric",
+            "description": "does not fail closed or disable model selection merely because the only available metric is a loss"
+          }
+        ]
+      }
+    },
+    {
       "id": "lightning-custom-aggregation-with-server-metrics",
       "prompt": "Convert this Lightning training code to a 3-site FedAvg job with a custom step-weighted ModelAggregator. Report val_loss for the received global model each round and produce the normal server metrics artifact.",
       "expected_output": "A FLARE Lightning conversion that captures finite scalar pre-fit validation results under model.__fl_meta__[MetaKey.INITIAL_METRICS], keeps flare.patch(trainer) as the only model-exchange path, and implements the custom ModelAggregator so it step-weights both parameters and supported client metrics and returns the aggregated values in FLModel.metrics. Validation requires val_loss in server metric artifacts or bounded server logs, not just a terminal Finished state.",

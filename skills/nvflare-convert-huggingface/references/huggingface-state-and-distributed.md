@@ -25,8 +25,10 @@ patched Trainer's exchanged parameter scope; otherwise ask or fail closed.
 
 Use `ExchangeFormat.PYTORCH` for native tensor dtypes such as BF16. Keep dtype,
 precision, quantization, and device-map behavior from source evidence rather
-than model-family assumptions. Follow the authorization rules in `SKILL.md` for
-remote code and download effects.
+than model-family assumptions. Follow the authorization rules in
+`../../nvflare-shared/references/conversion-common.md`, plus the `SKILL.md`
+delta covering `trust_remote_code` and offline recovery, for remote code and
+download effects.
 
 ## Checkpoint Continuity
 
@@ -39,7 +41,9 @@ Reject or report:
 
 - `save_only_model=True` with `restore_state=True`;
 - `load_best_model_at_end=True`;
-- explicit `launch_once=False` with `restore_state=True`;
+- explicit recipe `launch_once=False` with `restore_state=True` — the persistent
+  Trainer cannot survive a per-task relaunch. `launch_once` itself is owned by
+  `../../nvflare-shared/references/pytorch-family-recipe-construction.md`;
 - prebuilt optimizer/scheduler instances with `restore_state=False`;
 - checkpoint paths that are not visible to every distributed rank.
 

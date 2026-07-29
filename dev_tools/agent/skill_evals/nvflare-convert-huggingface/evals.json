@@ -208,7 +208,7 @@
         "The generated metric function preserves wer and also emits neg_wer as -wer.",
         "The recipe selects eval_neg_wer, the actual prefixed higher-is-better key returned by Trainer.evaluate().",
         "The agent does not select raw eval_wer or eval_loss as higher-is-better.",
-        "The agent does not use key_metric=\"\" because best-model selection was requested.",
+        "The agent still passes a non-empty key_metric because best-model selection was requested; it does not pass key_metric=\"\" and does not leave the recipe default in place.",
         "The agent does not claim that FedAvgRecipe exposes a lower-is-better direction option."
       ],
       "nvflare": {
@@ -231,6 +231,33 @@
           {
             "id": "no-nonexistent-recipe-direction-option",
             "description": "does not claim that FedAvgRecipe exposes a lower-is-better direction parameter"
+          }
+        ]
+      }
+    },
+    {
+      "id": "huggingface-loss-only-selection-metric",
+      "prompt": "Convert a Hugging Face Trainer that has no compute_metrics, so trainer.evaluate() returns only eval_loss. Keep best-model selection.",
+      "expected_output": "A Hugging Face conversion that adds a negated loss companion through a TrainerCallback registered before flare.patch(trainer), selects key_metric=\"eval_neg_loss\", and neither fails closed nor asks the user merely because the only available metric is a loss.",
+      "files": [],
+      "assertions": [
+        "A TrainerCallback registered before flare.patch(trainer) inserts eval_neg_loss as -eval_loss into the evaluate metrics dict.",
+        "The recipe selects key_metric=\"eval_neg_loss\".",
+        "The agent does not select raw eval_loss as higher-is-better.",
+        "The agent does not fail closed, ask for a different metric, or disable best-model selection because only a loss is available."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-huggingface",
+        "mandatory_behavior": [
+          {
+            "id": "negated-loss-selection-metric",
+            "description": "negates framework-generated eval_loss through a pre-patch TrainerCallback and selects the negated key, applying the shared framework-neutral rule"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-fail-closed-on-loss-only-metric",
+            "description": "does not fail closed or ask for another metric merely because the only available metric is a loss"
           }
         ]
       }

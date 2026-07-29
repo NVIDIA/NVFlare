@@ -11,6 +11,10 @@ Use this path for a standard Trainer conversion:
    source Trainer factory and metric behavior.
 4. Adapt `../assets/server_model.py` and `../assets/job.py` for the source model
    factory, client arguments, selected metric, and capability-gated options.
+   Hugging Face Trainer is part of the PyTorch family, so
+   `../../nvflare-shared/references/pytorch-model-exchange.md` owns the
+   tensor-payload and state-dict compatibility rules for the server model and
+   every client; load it before pinning shared constructor values.
 5. Follow the shared validation ladder with the HF-specific validation delta.
 
 The maintained assets are the canonical standard path. The client asset owns
@@ -28,11 +32,15 @@ required, factor shared setup into an explicit function parameter and have the
 generated client call that function with `federated=True`; keep the standalone
 path behind an entry point that passes `federated=False` explicitly.
 
-When the source has no valid evaluation dataset or metric and neither
-per-round evaluation nor best-model selection is requested, adapt the asset
-with `evaluate_before_train=False` and set `key_metric=""` in the recipe. An
-empty key omits the automatic model selector; it is not a workaround for a
-required lower-is-better metric.
+When the source has no valid evaluation dataset or metric and neither per-round
+evaluation nor best-model selection is requested, adapt the asset with
+`evaluate_before_train=False` and leave `key_metric` unspecified so the recipe's
+documented default remains active. Do not add a skill-specific sentinel or claim
+that the model selector was disabled. See the Best-Model Metric section of
+`../../nvflare-shared/references/pytorch-family-recipe-construction.md`.
+
+Import the Client API as `import nvflare.client.hf as flare`, as the asset does,
+so every `flare.*` call below resolves to `nvflare.client.hf`.
 
 Call `flare.init(rank=rank)` explicitly before `flare.get_site_name()`,
 `flare.get_config()`, or other Client API context access that occurs before
@@ -136,11 +144,10 @@ once with `recipe.add_client_file(...)`. Export and inspect the job before
 simulation. Reject absolute `task_script_path` values in generated configs
 because exported apps must launch their packaged client script portably.
 
-Exported app folders are target-specific, and the layout depends on the recipe
-configuration. Before asserting paths, inspect the exported job root and
-enumerate the app directories it actually contains. A standard unified export
-uses `app/custom`; a per-site export created through `set_per_site_config()`
-uses `app_server/custom` plus each `app_<site>/custom`.
+Exported app layout is owned by
+`../../nvflare-shared/references/conversion-workflow.md`: inspect the exported
+job root and enumerate the app directories it actually contains before asserting
+any path.
 
 Preserve the job asset's explicit packaging of `server_model.py` and the source
 model module into the server app, and package source modules imported by the
@@ -154,7 +161,8 @@ import/preflight checks.
 
 ## Data And Model Selection
 
-Follow the site-partitioning requirement in `SKILL.md`. Pass data roots through
+Follow the "Site Data Partitioning" rule in
+`../../nvflare-shared/references/conversion-common.md`. Pass data roots through
 client arguments or per-site configuration; never copy private site data into
 the job.
 
@@ -165,12 +173,25 @@ become `eval_accuracy`; when that is the returned client key, configure the
 server with `key_metric="eval_accuracy"` and report the mapping from source
 metric name to server metric key.
 
-`FedAvgRecipe` does not expose a lower-is-better direction flag. When a
-source-backed lower-is-better metric is returned by `compute_metrics`, preserve
-it and add an explicitly negated companion such as
-`{"wer": wer, "neg_wer": -wer}`, then select the prefixed key
-`eval_neg_wer`. If only Trainer-generated `eval_loss` exists and best-model
-selection is required, ask for a source-backed selection metric or fail closed;
-raw Trainer loss does not give the conversion a safe source-backed negation
-hook. Use `key_metric=""` only when best-model selection is not requested. Never
-select raw loss as though increasing values were improvements.
+`FedAvgRecipe` does not expose a lower-is-better direction flag, so the shared
+rule in `../../nvflare-shared/references/pytorch-family-recipe-construction.md`
+applies unchanged: when best-model selection is requested, every
+lower-is-better metric is delivered as an explicitly negated companion and
+selected by that key. This holds for loss exactly as it does for any other
+metric.
+
+- For a metric returned by `compute_metrics`, preserve the original and add the
+  negated companion in the same dict — `{"wer": wer, "neg_wer": -wer}` — then
+  select the prefixed key `eval_neg_wer`.
+- For Trainer-generated `eval_loss`, which `compute_metrics` never sees, add the
+  companion with a small `TrainerCallback` whose `on_evaluate` inserts
+  `metrics["eval_neg_loss"] = -metrics["eval_loss"]`, then select
+  `key_metric="eval_neg_loss"`. Register that callback on the Trainer **before**
+  `flare.patch(trainer)`: the patch appends its own callback, and Transformers
+  passes the same metrics dict to callbacks in registration order, so the
+  companion is present when FLARE captures the metrics. Guard the insertion so a
+  missing or non-finite `eval_loss` is skipped rather than raising.
+
+Never select raw loss as though increasing values were improvements. Ask or fail
+closed only when the metric direction itself is unclear, not merely because the
+sole available metric is a loss.

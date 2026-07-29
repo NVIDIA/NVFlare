@@ -19,17 +19,12 @@ Use this path for Lightning conversion:
    `recipe.execute(SimEnv(...))`.
 5. Validate with `python job.py`, inspect terminal evidence, then export.
 
-HE is not supported (steps 4–5): homomorphic-encryption recipes reject `SimEnv`
-and require provisioned `PocEnv`/`ProdEnv`, which are outside conversion scope.
-Follow the HE-not-supported rule in
-`../../nvflare-shared/references/pytorch-family-recipe-selection.md`: report HE
-as unsupported, route it to provisioning/deployment, and ask or fail closed
-instead of generating or running an HE `job.py`.
+HE is not supported at steps 4–5: follow the HE-not-supported rule in
+`../../nvflare-shared/references/pytorch-family-recipe-selection.md`.
 
-Follow the shared Source Of Truth Boundary in
-`../../nvflare-shared/references/conversion-workflow.md`.
-Follow the shared generated-entry rule there too: `client.py` is an FL-only
-Client API entry point, not a standalone/FL auto-detecting launcher.
+Follow the Source Of Truth Boundary and the generated-entry rule in
+`../../nvflare-shared/references/conversion-workflow.md`: `client.py` is an
+FL-only Client API entry point, not a standalone/FL auto-detecting launcher.
 
 ## Conversion Pattern
 
@@ -132,6 +127,20 @@ The metric names placed under `MetaKey.INITIAL_METRICS` must be the same names
 used for recipe `key_metric` and artifact reporting. They must describe the
 received global model evaluated before local training, not post-fit local
 metrics.
+
+`key_metric` selects on higher-is-better values only, so a source-backed
+lower-is-better metric — including a module that logs nothing but `val_loss` —
+must be delivered as an explicitly negated companion. This is the Lightning
+implementation of the framework-neutral rule in
+`../../nvflare-shared/references/pytorch-family-recipe-construction.md`. Pass
+the lower-is-better keys to
+`validate_global_model(..., lower_is_better_keys=("val_loss",))` in
+`../assets/lightning_client.py`: it preserves the original metric, adds
+`neg_val_loss` to the same `MetaKey.INITIAL_METRICS` dict, and the recipe then
+selects `key_metric="neg_val_loss"`. Only pass keys whose direction the source
+establishes; do not invent a direction. A `val_loss`-only module is never a
+reason to fail closed or to skip best-model selection when that selection was
+requested.
 
 If a custom `ModelAggregator` is selected, it must also aggregate supported
 client `FLModel.metrics` values and return them in the aggregated

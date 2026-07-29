@@ -29,27 +29,19 @@ def _scalar_validation_metrics(validation_results):
     metrics = {}
     for result in validation_results:
         if not isinstance(result, dict):
-            raise RuntimeError(
-                "Lightning validation results must be dictionaries of scalar metrics"
-            )
+            raise RuntimeError("Lightning validation results must be dictionaries of scalar metrics")
         for key, value in result.items():
             if key in metrics:
-                raise RuntimeError(
-                    f"Lightning validation returned duplicate metric key {key!r}"
-                )
+                raise RuntimeError(f"Lightning validation returned duplicate metric key {key!r}")
             item_fn = getattr(value, "item", None)
             if callable(item_fn):
                 value = item_fn()
             try:
                 scalar = float(value)
             except (TypeError, ValueError, OverflowError) as exc:
-                raise RuntimeError(
-                    f"Lightning validation metric {key!r} is not scalar"
-                ) from exc
+                raise RuntimeError(f"Lightning validation metric {key!r} is not scalar") from exc
             if not math.isfinite(scalar):
-                raise RuntimeError(
-                    f"Lightning validation metric {key!r} is not finite"
-                )
+                raise RuntimeError(f"Lightning validation metric {key!r} is not finite")
             metrics[str(key)] = scalar
 
     if not metrics:
@@ -57,7 +49,30 @@ def _scalar_validation_metrics(validation_results):
     return metrics
 
 
-def validate_global_model(trainer, model, datamodule=None, dataloaders=None):
+def add_negated_metrics(metrics, lower_is_better_keys):
+    """Add a ``neg_<key>`` companion for each lower-is-better metric.
+
+    ``FedAvgRecipe.key_metric`` selects on higher-is-better values only, so a
+    lower-is-better metric such as ``val_loss`` must be delivered as an
+    explicitly negated companion and selected by that companion key (for
+    example ``key_metric="neg_val_loss"``). This is the Lightning counterpart of
+    the framework-neutral rule in
+    ``../../nvflare-shared/references/pytorch-family-recipe-construction.md``.
+
+    Pass only source-backed keys whose direction the source establishes; the
+    original metric is preserved alongside the companion.
+    """
+    for key in lower_is_better_keys:
+        if key not in metrics:
+            raise RuntimeError(f"lower-is-better metric {key!r} is not in the validation results")
+        companion = f"neg_{key}"
+        if companion in metrics:
+            raise RuntimeError(f"negated companion {companion!r} already exists")
+        metrics[companion] = -metrics[key]
+    return metrics
+
+
+def validate_global_model(trainer, model, datamodule=None, dataloaders=None, lower_is_better_keys=()):
     """Validate the received global model and return the trainer callback metrics.
 
     Call this before ``trainer.fit`` inside the round loop. Metrics come from
@@ -65,6 +80,10 @@ def validate_global_model(trainer, model, datamodule=None, dataloaders=None):
     ``MetaKey.INITIAL_METRICS`` so the patched callback sends them with the
     training result even when the selected executor leaves
     ``train_with_evaluation`` disabled.
+
+    Pass ``lower_is_better_keys`` for source-backed lower-is-better metrics such
+    as ``("val_loss",)``; each gains a ``neg_`` companion that the recipe can
+    select with ``key_metric``.
     """
     if datamodule is not None:
         validation_results = trainer.validate(model, datamodule=datamodule)
@@ -72,6 +91,8 @@ def validate_global_model(trainer, model, datamodule=None, dataloaders=None):
         validation_results = trainer.validate(model, dataloaders=dataloaders)
 
     metrics = _scalar_validation_metrics(validation_results)
+    if lower_is_better_keys:
+        metrics = add_negated_metrics(metrics, lower_is_better_keys)
     fl_meta = getattr(model, "__fl_meta__", {})
     if not isinstance(fl_meta, dict):
         raise RuntimeError("LightningModule.__fl_meta__ must be a dictionary")
