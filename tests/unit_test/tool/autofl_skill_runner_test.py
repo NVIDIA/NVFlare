@@ -581,13 +581,16 @@ def test_run_terminates_inherited_stdout_descendant_after_leader_exits(tmp_path)
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="escaped-process cleanup uses Linux /proc ownership")
-def test_run_terminates_detached_descendant_that_escapes_process_group(tmp_path):
+@pytest.mark.parametrize("ignore_sigterm", [False, True], ids=["sigterm_honored", "sigterm_ignored"])
+def test_run_terminates_detached_descendant_that_escapes_process_group(tmp_path, ignore_sigterm):
     runner = _load_runner()
     child_pid_path = tmp_path / "detached.pid"
+    signal_setup = "signal.signal(signal.SIGTERM, signal.SIG_IGN); " if ignore_sigterm else ""
     child_code = (
-        "import os, pathlib, time; "
+        "import os, pathlib, signal, time; "
+        f"{signal_setup}"
         f"pathlib.Path({str(child_pid_path)!r}).write_text(str(os.getpid())); "
-        "print('detached descendant started', flush=True); time.sleep(30)"
+        "print('detached descendant started', flush=True); time.sleep(90)"
     )
     parent_code = (
         "import subprocess, sys; "
@@ -598,12 +601,12 @@ def test_run_terminates_detached_descendant_that_escapes_process_group(tmp_path)
     rc, output, runtime = runner.run(
         [sys.executable, "-c", parent_code],
         tmp_path,
-        timeout=1,
+        timeout=2 if ignore_sigterm else 1,
         log_path=tmp_path / "run.log",
     )
 
     assert rc == 124
-    assert runtime < 5
+    assert runtime < (25 if ignore_sigterm else 5)
     assert "leader exits" in output
     child_pid = int(child_pid_path.read_text(encoding="utf-8"))
     deadline = runner.time.monotonic() + 5

@@ -408,6 +408,8 @@ def trial_process_ids(trial_token: Optional[str]) -> List[int]:
 def signal_trial_processes(trial_token: Optional[str], sig: int) -> None:
     for process_id in trial_process_ids(trial_token):
         try:
+            # A PID could be recycled between the /proc scan and this kill; the token match plus the
+            # sub-second window makes that acceptable for cleanup.
             os.kill(process_id, sig)
         except (PermissionError, ProcessLookupError):
             continue
@@ -420,8 +422,7 @@ def wait_for_process_tree(
     while time.monotonic() < deadline:
         leader_exited = process.poll() is not None
         group_exited = process_group_id is None or not process_group_exists(process_group_id)
-        trial_processes_exited = not trial_process_ids(trial_token)
-        if leader_exited and group_exited and trial_processes_exited:
+        if leader_exited and group_exited and not trial_process_ids(trial_token):
             return True
         time.sleep(0.05)
     return (
@@ -454,7 +455,7 @@ def terminate_process(
         try:
             os.killpg(process_group_id, signal.SIGKILL)
         except ProcessLookupError:
-            return
+            pass
         except Exception:
             if process.poll() is None:
                 process.kill()
