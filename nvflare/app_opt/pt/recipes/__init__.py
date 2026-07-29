@@ -22,6 +22,10 @@ from .scaffold import ScaffoldRecipe
 
 # Lazy imports for recipes with optional dependencies or to avoid circular imports
 def __getattr__(name):
+    if name == "FedCERecipe":
+        from .fedce import FedCERecipe
+
+        return FedCERecipe
     if name == "FedAvgRecipeWithHE":
         from .fedavg_he import FedAvgRecipeWithHE
 
@@ -35,6 +39,7 @@ def __getattr__(name):
 
 __all__ = [
     "FedAvgRecipe",
+    "FedCERecipe",
     "CyclicRecipe",
     "FedOptRecipe",
     "FedProxRecipe",
