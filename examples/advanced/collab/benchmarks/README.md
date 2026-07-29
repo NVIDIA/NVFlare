@@ -35,8 +35,9 @@ Before a cluster run, verify the paths in the Slurm config and set:
 - `data_root` to the prepared four-site dataset root;
 - `trainer_output_root` to writable scratch storage;
 - `force_cpu` to `false`;
-- `gpu_config` to the allocation used by both schemes, for example
-  `"[0],[1],[2],[3]"` for one GPU per client.
+- `gpu_config` to the allocation used by both schemes. The checked-in Slurm
+  config uses `"0"`, placing all four clients in one simulator GPU group so
+  the benchmark requests only one GPU.
 - `precision` explicitly to `bfloat16` or `float32` for both schemes. The
   checked-in Slurm config uses BF16 and must fail during the smoke check if the
   allocated GPU does not support it; do not let the schemes choose precision
@@ -113,13 +114,25 @@ python -m collab.benchmarks.run_benchmarks \
 
 Ready-to-review Slurm entrypoints are under `collab/benchmarks/slurm/`:
 
-- `smoke.sbatch`: one client, one synchronization, and one selected scheme;
-- `paired.sbatch`: four clients, five synchronizations, and both schemes in a
-  configurable order.
+- `smoke.sbatch` with `SMOKE_KIND=single`: one client, one synchronization,
+  and one selected scheme;
+- `smoke.sbatch` with `SMOKE_KIND=capacity`: all four clients and one
+  synchronization on one GPU, verifying that the minimum allocation fits;
+- `paired.sbatch`: all four clients and five synchronizations on one GPU, with
+  both schemes in a configurable order.
 
 Both jobs verify the source commit, require a clean checkout, force offline
 Hugging Face operation, and capture GPU, package, host, Git, and
 `/usr/bin/time` metadata alongside persistent results.
+
+The capacity smoke must pass for both schemes before the paired job is
+submitted. Request more than one GPU only after a reproducible OOM demonstrates
+that the one-GPU allocation cannot satisfy the workload.
+
+The jobs are non-exclusive so Slurm can pack other workloads onto the same
+eight-GPU node. The single smoke requests 8 CPUs and 64 GB of host memory; the
+paired job requests 16 CPUs and 128 GB. GPU samples and `/usr/bin/time` RSS are
+used to adjust later requests instead of reserving an entire node.
 
 Run one scheme while validating a launch script:
 

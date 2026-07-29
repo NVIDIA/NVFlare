@@ -70,7 +70,7 @@ def make_recipe(config: dict) -> FedAvgRecipe:
             },
         },
         min_clients=config["num_clients"],
-        num_rounds=config["num_epochs"] * config["syncs_per_epoch"],
+        num_rounds=config.get("max_syncs", config["num_epochs"] * config["syncs_per_epoch"]),
         train_script=str(STANDARD_CLIENT_SOURCE),
         train_args=client_args,
         launch_external_process=True,

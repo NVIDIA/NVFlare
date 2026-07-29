@@ -158,7 +158,7 @@ def run_benchmark():
     global_weights = decode_state(initial["weights"], exchange_format)
     payload_bytes = sum(tensor.numel() * tensor.element_size() for tensor in global_weights.values())
     samples = []
-    total_syncs = config["num_epochs"] * config["syncs_per_epoch"]
+    total_syncs = config.get("max_syncs", config["num_epochs"] * config["syncs_per_epoch"])
 
     for sync_number in range(1, total_syncs + 1):
         total_start = time.perf_counter()

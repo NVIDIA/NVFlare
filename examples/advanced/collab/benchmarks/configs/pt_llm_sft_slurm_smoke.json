@@ -1,7 +1,8 @@
 {
   "num_clients": 1,
   "num_epochs": 1,
-  "syncs_per_epoch": 1,
+  "syncs_per_epoch": 5,
+  "max_syncs": 1,
   "model_name_or_path": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
   "hf_home": "/lustre/fsw/portfolios/coreai/users/ziyuex/huggingface_cache",
   "data_root": "/lustre/fsw/portfolios/coreai/users/ziyuex/projects/collab_project/data/pt_llm_sft",
