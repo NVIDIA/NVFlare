@@ -26,7 +26,7 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.streaming.stream_utils import callback_thread_pool
+from nvflare.fuel.f3.streaming.stream_utils import callback_thread_pool, download_request_thread_pool
 from nvflare.fuel.f3.streaming.transfer_outcome import (  # noqa: F401 (re-exported legacy names)
     DownloadStatus,
     RefOutcome,
@@ -1680,6 +1680,8 @@ class DownloadService:
 
 class Consumer(ABC):
 
+    supports_pipelining = False
+
     def __init__(self):
         self.logger = get_obj_logger(self)
 
@@ -1693,6 +1695,10 @@ class Consumer(ABC):
             data: data to be processed
 
         Returns: new state to be sent back to the data owner.
+
+        Consumers must not mutate ``state`` in place. Consumers that explicitly
+        guarantee they return a value-equivalent state may opt into request
+        pipelining by setting ``supports_pipelining = True``.
 
         """
         pass
@@ -1855,23 +1861,50 @@ def download_object(
 
     _emit_progress("start", force=True)
 
-    while True:
-        start_time = time.time()
-        request_payload = {_PropKey.REF_ID: ref_id}
+    # Build and fire one DownloadService request (no retry logic here).
+    def _do_request(req_state):
+        req_payload = {_PropKey.REF_ID: ref_id}
         if confirm_enabled:
-            request_payload[_PropKey.CONFIRM_CAPABLE] = True
-        if current_state is not None:
-            request_payload[_PropKey.STATE] = current_state
-        reply = cell.send_request(
+            req_payload[_PropKey.CONFIRM_CAPABLE] = True
+        if req_state is not None:
+            req_payload[_PropKey.STATE] = req_state
+        return cell.send_request(
             channel=OBJ_DOWNLOADER_CHANNEL,
             target=from_fqcn,
             topic=OBJ_DOWNLOADER_TOPIC,
-            request=new_cell_message(headers={}, payload=request_payload),
+            request=new_cell_message(headers={}, payload=req_payload),
             timeout=per_request_timeout,
             secure=secure,
             optional=optional,
             abort_signal=abort_signal,
         )
+
+    # Pipelined download loop.
+    #
+    # Profiling shows each cycle on the receiver's stream-callback thread is:
+    #   send_request blocking wait  ~55 %  (network RTT + sender serialisation stall)
+    #   BufferList.read_bytes       ~19 %  (reply payload join, inside send_request)
+    #   consumer.consume            ~20 %  (safetensors.load / disk write)
+    #   loop overhead               ~ 6 %
+    #
+    # By launching the NEXT request immediately after the current one returns
+    # (before consume), the ~20 % inline consume cost is overlapped with the
+    # following send_request.  Each cycle's wall time shrinks from
+    # (send_request + consume) to max(send_request, consume) ≈ send_request.
+    #
+    # Correctness: Consumer.consume() is allowed to transform the producer
+    # state. Only consumers that explicitly guarantee value-stable state may
+    # overlap consume() with the next request.
+    pipeline_enabled = consumer.supports_pipelining
+    pending_future = None
+
+    while True:
+        start_time = time.time()
+        if pending_future:
+            reply = pending_future.result()
+            pending_future = None
+        else:
+            reply = _do_request(current_state)
         duration = time.time() - start_time
 
         if abort_signal and abort_signal.triggered:
@@ -1953,7 +1986,7 @@ def download_object(
             _emit_progress("failed", force=True)
             return
 
-        # continue
+        # Good DATA reply.
         # CacheableObject sends a list of byte-chunks; FileDownloader sends raw bytes.
         data = payload.get(_PropKey.DATA)
         if data is not None:
@@ -1961,24 +1994,50 @@ def download_object(
             if isinstance(data, list):
                 total_items = (total_items or 0) + len(data)
         state = payload.get(_PropKey.STATE)
+
+        if pipeline_enabled:
+            # Snapshot the request state so a contract-violating in-place
+            # mutation cannot race request serialization or hide the change.
+            request_state = dict(state)
+            current_state = request_state
+            pending_future = download_request_thread_pool.submit(_do_request, request_state)
+        else:
+            request_state = None
+
         try:
             new_state = consumer.consume(ref_id, state, data)
         except Exception as ex:
+            if pending_future:
+                pending_future.cancel()
             consumer.download_failed(ref_id, f"exception when consuming data: {secure_format_exception(ex)}")
             _emit_progress("failed", force=True)
             return
 
         if not isinstance(new_state, dict):
+            if pending_future:
+                pending_future.cancel()
             consumer.download_failed(ref_id, f"consumer error: new_state should be dict but got {type(new_state)}")
             _emit_progress("failed", force=True)
             return
 
         if abort_signal and abort_signal.triggered:
+            if pending_future:
+                pending_future.cancel()
             consumer.download_failed(ref_id, "download aborted")
             _emit_progress("aborted", force=True)
             return
 
-        _emit_progress("active")
+        if pipeline_enabled:
+            if new_state != request_state:
+                # This consumer explicitly opted into stable-state pipelining.
+                # Do not issue a second corrected request after the speculative
+                # one, which would duplicate producer work.
+                if pending_future:
+                    pending_future.cancel()
+                consumer.download_failed(ref_id, "consumer changed state despite enabling download pipelining")
+                _emit_progress("failed", force=True)
+                return
+        else:
+            current_state = new_state
 
-        # Update state for next request
-        current_state = new_state
+        _emit_progress("active")

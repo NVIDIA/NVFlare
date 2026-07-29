@@ -38,7 +38,9 @@ from nvflare.fuel.f3.streaming.stream_utils import ONE_MB, stream_stats_category
 log = logging.getLogger(__name__)
 
 MAX_OUT_SEQ_CHUNKS = 16
-# 1/4 of the window size
+# Keep this compatible with senders that use the historical 16 MiB window.
+# A 16 MiB ACK interval can stall or time out mixed-version and explicitly
+# configured small-window peers before their first ACK arrives.
 ACK_INTERVAL = 1024 * 1024 * 4
 READ_TIMEOUT = 300
 COMPLETED_TASK_TTL = 60.0
