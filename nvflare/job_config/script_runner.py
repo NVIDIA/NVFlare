@@ -11,10 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import shlex
 from enum import Enum
 from typing import Optional, Type, Union
 
 from nvflare.apis.fl_constant import SystemVarName
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.app_common.abstract.launcher import Launcher
 from nvflare.app_common.executors.client_api_executor import ALL_EXECUTION_MODES, ClientAPIExecutor, ExecutionMode
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
@@ -27,7 +29,7 @@ from nvflare.fuel.utils.constants import FrameworkType  # noqa: F401 - re-export
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe, Mode
 from nvflare.fuel.utils.pipe.pipe import Pipe
-from nvflare.fuel.utils.secret_utils import split_command_preserving_secret_refs
+from nvflare.fuel.utils.secret_utils import has_secret_refs, split_command_preserving_secret_refs
 from nvflare.fuel.utils.validation_utils import check_str
 
 from .api import FedJob, validate_object_for_job
@@ -46,6 +48,7 @@ _PIPE_CONNECT_URL = {
 }
 
 _CommandArg = Union[str, list[str]]
+_ADDITIONAL_NODE_COMMAND = "additional_node_command"
 
 
 def _to_external_process_argv(value: _CommandArg, arg_name: str) -> list[str]:
@@ -57,6 +60,36 @@ def _to_external_process_argv(value: _CommandArg, arg_name: str) -> list[str]:
     if not all(isinstance(arg, str) for arg in value):
         raise ValueError(f"{arg_name} argv must contain only strings")
     return list(value)
+
+
+def _fill_additional_node_command(job: FedJob, target: str, command: list[str], launch_once: bool) -> None:
+    """Copy a managed external-process command into explicit multi-node launcher blocks."""
+    meta_props = job.job.meta_props
+    launcher_spec = meta_props.get(JobMetaKey.JOB_LAUNCHER_SPEC.value) if isinstance(meta_props, dict) else None
+    if not isinstance(launcher_spec, dict):
+        return
+
+    command_text = None
+    for site_name, site_spec in launcher_spec.items():
+        if (
+            site_name in ("default", SERVER_SITE_NAME)
+            or (target != ALL_SITES and site_name != target)
+            or not isinstance(site_spec, dict)
+        ):
+            continue
+        for block in site_spec.values():
+            nodes = block.get("nodes") if isinstance(block, dict) else None
+            if not isinstance(nodes, int) or nodes <= 1 or _ADDITIONAL_NODE_COMMAND in block:
+                continue
+            if not launch_once:
+                raise ValueError("generated additional_node_command requires launch_once=True")
+            if command_text is None:
+                if any(has_secret_refs(arg) for arg in command):
+                    raise ValueError(
+                        "additional_node_command does not support secret references; set a secret-free command explicitly"
+                    )
+                command_text = shlex.join(command)
+            block[_ADDITIONAL_NODE_COMMAND] = command_text
 
 
 class BaseScriptRunner:
@@ -253,6 +286,12 @@ class BaseScriptRunner:
         self._memory_gc_rounds = memory_gc_rounds
         self._cuda_empty_cache = cuda_empty_cache
 
+    def _external_process_argv(self) -> list[str]:
+        command = _to_external_process_argv(self._command, "command")
+        command.append(f"custom/{self._script}")
+        command.extend(_to_external_process_argv(self._script_args, "script_args"))
+        return command
+
     def _create_cell_pipe(self):
         ct = self._pipe_connect_type
         if not ct:
@@ -290,9 +329,8 @@ class BaseScriptRunner:
                 # shell-free argv, not by an in-CJ-process task_script_path. Parse the
                 # user-authored strings once here so the exported config carries stable
                 # argv boundaries to each target site.
-                command = _to_external_process_argv(self._command, "command")
-                command.append(f"custom/{self._script}")
-                command.extend(_to_external_process_argv(self._script_args, "script_args"))
+                command = self._external_process_argv()
+                _fill_additional_node_command(job, ctx.target, command, self._launch_once)
                 executor = ClientAPIExecutor(
                     execution_mode=self._execution_mode,
                     command=command,
@@ -327,9 +365,7 @@ class BaseScriptRunner:
             if self._launcher:
                 launcher = self._launcher
             else:
-                command = _to_external_process_argv(self._command, "command")
-                command.append(f"custom/{self._script}")
-                command.extend(_to_external_process_argv(self._script_args, "script_args"))
+                command = self._external_process_argv()
                 launcher = SubprocessLauncher(
                     script=command,
                     launch_once=self._launch_once,
