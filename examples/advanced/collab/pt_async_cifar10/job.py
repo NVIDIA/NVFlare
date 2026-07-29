@@ -17,7 +17,7 @@
 From the ``examples/advanced/collab/pt_async_cifar10`` directory:
 
     python prepare_data.py
-    python -m pt_async_cifar10
+    python job.py
 """
 
 import argparse

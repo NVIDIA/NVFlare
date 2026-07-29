@@ -9,7 +9,7 @@ The data lifecycle follows the current standard workflow:
 
 1. `prepare_data.py` downloads CIFAR-10 once and writes deterministic logical
    client index files.
-2. `pt_async_cifar10.py` builds a `CollabRecipe`; clients only load prepared
+2. `job.py` builds a `CollabRecipe`; clients only load prepared
    data and never download or repartition it during execution.
 
 From the `examples/advanced/collab` directory, enter this example first:
@@ -62,7 +62,7 @@ The following runs two physical simulator clients. Each round assigns those
 workers to two of the ten prepared logical clients:
 
 ```bash
-python -m pt_async_cifar10 \
+python job.py \
     --data-root /tmp/nvflare/datasets/cifar10 \
     --num-clients 2 \
     --num-rounds 3
@@ -77,7 +77,7 @@ python prepare_data.py \
     --data-root /tmp/nvflare/datasets/cifar10 \
     --overwrite
 
-python -m pt_async_cifar10 \
+python job.py \
     --data-root /tmp/nvflare/datasets/cifar10 \
     --num-clients 100 \
     --clients-per-round 100 \

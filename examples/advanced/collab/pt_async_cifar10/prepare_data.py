@@ -129,7 +129,7 @@ def prepare_data(args) -> Path:
         stream.write("\n")
 
     print(f"Prepared data written to {data_root}")
-    print(f"Next: python -m pt_async_cifar10 --data-root {data_root}")
+    print(f"Next: python job.py --data-root {data_root}")
     return data_root
 
 
