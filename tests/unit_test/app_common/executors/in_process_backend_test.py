@@ -27,6 +27,7 @@ import sys
 import time
 from unittest.mock import MagicMock, Mock, patch
 
+import msgpack
 import pytest
 
 from nvflare.apis.analytix import AnalyticsDataType
@@ -52,6 +53,8 @@ from nvflare.client.in_process.api import (
     InProcessClientAPI,
 )
 from nvflare.fuel.data_event.data_bus import DataBus
+from nvflare.fuel.utils.fobs import fobs as fobs_module
+from nvflare.fuel.utils.fobs.datum import DatumManager
 
 BACKEND_TOPICS = (TOPIC_LOCAL_RESULT, TOPIC_LOG_DATA, TOPIC_ABORT, TOPIC_STOP)
 
@@ -249,6 +252,39 @@ class TestInitializeAndFinalize:
             assert backend._client_api._cuda_empty_cache is True
         finally:
             backend.finalize(FLContext())
+
+    def test_initialize_registers_tensor_decomposer_for_pytorch_wire_results(self, custom_dir):
+        torch = pytest.importorskip("torch")
+        saved_decomposers = dict(fobs_module._decomposers)
+        saved_dot_handlers = dict(fobs_module._dot_handlers)
+        saved_registered = fobs_module._decomposers_registered
+        saved_whitelist = set(fobs_module._type_name_whitelist)
+        backend = None
+        try:
+            fobs_module.reset()
+            backend, _ = _initialized_backend(
+                custom_dir,
+                params_exchange_format=ExchangeFormat.PYTORCH,
+                server_expected_format=ExchangeFormat.PYTORCH,
+            )
+
+            tensor = torch.ones(4, dtype=torch.float16)
+            encoded = fobs_module.serialize(tensor, DatumManager(fobs_ctx={"native": True}))
+            envelope = msgpack.unpackb(encoded)
+
+            assert envelope[fobs_module.FOBS_DECOMPOSER].endswith(".TensorDecomposer")
+            assert envelope[fobs_module.FOBS_DATA]["type"] == "native"
+            assert isinstance(envelope[fobs_module.FOBS_DATA]["data"], bytes)
+        finally:
+            if backend is not None:
+                backend.finalize(FLContext())
+            fobs_module._decomposers.clear()
+            fobs_module._decomposers.update(saved_decomposers)
+            fobs_module._dot_handlers.clear()
+            fobs_module._dot_handlers.update(saved_dot_handlers)
+            fobs_module._decomposers_registered = saved_registered
+            fobs_module._type_name_whitelist.clear()
+            fobs_module._type_name_whitelist.update(saved_whitelist)
 
     def test_finalize_logs_stop_publish_failure(self, exited_custom_dir, caplog):
         backend, _ = _initialized_backend(exited_custom_dir)

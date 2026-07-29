@@ -735,11 +735,12 @@ class SwarmClientController(ClientSideController):
 
         Uses an FOBS round-trip:
           encode: LazyDownloadRefDecomposer.decompose() re-emits the original subprocess
-                  datum (fqcn + ref_id) as a TEXT datum — no CELL needed in the encode ctx.
+                  datum (fqcn + ref_id) as a TEXT datum. Relay refs require the CELL
+                  in this context to create a download transaction on the client job.
           decode: process_datum() with PASS_THROUGH=False calls _download_from_remote_cell()
-                  which downloads real numpy arrays from the subprocess DownloadService.
-                  cell.get_fobs_context() supplies the CELL so the download can route to
-                  the subprocess via the cell network.
+                  which downloads real numpy arrays through that transaction.
+                  cell.get_fobs_context() supplies a fresh context for each operation so
+                  encode-only state does not leak into decode.
         """
         import nvflare.fuel.utils.fobs as fobs
 
@@ -755,7 +756,8 @@ class SwarmClientController(ClientSideController):
         cell = get_cell()
         if not cell:
             return result
-        encoded = fobs.dumps(result)
+        encode_ctx = cell.get_fobs_context()
+        encoded = fobs.dumps(result, fobs_ctx=encode_ctx)
         decode_ctx = cell.get_fobs_context(props={fobs.FOBSContextKey.PASS_THROUGH: False})
         return fobs.loads(encoded, fobs_ctx=decode_ctx)
 
