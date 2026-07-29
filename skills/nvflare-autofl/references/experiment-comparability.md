@@ -58,47 +58,6 @@ receive a sanitized environment built from a fixed runtime allowlist plus only
 the variable names declared in `environment.simulator_env_passthrough`. Jobs
 that need variables such as `DATASET_DIR` must declare them there explicitly.
 
-## Strict Observed Training Budgets
-
-Static import and fixed command arguments establish declared comparability, but
-they cannot prove how many batches, examples, optimizer updates, or additional
-forward/backward passes arbitrary Python training code performs. Do not claim
-strict local-compute equality from source inspection or argument names alone.
-
-For a strict campaign, instrument the job to write a small JSON artifact under
-each collected simulation result and declare it in task-local
-`mutation_schema.yaml`:
-
-```yaml
-comparison_budget_evidence:
-  artifact: server/autofl_budget_summary.json
-  fields:
-    - optimizer_steps
-    - examples_seen
-    - partition_sha256
-```
-
-The artifact contains the selected values:
-
-```json
-{
-  "values": {
-    "optimizer_steps": 1280,
-    "examples_seen": 81920,
-    "partition_sha256": "..."
-  }
-}
-```
-
-Initialization copies this contract into
-`autofl.yaml` as `budget.observed_training_budget`. The scored baseline
-establishes the exact expected values. Every simulation, POC, or production
-candidate must provide the same fields and values; missing, malformed, or
-different evidence invalidates that candidate and prevents its score from being
-retained. The evidence fields are task-defined so the same mechanism works for
-custom trainers and frameworks without teaching the runner dataset- or
-algorithm-specific semantics.
-
 ## Data Distribution Experiments
 
 When the user asks to compare IID and heterogeneous data splits, define the split

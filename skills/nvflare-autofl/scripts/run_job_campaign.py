@@ -78,8 +78,6 @@ RESULT_FIELDS = [
     "candidate_kind",
     "algorithm_family",
     "literature_event_id",
-    "observed_budget",
-    "observed_budget_artifact",
 ]
 
 # Marker shared by every server-side global-model entry in cross_val_results.json: the legacy
@@ -226,8 +224,6 @@ class RunRecord:
     candidate_kind: str = ""
     algorithm_family: str = ""
     literature_event_id: str = ""
-    observed_budget: str = ""
-    observed_budget_artifact: str = ""
 
 
 @dataclass(frozen=True)
@@ -235,12 +231,6 @@ class MetricEvidence:
     score: float
     metric_name: str
     source: str
-    artifact: str
-
-
-@dataclass(frozen=True)
-class ObservedBudgetEvidence:
-    values: Dict[str, Any]
     artifact: str
 
 
@@ -1154,41 +1144,6 @@ def fixed_budget_hash(config: Dict[str, Any]) -> str:
     return sha256_json(config.get("budget", {}).get("fixed_training_budget", {}) or {})
 
 
-def observed_budget_values(record: RunRecord) -> Optional[Dict[str, Any]]:
-    if not record.observed_budget:
-        return None
-    try:
-        values = json.loads(record.observed_budget)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"record {record.name!r} has invalid observed training-budget evidence") from e
-    if not isinstance(values, dict):
-        raise ValueError(f"record {record.name!r} has invalid observed training-budget evidence")
-    return values
-
-
-def store_baseline_observed_budget(metadata: Dict[str, Any], record: RunRecord) -> None:
-    values = observed_budget_values(record)
-    if values is None:
-        metadata.pop("observed_training_budget", None)
-        return
-    metadata["observed_training_budget"] = {
-        "values": values,
-        "artifact": record.observed_budget_artifact,
-    }
-
-
-def expected_observed_budget(config: Dict[str, Any], metadata: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    if not observed_budget_contract(config):
-        return None
-    evidence = metadata.get("observed_training_budget")
-    values = evidence.get("values") if isinstance(evidence, dict) else None
-    if not isinstance(values, dict):
-        raise ValueError(
-            "campaign baseline has no observed training-budget evidence; repair the baseline before evaluating candidates"
-        )
-    return values
-
-
 def candidate_changes(
     workspace: Path,
     config: Dict[str, Any],
@@ -1860,97 +1815,6 @@ def fixed_within_campaign(schema: Dict[str, Any]) -> set:
     return set(values) if isinstance(values, list) else set()
 
 
-def comparison_budget_evidence_contract(schema: Dict[str, Any]) -> Dict[str, Any]:
-    contract = schema.get("comparison_budget_evidence")
-    if contract is None:
-        return {}
-    if not isinstance(contract, dict):
-        raise ValueError("mutation_schema.yaml comparison_budget_evidence must be a mapping")
-    artifact = contract.get("artifact")
-    fields = contract.get("fields")
-    if not isinstance(artifact, str) or not artifact.strip():
-        raise ValueError("comparison_budget_evidence.artifact must be a non-empty relative path")
-    if "\\" in artifact or re.match(r"^[A-Za-z]:", artifact):
-        raise ValueError("comparison_budget_evidence.artifact must use a portable relative POSIX path")
-    relative = PurePosixPath(artifact)
-    if relative.is_absolute() or not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
-        raise ValueError("comparison_budget_evidence.artifact must stay under the collected simulation artifacts")
-    if not isinstance(fields, list) or not fields:
-        raise ValueError("comparison_budget_evidence.fields must be a non-empty list")
-    normalized_fields = []
-    for field_name in fields:
-        if not isinstance(field_name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]*", field_name):
-            raise ValueError("comparison_budget_evidence.fields must contain stable JSON field names")
-        if field_name not in normalized_fields:
-            normalized_fields.append(field_name)
-    return {
-        "artifact": relative.as_posix(),
-        "fields": normalized_fields,
-        "enforcement": "exact_match_to_baseline",
-    }
-
-
-def apply_comparison_budget_evidence_contract(config: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
-    contract = comparison_budget_evidence_contract(schema)
-    if contract:
-        config.setdefault("budget", {})["observed_training_budget"] = contract
-    return config
-
-
-def observed_budget_contract(config: Dict[str, Any]) -> Dict[str, Any]:
-    budget = config.get("budget")
-    if not isinstance(budget, dict):
-        return {}
-    contract = budget.get("observed_training_budget")
-    if contract is None:
-        return {}
-    return comparison_budget_evidence_contract({"comparison_budget_evidence": contract})
-
-
-def observed_budget_contract_hash(config: Dict[str, Any]) -> Optional[str]:
-    contract = observed_budget_contract(config)
-    return sha256_json(contract) if contract else None
-
-
-def normalize_observed_budget_value(field_name: str, value: Any) -> Any:
-    if isinstance(value, bool) or value is None:
-        raise ValueError(f"observed training-budget field {field_name!r} must be a JSON scalar")
-    if isinstance(value, int):
-        if value < 0:
-            raise ValueError(f"observed training-budget field {field_name!r} must be non-negative")
-        return value
-    if isinstance(value, float):
-        if parse_finite_metric_value(value) is None or value < 0:
-            raise ValueError(f"observed training-budget field {field_name!r} must be finite and non-negative")
-        return value
-    if isinstance(value, str) and value:
-        return value
-    raise ValueError(f"observed training-budget field {field_name!r} must be a non-empty scalar")
-
-
-def extract_observed_budget_evidence(artifact_root: Path, contract: Dict[str, Any]) -> ObservedBudgetEvidence:
-    artifact = contract.get("artifact")
-    fields = contract.get("fields")
-    if not isinstance(artifact, str) or not isinstance(fields, list):
-        raise ValueError("autofl.yaml budget.observed_training_budget is invalid")
-    path = artifact_root.joinpath(*PurePosixPath(artifact).parts)
-    try:
-        resolved = path.resolve().relative_to(artifact_root.resolve())
-    except ValueError as e:
-        raise ValueError("observed training-budget artifact escapes the collected result directory") from e
-    path = artifact_root / resolved
-    payload = read_json(path)
-    values = payload.get("values")
-    if not isinstance(values, dict):
-        raise ValueError(f"observed training-budget artifact {path} must contain a values mapping")
-    normalized = {}
-    for field_name in fields:
-        if field_name not in values:
-            raise ValueError(f"observed training-budget artifact {path} is missing field {field_name!r}")
-        normalized[field_name] = normalize_observed_budget_value(field_name, values[field_name])
-    return ObservedBudgetEvidence(values=normalized, artifact=str(path.resolve()))
-
-
 def build_comparison_budget_args(schema: Dict[str, Any], help_text: str) -> List[str]:
     budget = comparison_budget(schema)
     args: List[str] = []
@@ -2454,7 +2318,6 @@ def run_job(
     simulator_no_progress_timeout: int,
     metrics: Sequence[str],
     config: Dict[str, Any],
-    expected_observed_budget: Optional[Dict[str, Any]] = None,
 ) -> RunRecord:
     baseline_run = run_def.status == "baseline"
     log_path = output_root / run_def.name / "run.log"
@@ -2499,7 +2362,6 @@ def run_job(
     run_def.artifacts = str(artifact_dir)
 
     evidence = None
-    budget_evidence = None
     if rc != 0:
         if sandbox_socket_failure:
             run_def.status = INFRASTRUCTURE_RETRY
@@ -2527,22 +2389,6 @@ def run_job(
             run_def.failure_reason = f"matching metric not found; {metric_search_description(artifact_root, metrics)}"
         else:
             run_def.score = evidence.score
-        contract = observed_budget_contract(config)
-        if contract:
-            try:
-                budget_evidence = extract_observed_budget_evidence(artifact_dir, contract)
-            except ValueError as e:
-                run_def.status = "crash"
-                run_def.score = None
-                run_def.failure_reason = str(e)
-            else:
-                if expected_observed_budget is not None and budget_evidence.values != expected_observed_budget:
-                    run_def.status = "crash"
-                    run_def.score = None
-                    run_def.failure_reason = (
-                        "observed training budget differs from baseline: "
-                        f"expected={expected_observed_budget!r}; actual={budget_evidence.values!r}"
-                    )
 
     record_status = "baseline" if baseline_run and run_def.status == "crash" else run_def.status
     return RunRecord(
@@ -2558,8 +2404,6 @@ def run_job(
         metric_name=evidence.metric_name if evidence else "",
         metric_source=evidence.source if evidence else "",
         metric_artifact=evidence.artifact if evidence else "",
-        observed_budget=json.dumps(budget_evidence.values, sort_keys=True) if budget_evidence else "",
-        observed_budget_artifact=budget_evidence.artifact if budget_evidence else "",
     )
 
 
@@ -2592,8 +2436,6 @@ def write_results(path: Path, records: List[RunRecord]) -> None:
                 "candidate_kind": record.candidate_kind,
                 "algorithm_family": record.algorithm_family,
                 "literature_event_id": record.literature_event_id,
-                "observed_budget": record.observed_budget,
-                "observed_budget_artifact": record.observed_budget_artifact,
             }
         )
     atomic_write_bytes(path, stream.getvalue().encode("utf-8"))
@@ -2626,8 +2468,6 @@ def load_results(path: Path) -> List[RunRecord]:
                     candidate_kind=row.get("candidate_kind", "") or "",
                     algorithm_family=row.get("algorithm_family", "") or "",
                     literature_event_id=row.get("literature_event_id", "") or "",
-                    observed_budget=row.get("observed_budget", "") or "",
-                    observed_budget_artifact=row.get("observed_budget_artifact", "") or "",
                 )
             )
     return records
@@ -2783,11 +2623,6 @@ def write_report(path: Path, config: Dict[str, Any], records: List[RunRecord], a
         str(args.max_candidates) if args.max_candidates is not None else "uncapped; runs until manual interruption"
     )
     objective = objective_contract(config, args.metric)
-    observed_contract = observed_budget_contract(config)
-    baseline_observed_budget = next(
-        (record.observed_budget for record in records if record.status == "baseline" and record.observed_budget),
-        "",
-    )
     lines = [
         "# Auto-FL Report",
         "",
@@ -2798,8 +2633,6 @@ def write_report(path: Path, config: Dict[str, Any], records: List[RunRecord], a
         f"Candidate budget: `{candidate_budget}`.",
         f"Config: `{args.autofl_yaml}`.",
         f"Fixed budget: `{json.dumps(config.get('budget', {}).get('fixed_training_budget', {}), sort_keys=True)}`.",
-        f"Observed budget contract: `{json.dumps(observed_contract, sort_keys=True) if observed_contract else 'none'}`.",
-        f"Baseline observed budget: `{baseline_observed_budget or 'not configured'}`.",
         "",
         "## Leaderboard",
         "",
@@ -3223,7 +3056,6 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
             metadata["best_score"] = baseline.score
             if baseline.score is not None:
                 metadata["best_candidate"] = baseline.name
-                store_baseline_observed_budget(metadata, baseline)
             metadata["updated_at"] = utc_now()
             write_json(metadata_path, metadata)
             next_action = (
@@ -3250,7 +3082,6 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
     config = apply_metric_contract(config, args.metric, schema)
     args.metric = str(config.get("objective", {}).get("requested_metric") or config["objective"]["metric"])
     config = apply_mutation_schema_contract(config, schema, workspace)
-    config = apply_comparison_budget_evidence_contract(config, schema)
     config.setdefault("trust_contract", {})["allowed_create_patterns"] = list(ALLOWED_CREATE_PATTERNS)
     write_yaml(paths["autofl_yaml"], config)
     admission_errors = campaign_admission_errors(config)
@@ -3272,8 +3103,6 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
         "best_source_sha256": source_hash(snapshot_files),
         "fixed_budget_sha256": fixed_budget_hash(config),
     }
-    if observed_budget_contract(config):
-        metadata["observed_budget_contract_sha256"] = observed_budget_contract_hash(config)
     write_json(metadata_path, metadata)
 
     records: List[RunRecord] = []
@@ -3282,8 +3111,6 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
         write_yaml(paths["autofl_yaml"], config)
         records.append(baseline)
         metadata["best_score"] = baseline.score
-        if baseline.score is not None:
-            store_baseline_observed_budget(metadata, baseline)
         metadata["updated_at"] = utc_now()
         write_json(metadata_path, metadata)
         next_action = (
@@ -3416,7 +3243,6 @@ def prepare_candidate(args: argparse.Namespace, job: Path) -> int:
         "base_candidate": metadata.get("best_candidate"),
         "base_source_sha256": source_hash(best_files),
         "fixed_budget_sha256": metadata.get("fixed_budget_sha256"),
-        "observed_budget_contract_sha256": metadata.get("observed_budget_contract_sha256"),
         # mode is a constant for schema stability: campaigns always maximize the metric.
         "objective": {"metric": args.metric, "mode": "max"},
         "environment": args.target_env,
@@ -3471,12 +3297,6 @@ def validate_candidate_for_evaluation(
         raise ValueError("candidate was prepared from a stale best candidate")
     if manifest.get("fixed_budget_sha256") != metadata.get("fixed_budget_sha256"):
         raise ValueError("candidate fixed-budget provenance is stale")
-    contract_hash = observed_budget_contract_hash(config)
-    if contract_hash and (
-        metadata.get("observed_budget_contract_sha256") != contract_hash
-        or manifest.get("observed_budget_contract_sha256") != contract_hash
-    ):
-        raise ValueError("candidate observed-budget contract provenance is stale")
     if not workspace_matches_snapshot(job.parent, best_source, best_files):
         raise ValueError("job workspace differs from the recorded best candidate")
     draft_source = manifest_path.parent / "source"
@@ -3516,9 +3336,6 @@ def candidate_campaign_config(
 ) -> Dict[str, Any]:
     candidate_config = apply_metric_contract(candidate_config, args.metric, schema)
     candidate_config["objective"] = dict(current_config.get("objective", {}))
-    current_observed_budget = observed_budget_contract(current_config)
-    if current_observed_budget:
-        candidate_config.setdefault("budget", {})["observed_training_budget"] = dict(current_observed_budget)
     current_paths = current_config.get("trust_contract", {}).get("allowed_edit_paths", []) or []
     trust_paths = candidate_config.setdefault("trust_contract", {}).setdefault("allowed_edit_paths", [])
     for path in current_paths:
@@ -3608,8 +3425,6 @@ def finalize_candidate_result(
                     "metric_name": record.metric_name,
                     "metric_source": record.metric_source,
                     "metric_artifact": record.metric_artifact,
-                    "observed_budget": observed_budget_values(record),
-                    "observed_budget_artifact": record.observed_budget_artifact,
                     "runtime_seconds": record.runtime_seconds,
                     "run_command": record.run_command,
                     "failure_reason": record.failure_reason,
@@ -3742,7 +3557,6 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
             simulator_no_progress_timeout=no_progress_timeout,
             metrics=metric_extraction_order(config, args.metric),
             config=config,
-            expected_observed_budget=expected_observed_budget(config, metadata),
         )
     except BaseException as error:
         try:
@@ -3933,20 +3747,7 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
         state = refresh_campaign_artifacts(args, paths, config, records, metadata)
         print_campaign_result(paths, records, state, literature_event=name, literature_event_id=event_id)
         return 0
-    budget_evidence = None
-    budget_failure_reason = ""
-    budget_contract = observed_budget_contract(config)
-    if budget_contract and not args.failure_reason:
-        if artifact_path is None:
-            budget_failure_reason = "configured observed training-budget evidence requires --artifacts"
-        else:
-            try:
-                budget_evidence = extract_observed_budget_evidence(artifact_path, budget_contract)
-            except ValueError as e:
-                budget_failure_reason = str(e)
     if args.baseline:
-        if budget_failure_reason:
-            raise ValueError(budget_failure_reason)
         records = load_results(paths["results"])
         if any(
             record.status == "baseline"
@@ -3968,12 +3769,9 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
             metric_name=evidence.metric_name if evidence else "",
             metric_source=evidence.source if evidence else "",
             metric_artifact=evidence.artifact if evidence else "",
-            observed_budget=json.dumps(budget_evidence.values, sort_keys=True) if budget_evidence else "",
-            observed_budget_artifact=budget_evidence.artifact if budget_evidence else "",
         )
         records.append(record)
         metadata["best_score"] = score
-        store_baseline_observed_budget(metadata, record)
         metadata["updated_at"] = utc_now()
         write_json(campaign_metadata_path(workspace), metadata)
         state = refresh_campaign_artifacts(
@@ -4023,22 +3821,7 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
     if fixed_budget_hash(candidate_config) != metadata.get("fixed_budget_sha256"):
         raise ValueError("candidate changes budget.fixed_training_budget")
     candidate_config = candidate_campaign_config(candidate_config, config, args, schema)
-    budget_mismatch = budget_evidence is not None and budget_evidence.values != expected_observed_budget(
-        config, metadata
-    )
-    status = (
-        "crash" if args.failure_reason or score is None or budget_failure_reason or budget_mismatch else "candidate"
-    )
-    failure_reason = args.failure_reason or ("metric not found" if score is None else "")
-    if budget_failure_reason and not failure_reason:
-        score = None
-        failure_reason = budget_failure_reason
-    elif budget_mismatch:
-        score = None
-        failure_reason = (
-            "observed training budget differs from baseline: "
-            f"expected={expected_observed_budget(config, metadata)!r}; actual={budget_evidence.values!r}"
-        )
+    status = "crash" if args.failure_reason or score is None else "candidate"
     record = RunRecord(
         status=status,
         name=str(manifest["candidate_id"]),
@@ -4048,12 +3831,10 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
         diff_summary=str(manifest.get("hypothesis") or "candidate"),
         run_command=f"nvflare job id={args.job_id or 'unreported'}",
         artifacts=str(artifact_path or ""),
-        failure_reason=failure_reason,
+        failure_reason=args.failure_reason or ("metric not found" if score is None else ""),
         metric_name=evidence.metric_name if evidence else "",
         metric_source=evidence.source if evidence else "",
         metric_artifact=evidence.artifact if evidence else "",
-        observed_budget=json.dumps(budget_evidence.values, sort_keys=True) if budget_evidence else "",
-        observed_budget_artifact=budget_evidence.artifact if budget_evidence else "",
     )
     records, state = finalize_candidate_result(
         args,

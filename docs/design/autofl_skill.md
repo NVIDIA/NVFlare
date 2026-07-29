@@ -55,8 +55,6 @@ layer:
 - Editable search-space settings discovered from `job.py` and related train
   scripts.
 - Fixed-budget constraints that must remain comparable across candidates.
-- Optional task-declared runtime evidence for budgets that static Python
-  inspection cannot prove, such as optimizer steps or partition identity.
 - Allowed edit paths and files that are out of scope for the agent.
 - Existing preferred source targets declared by task-local
   `mutation_schema.yaml`, once they resolve inside the job workspace.
@@ -99,28 +97,6 @@ instead of being guessed by the importer or the agent.
 The runner writes this reviewable `autofl.yaml` before admission and refuses to
 start a baseline when the job surface or fixed comparison budget remains
 safety-critical and unresolved.
-
-## Comparison Budget Evidence
-
-Auto-FL separates declared comparability from observed comparability. Imported
-rounds, clients, and task-local `comparison_budget_args` remain deterministic
-command and source constraints. They cannot prove the runtime behavior of
-arbitrary Python loops.
-
-A task that requires strict semantic equality may add
-`comparison_budget_evidence` to `mutation_schema.yaml`, naming one JSON artifact
-relative to the collected run and the fields that must match exactly. The
-runner copies this reviewable contract into
-`autofl.yaml` as `budget.observed_training_budget`. A successful baseline
-establishes the expected values; later simulation and externally recorded
-POC/production candidates must emit the same fields and values. Missing,
-malformed, or different evidence makes the attempt a crash and its score cannot
-be retained.
-
-This is an opt-in task contract, not a CIFAR-specific heuristic. Jobs choose
-meaningful counters or identities such as optimizer steps, examples seen,
-forward/backward passes, or a partition hash. The runner validates recorded
-evidence; it does not infer those semantics from agent-authored source.
 
 ## Trust Contract
 
@@ -241,14 +217,6 @@ result path or the sole changed workspace child; ambiguous or out-of-workspace
 results fail closed. POC and production results are accepted only after the
 materialized candidate is re-imported and its fixed comparison budget is
 verified again.
-
-On Linux, every runner child also inherits a random per-trial ownership token.
-Timeout, interruption, and final cleanup scan process environments for that
-exact token and terminate remaining trial-owned processes, including simulator
-workers that created a new process group or session. Existing process-group
-cleanup remains the portable first line of defense. The token is scoped to one
-execution and avoids command-name or shared-directory matching that could
-affect another campaign.
 
 Local simulation needs to bind sockets that a restricted coding-agent sandbox
 may prohibit. Authorization is therefore established once by the human during
