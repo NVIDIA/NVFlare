@@ -220,6 +220,10 @@ When ``model`` is supplied as a dict config, pass ``trainable_param_names`` expl
 estimation excludes non-trainable state such as BatchNorm running statistics and counters.
 FedCE is therefore a dedicated algorithm recipe, not a passive option on ``FedAvgRecipe``.
 
+**Example:**
+
+- `research/fed-ce <https://github.com/NVIDIA/NVFlare/tree/main/research/fed-ce>`_
+
 WEIGHT_DIFF Compatibility
 -------------------------
 
