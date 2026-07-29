@@ -54,7 +54,7 @@
         "The round loop calls trainer.evaluate() before trainer.train() so accuracy describes the received global model.",
         "The generated job imports FedAvgRecipe from nvflare.app_opt.pt.recipes.fedavg after recipe show confirms it.",
         "The agent treats recipe show as recipe metadata only, uses SimEnv with recipe.execute for local validation and standard export flags, and does not guess a separate export environment, private class-loader helper, internal command splitter, or another recipe-adjacent API.",
-        "A successful nvflare agent inspect establishes that the host-provided NVFLARE product is available even when importlib.metadata has no nvflare distribution record; when all other requirements are already compatible, the agent skips installation and continues to simulation instead of running uv pip install --system.",
+        "The agent establishes host-provided NVFLARE availability separately through nvflare agent inspect, nvflare --version, or a public capability check before generic package inventory; it never includes nvflare in a batch of importlib.metadata lookups, handles missing non-product metadata as an inventory result rather than a failed command, and skips installation when all applicable requirements are already compatible.",
         "A generated or preserved HfArgumentParser is constructed with allow_abbrev=False. Intentional typo and abbreviation rejection checks run through assertion wrappers whose top-level commands succeed only when the generated parser rejects them; the wrapper accepts an expected unused-argument ValueError only when its diagnostic names the rejected argument.",
         "The generated recipe model is an explicit class_path and args mapping, not a live model instance.",
         "The generated job preserves the maintained PyTorch-family fast path: FedAvgRecipe with class_path, SimEnv, recipe.execute, and explicit server/client model-file packaging.",
@@ -165,6 +165,10 @@
           {
             "id": "no-metadata-only-nvflare-reinstall",
             "description": "does not install or replace a working host-provided NVFLARE product solely because importlib.metadata lacks a distribution record or reports a development-version mismatch"
+          },
+          {
+            "id": "no-failing-nvflare-metadata-probe",
+            "description": "checks host-provided NVFLARE separately through its CLI or a public capability probe, excludes nvflare from generic distribution-metadata batches, and handles missing non-product metadata without a failed top-level inventory command"
           },
           {
             "id": "no-speculative-system-install",

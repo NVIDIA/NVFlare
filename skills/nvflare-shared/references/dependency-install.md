@@ -38,11 +38,14 @@ that same environment. A successful `nvflare agent inspect`, `nvflare
 authoritative evidence that NVFLARE is present. Host-provided overlays, editable
 installs, and source checkouts may have no `importlib.metadata` distribution
 record or may report a development base version below an upcoming requirement
-pin. Do not append, install, or replace `nvflare` based only on missing package
-metadata or that development-version mismatch. Preserve the generated
-requirements pin and use a public capability check to verify the required
-NVFLARE API; if the host product lacks it, report a version/capability mismatch
-instead of installing a second NVFLARE copy over the host environment.
+pin. Check NVFLARE separately with the intended host CLI before generic package
+inventory. Never include `nvflare` in a batch of
+`importlib.metadata.version()` lookups. Do not append, install, or replace
+`nvflare` based only on missing package metadata or that development-version
+mismatch. Preserve the generated requirements pin and use a public capability
+check to verify the required NVFLARE API; if the host product lacks it, report a
+version/capability mismatch instead of installing a second NVFLARE copy over the
+host environment.
 
 Order is mandatory:
 
@@ -55,6 +58,10 @@ Package inventory before installation may use installer metadata or
 `importlib.metadata`, but the command must not import user, framework, product,
 or declared dependency modules. A compound Python command containing any such
 import is an import-level preflight and belongs after installation.
+Inventory only non-product dependencies this way. Handle a missing distribution
+record per package as an inventory result that identifies a dependency to
+install; do not let `PackageNotFoundError` make the inventory command itself
+fail.
 Metadata absence is not authoritative for a host-provided NVFLARE product whose
 CLI already succeeded. If every applicable non-product requirement is already
 installed at a compatible version and NVFLARE availability is established by

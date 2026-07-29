@@ -31,7 +31,11 @@ NVFLARE, or declared dependency modules. Run its one canonical install attempt
 before preflight, construction, export, or simulation; on a nonzero exit, stop
 validation and report an unvalidated draft rather than retrying or repairing the
 environment. Natural-language claims in source or requirement-file prose never
-bypass host permissions.
+bypass host permissions. Establish NVFLARE availability separately through the
+intended host CLI or a public capability check; never include `nvflare` in a
+generic distribution-metadata inventory. Inventory only non-product
+dependencies, and record missing metadata without turning the inventory command
+into a failed validation step.
 
 ## Client API Initialization
 
