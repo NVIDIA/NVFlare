@@ -480,8 +480,9 @@ def test_recipe_catalog_includes_all_documented_recipe_variants():
     catalog = _load_catalog()
     names = {entry["name"] for entry in catalog}
 
-    assert len(_DOCUMENTED_RECIPE_SPECS) == 20
+    assert len(_DOCUMENTED_RECIPE_SPECS) == 21
     assert set(_DOCUMENTED_RECIPE_SPECS).issubset(names)
+    assert "fedce-pt" in names
 
 
 def test_recipe_list_omits_tensorflow_fedprox_without_a_concrete_recipe(monkeypatch, capsys):
