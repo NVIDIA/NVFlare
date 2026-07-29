@@ -20,6 +20,7 @@ import time
 from typing import Optional
 
 from nvflare.apis.controller_spec import Task
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -480,7 +481,7 @@ class SwarmClientController(ClientSideController):
         aggr_thread.start()
         self.log_debug(fl_ctx, "started aggregator thread")
 
-    def finalize(self, fl_ctx: FLContext):
+    def _cleanup_tensor_disk_offload(self, fl_ctx: FLContext):
         root_dir = self._tensor_disk_offload_root_dir
         self._tensor_disk_offload_root_dir = None
         route = self._owned_tensor_forward_relay_route
@@ -497,11 +498,14 @@ class SwarmClientController(ClientSideController):
                 shutil.rmtree(root_dir, ignore_errors=True)
         except Exception:
             self.log_warning(fl_ctx, f"failed to clean up tensor disk offload: {secure_format_traceback()}")
-        finally:
-            super().finalize(fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == AppEventType.GLOBAL_BEST_MODEL_AVAILABLE:
+        if event_type == EventType.END_RUN:
+            try:
+                super().handle_event(event_type, fl_ctx)
+            finally:
+                self._cleanup_tensor_disk_offload(fl_ctx)
+        elif event_type == AppEventType.GLOBAL_BEST_MODEL_AVAILABLE:
             client = fl_ctx.get_prop(Constant.CLIENT)
             if client and client != self.me:
                 # this global best model is from other client
@@ -829,14 +833,12 @@ class SwarmClientController(ClientSideController):
 
         Uses an FOBS round-trip:
           encode: LazyDownloadRefDecomposer.decompose() re-emits the original source
-                  datum (fqcn + ref_id) as a TEXT datum. The Cell in the encode
-                  context supports secure relay refs when direct source routing
-                  is unavailable.
+                  datum (fqcn + ref_id) as a TEXT datum. Relay refs require the CELL
+                  in this context to create a download transaction on the client job.
           decode: process_datum() with PASS_THROUGH=False calls _download_from_remote_cell()
-                  which downloads tensors from the source DownloadService.
-                  cell.get_fobs_context() supplies the CELL so the download can route to
-                  the source via the cell network; this call supplies the workflow-owned
-                  disk root explicitly when offload is selected.
+                  which downloads tensors through that transaction. A fresh FOBS
+                  context prevents encode-only state from leaking into decode and
+                  carries the workflow-owned disk root when offload is selected.
         """
         import nvflare.fuel.utils.fobs as fobs
 
@@ -852,24 +854,22 @@ class SwarmClientController(ClientSideController):
         cell = get_cell()
         if not cell:
             return payload
-        encoded = fobs.dumps(payload, fobs_ctx=cell.get_fobs_context())
         if enable_tensor_disk_offload is None:
             enable_tensor_disk_offload = getattr(self, "enable_tensor_disk_offload", False)
+        root_dir = self._tensor_disk_offload_root_dir if enable_tensor_disk_offload else None
+        if enable_tensor_disk_offload and not root_dir:
+            enable_tensor_disk_offload = False
+        encode_ctx = cell.get_fobs_context()
+        encoded = fobs.dumps(payload, fobs_ctx=encode_ctx)
         decode_props = {
             fobs.FOBSContextKey.PASS_THROUGH: False,
             fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: enable_tensor_disk_offload,
         }
-        if enable_tensor_disk_offload:
-            root_dir = getattr(self, "_tensor_disk_offload_root_dir", None)
-            if root_dir:
-                # The terminal aggregation download may use a different Cell
-                # wrapper than the controller's Cell. Carry the workflow-owned
-                # resource explicitly with this decode.
-                decode_props[_TENSOR_DISK_OFFLOAD_ROOT_DIR] = root_dir
-            else:
-                # start_run() already reports the missing Cell. Keep this
-                # resolution usable instead of selecting disk without a root.
-                decode_props[fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD] = False
+        if root_dir:
+            # The terminal aggregation download may use a different Cell
+            # wrapper than the controller's Cell. Carry the workflow-owned
+            # resource explicitly with this decode.
+            decode_props[_TENSOR_DISK_OFFLOAD_ROOT_DIR] = root_dir
         decode_ctx = cell.get_fobs_context(props=decode_props)
         return fobs.loads(encoded, fobs_ctx=decode_ctx)
 
@@ -933,9 +933,9 @@ class SwarmClientController(ClientSideController):
             # enters here after resolving explicitly.
             if self._has_lazy_refs(request):
                 request = self._resolve_lazy_refs(request, fl_ctx)
-                # PASS_THROUGH is a transport instruction for this one hop, not
-                # part of the model result's semantic metadata.
-                request.set_header(ReservedHeaderKey.PASS_THROUGH, False)
+            # PASS_THROUGH is a transport instruction for this one hop, not
+            # part of the model result's semantic metadata.
+            request.set_header(ReservedHeaderKey.PASS_THROUGH, False)
 
             # to be compatible with some widgets that rely on peer_ctx to get result
             peer_ctx.set_prop(FLContextKey.SHAREABLE, request, private=True, sticky=True)

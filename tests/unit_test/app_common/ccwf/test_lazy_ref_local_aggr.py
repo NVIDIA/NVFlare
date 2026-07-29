@@ -19,6 +19,7 @@ Covers four scenarios:
   3. Remote P2P path: trainer CJ preserves refs for explicit aggregation-CJ resolution.
   4. Defensive guard in _end_gather(): fires, calls system_panic (invariant violation).
 """
+import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -35,11 +36,11 @@ from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
 
-def _make_shareable_with_lazy_refs():
+def _make_shareable_with_lazy_refs(relay=False):
     """Return a WEIGHT_DIFF Shareable whose values are LazyDownloadRef placeholders."""
     lazy_data = {
-        "layer.weight": LazyDownloadRef(fqcn="site-1.subprocess", ref_id="ref-abc", item_id="T0"),
-        "layer.bias": LazyDownloadRef(fqcn="site-1.subprocess", ref_id="ref-abc", item_id="T1"),
+        "layer.weight": LazyDownloadRef(fqcn="site-1.subprocess", ref_id="ref-abc", item_id="T0", relay=relay),
+        "layer.bias": LazyDownloadRef(fqcn="site-1.subprocess", ref_id="ref-abc", item_id="T1", relay=relay),
     }
     dxo = DXO(data_kind=DataKind.WEIGHT_DIFF, data=lazy_data)
     return dxo.to_shareable()
@@ -74,6 +75,10 @@ def _make_controller():
     # attributes set by __init__
     ctl.enable_tensor_disk_offload = True
     ctl._tensor_disk_offload_root_dir = "/tmp/swarm-offload"
+    ctl._tensor_disk_offload_lock = threading.Lock()
+    ctl._active_tensor_disk_downloads = 0
+    ctl._tensor_disk_offload_closing = False
+    ctl._pending_tensor_disk_offload_root_dir = None
     ctl.metric_comparator = None
     ctl.metric_comparator_id = None
     ctl.report_learn_result_task_name = "swarm_report_learn_result"
@@ -147,15 +152,15 @@ class TestResolveRef(unittest.TestCase):
         self.assertIs(out, lazy_result)
 
     def test_resolve_lazy_refs_calls_fobs_round_trip(self):
-        """_resolve_lazy_refs() must call fobs.dumps then fobs.loads with PASS_THROUGH=False
-        in the decode context supplied by cell.get_fobs_context()."""
+        """Relay refs must be encoded with a Cell and decoded with PASS_THROUGH=False."""
         ctl = _make_controller()
-        lazy_result = _make_shareable_with_lazy_refs()
+        lazy_result = _make_shareable_with_lazy_refs(relay=True)
         real_result = _make_shareable_with_real_arrays()
 
         mock_cell = MagicMock()
+        fake_encode_ctx = {FOBSContextKey.CELL: mock_cell}
         fake_decode_ctx = {FOBSContextKey.PASS_THROUGH: False, FOBSContextKey.CELL: mock_cell}
-        mock_cell.get_fobs_context.return_value = fake_decode_ctx
+        mock_cell.get_fobs_context.side_effect = [fake_encode_ctx, fake_decode_ctx]
 
         mock_fl_ctx = MagicMock()
         mock_fl_ctx.get_engine.return_value.get_cell.return_value = mock_cell
@@ -166,11 +171,13 @@ class TestResolveRef(unittest.TestCase):
         ):
             out = ctl._resolve_lazy_refs(lazy_result, mock_fl_ctx)
 
-        mock_dumps.assert_called_once_with(lazy_result, fobs_ctx=fake_decode_ctx)
+        mock_dumps.assert_called_once_with(lazy_result, fobs_ctx=fake_encode_ctx)
         mock_loads.assert_called_once()
 
-        # cell.get_fobs_context must be called with props containing PASS_THROUGH=False
+        # Encode and decode need separate contexts because FOBS mutates its context
+        # with operation-local state.
         self.assertEqual(mock_cell.get_fobs_context.call_count, 2)
+        self.assertIsNot(fake_encode_ctx, fake_decode_ctx)
         props = mock_cell.get_fobs_context.call_args_list[1].kwargs.get("props", {})
         self.assertFalse(
             props.get(FOBSContextKey.PASS_THROUGH, True), "get_fobs_context must be called with PASS_THROUGH=False"
@@ -387,6 +394,39 @@ class TestRemoteAggregationPath(unittest.TestCase):
         gathered_result = ctl.gatherer.gathered_result
         self.assertIs(gathered_result, resolved_result)
         self.assertFalse(gathered_result.get_header(ReservedHeaderKey.PASS_THROUGH))
+
+    def test_aggregation_client_clears_pass_through_without_lazy_refs(self):
+        class _FakeGatherer:
+            for_round = 0
+
+            def __init__(self):
+                self.gathered_result = None
+
+            def gather(self, _client_name, request, _fl_ctx):
+                self.gathered_result = request
+                return make_reply(ReturnCode.OK)
+
+        ctl = _make_controller()
+        ctl.me = "site-2"
+        ctl.gatherer = _FakeGatherer()
+        ctl._resolve_lazy_refs = MagicMock()
+
+        result = _make_shareable_with_real_arrays()
+        result.set_header(AppConstants.CURRENT_ROUND, 0)
+        result.set_header(ReservedHeaderKey.PASS_THROUGH, True)
+        fl_ctx = MagicMock()
+        peer_ctx = FLContext()
+        peer_ctx.set_prop(ReservedKey.IDENTITY_NAME, "site-1", private=True, sticky=False)
+        fl_ctx.get_peer_context.return_value = peer_ctx
+        abort_signal = MagicMock()
+        abort_signal.triggered = False
+
+        with patch("nvflare.app_common.ccwf.swarm_client_ctl.Gatherer", _FakeGatherer):
+            reply = ctl._process_learn_result(result, fl_ctx, abort_signal)
+
+        self.assertEqual(reply.get_return_code(), ReturnCode.OK)
+        ctl._resolve_lazy_refs.assert_not_called()
+        self.assertFalse(ctl.gatherer.gathered_result.get_header(ReservedHeaderKey.PASS_THROUGH))
 
     def test_remote_aggr_does_not_call_resolve(self):
         """Remote aggregation path must not eagerly materialise tensors on the trainer CJ."""

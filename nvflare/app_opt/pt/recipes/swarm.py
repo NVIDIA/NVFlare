@@ -25,7 +25,7 @@ from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import In
 from nvflare.app_common.ccwf.ccwf_job import CCWFJob, CrossSiteEvalConfig, SwarmClientConfig, SwarmServerConfig
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
-from nvflare.client.config import ExchangeFormat
+from nvflare.client.config import ExchangeFormat, normalize_exchange_format
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from nvflare.fuel.utils.secret_utils import (
@@ -33,7 +33,7 @@ from nvflare.fuel.utils.secret_utils import (
     warn_on_unsupported_secret_refs,
     warn_on_unsupported_secret_refs_outside_keys,
 )
-from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
+from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int, check_positive_number
 from nvflare.job_config.script_runner import BaseScriptRunner, ScriptRunner
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import merge_config_overrides, validate_aggregator_data_kind, validate_ckpt
@@ -263,6 +263,7 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
     ):
         _SwarmValidator(initial_ckpt=initial_ckpt)
         warn_on_potential_secrets(command, context="recipe parameter 'command'")
+        server_expected_format = normalize_exchange_format(server_expected_format, "server_expected_format")
         self.server_expected_format = server_expected_format
 
         if train_args:
@@ -441,6 +442,11 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             client_config_args,
             validated_client_config_overrides,
             "client_config_overrides",
+        )
+        check_object_type(
+            "enable_tensor_disk_offload",
+            client_config_args["enable_tensor_disk_offload"],
+            bool,
         )
         self.enable_tensor_disk_offload = client_config_args["enable_tensor_disk_offload"]
         if self.enable_tensor_disk_offload and self.server_expected_format != ExchangeFormat.PYTORCH:

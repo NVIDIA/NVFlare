@@ -16,8 +16,8 @@ from unittest.mock import patch
 
 import pytest
 
-from nvflare.client.cell.decomposers import register_framework_decomposers
 from nvflare.client.config import ExchangeFormat
+from nvflare.client.decomposers import register_framework_decomposers
 
 
 @pytest.mark.parametrize(

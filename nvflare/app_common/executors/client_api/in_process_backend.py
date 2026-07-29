@@ -45,6 +45,7 @@ from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBacken
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.client.api_spec import CLIENT_API_KEY
 from nvflare.client.config import ConfigKey
+from nvflare.client.decomposers import register_framework_decomposers
 from nvflare.client.in_process.api import (
     TOPIC_ABORT,
     TOPIC_GLOBAL_RESULT,
@@ -101,6 +102,11 @@ class InProcessBackend(ClientAPIBackendSpec):
             raise ValueError(f"invalid task_script_path '{task_script_path}': in_process mode requires a .py script")
 
         try:
+            register_framework_decomposers(
+                context.params_exchange_format,
+                context.server_expected_format,
+                self.logger,
+            )
             self._engine = fl_ctx.get_engine()
 
             self._data_bus = DataBus()

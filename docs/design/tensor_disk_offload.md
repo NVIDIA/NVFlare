@@ -154,8 +154,11 @@ Custom aggregators are responsible for:
 - In containerized deployments, `/tmp` may be tmpfs (RAM-backed); set `TMPDIR` to a disk-backed mount to realize memory offload benefits.
 - `LazyTensorDict` owns a shared `_TempDirRef`; each lazy ref keeps this reference alive.
 - Lazy download directories are reclaimed when their refs are released, with GC as
-  a fallback. Workflow finalization restores the prior FOBS context and removes
-  the job-scoped root deterministically.
+  a fallback.
+- FedAvg-style workflows restore the prior FOBS context and remove their
+  job-scoped root when the workflow exits.
+- Swarm keeps its job-scoped root and tensor-forwarding route through workflow
+  finalization. At job `END_RUN`, it removes the root and its remaining contents.
 
 ## Failure Behavior
 
