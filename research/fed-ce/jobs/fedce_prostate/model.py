@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +20,13 @@ import torch.nn as nn
 
 class UNet(nn.Module):
     def __init__(self, in_channels=3, out_channels=1, init_features=32):
-        super(UNet, self).__init__()
+        super().__init__()
+
+        # FedJob serializes constructor arguments from matching instance
+        # attributes when it builds the server-side model persistor.
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.init_features = init_features
 
         features = init_features
         self.encoder1 = UNet._block(in_channels, features, name="enc1")
