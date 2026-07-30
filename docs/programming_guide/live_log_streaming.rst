@@ -135,8 +135,8 @@ In the Job API, you can attach a job-level receiver with:
 **Constructor arguments**
 
 ``dest_dir`` (str, default ``None``)
-    Directory where incoming log files are written. Defaults to the system
-    temporary directory.
+    Directory where incoming log staging files are written. Defaults to the
+    system temporary directory.
 
 ``idle_timeout`` (float, default ``30.0``)
     Seconds without any message (data or heartbeat) before the receiver
