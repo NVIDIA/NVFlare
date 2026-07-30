@@ -366,6 +366,8 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         # The same gate orders END_RUN against the launch-install-to-Popen window. Keep
         # this ordering bound on abort: a process handle may not have been installed yet.
         admitted = self._execute_gate.acquire(timeout=self._shutdown_wait_bound())
+        # Cleanup is unconditional if the gate times out. It marks the launch cleaned so
+        # _launch_trainer terminates a process whose Popen handle arrives afterward.
         try:
             with self._launch_lock:
                 trainer = self._active_launch
