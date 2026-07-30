@@ -69,16 +69,72 @@ eligible nodes. Validate its filesystem, process, cgroup, and GPU isolation on
 the production cluster. For Pyxis, install and configure Pyxis/Enroot on all
 eligible nodes and ensure ``srun`` is available after ``setup``.
 
-The environment selected by ``python_path`` must contain a compatible NVFlare
-installation and the job dependencies. This applies to the host environment in
-bare mode and to the image for Apptainer and Pyxis. A ``PYTHONPATH`` override
-used only to start the parent does not install NVFlare in the worker environment.
+The environment selected by ``python_path`` must contain the same NVFlare
+version as the parent and the other federation participants, plus the job
+dependencies. NVFlare does not support cross-version operation; see
+:ref:`installation`. This requirement applies to the host environment in bare
+mode and to the image for Apptainer and Pyxis. A ``PYTHONPATH`` override used
+only to start the parent does not install NVFlare in the worker environment.
 
 The prepare, submission, and runtime parent hosts may differ. The prepare host
 does not need Slurm commands. The submission host that runs the generated
 ``submit_command`` needs ``sbatch`` on ``PATH``. The runtime parent host needs
 all four parent commands after its service environment or
 ``parent.environment_setup`` has run.
+
+Build a Container Worker Image
+==============================
+
+Apptainer and Pyxis run the NVFlare client or server job process, not the
+long-running parent. The image must contain the required ``python_path``, the
+matching NVFlare installation, and all job dependencies. It does not need the
+startup kit or an entrypoint: the launcher mounts the runtime workspace and
+invokes the NVFlare worker module with ``python_path``. Pyxis disables the image
+entrypoint and runs the image read-only.
+
+The maintained :github_nvflare_link:`job image guide
+<docker/README.md#job-image>` and :github_nvflare_link:`Dockerfile
+<docker/Dockerfile.job>` provide a reference worker image. From the NVFlare
+repository root, replace ``site-version`` with the federation's NVFlare version,
+extend the Dockerfile with application dependencies as needed, build the OCI
+image, and run the conversion command for the selected backend:
+
+.. code-block:: shell
+
+   docker build -t nvflare-job:site-version -f docker/Dockerfile.job .
+
+   # Pyxis/Enroot
+   enroot import --output /lustre/images/nvflare-job-site-version.sqsh \
+       dockerd://nvflare-job:site-version
+
+   # Apptainer
+   apptainer build /lustre/images/nvflare-job-site-version.sif \
+       docker-daemon:nvflare-job:site-version
+
+Enroot can also import from a registry, and Apptainer can build from registry
+and archive sources; see the upstream `Enroot import documentation
+<https://github.com/NVIDIA/enroot/blob/main/doc/cmd/import.md>`_ and `Apptainer
+Docker/OCI documentation
+<https://apptainer.org/docs/user/latest/docker_and_oci.html>`_. Those tools may
+accept registry references directly, but the NVFlare Slurm ``image`` setting
+does not. It requires an existing absolute regular file. ``.sqsh`` and ``.sif``
+are conventional suffixes; NVFlare validates the path rather than the suffix.
+
+Place the finished image at a versioned, immutable shared-filesystem path that
+is readable by the runtime account and visible at the same absolute path on the
+runtime parent and every eligible compute node. Before configuring the site,
+run the image with the configured interpreter and verify the NVFlare version
+and application imports. For example:
+
+.. code-block:: shell
+
+   apptainer exec /lustre/images/nvflare-job-site-version.sif \
+       /usr/local/bin/python -c \
+       'import nvflare; print(nvflare.__version__)'
+
+For Pyxis, perform the equivalent one-node ``srun`` check with
+``--container-image`` and the same ``python_path``. Backend installation,
+registry authentication, and cluster configuration remain site responsibilities.
 
 Configure the Site
 ==================
@@ -121,7 +177,7 @@ Important keys are:
        bare mode.
    * - ``python_path``
      - Required absolute worker interpreter path in the selected execution
-       environment, with a compatible NVFlare installation.
+       environment, with the matching NVFlare installation.
    * - ``parent_host``
      - Compute-reachable parent host. Required when the parent is not in a Slurm
        allocation.
