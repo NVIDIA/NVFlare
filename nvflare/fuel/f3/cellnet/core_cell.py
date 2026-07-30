@@ -2248,3 +2248,6 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
     def is_secure(self):
         return self.secure
+
+    def supports_secure_messages(self):
+        return self.credential_manager.cell_cipher is not None
