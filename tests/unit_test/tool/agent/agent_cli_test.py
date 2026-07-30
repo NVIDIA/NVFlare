@@ -20,6 +20,7 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.tool import cli_output
+from nvflare.tool.agent import inspector as inspector_module
 
 
 @pytest.fixture(autouse=True)
@@ -300,6 +301,24 @@ def test_agent_inspect_json_reports_static_framework_evidence(capsys, tmp_path):
     assert payload["data"]["frameworks"][0]["name"] == "pytorch"
     assert payload["data"]["conversion_state"] == "not_converted"
     assert payload["data"]["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
+def test_agent_inspect_json_reports_deep_ast_without_aborting(capsys, tmp_path, monkeypatch):
+    script = tmp_path / "generated.py"
+    script.write_text("x = 1\n", encoding="utf-8")
+
+    def raise_ast_depth_error(_visitor, _tree):
+        raise RecursionError("AST depth exceeded")
+
+    monkeypatch.setattr(inspector_module._PythonInspector, "visit", raise_ast_depth_error)
+
+    exit_code = _run_main(["nvflare", "agent", "inspect", str(script), "--format", "json"])
+
+    assert exit_code == 0
+    payload = _load_single_stdout_json(capsys.readouterr())
+    _assert_envelope_shape(payload, "ok")
+    assert payload["data"]["classification_incomplete"] is True
+    assert [finding["code"] for finding in payload["data"]["findings"]] == ["PYTHON_AST_DEPTH_LIMIT"]
 
 
 def test_agent_inspect_json_reports_lightning_evidence_and_recommends_lightning_skill(capsys, tmp_path):

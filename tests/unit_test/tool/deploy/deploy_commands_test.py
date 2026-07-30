@@ -1268,12 +1268,14 @@ def test_stage_k8_rejects_invalid_stage_argument_values(tmp_path, capsys, monkey
     assert "valid Kubernetes namespace" in err
     assert calls == []
 
+    rejected_kubectl = "opaque-kubectl-value"
     with pytest.raises(SystemExit):
-        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare", kubectl="python"))
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare", kubectl=rejected_kubectl))
 
     err = capsys.readouterr().err
     assert "INVALID_ARGS" in err
     assert "Kubernetes CLI command must be one of" in err
+    assert rejected_kubectl not in err
     assert calls == []
 
     with pytest.raises(SystemExit):
