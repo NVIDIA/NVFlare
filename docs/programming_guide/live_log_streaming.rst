@@ -144,14 +144,20 @@ In the Job API, you can attach a job-level receiver with:
 
 **File layout**
 
-Each chunk is appended to::
+While the stream is active, each chunk is appended to a staging file at::
 
     {dest_dir}/{job_id}/{client_name}/{log_file_name}
 
 so an operator can find logs while the job is still running. When the stream
 ends successfully, the file is handed to the job manager (if registered) for
-permanent storage; otherwise — for example under the simulator — it is
-moved into the job's workspace run directory alongside the other artifacts.
+permanent storage. The storage backend may move the file, so the staging path
+may no longer exist after the stream ends. Without a job manager — for example
+under the simulator — the file is moved into the job's workspace run directory
+alongside the other artifacts.
+
+Stored logs can be retrieved with the FLARE Console command
+``download_job_components <job_id>`` or the FLARE API method
+``Session.download_job_components(job_id)``.
 
 If the stream ends with a non-OK return code (e.g. idle timeout), the
 **partial** file is retained at the path above and a warning is logged.
