@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 import os
 import shutil
 import tempfile
@@ -20,7 +21,7 @@ from unittest import mock
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
-from nvflare.apis.job_def import JobMetaKey, job_from_meta
+from nvflare.apis.job_def import JobMetaKey, RunStatus, job_from_meta
 from nvflare.apis.storage import WORKSPACE, StorageException
 from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
@@ -91,3 +92,25 @@ class TestJobManager(unittest.TestCase):
 
             content = self.job_manager.get_content(meta, self.fl_ctx)
             assert content == data
+
+    def test_set_abnormal_status_records_duration(self):
+        store = mock.MagicMock()
+        start_time = datetime.datetime.now() - datetime.timedelta(seconds=1)
+        store.get_meta.return_value = {JobMetaKey.START_TIME.value: str(start_time)}
+
+        with mock.patch.object(self.job_manager, "_get_job_store", return_value=store):
+            self.job_manager.set_status("job-1", RunStatus.FINISHED_ABNORMAL, self.fl_ctx)
+
+        meta = store.update_meta.call_args.kwargs["meta"]
+        assert meta[JobMetaKey.STATUS.value] == RunStatus.FINISHED_ABNORMAL.value
+        assert JobMetaKey.DURATION.value in meta
+
+    def test_set_abnormal_status_without_start_time(self):
+        store = mock.MagicMock()
+        store.get_meta.return_value = {}
+
+        with mock.patch.object(self.job_manager, "_get_job_store", return_value=store):
+            self.job_manager.set_status("job-1", RunStatus.FINISHED_ABNORMAL, self.fl_ctx)
+
+        meta = store.update_meta.call_args.kwargs["meta"]
+        assert meta == {JobMetaKey.STATUS.value: RunStatus.FINISHED_ABNORMAL.value}
