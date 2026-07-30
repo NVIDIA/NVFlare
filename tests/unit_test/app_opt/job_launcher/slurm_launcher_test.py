@@ -465,6 +465,7 @@ studies:
       image: %s
     slurm:
       sandbox: apptainer
+      python_path: /opt/nvflare/bin/python3
 """
         % (tmp_path / "study.sif"),
         encoding="utf-8",
@@ -480,6 +481,7 @@ studies:
     plan = launcher._build_launch_plan(meta, _fl_ctx(workspace))
 
     assert plan.image == str(tmp_path / "job.sif")
+    assert plan.python_path == "/opt/nvflare/bin/python3"
 
 
 def test_sandbox_none_rejects_byoc_authorized_job_image(tmp_path):
