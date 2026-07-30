@@ -72,6 +72,8 @@ tests:
           "data": { "run_finished": True }
     setup:
       - python tools/prepare_cifar10.py --root /tmp/nvflare/data
+    teardown:
+      - rm -rf /tmp/nvflare/data
   - test_name: "run in-process Client API with native PyTorch tensors"
     event_sequence:
       - "trigger":
