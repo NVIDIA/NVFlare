@@ -352,7 +352,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             if trainer.result_source_live.is_set():
                 self._reap_trainer_after_result(trainer)
             else:
-                self._stop_trainer(trainer, natural_exit_wait=self._shutdown_wait_bound())
+                self._stop_trainer(trainer, natural_exit_wait=self._stop_wait_bound())
         except Exception:
             self.logger.error(secure_format_traceback())
 
@@ -364,7 +364,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         with self._task_lock:
             self._closed = True
         # The same gate orders END_RUN against the launch-install-to-Popen window.
-        admitted = self._execute_gate.acquire(timeout=self._shutdown_wait_bound())
+        admitted = self._execute_gate.acquire(timeout=self._stop_wait_bound())
         try:
             with self._launch_lock:
                 trainer = self._active_launch
@@ -374,7 +374,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                     self._request_trainer_shutdown(trainer, wait_timeout=_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT)
                     self._reap_trainer_after_result(trainer)
                 else:
-                    self._stop_trainer(trainer, natural_exit_wait=self._shutdown_wait_bound())
+                    self._stop_trainer(trainer, natural_exit_wait=self._stop_wait_bound())
             self._wait_for_result_reapers()
         except Exception:
             self.logger.error(secure_format_traceback())
@@ -779,6 +779,9 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
     def _shutdown_wait_bound(self) -> float:
         shutdown_timeout = self._context.shutdown_timeout
         return _DEFAULT_SHUTDOWN_TIMEOUT if shutdown_timeout is None else shutdown_timeout
+
+    def _stop_wait_bound(self) -> float:
+        return 0.0 if self._abort else self._shutdown_wait_bound()
 
     def _result_source_disconnect_grace(self) -> float:
         """Return a nonzero disconnect grace for an accepted result source."""

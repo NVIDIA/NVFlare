@@ -500,6 +500,24 @@ class TestInitializeAndFinalize:
         assert process.returncode == 0
         assert env.harness.signals_sent() == [], "no signals for a trainer that exited naturally"
 
+    def test_abort_skips_finalize_gate_and_natural_exit_waits(self, env):
+        backend, _ = _initialized_backend(env, shutdown_timeout=30.0)
+        process = env.harness.processes[0]
+        backend._latch_abort("job aborted")
+        execute_gate = MagicMock()
+        execute_gate.acquire.return_value = True
+        backend._execute_gate = execute_gate
+
+        backend.finalize(FLContext())
+
+        gate_timeout = execute_gate.acquire.call_args.kwargs["timeout"]
+        assert gate_timeout == 0.0
+        assert process.wait_timeouts == []
+        assert [request for request in env.cell.sent if request[0] == Topic.SHUTDOWN] == []
+        assert len([message for message in env.cell.fired if message[0] == Topic.SHUTDOWN]) == 1
+        assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
+        execute_gate.release.assert_called_once_with()
+
     def test_finalize_does_not_kill_an_accepted_lazy_result_source(self, env):
         backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
         process = env.harness.processes[0]
@@ -2079,6 +2097,24 @@ class TestLaunchPerTask:
             assert env.harness.processes[0].returncode is not None, "the aborted launch was unwound"
         finally:
             backend.finalize(FLContext())
+
+    def test_abort_skips_per_task_natural_exit_wait(self, env):
+        backend, fl_ctx = _initialized_backend(env, launch_once=False, shutdown_timeout=30.0)
+        abort_signal = Signal()
+
+        def accept_then_abort(topic, target, request):
+            abort_signal.trigger("stop")
+            return _task_accepted_reply()
+
+        env.cell.on_request = accept_then_abort
+        result = backend.execute("train", Shareable(), fl_ctx, abort_signal)
+
+        process = env.harness.processes[0]
+        assert result.get_return_code() == ReturnCode.TASK_ABORTED
+        assert process.wait_timeouts == []
+        assert [request for request in env.cell.sent if request[0] == Topic.SHUTDOWN] == []
+        assert len([message for message in env.cell.fired if message[0] == Topic.SHUTDOWN]) == 1
+        assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
 
     def test_execute_after_finalize_fails_without_launching(self, env):
         backend, fl_ctx = _initialized_backend(env, launch_once=False)
