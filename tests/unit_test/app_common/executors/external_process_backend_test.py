@@ -2119,6 +2119,46 @@ class TestLaunchPerTask:
         assert len([message for message in env.cell.fired if message[0] == Topic.SHUTDOWN]) == 1
         assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
 
+    def test_abort_finalize_waits_for_mid_popen_launch_cleanup(self, env):
+        """Abort finalize must not return while Popen has created an unowned process."""
+        backend, fl_ctx = _initialized_backend(env, launch_once=False, shutdown_timeout=30.0)
+        backend._latch_abort("job aborted")
+        env.harness.auto_hello = False  # the child never gets far enough to HELLO
+        inner_popen = env.harness.popen
+        seen = {}
+        finalize_done = threading.Event()
+
+        def popen_with_concurrent_finalize(args, **kwargs):
+            process = inner_popen(args, **kwargs)
+
+            def finalize():
+                backend.finalize(FLContext())
+                finalize_done.set()
+
+            finalize_thread = threading.Thread(target=finalize)
+            seen["finalize_thread"] = finalize_thread
+            finalize_thread.start()
+
+            deadline = time.monotonic() + 5.0
+            while not backend._closed and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert backend._closed
+            seen["finalize_done_before_popen_return"] = finalize_done.is_set()
+            return process
+
+        env.harness.popen = popen_with_concurrent_finalize
+        result = backend.execute("train", Shareable(), fl_ctx, Signal())
+        seen["finalize_thread"].join(5.0)
+
+        process = env.harness.processes[0]
+        assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+        assert not seen["finalize_done_before_popen_return"]
+        assert finalize_done.is_set()
+        assert not seen["finalize_thread"].is_alive()
+        assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
+        assert process.returncode == -signal.SIGTERM
+        assert backend._active_launch is None
+
     def test_execute_after_finalize_fails_without_launching(self, env):
         backend, fl_ctx = _initialized_backend(env, launch_once=False)
         backend.finalize(FLContext())
