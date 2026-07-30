@@ -461,6 +461,8 @@ class TestAttachMode:
         api = _init_api(attach_bootstrap_path, attach_env)
 
         first = _deliver_attach_task(attach_env)
+        with api._liveness_lock:
+            api._last_cj_activity = None
         duplicate = _deliver_attach_task(attach_env, attempt_id="attempt-2")
         status = attach_env.deliver(
             Topic.TASK_STATUS,
@@ -471,6 +473,7 @@ class TestAttachMode:
         assert first.payload[MsgKey.REPLY_TOPIC] == Topic.TASK_ACCEPTED
         assert duplicate.payload[MsgKey.REPLY_TOPIC] == Topic.TASK_ACCEPTED
         assert status.payload[MsgKey.TASK_STATE] == TaskState.QUEUED
+        assert api._last_cj_activity is not None
         assert api._task_queue.qsize() == 1
         assert api.receive().params == {"w": [1.0]}
         assert api._attach._task_states["task-1"] == TaskState.DELIVERED

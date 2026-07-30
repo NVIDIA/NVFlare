@@ -126,6 +126,10 @@ def get_bootstrap_client_api_type(config: dict, path: str = "<bootstrap config>"
             raise ValueError(f"invalid Client API bootstrap config {path}: missing required field {field!r}")
         if not isinstance(config[field], str) or not config[field].strip():
             raise ValueError(f"invalid Client API bootstrap config {path}: field {field!r} must be a non-empty string")
+    if BootstrapKey.SECURE_MODE in config and type(config[BootstrapKey.SECURE_MODE]) is not bool:
+        raise ValueError(
+            f"invalid Client API bootstrap config {path}: field {BootstrapKey.SECURE_MODE!r} must be a bool"
+        )
     if execution_mode == ATTACH_EXECUTION_MODE:
         from nvflare.apis.fl_constant import ConnectionSecurity
         from nvflare.client.cell.attach import effective_connection_security, validate_attach_id
@@ -159,10 +163,6 @@ def get_bootstrap_client_api_type(config: dict, path: str = "<bootstrap config>"
                     f"{BootstrapKey.SECURE_MODE!r} disagrees with "
                     f"{BootstrapKey.CONNECTION_SECURITY!r}"
                 )
-    if BootstrapKey.SECURE_MODE in config and type(config[BootstrapKey.SECURE_MODE]) is not bool:
-        raise ValueError(
-            f"invalid Client API bootstrap config {path}: field {BootstrapKey.SECURE_MODE!r} must be a bool"
-        )
     if BootstrapKey.JOB_WAIT_TIMEOUT in config:
         value = config[BootstrapKey.JOB_WAIT_TIMEOUT]
         if value is not None and (not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0):

@@ -214,8 +214,9 @@ class TestBootstrapConfig:
         with pytest.raises(ValueError, match=f"field '{field}' must be a non-empty string"):
             get_bootstrap_client_api_type(config, "bootstrap.json")
 
-    def test_typed_bootstrap_rejects_invalid_secure_mode(self):
-        config = {**CONFIG, BootstrapKey.SECURE_MODE: "true"}
+    @pytest.mark.parametrize("base_config", [CONFIG, ATTACH_CONFIG], ids=["external_process", "attach"])
+    def test_typed_bootstrap_rejects_invalid_secure_mode(self, base_config):
+        config = {**base_config, BootstrapKey.SECURE_MODE: "true"}
 
         with pytest.raises(ValueError, match="field 'secure_mode' must be a bool"):
             get_bootstrap_client_api_type(config, "bootstrap.json")

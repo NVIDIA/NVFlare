@@ -641,7 +641,12 @@ class CellClientAPI(APISpec):
         self._result_receiver_ids = None
 
     def shutdown(self):
-        """Stop this one-session trainer and its process-global F3 runtime."""
+        """Stop this trainer session and any process-global F3 runtime it owns.
+
+        External-process mode owns its dedicated F3 runtime and shuts it down.
+        Attach mode stops only the session Cell because the externally managed
+        process may share the process-global runtime with other work.
+        """
         if self._attach:
             # Wake init() if it is waiting for a future job before taking the
             # lifecycle lock that init() holds.
@@ -675,6 +680,9 @@ class CellClientAPI(APISpec):
             return self._reply(Topic.TASK_FAILED, **{MsgKey.REASON: reject_reason})
         task_id = payload.get(MsgKey.TASK_ID)
         attempt_id = payload.get(MsgKey.ATTEMPT_ID)
+        # Any authenticated task delivery proves that the CJ is alive. Record
+        # activity before attach deduplication can return an idempotent reply.
+        self._note_cj_activity()
         if self._attach:
             duplicate_reply = self._attach.reserve_task(task_id, attempt_id)
             if duplicate_reply is not None:
@@ -687,7 +695,6 @@ class CellClientAPI(APISpec):
                 Topic.TASK_FAILED,
                 **{MsgKey.TASK_ID: task_id, MsgKey.REASON: terminal_reason},
             )
-        self._note_cj_activity()
         shareable = payload.get(MsgKey.MODEL)
         if not isinstance(shareable, Shareable):
             self._forget_reserved_task(task_id, attempt_id)
