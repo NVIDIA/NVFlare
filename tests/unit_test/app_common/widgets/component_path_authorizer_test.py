@@ -216,6 +216,14 @@ def test_uses_default_allow_list_when_resources_are_not_initialized():
     authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
 
 
+def test_default_allow_list_allows_metrics_artifact_writer():
+    component_path = "nvflare.app_common.widgets.metrics_artifact_writer.MetricsArtifactWriter"
+    authorizer = ComponentPathAuthorizer()
+    fl_ctx = _make_fl_ctx({"path": component_path})
+
+    authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
+
+
 def test_implicit_default_allow_list_is_audited_and_warned_once_per_job(monkeypatch, caplog):
     audit = MagicMock(return_value="event-id")
     monkeypatch.setattr(AuditService, "add_event", audit)
