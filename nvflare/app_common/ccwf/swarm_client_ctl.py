@@ -403,6 +403,7 @@ class SwarmClientController(ClientSideController):
         self.enable_tensor_disk_offload = enable_tensor_disk_offload
         self._tensor_disk_offload_root_dir = None
         self._owned_tensor_forward_relay_route = None
+        self._aggr_thread = None
         self.memory_gc_rounds = memory_gc_rounds
         self.cuda_empty_cache = cuda_empty_cache
         self._aggr_round_count = 0
@@ -476,9 +477,9 @@ class SwarmClientController(ClientSideController):
             # use default comparator
             self.metric_comparator = NumberMetricComparator()
 
-        aggr_thread = threading.Thread(target=self._monitor_gather)
-        aggr_thread.daemon = True
-        aggr_thread.start()
+        self._aggr_thread = threading.Thread(target=self._monitor_gather)
+        self._aggr_thread.daemon = True
+        self._aggr_thread.start()
         self.log_debug(fl_ctx, "started aggregator thread")
 
     def _cleanup_tensor_disk_offload(self, fl_ctx: FLContext):
@@ -495,9 +496,30 @@ class SwarmClientController(ClientSideController):
             self.log_warning(fl_ctx, f"failed to remove tensor forwarding relay route: {secure_format_traceback()}")
         try:
             if root_dir:
-                shutil.rmtree(root_dir, ignore_errors=True)
+                try:
+                    self._drain_tensor_disk_offload_threads(root_dir, fl_ctx)
+                finally:
+                    shutil.rmtree(root_dir, ignore_errors=True)
         except Exception:
             self.log_warning(fl_ctx, f"failed to clean up tensor disk offload: {secure_format_traceback()}")
+
+    def _drain_tensor_disk_offload_threads(self, root_dir: str, fl_ctx: FLContext):
+        deadline = time.monotonic() + self.learn_task_abort_timeout
+        current_thread = threading.current_thread()
+        threads = (self.learn_thread, self._aggr_thread)
+
+        for thread in threads:
+            if thread and thread is not current_thread and thread.is_alive():
+                thread.join(max(0.0, deadline - time.monotonic()))
+
+        alive_threads = [
+            thread.name for thread in threads if thread and thread is not current_thread and thread.is_alive()
+        ]
+        if alive_threads:
+            self.log_warning(
+                fl_ctx,
+                f"tensor disk offload cleanup timed out waiting for threads {alive_threads}; removing root {root_dir}",
+            )
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.END_RUN:

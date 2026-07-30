@@ -49,6 +49,25 @@ class _MockEngine:
         return self.aggregator
 
 
+class _FakeThread:
+    def __init__(self, name, stop_on_join, on_join=None):
+        self.name = name
+        self.stop_on_join = stop_on_join
+        self.on_join = on_join
+        self.join_calls = []
+        self.alive = True
+
+    def is_alive(self):
+        return self.alive
+
+    def join(self, timeout=None):
+        self.join_calls.append(timeout)
+        if self.on_join:
+            self.on_join()
+        if self.stop_on_join:
+            self.alive = False
+
+
 def test_swarm_controller_owns_offload_root_without_enabling_cell_globally():
     cell = _MockCell()
     controller = SwarmClientController(enable_tensor_disk_offload=True)
@@ -63,6 +82,7 @@ def test_swarm_controller_owns_offload_root_without_enabling_cell_globally():
         patch.object(ClientSideController, "finalize", autospec=True) as super_finalize,
         patch("nvflare.app_common.ccwf.swarm_client_ctl.threading.Thread") as thread_cls,
     ):
+        thread_cls.return_value.is_alive.return_value = False
         controller.start_run(fl_ctx)
 
         offload_root = controller._tensor_disk_offload_root_dir
@@ -101,8 +121,9 @@ def test_finalize_preserves_offload_root_until_end_run():
     with (
         patch.object(ClientSideController, "start_run", autospec=True),
         patch.object(ClientSideController, "finalize", autospec=True),
-        patch("nvflare.app_common.ccwf.swarm_client_ctl.threading.Thread"),
+        patch("nvflare.app_common.ccwf.swarm_client_ctl.threading.Thread") as thread_cls,
     ):
+        thread_cls.return_value.is_alive.return_value = False
         controller.start_run(fl_ctx)
         root_dir = controller._tensor_disk_offload_root_dir
         temp_dir = os.path.join(root_dir, "nvflare_tensors")
@@ -130,8 +151,9 @@ def test_secure_swarm_relays_forwarded_learn_tensors_through_client_job():
     with (
         patch.object(ClientSideController, "start_run", autospec=True),
         patch.object(ClientSideController, "finalize", autospec=True),
-        patch("nvflare.app_common.ccwf.swarm_client_ctl.threading.Thread"),
+        patch("nvflare.app_common.ccwf.swarm_client_ctl.threading.Thread") as thread_cls,
     ):
+        thread_cls.return_value.is_alive.return_value = False
         controller.start_run(fl_ctx)
         assert route in cell.decode_pass_through_relay_topics
         controller.finalize(fl_ctx)
@@ -141,3 +163,52 @@ def test_secure_swarm_relays_forwarded_learn_tensors_through_client_job():
         controller.handle_event(EventType.END_RUN, fl_ctx)
 
     assert route not in cell.decode_pass_through_relay_topics
+
+
+def test_cleanup_waits_for_controller_owned_threads_before_removing_root(tmp_path):
+    root_dir = tmp_path / "offload"
+    root_dir.mkdir()
+    controller = SwarmClientController(enable_tensor_disk_offload=True, learn_task_abort_timeout=1.0)
+    controller._tensor_disk_offload_root_dir = str(root_dir)
+    controller.log_warning = MagicMock()
+
+    root_exists_during_join = []
+
+    def record_root_state():
+        root_exists_during_join.append(root_dir.exists())
+
+    controller.learn_thread = _FakeThread("learn", stop_on_join=True, on_join=record_root_state)
+    controller._aggr_thread = _FakeThread("aggregate", stop_on_join=True, on_join=record_root_state)
+
+    controller._cleanup_tensor_disk_offload(MagicMock())
+
+    assert len(controller.learn_thread.join_calls) == 1
+    assert len(controller._aggr_thread.join_calls) == 1
+    assert 0.0 < controller.learn_thread.join_calls[0] <= 1.0
+    assert 0.0 < controller._aggr_thread.join_calls[0] <= 1.0
+    assert root_exists_during_join == [True, True]
+    assert not root_dir.exists()
+    assert controller._tensor_disk_offload_root_dir is None
+    controller.log_warning.assert_not_called()
+
+
+def test_cleanup_uses_shared_deadline_then_removes_root_after_timeout(tmp_path):
+    root_dir = tmp_path / "offload"
+    root_dir.mkdir()
+    controller = SwarmClientController(enable_tensor_disk_offload=True, learn_task_abort_timeout=1.0)
+    controller._tensor_disk_offload_root_dir = str(root_dir)
+    controller.log_warning = MagicMock()
+    controller.learn_thread = _FakeThread("learn", stop_on_join=False)
+    controller._aggr_thread = _FakeThread("aggregate", stop_on_join=False)
+
+    with patch("nvflare.app_common.ccwf.swarm_client_ctl.time.monotonic", side_effect=[10.0, 10.25, 10.75]):
+        controller._cleanup_tensor_disk_offload(MagicMock())
+
+    assert controller.learn_thread.join_calls == [pytest.approx(0.75)]
+    assert controller._aggr_thread.join_calls == [pytest.approx(0.25)]
+    assert not root_dir.exists()
+    assert controller._tensor_disk_offload_root_dir is None
+    warning = controller.log_warning.call_args.args[1]
+    assert "learn" in warning
+    assert "aggregate" in warning
+    assert str(root_dir) in warning
