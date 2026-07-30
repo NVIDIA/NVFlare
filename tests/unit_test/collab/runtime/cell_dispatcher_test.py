@@ -163,7 +163,6 @@ def test_remote_error_preserves_type_and_traceback():
 
     error = exc_info.value
     assert error.site == "site-1"
-    assert error.target == "site-1.trainer"
     assert error.target_name == "site-1.trainer"
     assert error.func_name == "train"
     assert error.cause_type == "ValueError"
@@ -171,9 +170,10 @@ def test_remote_error_preserves_type_and_traceback():
     assert str(error) == "call to site-1.trainer.train failed: ValueError: invalid input"
 
 
-def test_secure_call_fails_immediately_when_cell_does_not_support_secure_messages():
+def test_fire_and_forget_secure_call_fails_before_executor_submission_when_cell_is_not_secure():
     cell = MagicMock()
     cell.core_cell.supports_secure_messages.return_value = False
+    thread_executor = MagicMock()
     dispatcher = CellDispatcher(
         manager=MagicMock(),
         engine=MagicMock(),
@@ -181,21 +181,20 @@ def test_secure_call_fails_immediately_when_cell_does_not_support_secure_message
         cell=cell,
         target_fqcn="site-1/job",
         abort_signal=MagicMock(),
-        thread_executor=MagicMock(),
+        thread_executor=thread_executor,
     )
 
-    try:
-        with pytest.raises(RuntimeError, match="requires a Cell configured with certificates"):
-            dispatcher._call_target(
-                context=MagicMock(),
-                target_name="site-1.trainer",
-                call_opt=CallOption(secure=True),
-                func_name="train",
-            )
-    finally:
-        set_call_context(None)
+    with pytest.raises(RuntimeError, match="requires a Cell configured with certificates"):
+        dispatcher.call_target(
+            context=MagicMock(),
+            target_name="site-1.trainer",
+            call_opt=CallOption(secure=True, expect_result=False),
+            func_name="train",
+        )
 
+    thread_executor.submit.assert_not_called()
     cell.send_request.assert_not_called()
+    cell.fire_and_forget.assert_not_called()
 
 
 def test_group_worker_restores_previous_context():

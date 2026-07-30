@@ -64,8 +64,9 @@ def _error_reply(error: str, logger, error_type: str = None, traceback_text: str
     )
 
 
-def _preprocess(app: App, caller, target_obj_name, target_name, func_name, func, args, kwargs):
-    ctx = app.new_context(caller=caller, callee=target_name)
+def _preprocess(app: App, caller, target_obj_name, func_name, func, args, kwargs):
+    callee = f"{app.name}.{target_obj_name}" if target_obj_name else app.name
+    ctx = app.new_context(caller=caller, callee=callee)
 
     # make sure the final kwargs conforms to func interface
     obj_itf = app.get_target_object_publish_interface(target_obj_name)
@@ -146,9 +147,7 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
     # invoke this method
     previous_ctx = get_call_context()
     try:
-        _, method_args, method_kwargs = _preprocess(
-            app, caller, obj_name, target_name, method_name, m, method_args, method_kwargs
-        )
+        _, method_args, method_kwargs = _preprocess(app, caller, obj_name, method_name, m, method_args, method_kwargs)
         result = m(*method_args, **method_kwargs)
 
         return new_cell_message(

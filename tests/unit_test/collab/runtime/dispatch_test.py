@@ -152,7 +152,7 @@ def test_named_object_call_context_uses_fully_qualified_callee():
         {},
         {
             ObjectCallKey.CALLER: "server",
-            ObjectCallKey.TARGET_NAME: "site-1.trainer",
+            ObjectCallKey.TARGET_NAME: "other-site.trainer",
             ObjectCallKey.METHOD_NAME: "identify",
         },
     )

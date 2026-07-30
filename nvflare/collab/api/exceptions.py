@@ -30,7 +30,12 @@ class CollabCallError(Exception):
         cause_type: str = None,
         remote_traceback: str = None,
     ):
-        self.target = site
+        """Create an error for a failed Collab call.
+
+        Args:
+            site: The logical site name or fully qualified ``<site>.<object>`` target.
+                The legacy ``site`` attribute always contains only the site prefix.
+        """
         self.target_name = site
         self.site = site.split(".", 1)[0]
         self.func_name = func_name

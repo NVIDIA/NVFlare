@@ -28,6 +28,11 @@ _SHORT_WAIT = 1.0
 _FAILURE_MARKER = object()
 
 
+def _get_site_name(target_name: str):
+    # target_name is either <site_name> or <site_name>.<obj_name>
+    return target_name.split(".", 1)[0]
+
+
 class ResultQueue:
     def __init__(self, limit: int):
         if limit <= 0:
@@ -119,7 +124,7 @@ class ResultWaiter(threading.Event):
     def __init__(self, sites: list[str]):
         super().__init__()
         self.sites = sites
-        self._expected_sites = {self._get_site_name(site) for site in sites}
+        self._expected_sites = {_get_site_name(site) for site in sites}
         if len(self._expected_sites) != len(sites):
             raise ValueError(f"sites must be unique but got {sites}")
         self._received_sites = set()
@@ -178,12 +183,6 @@ class ResultWaiter(threading.Event):
             if done:
                 break
 
-    @staticmethod
-    def _get_site_name(target_name: str):
-        # target_name is either <site_name> or <site_name>.<obj_name>
-        parts = target_name.split(".")
-        return parts[0]
-
     def set_result(self, target_name: str, result):
         return self._set_outcome(target_name, result=result)
 
@@ -191,7 +190,7 @@ class ResultWaiter(threading.Event):
         return self._set_outcome(target_name, error=error)
 
     def _set_outcome(self, target_name: str, result=None, error: CollabCallError = None):
-        site_name = self._get_site_name(target_name)
+        site_name = _get_site_name(target_name)
         with self._result_lock:
             if site_name not in self._expected_sites:
                 self.logger.warning(f"ignored result from unexpected site '{site_name}'")
@@ -210,7 +209,7 @@ class ResultWaiter(threading.Event):
             return True
 
     def add_partial_result(self, target_name: str, partial_result):
-        site_name = self._get_site_name(target_name)
+        site_name = _get_site_name(target_name)
         self.results.append((site_name, partial_result), is_whole=False)
 
 
@@ -288,7 +287,7 @@ class GroupCallContext:
             # The callback observes the remote logical site as its caller.
             # Keep self.target_name fully qualified for routing and diagnostics,
             # but do not expose the target object suffix as caller identity.
-            ctx.caller = ResultWaiter._get_site_name(self.target_name)
+            ctx.caller = _get_site_name(self.target_name)
             ctx.callee = original_caller
 
             if not isinstance(result, Exception):
