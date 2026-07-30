@@ -105,6 +105,23 @@ File packaging helpers:
 
 For Python files, job export performs best-effort discovery of locally
 resolvable imports and includes discovered modules in the same target app.
+
+For a registered Python entry script, discovery follows the module names used
+by its imports:
+
+* An **unqualified absolute import**, such as ``import helper`` or
+  ``from helper import Helper``, names the top-level module ``helper``. For a
+  top-level script or a script in a flat directory without ``__init__.py``, the
+  exporter searches the script's directory before the project source root and
+  recursively scans local modules it finds.
+* A **package-qualified absolute import**, such as ``import pkg.helper`` or
+  ``from pkg.helper import Helper``, explicitly names ``pkg/helper.py``. Use
+  this form for a package sibling when the entry script is registered with a
+  package-qualified path such as ``pkg/client.py``.
+* An **explicit relative import**, such as ``from .helper import Helper``,
+  requires package execution context and may not work when an entry script is
+  executed by file path.
+
 Discovery is not a dependency declaration mechanism: it may not resolve every
 import, and a module discovered for a client app is not propagated to the
 server app.

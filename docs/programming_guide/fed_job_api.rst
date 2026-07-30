@@ -239,7 +239,9 @@ If the object is a str, it is treated as an external resource and will be includ
 Import discovery is scoped to the target app and is not a dependency
 declaration mechanism. For example, imports discovered from a client training
 script are not automatically added to the server app. Dynamic imports and
-other imports that cannot be resolved locally may not be discovered.
+other imports that cannot be resolved locally may not be discovered. If
+different discovered files map to the same destination in ``custom``, export
+raises ``ValueError`` instead of silently choosing one.
 
 Example:
 
