@@ -580,6 +580,138 @@ def test_run_terminates_inherited_stdout_descendant_after_leader_exits(tmp_path)
         pytest.fail(f"descendant process {child_pid} survived process-group cleanup")
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="escaped-process cleanup uses Linux /proc ownership")
+@pytest.mark.parametrize("ignore_sigterm", [False, True], ids=["sigterm_honored", "sigterm_ignored"])
+def test_run_terminates_detached_descendant_that_escapes_process_group(tmp_path, ignore_sigterm):
+    runner = _load_runner()
+    child_pid_path = tmp_path / "detached.pid"
+    signal_setup = "signal.signal(signal.SIGTERM, signal.SIG_IGN); " if ignore_sigterm else ""
+    child_code = (
+        "import os, pathlib, signal, time; "
+        f"{signal_setup}"
+        f"pathlib.Path({str(child_pid_path)!r}).write_text(str(os.getpid())); "
+        "print('detached descendant started', flush=True); time.sleep(90)"
+    )
+    parent_code = (
+        "import subprocess, sys; "
+        f"subprocess.Popen([sys.executable, '-c', {child_code!r}], start_new_session=True); "
+        "print('leader exits', flush=True)"
+    )
+
+    rc, output, runtime = runner.run(
+        [sys.executable, "-c", parent_code],
+        tmp_path,
+        timeout=2 if ignore_sigterm else 1,
+        log_path=tmp_path / "run.log",
+    )
+
+    assert rc == 124
+    assert runtime < (25 if ignore_sigterm else 5)
+    assert "leader exits" in output
+    child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+    deadline = runner.time.monotonic() + 5
+    while runner.time.monotonic() < deadline:
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            break
+        proc_stat = Path(f"/proc/{child_pid}/stat")
+        if proc_stat.is_file() and proc_stat.read_text(encoding="utf-8").split()[2] == "Z":
+            break
+        runner.time.sleep(0.05)
+    else:
+        pytest.fail(f"detached descendant process {child_pid} survived trial-token cleanup")
+
+
+def test_signal_trial_processes_uses_pidfds_and_revalidates_identity(monkeypatch):
+    runner = _load_runner()
+    identities = {10: [123, 123], 11: [456, -1]}
+    sent = []
+    closed = []
+
+    monkeypatch.setattr(runner, "trial_process_ids", lambda _token: [123, 456])
+    monkeypatch.setattr(runner, "process_has_trial_token", lambda _process_id, _marker: True)
+    monkeypatch.setattr(runner, "pidfd_process_id", lambda pidfd: identities[pidfd].pop(0))
+    monkeypatch.setattr(
+        runner.os, "pidfd_open", lambda process_id, _flags: {123: 10, 456: 11}[process_id], raising=False
+    )
+    monkeypatch.setattr(runner.os, "close", closed.append)
+    monkeypatch.setattr(runner.signal, "pidfd_send_signal", lambda pidfd, sig: sent.append((pidfd, sig)), raising=False)
+
+    runner.signal_trial_processes("trial-token", runner.signal.SIGTERM)
+
+    assert sent == [(10, runner.signal.SIGTERM)]
+    assert closed == [10, 11]
+
+
+def test_signal_trial_processes_reports_pidfd_open_failure(monkeypatch):
+    runner = _load_runner()
+
+    monkeypatch.setattr(runner, "trial_process_ids", lambda _token: [123])
+    monkeypatch.setattr(
+        runner.os,
+        "pidfd_open",
+        lambda _process_id, _flags: (_ for _ in ()).throw(PermissionError("pidfd denied")),
+        raising=False,
+    )
+    monkeypatch.setattr(runner.signal, "pidfd_send_signal", lambda _pidfd, _sig: None, raising=False)
+
+    with pytest.raises(runner.TrialProcessCleanupError, match="cannot open pidfd for trial process 123"):
+        runner.signal_trial_processes("trial-token", runner.signal.SIGTERM)
+
+
+def test_terminate_process_retries_pidfd_failure_with_sigkill(monkeypatch):
+    runner = _load_runner()
+    signals = []
+    waits = iter([False, True])
+
+    class ExitedProcess:
+        @staticmethod
+        def poll():
+            return 0
+
+    def signal_trial_processes(_trial_token, sig):
+        signals.append(sig)
+        if sig == runner.signal.SIGTERM:
+            raise runner.TrialProcessCleanupError("temporary pidfd failure")
+
+    monkeypatch.setattr(runner, "signal_trial_processes", signal_trial_processes)
+    monkeypatch.setattr(runner, "wait_for_process_tree", lambda *_args, **_kwargs: next(waits))
+    monkeypatch.setattr(runner, "trial_process_ids", lambda _trial_token: [])
+
+    runner.terminate_process(ExitedProcess(), trial_token="trial-token")
+
+    assert signals == [runner.signal.SIGTERM, runner.signal.SIGKILL]
+
+
+def test_run_requires_pidfds_before_starting_linux_process(tmp_path, monkeypatch):
+    runner = _load_runner()
+    started = False
+
+    def fail_start(*_args, **_kwargs):
+        nonlocal started
+        started = True
+        raise AssertionError("process must not start without race-safe cleanup support")
+
+    monkeypatch.setattr(runner.sys, "platform", "linux")
+    monkeypatch.setattr(
+        runner,
+        "ensure_trial_process_pidfd_support",
+        lambda: (_ for _ in ()).throw(runner.TrialProcessCleanupError("pidfds unavailable")),
+    )
+    monkeypatch.setattr(runner.subprocess, "Popen", fail_start)
+
+    with pytest.raises(runner.TrialProcessCleanupError, match="pidfds unavailable"):
+        runner.run(
+            [sys.executable, "-c", "print('must not run')"],
+            tmp_path,
+            timeout=10,
+            log_path=tmp_path / "run.log",
+        )
+
+    assert not started
+
+
 @pytest.mark.skipif(os.name == "nt", reason="process-group cleanup uses POSIX process groups")
 @pytest.mark.parametrize("monitor_error", [KeyboardInterrupt(), RuntimeError("monitor failed")])
 def test_run_terminates_child_process_group_when_monitor_raises(tmp_path, monkeypatch, monitor_error):

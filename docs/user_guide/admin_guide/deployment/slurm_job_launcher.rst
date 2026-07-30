@@ -32,7 +32,7 @@ Choose an execution backend with ``job_launcher.sandbox``:
      - Trusted container packaging
    * - ``none``
      - Python directly in the allocation
-     - Site-trusted code; required for multi-node jobs
+     - Site-trusted code; required for application-owned multi-node fan-out
 
 Prerequisites
 =============
@@ -207,6 +207,11 @@ Important keys are:
    * - ``pending_timeout``
      - Time limit starting at the first observed pending state; default ``600``
        seconds. A job may lower it.
+   * - ``multi_node_port_range``
+     - Optional ``"START-END"`` port range for the multi-node rendezvous
+       endpoint (``NVFL_MASTER_PORT``); default ``29400-30399``. Must not
+       contain ``internal_port``. If the existing ``internal_port`` is in the
+       implicit default range, the launcher uses ``30400-31399`` instead.
 
 ``setup`` starts with the minimal environment from ``sbatch --export=NIL``.
 Source module initialization explicitly. Put fixed values in study ``env``;
@@ -383,16 +388,89 @@ Jobs put portable GPU totals in ``resource_spec`` and Slurm-only settings in
    }
 
 Supported job keys are ``image``, ``nodes``, ``gpus_per_node``,
-``cpus_per_node``, ``mem_per_node`` (MiB), ``time``, and
-``pending_timeout``. A job image requires normal BYOC authorization and takes
+``cpus_per_node``, ``mem_per_node`` (MiB), ``time``, ``pending_timeout``, and
+``additional_node_command``.
+A job image requires normal BYOC authorization and takes
 precedence over the study and site images. Job and study images are rejected on
 any site whose effective sandbox is ``none``.
 
-Multi-node jobs require effective ``sandbox: none`` and must not specify an
-image. A positive multi-node ``num_of_gpus`` requires ``gpus_per_node``;
+A positive multi-node ``num_of_gpus`` requires ``gpus_per_node``;
 whenever both are supplied, ``num_of_gpus`` must equal
 ``nodes * gpus_per_node``.
-The application owns any multi-node process fan-out.
+
+For jobs built with an external-process ``ScriptRunner``, an explicit
+site block that directly sets ``nodes > 1`` does not need to repeat the
+training command. Export copies the fully assembled shell-free ``command``,
+script path, and script arguments into ``additional_node_command``. Generation
+requires ``launch_once=True``. For example, this Recipe needs no
+``additional_node_command``:
+
+.. code-block:: python
+
+   from nvflare.apis.job_def import JobMetaKey
+   from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+   from nvflare.recipe import set_recipe_meta
+
+   recipe = FedAvgRecipe(
+       name="multi-node",
+       model=MyModel(),
+       train_script="client.py",
+       min_clients=1,
+       num_rounds=10,
+       launch_external_process=True,
+       command="python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8",
+   )
+   set_recipe_meta(
+       recipe,
+       JobMetaKey.JOB_LAUNCHER_SPEC,
+       {
+           "site-1": {
+               "slurm": {
+                   "nodes": 2,
+                   "gpus_per_node": 8,
+               }
+           }
+       },
+   )
+
+Hand-authored jobs and custom launchers provide the full
+``additional_node_command`` in the Slurm launcher block:
+
+.. code-block:: json
+
+   {
+     "launcher_spec": {
+       "site-1": {
+         "slurm": {
+           "nodes": 2,
+           "gpus_per_node": 8,
+           "additional_node_command": "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 custom/client.py"
+         }
+       }
+     }
+   }
+
+An explicit ``additional_node_command`` always wins. Set it to ``null`` to
+keep application-owned fan-out. Export does not infer commands for
+``launcher_spec["default"]`` or blocks that only inherit ``nodes`` from a
+default; provide the full command explicitly in those cases. Neither generated
+nor explicit additional-node commands support ``${secret:NAME}`` or
+``${secret:file:/path}`` references.
+
+The launcher starts one task per node. Rank 0 runs the normal client job
+process; every other rank runs ``additional_node_command`` in the deployed app
+directory.
+All ranks receive ``NVFL_NNODES``, ``NVFL_NODE_RANK``,
+``NVFL_MASTER_ADDR``, ``NVFL_MASTER_PORT``, and the per-allocation
+``NVFL_RUN_ID``. Under ``apptainer`` or ``pyxis``, all user code runs inside
+the configured container. Non-zero ranks use the Cell API bootstrap;
+legacy Client API multi-node execution is not supported.
+
+Non-zero ranks start before rank 0 has prepared Client API runtime files, so a
+hand-written command must join its framework rendezvous before reading that
+state. ``torchrun_node`` provides this ordering. Without
+``additional_node_command``, Slurm ``nodes > 1`` retains application-owned
+fan-out behavior and requires effective ``sandbox: none``.
 
 Security and Operations
 =======================

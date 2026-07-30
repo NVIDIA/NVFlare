@@ -15,10 +15,11 @@
 import json
 import os
 import tempfile
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
+from nvflare.apis.job_def import SERVER_SITE_NAME, JobMetaKey
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import BaseScriptRunner, FrameworkType, PipeConnectType, ScriptRunner
@@ -516,6 +517,116 @@ class TestExecutionModeSelection:
             "",
         ]
 
+    def test_external_process_command_fills_explicit_multinode_site_block(self):
+        from nvflare.job_config.api import FedJob
+
+        launcher_spec = {
+            "default": {"slurm": {"nodes": 4}},
+            SERVER_SITE_NAME: {"slurm": {"nodes": 2}},
+            "site-multi": {"slurm": {"nodes": 2, "gpus_per_node": 1}},
+            "site-single": {"slurm": {"nodes": 1, "gpus_per_node": 1}},
+        }
+        job = FedJob(name="multinode-command", meta_props={JobMetaKey.JOB_LAUNCHER_SPEC.value: launcher_spec})
+        runner = ScriptRunner(
+            script="client.py",
+            script_args=["--label", "two words"],
+            launch_external_process=True,
+            command=["python3", "-m", "nvflare.app_opt.pt.torchrun_node", "--nproc-per-node=1"],
+        )
+
+        with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
+            job.to_clients(runner)
+
+        assert launcher_spec["site-multi"]["slurm"]["additional_node_command"] == (
+            "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=1 custom/client.py --label 'two words'"
+        )
+        assert "additional_node_command" not in launcher_spec["default"]["slurm"]
+        assert "additional_node_command" not in launcher_spec[SERVER_SITE_NAME]["slurm"]
+        assert "additional_node_command" not in launcher_spec["site-single"]["slurm"]
+
+    def test_external_process_command_fills_only_matching_site(self):
+        from nvflare.job_config.api import FedJob
+
+        launcher_spec = {
+            "site-1": {"slurm": {"nodes": 2}},
+            "site-2": {"slurm": {"nodes": 2}},
+        }
+        job = FedJob(name="site-command", meta_props={JobMetaKey.JOB_LAUNCHER_SPEC.value: launcher_spec})
+        runner = ScriptRunner(script="client.py", launch_external_process=True, command="python3 -u")
+
+        with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
+            job.to(runner, "site-1")
+
+        assert launcher_spec["site-1"]["slurm"]["additional_node_command"] == "python3 -u custom/client.py"
+        assert "additional_node_command" not in launcher_spec["site-2"]["slurm"]
+
+    def test_legacy_external_process_does_not_generate_additional_node_command(self):
+        from nvflare.job_config.api import FedJob
+
+        block = {"nodes": 2}
+        job = FedJob(
+            name="legacy-command",
+            meta_props={JobMetaKey.JOB_LAUNCHER_SPEC.value: {"site-1": {"slurm": block}}},
+        )
+        runner = BaseScriptRunner(script="client.py", launch_external_process=True)
+
+        with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
+            job.to_clients(runner)
+
+        assert "additional_node_command" not in block
+
+    @pytest.mark.parametrize("explicit_value", [None, "custom-worker --arg"])
+    def test_explicit_additional_node_command_wins(self, explicit_value):
+        from nvflare.job_config.api import FedJob
+
+        block = {"nodes": 2, "additional_node_command": explicit_value}
+        job = FedJob(
+            name="explicit-command",
+            meta_props={JobMetaKey.JOB_LAUNCHER_SPEC.value: {"site-1": {"slurm": block}}},
+        )
+        runner = ScriptRunner(script="client.py", launch_external_process=True, launch_once=False)
+
+        with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
+            job.to_clients(runner)
+
+        assert block["additional_node_command"] == explicit_value
+
+    @pytest.mark.parametrize(
+        "runner, message",
+        [
+            (
+                ScriptRunner(script="client.py", launch_external_process=True, launch_once=False),
+                "launch_once=True",
+            ),
+            (
+                ScriptRunner(
+                    script="client.py",
+                    launch_external_process=True,
+                    script_args=["--api-key", "${secret:API_TOKEN}"],
+                ),
+                "does not support secret references",
+            ),
+        ],
+    )
+    def test_generated_additional_node_command_rejects_unsupported_runner(self, runner, message):
+        from nvflare.job_config.api import FedJob
+
+        job = FedJob(
+            name="invalid-generated-command",
+            meta_props={
+                JobMetaKey.JOB_LAUNCHER_SPEC.value: {
+                    "site-1": {"slurm": {"nodes": 2}},
+                }
+            },
+        )
+
+        with (
+            patch("os.path.isfile", return_value=True),
+            patch("os.path.exists", return_value=True),
+            pytest.raises(ValueError, match=message),
+        ):
+            job.to_clients(runner)
+
     def test_external_process_command_argv_is_serialized(self, tmp_path, monkeypatch):
         from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
         from nvflare.job_config.api import FedJob
@@ -622,3 +733,41 @@ class TestExecutionModeSelection:
         assert app.app_config.components == {}
         # the script rides along as an app resource
         assert "client.py" in app.app_config.ext_scripts
+
+    def test_in_process_gpu_simulator_exports_subdirectory_script_sibling(self, tmp_path, monkeypatch):
+        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+        from nvflare.job_config.api import FedJob
+
+        source_dir = tmp_path / "src"
+        source_dir.mkdir()
+        script = os.path.join("src", "poc_executor.py")
+        (source_dir / "poc_executor.py").write_text("from net import Net\n")
+        (source_dir / "net.py").write_text("class Net:\n    pass\n")
+        monkeypatch.chdir(tmp_path)
+
+        job = FedJob(name="job_api_basic_gpu")
+        job.to_server(ScatterAndGather(min_clients=2, num_rounds=2, wait_time_after_min_received=0))
+        job.to_clients(ScriptRunner(script=script, framework=FrameworkType.PYTORCH))
+
+        process = Mock()
+        process.wait.return_value = 0
+
+        def start_simulator(command, **kwargs):
+            job_dir = next(arg for arg in command if arg.endswith(os.sep + job.name))
+            custom_dir = os.path.join(job_dir, "app", "custom")
+            assert os.path.isfile(os.path.join(custom_dir, script))
+            assert os.path.isfile(os.path.join(custom_dir, "net.py"))
+            assert not os.path.exists(os.path.join(custom_dir, "src", "net.py"))
+
+            config_path = os.path.join(job_dir, "app", "config", "config_fed_client.json")
+            with open(config_path) as config_file:
+                executor_args = json.load(config_file)["executors"][0]["executor"]["args"]
+            assert executor_args["execution_mode"] == "in_process"
+            assert executor_args["task_script_path"] == script
+            assert command[command.index("-gpu") + 1] == "0,1"
+            return process
+
+        with patch("nvflare.job_config.fed_job_config.subprocess.Popen", side_effect=start_simulator):
+            result = job.simulator_run(str(tmp_path / "workspace"), n_clients=2, gpu="0,1")
+
+        assert result == 0
