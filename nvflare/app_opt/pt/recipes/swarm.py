@@ -441,5 +441,5 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         )
         if initial_ckpt is not None and not os.path.isabs(initial_ckpt):
             # FileSource copies the checkpoint basename into custom/, matching
-            # the path configured on PTFileModelPersistor above.
-            self._job.add_file_to_server(initial_ckpt)
+            # the path configured on the client-side PTFileModelPersistor above.
+            self._job.add_file_to_clients(initial_ckpt)

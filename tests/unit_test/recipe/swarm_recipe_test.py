@@ -21,7 +21,7 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.apis.dxo import DataKind
-from nvflare.apis.job_def import ALL_SITES
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.fuel.utils.secret_utils import PotentialSecretWarning
 
 torch = pytest.importorskip("torch")
@@ -583,7 +583,7 @@ class TestSwarmLearningRecipeExport:
     """Export behavior tests for SwarmLearningRecipe."""
 
     def test_export_nested_relative_ckpt_uses_configured_basename(self, tmp_path, monkeypatch):
-        """A nested relative checkpoint is flattened to the custom directory."""
+        """A nested relative checkpoint is flattened into each client app."""
         from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
         checkpoint = tmp_path / "models" / "checkpoint.pt"
@@ -602,6 +602,10 @@ class TestSwarmLearningRecipeExport:
             min_clients=2,
             initial_ckpt="models/checkpoint.pt",
         )
+
+        checkpoint_source = ("models/checkpoint.pt", None, None)
+        assert checkpoint_source in recipe._job._deploy_map[ALL_SITES].app_config.file_sources
+        assert checkpoint_source not in recipe._job._deploy_map[SERVER_SITE_NAME].app_config.file_sources
 
         export_dir = tmp_path / "job"
         recipe.export(str(export_dir))
