@@ -320,7 +320,7 @@ class SlurmJobLauncher(JobLauncherSpec):
 
     def _effective_study_values(
         self, runtime: StudyRuntime, job_image: Optional[str] = None
-    ) -> tuple[str, Optional[str], str, dict]:
+    ) -> tuple[str, Optional[str], str, str, dict]:
         slurm = runtime.slurm
         sandbox = slurm.get("sandbox", self.config.sandbox)
         if job_image is not None:
@@ -339,10 +339,11 @@ class SlurmJobLauncher(JobLauncherSpec):
                 label="effective image",
             )
         )
+        python_path = slurm.get("python_path", self.config.python_path)
         setup = slurm.get("setup", self.config.setup)
         directives = dict(self.config.sbatch_directives)
         directives.update({key: slurm[key] for key in ("partition", "account", "qos") if key in slurm})
-        return sandbox, image, setup, directives
+        return sandbox, image, python_path, setup, directives
 
     def _study_environment(self, runtime: StudyRuntime) -> tuple[dict, dict]:
         environment = dict(runtime.env)
@@ -435,7 +436,7 @@ class SlurmJobLauncher(JobLauncherSpec):
         # AppDeployer classifies a selected Slurm image as BYOC and authorizes it
         # before the locally deployed job reaches this launcher.
         job_image = job_spec.get("image")
-        sandbox, image, setup, directives = self._effective_study_values(runtime, job_image)
+        sandbox, image, python_path, setup, directives = self._effective_study_values(runtime, job_image)
         resources = _resolve_resources(
             job_meta,
             site_name,
@@ -474,7 +475,7 @@ class SlurmJobLauncher(JobLauncherSpec):
             study_env=study_env,
             study_secret_env=secret_env,
             mounts=tuple(mounts),
-            python_path=self.config.python_path,
+            python_path=python_path,
             python_env=self._python_environment(workspace, job_id),
             forward_env=self.config.forward_env,
             additional_node_command=additional_node_command,
