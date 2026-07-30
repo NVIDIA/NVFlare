@@ -26,6 +26,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.executors.client_api.attach_backend import AttachBackend
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext
 from nvflare.client.cell.defs import CHANNEL, MsgKey, TaskState, Topic
+from nvflare.client.config import ConfigKey
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
@@ -179,6 +180,26 @@ def test_attach_session_executes_task_and_finalize_only_closes_protocol():
     assert any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
     assert any(topic == Topic.SHUTDOWN for topic, _, _ in cell.sent)
     assert not backend._session_thread.is_alive()
+
+
+def test_session_open_task_exchange_uses_wire_primitive_values():
+    cell = FakeCell()
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell)
+    backend.initialize(_context(), fl_ctx)
+    _wait_ready(backend)
+
+    session_open = next(payload for topic, _, payload in cell.sent if topic == Topic.SESSION_OPEN)
+    task_exchange = session_open[MsgKey.TASK_EXCHANGE]
+
+    for key in (
+        ConfigKey.EXCHANGE_FORMAT,
+        ConfigKey.SERVER_EXPECTED_FORMAT,
+        ConfigKey.TRANSFER_TYPE,
+    ):
+        assert type(task_exchange[key]) is str
+
+    backend.finalize(fl_ctx)
 
 
 def test_attach_timeout_returns_error_without_hanging():

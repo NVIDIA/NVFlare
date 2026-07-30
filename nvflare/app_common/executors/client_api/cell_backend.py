@@ -327,9 +327,13 @@ class CellBackendBase(ClientAPIBackendSpec):
         context = self._context
         return {
             ConfigKey.TRAIN_WITH_EVAL: context.train_with_evaluation,
-            ConfigKey.EXCHANGE_FORMAT: context.params_exchange_format,
-            ConfigKey.SERVER_EXPECTED_FORMAT: context.server_expected_format,
-            ConfigKey.TRANSFER_TYPE: context.params_transfer_type,
+            # Keep bootstrap/session control payloads independent of Python enum
+            # registration. JSON happened to serialize these str enums as their
+            # values in launched mode, but FOBS preserves their Python type and
+            # rejects them in a bare attached trainer.
+            ConfigKey.EXCHANGE_FORMAT: context.params_exchange_format.value,
+            ConfigKey.SERVER_EXPECTED_FORMAT: context.server_expected_format.value,
+            ConfigKey.TRANSFER_TYPE: context.params_transfer_type.value,
             ConfigKey.TRAIN_TASK_NAME: context.train_task_name,
             ConfigKey.EVAL_TASK_NAME: context.evaluate_task_name,
             ConfigKey.SUBMIT_MODEL_TASK_NAME: context.submit_model_task_name,

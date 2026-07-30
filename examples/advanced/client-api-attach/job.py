@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Export a one-client NumPy FedAvg job that waits for an attached trainer."""
+"""Submit and monitor a one-client NumPy FedAvg job that waits for an attached trainer."""
 
 import argparse
 from pathlib import Path
@@ -20,6 +20,7 @@ from pathlib import Path
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
 from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.recipe import ProdEnv
 
 
 class AttachNumpyFedAvgRecipe(NumpyFedAvgRecipe):
@@ -44,7 +45,8 @@ class AttachNumpyFedAvgRecipe(NumpyFedAvgRecipe):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--attach_id", default="numpy_trainer")
-    parser.add_argument("--job_dir", default="/tmp/nvflare/jobs")
+    parser.add_argument("--startup_kit_location", required=True)
+    parser.add_argument("--username", default="admin@nvidia.com")
     args = parser.parse_args()
 
     recipe = AttachNumpyFedAvgRecipe(
@@ -57,8 +59,15 @@ def main():
         # The operator starts trainer.py independently with its connection profile.
         train_script=str(Path(__file__).with_name("trainer.py")),
     )
-    recipe.export(args.job_dir)
-    print(f"Exported {recipe.name!r} to {args.job_dir}")
+    env = ProdEnv(
+        startup_kit_location=args.startup_kit_location,
+        username=args.username,
+    )
+    run = recipe.execute(env)
+    print(f"Submitted {recipe.name!r} as job {run.get_job_id()}")
+    result = run.get_result()
+    print(f"Result: {result}")
+    print(f"Status: {run.get_status()}")
 
 
 if __name__ == "__main__":

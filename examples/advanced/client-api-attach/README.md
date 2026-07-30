@@ -38,19 +38,19 @@ federation endpoint, not the `site-1` Cell endpoint. Do not use it as
 `connect_url`.
 
 After the site operator has provisioned a reachable site Cell endpoint and updated
-`attach_profile.json`, install this repository and export the job:
+`attach_profile.json`, install this repository and submit the job through an admin
+startup kit:
 
 ```bash
 python -m pip install -e .
 python -m pip install -r examples/advanced/client-api-attach/requirements.txt
-python examples/advanced/client-api-attach/job.py --job_dir /tmp/nvflare/jobs
+python examples/advanced/client-api-attach/job.py \
+  --startup_kit_location /absolute/path/to/admin@nvidia.com
 ```
 
-Submit the exported job through that deployment's normal admin connection:
-
-```bash
-nvflare job submit -j /tmp/nvflare/jobs/client-api-attach
-```
+`job.py` uses `ProdEnv` to submit the recipe and waits until the run completes.
+Pass `--username` if the startup kit belongs to a user other than
+`admin@nvidia.com`.
 
 Start the independently managed trainer:
 
@@ -59,9 +59,8 @@ cd examples/advanced/client-api-attach
 python trainer.py --config attach_profile.json
 ```
 
-The last two steps may be reversed: the trainer may start before or after job
-submission, but the site and its provisioned Cell endpoint must already be
-available.
+The trainer and job commands may be started in either order, but the site and its
+provisioned Cell endpoint must already be available.
 
 `flare.send()` does not return until any lazy result payload has reached
 receiver-confirmed terminal success. Keep the trainer process alive through that
