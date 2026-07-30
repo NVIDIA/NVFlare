@@ -23,6 +23,7 @@ a full detector and conversion skill land.
 from typing import Optional
 
 from .base import FrameworkDetector
+from .huggingface import HuggingFaceDetector
 from .lightning import LightningDetector
 from .pytorch import PyTorchDetector
 
@@ -30,6 +31,7 @@ from .pytorch import PyTorchDetector
 _DETECTORS: list[FrameworkDetector] = [
     PyTorchDetector(),
     LightningDetector(),
+    HuggingFaceDetector(),
 ]
 
 # Frameworks recognized by import only (ranked from import evidence) until a
@@ -80,13 +82,23 @@ def framework_for_import(module: str) -> Optional[str]:
     return _IMPORT_ROOTS.get(module.split(".")[0])
 
 
-def recommended_skill_for(framework: Optional[str]) -> Optional[str]:
+def recommended_skill_for(framework: Optional[str], evidence: Optional[list[dict]] = None) -> Optional[str]:
+    evidence = evidence or []
     if framework is None:
         return None
     for detector in _DETECTORS:
         if detector.name == framework:
+            if detector.recommendation_requires_active_evidence and not any(
+                detector.is_active_evidence(item) for item in evidence
+            ):
+                return None
             return detector.recommended_skill
     return None
+
+
+def fallback_skill_for(framework: Optional[str], evidence: list[dict]) -> Optional[str]:
+    detector = _detector_by_name(framework) if framework else None
+    return detector.fallback_skill_for(evidence) if detector else None
 
 
 def _family_member_detectors() -> list[FrameworkDetector]:
@@ -107,6 +119,27 @@ def is_active_evidence(framework: str, evidence: dict) -> bool:
     return detector.is_active_evidence(evidence)
 
 
+def is_training_owner_evidence(framework: str, evidence: dict) -> bool:
+    detector = _detector_by_name(framework)
+    if detector is None:
+        return False
+    return detector.is_training_owner_evidence(evidence)
+
+
+def has_active_family_member_conflict(evidence_by_framework: dict, resolver) -> bool:
+    """Whether reachable training owners from multiple specialized members claim one family."""
+    active_by_family: dict[str, int] = {}
+    for detector in _family_member_detectors():
+        family = detector.family
+        if not family:
+            continue
+        evidence = evidence_by_framework.get(detector.name, [])
+        owner_evidence = [item for item in evidence if detector.is_training_owner_evidence(item)]
+        if owner_evidence and resolver.tied_to_entry_context(owner_evidence):
+            active_by_family[family] = active_by_family.get(family, 0) + 1
+    return any(count > 1 for count in active_by_family.values())
+
+
 def resolve_primary_framework(primary: str, evidence_by_framework: dict, resolver) -> str:
     """Disambiguate a family conflict (e.g. PyTorch vs PyTorch Lightning).
 
@@ -114,12 +147,41 @@ def resolve_primary_framework(primary: str, evidence_by_framework: dict, resolve
     when it is part of a family whose base and member both have evidence; the
     member detector owns the promotion decision.
     """
-    for member in _family_member_detectors():
-        base = member.family
-        if base in evidence_by_framework and member.name in evidence_by_framework:
-            if primary in {base, member.name}:
-                return member.name if member.promote_over_family(base, resolver) else base
+    primary_detector = _detector_by_name(primary)
+    if primary_detector and primary_detector.family:
+        base = primary_detector.family
+        if base in evidence_by_framework:
+            if primary_detector.promote_over_family(base, resolver):
+                return primary
+            promoted = _promoted_family_member(base, evidence_by_framework, resolver, exclude={primary})
+            return promoted.name if promoted else base
+        return primary
+
+    promoted = _promoted_family_member(primary, evidence_by_framework, resolver)
+    if promoted:
+        return promoted.name
     return primary
+
+
+def _promoted_family_member(
+    base: str,
+    evidence_by_framework: dict,
+    resolver,
+    *,
+    exclude: Optional[set[str]] = None,
+) -> Optional[FrameworkDetector]:
+    exclude = exclude or set()
+    candidates = [
+        member
+        for member in _family_member_detectors()
+        if member.name not in exclude
+        and member.family == base
+        and member.name in evidence_by_framework
+        and member.promote_over_family(base, resolver)
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda member: resolver.score(resolver.evidence(member.name)))
 
 
 def family_base_has_member(base: Optional[str], evidence_by_framework: dict) -> Optional[str]:

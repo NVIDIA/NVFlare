@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,19 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
+from transformers import Trainer, TrainingArguments
 
 
-def custom_client_datalist_json_path(datalist_json_path: str, client_id: str) -> str:
-    """
-    Customize datalist_json_path for each client
-    Args:
-         datalist_json_path: root path containing all jsons
-         client_id: e.g., site-2
-    """
-    # Customize datalist_json_path for each client
-    datalist_json_path_client = os.path.join(
-        datalist_json_path,
-        client_id + ".json",
-    )
-    return datalist_json_path_client
+def main():
+    trainer = Trainer(model=model, args=TrainingArguments(output_dir="outputs"))
+    trainer.train()
+
+
+main()

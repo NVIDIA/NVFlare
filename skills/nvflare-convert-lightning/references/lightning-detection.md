@@ -34,6 +34,15 @@ the skill from the training entry point the user asks to federate:
 - if the user federates a manual PyTorch loop and only borrows an `nn.Module`,
   use `nvflare-convert-pytorch`.
 
+## Hugging Face Trainer Ownership
+
+Hugging Face models and tokenizers inside a Lightning-owned training loop do
+not change ownership; keep the Lightning conversion. A Hugging Face
+Trainer-only entrypoint routes to `nvflare-convert-huggingface`. When inspection
+finds active Lightning and Hugging Face Trainer entrypoints in the same
+project, route to `nvflare-orient` and ask the user to select one owner or split
+the entrypoints/jobs. Never patch both Trainers in one federated round loop.
+
 ## Lightning Trainer Wrappers
 
 Some ecosystems build the trainer through a wrapper or factory, for example
