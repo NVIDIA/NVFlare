@@ -375,6 +375,8 @@ def test_runner_applies_schema_metric_contract():
             "requested_metric": "accuracy",
             "optimization_metric": "accuracy",
             "metric_extraction_order": ["accuracy"],
+            "metric_invariants": ["definition", "evaluation_timing_and_checkpoint"],
+            "metric_change_policy": "restart_campaign_with_repaired_baseline",
         }
     }
     schema = {
@@ -393,6 +395,8 @@ def test_runner_applies_schema_metric_contract():
     assert updated["objective"]["optimization_metric"] == "test_accuracy"
     assert updated["objective"]["metric_extraction_order"] == ["test_accuracy", "accuracy"]
     assert updated["objective"]["metric_source"] == "held-out CIFAR-10 test set"
+    assert updated["objective"]["metric_invariants"] == ["definition", "evaluation_timing_and_checkpoint"]
+    assert updated["objective"]["metric_change_policy"] == "restart_campaign_with_repaired_baseline"
 
 
 def test_schema_metric_contract_rejects_minimization_objective():

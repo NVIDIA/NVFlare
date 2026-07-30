@@ -66,7 +66,9 @@ text is only the interaction layer.
 Common next actions:
 
 - `repair_baseline`: fix the deterministic import, execution, or metric issue,
-  then retry initialization.
+  then retry initialization when no scored baseline exists. A semantic metric
+  correction after scoring requires a clean campaign and repaired baseline;
+  old and new scores are not comparable.
 - `edit_candidate`: finish the pending candidate draft, then invoke the runner's
   `evaluate` lifecycle action.
 - `abandon_candidate`: abandon pending candidate work after a manual stop, then

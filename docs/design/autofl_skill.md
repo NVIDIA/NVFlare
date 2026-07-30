@@ -51,7 +51,8 @@ and submission artifacts.
 The purpose of `autofl.yaml` is to expose the human-reviewable Auto-FL campaign
 layer:
 
-- Objective metric, requested environment, and candidate budget.
+- Objective metric, requested environment, candidate budget, and semantic
+  metric invariants.
 - Editable search-space settings discovered from `job.py` and related train
   scripts.
 - Fixed-budget constraints that must remain comparable across candidates.
@@ -81,6 +82,8 @@ on campaign-relevant settings rather than duplicating the full exported job:
   unambiguous NVFlare `ScriptRunner(script=...)` call.
 - Objective metric from user request, `key_metric`, or explicit unresolved
   default.
+- Metric invariants covering definition, evaluation data/split,
+  timing/checkpoint, aggregation/population, and scale/units/direction.
 - Fixed-budget fields such as rounds, clients, and candidate budget.
 - Common argparse tunables from `job.py` and the resolved train script.
 
@@ -113,6 +116,13 @@ Every import result includes:
 The skill must present editable, unresolved, and allowed sections before it runs
 candidates. This is the core product guardrail: NVFlare makes the campaign
 reviewable and reproducible; the agent makes it interactive and exploratory.
+Candidate comparison also depends on the objective's declared
+`metric_invariants`. The agent reviews hypotheses and diffs against this
+contract because deterministic static analysis cannot prove arbitrary
+measurement equivalence. If a scored campaign needs a metric implementation
+correction, the candidate is abandoned, prior scores are declared incomparable,
+and a human-approved source repair starts a clean campaign and baseline. A
+metric correction is never retained as an optimization improvement.
 During campaign initialization, the runner merges existing, workspace-local
 `mutation_schema.yaml` `preferred_targets` into
 `trust_contract.allowed_edit_paths`. Missing, symlinked, reserved, or
