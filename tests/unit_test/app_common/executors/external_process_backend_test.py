@@ -500,7 +500,7 @@ class TestInitializeAndFinalize:
         assert process.returncode == 0
         assert env.harness.signals_sent() == [], "no signals for a trainer that exited naturally"
 
-    def test_abort_skips_finalize_gate_and_natural_exit_waits(self, env):
+    def test_abort_preserves_finalize_gate_ordering_and_skips_natural_exit_wait(self, env):
         backend, _ = _initialized_backend(env, shutdown_timeout=30.0)
         process = env.harness.processes[0]
         backend._latch_abort("job aborted")
@@ -511,7 +511,7 @@ class TestInitializeAndFinalize:
         backend.finalize(FLContext())
 
         gate_timeout = execute_gate.acquire.call_args.kwargs["timeout"]
-        assert gate_timeout == 0.0
+        assert gate_timeout == 30.0
         assert process.wait_timeouts == []
         assert [request for request in env.cell.sent if request[0] == Topic.SHUTDOWN] == []
         assert len([message for message in env.cell.fired if message[0] == Topic.SHUTDOWN]) == 1
@@ -1628,7 +1628,8 @@ class TestExecute:
         assert env.harness.processes == [], "no trainer process may be started after finalize set _closed"
         assert box["r"].get_return_code() == ReturnCode.EXECUTION_EXCEPTION
 
-    def test_finalize_stops_process_returned_after_launch_cleanup(self, env, monkeypatch):
+    @pytest.mark.parametrize("abort_latched", [False, True], ids=["normal", "abort"])
+    def test_finalize_stops_process_returned_after_launch_cleanup(self, env, monkeypatch, abort_latched):
         """A process whose Popen returns after finalize cleanup must not be orphaned."""
         backend, fl_ctx = _initialized_backend(
             env,
@@ -1656,6 +1657,8 @@ class TestExecute:
         execute_thread.start()
         assert process_started.wait(5.0), "execute did not enter the Popen-in-flight window"
 
+        if abort_latched:
+            backend._latch_abort("job aborted")
         trainer = backend._active_launch
         process = env.harness.processes[0]
         backend.finalize(FLContext())

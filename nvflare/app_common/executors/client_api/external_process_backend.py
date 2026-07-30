@@ -363,8 +363,9 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         # Serialize close with RESULT_READY's acceptance commit.
         with self._task_lock:
             self._closed = True
-        # The same gate orders END_RUN against the launch-install-to-Popen window.
-        admitted = self._execute_gate.acquire(timeout=self._stop_wait_bound())
+        # The same gate orders END_RUN against the launch-install-to-Popen window. Keep
+        # this ordering bound on abort: a process handle may not have been installed yet.
+        admitted = self._execute_gate.acquire(timeout=self._shutdown_wait_bound())
         try:
             with self._launch_lock:
                 trainer = self._active_launch
