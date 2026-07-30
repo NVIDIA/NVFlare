@@ -63,35 +63,43 @@ selected recipe path and the generated client's actual parser.
 
 ## Tensor-Native Transport
 
-When `server_expected_format` is exposed, pass
-`server_expected_format=ExchangeFormat.PYTORCH`. This selects tensor-native
-transport. When tensor-native transport was selected, call
+Use the workflow-side format keyword exposed by the selected recipe:
+
+- When `aggregation_format` is exposed, pass
+  `aggregation_format=ExchangeFormat.PYTORCH`. This names the representation
+  consumed by a client-side aggregation workflow such as Swarm.
+- Otherwise, when `server_expected_format` is exposed, pass
+  `server_expected_format=ExchangeFormat.PYTORCH`. This names the representation
+  consumed by a server-side workflow.
+
+Either form selects tensor-native transport. When tensor-native transport was selected, call
 `recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])`
 after any `set_per_site_config(...)` call and before export or execution.
 
-If `server_expected_format` is absent, preserve the recipe's documented
-transport default and do not infer tensor-native transport from its framework
-name. Register `TensorDecomposer` only when another public recipe surface
-explicitly selects tensor-native transport. If the user requires tensor-native
-transport and the selected recipe has no public way to select it, report a
-recipe-capability gap instead of passing unsupported keywords or switching
-recipes.
+If neither workflow-side format keyword is exposed, preserve the recipe's
+documented transport default and do not infer tensor-native transport from its
+framework name. Register `TensorDecomposer` only when another public recipe
+surface explicitly selects tensor-native transport. If the user requires
+tensor-native transport and the selected recipe has no public way to select it,
+report a recipe-capability gap instead of passing unsupported keywords or
+switching recipes.
 
 `pytorch-model-exchange.md` is the canonical owner of framework payload and
 state-dict rules.
 
-## Server Tensor Disk Offload
+## Workflow Tensor Disk Offload
 
-Disk offload is a server memory optimization, not a model-exchange format. It
-causes incoming streamed tensors to be downloaded to server-side temporary files
-and materialized lazily during aggregation instead of being deserialized into
-memory immediately, reducing peak server memory pressure and OOM risk.
+Disk offload is an aggregation-workflow memory optimization, not a
+model-exchange format. It causes incoming streamed tensors to be downloaded to
+temporary files on the aggregation host and materialized lazily during
+aggregation instead of being deserialized into memory immediately, reducing
+peak memory pressure and OOM risk.
 
 When tensor-native transport was selected and `enable_tensor_disk_offload` is
 exposed, pass `enable_tensor_disk_offload=True`. NVFLARE activates this
-optimization only with `server_expected_format=ExchangeFormat.PYTORCH`;
-otherwise it warns and treats the setting as a no-op. Never pass the keyword to
-a recipe that does not expose it.
+optimization only when the exposed workflow-side format is
+`ExchangeFormat.PYTORCH`; otherwise it warns and treats the setting as a no-op.
+Never pass the keyword to a recipe that does not expose it.
 
 If the user requires disk offload and the selected recipe cannot expose both
 tensor-native transport and `enable_tensor_disk_offload`, report a
