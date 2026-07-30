@@ -114,7 +114,8 @@ class RxTask:
         self.chunk_size = config.get_streaming_chunk_size(STREAM_CHUNK_SIZE)
         self.window_size = config.get_streaming_window_size(STREAM_WINDOW_SIZE)
         self.ack_interval = config.get_streaming_ack_interval(ACK_INTERVAL)
-        self.retry_max_pending_bytes = config.get_streaming_retry_max_pending_bytes(STREAM_RETRY_MAX_PENDING_BYTES)
+        retry_max_pending_default = max(STREAM_RETRY_MAX_PENDING_BYTES, 2 * self.window_size)
+        self.retry_max_pending_bytes = config.get_streaming_retry_max_pending_bytes(retry_max_pending_default)
         self.max_out_seq = config.get_streaming_max_out_seq_chunks(MAX_OUT_SEQ_CHUNKS)
         self.completed_task_ttl = config.get_streaming_retry_timeout(
             COMPLETED_TASK_TTL
@@ -241,6 +242,12 @@ class RxTask:
             self.retry_max_pending_bytes,
             allow_non_positive=True,
         )
+        if self.ack_interval > self.window_size:
+            log.warning(
+                f"{self} streaming_ack_interval {self.ack_interval} from {self.origin} exceeds "
+                f"streaming_window_size {self.window_size}; using {self.window_size}"
+            )
+            self.ack_interval = self.window_size
         retry_timeout = message.get_header(StreamHeaderKey.RETRY_TIMEOUT, None)
         retry_wait = message.get_header(StreamHeaderKey.RETRY_WAIT, None)
         if retry_timeout is not None and retry_wait is not None:

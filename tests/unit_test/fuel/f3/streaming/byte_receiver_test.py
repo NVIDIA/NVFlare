@@ -262,6 +262,29 @@ def test_new_stream_without_sender_parameters_uses_local_configuration(monkeypat
     assert task.retry_max_pending_bytes == 16
 
 
+def test_sender_ack_interval_above_window_is_clamped(caplog):
+    cell = SimpleNamespace()
+    message = _make_chunk(
+        "site-1",
+        sid=535,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        streaming_parameters={
+            StreamHeaderKey.WINDOW_SIZE: 8,
+            StreamHeaderKey.ACK_INTERVAL: 16,
+        },
+    )
+
+    with caplog.at_level(logging.WARNING):
+        task = RxTask.find_or_create_task(message, cell)
+        assert task.process_chunk(message) is True
+
+    assert task.window_size == 8
+    assert task.ack_interval == 8
+    assert "streaming_ack_interval 16" in caplog.text
+    assert "streaming_window_size 8" in caplog.text
+
+
 @pytest.mark.parametrize("invalid_value", [True, -1, 0, 1.5, "16M"])
 def test_invalid_sender_ack_interval_uses_local_configuration(monkeypatch, invalid_value, caplog):
     monkeypatch.setattr(CommConfigurator, "get_streaming_ack_interval", lambda self, default: 4)

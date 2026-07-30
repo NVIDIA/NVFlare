@@ -402,6 +402,6 @@ streaming_retry_max_pending_bytes
 ---------------------------------
 
 The maximum total payload bytes that a reliable streaming sender keeps in memory for retry.
-The default value is 128M.
+The default value is 128M, or twice ``streaming_window_size`` when a custom window is larger than 64M.
 
 Set this to 0 or a negative value to disable the retry pending-byte limit.

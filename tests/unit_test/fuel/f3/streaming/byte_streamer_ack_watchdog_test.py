@@ -344,6 +344,26 @@ class TestReliableByteStreamer:
 
         assert task.retry_max_pending_bytes == 7
 
+    def test_retry_pending_byte_limit_default_scales_with_large_window(self, monkeypatch, retry_scheduler):
+        self._patch_common_config(monkeypatch)
+        window_size = 256 * 1024**2
+        monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: window_size)
+
+        task = self._make_task_with_reliable(True, monkeypatch)
+
+        assert task.retry_max_pending_bytes == 2 * window_size
+
+    def test_ack_interval_is_clamped_to_window_size(self, monkeypatch, retry_scheduler, caplog):
+        self._patch_common_config(monkeypatch)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: 8)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_ack_interval", lambda self, default: 16)
+
+        with caplog.at_level("WARNING"):
+            task = self._make_task_with_reliable(True, monkeypatch)
+
+        assert task.ack_interval == 8
+        assert "streaming_ack_interval 16 exceeds streaming_window_size 8" in caplog.text
+
     def test_retry_timeout_has_positive_floor(self, monkeypatch, retry_scheduler):
         self._patch_common_config(monkeypatch)
         monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 0.0)

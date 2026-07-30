@@ -60,7 +60,7 @@ Low-level communication configuration (comm_config.py):
      - 60.0
      - Maximum time to retry an unacknowledged reliable streaming chunk
    * - streaming_retry_max_pending_bytes
-     - 128MB
+     - max(128MB, 2 * streaming_window_size)
      - Maximum payload bytes held in memory for reliable streaming retry
 
 

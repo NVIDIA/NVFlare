@@ -242,6 +242,12 @@ class TxTask(StreamTaskSpec):
         self.reliable = config.get_streaming_reliable(False) if reliable is None else reliable
         self.window_size = config.get_streaming_window_size(STREAM_WINDOW_SIZE)
         self.ack_interval = config.get_streaming_ack_interval(STREAM_ACK_INTERVAL)
+        if self.ack_interval > self.window_size:
+            log.warning(
+                f"{self} streaming_ack_interval {self.ack_interval} exceeds streaming_window_size "
+                f"{self.window_size}; using {self.window_size}"
+            )
+            self.ack_interval = self.window_size
         self.ack_wait = config.get_streaming_ack_wait(STREAM_ACK_WAIT)
         self.ack_progress_timeout = config.get_streaming_ack_progress_timeout(60.0)
         # Guard against zero/negative config to avoid wait(0) busy-spin loops.
@@ -249,7 +255,8 @@ class TxTask(StreamTaskSpec):
         self.last_ack_progress_ts = time.monotonic()
         self.retry_wait = max(0.01, config.get_streaming_retry_wait(STREAM_RETRY_WAIT))
         self.retry_timeout = max(0.01, config.get_streaming_retry_timeout(STREAM_RETRY_TIMEOUT))
-        self.retry_max_pending_bytes = config.get_streaming_retry_max_pending_bytes(STREAM_RETRY_MAX_PENDING_BYTES)
+        retry_max_pending_default = max(STREAM_RETRY_MAX_PENDING_BYTES, 2 * self.window_size)
+        self.retry_max_pending_bytes = config.get_streaming_retry_max_pending_bytes(retry_max_pending_default)
 
         if self.reliable:
             self.pending_messages = {}
