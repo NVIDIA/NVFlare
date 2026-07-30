@@ -49,6 +49,9 @@ class TensorDecomposer(ViaDownloaderDecomposer):
     def to_downloadable(self, items: dict, max_chunk_size: int, fobs_ctx: dict) -> Downloadable:
         return TensorDownloadable(items, max_chunk_size)
 
+    def _get_download_kwargs(self, fobs_ctx: dict) -> dict:
+        return {"fobs_ctx": fobs_ctx}
+
     def download(
         self,
         from_fqcn: str,

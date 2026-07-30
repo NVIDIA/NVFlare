@@ -19,7 +19,6 @@ Covers four scenarios:
   3. Remote P2P path: trainer CJ preserves refs for explicit aggregation-CJ resolution.
   4. Defensive guard in _end_gather(): fires, calls system_panic (invariant violation).
 """
-import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -75,10 +74,6 @@ def _make_controller():
     # attributes set by __init__
     ctl.enable_tensor_disk_offload = True
     ctl._tensor_disk_offload_root_dir = "/tmp/swarm-offload"
-    ctl._tensor_disk_offload_lock = threading.Lock()
-    ctl._active_tensor_disk_downloads = 0
-    ctl._tensor_disk_offload_closing = False
-    ctl._pending_tensor_disk_offload_root_dir = None
     ctl.metric_comparator = None
     ctl.metric_comparator_id = None
     ctl.report_learn_result_task_name = "swarm_report_learn_result"

@@ -297,9 +297,18 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         optional=False,
         abort_signal=None,
         progress_cb=None,
-        fobs_ctx: dict = None,
     ) -> tuple[str, dict]:
         pass
+
+    def _get_download_kwargs(self, fobs_ctx: dict) -> dict:
+        """Return optional context-aware arguments for ``download``.
+
+        The default must remain empty because external subclasses may implement
+        the legacy ``download`` signature without accepting arbitrary keyword
+        arguments. Subclasses that need call-scoped FOBS context can explicitly
+        opt in by overriding this hook.
+        """
+        return {}
 
     def supported_dots(self):
         return [self.get_download_dot()]
@@ -887,14 +896,15 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         stream_progress_cb = self._make_stream_progress_cb(fobs_ctx, ref_id)
 
         self.logger.debug(f"trying to download: {ref_id=} {fqcn=}")
+        download_kwargs = self._get_download_kwargs(fobs_ctx)
         err, items = self.download(
             from_fqcn=fqcn,
             ref_id=ref_id,
             per_request_timeout=req_timeout,
             cell=cell,
-            fobs_ctx=fobs_ctx,
             abort_signal=abort_signal,
             progress_cb=stream_progress_cb,
+            **download_kwargs,
         )
         if err:
             self.logger.error(f"failed to download from {fqcn} for source {ref}: {err}")
