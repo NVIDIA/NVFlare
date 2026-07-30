@@ -291,6 +291,19 @@ class LoggerNameFilter(logging.Filter):
         return any(name.startswith(logger_name) or name.split(".")[-1] == logger_name for logger_name in logger_names)
 
 
+class TrainingLogFilter(LoggerNameFilter):
+    """Show non-NVFlare training logs while suppressing non-application NVFlare INFO logs."""
+
+    def filter(self, record):
+        name = getattr(record, "fullName", record.name)
+        is_nvflare_logger = name == "nvflare" or name.startswith("nvflare.")
+
+        if not is_nvflare_logger and not self.matches_name(name, self.exclude_logger_names):
+            return True
+
+        return super().filter(record)
+
+
 def get_module_logger(module=None, name=None) -> logging.Logger:
     # Get module logger name adhering to logger hierarchy. Optionally add name as a suffix.
     if module is None:

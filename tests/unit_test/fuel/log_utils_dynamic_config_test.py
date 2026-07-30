@@ -51,7 +51,33 @@ def test_log_modes_preserve_concise_and_add_msg_only():
     assert logmode_config_dict[LogMode.CONCISE]["formatters"]["consoleFormatter"]["fmt"] == (
         "%(asctime)s - %(levelname)s - %(message)s"
     )
+    assert logmode_config_dict[LogMode.CONCISE]["filters"]["FLFilter"]["()"] == (
+        "nvflare.fuel.utils.log_utils.TrainingLogFilter"
+    )
     assert logmode_config_dict[LogMode.MSG_ONLY]["formatters"]["consoleFormatter"]["fmt"] == "%(message)s"
+
+
+@pytest.mark.parametrize(
+    "logger_name,level,expected",
+    [
+        ("trainer.SimpleTrainer", logging.INFO, True),
+        ("torch.distributed", logging.INFO, True),
+        ("custom.trainer", logging.INFO, True),
+        ("nvflare_custom.trainer", logging.INFO, True),
+        ("nvflare.app_common.workflows.fedavg", logging.INFO, True),
+        ("nvflare.app_opt.tracking", logging.INFO, True),
+        ("nvflare.private.fed.client", logging.INFO, False),
+        ("nvflare.fuel.f3.cellnet", logging.INFO, False),
+        ("nvflare.private.fed.client", logging.WARNING, True),
+    ],
+)
+def test_training_log_filter(logger_name, level, expected):
+    from nvflare.fuel.utils.log_utils import TrainingLogFilter
+
+    log_filter = TrainingLogFilter(logger_names=["custom", "nvflare.app_common", "nvflare.app_opt"])
+    record = logging.LogRecord(logger_name, level, __file__, 1, "message", (), None)
+
+    assert log_filter.filter(record) is expected
 
 
 def test_color_formatter_omits_ansi_when_stdout_is_not_tty(monkeypatch):

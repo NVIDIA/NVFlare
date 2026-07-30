@@ -812,7 +812,7 @@ application run.
         simulator_parser.add_argument("-c", "--clients", type=str, help="client names list")
         simulator_parser.add_argument("-t", "--threads", type=int, help="number of parallel running clients")
         simulator_parser.add_argument("-gpu", "--gpu", type=str, help="list of GPU Device Ids, comma separated")
-        simulator_parser.add_argument("-l", "--log_config", type=str, default="full", help="log config mode ('concise', 'full', 'verbose'), filepath, or level")
+        simulator_parser.add_argument("-l", "--log_config", type=str, default="concise", help="log config mode ('concise', 'full', 'verbose'), filepath, or level")
         simulator_parser.add_argument("-m", "--max_clients", type=int, default=100, help="max number of clients")
 
 
