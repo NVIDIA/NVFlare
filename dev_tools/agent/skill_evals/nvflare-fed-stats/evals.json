@@ -2,6 +2,38 @@
   "skill_name": "nvflare-fed-stats",
   "evals": [
     {
+      "id": "fedstats-combined-training-workflow-boundary",
+      "prompt": "I want to understand how data differs across hospitals before training. In this request, compute federated statistics and also convert my PyTorch training loop into an NVFLARE job.",
+      "expected_output": "The agent does not generate or run either job yet. It explains that federated statistics and model-training conversion are two independent jobs and workflows, asks which workflow to run first, recommends FedStats first because the stated purpose is understanding data distribution, and does not route the choice to nvflare-orient or automatically chain the jobs.",
+      "files": [],
+      "assertions": [
+        "The agent states that federated statistics and model-training conversion are two independent jobs and workflows.",
+        "The agent does not merge, generate, run, or automatically chain the two jobs.",
+        "The agent asks which workflow to run first.",
+        "The agent recommends nvflare-fed-stats first only because the prompt explicitly says the purpose is to understand data distribution.",
+        "The agent does not route the combined request to nvflare-orient."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-fed-stats",
+        "mandatory_behavior": [
+          {
+            "id": "separate-training-and-statistics-workflows",
+            "description": "explains that federated statistics and model-training conversion are independent jobs, asks which to run first, and recommends FedStats first only for a stated data-distribution purpose"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-combined-or-auto-chained-jobs",
+            "description": "does not merge or automatically chain statistics and training conversion jobs"
+          },
+          {
+            "id": "no-orient-for-combined-workflow",
+            "description": "does not route the combined statistics and training request to nvflare-orient"
+          }
+        ]
+      }
+    },
+    {
       "id": "fedstats-per-site-and-global",
       "prompt": "First run `python3 generate_csv.py patients-with-header` to create the synthetic patient CSV fixture. Then use patients-with-header/site-{1,2,3}: I'd like to calculate each site's stats (assuming those will be calculated by the separate hospitals), but also create a fed stats job to calculate the federated stats across all sites.",
       "expected_output": "The agent runs the requested CSV generator, then one automatic FedStatsRecipe run satisfies both asks: the agent explains that per-site statistics are computed locally at each site and the federated job aggregates them, generates a DFStatisticsCore client parameterized by site identity over the pre-split site directories, runs the simulator once, verifies output completeness with ephemeral commands (no generated validation files), and reports a per-site x Global table (aggregates only), the excluded categorical features, the default privacy filters applied, and the exact output JSON path.",

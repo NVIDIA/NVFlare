@@ -41,8 +41,9 @@ executes them. The packaged skills today are:
 
 - `nvflare-orient` — read-only router that inspects a project and recommends the
   next skill or workflow;
-- `nvflare-convert-pytorch` and `nvflare-convert-lightning` — convert existing
-  PyTorch / PyTorch Lightning training code into a federated NVFLARE job via the
+- `nvflare-convert-pytorch`, `nvflare-convert-lightning`, and
+  `nvflare-convert-huggingface` — convert existing PyTorch, PyTorch Lightning,
+  or Hugging Face Trainer code into a federated NVFLARE job via the
   Client API, with local validation and export;
 - `nvflare-diagnose-job` — read-only diagnosis of a failed job from bounded
   evidence.
@@ -208,7 +209,7 @@ flowchart TB
 
 ```mermaid
 flowchart TD
-    SkillsRoot["repo-root skills/ (or published NVIDIA/<skills-repo>)"] --> SkillDirs["nvflare-orient, nvflare-convert-pytorch, nvflare-convert-lightning, nvflare-diagnose-job, nvflare-shared (internal)"]
+    SkillsRoot["repo-root skills/ (or published NVIDIA/<skills-repo>)"] --> SkillDirs["nvflare-orient, nvflare-convert-pytorch, nvflare-convert-lightning, nvflare-convert-huggingface, nvflare-diagnose-job, nvflare-shared (internal)"]
 
     SkillDirs --> Lint["Engineering lint tool: dev_tools/agent/skills/checks (frontmatter validation, admission checks)"]
 
@@ -224,7 +225,7 @@ flowchart TD
 ```mermaid
 flowchart LR
     Project["User project or NVFLARE artifacts"] --> Orient["nvflare-orient: read-only router"]
-    Project --> Convert["nvflare-convert-pytorch / nvflare-convert-lightning: conversion skills"]
+    Project --> Convert["nvflare-convert-pytorch / nvflare-convert-lightning / nvflare-convert-huggingface: conversion skills"]
     Project --> Diagnose["nvflare-diagnose-job: read-only diagnosis"]
 
     Orient --> OrientInspect["Inspect project shape and FLARE readiness"]
@@ -262,7 +263,8 @@ Runtime (installed on the user's machine):
   agent skill directories)
 - Per-framework detectors: `nvflare/tool/agent/frameworks/` (one module per
   framework; add a framework here, not in the engine)
-- Implemented skills: `nvflare-orient`, `nvflare-convert-pytorch`, `nvflare-convert-lightning`, and `nvflare-diagnose-job`
+- Implemented skills: `nvflare-orient`, `nvflare-convert-pytorch`, `nvflare-convert-lightning`,
+  `nvflare-convert-huggingface`, and `nvflare-diagnose-job`
 
 Separate:
 

@@ -71,6 +71,19 @@ class CacheableObject(Downloadable):
         """
         pass
 
+    def prefetch_item(self, index: int):
+        """Optionally start producing an item before the receiver requests it.
+
+        The default implementation does nothing. Subclasses with expensive
+        ``produce_item`` implementations can override this to keep one bounded
+        item of work ahead of the network transfer.
+        """
+        pass
+
+    def get_item_size(self, index: int) -> Optional[int]:
+        """Return a lower-bound item size when it is known without production."""
+        return None
+
     def set_transaction(self, tx_id, ref_id):
         tx_info = DownloadService.get_transaction_info(tx_id)
         self.num_receivers = tx_info.num_receivers
@@ -180,21 +193,48 @@ class CacheableObject(Downloadable):
 
         result = []
         total_size = 0
+        should_prefetch = True
 
         for i in range(start, self.size):
+            if result:
+                estimated_size = self.get_item_size(i)
+                if estimated_size is not None and total_size + estimated_size >= self.max_chunk_size:
+                    break
             item = self._get_item(i, requester)
             item_size = len(item)
             if not result or total_size + item_size < self.max_chunk_size:
                 result.append(item)
                 total_size += item_size
             else:
+                # _get_item() already produced and cached this item.
+                should_prefetch = False
                 break
+
+        next_index = start + len(result)
+        if should_prefetch:
+            # Keep up to two items ahead without allowing two oversized
+            # serializations to multiply peak RSS. The first item is always
+            # eligible because an individual item may legitimately exceed
+            # max_chunk_size; additional items must fit in the byte budget.
+            prefetched_size = 0
+            for _pi in range(next_index, min(next_index + 2, self.size)):
+                estimated_size = self.get_item_size(_pi)
+                if prefetched_size and (
+                    estimated_size is None or prefetched_size + estimated_size > self.max_chunk_size
+                ):
+                    break
+                self.prefetch_item(_pi)
+                if estimated_size is None:
+                    break
+                prefetched_size += estimated_size
 
         self.logger.debug(f"produced {len(result)} items for {requester}: {total_size} bytes")
         return ProduceRC.OK, result, {_StateKey.START: start, _StateKey.COUNT: len(result)}
 
 
 class ItemConsumer(Consumer):
+
+    supports_pipelining = True
 
     def __init__(self):
         super().__init__()

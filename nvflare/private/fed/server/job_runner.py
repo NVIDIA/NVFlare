@@ -171,20 +171,18 @@ class JobRunner(FLComponent):
                         deploy_detail.append(f"server: {err}")
                         raise RuntimeError(f"Failed to deploy app '{app_name}': {err}")
 
-                    from_hub_site = job.meta.get(JobMetaKey.FROM_HUB_SITE.value)
-                    if not from_hub_site:
-                        app_path = workspace.get_app_dir(job.job_id)
-                        root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
-                        sig_file = os.path.join(app_path, NVFLARE_SIG_FILE)
-                        if os.path.exists(sig_file):
-                            if not verify_folder_signature(app_path, root_ca_path):
-                                err = "job signature verification failed"
-                                deploy_detail.append(f"server: {err}")
-                                raise RuntimeError(f"Failed to verify app '{app_name}': {err}")
-                        elif require_signed_jobs(workspace):
-                            err = "unsigned job rejected — require_signed_jobs is enabled"
+                    app_path = workspace.get_app_dir(job.job_id)
+                    root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
+                    sig_file = os.path.join(app_path, NVFLARE_SIG_FILE)
+                    if os.path.exists(sig_file):
+                        if not verify_folder_signature(app_path, root_ca_path):
+                            err = "job signature verification failed"
                             deploy_detail.append(f"server: {err}")
-                            raise RuntimeError(f"UNSIGNED_JOB_REJECTED: {err}")
+                            raise RuntimeError(f"Failed to verify app '{app_name}': {err}")
+                    elif require_signed_jobs(workspace):
+                        err = "unsigned job rejected — require_signed_jobs is enabled"
+                        deploy_detail.append(f"server: {err}")
+                        raise RuntimeError(f"UNSIGNED_JOB_REJECTED: {err}")
 
                     self.log_info(
                         fl_ctx, f"Application {app_name} deployed to the server for job: {run_number}", fire_event=False
