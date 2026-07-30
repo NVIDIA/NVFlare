@@ -65,6 +65,7 @@ def _make_chunk(
     reliable: bool = True,
     retry_wait: float = None,
     retry_timeout: float = None,
+    streaming_parameters: dict = None,
 ):
     message = Message(None, payload)
     headers = {
@@ -81,6 +82,8 @@ def _make_chunk(
         headers[StreamHeaderKey.RETRY_WAIT] = retry_wait
     if retry_timeout is not None:
         headers[StreamHeaderKey.RETRY_TIMEOUT] = retry_timeout
+    if streaming_parameters:
+        headers.update(streaming_parameters)
     message.add_headers(headers)
     return message
 
@@ -215,6 +218,68 @@ def test_find_or_create_task_records_reliable_header():
     task = RxTask.find_or_create_task(message, cell)
 
     assert task.reliable is True
+
+
+def test_new_stream_uses_sender_streaming_parameters():
+    cell = SimpleNamespace()
+    sender_parameters = {
+        StreamHeaderKey.CHUNK_SIZE: 2 * 1024**2,
+        StreamHeaderKey.WINDOW_SIZE: 128 * 1024**2,
+        StreamHeaderKey.ACK_INTERVAL: 32 * 1024**2,
+        StreamHeaderKey.RETRY_MAX_PENDING_BYTES: 256 * 1024**2,
+    }
+    message = _make_chunk(
+        "site-1",
+        sid=532,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        streaming_parameters=sender_parameters,
+    )
+
+    task = RxTask.find_or_create_task(message, cell)
+    assert task.process_chunk(message) is True
+
+    assert task.chunk_size == sender_parameters[StreamHeaderKey.CHUNK_SIZE]
+    assert task.window_size == sender_parameters[StreamHeaderKey.WINDOW_SIZE]
+    assert task.ack_interval == sender_parameters[StreamHeaderKey.ACK_INTERVAL]
+    assert task.retry_max_pending_bytes == sender_parameters[StreamHeaderKey.RETRY_MAX_PENDING_BYTES]
+
+
+def test_new_stream_without_sender_parameters_uses_local_configuration(monkeypatch):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_chunk_size", lambda self, default: 2)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: 8)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_ack_interval", lambda self, default: 4)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_max_pending_bytes", lambda self, default: 16)
+    cell = SimpleNamespace()
+    message = _make_chunk("site-1", sid=533, seq=0, data_type=StreamDataType.CHUNK)
+
+    task = RxTask.find_or_create_task(message, cell)
+    assert task.process_chunk(message) is True
+
+    assert task.chunk_size == 2
+    assert task.window_size == 8
+    assert task.ack_interval == 4
+    assert task.retry_max_pending_bytes == 16
+
+
+@pytest.mark.parametrize("invalid_value", [True, -1, 0, 1.5, "16M"])
+def test_invalid_sender_ack_interval_uses_local_configuration(monkeypatch, invalid_value, caplog):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_ack_interval", lambda self, default: 4)
+    cell = SimpleNamespace()
+    message = _make_chunk(
+        "site-1",
+        sid=534,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        streaming_parameters={StreamHeaderKey.ACK_INTERVAL: invalid_value},
+    )
+
+    with caplog.at_level(logging.WARNING):
+        task = RxTask.find_or_create_task(message, cell)
+        assert task.process_chunk(message) is True
+
+    assert task.ack_interval == 4
+    assert "ignoring invalid streaming_ack_interval header" in caplog.text
 
 
 def test_reliable_duplicate_initial_chunk_sends_sequence_ack():

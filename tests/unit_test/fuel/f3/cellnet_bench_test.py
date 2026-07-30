@@ -20,12 +20,14 @@ import pytest
 from dev_tools.f3 import cellnet_bench
 from nvflare.fuel.f3.streaming.byte_receiver import ACK_INTERVAL
 from nvflare.fuel.f3.streaming.byte_streamer import STREAM_CHUNK_SIZE, STREAM_WINDOW_SIZE
+from nvflare.fuel.f3.streaming.stream_const import STREAM_RETRY_MAX_PENDING_BYTES
 
 
 def test_benchmark_defaults_match_f3_streaming_defaults():
     assert cellnet_bench.DEFAULT_F3_CHUNK_SIZE == STREAM_CHUNK_SIZE == 1024**2
-    assert cellnet_bench.DEFAULT_F3_WINDOW_SIZE == STREAM_WINDOW_SIZE == 16 * 1024**2
-    assert ACK_INTERVAL == 4 * 1024**2
+    assert cellnet_bench.DEFAULT_F3_WINDOW_SIZE == STREAM_WINDOW_SIZE == 64 * 1024**2
+    assert ACK_INTERVAL == 16 * 1024**2
+    assert STREAM_RETRY_MAX_PENDING_BYTES == 128 * 1024**2
 
 
 @pytest.mark.parametrize(

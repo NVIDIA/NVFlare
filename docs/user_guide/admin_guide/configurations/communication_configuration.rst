@@ -254,13 +254,13 @@ This is an example of comm_config.json file with default values for all the para
     "streaming_max_blob_size": 2144337904,
     "streaming_read_timeout": 60,
     "streaming_max_out_seq_chunks": 16,
-    "streaming_window_size": 16777216,
-    "streaming_ack_interval": 4194304,
+    "streaming_window_size": 67108864,
+    "streaming_ack_interval": 16777216,
     "streaming_ack_wait": 10,
     "streaming_reliable": false,
     "streaming_retry_wait": 5.0,
     "streaming_retry_timeout": 60.0,
-    "streaming_retry_max_pending_bytes": 33554432
+    "streaming_retry_max_pending_bytes": 134217728
   }
 
 When large amount of data are exchanged on busy hosts like in LLM training, following parameters are recommended in <site_workspace>/local/comm_config.json on both servers and clients,
@@ -354,21 +354,21 @@ Following parameters are used to control the flow-control behavior.
 streaming_window_size
 ---------------------
 
-The sliding window size in bytes. The default is 16M.
+The sliding window size in bytes. The default is 64M.
 
 The larger the window size, the smoother the flow of data  but the memory usage will be higher.
-High-bandwidth deployments can configure a larger window on all endpoints; for
-example, ``dev_tools/f3/comm_config.yml`` uses 64M for a nominal 25 Gbit/s link.
 
 streaming_ack_interval
 ----------------------
 
 This parameter controls how often the receiver sends ACKs to the sender.
-The unit is bytes and the default value is 4M (1/4 of the default window size).
+The unit is bytes and the default value is 16M (1/4 of the default window size).
 
 The smaller the value, the smoother the sliding window moves, however it generates more messages.
-Keep this value no larger than the smallest sender window in mixed-version or
-heterogeneously configured deployments.
+The sender includes its streaming chunk size, window size, ACK interval, and retry pending-byte
+limit in the first stream message. The receiver uses those values for the stream so flow-control
+settings remain consistent when the endpoints have different configurations. When communicating
+with an older sender that does not include these headers, the receiver uses its local configuration.
 
 streaming_ack_wait
 ------------------
@@ -402,6 +402,6 @@ streaming_retry_max_pending_bytes
 ---------------------------------
 
 The maximum total payload bytes that a reliable streaming sender keeps in memory for retry.
-The default value is twice ``streaming_window_size``.
+The default value is 128M.
 
 Set this to 0 or a negative value to disable the retry pending-byte limit.
