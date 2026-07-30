@@ -36,6 +36,10 @@ class CellDispatcher(_InvocationDispatcher):
         self.target_fqcn = target_fqcn
         self.thread_executor = thread_executor
 
+    def _check_secure_call_supported(self, call_opt: CallOption):
+        if call_opt.secure and not self.cell.core_cell.supports_secure_messages():
+            raise RuntimeError("secure Collab call requires a Cell configured with certificates")
+
     def _call_target(
         self,
         context,
@@ -46,6 +50,8 @@ class CellDispatcher(_InvocationDispatcher):
         **kwargs,
     ):
         set_call_context(context)
+
+        self._check_secure_call_supported(call_opt)
 
         payload = {
             ObjectCallKey.CALLER: self.caller,
@@ -125,6 +131,10 @@ class CellDispatcher(_InvocationDispatcher):
             return None
 
     def call_target_in_group(self, gcc: GroupCallContext, func_name: str, *args, **kwargs):
+        # Validate local preconditions before handing work to the executor. In
+        # particular, fire-and-forget calls return before worker failures can
+        # be observed, so an invalid secure configuration must fail here.
+        self._check_secure_call_supported(gcc.call_opt)
         future = self.thread_executor.submit(self._run_func, gcc, func_name, args, kwargs)
         future.add_done_callback(lambda done: self._group_call_done(done, gcc, func_name))
 

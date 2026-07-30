@@ -405,7 +405,7 @@ def _resolve_kubectl(args) -> str:
     if kubectl not in K8_STAGE_ALLOWED_KUBECTL_NAMES:
         _fail(
             "INVALID_ARGS",
-            f"Kubernetes CLI command must be one of {sorted(K8_STAGE_ALLOWED_KUBECTL_NAMES)}: {kubectl!r}",
+            f"Kubernetes CLI command must be one of {sorted(K8_STAGE_ALLOWED_KUBECTL_NAMES)}.",
             "Set --kubectl or KUBECTL to kubectl or oc.",
         )
     return kubectl

@@ -2,14 +2,14 @@
 name: nvflare-autofl
 description: "Use for agent-assisted Auto-FL optimization of an existing NVFLARE job in simulation, POC, or production. Do not use for code conversion, diagnosis-only work, or deployment setup."
 license: Apache-2.0
-version: "0.1.0"
-compatibility: "Requires NVFLARE 2.8.0+, Python, and permission to run NVFLARE jobs in the selected environment."
+compatibility: "Requires NVFLARE 2.9.0+, Python, and permission to run NVFLARE jobs in the selected environment."
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-  tags: [nvflare, federated-learning, optimization]
-  min_flare_version: "2.8.0"
+  tags: "nvflare, federated-learning, optimization"
+  min_flare_version: "2.9.0"
   blast_radius: submits_production
   category: Optimization
+  version: "0.1.0"
 ---
 
 # NVFLARE Auto-FL
