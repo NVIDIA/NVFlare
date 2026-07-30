@@ -47,6 +47,7 @@ Run config-driven system tests by selecting a `test_configs.yml` group:
 ```bash
 NVFLARE_TEST_FRAMEWORK=numpy python -m pytest -v --log-cli-level=INFO --capture=no system_test.py
 NVFLARE_TEST_FRAMEWORK=pytorch python -m pytest -v --log-cli-level=INFO --capture=no system_test.py
+NVFLARE_TEST_FRAMEWORK=xgboost python -m pytest -v --log-cli-level=INFO --capture=no system_test.py
 NVFLARE_TEST_FRAMEWORK=client_api python -m pytest -v --log-cli-level=INFO --capture=no system_test.py
 ```
 

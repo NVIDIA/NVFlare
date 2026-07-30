@@ -26,6 +26,12 @@ Example:
         --recipe_dir ../../examples/advanced/cifar10/pt/cifar10-sim/cifar10_fedavg \
         --output_dir ./exported_jobs/cifar10_fedavg_test \
         --recipe_args "--n_clients 2 --num_rounds 2"
+
+    python tools/export_recipe_job.py \
+        --recipe_dir ../../examples/advanced/xgboost/fedxgb \
+        --job_file job_tree.py \
+        --output_dir ./data/jobs \
+        --recipe_args "--site_num 2 --training_algo bagging --round_num 1"
 """
 
 import argparse
@@ -88,21 +94,26 @@ def add_paths_for_recipe(recipe_dir: str):
             sys.path.insert(0, src_parent)
 
 
-def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: Optional[list[str]] = None):
+def export_recipe_from_job_py(
+    recipe_dir: str,
+    output_dir: str,
+    recipe_args: Optional[list[str]] = None,
+    job_file: str = "job.py",
+):
     """
-    Import and run job.py, but patch recipe.execute() to export instead.
+    Import and run a recipe job file, but patch recipe.execute() to export instead.
 
     This ensures we test the exact same configuration as the example.
     """
     recipe_abs_path = os.path.abspath(recipe_dir)
-    job_py_path = os.path.join(recipe_abs_path, "job.py")
+    job_py_path = os.path.join(recipe_abs_path, job_file)
 
     # Convert output_dir to absolute path BEFORE changing directories
     # Otherwise, relative paths like "./data/jobs" would be resolved relative to the recipe dir
     output_abs_path = os.path.abspath(output_dir)
 
     if not os.path.exists(job_py_path):
-        raise FileNotFoundError(f"job.py not found in {recipe_dir}")
+        raise FileNotFoundError(f"{job_file} not found in {recipe_dir}")
 
     # Capture state to restore on exit (including on exception)
     original_path = list(sys.path)
@@ -159,7 +170,7 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: Opt
         return MockRun(self.name if hasattr(self, "name") else "exported_job")
 
     try:
-        sys.argv = ["job.py"] + (recipe_args or [])
+        sys.argv = [job_file] + (recipe_args or [])
 
         with patch("nvflare.recipe.spec.Recipe.execute", patched_execute):
             spec = importlib.util.spec_from_file_location("__main__", job_py_path)
@@ -219,7 +230,10 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: Opt
 
 def main():
     parser = argparse.ArgumentParser(description="Export a recipe to a job folder for testing")
-    parser.add_argument("--recipe_dir", required=True, type=str, help="Path to recipe directory containing job.py")
+    parser.add_argument(
+        "--recipe_dir", required=True, type=str, help="Path to directory containing the recipe job file"
+    )
+    parser.add_argument("--job_file", default="job.py", type=str, help="Recipe job filename within recipe_dir")
     parser.add_argument("--output_dir", required=True, type=str, help="Output directory for exported job")
     parser.add_argument(
         "--recipe_args",
@@ -249,7 +263,7 @@ def main():
             shutil.rmtree(job_subfolder)
             print(f"Cleaned existing job folder: {job_subfolder}")
 
-    export_recipe_from_job_py(args.recipe_dir, args.output_dir, recipe_args)
+    export_recipe_from_job_py(args.recipe_dir, args.output_dir, recipe_args, job_file=args.job_file)
 
 
 if __name__ == "__main__":
