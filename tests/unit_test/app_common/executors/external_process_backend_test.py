@@ -564,7 +564,7 @@ class TestInitializeAndFinalize:
         def natural_wait(timeout=None):
             wait_entered.set()
             assert ebp._DEFAULT_SHUTDOWN_TIMEOUT - 1.0 < timeout <= ebp._DEFAULT_SHUTDOWN_TIMEOUT
-            assert release_exit.wait(2.0)
+            release_exit.wait()
             process.exit(0)
             return 0
 
@@ -579,11 +579,14 @@ class TestInitializeAndFinalize:
         finalize_thread = threading.Thread(target=backend.finalize, args=(FLContext(),))
         finalize_thread.start()
 
-        assert wait_entered.wait(1.0)
-        assert env.harness.signals_sent() == []
-        assert finalize_thread.is_alive()
-
-        release_exit.set()
+        try:
+            assert wait_entered.wait(2.0)
+            assert env.harness.signals_sent() == []
+            assert finalize_thread.is_alive()
+        finally:
+            # Always release the mocked wait, including when an assertion fails, so
+            # test-runner scheduling cannot turn this synchronization into SIGTERM.
+            release_exit.set()
         finalize_thread.join(timeout=2.0)
         assert not finalize_thread.is_alive()
         assert env.harness.signals_sent() == []
