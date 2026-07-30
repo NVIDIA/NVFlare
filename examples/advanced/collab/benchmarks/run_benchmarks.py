@@ -76,6 +76,9 @@ def run_one(scheme: str, output_root: Path, source_config: Path) -> dict:
         env["HF_DATASETS_OFFLINE"] = "1"
     if config.get("hf_home"):
         env["HF_HOME"] = config["hf_home"]
+        env["HF_HUB_CACHE"] = str(Path(config["hf_home"]) / "hub")
+        env["HF_DATASETS_CACHE"] = str(Path(config["hf_home"]) / "datasets")
+        env["XDG_CACHE_HOME"] = str(Path(config["hf_home"]) / "xdg")
 
     print(f"\nRunning pt_llm_sft ({scheme})", flush=True)
     started = time.perf_counter()

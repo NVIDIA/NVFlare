@@ -58,6 +58,7 @@ def make_recipe(config: dict) -> FedAvgRecipe:
             "--precision",
             config["precision"],
         ]
+        + (["--model-revision", config["model_revision"]] if config.get("model_revision") else [])
         + (["--evaluate-global-model"] if config["evaluate_global_model"] else [])
     )
     recipe = FedAvgRecipe(
@@ -66,6 +67,7 @@ def make_recipe(config: dict) -> FedAvgRecipe:
             "class_path": "collab.benchmarks.pt_llm_sft.standard_model.CausalLMModel",
             "args": {
                 "model_name_or_path": config["model_name_or_path"],
+                "model_revision": config.get("model_revision"),
                 "precision": config["precision"],
             },
         },

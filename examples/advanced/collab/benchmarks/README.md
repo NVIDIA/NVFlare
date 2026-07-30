@@ -18,6 +18,234 @@ The older native-versus-NumPy transition controls remain available in the
 individual workload modules for diagnostic use, but they are not the primary
 benchmark comparison.
 
+## Recorded cluster results
+
+The following runs were performed on July 29-30, 2026. They are recorded here
+for reproducibility, including unsuccessful submissions and runs made before
+the final one-GPU protocol was frozen.
+
+### Workload and reusable assets
+
+- Model: `TinyLlama/TinyLlama-1.1B-Chat-v1.0`, revision
+  `fe8a4ea1ffedaf415f4da2f062534de366a451e6`.
+- Dataset: `databricks/databricks-dolly-15k`.
+- Data split: four clients, each with 50 training and 10 validation examples.
+- Dolly source fingerprint: `2537fb912ac88184`.
+- Selected-data fingerprint: `ad577d13f1c87fc6`.
+- Prepared-data root:
+  `/lustre/fsw/portfolios/coreai/users/ziyuex/projects/collab_project/data/pt_llm_sft`.
+- Environment:
+  `/lustre/fsw/portfolios/coreai/users/ziyuex/miniconda3/envs/dfkd_async`;
+  the environment was reused without package changes.
+- GPU class: NVIDIA A100-SXM4-80GB with 81,920 MiB, driver `535.129.03`.
+
+The initial preparation completed at commit
+`a26c3554989469aa1467f4cf4a89e0a43fcb1cd3`. All per-file SHA-256 checks
+passed. At the final benchmark commit
+`f8ad5a7349d1384dc21325dfb6f46c020d72c299`, the preparation command took the
+reuse path without downloading Dolly again and revalidated the manifest and
+all shards. The validated manifest SHA-256 was
+`d2d545d8e7ba062f417c5828a46278a1cb4e5be00f8f12d8844bfa9fdb6e642a`.
+
+### Initial submission and smoke runs
+
+The first standard-smoke submission requested one GPU, 32 CPUs, 128 GB, and
+one hour. Slurm rejected it before creating a job because the cluster permits
+at most 30 CPUs for a one-GPU request. Reducing the request to eight CPUs
+allowed both initial smoke jobs to complete:
+
+| Scheme | Job | Allocation | Elapsed | Runner process | Training/sample time | MaxRSS |
+|---|---:|---|---:|---:|---:|---:|
+| Standard | `31075151` | 1 GPU, 8 CPUs, 128 GB | 2m 12s | 95.03s | 90.89s execution | 8,800,724K |
+| Collab | `31075589` | 1 GPU, 8 CPUs, 128 GB | 2m 10s | 91.15s | 33.93s sample total | 11,453,420K |
+
+Both jobs completed with exit code `0:0` at commit
+`a26c3554989469aa1467f4cf4a89e0a43fcb1cd3`. BF16 model loading and training
+succeeded. The Collab smoke moved a 2,200,096,768-byte full-model payload.
+These smoke runs predate the final resource scripts and did not collect
+per-second GPU samples.
+
+### Preliminary four-GPU paired run
+
+Job `31076308` completed one standard-then-Collab pair:
+
+| Measurement | Standard | Collab | Difference |
+|---|---:|---:|---:|
+| Runner process time | 300.32s | 247.14s | Collab was 53.19s (17.71%) faster |
+| Scheme-specific time | 295.68s execution | 38.28s mean per sync | Not directly comparable |
+
+The job completed with exit code `0:0` in 12m 08s. It used four
+A100-SXM4-80GB GPUs, 16 CPUs, and 256 GB of host memory; batch MaxRSS was
+134,296,984K. The Collab full-model payload was 2,200,096,768 bytes.
+Artifacts are under:
+
+```text
+/lustre/fsw/portfolios/coreai/users/ziyuex/projects/collab_project/results/paired_31076308
+```
+
+This is a preliminary functional result, not the final cluster-efficient
+measurement. It ran commit
+`a26c3554989469aa1467f4cf4a89e0a43fcb1cd3` with the superseded four-GPU
+request. The job was submitted after newer hold and one-GPU messages had been
+written, but before the experiment agent polled those messages. The old script
+captured only a static GPU inventory, so peak GPU memory and mean/peak GPU
+utilization cannot be reconstructed. No additional repetitions were performed
+under this allocation.
+
+### Final-commit one-GPU validation
+
+The final protocol packs all four logical clients onto one non-exclusive GPU.
+The single-client and four-client capacity gates produced:
+
+| Gate | Job | Clients | Elapsed | Runner process | Peak GPU memory | Mean/peak GPU utilization | MaxRSS | Result |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| Standard single | `31143768` | 1 | 2m 25s | 100.50s | 11,523 MiB | 1.34% / 58% | 14,685,900K | Passed |
+| Collab single | `31144006` | 1 | 2m 41s | 97.37s | 11,523 MiB | 0.82% / 42% | 11,139,604K | Passed |
+| Standard capacity | `31144300` | 4 | 2m 25s | 101.32s | 46,075 MiB | 5.12% / 100% | 51,086,876K | Passed |
+| Collab capacity | `31144623` | 4 | 2m 23s | 100.56s | 46,075 MiB | 4.85% / 100% | 44,132,116K | Passed |
+
+All four jobs used commit
+`f8ad5a7349d1384dc21325dfb6f46c020d72c299`, one A100-SXM4-80GB, eight CPUs,
+64 GB of host memory, and exit code `0:0`. Their logs passed the error scan.
+The standard single execution time was 95.70s; the Collab single mean total
+sample time was 28.64s and its full-model payload was 2,200,096,768 bytes. The
+standard capacity execution time was 97.05s. The Collab capacity mean total
+sample time was 37.30s, again with a 2,200,096,768-byte payload.
+
+The single-sync smoke timings are launch and capacity checks, not the primary
+performance comparison. Both four-client schemes fit on one GPU with identical
+46,075 MiB measured peaks, so the capacity gates authorized the paired run.
+
+### Final-commit one-GPU paired run
+
+Job `31144947` ran the full five-sync standard-then-Collab pair:
+
+| Measurement | Standard | Collab | Difference |
+|---|---:|---:|---:|
+| Runner process time | 270.45s | 228.60s | Collab was 41.86s (15.48%) faster |
+| Scheme-specific time | 266.52s execution | 33.73s mean per sync | Not directly comparable |
+
+The job completed with exit code `0:0` in 9m 04s on commit
+`f8ad5a7349d1384dc21325dfb6f46c020d72c299`. It requested one non-exclusive
+A100-SXM4-80GB, 16 CPUs, and 128 GB of host memory. Batch MaxRSS was
+123,076,640K. Across 509 one-second samples, peak GPU memory was 46,075 MiB,
+mean utilization was 6.87%, and peak utilization was 100%. The Collab median
+per-sync total was 33.10s and its full-model payload was 2,200,096,768 bytes.
+The result summary, both scheme metrics, and GPU samples are present; stderr
+was empty, and the run had no OOM, timeout, package, or error-scan failure.
+
+Compared with the superseded four-GPU pair, the raw allocation footprint fell
+from 48.53 to 9.07 GPU-minutes, an 81.3% reduction. This cross-run allocation
+comparison is descriptive rather than controlled because the runs used
+different commits and resource scripts.
+
+Both completed paired runs favored Collab in runner-process time: 17.71% on
+the preliminary four-GPU run and 15.48% on the final-commit one-GPU run. Only
+one pair was run under each allocation, always in standard-then-Collab order.
+A publishable performance claim still requires repeated pairs and alternating
+scheme order as described in the measurement protocol.
+
+### Result artifacts
+
+All successful job artifacts use this base directory:
+
+```text
+/lustre/fsw/portfolios/coreai/users/ziyuex/projects/collab_project/results
+```
+
+| Job | Result directory |
+|---:|---|
+| `31075151` | `smoke_standard_31075151` |
+| `31075589` | `smoke_collab_31075589` |
+| `31076308` | `paired_31076308` |
+| `31143768` | `smoke_single_standard_31143768` |
+| `31144006` | `smoke_single_collab_31144006` |
+| `31144300` | `smoke_capacity_standard_31144300` |
+| `31144623` | `smoke_capacity_collab_31144623` |
+| `31144947` | `paired_31144947` |
+
+Each result directory preserves scheme metrics and a combined summary. Jobs
+from the final commit also preserve per-second GPU samples under
+`environment/gpu_samples.csv`. Slurm stdout and stderr are under the sibling
+`logs` directory in the project root. The rejected 32-CPU submission has no
+job ID or result directory because Slurm refused it before job creation.
+
+## Yi-1.5-9B four-GPU scale-up
+
+The next benchmark scales only the model and GPU mapping while preserving the
+full-parameter BF16 SFT workload, AdamW optimizer, batch size of one, sequence
+length of 64, four Dolly sites, and five synchronizations. It uses the public
+text-only checkpoint:
+
+```text
+01-ai/Yi-1.5-9B
+revision 80d5471b1eae28beae33e06eadbd4b48e74d4ce1
+8,829,407,232 BF16 parameters
+```
+
+Yi-1.5-9B is the largest plausible public dense candidate for this unchanged
+single-A100 training method. Its parameters, gradients, and two BF16 Adam
+moment tensors have a lower bound of about 65.8 GiB before activations and
+framework overhead. A 10B model would leave only about 5.5 GiB of an 80 GiB
+GPU for all remaining state, while readily available 14B models exceed the GPU
+capacity on those four tensors alone. The one-client gates determine the
+actual fit rather than assuming the estimate is sufficient.
+
+The three immutable configs are:
+
+- `configs/pt_llm_sft_slurm_yi_9b_single.json`: one site, one sync, GPU 0;
+- `configs/pt_llm_sft_slurm_yi_9b_capacity.json`: four sites, one sync,
+  GPUs `0,1,2,3`;
+- `configs/pt_llm_sft_slurm_yi_9b.json`: four sites, five syncs, GPUs
+  `0,1,2,3`.
+
+### Prepare only in the user-owned cache
+
+The model must not use a system, default-home, shared-global, or node-local
+cache. `prepare_model.py` and every Yi Slurm launcher pin all cache paths
+beneath:
+
+```text
+/lustre/fsw/portfolios/coreai/users/ziyuex/huggingface_cache
+```
+
+Preparation passes that directory explicitly to the Hugging Face downloader,
+pins the model revision, verifies all weight shards, checks that the resolved
+snapshot remains beneath the configured cache root, and writes a model
+manifest under `nvflare_manifests/`. Measured jobs run offline and repeat the
+same validation with `--local-files-only` before timing.
+
+After exporting `NVFLARE_SOURCE_ROOT` and `EXPECTED_COMMIT` for a clean,
+immutable checkout, prepare the model once and reuse the existing Dolly data:
+
+```bash
+bash collab/benchmarks/slurm/prepare_model.sh
+CONFIG=collab/benchmarks/configs/pt_llm_sft_slurm_yi_9b.json \
+  bash collab/benchmarks/slurm/prepare_data.sh
+```
+
+### Run capacity gates before the pair
+
+Submit and monitor each job sequentially:
+
+```bash
+SCHEME=standard sbatch --export=ALL,SCHEME=standard collab/benchmarks/slurm/yi_9b_single.sbatch
+SCHEME=collab sbatch --export=ALL,SCHEME=collab collab/benchmarks/slurm/yi_9b_single.sbatch
+
+SCHEME=standard sbatch --export=ALL,SCHEME=standard collab/benchmarks/slurm/yi_9b_capacity.sbatch
+SCHEME=collab sbatch --export=ALL,SCHEME=collab collab/benchmarks/slurm/yi_9b_capacity.sbatch
+
+SCHEME_ORDER="standard collab" \
+  sbatch --export=ALL,SCHEME_ORDER="standard collab" collab/benchmarks/slurm/yi_9b_paired.sbatch
+```
+
+The single gate requests one GPU, eight CPUs, and 160 GB for 90 minutes. The
+capacity gate requests four GPUs, 32 CPUs, and 512 GB for two hours. Only if
+both schemes pass those gates should the paired job request four GPUs, 32 CPUs,
+and 1 TB for four hours. All jobs are non-exclusive. Each site receives one
+A100; no GPU is shared by two sites. Stop on an OOM instead of changing the
+model or training method inside a matched pair.
+
 ## Configure cluster assets
 
 `configs/pt_llm_sft.json` is the lightweight local smoke configuration.
@@ -50,8 +278,7 @@ run. Record the model revision or snapshot path and a dataset manifest with
 the results.
 
 The lightweight model in the local configuration remains a smoke-test default.
-The 1.1B TinyLlama snapshot is the current primary Slurm candidate because it
-is already complete, text-only, and compatible with `AutoModelForCausalLM`.
+TinyLlama 1.1B is the recorded baseline; Yi-1.5-9B is the four-GPU scale-up.
 
 ## Install dependencies
 
@@ -150,7 +377,7 @@ Use a shared scratch path through `--output-root` on Slurm.
 
 - Run a smoke test first, then at least three paired measured repetitions.
 - Alternate scheme order across pairs to reduce cache and thermal bias.
-- Use the same Slurm allocation and exclusive-node policy for a pair.
+- Use the same Slurm allocation and placement policy for a pair.
 - Warm the model and dataset caches before timing and enable offline Hugging
   Face mode for measured jobs.
 - Record job IDs, commit SHA, config, model snapshot, dataset manifest,

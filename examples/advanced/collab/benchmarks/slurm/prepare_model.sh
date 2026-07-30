@@ -6,7 +6,7 @@ set -euo pipefail
 
 CONDA_ROOT=/lustre/fsw/portfolios/coreai/users/ziyuex/miniconda3
 HF_CACHE_ROOT=/lustre/fsw/portfolios/coreai/users/ziyuex/huggingface_cache
-CONFIG=${CONFIG:-collab/benchmarks/configs/pt_llm_sft_slurm.json}
+CONFIG=${CONFIG:-collab/benchmarks/configs/pt_llm_sft_slurm_yi_9b.json}
 
 actual_commit=$(git -C "${NVFLARE_SOURCE_ROOT}" rev-parse HEAD)
 if [[ "${actual_commit}" != "${EXPECTED_COMMIT}" ]]; then
@@ -26,4 +26,4 @@ export HF_DATASETS_CACHE="${HF_CACHE_ROOT}/datasets"
 export XDG_CACHE_HOME="${HF_CACHE_ROOT}/xdg"
 
 cd "${NVFLARE_SOURCE_ROOT}/examples/advanced"
-python collab/benchmarks/prepare_data.py --workload pt_llm_sft --config "${CONFIG}"
+python collab/benchmarks/prepare_model.py --config "${CONFIG}"

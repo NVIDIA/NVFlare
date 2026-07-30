@@ -19,7 +19,7 @@ from transformers import AutoModelForCausalLM
 
 
 class CausalLMModel(torch.nn.Module):
-    def __init__(self, model_name_or_path: str, precision: str):
+    def __init__(self, model_name_or_path: str, precision: str, model_revision: str | None = None):
         super().__init__()
         bf16_supported = torch.cuda.is_available() and bool(getattr(torch.cuda, "is_bf16_supported", lambda: False)())
         if precision == "bfloat16" and not bf16_supported:
@@ -29,6 +29,7 @@ class CausalLMModel(torch.nn.Module):
         dtype = torch.bfloat16 if precision == "bfloat16" else torch.float32
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name_or_path,
+            revision=model_revision,
             trust_remote_code=True,
             dtype=dtype,
         )

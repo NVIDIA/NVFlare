@@ -61,7 +61,15 @@ def prepare_dolly_data(data_root: Path, config: dict) -> None:
         raise ValueError("Dolly training examples per client must be at least syncs_per_epoch")
 
     if config.get("hf_home"):
-        os.environ["HF_HOME"] = config["hf_home"]
+        hf_home = Path(config["hf_home"]).expanduser().resolve()
+        os.environ.update(
+            {
+                "HF_HOME": str(hf_home),
+                "HF_HUB_CACHE": str(hf_home / "hub"),
+                "HF_DATASETS_CACHE": str(hf_home / "datasets"),
+                "XDG_CACHE_HOME": str(hf_home / "xdg"),
+            }
+        )
     import datasets as hf_datasets
 
     dataset = hf_datasets.load_dataset(config["dataset_name"], split=config["dataset_split"])

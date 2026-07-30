@@ -1,0 +1,23 @@
+{
+  "num_clients": 4,
+  "num_epochs": 1,
+  "syncs_per_epoch": 5,
+  "model_name_or_path": "01-ai/Yi-1.5-9B",
+  "model_revision": "80d5471b1eae28beae33e06eadbd4b48e74d4ce1",
+  "hf_home": "/lustre/fsw/portfolios/coreai/users/ziyuex/huggingface_cache",
+  "data_root": "/lustre/fsw/portfolios/coreai/users/ziyuex/projects/collab_project/data/pt_llm_sft",
+  "dataset_name": "databricks/databricks-dolly-15k",
+  "dataset_split": "train",
+  "data_seed": 0,
+  "train_examples_per_client": 50,
+  "valid_examples_per_client": 10,
+  "trainer_output_root": "/lustre/fsw/portfolios/coreai/users/ziyuex/projects/collab_project/results/trainer",
+  "learning_rate": 0.00002,
+  "max_length": 64,
+  "precision": "bfloat16",
+  "evaluate_global_model": false,
+  "call_timeout": 7200,
+  "force_cpu": false,
+  "offline_mode": true,
+  "gpu_config": "0,1,2,3"
+}

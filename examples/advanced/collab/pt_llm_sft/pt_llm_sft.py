@@ -113,10 +113,12 @@ class LLMSFTClient:
         learning_rate: float,
         max_length: int,
         evaluate_global_model: bool,
+        model_revision: str | None = None,
         precision: str = "auto",
         site_name: str | None = None,
     ):
         self.model_name_or_path = model_name_or_path
+        self.model_revision = model_revision
         self.data_root = data_root
         self.output_root = output_root
         self.syncs_per_epoch = syncs_per_epoch
@@ -156,13 +158,18 @@ class LLMSFTClient:
 
         self.train_dataset = datasets.load_dataset("json", data_files=str(train_path), split="train")
         self.eval_dataset = datasets.load_dataset("json", data_files=str(valid_path), split="train")
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name_or_path, trust_remote_code=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            self.model_name_or_path,
+            revision=self.model_revision,
+            trust_remote_code=True,
+        )
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
         _, _, dtype = precision_config(self.precision)
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_name_or_path,
+            revision=self.model_revision,
             trust_remote_code=True,
             dtype=dtype,
         )
@@ -361,6 +368,7 @@ def make_recipe(args) -> CollabRecipe:
         learning_rate=args.learning_rate,
         max_length=args.max_length,
         evaluate_global_model=not args.skip_evaluation,
+        model_revision=args.model_revision,
         precision=args.precision,
     )
     server = SFTFedAvg(
@@ -386,6 +394,7 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-root", default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--workspace-root", default="/tmp/nvflare/collab/pt_llm_sft/workspace")
     parser.add_argument("--model-name-or-path", default=DEFAULT_MODEL_NAME)
+    parser.add_argument("--model-revision")
     parser.add_argument("--num-clients", type=int, default=4)
     parser.add_argument("--num-epochs", type=int, default=1)
     parser.add_argument("--syncs-per-epoch", type=int, default=5)

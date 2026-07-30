@@ -24,6 +24,7 @@ import nvflare.client as flare
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model-name-or-path", required=True)
+    parser.add_argument("--model-revision")
     parser.add_argument("--data-root", required=True)
     parser.add_argument("--output-root", required=True)
     parser.add_argument("--syncs-per-epoch", type=int, required=True)
@@ -42,6 +43,7 @@ def main():
         learning_rate=args.learning_rate,
         max_length=args.max_length,
         evaluate_global_model=args.evaluate_global_model,
+        model_revision=args.model_revision,
         precision=args.precision,
         site_name=flare.get_site_name(),
     )

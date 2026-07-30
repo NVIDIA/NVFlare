@@ -104,6 +104,7 @@ def initialize_client():
         learning_rate=config["learning_rate"],
         max_length=config["max_length"],
         evaluate_global_model=config["evaluate_global_model"],
+        model_revision=config.get("model_revision"),
         precision=config["precision"],
     )
     _client.initialize()
