@@ -2,22 +2,15 @@
 name: nvflare-fed-stats
 description: "Compute federated statistics over tabular data (count, sum, mean, stddev, var, histogram, quantile, noise-protected min/max) and image data (count, failure_count, pixel-intensity histogram) across NVFLARE sites via FedStatsRecipe — automatic and non-interactive from the dataset, feature names (header or supplied), and optionally a README or notes declaring which statistics to compute; do not use for model training conversion, hierarchical statistics, deployment, POC/production lifecycle, or failed-job diagnosis."
 license: Apache-2.0
-version: "0.1.0"
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-  min_flare_version: "2.8.0"
+  min_flare_version: "2.9.0"
   blast_radius: runs_simulator
   category: Analysis
-  tags:
-    - nvflare
-    - federated-learning
-    - statistics
-    - pandas
-  languages:
-    - python
-  frameworks:
-    - pandas
-    - nvflare
+  version: "0.1.0"
+  tags: "nvflare, federated-learning, statistics, pandas"
+  languages: "python"
+  frameworks: "pandas, nvflare"
   domain: ml
 ---
 
@@ -40,11 +33,16 @@ images: count, failure_count, pixel-intensity histograms. Both paths use
 
 ## Do Not Use When
 
-Do not use for model training conversion (route to `nvflare-convert-pytorch`
-or `nvflare-convert-lightning`), a failed or stalled existing job (route to
-`nvflare-diagnose-job`), or generic pandas/data-science help without
-federated intent. A request combining training and statistics is two
-sequential skills: the converter leads, this skill follows for statistics.
+Do not use for model training conversion (route to `nvflare-convert-pytorch`,
+`nvflare-convert-lightning`, or `nvflare-convert-huggingface`), a failed or
+stalled existing job (route to `nvflare-diagnose-job`), or generic
+pandas/data-science help without federated intent.
+If a request combines federated statistics and model-training conversion,
+treat it as two independent jobs and workflows: do not merge or automatically
+chain them, do not route the combination to `nvflare-orient`, and ask which
+workflow to run first before generating or running either job. Recommend
+`nvflare-fed-stats` first only when the user's purpose is to understand data
+distribution; handle conversion later as a separate request.
 Hierarchical statistics, production deployment, Kubernetes, POC lifecycle,
 and privacy-policy design beyond the recipe's built-in knobs are out of
 scope. Statistics outside the supported set — categorical counts,
