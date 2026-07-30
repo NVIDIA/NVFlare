@@ -38,7 +38,7 @@ under the `metadata:` map:
 name: nvflare-your-skill
 description: Short trigger-oriented description.
 metadata:
-  min_flare_version: "2.8.0"
+  min_flare_version: "2.9.0"
   blast_radius: read_only
   category: Orientation
 ---

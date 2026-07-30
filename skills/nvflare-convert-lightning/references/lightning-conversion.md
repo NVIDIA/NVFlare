@@ -19,15 +19,12 @@ Use this path for Lightning conversion:
    `recipe.execute(SimEnv(...))`.
 5. Validate with `python job.py`, inspect terminal evidence, then export.
 
-HE is not supported (steps 4–5): homomorphic-encryption recipes reject `SimEnv`
-and require provisioned `PocEnv`/`ProdEnv`, which are outside conversion scope.
-Follow the HE-not-supported rule in
-`../../nvflare-shared/references/pytorch-family-recipe-selection.md`: report HE
-as unsupported, route it to provisioning/deployment, and ask or fail closed
-instead of generating or running an HE `job.py`.
+HE is not supported at steps 4–5: follow the HE-not-supported rule in
+`../../nvflare-shared/references/pytorch-family-recipe-selection.md`.
 
-Follow the shared Source Of Truth Boundary in
-`../../nvflare-shared/references/conversion-workflow.md`.
+Follow the Source Of Truth Boundary and the generated-entry rule in
+`../../nvflare-shared/references/conversion-workflow.md`: `client.py` is an
+FL-only Client API entry point, not a standalone/FL auto-detecting launcher.
 
 ## Conversion Pattern
 
@@ -78,6 +75,13 @@ are sent can train an unwanted round or block the task. The packaged
   `flare.init()` before the first such Client API context access.
 - Use `flare.receive()` in the patched loop only for FL task progression,
   round/site logging, or task metadata, never for manual model loading.
+- During export inspection, verify generated or project-local modules
+  referenced by server-side `class_path` config are packaged into the server app
+  with `recipe.add_server_file(...)` or an equivalent server-targeted API. The
+  `train_script` import closure packages client apps and is not enough for
+  per-site exports that create `app_server` separately. Installed NVFLARE,
+  framework, and third-party class paths stay runtime dependencies and are
+  validated through requirements installation plus import/preflight checks.
 
 ## Lightning Evaluation Template
 
@@ -123,6 +127,25 @@ The metric names placed under `MetaKey.INITIAL_METRICS` must be the same names
 used for recipe `key_metric` and artifact reporting. They must describe the
 received global model evaluated before local training, not post-fit local
 metrics.
+
+`key_metric` selects on higher-is-better values only, so what the client
+delivers and the recipe selects must itself be a higher-is-better value. A
+source metric with the opposite direction — including a module that logs nothing
+but `val_loss` — must first be flipped into an explicitly negated companion.
+This is the Lightning implementation of the framework-neutral rule in
+`../../nvflare-shared/references/pytorch-family-recipe-construction.md`.
+
+Name those metrics with
+`validate_global_model(..., make_higher_is_better=("val_loss",))` in
+`../assets/lightning_client.py`, and thread the same argument through
+`main(...)` when adapting the round loop. The helper preserves the original
+metric and adds a higher-is-better `neg_val_loss` to the same
+`MetaKey.INITIAL_METRICS` dict; the recipe then selects
+`key_metric="neg_val_loss"`. Select the companion, never the original —
+`key_metric="val_loss"` would pick the worst global model. Only name keys whose
+direction the source establishes; do not invent a direction. A `val_loss`-only
+module is never a reason to fail closed or to skip best-model selection when
+that selection was requested.
 
 If a custom `ModelAggregator` is selected, it must also aggregate supported
 client `FLModel.metrics` values and return them in the aggregated

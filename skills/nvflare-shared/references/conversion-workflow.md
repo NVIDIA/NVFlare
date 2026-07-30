@@ -234,6 +234,39 @@ Generated conversion jobs must use FLARE's standard source layout:
 
 Do not generate ad hoc FLARE entry-point names such as `train_fl.py`.
 
+The generated `client.py` is an FL Client API entry point. It must always reach
+the framework's FLARE initialization and model-exchange integration path; do not
+auto-detect FL launch from environment variables such as `CLIENT_API_TYPE`.
+Launchers may remove or change those variables before spawning the trainer. If
+the source has a standalone CLI that should remain usable, factor shared setup
+into a function with an explicit parameter and have `client.py` pass the FL mode
+explicitly; keep standalone behavior behind a separate entry point or explicit
+argument.
+
+Exported app content is target-specific, and its directory layout depends on
+the recipe configuration. Before asserting paths, inspect the exported job root
+and enumerate the app directories it actually contains. A standard unified
+export uses `app/custom`; an export using `set_per_site_config()` uses
+`app_server/custom` plus each `app_<site>/custom`. Do not reuse a path assumption
+from another export.
+
+The configured `train_script` and its import closure populate client content;
+they do not guarantee separately targeted server-app packaging. Every generated
+or project-local module referenced by server-side
+`class_path` config, such as a `model.py` containing
+`{"class_path": "model.Net"}`, must be added to the server app with
+`recipe.add_server_file("model.py")` or an equivalent server-targeted API
+regardless of whether the client imports it. Client-used generated or
+project-local modules must separately be reachable through the `train_script`
+import closure or added with `recipe.add_client_file(...)`. Installed NVFLARE,
+framework, and third-party modules referenced by `class_path` remain runtime
+dependencies; verify them with applicable requirements installation and
+import/preflight checks, not by copying them under `custom/`. During export
+inspection, verify every generated or project-local server and client module
+referenced by `class_path`, train script, custom aggregator, data helper, or
+config is present under the discovered layout: `app/custom` for a unified app,
+or `app_server/custom` and each `app_<site>/custom` for a per-site export.
+
 Before treating an existing canonical filename as a collision, classify it by
 static source evidence. Derive the model, data-prep, download, and training
 source files from the detected training entry point and import graph; do not
@@ -343,8 +376,9 @@ with the matching `aggregator_data_kind` and parameter transfer settings.
 A generated custom aggregator must:
 
 - implement `accept_model()`, `aggregate_model()`, and `reset_stats()`;
-- operate on `FLModel.params` and preserve or intentionally set
-  `FLModel.params_type`;
+- operate on `FLModel.params`, preserve or intentionally set
+  `FLModel.params_type`, and carry finite numeric/bool client metrics into the
+  aggregated `FLModel.metrics`;
 - use `FLModel.meta` such as `NUM_STEPS_CURRENT_ROUND` when weighting needs
   client contribution metadata;
 - when accepted client models contain supported scalar `FLModel.metrics`,
@@ -352,6 +386,12 @@ A generated custom aggregator must:
   them in the aggregated `FLModel.metrics`. A parameters-only result prevents
   aggregate metric artifacts and server model selection even though training
   itself can finish.
+
+When a recipe uses a custom `aggregator=`, the controller cannot safely
+synthesize per-site metric aggregation metadata for an unknown algorithm. If
+the custom aggregator drops `FLModel.metrics`, server-side metrics artifacts
+such as `metrics_summary.json` can silently disappear even though training
+finished successfully.
 
 When the aggregator weights by client contribution, the client must send that
 metadata; the plain Client API does not populate it automatically. Include it
@@ -445,6 +485,14 @@ conversion ports to real multi-site deployment, where each site's data lives at
 a different location. Point at the original dataset, not at a copy inside the
 NVFLARE run workspace: that workspace path is run-specific and disappears
 between runs.
+
+When the source uses a relative data path, resolve it in `job.py` against the
+original source-project root before recipe construction, then pass that resolved
+value through `train_args` or `per_site_config`; the client must consume the
+configured value unchanged. Do not reinterpret it relative to packaged
+`client.py`, the export directory, or the simulator process working directory.
+Validate relative-path conversions from a fresh caller working directory so the
+source data remains reachable after packaging.
 
 An absolute path is acceptable only as the runtime-supplied value or default of
 that configurable argument — for example, in single-machine simulation every
@@ -543,14 +591,18 @@ draft with that real failure as the blocker rather than looping on it.
 
 - Use `python job.py --export --export-dir <dir>` to export a generated job.
   These are NVFLARE job system arguments across recipes, algorithms, and
-  frameworks. Do not declare them as generated job-local arguments.
-- If a generated `job.py` defines local command-line options, its local parser
-  must tolerate NVFLARE system arguments such as `--export` and `--export-dir`.
-  With `argparse`, use `parse_known_args()` or an equivalent approach. Do not
-  add local `--export` or `--export-dir` arguments, and do not let local
-  parsing reject or consume them before the NVFLARE job/export layer handles
-  export. Treat this as a generation-time requirement; validation should
-  confirm the behavior rather than discovering it through a failed export.
+  frameworks. Do not declare them as generated job-local arguments, and do not
+  invent alternate export flags such as `--export_only`.
+- If a generated `job.py` defines local command-line options, import the
+  NVFLARE recipe API before local argument parsing. The recipe import removes
+  `--export` and `--export-dir` from `sys.argv`, so `parse_known_args()` is not
+  needed for NVFLARE flags and must not be used. Construct the local parser with
+  `argparse.ArgumentParser(allow_abbrev=False)` and call strict `parse_args()` so
+  unknown and abbreviated options fail. Do not add local `--export` or
+  `--export-dir` arguments or consume them in generated code. Treat this as a
+  generation-time requirement; validation should confirm a standard export
+  invocation plus rejection of both a misspelled option and a unique-prefix
+  abbreviation.
 - Default `<dir>` according to `runtime-output-guidance.md` unless the user
   provides an export directory.
 - If writing explicit Job API code without a recipe execution helper, call

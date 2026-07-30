@@ -2,21 +2,15 @@
 name: nvflare-diagnose-job
 description: "Use when the user asks why a reported NVFLARE job failure signal occurred: the job failed, stalled, timed out, lost clients, ended with EXECUTION_EXCEPTION, or produced suspicious errors. Diagnose in simulation, POC, or production by collecting bounded evidence and mapping failure patterns to recovery actions."
 license: Apache-2.0
-version: "0.1.0"
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-  min_flare_version: "2.8.0"
+  min_flare_version: "2.9.0"
   blast_radius: read_only
   category: Troubleshooting
-  tags:
-    - nvflare
-    - federated-learning
-    - diagnosis
-    - troubleshooting
-  languages:
-    - python
-  frameworks:
-    - nvflare
+  version: "0.1.0"
+  tags: "nvflare, federated-learning, diagnosis, troubleshooting"
+  languages: "python"
+  frameworks: "nvflare"
   domain: ml
 ---
 
