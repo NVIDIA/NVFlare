@@ -109,7 +109,7 @@ def main() -> None:
     parser.add_argument(
         "--config",
         type=Path,
-        default=CONFIG_DIR / "pt_llm_sft_slurm_yi_9b.json",
+        default=CONFIG_DIR / "pt_llm_sft_slurm_qwen3_8b.json",
     )
     parser.add_argument("--local-files-only", action="store_true")
     args = parser.parse_args()

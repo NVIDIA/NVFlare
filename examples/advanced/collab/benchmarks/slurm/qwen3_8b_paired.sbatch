@@ -7,11 +7,11 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=1T
 #SBATCH --time=04:00:00
-#SBATCH --job-name=collab-yi-9b-paired
+#SBATCH --job-name=collab-qwen3-8b-paired
 #SBATCH --output=/lustre/fsw/portfolios/coreai/users/ziyuex/projects/collab_project/logs/%x_%j.out
 #SBATCH --error=/lustre/fsw/portfolios/coreai/users/ziyuex/projects/collab_project/logs/%x_%j.err
 
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-exec "${SCRIPT_DIR}/run_yi_9b.sh" paired
+exec "${SCRIPT_DIR}/run_qwen3_8b.sh" paired

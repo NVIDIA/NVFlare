@@ -6,7 +6,7 @@ set -euo pipefail
 
 CONDA_ROOT=/lustre/fsw/portfolios/coreai/users/ziyuex/miniconda3
 HF_CACHE_ROOT=/lustre/fsw/portfolios/coreai/users/ziyuex/huggingface_cache
-CONFIG=${CONFIG:-collab/benchmarks/configs/pt_llm_sft_slurm_yi_9b.json}
+CONFIG=${CONFIG:-collab/benchmarks/configs/pt_llm_sft_slurm_qwen3_8b.json}
 
 actual_commit=$(git -C "${NVFLARE_SOURCE_ROOT}" rev-parse HEAD)
 if [[ "${actual_commit}" != "${EXPECTED_COMMIT}" ]]; then

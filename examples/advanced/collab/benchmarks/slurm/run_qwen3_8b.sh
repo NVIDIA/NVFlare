@@ -9,15 +9,15 @@ RUN_KIND=${1:?Pass single, capacity, or paired}
 case "${RUN_KIND}" in
     single)
         : "${SCHEME:?Export SCHEME=standard or SCHEME=collab}"
-        CONFIG=collab/benchmarks/configs/pt_llm_sft_slurm_yi_9b_single.json
+        CONFIG=collab/benchmarks/configs/pt_llm_sft_slurm_qwen3_8b_single.json
         EXPECTED_GPU_COUNT=1
-        RESULT_NAME=yi_9b_single_${SCHEME}_${SLURM_JOB_ID}
+        RESULT_NAME=qwen3_8b_single_${SCHEME}_${SLURM_JOB_ID}
         ;;
     capacity)
         : "${SCHEME:?Export SCHEME=standard or SCHEME=collab}"
-        CONFIG=collab/benchmarks/configs/pt_llm_sft_slurm_yi_9b_capacity.json
+        CONFIG=collab/benchmarks/configs/pt_llm_sft_slurm_qwen3_8b_capacity.json
         EXPECTED_GPU_COUNT=4
-        RESULT_NAME=yi_9b_capacity_${SCHEME}_${SLURM_JOB_ID}
+        RESULT_NAME=qwen3_8b_capacity_${SCHEME}_${SLURM_JOB_ID}
         ;;
     paired)
         SCHEME_ORDER=${SCHEME_ORDER:-"standard collab"}
@@ -25,9 +25,9 @@ case "${RUN_KIND}" in
             echo "SCHEME_ORDER must be 'standard collab' or 'collab standard'" >&2
             exit 1
         fi
-        CONFIG=collab/benchmarks/configs/pt_llm_sft_slurm_yi_9b.json
+        CONFIG=collab/benchmarks/configs/pt_llm_sft_slurm_qwen3_8b.json
         EXPECTED_GPU_COUNT=4
-        RESULT_NAME=yi_9b_paired_${SLURM_JOB_ID}
+        RESULT_NAME=qwen3_8b_paired_${SLURM_JOB_ID}
         ;;
     *) echo "RUN_KIND must be single, capacity, or paired" >&2; exit 1 ;;
 esac

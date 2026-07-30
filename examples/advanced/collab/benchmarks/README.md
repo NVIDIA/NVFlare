@@ -170,7 +170,7 @@ from the final commit also preserve per-second GPU samples under
 `logs` directory in the project root. The rejected 32-CPU submission has no
 job ID or result directory because Slurm refused it before job creation.
 
-## Yi-1.5-9B four-GPU scale-up
+## Qwen3-8B four-GPU scale-up
 
 The next benchmark scales only the model and GPU mapping while preserving the
 full-parameter BF16 SFT workload, AdamW optimizer, batch size of one, sequence
@@ -178,31 +178,32 @@ length of 64, four Dolly sites, and five synchronizations. It uses the public
 text-only checkpoint:
 
 ```text
-01-ai/Yi-1.5-9B
-revision 80d5471b1eae28beae33e06eadbd4b48e74d4ce1
-8,829,407,232 BF16 parameters
+Qwen/Qwen3-8B
+revision b968826d9c46dd6066d109eabc6255188de91218
+8,190,735,360 BF16 parameters
 ```
 
-Yi-1.5-9B is the largest plausible public dense candidate for this unchanged
-single-A100 training method. Its parameters, gradients, and two BF16 Adam
-moment tensors have a lower bound of about 65.8 GiB before activations and
-framework overhead. A 10B model would leave only about 5.5 GiB of an 80 GiB
-GPU for all remaining state, while readily available 14B models exceed the GPU
-capacity on those four tensors alone. The one-client gates determine the
-actual fit rather than assuming the estimate is sufficient.
+Qwen3 is a commonly used model family with public, Apache-2.0 weights and no
+gated-access credential requirement, making the benchmark reproducible for
+repository users. Qwen3-8B is the largest plausible dense Qwen3 size for this
+unchanged single-A100 training method. Its parameters, gradients, and two BF16
+Adam moment tensors have a lower bound of about 61.0 GiB before activations and
+framework overhead. The next dense family size, Qwen3-14B, exceeds 80 GiB on
+those four tensors alone. The one-client gates determine the actual fit rather
+than assuming the estimate is sufficient.
 
 The three immutable configs are:
 
-- `configs/pt_llm_sft_slurm_yi_9b_single.json`: one site, one sync, GPU 0;
-- `configs/pt_llm_sft_slurm_yi_9b_capacity.json`: four sites, one sync,
+- `configs/pt_llm_sft_slurm_qwen3_8b_single.json`: one site, one sync, GPU 0;
+- `configs/pt_llm_sft_slurm_qwen3_8b_capacity.json`: four sites, one sync,
   GPUs `0,1,2,3`;
-- `configs/pt_llm_sft_slurm_yi_9b.json`: four sites, five syncs, GPUs
+- `configs/pt_llm_sft_slurm_qwen3_8b.json`: four sites, five syncs, GPUs
   `0,1,2,3`.
 
 ### Prepare only in the user-owned cache
 
 The model must not use a system, default-home, shared-global, or node-local
-cache. `prepare_model.py` and every Yi Slurm launcher pin all cache paths
+cache. `prepare_model.py` and every Qwen3 Slurm launcher pin all cache paths
 beneath:
 
 ```text
@@ -220,7 +221,7 @@ immutable checkout, prepare the model once and reuse the existing Dolly data:
 
 ```bash
 bash collab/benchmarks/slurm/prepare_model.sh
-CONFIG=collab/benchmarks/configs/pt_llm_sft_slurm_yi_9b.json \
+CONFIG=collab/benchmarks/configs/pt_llm_sft_slurm_qwen3_8b.json \
   bash collab/benchmarks/slurm/prepare_data.sh
 ```
 
@@ -229,14 +230,14 @@ CONFIG=collab/benchmarks/configs/pt_llm_sft_slurm_yi_9b.json \
 Submit and monitor each job sequentially:
 
 ```bash
-SCHEME=standard sbatch --export=ALL,SCHEME=standard collab/benchmarks/slurm/yi_9b_single.sbatch
-SCHEME=collab sbatch --export=ALL,SCHEME=collab collab/benchmarks/slurm/yi_9b_single.sbatch
+SCHEME=standard sbatch --export=ALL,SCHEME=standard collab/benchmarks/slurm/qwen3_8b_single.sbatch
+SCHEME=collab sbatch --export=ALL,SCHEME=collab collab/benchmarks/slurm/qwen3_8b_single.sbatch
 
-SCHEME=standard sbatch --export=ALL,SCHEME=standard collab/benchmarks/slurm/yi_9b_capacity.sbatch
-SCHEME=collab sbatch --export=ALL,SCHEME=collab collab/benchmarks/slurm/yi_9b_capacity.sbatch
+SCHEME=standard sbatch --export=ALL,SCHEME=standard collab/benchmarks/slurm/qwen3_8b_capacity.sbatch
+SCHEME=collab sbatch --export=ALL,SCHEME=collab collab/benchmarks/slurm/qwen3_8b_capacity.sbatch
 
 SCHEME_ORDER="standard collab" \
-  sbatch --export=ALL,SCHEME_ORDER="standard collab" collab/benchmarks/slurm/yi_9b_paired.sbatch
+  sbatch --export=ALL,SCHEME_ORDER="standard collab" collab/benchmarks/slurm/qwen3_8b_paired.sbatch
 ```
 
 The single gate requests one GPU, eight CPUs, and 160 GB for 90 minutes. The
@@ -278,7 +279,7 @@ run. Record the model revision or snapshot path and a dataset manifest with
 the results.
 
 The lightweight model in the local configuration remains a smoke-test default.
-TinyLlama 1.1B is the recorded baseline; Yi-1.5-9B is the four-GPU scale-up.
+TinyLlama 1.1B is the recorded baseline; Qwen3-8B is the four-GPU scale-up.
 
 ## Install dependencies
 
