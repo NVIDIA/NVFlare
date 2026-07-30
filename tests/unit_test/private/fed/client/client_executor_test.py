@@ -21,7 +21,7 @@ import pytest
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, JobConstants, RunProcessKey
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, JobConstants, RunProcessKey
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.workspace import Workspace
@@ -36,6 +36,7 @@ EXPECTED_REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: "exception",
     ProcessExitCode.UNSAFE_COMPONENT: "unsafe component",
     ProcessExitCode.CONFIG_ERROR: "config error",
+    ProcessExitCode.INFRASTRUCTURE_ERROR: "infrastructure error",
     JobReturnCode.ABORTED: "aborted",
 }
 
@@ -471,6 +472,34 @@ def test_wait_child_process_reports_failure_return_code_to_server(return_code, r
     fl_ctx.set_prop.assert_any_call(FLContextKey.CURRENT_JOB_ID, "job-1", private=True, sticky=False)
     fl_ctx.set_prop.assert_any_call(FLContextKey.CLIENT_NAME, "site-1", private=True, sticky=False)
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
+
+
+def test_wait_child_process_preserves_launcher_infrastructure_error_over_rc_file(tmp_path):
+    client = MagicMock()
+    client.client_name = "site-1"
+    job_executor = JobExecutor(client=client, startup="startup")
+    job_handle = MagicMock()
+    job_handle.poll.return_value = ProcessExitCode.INFRASTRUCTURE_ERROR
+    job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
+    run_dir = tmp_path / "job-1"
+    run_dir.mkdir()
+    rc_file = run_dir / FLMetaKey.PROCESS_RC_FILE
+    rc_file.write_text("0\n", encoding="utf-8")
+    fl_ctx = MagicMock()
+
+    job_executor._wait_child_process_finish(
+        client=client,
+        job_id="job-1",
+        allocated_resource=None,
+        token=None,
+        resource_manager=MagicMock(),
+        workspace=str(tmp_path),
+        fl_ctx=fl_ctx,
+    )
+
+    payload = client.cell.fire_and_forget.call_args.kwargs["message"].payload
+    assert payload[JobFailureMsgKey.CODE] == ProcessExitCode.INFRASTRUCTURE_ERROR
+    assert not rc_file.exists()
 
 
 @pytest.mark.parametrize("return_code", [JobReturnCode.SUCCESS, JobReturnCode.UNKNOWN, JobReturnCode.EXECUTION_ERROR])

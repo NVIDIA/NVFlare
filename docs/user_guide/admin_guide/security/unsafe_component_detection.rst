@@ -156,6 +156,7 @@ and any argument values that could trigger file, process, network, deserializati
             "nvflare.app_common.statistics.min_max_cleanser.AddNoiseToMinMax",
             "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
             "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
+            "nvflare.app_common.widgets.metrics_artifact_writer.MetricsArtifactWriter",
             "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
             "nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval",
             "nvflare.app_common.workflows.cyclic_ctl.CyclicController",

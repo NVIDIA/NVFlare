@@ -63,6 +63,7 @@ DEFAULT_CLASS_ALLOW_LIST = (
     "nvflare.app_common.widgets.event_recorder.ClientEventRecorder",
     "nvflare.app_common.widgets.event_recorder.ServerEventRecorder",
     "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
+    "nvflare.app_common.widgets.metrics_artifact_writer.MetricsArtifactWriter",
     "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
     "nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval",
     "nvflare.app_common.workflows.cyclic_ctl.CyclicController",
