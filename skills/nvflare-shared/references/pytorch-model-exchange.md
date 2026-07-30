@@ -1,8 +1,8 @@
 # PyTorch-Family Model Exchange
 
-Use this reference only for PyTorch-family skills, including plain PyTorch and
-PyTorch Lightning. Do not load it from TensorFlow, sklearn, XGBoost, or other
-non-PyTorch framework skills.
+Use this reference only for PyTorch-family skills: plain PyTorch, PyTorch
+Lightning, and Hugging Face Trainer. Do not load it from TensorFlow, sklearn,
+XGBoost, or other non-PyTorch framework skills.
 
 ## Tensor Payload Rule
 
@@ -19,10 +19,11 @@ assert all(isinstance(v, torch.Tensor) for v in params.values())
 flare.send(flare.FLModel(params=params, metrics=metrics, meta=meta))
 ```
 
-For PyTorch Lightning, the patched trainer builds and sends the payload, so do
-not write this snippet in Lightning client code. The tensor-not-NumPy rule still
-applies to the PyTorch family, but Lightning enforces it through recipe/job
-configuration rather than manual client payload construction.
+For PyTorch Lightning and Hugging Face Trainer, the patched trainer builds and
+sends the payload, so do not write this snippet in patched client code. The
+tensor-not-NumPy rule still applies to the PyTorch family, but patched Trainer
+integrations enforce it through recipe/job configuration rather than manual
+client payload construction.
 
 ## Related Recipe Construction
 
@@ -73,4 +74,6 @@ This reference covers PyTorch-family tensor/state-dict exchange only. Framework
 skills still own their training-loop pattern:
 
 - plain PyTorch owns manual `nvflare.client` receive/load/train/send code;
-- PyTorch Lightning owns patched `Trainer` and callback-driven model exchange.
+- PyTorch Lightning owns patched `Trainer` and callback-driven model exchange;
+- Hugging Face owns patched `transformers.Trainer` / TRL `SFTTrainer` exchange
+  through `nvflare.client.hf.patch(trainer)` and its conversion reference.
