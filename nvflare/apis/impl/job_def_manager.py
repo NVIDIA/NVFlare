@@ -469,10 +469,9 @@ class SimpleJobDefManager(JobDefManagerSpec):
             RunStatus.FINISHED_CANT_SCHEDULE.value,
         ]:
             job_meta = store.get_meta(self.job_uri(jid))
-            if job_meta[JobMetaKey.START_TIME.value]:
-                start_time = datetime.datetime.strptime(
-                    job_meta.get(JobMetaKey.START_TIME.value), "%Y-%m-%d %H:%M:%S.%f"
-                )
+            start_time_value = job_meta.get(JobMetaKey.START_TIME.value)
+            if start_time_value:
+                start_time = datetime.datetime.strptime(start_time_value, "%Y-%m-%d %H:%M:%S.%f")
                 meta[JobMetaKey.DURATION.value] = str(datetime.datetime.now() - start_time)
         store.update_meta(uri=self.job_uri(jid), meta=meta, replace=False)
 

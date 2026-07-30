@@ -104,3 +104,13 @@ class TestJobManager(unittest.TestCase):
         meta = store.update_meta.call_args.kwargs["meta"]
         assert meta[JobMetaKey.STATUS.value] == RunStatus.FINISHED_ABNORMAL.value
         assert JobMetaKey.DURATION.value in meta
+
+    def test_set_abnormal_status_without_start_time(self):
+        store = mock.MagicMock()
+        store.get_meta.return_value = {}
+
+        with mock.patch.object(self.job_manager, "_get_job_store", return_value=store):
+            self.job_manager.set_status("job-1", RunStatus.FINISHED_ABNORMAL, self.fl_ctx)
+
+        meta = store.update_meta.call_args.kwargs["meta"]
+        assert meta == {JobMetaKey.STATUS.value: RunStatus.FINISHED_ABNORMAL.value}
