@@ -13,5 +13,5 @@
 
 set -euo pipefail
 
-SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-exec "${SCRIPT_DIR}/run_qwen3_8b.sh" paired
+: "${NVFLARE_SOURCE_ROOT:?Export NVFLARE_SOURCE_ROOT when submitting}"
+exec "${NVFLARE_SOURCE_ROOT}/examples/advanced/collab/benchmarks/slurm/run_qwen3_8b.sh" paired
