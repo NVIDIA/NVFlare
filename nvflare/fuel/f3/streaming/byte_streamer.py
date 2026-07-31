@@ -24,9 +24,13 @@ from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.f3.streaming.stream_const import (
+    STREAM_ACK_INTERVAL,
     STREAM_ACK_TOPIC,
     STREAM_CHANNEL,
+    STREAM_CHUNK_SIZE,
     STREAM_DATA_TOPIC,
+    STREAM_RETRY_MAX_PENDING_BYTES,
+    STREAM_WINDOW_SIZE,
     StreamDataType,
     StreamHeaderKey,
 )
@@ -40,8 +44,6 @@ from nvflare.fuel.f3.streaming.stream_utils import (
     wrap_view,
 )
 
-STREAM_CHUNK_SIZE = 1024 * 1024
-STREAM_WINDOW_SIZE = 16 * STREAM_CHUNK_SIZE
 STREAM_ACK_WAIT = 300
 STREAM_RETRY_WAIT = 5.0
 STREAM_RETRY_TIMEOUT = 60.0
@@ -239,6 +241,13 @@ class TxTask(StreamTaskSpec):
         config = CommConfigurator()
         self.reliable = config.get_streaming_reliable(False) if reliable is None else reliable
         self.window_size = config.get_streaming_window_size(STREAM_WINDOW_SIZE)
+        self.ack_interval = config.get_streaming_ack_interval(STREAM_ACK_INTERVAL)
+        if self.ack_interval > self.window_size:
+            log.warning(
+                f"{self} streaming_ack_interval {self.ack_interval} exceeds streaming_window_size "
+                f"{self.window_size}; using {self.window_size}"
+            )
+            self.ack_interval = self.window_size
         self.ack_wait = config.get_streaming_ack_wait(STREAM_ACK_WAIT)
         self.ack_progress_timeout = config.get_streaming_ack_progress_timeout(60.0)
         # Guard against zero/negative config to avoid wait(0) busy-spin loops.
@@ -246,7 +255,8 @@ class TxTask(StreamTaskSpec):
         self.last_ack_progress_ts = time.monotonic()
         self.retry_wait = max(0.01, config.get_streaming_retry_wait(STREAM_RETRY_WAIT))
         self.retry_timeout = max(0.01, config.get_streaming_retry_timeout(STREAM_RETRY_TIMEOUT))
-        self.retry_max_pending_bytes = config.get_streaming_retry_max_pending_bytes(2 * self.window_size)
+        retry_max_pending_default = max(STREAM_RETRY_MAX_PENDING_BYTES, 2 * self.window_size)
+        self.retry_max_pending_bytes = config.get_streaming_retry_max_pending_bytes(retry_max_pending_default)
 
         if self.reliable:
             self.pending_messages = {}
@@ -346,9 +356,18 @@ class TxTask(StreamTaskSpec):
             StreamHeaderKey.RELIABLE: self.reliable,
             StreamHeaderKey.OPTIONAL: self.optional,
         }
-        if self.reliable and self.seq == 0:
-            stream_headers[StreamHeaderKey.RETRY_WAIT] = self.retry_wait
-            stream_headers[StreamHeaderKey.RETRY_TIMEOUT] = self.retry_timeout
+        if self.seq == 0:
+            stream_headers.update(
+                {
+                    StreamHeaderKey.CHUNK_SIZE: self.chunk_size,
+                    StreamHeaderKey.WINDOW_SIZE: self.window_size,
+                    StreamHeaderKey.ACK_INTERVAL: self.ack_interval,
+                    StreamHeaderKey.RETRY_MAX_PENDING_BYTES: self.retry_max_pending_bytes,
+                }
+            )
+            if self.reliable:
+                stream_headers[StreamHeaderKey.RETRY_WAIT] = self.retry_wait
+                stream_headers[StreamHeaderKey.RETRY_TIMEOUT] = self.retry_timeout
         message.add_headers(stream_headers)
 
         if self.reliable:
