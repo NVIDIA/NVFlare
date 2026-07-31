@@ -123,8 +123,9 @@ def _stop_process(process: subprocess.Popen) -> tuple[str, str]:
 
 
 @pytest.mark.timeout(60)
-@pytest.mark.parametrize("transport", ["tcp", "shared-file"])
-def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, transport):
+@pytest.mark.parametrize("transport", ["tcp", "grpc", "http", "shared-file"])
+@pytest.mark.parametrize("startup_order", ["trainer-first", "cj-first"])
+def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, transport, startup_order):
     flare_decomposers.register()
     common_decomposers.register()
     server_url = f"tcp://127.0.0.1:{get_open_ports(1)[0]}"
@@ -138,7 +139,7 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, transport)
 
     try:
         received = {}
-        server = Cell("server", server_url, secure=False, credentials={})
+        server = Cell(f"server-{suffix}", server_url, secure=False, credentials={})
         server.start()
         cells.append(server)
 
@@ -178,7 +179,7 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, transport)
                 DriverParams.CONNECTION_SECURITY.value: "clear",
             }
             trainer_connection = {
-                "connect_url": f"tcp://127.0.0.1:{attach_port}",
+                "connect_url": f"{transport}://127.0.0.1:{attach_port}",
                 "cj_fqcn": f"{site_name}.{job_id}",
                 "connection_security": "clear",
             }
@@ -195,7 +196,7 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, transport)
         cells.append(cj)
         cj.core_cell.comm_configurator.config = {
             "client_api_attach": {
-                "scheme": transport if transport == "shared-file" else "tcp",
+                "scheme": transport,
                 "resources": attach_resources,
             }
         }
@@ -217,19 +218,21 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, transport)
         trainer_script.write_text(_TRAINER_SCRIPT)
         env = os.environ.copy()
         env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
-        trainer = subprocess.Popen(
-            [
-                sys.executable,
-                "-u",
-                str(trainer_script),
-                str(profile),
-                *(["--deny-network"] if transport == "shared-file" else []),
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=env,
-        )
+
+        def start_trainer():
+            return subprocess.Popen(
+                [
+                    sys.executable,
+                    "-u",
+                    str(trainer_script),
+                    str(profile),
+                    *(["--deny-network"] if transport == "shared-file" else []),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+            )
 
         backend = AttachBackend()
         # Exercise the relayed-job result path independently of the dedicated
@@ -244,11 +247,21 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, transport)
             heartbeat_timeout=5.0,
             task_wait_timeout=20.0,
             result_wait_timeout=20.0,
-            allow_insecure_attach=transport == "tcp",
+            allow_insecure_attach=transport != "shared-file",
             params_exchange_format=ExchangeFormat.NUMPY,
             server_expected_format=ExchangeFormat.NUMPY,
         )
+        if startup_order == "trainer-first":
+            trainer = start_trainer()
         backend.initialize(context, fl_ctx)
+        if startup_order == "cj-first":
+            # Make the first SESSION_OPEN fail before the trainer Cell exists.
+            # Attach must keep retrying with the same session until the trainer
+            # starts or attach_timeout expires.
+            time.sleep(1.0)
+            assert not backend._get_session().ready.is_set()
+            assert backend._session_thread.is_alive()
+            trainer = start_trainer()
 
         # Cross the ViaDownloader threshold and run twice. The second round
         # proves round one's trainer-hosted source settled instead of leaving

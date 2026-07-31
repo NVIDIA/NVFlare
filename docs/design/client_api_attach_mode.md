@@ -328,7 +328,9 @@ configuration.
 1. The trainer constructs and starts its Cell.
 2. The CJ creates one random `session_id`.
 3. The CJ retries the same `SESSION_OPEN` until accepted, aborted, or
-   `attach_timeout` expires.
+   `attach_timeout` expires. `SESSION_OPEN` is a bounded control-plane request,
+   not a blob-stream request, so an early driver-level unreachable result returns
+   promptly to this retry loop.
 4. The request carries the attach ID, job/site identity, trainer FQCN, protocol
    version, rank, heartbeat policy, task exchange, memory settings, and whether
    trainer-hosted lazy results are relayed through the CJ.
@@ -487,16 +489,19 @@ Unit coverage must verify:
 - SESSION_OPEN rejection cannot poison `init()`;
 - task delivery does not retry semantic rejection;
 - reconnect, stale-session rejection, task deduplication, and result recovery;
+- trainer-first and CJ-first rendezvous over each supported Attach driver;
 - secure-job result relay is independent of clear shared-file Attach transport;
 - canonical lazy sources survive uncertain status and routine shutdown; and
 - Attach finalization never invokes process-ownership operations.
 
-The fast integration test must run a real trainer subprocess and real Cells for:
+The fast integration test must run a real trainer subprocess and real Cells,
+with both trainer-first and CJ-first startup, for:
 
 1. a clear TCP listener with explicit insecure opt-in; and
-2. `shared-file` with a trainer audit hook that rejects all socket operations.
+2. clear gRPC and HTTP listeners with explicit insecure opt-in; and
+3. `shared-file` with a trainer audit hook that rejects all socket operations.
 
-Both cases send a NumPy task, accept a lazy result, and have the CP pull the
+All cases send a NumPy task, accept a lazy result, and have the CP pull the
 result through the CJ from the trainer. This verifies the load-bearing
 CJ-child routing and source-lifetime path.
 

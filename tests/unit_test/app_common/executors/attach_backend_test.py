@@ -64,6 +64,8 @@ class FakeCell:
         self.deliver_result = True
         self.task_reply_topic = Topic.TASK_ACCEPTED
         self.task_ready_count = 0
+        self.session_open_count = 0
+        self.session_open_failures = 0
         self.shutdown_source_live = False
         params = listener_params or {
             DriverParams.SCHEME.value: listener_scheme,
@@ -91,6 +93,7 @@ class FakeCell:
             communicator=communicator,
             comm_configurator=configurator,
             identity_resolver=SimpleNamespace(exact_identity_map={}),
+            send_request=self._send_control_request,
         )
 
     def register_request_cb(self, channel, topic, cb):
@@ -106,16 +109,7 @@ class FakeCell:
     def send_request(self, channel, topic, target, request, timeout=None, **kwargs):
         self.sent.append((topic, target, request.payload))
         if topic == Topic.SESSION_OPEN:
-            if not self.deliver_session:
-                return make_cell_reply(CellReturnCode.COMM_ERROR)
-            return _accepted(
-                Topic.SESSION_ACCEPTED,
-                **{
-                    MsgKey.SESSION_ID: request.payload[MsgKey.SESSION_ID],
-                    MsgKey.CONNECT_URL: self.connect_url,
-                    MsgKey.CONNECTION_SECURITY: "clear",
-                },
-            )
+            raise AssertionError("SESSION_OPEN must use the CoreCell control path")
         if topic == Topic.TASK_READY:
             self.task_ready_count += 1
             task = request.payload
@@ -146,6 +140,21 @@ class FakeCell:
                 body={MsgKey.RESULT_SOURCE_LIVE: self.shutdown_source_live},
             )
         return make_cell_reply(CellReturnCode.OK)
+
+    def _send_control_request(self, channel, topic, target, request, timeout=None, **kwargs):
+        self.sent.append((topic, target, request.payload))
+        assert topic == Topic.SESSION_OPEN
+        self.session_open_count += 1
+        if not self.deliver_session or self.session_open_count <= self.session_open_failures:
+            return make_cell_reply(CellReturnCode.COMM_ERROR)
+        return _accepted(
+            Topic.SESSION_ACCEPTED,
+            **{
+                MsgKey.SESSION_ID: request.payload[MsgKey.SESSION_ID],
+                MsgKey.CONNECT_URL: self.connect_url,
+                MsgKey.CONNECTION_SECURITY: "clear",
+            },
+        )
 
     def fire_and_forget(self, channel, topic, targets, message, **kwargs):
         self.fired.append((topic, tuple(targets), message.payload))
@@ -286,6 +295,20 @@ def test_attach_timeout_returns_error_without_hanging():
     backend.finalize(fl_ctx)
 
     assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+
+
+def test_session_open_retries_core_control_path_after_target_unreachable():
+    cell = FakeCell()
+    cell.session_open_failures = 1
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell)
+
+    backend.initialize(_context(), fl_ctx)
+    session = _wait_ready(backend)
+    backend.finalize(fl_ctx)
+
+    assert session.ready.is_set()
+    assert cell.session_open_count >= 2
 
 
 def test_lost_task_acceptance_uses_status_without_redelivery():

@@ -399,7 +399,15 @@ class AttachBackend(CellBackendBase):
             MsgKey.CUDA_EMPTY_CACHE: self._context.cuda_empty_cache,
         }
         try:
-            reply = self._cell.send_request(
+            # SESSION_OPEN is a small control-plane message. Use CoreCell rather
+            # than the blob-stream request path so an early gRPC
+            # TARGET_UNREACHABLE returns promptly and the attach loop can retry.
+            # TASK_READY and result payloads still use the streaming Cell.
+            core_cell = getattr(self._cell, "core_cell", None)
+            send_request = getattr(core_cell, "send_request", None)
+            if not callable(send_request):
+                send_request = self._cell.send_request
+            reply = send_request(
                 channel=CHANNEL,
                 topic=Topic.SESSION_OPEN,
                 target=session.trainer_fqcn,
