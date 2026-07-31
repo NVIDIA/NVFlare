@@ -243,7 +243,7 @@ SCHEME_ORDER="standard collab" \
 The single gate requests one GPU, eight CPUs, and 160 GB for 90 minutes. The
 capacity gate requests four GPUs, 32 CPUs, and 512 GB for two hours. Only if
 both schemes pass those gates should the paired job request four GPUs, 32 CPUs,
-and 1 TB for four hours. All jobs are non-exclusive. Each site receives one
+and 256 GB for four hours. All jobs are non-exclusive. Each site receives one
 A100; no GPU is shared by two sites. Stop on an OOM instead of changing the
 model or training method inside a matched pair.
 
