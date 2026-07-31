@@ -28,6 +28,13 @@ PYTEST_ARGS=(-v --log-cli-level=INFO --capture=no)
 XGBOOST_REQUIREMENTS_FILE="${REPO_ROOT}/examples/advanced/xgboost/requirements.txt"
 XGBOOST_FEDERATED_WHEEL_URL="${XGBOOST_FEDERATED_WHEEL_URL:-}"
 
+# All dependencies installed by this script are public. Do not inherit an extra
+# package index whose stale candidates can shadow packages from public PyPI.
+unset PIP_EXTRA_INDEX_URL
+export PIP_CONFIG_FILE="/dev/null"
+export PIP_INDEX_URL="https://pypi.org/simple"
+export PIPENV_PYPI_MIRROR="${PIP_INDEX_URL}"
+
 # CRITICAL: Set gRPC environment variables before ANY imports that might use gRPC.
 # See: https://github.com/grpc/grpc/issues/28557
 export GRPC_POLL_STRATEGY="poll"
