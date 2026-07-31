@@ -503,6 +503,12 @@ PyTorch SCAFFOLD
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
 
+.. note::
+   PyTorch SCAFFOLD supports ``enable_tensor_disk_offload=True`` for streamed PyTorch tensor updates.
+   Import ``ExchangeFormat`` from ``nvflare.client.config`` and configure
+   ``server_expected_format=ExchangeFormat.PYTORCH`` so the server path preserves tensors instead of converting
+   updates to NumPy before aggregation.
+
 PyTorch Lightning clients can use the same patched training script for FedAvg and SCAFFOLD:
 
 .. code-block:: python
@@ -1020,6 +1026,7 @@ Decentralized federated learning without a central server.
 .. code-block:: python
 
     from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+    from nvflare.client.config import ExchangeFormat
     from nvflare.recipe import SimEnv
 
     recipe = SwarmLearningRecipe(
@@ -1034,6 +1041,8 @@ Decentralized federated learning without a central server.
         learn_task_ack_timeout=3600,
         final_result_ack_timeout=3600,
         max_concurrent_submissions=1,
+        aggregation_format=ExchangeFormat.PYTORCH,
+        enable_tensor_disk_offload=True,
     )
     env = SimEnv(num_clients=3)
     run = recipe.execute(env)
@@ -1047,6 +1056,12 @@ Decentralized federated learning without a central server.
      when their explicit parameters are omitted.
    - ``progress_timeout`` (default 3600 s): maximum time without workflow progress.
    - ``max_concurrent_submissions`` (default 1, minimum 1): concurrent aggregation submissions.
+   - For PyTorch tensor streaming with lower aggregation-client memory pressure, set
+     ``aggregation_format=ExchangeFormat.PYTORCH`` and
+     ``enable_tensor_disk_offload=True``. Configure ``tensor_download_chunk_size``
+     and streaming timeouts through ``recipe.add_client_config({...})``. This
+     offloads the receiving aggregation path, not the trainer's in-memory model
+     or outgoing result tensors.
    - ``pipe_type`` (default ``"cell_pipe"``): set to ``"file_pipe"`` when cell networking
      is unavailable or for third-party subprocess integrations.
    - ``submit_result_timeout``, ``download_complete_timeout``,
