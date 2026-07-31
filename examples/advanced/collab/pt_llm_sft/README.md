@@ -1,8 +1,9 @@
 # Federated LLM Supervised Fine-Tuning with Collab
 
-This example performs full-parameter supervised fine-tuning (SFT) of
-[Qwen2.5-0.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct)
-with Hugging Face TRL and synchronous federated averaging.
+This example performs full-parameter supervised fine-tuning (SFT) of a Hugging
+Face causal language model with TRL and synchronous federated averaging. It
+uses Qwen2.5-0.5B-Instruct by default; select any compatible checkpoint with
+`--model-name-or-path`.
 
 Its focus is the Collab programming model. Client methods accept and return
 ordinary Python objects, including the complete
@@ -25,9 +26,9 @@ introducing application-level model-format transitions or checkpoint/resume
 files between intervals.
 
 > **Resource note:** This example exchanges and averages the complete model,
-> not a parameter-efficient subset. Four simulated Qwen2.5-0.5B clients
-> therefore require substantial RAM, GPU memory, transfer time, and checkpoint
-> space.
+> not a parameter-efficient subset. Resource requirements scale with both the
+> checkpoint size and client count, including RAM, GPU memory, transfer time,
+> and checkpoint space.
 
 ## Install the LLM dependencies
 
@@ -108,12 +109,6 @@ optimizer steps, BF16 precision, and GPU assignment within each pair:
 - batch size 1, sequence length 64, and learning rate `2e-5`;
 - evaluation disabled so the measurement focused on training and exchange.
 
-The recorded checkpoints were:
-
-- `TinyLlama/TinyLlama-1.1B-Chat-v1.0` at
-  `fe8a4ea1ffedaf415f4da2f062534de366a451e6`;
-- `Qwen/Qwen3-8B` at `b968826d9c46dd6066d109eabc6255188de91218`.
-
 | Model | Placement | Standard | Collab | Collab difference |
 |---|---|---:|---:|---:|
 | TinyLlama 1.1B | Four clients on one A100 80 GB | 270.45s | 228.60s | **41.86s / 15.48% faster** |
@@ -125,19 +120,13 @@ native full-model payload was 16,381,470,720 bytes. Mean application-level
 native-object transition time was 73.7 ms on the server and 5.37 microseconds
 on a client.
 
-The Qwen3-8B training curves also aligned:
+The persisted Qwen3-8B round metrics show that both simulators followed the
+same training curve:
 
-| Synchronization | Standard mean loss | Collab mean loss | Difference |
-|---:|---:|---:|---:|
-| 1 | 2.3542 | 2.3541 | approximately 0.0000 |
-| 2 | 2.1882 | 2.1894 | +0.0012 |
-| 3 | 1.9828 | 1.9841 | +0.0013 |
-| 4 | 1.8190 | 1.8169 | -0.0020 |
-| 5 | 1.9739 | 1.9742 | +0.0004 |
+![Qwen3-8B aggregated training loss for the Standard and Collab simulators](figures/training_loss.png)
 
-Standard means are calculated from per-client losses logged to four decimal
-places. The maximum round-level difference was 0.11%, and the largest
-individual-client difference was 0.0041.
+The lower panel shows the Collab-minus-Standard difference. The maximum
+round-level difference was 0.11%.
 
 The larger model increased the absolute time saved, while model initialization,
 local learning, full-state movement, and aggregation grew enough to reduce the
