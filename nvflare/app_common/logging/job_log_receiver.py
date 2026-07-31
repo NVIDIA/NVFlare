@@ -42,12 +42,12 @@ class JobLogReceiver(Widget):
     """Receives live log data streamed by :class:`JobLogStreamer`.
 
     ``JobLogReceiver`` accepts a live stream: each chunk is written directly to
-    its final file as it arrives so that the log can be followed with
+    a staging file as it arrives so that the log can be followed with
     ``tail -f`` on the server while the job runs. When the stream closes
     (normal EOF, job abort, or idle timeout) the file is handed to the job
-    manager for storage.
+    manager for storage. The storage backend may consume the staging file.
 
-    The destination file is written to ``{dest_dir}/{job_id}/{client_name}/{log_file_name}``,
+    The staging file is written to ``{dest_dir}/{job_id}/{client_name}/{log_file_name}``,
     making it easy to locate and tail during a run.
 
     This widget can be placed in either of two locations:
@@ -71,7 +71,7 @@ class JobLogReceiver(Widget):
     ``registry.set`` is idempotent for the same channel/topic pair.
 
     Args:
-        dest_dir: directory where incoming log files are written.
+        dest_dir: directory where incoming log staging files are written.
             Defaults to the system temporary directory.
         idle_timeout: seconds without any message (data or heartbeat) before
             the receiver declares the sender dead and closes the stream
@@ -237,10 +237,8 @@ class JobLogReceiver(Widget):
             self.log_info(fl_ctx, f"Live log '{log_type}' from {client} retained at {file_path}")
             return
         data_type = self._storage_data_type(log_type)
-        self.log_info(
-            fl_ctx, f"Saving live log '{log_type}' as '{data_type}' from {client} for job {job_id}: {file_path}"
-        )
         job_manager.set_client_data(job_id, file_path, client, data_type, fl_ctx)
+        self.log_info(fl_ctx, f"Saved live log '{log_type}' from {client} for job {job_id}")
 
     def _register(self, event_type: str, fl_ctx: FLContext):
         # Re-register on every triggering event. The active ObjectStreamer is
