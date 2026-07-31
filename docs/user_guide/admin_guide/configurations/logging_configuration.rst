@@ -48,6 +48,10 @@ See the `configuration dictionary schema <https://docs.python.org/3/library/logg
             "FLFilter": {
                 "()": "nvflare.fuel.utils.log_utils.LoggerNameFilter",
                 "logger_names": ["custom", "nvflare.app_common", "nvflare.app_opt"]
+            },
+            "ConciseFilter": {
+                "()": "nvflare.fuel.utils.log_utils.ConciseLogFilter",
+                "logger_names": ["custom", "nvflare.app_common", "nvflare.app_opt"]
             }
         },
         "handlers": {
@@ -206,6 +210,23 @@ We leverage this in our FLFilter, which filters loggers related to fl training o
 
     "FLFilter": {
         "()": "nvflare.fuel.utils.log_utils.LoggerNameFilter",
+        "logger_names": ["custom", "nvflare.app_common", "nvflare.app_opt"]
+    }
+
+ConciseLogFilter
+----------------
+:class:`ConciseLogFilter<nvflare.fuel.utils.log_utils.ConciseLogFilter>` extends ``LoggerNameFilter`` for the
+``concise`` and ``msg_only`` console modes. It allows records from loggers outside the ``nvflare`` namespace so
+user training logs are visible without requiring :func:`custom_logger<nvflare.fuel.utils.log_utils.custom_logger>`.
+For ``nvflare`` loggers, it applies the inherited ``LoggerNameFilter`` rules, allowing configured logger names and,
+by default, all records above INFO.
+
+We configure this as ``ConciseFilter`` with the same NVFlare application logger allowlist used by ``FLFilter``:
+
+.. code-block:: json
+
+    "ConciseFilter": {
+        "()": "nvflare.fuel.utils.log_utils.ConciseLogFilter",
         "logger_names": ["custom", "nvflare.app_common", "nvflare.app_opt"]
     }
 
