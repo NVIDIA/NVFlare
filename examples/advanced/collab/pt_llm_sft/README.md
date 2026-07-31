@@ -109,14 +109,15 @@ optimizer steps, BF16 precision, and GPU assignment within each pair:
 - batch size 1, sequence length 64, and learning rate `2e-5`;
 - evaluation disabled so the measurement focused on training and exchange.
 
-For reference, the regular-simulator side was launched from the matched
-benchmark harness with:
+For reference, run the regular NVFlare simulator from
+`examples/advanced/llm_hf` with:
 
 ```bash
-python -m collab.benchmarks.run_benchmarks \
-    --scheme standard \
-    --config <matched-config.json> \
-    --output-root <result-directory>
+python job.py \
+    --client_ids dolly \
+    --data_path ${PWD}/dataset \
+    --workspace_dir ${PWD}/workspace/simulation \
+    --job_dir ${PWD}/workspace/jobs/simulation
 ```
 
 | Model | Placement | Standard | Collab | Collab difference |
