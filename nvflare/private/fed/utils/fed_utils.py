@@ -34,6 +34,7 @@ from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.decomposers import common_decomposers
 from nvflare.app_common.widgets.component_path_authorizer import ComponentPathAuthorizer
+from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.stats_pool import CsvRecordHandler, StatsPoolManager
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
@@ -544,6 +545,8 @@ def get_target_names(targets):
 
 
 def get_return_code(job_handle, job_id, workspace, logger):
+    launcher_return_code = job_handle.poll()
+    return_code = launcher_return_code
     run_dir = os.path.join(workspace, job_id)
     rc_file = os.path.join(run_dir, FLMetaKey.PROCESS_RC_FILE)
     if os.path.exists(rc_file):
@@ -556,9 +559,8 @@ def get_return_code(job_handle, job_id, workspace, logger):
                 f"Could not get the return code from {rc_file} of the job:{job_id}, "
                 f"falling back to the return code from the job_handle:{job_handle}: {secure_format_exception(e)}"
             )
-            return_code = job_handle.poll()
-    else:
-        return_code = job_handle.poll()
+    if launcher_return_code == ProcessExitCode.INFRASTRUCTURE_ERROR:
+        return launcher_return_code
     return return_code
 
 

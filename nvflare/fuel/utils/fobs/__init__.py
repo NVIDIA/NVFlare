@@ -65,6 +65,9 @@ class FOBSContextKey:
     # When PASS_THROUGH is active, preserve laziness but relay future downloads
     # through this Cell instead of re-emitting the original source reference.
     RELAY_PASS_THROUGH = "relay_pass_through"
+    # When True, streamed PyTorch tensors are downloaded into temporary files
+    # and recomposed as disk-backed lazy tensor references.
+    TENSOR_DISK_OFFLOAD = "enable_tensor_disk_offload"
     # Optional callable set by FlareAgent before serialising a result message
     # when reverse PASS_THROUGH is active (subprocess → CJ → server).  Signature:
     #   cb(tx_id: str, status: str, base_objs: list) -> None

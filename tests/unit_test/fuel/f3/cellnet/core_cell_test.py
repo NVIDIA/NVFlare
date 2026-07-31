@@ -223,6 +223,14 @@ def test_encrypt_and_decrypt_secure_payload():
     assert not message.get_header(MessageHeaderKey.ENCRYPTED, False)
 
 
+@pytest.mark.parametrize("cell_cipher, expected", [(None, False), (MagicMock(), True)])
+def test_supports_secure_messages_requires_cell_cipher(cell_cipher, expected):
+    cell = _cell()
+    cell.credential_manager = SimpleNamespace(cell_cipher=cell_cipher)
+
+    assert cell.supports_secure_messages() is expected
+
+
 @pytest.mark.parametrize("payload", ["text", 1, {}])
 def test_encrypt_rejects_unsupported_payload(payload):
     cell = _cell()
