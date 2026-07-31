@@ -284,6 +284,11 @@ writes:
 - `autofl_report_summary.json`, a machine-readable
   `nvflare.autofl.report.v1` summary for tools and future automation.
 
+When campaign state records an unfinished literature exploration batch, the
+report marks that checkpoint as incomplete instead of treating the partial
+evidence as a confirmed negative result. The Markdown report uses a relative
+reference for `progress.png` so the report and plot remain portable together.
+
 The helper does not edit source, ledger, manifests, or campaign state and does
 not require Git. If an abrupt interruption leaves state active, the human must
 confirm interruption after execution is independently checked; the report
