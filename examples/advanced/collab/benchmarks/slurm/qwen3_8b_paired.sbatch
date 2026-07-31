@@ -5,7 +5,7 @@
 #SBATCH --ntasks=1
 #SBATCH --gpus=4
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=256G
+#SBATCH --mem=512G
 #SBATCH --time=04:00:00
 #SBATCH --job-name=collab-qwen3-8b-paired
 #SBATCH --output=/lustre/fsw/portfolios/coreai/users/ziyuex/projects/collab_project/logs/%x_%j.out
