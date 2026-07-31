@@ -40,6 +40,7 @@ import os
 import shlex
 import shutil
 import sys
+from pathlib import Path
 from typing import Optional
 from unittest.mock import patch
 
@@ -105,14 +106,19 @@ def export_recipe_from_job_py(
 
     This ensures we test the exact same configuration as the example.
     """
-    recipe_abs_path = os.path.abspath(recipe_dir)
-    job_py_path = os.path.join(recipe_abs_path, job_file)
+    recipe_path = Path(recipe_dir).resolve()
+    job_path = (recipe_path / job_file).resolve()
+    if not job_path.is_relative_to(recipe_path):
+        raise ValueError(f"job_file must resolve within recipe_dir: {job_file}")
+
+    recipe_abs_path = str(recipe_path)
+    job_py_path = str(job_path)
 
     # Convert output_dir to absolute path BEFORE changing directories
     # Otherwise, relative paths like "./data/jobs" would be resolved relative to the recipe dir
     output_abs_path = os.path.abspath(output_dir)
 
-    if not os.path.exists(job_py_path):
+    if not os.path.isfile(job_py_path):
         raise FileNotFoundError(f"{job_file} not found in {recipe_dir}")
 
     # Capture state to restore on exit (including on exception)
