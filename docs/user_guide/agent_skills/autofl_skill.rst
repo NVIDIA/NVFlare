@@ -183,6 +183,9 @@ identified strictly by ``status=baseline``; ``best`` includes only a scored
 baseline or ``keep`` row, while a better unretained ``discard`` is reported as
 ``best_observed``. If a valid plot cannot be produced, the Markdown and JSON
 reports are still generated with an explicit plot-availability warning.
+An exploration batch stopped before its required candidate count is reported
+as incomplete, and the Markdown report references ``progress.png`` relatively
+so the two artifacts can be moved together.
 
 The concise synthesis follows the same evidence rules. "What helped" contains
 only strict improvements that were retained. "What did not help" presents

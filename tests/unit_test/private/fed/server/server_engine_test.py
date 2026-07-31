@@ -355,6 +355,20 @@ def test_set_run_manager_links_cell_and_registers_widgets():
     assert run_manager.add_handler.call_count == 2
 
 
+@pytest.mark.parametrize("has_run_manager", [False, True])
+def test_set_cell_links_run_manager_without_registering_handler(has_run_manager):
+    engine = _basic_engine()
+    engine.run_manager = MagicMock() if has_run_manager else None
+    cell = MagicMock()
+
+    engine.set_cell(cell)
+
+    assert engine.cell is cell
+    if has_run_manager:
+        assert engine.run_manager.cell is cell
+    cell.register_request_cb.assert_not_called()
+
+
 def test_initialize_comm_links_run_manager_and_registers_handler():
     engine = _basic_engine()
     engine.run_manager = MagicMock()

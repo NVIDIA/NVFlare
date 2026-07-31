@@ -344,6 +344,26 @@ class TestReliableByteStreamer:
 
         assert task.retry_max_pending_bytes == 7
 
+    def test_retry_pending_byte_limit_default_scales_with_large_window(self, monkeypatch, retry_scheduler):
+        self._patch_common_config(monkeypatch)
+        window_size = 256 * 1024**2
+        monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: window_size)
+
+        task = self._make_task_with_reliable(True, monkeypatch)
+
+        assert task.retry_max_pending_bytes == 2 * window_size
+
+    def test_ack_interval_is_clamped_to_window_size(self, monkeypatch, retry_scheduler, caplog):
+        self._patch_common_config(monkeypatch)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: 8)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_ack_interval", lambda self, default: 16)
+
+        with caplog.at_level("WARNING"):
+            task = self._make_task_with_reliable(True, monkeypatch)
+
+        assert task.ack_interval == 8
+        assert "streaming_ack_interval 16 exceeds streaming_window_size 8" in caplog.text
+
     def test_retry_timeout_has_positive_floor(self, monkeypatch, retry_scheduler):
         self._patch_common_config(monkeypatch)
         monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 0.0)
@@ -399,6 +419,10 @@ class TestReliableByteStreamer:
         assert task.pending_message_bytes == 4
         assert message.get_header(StreamHeaderKey.RETRY_WAIT) == task.retry_wait
         assert message.get_header(StreamHeaderKey.RETRY_TIMEOUT) == task.retry_timeout
+        assert message.get_header(StreamHeaderKey.CHUNK_SIZE) == task.chunk_size
+        assert message.get_header(StreamHeaderKey.WINDOW_SIZE) == task.window_size
+        assert message.get_header(StreamHeaderKey.ACK_INTERVAL) == task.ack_interval
+        assert message.get_header(StreamHeaderKey.RETRY_MAX_PENDING_BYTES) == task.retry_max_pending_bytes
 
         task.buffer[0:1] = b"e"
         task.buffer_size = 1
@@ -408,6 +432,10 @@ class TestReliableByteStreamer:
         assert task.pending_message_bytes == 5
         assert next_message.get_header(StreamHeaderKey.RETRY_WAIT) is None
         assert next_message.get_header(StreamHeaderKey.RETRY_TIMEOUT) is None
+        assert next_message.get_header(StreamHeaderKey.CHUNK_SIZE) is None
+        assert next_message.get_header(StreamHeaderKey.WINDOW_SIZE) is None
+        assert next_message.get_header(StreamHeaderKey.ACK_INTERVAL) is None
+        assert next_message.get_header(StreamHeaderKey.RETRY_MAX_PENDING_BYTES) is None
 
     def test_reliable_send_blocks_concurrent_error_stop_until_send_returns(self, monkeypatch, retry_scheduler):
         task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
