@@ -24,13 +24,42 @@ from nvflare.apis.shareable import Shareable
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
-from nvflare.private.defs import CellMessageHeaderKeys, ClientRegMsgKey, JobFailureMsgKey, new_cell_message
+from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, ClientRegMsgKey, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
 from nvflare.private.fed.server.fed_server import FederatedServer
-from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, HotState
+from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
+from nvflare.private.fed.server.server_engine import ServerEngine
+from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, HotState, ServerState
 
 
 class TestFederatedServer:
+    @staticmethod
+    def _create_job_cell_with_command_agent(server_state):
+        server = object.__new__(FederatedServer)
+        engine = ServerEngine.__new__(ServerEngine)
+        engine.server = server
+        engine.run_manager = None
+        server.engine = engine
+        server.server_state = server_state
+
+        with (
+            patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+            patch("nvflare.private.fed.server.fed_server.NetAgent"),
+            patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+        ):
+            cell = MagicMock()
+            cell_cls.return_value = cell
+            server.create_job_cell("job-1", "tcp://root", "tcp://parent", False, None)
+
+        engine.set_cell(cell)
+        aux_calls = [
+            call
+            for call in cell.register_request_cb.call_args_list
+            if call.kwargs["channel"] == CellChannel.AUX_COMMUNICATION and call.kwargs["topic"] == "*"
+        ]
+        assert len(aux_calls) == 1
+        return server, engine, cell, aux_calls[0].kwargs["cb"]
+
     def test_resolve_client_fqcn_for_auth_fails_closed_for_registered_client_with_missing_fqcn(self):
         server = object.__new__(FederatedServer)
         client = MagicMock()
@@ -91,6 +120,39 @@ class TestFederatedServer:
 
         assert cell_cls.call_args.kwargs["auth_identity"] == "server-cn"
         assert cell_cls.call_args.kwargs["auth_identity_map"] == auth_identity_map
+
+    def test_set_cell_preserves_server_command_agent_aux_callback(self):
+        server, engine, cell, aux_callback = self._create_job_cell_with_command_agent(HotState(ssid="ssid"))
+
+        assert engine.cell is cell
+        assert aux_callback.__self__ is server.command_agent
+        assert aux_callback.__func__ is ServerCommandAgent.aux_communicate
+
+    @pytest.mark.parametrize(
+        "server_state,request_ssid",
+        [
+            (HotState(ssid="expected-ssid"), "wrong-ssid"),
+            (ServerState(ssid="expected-ssid"), "expected-ssid"),
+        ],
+    )
+    def test_server_job_aux_callback_rejects_invalid_ssid_or_state(self, server_state, request_ssid):
+        _, engine, _, aux_callback = self._create_job_cell_with_command_agent(server_state)
+        fl_ctx = MagicMock()
+        fl_ctx.get_engine.return_value = engine
+        engine.new_context = MagicMock(return_value=nullcontext(fl_ctx))
+        engine.dispatch = MagicMock()
+        request = new_cell_message(
+            {
+                MessageHeaderKey.TOPIC: "test_topic",
+                CellMessageHeaderKeys.SSID: request_ssid,
+            },
+            Shareable(),
+        )
+
+        result = aux_callback(request)
+
+        assert result.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.AUTHENTICATION_ERROR
+        engine.dispatch.assert_not_called()
 
     def test_hot_state_defaults_to_non_empty_session_id(self):
         assert HotState().ssid == DEFAULT_SERVICE_SESSION_ID
