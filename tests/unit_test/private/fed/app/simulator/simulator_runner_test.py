@@ -21,7 +21,7 @@ import time
 import uuid
 from argparse import Namespace
 from tempfile import TemporaryDirectory
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -109,6 +109,17 @@ class TestSimulatorRunner:
         runner = SimulatorRunner(job_folder="", workspace="")
         split_names = runner.split_clients(client_names, gpus)
         assert sorted(split_names) == sorted(expected_split_names)
+
+    @pytest.mark.parametrize("execution_error,expected_status", [(False, 0), (True, 2)])
+    def test_server_fatal_error_sets_simulator_status(self, execution_error, expected_status):
+        runner = SimulatorRunner(job_folder="", workspace="")
+        runner.server = MagicMock()
+        fl_ctx = runner.server.engine.new_context.return_value.__enter__.return_value
+        fl_ctx.get_prop.return_value = execution_error
+
+        assert runner._get_server_run_status() == expected_status
+
+        fl_ctx.get_prop.assert_called_once_with(FLContextKey.FATAL_SYSTEM_ERROR, False)
 
     @pytest.mark.parametrize(
         "gpus, expected_gpus",

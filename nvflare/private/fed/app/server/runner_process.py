@@ -102,6 +102,7 @@ def main(args):
             server.cell = server.create_job_cell(
                 args.job_id, args.root_url, args.parent_url, secure_train, server_config
             )
+            server.engine.initialize_comm(server.cell)
 
             # set filter to add additional auth headers
             set_add_auth_headers_filters(

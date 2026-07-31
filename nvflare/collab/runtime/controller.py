@@ -196,6 +196,9 @@ class CollabController(Controller, CollabAdaptor):
         # configure all sites
         engine = fl_ctx.get_engine()
         self.cell = engine.get_cell()
+        if self.cell is None:
+            self.system_panic("server communication cell is unavailable", fl_ctx)
+            return
         server_collab_interface = self.server_app.get_collab_interface()
         task = Task(
             name=SYNC_TASK_NAME,
