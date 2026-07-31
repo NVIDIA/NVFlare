@@ -185,7 +185,7 @@ class TestPrepareLearnTaskData(unittest.TestCase):
 
     def test_attach_mode_is_conservatively_treated_as_in_process(self):
         task_data = _make_shareable_with_lazy_refs()
-        executor = ClientAPIExecutor(execution_mode=ExecutionMode.ATTACH)
+        executor = ClientAPIExecutor(execution_mode=ExecutionMode.ATTACH, attach_id="test-attach")
 
         _, resolved, controller_data, learner_data = self._prepare(task_data, executor)
         self.assertIs(controller_data, resolved)
