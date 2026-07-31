@@ -161,6 +161,7 @@ class AttachFakeCell(FakeCell):
             MsgKey.RANK: "0",
             MsgKey.HEARTBEAT_INTERVAL: 0.05,
             MsgKey.HEARTBEAT_TIMEOUT: 0.0,
+            MsgKey.RESULT_RELAY: False,
             MsgKey.TASK_EXCHANGE: {
                 ConfigKey.TRAIN_TASK_NAME: "train",
                 ConfigKey.EVAL_TASK_NAME: "validate",
@@ -437,6 +438,7 @@ class TestAttachMode:
             (MsgKey.PROTOCOL_VERSION, PROTOCOL_VERSION + 1),
             (MsgKey.RANK, "1"),
             (MsgKey.HEARTBEAT_INTERVAL, 0),
+            (MsgKey.RESULT_RELAY, "true"),
             (MsgKey.TASK_EXCHANGE, "not-a-dict"),
             (MsgKey.MEMORY_GC_ROUNDS, -1),
         ):
@@ -472,6 +474,36 @@ class TestAttachMode:
         assert init_errors == []
         assert api._session_id == SESSION_ID
         api.shutdown()
+
+    def test_attach_result_relay_is_independent_of_clear_trainer_transport(self, attach_bootstrap_path, attach_env):
+        attach_env.session_open_payload[MsgKey.RESULT_RELAY] = True
+        api = _init_api(attach_bootstrap_path, attach_env)
+        try:
+            _deliver_attach_task(attach_env)
+            api.receive()
+
+            def _on_request(topic, target, request):
+                if topic == Topic.RESULT_READY:
+                    return make_cell_reply(
+                        CellReturnCode.OK,
+                        body={
+                            MsgKey.REPLY_TOPIC: Topic.RESULT_ACCEPTED,
+                            MsgKey.RESULT_ID: request.payload[MsgKey.RESULT_ID],
+                            MsgKey.ACCEPTED_ATTEMPT_ID: request.payload[MsgKey.ATTEMPT_ID],
+                        },
+                    )
+                return make_cell_reply(CellReturnCode.OK)
+
+            attach_env.on_request = _on_request
+            api.send(FLModel(params={"w": [2.0]}, params_type=ParamsType.FULL))
+
+            result_request = [m for m in attach_env.request_messages if MsgKey.RESULT in m.payload][0]
+            result_kwargs = attach_env.request_kwargs[attach_env.request_messages.index(result_request)]
+            assert attach_env.cell_ctor.call_args.kwargs["secure"] is False
+            assert result_kwargs["receiver_ids"] == (CJ_FQCN,)
+            assert result_kwargs["num_receivers"] == 1
+        finally:
+            api.shutdown()
 
     def test_decomposer_failure_does_not_half_bind_session(self, attach_bootstrap_path, attach_env, monkeypatch):
         attach_env.open_on_start = False

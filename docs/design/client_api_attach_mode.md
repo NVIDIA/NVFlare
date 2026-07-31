@@ -330,7 +330,8 @@ configuration.
 3. The CJ retries the same `SESSION_OPEN` until accepted, aborted, or
    `attach_timeout` expires.
 4. The request carries the attach ID, job/site identity, trainer FQCN, protocol
-   version, rank, heartbeat policy, task exchange, and memory settings.
+   version, rank, heartbeat policy, task exchange, memory settings, and whether
+   trainer-hosted lazy results are relayed through the CJ.
 5. The trainer validates the entire request and registers framework decomposers
    before committing any session binding.
 6. It returns `SESSION_ACCEPTED`.
@@ -375,6 +376,17 @@ receiver-confirmed terminal success. Until then:
   failures or routine `SHUTDOWN`; and
 - its lifecycle guard must not stop the Cell while a canonical source is still
   being served.
+
+The expected source receiver is a session property supplied by the CJ. In a
+secure relayed job it is the CJ; otherwise it is the ultimate receiver stamped
+on the task. This choice is independent of the Attach listener driver and its
+connection security: a clear `shared-file` trainer route may still feed a
+secure CP/CJ route whose CJ performs the relay.
+
+If tensor-streaming filters are also configured, a result that already contains
+pass-through lazy references bypasses their separate tensor rendezvous. The
+filters preserve the complete result envelope so its terminal consumer resolves
+the references through the ordinary downloader path.
 
 After acceptance, transient status-probe failure must not delete transfer
 sources. Reusing a result ID for another `send()` is rejected explicitly.
@@ -473,6 +485,7 @@ Unit coverage must verify:
 - SESSION_OPEN rejection cannot poison `init()`;
 - task delivery does not retry semantic rejection;
 - reconnect, stale-session rejection, task deduplication, and result recovery;
+- secure-job result relay is independent of clear shared-file Attach transport;
 - canonical lazy sources survive uncertain status and routine shutdown; and
 - Attach finalization never invokes process-ownership operations.
 

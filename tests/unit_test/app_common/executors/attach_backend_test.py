@@ -264,6 +264,7 @@ def test_session_open_task_exchange_uses_wire_primitive_values():
     session_open = next(payload for topic, _, payload in cell.sent if topic == Topic.SESSION_OPEN)
     task_exchange = session_open[MsgKey.TASK_EXCHANGE]
 
+    assert session_open[MsgKey.RESULT_RELAY] is True
     for key in (
         ConfigKey.EXCHANGE_FORMAT,
         ConfigKey.SERVER_EXPECTED_FORMAT,

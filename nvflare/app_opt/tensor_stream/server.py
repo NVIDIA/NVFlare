@@ -27,7 +27,7 @@ from nvflare.client.config import ExchangeFormat
 
 from .receiver import TensorReceiver
 from .sender import TensorSender
-from .utils import clean_task_data
+from .utils import clean_task_data, contains_lazy_download_ref
 
 
 class TensorServerStreamer(FLComponent):
@@ -173,6 +173,14 @@ class TensorServerStreamer(FLComponent):
         elif event_type == EventType.BEFORE_TASK_RESULT_FILTER:
             task_id = fl_ctx.get_prop(FLContextKey.TASK_ID)
             peer_name = fl_ctx.get_peer_context().get_identity_name()
+            task_result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
+            if contains_lazy_download_ref(task_result):
+                self.log_info(
+                    fl_ctx,
+                    f"Skipping task-result tensor rendezvous for peer '{peer_name}' and task '{task_id}' because "
+                    "the result contains PASS_THROUGH download references.",
+                )
+                return
             try:
                 self.receiver.wait_for_tensors(task_id, peer_name)
                 self.receiver.set_ctx_with_tensors(fl_ctx)

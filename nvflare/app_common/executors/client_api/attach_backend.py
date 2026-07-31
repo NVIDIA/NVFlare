@@ -390,6 +390,10 @@ class AttachBackend(CellBackendBase):
             MsgKey.RANK: "0",
             MsgKey.HEARTBEAT_INTERVAL: self._context.heartbeat_interval,
             MsgKey.HEARTBEAT_TIMEOUT: self._context.heartbeat_timeout,
+            # In secure jobs the CJ relays lazy result downloads. The Attach
+            # transport can independently be clear (for example shared-file),
+            # so tell the trainer the result route explicitly.
+            MsgKey.RESULT_RELAY: self._secure_mode,
             MsgKey.TASK_EXCHANGE: self._task_exchange_config(),
             MsgKey.MEMORY_GC_ROUNDS: self._context.memory_gc_rounds,
             MsgKey.CUDA_EMPTY_CACHE: self._context.cuda_empty_cache,

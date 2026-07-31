@@ -82,6 +82,10 @@ class MsgKey:
     RESULT_ID = "result_id"
     RESULT_STATE = "result_state"
     ACCEPTED_ATTEMPT_ID = "accepted_attempt_id"
+    # True when the CJ is the terminal requester for trainer-hosted lazy result
+    # sources. This is independent of the Attach driver's transport security:
+    # a clear shared-file trainer route may still feed a secure, relayed job.
+    RESULT_RELAY = "result_relay"
     # True while send() owns an accepted source, including the RESULT_ACCEPTED race;
     # SHUTDOWN may stop the process only after this becomes False.
     RESULT_SOURCE_LIVE = "result_source_live"

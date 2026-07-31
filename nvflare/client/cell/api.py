@@ -137,10 +137,10 @@ class CellClientAPI(APISpec):
         self._attach = AttachTrainerSession(self) if self._is_attach else None
         self._trainer_fqcn = self._attach.trainer_fqcn if self._attach else self._config[BootstrapKey.TRAINER_FQCN]
         self._job_id: Optional[str] = self._config.get(BootstrapKey.JOB_ID)
-        attach_secure = bool(
-            self._attach and self._attach.connection_security and self._attach.connection_security != "clear"
-        )
-        self._secure_mode = bool(self._config.get(BootstrapKey.SECURE_MODE, attach_secure))
+        # This controls who is expected to pull trainer-hosted lazy results,
+        # not how the trainer's own Cell transport is secured. Launched mode
+        # receives it in the bootstrap; Attach receives it in SESSION_OPEN.
+        self._result_relay_to_cj = bool(self._config.get(BootstrapKey.SECURE_MODE, False))
         self._task_exchange: dict = self._config.get(BootstrapKey.TASK_EXCHANGE, {})
         # Typed files predating LAUNCH_ONCE default to persistent; one-shot close is irreversible.
         self._launch_once = bool(self._task_exchange.get(ConfigKey.LAUNCH_ONCE, True))
@@ -226,7 +226,6 @@ class CellClientAPI(APISpec):
             secure = False
             if self._attach:
                 secure, credentials = self._attach.cell_security()
-                self._secure_mode = secure
             self._cell = Cell(
                 fqcn=self._trainer_fqcn,
                 root_url=None,
@@ -419,7 +418,7 @@ class CellClientAPI(APISpec):
                 ResultUploadProgressContextKey.STREAMING_IDLE_TIMEOUT: DEFAULT_STREAMING_IDLE_TIMEOUT,
             },
         }
-        source_receiver_ids = (self._cj_fqcn,) if self._secure_mode else self._result_receiver_ids
+        source_receiver_ids = (self._cj_fqcn,) if self._result_relay_to_cj else self._result_receiver_ids
 
         result_accepted = False
         result_id = self._attach.mark_result_publishing(task.get(MsgKey.TASK_ID)) if self._attach else None

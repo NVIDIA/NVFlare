@@ -475,6 +475,7 @@ class AttachTrainerSession:
                 api._job_id = payload.get(MsgKey.JOB_ID)
                 api._heartbeat_interval = runtime["heartbeat_interval"]
                 api._heartbeat_timeout = runtime["heartbeat_timeout"]
+                api._result_relay_to_cj = runtime["result_relay"]
                 api._task_exchange = runtime["task_exchange"]
                 api._launch_once = True
                 api._memory_gc_rounds = runtime["memory_gc_rounds"]
@@ -535,6 +536,9 @@ class AttachTrainerSession:
             task_exchange = payload.get(MsgKey.TASK_EXCHANGE)
             if not isinstance(task_exchange, dict):
                 raise TrainerSessionError("SESSION_OPEN task_exchange must be a dict")
+            result_relay = payload.get(MsgKey.RESULT_RELAY)
+            if type(result_relay) is not bool:
+                raise TrainerSessionError("SESSION_OPEN result_relay must be a bool")
             memory_gc_rounds = payload.get(MsgKey.MEMORY_GC_ROUNDS, 0)
             if not isinstance(memory_gc_rounds, int) or isinstance(memory_gc_rounds, bool) or memory_gc_rounds < 0:
                 raise TrainerSessionError("SESSION_OPEN memory_gc_rounds must be an integer >= 0")
@@ -543,6 +547,7 @@ class AttachTrainerSession:
         return {
             "heartbeat_interval": heartbeat_interval,
             "heartbeat_timeout": heartbeat_timeout,
+            "result_relay": result_relay,
             "task_exchange": dict(task_exchange),
             "memory_gc_rounds": memory_gc_rounds,
         }, None

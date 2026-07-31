@@ -21,7 +21,7 @@ from nvflare.client.config import ExchangeFormat
 
 from .receiver import TensorReceiver
 from .sender import TensorSender
-from .utils import clean_task_result
+from .utils import clean_task_result, contains_lazy_download_ref
 
 
 class TensorClientStreamer(FLComponent):
@@ -128,6 +128,14 @@ class TensorClientStreamer(FLComponent):
         Args:
             fl_ctx (FLContext): The FLContext for the current operation.
         """
+        task_result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
+        if contains_lazy_download_ref(task_result):
+            self.log_info(
+                fl_ctx,
+                "Skipping task-result tensor streaming because the result contains PASS_THROUGH download references.",
+            )
+            return
+
         self.sender = TensorSender(self.engine, FLContextKey.TASK_RESULT, self.format, self.tasks)
         self.sender.store_tensors(fl_ctx)
         try:

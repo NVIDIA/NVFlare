@@ -97,7 +97,7 @@ def _wait_for_listener(cell: Cell, timeout: float = 10.0) -> str:
     raise AssertionError(f"Cell {cell.get_fqcn()} did not create an internal listener")
 
 
-def _fl_ctx(cell: Cell, site_name: str, job_id: str) -> FLContext:
+def _fl_ctx(cell: Cell, site_name: str, job_id: str, secure_mode: bool = False) -> FLContext:
     engine = MagicMock()
     engine.get_cell.return_value = cell
     engine.new_context.return_value.__enter__.return_value = FLContext()
@@ -106,7 +106,7 @@ def _fl_ctx(cell: Cell, site_name: str, job_id: str) -> FLContext:
     fl_ctx.put(ReservedKey.RUN_NUM, job_id, private=False, sticky=False)
     fl_ctx.put(ReservedKey.IDENTITY_NAME, site_name, private=False, sticky=False)
     fl_ctx.put(FLContextKey.CURRENT_JOB_ID, job_id, private=False, sticky=False)
-    fl_ctx.put(FLContextKey.SECURE_MODE, False, private=True, sticky=False)
+    fl_ctx.put(FLContextKey.SECURE_MODE, secure_mode, private=True, sticky=False)
     return fl_ctx
 
 
@@ -232,7 +232,10 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, transport)
         )
 
         backend = AttachBackend()
-        fl_ctx = _fl_ctx(cj, site_name, job_id)
+        # Exercise the relayed-job result path independently of the dedicated
+        # Attach transport's own security. This is especially load-bearing for
+        # a clear shared-file trainer route in an otherwise secure job.
+        fl_ctx = _fl_ctx(cj, site_name, job_id, secure_mode=True)
         context = ClientAPIBackendContext(
             executor=MagicMock(),
             attach_id=attach_id,
@@ -247,26 +250,33 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, transport)
         )
         backend.initialize(context, fl_ctx)
 
-        initial = np.asarray([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
-        task = DXO(DataKind.WEIGHTS, {NPConstants.NUMPY_KEY: initial}).to_shareable()
-        task.set_header(AppConstants.CURRENT_ROUND, 0)
-        result = backend.execute("train", task, fl_ctx, Signal())
+        # Cross the ViaDownloader threshold and run twice. The second round
+        # proves round one's trainer-hosted source settled instead of leaving
+        # the single-threaded trainer blocked in flare.send().
+        initial = np.arange(1024 * 1024, dtype=np.float32).reshape(1024, 1024)
+        for current_round in range(2):
+            task = DXO(DataKind.WEIGHTS, {NPConstants.NUMPY_KEY: initial}).to_shareable()
+            task.set_header(AppConstants.CURRENT_ROUND, current_round)
+            result = backend.execute("train", task, fl_ctx, Signal())
 
-        # The CJ deliberately holds lazy references. Forward the result to its CP
-        # so the CP downloads the arrays through CJ from the external trainer.
-        reply = cj.send_request(
-            channel="attach_e2e",
-            topic="result",
-            target=site.get_fqcn(),
-            request=new_cell_message({}, result),
-            timeout=20.0,
-        )
-        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
-        result_dxo = from_shareable(received["result"])
-        np.testing.assert_array_equal(result_dxo.data[NPConstants.NUMPY_KEY], initial + 1)
+            # The CJ deliberately holds lazy references. Forward the result to
+            # its CP so the CP downloads through the secure-job relay from the
+            # external trainer.
+            received.clear()
+            reply = cj.send_request(
+                channel="attach_e2e",
+                topic="result",
+                target=site.get_fqcn(),
+                request=new_cell_message({}, result),
+                timeout=20.0,
+            )
+            assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+            result_dxo = from_shareable(received["result"])
+            np.testing.assert_array_equal(result_dxo.data[NPConstants.NUMPY_KEY], initial + 1)
+            initial = result_dxo.data[NPConstants.NUMPY_KEY]
     finally:
         if backend is not None:
-            backend.finalize(_fl_ctx(cells[-1], site_name, job_id))
+            backend.finalize(_fl_ctx(cells[-1], site_name, job_id, secure_mode=True))
         stdout, stderr = _stop_process(trainer) if trainer is not None else ("", "")
         for cell in reversed(cells):
             fqcn = cell.get_fqcn()

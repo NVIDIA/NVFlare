@@ -15,13 +15,16 @@
 from unittest.mock import Mock, patch
 
 import pytest
+import torch
 
+from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.app_opt.tensor_stream.client import TensorClientStreamer
 from nvflare.app_opt.tensor_stream.receiver import TensorReceiver
 from nvflare.app_opt.tensor_stream.sender import TensorSender
 from nvflare.client.config import ExchangeFormat
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
 
 class TestTensorClientStreamer:
@@ -229,6 +232,30 @@ class TestTensorClientStreamer:
 
         # Verify sender is set to None after successful send
         assert streamer.sender is None
+
+    @patch("nvflare.app_opt.tensor_stream.client.TensorSender")
+    @patch("nvflare.app_opt.tensor_stream.client.clean_task_result")
+    def test_send_tensors_to_server_preserves_pass_through_result(
+        self, mock_clean_task_result, mock_sender_class, mock_fl_context, mock_engine_with_clients
+    ):
+        task_result = DXO(
+            data_kind=DataKind.WEIGHTS,
+            data={
+                "large_weight": LazyDownloadRef("site-3.trainer", "result-ref", "T0"),
+                "small_weight": torch.tensor([1.0]),
+            },
+        ).to_shareable()
+        mock_fl_context.get_prop.return_value = task_result
+        streamer = TensorClientStreamer(format=ExchangeFormat.PYTORCH, tasks=["train"])
+        streamer.engine = mock_engine_with_clients
+
+        streamer.send_tensors_to_server(mock_fl_context)
+
+        mock_sender_class.assert_not_called()
+        mock_clean_task_result.assert_not_called()
+        assert streamer.sender is None
+        assert task_result["DXO"]["data"]["large_weight"].fqcn == "site-3.trainer"
+        assert torch.equal(task_result["DXO"]["data"]["small_weight"], torch.tensor([1.0]))
 
     @patch("nvflare.app_opt.tensor_stream.client.TensorSender")
     @patch("nvflare.app_opt.tensor_stream.client.TensorReceiver")
