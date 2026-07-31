@@ -17,6 +17,8 @@
 import threading
 import time
 import uuid
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
@@ -31,8 +33,10 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 
-TRAINER_FQCN = "site-1.-client_api_trainer_a"
+CJ_FQCN = "site-1.job-1"
+TRAINER_FQCN = f"{CJ_FQCN}.-client_api_trainer_a"
 
 
 def _accepted(topic, **fields):
@@ -40,7 +44,14 @@ def _accepted(topic, **fields):
 
 
 class FakeCell:
-    def __init__(self, connect_url="grpc://127.0.0.1:9000"):
+    def __init__(
+        self,
+        connect_url="grpc://127.0.0.1:9000",
+        listener_scheme="grpcs",
+        listener_connection_security="mtls",
+        listener_params=None,
+        attach_config=True,
+    ):
         self.decode_pass_through_topics = set()
         self.decode_pass_through_relay_topics = set()
         self.cbs = {}
@@ -53,6 +64,34 @@ class FakeCell:
         self.deliver_result = True
         self.task_reply_topic = Topic.TASK_ACCEPTED
         self.task_ready_count = 0
+        self.shutdown_source_live = False
+        params = listener_params or {
+            DriverParams.SCHEME.value: listener_scheme,
+            DriverParams.CONNECTION_SECURITY.value: listener_connection_security,
+            DriverParams.URL.value: connect_url,
+        }
+        communicator = MagicMock()
+        communicator.start_listener.return_value = ("attach-listener", connect_url, params)
+        configurator = MagicMock()
+        configurator.get_config.return_value = (
+            {
+                "client_api_attach": {
+                    "scheme": listener_scheme,
+                    "resources": {
+                        key: value
+                        for key, value in params.items()
+                        if key not in (DriverParams.SCHEME.value, DriverParams.URL.value)
+                    },
+                }
+            }
+            if attach_config
+            else {}
+        )
+        self.core_cell = SimpleNamespace(
+            communicator=communicator,
+            comm_configurator=configurator,
+            identity_resolver=SimpleNamespace(exact_identity_map={}),
+        )
 
     def register_request_cb(self, channel, topic, cb):
         assert channel == CHANNEL
@@ -102,7 +141,10 @@ class FakeCell:
         if topic == Topic.TASK_STATUS:
             return _accepted(Topic.TASK_STATUS, **{MsgKey.TASK_STATE: TaskState.QUEUED})
         if topic == Topic.SHUTDOWN:
-            return make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: False})
+            return make_cell_reply(
+                CellReturnCode.OK,
+                body={MsgKey.RESULT_SOURCE_LIVE: self.shutdown_source_live},
+            )
         return make_cell_reply(CellReturnCode.OK)
 
     def fire_and_forget(self, channel, topic, targets, message, **kwargs):
@@ -112,7 +154,7 @@ class FakeCell:
         return self.cbs[topic](new_cell_message({MessageHeaderKey.ORIGIN: origin}, payload))
 
 
-def _fl_ctx(cell):
+def _fl_ctx(cell, secure_mode=True):
     engine = MagicMock()
     engine.get_cell.return_value = cell
     engine.new_context.return_value.__enter__.return_value = FLContext()
@@ -121,7 +163,7 @@ def _fl_ctx(cell):
     fl_ctx.put(ReservedKey.RUN_NUM, "job-1", private=False, sticky=False)
     fl_ctx.put(ReservedKey.IDENTITY_NAME, "site-1", private=False, sticky=False)
     fl_ctx.put(FLContextKey.CURRENT_JOB_ID, "job-1", private=False, sticky=False)
-    fl_ctx.put(FLContextKey.SECURE_MODE, False, private=True, sticky=False)
+    fl_ctx.put(FLContextKey.SECURE_MODE, secure_mode, private=True, sticky=False)
     return fl_ctx
 
 
@@ -180,6 +222,36 @@ def test_attach_session_executes_task_and_finalize_only_closes_protocol():
     assert any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
     assert any(topic == Topic.SHUTDOWN for topic, _, _ in cell.sent)
     assert not backend._session_thread.is_alive()
+    cell.core_cell.communicator.remove_connector.assert_called_once_with("attach-listener")
+    assert TRAINER_FQCN not in cell.core_cell.identity_resolver.exact_identity_map
+
+
+def test_mtls_listener_binds_trainer_fqcn_to_site_certificate_identity():
+    cell = FakeCell()
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell)
+
+    backend.initialize(_context(), fl_ctx)
+
+    assert cell.core_cell.identity_resolver.exact_identity_map[TRAINER_FQCN] == "site-1"
+    backend.finalize(fl_ctx)
+    assert TRAINER_FQCN not in cell.core_cell.identity_resolver.exact_identity_map
+
+
+def test_conflicting_trainer_transport_identity_fails_before_listener_or_session():
+    cell = FakeCell()
+    cell.core_cell.identity_resolver.exact_identity_map[TRAINER_FQCN] = "other-site"
+    backend = AttachBackend()
+
+    try:
+        backend.initialize(_context(), _fl_ctx(cell))
+    except ValueError as e:
+        assert "already bound" in str(e)
+    else:
+        raise AssertionError("a conflicting transport identity must be rejected")
+
+    cell.core_cell.communicator.start_listener.assert_not_called()
+    assert not any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
 
 
 def test_session_open_task_exchange_uses_wire_primitive_values():
@@ -317,19 +389,164 @@ def test_reconnect_does_not_replay_task_interrupted_by_session_loss():
     backend.finalize(fl_ctx)
 
 
-def test_cleartext_non_loopback_route_requires_explicit_opt_in():
-    cell = FakeCell(connect_url="grpc://10.20.30.40:9000")
+def test_clear_attach_listener_requires_explicit_opt_in_before_session_open():
+    cell = FakeCell(listener_scheme="grpc", listener_connection_security="clear")
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell, secure_mode=False)
+
+    try:
+        backend.initialize(_context(), fl_ctx)
+    except ValueError as e:
+        assert "CJ-owned attach listener" in str(e)
+    else:
+        raise AssertionError("non-secure attach must require explicit opt-in")
+    assert not any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
+
+    allowed = AttachBackend()
+    allowed_context = _context(allow_insecure_attach=True)
+    allowed.initialize(allowed_context, fl_ctx)
+    assert _wait_ready(allowed).ready.is_set()
+    allowed_context.executor.log_warning.assert_called_once()
+    allowed.finalize(fl_ctx)
+
+
+def test_secure_site_still_requires_mtls_attach_listener_before_session_open():
+    cell = FakeCell(listener_scheme="grpc", listener_connection_security="mtls")
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell, secure_mode=True)
+
+    try:
+        backend.initialize(_context(), fl_ctx)
+    except ValueError as e:
+        assert "CJ-owned attach listener" in str(e)
+    else:
+        raise AssertionError("a secure-mode site with a clear attach listener must be rejected")
+    assert not any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
+
+    allowed = AttachBackend()
+    allowed_context = _context(allow_insecure_attach=True)
+    allowed.initialize(allowed_context, fl_ctx)
+    assert _wait_ready(allowed).ready.is_set()
+    allowed_context.executor.log_warning.assert_called_once()
+    allowed.finalize(fl_ctx)
+
+
+def _shared_file_listener_params(tmp_path: Path) -> dict:
+    root_dir = tmp_path / "cellnet"
+    listener_dir = root_dir / "lst_12345678"
+    conns_dir = listener_dir / "conns"
+    conns_dir.mkdir(parents=True)
+    marker = listener_dir / ".nvf_file_transport"
+    marker.touch()
+    root_dir.chmod(0o770)
+    listener_dir.chmod(0o770)
+    conns_dir.chmod(0o770)
+    marker.chmod(0o660)
+    return {
+        DriverParams.URL.value: f"shared-file://0{listener_dir}",
+        DriverParams.SCHEME.value: "shared-file",
+        DriverParams.CONNECTION_SECURITY.value: "clear",
+        "root_dir": str(root_dir),
+    }
+
+
+def test_shared_file_attach_listener_does_not_require_insecure_opt_in(tmp_path):
+    params = _shared_file_listener_params(tmp_path)
+    cell = FakeCell(
+        connect_url=params[DriverParams.URL.value],
+        listener_scheme="shared-file",
+        listener_connection_security="clear",
+        listener_params=params,
+    )
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell, secure_mode=False)
+    context = _context()
+
+    backend.initialize(context, fl_ctx)
+
+    assert _wait_ready(backend).ready.is_set()
+    context.executor.log_warning.assert_not_called()
+    backend.finalize(fl_ctx)
+
+
+def test_world_accessible_shared_file_attach_listener_is_rejected(tmp_path):
+    params = _shared_file_listener_params(tmp_path)
+    listener_dir = Path(params[DriverParams.URL.value].removeprefix("shared-file://0"))
+    listener_dir.chmod(0o777)
+    cell = FakeCell(
+        connect_url=params[DriverParams.URL.value],
+        listener_scheme="shared-file",
+        listener_connection_security="clear",
+        listener_params=params,
+    )
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell, secure_mode=False)
+
+    try:
+        backend.initialize(_context(allow_insecure_attach=True), fl_ctx)
+    except ValueError as e:
+        assert "shared-file attach requires" in str(e)
+    else:
+        raise AssertionError("a world-accessible shared-file route must be rejected even with the insecure opt-in")
+    assert not any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
+
+
+def test_missing_attach_listener_config_fails_before_session_open():
+    cell = FakeCell(attach_config=False)
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell)
+
+    try:
+        backend.initialize(_context(), fl_ctx)
+    except ValueError as e:
+        assert "client_api_attach" in str(e)
+    else:
+        raise AssertionError("attach must require a dedicated listener configuration")
+    assert not any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
+
+
+def test_finalize_unblocks_pending_result_wait():
+    cell = FakeCell()
+    cell.deliver_result = False
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell)
+    backend.initialize(
+        _context(heartbeat_interval=5.0, heartbeat_timeout=30.0, result_wait_timeout=None),
+        fl_ctx,
+    )
+    _wait_ready(backend)
+
+    result_box = {}
+    execution = threading.Thread(
+        target=lambda: result_box.setdefault("result", backend.execute("train", Shareable(), fl_ctx, Signal()))
+    )
+    execution.start()
+    assert _wait_until(lambda: cell.task_ready_count == 1)
+
+    backend.finalize(fl_ctx)
+    execution.join(timeout=2.0)
+
+    assert not execution.is_alive()
+    assert result_box["result"].get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+
+
+def test_finalize_keeps_attach_listener_until_accepted_result_source_disconnects():
+    cell = FakeCell()
+    cell.shutdown_source_live = True
     backend = AttachBackend()
     fl_ctx = _fl_ctx(cell)
     backend.initialize(_context(), fl_ctx)
+    session = _wait_ready(backend)
+    session.result_source_live.set()
 
-    deadline = time.monotonic() + 2.0
-    while time.monotonic() < deadline and not backend._session_error():
-        time.sleep(0.01)
-    assert "cleartext non-loopback" in backend._session_error()
-    backend.finalize(fl_ctx)
+    finalizer = threading.Thread(target=lambda: backend.finalize(fl_ctx))
+    finalizer.start()
+    assert _wait_until(lambda: any(topic == Topic.SHUTDOWN for topic, _, _ in cell.sent))
+    assert finalizer.is_alive()
+    cell.core_cell.communicator.remove_connector.assert_not_called()
 
-    allowed = AttachBackend()
-    allowed.initialize(_context(allow_insecure_attach=True), fl_ctx)
-    assert _wait_ready(allowed).ready.is_set()
-    allowed.finalize(fl_ctx)
+    cell.connected = False
+    finalizer.join(timeout=2.0)
+
+    assert not finalizer.is_alive()
+    cell.core_cell.communicator.remove_connector.assert_called_once_with("attach-listener")

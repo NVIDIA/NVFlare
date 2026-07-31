@@ -42,12 +42,29 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils.network_utils import get_open_ports
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(nvflare.__file__)))
 _TRAINER_SCRIPT = textwrap.dedent(
     """
     import sys
+
+    if "--deny-network" in sys.argv:
+        denied_events = {
+            "socket.__new__",
+            "socket.bind",
+            "socket.connect",
+            "socket.connect_ex",
+            "socket.getaddrinfo",
+            "socket.sendto",
+        }
+
+        def deny_network(event, args):
+            if event in denied_events:
+                raise RuntimeError(f"network access is forbidden for this trainer: {event}")
+
+        sys.addaudithook(deny_network)
 
     import numpy as np
 
@@ -106,7 +123,8 @@ def _stop_process(process: subprocess.Popen) -> tuple[str, str]:
 
 
 @pytest.mark.timeout(60)
-def test_external_trainer_attaches_and_completes_numpy_task(tmp_path):
+@pytest.mark.parametrize("transport", ["tcp", "shared-file"])
+def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, transport):
     flare_decomposers.register()
     common_decomposers.register()
     server_url = f"tcp://127.0.0.1:{get_open_ports(1)[0]}"
@@ -134,6 +152,36 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path):
         site.start()
         cells.append(site)
         site_listener = _wait_for_listener(site)
+        site.register_request_cb(
+            channel="attach_e2e",
+            topic="result",
+            cb=lambda request: received.update(result=request.payload) or make_reply(ReturnCode.OK),
+        )
+
+        if transport == "shared-file":
+            attach_resources = {
+                "root_dir": str(tmp_path / "attach"),
+                DriverParams.CONNECTION_SECURITY.value: "clear",
+                "poll_interval": 0.005,
+                "max_poll_interval": 0.05,
+                "lease_interval": 0.2,
+                "lease_timeout": 5,
+            }
+            trainer_connection = {
+                "rendezvous_dir": attach_resources["root_dir"],
+            }
+        else:
+            attach_port = get_open_ports(1)[0]
+            attach_resources = {
+                "host": "127.0.0.1",
+                "port": attach_port,
+                DriverParams.CONNECTION_SECURITY.value: "clear",
+            }
+            trainer_connection = {
+                "connect_url": f"tcp://127.0.0.1:{attach_port}",
+                "cj_fqcn": f"{site_name}.{job_id}",
+                "connection_security": "clear",
+            }
 
         cj = Cell(
             f"{site_name}.{job_id}",
@@ -143,13 +191,14 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path):
             parent_url=site_listener,
             create_internal_listener=False,
         )
-        cj.register_request_cb(
-            channel="attach_e2e",
-            topic="result",
-            cb=lambda request: received.update(result=request.payload) or make_reply(ReturnCode.OK),
-        )
         cj.start()
         cells.append(cj)
+        cj.core_cell.comm_configurator.config = {
+            "client_api_attach": {
+                "scheme": transport if transport == "shared-file" else "tcp",
+                "resources": attach_resources,
+            }
+        }
 
         profile = tmp_path / "attach_profile.json"
         profile.write_text(
@@ -159,9 +208,8 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path):
                     "execution_mode": "attach",
                     "attach_id": attach_id,
                     "site_name": site_name,
-                    "connect_url": site_listener,
-                    "connection_security": "clear",
                     "job_wait_timeout": 20.0,
+                    **trainer_connection,
                 }
             )
         )
@@ -170,7 +218,13 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path):
         env = os.environ.copy()
         env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
         trainer = subprocess.Popen(
-            [sys.executable, "-u", str(trainer_script), str(profile)],
+            [
+                sys.executable,
+                "-u",
+                str(trainer_script),
+                str(profile),
+                *(["--deny-network"] if transport == "shared-file" else []),
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -187,6 +241,7 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path):
             heartbeat_timeout=5.0,
             task_wait_timeout=20.0,
             result_wait_timeout=20.0,
+            allow_insecure_attach=transport == "tcp",
             params_exchange_format=ExchangeFormat.NUMPY,
             server_expected_format=ExchangeFormat.NUMPY,
         )
@@ -197,12 +252,12 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path):
         task.set_header(AppConstants.CURRENT_ROUND, 0)
         result = backend.execute("train", task, fl_ctx, Signal())
 
-        # The CJ deliberately holds lazy references. Forward the result to a real
-        # receiver so it downloads the arrays directly from the external trainer.
+        # The CJ deliberately holds lazy references. Forward the result to its CP
+        # so the CP downloads the arrays through CJ from the external trainer.
         reply = cj.send_request(
             channel="attach_e2e",
             topic="result",
-            target=cj.get_fqcn(),
+            target=site.get_fqcn(),
             request=new_cell_message({}, result),
             timeout=20.0,
         )

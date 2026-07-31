@@ -137,7 +137,9 @@ class CellClientAPI(APISpec):
         self._attach = AttachTrainerSession(self) if self._is_attach else None
         self._trainer_fqcn = self._attach.trainer_fqcn if self._attach else self._config[BootstrapKey.TRAINER_FQCN]
         self._job_id: Optional[str] = self._config.get(BootstrapKey.JOB_ID)
-        attach_secure = bool(self._attach and self._attach.connection_security != "clear")
+        attach_secure = bool(
+            self._attach and self._attach.connection_security and self._attach.connection_security != "clear"
+        )
         self._secure_mode = bool(self._config.get(BootstrapKey.SECURE_MODE, attach_secure))
         self._task_exchange: dict = self._config.get(BootstrapKey.TASK_EXCHANGE, {})
         # Typed files predating LAUNCH_ONCE default to persistent; one-shot close is irreversible.
@@ -219,11 +221,12 @@ class CellClientAPI(APISpec):
             with self._liveness_lock:
                 self._last_cj_activity = None
 
-            connect_url = self._config[BootstrapKey.CONNECT_URL]
+            connect_url = self._attach.prepare_connection() if self._attach else self._config[BootstrapKey.CONNECT_URL]
             credentials = {}
             secure = False
             if self._attach:
                 secure, credentials = self._attach.cell_security()
+                self._secure_mode = secure
             self._cell = Cell(
                 fqcn=self._trainer_fqcn,
                 root_url=None,
@@ -235,6 +238,8 @@ class CellClientAPI(APISpec):
                 create_internal_listener=False,
             )
             try:
+                if self._attach:
+                    self._attach.install_pre_decode_guard(self._cell)
                 # Propagate concurrent ABORT/SHUTDOWN into nested task-payload downloads.
                 self._cell.update_fobs_context({FOBSContextKey.ABORT_SIGNAL: self._abort_signal})
                 self._register_control_cbs(self._cell)

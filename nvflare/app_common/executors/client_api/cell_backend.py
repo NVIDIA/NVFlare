@@ -349,9 +349,6 @@ class CellBackendBase(ClientAPIBackendSpec):
         body.update(fields)
         return make_cell_reply(CellReturnCode.OK, body=body)
 
-    # Attach originally used ``_reply``; retain the short internal spelling.
-    _reply = _protocol_reply
-
     def _disable_pass_through(self) -> None:
         if self._cell is not None:
             for route in self._owned_pass_through_routes:

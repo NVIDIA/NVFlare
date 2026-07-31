@@ -47,6 +47,7 @@ ATTACH_CONFIG = {
     BootstrapKey.EXECUTION_MODE: ATTACH_EXECUTION_MODE,
     BootstrapKey.ATTACH_ID: "trainer_a",
     BootstrapKey.SITE_NAME: "site-1",
+    BootstrapKey.CJ_FQCN: "site-1.job-1",
     BootstrapKey.CONNECT_URL: "grpc://127.0.0.1:56789",
     BootstrapKey.CONNECTION_SECURITY: "clear",
     BootstrapKey.JOB_WAIT_TIMEOUT: None,
@@ -111,11 +112,72 @@ class TestBootstrapConfig:
         assert get_bootstrap_client_api_type(CONFIG, "bootstrap.json") == CELL_API_TYPE
         assert get_bootstrap_client_api_type(ATTACH_CONFIG, "attach.json") == CELL_API_TYPE
 
-    @pytest.mark.parametrize("field", [BootstrapKey.ATTACH_ID, BootstrapKey.SITE_NAME, BootstrapKey.CONNECT_URL])
+    @pytest.mark.parametrize("field", [BootstrapKey.ATTACH_ID, BootstrapKey.SITE_NAME])
     def test_attach_profile_requires_rendezvous_fields(self, field):
         config = dict(ATTACH_CONFIG)
         del config[field]
         with pytest.raises(ValueError, match=f"missing required field '{field}'"):
+            get_bootstrap_client_api_type(config, "attach.json")
+
+    def test_attach_profile_requires_exactly_one_connection_source(self, tmp_path):
+        neither = dict(ATTACH_CONFIG)
+        del neither[BootstrapKey.CONNECT_URL]
+        with pytest.raises(ValueError, match="exactly one"):
+            get_bootstrap_client_api_type(neither, "attach.json")
+
+        both = {
+            **ATTACH_CONFIG,
+            BootstrapKey.RENDEZVOUS_DIR: str(tmp_path),
+        }
+        with pytest.raises(ValueError, match="exactly one"):
+            get_bootstrap_client_api_type(both, "attach.json")
+
+    def test_shared_file_rendezvous_profile_is_valid(self, tmp_path):
+        config = dict(ATTACH_CONFIG)
+        del config[BootstrapKey.CONNECT_URL]
+        del config[BootstrapKey.CJ_FQCN]
+        config[BootstrapKey.RENDEZVOUS_DIR] = str(tmp_path)
+
+        assert get_bootstrap_client_api_type(config, "attach.json") == CELL_API_TYPE
+
+    def test_shared_file_rendezvous_requires_absolute_path_and_no_tls_material(self, tmp_path):
+        config = dict(ATTACH_CONFIG)
+        del config[BootstrapKey.CONNECT_URL]
+        del config[BootstrapKey.CJ_FQCN]
+        config[BootstrapKey.RENDEZVOUS_DIR] = "relative/path"
+        with pytest.raises(ValueError, match="absolute path"):
+            get_bootstrap_client_api_type(config, "attach.json")
+
+        config[BootstrapKey.RENDEZVOUS_DIR] = str(tmp_path)
+        config[BootstrapKey.CONNECTION_SECURITY] = "mtls"
+        with pytest.raises(ValueError, match="supports only"):
+            get_bootstrap_client_api_type(config, "attach.json")
+
+        config[BootstrapKey.CONNECTION_SECURITY] = "clear"
+        config[BootstrapKey.CA_CERT] = "/tmp/rootCA.pem"
+        with pytest.raises(ValueError, match="does not use"):
+            get_bootstrap_client_api_type(config, "attach.json")
+
+    def test_shared_file_rendezvous_rejects_prebound_cj(self, tmp_path):
+        config = dict(ATTACH_CONFIG)
+        del config[BootstrapKey.CONNECT_URL]
+        config[BootstrapKey.RENDEZVOUS_DIR] = str(tmp_path)
+
+        with pytest.raises(ValueError, match="discovers 'cj_fqcn'"):
+            get_bootstrap_client_api_type(config, "attach.json")
+
+    @pytest.mark.parametrize(
+        "cj_fqcn",
+        [None, "", "site-2.job-1", "site-1", "site-1.job-1.extra", "site-1.bad job"],
+    )
+    def test_direct_profile_requires_job_cell_fqcn_for_the_configured_site(self, cj_fqcn):
+        config = dict(ATTACH_CONFIG)
+        if cj_fqcn is None:
+            config.pop(BootstrapKey.CJ_FQCN)
+        else:
+            config[BootstrapKey.CJ_FQCN] = cj_fqcn
+
+        with pytest.raises(ValueError, match="cj_fqcn"):
             get_bootstrap_client_api_type(config, "attach.json")
 
     @pytest.mark.parametrize("attach_id", ["", "has.dot", "has space", "a" * 65])

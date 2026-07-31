@@ -14,11 +14,11 @@
 
 import pytest
 
-from nvflare.client.cell.attach import make_attach_trainer_fqcn, validate_attach_transport
+from nvflare.client.cell.attach import make_attach_trainer_fqcn, validate_attach_profile
 
 
-def test_rendezvous_fqcn_matches_ipc_site_child_shape():
-    assert make_attach_trainer_fqcn("site-1", "trainer_a") == "site-1.-client_api_trainer_a"
+def test_rendezvous_fqcn_is_a_child_of_the_job_cell():
+    assert make_attach_trainer_fqcn("site-1.job-1", "trainer_a") == "site-1.job-1.-client_api_trainer_a"
 
 
 @pytest.mark.parametrize(
@@ -27,23 +27,46 @@ def test_rendezvous_fqcn_matches_ipc_site_child_shape():
         "grpc://10.20.30.40:9000",
         "grpc://0.0.0.0:9000",
         "grpc://localhost:9000",
+        "grpc://127.0.0.1:9000",
+        "grpc://[::1]:9000",
     ],
 )
-def test_clear_non_literal_loopback_routes_are_rejected(url):
-    with pytest.raises(ValueError, match="cleartext non-loopback"):
-        validate_attach_transport(url, "clear", allow_insecure_attach=False)
+def test_clear_profile_syntax_is_accepted_without_making_a_cj_policy_decision(url):
+    assert validate_attach_profile(url, "clear") == "clear"
 
 
-def test_literal_loopback_and_shared_file_do_not_need_insecure_opt_in():
-    assert validate_attach_transport("grpc://127.0.0.1:9000", "clear", False) == "clear"
-    assert validate_attach_transport("grpc://[::1]:9000", "clear", False) == "clear"
-    assert validate_attach_transport("shared-file://0/var/run/nvflare", None, False) == "clear"
+def test_shared_file_profile_has_no_tls_mode():
+    assert validate_attach_profile("shared-file://0/var/run/nvflare", None) == "clear"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "shared-file://host/var/run/nvflare",
+        "shared-file:///var/run/nvflare",
+        "shared-file://0",
+        "shared-file:relative/path",
+    ],
+)
+def test_invalid_shared_file_profile_is_rejected(url):
+    with pytest.raises(ValueError, match="shared-file"):
+        validate_attach_profile(url, "clear")
+
+
+def test_shared_file_profile_rejects_tls_label():
+    with pytest.raises(ValueError, match="supports only"):
+        validate_attach_profile("shared-file://0/var/run/nvflare", "mtls")
+
+
+def test_file_url_is_not_treated_as_the_shared_file_driver():
+    with pytest.raises(ValueError, match="not an F3 transport"):
+        validate_attach_profile("file:///var/run/nvflare", "clear")
 
 
 def test_tls_network_route_is_accepted():
-    assert validate_attach_transport("grpcs://host.example:9000", "mtls", False) == "mtls"
+    assert validate_attach_profile("grpcs://host.example:9000", "mtls") == "mtls"
 
 
 def test_bare_ca_tls_network_route_is_rejected():
     with pytest.raises(ValueError, match="bare-CA TLS attach is not supported"):
-        validate_attach_transport("grpcs://host.example:9000", "tls", False)
+        validate_attach_profile("grpcs://host.example:9000", "tls")

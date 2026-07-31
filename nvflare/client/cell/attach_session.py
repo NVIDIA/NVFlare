@@ -17,23 +17,28 @@
 import atexit
 import os
 import threading
+import time
 import uuid
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Optional
 
 from nvflare.apis.fl_constant import ConnectionSecurity
-from nvflare.client.cell.attach import effective_connection_security, make_attach_trainer_fqcn
+from nvflare.client.cell.attach import make_attach_trainer_fqcn, validate_attach_profile
+from nvflare.client.cell.attach_rendezvous import AttachEndpointKey, wait_for_attach_endpoint
 from nvflare.client.cell.bootstrap import BootstrapKey
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, ResultState, TaskState, Topic
 from nvflare.client.config import ConfigKey, ExchangeFormat
 from nvflare.client.decomposers import register_framework_decomposers
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import enhance_credential_info
 from nvflare.fuel.f3.streaming.download_service import DownloadService
+from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
+from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
 
 if TYPE_CHECKING:
@@ -42,6 +47,7 @@ if TYPE_CHECKING:
 
 _RESULT_STATUS_TIMEOUT = 2.0
 _RESULT_SEND_ATTEMPTS = 2
+_AMBIGUOUS_RESULT_POLL_INTERVAL = 0.25
 
 
 class TrainerSessionError(RuntimeError):
@@ -59,18 +65,55 @@ class AttachTrainerSession:
         self._api = api
         config = api._config
         self.attach_id = config[BootstrapKey.ATTACH_ID]
-        self.trainer_fqcn = make_attach_trainer_fqcn(api._site_name, self.attach_id)
-        self.connection_security = effective_connection_security(
-            config[BootstrapKey.CONNECT_URL],
-            config.get(BootstrapKey.CONNECTION_SECURITY),
+        cj_fqcn = config.get(BootstrapKey.CJ_FQCN)
+        self.trainer_fqcn = make_attach_trainer_fqcn(cj_fqcn, self.attach_id) if cj_fqcn else None
+        connect_url = config.get(BootstrapKey.CONNECT_URL)
+        # A direct network profile is validated immediately. A shared-file
+        # profile resolves the CJ-owned listener through its rendezvous record
+        # when init() starts, so a trainer may be started before the job.
+        self.connection_security = (
+            validate_attach_profile(connect_url, config.get(BootstrapKey.CONNECTION_SECURITY)) if connect_url else None
         )
+        self._wait_deadline: Optional[float] = None
         self._opened = threading.Event()
         self._task_states = OrderedDict()
         self._task_attempts = {}
         self._current_result_id: Optional[str] = None
         self._cleanup_registered = False
 
+    def prepare_connection(self) -> str:
+        timeout = self._api._config.get(BootstrapKey.JOB_WAIT_TIMEOUT)
+        self._wait_deadline = None if timeout is None else time.monotonic() + timeout
+        connect_url = self._api._config.get(BootstrapKey.CONNECT_URL)
+        if connect_url:
+            self._api._cj_fqcn = self._api._config[BootstrapKey.CJ_FQCN]
+            self._api._trainer_fqcn = self.trainer_fqcn
+            return connect_url
+
+        record = wait_for_attach_endpoint(
+            root_dir=self._api._config[BootstrapKey.RENDEZVOUS_DIR],
+            site_name=self._api._site_name,
+            attach_id=self.attach_id,
+            timeout=self._remaining_wait_timeout(),
+        )
+        self._api._cj_fqcn = record[AttachEndpointKey.CJ_FQCN]
+        self.trainer_fqcn = record[AttachEndpointKey.TRAINER_FQCN]
+        self._api._trainer_fqcn = self.trainer_fqcn
+        connect_url = record[AttachEndpointKey.CONNECT_URL]
+        connection_security = record[AttachEndpointKey.CONNECTION_SECURITY]
+        self.connection_security = validate_attach_profile(connect_url, connection_security)
+        self._api._config[BootstrapKey.CONNECT_URL] = connect_url
+        self._api._config[BootstrapKey.CONNECTION_SECURITY] = connection_security
+        return connect_url
+
+    def _remaining_wait_timeout(self) -> Optional[float]:
+        if self._wait_deadline is None:
+            return None
+        return max(0.0, self._wait_deadline - time.monotonic())
+
     def cell_security(self) -> tuple[bool, dict]:
+        if self.connection_security is None:
+            raise RuntimeError("attach connection was not resolved before Cell construction")
         credentials = {DriverParams.CONNECTION_SECURITY.value: self.connection_security}
         if self.connection_security != ConnectionSecurity.CLEAR:
             ca_cert = self._api._config.get(BootstrapKey.CA_CERT)
@@ -98,10 +141,42 @@ class AttachTrainerSession:
         cell.register_request_cb(channel=CHANNEL, topic=Topic.SESSION_OPEN, cb=self._handle_session_open)
         cell.register_request_cb(channel=CHANNEL, topic=Topic.TASK_STATUS, cb=self._handle_task_status)
 
+    def install_pre_decode_guard(self, cell) -> None:
+        """Reject unauthorized attach streams from headers before FOBS decode."""
+        core_cell = getattr(cell, "core_cell", None)
+        if core_cell is None or not hasattr(core_cell, "set_message_interceptor"):
+            raise RuntimeError("attach requires a Cell message interceptor for pre-decode origin authorization")
+        core_cell.set_message_interceptor(self._pre_decode_guard)
+
+    def _pre_decode_guard(self, message):
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "")
+        if channel == STREAM_CHANNEL and topic == STREAM_DATA_TOPIC:
+            channel = message.get_header(StreamHeaderKey.CHANNEL, "")
+            topic = message.get_header(StreamHeaderKey.TOPIC, "")
+        if channel != CHANNEL:
+            return None
+
+        origin = message.get_header(MessageHeaderKey.ORIGIN) or ""
+        with self._api._lock:
+            bound_origin = self._api._cj_fqcn
+        if bound_origin:
+            authorized = origin == bound_origin
+        else:
+            path = FQCN.split(origin) if isinstance(origin, str) else []
+            authorized = topic == Topic.SESSION_OPEN and len(path) == 2 and path[0] == self._api._site_name
+        if authorized:
+            return None
+        return make_cell_reply(
+            CellReturnCode.AUTHENTICATION_ERROR,
+            error=f"attach message {topic!r} from unauthorized origin {origin!r}",
+        )
+
     def wait_for_open(self) -> None:
-        timeout = self._api._config.get(BootstrapKey.JOB_WAIT_TIMEOUT)
+        timeout = self._remaining_wait_timeout()
         if not self._opened.wait(timeout):
-            raise TrainerSessionError(f"no SESSION_OPEN received within job_wait_timeout={timeout}s")
+            configured = self._api._config.get(BootstrapKey.JOB_WAIT_TIMEOUT)
+            raise TrainerSessionError(f"no SESSION_OPEN received within job_wait_timeout={configured}s")
         if not self._api._session_id:
             raise TrainerSessionError("SESSION_OPEN wait was interrupted before a session was established")
 
@@ -248,7 +323,38 @@ class AttachTrainerSession:
             if accepted_attempt_id:
                 self._keep_canonical_attempt(accepted_attempt_id, attempt_waiters)
                 return
+        accepted_attempt_id = self._resolve_ambiguous_result(task_id, result_id, attempt_waiters)
+        if accepted_attempt_id:
+            self._keep_canonical_attempt(accepted_attempt_id, attempt_waiters)
+            return
         raise TrainerSessionError(f"result publication failed after status recovery: {last_error}") from last_error
+
+    def _resolve_ambiguous_result(self, task_id: str, result_id: str, attempt_waiters: dict) -> Optional[str]:
+        """Keep candidate lazy sources live until authority or delivery is proven."""
+        all_waiters = [waiter for waiters in attempt_waiters.values() for waiter in waiters]
+        if not all_waiters:
+            return None
+
+        while True:
+            accepted_attempt_id = self._accepted_result_attempt_from_status(task_id, result_id)
+            if accepted_attempt_id:
+                return accepted_attempt_id
+
+            for attempt_id, waiters in attempt_waiters.items():
+                if waiters and all(waiter.done() for waiter in waiters):
+                    outcomes = [waiter.wait(timeout=0) for waiter in waiters]
+                    if all(
+                        outcome is not None and outcome.status == TransferProgressState.COMPLETED
+                        for outcome in outcomes
+                    ):
+                        return attempt_id
+
+            if all(waiter.done() for waiter in all_waiters):
+                return None
+            session_end = self._api._result_publication_end_reason()
+            if session_end:
+                raise TrainerSessionError(session_end)
+            time.sleep(_AMBIGUOUS_RESULT_POLL_INTERVAL)
 
     @staticmethod
     def _accepted_result_attempt(reply, result_id: str) -> str:
@@ -381,8 +487,6 @@ class AttachTrainerSession:
             **{
                 MsgKey.SESSION_ID: session_id,
                 MsgKey.PROTOCOL_VERSION: PROTOCOL_VERSION,
-                MsgKey.CONNECT_URL: api._config[BootstrapKey.CONNECT_URL],
-                MsgKey.CONNECTION_SECURITY: self.connection_security,
             },
         )
 
@@ -396,6 +500,14 @@ class AttachTrainerSession:
             return "attach id mismatch"
         if payload.get(MsgKey.SITE_NAME) != api._site_name:
             return "site name mismatch"
+        job_id = payload.get(MsgKey.JOB_ID)
+        if not isinstance(job_id, str) or not job_id or len(FQCN.split(job_id)) != 1 or FQCN.validate(job_id):
+            return "SESSION_OPEN has invalid job id"
+        expected_origin = FQCN.join([api._site_name, job_id])
+        if origin != expected_origin:
+            return f"CJ origin mismatch: expected {expected_origin!r}, got {origin!r}"
+        if api._cj_fqcn and origin != api._cj_fqcn:
+            return f"CJ origin does not match rendezvous endpoint {api._cj_fqcn!r}"
         if payload.get(MsgKey.TRAINER_FQCN) != self.trainer_fqcn:
             return "trainer FQCN mismatch"
         if payload.get(MsgKey.PROTOCOL_VERSION) != PROTOCOL_VERSION:

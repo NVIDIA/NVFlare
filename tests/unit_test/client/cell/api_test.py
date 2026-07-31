@@ -35,6 +35,7 @@ from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.cell import api as cell_api
 from nvflare.client.cell import attach_session as attach_session_module
 from nvflare.client.cell.api import CellClientAPI, TrainerSessionError
+from nvflare.client.cell.attach_rendezvous import AttachEndpointPublisher
 from nvflare.client.cell.bootstrap import (
     ATTACH_EXECUTION_MODE,
     BOOTSTRAP_SCHEMA_VERSION,
@@ -49,6 +50,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
 from nvflare.fuel.utils.fobs import FOBSContextKey
 
@@ -56,7 +58,7 @@ CJ_FQCN = "site-1.job-1"
 TRAINER_FQCN = "site-1.job-1.client_api_trainer_1"
 SESSION_ID = "session-abc"
 ATTACH_ID = "trainer_a"
-ATTACH_TRAINER_FQCN = "site-1.-client_api_trainer_a"
+ATTACH_TRAINER_FQCN = f"{CJ_FQCN}.-client_api_trainer_a"
 
 
 def _hello_accepted_reply(heartbeat_interval=0.05, heartbeat_timeout=0.0):
@@ -140,6 +142,14 @@ class FakeCell:
 class AttachFakeCell(FakeCell):
     def __init__(self):
         super().__init__()
+        self.core_cell = SimpleNamespace(message_interceptor=None)
+
+        def _set_message_interceptor(cb, *args, **kwargs):
+            self.core_cell.message_interceptor = cb
+            self.core_cell.message_interceptor_args = args
+            self.core_cell.message_interceptor_kwargs = kwargs
+
+        self.core_cell.set_message_interceptor = _set_message_interceptor
         self.fqcn = ATTACH_TRAINER_FQCN
         self.session_open_payload = {
             MsgKey.SESSION_ID: SESSION_ID,
@@ -218,6 +228,7 @@ def attach_bootstrap_path(tmp_path):
             BootstrapKey.EXECUTION_MODE: ATTACH_EXECUTION_MODE,
             BootstrapKey.ATTACH_ID: ATTACH_ID,
             BootstrapKey.SITE_NAME: "site-1",
+            BootstrapKey.CJ_FQCN: CJ_FQCN,
             BootstrapKey.CONNECT_URL: "grpc://127.0.0.1:12345",
             BootstrapKey.CONNECTION_SECURITY: "clear",
             BootstrapKey.JOB_WAIT_TIMEOUT: 1.0,
@@ -289,6 +300,13 @@ def _wait_until(predicate, timeout=1.0):
     return predicate()
 
 
+def _send_and_capture_error(api, model, errors):
+    try:
+        api.send(model)
+    except BaseException as e:
+        errors.append(e)
+
+
 def _deliver_attach_task(env, task_id="task-1", attempt_id="attempt-1"):
     shareable = FLModelUtils.to_shareable(FLModel(params={"w": [1.0]}, params_type=ParamsType.FULL))
     return env.deliver(
@@ -305,7 +323,7 @@ def _deliver_attach_task(env, task_id="task-1", attempt_id="attempt-1"):
 
 
 class TestAttachMode:
-    def test_init_waits_for_session_open_and_derives_site_level_fqcn(self, attach_bootstrap_path, attach_env):
+    def test_init_waits_for_session_open_and_derives_cj_child_fqcn(self, attach_bootstrap_path, attach_env):
         api = _init_api(attach_bootstrap_path, attach_env)
 
         assert api._cj_fqcn == CJ_FQCN
@@ -317,8 +335,74 @@ class TestAttachMode:
         assert kwargs["parent_url"] == "grpc://127.0.0.1:12345"
         assert kwargs["secure"] is False
         assert kwargs["credentials"]["connection_security"] == "clear"
+        assert MsgKey.CONNECT_URL not in attach_env.session_reply.payload
+        assert MsgKey.CONNECTION_SECURITY not in attach_env.session_reply.payload
         api.shutdown()
         assert not attach_env.shutdown_f3_streaming.called
+
+    def test_shared_file_profile_discovers_cj_owned_listener(self, attach_bootstrap_path, attach_env):
+        rendezvous_dir = str(Path(attach_bootstrap_path).parent)
+        config = read_bootstrap_config(attach_bootstrap_path)
+        del config[BootstrapKey.CONNECT_URL]
+        del config[BootstrapKey.CONNECTION_SECURITY]
+        del config[BootstrapKey.CJ_FQCN]
+        config[BootstrapKey.RENDEZVOUS_DIR] = rendezvous_dir
+        write_bootstrap_config(attach_bootstrap_path, config)
+        publisher = AttachEndpointPublisher(rendezvous_dir, "site-1", ATTACH_ID)
+        publisher.publish(
+            cj_fqcn=CJ_FQCN,
+            trainer_fqcn=ATTACH_TRAINER_FQCN,
+            connect_url=f"shared-file://0{rendezvous_dir}/lst_12345678",
+            connection_security="clear",
+        )
+
+        try:
+            api = _init_api(attach_bootstrap_path, attach_env)
+            kwargs = attach_env.cell_ctor.call_args.kwargs
+            assert kwargs["parent_url"] == f"shared-file://0{rendezvous_dir}/lst_12345678"
+            assert kwargs["secure"] is False
+            assert api._cj_fqcn == CJ_FQCN
+            api.shutdown()
+        finally:
+            publisher.close()
+
+    def test_pre_decode_guard_rejects_foreign_origins_without_touching_payload(self, attach_bootstrap_path):
+        config = read_bootstrap_config(attach_bootstrap_path)
+        del config[BootstrapKey.CONNECT_URL]
+        del config[BootstrapKey.CONNECTION_SECURITY]
+        del config[BootstrapKey.CJ_FQCN]
+        config[BootstrapKey.RENDEZVOUS_DIR] = str(Path(attach_bootstrap_path).parent)
+        write_bootstrap_config(attach_bootstrap_path, config)
+        api = CellClientAPI(bootstrap_file=attach_bootstrap_path)
+        canary = MagicMock(name="lazy_payload_canary")
+
+        def _stream_message(origin, topic):
+            return new_cell_message(
+                {
+                    MessageHeaderKey.CHANNEL: STREAM_CHANNEL,
+                    MessageHeaderKey.TOPIC: STREAM_DATA_TOPIC,
+                    MessageHeaderKey.ORIGIN: origin,
+                    StreamHeaderKey.CHANNEL: CHANNEL,
+                    StreamHeaderKey.TOPIC: topic,
+                },
+                canary,
+            )
+
+        cross_site_open = api._attach._pre_decode_guard(_stream_message("site-2.job-1", Topic.SESSION_OPEN))
+        premature_task = api._attach._pre_decode_guard(_stream_message(CJ_FQCN, Topic.TASK_READY))
+        same_site_open = api._attach._pre_decode_guard(_stream_message(CJ_FQCN, Topic.SESSION_OPEN))
+
+        assert cross_site_open.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.AUTHENTICATION_ERROR
+        assert premature_task.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.AUTHENTICATION_ERROR
+        assert same_site_open is None
+        assert canary.mock_calls == []
+
+        api._cj_fqcn = CJ_FQCN
+        foreign_after_binding = api._attach._pre_decode_guard(_stream_message("site-1.other-job", Topic.SESSION_OPEN))
+        bound_task = api._attach._pre_decode_guard(_stream_message(CJ_FQCN, Topic.TASK_READY))
+        assert foreign_after_binding.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.AUTHENTICATION_ERROR
+        assert bound_task is None
+        assert canary.mock_calls == []
 
     def test_session_open_is_idempotent_and_rejects_second_cj(self, attach_bootstrap_path, attach_env):
         api = _init_api(attach_bootstrap_path, attach_env)
@@ -349,7 +433,7 @@ class TestAttachMode:
         for key, value in (
             (MsgKey.ATTACH_ID, "other"),
             (MsgKey.SITE_NAME, "other-site"),
-            (MsgKey.TRAINER_FQCN, "site-1.-client_api_other"),
+            (MsgKey.TRAINER_FQCN, f"{CJ_FQCN}.-client_api_other"),
             (MsgKey.PROTOCOL_VERSION, PROTOCOL_VERSION + 1),
             (MsgKey.RANK, "1"),
             (MsgKey.HEARTBEAT_INTERVAL, 0),
@@ -361,7 +445,17 @@ class TestAttachMode:
             invalid_opens.append((CJ_FQCN, payload))
         missing_session = dict(attach_env.session_open_payload)
         missing_session.pop(MsgKey.SESSION_ID)
-        invalid_opens.extend([("", dict(attach_env.session_open_payload)), (CJ_FQCN, missing_session)])
+        invalid_job = dict(attach_env.session_open_payload)
+        invalid_job[MsgKey.JOB_ID] = "job.with.extra.segment"
+        invalid_opens.extend(
+            [
+                ("", dict(attach_env.session_open_payload)),
+                ("site-2.job-1", dict(attach_env.session_open_payload)),
+                ("site-1.other-job", dict(attach_env.session_open_payload)),
+                (CJ_FQCN, missing_session),
+                (CJ_FQCN, invalid_job),
+            ]
+        )
 
         for origin, payload in invalid_opens:
             reply = attach_env.deliver(Topic.SESSION_OPEN, origin, payload)
@@ -400,7 +494,9 @@ class TestAttachMode:
 
         assert rejected.payload[MsgKey.REPLY_TOPIC] == Topic.SESSION_REJECTED
         assert "torch is unavailable" in rejected.payload[MsgKey.REASON]
-        assert api._cj_fqcn is None
+        # Direct profiles pre-bind the job Cell as the only transport origin;
+        # the session itself must remain unbound after semantic initialization fails.
+        assert api._cj_fqcn == CJ_FQCN
         assert api._session_id is None
         assert not api._attach._opened.is_set()
         assert init_thread.is_alive()
@@ -454,6 +550,20 @@ class TestAttachMode:
         api = CellClientAPI(bootstrap_file=attach_bootstrap_path)
         with pytest.raises(RuntimeError, match=r"missing or unreadable: client_cert, client_key"):
             api.init(rank="0")
+
+        attach_env.cell_ctor.assert_not_called()
+
+    def test_profile_rejects_bare_ca_tls_before_cell_construction(self, attach_bootstrap_path, attach_env):
+        ca_cert = Path(attach_bootstrap_path).parent / "rootCA.pem"
+        ca_cert.write_text("test credential", encoding="utf-8")
+        config = read_bootstrap_config(attach_bootstrap_path)
+        config[BootstrapKey.CONNECT_URL] = "grpcs://site.example:9000"
+        config[BootstrapKey.CONNECTION_SECURITY] = "tls"
+        config[BootstrapKey.CA_CERT] = str(ca_cert)
+        write_bootstrap_config(attach_bootstrap_path, config)
+
+        with pytest.raises(ValueError, match="bare-CA TLS attach is not supported"):
+            CellClientAPI(bootstrap_file=attach_bootstrap_path)
 
         attach_env.cell_ctor.assert_not_called()
 
@@ -617,6 +727,72 @@ class TestAttachMode:
         delete_transaction.assert_called_once_with("tx-2")
         waiters["tx-1"].wait.assert_called()
         waiters["tx-2"].wait.assert_not_called()
+
+    def test_all_control_replies_lost_keeps_lazy_source_until_receiver_confirmation(
+        self, attach_bootstrap_path, attach_env, monkeypatch
+    ):
+        api = _init_api(attach_bootstrap_path, attach_env)
+        _deliver_attach_task(attach_env)
+        assert api.receive() is not None
+
+        canonical_complete = threading.Event()
+        completed_outcome = SimpleNamespace(
+            status=TransferProgressState.COMPLETED,
+            reason="all_receivers_succeeded",
+        )
+        canonical_waiter = MagicMock()
+        canonical_waiter.transaction_id = "tx-1"
+        canonical_waiter.done.side_effect = canonical_complete.is_set
+        canonical_waiter.wait.side_effect = lambda timeout=None: (
+            completed_outcome if canonical_complete.is_set() else None
+        )
+        duplicate_waiter = MagicMock()
+        duplicate_waiter.transaction_id = "tx-2"
+        duplicate_waiter.done.return_value = False
+        duplicate_waiter.wait.return_value = None
+        waiters = {"tx-1": canonical_waiter, "tx-2": duplicate_waiter}
+        monkeypatch.setattr(cell_api.DownloadService, "get_transfer_waiter", lambda tx_id: waiters[tx_id])
+        delete_transaction = MagicMock()
+        monkeypatch.setattr(cell_api.DownloadService, "delete_transaction", delete_transaction)
+        monkeypatch.setattr(attach_session_module, "_AMBIGUOUS_RESULT_POLL_INTERVAL", 0.01)
+
+        attempts = []
+
+        def _on_request(topic, target, request):
+            if topic == Topic.RESULT_READY:
+                attempts.append(request.payload[MsgKey.ATTEMPT_ID])
+                index = attach_env.request_messages.index(request)
+                tx_created = attach_env.request_kwargs[index]["fobs_ctx_props"][
+                    cell_api.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
+                ]
+                tx_created(SimpleNamespace(tx_id=f"tx-{len(attempts)}"))
+                raise RuntimeError("acceptance reply lost")
+            if topic == Topic.RESULT_STATUS:
+                return None
+            return make_cell_reply(CellReturnCode.OK)
+
+        attach_env.on_request = _on_request
+        errors = []
+        sender = threading.Thread(
+            target=lambda: _send_and_capture_error(
+                api,
+                FLModel(params={"w": [2.0]}, params_type=ParamsType.FULL),
+                errors,
+            )
+        )
+        sender.start()
+        assert _wait_until(lambda: len(attempts) == 2)
+        time.sleep(0.03)
+        assert sender.is_alive()
+        delete_transaction.assert_not_called()
+
+        canonical_complete.set()
+        sender.join(timeout=1.0)
+
+        assert not sender.is_alive()
+        assert errors == []
+        delete_transaction.assert_called_once_with("tx-2")
+        canonical_waiter.wait.assert_called()
 
     def test_second_send_for_completed_attach_task_raises_even_without_cache_clear(
         self, attach_bootstrap_path, attach_env

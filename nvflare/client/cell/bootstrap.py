@@ -63,6 +63,7 @@ class BootstrapKey:
     CA_CERT = "ca_cert"
 
     ATTACH_ID = "attach_id"
+    RENDEZVOUS_DIR = "rendezvous_dir"
     JOB_WAIT_TIMEOUT = "job_wait_timeout"
 
     # Legacy TASK_EXCHANGE shape needed before the first task arrives.
@@ -84,7 +85,6 @@ _EXTERNAL_REQUIRED_STRING_FIELDS = (
 _ATTACH_REQUIRED_STRING_FIELDS = (
     BootstrapKey.ATTACH_ID,
     BootstrapKey.SITE_NAME,
-    BootstrapKey.CONNECT_URL,
 )
 
 
@@ -135,20 +135,69 @@ def get_bootstrap_client_api_type(config: dict, path: str = "<bootstrap config>"
         from nvflare.client.cell.attach import effective_connection_security, validate_attach_id
 
         validate_attach_id(config[BootstrapKey.ATTACH_ID])
-        connection_security = effective_connection_security(
-            config[BootstrapKey.CONNECT_URL],
-            config.get(BootstrapKey.CONNECTION_SECURITY),
-        )
-        if connection_security == ConnectionSecurity.TLS:
+        connect_url = config.get(BootstrapKey.CONNECT_URL)
+        rendezvous_dir = config.get(BootstrapKey.RENDEZVOUS_DIR)
+        if bool(connect_url) == bool(rendezvous_dir):
             raise ValueError(
-                f"invalid Client API bootstrap config {path}: "
-                "bare-CA TLS attach is not supported; use mTLS or a non-network driver"
+                f"invalid Client API bootstrap config {path}: attach requires exactly one of "
+                f"{BootstrapKey.CONNECT_URL!r} or {BootstrapKey.RENDEZVOUS_DIR!r}"
             )
+        if rendezvous_dir:
+            if not isinstance(rendezvous_dir, str) or not os.path.isabs(rendezvous_dir):
+                raise ValueError(
+                    f"invalid Client API bootstrap config {path}: field "
+                    f"{BootstrapKey.RENDEZVOUS_DIR!r} must be an absolute path"
+                )
+            if config.get(BootstrapKey.CONNECTION_SECURITY) not in (None, ConnectionSecurity.CLEAR):
+                raise ValueError(
+                    f"invalid Client API bootstrap config {path}: shared-file rendezvous supports only "
+                    f"{BootstrapKey.CONNECTION_SECURITY!r}={ConnectionSecurity.CLEAR!r}"
+                )
+            if BootstrapKey.CJ_FQCN in config:
+                raise ValueError(
+                    f"invalid Client API bootstrap config {path}: shared-file rendezvous discovers "
+                    f"{BootstrapKey.CJ_FQCN!r}; do not configure it"
+                )
+            connection_security = ConnectionSecurity.CLEAR
+        else:
+            if not isinstance(connect_url, str) or not connect_url.strip():
+                raise ValueError(
+                    f"invalid Client API bootstrap config {path}: field "
+                    f"{BootstrapKey.CONNECT_URL!r} must be a non-empty string"
+                )
+            cj_fqcn = config.get(BootstrapKey.CJ_FQCN)
+            if not isinstance(cj_fqcn, str) or not cj_fqcn:
+                raise ValueError(
+                    f"invalid Client API bootstrap config {path}: a direct attach profile requires "
+                    f"field {BootstrapKey.CJ_FQCN!r}"
+                )
+            from nvflare.fuel.f3.cellnet.fqcn import FQCN
+
+            cj_path = FQCN.split(cj_fqcn)
+            if len(cj_path) != 2 or cj_path[0] != config[BootstrapKey.SITE_NAME] or FQCN.validate(cj_fqcn):
+                raise ValueError(
+                    f"invalid Client API bootstrap config {path}: field "
+                    f"{BootstrapKey.CJ_FQCN!r} must be '<site_name>.<job_id>'"
+                )
+            connection_security = effective_connection_security(
+                connect_url,
+                config.get(BootstrapKey.CONNECTION_SECURITY),
+            )
+            if connection_security == ConnectionSecurity.TLS:
+                raise ValueError(
+                    f"invalid Client API bootstrap config {path}: "
+                    "bare-CA TLS attach is not supported; use mTLS or a non-network driver"
+                )
         ca_cert = config.get(BootstrapKey.CA_CERT)
         if ca_cert is not None and (not isinstance(ca_cert, str) or not ca_cert.strip()):
             raise ValueError(
                 f"invalid Client API bootstrap config {path}: field "
                 f"{BootstrapKey.CA_CERT!r} must be a non-empty string"
+            )
+        if rendezvous_dir and ca_cert:
+            raise ValueError(
+                f"invalid Client API bootstrap config {path}: shared-file rendezvous does not use "
+                f"{BootstrapKey.CA_CERT!r}"
             )
         if connection_security != ConnectionSecurity.CLEAR and not ca_cert:
             raise ValueError(

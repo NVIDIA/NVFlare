@@ -3,7 +3,6 @@
   "execution_mode": "attach",
   "attach_id": "numpy_trainer",
   "site_name": "site-1",
-  "connect_url": "grpc://127.0.0.1:0",
-  "connection_security": "clear",
+  "rendezvous_dir": "/tmp/nvflare-client-api-attach",
   "job_wait_timeout": null
 }
