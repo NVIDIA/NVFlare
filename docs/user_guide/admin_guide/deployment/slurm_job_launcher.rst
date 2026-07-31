@@ -32,7 +32,7 @@ Choose an execution backend with ``job_launcher.sandbox``:
      - Trusted container packaging
    * - ``none``
      - Python directly in the allocation
-     - Site-trusted code; required for multi-node jobs
+     - Site-trusted code; required for application-owned multi-node fan-out
 
 Prerequisites
 =============
@@ -69,16 +69,72 @@ eligible nodes. Validate its filesystem, process, cgroup, and GPU isolation on
 the production cluster. For Pyxis, install and configure Pyxis/Enroot on all
 eligible nodes and ensure ``srun`` is available after ``setup``.
 
-The environment selected by ``python_path`` must contain a compatible NVFlare
-installation and the job dependencies. This applies to the host environment in
-bare mode and to the image for Apptainer and Pyxis. A ``PYTHONPATH`` override
-used only to start the parent does not install NVFlare in the worker environment.
+The environment selected by ``python_path`` must contain the same NVFlare
+version as the parent and the other federation participants, plus the job
+dependencies. NVFlare does not support cross-version operation; see
+:ref:`installation`. This requirement applies to the host environment in bare
+mode and to the image for Apptainer and Pyxis. A ``PYTHONPATH`` override used
+only to start the parent does not install NVFlare in the worker environment.
 
 The prepare, submission, and runtime parent hosts may differ. The prepare host
 does not need Slurm commands. The submission host that runs the generated
 ``submit_command`` needs ``sbatch`` on ``PATH``. The runtime parent host needs
 all four parent commands after its service environment or
 ``parent.environment_setup`` has run.
+
+Build a Container Worker Image
+==============================
+
+Apptainer and Pyxis run the NVFlare client or server job process, not the
+long-running parent. The image must contain the required ``python_path``, the
+matching NVFlare installation, and all job dependencies. It does not need the
+startup kit or an entrypoint: the launcher mounts the runtime workspace and
+invokes the NVFlare worker module with ``python_path``. Pyxis disables the image
+entrypoint and runs the image read-only.
+
+The maintained :github_nvflare_link:`job image guide
+<docker/README.md#job-image>` and :github_nvflare_link:`Dockerfile
+<docker/Dockerfile.job>` provide a reference worker image. From the NVFlare
+repository root, replace ``site-version`` with the federation's NVFlare version,
+extend the Dockerfile with application dependencies as needed, build the OCI
+image, and run the conversion command for the selected backend:
+
+.. code-block:: shell
+
+   docker build -t nvflare-job:site-version -f docker/Dockerfile.job .
+
+   # Pyxis/Enroot
+   enroot import --output /lustre/images/nvflare-job-site-version.sqsh \
+       dockerd://nvflare-job:site-version
+
+   # Apptainer
+   apptainer build /lustre/images/nvflare-job-site-version.sif \
+       docker-daemon:nvflare-job:site-version
+
+Enroot can also import from a registry, and Apptainer can build from registry
+and archive sources; see the upstream `Enroot import documentation
+<https://github.com/NVIDIA/enroot/blob/main/doc/cmd/import.md>`_ and `Apptainer
+Docker/OCI documentation
+<https://apptainer.org/docs/user/latest/docker_and_oci.html>`_. Those tools may
+accept registry references directly, but the NVFlare Slurm ``image`` setting
+does not. It requires an existing absolute regular file. ``.sqsh`` and ``.sif``
+are conventional suffixes; NVFlare validates the path rather than the suffix.
+
+Place the finished image at a versioned, immutable shared-filesystem path that
+is readable by the runtime account and visible at the same absolute path on the
+runtime parent and every eligible compute node. Before configuring the site,
+run the image with the configured interpreter and verify the NVFlare version
+and application imports. For example:
+
+.. code-block:: shell
+
+   apptainer exec /lustre/images/nvflare-job-site-version.sif \
+       /usr/local/bin/python -c \
+       'import nvflare; print(nvflare.__version__)'
+
+For Pyxis, perform the equivalent one-node ``srun`` check with
+``--container-image`` and the same ``python_path``. Backend installation,
+registry authentication, and cluster configuration remain site responsibilities.
 
 Configure the Site
 ==================
@@ -121,7 +177,7 @@ Important keys are:
        bare mode.
    * - ``python_path``
      - Required absolute worker interpreter path in the selected execution
-       environment, with a compatible NVFlare installation.
+       environment, with the matching NVFlare installation.
    * - ``parent_host``
      - Compute-reachable parent host. Required when the parent is not in a Slurm
        allocation.
@@ -151,6 +207,11 @@ Important keys are:
    * - ``pending_timeout``
      - Time limit starting at the first observed pending state; default ``600``
        seconds. A job may lower it.
+   * - ``multi_node_port_range``
+     - Optional ``"START-END"`` port range for the multi-node rendezvous
+       endpoint (``NVFL_MASTER_PORT``); default ``29400-30399``. Must not
+       contain ``internal_port``. If the existing ``internal_port`` is in the
+       implicit default range, the launcher uses ``30400-31399`` instead.
 
 ``setup`` starts with the minimal environment from ``sbatch --export=NIL``.
 Source module initialization explicitly. Put fixed values in study ``env``;
@@ -327,16 +388,89 @@ Jobs put portable GPU totals in ``resource_spec`` and Slurm-only settings in
    }
 
 Supported job keys are ``image``, ``nodes``, ``gpus_per_node``,
-``cpus_per_node``, ``mem_per_node`` (MiB), ``time``, and
-``pending_timeout``. A job image requires normal BYOC authorization and takes
+``cpus_per_node``, ``mem_per_node`` (MiB), ``time``, ``pending_timeout``, and
+``additional_node_command``.
+A job image requires normal BYOC authorization and takes
 precedence over the study and site images. Job and study images are rejected on
 any site whose effective sandbox is ``none``.
 
-Multi-node jobs require effective ``sandbox: none`` and must not specify an
-image. A positive multi-node ``num_of_gpus`` requires ``gpus_per_node``;
+A positive multi-node ``num_of_gpus`` requires ``gpus_per_node``;
 whenever both are supplied, ``num_of_gpus`` must equal
 ``nodes * gpus_per_node``.
-The application owns any multi-node process fan-out.
+
+For jobs built with an external-process ``ScriptRunner``, an explicit
+site block that directly sets ``nodes > 1`` does not need to repeat the
+training command. Export copies the fully assembled shell-free ``command``,
+script path, and script arguments into ``additional_node_command``. Generation
+requires ``launch_once=True``. For example, this Recipe needs no
+``additional_node_command``:
+
+.. code-block:: python
+
+   from nvflare.apis.job_def import JobMetaKey
+   from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+   from nvflare.recipe import set_recipe_meta
+
+   recipe = FedAvgRecipe(
+       name="multi-node",
+       model=MyModel(),
+       train_script="client.py",
+       min_clients=1,
+       num_rounds=10,
+       launch_external_process=True,
+       command="python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8",
+   )
+   set_recipe_meta(
+       recipe,
+       JobMetaKey.JOB_LAUNCHER_SPEC,
+       {
+           "site-1": {
+               "slurm": {
+                   "nodes": 2,
+                   "gpus_per_node": 8,
+               }
+           }
+       },
+   )
+
+Hand-authored jobs and custom launchers provide the full
+``additional_node_command`` in the Slurm launcher block:
+
+.. code-block:: json
+
+   {
+     "launcher_spec": {
+       "site-1": {
+         "slurm": {
+           "nodes": 2,
+           "gpus_per_node": 8,
+           "additional_node_command": "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 custom/client.py"
+         }
+       }
+     }
+   }
+
+An explicit ``additional_node_command`` always wins. Set it to ``null`` to
+keep application-owned fan-out. Export does not infer commands for
+``launcher_spec["default"]`` or blocks that only inherit ``nodes`` from a
+default; provide the full command explicitly in those cases. Neither generated
+nor explicit additional-node commands support ``${secret:NAME}`` or
+``${secret:file:/path}`` references.
+
+The launcher starts one task per node. Rank 0 runs the normal client job
+process; every other rank runs ``additional_node_command`` in the deployed app
+directory.
+All ranks receive ``NVFL_NNODES``, ``NVFL_NODE_RANK``,
+``NVFL_MASTER_ADDR``, ``NVFL_MASTER_PORT``, and the per-allocation
+``NVFL_RUN_ID``. Under ``apptainer`` or ``pyxis``, all user code runs inside
+the configured container. Non-zero ranks use the Cell API bootstrap;
+legacy Client API multi-node execution is not supported.
+
+Non-zero ranks start before rank 0 has prepared Client API runtime files, so a
+hand-written command must join its framework rendezvous before reading that
+state. ``torchrun_node`` provides this ordering. Without
+``additional_node_command``, Slurm ``nodes > 1`` retains application-owned
+fan-out behavior and requires effective ``sandbox: none``.
 
 Security and Operations
 =======================

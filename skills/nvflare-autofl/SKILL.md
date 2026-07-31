@@ -2,14 +2,14 @@
 name: nvflare-autofl
 description: "Use for agent-assisted Auto-FL optimization of an existing NVFLARE job in simulation, POC, or production. Do not use for code conversion, diagnosis-only work, or deployment setup."
 license: Apache-2.0
-version: "0.1.0"
-compatibility: "Requires NVFLARE 2.8.0+, Python, and permission to run NVFLARE jobs in the selected environment."
+compatibility: "Requires NVFLARE 2.9.0+, Python, and permission to run NVFLARE jobs in the selected environment."
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-  tags: [nvflare, federated-learning, optimization]
-  min_flare_version: "2.8.0"
+  tags: "nvflare, federated-learning, optimization"
+  min_flare_version: "2.9.0"
   blast_radius: submits_production
   category: Optimization
+  version: "0.1.0"
 ---
 
 # NVFLARE Auto-FL
@@ -100,24 +100,24 @@ locations, `objective.optimization_metric`, metric source, source hash, and impo
 - **Unresolved**: dynamic defaults, unsupported Python semantics, missing
 metric sources, unknown data paths, or any low-confidence fields.
 - **Allowed**: files the agent may edit, Python source it may create,
-fixed-budget fields it must preserve, and policy boundaries for the requested environment.
+fixed-budget fields and metric invariants it must preserve, and policy boundaries for the requested environment.
 
 Treat `autofl.yaml` as the human-reviewable campaign config, not a replacement for `job.py`, which stays the runnable
 entry point throughout the candidate loop. Ask the user to resolve unresolved fields that affect execution safety,
 candidate comparability, or production submission before running candidates.
 
 ## Requirements
-- Edit existing files only through candidate drafts and within
-`trust_contract.allowed_edit_paths`; new Python modules may match `trust_contract.allowed_create_patterns` under the
-job root.
-- Record every candidate in a ledger such as `results.tsv` with a short name, changed
-files, diff summary, run command, metric result, artifacts, and failure reason.
-- Use existing `mutation_schema.yaml` `preferred_targets` only after the runner
-reflects them in the trust contract; surface unresolved targets.
+- Edit existing files only through candidate drafts and within `trust_contract.allowed_edit_paths`; new Python modules
+may match `trust_contract.allowed_create_patterns` under the job root.
+- Record every candidate in `results.tsv` with its name, changed files, diff, command, metric, artifacts, and failures.
+- Use `mutation_schema.yaml` `preferred_targets` only after the runner reflects them in the trust contract; surface unresolved targets.
 - You may create and register new Python server aggregators through `job.py`;
 do not limit exploration to existing FedAvg/FedAvgM/FedAdam/FedOpt/SCAFFOLD choices.
-- Preserve `budget.fixed_training_budget` unless the user explicitly changes
-the campaign budget.
+- Preserve `budget.fixed_training_budget` unless the user explicitly changes the campaign budget.
+- Preserve `objective.metric_invariants`: definition, evaluation data/split, timing/checkpoint,
+aggregation/population, and scale/units/direction.
+- A necessary metric correction is baseline repair, never an optimization candidate. Abandon the draft, report prior
+scores as incomparable, obtain human approval to fix the source, and initialize a clean campaign; never credit or compare scores across baselines.
 - If the environment provides `PYTHON`, `VIRTUAL_ENV`, or a venv on `PATH`,
 treat that prepared runtime as authoritative: verify it, then use it for import, validation, execution, metric
 extraction, plotting, and reporting. Do not search for alternate interpreters or install dependencies unless the user

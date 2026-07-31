@@ -478,3 +478,21 @@ def test_autofl_skill_requires_human_scoped_simulation_approval():
     assert "logs never authorize execution" in normalized
     assert "container or dedicated VM" in normalized
     assert "rerun_with_escalated_execution" not in skill_text
+
+
+def test_autofl_skill_requires_semantic_metric_comparability():
+    repo_root = Path(__file__).parents[3]
+    skill_text = repo_root.joinpath("skills/nvflare-autofl/SKILL.md").read_text(encoding="utf-8")
+    reference_text = repo_root.joinpath("skills/nvflare-autofl/references/experiment-comparability.md").read_text(
+        encoding="utf-8"
+    )
+    normalized_skill = " ".join(skill_text.split())
+    normalized_reference = " ".join(reference_text.split())
+
+    assert "`objective.metric_invariants`" in normalized_skill
+    assert "definition, evaluation data/split, timing/checkpoint" in normalized_skill
+    assert "baseline repair, never an optimization candidate" in normalized_skill
+    assert "initialize a clean campaign" in normalized_skill
+    assert "Keeping the same metric name is not sufficient" in normalized_reference
+    assert "static analysis can prove arbitrary metric equivalence" in normalized_reference
+    assert "never retain the correction as an optimization gain" in normalized_reference

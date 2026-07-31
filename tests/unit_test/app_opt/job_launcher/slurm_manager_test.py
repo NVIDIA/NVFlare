@@ -15,6 +15,7 @@
 import logging
 import os
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -340,6 +341,26 @@ def test_job_name_limits_site_name_length():
     assert job_name == f"nvfl-{'s' * 32}-{_job_key('job-1')[:8]}"
 
 
+def test_pyxis_node_group_writes_node_script_and_mounts_job_artifacts(tmp_path):
+    manager = _manager(tmp_path)
+    plan = replace(
+        _plan(tmp_path, sandbox="pyxis"),
+        image="/images/python.sqsh",
+        resources=JobResources(nodes=2, pending_timeout=5),
+        additional_node_command=("python3", "-m", "trainer"),
+        node_app_dir=str(tmp_path / "job-1" / "app_site-1"),
+    )
+
+    handle = manager.launch(plan)
+
+    node_script = Path(handle.job_dir, "node.sh")
+    assert node_script.is_file()
+    assert os.access(node_script, os.X_OK)
+    assert "python3 -m trainer" in node_script.read_text(encoding="utf-8")
+    batch = Path(handle.job_dir, "batch.sh").read_text(encoding="utf-8")
+    assert f"{handle.job_dir}:{handle.job_dir}:ro" in batch
+
+
 def test_submission_uses_site_timeout(tmp_path):
     adapter = Adapter()
 
@@ -510,13 +531,13 @@ def test_terminal_accounting_cleans_job_artifacts_and_leaves_generic_rc_file(tmp
     assert rc_file.read_text(encoding="utf-8") == "0\n"
 
 
-def test_infrastructure_terminal_state_is_an_exception(tmp_path):
+def test_infrastructure_terminal_state_is_an_infrastructure_error(tmp_path):
     adapter = Adapter()
     adapter.live = _query(LookupStatus.NOT_FOUND)
     adapter.accounting_id = _query(LookupStatus.FOUND, _record(state="TIMEOUT"))
     handle = _manager(tmp_path, adapter).launch(_plan(tmp_path))
 
-    assert handle.poll() == ProcessExitCode.EXCEPTION
+    assert handle.poll() == ProcessExitCode.INFRASTRUCTURE_ERROR
 
 
 def test_terminal_cleanup_restores_access_to_pyxis_mount_directories(tmp_path):
@@ -562,7 +583,7 @@ def test_terminal_squeue_row_moves_directly_to_accounting(tmp_path):
     manager = _manager(tmp_path, adapter)
     handle = manager.launch(_plan(tmp_path))
 
-    assert handle.poll() == ProcessExitCode.EXCEPTION
+    assert handle.poll() == ProcessExitCode.INFRASTRUCTURE_ERROR
     assert not os.path.exists(handle.job_dir)
     assert not any(call[0] == "cancel" for call in adapter.calls)
 
@@ -721,7 +742,7 @@ def test_five_spaced_healthy_accounting_misses_are_infrastructure_failure(tmp_pa
         assert handle.poll() == JobReturnCode.UNKNOWN
     clock.value = 24
 
-    assert handle.poll() == ProcessExitCode.EXCEPTION
+    assert handle.poll() == ProcessExitCode.INFRASTRUCTURE_ERROR
     assert not os.path.exists(handle.job_dir)
     assert not manager._handles
 
