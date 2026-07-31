@@ -13,6 +13,11 @@ Choose one final full-run path based on the artifact being validated:
   <exported-job-dir> -w <runtime-dir>/workspace -n <num_clients> -t
   <num_threads> -l concise` (or `-c site-1,site-2,...`).
 
+Do not accept a generated job-local export alias such as `--export_only` as a
+valid replacement for the NVFLARE Recipe interface. If a generated job manually
+branches on a private export flag or calls `recipe.export()` only for that flag,
+report it as a generated-code violation instead of treating the export as valid.
+
 Do not run both full simulations unless the first one failed and the second is a
 scoped rerun after a fix. Do not write Python code to call simulator APIs for
 exported-job validation.
@@ -20,6 +25,12 @@ exported-job validation.
   unavailable.
 - Keep validation commands single-purpose. Run dependency installation, cleanup,
   export, and simulation as separate commands.
+- Treat an unavailable optional capability or host-diagnostic utility as
+  evidence, not a failed validation command. Check tool availability first,
+  keep optional diagnostics separate from required import, parser, partition,
+  model, or recipe checks, and make the optional probe exit zero when the tool
+  is absent. Do not append platform-specific utilities such as `free`, `sysctl`,
+  or `nvidia-smi` to a required command where their absence changes its status.
 - If validation cannot run, save the conversion as a draft and report the
   concrete blocker.
 
@@ -39,11 +50,23 @@ confirm completion before reporting success — never finalize on a still-runnin
 or "will be notified" basis.
 
 Required success evidence is process exit code 0, terminal FL evidence such as
-the server log reaching a Finished state, and metrics evidence such as
-`metrics_summary.json` or a concrete explanation for why metrics are
-unavailable. Progress messages, scheduled wakeups, "standing by"/"I'll wait"
-statements, and active processes are not completion evidence and are not valid
-final answers.
+the server log reaching a Finished state, and workflow-native metric evidence.
+For FedAvg/FedOpt/FedProx/SCAFFOLD-style training workflows that install the
+metrics artifact writer or emit aggregation events, this means server-side
+artifacts such as `metrics_summary.json` or `round_metrics.jsonl`. For public
+recipes whose contract does not emit those artifacts by default, collect the
+native evidence instead: for FedEval, one-shot validation-result logs or
+artifacts showing returned per-site metrics; for Cyclic or Swarm workflows,
+their documented result logs, workflow artifacts, or other selected-recipe
+metric outputs. When a run exits 0 and reaches a terminal finished state, a
+missing expected metrics artifact is a validation failure only if the selected
+recipe/workflow installs that writer or otherwise documents that artifact as an
+output. A prose explanation can substitute for metrics only for blocked/timed-out
+runs, explicitly metrics-free workflows, or metric-bearing workflows whose
+selected public recipe exposes only non-artifact metric evidence; in the last
+case cite the recipe and the exact native evidence used. Progress messages,
+scheduled wakeups, "standing by"/"I'll wait" statements, and active processes
+are not completion evidence and are not valid final answers.
 
 Do not pipe the final validation command through `tail`, `grep`, or another
 command that can hide the simulator or `python job.py` exit status. Redirect the
@@ -71,6 +94,24 @@ Before any import-level preflight or recipe-construction probe, apply
 eligible requirements into the validation environment first. Do not run a probe
 that is expected to fail with `ModuleNotFoundError` as a way to discover already
 declared dependencies.
+
+Run intentional rejection checks, such as misspelled or abbreviated argument
+tests, through an assertion wrapper. The wrapper must check the child process's
+expected nonzero status and diagnostic, then exit 0 only when the rejection is
+correct. Do not leave an expected child failure as a failed top-level validation
+command, where it is indistinguishable from an unexpected failure and recovery.
+Match the parser's documented rejection type: for example,
+`HfArgumentParser.parse_args_into_dataclasses()` can raise `ValueError` for
+unused arguments instead of `SystemExit`. Accept only the expected exception and
+confirm its diagnostic identifies the rejected argument; another exception or
+diagnostic is a real validation failure.
+
+Do not call Client API lifecycle or round methods from a standalone Python
+preflight. Calls such as `flare.init()`, `flare.patch()`, `flare.is_running()`,
+`flare.receive()`, or `flare.send()` require a launcher-created Client API
+context. Validate their generated source shape and public signatures
+statically; validate runtime acceptance only through the recipe or simulator
+that launches the client context.
 
 Before spending time on full simulation, run cheap checks when applicable:
 
@@ -103,6 +144,10 @@ fields, or model-state keys, inspect the actual object (`df.columns`, JSON keys,
 from that evidence. Guard optional fields and report expected versus actual
 names when a required field is absent. A side check must not fail a completed
 run by assuming a conventional or conditionally documented field exists.
+For generated Python structure, validate semantic AST nodes rather than textual
+occurrences. Scope traversal to the field being checked; for example, inspect a
+loop's condition and body separately. Do not run a speculative assertion that
+valid code is expected to fail and then repair the verification command.
 
 ## Evidence To Report
 
@@ -113,8 +158,12 @@ Before calling a generated job correct, report:
 - local validation command, process exit code, and terminal-state evidence;
 - export command, export directory, and exported folder inspection result when
   export is in scope;
-- metric values from metrics artifacts, or a clear explanation that metrics
-  were unavailable;
+- metric values from the workflow-native metric evidence; for exit-0 terminal
+  runs, treat missing server-side metrics artifacts as failed validation only
+  when the selected recipe/workflow installs those artifacts or documents them
+  as outputs. For FedEval, Cyclic, Swarm, and similar workflows without those
+  artifacts by default, report the recipe-native metric logs/artifacts used
+  instead;
 - exact evidence paths for simulation workspace, generated result files,
   server-side metrics artifacts, server/client logs, and global-model artifacts
   when present;

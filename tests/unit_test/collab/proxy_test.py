@@ -93,6 +93,25 @@ def test_proxy_rejects_duplicate_positional_and_keyword_argument():
     backend.call_target.assert_not_called()
 
 
+def test_child_proxy_local_failure_preserves_fully_qualified_target():
+    proxy, backend = _make_binding_proxy()
+    child = Proxy(
+        app=proxy.app,
+        target_name="site-1.trainer",
+        target_fqn="",
+        backend=backend,
+        target_interface=get_object_publish_interface(_BindingTarget()).to_dict(),
+    )
+    proxy.add_child("trainer", child)
+
+    with pytest.raises(CollabCallError, match="multiple values for argument 'value'") as exc_info:
+        proxy(target="trainer").update(1, value=2, rounds=3)
+
+    assert exc_info.value.site == "site-1"
+    assert exc_info.value.target_name == "site-1.trainer"
+    backend.call_target.assert_not_called()
+
+
 def test_proxy_enforces_keyword_only_and_positional_only_arguments():
     proxy, backend = _make_binding_proxy()
 

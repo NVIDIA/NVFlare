@@ -189,6 +189,41 @@ FedAvg with secure aggregation using homomorphic encryption.
 
 - `examples/advanced/cifar10/pt/cifar10-real-world#secure-aggregation-using-homomorphic-encryption <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/pt/cifar10-real-world#42-secure-aggregation-using-homomorphic-encryption>`_
 
+FedCE
+=====
+
+``FedCERecipe`` implements contribution-aware aggregation for PyTorch. It estimates each client's
+contribution from gradient-direction novelty and a client-computed leave-one-out (minus-model) score,
+then uses those estimates as aggregation weights.
+
+.. code-block:: python
+
+    from nvflare.app_opt.pt.recipes import FedCERecipe
+
+    recipe = FedCERecipe(
+        name="fedce-pt",
+        model=MyModel(),
+        min_clients=3,
+        num_rounds=10,
+        train_script="client.py",
+        fedce_mode="plus",
+    )
+
+FedCE requires a compatible client training script. The script must return model differences and set
+``FLModel.meta["fedce_minus_val"]``. The ``PTFedCEHelper`` utility constructs the minus model,
+reads the prior contribution weight from the received model metadata, and attaches the score to the result.
+The score must increase with estimated contribution, regardless of the validation metric's direction.
+For a higher-is-better metric such as Dice, use ``1 - minus_model_dice`` so a larger performance drop
+produces a larger score, matching the research implementation. For a lower-is-better metric such as loss,
+use ``minus_model_loss`` because a larger loss after removing the client already indicates greater contribution.
+When ``model`` is supplied as a dict config, pass ``trainable_param_names`` explicitly so contribution
+estimation excludes non-trainable state such as BatchNorm running statistics and counters.
+FedCE is therefore a dedicated algorithm recipe, not a passive option on ``FedAvgRecipe``.
+
+**Example:**
+
+- `research/fed-ce <https://github.com/NVIDIA/NVFlare/tree/main/research/fed-ce>`_
+
 WEIGHT_DIFF Compatibility
 -------------------------
 
@@ -206,7 +241,7 @@ such as supported data kinds and a custom aggregator's declared ``expected_data_
      - Server aggregation path
      - Support
      - Required configuration
-   * - Unified, PyTorch, TensorFlow, and NumPy ``FedAvgRecipe``; PyTorch FedProx
+   * - Unified, PyTorch, TensorFlow, and NumPy ``FedAvgRecipe``; ``FedProxRecipe``
      - Built-in ``FedAvg`` streaming aggregation
      - Yes
      - Set ``aggregator_data_kind=DataKind.WEIGHT_DIFF`` and return
@@ -280,48 +315,89 @@ raises an error naming both the configured and declared kinds and how to align t
 FedProx
 =======
 
-FedProx is FedAvg with a proximal term added to the client loss function to handle data heterogeneity.
-It uses the standard FedAvgRecipe with the FedProx loss helper on the client side.
-Because PyTorch FedProx uses ``FedAvgRecipe``, it also supports ``enable_tensor_disk_offload=True`` for
-streamed PyTorch tensor updates, with the same behavior and constraints as PyTorch FedAvg.
+FedProx is FedAvg with a proximal term added to client optimization to handle data heterogeneity.
+PyTorch provides a concrete ``FedProxRecipe`` with a finite positive ``fedprox_mu`` (default ``0.01``).
+It inherits the aggregation, persistence, transfer, and memory options of PyTorch ``FedAvgRecipe``.
+
+.. warning::
+
+    ``FedProxRecipe`` requires a compatible client. Patched Lightning clients consume ``fedprox_mu``
+    automatically. Raw PyTorch clients must read ``FLModel.meta[FEDPROX_MU]``, snapshot the received global
+    model, and integrate ``PTFedProxLoss``. A client that ignores the metadata performs ordinary local training
+    and is not FedProx-compatible.
 
 PyTorch FedProx
 ---------------
 
 .. code-block:: python
 
-    from nvflare.app_opt.pt.recipes import FedAvgRecipe
+    from nvflare.app_opt.pt.recipes import FedProxRecipe
     from nvflare.recipe import SimEnv
 
-    # FedProx uses FedAvgRecipe with FedProxLoss in the client training script
-    recipe = FedAvgRecipe(
+    recipe = FedProxRecipe(
         name="fedprox-pt",
         min_clients=2,
         num_rounds=5,
         model=MyModel(),
         train_script="client.py",
-        train_args="--fedproxloss_mu 0.01",  # Pass mu parameter to client
+        fedprox_mu=0.01,
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
 
-In your client training script, use the FedProxLoss helper:
+For a PyTorch Lightning client patched with ``nvflare.client.lightning.patch``, no loss or training-loop change
+is needed. The patch reads ``fedprox_mu`` from each received model and adds
+``mu * (local_parameter - global_parameter)`` to every dense gradient after accumulation and AMP unscaling but
+before gradient clipping. The loss returned or logged by ``training_step`` excludes this automatically injected
+term, while optimization includes its exact gradient.
+
+While a positive coefficient is active, the patch keeps an additional device-resident snapshot of every
+optimizer-owned trainable parameter for the duration of the round. Account for this extra memory when sizing
+large models.
+
+Custom controllers that use the lower-level ``FedAvg(fedprox_mu=...)`` workflow can schedule the coefficient by
+sending ``FEDPROX_MU`` on every training round after the schedule starts. Positive values activate FedProx and
+may change between rounds; an explicit ``0.0`` disables it
+for that round without allocating the snapshot. Omitting the key after it has been observed raises a contract
+error instead of silently falling back to FedAvg. ``FedProxRecipe`` itself always represents active FedProx and
+therefore accepts only finite positive values.
+
+The automatic path supports Lightning automatic optimization with one optimizer and ``precision="32-true"``
+or ``precision="bf16-mixed"``. It rejects scaler-backed precision, closure-based LBFGS, sparse gradients, and
+mid-round trainability changes. For an unpatched or manual client loop, use ``PTFedProxLoss`` explicitly:
 
 .. code-block:: python
 
+    import copy
+
+    import nvflare.client as flare
+    from nvflare.app_common.utils.fedprox_utils import get_fedprox_mu
     from nvflare.app_opt.pt import PTFedProxLoss
 
-    # In training loop:
-    fedprox_loss = PTFedProxLoss(mu=fedproxloss_mu)
-    for data, target in train_loader:
-        optimizer.zero_grad()
-        output = model(data)
-        ce_loss = criterion(output, target)
-        # Add FedProx regularization term
-        prox_loss = fedprox_loss(model)
-        loss = ce_loss + prox_loss
-        loss.backward()
-        optimizer.step()
+    while flare.is_running():
+        input_model = flare.receive()
+        if flare.is_evaluate():
+            # Evaluate the received model and send metrics.
+            ...
+        elif flare.is_submit_model():
+            # Send the requested model.
+            ...
+        elif flare.is_train():
+            mu = get_fedprox_mu(input_model)
+            model.load_state_dict(input_model.params)
+            global_model = copy.deepcopy(model)
+            fedprox_loss = PTFedProxLoss(mu=mu)
+
+            for data, target in train_loader:
+                optimizer.zero_grad()
+                output = model(data)
+                ce_loss = criterion(output, target)
+                prox_loss = fedprox_loss(model, global_model)
+                loss = ce_loss + prox_loss
+                loss.backward()
+                optimizer.step()
+        else:
+            raise RuntimeError("Unsupported task")
 
 **Examples:**
 
@@ -330,29 +406,15 @@ In your client training script, use the FedProxLoss helper:
 TensorFlow FedProx
 ------------------
 
-.. code-block:: python
-
-    from nvflare.app_opt.tf.recipes import FedAvgRecipe
-    from nvflare.recipe import SimEnv
-
-    recipe = FedAvgRecipe(
-        name="fedprox-tf",
-        min_clients=2,
-        num_rounds=5,
-        model=MyTFModel(),
-        train_script="client.py",
-        train_args="--fedproxloss_mu 0.01",
-    )
-    env = SimEnv(num_clients=2)
-    run = recipe.execute(env)
-
-In your client training script, use the TensorFlow FedProxLoss:
+TensorFlow does not currently provide a concrete FedProx recipe or an automatic metadata contract. To implement
+FedProx manually with a TensorFlow ``FedAvgRecipe``, configure the coefficient for your own client training script
+and use ``TFFedProxLoss``:
 
 .. code-block:: python
 
     from nvflare.app_opt.tf.fedprox_loss import TFFedProxLoss
 
-    fedprox_loss = TFFedProxLoss(mu=fedproxloss_mu)
+    fedprox_loss = TFFedProxLoss(mu=0.01)
     # Use in training loop
 
 **Examples:**
@@ -440,6 +502,12 @@ PyTorch SCAFFOLD
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
+
+.. note::
+   PyTorch SCAFFOLD supports ``enable_tensor_disk_offload=True`` for streamed PyTorch tensor updates.
+   Import ``ExchangeFormat`` from ``nvflare.client.config`` and configure
+   ``server_expected_format=ExchangeFormat.PYTORCH`` so the server path preserves tensors instead of converting
+   updates to NumPy before aggregation.
 
 PyTorch Lightning clients can use the same patched training script for FedAvg and SCAFFOLD:
 
@@ -958,6 +1026,7 @@ Decentralized federated learning without a central server.
 .. code-block:: python
 
     from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+    from nvflare.client.config import ExchangeFormat
     from nvflare.recipe import SimEnv
 
     recipe = SwarmLearningRecipe(
@@ -972,6 +1041,8 @@ Decentralized federated learning without a central server.
         learn_task_ack_timeout=3600,
         final_result_ack_timeout=3600,
         max_concurrent_submissions=1,
+        aggregation_format=ExchangeFormat.PYTORCH,
+        enable_tensor_disk_offload=True,
     )
     env = SimEnv(num_clients=3)
     run = recipe.execute(env)
@@ -985,6 +1056,12 @@ Decentralized federated learning without a central server.
      when their explicit parameters are omitted.
    - ``progress_timeout`` (default 3600 s): maximum time without workflow progress.
    - ``max_concurrent_submissions`` (default 1, minimum 1): concurrent aggregation submissions.
+   - For PyTorch tensor streaming with lower aggregation-client memory pressure, set
+     ``aggregation_format=ExchangeFormat.PYTORCH`` and
+     ``enable_tensor_disk_offload=True``. Configure ``tensor_download_chunk_size``
+     and streaming timeouts through ``recipe.add_client_config({...})``. This
+     offloads the receiving aggregation path, not the trainer's in-memory model
+     or outgoing result tensors.
    - ``pipe_type`` (default ``"cell_pipe"``): set to ``"file_pipe"`` when cell networking
      is unavailable or for third-party subprocess integrations.
    - ``submit_result_timeout``, ``download_complete_timeout``,

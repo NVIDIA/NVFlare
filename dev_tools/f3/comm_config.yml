@@ -1,0 +1,67 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Benchmark-selected F3 streaming defaults for a nominal 25 Gbit/s network.
+# Use the same file on both benchmark endpoints.
+# Byte-size fields accept binary suffixes: 1K=1024, 1M=1024K, 1G=1024M.
+streaming_chunk_size: 1M
+streaming_window_size: 64M                 # 64 chunks
+streaming_ack_interval: 16M                # one quarter of the window
+streaming_max_out_seq_chunks: 16
+streaming_retry_max_pending_bytes: 128M
+
+# Any native F3 comm_config option can be added here. Common flat options are:
+#
+# max_message_size: 1G
+# tcp_no_delay: true
+# allow_adhoc_conns: true
+# adhoc_conn_scheme: tcp
+# internal_conn_scheme: tcp
+# backbone_conn_gen: 2
+# subnet_heartbeat_interval: 30
+# subnet_trouble_threshold: 90
+# comm_driver_path: /path/to/custom/drivers
+# heartbeat_interval: 60
+# use_aio_grpc: false
+# streaming_max_blob_size: 1G
+# streaming_ack_wait: 300
+# streaming_read_timeout: 300
+# streaming_send_timeout: 30.0
+# streaming_ack_progress_timeout: 60.0
+# streaming_ack_progress_check_interval: 5.0
+# streaming_reliable: false
+# streaming_retry_wait: 5.0
+# streaming_retry_timeout: 60.0
+# sfm_send_stall_timeout: 0.0
+# sfm_close_stalled_connection: false
+# sfm_send_stall_consecutive_checks: 3
+#
+# Nested driver and connection settings are passed through unchanged as well:
+#
+# internal:
+#   scheme: tcp
+#   resources:
+#     host: localhost
+# adhoc:
+#   scheme: tcp
+#   resources:
+#     host: localhost
+#     secure: false
+# backbone:
+#   connect_generation: [1, 2]
+# grpc:
+#   max_workers: 100
+#   options:
+#     - [grpc.max_send_message_length, 1G]
+#     - [grpc.max_receive_message_length, 1G]

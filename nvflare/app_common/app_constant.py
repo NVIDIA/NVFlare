@@ -154,6 +154,7 @@ class ValidateType(object):
 
 
 class AlgorithmConstants(object):
+    FEDPROX_MU = "fedprox_mu"
     SCAFFOLD_CTRL_DIFF = "scaffold_c_diff"
     SCAFFOLD_CTRL_GLOBAL = "scaffold_c_global"
     SCAFFOLD_CTRL_AGGREGATOR_ID = "scaffold_ctrl_aggregator"

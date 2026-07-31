@@ -306,10 +306,15 @@ def test_get_finished_job_status_maps_aborted_launcher_return_code_to_finished_a
 
 
 @pytest.mark.parametrize(
-    "failure_code",
-    [ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION, JobReturnCode.EXECUTION_ERROR],
+    "failure_code, expected_status",
+    [
+        (ProcessExitCode.CONFIG_ERROR, RunStatus.FINISHED_EXECUTION_EXCEPTION),
+        (ProcessExitCode.EXCEPTION, RunStatus.FINISHED_EXECUTION_EXCEPTION),
+        (JobReturnCode.EXECUTION_ERROR, RunStatus.FINISHED_EXECUTION_EXCEPTION),
+        (ProcessExitCode.INFRASTRUCTURE_ERROR, RunStatus.FINISHED_ABNORMAL),
+    ],
 )
-def test_get_finished_job_status_maps_exception_return_code_to_finished_execution_exception(failure_code):
+def test_get_finished_job_status_maps_failure_return_code(failure_code, expected_status):
     runner = JobRunner(workspace_root="/tmp")
     runner.log_info = MagicMock()
     runner.abort_client_run = MagicMock()
@@ -330,7 +335,7 @@ def test_get_finished_job_status_maps_exception_return_code_to_finished_executio
 
     status = runner._get_finished_job_status(engine, job, fl_ctx)
 
-    assert status == RunStatus.FINISHED_EXECUTION_EXCEPTION
+    assert status == expected_status
     job_manager.set_status.assert_not_called()
     runner.abort_client_run.assert_called_once_with("job-1", [], fl_ctx)
 
@@ -422,6 +427,34 @@ def test_fail_run_preserves_existing_exception_process_entry_under_engine_lock()
     assert engine.exception_run_processes["job-1"] is existing_exception_process
     assert existing_exception_process[RunProcessKey.PROCESS_RETURN_CODE] == ProcessExitCode.EXCEPTION
     assert live_run_process.get(RunProcessKey.PROCESS_RETURN_CODE) is None
+
+
+@pytest.mark.parametrize(
+    "first_code, second_code",
+    [
+        (ProcessExitCode.INFRASTRUCTURE_ERROR, ProcessExitCode.EXCEPTION),
+        (ProcessExitCode.EXCEPTION, ProcessExitCode.INFRASTRUCTURE_ERROR),
+    ],
+)
+def test_fail_run_gives_infrastructure_error_precedence(first_code, second_code):
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_info = MagicMock()
+    runner._stop_run = MagicMock()
+
+    run_process = {
+        RunProcessKey.PARTICIPANTS: {},
+        RunProcessKey.PROCESS_RETURN_CODE: first_code,
+    }
+    engine = MagicMock()
+    engine.lock = MagicMock()
+    engine.exception_run_processes = {"job-1": run_process}
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = engine
+    runner.running_jobs = {"job-1": MagicMock()}
+
+    assert runner.fail_run("job-1", second_code, fl_ctx) == ""
+
+    assert run_process[RunProcessKey.PROCESS_RETURN_CODE] == ProcessExitCode.INFRASTRUCTURE_ERROR
 
 
 def test_stop_run_does_not_publish_terminal_status_before_completion():
