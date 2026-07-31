@@ -750,6 +750,16 @@ def test_report_generates_product_artifacts_and_candidate_lineage(tmp_path, monk
     assert "Metric artifact: `runs/inherited_tuning/cross_val_results.json`" in report
 
 
+def test_markdown_artifact_path_escapes_image_destination(tmp_path):
+    reporter = _load_reporter()
+    report_path = tmp_path / "reports" / "final report (1)#.md"
+    progress_path = tmp_path / "artifacts" / "progress plot (1)#.png"
+
+    assert reporter.markdown_artifact_path(str(progress_path), str(report_path)) == (
+        "../artifacts/progress%20plot%20%281%29%23.png"
+    )
+
+
 def test_report_synthesizes_literature_against_checkpoint_incumbent(tmp_path, monkeypatch):
     reporter = _load_reporter()
     _write_campaign(tmp_path)
@@ -819,6 +829,129 @@ def test_report_marks_cap_truncated_literature_batch_incomplete(tmp_path, monkey
     assert summary["outcome_summary"]["literature"]["counts"] == {"incomplete": 1}
     assert any("2 of 3 required candidates completed" in warning for warning in summary["warnings"])
     assert "incomplete (2/3; candidate_cap_exhausted)" in report
+
+
+def test_report_keeps_completed_literature_batch_outcome(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    _write_rows(
+        tmp_path,
+        [
+            _row("baseline", "baseline", "0.500000"),
+            _row("literature", "literature_review_1", literature_event_id="lit-0001"),
+            _row("discard", "literature_candidate_1", "0.490000", literature_event_id="lit-0001"),
+        ],
+    )
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["exploration_batch"] = {
+        "literature_event_id": "lit-0001",
+        "completed": 1,
+        "required": 1,
+    }
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+    review = summary["literature_reviews"][0]
+
+    assert review["outcome"] == "not_confirmed"
+    assert review["completion"] == {
+        "completed": 1,
+        "required": 1,
+        "complete": True,
+        "reason": None,
+    }
+    assert not any("exploration batch" in warning for warning in summary["warnings"])
+
+
+@pytest.mark.parametrize(
+    "exploration_batch",
+    [
+        {"literature_event_id": "lit-0001", "completed": "2", "required": 3},
+        {"literature_event_id": "lit-0001", "completed": 0, "required": 0},
+        {"literature_event_id": "lit-0001", "completed": True, "required": 3},
+    ],
+)
+def test_report_ignores_malformed_exploration_batch(tmp_path, monkeypatch, exploration_batch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["exploration_batch"] = exploration_batch
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+
+    assert summary["literature_reviews"][0]["outcome"] == "helped"
+    assert summary["literature_reviews"][0]["completion"] is None
+    assert not any("exploration batch" in warning for warning in summary["warnings"])
+
+
+def test_report_does_not_match_empty_exploration_batch_id(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    _write_rows(
+        tmp_path,
+        [
+            _row("baseline", "baseline", "0.500000"),
+            _row("literature", "literature_review_without_id"),
+            _row("discard", "unattributed_candidate", "0.490000"),
+        ],
+    )
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["exploration_batch"] = {"literature_event_id": "", "completed": 1, "required": 2}
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+
+    assert summary["literature_reviews"][0]["outcome"] == "not_evaluated"
+    assert summary["literature_reviews"][0]["completion"] is None
+    assert not any("exploration batch" in warning for warning in summary["warnings"])
+
+
+def test_report_escapes_literature_completion_reason_in_markdown_table(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state.update(
+        {
+            "reason": "candidate_cap|exhausted",
+            "exploration_batch": {"literature_event_id": "lit-0001", "completed": 2, "required": 3},
+        }
+    )
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    _generate(reporter, tmp_path, monkeypatch)
+    report = tmp_path.joinpath("autofl_final_report.md").read_text(encoding="utf-8")
+    outcome_row = next(line for line in report.splitlines() if "literature_review_1" in line and line.startswith("|"))
+
+    assert "incomplete (2/3; candidate_cap\\|exhausted)" in outcome_row
+    assert outcome_row.replace("\\|", "").count("|") == 6
+
+
+def test_report_warns_about_unmatched_incomplete_exploration_batch(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state.update(
+        {
+            "reason": "candidate_cap_exhausted",
+            "exploration_batch": {"literature_event_id": "lit-missing", "completed": 2, "required": 3},
+        }
+    )
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+
+    assert summary["literature_reviews"][0]["completion"] is None
+    assert any(
+        "batch lit-missing was incomplete at candidate_cap_exhausted: 2 of 3 required candidates completed" in warning
+        and "no matching literature checkpoint" in warning
+        for warning in summary["warnings"]
+    )
 
 
 def test_report_selects_first_final_and_largest_milestone_jumps(tmp_path, monkeypatch):

@@ -71,7 +71,7 @@ even if a malformed crash row contains a numeric score:
 - `matched`: the best following candidate tied the incumbent;
 - `not_confirmed`: candidates ran but none matched or improved the incumbent;
 - `failed`: attempts produced no score;
-- `not_evaluated`: no candidate attempt followed the checkpoint.
+- `not_evaluated`: no candidate attempt followed the checkpoint;
 - `incomplete`: authoritative campaign state shows that fewer than the required
   exploration candidates completed before the campaign stopped. The report
   preserves measured evidence but does not present the partial batch as a
@@ -165,6 +165,9 @@ The JSON summary remains `nvflare.autofl.report.v1` and includes
 `artifacts.progress_plot_available` and `objective.metric_contract_source`,
 plus `selection`, `outcome_summary`, `abandoned_candidates`, and
 `state_accounting` for the concise evidence synthesis and consistency check.
+Each `literature_reviews` entry carries `completion`, either an object with
+`completed`, `required`, `complete`, and `reason`, or `null` when campaign state
+does not record a matching exploration batch.
 Missing plotting dependencies or an invalid existing PNG produce warnings and
 `progress_plot_available=false`, but do not suppress the Markdown or JSON
 report. The invalid or failed plot artifact is preserved and is not embedded

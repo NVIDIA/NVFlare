@@ -34,6 +34,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
+from urllib.parse import quote
 
 try:
     import fcntl
@@ -746,6 +747,26 @@ def manifest_summary(record: Optional[RunRecord], campaign_root: Path) -> Dict[s
     }
 
 
+def validated_exploration_batch(exploration_batch: Any) -> Optional[Tuple[str, int, int]]:
+    if not isinstance(exploration_batch, dict):
+        return None
+    event_id = exploration_batch.get("literature_event_id")
+    completed = exploration_batch.get("completed")
+    required = exploration_batch.get("required")
+    if (
+        not isinstance(event_id, str)
+        or not event_id
+        or not isinstance(completed, int)
+        or isinstance(completed, bool)
+        or not isinstance(required, int)
+        or isinstance(required, bool)
+        or completed < 0
+        or required <= 0
+    ):
+        return None
+    return event_id, completed, required
+
+
 def literature_outcomes(
     records: Sequence[RunRecord],
     exploration_batch: Optional[Dict[str, Any]] = None,
@@ -756,6 +777,7 @@ def literature_outcomes(
         if is_literature_event(record):
             events.append((index, record, record.literature_event_id))
     outcomes = []
+    validated_batch = validated_exploration_batch(exploration_batch)
     for start, event, event_id in events:
         before = select_best(records[:start], retained_only=True)
         attempts = [
@@ -770,23 +792,14 @@ def literature_outcomes(
         scored = [record for record in attempts if is_finalized_scored_record(record)]
         segment_best = select_best(scored)
         completion = None
-        if isinstance(exploration_batch, dict) and exploration_batch.get("literature_event_id") == event_id:
-            completed = exploration_batch.get("completed")
-            required = exploration_batch.get("required")
-            if (
-                isinstance(completed, int)
-                and not isinstance(completed, bool)
-                and isinstance(required, int)
-                and not isinstance(required, bool)
-                and completed >= 0
-                and required > 0
-            ):
-                completion = {
-                    "completed": completed,
-                    "required": required,
-                    "complete": completed >= required,
-                    "reason": None if completed >= required else termination_reason,
-                }
+        if validated_batch and bool(event_id) and validated_batch[0] == event_id:
+            _, completed, required = validated_batch
+            completion = {
+                "completed": completed,
+                "required": required,
+                "complete": completed >= required,
+                "reason": None if completed >= required else termination_reason,
+            }
         if completion and not completion["complete"]:
             outcome = "incomplete"
             delta = None if segment_best is None or before is None else segment_best.score - before.score
@@ -835,7 +848,11 @@ def literature_outcomes(
     return outcomes
 
 
-def literature_completion_warnings(reviews: Sequence[Dict[str, Any]]) -> List[str]:
+def literature_completion_warnings(
+    reviews: Sequence[Dict[str, Any]],
+    exploration_batch: Optional[Dict[str, Any]] = None,
+    termination_reason: Optional[str] = None,
+) -> List[str]:
     warnings = []
     for review in reviews:
         completion = review.get("completion")
@@ -845,6 +862,15 @@ def literature_completion_warnings(reviews: Sequence[Dict[str, Any]]) -> List[st
         warnings.append(
             f"Literature exploration batch {review['literature_event_id'] or review['event']} was incomplete at "
             f"{reason}: {completion['completed']} of {completion['required']} required candidates completed."
+        )
+    validated_batch = validated_exploration_batch(exploration_batch)
+    review_event_ids = {review.get("literature_event_id") for review in reviews}
+    if validated_batch and validated_batch[1] < validated_batch[2] and validated_batch[0] not in review_event_ids:
+        event_id, completed, required = validated_batch
+        reason = termination_reason or "campaign termination"
+        warnings.append(
+            f"Literature exploration batch {event_id} was incomplete at {reason}: {completed} of {required} required "
+            "candidates completed, but no matching literature checkpoint was found in the results ledger."
         )
     return warnings
 
@@ -1342,9 +1368,10 @@ def md_cell(value: Any, limit: int = 180) -> str:
 
 def markdown_artifact_path(artifact: str, report: str) -> str:
     try:
-        return Path(os.path.relpath(artifact, start=Path(report).parent)).as_posix()
+        path = Path(os.path.relpath(artifact, start=Path(report).parent)).as_posix()
     except ValueError:
-        return Path(artifact).as_posix()
+        path = Path(artifact).as_posix()
+    return quote(path, safe="/:")
 
 
 def literature_outcome_label(review: Dict[str, Any]) -> str:
@@ -1352,7 +1379,7 @@ def literature_outcome_label(review: Dict[str, Any]) -> str:
     if isinstance(completion, dict) and completion.get("complete") is False:
         label = f"incomplete ({completion['completed']}/{completion['required']}"
         if completion.get("reason"):
-            label += f"; {completion['reason']}"
+            label += f"; {md_cell(completion['reason'], 60)}"
         return label + ")"
     return str(review["outcome"])
 
@@ -1836,7 +1863,13 @@ def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
         exploration_batch=state.get("exploration_batch"),
         termination_reason=termination_reason,
     )
-    warnings.extend(literature_completion_warnings(reviews))
+    warnings.extend(
+        literature_completion_warnings(
+            reviews,
+            exploration_batch=state.get("exploration_batch"),
+            termination_reason=termination_reason,
+        )
+    )
     summary = {
         "schema_version": SUMMARY_SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
