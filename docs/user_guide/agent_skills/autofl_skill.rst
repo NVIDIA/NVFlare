@@ -66,8 +66,12 @@ data and split, timing and checkpoint, aggregation and evaluated population,
 and scale, units, and direction. A candidate is not comparable merely because
 it emits the same metric name. If the metric implementation needs correction,
 the agent abandons that candidate, reports prior scores as incomparable, and
-asks the human to approve a source fix followed by a clean campaign and new
-baseline. The correction is never credited as an optimization gain.
+preserves the scored workspace as audit evidence. After human approval, the
+source is repaired in a fresh job workspace containing no prior Auto-FL
+campaign metadata or generated artifacts, and a new baseline is initialized
+there. Running ``initialize`` in the scored workspace resumes its old evidence
+instead of creating a new baseline. The correction is never credited as an
+optimization gain.
 
 Simulation Execution Permission
 ===============================
