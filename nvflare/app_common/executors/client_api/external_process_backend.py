@@ -425,29 +425,33 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             if self._closed:
                 raise RuntimeError("backend closed before trainer launch")
 
+            launch_blocked = False
             with trainer._stop_lock:
                 # Serialize Popen and handle installation with teardown. Once Popen has
                 # created a child, finalize must not return before that child is owned
                 # and terminated.
                 if self._closed or trainer._cleaned:
-                    raise RuntimeError("backend closed before trainer launch")
-                # Never log the configured command: legacy/hand-written jobs may contain literal
-                # credentials rather than site-resolved secret references.
-                self.logger.info(f"launching external trainer (launch {seq})")
-                process = subprocess.Popen(
-                    self._split_command(self._context.command),
-                    shell=False,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    cwd=self._app_dir,
-                    env=env,
-                    # own process group so orderly stop can signal the launched trainer group
-                    start_new_session=(os.name == "posix"),
-                )
-                trainer.process = process
-                if os.name == "posix":
-                    # start_new_session made the child its own group leader (pgid == pid)
-                    trainer.pgid = process.pid
+                    launch_blocked = True
+                else:
+                    # Never log the configured command: legacy/hand-written jobs may contain literal
+                    # credentials rather than site-resolved secret references.
+                    self.logger.info(f"launching external trainer (launch {seq})")
+                    process = subprocess.Popen(
+                        self._split_command(self._context.command),
+                        shell=False,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        cwd=self._app_dir,
+                        env=env,
+                        # own process group so orderly stop can signal the launched trainer group
+                        start_new_session=(os.name == "posix"),
+                    )
+                    trainer.process = process
+                    if os.name == "posix":
+                        # start_new_session made the child its own group leader (pgid == pid)
+                        trainer.pgid = process.pid
+            if launch_blocked:
+                raise RuntimeError("backend closed before trainer launch")
             trainer.log_thread = threading.Thread(
                 target=log_subprocess_output,
                 args=(process, self.logger),

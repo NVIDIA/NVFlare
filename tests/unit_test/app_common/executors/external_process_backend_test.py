@@ -1656,6 +1656,78 @@ class TestExecute:
         assert env.harness.processes == [], "no trainer process may be started after finalize set _closed"
         assert box["r"].get_return_code() == ReturnCode.EXECUTION_EXCEPTION
 
+    def test_closed_launch_path_does_not_self_deadlock(self, env, monkeypatch):
+        """Launch releases its stop lock before exception cleanup reacquires it."""
+        backend, fl_ctx = _initialized_backend(env, launch_once=False, shutdown_timeout=0.0)
+        in_write = threading.Event()
+        let_write_finish = threading.Event()
+        launch_has_stop_lock = threading.Event()
+        let_launch_check_closed = threading.Event()
+        finalize_reached_gate = threading.Event()
+        real_write = ebp.write_bootstrap_config
+
+        def hooked_write(path, config):
+            in_write.set()
+            assert let_write_finish.wait(5.0)
+            return real_write(path, config)
+
+        monkeypatch.setattr(ebp, "write_bootstrap_config", hooked_write)
+
+        box = {}
+        execute_thread = threading.Thread(
+            target=lambda: box.__setitem__("result", backend.execute("train", Shareable(), fl_ctx, Signal()))
+        )
+        execute_thread.start()
+        assert in_write.wait(5.0), "execute did not register its trainer before Popen"
+
+        trainer = backend._active_launch
+        real_stop_lock = trainer._stop_lock
+
+        class PausingStopLock:
+            pause_next_enter = True
+
+            def __enter__(self):
+                real_stop_lock.acquire()
+                if self.pause_next_enter:
+                    self.pause_next_enter = False
+                    launch_has_stop_lock.set()
+                    if not let_launch_check_closed.wait(5.0):
+                        real_stop_lock.release()
+                        raise AssertionError("finalize did not close the backend while launch held the stop lock")
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                real_stop_lock.release()
+
+        real_execute_gate = backend._execute_gate
+
+        class ObservedExecuteGate:
+            def acquire(self, *args, **kwargs):
+                finalize_reached_gate.set()
+                return real_execute_gate.acquire(*args, **kwargs)
+
+            def release(self):
+                real_execute_gate.release()
+
+        trainer._stop_lock = PausingStopLock()
+        backend._execute_gate = ObservedExecuteGate()
+        let_write_finish.set()
+        assert launch_has_stop_lock.wait(5.0), "launch did not enter the stop-lock critical section"
+
+        finalize_thread = threading.Thread(target=lambda: backend.finalize(FLContext()))
+        finalize_thread.start()
+        assert finalize_reached_gate.wait(5.0), "finalize did not close the backend before its gate wait"
+        assert backend._closed
+        let_launch_check_closed.set()
+
+        execute_thread.join(5.0)
+        finalize_thread.join(5.0)
+
+        assert not execute_thread.is_alive()
+        assert not finalize_thread.is_alive()
+        assert env.harness.processes == []
+        assert box["result"].get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+
     @pytest.mark.parametrize("abort_latched", [False, True], ids=["normal", "abort"])
     def test_finalize_stops_process_returned_after_launch_cleanup(self, env, monkeypatch, abort_latched):
         """Finalize must wait for an in-flight Popen and stop its process before returning."""
