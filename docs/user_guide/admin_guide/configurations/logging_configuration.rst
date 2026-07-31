@@ -322,7 +322,8 @@ FL_LOG_LEVEL Environment Variable
 =================================
 
 The ``FL_LOG_LEVEL`` environment variable can be used to set the log configuration without passing a command-line argument or API parameter.
-It accepts the same values as the :ref:`Log Config Argument <log_config_argument>` above (``concise``, ``full``, ``verbose``, a filepath, or a log level).
+It accepts the same values as the :ref:`Log Config Argument <log_config_argument>` above (``concise``, ``msg_only``,
+``full``, ``verbose``, a filepath, or a log level).
 
 This environment variable is applied across all modes: simulator, POC, and production.
 
@@ -415,7 +416,7 @@ However these commands do not overwrite the log configuration file in the worksp
 - **config**: the log config argument can be any of the following (For more details, refer to :ref:`Log Config Argument <log_config_argument>` above):
 
     - path to a json log configuration file (``/path/to/my_log_config.json``)
-    - predefined log mode (``concise``, ``full``, ``verbose``)
+    - predefined log mode (``concise``, ``msg_only``, ``full``, ``verbose``)
     - log level name or number (``debug``, ``info``, ``warning``, ``error``, ``critical``, ``30``)
     - read the current log configuration file log_config.json from the workspace (``reload``)
 
