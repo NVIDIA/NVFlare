@@ -22,6 +22,7 @@ import pytest
 
 from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
+from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.secret_utils import PotentialSecretWarning
 
 torch = pytest.importorskip("torch")
@@ -423,6 +424,98 @@ class TestSwarmLearningRecipeMemoryGC:
             cuda_empty_cache=True,
         )
         assert recipe._job is not None
+
+
+class TestSwarmLearningRecipeTensorDiskOffload:
+    """Test PyTorch streaming and aggregation-client disk offload wiring."""
+
+    @staticmethod
+    def _get_client_components(recipe):
+        client_app = recipe._job._deploy_map[ALL_SITES]
+        client_controller = next(item.executor for item in client_app.app_config.executors if item.tasks == ["swarm_*"])
+        train_executor = next(item.executor for item in client_app.app_config.executors if "train" in item.tasks)
+        persistor = client_app.app_config.components["persistor"]
+        return client_controller, train_executor, persistor
+
+    def test_pytorch_streaming_with_disk_offload_is_wired_to_aggregation_controller(
+        self, mock_file_system, simple_pt_model
+    ):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        recipe = SwarmLearningRecipe(
+            name="test_swarm_tensor_disk_offload",
+            model=simple_pt_model,
+            num_rounds=1,
+            train_script="train.py",
+            min_clients=2,
+            aggregation_format=ExchangeFormat.PYTORCH,
+            enable_tensor_disk_offload=True,
+        )
+
+        client_controller, train_executor, persistor = self._get_client_components(recipe)
+        assert recipe.aggregation_format == ExchangeFormat.PYTORCH
+        assert recipe.enable_tensor_disk_offload is True
+        assert client_controller.enable_tensor_disk_offload is True
+        assert train_executor._server_expected_format == ExchangeFormat.PYTORCH
+        assert persistor._allow_numpy_conversion is False
+
+    def test_string_aggregation_format_is_normalized(self, mock_file_system, simple_pt_model):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        recipe = SwarmLearningRecipe(
+            name="test_swarm_string_exchange_format",
+            model=simple_pt_model,
+            num_rounds=1,
+            train_script="train.py",
+            min_clients=2,
+            aggregation_format="pytorch",
+            enable_tensor_disk_offload=True,
+        )
+
+        client_controller, train_executor, persistor = self._get_client_components(recipe)
+        assert recipe.aggregation_format == ExchangeFormat.PYTORCH
+        assert client_controller.enable_tensor_disk_offload is True
+        assert train_executor._server_expected_format == ExchangeFormat.PYTORCH
+        assert persistor._allow_numpy_conversion is False
+
+    def test_invalid_aggregation_format_is_rejected(self, mock_file_system, simple_pt_model):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        with pytest.raises(ValueError, match="invalid aggregation_format"):
+            SwarmLearningRecipe(
+                name="test_swarm_invalid_exchange_format",
+                model=simple_pt_model,
+                num_rounds=1,
+                train_script="train.py",
+                min_clients=2,
+                aggregation_format="pt",
+            )
+
+    def test_non_boolean_disk_offload_override_is_rejected(self, mock_file_system, simple_pt_model):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        with pytest.raises(TypeError, match="enable_tensor_disk_offload"):
+            SwarmLearningRecipe(
+                name="test_swarm_invalid_disk_offload_override",
+                model=simple_pt_model,
+                num_rounds=1,
+                train_script="train.py",
+                min_clients=2,
+                client_config_overrides={"enable_tensor_disk_offload": "yes"},
+            )
+
+    def test_disk_offload_warns_when_payloads_are_numpy(self, mock_file_system, simple_pt_model):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        with pytest.warns(UserWarning, match="only applies to streamed PyTorch tensors"):
+            SwarmLearningRecipe(
+                name="test_swarm_tensor_disk_offload_warning",
+                model=simple_pt_model,
+                num_rounds=1,
+                train_script="train.py",
+                min_clients=2,
+                enable_tensor_disk_offload=True,
+            )
 
 
 class TestSwarmLearningRecipePipeType:

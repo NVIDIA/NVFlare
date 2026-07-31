@@ -191,6 +191,8 @@ to ``/etc/hosts`` with the internal IP and the hostname.
    tensor disk offload, because they do not reduce server memory usage. Verify both the resolved temp directory and its
    backing filesystem as part of server IT setup.
 
+.. _starting_fl_clients:
+
 Starting Federated Learning Clients
 ============================================
 Each site participating in federated learning training is a client. Each package for a client is named after the client
@@ -198,6 +200,15 @@ name specified when provisioning the project.
 
 In the package for each client, run ``start.sh``
 from the "startup" folder to start the client.
+
+.. note::
+
+   For PyTorch Swarm jobs that enable ``enable_tensor_disk_offload=True``, every
+   client that can become an aggregation client needs an existing, writable,
+   disk-backed ``TMPDIR`` with enough free space for incoming tensor payloads.
+   Avoid RAM-backed ``tmpfs`` or ``ramfs`` mounts; they do not reduce process
+   memory pressure. Verify the resolved temporary directory and its backing
+   filesystem before starting ``startup/start.sh``.
 
 .. tip::
 
