@@ -23,8 +23,11 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import MAX_COMPLETED_TASK_TTL, RxStream, RxTask
+from nvflare.fuel.f3.streaming.byte_streamer import TxTask
 from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_TOPIC, STREAM_CHANNEL, StreamDataType, StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import StreamError
+from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError
+
+MB = 1024**2
 
 
 @pytest.fixture(autouse=True)
@@ -260,6 +263,98 @@ def test_new_stream_without_sender_parameters_uses_local_configuration(monkeypat
     assert task.window_size == 8
     assert task.ack_interval == 4
     assert task.retry_max_pending_bytes == 16
+
+
+def test_headerless_legacy_sender_with_small_window_completes_transfer(monkeypatch):
+    window_size = 8 * MB
+    payload_size = 17 * MB
+    received = {"size": 0, "error": None}
+    receive_done = threading.Event()
+
+    monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: window_size)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_ack_interval", lambda self, default: default)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_ack_wait", lambda self, default: 0.5)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_ack_progress_timeout", lambda self, default: 0.5)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_ack_progress_check_interval", lambda self, default: 0.01)
+
+    class PayloadStream(Stream):
+        def __init__(self):
+            super().__init__(size=payload_size, headers={})
+            self.remaining = payload_size
+            self.chunk = b"x" * MB
+
+        def read(self, size):
+            if not self.remaining:
+                return b""
+            result = self.chunk[: min(size, self.remaining)]
+            self.remaining -= len(result)
+            return result
+
+    class LoopbackCell:
+        def __init__(self):
+            self.tx_task = None
+            self.rx_thread = None
+
+        def fire_and_forget(self, channel, topic, target, message, **kwargs):
+            if topic == STREAM_ACK_TOPIC:
+                message.set_header(MessageHeaderKey.ORIGIN, "receiver")
+                self.tx_task.handle_ack(message)
+                return {}
+
+            # Model a pre-parameter-sync sender by removing the headers that
+            # modern TxTask adds to its first message.
+            for key in (
+                StreamHeaderKey.CHUNK_SIZE,
+                StreamHeaderKey.WINDOW_SIZE,
+                StreamHeaderKey.ACK_INTERVAL,
+                StreamHeaderKey.RETRY_MAX_PENDING_BYTES,
+            ):
+                message.remove_header(key)
+            message.set_header(MessageHeaderKey.ORIGIN, "legacy-sender")
+
+            rx_task = RxTask.find_or_create_task(message, self)
+            if rx_task.process_chunk(message):
+
+                def consume_stream():
+                    try:
+                        stream = RxStream(rx_task)
+                        while True:
+                            chunk = stream.read(MB)
+                            if not chunk:
+                                break
+                            received["size"] += len(chunk)
+                    except Exception as ex:
+                        received["error"] = ex
+                    finally:
+                        receive_done.set()
+
+                self.rx_thread = threading.Thread(target=consume_stream)
+                self.rx_thread.start()
+            return {}
+
+    cell = LoopbackCell()
+    tx_task = TxTask(
+        cell=cell,
+        chunk_size=MB,
+        channel="ch",
+        topic="tp",
+        target="receiver",
+        headers={},
+        stream=PayloadStream(),
+        reliable=False,
+        secure=False,
+        optional=False,
+    )
+    cell.tx_task = tx_task
+
+    tx_task.send_loop()
+
+    assert tx_task.stream_future.result(timeout=1) == payload_size
+    assert receive_done.wait(timeout=1)
+    cell.rx_thread.join(timeout=1)
+    assert not cell.rx_thread.is_alive()
+    assert received["error"] is None
+    assert received["size"] == payload_size
 
 
 def test_sender_ack_interval_above_window_is_clamped(caplog):

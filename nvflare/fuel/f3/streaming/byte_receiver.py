@@ -26,7 +26,6 @@ from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.f3.streaming.stream_const import (
     EOS,
-    STREAM_ACK_INTERVAL,
     STREAM_ACK_TOPIC,
     STREAM_CHANNEL,
     STREAM_CHUNK_SIZE,
@@ -42,8 +41,10 @@ from nvflare.fuel.f3.streaming.stream_utils import ONE_MB, stream_stats_category
 log = logging.getLogger(__name__)
 
 MAX_OUT_SEQ_CHUNKS = 16
-# Backward-compatible module alias.
-ACK_INTERVAL = STREAM_ACK_INTERVAL
+# Headerless legacy senders can use windows smaller than the new sender
+# default. Keep their receiver-side fallback at the historical 4 MiB so an
+# ACK is sent before those senders exhaust their flow-control window.
+ACK_INTERVAL = 4 * ONE_MB
 READ_TIMEOUT = 300
 COMPLETED_TASK_TTL = 60.0
 RETRY_WAIT = 5.0
