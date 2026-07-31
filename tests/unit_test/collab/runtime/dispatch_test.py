@@ -55,6 +55,12 @@ class _ThreadCapturingClient:
         return "result"
 
 
+class _ContextCapturingClient:
+    @publish
+    def identify(self, context=None):
+        return context.caller, context.callee
+
+
 def test_prepare_for_remote_call_registers_blob_callback():
     cell = MagicMock()
     app = MagicMock()
@@ -136,6 +142,25 @@ def test_remote_call_restores_previous_context_after_success():
 
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
     assert reply.payload[CallReplyKey.RESULT] == "result"
+
+
+def test_named_object_call_context_uses_fully_qualified_callee():
+    app = ClientApp(_SuccessfulClient())
+    app.name = "site-1"
+    app.add_collab_object("trainer", _ContextCapturingClient())
+    request = new_cell_message(
+        {},
+        {
+            ObjectCallKey.CALLER: "server",
+            ObjectCallKey.TARGET_NAME: "other-site.trainer",
+            ObjectCallKey.METHOD_NAME: "identify",
+        },
+    )
+
+    reply = _call_app_method(request, app, MagicMock())
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+    assert reply.payload[CallReplyKey.RESULT] == ("server", "site-1.trainer")
 
 
 def test_remote_call_restores_positional_only_arguments_for_invocation():

@@ -376,10 +376,14 @@ class TestFederatedServer:
             server.engine.job_runner.fail_run.assert_not_called()
 
     @pytest.mark.parametrize(
-        "failure_code",
-        [ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION],
+        "failure_code, expected_code",
+        [
+            (ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION),
+            (ProcessExitCode.EXCEPTION, ProcessExitCode.EXCEPTION),
+            (ProcessExitCode.INFRASTRUCTURE_ERROR, ProcessExitCode.INFRASTRUCTURE_ERROR),
+        ],
     )
-    def test_process_job_failure_fails_run_for_reported_exception_client_failures(self, failure_code):
+    def test_process_job_failure_fails_run_for_reported_client_failures(self, failure_code, expected_code):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
             server = FederatedServer(
                 project_name="project_name",
@@ -412,7 +416,7 @@ class TestFederatedServer:
 
             server.process_job_failure(request)
 
-            server.engine.job_runner.fail_run.assert_called_once_with("job-1", ProcessExitCode.EXCEPTION, fl_ctx)
+            server.engine.job_runner.fail_run.assert_called_once_with("job-1", expected_code, fl_ctx)
             server.engine.job_runner.stop_run.assert_not_called()
 
     def test_process_job_failure_ignores_generic_launcher_execution_error(self):

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 import json
 import sys
 from pathlib import Path
@@ -22,6 +23,10 @@ sys.path.insert(0, str(CHECKS_PARENT))
 from checks.lints import run_v1_lints  # noqa: E402
 
 
+def _eval_by_id(eval_data, eval_id):
+    return next(item for item in eval_data["evals"] if item["id"] == eval_id)
+
+
 def test_seed_skills_pass_v1_admission_lints():
     repo_root = Path(__file__).resolve().parents[4]
 
@@ -30,6 +35,41 @@ def test_seed_skills_pass_v1_admission_lints():
     assert result["status"] == "ok"
     assert result["summary"]["skill_count"] >= 2
     assert result["findings"] == []
+
+
+def test_training_conversion_and_fedstats_remain_separate_user_ordered_workflows():
+    repo_root = Path(__file__).resolve().parents[4]
+    skill_names = (
+        "nvflare-fed-stats",
+        "nvflare-convert-pytorch",
+        "nvflare-convert-lightning",
+        "nvflare-convert-huggingface",
+    )
+    required_text = (
+        "treat it as two independent jobs and workflows: do not merge or automatically "
+        "chain them, do not route the combination to `nvflare-orient`, and ask which "
+        "workflow to run first"
+    )
+
+    for skill_name in skill_names:
+        skill_text = repo_root.joinpath("skills", skill_name, "SKILL.md").read_text(encoding="utf-8")
+        normalized_skill = " ".join(skill_text.split())
+        assert required_text in normalized_skill
+        assert (
+            "Recommend `nvflare-fed-stats` first only when the user's purpose is to understand data distribution"
+            in normalized_skill
+        )
+
+        eval_data = json.loads(
+            repo_root.joinpath("dev_tools", "agent", "skill_evals", skill_name, "evals.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        boundary_eval = next(item for item in eval_data["evals"] if "combined" in item["id"])
+        mandatory_ids = {item["id"] for item in boundary_eval["nvflare"]["mandatory_behavior"]}
+        prohibited_ids = {item["id"] for item in boundary_eval["nvflare"]["prohibited_behavior"]}
+        assert "separate-training-and-statistics-workflows" in mandatory_ids
+        assert {"no-combined-or-auto-chained-jobs", "no-orient-for-combined-workflow"} <= prohibited_ids
 
 
 def test_diagnose_job_catalog_pins_recovery_categories():
@@ -74,6 +114,23 @@ def test_diagnose_job_catalog_pins_recovery_categories():
     assert partial_logs["Recovery Category"] == "`UNKNOWN`"
     assert "before assigning root cause" in partial_logs["Next Action"]
     assert "do not classify the log-access problem as the job failure cause" in partial_logs["Next Action"]
+
+    datum_type_6 = rows["DATUM_OBJECT_TYPE_6"]
+    assert datum_type_6["Recovery Category"] == "`FIXABLE_BY_CONFIG`"
+    assert "cannot find handler for Datum Object Type 6" in datum_type_6["Evidence Signals"]
+    assert "persists until attempt end" in datum_type_6["Evidence Signals"]
+    assert "no later task download, client update, or aggregation succeeds" in datum_type_6["Evidence Signals"]
+    assert "no client receives the task" in datum_type_6["Evidence Signals"]
+    assert "Do not select `DATUM_OBJECT_TYPE_6` for later-success cases" in normalized_catalog
+    assert "Do not recommend registering `TensorDecomposer` inside `client.py`" in normalized_catalog
+    assert "unless evidence proves that code runs before task deserialization" in normalized_catalog
+
+    exit_neg9 = rows["PROCESS_EXIT_NEG9"]
+    assert exit_neg9["Recovery Category"] == "`UNKNOWN`"
+    assert "`rc=-9`" in exit_neg9["Evidence Signals"]
+    assert "do not infer OOM from `-9` alone" in exit_neg9["Next Action"]
+    assert "at most one retry" in normalized_catalog
+    assert "changed causal factor" in normalized_catalog
 
 
 def test_diagnose_job_uses_one_post_load_scope_check():
@@ -138,9 +195,76 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     assert "unprotected recipe or adding only a disclaimer" in skill_text
     assert "key_metric=metric_name" not in recipe_text
     assert "when the selected execution path delivers that metric to the server" in recipe_text
-    for consumer_text in (skill_text, recipe_text, client_text, validation_text):
+
+    # The negate-the-loss rule is framework-neutral when best-model selection is
+    # requested. No converter may carve itself out of it.
+    assert "This applies to loss in every framework" in normalized_construction
+    assert "do not fail closed merely because loss is the only available metric" in normalized_construction
+    assert "leave `key_metric` unspecified" in normalized_construction
+    assert "retain the recipe's documented default" in normalized_construction
+    assert "Do not add a skill-specific sentinel" in construction_text
+
+    # Retaining the default leaves the selector ACTIVE on that default key: BaseFedJob
+    # installs IntimeModelSelector for any truthy key_metric, and the selector logs a
+    # warning and skips the client when the key is absent from the delivered metrics.
+    # The guidance must state that observable consequence so the agent can report it.
+    from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+
+    assert inspect.signature(FedAvgRecipe).parameters["key_metric"].default == "accuracy"
+    assert "leaves the recipe's model selector active on that default key" in normalized_construction
+    assert "logs a per-round warning naming the missing metric" in normalized_construction
+    assert "without a best-model artifact" in normalized_construction
+    assert "Report it as a known limitation" in normalized_construction
+
+    # The selector's lower-is-better name heuristic matches the "loss" substring and a
+    # neg_ prefix does not clear it, so the recommended negated key trips a false
+    # positive.  The guidance must say so, or an agent "fixes" it by selecting the
+    # un-negated metric and silently picks the worst global model.
+    from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better
+
+    assert _looks_lower_is_better("neg_val_loss") is True
+    assert _looks_lower_is_better("eval_neg_loss") is True
+    assert "known\nfalse positive on a negated key" in construction_text
+    assert "a `neg_` prefix does not clear" in normalized_construction
+    assert "that selects the worst global model" in normalized_construction
+
+    hf_root = repo_root / "skills" / "nvflare-convert-huggingface"
+    hf_skill_text = hf_root.joinpath("SKILL.md").read_text(encoding="utf-8")
+    hf_conversion_text = hf_root.joinpath("references/huggingface-conversion.md").read_text(encoding="utf-8")
+    lightning_conversion_text = repo_root.joinpath(
+        "skills/nvflare-convert-lightning/references/lightning-conversion.md"
+    ).read_text(encoding="utf-8")
+    lightning_asset_text = repo_root.joinpath("skills/nvflare-convert-lightning/assets/lightning_client.py").read_text(
+        encoding="utf-8"
+    )
+    normalized_hf_conversion = " ".join(hf_conversion_text.split())
+    normalized_lightning_conversion = " ".join(lightning_conversion_text.split())
+
+    # Every PyTorch-family converter needs a concrete way to satisfy the shared
+    # negate-the-loss rule, not just a restatement of it.
+    assert "the shared rule in" in normalized_hf_conversion
+    assert "applies unchanged" in normalized_hf_conversion
+    assert 'metrics["eval_neg_loss"] = -metrics["eval_loss"]' in hf_conversion_text
+    assert 'key_metric="eval_neg_loss"' in hf_conversion_text
+    assert "make_higher_is_better" in lightning_asset_text
+    assert "def add_higher_is_better_metrics" in lightning_asset_text
+    assert 'make_higher_is_better=("val_loss",)' in normalized_lightning_conversion
+    assert 'key_metric="neg_val_loss"' in lightning_conversion_text
+    assert "never a reason to fail closed" in normalized_lightning_conversion
+    # main() is the loop agents copy verbatim; if it does not thread
+    # make_higher_is_better into validate_global_model, the negated key never
+    # reaches the server no matter what the reference says.
+    assert "def main(model, datamodule, trainer_factory, evaluate_only=False, make_higher_is_better=())" in (
+        lightning_asset_text
+    )
+    assert "make_higher_is_better=make_higher_is_better" in lightning_asset_text
+
+    for consumer_text in (skill_text, recipe_text, client_text, validation_text, hf_skill_text, hf_conversion_text):
         assert "pytorch-family-recipe-construction.md" in consumer_text
         assert 'metrics={"neg_loss": -loss}' not in consumer_text
+        assert 'key_metric=""' not in consumer_text
+        # No skill may carve itself out of the negate-the-loss rule.
+        assert "no safe conversion-owned negation hook" not in consumer_text
 
 
 def test_pytorch_model_exchange_owns_plain_pytorch_send_pattern():
@@ -184,11 +308,16 @@ def test_pytorch_family_construction_policy_is_canonical_and_capability_based():
     assert construction_path in lightning_skill
     assert "whose `name` field is the public constructor keyword" in normalized_construction
     assert "Only pass a recipe keyword when its name is in the exposed-name set" in normalized_construction
-    assert "When `server_expected_format` is exposed" in normalized_construction
+    assert (
+        "Every recipe construction or construction preflight must include one model source" in normalized_construction
+    )
+    assert "Never instantiate an incomplete `FedAvgRecipe`" in normalized_construction
+    assert "When `aggregation_format` is exposed" in normalized_construction
+    assert "when `server_expected_format` is exposed" in normalized_construction
     assert "When tensor-native transport was selected" in normalized_construction
-    assert "Disk offload is a server memory optimization, not a model-exchange format" in normalized_construction
-    assert "downloaded to server-side temporary files and materialized lazily" in normalized_construction
-    assert "optimization only with `server_expected_format=ExchangeFormat.PYTORCH`" in normalized_construction
+    assert "Disk offload is an aggregation-workflow memory optimization" in normalized_construction
+    assert "temporary files on the aggregation host and materialized lazily" in normalized_construction
+    assert "only when the exposed workflow-side format is `ExchangeFormat.PYTORCH`" in normalized_construction
     assert "When `params_transfer_type` is exposed" in normalized_construction
     assert "single-process multi-GPU `torch.nn.DataParallel` stay in-process" in normalized_construction
     assert "Do not also pass `save_filename`" in normalized_construction
@@ -246,10 +375,10 @@ def test_lightning_training_metrics_have_one_canonical_delivery_bridge():
     assert client_template.index("trainer.validate") < client_template.index("trainer.fit")
     assert "A terminal `Finished` state without that metric is incomplete validation" in normalized_validation
     assert "return them in the aggregated `FLModel.metrics`" in normalized_workflow
-    assert "metrics=averaged_metrics or None" in aggregator_template
+    assert "metrics=metrics or None" in aggregator_template
 
 
-def test_pytorch_recipe_capability_profiles_include_non_fedavg_without_disk_offload():
+def test_pytorch_recipe_capability_profiles_match_tensor_disk_offload_support():
     from nvflare.tool.recipe.recipe_cli import _load_catalog, _recipe_detail
 
     catalog = {entry["name"]: entry for entry in _load_catalog()}
@@ -262,8 +391,8 @@ def test_pytorch_recipe_capability_profiles_include_non_fedavg_without_disk_offl
     for recipe_name in ("cyclic-pt", "fedeval-pt"):
         assert "server_expected_format" in parameter_names[recipe_name]
         assert "enable_tensor_disk_offload" not in parameter_names[recipe_name]
+    assert {"aggregation_format", "enable_tensor_disk_offload"} <= parameter_names["swarm-pt"]
     assert "server_expected_format" not in parameter_names["swarm-pt"]
-    assert "enable_tensor_disk_offload" not in parameter_names["swarm-pt"]
 
 
 def test_pytorch_family_capability_evals_cover_fedeval_and_dataparallel():
@@ -320,19 +449,44 @@ def test_pytorch_conversion_stops_after_dependency_install_failure():
     normalized_skill = " ".join(skill_text.split())
     normalized_dependency = " ".join(dependency_text.split())
     normalized_workflow = " ".join(workflow_text.split())
-    mandatory_by_id = {
-        item["id"]: item["description"] for item in eval_data["evals"][0]["nvflare"]["mandatory_behavior"]
-    }
+    basic_eval = _eval_by_id(eval_data, "pytorch-convert-basic")["nvflare"]
+    mandatory_by_id = {item["id"]: item["description"] for item in basic_eval["mandatory_behavior"]}
     mandatory_ids = set(mandatory_by_id)
-    prohibited_ids = {item["id"] for item in eval_data["evals"][0]["nvflare"]["prohibited_behavior"]}
+    prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
+
+    common_text = repo_root.joinpath("skills/nvflare-shared/references/conversion-common.md").read_text(
+        encoding="utf-8"
+    )
+    normalized_common = " ".join(common_text.split())
 
     assert (
         "before any Python command imports user, PyTorch, NVFLARE, or declared dependency modules" in normalized_skill
     )
-    assert "on a nonzero exit, stop validation" in normalized_skill
+    # The ordering rule and its terminal-failure behavior are authored once in
+    # conversion-common.md; converters state only which modules their step-3 guard covers.
+    assert (
+        "before any Python command imports user, framework, NVFLARE, or declared dependency modules"
+        in normalized_common
+    )
+    assert "on a nonzero exit, stop validation and report an unvalidated draft" in normalized_common
+    for converter in ("nvflare-convert-pytorch", "nvflare-convert-lightning", "nvflare-convert-huggingface"):
+        converter_text = repo_root.joinpath(f"skills/{converter}/SKILL.md").read_text(encoding="utf-8")
+        assert "conversion-common.md" in converter_text
+        assert "on a nonzero exit, stop validation" not in " ".join(converter_text.split())
     assert "include every applicable requirements file" in normalized_dependency
     assert "`-r <requirements-a> -r <requirements-b> -c <constraints> nvflare`" in dependency_text
     assert "append `nvflare` to the same command" in normalized_dependency
+    assert "authoritative evidence that NVFLARE is present" in normalized_dependency
+    assert (
+        "Do not append, install, or replace `nvflare` based only on missing package metadata" in normalized_dependency
+    )
+    assert "skip dependency installation and continue to validation" in normalized_dependency
+    assert "Build an install plan only when inventory identifies at least one dependency" in normalized_dependency
+    assert "Resolve the host-provided Python interpreter before choosing the installer target" in normalized_dependency
+    assert "Never add `uv pip install --system`" in normalized_dependency
+    assert (
+        "only when the agent host explicitly supplies and identifies that system interpreter" in normalized_dependency
+    )
     assert "parts of one planned install, not retries" in normalized_dependency
     assert "Run the selected combined canonical install command once." in dependency_text
     assert "stop dependency installation and validation for this conversion run" in normalized_dependency
@@ -347,6 +501,42 @@ def test_pytorch_conversion_stops_after_dependency_install_failure():
     )
     assert "reports a redacted failed command" in mandatory_by_id["dependency-install-failure-is-terminal"]
     assert "no-dependency-install-retry-or-environment-surgery" in prohibited_ids
+
+
+def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recoveries():
+    repo_root = Path(__file__).resolve().parents[4]
+    dependency_text = repo_root.joinpath("skills/nvflare-shared/references/dependency-install.md").read_text(
+        encoding="utf-8"
+    )
+    validation_text = repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md").read_text(
+        encoding="utf-8"
+    )
+    metrics_text = repo_root.joinpath("skills/nvflare-shared/references/metrics-and-artifact-reporting.md").read_text(
+        encoding="utf-8"
+    )
+    hf_root = repo_root / "skills" / "nvflare-convert-huggingface"
+    hf_skill = hf_root.joinpath("SKILL.md").read_text(encoding="utf-8")
+    hf_validation = hf_root.joinpath("references/huggingface-validation.md").read_text(encoding="utf-8")
+    eval_data = json.loads(
+        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-convert-huggingface/evals.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    basic_eval = _eval_by_id(eval_data, "huggingface-convert-basic")["nvflare"]
+    mandatory_ids = {item["id"] for item in basic_eval["mandatory_behavior"]}
+    prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
+
+    assert "same interpreter selected for installation and validation" in " ".join(dependency_text.split())
+    assert "make the inventory command exit zero" in " ".join(dependency_text.split())
+    assert "optional capability or host-diagnostic utility as evidence" in " ".join(validation_text.split())
+    assert "Do not append platform-specific utilities" in " ".join(validation_text.split())
+    assert "invoke the selected library's normal cache-aware load or download once" in " ".join(hf_validation.split())
+    assert "`snapshot_download(..., local_files_only=True)`" in hf_validation
+    assert "`<metric-name> = <numeric-value> (<source>)`" in metrics_text
+    assert "Naming the metric without its numeric value" in " ".join(metrics_text.split())
+    assert "report each observed primary scalar with its metric name, numeric value" in " ".join(hf_skill.split())
+    assert {"cache-aware-authorized-model-resolution", "numeric-primary-metric-reporting"} <= mandatory_ids
+    assert {"no-raising-cache-only-model-probe", "no-unguarded-platform-specific-diagnostic"} <= prohibited_ids
 
 
 def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
@@ -370,8 +560,9 @@ def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
     normalized_construction = " ".join(construction_text.split())
     normalized_workflow = " ".join(workflow_text.split())
     normalized_validation = " ".join(validation_text.split())
-    mandatory_ids = {item["id"] for item in eval_data["evals"][0]["nvflare"]["mandatory_behavior"]}
-    prohibited_ids = {item["id"] for item in eval_data["evals"][0]["nvflare"]["prohibited_behavior"]}
+    basic_eval = _eval_by_id(eval_data, "pytorch-convert-basic")["nvflare"]
+    mandatory_ids = {item["id"] for item in basic_eval["mandatory_behavior"]}
+    prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
 
     assert "pass `best_model_filename` only" in normalized_construction
     assert "Do not also pass `save_filename`" in normalized_construction
@@ -383,6 +574,9 @@ def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
     assert "validate properties rather than guessed site sizes" in normalized_validation
     assert "complete, non-overlapping coverage" in normalized_validation
     assert "Assert exact per-site row counts only when" in validation_text
+    assert "resolve it in `job.py` against the original source-project root" in normalized_workflow
+    assert "the simulator process working directory" in normalized_workflow
+    assert "Validate relative-path conversions from a fresh caller working directory" in workflow_text
     assert {"safe-pandas-partitioning", "invariant-based-partition-validation"} <= mandatory_ids
     assert {"no-deprecated-save-filename-alias", "no-hardcoded-guessed-partition-counts"} <= prohibited_ids
 
@@ -396,9 +590,9 @@ def test_fedstats_reuses_named_sites_for_recipe_and_simulation():
     eval_data = json.loads(
         repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-fed-stats/evals.json").read_text(encoding="utf-8")
     )
-    first_eval = eval_data["evals"][0]["nvflare"]
-    mandatory_ids = {item["id"] for item in first_eval["mandatory_behavior"]}
-    prohibited_ids = {item["id"] for item in first_eval["prohibited_behavior"]}
+    basic_eval = _eval_by_id(eval_data, "fedstats-per-site-and-global")["nvflare"]
+    mandatory_ids = {item["id"] for item in basic_eval["mandatory_behavior"]}
+    prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
     normalized_skill = " ".join(skill_text.split())
     normalized_validation = " ".join(validation_text.split())
 
@@ -433,3 +627,268 @@ def test_fedstats_reuses_named_sites_for_recipe_and_simulation():
         example_text = repo_root.joinpath(relative_path).read_text(encoding="utf-8")
         assert "sites=sites" in example_text
         assert "SimEnv(clients=sites" in example_text
+
+
+def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys():
+    repo_root = Path(__file__).resolve().parents[4]
+    skill_root = repo_root / "skills" / "nvflare-convert-huggingface"
+    skill_text = skill_root.joinpath("SKILL.md").read_text(encoding="utf-8")
+    conversion_text = skill_root.joinpath("references/huggingface-conversion.md").read_text(encoding="utf-8")
+    validation_text = skill_root.joinpath("references/huggingface-validation.md").read_text(encoding="utf-8")
+    shared_validation = repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md").read_text(
+        encoding="utf-8"
+    )
+    shared_workflow = repo_root.joinpath("skills/nvflare-shared/references/conversion-workflow.md").read_text(
+        encoding="utf-8"
+    )
+    pytorch_conversion = repo_root.joinpath(
+        "skills/nvflare-convert-pytorch/references/pytorch-client-api-conversion.md"
+    ).read_text(encoding="utf-8")
+    lightning_conversion = repo_root.joinpath(
+        "skills/nvflare-convert-lightning/references/lightning-conversion.md"
+    ).read_text(encoding="utf-8")
+    client_template = skill_root.joinpath("assets/client_with_eval.py").read_text(encoding="utf-8")
+    server_model_template = skill_root.joinpath("assets/server_model.py").read_text(encoding="utf-8")
+    job_template = skill_root.joinpath("assets/job.py").read_text(encoding="utf-8")
+    recipe_text = repo_root.joinpath(
+        "skills/nvflare-shared/references/pytorch-family-recipe-construction.md"
+    ).read_text(encoding="utf-8")
+    normalized_skill = " ".join(skill_text.split())
+    normalized_conversion = " ".join(conversion_text.split())
+    normalized_validation = " ".join(validation_text.split())
+    normalized_shared_validation = " ".join(shared_validation.split())
+    normalized_shared = " ".join(shared_workflow.split())
+    normalized_pytorch = " ".join(pytorch_conversion.split())
+    normalized_lightning = " ".join(lightning_conversion.split())
+    normalized_recipe = " ".join(recipe_text.split())
+
+    assert "generated `client.py` is an FL Client API entry point" in shared_workflow
+    assert "auto-detect FL launch from environment variables" in shared_workflow
+    assert "Exported app content is target-specific" in shared_workflow
+    assert "Before asserting paths, inspect the exported job root" in normalized_shared
+    assert "`app/custom`" in shared_workflow
+    assert "`app_server/custom` plus each `app_<site>/custom`" in normalized_shared
+    assert "Do not reuse a path assumption from another export" in normalized_shared
+    assert 'recipe.add_server_file("model.py")' in shared_workflow
+    assert "Every generated or project-local module referenced by server-side" in normalized_shared
+    assert "Installed NVFLARE, framework, and third-party modules referenced by `class_path`" in normalized_shared
+    assert "client apps and is not enough for per-site exports" in normalized_pytorch
+    assert "client apps and is not enough for per-site exports" in normalized_lightning
+    assert "third-party class paths stay runtime dependencies" in normalized_pytorch
+    assert "third-party class paths stay runtime dependencies" in normalized_lightning
+    assert "FL-only Client API entry point" in normalized_pytorch
+    assert "FL-only Client API entry point" in normalized_lightning
+    assert (
+        "establish Lightning-local metrics but do not by themselves establish server delivery" in normalized_lightning
+    )
+    assert "`MetaKey.INITIAL_METRICS` before `trainer.fit(...)`" in normalized_lightning
+    phase_markers = [
+        "Inspect before editing",
+        "Apply the dependency-install ordering rule",
+        "Select the recipe from FL intent",
+        "Convert with `references/huggingface-conversion.md`",
+        "Adapt `assets/server_model.py` and `assets/job.py`",
+        "Only after generated files exist",
+        "Report the recipe",
+    ]
+    phase_positions = [skill_text.index(marker) for marker in phase_markers]
+    assert phase_positions == sorted(phase_positions)
+    assert "Complete each workflow phase before loading the next phase's reference" in normalized_skill
+    assert (
+        "Do not preload validation, state/DDP, broad workflow, dependency, or reporting references" in normalized_skill
+    )
+    assert "adapt `assets/client_with_eval.py` rather than drafting a new round loop" in normalized_skill
+    assert "do not inspect recipe source or signatures" in normalized_skill.lower()
+    assert "do not depend on repository examples" in normalized_skill.lower()
+    assert "FL-only" in conversion_text
+    assert "preserve source metric names" in skill_text
+    assert "source-to-server mapping" in skill_text
+    assert "CLIENT_API_TYPE" in conversion_text
+    assert "federated=True" in conversion_text
+    assert "federated=False" in conversion_text
+    assert '`train_script="client.py"`' in normalized_conversion
+    assert '`recipe.add_client_file(str(SOURCE_DIR / "client.py"))`' in normalized_conversion
+    assert "Reject absolute `task_script_path` values" in normalized_conversion
+    assert "client import is not enough when an export separates server and client apps" in normalized_conversion
+    # Exported app layout is authored once in conversion-workflow.md; the HF reference
+    # points at it and states only which files the job asset must package.
+    assert "Exported app layout is owned by" in normalized_conversion
+    assert "inspect the exported job root and enumerate the app directories" in normalized_conversion
+    assert "`app/custom` for a unified export" in normalized_conversion
+    assert "`app_server/custom` and each `app_<site>/custom`" in normalized_conversion
+    assert "Do not reuse a path assumption from another export" in normalized_conversion
+    assert "third-party class paths stay runtime dependencies" in normalized_conversion
+    assert "Do not inspect `PTModel`, persistors, class loaders" in normalized_conversion
+    assert "Adapt `../assets/client_with_eval.py`" in normalized_conversion
+    assert "Adapt `../assets/server_model.py` and `../assets/job.py`" in normalized_conversion
+    assert "same writable source directory" in normalized_conversion
+    assert "rejects parent-traversal external-script paths" in normalized_conversion
+    assert "inspecting NVFLARE implementation source" in normalized_conversion
+    assert "flare.patch(trainer)" in client_template
+    assert "HfArgumentParser(dataclass_types, allow_abbrev=False)" in client_template
+    assert "while flare.is_running()" in client_template
+    assert "return model" in server_model_template
+    assert '"class_path": "server_model.ServerModel"' in job_template
+    assert 'recipe.add_server_file(str(SOURCE_DIR / "server_model.py"))' in job_template
+    assert 'recipe.add_server_file(str(SOURCE_DIR / "model.py"))' in job_template
+    assert 'recipe.add_client_file(str(SOURCE_DIR / "client.py"))' in job_template
+    assert "set_per_site_config(recipe, per_site_config)" in job_template
+    assert "site-specific train_script overrides are not supported" in job_template
+    assert "../model.py" not in job_template
+    assert "SimEnv(" in job_template
+    assert "recipe.execute(" in job_template
+    assert "PTModel" not in job_template
+    assert (
+        "client entry's actual argument mechanism and actual dataclass types in parse-only mode"
+        in normalized_validation
+    )
+    assert "generated client uses `HfArgumentParser`" in validation_text
+    assert "same project and framework dataclass types" in normalized_validation
+    assert "When it preserves `argparse` or another parser" in normalized_validation
+    assert "reject every unused argument" in normalized_validation
+    assert "`HfArgumentParser.parse_args_into_dataclasses()` can raise `ValueError`" in shared_validation
+    assert "the wrapper itself exits zero" in normalized_validation
+    assert "must catch that exact `ValueError`" in normalized_validation
+    assert "A wrapper that catches only `SystemExit` is invalid" in normalized_validation
+    assert (
+        "Do not call Client API lifecycle or round methods from a standalone Python preflight"
+        in normalized_shared_validation
+    )
+    assert "Do not call `flare.init()`, `flare.patch()`, `flare.is_running()`" in normalized_validation
+    assert "let the first bounded simulation validate runtime patch acceptance" in normalized_validation
+    assert "Version-check only fields claimed to belong to a framework" in normalized_validation
+    assert "project-defined subclass field" in normalized_validation
+    assert "actual parser accepts it" in normalized_validation
+    assert "reduced one-round topology smoke" in normalized_validation
+    assert "full-model validation blocked" in normalized_validation
+    assert "estimate server and concurrent client memory" in normalized_validation
+    assert "Capability-check optional diagnostics such as `free` or `nvidia-smi`" in normalized_validation
+    assert "capacity evidence is unavailable, not conversion failure" in normalized_validation
+    assert "reported default `max_steps=10`" in normalized_skill
+    assert "Resolve exactly one per-round budget and encode it in one place" in conversion_text
+    assert "user-requested local steps become generated `TrainingArguments.max_steps`" in normalized_conversion
+    assert "user-requested local epochs become generated" in normalized_conversion
+    assert "bounded generated default `max_steps=10`" in normalized_conversion
+    assert "Do not also pass the same value through patch `local_steps` or `local_epochs`" in normalized_conversion
+    assert "requested budget appears once" in normalized_validation
+    assert "whole-job target in its progress bar" in normalized_conversion
+    assert "make at most one expensive real-model retry" in normalized_validation
+    assert "do not write one-off AST, class-loader, persistor, Recipe-source" in normalized_validation
+    assert "`python job.py --export --export-dir <runtime-dir>/job_config`" in normalized_shared_validation
+    assert "Do not accept a generated job-local export alias such as `--export_only`" in normalized_shared_validation
+    assert "report it as a generated-code violation" in normalized_shared_validation
+    assert "not automatically as a POSIX shell command" in normalized_recipe
+    assert "default in-process Client API executor" in normalized_recipe
+    assert "Do not import or call internal command-splitting helpers" in normalized_recipe
+    assert "Do not import internal class loader helpers" in normalized_recipe
+    assert "invent alternate export flags such as `--export_only`" in normalized_shared
+    assert "import the NVFLARE recipe API before local argument parsing" in normalized_shared
+    assert "`argparse.ArgumentParser(allow_abbrev=False)`" in normalized_shared
+    assert "`parse_known_args()` is not needed" in normalized_shared
+    assert "unknown and abbreviated options fail" in normalized_shared
+    assert "`ArgumentParser(allow_abbrev=False)`" in normalized_skill
+    assert "strict `parse_args()`; do not use `parse_known_args()`" in normalized_skill
+    assert "`recipe show` validates only the selected recipe's module, class" in normalized_recipe
+    assert "It does not advertise other symbols from `nvflare.recipe`" in normalized_recipe
+    assert "use `SimEnv` with `recipe.execute(...)`" in normalized_recipe
+    assert "Do not guess or directly import additional recipe-adjacent symbols" in normalized_recipe
+    assert "Do not replace a failed local public check with web search" in normalized_recipe
+    assert "Run intentional rejection checks" in normalized_shared_validation
+    assert "through an assertion wrapper" in normalized_shared_validation
+    assert "expected child failure as a failed top-level validation command" in normalized_shared_validation
+    assert "shared assertion-wrapper rule" in normalized_validation
+    assert "typo and abbreviation rejection cases" in normalized_validation
+    assert "explicit non-client entry parameter" in normalized_validation
+    assert "same resolved local model path and cache configuration" in normalized_validation
+    assert "Instantiate the adapted `server_model.ServerModel`" in validation_text
+    assert "exact full-model key agreement" in normalized_validation
+    assert "class_path`, train script, custom aggregator" in normalized_shared
+    assert "Its name must exactly match one key delivered by the client" in normalized_recipe
+    assert "Do not reduce simulator `num_threads` below the requested client count" in recipe_text
+    assert "guessed concurrency settings" in normalized_recipe
+
+
+def test_unified_export_packages_server_class_path_file_with_server_targeted_api(tmp_path):
+    from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+
+    client_file = tmp_path / "client.py"
+    model_file = tmp_path / "model.py"
+    client_file.write_text("import model\n", encoding="utf-8")
+    model_file.write_text("class SimpleNetwork:\n    pass\n", encoding="utf-8")
+
+    recipe = FedAvgRecipe(
+        name="unified_server_file_export",
+        min_clients=2,
+        num_rounds=1,
+        model={"class_path": "model.SimpleNetwork", "args": {}},
+        train_script=str(client_file),
+    )
+    recipe.add_server_file(str(model_file))
+
+    export_root = tmp_path / "export"
+    recipe.export(str(export_root))
+    job_root = export_root / recipe.name
+
+    assert (job_root / "app" / "custom" / "model.py").is_file()
+
+
+def test_per_site_export_packages_server_class_path_file_with_server_targeted_api(tmp_path):
+    from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+    from nvflare.recipe import set_per_site_config
+
+    client_file = tmp_path / "client.py"
+    model_file = tmp_path / "model.py"
+    client_file.write_text("import model\n", encoding="utf-8")
+    model_file.write_text("class SimpleNetwork:\n    pass\n", encoding="utf-8")
+
+    recipe = FedAvgRecipe(
+        name="server_file_export",
+        min_clients=2,
+        num_rounds=1,
+        model={"class_path": "model.SimpleNetwork", "args": {}},
+        train_script=str(client_file),
+    )
+    set_per_site_config(recipe, {"site-1": {"train_args": ""}, "site-2": {"train_args": ""}})
+    recipe.add_server_file(str(model_file))
+    recipe.add_client_file(str(model_file), clients=["site-1", "site-2"])
+
+    export_root = tmp_path / "export"
+    recipe.export(str(export_root))
+    job_root = export_root / recipe.name
+
+    assert (job_root / "app_server" / "custom" / "model.py").is_file()
+    assert (job_root / "app_site-1" / "custom" / "model.py").is_file()
+    assert (job_root / "app_site-2" / "custom" / "model.py").is_file()
+
+
+def test_pytorch_family_validation_and_custom_aggregation_metric_contracts():
+    repo_root = Path(__file__).resolve().parents[4]
+    validation_text = repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md").read_text(
+        encoding="utf-8"
+    )
+    normalized_validation = " ".join(validation_text.split())
+
+    assert "workflow-native metric evidence" in validation_text
+    assert "FedAvg/FedOpt/FedProx/SCAFFOLD-style training workflows" in validation_text
+    assert "For FedEval" in validation_text
+    assert "Cyclic or Swarm workflows" in validation_text
+    expected_metrics_artifact_rule = (
+        "missing expected metrics artifact is a validation failure only if the selected recipe/workflow installs"
+    )
+    assert expected_metrics_artifact_rule in normalized_validation
+
+    eval_root = repo_root / "dev_tools" / "agent" / "skill_evals"
+    for skill_name, case_id in {
+        "nvflare-convert-pytorch": "pytorch-convert-custom-aggregation",
+        "nvflare-convert-lightning": "lightning-convert-custom-aggregation",
+        "nvflare-convert-huggingface": "huggingface-convert-custom-aggregation",
+    }.items():
+        suite = json.loads(eval_root.joinpath(skill_name, "evals.json").read_text(encoding="utf-8"))
+        case = next(item for item in suite["evals"] if item["id"] == case_id)
+        behavior_ids = {item["id"] for item in case["nvflare"]["mandatory_behavior"]}
+        assertions_text = " ".join(case["assertions"])
+
+        assert "custom-aggregator-preserves-metrics" in behavior_ids
+        assert "custom-aggregator-missing-metrics-visible" in behavior_ids
+        assert "finite numeric and boolean client metrics" in assertions_text
+        assert "publishing a partial metric average" in assertions_text

@@ -135,6 +135,7 @@ DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT = 240
 DEFAULT_JOB_HELP_TIMEOUT = 30
 MAX_CAPTURED_PROCESS_OUTPUT = 1024 * 1024
 SIMULATOR_WORKSPACE_ROOT_ENV_VAR = "NVFLARE_SIMULATOR_WORKSPACE_ROOT"
+TRIAL_PROCESS_TOKEN_ENV_VAR = "NVFLARE_AUTOFL_TRIAL_TOKEN"
 SIMULATOR_WORKSPACE_OVERRIDE_MIN_NVFLARE_VERSION = "2.9.0"
 DEFAULT_WORKSPACE_OVERRIDE_PROBE_TIMEOUT = 30
 CAMPAIGN_LOCK_PATH = ".nvflare/autofl/campaign.lock"
@@ -387,18 +388,159 @@ def process_group_exists(process_group_id: int) -> bool:
     return True
 
 
-def wait_for_process_tree(process: subprocess.Popen, process_group_id: Optional[int], timeout: float) -> bool:
+class TrialProcessCleanupError(RuntimeError):
+    pass
+
+
+def pidfd_functions():
+    pidfd_open = getattr(os, "pidfd_open", None)
+    pidfd_send_signal = getattr(signal, "pidfd_send_signal", None)
+    if not callable(pidfd_open) or not callable(pidfd_send_signal):
+        raise TrialProcessCleanupError(
+            "Linux pidfd_open and pidfd_send_signal support is required for race-safe trial cleanup"
+        )
+    return pidfd_open, pidfd_send_signal
+
+
+def ensure_trial_process_pidfd_support() -> None:
+    if not sys.platform.startswith("linux"):
+        return
+    pidfd_open, pidfd_send_signal = pidfd_functions()
+    try:
+        pidfd = pidfd_open(os.getpid(), 0)
+    except OSError as e:
+        raise TrialProcessCleanupError(f"cannot open the Linux pidfd required for race-safe trial cleanup: {e}") from e
+    try:
+        while True:
+            try:
+                pidfd_send_signal(pidfd, 0)
+                break
+            except InterruptedError:
+                continue
+            except OSError as e:
+                raise TrialProcessCleanupError(
+                    f"cannot signal through the Linux pidfd required for race-safe trial cleanup: {e}"
+                ) from e
+    finally:
+        os.close(pidfd)
+
+
+def trial_process_ids(trial_token: Optional[str]) -> List[int]:
+    """Return Linux processes that inherited this runner-owned trial token."""
+    if not trial_token or not sys.platform.startswith("linux"):
+        return []
+    marker = f"{TRIAL_PROCESS_TOKEN_ENV_VAR}={trial_token}".encode("utf-8")
+    process_ids = []
+    for environ_path in Path("/proc").glob("[0-9]*/environ"):
+        try:
+            process_id = int(environ_path.parent.name)
+            environ = environ_path.read_bytes().split(b"\0")
+        except (OSError, ValueError):
+            continue
+        if process_id != os.getpid() and marker in environ:
+            process_ids.append(process_id)
+    return sorted(process_ids)
+
+
+def pidfd_process_id(pidfd: int) -> Optional[int]:
+    try:
+        lines = Path(f"/proc/self/fdinfo/{pidfd}").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        if line.startswith("Pid:"):
+            try:
+                return int(line.partition(":")[2].strip())
+            except ValueError:
+                return None
+    return None
+
+
+def process_has_trial_token(process_id: int, marker: bytes) -> bool:
+    try:
+        return marker in Path(f"/proc/{process_id}/environ").read_bytes().split(b"\0")
+    except OSError:
+        return False
+
+
+def open_trial_process_pidfd(process_id: int, marker: bytes) -> Optional[int]:
+    pidfd_open, _ = pidfd_functions()
+    while True:
+        try:
+            pidfd = pidfd_open(process_id, 0)
+            break
+        except ProcessLookupError:
+            return None
+        except InterruptedError:
+            continue
+        except OSError as e:
+            raise TrialProcessCleanupError(f"cannot open pidfd for trial process {process_id}: {e}") from e
+    if (
+        pidfd_process_id(pidfd) != process_id
+        or not process_has_trial_token(process_id, marker)
+        or pidfd_process_id(pidfd) != process_id
+    ):
+        os.close(pidfd)
+        return None
+    return pidfd
+
+
+def signal_trial_processes(trial_token: Optional[str], sig: int) -> None:
+    if not trial_token:
+        return
+    process_ids = trial_process_ids(trial_token)
+    if not process_ids:
+        return
+    _, pidfd_send_signal = pidfd_functions()
+    marker = f"{TRIAL_PROCESS_TOKEN_ENV_VAR}={trial_token}".encode("utf-8")
+    errors = []
+    for process_id in process_ids:
+        try:
+            pidfd = open_trial_process_pidfd(process_id, marker)
+        except TrialProcessCleanupError as e:
+            errors.append(str(e))
+            continue
+        if pidfd is None:
+            continue
+        try:
+            while True:
+                try:
+                    pidfd_send_signal(pidfd, sig)
+                    break
+                except ProcessLookupError:
+                    break
+                except InterruptedError:
+                    continue
+                except OSError as e:
+                    errors.append(f"cannot signal trial process {process_id} through pidfd: {e}")
+                    break
+        finally:
+            os.close(pidfd)
+    if errors:
+        raise TrialProcessCleanupError("; ".join(errors))
+
+
+def wait_for_process_tree(
+    process: subprocess.Popen, process_group_id: Optional[int], timeout: float, trial_token: Optional[str] = None
+) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         leader_exited = process.poll() is not None
         group_exited = process_group_id is None or not process_group_exists(process_group_id)
-        if leader_exited and group_exited:
+        if leader_exited and group_exited and not trial_process_ids(trial_token):
             return True
         time.sleep(0.05)
-    return process.poll() is not None and (process_group_id is None or not process_group_exists(process_group_id))
+    return (
+        process.poll() is not None
+        and (process_group_id is None or not process_group_exists(process_group_id))
+        and not trial_process_ids(trial_token)
+    )
 
 
-def terminate_process(process: subprocess.Popen, process_group_id: Optional[int] = None) -> None:
+def terminate_process(
+    process: subprocess.Popen, process_group_id: Optional[int] = None, trial_token: Optional[str] = None
+) -> None:
+    cleanup_errors = []
     if os.name != "nt" and process_group_id is not None:
         try:
             os.killpg(process_group_id, signal.SIGTERM)
@@ -410,23 +552,37 @@ def terminate_process(process: subprocess.Popen, process_group_id: Optional[int]
                 process.terminate()
     elif process.poll() is None:
         process.terminate()
-    else:
-        return
+    try:
+        signal_trial_processes(trial_token, signal.SIGTERM)
+    except TrialProcessCleanupError as e:
+        cleanup_errors.append(str(e))
 
-    if wait_for_process_tree(process, process_group_id, timeout=10):
+    if wait_for_process_tree(process, process_group_id, timeout=10, trial_token=trial_token):
         return
 
     if os.name != "nt" and process_group_id is not None:
         try:
             os.killpg(process_group_id, signal.SIGKILL)
         except ProcessLookupError:
-            return
+            pass
         except Exception:
             if process.poll() is None:
                 process.kill()
     elif process.poll() is None:
         process.kill()
-    wait_for_process_tree(process, process_group_id, timeout=10)
+    try:
+        signal_trial_processes(trial_token, signal.SIGKILL)
+    except TrialProcessCleanupError as e:
+        cleanup_errors.append(str(e))
+    tree_exited = wait_for_process_tree(process, process_group_id, timeout=10, trial_token=trial_token)
+    remaining_trial_processes = trial_process_ids(trial_token)
+    if remaining_trial_processes:
+        detail = f"; pidfd errors: {'; '.join(cleanup_errors)}" if cleanup_errors else ""
+        raise TrialProcessCleanupError(
+            f"trial cleanup could not terminate detached processes {remaining_trial_processes}{detail}"
+        )
+    if not tree_exited and cleanup_errors:
+        raise TrialProcessCleanupError(f"trial cleanup did not complete: {'; '.join(cleanup_errors)}")
 
 
 def append_output_tail(current: str, value: str) -> str:
@@ -544,6 +700,7 @@ def run(
     simulator_no_progress_timeout: int = DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT,
     env: Optional[Dict[str, str]] = None,
 ) -> Tuple[int, str, float]:
+    ensure_trial_process_pidfd_support()
     started = time.monotonic()
     next_stall_check = started
     last_progress_check = started
@@ -553,6 +710,9 @@ def run(
     last_partial_aggregation_signature = ""
     log_path.parent.mkdir(parents=True, exist_ok=True)
     output_tail = ""
+    run_env = dict(env) if env is not None else dict(os.environ)
+    trial_token = uuid.uuid4().hex
+    run_env[TRIAL_PROCESS_TOKEN_ENV_VAR] = trial_token
     with log_path.open("w", encoding="utf-8") as log_file:
         process = subprocess.Popen(
             argv,
@@ -562,7 +722,7 @@ def run(
             text=False,
             bufsize=0,
             start_new_session=os.name != "nt",
-            env=env,
+            env=run_env,
         )
         process_group_id = process.pid if os.name != "nt" else None
         assert process.stdout is not None
@@ -607,12 +767,12 @@ def run(
                 now = time.monotonic()
                 if not timed_out and timeout and now - started > timeout:
                     timed_out = True
-                    terminate_process(process, process_group_id)
+                    terminate_process(process, process_group_id, trial_token)
                 if not timed_out and not stall_message and simulator_stall_roots and now >= next_stall_check:
                     stall_message = simulator_stall_message(simulator_stall_roots) or ""
                     next_stall_check = now + stall_check_interval
                     if stall_message:
-                        terminate_process(process, process_group_id)
+                        terminate_process(process, process_group_id, trial_token)
                     elif simulator_no_progress_timeout:
                         partial_aggregation_signature = simulator_partial_aggregation_signature_for_roots(
                             simulator_stall_roots
@@ -631,7 +791,7 @@ def run(
                                 "partial simulator aggregation made no server-side progress for "
                                 f"{int(now - last_partial_aggregation_seen)}s: {last_partial_aggregation_signature}"
                             )
-                            terminate_process(process, process_group_id)
+                            terminate_process(process, process_group_id, trial_token)
                         progress_signature = simulator_progress_signature_for_roots(simulator_stall_roots)
                         if stall_message:
                             pass
@@ -647,7 +807,7 @@ def run(
                                 f"no simulator progress markers changed for {int(now - last_progress_seen)}s "
                                 f"across {', '.join(str(root) for root in simulator_stall_roots)}"
                             )
-                            terminate_process(process, process_group_id)
+                            terminate_process(process, process_group_id, trial_token)
                         last_progress_check = now
                 try:
                     raw_chunk = output_queue.get(timeout=0.2)
@@ -680,7 +840,7 @@ def run(
                 return SIMULATOR_STALL_EXIT_CODE, output_tail, time.monotonic() - started
             return process.returncode or 0, output_tail, time.monotonic() - started
         finally:
-            terminate_process(process, process_group_id)
+            terminate_process(process, process_group_id, trial_token)
             reader_deadline = time.monotonic() + 10
             while (reader.is_alive() or not output_queue.empty()) and time.monotonic() < reader_deadline:
                 try:

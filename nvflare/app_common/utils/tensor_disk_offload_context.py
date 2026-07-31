@@ -17,7 +17,9 @@ import tempfile
 from dataclasses import dataclass
 from typing import Any, Optional
 
-_ENABLE_TENSOR_DISK_OFFLOAD = "enable_tensor_disk_offload"
+from nvflare.fuel.utils.fobs import FOBSContextKey
+
+_ENABLE_TENSOR_DISK_OFFLOAD = FOBSContextKey.TENSOR_DISK_OFFLOAD
 _TENSOR_DISK_OFFLOAD_ROOT_DIR = "tensor_disk_offload_root_dir"
 
 
@@ -41,6 +43,11 @@ def _get_cell(engine):
 
 def setup_tensor_disk_offload(engine, enabled: bool, job_id: str = "job") -> TensorDiskOffloadContext:
     """Enable tensor disk offload in the active cell FOBS context.
+
+    Args:
+        engine: engine that owns the active Cell.
+        enabled: whether to prepare disk-backed tensor downloads.
+        job_id: identifier used to name the temporary offload root.
 
     Returns:
       Context needed to restore the prior setting and cleanup temporary files.
