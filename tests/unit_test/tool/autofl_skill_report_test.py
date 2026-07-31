@@ -743,6 +743,8 @@ def test_report_generates_product_artifacts_and_candidate_lineage(tmp_path, monk
     assert "## Literature Review Outcomes" in report
     assert "## Validation And Comparability Notes" in report
     assert "Product Findings" not in report
+    assert "![Auto-FL progress](progress.png)" in report
+    assert f"![Auto-FL progress]({tmp_path.joinpath('progress.png').resolve()})" not in report
     assert str(tmp_path.joinpath("progress.png").resolve()) in report
     assert "Metric extraction source: `json:cross_val_results.json`" in report
     assert "Metric artifact: `runs/inherited_tuning/cross_val_results.json`" in report
@@ -772,6 +774,51 @@ def test_report_synthesizes_literature_against_checkpoint_incumbent(tmp_path, mo
             "sources": ["Li18 arXiv:1812.06127", "Karimireddy19"],
         },
     }
+
+
+def test_report_marks_cap_truncated_literature_batch_incomplete(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    _write_rows(
+        tmp_path,
+        [
+            _row("baseline", "baseline", "0.500000"),
+            _row("literature", "literature_review_1", literature_event_id="lit-0001"),
+            _row("discard", "literature_candidate_1", "0.490000", literature_event_id="lit-0001"),
+            _row("discard", "literature_candidate_2", "0.495000", literature_event_id="lit-0001"),
+        ],
+    )
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state.update(
+        {
+            "reason": "candidate_cap_exhausted",
+            "candidate_cap": 2,
+            "candidate_cap_source": "explicit",
+            "exploration_batch": {
+                "literature_event_id": "lit-0001",
+                "completed": 2,
+                "required": 3,
+                "completion_index": None,
+            },
+        }
+    )
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+    report = tmp_path.joinpath("autofl_final_report.md").read_text(encoding="utf-8")
+    review = summary["literature_reviews"][0]
+
+    assert review["outcome"] == "incomplete"
+    assert review["completion"] == {
+        "completed": 2,
+        "required": 3,
+        "complete": False,
+        "reason": "candidate_cap_exhausted",
+    }
+    assert summary["outcome_summary"]["literature"]["counts"] == {"incomplete": 1}
+    assert any("2 of 3 required candidates completed" in warning for warning in summary["warnings"])
+    assert "incomplete (2/3; candidate_cap_exhausted)" in report
 
 
 def test_report_selects_first_final_and_largest_milestone_jumps(tmp_path, monkeypatch):
