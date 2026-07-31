@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,18 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Small synthetic PyTorch model whose parameters enter tensor streaming."""
 
-class ProcessExitCode:
-
-    EXCEPTION = 101
-    UNSAFE_COMPONENT = 102
-    CONFIG_ERROR = 103
-    INFRASTRUCTURE_ERROR = 104
+import torch
+from torch import nn
 
 
-PROCESS_EXIT_REASON = {
-    ProcessExitCode.UNSAFE_COMPONENT: "unsafe component",
-    ProcessExitCode.CONFIG_ERROR: "config error",
-    ProcessExitCode.EXCEPTION: "exception",
-    ProcessExitCode.INFRASTRUCTURE_ERROR: "infrastructure error",
-}
+class SyntheticModel(nn.Module):
+    def __init__(self, tensor_elements: int = 1048576):
+        super().__init__()
+        self.weight_1 = nn.Parameter(torch.zeros(tensor_elements, dtype=torch.float32))
+        self.weight_2 = nn.Parameter(torch.zeros(tensor_elements, dtype=torch.float32))

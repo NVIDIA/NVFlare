@@ -28,9 +28,12 @@ The coding agent must review candidate diffs against these invariants before
 evaluation. This is an explicit campaign contract, not a claim that static
 analysis can prove arbitrary metric equivalence. If a metric implementation
 must be corrected, abandon the candidate and report that existing scores are
-incomparable. After human approval, repair the source and initialize a clean
-campaign with a new baseline; never retain the correction as an optimization
-gain or compare scores across the old and repaired campaigns.
+incomparable. Preserve the scored workspace as audit evidence. After human
+approval, repair the source in a fresh job workspace containing no Auto-FL
+campaign metadata or generated artifacts, then initialize a new baseline
+there. Running `initialize` in the scored workspace resumes its old evidence;
+never retain the correction as an optimization gain or compare scores across
+the old and repaired campaigns.
 
 ## Iterative Reruns
 

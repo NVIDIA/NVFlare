@@ -121,8 +121,12 @@ Candidate comparison also depends on the objective's declared
 contract because deterministic static analysis cannot prove arbitrary
 measurement equivalence. If a scored campaign needs a metric implementation
 correction, the candidate is abandoned, prior scores are declared incomparable,
-and a human-approved source repair starts a clean campaign and baseline. A
-metric correction is never retained as an optimization improvement.
+and the scored workspace is preserved as audit evidence. After human approval,
+the source is repaired in a fresh job workspace with no Auto-FL campaign
+metadata or generated artifacts, and a new baseline is initialized there.
+Calling `initialize` in a scored workspace resumes its existing evidence; it
+does not establish a repaired baseline. A metric correction is never retained
+as an optimization improvement.
 During campaign initialization, the runner merges existing, workspace-local
 `mutation_schema.yaml` `preferred_targets` into
 `trust_contract.allowed_edit_paths`. Missing, symlinked, reserved, or

@@ -312,11 +312,12 @@ def test_pytorch_family_construction_policy_is_canonical_and_capability_based():
         "Every recipe construction or construction preflight must include one model source" in normalized_construction
     )
     assert "Never instantiate an incomplete `FedAvgRecipe`" in normalized_construction
-    assert "When `server_expected_format` is exposed" in normalized_construction
+    assert "When `aggregation_format` is exposed" in normalized_construction
+    assert "when `server_expected_format` is exposed" in normalized_construction
     assert "When tensor-native transport was selected" in normalized_construction
-    assert "Disk offload is a server memory optimization, not a model-exchange format" in normalized_construction
-    assert "downloaded to server-side temporary files and materialized lazily" in normalized_construction
-    assert "optimization only with `server_expected_format=ExchangeFormat.PYTORCH`" in normalized_construction
+    assert "Disk offload is an aggregation-workflow memory optimization" in normalized_construction
+    assert "temporary files on the aggregation host and materialized lazily" in normalized_construction
+    assert "only when the exposed workflow-side format is `ExchangeFormat.PYTORCH`" in normalized_construction
     assert "When `params_transfer_type` is exposed" in normalized_construction
     assert "single-process multi-GPU `torch.nn.DataParallel` stay in-process" in normalized_construction
     assert "Do not also pass `save_filename`" in normalized_construction
@@ -377,7 +378,7 @@ def test_lightning_training_metrics_have_one_canonical_delivery_bridge():
     assert "metrics=metrics or None" in aggregator_template
 
 
-def test_pytorch_recipe_capability_profiles_include_non_fedavg_without_disk_offload():
+def test_pytorch_recipe_capability_profiles_match_tensor_disk_offload_support():
     from nvflare.tool.recipe.recipe_cli import _load_catalog, _recipe_detail
 
     catalog = {entry["name"]: entry for entry in _load_catalog()}
@@ -390,8 +391,8 @@ def test_pytorch_recipe_capability_profiles_include_non_fedavg_without_disk_offl
     for recipe_name in ("cyclic-pt", "fedeval-pt"):
         assert "server_expected_format" in parameter_names[recipe_name]
         assert "enable_tensor_disk_offload" not in parameter_names[recipe_name]
+    assert {"aggregation_format", "enable_tensor_disk_offload"} <= parameter_names["swarm-pt"]
     assert "server_expected_format" not in parameter_names["swarm-pt"]
-    assert "enable_tensor_disk_offload" not in parameter_names["swarm-pt"]
 
 
 def test_pytorch_family_capability_evals_cover_fedeval_and_dataparallel():
