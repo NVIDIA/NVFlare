@@ -12,13 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Prepare small per-site instruction-tuning datasets for the Collab LLM example."""
+"""Prepare per-site instruction-tuning datasets for the Collab LLM example."""
 
 import argparse
 import json
 from pathlib import Path
 
 DEFAULT_DATA_ROOT = "/tmp/nvflare/collab/pt_llm_sft/data"
+DOLLY_DATASET_NAME = "databricks/databricks-dolly-15k"
+DOLLY_DATASET_SPLIT = "train"
+DATA_MODES = ("synthetic", "dolly")
 
 
 def write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -29,7 +32,17 @@ def write_jsonl(path: Path, rows: list[dict]) -> None:
             stream.write("\n")
 
 
-def make_rows(site_name: str, site_number: int) -> tuple[list[dict], list[dict]]:
+def write_manifest(data_root: Path, manifest: dict) -> None:
+    with (data_root / "manifest.json").open("w", encoding="utf-8") as stream:
+        json.dump(manifest, stream, indent=2, sort_keys=True)
+        stream.write("\n")
+
+
+def site_names(num_clients: int) -> list[str]:
+    return [f"site-{site_number}" for site_number in range(1, num_clients + 1)]
+
+
+def make_synthetic_rows(site_name: str, site_number: int) -> tuple[list[dict], list[dict]]:
     train_rows = [
         {
             "instruction": "Summarize the client update in one sentence.",
@@ -72,35 +85,125 @@ def make_rows(site_name: str, site_number: int) -> tuple[list[dict], list[dict]]
     return train_rows, valid_rows
 
 
-def prepare_data(data_root: Path, num_clients: int) -> None:
-    if num_clients < 1:
-        raise ValueError("--num-clients must be at least 1")
+def normalize_dolly_row(row: dict) -> dict:
+    return {
+        "instruction": row["instruction"],
+        "input": row.get("context") or "",
+        "output": row["response"],
+    }
 
-    for site_number in range(1, num_clients + 1):
-        site_name = f"site-{site_number}"
-        train_rows, valid_rows = make_rows(site_name, site_number)
+
+def prepare_synthetic_data(data_root: Path, num_clients: int) -> dict:
+    counts = {}
+    for site_number, site_name in enumerate(site_names(num_clients), start=1):
+        train_rows, valid_rows = make_synthetic_rows(site_name, site_number)
         write_jsonl(data_root / site_name / "train.jsonl", train_rows)
         write_jsonl(data_root / site_name / "valid.jsonl", valid_rows)
+        counts[site_name] = {"train": len(train_rows), "valid": len(valid_rows)}
 
-    manifest = {
+    return {
+        "data_mode": "synthetic",
         "num_clients": num_clients,
-        "sites": [f"site-{site_number}" for site_number in range(1, num_clients + 1)],
+        "sites": site_names(num_clients),
+        "site_counts": counts,
     }
-    with (data_root / "manifest.json").open("w", encoding="utf-8") as stream:
-        json.dump(manifest, stream, indent=2)
-        stream.write("\n")
+
+
+def prepare_dolly_data(
+    data_root: Path,
+    num_clients: int,
+    validation_fraction: float,
+    seed: int,
+    cache_dir: Path | None,
+) -> dict:
+    if not 0.0 < validation_fraction < 1.0:
+        raise ValueError("--validation-fraction must be between 0 and 1")
+
+    import datasets
+
+    load_kwargs = {
+        "path": DOLLY_DATASET_NAME,
+        "split": DOLLY_DATASET_SPLIT,
+    }
+    if cache_dir is not None:
+        load_kwargs["cache_dir"] = str(cache_dir)
+    dataset = datasets.load_dataset(**load_kwargs)
+    if len(dataset) < num_clients * 2:
+        raise ValueError(f"{DOLLY_DATASET_NAME} has {len(dataset)} rows; need at least two rows per client")
+
+    source_fingerprint = getattr(dataset, "_fingerprint", None)
+    dataset_version = str(dataset.info.version) if dataset.info.version is not None else None
+    dataset = dataset.shuffle(seed=seed)
+    counts = {}
+
+    for site_index, site_name in enumerate(site_names(num_clients)):
+        site_dataset = dataset.shard(num_shards=num_clients, index=site_index, contiguous=True)
+        valid_count = max(1, int(len(site_dataset) * validation_fraction))
+        valid_count = min(valid_count, len(site_dataset) - 1)
+        train_count = len(site_dataset) - valid_count
+        train_rows = [normalize_dolly_row(row) for row in site_dataset.select(range(train_count))]
+        valid_rows = [normalize_dolly_row(row) for row in site_dataset.select(range(train_count, len(site_dataset)))]
+        write_jsonl(data_root / site_name / "train.jsonl", train_rows)
+        write_jsonl(data_root / site_name / "valid.jsonl", valid_rows)
+        counts[site_name] = {"train": len(train_rows), "valid": len(valid_rows)}
+
+    return {
+        "data_mode": "dolly",
+        "dataset_name": DOLLY_DATASET_NAME,
+        "dataset_split": DOLLY_DATASET_SPLIT,
+        "dataset_version": dataset_version,
+        "source_fingerprint": source_fingerprint,
+        "selected_fingerprint": getattr(dataset, "_fingerprint", None),
+        "seed": seed,
+        "validation_fraction": validation_fraction,
+        "num_clients": num_clients,
+        "sites": site_names(num_clients),
+        "site_counts": counts,
+    }
+
+
+def prepare_data(
+    data_root: Path,
+    num_clients: int,
+    data_mode: str = "synthetic",
+    validation_fraction: float = 0.1,
+    seed: int = 0,
+    cache_dir: Path | None = None,
+) -> dict:
+    if num_clients < 1:
+        raise ValueError("--num-clients must be at least 1")
+    if data_mode == "synthetic":
+        manifest = prepare_synthetic_data(data_root, num_clients)
+    elif data_mode == "dolly":
+        manifest = prepare_dolly_data(data_root, num_clients, validation_fraction, seed, cache_dir)
+    else:
+        raise ValueError(f"unsupported data mode: {data_mode}")
+    write_manifest(data_root, manifest)
+    return manifest
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", default=DEFAULT_DATA_ROOT)
     parser.add_argument("--num-clients", type=int, default=4)
+    parser.add_argument("--data-mode", choices=DATA_MODES, default="synthetic")
+    parser.add_argument("--validation-fraction", type=float, default=0.1)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--cache-dir", help="Optional Hugging Face dataset cache directory for Dolly")
     args = parser.parse_args()
 
     data_root = Path(args.data_root).expanduser().resolve()
     data_root.mkdir(parents=True, exist_ok=True)
-    prepare_data(data_root, args.num_clients)
-    print(f"Prepared data for {args.num_clients} clients under {data_root}")
+    cache_dir = Path(args.cache_dir).expanduser().resolve() if args.cache_dir else None
+    manifest = prepare_data(
+        data_root,
+        args.num_clients,
+        data_mode=args.data_mode,
+        validation_fraction=args.validation_fraction,
+        seed=args.seed,
+        cache_dir=cache_dir,
+    )
+    print(f"Prepared {manifest['data_mode']} data for {args.num_clients} clients under {data_root}")
 
 
 if __name__ == "__main__":

@@ -114,11 +114,13 @@ class LLMSFTClient:
         max_length: int,
         evaluate_global_model: bool,
         model_revision: str | None = None,
+        trust_remote_code: bool = False,
         precision: str = "auto",
         site_name: str | None = None,
     ):
         self.model_name_or_path = model_name_or_path
         self.model_revision = model_revision
+        self.trust_remote_code = trust_remote_code
         self.data_root = data_root
         self.output_root = output_root
         self.syncs_per_epoch = syncs_per_epoch
@@ -161,7 +163,7 @@ class LLMSFTClient:
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_name_or_path,
             revision=self.model_revision,
-            trust_remote_code=True,
+            trust_remote_code=self.trust_remote_code,
         )
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -170,8 +172,8 @@ class LLMSFTClient:
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_name_or_path,
             revision=self.model_revision,
-            trust_remote_code=True,
-            dtype=dtype,
+            trust_remote_code=self.trust_remote_code,
+            torch_dtype=dtype,
         )
         self.model.config.use_cache = False
         self.sft_trainer = self.make_trainer()
@@ -369,6 +371,7 @@ def make_recipe(args) -> CollabRecipe:
         max_length=args.max_length,
         evaluate_global_model=not args.skip_evaluation,
         model_revision=args.model_revision,
+        trust_remote_code=args.trust_remote_code,
         precision=args.precision,
     )
     server = SFTFedAvg(
@@ -395,6 +398,11 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workspace-root", default="/tmp/nvflare/collab/pt_llm_sft/workspace")
     parser.add_argument("--model-name-or-path", default=DEFAULT_MODEL_NAME)
     parser.add_argument("--model-revision")
+    parser.add_argument(
+        "--trust-remote-code",
+        action="store_true",
+        help="Allow code from the model repository to execute; only use with a trusted checkpoint",
+    )
     parser.add_argument("--num-clients", type=int, default=4)
     parser.add_argument("--num-epochs", type=int, default=1)
     parser.add_argument("--syncs-per-epoch", type=int, default=5)

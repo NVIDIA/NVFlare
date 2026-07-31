@@ -43,17 +43,40 @@ repository, so no additional editable install is needed here.
 
 ## 1. Prepare data
 
-Create small synthetic instruction-tuning shards for four logical sites:
+### Synthetic data (quick start)
+
+Create small synthetic instruction-tuning shards for four logical clients:
 
 ```bash
 python collab/pt_llm_sft/prepare_data.py \
+    --data-mode synthetic \
     --num-clients 4 \
     --data-root /tmp/nvflare/collab/pt_llm_sft/data
 ```
 
-The command creates six training records and one validation record under each
+This command creates six training records and one validation record under each
 site directory. With the default batch size of one, the six batches support
-five synchronization intervals per epoch. For other datasets,
+five synchronization intervals per epoch.
+
+### Dolly (real data)
+
+Download `databricks/databricks-dolly-15k` and split it across four clients:
+
+```bash
+python collab/pt_llm_sft/prepare_data.py \
+    --data-mode dolly \
+    --num-clients 4 \
+    --data-root /tmp/nvflare/collab/pt_llm_sft/dolly
+```
+
+The Dolly rows are shuffled deterministically, divided into four disjoint
+client shards, and split into 90% training and 10% validation data within each
+client. Use `--seed` to change the partition, `--validation-fraction` to change
+the split, and `--cache-dir` to select the Hugging Face dataset cache. To train
+on Dolly, use `/tmp/nvflare/collab/pt_llm_sft/dolly` as the `--data-root` in
+the next command.
+
+For any prepared dataset,
 `--syncs-per-epoch` must not exceed the number of local training batches.
 
 ## 2. Run the Collab recipe
@@ -70,6 +93,10 @@ The Hugging Face model is downloaded on the first run if it is not already in
 the local cache. CUDA GPUs are recommended; CPU execution is supported but is
 considerably slower and stores the default model state in FP32. Use
 `--model-name-or-path` to select another compatible causal-LM checkpoint.
+Remote checkpoint code is disabled by default. If a model requires custom
+code, review its repository, pin a trusted revision with `--model-revision`,
+and only then pass `--trust-remote-code`; this option allows repository-supplied
+Python to execute in every client process.
 
 Before each synchronization interval, clients evaluate the received global
 model. Pass `--skip-evaluation` when measuring synchronization overhead.
