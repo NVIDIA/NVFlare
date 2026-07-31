@@ -20,7 +20,7 @@ ownership hook, and the surface-freeze contract on the frozen constructor parame
 """
 
 import inspect
-from unittest.mock import Mock
+from unittest.mock import Mock, call, patch
 
 import pytest
 
@@ -42,6 +42,8 @@ from nvflare.app_common.executors.client_api_executor import (
     ExecutionMode,
 )
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.fuel.utils.fobs import FOBSContextKey
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
 # The frozen V1 constructor surface (design: "Configuration Surface" in
 # docs/design/client_api_execution_modes.md, plus the load-bearing args added beyond that list -
@@ -532,6 +534,63 @@ class TestBackendPlumbing:
         reply = executor.execute("train", Shareable(), fl_ctx, Signal())
         assert reply is backend.result
         assert ("execute", "train") in backend.calls
+
+    def test_execute_materializes_result_for_declared_component(self):
+        backend = _StubBackend()
+        backend.result = Shareable({"weight": LazyDownloadRef("trainer", "ref-1", "T0")})
+        executor = ClientAPIExecutor(execution_mode="attach", attach_id="trainer_a")
+        executor._backend = backend
+        engine = Mock()
+        component = Mock()
+        component.requires_materialized_task_result.side_effect = lambda task_name: task_name == "train"
+        engine.get_all_components.return_value = {"tensor_streamer": component}
+        cell = engine.get_cell.return_value
+        cell.get_fqcn.return_value = "site-1.job-1"
+        encode_ctx = {"cell": cell, "phase": "encode"}
+        decode_ctx = {"cell": cell, "phase": "decode"}
+        cell.get_fobs_context.side_effect = [encode_ctx, decode_ctx]
+        fl_ctx = _make_fl_ctx(engine)
+        task = Shareable()
+        abort_signal = Signal()
+        materialized = Shareable({"weight": "concrete"})
+
+        with (
+            patch("nvflare.app_common.executors.client_api_executor.fobs.dumps", return_value=b"encoded") as dumps,
+            patch("nvflare.app_common.executors.client_api_executor.fobs.loads", return_value=materialized) as loads,
+        ):
+            reply = executor.execute("train", task, fl_ctx, abort_signal)
+
+        assert reply is materialized
+        assert task.get_header(FOBSContextKey.RECEIVER_IDS) == ["site-1.job-1"]
+        dumps.assert_called_once_with(backend.result, fobs_ctx=encode_ctx)
+        assert cell.get_fobs_context.call_args_list == [
+            call(
+                props={
+                    FOBSContextKey.PASS_THROUGH: False,
+                    FOBSContextKey.RELAY_PASS_THROUGH: False,
+                }
+            ),
+            call(props={FOBSContextKey.PASS_THROUGH: False, FOBSContextKey.ABORT_SIGNAL: abort_signal}),
+        ]
+        loads.assert_called_once_with(b"encoded", fobs_ctx=decode_ctx)
+
+    def test_execute_keeps_pass_through_result_for_unrelated_task(self):
+        backend = _StubBackend()
+        backend.result = Shareable({"weight": LazyDownloadRef("trainer", "ref-1", "T0")})
+        executor = ClientAPIExecutor(execution_mode="attach", attach_id="trainer_a")
+        executor._backend = backend
+        engine = Mock()
+        component = Mock()
+        component.requires_materialized_task_result.side_effect = lambda task_name: task_name == "train"
+        engine.get_all_components.return_value = {"tensor_streamer": component}
+        fl_ctx = _make_fl_ctx(engine)
+        task = Shareable()
+
+        reply = executor.execute("validate", task, fl_ctx, Signal())
+
+        assert reply is backend.result
+        assert task.get_header(FOBSContextKey.RECEIVER_IDS) is None
+        engine.get_cell.assert_not_called()
 
     def test_unrelated_events_are_not_relayed_to_backend(self):
         executor, backend, fl_ctx, _ = self._make_started_executor()

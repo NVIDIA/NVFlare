@@ -283,9 +283,10 @@ trainer's task-exchange metadata, and is applied by the trainer-side Client API 
 result. A DIFF is computed in the trainer-native representation before outgoing conversion.
 
 CJ task-data/task-result filter ordering is unchanged. Filters receive the payload representation
-delivered by the transport, which can contain lazy references when pass-through is active. This
-execution-mode change does not make filter presence imply CJ materialization and does not add an
-executor or filter capability contract.
+delivered by the transport, which can contain lazy references when pass-through is active. Filter
+presence does not imply CJ materialization. An explicit result-event consumer such as
+`TensorClientStreamer` may instead declare that it requires concrete results; `ClientAPIExecutor`
+then terminates that result's pass-through route at the CJ before the component runs.
 
 Relocating content transformations from CJ filters to explicit send/receive endpoints is deferred
 to a separate design and change. That work must first inventory the existing privacy, HE,

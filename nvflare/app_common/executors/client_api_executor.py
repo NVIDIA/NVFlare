@@ -36,6 +36,9 @@ from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBacken
 from nvflare.app_common.widgets.convert_to_fed_event import FED_EVENT_PREFIX
 from nvflare.client.config import ExchangeFormat, TransferType, normalize_exchange_format
 from nvflare.client.converter_utils import validate_format_pair
+from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.fobs import FOBSContextKey
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 
@@ -348,7 +351,16 @@ class ClientAPIExecutor(Executor):
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         try:
+            materialize_result = (
+                self._execution_mode != ExecutionMode.IN_PROCESS
+                and self._requires_materialized_result(task_name, fl_ctx)
+            )
+            result_cell = None
+            if materialize_result:
+                result_cell = self._route_result_to_cj(shareable, fl_ctx)
             result = backend.execute(task_name, shareable, fl_ctx, abort_signal)
+            if isinstance(result, Shareable) and materialize_result and self._contains_lazy_download_ref(result):
+                result = self._materialize_result(result, result_cell, abort_signal)
         except UnsafeJobError:
             # ClientRunner has dedicated handling for UnsafeJobError (client_runner.py maps it
             # to ReturnCode.UNSAFE_JOB and marks the job unsafe). Do NOT swallow it into a
@@ -364,6 +376,69 @@ class ClientAPIExecutor(Executor):
             self.log_error(fl_ctx, f"bad result from backend: expected Shareable but got {type(result)}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         return result
+
+    @staticmethod
+    def _requires_materialized_result(task_name: str, fl_ctx: FLContext) -> bool:
+        """Whether a configured component explicitly consumes the concrete Client API result."""
+        engine = fl_ctx.get_engine()
+        get_all_components = getattr(engine, "get_all_components", None) if engine is not None else None
+        components = get_all_components() if callable(get_all_components) else None
+        if not isinstance(components, dict):
+            return False
+
+        for component in components.values():
+            requirement = getattr(component, "requires_materialized_task_result", None)
+            if callable(requirement) and requirement(task_name) is True:
+                return True
+        return False
+
+    @staticmethod
+    def _route_result_to_cj(shareable: Shareable, fl_ctx: FLContext):
+        """Make the CJ the terminal receiver for a result that a local component consumes."""
+        engine = fl_ctx.get_engine()
+        get_cell = getattr(engine, "get_cell", None) if engine is not None else None
+        cell = get_cell() if callable(get_cell) else None
+        cj_fqcn = cell.get_fqcn() if cell is not None else None
+        if not cj_fqcn:
+            raise RuntimeError("cannot materialize Client API result: CJ Cell identity is unavailable")
+        shareable.set_header(FOBSContextKey.RECEIVER_IDS, [cj_fqcn])
+        return cell
+
+    @staticmethod
+    def _contains_lazy_download_ref(value, visited=None) -> bool:
+        """Return whether a Shareable graph contains a pass-through download reference."""
+        if isinstance(value, LazyDownloadRef):
+            return True
+        if not isinstance(value, (dict, list, tuple, set)):
+            return False
+
+        if visited is None:
+            visited = set()
+        value_id = id(value)
+        if value_id in visited:
+            return False
+        visited.add(value_id)
+
+        if isinstance(value, dict):
+            items = (*value.keys(), *value.values())
+        else:
+            items = value
+        return any(ClientAPIExecutor._contains_lazy_download_ref(item, visited) for item in items)
+
+    @staticmethod
+    def _materialize_result(result: Shareable, cell, abort_signal: Signal) -> Shareable:
+        """Resolve a pass-through result at the CJ for a declared local consumer."""
+        encode_ctx = cell.get_fobs_context(
+            props={FOBSContextKey.PASS_THROUGH: False, FOBSContextKey.RELAY_PASS_THROUGH: False}
+        )
+        encoded = fobs.dumps(result, fobs_ctx=encode_ctx)
+        decode_ctx = cell.get_fobs_context(
+            props={FOBSContextKey.PASS_THROUGH: False, FOBSContextKey.ABORT_SIGNAL: abort_signal}
+        )
+        materialized = fobs.loads(encoded, fobs_ctx=decode_ctx)
+        if not isinstance(materialized, Shareable):
+            raise TypeError(f"materialized Client API result must be Shareable but got {type(materialized)}")
+        return materialized
 
     def set_analytics_fire_fed_event(self, enabled: bool) -> None:
         """Select direct federation events instead of the local ConvertToFedEvent path."""

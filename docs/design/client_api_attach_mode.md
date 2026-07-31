@@ -385,12 +385,13 @@ on the task. This choice is independent of the Attach listener driver and its
 connection security: a clear `shared-file` trainer route may still feed a
 secure CP/CJ route whose CJ performs the relay.
 
-If tensor-streaming filters are also configured, a result that already contains
-pass-through lazy references bypasses their separate tensor rendezvous. The
-client stamps that decision in the result envelope because the server may eagerly
-resolve the references before its tensor-stream filter runs. The filters preserve
-the complete result envelope so its terminal consumer resolves the references
-through the ordinary downloader path.
+If `TensorClientStreamer` is configured for a task, it explicitly declares that
+it consumes concrete result tensors. `ClientAPIExecutor` then makes the CJ the
+terminal receiver of the trainer-hosted lazy result, materializes it there, and
+lets the existing tensor streamer send the tensors to the server. This avoids two
+competing result paths while preserving the tensor-streaming contract. Without a
+declared concrete consumer, the CJ remains a pure pass-through hop and the
+ultimate receiver downloads directly from the trainer.
 
 After acceptance, transient status-probe failure must not delete transfer
 sources. Reusing a result ID for another `send()` is rejected explicitly.

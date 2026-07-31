@@ -76,6 +76,10 @@ class TensorClientStreamer(FLComponent):
         self.sender: TensorSender = None
         self.receiver: TensorReceiver = None
 
+    def requires_materialized_task_result(self, task_name: str) -> bool:
+        """Tell ClientAPIExecutor that tensor streaming consumes concrete result tensors."""
+        return task_name in self.tasks
+
     def initialize(self, fl_ctx: FLContext):
         """Initialize the TensorClientStreamer component.
         Args:
