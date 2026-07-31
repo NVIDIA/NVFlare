@@ -121,8 +121,12 @@ Candidate comparison also depends on the objective's declared
 contract because deterministic static analysis cannot prove arbitrary
 measurement equivalence. If a scored campaign needs a metric implementation
 correction, the candidate is abandoned, prior scores are declared incomparable,
-and a human-approved source repair starts a clean campaign and baseline. A
-metric correction is never retained as an optimization improvement.
+and the scored workspace is preserved as audit evidence. After human approval,
+the source is repaired in a fresh job workspace with no Auto-FL campaign
+metadata or generated artifacts, and a new baseline is initialized there.
+Calling `initialize` in a scored workspace resumes its existing evidence; it
+does not establish a repaired baseline. A metric correction is never retained
+as an optimization improvement.
 During campaign initialization, the runner merges existing, workspace-local
 `mutation_schema.yaml` `preferred_targets` into
 `trust_contract.allowed_edit_paths`. Missing, symlinked, reserved, or
@@ -279,6 +283,11 @@ writes:
   reproduction guidance;
 - `autofl_report_summary.json`, a machine-readable
   `nvflare.autofl.report.v1` summary for tools and future automation.
+
+When campaign state records an unfinished literature exploration batch, the
+report marks that checkpoint as incomplete instead of treating the partial
+evidence as a confirmed negative result. The Markdown report uses a relative
+reference for `progress.png` so the report and plot remain portable together.
 
 The helper does not edit source, ledger, manifests, or campaign state and does
 not require Git. If an abrupt interruption leaves state active, the human must
