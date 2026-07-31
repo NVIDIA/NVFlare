@@ -23,8 +23,6 @@ DEFAULT_WORKSPACE = "/tmp/nvflare/fedbpt"
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from fedbpt_recipe import FedBPTRecipe  # noqa: E402
-
 
 def define_parser():
     parser = argparse.ArgumentParser(description="Run or export the FedBPT NVFlare job.")
@@ -69,11 +67,12 @@ def define_parser():
     return parser
 
 
-def main():
-    parser = define_parser()
-    args, extra_train_args = parser.parse_known_args()
+def create_recipe(args, extra_train_args=None):
+    # Import only after the entrypoint has parsed its own export flags. Recipe's
+    # module initialization consumes those flags from sys.argv for execute().
+    from fedbpt_recipe import FedBPTRecipe
 
-    recipe = FedBPTRecipe(
+    return FedBPTRecipe(
         name=args.job_name,
         num_clients=args.num_clients,
         min_clients=args.min_clients,
@@ -101,6 +100,13 @@ def main():
         train_args=args.train_args,
         extra_train_args=extra_train_args,
     )
+
+
+def main():
+    parser = define_parser()
+    args, extra_train_args = parser.parse_known_args()
+
+    recipe = create_recipe(args, extra_train_args)
     if args.export:
         recipe.export(args.export_dir)
         print(f"Job exported to: {os.path.join(args.export_dir, args.job_name)}")
