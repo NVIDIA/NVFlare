@@ -125,6 +125,9 @@ class TensorClientStreamer(FLComponent):
             except Exception as e:
                 self.system_panic(str(e), fl_ctx)
         elif event_type == EventType.AFTER_TASK_RESULT_FILTER:
+            task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
+            if task_name not in self.tasks:
+                return
             try:
                 self.send_tensors_to_server(fl_ctx)
             except Exception as e:
