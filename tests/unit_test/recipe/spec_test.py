@@ -14,6 +14,7 @@
 
 """Tests for recipe utilities and ExecEnv script validation."""
 
+import argparse
 import importlib
 import json
 import logging
@@ -651,6 +652,39 @@ def test_recipe_spec_import_strips_export_dir_equals_form(monkeypatch):
 
     assert sys.argv == ["python", "job.py", "--other"]
     assert spec_module._peek_recipe_args() == (True, "out")
+
+
+@pytest.mark.parametrize(
+    ("local_flag", "should_parse"),
+    [
+        ("--max_train_samples", True),
+        ("--max_train_sample", False),
+        ("--max_trian_samples", False),
+    ],
+)
+def test_recipe_export_flags_allow_strict_local_argument_parsing(monkeypatch, local_flag, should_parse):
+    import sys
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["job.py", "--export", "--export-dir", "/tmp/out", local_flag, "100"],
+    )
+
+    import nvflare.recipe.spec as spec_module
+
+    importlib.reload(spec_module)
+    parser = argparse.ArgumentParser(allow_abbrev=False)
+    parser.add_argument("--max_train_samples", type=int)
+
+    if should_parse:
+        args = parser.parse_args()
+        assert args.max_train_samples == 100
+        assert spec_module._peek_recipe_args() == (True, "/tmp/out")
+    else:
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args()
+        assert exc_info.value.code == 2
 
 
 def test_consume_recipe_args_dangling_export_dir_does_not_raise(monkeypatch):

@@ -163,9 +163,38 @@ def test_remote_error_preserves_type_and_traceback():
 
     error = exc_info.value
     assert error.site == "site-1"
+    assert error.target_name == "site-1.trainer"
     assert error.func_name == "train"
     assert error.cause_type == "ValueError"
     assert error.remote_traceback == "remote traceback"
+    assert str(error) == "call to site-1.trainer.train failed: ValueError: invalid input"
+
+
+def test_fire_and_forget_secure_call_fails_before_executor_submission_when_cell_is_not_secure():
+    cell = MagicMock()
+    cell.core_cell.supports_secure_messages.return_value = False
+    thread_executor = MagicMock()
+    dispatcher = CellDispatcher(
+        manager=MagicMock(),
+        engine=MagicMock(),
+        caller="server",
+        cell=cell,
+        target_fqcn="site-1/job",
+        abort_signal=MagicMock(),
+        thread_executor=thread_executor,
+    )
+
+    with pytest.raises(RuntimeError, match="requires a Cell configured with certificates"):
+        dispatcher.call_target(
+            context=MagicMock(),
+            target_name="site-1.trainer",
+            call_opt=CallOption(secure=True, expect_result=False),
+            func_name="train",
+        )
+
+    thread_executor.submit.assert_not_called()
+    cell.send_request.assert_not_called()
+    cell.fire_and_forget.assert_not_called()
 
 
 def test_group_worker_restores_previous_context():

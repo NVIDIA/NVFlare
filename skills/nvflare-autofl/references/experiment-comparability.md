@@ -15,6 +15,26 @@ recorded in the payload, so a weighted mean is not computable. Cross-site
 server-final global-model scores are diagnostic unless the user explicitly
 requests selection on them.
 
+## Metric Semantics
+
+Every imported objective declares `metric_invariants`. Comparable candidates
+must preserve the metric definition, evaluation data and split, evaluation
+timing and checkpoint, aggregation and evaluated population, and scale, units,
+and optimization direction. Keeping the same metric name is not sufficient. For
+example, moving `accuracy` from before local training to after local training
+changes the measurement even though the ledger column is unchanged.
+
+The coding agent must review candidate diffs against these invariants before
+evaluation. This is an explicit campaign contract, not a claim that static
+analysis can prove arbitrary metric equivalence. If a metric implementation
+must be corrected, abandon the candidate and report that existing scores are
+incomparable. Preserve the scored workspace as audit evidence. After human
+approval, repair the source in a fresh job workspace containing no Auto-FL
+campaign metadata or generated artifacts, then initialize a new baseline
+there. Running `initialize` in the scored workspace resumes its old evidence;
+never retain the correction as an optimization gain or compare scores across
+the old and repaired campaigns.
+
 ## Iterative Reruns
 
 When the user asks to change batch size, train args, number of rounds,

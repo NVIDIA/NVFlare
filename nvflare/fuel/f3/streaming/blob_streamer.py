@@ -15,15 +15,16 @@ import logging
 import threading
 from typing import Callable, Optional
 
+from nvflare.fuel.f3.cellnet.defs import Encoding
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver
 from nvflare.fuel.f3.streaming.byte_streamer import STREAM_CHUNK_SIZE, STREAM_TYPE_BLOB, ByteStreamer
-from nvflare.fuel.f3.streaming.stream_const import EOS
+from nvflare.fuel.f3.streaming.stream_const import EOS, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
 from nvflare.fuel.f3.streaming.stream_utils import FastBuffer, callback_thread_pool, stream_thread_pool, wrap_view
-from nvflare.fuel.utils.buffer_list import BufferList
+from nvflare.fuel.utils.buffer_list import BufferList, ConsumableBufferList
 from nvflare.security.logging import secure_format_traceback
 
 log = logging.getLogger(__name__)
@@ -68,11 +69,12 @@ class BlobStream(Stream):
 
 
 class BlobTask:
-    def __init__(self, future: StreamFuture, stream: Stream, max_size: int = 0):
+    def __init__(self, future: StreamFuture, stream: Stream, max_size: int = 0, preserve_chunks: bool = False):
         self.future = future
         self.stream = stream
         self.size = stream.get_size()
         self.max_size = max_size
+        self.preserve_chunks = preserve_chunks
 
         if self.size < 0:
             raise StreamError(f"Declared blob size cannot be negative: {self.size}")
@@ -80,10 +82,12 @@ class BlobTask:
         if self.max_size > 0 and self.size > self.max_size:
             raise StreamError(f"Declared blob size {self.size} exceeds configured limit {self.max_size}")
 
-        self.pre_allocated = self.size > 0
+        self.pre_allocated = self.size > 0 and not self.preserve_chunks
 
         if self.pre_allocated:
             self.buffer = wrap_view(bytearray(self.size))
+        elif self.preserve_chunks:
+            self.buffer = ConsumableBufferList()
         else:
             self.buffer = FastBuffer()
 
@@ -110,6 +114,8 @@ class BlobHandler:
         if blob_task.pre_allocated:
             return self._store_pre_allocated_chunk(blob_task, buf, buf_size, length, thread_id)
 
+        # preserve_chunks uses a plain list buffer; append() works for both it
+        # and FastBuffer, and both must enforce the max_blob_size limit.
         return self._append_dynamic_chunk(blob_task, buf, buf_size, length, thread_id)
 
     def _store_pre_allocated_chunk(
@@ -132,12 +138,16 @@ class BlobHandler:
         self, blob_task: BlobTask, buf: BytesAlike, buf_size: int, length: int, thread_id: int
     ) -> bool:
         next_size = buf_size + length
+        limit = blob_task.max_size
+        if blob_task.size > 0:
+            limit = blob_task.size if limit <= 0 else min(limit, blob_task.size)
+
         # read() already pulled this chunk, so rejection can overshoot by one chunk at most.
-        if blob_task.max_size > 0 and next_size > blob_task.max_size:
-            log.error(f"{blob_task} Size limit exceeded: {thread_id=} {next_size=} limit={blob_task.max_size}")
+        if limit > 0 and next_size > limit:
+            log.error(f"{blob_task} Size limit exceeded: {thread_id=} {next_size=} {limit=}")
+            limit_kind = "declared size" if blob_task.size > 0 and limit == blob_task.size else "configured limit"
             error = StreamError(
-                f"Blob received more data than configured limit {blob_task.max_size}: "
-                f"received at least {next_size} bytes"
+                f"Blob received more data than {limit_kind} {limit}: received at least {next_size} bytes"
             )
             self._fail(blob_task.stream, blob_task.future, error)
             return False
@@ -151,7 +161,11 @@ class BlobHandler:
             log.warning("Resume is not supported, ignored")
 
         try:
-            blob_task = BlobTask(future, stream, self.max_blob_size)
+            preserve_chunks = (stream.headers or {}).get(StreamHeaderKey.PAYLOAD_ENCODING) == Encoding.FOBS
+            if preserve_chunks:
+                blob_task = BlobTask(future, stream, self.max_blob_size, preserve_chunks=True)
+            else:
+                blob_task = BlobTask(future, stream, self.max_blob_size)
         except StreamError as ex:
             self._fail(stream, future, ex)
             return 0
@@ -216,7 +230,7 @@ class BlobHandler:
                 )
                 return
 
-            if blob_task.pre_allocated:
+            if blob_task.pre_allocated or blob_task.preserve_chunks:
                 result = blob_task.buffer
             else:
                 result = blob_task.buffer.to_bytes()

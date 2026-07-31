@@ -45,6 +45,14 @@ def _objective(metric, source="user_request"):
         "metric_extraction_order": [metric],
         "mode": "max",
         "metric_contract_source": source,
+        "metric_invariants": [
+            "definition",
+            "evaluation_data_and_split",
+            "evaluation_timing_and_checkpoint",
+            "aggregation_and_population",
+            "scale_units_and_direction",
+        ],
+        "metric_change_policy": "restart_campaign_with_repaired_baseline",
     }
 
 
