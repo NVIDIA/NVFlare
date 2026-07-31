@@ -385,8 +385,10 @@ secure CP/CJ route whose CJ performs the relay.
 
 If tensor-streaming filters are also configured, a result that already contains
 pass-through lazy references bypasses their separate tensor rendezvous. The
-filters preserve the complete result envelope so its terminal consumer resolves
-the references through the ordinary downloader path.
+client stamps that decision in the result envelope because the server may eagerly
+resolve the references before its tensor-stream filter runs. The filters preserve
+the complete result envelope so its terminal consumer resolves the references
+through the ordinary downloader path.
 
 After acceptance, transient status-probe failure must not delete transfer
 sources. Reusing a result ID for another `send()` is rejected explicitly.

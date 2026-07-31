@@ -119,6 +119,7 @@ class TestDefs:
             "RESULT_ID": "result_id",
             "RESULT_STATE": "result_state",
             "ACCEPTED_ATTEMPT_ID": "accepted_attempt_id",
+            "RESULT_RELAY": "result_relay",
             "RESULT_SOURCE_LIVE": "result_source_live",
             "HEARTBEAT_INTERVAL": "heartbeat_interval",
             "HEARTBEAT_TIMEOUT": "heartbeat_timeout",

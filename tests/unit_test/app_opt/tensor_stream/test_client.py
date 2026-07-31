@@ -23,6 +23,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.app_opt.tensor_stream.client import TensorClientStreamer
 from nvflare.app_opt.tensor_stream.receiver import TensorReceiver
 from nvflare.app_opt.tensor_stream.sender import TensorSender
+from nvflare.app_opt.tensor_stream.types import TensorCustomKeys
 from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
@@ -254,6 +255,7 @@ class TestTensorClientStreamer:
         mock_sender_class.assert_not_called()
         mock_clean_task_result.assert_not_called()
         assert streamer.sender is None
+        assert task_result.get_header(TensorCustomKeys.TASK_RESULT_STREAMING_SKIPPED) is True
         assert task_result["DXO"]["data"]["large_weight"].fqcn == "site-3.trainer"
         assert torch.equal(task_result["DXO"]["data"]["small_weight"], torch.tensor([1.0]))
 
