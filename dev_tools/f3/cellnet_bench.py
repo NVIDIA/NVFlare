@@ -66,6 +66,7 @@ from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
+from nvflare.fuel.f3.streaming.stream_const import STREAM_CHUNK_SIZE, STREAM_WINDOW_SIZE
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamFuture
 from nvflare.fuel.utils.config_service import ConfigService
 
@@ -88,8 +89,8 @@ DEFAULT_CELLNET_SIZE = 10 * GB
 DEFAULT_TCP_SIZE = 100 * GB
 DEFAULT_TCP_WARMUP_SIZE = GB
 DEFAULT_TARGET_GBPS = 25.0
-DEFAULT_F3_CHUNK_SIZE = MB
-DEFAULT_F3_WINDOW_SIZE = 16 * MB
+DEFAULT_F3_CHUNK_SIZE = STREAM_CHUNK_SIZE
+DEFAULT_F3_WINDOW_SIZE = STREAM_WINDOW_SIZE
 
 BYTE_SIZE_PATTERN = re.compile(r"\s*(\d+(?:\.\d+)?)\s*([KMGT]?)(?:I?B)?\s*", re.IGNORECASE)
 BYTE_SIZE_MULTIPLIERS = {
