@@ -173,6 +173,9 @@ class TensorServerStreamer(FLComponent):
             self.wait_sending_task_data_all_clients(num_clients, fl_ctx)
             self.try_to_clean_task_data(num_clients, fl_ctx)
         elif event_type == EventType.BEFORE_TASK_RESULT_FILTER:
+            task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
+            if task_name not in self.tasks:
+                return
             task_id = fl_ctx.get_prop(FLContextKey.TASK_ID)
             peer_name = fl_ctx.get_peer_context().get_identity_name()
             task_result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)

@@ -228,12 +228,31 @@ class TestTensorServerStreamer:
         streamer = TensorServerStreamer()
         mock_receiver = Mock(spec=TensorReceiver)
         streamer.receiver = mock_receiver
+        mock_fl_context.get_prop.side_effect = lambda key, default=None: {
+            FLContextKey.TASK_NAME: "train",
+            FLContextKey.TASK_ID: "task-1",
+        }.get(key, default)
 
         # Handle BEFORE_TASK_RESULT_FILTER event
         streamer.handle_event(EventType.BEFORE_TASK_RESULT_FILTER, mock_fl_context)
 
         # Verify receiver.set_ctx_with_tensors was called
         mock_receiver.set_ctx_with_tensors.assert_called_once_with(mock_fl_context)
+
+    def test_handle_event_before_task_result_filter_skips_unconfigured_task(self, mock_fl_context):
+        streamer = TensorServerStreamer(tasks=["train"])
+        mock_receiver = Mock(spec=TensorReceiver)
+        streamer.receiver = mock_receiver
+        mock_fl_context.get_prop.side_effect = lambda key, default=None: {
+            FLContextKey.TASK_NAME: "swarm_config",
+            FLContextKey.TASK_ID: "task-1",
+        }.get(key, default)
+
+        streamer.handle_event(EventType.BEFORE_TASK_RESULT_FILTER, mock_fl_context)
+
+        mock_receiver.wait_for_tensors.assert_not_called()
+        mock_receiver.set_ctx_with_tensors.assert_not_called()
+        mock_fl_context.get_peer_context.assert_not_called()
 
     def test_handle_event_before_task_result_filter_skips_pass_through_result(self, mock_fl_context):
         task_id = "task-1"
@@ -245,6 +264,7 @@ class TestTensorServerStreamer:
             },
         ).to_shareable()
         mock_fl_context.get_prop.side_effect = lambda key, default=None: {
+            FLContextKey.TASK_NAME: "train",
             FLContextKey.TASK_ID: task_id,
             FLContextKey.TASK_RESULT: task_result,
         }.get(key, default)
@@ -271,6 +291,7 @@ class TestTensorServerStreamer:
         ).to_shareable()
         task_result.set_header(TensorCustomKeys.TASK_RESULT_STREAMING_SKIPPED, True)
         mock_fl_context.get_prop.side_effect = lambda key, default=None: {
+            FLContextKey.TASK_NAME: "train",
             FLContextKey.TASK_ID: task_id,
             FLContextKey.TASK_RESULT: task_result,
         }.get(key, default)
@@ -490,6 +511,7 @@ class TestTensorServerStreamer:
         mock_fl_context.get_engine.return_value = mock_engine_with_clients
         mock_fl_context.get_prop.side_effect = lambda key, default=None: {
             AppConstants.CURRENT_ROUND: current_round,
+            FLContextKey.TASK_NAME: "train",
             FLContextKey.TASK_ID: task_id,
         }.get(key, default)
 

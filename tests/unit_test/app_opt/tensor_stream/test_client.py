@@ -150,7 +150,10 @@ class TestTensorClientStreamer:
         mock_peer_context = Mock()
         mock_peer_context.get_identity_name.return_value = "client1"
         mock_fl_context.get_peer_context.return_value = mock_peer_context
-        mock_fl_context.get_prop.return_value = "task_123"
+        mock_fl_context.get_prop.side_effect = lambda key: {
+            FLContextKey.TASK_NAME: "train",
+            FLContextKey.TASK_ID: "task_123",
+        }.get(key)
 
         # Handle BEFORE_TASK_DATA_FILTER event
         streamer.handle_event(EventType.BEFORE_TASK_DATA_FILTER, mock_fl_context)
@@ -160,6 +163,21 @@ class TestTensorClientStreamer:
 
         # Verify receiver.set_ctx_with_tensors was called
         mock_receiver.set_ctx_with_tensors.assert_called_once_with(mock_fl_context)
+
+    def test_handle_event_before_task_data_filter_skips_unconfigured_task(self, mock_fl_context):
+        streamer = TensorClientStreamer(tasks=["train"])
+        mock_receiver = Mock(spec=TensorReceiver)
+        streamer.receiver = mock_receiver
+        mock_fl_context.get_prop.side_effect = lambda key: {
+            FLContextKey.TASK_NAME: "swarm_config",
+            FLContextKey.TASK_ID: "task_123",
+        }.get(key)
+
+        streamer.handle_event(EventType.BEFORE_TASK_DATA_FILTER, mock_fl_context)
+
+        mock_receiver.wait_for_tensors.assert_not_called()
+        mock_receiver.set_ctx_with_tensors.assert_not_called()
+        mock_fl_context.get_peer_context.assert_not_called()
 
     def test_handle_event_after_task_result_filter(self, mock_fl_context, mock_engine_with_clients):
         """Test handling AFTER_TASK_RESULT_FILTER event."""
@@ -270,7 +288,10 @@ class TestTensorClientStreamer:
         mock_peer_context = Mock()
         mock_peer_context.get_identity_name.return_value = "client1"
         mock_fl_context.get_peer_context.return_value = mock_peer_context
-        mock_fl_context.get_prop.return_value = "task_123"
+        mock_fl_context.get_prop.side_effect = lambda key, default=None: {
+            FLContextKey.TASK_NAME: "train",
+            FLContextKey.TASK_ID: "task_123",
+        }.get(key, default)
 
         mock_sender_instance = Mock(spec=TensorSender)
         mock_receiver_instance = Mock(spec=TensorReceiver)
@@ -461,7 +482,10 @@ class TestTensorClientStreamer:
         mock_peer_context = Mock()
         mock_peer_context.get_identity_name.return_value = "client1"
         mock_fl_context.get_peer_context.return_value = mock_peer_context
-        mock_fl_context.get_prop.return_value = "task_123"
+        mock_fl_context.get_prop.side_effect = lambda key: {
+            FLContextKey.TASK_NAME: "train",
+            FLContextKey.TASK_ID: "task_123",
+        }.get(key)
 
         # Exception should be caught and system_panic should be called
         streamer.handle_event(EventType.BEFORE_TASK_DATA_FILTER, mock_fl_context)
@@ -535,7 +559,10 @@ class TestTensorClientStreamer:
                 mock_peer_context = Mock()
                 mock_peer_context.get_identity_name.return_value = "client1"
                 mock_fl_context.get_peer_context.return_value = mock_peer_context
-                mock_fl_context.get_prop.return_value = "task_123"
+                mock_fl_context.get_prop.side_effect = lambda key, default=None: {
+                    FLContextKey.TASK_NAME: "train",
+                    FLContextKey.TASK_ID: "task_123",
+                }.get(key, default)
 
                 mock_sender_instance = Mock(spec=TensorSender)
                 mock_receiver_instance = Mock(spec=TensorReceiver)

@@ -114,6 +114,9 @@ class TensorClientStreamer(FLComponent):
         if event_type == EventType.START_RUN:
             self.initialize(fl_ctx)
         elif event_type == EventType.BEFORE_TASK_DATA_FILTER:
+            task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
+            if task_name not in self.tasks:
+                return
             task_id = fl_ctx.get_prop(FLContextKey.TASK_ID)
             peer_name = fl_ctx.get_peer_context().get_identity_name()
             try:
