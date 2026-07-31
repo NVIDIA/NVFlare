@@ -70,8 +70,9 @@ directory from the process logging configuration, tails the target file, and
 streams new bytes to the server over the streaming infrastructure.
 
 `JobLogReceiver` handles server-side persistence. It writes incoming chunks
-directly to disk so the file can be observed while the job is running, and then
-hands the completed file to the job manager when the stream ends successfully.
+directly to a staging file so the log can be observed while the job is running,
+and then hands the completed file to the job manager when the stream ends
+successfully. The storage backend may consume the staging file.
 
 ## 6. Why the Streamer Runs Inside the Job
 
@@ -189,13 +190,17 @@ receiver's idle timer well before it expires.
 
 ## 12. Server-Side Persistence Model
 
-`JobLogReceiver` writes incoming chunks directly to a file as they arrive. This
-allows operators to inspect the evolving file during job execution.
+`JobLogReceiver` writes incoming chunks directly to a staging file as they
+arrive. This allows operators to inspect the evolving file during job
+execution.
 
 When the stream finishes successfully:
 
 - if a job manager is available, the receiver passes the file into
-  `job_manager.set_client_data(...)`
+  `job_manager.set_client_data(...)`; the storage backend may move the file, so
+  its staging path may no longer exist afterward. Use the FLARE Console command
+  `download_job_components <job_id>` or
+  `Session.download_job_components(job_id)` in the FLARE API to retrieve it
 - if a job manager is not available, such as some simulator scenarios, the file
   is retained in a workspace-accessible location
 

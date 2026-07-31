@@ -1,3 +1,5 @@
+# General Client API example coverage with POCSiteLauncher.
+# Core external- and in-process smoke tests also run in client_api_prod.yml.
 n_servers: 1
 n_clients: 2
 jobs_root_dir: ./data/jobs
@@ -41,38 +43,6 @@ tests:
           "type": "server_log"
           "data": "Server started"
         "actions": [ "submit_job pt_client_api" ]
-        "result":
-          "type": "job_submit_success"
-      - "trigger":
-          "type": "run_state"
-          "data": { "run_finished": True }
-        "actions": [ "ensure_current_job_done" ]
-        "result":
-          "type": "run_state"
-          "data": { "run_finished": True }
-    setup:
-      - python tools/prepare_cifar10.py --root /tmp/nvflare/data
-  - test_name: "run pt-client-api-torchrun-cpu"
-    event_sequence:
-      - "trigger":
-          "type": "server_log"
-          "data": "Server started"
-        "actions": [ "submit_job pt_client_api_torchrun_cpu" ]
-        "result":
-          "type": "job_submit_success"
-      - "trigger":
-          "type": "run_state"
-          "data": { "run_finished": True }
-        "actions": [ "ensure_current_job_done" ]
-        "result":
-          "type": "run_state"
-          "data": { "run_finished": True }
-  - test_name: "run pt-client-api-launch-once"
-    event_sequence:
-      - "trigger":
-          "type": "server_log"
-          "data": "Server started"
-        "actions": [ "submit_job pt_client_api_launch_once" ]
         "result":
           "type": "job_submit_success"
       - "trigger":
@@ -174,28 +144,6 @@ tests:
           "data": { "run_finished": True }
     setup:
       - python tools/prepare_cifar10.py --root /tmp/nvflare/data
-  - test_name: "run in-process Client API with native PyTorch tensors"
-    event_sequence:
-      - "trigger":
-          "type": "server_log"
-          "data": "Server started"
-        "actions": [ "submit_job pt_client_api_in_process_native_tensors" ]
-        "result":
-          "type": "job_submit_success"
-      - "trigger":
-          "type": "run_state"
-          "data": { "run_finished": True }
-        "actions": [ "ensure_current_job_done" ]
-        "result":
-          "type": "run_state"
-          "data": { "run_finished": True }
-    validators:
-      - path: tests.integration_test.src.validators.PTModelValidator
-      - path: tests.integration_test.src.validators.LogPatternValidator
-        args:
-          forbidden_patterns:
-            - "Traceback (most recent call last)"
-            - "EXECUTION_EXCEPTION"
   - test_name: "run decorator-in-process"
     event_sequence:
       - "trigger":
@@ -232,53 +180,3 @@ tests:
       - python tools/prepare_cifar10.py --root /tmp/nvflare/data
     teardown:
       - rm -rf /tmp/nvflare/data
-  - test_name: "run quantized PyTorch result streaming with PyTorch server task"
-    event_sequence:
-      - "trigger":
-          "type": "server_log"
-          "data": "Server started"
-        "actions": [ "submit_job pt_quantized_result_stream" ]
-        "result":
-          "type": "job_submit_success"
-      - "trigger":
-          "type": "run_state"
-          "data": { "run_finished": True }
-        "actions": [ "ensure_current_job_done" ]
-        "result":
-          "type": "run_state"
-          "data": { "run_finished": True }
-    validators:
-      - path: tests.integration_test.src.validators.PTModelValidator
-      - path: tests.integration_test.src.validators.LogPatternValidator
-        args:
-          required_patterns:
-            - "VERIFIED_SERVER_TASK_FORMAT: 2 pytorch parameters"
-            - "VERIFIED_QUANTIZED_RESULT: 2 float16 tensors"
-          forbidden_patterns:
-            - "Traceback (most recent call last)"
-            - "EXECUTION_EXCEPTION"
-  - test_name: "run quantized PyTorch result streaming with NumPy server task"
-    event_sequence:
-      - "trigger":
-          "type": "server_log"
-          "data": "Server started"
-        "actions": [ "submit_job pt_quantized_result_stream_numpy_server" ]
-        "result":
-          "type": "job_submit_success"
-      - "trigger":
-          "type": "run_state"
-          "data": { "run_finished": True }
-        "actions": [ "ensure_current_job_done" ]
-        "result":
-          "type": "run_state"
-          "data": { "run_finished": True }
-    validators:
-      - path: tests.integration_test.src.validators.PTModelValidator
-      - path: tests.integration_test.src.validators.LogPatternValidator
-        args:
-          required_patterns:
-            - "VERIFIED_SERVER_TASK_FORMAT: 2 numpy parameters"
-            - "VERIFIED_QUANTIZED_RESULT: 2 float16 tensors"
-          forbidden_patterns:
-            - "Traceback (most recent call last)"
-            - "EXECUTION_EXCEPTION"
