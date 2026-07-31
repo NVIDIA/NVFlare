@@ -109,6 +109,16 @@ optimizer steps, BF16 precision, and GPU assignment within each pair:
 - batch size 1, sequence length 64, and learning rate `2e-5`;
 - evaluation disabled so the measurement focused on training and exchange.
 
+For reference, the regular-simulator side was launched from the matched
+benchmark harness with:
+
+```bash
+python -m collab.benchmarks.run_benchmarks \
+    --scheme standard \
+    --config <matched-config.json> \
+    --output-root <result-directory>
+```
+
 | Model | Placement | Standard | Collab | Collab difference |
 |---|---|---:|---:|---:|
 | TinyLlama 1.1B | Four clients on one A100 80 GB | 270.45s | 228.60s | **41.86s / 15.48% faster** |
@@ -124,9 +134,6 @@ The persisted Qwen3-8B round metrics show that both simulators followed the
 same training curve:
 
 ![Qwen3-8B aggregated training loss for the Standard and Collab simulators](figures/training_loss.png)
-
-The lower panel shows the Collab-minus-Standard difference. The maximum
-round-level difference was 0.11%.
 
 The larger model increased the absolute time saved, while model initialization,
 local learning, full-state movement, and aggregation grew enough to reduce the
