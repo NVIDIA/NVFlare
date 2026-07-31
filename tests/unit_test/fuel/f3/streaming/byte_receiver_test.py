@@ -23,8 +23,11 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import MAX_COMPLETED_TASK_TTL, RxStream, RxTask
+from nvflare.fuel.f3.streaming.byte_streamer import TxTask
 from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_TOPIC, STREAM_CHANNEL, StreamDataType, StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import StreamError
+from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError
+
+MB = 1024**2
 
 
 @pytest.fixture(autouse=True)
@@ -65,6 +68,7 @@ def _make_chunk(
     reliable: bool = True,
     retry_wait: float = None,
     retry_timeout: float = None,
+    streaming_parameters: dict = None,
 ):
     message = Message(None, payload)
     headers = {
@@ -81,6 +85,8 @@ def _make_chunk(
         headers[StreamHeaderKey.RETRY_WAIT] = retry_wait
     if retry_timeout is not None:
         headers[StreamHeaderKey.RETRY_TIMEOUT] = retry_timeout
+    if streaming_parameters:
+        headers.update(streaming_parameters)
     message.add_headers(headers)
     return message
 
@@ -215,6 +221,183 @@ def test_find_or_create_task_records_reliable_header():
     task = RxTask.find_or_create_task(message, cell)
 
     assert task.reliable is True
+
+
+def test_new_stream_uses_sender_streaming_parameters():
+    cell = SimpleNamespace()
+    sender_parameters = {
+        StreamHeaderKey.CHUNK_SIZE: 2 * 1024**2,
+        StreamHeaderKey.WINDOW_SIZE: 128 * 1024**2,
+        StreamHeaderKey.ACK_INTERVAL: 32 * 1024**2,
+        StreamHeaderKey.RETRY_MAX_PENDING_BYTES: 256 * 1024**2,
+    }
+    message = _make_chunk(
+        "site-1",
+        sid=532,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        streaming_parameters=sender_parameters,
+    )
+
+    task = RxTask.find_or_create_task(message, cell)
+    assert task.process_chunk(message) is True
+
+    assert task.chunk_size == sender_parameters[StreamHeaderKey.CHUNK_SIZE]
+    assert task.window_size == sender_parameters[StreamHeaderKey.WINDOW_SIZE]
+    assert task.ack_interval == sender_parameters[StreamHeaderKey.ACK_INTERVAL]
+    assert task.retry_max_pending_bytes == sender_parameters[StreamHeaderKey.RETRY_MAX_PENDING_BYTES]
+
+
+def test_new_stream_without_sender_parameters_uses_local_configuration(monkeypatch):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_chunk_size", lambda self, default: 2)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: 8)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_ack_interval", lambda self, default: 4)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_max_pending_bytes", lambda self, default: 16)
+    cell = SimpleNamespace()
+    message = _make_chunk("site-1", sid=533, seq=0, data_type=StreamDataType.CHUNK)
+
+    task = RxTask.find_or_create_task(message, cell)
+    assert task.process_chunk(message) is True
+
+    assert task.chunk_size == 2
+    assert task.window_size == 8
+    assert task.ack_interval == 4
+    assert task.retry_max_pending_bytes == 16
+
+
+def test_headerless_legacy_sender_with_small_window_completes_transfer(monkeypatch):
+    window_size = 8 * MB
+    payload_size = 17 * MB
+    received = {"size": 0, "error": None}
+    receive_done = threading.Event()
+
+    monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: window_size)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_ack_interval", lambda self, default: default)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_ack_wait", lambda self, default: 0.5)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_ack_progress_timeout", lambda self, default: 0.5)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_ack_progress_check_interval", lambda self, default: 0.01)
+
+    class PayloadStream(Stream):
+        def __init__(self):
+            super().__init__(size=payload_size, headers={})
+            self.remaining = payload_size
+            self.chunk = b"x" * MB
+
+        def read(self, size):
+            if not self.remaining:
+                return b""
+            result = self.chunk[: min(size, self.remaining)]
+            self.remaining -= len(result)
+            return result
+
+    class LoopbackCell:
+        def __init__(self):
+            self.tx_task = None
+            self.rx_thread = None
+
+        def fire_and_forget(self, channel, topic, target, message, **kwargs):
+            if topic == STREAM_ACK_TOPIC:
+                message.set_header(MessageHeaderKey.ORIGIN, "receiver")
+                self.tx_task.handle_ack(message)
+                return {}
+
+            # Model a pre-parameter-sync sender by removing the headers that
+            # modern TxTask adds to its first message.
+            for key in (
+                StreamHeaderKey.CHUNK_SIZE,
+                StreamHeaderKey.WINDOW_SIZE,
+                StreamHeaderKey.ACK_INTERVAL,
+                StreamHeaderKey.RETRY_MAX_PENDING_BYTES,
+            ):
+                message.remove_header(key)
+            message.set_header(MessageHeaderKey.ORIGIN, "legacy-sender")
+
+            rx_task = RxTask.find_or_create_task(message, self)
+            if rx_task.process_chunk(message):
+
+                def consume_stream():
+                    try:
+                        stream = RxStream(rx_task)
+                        while True:
+                            chunk = stream.read(MB)
+                            if not chunk:
+                                break
+                            received["size"] += len(chunk)
+                    except Exception as ex:
+                        received["error"] = ex
+                    finally:
+                        receive_done.set()
+
+                self.rx_thread = threading.Thread(target=consume_stream)
+                self.rx_thread.start()
+            return {}
+
+    cell = LoopbackCell()
+    tx_task = TxTask(
+        cell=cell,
+        chunk_size=MB,
+        channel="ch",
+        topic="tp",
+        target="receiver",
+        headers={},
+        stream=PayloadStream(),
+        reliable=False,
+        secure=False,
+        optional=False,
+    )
+    cell.tx_task = tx_task
+
+    tx_task.send_loop()
+
+    assert tx_task.stream_future.result(timeout=1) == payload_size
+    assert receive_done.wait(timeout=1)
+    cell.rx_thread.join(timeout=1)
+    assert not cell.rx_thread.is_alive()
+    assert received["error"] is None
+    assert received["size"] == payload_size
+
+
+def test_sender_ack_interval_above_window_is_clamped(caplog):
+    cell = SimpleNamespace()
+    message = _make_chunk(
+        "site-1",
+        sid=535,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        streaming_parameters={
+            StreamHeaderKey.WINDOW_SIZE: 8,
+            StreamHeaderKey.ACK_INTERVAL: 16,
+        },
+    )
+
+    with caplog.at_level(logging.WARNING):
+        task = RxTask.find_or_create_task(message, cell)
+        assert task.process_chunk(message) is True
+
+    assert task.window_size == 8
+    assert task.ack_interval == 8
+    assert "streaming_ack_interval 16" in caplog.text
+    assert "streaming_window_size 8" in caplog.text
+
+
+@pytest.mark.parametrize("invalid_value", [True, -1, 0, 1.5, "16M"])
+def test_invalid_sender_ack_interval_uses_local_configuration(monkeypatch, invalid_value, caplog):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_ack_interval", lambda self, default: 4)
+    cell = SimpleNamespace()
+    message = _make_chunk(
+        "site-1",
+        sid=534,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        streaming_parameters={StreamHeaderKey.ACK_INTERVAL: invalid_value},
+    )
+
+    with caplog.at_level(logging.WARNING):
+        task = RxTask.find_or_create_task(message, cell)
+        assert task.process_chunk(message) is True
+
+    assert task.ack_interval == 4
+    assert "ignoring invalid streaming_ack_interval header" in caplog.text
 
 
 def test_reliable_duplicate_initial_chunk_sends_sequence_ack():
