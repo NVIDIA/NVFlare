@@ -800,6 +800,31 @@ class TestInitializeAndFinalize:
             ]
 
     @pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
+    def test_abort_escalates_sigterm_to_sigkill_without_configured_grace(self, env, monkeypatch):
+        backend, _ = _initialized_backend(env, stop_grace_period=30.0)
+        backend._latch_abort("job aborted")
+        monkeypatch.setattr(env.harness, "killpg", lambda pgid, sig: env.harness.killpg_calls.append((pgid, sig)))
+        monkeypatch.setattr(ebp.os, "killpg", env.harness.killpg, raising=False)
+        monkeypatch.setattr(ebp, "_LOG_THREAD_JOIN_TIMEOUT", 0.0)
+        await_timeouts = []
+        real_await_group_exit = backend._await_group_exit
+
+        def record_await_timeout(trainer, timeout):
+            await_timeouts.append(timeout)
+            return real_await_group_exit(trainer, timeout)
+
+        monkeypatch.setattr(backend, "_await_group_exit", record_await_timeout)
+
+        backend.finalize(FLContext())
+
+        assert await_timeouts == [0.0, 0.0]
+        if os.name == "posix":
+            assert env.harness.signals_sent() == [
+                (env.harness.processes[0].pid, signal.SIGTERM),
+                (env.harness.processes[0].pid, signal.SIGKILL),
+            ]
+
+    @pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
     def test_workers_terminated_when_launcher_already_exited(self, env):
         """Launcher exits while workers keep the owned process group
         alive — teardown must still signal the GROUP, not skip on the dead leader."""
@@ -1633,7 +1658,7 @@ class TestExecute:
 
     @pytest.mark.parametrize("abort_latched", [False, True], ids=["normal", "abort"])
     def test_finalize_stops_process_returned_after_launch_cleanup(self, env, monkeypatch, abort_latched):
-        """A process whose Popen returns after finalize cleanup must not be orphaned."""
+        """Finalize must wait for an in-flight Popen and stop its process before returning."""
         backend, fl_ctx = _initialized_backend(
             env,
             launch_once=False,
@@ -1662,18 +1687,38 @@ class TestExecute:
 
         if abort_latched:
             backend._latch_abort("job aborted")
-        trainer = backend._active_launch
         process = env.harness.processes[0]
-        backend.finalize(FLContext())
-        assert trainer._cleaned
-        assert process.returncode is None, "finalize cannot stop a process whose handle Popen has not returned"
+        stop_started = threading.Event()
+        finalize_done = threading.Event()
+        process_alive_at_finalize_return = []
+        real_stop = backend._stop_trainer
+
+        def observed_stop(trainer, natural_exit_wait):
+            stop_started.set()
+            return real_stop(trainer, natural_exit_wait)
+
+        monkeypatch.setattr(backend, "_stop_trainer", observed_stop)
+
+        def finalize():
+            backend.finalize(FLContext())
+            process_alive_at_finalize_return.append(process.returncode is None)
+            finalize_done.set()
+
+        finalize_thread = threading.Thread(target=finalize)
+        finalize_thread.start()
+        assert stop_started.wait(5.0), "finalize did not reach trainer cleanup"
+        assert not finalize_done.is_set(), "finalize returned before the Popen handle was installed"
 
         let_popen_return.set()
         execute_thread.join(5.0)
+        finalize_thread.join(5.0)
 
         assert not execute_thread.is_alive()
+        assert not finalize_thread.is_alive()
+        assert finalize_done.is_set()
+        assert process_alive_at_finalize_return == [False]
         assert box["result"].get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-        assert process.returncode is not None, "the process returned after cleanup must be terminated"
+        assert process.returncode is not None, "finalize returned with the spawned process still alive"
 
     def test_abort_signal_mid_wait_returns_task_aborted(self, env):
         backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)

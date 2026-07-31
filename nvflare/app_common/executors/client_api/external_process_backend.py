@@ -362,8 +362,8 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         # The same gate orders END_RUN against the launch-install-to-Popen window. Keep
         # this ordering bound on abort: a process handle may not have been installed yet.
         admitted = self._execute_gate.acquire(timeout=self._shutdown_wait_bound())
-        # Cleanup is unconditional if the gate times out. It marks the launch cleaned so
-        # _launch_trainer terminates a process whose Popen handle arrives afterward.
+        # Cleanup is unconditional if the gate times out. _stop_trainer then waits on the
+        # session stop lock until an in-flight Popen installs its process handle.
         try:
             with self._launch_lock:
                 trainer = self._active_launch
@@ -425,30 +425,29 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             if self._closed:
                 raise RuntimeError("backend closed before trainer launch")
 
-            # Never log the configured command: legacy/hand-written jobs may contain literal
-            # credentials rather than site-resolved secret references.
-            self.logger.info(f"launching external trainer (launch {seq})")
-            process = subprocess.Popen(
-                self._split_command(self._context.command),
-                shell=False,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                cwd=self._app_dir,
-                env=env,
-                # own process group so orderly stop can signal the launched trainer group
-                start_new_session=(os.name == "posix"),
-            )
             with trainer._stop_lock:
+                # Serialize Popen and handle installation with teardown. Once Popen has
+                # created a child, finalize must not return before that child is owned
+                # and terminated.
+                if self._closed or trainer._cleaned:
+                    raise RuntimeError("backend closed before trainer launch")
+                # Never log the configured command: legacy/hand-written jobs may contain literal
+                # credentials rather than site-resolved secret references.
+                self.logger.info(f"launching external trainer (launch {seq})")
+                process = subprocess.Popen(
+                    self._split_command(self._context.command),
+                    shell=False,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    cwd=self._app_dir,
+                    env=env,
+                    # own process group so orderly stop can signal the launched trainer group
+                    start_new_session=(os.name == "posix"),
+                )
                 trainer.process = process
                 if os.name == "posix":
                     # start_new_session made the child its own group leader (pgid == pid)
                     trainer.pgid = process.pid
-                cleaned_during_launch = trainer._cleaned
-            if cleaned_during_launch:
-                # finalize() may have timed out on the execute gate and cleaned the
-                # session while Popen was in flight, before it could see this handle.
-                self._terminate_process_tree(trainer, grace=self._context.stop_grace_period)
-                raise RuntimeError("backend closed during trainer launch")
             trainer.log_thread = threading.Thread(
                 target=log_subprocess_output,
                 args=(process, self.logger),
@@ -517,7 +516,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             except Exception:
                 self.logger.error(secure_format_traceback())
             try:
-                self._terminate_process_tree(trainer, grace=self._context.stop_grace_period)
+                self._terminate_process_tree(trainer, grace=self._termination_grace())
             except Exception:
                 self.logger.error(secure_format_traceback())
             self._cleanup_trainer(trainer)
@@ -781,6 +780,9 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
 
     def _stop_wait_bound(self) -> float:
         return 0.0 if self._abort else self._shutdown_wait_bound()
+
+    def _termination_grace(self) -> float:
+        return 0.0 if self._abort else self._context.stop_grace_period
 
     def _result_source_disconnect_grace(self) -> float:
         """Return a nonzero disconnect grace for an accepted result source."""
