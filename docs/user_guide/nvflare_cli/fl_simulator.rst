@@ -799,9 +799,11 @@ application run.
 .. code-block:: python
 
     import argparse
+    import os
     import sys
     from sys import platform
 
+    from nvflare.fuel.utils.log_utils import FL_LOG_LEVEL, LogMode
     from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 
 
@@ -812,11 +814,20 @@ application run.
         simulator_parser.add_argument("-c", "--clients", type=str, help="client names list")
         simulator_parser.add_argument("-t", "--threads", type=int, help="number of parallel running clients")
         simulator_parser.add_argument("-gpu", "--gpu", type=str, help="list of GPU Device Ids, comma separated")
-        simulator_parser.add_argument("-l", "--log_config", type=str, default="concise", help="log config mode ('concise', 'full', 'verbose'), filepath, or level")
+        simulator_parser.add_argument(
+            "-l",
+            "--log_config",
+            type=str,
+            default=None,
+            help="log config mode ('concise', 'msg_only', 'full', 'verbose'), filepath, or level",
+        )
         simulator_parser.add_argument("-m", "--max_clients", type=int, default=100, help="max number of clients")
 
 
     def run_simulator(simulator_args):
+        log_config = simulator_args.log_config
+        if log_config is None:
+            log_config = os.environ.get(FL_LOG_LEVEL, LogMode.CONCISE)
         simulator = SimulatorRunner(
             job_folder=simulator_args.job_folder,
             workspace=simulator_args.workspace,
@@ -824,7 +835,7 @@ application run.
             n_clients=simulator_args.n_clients,
             threads=simulator_args.threads,
             gpu=simulator_args.gpu,
-            log_config=simulator_args.log_config,
+            log_config=log_config,
             max_clients=simulator_args.max_clients,
         )
         run_status = simulator.run()

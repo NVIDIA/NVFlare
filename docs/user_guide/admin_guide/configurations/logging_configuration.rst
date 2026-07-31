@@ -281,8 +281,8 @@ Furthermore, any intermediate logger parents are already created and are configu
 When creating loggers for custom code, we provide a user custom logger function:
 
 :func:`custom_logger<nvflare.fuel.utils.log_utils.custom_logger>`: From a logger, return a new logger with "custom" prepended to the logger name.
-This provides an explicit namespace for custom logs. The default FLFilter displays these logs as well as logs from
-other non-NVFlare namespaces in "concise" mode.
+This provides an explicit namespace that passes through the default FLFilter into ``log_fl.txt``. The concise and
+message-only console modes additionally display logs from all other non-NVFlare namespaces.
 
 When creating loggers for FLARE code, we provide several developer functions to help adhere to the package logger hierarchy:
 
@@ -305,10 +305,11 @@ We provide a log config argument (``-l`` or ``log_config`` in simulator mode, an
 This argument can be any of the following:
 
 - log configuration json file (``/path/to/my_log_config.json``, ``my_log_config.json``)
-- predefined console :class:`LogMode<nvflare.fuel.utils.log_utils.LogMode>` (``concise``, ``full``, ``verbose``)
+- predefined console :class:`LogMode<nvflare.fuel.utils.log_utils.LogMode>` (``concise``, ``msg_only``, ``full``, ``verbose``)
 
-    - ``concise`` (default for simulator mode): user and training-library logs plus selected NVFlare application logs,
-      with simplified log attributes
+    - ``concise`` (default for simulator mode): all non-NVFlare logs plus selected NVFlare application logs, with
+      simplified log attributes
+    - ``msg_only``: the same log selection as ``concise``, formatted as messages only
     - ``full`` (default in workspaces in poc and production mode): all info level logs
     - ``verbose``: debug level logs with detailed log attributes
 

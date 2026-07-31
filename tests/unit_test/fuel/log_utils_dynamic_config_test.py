@@ -51,10 +51,16 @@ def test_log_modes_preserve_concise_and_add_msg_only():
     assert logmode_config_dict[LogMode.CONCISE]["formatters"]["consoleFormatter"]["fmt"] == (
         "%(asctime)s - %(levelname)s - %(message)s"
     )
-    assert logmode_config_dict[LogMode.CONCISE]["filters"]["FLFilter"]["()"] == (
-        "nvflare.fuel.utils.log_utils.TrainingLogFilter"
+    assert logmode_config_dict[LogMode.CONCISE]["handlers"]["consoleHandler"]["filters"] == ["ConciseFilter"]
+    assert logmode_config_dict[LogMode.CONCISE]["filters"]["ConciseFilter"]["()"] == (
+        "nvflare.fuel.utils.log_utils.ConciseLogFilter"
     )
     assert logmode_config_dict[LogMode.MSG_ONLY]["formatters"]["consoleFormatter"]["fmt"] == "%(message)s"
+    assert logmode_config_dict[LogMode.MSG_ONLY]["handlers"]["consoleHandler"]["filters"] == ["ConciseFilter"]
+    assert logmode_config_dict[LogMode.FULL]["filters"]["FLFilter"]["()"] == (
+        "nvflare.fuel.utils.log_utils.LoggerNameFilter"
+    )
+    assert logmode_config_dict[LogMode.FULL]["handlers"]["FLFileHandler"]["filters"] == ["FLFilter"]
 
 
 @pytest.mark.parametrize(
@@ -71,10 +77,10 @@ def test_log_modes_preserve_concise_and_add_msg_only():
         ("nvflare.private.fed.client", logging.WARNING, True),
     ],
 )
-def test_training_log_filter(logger_name, level, expected):
-    from nvflare.fuel.utils.log_utils import TrainingLogFilter
+def test_concise_log_filter(logger_name, level, expected):
+    from nvflare.fuel.utils.log_utils import ConciseLogFilter
 
-    log_filter = TrainingLogFilter(logger_names=["custom", "nvflare.app_common", "nvflare.app_opt"])
+    log_filter = ConciseLogFilter(logger_names=["custom", "nvflare.app_common", "nvflare.app_opt"])
     record = logging.LogRecord(logger_name, level, __file__, 1, "message", (), None)
 
     assert log_filter.filter(record) is expected
