@@ -94,3 +94,53 @@ This intentionally omits the production-oriented features in
 multi-GPU launch, experiment tracking, and deployment configuration. It keeps
 the LLM code close to an ordinary SFT program so direct, tensor-native Collab
 calls remain easy to see.
+
+## Recorded simulator comparison
+
+To validate the native-object path, we compared the standard NVFlare simulator
+and the Collab simulator on a matched full-model SFT workload. Both schemes
+used the same prepared `databricks/databricks-dolly-15k` shards, model,
+optimizer steps, BF16 precision, and GPU assignment within each pair:
+
+- four clients with 50 training and 10 validation examples each;
+- one epoch divided into five federated synchronizations;
+- 10 local optimizer steps per client and synchronization;
+- batch size 1, sequence length 64, and learning rate `2e-5`;
+- evaluation disabled so the measurement focused on training and exchange.
+
+The recorded checkpoints were:
+
+- `TinyLlama/TinyLlama-1.1B-Chat-v1.0` at
+  `fe8a4ea1ffedaf415f4da2f062534de366a451e6`;
+- `Qwen/Qwen3-8B` at `b968826d9c46dd6066d109eabc6255188de91218`.
+
+| Model | Placement | Standard | Collab | Collab difference |
+|---|---|---:|---:|---:|
+| TinyLlama 1.1B | Four clients on one A100 80 GB | 270.45s | 228.60s | **41.86s / 15.48% faster** |
+| Qwen3-8B | One A100 80 GB per client | 1,310.18s | 1,232.48s | **77.70s / 5.93% faster** |
+
+The primary metric is end-to-end process time, including model initialization,
+simulator startup, all five synchronizations, and shutdown. For Qwen3-8B, each
+native full-model payload was 16,381,470,720 bytes. Mean application-level
+native-object transition time was 73.7 ms on the server and 5.37 microseconds
+on a client.
+
+The Qwen3-8B training curves also aligned:
+
+| Synchronization | Standard mean loss | Collab mean loss | Difference |
+|---:|---:|---:|---:|
+| 1 | 2.3542 | 2.3541 | approximately 0.0000 |
+| 2 | 2.1882 | 2.1894 | +0.0012 |
+| 3 | 1.9828 | 1.9841 | +0.0013 |
+| 4 | 1.8190 | 1.8169 | -0.0020 |
+| 5 | 1.9739 | 1.9742 | +0.0004 |
+
+Standard means are calculated from per-client losses logged to four decimal
+places. The maximum round-level difference was 0.11%, and the largest
+individual-client difference was 0.0041.
+
+The larger model increased the absolute time saved, while model initialization,
+local learning, full-state movement, and aggregation grew enough to reduce the
+relative percentage. Each model result is one Standard-then-Collab observation;
+repeated pairs with alternating order are required for a statistical
+performance claim.

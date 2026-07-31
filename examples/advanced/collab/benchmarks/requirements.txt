@@ -1,2 +1,0 @@
--r ../pt_llm_sft/requirements.txt
-torchvision

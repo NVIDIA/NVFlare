@@ -28,12 +28,6 @@ python -m collab.swarm.swarm --num-clients 3
 | `swarm` | Decentralized swarm learning with client-to-client calls |
 | [`pt_llm_sft`](pt_llm_sft/README.md) | Full-parameter Hugging Face SFT with frequent direct PyTorch tensor exchange and server-side FedAvg |
 
-## Benchmarks
-
-The [`benchmarks`](benchmarks/README.md) directory compares the standard
-NVFlare simulator path used by the Hugging Face LLM example with the Collab
-simulator's direct function-call path on a matched full-parameter SFT workload.
-
 Every server object or module must define exactly one `@collab.main` entry
 point. A workflow with multiple stages should call them from that single entry
 point.

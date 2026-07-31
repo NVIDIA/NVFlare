@@ -38,8 +38,8 @@ def make_rows(site_name: str, site_number: int) -> tuple[list[dict], list[dict]]
         },
         {
             "instruction": "Classify the learning setup.",
-            "input": "Several sites train locally and a coordinator averages their adapter parameters.",
-            "output": "This is federated learning with adapter averaging.",
+            "input": "Several sites train locally and a coordinator averages their model parameters.",
+            "output": "This is federated learning with full-model averaging.",
         },
         {
             "instruction": "Rewrite this in a concise technical style.",
@@ -65,8 +65,8 @@ def make_rows(site_name: str, site_number: int) -> tuple[list[dict], list[dict]]
     valid_rows = [
         {
             "instruction": "Summarize the global-model evaluation.",
-            "input": f"{site_name} evaluates the received global adapter before local training.",
-            "output": f"{site_name} measures the global adapter before updating it.",
+            "input": f"{site_name} evaluates the received global model before local training.",
+            "output": f"{site_name} measures the global model before updating it.",
         }
     ]
     return train_rows, valid_rows
