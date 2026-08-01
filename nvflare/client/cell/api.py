@@ -684,11 +684,12 @@ class CellClientAPI(APISpec):
             return self._reply(Topic.TASK_FAILED, **{MsgKey.REASON: reject_reason})
         task_id = payload.get(MsgKey.TASK_ID)
         attempt_id = payload.get(MsgKey.ATTEMPT_ID)
+        task_sequence = payload.get(MsgKey.TASK_SEQ)
         # Any authenticated task delivery proves that the CJ is alive. Record
         # activity before attach deduplication can return an idempotent reply.
         self._note_cj_activity()
         if self._attach:
-            duplicate_reply = self._attach.reserve_task(task_id, attempt_id)
+            duplicate_reply = self._attach.reserve_task(task_id, attempt_id, task_sequence)
             if duplicate_reply is not None:
                 return duplicate_reply
         with self._lock:

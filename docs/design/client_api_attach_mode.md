@@ -52,7 +52,7 @@ server -> CP -> CJ -> trainer
 ```
 
 For shared-file Attach, the external trainer may start before the job. It waits
-on a leased record keyed by `(site_name, attach_id)`; the CJ atomically publishes
+on a locked record keyed by `(site_name, attach_id)`; the CJ atomically publishes
 its dynamic listener URL and job-specific FQCN when it starts. A direct network
 profile instead contains the listener URL and `cj_fqcn`, so it is necessarily
 job-specific.
@@ -184,10 +184,11 @@ trainer profile cannot contain the final URL before the job exists. Attach uses
 a small discovery record above the driver:
 
 ```text
-<root_dir>/.nvflare/client_api_attach/<site>/<attach_id>.claim/
-├── owner.json
-├── endpoint.json
-└── lease
+<root_dir>/.nvflare/client_api_attach/<site>/
+├── .<attach_id>.lock
+└── <attach_id>.claim/
+    ├── owner.json
+    └── endpoint.json
 ```
 
 The endpoint contains:
@@ -198,29 +199,38 @@ The endpoint contains:
 - CJ FQCN;
 - derived trainer FQCN;
 - complete `shared-file://` listener URL;
-- `connection_security="clear"`; and
-- lease timeout.
+- `connection_security="clear"`.
 
 Publisher rules:
 
-1. Claim creation is atomic.
+1. The publisher holds a non-blocking advisory lock for its process lifetime.
 2. A live existing claim rejects a second job using the same attach ID.
-3. A stale claim may be atomically renamed to a unique tombstone and removed.
+3. After a crash releases the lock, the next publisher atomically renames the
+   orphaned claim to a unique tombstone and removes it.
 4. Record replacement is atomic.
-5. The CJ refreshes the lease while the Attach backend is alive.
-6. Close removes only a claim whose owner instance still matches.
+5. The process-held lock is the liveness signal; no periodic filesystem writes,
+   wall-clock timestamps, or record-selected liveness values are used.
+6. Close removes only a claim whose owner instance still matches, then releases
+   the lock.
 
 Reader rules:
 
 1. The trainer reads only the deterministic site/attach-ID claim.
-2. It accepts only a live record with the expected schema, site, and attach ID.
-3. `cj_fqcn` must be exactly `<site>.<job_id>`.
-4. `trainer_fqcn` must equal the value derived from that CJ FQCN and attach ID.
-5. The endpoint must be a valid `shared-file` URL with clear connection security.
-6. Discovery plus `SESSION_OPEN` share one `job_wait_timeout` budget.
+2. It validates the root, discovery tree, record files, and concrete FileDriver
+   listener with the same filesystem-permission policy as the publisher.
+3. It accepts a record only while the publisher's stable lock is held. An
+   unlocked orphan record is never considered live.
+4. `cj_fqcn` must be exactly `<site>.<job_id>`.
+5. `trainer_fqcn` must equal the value derived from that CJ FQCN and attach ID.
+6. The endpoint must be an immediate child of the configured root, be a valid
+   `shared-file` URL with clear connection security.
+7. Discovery plus `SESSION_OPEN` share one `job_wait_timeout` budget and shutdown
+   interrupts an otherwise unbounded discovery wait.
 
 The record is discovery, not authentication. Filesystem access to the configured
-root is the trust boundary.
+root is the trust boundary. The shared filesystem must provide coherent atomic
+rename and working cross-node POSIX advisory locking; deployments where locks
+are local-only or disabled are unsupported.
 
 ## Trainer Profiles
 
@@ -347,16 +357,17 @@ or wakes a waiting `init()`. This avoids a wrong-peer availability latch.
 The CJ sends:
 
 ```text
-TASK_READY(session_id, task_id, attempt_id, task_name, model)
+TASK_READY(session_id, task_id, task_seq, attempt_id, task_name, model)
 ```
 
 The trainer replies with `TASK_ACCEPTED` or `TASK_FAILED`. Transport failures are
 retryable with the same IDs; semantic rejection is terminal and is not retried.
 `TASK_STATUS` resolves an ambiguous reply.
 
-The trainer keeps a bounded ledger. Entries evicted from the active ledger remain
-represented by a stale watermark/set so delayed duplicates are rejected rather
-than requeued as new work.
+The CJ assigns a monotonically increasing task sequence within each session. The
+trainer keeps a 256-entry ledger; completed entries evicted from it advance a
+stale sequence watermark so delayed duplicates are rejected rather than requeued
+as new work.
 
 ### Result delivery
 
@@ -422,11 +433,15 @@ Finalization:
 
 1. marks the backend closed;
 2. asks an established trainer to shut down its session;
-3. waits briefly for the monitor thread;
-4. removes the endpoint claim;
-5. removes the exact listener connector;
-6. removes the identity mapping it added; and
-7. disables pass-through.
+3. if an accepted lazy-result source is still live, keeps the route available
+   until it settles, disconnects, or reaches the streaming idle timeout (600
+   seconds by default, plus disconnect grace); this can intentionally delay
+   `END_RUN` to preserve an already-canonical result;
+4. waits briefly for the monitor thread;
+5. removes the endpoint claim;
+6. removes the exact listener connector;
+7. removes the identity mapping it added; and
+8. disables pass-through.
 
 It never sends OS signals, terminates a process group, calls `waitpid`, or assumes
 the trainer's PID exists.
@@ -463,7 +478,7 @@ configuration because it is only a name. No Attach secret is defined.
 - `nvflare/client/cell/attach.py`
   validates attach IDs, derives the trainer FQCN, and validates direct URLs.
 - `nvflare/client/cell/attach_rendezvous.py`
-  implements leased shared-file endpoint discovery.
+  implements locked shared-file endpoint discovery.
 - `nvflare/client/cell/bootstrap.py`
   validates direct and rendezvous profile forms.
 - `nvflare/client/cell/attach_session.py`

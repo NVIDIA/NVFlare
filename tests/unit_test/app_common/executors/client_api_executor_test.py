@@ -22,6 +22,7 @@ ownership hook, and the surface-freeze contract on the frozen constructor parame
 import inspect
 from unittest.mock import Mock, call, patch
 
+import numpy as np
 import pytest
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE, AnalyticsDataType
@@ -33,7 +34,10 @@ from nvflare.apis.fl_exception import UnsafeComponentError, UnsafeJobError
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
+from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.decomposers import common_decomposers
+from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
 from nvflare.app_common.executors.client_api_executor import (
     ALL_EXECUTION_MODES,
@@ -42,7 +46,8 @@ from nvflare.app_common.executors.client_api_executor import (
     ExecutionMode,
 )
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.fuel.utils.fobs import FOBSContextKey
+from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.fobs import FOBSContextKey, dots
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
 # The frozen V1 constructor surface (design: "Configuration Surface" in
@@ -110,6 +115,7 @@ class _StubBackend(ClientAPIBackendSpec):
         self.calls = []
         self.result = make_reply(ReturnCode.OK)
         self.context = None
+        self.receiver_ids_during_execute = None
 
     def initialize(self, context, fl_ctx):
         self.context = context
@@ -117,6 +123,7 @@ class _StubBackend(ClientAPIBackendSpec):
 
     def execute(self, task_name, shareable, fl_ctx, abort_signal):
         self.calls.append(("execute", task_name))
+        self.receiver_ids_during_execute = shareable.get_header(FOBSContextKey.RECEIVER_IDS)
         return self.result
 
     def finalize(self, fl_ctx):
@@ -562,6 +569,7 @@ class TestBackendPlumbing:
 
         assert reply is materialized
         assert task.get_header(FOBSContextKey.RECEIVER_IDS) == ["site-1.job-1"]
+        assert backend.receiver_ids_during_execute == ["site-1.job-1"]
         dumps.assert_called_once_with(backend.result, fobs_ctx=encode_ctx)
         assert cell.get_fobs_context.call_args_list == [
             call(
@@ -573,6 +581,34 @@ class TestBackendPlumbing:
             call(props={FOBSContextKey.PASS_THROUGH: False, FOBSContextKey.ABORT_SIGNAL: abort_signal}),
         ]
         loads.assert_called_once_with(b"encoded", fobs_ctx=decode_ctx)
+
+    def test_materialize_result_uses_real_fobs_to_resolve_lazy_reference(self):
+        flare_decomposers.register()
+        common_decomposers.register()
+        fobs.register(NumpyArrayDecomposer)
+        cell = Mock()
+        cell.get_fobs_context.side_effect = lambda props: {FOBSContextKey.CELL: cell, **props}
+        abort_signal = Signal()
+        expected = np.asarray([1.0, 2.0, 3.0])
+        result = Shareable(
+            {
+                "weight": LazyDownloadRef(
+                    fqcn="site-1.trainer",
+                    ref_id="ref-1",
+                    item_id="T0",
+                    dot=dots.NUMPY_DOWNLOAD,
+                )
+            }
+        )
+
+        with patch(
+            "nvflare.app_common.decomposers.numpy_decomposers.download_arrays",
+            return_value=(None, {"T0": expected}),
+        ) as download:
+            materialized = ClientAPIExecutor._materialize_result(result, cell, abort_signal)
+
+        np.testing.assert_array_equal(materialized["weight"], expected)
+        download.assert_called_once()
 
     def test_execute_keeps_pass_through_result_for_unrelated_task(self):
         backend = _StubBackend()

@@ -59,8 +59,10 @@ dynamic `shared-file://.../lst_<id>` URL:
 
 When the CJ starts, it creates its Attach listener and atomically publishes the
 dynamic URL under the site/attach-ID rendezvous claim. A trainer started first
-waits for that record. The claim is leased, rejects a concurrent live job using
-the same `attach_id`, and is removed during orderly job teardown.
+waits for that record. The CJ holds a cross-node POSIX advisory lock for its
+lifetime, which rejects a concurrent live job using the same `attach_id` and
+makes an unlocked crash artifact ineligible for discovery. The shared filesystem
+must provide working cross-node advisory locks and coherent atomic rename.
 
 Shared-file Attach does not require `--allow_insecure_attach`. The backend checks
 the actual CJ-owned listener, FileDriver ownership marker, connection directory,
@@ -102,8 +104,11 @@ The trainer receives the matching direct profile:
 
 Keep `client.crt` and `client.key` beside `rootCA.pem`; Cell discovers them using
 the same credential-folder convention as `IPCAgent`. The CJ listener requires its
-site-local CA, server certificate, and server key. Never distribute the server
-key to the trainer.
+site-local CA, server certificate, and server key. A default provisioned client
+kit does not contain `server.crt`/`server.key`; provision the site with
+`listening_host` set (or otherwise install a site-local listener certificate and
+key) before configuring the `grpcs` listener. Never distribute the server key to
+the trainer.
 
 The direct profile is job-specific: replace `<job_id>` with the submitted job ID.
 The trainer FQCN is derived as
@@ -133,14 +138,16 @@ nvflare poc prepare -n 1 --force
 
 Create
 `/tmp/nvflare-attach-poc/example_project/prod_00/site-1/local/comm_config.json`
-with a dedicated shared-file Attach listener:
+with a dedicated shared-file Attach listener. Replace `/absolute/shared/...`
+below and in a private copy of `attach_profile.json` with the same existing,
+absolute directory; create it with mode `0770` under a non-world-writable parent:
 
 ```json
 {
   "client_api_attach": {
     "scheme": "shared-file",
     "resources": {
-      "root_dir": "/tmp/nvflare-client-api-attach",
+      "root_dir": "/absolute/shared/nvflare-client-api-attach",
       "connection_security": "clear",
       "poll_interval": 0.01,
       "max_poll_interval": 0.25
@@ -149,8 +156,8 @@ with a dedicated shared-file Attach listener:
 }
 ```
 
-The example `attach_profile.json` already uses the matching
-`/tmp/nvflare-client-api-attach` rendezvous directory.
+The checked-in `attach_profile.json` uses the same explicit placeholder so the
+example never silently trusts a shared `/tmp` location.
 
 The component policy must authorize the exact job components. In each directory,
 copy `resources.json.default` to `resources.json` if needed, preserve the existing
@@ -158,11 +165,9 @@ copy `resources.json.default` to `resources.json` if needed, preserve the existi
 
 - `site-1/local/resources.json`:
   `nvflare.app_common.executors.client_api_executor.ClientAPIExecutor`
-- `server/local/resources.json`:
-  `nvflare.app_common.widgets.metrics_artifact_writer.MetricsArtifactWriter`
 
-The metrics writer comes from `BaseFedJob`; it is not Attach-specific. Do not
-replace either allow-list with a broad package prefix.
+`MetricsArtifactWriter` is already in the default allow-list. Do not replace the
+site allow-list with a broad package prefix.
 
 Start the POC and install the example dependency:
 

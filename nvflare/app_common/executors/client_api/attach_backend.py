@@ -14,8 +14,6 @@
 
 """Non-owning Client API backend for an externally started trainer."""
 
-import os
-import stat
 import threading
 import time
 import uuid
@@ -31,21 +29,17 @@ from nvflare.app_common.executors.client_api.cell_backend import CellBackendBase
 from nvflare.client.cell.attach import make_attach_trainer_fqcn
 from nvflare.client.cell.attach_rendezvous import (
     ATTACH_COMM_CONFIG,
-    ATTACH_RENDEZVOUS_LEASE_INTERVAL,
     AttachEndpointPublisher,
+    validate_shared_file_listener,
 )
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, TaskState, Topic
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.identity import is_mtls_connection
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
-from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.f3.drivers.file_driver import CONNS_DIR as SHARED_FILE_CONNS_DIR
-from nvflare.fuel.f3.drivers.file_driver import OWNER_MARKER as SHARED_FILE_OWNER_MARKER
 from nvflare.fuel.f3.drivers.file_driver import ROOT_DIR as SHARED_FILE_ROOT_DIR
 from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
-from nvflare.fuel.f3.drivers.file_driver import parse_file_url
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils.fobs import FOBSContextKey
@@ -89,6 +83,7 @@ class _AttachedTrainerSession(CellSession):
     def __init__(self, trainer_fqcn: str):
         super().__init__(trainer_fqcn, uuid.uuid4().hex)
         self.error: Optional[str] = None
+        self.task_sequence = 0
 
 
 class AttachBackend(CellBackendBase):
@@ -108,7 +103,6 @@ class AttachBackend(CellBackendBase):
         self._attach_listener_url: Optional[str] = None
         self._attach_listener_params: Optional[dict] = None
         self._endpoint_publisher: Optional[AttachEndpointPublisher] = None
-        self._last_rendezvous_touch = 0.0
         self._trainer_identity_added = False
 
     # ------------------------------------------------------------------ lifecycle
@@ -225,23 +219,12 @@ class AttachBackend(CellBackendBase):
     def _shared_file_listener_is_protected(params: dict) -> bool:
         """Validate the CJ-owned FileDriver listener's concrete filesystem trust boundary."""
         url = params.get(DriverParams.URL.value, params.get(DriverParams.URL))
-        if not isinstance(url, str):
+        root_dir = params.get(SHARED_FILE_ROOT_DIR)
+        if not isinstance(url, str) or not isinstance(root_dir, str):
             return False
         try:
-            listener_dir = parse_file_url(url)
-            root_stat = os.stat(os.path.dirname(listener_dir))
-            listener_stat = os.lstat(listener_dir)
-            conns_stat = os.lstat(os.path.join(listener_dir, SHARED_FILE_CONNS_DIR))
-            marker_stat = os.lstat(os.path.join(listener_dir, SHARED_FILE_OWNER_MARKER))
-        except (CommError, OSError):
-            return False
-
-        if root_stat.st_mode & stat.S_IWOTH:
-            return False
-        for value in (listener_stat, conns_stat):
-            if not stat.S_ISDIR(value.st_mode) or stat.S_IMODE(value.st_mode) & 0o007:
-                return False
-        if not stat.S_ISREG(marker_stat.st_mode) or stat.S_IMODE(marker_stat.st_mode) & 0o007:
+            validate_shared_file_listener(root_dir, url)
+        except (OSError, RuntimeError, ValueError):
             return False
         return True
 
@@ -257,22 +240,6 @@ class AttachBackend(CellBackendBase):
             connect_url=self._attach_listener_url,
             connection_security=ConnectionSecurity.CLEAR,
         )
-        self._last_rendezvous_touch = time.monotonic()
-
-    def _refresh_rendezvous(self, session: _AttachedTrainerSession) -> bool:
-        publisher = self._endpoint_publisher
-        if publisher is None:
-            return True
-        now = time.monotonic()
-        if now - self._last_rendezvous_touch < ATTACH_RENDEZVOUS_LEASE_INTERVAL:
-            return True
-        try:
-            publisher.touch()
-        except Exception as e:
-            session.error = f"attach endpoint rendezvous failed: {e}"
-            return False
-        self._last_rendezvous_touch = now
-        return True
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         executor = self._context.executor
@@ -344,8 +311,6 @@ class AttachBackend(CellBackendBase):
         while not self._session_stop.is_set():
             session = self._get_session()
             if session is None:
-                return
-            if not self._refresh_rendezvous(session):
                 return
             if not session.ready.is_set():
                 if session.error:
@@ -492,12 +457,14 @@ class AttachBackend(CellBackendBase):
         abort_signal: Signal,
     ) -> Shareable:
         task = CellTask(uuid.uuid4().hex)
+        session.task_sequence += 1
+        task_sequence = session.task_sequence
         shareable.set_header(FLMetaKey.JOB_ID, fl_ctx.get_job_id())
         shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())
         with self._task_lock:
             self._current_task = task
         try:
-            accepted, reason = self._deliver_task(session, task, task_name, shareable, abort_signal)
+            accepted, reason = self._deliver_task(session, task, task_sequence, task_name, shareable, abort_signal)
             if not accepted:
                 if abort_signal.triggered:
                     self._send_abort(session, f"task {task_name!r} aborted")
@@ -536,6 +503,7 @@ class AttachBackend(CellBackendBase):
         self,
         session: _AttachedTrainerSession,
         task: CellTask,
+        task_sequence: int,
         task_name: str,
         shareable: Shareable,
         abort_signal: Signal,
@@ -567,6 +535,7 @@ class AttachBackend(CellBackendBase):
                 {
                     MsgKey.SESSION_ID: session.session_id,
                     MsgKey.TASK_ID: task.task_id,
+                    MsgKey.TASK_SEQ: task_sequence,
                     MsgKey.ATTEMPT_ID: attempt_id,
                     MsgKey.TASK_NAME: task_name,
                     MsgKey.MODEL: shareable,

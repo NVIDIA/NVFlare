@@ -228,6 +228,8 @@ def test_attach_session_executes_task_and_finalize_only_closes_protocol():
 
     assert session.trainer_fqcn == TRAINER_FQCN
     assert result["answer"] == 42
+    task_ready = next(payload for topic, _, payload in cell.sent if topic == Topic.TASK_READY)
+    assert task_ready[MsgKey.TASK_SEQ] == 1
     assert any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
     assert any(topic == Topic.SHUTDOWN for topic, _, _ in cell.sent)
     assert not backend._session_thread.is_alive()

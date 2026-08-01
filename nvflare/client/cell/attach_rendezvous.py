@@ -14,6 +14,7 @@
 
 """Shared-filesystem discovery for a CJ-owned Client API Attach listener."""
 
+import errno
 import json
 import os
 import shutil
@@ -23,22 +24,38 @@ import time
 import uuid
 from typing import Optional
 
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - shared-file Attach is a POSIX/HPC transport
+    fcntl = None
+
 from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.client.cell.attach import make_attach_trainer_fqcn, validate_attach_id, validate_attach_profile
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.comm_error import CommError
+from nvflare.fuel.f3.drivers.file_driver import CONNS_DIR as SHARED_FILE_CONNS_DIR
+from nvflare.fuel.f3.drivers.file_driver import LISTENER_PREFIX as SHARED_FILE_LISTENER_PREFIX
+from nvflare.fuel.f3.drivers.file_driver import OWNER_MARKER as SHARED_FILE_OWNER_MARKER
 from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
+from nvflare.fuel.f3.drivers.file_driver import parse_file_url
 
 ATTACH_COMM_CONFIG = "client_api_attach"
 ATTACH_ENDPOINT_SCHEMA_VERSION = 1
 ATTACH_RENDEZVOUS_SUBDIR = ".nvflare/client_api_attach"
 ATTACH_ENDPOINT_FILE = "endpoint.json"
 ATTACH_OWNER_FILE = "owner.json"
-ATTACH_LEASE_FILE = "lease"
+ATTACH_CLAIM_LOCK_SUFFIX = ".lock"
 ATTACH_RENDEZVOUS_DIR_MODE = 0o770
 ATTACH_RENDEZVOUS_FILE_MODE = 0o660
-ATTACH_RENDEZVOUS_LEASE_INTERVAL = 5.0
-ATTACH_RENDEZVOUS_LEASE_TIMEOUT = 30.0
 _WAIT_INTERVAL = 0.2
+
+
+class AttachEndpointOwnershipError(RuntimeError):
+    """The publisher's process-held claim no longer matches its claim directory."""
+
+
+class AttachRendezvousCancelled(RuntimeError):
+    """A trainer stopped while waiting for a shared-file endpoint."""
 
 
 class AttachEndpointKey:
@@ -50,7 +67,6 @@ class AttachEndpointKey:
     TRAINER_FQCN = "trainer_fqcn"
     CONNECT_URL = "connect_url"
     CONNECTION_SECURITY = "connection_security"
-    LEASE_TIMEOUT = "lease_timeout"
 
 
 def _validate_site_name(site_name: str) -> str:
@@ -108,26 +124,44 @@ def _read_json(path: str) -> Optional[dict]:
     return data if isinstance(data, dict) else None
 
 
+def _read_json_strict(path: str) -> dict:
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise AttachEndpointOwnershipError(f"attach rendezvous file does not contain an object: {path}")
+    return data
+
+
+def _validate_real_dir(path: str, *, private: bool, label: str) -> None:
+    value = os.lstat(path)
+    if not stat.S_ISDIR(value.st_mode):
+        raise RuntimeError(f"{label} is not a real directory: {path}")
+    mode = stat.S_IMODE(value.st_mode)
+    if private and mode & 0o007:
+        raise RuntimeError(f"{label} grants access to other users: {path}")
+    if not private and mode & stat.S_IWOTH:
+        raise RuntimeError(f"{label} is world-writable: {path}")
+
+
+def _validate_private_file(path: str, label: str) -> None:
+    value = os.lstat(path)
+    if not stat.S_ISREG(value.st_mode):
+        raise RuntimeError(f"{label} is not a regular file: {path}")
+    if stat.S_IMODE(value.st_mode) & 0o007:
+        raise RuntimeError(f"{label} grants access to other users: {path}")
+
+
 def _ensure_private_dir(path: str, mode: int) -> None:
     try:
         os.mkdir(path, mode)
         os.chmod(path, mode)
     except FileExistsError:
         pass
-    value = os.lstat(path)
-    if not stat.S_ISDIR(value.st_mode):
-        raise RuntimeError(f"attach rendezvous path is not a real directory: {path}")
-    if stat.S_IMODE(value.st_mode) & 0o007:
-        raise RuntimeError(f"attach rendezvous directory grants access to other users: {path}")
+    _validate_real_dir(path, private=True, label="attach rendezvous path")
 
 
 def _ensure_rendezvous_parent(root_dir: str, site_name: str) -> str:
-    root_value = os.lstat(root_dir)
-    if not stat.S_ISDIR(root_value.st_mode):
-        raise RuntimeError(f"shared-file root is not a real directory: {root_dir}")
-    if stat.S_IMODE(root_value.st_mode) & stat.S_IWOTH:
-        raise RuntimeError(f"shared-file root is world-writable: {root_dir}")
-
+    _validate_real_dir(root_dir, private=False, label="shared-file root")
     current = root_dir
     for segment in (".nvflare", "client_api_attach", site_name):
         current = os.path.join(current, segment)
@@ -135,18 +169,45 @@ def _ensure_rendezvous_parent(root_dir: str, site_name: str) -> str:
     return current
 
 
-def _claim_is_stale(claim_dir: str) -> bool:
+def _claim_lock_path(parent: str, attach_id: str) -> str:
+    return os.path.join(parent, f".{attach_id}{ATTACH_CLAIM_LOCK_SUFFIX}")
+
+
+def _acquire_claim_lock(parent: str, attach_id: str) -> int:
+    """Acquire a process-held cross-node claim lock or reject an existing live owner."""
+    if fcntl is None:
+        raise RuntimeError("shared-file Attach requires POSIX advisory lock support")
+    path = _claim_lock_path(parent, attach_id)
+    flags = os.O_CREAT | os.O_RDWR
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags, ATTACH_RENDEZVOUS_FILE_MODE)
     try:
-        value = os.lstat(claim_dir)
-        if not stat.S_ISDIR(value.st_mode):
-            raise RuntimeError(f"attach claim path is not a real directory: {claim_dir}")
-        lease_mtime = os.stat(os.path.join(claim_dir, ATTACH_LEASE_FILE)).st_mtime
-    except FileNotFoundError:
+        value = os.fstat(fd)
+        if not stat.S_ISREG(value.st_mode):
+            raise RuntimeError(f"attach claim lock is not a regular file: {path}")
+        if stat.S_IMODE(value.st_mode) & 0o007:
+            raise RuntimeError(f"attach claim lock grants access to other users: {path}")
         try:
-            lease_mtime = os.lstat(claim_dir).st_mtime
-        except FileNotFoundError:
-            return True
-    return time.time() - lease_mtime > ATTACH_RENDEZVOUS_LEASE_TIMEOUT
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as e:
+            if e.errno in (errno.EACCES, errno.EAGAIN):
+                raise AttachEndpointOwnershipError(f"attach_id {attach_id!r} is already claimed by a live CJ") from e
+            raise RuntimeError(f"shared-file Attach requires working cross-node advisory locks for {path}: {e}") from e
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _release_claim_lock(fd: Optional[int]) -> None:
+    if fd is None:
+        return
+    try:
+        if fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
 
 
 def _remove_owned_tree(path: str) -> None:
@@ -164,41 +225,42 @@ class AttachEndpointPublisher:
         self.instance_id = uuid.uuid4().hex
         self.claim_dir = attach_claim_dir(self.root_dir, self.site_name, self.attach_id)
         self._closed = False
+        self._claim_lock_fd: Optional[int] = None
         self._claim()
 
     def _claim(self) -> None:
         parent = _ensure_rendezvous_parent(self.root_dir, self.site_name)
-        for _ in range(3):
-            try:
-                os.mkdir(self.claim_dir, ATTACH_RENDEZVOUS_DIR_MODE)
-                os.chmod(self.claim_dir, ATTACH_RENDEZVOUS_DIR_MODE)
-                break
-            except FileExistsError:
-                if not _claim_is_stale(self.claim_dir):
-                    raise RuntimeError(
-                        f"attach_id {self.attach_id!r} is already claimed by a live CJ at site {self.site_name!r}"
-                    )
-                tombstone = os.path.join(parent, f".{self.attach_id}.stale-{uuid.uuid4().hex}")
-                try:
-                    os.rename(self.claim_dir, tombstone)
-                except FileNotFoundError:
-                    continue
-                _remove_owned_tree(tombstone)
-        else:
-            raise RuntimeError(f"could not claim attach_id {self.attach_id!r}")
-
+        self._claim_lock_fd = _acquire_claim_lock(parent, self.attach_id)
         try:
+            if os.path.lexists(self.claim_dir):
+                _validate_real_dir(self.claim_dir, private=True, label="attach claim path")
+                tombstone = os.path.join(parent, f".{self.attach_id}.stale-{uuid.uuid4().hex}")
+                os.rename(self.claim_dir, tombstone)
+                _remove_owned_tree(tombstone)
+            os.mkdir(self.claim_dir, ATTACH_RENDEZVOUS_DIR_MODE)
+            os.chmod(self.claim_dir, ATTACH_RENDEZVOUS_DIR_MODE)
             _atomic_write_json(
                 os.path.join(self.claim_dir, ATTACH_OWNER_FILE),
                 {AttachEndpointKey.INSTANCE_ID: self.instance_id},
                 ATTACH_RENDEZVOUS_FILE_MODE,
             )
-            self.touch()
         except BaseException:
             _remove_owned_tree(self.claim_dir)
+            _release_claim_lock(self._claim_lock_fd)
+            self._claim_lock_fd = None
             raise
 
+    def _assert_owner(self) -> None:
+        try:
+            owner = _read_json_strict(os.path.join(self.claim_dir, ATTACH_OWNER_FILE))
+        except json.JSONDecodeError as e:
+            raise AttachEndpointOwnershipError(f"attach rendezvous owner record is corrupt: {self.claim_dir}") from e
+        if owner.get(AttachEndpointKey.INSTANCE_ID) != self.instance_id:
+            raise AttachEndpointOwnershipError(f"lost ownership of attach rendezvous claim {self.claim_dir}")
+
     def publish(self, cj_fqcn: str, trainer_fqcn: str, connect_url: str, connection_security: str) -> None:
+        if self._closed:
+            raise AttachEndpointOwnershipError("cannot publish a closed attach rendezvous claim")
         record = {
             AttachEndpointKey.SCHEMA_VERSION: ATTACH_ENDPOINT_SCHEMA_VERSION,
             AttachEndpointKey.INSTANCE_ID: self.instance_id,
@@ -208,54 +270,116 @@ class AttachEndpointPublisher:
             AttachEndpointKey.TRAINER_FQCN: trainer_fqcn,
             AttachEndpointKey.CONNECT_URL: connect_url,
             AttachEndpointKey.CONNECTION_SECURITY: connection_security,
-            AttachEndpointKey.LEASE_TIMEOUT: ATTACH_RENDEZVOUS_LEASE_TIMEOUT,
         }
         _validate_endpoint_record(record, self.site_name, self.attach_id)
+        validate_shared_file_listener(self.root_dir, connect_url)
+        self._assert_owner()
         _atomic_write_json(
             os.path.join(self.claim_dir, ATTACH_ENDPOINT_FILE),
             record,
             ATTACH_RENDEZVOUS_FILE_MODE,
         )
-        self.touch()
-
-    def touch(self) -> None:
-        if self._closed:
-            return
-        owner = _read_json(os.path.join(self.claim_dir, ATTACH_OWNER_FILE))
-        if not owner or owner.get(AttachEndpointKey.INSTANCE_ID) != self.instance_id:
-            raise RuntimeError(f"lost ownership of attach rendezvous claim {self.claim_dir}")
-        lease_path = os.path.join(self.claim_dir, ATTACH_LEASE_FILE)
-        try:
-            os.utime(lease_path, None)
-        except FileNotFoundError:
-            with open(lease_path, "ab"):
-                pass
-            os.chmod(lease_path, ATTACH_RENDEZVOUS_FILE_MODE)
 
     def close(self) -> None:
         if self._closed:
             return
         self._closed = True
-        owner = _read_json(os.path.join(self.claim_dir, ATTACH_OWNER_FILE))
-        if not owner or owner.get(AttachEndpointKey.INSTANCE_ID) != self.instance_id:
-            return
-        tombstone = f"{self.claim_dir}.closing-{self.instance_id}"
         try:
-            os.rename(self.claim_dir, tombstone)
+            owner = _read_json(os.path.join(self.claim_dir, ATTACH_OWNER_FILE))
+            if owner and owner.get(AttachEndpointKey.INSTANCE_ID) == self.instance_id:
+                tombstone = f"{self.claim_dir}.closing-{self.instance_id}"
+                try:
+                    os.rename(self.claim_dir, tombstone)
+                except FileNotFoundError:
+                    pass
+                else:
+                    _remove_owned_tree(tombstone)
+        finally:
+            _release_claim_lock(self._claim_lock_fd)
+            self._claim_lock_fd = None
+
+
+def _existing_rendezvous_tree_is_safe(root_dir: str, site_name: str, attach_id: str) -> bool:
+    """Validate every existing discovery component; return False while trainer-first paths are absent."""
+    site_dir = os.path.join(root_dir, ATTACH_RENDEZVOUS_SUBDIR, site_name)
+    paths = (
+        (root_dir, False, "shared-file root"),
+        (os.path.join(root_dir, ".nvflare"), True, "attach rendezvous path"),
+        (os.path.join(root_dir, ".nvflare", "client_api_attach"), True, "attach rendezvous path"),
+        (site_dir, True, "attach rendezvous path"),
+        (attach_claim_dir(root_dir, site_name, attach_id), True, "attach claim path"),
+    )
+    for path, private, label in paths:
+        try:
+            _validate_real_dir(path, private=private, label=label)
         except FileNotFoundError:
-            return
-        _remove_owned_tree(tombstone)
-
-
-def _claim_is_live(claim_dir: str, record: dict) -> bool:
-    timeout = record.get(AttachEndpointKey.LEASE_TIMEOUT)
-    if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
-        return False
+            return False
     try:
-        mtime = os.stat(os.path.join(claim_dir, ATTACH_LEASE_FILE)).st_mtime
-    except OSError:
+        _validate_private_file(_claim_lock_path(site_dir, attach_id), "attach claim lock")
+    except FileNotFoundError:
         return False
-    return time.time() - mtime <= timeout
+    return True
+
+
+def validate_shared_file_listener(root_dir: str, connect_url: str) -> str:
+    """Validate a FileDriver listener as a concrete endpoint inside the configured trust root."""
+    root_dir = _validate_root_dir(root_dir)
+    _validate_real_dir(root_dir, private=False, label="shared-file root")
+    try:
+        listener_dir = os.path.abspath(parse_file_url(connect_url))
+    except CommError as e:
+        raise ValueError(str(e)) from e
+    if os.path.dirname(listener_dir) != root_dir or not os.path.basename(listener_dir).startswith(
+        SHARED_FILE_LISTENER_PREFIX
+    ):
+        raise RuntimeError(f"shared-file Attach listener must be an immediate child of configured root {root_dir}")
+    _validate_real_dir(listener_dir, private=True, label="shared-file listener")
+    _validate_real_dir(
+        os.path.join(listener_dir, SHARED_FILE_CONNS_DIR),
+        private=True,
+        label="shared-file listener connection path",
+    )
+    _validate_private_file(os.path.join(listener_dir, SHARED_FILE_OWNER_MARKER), "shared-file listener owner marker")
+    return listener_dir
+
+
+def _claim_has_live_publisher(root_dir: str, site_name: str, attach_id: str) -> bool:
+    """Return whether a CJ still owns the stable, process-held attach lock."""
+    if fcntl is None:
+        raise RuntimeError("shared-file Attach requires POSIX advisory lock support")
+    site_dir = os.path.join(root_dir, ATTACH_RENDEZVOUS_SUBDIR, site_name)
+    path = _claim_lock_path(site_dir, attach_id)
+    flags = os.O_RDWR
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags)
+    except FileNotFoundError:
+        return False
+    except OSError as e:
+        if e.errno in (errno.EACCES, errno.ELOOP, errno.EPERM):
+            raise RuntimeError(f"cannot safely open attach claim lock {path}: {e}") from e
+        raise
+    try:
+        value = os.fstat(fd)
+        if not stat.S_ISREG(value.st_mode):
+            raise RuntimeError(f"attach claim lock is not a regular file: {path}")
+        if stat.S_IMODE(value.st_mode) & 0o007:
+            raise RuntimeError(f"attach claim lock grants access to other users: {path}")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as e:
+            if e.errno in (errno.EACCES, errno.EAGAIN):
+                return True
+            if e.errno in (errno.ENOSYS, errno.EOPNOTSUPP):
+                raise RuntimeError(
+                    f"shared-file Attach requires working cross-node advisory locks for {path}: {e}"
+                ) from e
+            raise
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return False
+    finally:
+        os.close(fd)
 
 
 def _validate_endpoint_record(record: dict, site_name: str, attach_id: str) -> dict:
@@ -295,23 +419,61 @@ def _validate_endpoint_record(record: dict, site_name: str, attach_id: str) -> d
     return dict(record)
 
 
+def _read_valid_endpoint(root_dir: str, site_name: str, attach_id: str) -> Optional[dict]:
+    if not _existing_rendezvous_tree_is_safe(root_dir, site_name, attach_id):
+        return None
+    claim_dir = attach_claim_dir(root_dir, site_name, attach_id)
+    owner_path = os.path.join(claim_dir, ATTACH_OWNER_FILE)
+    endpoint_path = os.path.join(claim_dir, ATTACH_ENDPOINT_FILE)
+    try:
+        _validate_private_file(owner_path, "attach rendezvous owner")
+        _validate_private_file(endpoint_path, "attach rendezvous endpoint")
+    except FileNotFoundError:
+        return None
+    owner = _read_json(owner_path)
+    record = _read_json(endpoint_path)
+    if not owner or not record:
+        return None
+    record = _validate_endpoint_record(record, site_name, attach_id)
+    instance_id = record[AttachEndpointKey.INSTANCE_ID]
+    if owner.get(AttachEndpointKey.INSTANCE_ID) != instance_id:
+        return None
+    validate_shared_file_listener(root_dir, record[AttachEndpointKey.CONNECT_URL])
+    return record if _claim_has_live_publisher(root_dir, site_name, attach_id) else None
+
+
 def wait_for_attach_endpoint(
     root_dir: str,
     site_name: str,
     attach_id: str,
     timeout: Optional[float],
+    stop_event=None,
 ) -> dict:
-    """Wait for a live endpoint record and return its validated contents."""
-    claim_dir = attach_claim_dir(root_dir, site_name, attach_id)
+    """Wait for an endpoint whose publisher still holds the cross-node claim lock."""
+    root_dir = _validate_root_dir(root_dir)
+    site_name = _validate_site_name(site_name)
+    attach_id = validate_attach_id(attach_id)
     deadline = None if timeout is None else time.monotonic() + timeout
     while True:
-        record = _read_json(os.path.join(claim_dir, ATTACH_ENDPOINT_FILE))
-        if record and _claim_is_live(claim_dir, record):
-            return _validate_endpoint_record(record, site_name, attach_id)
-        if deadline is not None and time.monotonic() >= deadline:
+        if stop_event is not None and stop_event.is_set():
+            raise AttachRendezvousCancelled("attach rendezvous wait was stopped")
+        try:
+            record = _read_valid_endpoint(root_dir, site_name, attach_id)
+        except OSError:
+            # Network filesystems can transiently fail metadata reads. The
+            # caller's local deadline still bounds this retry loop.
+            record = None
+        now = time.monotonic()
+        if record:
+            return record
+        if deadline is not None and now >= deadline:
             raise TimeoutError(
                 f"no live attach endpoint for site={site_name!r} attach_id={attach_id!r} "
                 f"within job_wait_timeout={timeout}s"
             )
-        remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
-        time.sleep(_WAIT_INTERVAL if remaining is None else min(_WAIT_INTERVAL, remaining))
+        remaining = None if deadline is None else max(0.0, deadline - now)
+        wait_time = _WAIT_INTERVAL if remaining is None else min(_WAIT_INTERVAL, remaining)
+        if stop_event is not None:
+            stop_event.wait(wait_time)
+        else:
+            time.sleep(wait_time)

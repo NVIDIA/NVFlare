@@ -308,6 +308,13 @@ def _send_and_capture_error(api, model, errors):
         errors.append(e)
 
 
+def _init_and_capture_error(api, errors):
+    try:
+        api.init()
+    except BaseException as e:
+        errors.append(e)
+
+
 def _deliver_attach_task(env, task_id="task-1", attempt_id="attempt-1"):
     shareable = FLModelUtils.to_shareable(FLModel(params={"w": [1.0]}, params_type=ParamsType.FULL))
     return env.deliver(
@@ -316,6 +323,7 @@ def _deliver_attach_task(env, task_id="task-1", attempt_id="attempt-1"):
         {
             MsgKey.SESSION_ID: SESSION_ID,
             MsgKey.TASK_ID: task_id,
+            MsgKey.TASK_SEQ: 1,
             MsgKey.ATTEMPT_ID: attempt_id,
             MsgKey.TASK_NAME: "train",
             MsgKey.MODEL: shareable,
@@ -338,11 +346,18 @@ class TestAttachMode:
         assert kwargs["credentials"]["connection_security"] == "clear"
         assert MsgKey.CONNECT_URL not in attach_env.session_reply.payload
         assert MsgKey.CONNECTION_SECURITY not in attach_env.session_reply.payload
+        assert attach_env.core_cell.message_interceptor == api._attach._pre_decode_guard
         api.shutdown()
         assert not attach_env.shutdown_f3_streaming.called
 
     def test_shared_file_profile_discovers_cj_owned_listener(self, attach_bootstrap_path, attach_env):
         rendezvous_dir = str(Path(attach_bootstrap_path).parent)
+        listener_dir = Path(rendezvous_dir) / "lst_12345678"
+        listener_dir.mkdir(mode=0o770)
+        (listener_dir / "conns").mkdir(mode=0o770)
+        marker = listener_dir / ".nvf_file_transport"
+        marker.touch(mode=0o660)
+        marker.chmod(0o660)
         config = read_bootstrap_config(attach_bootstrap_path)
         del config[BootstrapKey.CONNECT_URL]
         del config[BootstrapKey.CONNECTION_SECURITY]
@@ -366,6 +381,27 @@ class TestAttachMode:
             api.shutdown()
         finally:
             publisher.close()
+
+    def test_shutdown_interrupts_unbounded_shared_file_rendezvous_wait(self, attach_bootstrap_path, attach_env):
+        config = read_bootstrap_config(attach_bootstrap_path)
+        del config[BootstrapKey.CONNECT_URL]
+        del config[BootstrapKey.CONNECTION_SECURITY]
+        del config[BootstrapKey.CJ_FQCN]
+        config[BootstrapKey.RENDEZVOUS_DIR] = str(Path(attach_bootstrap_path).parent)
+        config[BootstrapKey.JOB_WAIT_TIMEOUT] = None
+        write_bootstrap_config(attach_bootstrap_path, config)
+        api = CellClientAPI(bootstrap_file=attach_bootstrap_path)
+        errors = []
+        initializer = threading.Thread(target=lambda: _init_and_capture_error(api, errors))
+        initializer.start()
+        time.sleep(0.05)
+
+        api.shutdown()
+        initializer.join(timeout=1.0)
+
+        assert not initializer.is_alive()
+        assert len(errors) == 1
+        assert "rendezvous wait was stopped" in str(errors[0])
 
     def test_pre_decode_guard_rejects_foreign_origins_without_touching_payload(self, attach_bootstrap_path):
         config = read_bootstrap_config(attach_bootstrap_path)
@@ -853,18 +889,18 @@ class TestAttachMode:
             api.send(result, clear_cache=False)
         assert [topic for topic, _, _ in attach_env.requests].count(Topic.RESULT_READY) == 1
 
-    def test_completed_task_ledger_is_retained_for_the_session(self, attach_bootstrap_path, attach_env):
+    def test_completed_task_ledger_is_bounded_with_stale_watermark(self, attach_bootstrap_path, attach_env):
         api = _init_api(attach_bootstrap_path, attach_env)
 
         for index in range(300):
             task_id = f"task-{index}"
-            assert api._attach.reserve_task(task_id, f"attempt-{index}") is None
+            assert api._attach.reserve_task(task_id, f"attempt-{index}", index + 1) is None
             api._attach.mark_task_complete(task_id)
 
-        duplicate = api._attach.reserve_task("task-0", "delayed-attempt")
-        assert duplicate.payload[MsgKey.REPLY_TOPIC] == Topic.TASK_ACCEPTED
-        assert duplicate.payload[MsgKey.TASK_STATE] == TaskState.COMPLETE
-        assert len(api._attach._task_states) == 300
+        duplicate = api._attach.reserve_task("task-0", "delayed-attempt", 1)
+        assert duplicate.payload[MsgKey.REPLY_TOPIC] == Topic.TASK_FAILED
+        assert "stale task_seq" in duplicate.payload[MsgKey.REASON]
+        assert len(api._attach._task_states) == 256
 
     def test_lifecycle_cleanup_defers_while_result_source_is_live(self, attach_bootstrap_path, attach_env):
         api = _init_api(attach_bootstrap_path, attach_env)

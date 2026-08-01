@@ -72,6 +72,7 @@ class MsgKey:
     CONNECT_URL = "connect_url"
     CONNECTION_SECURITY = "connection_security"
     TASK_ID = "task_id"
+    TASK_SEQ = "task_seq"
     ATTEMPT_ID = "attempt_id"
     TASK_NAME = "task_name"
     TASK_STATE = "task_state"

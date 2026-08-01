@@ -48,6 +48,7 @@ if TYPE_CHECKING:
 _RESULT_STATUS_TIMEOUT = 2.0
 _RESULT_SEND_ATTEMPTS = 2
 _AMBIGUOUS_RESULT_POLL_INTERVAL = 0.25
+_TASK_LEDGER_LIMIT = 256
 
 
 class TrainerSessionError(RuntimeError):
@@ -76,8 +77,13 @@ class AttachTrainerSession:
         )
         self._wait_deadline: Optional[float] = None
         self._opened = threading.Event()
+        self._closed = threading.Event()
         self._task_states = OrderedDict()
         self._task_attempts = {}
+        self._task_sequences = {}
+        self._highest_task_sequence = 0
+        self._evicted_task_sequence = 0
+        self._retryable_task = None
         self._current_result_id: Optional[str] = None
         self._cleanup_registered = False
 
@@ -95,6 +101,7 @@ class AttachTrainerSession:
             site_name=self._api._site_name,
             attach_id=self.attach_id,
             timeout=self._remaining_wait_timeout(),
+            stop_event=self._closed,
         )
         self._api._cj_fqcn = record[AttachEndpointKey.CJ_FQCN]
         self.trainer_fqcn = record[AttachEndpointKey.TRAINER_FQCN]
@@ -189,6 +196,7 @@ class AttachTrainerSession:
         if self._cleanup_registered:
             atexit.unregister(self.cleanup)
             self._cleanup_registered = False
+        self._closed.set()
         self._opened.set()
 
     def cleanup(self) -> None:
@@ -214,11 +222,12 @@ class AttachTrainerSession:
     def mark_task_complete(self, task_id: str) -> None:
         with self._api._lock:
             self._task_states[task_id] = TaskState.COMPLETE
+            self._trim_task_ledger()
 
     def clear_result(self) -> None:
         self._current_result_id = None
 
-    def reserve_task(self, task_id, attempt_id):
+    def reserve_task(self, task_id, attempt_id, task_sequence):
         """Reserve a logical task, returning an idempotent reply for a duplicate."""
         if not isinstance(task_id, str) or not task_id:
             return self._api._reply(Topic.TASK_FAILED, **{MsgKey.REASON: "TASK_READY requires task_id"})
@@ -227,18 +236,53 @@ class AttachTrainerSession:
                 Topic.TASK_FAILED,
                 **{MsgKey.TASK_ID: task_id, MsgKey.REASON: "TASK_READY requires attempt_id"},
             )
+        if not isinstance(task_sequence, int) or isinstance(task_sequence, bool) or task_sequence <= 0:
+            return self._api._reply(
+                Topic.TASK_FAILED,
+                **{MsgKey.TASK_ID: task_id, MsgKey.REASON: "TASK_READY requires a positive integer task_seq"},
+            )
         with self._api._lock:
             known_state = self._task_states.get(task_id)
             known_attempt = self._task_attempts.get(task_id)
+            known_sequence = self._task_sequences.get(task_id)
             if known_state is None:
+                retryable = self._retryable_task == (task_id, task_sequence)
+                if task_sequence <= self._evicted_task_sequence or (
+                    task_sequence <= self._highest_task_sequence and not retryable
+                ):
+                    return self._api._reply(
+                        Topic.TASK_FAILED,
+                        **{
+                            MsgKey.TASK_ID: task_id,
+                            MsgKey.REASON: (
+                                f"stale task_seq {task_sequence}; " f"watermark={self._evicted_task_sequence}"
+                            ),
+                        },
+                    )
+                self._highest_task_sequence = max(self._highest_task_sequence, task_sequence)
+                if retryable:
+                    self._retryable_task = None
                 self._task_states[task_id] = TaskState.QUEUED
                 self._task_states.move_to_end(task_id)
                 self._task_attempts[task_id] = attempt_id
+                self._task_sequences[task_id] = task_sequence
                 return None
+            if known_sequence != task_sequence:
+                return self._api._reply(
+                    Topic.TASK_FAILED,
+                    **{
+                        MsgKey.TASK_ID: task_id,
+                        MsgKey.REASON: (
+                            f"task_seq mismatch for task {task_id!r}: "
+                            f"expected {known_sequence}, got {task_sequence}"
+                        ),
+                    },
+                )
         return self._api._reply(
             Topic.TASK_ACCEPTED,
             **{
                 MsgKey.TASK_ID: task_id,
+                MsgKey.TASK_SEQ: known_sequence,
                 MsgKey.ATTEMPT_ID: known_attempt,
                 MsgKey.TASK_STATE: known_state,
             },
@@ -247,8 +291,23 @@ class AttachTrainerSession:
     def forget_reserved_task(self, task_id, attempt_id) -> None:
         with self._api._lock:
             if self._task_attempts.get(task_id) == attempt_id:
+                task_sequence = self._task_sequences.get(task_id)
                 self._task_states.pop(task_id, None)
                 self._task_attempts.pop(task_id, None)
+                self._task_sequences.pop(task_id, None)
+                if task_sequence is not None:
+                    self._retryable_task = (task_id, task_sequence)
+
+    def _trim_task_ledger(self) -> None:
+        while len(self._task_states) > _TASK_LEDGER_LIMIT:
+            task_id, state = next(iter(self._task_states.items()))
+            if state != TaskState.COMPLETE:
+                return
+            self._task_states.pop(task_id, None)
+            self._task_attempts.pop(task_id, None)
+            task_sequence = self._task_sequences.pop(task_id, None)
+            if task_sequence is not None:
+                self._evicted_task_sequence = max(self._evicted_task_sequence, task_sequence)
 
     def publish_result(
         self,
