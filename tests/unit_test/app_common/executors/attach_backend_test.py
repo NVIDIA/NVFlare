@@ -34,6 +34,7 @@ from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 
 CJ_FQCN = "site-1.job-1"
 TRAINER_FQCN = f"{CJ_FQCN}.-client_api_trainer_a"
@@ -62,7 +63,12 @@ class FakeCell:
         self.connected = True
         self.lose_task_reply = False
         self.deliver_result = True
+        self.deliver_result_on_status = False
         self.task_reply_topic = Topic.TASK_ACCEPTED
+        self.task_status_state = TaskState.QUEUED
+        self.task_serialization_error = None
+        self.hold_lost_task_reply_until_cancel = False
+        self.pending_task = None
         self.task_ready_count = 0
         self.session_open_count = 0
         self.session_open_failures = 0
@@ -112,28 +118,30 @@ class FakeCell:
             raise AssertionError("SESSION_OPEN must use the CoreCell control path")
         if topic == Topic.TASK_READY:
             self.task_ready_count += 1
+            if self.task_serialization_error:
+                raise self.task_serialization_error
+            # Real Cell.send_request sets this only after local FOBS encoding
+            # succeeds and before any transport work begins.
+            request.set_header(StreamHeaderKey.PAYLOAD_ENCODING, "fobs")
             task = request.payload
+            self.pending_task = (target, task)
             if self.task_reply_topic == Topic.TASK_FAILED:
                 return _accepted(Topic.TASK_FAILED, **{MsgKey.REASON: "unsupported task"})
-            if not self.deliver_result:
-                return _accepted(Topic.TASK_ACCEPTED)
-            result_reply = self.deliver(
-                Topic.RESULT_READY,
-                target,
-                {
-                    MsgKey.SESSION_ID: task[MsgKey.SESSION_ID],
-                    MsgKey.TASK_ID: task[MsgKey.TASK_ID],
-                    MsgKey.RESULT_ID: uuid.uuid4().hex,
-                    MsgKey.ATTEMPT_ID: uuid.uuid4().hex,
-                    MsgKey.RESULT: Shareable({"answer": 42}),
-                },
-            )
-            assert result_reply.payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_ACCEPTED
+            if self.deliver_result:
+                self._deliver_result(target, task)
             if self.lose_task_reply:
+                if self.hold_lost_task_reply_until_cancel:
+                    deadline = time.monotonic() + 1.0
+                    while time.monotonic() < deadline and not kwargs["abort_signal"].triggered:
+                        time.sleep(0.001)
+                    assert kwargs["abort_signal"].triggered
                 raise RuntimeError("TASK_ACCEPTED reply lost")
             return _accepted(Topic.TASK_ACCEPTED)
         if topic == Topic.TASK_STATUS:
-            return _accepted(Topic.TASK_STATUS, **{MsgKey.TASK_STATE: TaskState.QUEUED})
+            if self.deliver_result_on_status and self.pending_task:
+                self.deliver_result_on_status = False
+                self._deliver_result(*self.pending_task)
+            return _accepted(Topic.TASK_STATUS, **{MsgKey.TASK_STATE: self.task_status_state})
         if topic == Topic.SHUTDOWN:
             return make_cell_reply(
                 CellReturnCode.OK,
@@ -161,6 +169,20 @@ class FakeCell:
 
     def deliver(self, topic, origin, payload):
         return self.cbs[topic](new_cell_message({MessageHeaderKey.ORIGIN: origin}, payload))
+
+    def _deliver_result(self, origin, task):
+        result_reply = self.deliver(
+            Topic.RESULT_READY,
+            origin,
+            {
+                MsgKey.SESSION_ID: task[MsgKey.SESSION_ID],
+                MsgKey.TASK_ID: task[MsgKey.TASK_ID],
+                MsgKey.RESULT_ID: uuid.uuid4().hex,
+                MsgKey.ATTEMPT_ID: uuid.uuid4().hex,
+                MsgKey.RESULT: Shareable({"answer": 42}),
+            },
+        )
+        assert result_reply.payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_ACCEPTED
 
 
 def _fl_ctx(cell, secure_mode=True):
@@ -316,6 +338,8 @@ def test_session_open_retries_core_control_path_after_target_unreachable():
 def test_lost_task_acceptance_uses_status_without_redelivery():
     cell = FakeCell()
     cell.lose_task_reply = True
+    cell.deliver_result = False
+    cell.deliver_result_on_status = True
     backend = AttachBackend()
     fl_ctx = _fl_ctx(cell)
     backend.initialize(_context(), fl_ctx)
@@ -329,6 +353,47 @@ def test_lost_task_acceptance_uses_status_without_redelivery():
     assert any(topic == Topic.TASK_STATUS for topic, _, _ in cell.sent)
 
 
+def test_accepted_result_recovers_lost_task_confirmation_without_status_or_redelivery():
+    cell = FakeCell()
+    cell.lose_task_reply = True
+    cell.hold_lost_task_reply_until_cancel = True
+    cell.task_status_state = TaskState.UNKNOWN
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell)
+    backend.initialize(_context(task_wait_timeout=600.0), fl_ctx)
+    _wait_ready(backend)
+
+    start = time.monotonic()
+    result = backend.execute("train", Shareable(), fl_ctx, Signal())
+    elapsed = time.monotonic() - start
+    backend.finalize(fl_ctx)
+
+    assert result["answer"] == 42
+    assert elapsed < 1.0
+    assert cell.task_ready_count == 1
+    assert not any(topic == Topic.TASK_STATUS for topic, _, _ in cell.sent)
+
+
+def test_run_task_uses_already_accepted_result_when_delivery_reports_failure(monkeypatch):
+    cell = FakeCell()
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell)
+    backend.initialize(_context(), fl_ctx)
+    session = _wait_ready(backend)
+
+    def accept_result_then_report_failure(_session, task, *_args):
+        task.result = Shareable({"answer": 42})
+        task.result_ready.set()
+        return False, "TASK_ACCEPTED confirmation lost"
+
+    monkeypatch.setattr(backend, "_deliver_task", accept_result_then_report_failure)
+    result = backend.execute("train", Shareable(), fl_ctx, Signal())
+    backend.finalize(fl_ctx)
+
+    assert session.ready.is_set()
+    assert result["answer"] == 42
+
+
 def test_semantic_task_rejection_is_not_retried():
     cell = FakeCell()
     cell.task_reply_topic = Topic.TASK_FAILED
@@ -338,6 +403,22 @@ def test_semantic_task_rejection_is_not_retried():
     _wait_ready(backend)
 
     result = backend.execute("unsupported", Shareable(), fl_ctx, Signal())
+    backend.finalize(fl_ctx)
+
+    assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+    assert cell.task_ready_count == 1
+    assert not any(topic == Topic.TASK_STATUS for topic, _, _ in cell.sent)
+
+
+def test_local_task_serialization_error_is_not_retried_or_probed():
+    cell = FakeCell()
+    cell.task_serialization_error = ValueError("unsupported task payload")
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell)
+    backend.initialize(_context(task_wait_timeout=600.0), fl_ctx)
+    _wait_ready(backend)
+
+    result = backend.execute("train", Shareable(), fl_ctx, Signal())
     backend.finalize(fl_ctx)
 
     assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
@@ -384,6 +465,40 @@ def test_reconnect_uses_fresh_session_and_rejects_stale_traffic():
     )
     assert stale.payload[MsgKey.REPLY_TOPIC] == Topic.ERROR
     assert "session id" in stale.payload[MsgKey.REASON]
+    backend.finalize(fl_ctx)
+
+
+def test_reconnect_waits_for_accepted_result_source_to_be_released():
+    cell = FakeCell()
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell)
+    backend.initialize(
+        _context(allow_reconnect=True, heartbeat_interval=0.01, heartbeat_timeout=0.05),
+        fl_ctx,
+    )
+    first = _wait_ready(backend)
+
+    result = backend.execute("train", Shareable(), fl_ctx, Signal())
+    assert result["answer"] == 42
+    assert first.result_source_live.is_set()
+    assert backend._current_task is None
+
+    with first._activity_lock:
+        first._last_peer_activity = time.monotonic() - 1.0
+    time.sleep(0.15)
+    assert backend._get_session() is first
+    assert first.error is None
+
+    heartbeat = cell.deliver(
+        Topic.HEARTBEAT,
+        TRAINER_FQCN,
+        {MsgKey.SESSION_ID: first.session_id, MsgKey.RESULT_SOURCE_LIVE: False},
+    )
+    assert heartbeat.payload[MsgKey.REPLY_TOPIC] == Topic.HEARTBEAT
+    with first._activity_lock:
+        first._last_peer_activity = time.monotonic() - 1.0
+
+    assert _wait_until(lambda: backend._get_session() is not first and backend._get_session().ready.is_set())
     backend.finalize(fl_ctx)
 
 

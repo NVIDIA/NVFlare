@@ -183,6 +183,7 @@ def _acquire_claim_lock(parent: str, attach_id: str) -> int:
         flags |= os.O_NOFOLLOW
     fd = os.open(path, flags, ATTACH_RENDEZVOUS_FILE_MODE)
     try:
+        os.fchmod(fd, ATTACH_RENDEZVOUS_FILE_MODE)
         value = os.fstat(fd)
         if not stat.S_ISREG(value.st_mode):
             raise RuntimeError(f"attach claim lock is not a regular file: {path}")

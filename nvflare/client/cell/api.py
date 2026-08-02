@@ -651,6 +651,16 @@ class CellClientAPI(APISpec):
         Attach mode stops only the session Cell because the externally managed
         process may share the process-global runtime with other work.
         """
+        # Stop new task admission immediately, but do not tear down the Cell or
+        # process-global streaming while send() still owns an accepted lazy
+        # result source. send() observes _stopped and performs this shutdown
+        # after its receiver-confirmed transfer barrier settles.
+        with self._lock:
+            self._stopped = True
+            defer_for_result = self._result_send_active
+        if defer_for_result:
+            self._abort_signal.trigger("client api shutdown")
+            return
         if self._attach:
             # Wake init() if it is waiting for a future job before taking the
             # lifecycle lock that init() holds.
@@ -730,6 +740,8 @@ class CellClientAPI(APISpec):
             terminal_reason = self._session_end_reason()
             if terminal_reason is None:
                 self._task_queue.put({"task": payload, "model": model, "result_receiver_ids": result_receiver_ids})
+                if self._attach:
+                    self._attach.commit_reserved_task_locked(task_id, attempt_id)
         if terminal_reason:
             self._forget_reserved_task(task_id, attempt_id)
             return self._reply(
@@ -850,7 +862,9 @@ class CellClientAPI(APISpec):
 
     def _heartbeat_loop(self) -> None:
         while not self._heartbeat_stop.wait(self._heartbeat_interval):
-            if self._closed or self._stopped or self._abort:
+            with self._lock:
+                session_ended = self._closed or self._abort or (self._stopped and not self._result_send_active)
+            if session_ended:
                 return
             try:
                 with self._lock:

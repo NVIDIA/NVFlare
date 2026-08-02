@@ -362,7 +362,14 @@ TASK_READY(session_id, task_id, task_seq, attempt_id, task_name, model)
 
 The trainer replies with `TASK_ACCEPTED` or `TASK_FAILED`. Transport failures are
 retryable with the same IDs; semantic rejection is terminal and is not retried.
-`TASK_STATUS` resolves an ambiguous reply.
+`TASK_STATUS` resolves an ambiguous reply. A reservation remains `UNKNOWN` while
+the trainer converts or lazily downloads the model and becomes `QUEUED` only
+after queue insertion succeeds. A deterministic local serialization failure on
+the CJ is terminal immediately; only failures after Cell encoding are treated as
+potentially ambiguous delivery. An accepted `RESULT_READY` for the active task is
+also authoritative proof of delivery: it interrupts an outstanding `TASK_READY`
+request and is preserved even when `TASK_ACCEPTED` and a later status probe are
+lost.
 
 The CJ assigns a monotonically increasing task sequence within each session. The
 trainer keeps a 256-entry ledger; completed entries evicted from it advance a
@@ -384,6 +391,9 @@ publication is idempotent. If the acknowledgement is lost, the trainer probes
 `flare.send()` returns only after the result's lazy references reach
 receiver-confirmed terminal success. Until then:
 
+- an explicit local API shutdown, like protocol `SHUTDOWN`, stops new task
+  admission but defers Cell and owned F3 teardown until the accepted source
+  settles; and
 - the external trainer must remain alive and attached;
 - the trainer must preserve canonical result transfers across ambiguous status
   failures or routine `SHUTDOWN`; and
@@ -415,7 +425,9 @@ leave post-acceptance result waiting unbounded.
 
 If `allow_reconnect=False`, loss ends the session. If true and no task is active,
 the backend creates a fresh session and attach-timeout budget for the same trainer
-FQCN. It never silently replays an ambiguous active task.
+FQCN, but only after any accepted trainer-owned lazy-result source is released.
+It never silently replays an ambiguous active task or rotates away from a live
+result-source barrier.
 
 ## Lifecycle
 

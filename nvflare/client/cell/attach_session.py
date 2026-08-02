@@ -262,7 +262,10 @@ class AttachTrainerSession:
                 self._highest_task_sequence = max(self._highest_task_sequence, task_sequence)
                 if retryable:
                     self._retryable_task = None
-                self._task_states[task_id] = TaskState.QUEUED
+                # Reservation prevents concurrent duplicate conversion, but it
+                # is not an acceptance claim. TASK_STATUS must remain UNKNOWN
+                # until conversion succeeds and the task is actually queued.
+                self._task_states[task_id] = TaskState.UNKNOWN
                 self._task_states.move_to_end(task_id)
                 self._task_attempts[task_id] = attempt_id
                 self._task_sequences[task_id] = task_sequence
@@ -278,6 +281,15 @@ class AttachTrainerSession:
                         ),
                     },
                 )
+        if known_state == TaskState.UNKNOWN:
+            return self._api._reply(
+                Topic.TASK_STATUS,
+                **{
+                    MsgKey.TASK_ID: task_id,
+                    MsgKey.TASK_SEQ: known_sequence,
+                    MsgKey.TASK_STATE: TaskState.UNKNOWN,
+                },
+            )
         return self._api._reply(
             Topic.TASK_ACCEPTED,
             **{
@@ -287,6 +299,13 @@ class AttachTrainerSession:
                 MsgKey.TASK_STATE: known_state,
             },
         )
+
+    def commit_reserved_task_locked(self, task_id: str, attempt_id: str) -> None:
+        """Publish QUEUED after queue insertion; caller must hold the API lock."""
+        state = self._task_states.get(task_id)
+        if state != TaskState.UNKNOWN or self._task_attempts.get(task_id) != attempt_id:
+            raise TrainerSessionError(f"task reservation changed before queue commit for {task_id!r}")
+        self._task_states[task_id] = TaskState.QUEUED
 
     def forget_reserved_task(self, task_id, attempt_id) -> None:
         with self._api._lock:

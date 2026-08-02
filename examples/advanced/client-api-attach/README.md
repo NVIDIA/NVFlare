@@ -41,7 +41,9 @@ using its default TCP driver, gRPC, mTLS, or another configured driver.
 The site/CJ runtime and trainer must see `root_dir` at the same absolute path.
 Keep it owned by the dedicated site account and restrict its group to the intended
 trainer principals. `FileDriver` creates directories with mode `0770` and files
-with mode `0660`; filesystem access is the peer-access boundary.
+with mode `0660`, explicitly restoring those group permissions after creation so
+a restrictive process umask cannot block a different user in the shared group;
+filesystem access is the peer-access boundary.
 
 The trainer profile names the stable rendezvous directory, not the driver's
 dynamic `shared-file://.../lst_<id>` URL:

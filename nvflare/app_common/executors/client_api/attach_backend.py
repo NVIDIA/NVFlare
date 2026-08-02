@@ -41,6 +41,7 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.file_driver import ROOT_DIR as SHARED_FILE_ROOT_DIR
 from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.fuel.f3.streaming.download_service import DownloadService
+from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
@@ -60,17 +61,26 @@ _ROUTE_UNPROTECTED = "unprotected"
 class _AttachCancelSignal(Signal):
     """Signal that also observes task abort, backend close, and session loss."""
 
-    def __init__(self, abort_signal: Signal, backend: "AttachBackend", session_id: str):
+    def __init__(
+        self,
+        abort_signal: Signal,
+        backend: "AttachBackend",
+        session_id: str,
+        completion_signal: Optional[threading.Event] = None,
+    ):
         super().__init__()
         self._abort_signal = abort_signal
         self._backend = backend
         self._session_id = session_id
+        self._completion_signal = completion_signal
 
     @property
     def triggered(self):
         if super().triggered:
             return True
-        if self._abort_signal.triggered:
+        if self._completion_signal is not None and self._completion_signal.is_set():
+            self.trigger("task result accepted")
+        elif self._abort_signal.triggered:
             self.trigger("task aborted")
         elif self._backend._closed:
             self.trigger("backend closed")
@@ -328,6 +338,14 @@ class AttachBackend(CellBackendBase):
                 continue
 
             reason = liveness_error
+            # RESULT_READY acceptance can outlive execute(): the downstream
+            # consumer may still be pulling trainer-owned lazy sources after
+            # _current_task is cleared. Keep this session authoritative until
+            # the trainer reports release; otherwise finalize() could observe a
+            # replacement session and tear down the live source route.
+            if self._context.allow_reconnect and session.result_source_live.is_set():
+                self._session_stop.wait(_SESSION_MONITOR_INTERVAL)
+                continue
             with self._task_lock:
                 active_task = self._current_task is not None
             if active_task:
@@ -465,6 +483,11 @@ class AttachBackend(CellBackendBase):
             self._current_task = task
         try:
             accepted, reason = self._deliver_task(session, task, task_sequence, task_name, shareable, abort_signal)
+            # RESULT_READY is accepted only for this active task and session.
+            # It is therefore stronger delivery evidence than a missing
+            # TASK_ACCEPTED reply or an UNKNOWN status probe.
+            if not accepted and task.result_ready.is_set():
+                accepted = True
             if not accepted:
                 if abort_signal.triggered:
                     self._send_abort(session, f"task {task_name!r} aborted")
@@ -515,6 +538,8 @@ class AttachBackend(CellBackendBase):
         first_attempt = True
         last_reason = None
         while time.monotonic() < deadline and not abort_signal.triggered:
+            if task.result_ready.is_set():
+                return True, None
             if not first_attempt:
                 state = self._query_task_status(
                     session,
@@ -541,7 +566,12 @@ class AttachBackend(CellBackendBase):
                     MsgKey.MODEL: shareable,
                 },
             )
-            cancel = _AttachCancelSignal(abort_signal, self, session.session_id)
+            cancel = _AttachCancelSignal(
+                abort_signal,
+                self,
+                session.session_id,
+                completion_signal=task.result_ready,
+            )
             remaining = max(0.0, deadline - time.monotonic())
             # Preserve a small part of the absolute delivery budget for
             # TASK_STATUS recovery if the acceptance reply is lost.
@@ -561,6 +591,8 @@ class AttachBackend(CellBackendBase):
                         RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: _on_transaction_created,
                     },
                 )
+                if task.result_ready.is_set():
+                    return True, None
                 last_reason, terminal = self._check_task_accepted(reply)
                 if last_reason is None:
                     return True, None
@@ -569,6 +601,16 @@ class AttachBackend(CellBackendBase):
                     return False, last_reason
             except Exception as e:
                 last_reason = str(e)
+                if task.result_ready.is_set():
+                    return True, None
+                if not request.get_header(StreamHeaderKey.PAYLOAD_ENCODING):
+                    # Cell encodes before it creates/sends the blob request.
+                    # Without this header the failure is deterministic and
+                    # local; the trainer cannot have accepted the task.
+                    self._delete_transfers(waiters)
+                    return False, f"local TASK_READY serialization failed: {last_reason}"
+            if task.result_ready.is_set():
+                return True, None
             state = self._query_task_status(
                 session,
                 task.task_id,
@@ -580,6 +622,8 @@ class AttachBackend(CellBackendBase):
             if cancel.triggered or not self._session_matches(session.session_id):
                 break
             self._session_stop.wait(min(_CONTROL_RETRY_INTERVAL, max(0.0, deadline - time.monotonic())))
+        if task.result_ready.is_set():
+            return True, None
         return False, last_reason or "task delivery timed out"
 
     def _query_task_status(
@@ -622,6 +666,8 @@ class AttachBackend(CellBackendBase):
         topic = body.get(MsgKey.REPLY_TOPIC)
         if topic == Topic.TASK_ACCEPTED:
             return None, False
+        if topic == Topic.TASK_STATUS and body.get(MsgKey.TASK_STATE) == TaskState.UNKNOWN:
+            return "trainer is still preparing TASK_READY", False
         reason = body.get(MsgKey.REASON)
         if topic == Topic.TASK_FAILED:
             return f"trainer rejected TASK_READY: {reason}", True

@@ -656,6 +656,48 @@ class TestAttachMode:
         assert api.receive().params == {"w": [1.0]}
         assert api._attach._task_states["task-1"] == TaskState.DELIVERED
 
+    def test_task_status_stays_unknown_until_conversion_and_queueing_succeed(
+        self, attach_bootstrap_path, attach_env, monkeypatch
+    ):
+        api = _init_api(attach_bootstrap_path, attach_env)
+        conversion_started = threading.Event()
+        release_conversion = threading.Event()
+
+        def fail_conversion(_shareable):
+            conversion_started.set()
+            assert release_conversion.wait(timeout=2.0)
+            raise ValueError("conversion failed")
+
+        monkeypatch.setattr(cell_api.FLModelUtils, "from_shareable", fail_conversion)
+        replies = []
+        delivery = threading.Thread(target=lambda: replies.append(_deliver_attach_task(attach_env)))
+        delivery.start()
+        assert conversion_started.wait(timeout=1.0)
+
+        status = attach_env.deliver(
+            Topic.TASK_STATUS,
+            CJ_FQCN,
+            {MsgKey.SESSION_ID: SESSION_ID, MsgKey.TASK_ID: "task-1"},
+        )
+        duplicate = _deliver_attach_task(attach_env, attempt_id="attempt-2")
+        assert status.payload[MsgKey.TASK_STATE] == TaskState.UNKNOWN
+        assert duplicate.payload[MsgKey.REPLY_TOPIC] == Topic.TASK_STATUS
+        assert duplicate.payload[MsgKey.TASK_STATE] == TaskState.UNKNOWN
+        assert api._task_queue.empty()
+
+        release_conversion.set()
+        delivery.join(timeout=1.0)
+        assert not delivery.is_alive()
+        assert replies[0].payload[MsgKey.REPLY_TOPIC] == Topic.TASK_FAILED
+        assert api._task_queue.empty()
+
+        final_status = attach_env.deliver(
+            Topic.TASK_STATUS,
+            CJ_FQCN,
+            {MsgKey.SESSION_ID: SESSION_ID, MsgKey.TASK_ID: "task-1"},
+        )
+        assert final_status.payload[MsgKey.TASK_STATE] == TaskState.UNKNOWN
+
     def test_lost_result_acceptance_is_recovered_by_result_status(self, attach_bootstrap_path, attach_env):
         api = _init_api(attach_bootstrap_path, attach_env)
         _deliver_attach_task(attach_env)
@@ -1469,6 +1511,63 @@ class TestReceiveSend:
             assert not sender.is_alive()
             assert errors == []
             assert env.stopped is True
+        finally:
+            transfer_completed.set()
+            api.shutdown()
+
+    def test_explicit_shutdown_defers_owned_f3_teardown_until_live_result_settles(
+        self, bootstrap_path, env, monkeypatch
+    ):
+        accepted = threading.Event()
+        transfer_completed = threading.Event()
+        waiter = MagicMock()
+        waiter.transaction_id = "explicit-shutdown-result-tx"
+        waiter.done.side_effect = transfer_completed.is_set
+        waiter.wait.side_effect = lambda timeout=None: (
+            SimpleNamespace(status=TransferProgressState.COMPLETED, reason="all_receivers_succeeded")
+            if transfer_completed.wait(timeout)
+            else None
+        )
+        monkeypatch.setattr(cell_api.DownloadService, "get_transfer_waiter", lambda _tx_id: waiter)
+
+        def on_request(topic, target, request):
+            if topic == Topic.HELLO:
+                return _hello_accepted_reply()
+            if topic == Topic.RESULT_READY:
+                kwargs = env.request_kwargs[-1]
+                kwargs["fobs_ctx_props"][cell_api.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](
+                    SimpleNamespace(tx_id="explicit-shutdown-result-tx")
+                )
+                accepted.set()
+                return _result_accepted_reply()
+            return make_cell_reply(CellReturnCode.OK)
+
+        env.on_request = on_request
+        api = _init_api(bootstrap_path, env)
+        errors = []
+        try:
+            _deliver_task(env)
+            api.receive()
+
+            sender = threading.Thread(target=lambda: _send_and_capture_error(api, FLModel(params={"w": [2.0]}), errors))
+            sender.start()
+            assert accepted.wait(0.5)
+
+            api.shutdown()
+
+            assert sender.is_alive()
+            assert env.stopped is False
+            env.shutdown_f3_streaming.assert_not_called()
+            assert waiter.done() is False
+
+            transfer_completed.set()
+            sender.join(timeout=0.5)
+
+            assert not sender.is_alive()
+            assert errors == []
+            assert env.stopped is True
+            assert env.stop_calls == 1
+            env.shutdown_f3_streaming.assert_called_once_with()
         finally:
             transfer_completed.set()
             api.shutdown()

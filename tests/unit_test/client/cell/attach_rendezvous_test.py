@@ -15,6 +15,7 @@
 import errno
 import json
 import os
+import stat
 import threading
 
 import pytest
@@ -65,6 +66,25 @@ def test_publish_wait_and_close_round_trip(tmp_path):
 
     publisher.close()
     assert not os.path.exists(claim_dir)
+
+
+def test_claim_lock_keeps_shared_group_access_under_restrictive_umask(tmp_path):
+    root_dir = tmp_path / "shared"
+    root_dir.mkdir(mode=0o770)
+    os.chmod(root_dir, 0o770)
+    previous_umask = os.umask(0o027)
+    try:
+        publisher = _publish(root_dir)
+    finally:
+        os.umask(previous_umask)
+
+    try:
+        claim_dir = attach_claim_dir(str(root_dir), "site-1", "trainer_a")
+        lock_path = attach_rendezvous._claim_lock_path(os.path.dirname(claim_dir), "trainer_a")
+        assert stat.S_IMODE(os.stat(lock_path).st_mode) == 0o660
+        assert wait_for_attach_endpoint(str(root_dir), "site-1", "trainer_a", timeout=0.5)
+    finally:
+        publisher.close()
 
 
 def test_live_attach_id_claim_cannot_be_stolen(tmp_path):
