@@ -22,7 +22,7 @@ import threading
 from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, JobConstants, SiteType, SystemConfigs
 from nvflare.apis.job_launcher_spec import JobProcessEnv, pop_credential_env
 from nvflare.apis.workspace import Workspace
-from nvflare.app_opt.job_launcher.workspace_cell_transfer import download_workspace, upload_results_safely
+from nvflare.app_opt.job_launcher.workspace_cell_transfer import download_workspace, upload_results_on_shutdown
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
@@ -142,7 +142,7 @@ def main(args):
         if err:
             if logger:
                 logger.warning(err)
-        upload_results_safely(args, secure_train, log=logger)
+        upload_results_on_shutdown(args, secure_train, log=logger)
 
 
 def parse_arguments():
