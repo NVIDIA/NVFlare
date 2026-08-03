@@ -196,6 +196,11 @@ FedCE
 contribution from gradient-direction novelty and a client-computed leave-one-out (minus-model) score,
 then uses those estimates as aggregation weights.
 
+FedCE requires at least two clients and assumes full participation in every round. Configure
+``min_clients`` to include all participating clients whenever possible. If the client set changes,
+NVFlare logs a warning, initializes unseen clients with a uniform prior, and carries the most recent
+contribution weights of absent clients forward.
+
 .. code-block:: python
 
     from nvflare.app_opt.pt.recipes import FedCERecipe

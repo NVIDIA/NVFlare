@@ -34,6 +34,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
+from urllib.parse import quote
 
 try:
     import fcntl
@@ -746,12 +747,37 @@ def manifest_summary(record: Optional[RunRecord], campaign_root: Path) -> Dict[s
     }
 
 
-def literature_outcomes(records: Sequence[RunRecord]) -> List[Dict[str, Any]]:
+def validated_exploration_batch(exploration_batch: Any) -> Optional[Tuple[str, int, int]]:
+    if not isinstance(exploration_batch, dict):
+        return None
+    event_id = exploration_batch.get("literature_event_id")
+    completed = exploration_batch.get("completed")
+    required = exploration_batch.get("required")
+    if (
+        not isinstance(event_id, str)
+        or not event_id
+        or not isinstance(completed, int)
+        or isinstance(completed, bool)
+        or not isinstance(required, int)
+        or isinstance(required, bool)
+        or completed < 0
+        or required <= 0
+    ):
+        return None
+    return event_id, completed, required
+
+
+def literature_outcomes(
+    records: Sequence[RunRecord],
+    exploration_batch: Optional[Dict[str, Any]] = None,
+    termination_reason: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     events = []
     for index, record in enumerate(records):
         if is_literature_event(record):
             events.append((index, record, record.literature_event_id))
     outcomes = []
+    validated_batch = validated_exploration_batch(exploration_batch)
     for start, event, event_id in events:
         before = select_best(records[:start], retained_only=True)
         attempts = [
@@ -765,7 +791,19 @@ def literature_outcomes(records: Sequence[RunRecord]) -> List[Dict[str, Any]]:
         ]
         scored = [record for record in attempts if is_finalized_scored_record(record)]
         segment_best = select_best(scored)
-        if segment_best is None:
+        completion = None
+        if validated_batch and bool(event_id) and validated_batch[0] == event_id:
+            _, completed, required = validated_batch
+            completion = {
+                "completed": completed,
+                "required": required,
+                "complete": completed >= required,
+                "reason": None if completed >= required else termination_reason,
+            }
+        if completion and not completion["complete"]:
+            outcome = "incomplete"
+            delta = None if segment_best is None or before is None else segment_best.score - before.score
+        elif segment_best is None:
             outcome = "failed" if attempts else "not_evaluated"
             delta = None
         elif before is None or better(segment_best.score, before.score):
@@ -790,6 +828,7 @@ def literature_outcomes(records: Sequence[RunRecord]) -> List[Dict[str, Any]]:
                 "best_score": None if segment_best is None else segment_best.score,
                 "delta_from_incumbent": delta,
                 "candidate_attempts": [record.name for record in attempts],
+                "completion": completion,
                 "candidate_results": [
                     {
                         "name": record.name,
@@ -807,6 +846,33 @@ def literature_outcomes(records: Sequence[RunRecord]) -> List[Dict[str, Any]]:
             }
         )
     return outcomes
+
+
+def literature_completion_warnings(
+    reviews: Sequence[Dict[str, Any]],
+    exploration_batch: Optional[Dict[str, Any]] = None,
+    termination_reason: Optional[str] = None,
+) -> List[str]:
+    warnings = []
+    for review in reviews:
+        completion = review.get("completion")
+        if not isinstance(completion, dict) or completion.get("complete") is not False:
+            continue
+        reason = completion.get("reason") or "campaign termination"
+        warnings.append(
+            f"Literature exploration batch {review['literature_event_id'] or review['event']} was incomplete at "
+            f"{reason}: {completion['completed']} of {completion['required']} required candidates completed."
+        )
+    validated_batch = validated_exploration_batch(exploration_batch)
+    review_event_ids = {review.get("literature_event_id") for review in reviews}
+    if validated_batch and validated_batch[1] < validated_batch[2] and validated_batch[0] not in review_event_ids:
+        event_id, completed, required = validated_batch
+        reason = termination_reason or "campaign termination"
+        warnings.append(
+            f"Literature exploration batch {event_id} was incomplete at {reason}: {completed} of {required} required "
+            "candidates completed, but no matching literature checkpoint was found in the results ledger."
+        )
+    return warnings
 
 
 def candidate_outcome_payload(record: RunRecord, incumbent: Optional[RunRecord]) -> Dict[str, Any]:
@@ -1300,6 +1366,24 @@ def md_cell(value: Any, limit: int = 180) -> str:
     return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
+def markdown_artifact_path(artifact: str, report: str) -> str:
+    try:
+        path = Path(os.path.relpath(artifact, start=Path(report).parent)).as_posix()
+    except ValueError:
+        path = Path(artifact).as_posix()
+    return quote(path, safe="/:")
+
+
+def literature_outcome_label(review: Dict[str, Any]) -> str:
+    completion = review.get("completion")
+    if isinstance(completion, dict) and completion.get("complete") is False:
+        label = f"incomplete ({completion['completed']}/{completion['required']}"
+        if completion.get("reason"):
+            label += f"; {md_cell(completion['reason'], 60)}"
+        return label + ")"
+    return str(review["outcome"])
+
+
 def format_score(value: Optional[float]) -> str:
     return "n/a" if value is None else f"{value:.6f}"
 
@@ -1386,7 +1470,10 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord]) -> st
         else:
             lines.append("No finalized scored result was available.")
     progress_lines = (
-        [f"![Auto-FL progress]({summary['artifacts']['progress_plot']})"]
+        [
+            "![Auto-FL progress]("
+            f"{markdown_artifact_path(summary['artifacts']['progress_plot'], summary['artifacts']['report'])})"
+        ]
         if summary["artifacts"]["progress_plot_available"]
         else ["Progress plot unavailable; see the validation and comparability warnings below."]
     )
@@ -1592,17 +1679,19 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord]) -> st
                     result = format_score(candidate["score"])
                 evidence_items.append(f"{candidate['name']}={result}")
             evidence = "; ".join(evidence_items) or "no candidate recorded"
+            outcome_label = literature_outcome_label(item)
             lines.append(
                 f"| `{md_cell(item['event'], 45)}` (`{item['literature_event_id'] or 'not recorded'}`) | "
                 f"{md_cell('; '.join(item['sources']) or 'not recorded', 100)} | "
-                f"{item['outcome']} | `{md_cell(evidence, 130)}` | {format_delta(item['delta_from_incumbent'])} |"
+                f"{outcome_label} | `{md_cell(evidence, 130)}` | {format_delta(item['delta_from_incumbent'])} |"
             )
         lines.extend(["", "Checkpoint hypotheses and decisions:", ""])
         for item in summary["literature_reviews"]:
             candidates = ", ".join(item["candidate_attempts"]) or "none recorded"
+            outcome_label = literature_outcome_label(item)
             lines.extend(
                 wrap_markdown_bullet(
-                    f"- **{item['event']} ({item['outcome']}):** ",
+                    f"- **{item['event']} ({outcome_label}):** ",
                     f"{item['hypothesis']} Measured candidates: `{md_cell(candidates, 300)}`.",
                 )
             )
@@ -1769,7 +1858,18 @@ def generate_locked(args: argparse.Namespace, root: Path) -> Dict[str, Any]:
     cap = state.get("candidate_cap")
     cap_label = "uncapped" if cap in {None, "", 0} else cap
     lineage = candidate_lineage(best, records)
-    reviews = literature_outcomes(records)
+    reviews = literature_outcomes(
+        records,
+        exploration_batch=state.get("exploration_batch"),
+        termination_reason=termination_reason,
+    )
+    warnings.extend(
+        literature_completion_warnings(
+            reviews,
+            exploration_batch=state.get("exploration_batch"),
+            termination_reason=termination_reason,
+        )
+    )
     summary = {
         "schema_version": SUMMARY_SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
