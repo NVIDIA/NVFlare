@@ -50,7 +50,7 @@ user's purpose is to understand data distribution; handle conversion later as a 
    Load `../nvflare-shared/references/conversion-workflow.md` only for a non-standard
    case that needs its detailed rerun, data-location, authorization, or
    missing-semantics guidance.
-2. Inspect before editing with `nvflare agent inspect <path> --format json`
+2. Inspect before editing with `nvflare agent inspect source <path> --format json`
    plus direct source reading. Load `references/huggingface-detection.md` during
    this phase. If inspect recommends `nvflare-orient` for unresolved Trainer
    ownership or active Lightning/Hugging Face owners, stop before editing.

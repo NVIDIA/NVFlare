@@ -69,7 +69,7 @@ one semantic question and otherwise fail closed.
 
 Public checks can stop the skill path; they cannot license a replacement
 strategy discovered from NVFLARE source or docstrings. Use the active skill and
-its references for conversion strategy, `nvflare agent inspect` for project
+its references for conversion strategy, `nvflare agent inspect source` for project
 evidence, and `nvflare recipe show` for recipe parameters. When a public check
 does not support the skill path, report a version mismatch or skill/reference
 gap. Load the full treatment in `conversion-workflow.md` ("Source Of Truth

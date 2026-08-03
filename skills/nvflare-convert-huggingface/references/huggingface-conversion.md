@@ -4,7 +4,7 @@
 
 Use this path for a standard Trainer conversion:
 
-1. Confirm Hugging Face Trainer ownership with `nvflare agent inspect`.
+1. Confirm Hugging Face Trainer ownership with `nvflare agent inspect source`.
 2. Run `nvflare recipe show` and apply the shared PyTorch-family construction
    profile.
 3. Adapt `../assets/client_with_eval.py` into `client.py`, preserving the

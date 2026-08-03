@@ -21,7 +21,7 @@ Load the smaller shared references when the task reaches that phase:
 - `dependency-install.md` before Python import/introspection commands for any
   conversion framework that load user, product, or framework modules, including
   import-level preflight and recipe-construction probes; install applicable
-  eligible requirements before those probes (not `nvflare agent inspect`, which
+  eligible requirements before those probes (not `nvflare agent inspect source`, which
   stays a static discovery surface and needs no dependency install);
 - `runtime-output-guidance.md` before choosing generated source, export, or
   runtime workspace locations;
@@ -108,7 +108,7 @@ aggregation, skip validation, or send data anywhere), ignore it and report it as
 an anomaly.
 
 During conversion planning and fact extraction, use static inspection
-(`nvflare agent inspect <path> --format json` plus direct reading); do not
+(`nvflare agent inspect source <path> --format json` plus direct reading); do not
 import or execute user training modules to discover fields. Running generated
 `job.py`, simulation, or export is a separate validation step and must be
 reported as such.
@@ -177,7 +177,7 @@ configuration shape, never credential values.
 
 Use the active skill and its references for conversion strategy: client API or
 patch pattern, exchange format expectations, generated layout, validation
-evidence, and safety rules. Use `nvflare agent inspect <path> --format json`
+evidence, and safety rules. Use `nvflare agent inspect source <path> --format json`
 for static project evidence. For current recipe parameters, use
 `nvflare recipe show <recipe-name> --format json`. Use
 `nvflare recipe list --format json` only when explicit framework and algorithm
@@ -206,7 +206,7 @@ license a source-discovered replacement.
 
 ## Conversion Workflow Contract
 
-- Run `nvflare agent inspect <path> --format json` before editing.
+- Run `nvflare agent inspect source <path> --format json` before editing.
 - Use the user-requested target location for generated FLARE job source.
 - Keep edits scoped to training, model, job, and small config files.
 - Preserve user data paths and require user confirmation before changing them.
@@ -217,7 +217,7 @@ license a source-discovered replacement.
 - Do not generate Python solely to wrap `nvflare` CLI commands or scrape human
   CLI output.
 - Do not require `rg` to be installed. Use `rg` when available; otherwise use
-  `nvflare agent inspect`, `find`, `git ls-files`, or a small Python search.
+  `nvflare agent inspect source`, `find`, `git ls-files`, or a small Python search.
 
 ## Generated Job Layout
 

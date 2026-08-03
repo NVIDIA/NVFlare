@@ -42,7 +42,7 @@
         "files/trainer-basic/model.py"
       ],
       "assertions": [
-        "The agent runs nvflare agent inspect before editing and confirms active Hugging Face Trainer evidence.",
+        "The agent runs nvflare agent inspect source on the target before editing and confirms active Hugging Face Trainer ownership.",
         "The agent preserves existing non-generated source unless the user explicitly requested a specific overwrite.",
         "The generated client uses nvflare.client.hf and exactly one flare.patch(trainer) call.",
         "The agent completes inspect, dependency handling, recipe show and capability construction, conversion, job construction, and validation in order without preloading advanced or validation references.",
@@ -54,7 +54,7 @@
         "The round loop calls trainer.evaluate() before trainer.train() so accuracy describes the received global model.",
         "The generated job imports FedAvgRecipe from nvflare.app_opt.pt.recipes.fedavg after recipe show confirms it.",
         "The agent treats recipe show as recipe metadata only, uses SimEnv with recipe.execute for local validation and standard export flags, and does not guess a separate export environment, private class-loader helper, internal command splitter, or another recipe-adjacent API.",
-        "The agent establishes host-provided NVFLARE availability separately through nvflare agent inspect, nvflare --version, or a public capability check before generic package inventory; it never includes nvflare in a batch of importlib.metadata lookups, handles missing non-product metadata as an inventory result rather than a failed command, and skips installation when all applicable requirements are already compatible.",
+        "The agent establishes host-provided NVFLARE availability separately through nvflare agent inspect source, nvflare --version, or a public capability check before generic package inventory; it never includes nvflare in a batch of importlib.metadata lookups, handles missing non-product metadata as an inventory result rather than a failed command, and skips installation when all applicable requirements are already compatible.",
         "When public checkpoint download is authorized if uncached, the agent uses one normal cache-aware load or download instead of an unguarded cache-only probe that fails on a normal miss.",
         "A generated or preserved HfArgumentParser is constructed with allow_abbrev=False. Intentional typo and abbreviation rejection checks run through assertion wrappers whose top-level commands succeed only when the generated parser rejects them; the wrapper accepts an expected unused-argument ValueError only when its diagnostic names the rejected argument.",
         "Standalone preflight may construct the Trainer but does not call flare.init(), flare.patch(), flare.is_running(), or patched Trainer methods without a launcher-created Client API context; the first bounded simulation validates runtime patch acceptance.",
@@ -72,7 +72,7 @@
         "mandatory_behavior": [
           {
             "id": "inspect-huggingface-trainer-first",
-            "description": "runs static agent inspection before editing and confirms Trainer or SFTTrainer ownership"
+            "description": "runs nvflare agent inspect source before editing and confirms Trainer or SFTTrainer ownership"
           },
           {
             "id": "preserve-existing-source",
