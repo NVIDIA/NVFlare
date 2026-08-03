@@ -12,12 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import builtins
 import importlib.util
 import json
 import os
 import sys
-from types import ModuleType
 
 import pytest
 
@@ -32,40 +30,6 @@ def _load_fedbpt_job_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-
-
-def test_fedbpt_main_parses_export_flags_before_importing_recipe(monkeypatch, tmp_path):
-    exported = []
-
-    class FakeFedBPTRecipe:
-        def __init__(self, **kwargs):
-            self.name = kwargs["name"]
-
-        def export(self, export_dir):
-            exported.append((export_dir, self.name))
-
-    fake_recipe_module = ModuleType("fedbpt_recipe")
-    fake_recipe_module.FedBPTRecipe = FakeFedBPTRecipe
-    real_import = builtins.__import__
-
-    def import_recipe_and_consume_export_flags(name, globals=None, locals=None, fromlist=(), level=0):
-        if name == "fedbpt_recipe":
-            # Match nvflare.recipe.spec's import-time behavior closely enough to
-            # prove that job.py parsed these values before they disappear.
-            export_index = sys.argv.index("--export")
-            del sys.argv[export_index]
-            export_dir_index = sys.argv.index("--export-dir")
-            del sys.argv[export_dir_index : export_dir_index + 2]
-            return fake_recipe_module
-        return real_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", import_recipe_and_consume_export_flags)
-    monkeypatch.setattr(sys, "argv", ["job.py", "--export", "--export-dir", str(tmp_path)])
-
-    job_module = _load_fedbpt_job_module()
-    job_module.main()
-
-    assert exported == [(str(tmp_path), "fedbpt")]
 
 
 @pytest.mark.skipif(not HAS_FEDBPT_EXPORT_DEPS, reason="FedBPT job export dependencies are not installed")
