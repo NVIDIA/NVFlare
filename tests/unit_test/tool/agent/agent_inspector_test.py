@@ -77,6 +77,24 @@ def test_closed_optimizer_table(tmp_path, optimizer):
     assert inspect_source(tmp_path)["ownership"]["framework"] == "pytorch"
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import torch\ndef train(optimizer: torch.optim.Optimizer):\n    optimizer.step()\n",
+        "from torch.optim import Optimizer as OptimizerBase\n"
+        "def train(optimizer: OptimizerBase):\n    optimizer.step()\n",
+    ],
+)
+def test_typed_optimizer_parameter_is_pytorch_owner(tmp_path, source):
+    write_project(tmp_path, {"train.py": source})
+
+    result = inspect_source(tmp_path)
+
+    assert result["ownership"]["state"] == "clear"
+    assert result["ownership"]["framework"] == "pytorch"
+    assert result["routing"] == {"recommended_skill": "nvflare-convert-pytorch", "reason": "clear_owner"}
+
+
 @pytest.mark.parametrize("step", ["scaler.step(optimizer)", "scaler.step(optimizer=optimizer)"])
 def test_closed_grad_scaler_pair(tmp_path, step):
     write_project(

@@ -213,6 +213,7 @@ def _analyze_body(
             bound_names.add(statement.name)
             child = bindings.child_scope() if function_depth == 0 else bindings.nested_scope()
             _invalidate(child, _argument_names(statement.args), remember_framework=False)
+            _record_parameter_bindings(statement.args, child)
             child_yield, child_bound_names = _analyze_body(
                 statement.body,
                 child,
@@ -423,6 +424,7 @@ def _analyze_direct_method(
             _record_expression_calls(expression, definition_bindings, facts, scratch)
     child = module_bindings.child_scope()
     _invalidate(child, _argument_names(method.args), remember_framework=False)
+    _record_parameter_bindings(method.args, child)
     contains_yield, bound_names = _analyze_body(
         method.body,
         child,
@@ -835,6 +837,13 @@ def _argument_names(arguments: ast.arguments) -> set[str]:
     if arguments.kwarg:
         names.add(arguments.kwarg.arg)
     return names
+
+
+def _record_parameter_bindings(arguments: ast.arguments, bindings: Bindings) -> None:
+    parameters = (*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs)
+    for parameter in parameters:
+        if _resolve_expr(parameter.annotation, bindings) == "torch.optim.Optimizer":
+            bindings.optimizers.add(parameter.arg)
 
 
 def _inherited_dependencies(node: ast.AST, bindings: Bindings) -> tuple[Dependency, ...]:
