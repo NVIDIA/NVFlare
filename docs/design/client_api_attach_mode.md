@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation design for `execution_mode="attach"`, updated 2026-07-30.
+Implemented design for `execution_mode="attach"`, updated 2026-08-03.
 
 This design assumes the Cell-based external-process Client API from PR #4906:
 
@@ -21,10 +21,25 @@ Attach adds an externally owned trainer without changing `nvflare/fuel/f3/**`.
 The CJ-side class is `AttachBackend`. The external process still uses
 `CellClientAPI`; there is no new public agent or exchanger API.
 
-```text
-federation network <-> CP <-> CJ <-> Attach listener <-> external trainer
-                                      owned by CJ
+```mermaid
+flowchart LR
+    subgraph server_site["Server site"]
+        SP["Server Parent (SP)"]
+        SJ["Server Job (SJ)"]
+        SJ <--> SP
+    end
+    subgraph client_site["Client site"]
+        CP["Client Parent (CP)"]
+        CJ["Client Job (CJ)<br/>ClientAPIExecutor + AttachBackend"]
+        CP <--> CJ
+    end
+    T["Externally owned Trainer<br/>CellClientAPI + AttachTrainerSession"]
+    SP <-- "provisioned federation route" --> CP
+    CJ <-- "dedicated Attach listener<br/>network or shared-file" --> T
 ```
+
+The CJ owns the dedicated listener and Attach protocol session. The external
+owner—not NVFlare—owns the Trainer process.
 
 The key deployment decision is that the two Cell connections are independent:
 
@@ -114,6 +129,56 @@ CellBackendBase
 
 Attach must not subclass `ExternalProcessBackend`, because inheriting process
 ownership would make teardown unsafe.
+
+### Runtime module boundaries
+
+The file split follows process ownership and the point at which configuration is
+known. It is not a second data plane: both modes still use Cell, FOBS,
+ViaDownloader, and DownloadService.
+
+```mermaid
+flowchart TB
+    SJ["SJ / federation"]
+    subgraph cj["CJ process: nvflare/app_common/executors/client_api"]
+        EX["ClientAPIExecutor"] --> SPEC["backend_spec.py<br/>common lifecycle/config contract"]
+        SPEC --> CELL["cell_backend.py<br/>shared Cell task/result protocol"]
+        CELL --> EP["external_process_backend.py<br/>launches and owns Trainer"]
+        CELL --> AB["attach_backend.py<br/>listener/session only"]
+    end
+    subgraph trainer["Trainer process: nvflare/client/cell"]
+        API["api.py<br/>Cell Client API"] --> BOOT["bootstrap.py<br/>typed pre-connection profile"]
+        API --> SESSION["attach_session.py<br/>live protocol, retry, task ledger"]
+        SESSION --> COMMON["attach.py<br/>FQCN/security validation"]
+        SESSION -. "shared-file profile only" .-> RENDEZVOUS["attach_rendezvous.py<br/>endpoint discovery/ownership"]
+        API --> DEFS["defs.py<br/>shared topics, fields, states"]
+    end
+    SJ --> EX
+    AB <--> API
+```
+
+The CJ-side files have distinct responsibilities:
+
+| File | Why it exists |
+|---|---|
+| `backend_spec.py` | Keeps `ClientAPIExecutor` independent of process placement and exposes one lifecycle/config contract to every backend. |
+| `cell_backend.py` | Holds the Cell callbacks, one-task correlation, result authority, heartbeat, analytics, and lazy-source lifetime behavior shared by launched and attached trainers. |
+| `external_process_backend.py` | Retains process launch, monitoring, signalling, and reap behavior for a CJ-owned trainer. |
+| `attach_backend.py` | Owns the dedicated listener, `SESSION_OPEN`, retry/reconnect, and non-owning teardown required for an externally owned trainer. |
+
+The Trainer-side files separate immutable bootstrap work from the live session:
+
+| File | Why it exists |
+|---|---|
+| `api.py` | Implements the common `flare.init/receive/send` engine used by both Cell execution modes. |
+| `bootstrap.py` | Validates the typed profile before a Cell exists; Attach accepts exactly one of a direct URL or rendezvous directory. |
+| `defs.py` | Prevents CJ and Trainer from defining divergent protocol topic, field, and state strings. |
+| `attach.py` | Gives both processes the same attach-ID, FQCN, URL, and connection-security validation without importing either session implementation. |
+| `attach_rendezvous.py` | Maps a stable `(site_name, attach_id)` to FileDriver's dynamic listener and proves live, exclusive ownership; direct network Attach never calls it. |
+| `attach_session.py` | Implements the Trainer-side `SESSION_OPEN` binding, task reservation/deduplication, result status recovery, heartbeat, and shutdown behavior after either connection route is known. |
+
+In particular, `attach_rendezvous.py` cannot replace `attach_session.py`:
+rendezvous only discovers a shared-file endpoint. Direct profiles bypass it, and
+both routes still need the same live task/result protocol once connected.
 
 ### Listener ownership and configuration
 
@@ -275,6 +340,11 @@ contains a job ID, this direct profile must be generated for that job. This mode
 does not provide the either-starts-first discovery offered by shared-file
 rendezvous unless an external deployment system provisions the job identity and
 URL before starting the trainer.
+
+A clear direct network URL, including a loopback URL, must explicitly set
+`connection_security="clear"`; omission is rejected rather than silently
+downgrading the trainer connection. The CJ independently requires
+`allow_insecure_attach=True` for every clear network listener.
 
 The mTLS credential helper locates `client.crt` and `client.key` beside
 `rootCA.pem`. All three files must exist and be readable before Cell

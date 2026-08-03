@@ -180,6 +180,13 @@ class TestBootstrapConfig:
         with pytest.raises(ValueError, match="cj_fqcn"):
             get_bootstrap_client_api_type(config, "attach.json")
 
+    def test_direct_clear_profile_requires_explicit_security_acknowledgement(self):
+        config = dict(ATTACH_CONFIG)
+        config.pop(BootstrapKey.CONNECTION_SECURITY)
+
+        with pytest.raises(ValueError, match="explicitly set connection_security='clear'"):
+            get_bootstrap_client_api_type(config, "attach.json")
+
     @pytest.mark.parametrize("attach_id", ["", "has.dot", "has space", "a" * 65])
     def test_attach_profile_rejects_bad_attach_id(self, attach_id):
         with pytest.raises(ValueError, match="attach_id"):

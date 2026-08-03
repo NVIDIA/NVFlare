@@ -132,7 +132,7 @@ def get_bootstrap_client_api_type(config: dict, path: str = "<bootstrap config>"
         )
     if execution_mode == ATTACH_EXECUTION_MODE:
         from nvflare.apis.fl_constant import ConnectionSecurity
-        from nvflare.client.cell.attach import effective_connection_security, validate_attach_id
+        from nvflare.client.cell.attach import validate_attach_id, validate_attach_profile
 
         validate_attach_id(config[BootstrapKey.ATTACH_ID])
         connect_url = config.get(BootstrapKey.CONNECT_URL)
@@ -179,15 +179,10 @@ def get_bootstrap_client_api_type(config: dict, path: str = "<bootstrap config>"
                     f"invalid Client API bootstrap config {path}: field "
                     f"{BootstrapKey.CJ_FQCN!r} must be '<site_name>.<job_id>'"
                 )
-            connection_security = effective_connection_security(
+            connection_security = validate_attach_profile(
                 connect_url,
                 config.get(BootstrapKey.CONNECTION_SECURITY),
             )
-            if connection_security == ConnectionSecurity.TLS:
-                raise ValueError(
-                    f"invalid Client API bootstrap config {path}: "
-                    "bare-CA TLS attach is not supported; use mTLS or a non-network driver"
-                )
         ca_cert = config.get(BootstrapKey.CA_CERT)
         if ca_cert is not None and (not isinstance(ca_cert, str) or not ca_cert.strip()):
             raise ValueError(

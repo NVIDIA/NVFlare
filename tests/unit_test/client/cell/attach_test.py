@@ -35,6 +35,20 @@ def test_clear_profile_syntax_is_accepted_without_making_a_cj_policy_decision(ur
     assert validate_attach_profile(url, "clear") == "clear"
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "grpc://10.20.30.40:9000",
+        "grpc://localhost:9000",
+        "http://127.0.0.1:9000",
+        "tcp://[::1]:9000",
+    ],
+)
+def test_clear_network_profile_requires_explicit_security_acknowledgement(url):
+    with pytest.raises(ValueError, match="explicitly set connection_security='clear'"):
+        validate_attach_profile(url, None)
+
+
 def test_shared_file_profile_has_no_tls_mode():
     assert validate_attach_profile("shared-file://0/var/run/nvflare", None) == "clear"
 
@@ -65,6 +79,10 @@ def test_file_url_is_not_treated_as_the_shared_file_driver():
 
 def test_tls_network_route_is_accepted():
     assert validate_attach_profile("grpcs://host.example:9000", "mtls") == "mtls"
+
+
+def test_secure_network_scheme_defaults_to_mtls():
+    assert validate_attach_profile("grpcs://host.example:9000", None) == "mtls"
 
 
 def test_bare_ca_tls_network_route_is_rejected():

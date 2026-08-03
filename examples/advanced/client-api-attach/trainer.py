@@ -24,7 +24,7 @@ from nvflare.app_common.np.constants import NPConstants
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="attach_profile.json")
+    parser.add_argument("--config", default="attach_profile_shared_file.json")
     args = parser.parse_args()
 
     flare.init(config_file=args.config)

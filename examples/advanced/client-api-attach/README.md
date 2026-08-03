@@ -45,8 +45,8 @@ with mode `0660`, explicitly restoring those group permissions after creation so
 a restrictive process umask cannot block a different user in the shared group;
 filesystem access is the peer-access boundary.
 
-The trainer profile names the stable rendezvous directory, not the driver's
-dynamic `shared-file://.../lst_<id>` URL:
+The checked-in `attach_profile_shared_file.json` names the stable rendezvous
+directory, not the driver's dynamic `shared-file://.../lst_<id>` URL:
 
 ```json
 {
@@ -88,7 +88,8 @@ A registered network driver can instead be configured on the dedicated listener:
 }
 ```
 
-The trainer receives the matching direct profile:
+The checked-in `attach_profile_network.json` is the corresponding direct-profile
+template:
 
 ```json
 {
@@ -119,7 +120,8 @@ identity before constructing its Cell. Unlike shared-file rendezvous, a static
 direct profile cannot discover a later job automatically.
 
 Bare-CA one-way TLS (`connection_security=tls`) is rejected. Clear network
-listeners require both `connection_security=clear` in the profile and
+listeners—including loopback listeners—require both an explicit
+`connection_security=clear` in the profile and
 `--allow_insecure_attach` on `job.py`. The flag only acknowledges an unprotected
 CJ-to-trainer network route; it does not affect CP-to-CJ communication and must
 not be used on an untrusted network.
@@ -141,8 +143,9 @@ nvflare poc prepare -n 1 --force
 Create
 `/tmp/nvflare-attach-poc/example_project/prod_00/site-1/local/comm_config.json`
 with a dedicated shared-file Attach listener. Replace `/absolute/shared/...`
-below and in a private copy of `attach_profile.json` with the same existing,
-absolute directory; create it with mode `0770` under a non-world-writable parent:
+below and in a private copy of `attach_profile_shared_file.json` with the same
+existing, absolute directory; create it with mode `0770` under a
+non-world-writable parent:
 
 ```json
 {
@@ -158,8 +161,8 @@ absolute directory; create it with mode `0770` under a non-world-writable parent
 }
 ```
 
-The checked-in `attach_profile.json` uses the same explicit placeholder so the
-example never silently trusts a shared `/tmp` location.
+The checked-in `attach_profile_shared_file.json` uses the same explicit
+placeholder so the example never silently trusts a shared `/tmp` location.
 
 The component policy must authorize the exact job components. In each directory,
 copy `resources.json.default` to `resources.json` if needed, preserve the existing
@@ -190,12 +193,23 @@ In another terminal, start the independently managed trainer:
 
 ```bash
 cd examples/advanced/client-api-attach
-python trainer.py --config attach_profile.json
+python trainer.py --config attach_profile_shared_file.json
 ```
 
 The trainer and job commands may be started in either order. `job.py` uses
 `ProdEnv`, waits for completion, and prints the downloaded result directory.
 Pass `--username` if the startup kit belongs to another administrator.
+
+For network Attach, configure the `client_api_attach` network listener described
+above, replace every placeholder in `attach_profile_network.json`, and run:
+
+```bash
+python trainer.py --config attach_profile_network.json
+```
+
+The direct profile contains the job-specific CJ FQCN, so normally submit the job
+and generate the final profile before starting the network trainer. The training
+code and job recipe are otherwise identical to the shared-file example.
 
 Successful output ends with `Status: FINISHED:COMPLETED`. For this three-round
 example, verify the final model with:

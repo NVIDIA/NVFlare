@@ -64,7 +64,14 @@ def effective_connection_security(connect_url: str, connection_security: str | N
             )
         return connection_security
     scheme = urlsplit(connect_url).scheme.lower()
-    return ConnectionSecurity.MTLS if scheme in SECURE_NETWORK_SCHEMES else ConnectionSecurity.CLEAR
+    if scheme in SECURE_NETWORK_SCHEMES:
+        return ConnectionSecurity.MTLS
+    if scheme == SHARED_FILE_SCHEME:
+        return ConnectionSecurity.CLEAR
+    raise ValueError(
+        "network attach without TLS must explicitly set connection_security='clear'; "
+        "use 'clear' only on a trusted, isolated network; otherwise use 'mtls'"
+    )
 
 
 def validate_attach_profile(connect_url: str, connection_security: str | None) -> str:
