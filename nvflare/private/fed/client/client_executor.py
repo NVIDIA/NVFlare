@@ -60,12 +60,16 @@ class _PendingJobHandle(JobHandleSpec):
             self._job_handle = job_handle
             return self._terminate_requested
 
-    def terminate(self):
+    def terminate(self, heartbeat_cleanup=False):
         with self._lock:
             job_handle = self._job_handle
             if job_handle is None:
                 self._terminate_requested = True
                 return
+        if heartbeat_cleanup:
+            terminate_for_heartbeat_cleanup = getattr(job_handle, "_terminate_for_heartbeat_cleanup", None)
+            if terminate_for_heartbeat_cleanup:
+                return terminate_for_heartbeat_cleanup()
         return job_handle.terminate()
 
     def poll(self):
@@ -474,11 +478,12 @@ class JobExecutor(ClientExecutor):
             self.logger.error(f"reset_errors execution exception: {secure_format_exception(e)}.")
             secure_log_traceback()
 
-    def abort_app(self, job_id):
+    def abort_app(self, job_id, heartbeat_cleanup=False):
         """Aborts the running app.
 
         Args:
             job_id: the job_id
+            heartbeat_cleanup: whether heartbeat cleanup requested the abort rather than a user or administrator
         """
         # When the HeartBeat cleanup process try to abort the worker process, the job maybe already terminated,
         # Use retry to avoid print out the error stack trace.
@@ -502,7 +507,7 @@ class JobExecutor(ClientExecutor):
                         optional=True,
                     )
                     self.logger.debug("abort sent to worker")
-                    t = threading.Thread(target=self._terminate_job, args=[job_handle, job_id])
+                    t = threading.Thread(target=self._terminate_job, args=[job_handle, job_id, heartbeat_cleanup])
                     t.start()
                     t.join()
                     break
@@ -552,7 +557,7 @@ class JobExecutor(ClientExecutor):
             optional=optional,
         )
 
-    def _terminate_job(self, job_handle, job_id):
+    def _terminate_job(self, job_handle, job_id, heartbeat_cleanup=False):
         max_wait = 10.0
         done = False
         start = time.time()
@@ -569,7 +574,10 @@ class JobExecutor(ClientExecutor):
 
             time.sleep(0.05)  # we want to quickly check
 
-        job_handle.terminate()
+        if heartbeat_cleanup:
+            job_handle.terminate(heartbeat_cleanup=True)
+        else:
+            job_handle.terminate()
         self.logger.info(f"run ({job_id}): child worker process terminated")
 
     def abort_task(self, job_id):

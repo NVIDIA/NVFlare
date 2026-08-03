@@ -23,14 +23,15 @@ from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, JobConstants, RunProcessKey
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobReturnCode
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobReturnCode
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey
 from nvflare.private.fed.client.client_engine import ClientEngine
-from nvflare.private.fed.client.client_executor import REPORTABLE_JOB_FAILURES, JobExecutor
+from nvflare.private.fed.client.client_executor import REPORTABLE_JOB_FAILURES, JobExecutor, _PendingJobHandle
 from nvflare.private.fed.client.client_status import ClientStatus
+from nvflare.private.fed.client.communicator import Communicator
 
 EXPECTED_REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: "exception",
@@ -58,6 +59,17 @@ def test_abort_app_terminates_starting_job_without_worker_command():
 
     job_handle.terminate.assert_called_once_with()
     client.cell.fire_and_forget.assert_not_called()
+
+
+def test_heartbeat_cleanup_propagates_non_user_abort_intent():
+    job_executor = MagicMock()
+    job_executor.get_status.return_value = ClientStatus.STARTED
+    engine = SimpleNamespace(client_executor=job_executor)
+    engine.abort_app = ClientEngine.abort_app.__get__(engine)
+
+    Communicator(client_config={"client_name": "site-1"})._clean_up_runs(engine, ["job-1"])
+
+    job_executor.abort_app.assert_called_once_with("job-1", heartbeat_cleanup=True)
 
 
 def _write_deployed_meta(tmp_path, job_id, deployed_meta):
@@ -207,6 +219,16 @@ def test_start_app_removes_pending_handle_when_launcher_returns_no_handle(tmp_pa
         )
 
     assert job_id not in executor.run_processes
+
+
+def test_pending_handle_heartbeat_cleanup_falls_back_to_terminate():
+    job_handle = MagicMock(spec=JobHandleSpec)
+    pending_handle = _PendingJobHandle()
+    pending_handle.attach(job_handle)
+
+    pending_handle.terminate(heartbeat_cleanup=True)
+
+    job_handle.terminate.assert_called_once_with()
 
 
 def test_start_app_does_not_replace_existing_launch_registration(tmp_path):
