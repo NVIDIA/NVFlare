@@ -101,8 +101,11 @@ def main():
     set_per_site_config(recipe, per_site_config)
 
     # Export the job and run it when no additional setup is required
-    env = SimEnv(clients=recipe.configured_sites())
-    recipe.export(f"/tmp/nvflare/workspace/fedxgb_secure/train_fl/jobs/{job_name}", env=env)
+    env = SimEnv(
+        clients=recipe.configured_sites(),
+        workspace_root="/tmp/nvflare/workspace/fedxgb_secure/train_fl/works",
+    )
+    recipe.export("/tmp/nvflare/workspace/fedxgb_secure/train_fl/jobs", env=env)
 
     # Note: Secure horizontal training requires special tenseal context setup
     if args.secure:
