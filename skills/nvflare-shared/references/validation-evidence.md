@@ -100,6 +100,8 @@ tests, through an assertion wrapper. The wrapper must check the child process's
 expected nonzero status and diagnostic, then exit 0 only when the rejection is
 correct. Do not leave an expected child failure as a failed top-level validation
 command, where it is indistinguishable from an unexpected failure and recovery.
+Keep every required argument valid and append the invalid option; never replace
+a required option, because missing-required rejection masks the intended check.
 Match the parser's documented rejection type: for example,
 `HfArgumentParser.parse_args_into_dataclasses()` can raise `ValueError` for
 unused arguments instead of `SystemExit`. Accept only the expected exception and
