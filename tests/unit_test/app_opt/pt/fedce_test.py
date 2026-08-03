@@ -75,6 +75,34 @@ def test_fedce_recovers_prior_weights_from_dispatched_model_metadata():
     assert aggregator._get_prior_weights(["site-1", "site-2"]) == prior_weights
 
 
+def test_fedce_carries_weights_across_partial_participation(caplog):
+    aggregator = FedCEModelAggregator()
+    aggregator.accept_model(_result("site-1", [1.0, 0.0], 0.5))
+    aggregator.accept_model(_result("site-3", [0.0, 1.0], 0.5))
+    first_weights = aggregator.aggregate_model().meta[FedCEConstants.CONTRIBUTION_WEIGHTS]
+
+    aggregator.reset_stats()
+    aggregator.accept_model(_result("site-2", [1.0, 1.0], 0.5, round_number=1))
+    aggregator.accept_model(_result("site-3", [0.0, 1.0], 0.5, round_number=1))
+
+    prior_weights = aggregator._get_prior_weights(["site-2", "site-3"])
+    dispatched = FLModel(meta={FedCEConstants.CONTRIBUTION_WEIGHTS: first_weights})
+    assert prior_weights == {"site-2": pytest.approx(1.0 / 3.0), "site-3": pytest.approx(0.5)}
+    assert PTFedCEHelper.get_contribution_weight(dispatched, "site-2") == pytest.approx(prior_weights["site-2"])
+    with caplog.at_level("WARNING"):
+        second = aggregator.aggregate_model()
+
+    second_weights = second.meta[FedCEConstants.CONTRIBUTION_WEIGHTS]
+    assert "partial participation" in caplog.text
+    assert set(second_weights) == {"site-1", "site-2", "site-3"}
+    assert second_weights["site-1"] == pytest.approx(first_weights["site-1"])
+    assert second_weights["site-2"] + second_weights["site-3"] == pytest.approx(1.0)
+    assert PTFedCEHelper.get_contribution_weight(second, "site-1") == pytest.approx(first_weights["site-1"])
+
+    next_prior_weights = aggregator._get_prior_weights(["site-3", "site-4"])
+    assert PTFedCEHelper.get_contribution_weight(second, "site-4") == pytest.approx(next_prior_weights["site-4"])
+
+
 def test_fedce_requires_minus_model_score():
     aggregator = FedCEModelAggregator()
     result = FLModel(
@@ -120,9 +148,11 @@ def test_fedce_helper_reads_weight_and_handles_non_trainable_buffers():
             self.register_buffer("counter", torch.tensor([3], dtype=torch.int64))
             self.register_buffer("untouched", torch.tensor([4], dtype=torch.int64))
 
-    global_model = FLModel(meta={FedCEConstants.CONTRIBUTION_WEIGHTS: {"site-1": 0.4}})
+    global_model = FLModel(meta={FedCEConstants.CONTRIBUTION_WEIGHTS: {"site-1": 0.4, "site-3": 0.6}})
     assert PTFedCEHelper.get_contribution_weight(global_model, "site-1") == pytest.approx(0.4)
+    assert PTFedCEHelper.get_contribution_weight(global_model, "site-2") == pytest.approx(1.0 / 3.0)
     assert PTFedCEHelper.get_contribution_weight(global_model, "site-2", default=0.2) == pytest.approx(0.2)
+    assert PTFedCEHelper.get_contribution_weight(FLModel(meta={}), "site-1") == pytest.approx(0.0)
 
     model = BufferedModel()
     minus_model = PTFedCEHelper.make_minus_model(
