@@ -498,6 +498,11 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             abort_signal=self.session_abort_signal,
         )
         if err:
+            if file_path:
+                try:
+                    Path(file_path).unlink(missing_ok=True)
+                except OSError as ex:
+                    self.logger.error(f"failed to remove partial download: {secure_format_exception(ex)}")
             self._print_hci(f"failed to receive file {file_name}: {err}")
             return None
 

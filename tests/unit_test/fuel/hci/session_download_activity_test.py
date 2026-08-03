@@ -21,7 +21,10 @@ from nvflare.fuel.f3.streaming.download_service import ProduceRC, _PropKey
 from nvflare.fuel.f3.streaming.file_downloader import FileDownloadable
 from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
 from nvflare.fuel.hci.client.api import AdminAPI
+from nvflare.fuel.hci.client.api_status import APIStatus
+from nvflare.fuel.hci.client.file_transfer import FileTransferModule
 from nvflare.fuel.hci.conn import Connection
+from nvflare.fuel.hci.proto import MetaKey, ProtoKey
 from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.server.sess import SessionManager
@@ -124,6 +127,24 @@ def test_logout_cancels_bound_download_but_completed_download_is_detached(monkey
     active_cancel.assert_called_once_with()
     completed_cancel.assert_not_called()
     assert cell.events == []
+
+
+def test_session_teardown_isolates_notification_and_cancel_failures(monkeypatch):
+    cell = MagicMock()
+    cell.fire_and_forget.side_effect = RuntimeError("notification failed")
+    manager = _new_manager(monkeypatch, cell, _Clock())
+    session = _new_session(manager, "admin")
+    failing_cancel = MagicMock(side_effect=RuntimeError("cancel failed"))
+    successful_cancel = MagicMock()
+    assert manager.bind_download(session.sess_id, "tx-failing", failing_cancel)
+    assert manager.bind_download(session.sess_id, "tx-successful", successful_cancel)
+
+    manager.end_session_by_id(session.sess_id, "idle timeout")
+
+    failing_cancel.assert_called_once_with()
+    successful_cancel.assert_called_once_with()
+    assert manager.get_sessions() == []
+    assert manager.downloads == {}
 
 
 def test_binary_transfer_binds_verified_progress_and_detaches_on_failure(monkeypatch, tmp_path):
@@ -242,6 +263,50 @@ def test_session_expiry_aborts_active_download():
     assert api.session_abort_signal.triggered
     assert api.session_abort_signal.value == "idle timeout"
     api.close.assert_called_once_with()
+
+
+def test_failed_download_removes_partial_file(monkeypatch, tmp_path):
+    partial_file = tmp_path / "partial"
+    partial_file.write_bytes(b"incomplete")
+    monkeypatch.setattr(
+        "nvflare.fuel.hci.client.api.downloader.download_file",
+        lambda **_kwargs: ("aborted", str(partial_file)),
+    )
+    api = AdminAPI.__new__(AdminAPI)
+    api.cell = MagicMock()
+    api.file_download_progress_timeout = 1
+    api.session_abort_signal = Signal()
+    api.logger = MagicMock()
+    api._print_hci = MagicMock()
+
+    assert api.download_file("server", "ref-1", str(tmp_path / "result")) is None
+    assert not partial_file.exists()
+
+
+def test_pull_folder_failure_removes_transaction_directory(tmp_path):
+    module = FileTransferModule(str(tmp_path), str(tmp_path))
+    tx_path = tmp_path / "job-1__tx-1"
+    tx_path.mkdir()
+    (tx_path / "previous-result").write_bytes(b"complete")
+    failure = {ProtoKey.STATUS: APIStatus.ERROR_RUNTIME, ProtoKey.DETAILS: "download failed"}
+    api = MagicMock()
+    api.server_execute.return_value = {
+        ProtoKey.STATUS: APIStatus.SUCCESS,
+        ProtoKey.META: {
+            MetaKey.FILES: [["result", "ref-1"]],
+            MetaKey.TX_ID: "tx-1",
+            MetaKey.SOURCE_FQCN: "server",
+        },
+    }
+    api.do_command.return_value = failure
+    command_entry = MagicMock()
+    command_entry.full_command_name.return_value = "download_job"
+    ctx = MagicMock()
+    ctx.get_command_entry.return_value = command_entry
+    ctx.get_api.return_value = api
+
+    assert module.pull_folder(["pull_folder", "job-1"], ctx) == failure
+    assert not tx_path.exists()
 
 
 def test_logout_after_expiry_does_not_use_stopped_messenger():

@@ -24,8 +24,10 @@ from nvflare.fuel.hci.base64_utils import b64str_to_str, str_to_b64str
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import InternalCommands, ReplyKeyword
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.time_utils import time_to_string
 from nvflare.private.fed.utils.identity_utils import IdentityAsserter, TokenVerifier
+from nvflare.security.logging import secure_format_exception
 
 LIST_SESSIONS_CMD_NAME = InternalCommands.LIST_SESSIONS
 CHECK_SESSION_CMD_NAME = InternalCommands.CHECK_SESSION
@@ -112,6 +114,7 @@ class SessionManager(CommandModule):
             monitor_interval = 5
 
         self.cell = cell
+        self.logger = get_obj_logger(self)
         self.sess_update_lock = threading.Lock()
         self.sessions = {}  # token => Session
         self.downloads = {}  # session ID => {transaction ID: cancel callback}
@@ -240,15 +243,23 @@ class SessionManager(CommandModule):
             sess = self.sessions.pop(sess_id, None)
             downloads = self.downloads.pop(sess_id, {})
         if sess and reason:
-            self.cell.fire_and_forget(
-                channel=CellChannel.HCI,
-                topic="SESSION_EXPIRED",
-                targets=sess.origin_fqcn,
-                message=CellMessage(payload=reason),
-                optional=True,
-            )
-        for cancel_cb in downloads.values():
-            cancel_cb()
+            try:
+                self.cell.fire_and_forget(
+                    channel=CellChannel.HCI,
+                    topic="SESSION_EXPIRED",
+                    targets=sess.origin_fqcn,
+                    message=CellMessage(payload=reason),
+                    optional=True,
+                )
+            except Exception as ex:
+                self.logger.error(f"failed to notify expired session {sess_id}: {secure_format_exception(ex)}")
+        for tx_id, cancel_cb in downloads.items():
+            try:
+                cancel_cb()
+            except Exception as ex:
+                self.logger.error(
+                    f"failed to cancel download {tx_id} for session {sess_id}: {secure_format_exception(ex)}"
+                )
 
     def get_spec(self):
         return CommandModuleSpec(
