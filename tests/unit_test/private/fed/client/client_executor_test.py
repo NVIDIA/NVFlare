@@ -128,7 +128,8 @@ def test_start_app_pending_handle_operations_before_launcher_returns(tmp_path):
         )
 
 
-def test_start_app_applies_abort_while_launcher_is_running(tmp_path):
+@pytest.mark.parametrize("heartbeat_cleanup", [False, True], ids=["user_abort", "heartbeat_cleanup"])
+def test_start_app_preserves_abort_intent_while_launcher_is_running(tmp_path, heartbeat_cleanup):
     job_id = "job-1"
     job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
     executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
@@ -138,7 +139,7 @@ def test_start_app_applies_abort_while_launcher_is_running(tmp_path):
 
     def launch_job(*_args):
         assert executor.get_status(job_id) == ClientStatus.STARTING
-        ClientEngine.abort_app(SimpleNamespace(client_executor=executor), job_id)
+        ClientEngine.abort_app(SimpleNamespace(client_executor=executor), job_id, heartbeat_cleanup=heartbeat_cleanup)
         return job_handle
 
     launcher.launch_job.side_effect = launch_job
@@ -159,7 +160,12 @@ def test_start_app_applies_abort_while_launcher_is_running(tmp_path):
         )
 
     pending_handle = executor.run_processes[job_id][RunProcessKey.JOB_HANDLE]
-    job_handle.terminate.assert_called_once_with()
+    if heartbeat_cleanup:
+        job_handle._terminate_for_heartbeat_cleanup.assert_called_once_with()
+        job_handle.terminate.assert_not_called()
+    else:
+        job_handle.terminate.assert_called_once_with()
+        job_handle._terminate_for_heartbeat_cleanup.assert_not_called()
     client.cell.fire_and_forget.assert_not_called()
     assert pending_handle.poll() == JobReturnCode.ABORTED
     pending_handle.wait()

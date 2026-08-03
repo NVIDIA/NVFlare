@@ -53,18 +53,20 @@ class _PendingJobHandle(JobHandleSpec):
     def __init__(self):
         self._lock = threading.Lock()
         self._job_handle = None
-        self._terminate_requested = False
+        self._pending_heartbeat_cleanup: bool | None = None
 
-    def attach(self, job_handle: JobHandleSpec) -> bool:
+    def attach(self, job_handle: JobHandleSpec) -> bool | None:
         with self._lock:
             self._job_handle = job_handle
-            return self._terminate_requested
+            return self._pending_heartbeat_cleanup
 
     def terminate(self, heartbeat_cleanup=False):
         with self._lock:
             job_handle = self._job_handle
             if job_handle is None:
-                self._terminate_requested = True
+                # Preserve a real abort if stop requests race before attachment.
+                if self._pending_heartbeat_cleanup is None or not heartbeat_cleanup:
+                    self._pending_heartbeat_cleanup = heartbeat_cleanup
                 return
         if heartbeat_cleanup:
             terminate_for_heartbeat_cleanup = getattr(job_handle, "_terminate_for_heartbeat_cleanup", None)
@@ -310,9 +312,9 @@ class JobExecutor(ClientExecutor):
                     self.run_processes.pop(job_id, None)
             raise
 
-        abort_requested = pending_handle.attach(job_handle)
-        if abort_requested:
-            self.abort_app(job_id)
+        heartbeat_cleanup = pending_handle.attach(job_handle)
+        if heartbeat_cleanup is not None:
+            self.abort_app(job_id, heartbeat_cleanup=heartbeat_cleanup)
 
         self.logger.info(f"Launched job {job_id} with job launcher: {type(job_launcher)} ")
 
@@ -495,7 +497,10 @@ class JobExecutor(ClientExecutor):
                     with self.lock:
                         job_handle = self.run_processes[job_id][RunProcessKey.JOB_HANDLE]
                     if process_status == ClientStatus.STARTING:
-                        job_handle.terminate()
+                        if heartbeat_cleanup:
+                            job_handle.terminate(heartbeat_cleanup=True)
+                        else:
+                            job_handle.terminate()
                         break
                     data = {}
                     request = new_cell_message({}, data)
