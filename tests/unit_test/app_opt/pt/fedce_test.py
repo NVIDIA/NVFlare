@@ -85,7 +85,10 @@ def test_fedce_carries_weights_across_partial_participation(caplog):
     aggregator.accept_model(_result("site-2", [1.0, 1.0], 0.5, round_number=1))
     aggregator.accept_model(_result("site-3", [0.0, 1.0], 0.5, round_number=1))
 
-    assert aggregator._get_prior_weights(["site-2", "site-3"]) == {"site-2": 0.5, "site-3": 0.5}
+    prior_weights = aggregator._get_prior_weights(["site-2", "site-3"])
+    dispatched = FLModel(meta={FedCEConstants.CONTRIBUTION_WEIGHTS: first_weights})
+    assert prior_weights == {"site-2": pytest.approx(1.0 / 3.0), "site-3": pytest.approx(0.5)}
+    assert PTFedCEHelper.get_contribution_weight(dispatched, "site-2") == pytest.approx(prior_weights["site-2"])
     with caplog.at_level("WARNING"):
         second = aggregator.aggregate_model()
 
@@ -95,6 +98,9 @@ def test_fedce_carries_weights_across_partial_participation(caplog):
     assert second_weights["site-1"] == pytest.approx(first_weights["site-1"])
     assert second_weights["site-2"] + second_weights["site-3"] == pytest.approx(1.0)
     assert PTFedCEHelper.get_contribution_weight(second, "site-1") == pytest.approx(first_weights["site-1"])
+
+    next_prior_weights = aggregator._get_prior_weights(["site-3", "site-4"])
+    assert PTFedCEHelper.get_contribution_weight(second, "site-4") == pytest.approx(next_prior_weights["site-4"])
 
 
 def test_fedce_requires_minus_model_score():
@@ -144,7 +150,7 @@ def test_fedce_helper_reads_weight_and_handles_non_trainable_buffers():
 
     global_model = FLModel(meta={FedCEConstants.CONTRIBUTION_WEIGHTS: {"site-1": 0.4, "site-3": 0.6}})
     assert PTFedCEHelper.get_contribution_weight(global_model, "site-1") == pytest.approx(0.4)
-    assert PTFedCEHelper.get_contribution_weight(global_model, "site-2") == pytest.approx(0.5)
+    assert PTFedCEHelper.get_contribution_weight(global_model, "site-2") == pytest.approx(1.0 / 3.0)
     assert PTFedCEHelper.get_contribution_weight(global_model, "site-2", default=0.2) == pytest.approx(0.2)
     assert PTFedCEHelper.get_contribution_weight(FLModel(meta={}), "site-1") == pytest.approx(0.0)
 

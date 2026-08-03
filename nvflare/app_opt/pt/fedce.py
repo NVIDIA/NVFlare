@@ -35,6 +35,10 @@ class FedCEConstants:
     CONTRIBUTION_WEIGHTS = "fedce_coef"
 
 
+def _get_unseen_client_weight(weights: Dict[str, float]) -> float:
+    return 1.0 / (len(weights) + 1) if weights else 0.0
+
+
 class PTFedCEHelper:
     """Client-side utilities for the FedCE-specific training contract."""
 
@@ -45,7 +49,7 @@ class PTFedCEHelper:
             return float(weights[client_name])
         if default is not None:
             return float(default)
-        return 1.0 / len(weights) if weights else 0.0
+        return _get_unseen_client_weight(weights)
 
     @staticmethod
     def make_minus_model(global_model, previous_local_state: Dict, contribution_weight: float):
@@ -274,9 +278,15 @@ class FedCEModelAggregator(ModelAggregator):
         return sorted(common)
 
     def _get_prior_weights(self, clients: List[str]) -> Dict[str, float]:
-        uniform_weight = 1.0 / len(clients)
-        values = [self._contribution_weights.get(client, uniform_weight) for client in clients]
-        return dict(zip(clients, _normalize(values, self.epsilon)))
+        if not self._contribution_weights:
+            uniform_weight = 1.0 / len(clients)
+            return dict.fromkeys(clients, uniform_weight)
+
+        # Keep the server prior identical to the coefficient an unseen client
+        # used for its minus model. Normalization is unnecessary because these
+        # weights are used only to derive cosine directions.
+        unseen_client_weight = _get_unseen_client_weight(self._contribution_weights)
+        return {client: self._contribution_weights.get(client, unseen_client_weight) for client in clients}
 
     def _weighted_vector(self, clients: List[str], weights: Dict[str, float], param_names: List[str]):
         result = None
