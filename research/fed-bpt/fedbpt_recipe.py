@@ -16,7 +16,7 @@ import os
 import shlex
 import sys
 from contextlib import contextmanager
-from typing import Iterable
+from typing import Iterable, Optional
 
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
@@ -24,7 +24,7 @@ from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.script_runner import BaseScriptRunner
-from nvflare.recipe.spec import Recipe
+from nvflare.recipe.spec import ExecEnv, Recipe
 
 FEDBPT_DIR = os.path.abspath(os.path.dirname(__file__))
 SRC_DIR = os.path.join(FEDBPT_DIR, "src")
@@ -164,10 +164,30 @@ class FedBPTRecipe(Recipe):
         job.to_clients(RegisterDecomposer(), id="register_decomposer")
         super().__init__(job)
 
-    def export(self, *args, **kwargs):
+    def export(
+        self,
+        job_dir: str,
+        server_exec_params: Optional[dict] = None,
+        client_exec_params: Optional[dict] = None,
+        env: Optional[ExecEnv] = None,
+    ):
         with _temporary_sys_path(SRC_DIR):
-            return super().export(*args, **kwargs)
+            return super().export(
+                job_dir=job_dir,
+                server_exec_params=server_exec_params,
+                client_exec_params=client_exec_params,
+                env=env,
+            )
 
-    def run(self, *args, **kwargs):
+    def run(
+        self,
+        env: ExecEnv,
+        server_exec_params: Optional[dict] = None,
+        client_exec_params: Optional[dict] = None,
+    ) -> "Run":
         with _temporary_sys_path(SRC_DIR):
-            return super().run(*args, **kwargs)
+            return super().run(
+                env=env,
+                server_exec_params=server_exec_params,
+                client_exec_params=client_exec_params,
+            )
