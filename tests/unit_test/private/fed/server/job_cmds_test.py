@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 import gc
 import io
 from argparse import Namespace
@@ -1196,6 +1197,20 @@ def test_list_jobs_ignores_duration_parse_failures(monkeypatch):
     assert len(conn.tables[0].rows) == 1
     first_row, _row_meta = conn.tables[0].rows[0]
     assert first_row[0] == "job-1"
+
+
+def test_set_duration_uses_offset_aware_start_time():
+    start_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=1)
+    job = _FakeListedJob(
+        {
+            JobMetaKey.STATUS.value: RunStatus.RUNNING.value,
+            JobMetaKey.START_TIME.value: start_time.isoformat(),
+        }
+    )
+
+    JobCommandModule._set_duration(job)
+
+    assert JobMetaKey.DURATION.value in job.meta
 
 
 def test_list_jobs_shows_execution_exception_status(monkeypatch):
