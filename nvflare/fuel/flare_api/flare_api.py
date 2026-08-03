@@ -197,10 +197,13 @@ class Session(SessionSpec):
         """Close the session."""
         self.api.logout()
 
-    def try_connect(self, timeout):
+    def _raise_if_session_expired(self):
         session_expired_reason = getattr(self.api, "session_expired_reason", None)
         if isinstance(session_expired_reason, str) and session_expired_reason:
             raise SessionExpired(session_expired_reason)
+
+    def try_connect(self, timeout):
+        self._raise_if_session_expired()
         if self.api.closed:
             raise SessionClosed("session closed")
 
@@ -225,18 +228,14 @@ class Session(SessionSpec):
         raise InternalError(details or f"login failed: {status}")
 
     def _do_command(self, command: str, enforce_meta=True, props=None):
-        session_expired_reason = getattr(self.api, "session_expired_reason", None)
-        if isinstance(session_expired_reason, str) and session_expired_reason:
-            raise SessionExpired(session_expired_reason)
+        self._raise_if_session_expired()
         if self.api.closed:
             raise SessionClosed("session closed")
 
         result = None
         for attempt in range(_CONNECTION_RETRY_ATTEMPTS):
             result = self.api.do_command(command, props=props)
-            session_expired_reason = getattr(self.api, "session_expired_reason", None)
-            if isinstance(session_expired_reason, str) and session_expired_reason:
-                raise SessionExpired(session_expired_reason)
+            self._raise_if_session_expired()
             if not _should_retry_connection_failure(command, result) or attempt >= _CONNECTION_RETRY_ATTEMPTS - 1:
                 break
             time.sleep(_CONNECTION_RETRY_BACKOFF * (attempt + 1))
