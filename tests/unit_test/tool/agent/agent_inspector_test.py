@@ -657,6 +657,59 @@ def test_pr4955_unique_contained_job_is_authoritative(tmp_path):
     assert inspect_source(tmp_path)["routing"]["reason"] == "existing_job"
 
 
+def test_pr4955_nested_converted_job_keeps_authority_beside_model_only_root(tmp_path):
+    write_project(
+        tmp_path,
+        {
+            "train.py": "import torch\ndef train():\n    return torch.nn.Linear(1, 1)\n",
+            "jobs/fedavg/job.py": "from nvflare.app_common.workflows.fedavg import FedAvg\n"
+            "from nvflare.job_config.api import FedJob\n"
+            "job = FedJob()\ncontroller = FedAvg()\njob.export()\n",
+        },
+    )
+
+    assert inspect_source(tmp_path)["routing"] == {"recommended_skill": None, "reason": "existing_job"}
+
+
+def test_independent_nested_job_beside_active_owner_fails_closed(tmp_path):
+    write_project(
+        tmp_path,
+        {
+            "train.py": "from torch.optim import SGD\noptimizer = SGD(params)\noptimizer.step()\n",
+            "jobs/fedavg/job.py": "from nvflare.job_config.api import FedJob\njob = FedJob()\n",
+        },
+    )
+
+    assert inspect_source(tmp_path)["routing"] == {
+        "recommended_skill": "nvflare-orient",
+        "reason": "possible_existing_job",
+    }
+
+
+@pytest.mark.parametrize(
+    "model_source",
+    [
+        "import torch\nclass Net(torch.nn.Module):\n    pass\n",
+        "from torch.optim import SGD\nclass Net:\n    pass\noptimizer = SGD(params)\noptimizer.step()\n",
+    ],
+)
+def test_only_project_under_secondary_tree_fails_closed(tmp_path, model_source):
+    write_project(
+        tmp_path,
+        {
+            "tests/integration/model.py": model_source,
+            "tests/integration/job.py": "from model import Net\n"
+            "from nvflare.job_config.api import FedJob\n"
+            "job = FedJob()\nnet = Net()\n",
+        },
+    )
+
+    assert inspect_source(tmp_path)["routing"] == {
+        "recommended_skill": "nvflare-orient",
+        "reason": "possible_existing_job",
+    }
+
+
 def test_pr4955_multiple_independent_jobs_fail_closed(tmp_path):
     write_project(
         tmp_path,
