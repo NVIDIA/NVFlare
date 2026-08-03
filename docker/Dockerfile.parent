@@ -20,10 +20,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/NVFlare
-COPY . .
 
 # Make the prefix install importable without relying on PYTHONPATH.
-RUN NVFL_RELEASE=1 python -m pip install --prefix=/opt/nvflare ".[K8S]" \
+RUN --mount=type=bind,source=.,target=/opt/NVFlare,rw \
+    git ls-files --deleted -z | git update-index --skip-worktree -z --stdin \
+    && python -c "import versioneer; v = versioneer.get_versions(); assert not v['error'], v['error']" \
+    && NVFL_RELEASE=1 python -m pip install --prefix=/opt/nvflare ".[K8S]" \
     && PYTHONPATH="/opt/nvflare/lib/python${PYTHON_MINOR}/site-packages" python -m pip check \
     && mkdir -p "/usr/local/lib/python${PYTHON_MINOR}/site-packages" \
     && printf "/opt/nvflare/lib/python%s/site-packages\n" "${PYTHON_MINOR}" \
@@ -43,7 +45,7 @@ COPY --from=builder /opt/nvflare /opt/nvflare
 COPY --from=builder /usr/local/lib/python${PYTHON_MINOR}/site-packages/nvflare-prefix.pth /usr/local/lib/python${PYTHON_MINOR}/site-packages/nvflare-prefix.pth
 COPY --from=builder /usr/bin/zip /usr/bin/zip
 
-RUN ["python", "-c", "import nvflare; import kubernetes"]
+RUN ["python", "-c", "import importlib.metadata as m; import kubernetes; import nvflare; assert nvflare.__version__ == m.version('nvflare') != '0+unknown'"]
 RUN ["/usr/bin/zip", "--version"]
 
 CMD ["python"]
