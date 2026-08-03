@@ -676,6 +676,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     skill_text = skill_root.joinpath("SKILL.md").read_text(encoding="utf-8")
     conversion_text = skill_root.joinpath("references/huggingface-conversion.md").read_text(encoding="utf-8")
     validation_text = skill_root.joinpath("references/huggingface-validation.md").read_text(encoding="utf-8")
+    state_text = skill_root.joinpath("references/huggingface-state-and-distributed.md").read_text(encoding="utf-8")
     shared_validation = repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md").read_text(
         encoding="utf-8"
     )
@@ -694,9 +695,17 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     recipe_text = repo_root.joinpath(
         "skills/nvflare-shared/references/pytorch-family-recipe-construction.md"
     ).read_text(encoding="utf-8")
+    eval_data = json.loads(
+        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-convert-huggingface/evals.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    basic_eval = _eval_by_id(eval_data, "huggingface-convert-basic")["nvflare"]
+    ddp_eval = _eval_by_id(eval_data, "huggingface-ddp-contract")["nvflare"]
     normalized_skill = " ".join(skill_text.split())
     normalized_conversion = " ".join(conversion_text.split())
     normalized_validation = " ".join(validation_text.split())
+    normalized_state = " ".join(state_text.split())
     normalized_shared_validation = " ".join(shared_validation.split())
     normalized_shared = " ".join(shared_workflow.split())
     normalized_pytorch = " ".join(pytorch_conversion.split())
@@ -766,6 +775,8 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "rejects parent-traversal external-script paths" in normalized_conversion
     assert "inspecting NVFLARE implementation source" in normalized_conversion
     assert "flare.patch(trainer)" in client_template
+    assert "def main(trainer_factory, *, rank, evaluate_before_train=True)" in client_template
+    assert "flare.init(rank=rank)" in client_template
     assert "HfArgumentParser(dataclass_types, allow_abbrev=False)" in client_template
     assert "while flare.is_running()" in client_template
     assert "return model" in server_model_template
@@ -797,6 +808,20 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     )
     assert "Do not call `flare.init()`, `flare.patch()`, `flare.is_running()`" in normalized_validation
     assert "let the first bounded simulation validate runtime patch acceptance" in normalized_validation
+    assert "same importable factory path and with the same local constructor arguments" in normalized_validation
+    assert "state-dict key sets, shapes, and dtypes" in normalized_validation
+    assert "require exact per-tensor equality or an equivalent stable state hash" in normalized_validation
+    assert "For a genuinely nondeterministic factory" in normalized_validation
+    assert "do not require equality across independent calls" in normalized_validation
+    assert "two-process `torchrun` case" in normalized_validation
+    assert "generated client's required `rank` argument" in normalized_state
+    assert "do not pass it as the FLARE rank" in normalized_state
+    basic_mandatory = {item["id"]: item["description"] for item in basic_eval["mandatory_behavior"]}
+    ddp_mandatory = {item["id"]: item["description"] for item in ddp_eval["mandatory_behavior"]}
+    assert "same importable factory path and arguments" in basic_mandatory["explicit-server-model-config"]
+    assert "exact values or a stable state hash" in basic_mandatory["explicit-server-model-config"]
+    assert "without a rank-zero default" in ddp_mandatory["initialize-distributed-before-patch"]
+    assert "observed global and flare.init ranks 0 and 1" in ddp_mandatory["rank-symmetric-trainer-loop"]
     assert "Version-check only fields claimed to belong to a framework" in normalized_validation
     assert "project-defined subclass field" in normalized_validation
     assert "actual parser accepts it" in normalized_validation

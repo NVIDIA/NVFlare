@@ -58,7 +58,7 @@
         "When public checkpoint download is authorized if uncached, the agent uses one normal cache-aware load or download instead of an unguarded cache-only probe that fails on a normal miss.",
         "A generated or preserved HfArgumentParser is constructed with allow_abbrev=False. Intentional typo and abbreviation rejection checks run through assertion wrappers whose top-level commands succeed only when the generated parser rejects them; the wrapper accepts an expected unused-argument ValueError only when its diagnostic names the rejected argument.",
         "Standalone preflight may construct the Trainer but does not call flare.init(), flare.patch(), flare.is_running(), or patched Trainer methods without a launcher-created Client API context; the first bounded simulation validates runtime patch acceptance.",
-        "The generated recipe model is an explicit class_path and args mapping, not a live model instance.",
+        "The generated recipe model is an explicit class_path and args mapping, not a live model instance. Validation reconstructs the source and server models through the same importable factory path and arguments, compares keys, shapes, and dtypes, and also compares exact tensor values or a stable state hash when construction is proven deterministic.",
         "The generated job preserves the maintained PyTorch-family fast path: FedAvgRecipe with class_path, SimEnv, recipe.execute, and explicit server/client model-file packaging.",
         "The generated recipe uses ExchangeFormat.PYTORCH, enables tensor disk offload, encodes train_args for the selected public execution mode without assuming shell parsing, and packages the required model file into the server app with recipe.add_server_file or an equivalent server-targeted API, including a server-only model.py that would otherwise be outside each client app's train_script import closure.",
         "The recipe key_metric preserves the source metric name accuracy when the generated evaluate call emits accuracy; if Trainer emits eval_accuracy, the recipe uses that exact key and reports the source-to-server metric mapping.",
@@ -124,7 +124,7 @@
           },
           {
             "id": "explicit-server-model-config",
-            "description": "uses an importable class_path plus args server model whose state-dict keyspace matches the Trainer exchange scope and ensures server-only model modules are exported"
+            "description": "uses the same importable factory path and arguments for source and server models, validates matching state-dict keys, shapes, and dtypes, requires exact values or a stable state hash when construction is proven deterministic, and ensures server-only model modules are exported"
           },
           {
             "id": "preserve-tensor-dtypes",
@@ -366,15 +366,16 @@
     {
       "id": "huggingface-ddp-contract",
       "prompt": "Convert this Hugging Face Trainer job for torchrun with two GPU processes per site. Keep checkpoint state across FL rounds and explain any shared-storage requirement.",
-      "expected_output": "A Hugging Face conversion that preserves torchrun, initializes torch.distributed before flare.patch, uses global rank for FLARE, keeps every rank in the same is_running/evaluate/train sequence, uses external execution, and explains that in-memory parameter broadcast needs no shared output directory while restore_state checkpoint paths must be visible to every rank.",
+      "expected_output": "A Hugging Face conversion that preserves torchrun, initializes torch.distributed before flare.patch, requires and forwards the resolved global rank to flare.init, keeps every rank in the same is_running/evaluate/train sequence, validates the two-process path with observed ranks 0 and 1, uses external execution, and explains that in-memory parameter broadcast needs no shared output directory while restore_state checkpoint paths must be visible to every rank.",
       "files": [
         "files/trainer-basic/train.py",
         "files/trainer-basic/model.py"
       ],
       "assertions": [
         "The generated client initializes torch.distributed before flare.patch when WORLD_SIZE is greater than one.",
-        "The generated client uses global RANK or the initialized process-group rank rather than LOCAL_RANK for FLARE.",
+        "The generated client requires a resolved global rank with no rank-zero default, uses global RANK or the initialized process-group rank rather than LOCAL_RANK, and forwards that value to flare.init(rank=rank).",
         "Every rank calls is_running, evaluate, and train in identical order.",
+        "Before claiming DDP coverage, the agent runs a two-process torchrun validation and records distinct resolved and flare.init ranks 0 and 1.",
         "The agent preserves the user-provided torchrun process count and does not invent multi-node rendezvous settings.",
         "The agent distinguishes default in-memory parameter broadcast from shared checkpoint-path requirements."
       ],
@@ -383,11 +384,11 @@
         "mandatory_behavior": [
           {
             "id": "initialize-distributed-before-patch",
-            "description": "initializes the distributed process group before patching when a multi-rank environment is declared"
+            "description": "initializes the distributed process group before patching when a multi-rank environment is declared, requires the resolved global rank, and forwards it unchanged to flare.init without a rank-zero default"
           },
           {
             "id": "rank-symmetric-trainer-loop",
-            "description": "keeps all ranks in the same patched Trainer call order"
+            "description": "keeps all ranks in the same patched Trainer call order and validates the two-process path with observed global and flare.init ranks 0 and 1 before claiming DDP coverage"
           },
           {
             "id": "checkpoint-storage-contract",

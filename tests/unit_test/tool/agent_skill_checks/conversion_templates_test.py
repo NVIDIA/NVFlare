@@ -145,8 +145,8 @@ def test_pytorch_eval_template_initializes_flare_before_training_setup():
 @pytest.mark.parametrize(
     "evaluate_before_train, expected_events",
     [
-        (True, ["init", "factory", "patch", "is_running", "evaluate", "train", "is_running"]),
-        (False, ["init", "factory", "patch", "is_running", "train", "is_running"]),
+        (True, ["init:3", "factory", "patch", "is_running", "evaluate", "train", "is_running"]),
+        (False, ["init:3", "factory", "patch", "is_running", "train", "is_running"]),
     ],
 )
 def test_huggingface_client_template_preserves_trainer_sequence(monkeypatch, evaluate_before_train, expected_events):
@@ -165,7 +165,7 @@ def test_huggingface_client_template_preserves_trainer_sequence(monkeypatch, eva
         return _Trainer()
 
     running = iter((True, False))
-    monkeypatch.setattr(module.flare, "init", lambda rank=0: events.append("init"))
+    monkeypatch.setattr(module.flare, "init", lambda rank: events.append(f"init:{rank}"))
     monkeypatch.setattr(module.flare, "patch", lambda trainer: events.append("patch"))
     monkeypatch.setattr(
         module.flare,
@@ -173,9 +173,25 @@ def test_huggingface_client_template_preserves_trainer_sequence(monkeypatch, eva
         lambda: events.append("is_running") or next(running),
     )
 
-    module.main(trainer_factory, evaluate_before_train=evaluate_before_train)
+    module.main(trainer_factory, rank=3, evaluate_before_train=evaluate_before_train)
 
     assert events == expected_events
+
+
+def test_huggingface_client_template_requires_and_forwards_global_rank(monkeypatch):
+    module = _load_module(HF_TEMPLATES / "client_with_eval.py")
+    rank_parameter = inspect.signature(module.main).parameters["rank"]
+    observed = []
+
+    monkeypatch.setattr(module.flare, "init", lambda rank: observed.append(rank))
+    monkeypatch.setattr(module.flare, "patch", lambda trainer: None)
+    monkeypatch.setattr(module.flare, "is_running", lambda: False)
+
+    assert rank_parameter.default is inspect.Parameter.empty
+    assert rank_parameter.kind is inspect.Parameter.KEYWORD_ONLY
+    for rank in (0, 1):
+        module.main(lambda: object(), rank=rank)
+    assert observed == [0, 1]
 
 
 def test_huggingface_client_template_has_one_patch_and_no_manual_exchange():
@@ -194,18 +210,31 @@ def test_huggingface_client_template_has_one_patch_and_no_manual_exchange():
     assert not {node.func.attr for node in calls} & {"receive", "send"}
 
 
-def test_huggingface_server_model_template_returns_source_model_without_wrapper_prefix(monkeypatch):
+def test_huggingface_server_model_template_preserves_deterministic_source_state(monkeypatch):
     torch = pytest.importorskip("torch")
-    expected_model = torch.nn.Linear(4, 2)
+    calls = []
+
+    def load_model(model_name_or_path, **kwargs):
+        calls.append((model_name_or_path, dict(kwargs)))
+        torch.manual_seed(kwargs["seed"])
+        return torch.nn.Linear(kwargs["in_features"], kwargs["out_features"])
+
     source_model_module = types.ModuleType("model")
-    source_model_module.load_model = lambda model_name_or_path, **kwargs: expected_model
+    source_model_module.load_model = load_model
     monkeypatch.setitem(sys.modules, "model", source_model_module)
 
     module = _load_module(HF_TEMPLATES / "server_model.py")
-    server_model = module.ServerModel("local-model")
+    constructor_args = {"in_features": 4, "out_features": 2, "seed": 17}
+    source_model = load_model("local-model", **constructor_args)
+    server_model = module.ServerModel("local-model", **constructor_args)
+    source_state = source_model.state_dict()
+    server_state = server_model.state_dict()
 
-    assert server_model is expected_model
-    assert set(server_model.state_dict()) == {"weight", "bias"}
+    assert calls == [("local-model", constructor_args), ("local-model", constructor_args)]
+    assert source_state.keys() == server_state.keys()
+    assert all(source_state[key].shape == server_state[key].shape for key in source_state)
+    assert all(source_state[key].dtype == server_state[key].dtype for key in source_state)
+    assert all(torch.equal(source_state[key], server_state[key]) for key in source_state)
 
 
 def test_huggingface_job_template_uses_pytorch_fast_path_and_packages_model_files(monkeypatch):

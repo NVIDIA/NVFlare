@@ -120,8 +120,11 @@ user's purpose is to understand data distribution; handle conversion later as a 
 - Must use `flare.patch(trainer)` as the sole model-exchange owner. `receive()`
   inside a patched loop may inspect task metadata only; it must not load a
   second copy of the global model.
-- Must pass the distributed rank to `flare.init(rank=rank)`; Client API
-  initialization order otherwise follows `../nvflare-shared/references/conversion-common.md`.
+- Must make the client entry's global `rank` argument required and pass it to
+  `flare.init(rank=rank)`; never default every process to rank zero. Resolve it
+  from an initialized process group or global `RANK`, using explicit zero only
+  for a verified single-process launch. Client API initialization order
+  otherwise follows `../nvflare-shared/references/conversion-common.md`.
 - Must preserve source evaluation. When per-round global-model evaluation is
   required, call `trainer.evaluate()` before `trainer.train()` on every rank.
   Do not invent `compute_metrics`, label mappings, averaging denominators, or
