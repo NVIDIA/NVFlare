@@ -247,6 +247,34 @@ def test_huggingface_job_template_uses_pytorch_fast_path_and_packages_model_file
     assert "--num_train_epochs" not in recipe.kwargs["train_args"]
 
 
+def test_huggingface_train_only_job_disables_model_selection_by_default(tmp_path, monkeypatch):
+    generated_dir = tmp_path / "generated"
+    generated_dir.mkdir()
+    job_path = generated_dir / "job.py"
+    job_path.write_text((HF_TEMPLATES / "job.py").read_text(encoding="utf-8"), encoding="utf-8")
+    (generated_dir / "client.py").write_text("import model\n", encoding="utf-8")
+    (generated_dir / "model.py").write_text("class Model:\n    pass\n", encoding="utf-8")
+    (generated_dir / "server_model.py").write_text("from model import Model\n", encoding="utf-8")
+
+    caller_dir = tmp_path / "caller"
+    caller_dir.mkdir()
+    monkeypatch.chdir(caller_dir)
+    module = _load_module(job_path)
+    recipe = module.build_recipe(
+        name="hf-train-only",
+        model_name_or_path="local-model",
+        data_root="/tmp/data",
+        num_clients=2,
+        num_rounds=1,
+    )
+
+    assert recipe.key_metric == ""
+    export_root = tmp_path / "export"
+    recipe.export(str(export_root))
+    server_config = export_root / recipe.name / "app" / "config" / "config_fed_server.json"
+    assert "IntimeModelSelector" not in server_config.read_text(encoding="utf-8")
+
+
 def test_huggingface_job_template_supports_one_resolved_budget_mode():
     module = _load_module(HF_TEMPLATES / "job.py")
 

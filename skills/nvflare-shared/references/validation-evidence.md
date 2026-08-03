@@ -119,6 +119,9 @@ Before spending time on full simulation, run cheap checks when applicable:
 - construct or instantiate the selected recipe;
 - export to a temporary directory;
 - inspect exported server/client app folders and expected config files;
+- compare the resolved model-selection state with the exported server config:
+  disabled means no active model selector, while metric or deliberately accepted
+  recipe-default selection means a selector with the resolved key;
 - verify generated files required by server and client code are packaged;
 - run local partition sanity checks when generated site splits or data
   partitions are introduced;

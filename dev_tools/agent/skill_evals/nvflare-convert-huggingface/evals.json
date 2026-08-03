@@ -230,6 +230,33 @@
       }
     },
     {
+      "id": "huggingface-train-only-disables-model-selection",
+      "prompt": "Convert this Hugging Face Trainer project to a two-site NVFLARE FedAvg job. It has a train_dataset but no eval_dataset or compute_metrics, and I am not requesting evaluation or best-model selection.",
+      "expected_output": "A train-only Hugging Face conversion that skips per-round evaluation, explicitly disables model selection with key_metric=\"\", and verifies that the exported server configuration contains no active model selector.",
+      "files": [],
+      "assertions": [
+        "The generated client uses evaluate_before_train=False and preserves the source's train-only Trainer lifecycle.",
+        "The generated job passes key_metric=\"\" instead of omitting it and activating FedAvgRecipe's accuracy default.",
+        "The agent inspects the exported server configuration and confirms that it contains no active IntimeModelSelector.",
+        "The validation does not accept missing-validation-metric warnings from an active default selector as expected train-only behavior."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-huggingface",
+        "mandatory_behavior": [
+          {
+            "id": "disable-unrequested-model-selection",
+            "description": "uses key_metric=\"\" for a train-only job and verifies that export contains no active model selector"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-active-default-selector-for-train-only",
+            "description": "does not omit key_metric, retain the accuracy default, or accept missing-metric warnings for a train-only job"
+          }
+        ]
+      }
+    },
+    {
       "id": "huggingface-lower-is-better-metric",
       "prompt": "Convert a Hugging Face Trainer whose compute_metrics returns word error rate as wer. Keep best-model selection, where lower WER is better.",
       "expected_output": "A Hugging Face conversion that preserves the source wer metric, emits a source-backed negated companion such as neg_wer, selects the returned eval_neg_wer key, and does not treat raw loss/WER as higher-is-better or claim that FedAvgRecipe exposes a lower-is-better option.",
