@@ -114,10 +114,12 @@ def main():
     set_per_site_config(recipe, per_site_config)
 
     # Export and run
-    env = SimEnv(clients=recipe.configured_sites())
-    run = recipe.execute(env)
-    run.export_job(f"/tmp/nvflare/workspace/fedxgb_secure/train_fl/jobs/{job_name}")
-    run.simulator_run(f"/tmp/nvflare/workspace/fedxgb_secure/train_fl/works/{job_name}")
+    env = SimEnv(
+        clients=recipe.configured_sites(),
+        workspace_root="/tmp/nvflare/workspace/fedxgb_secure/train_fl/works",
+    )
+    recipe.export("/tmp/nvflare/workspace/fedxgb_secure/train_fl/jobs", env=env)
+    recipe.execute(env)
 
     print("\n" + "=" * 80)
     print("Training Complete!")
