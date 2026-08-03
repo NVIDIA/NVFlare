@@ -16,7 +16,8 @@ import errno
 import json
 import os
 import re
-import tempfile
+import stat
+import uuid
 from collections import OrderedDict
 from typing import Any, Dict, Optional, Union
 
@@ -310,20 +311,23 @@ class PTFileModelPersistor(ModelPersistor):
         The temporary file is created in the checkpoint directory so ``os.replace``
         is atomic on filesystems that provide atomic same-filesystem replacement.
         Remote filesystems may provide weaker guarantees. Directory fsync is skipped
-        when the platform or filesystem does not support it.
+        when the platform or filesystem does not support it. New checkpoints honor
+        the process umask, and replacements preserve the existing file mode.
         """
         save_dict = self.persistence_manager.to_persistence_dict()
         save_dir = os.path.dirname(os.path.abspath(save_path))
         temp_path = None
         try:
-            with tempfile.NamedTemporaryFile(
-                mode="wb",
-                dir=save_dir,
-                prefix=f".{os.path.basename(save_path)}.",
-                suffix=".tmp",
-                delete=False,
-            ) as temp_file:
-                temp_path = temp_file.name
+            save_mode = stat.S_IMODE(os.stat(save_path).st_mode)
+        except FileNotFoundError:
+            save_mode = None
+
+        try:
+            candidate_path = os.path.join(save_dir, f".{os.path.basename(save_path)}.{uuid.uuid4().hex}.tmp")
+            with open(candidate_path, "xb") as temp_file:
+                temp_path = candidate_path
+                if save_mode is not None:
+                    os.chmod(temp_path, save_mode)
                 torch.save(save_dict, temp_file)
                 temp_file.flush()
                 os.fsync(temp_file.fileno())

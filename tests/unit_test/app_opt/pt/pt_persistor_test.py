@@ -16,6 +16,7 @@
 
 import errno
 import os
+import stat
 
 import pytest
 
@@ -137,6 +138,32 @@ class TestPTFileModelPersistorSave:
         loaded = torch.load(final_path, weights_only=True)
         assert torch.equal(loaded["model"]["weight"], old_checkpoint["model"]["weight"])
 
+    def test_fsync_failure_preserves_checkpoint_and_cleans_temp_file(self, tmp_path, monkeypatch):
+        import torch
+
+        from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+        final_path = tmp_path / "model.pt"
+        old_checkpoint = {"model": {"weight": torch.tensor([1.0])}}
+        torch.save(old_checkpoint, final_path)
+        old_bytes = final_path.read_bytes()
+
+        persistor = PTFileModelPersistor()
+        persistor.persistence_manager = _PersistenceManager({"model": {"weight": torch.tensor([2.0])}})
+
+        def fail_fsync(_fd):
+            raise OSError(errno.ENOSPC, "no space left on device")
+
+        monkeypatch.setattr(os, "fsync", fail_fsync)
+
+        with pytest.raises(OSError, match="no space left on device"):
+            persistor.save_model_file(str(final_path))
+
+        assert final_path.read_bytes() == old_bytes
+        loaded = torch.load(final_path, weights_only=True)
+        assert torch.equal(loaded["model"]["weight"], old_checkpoint["model"]["weight"])
+        assert list(tmp_path.glob(f".{final_path.name}.*.tmp")) == []
+
     @pytest.mark.parametrize("checkpoint_kind", ["current", "best"])
     def test_successfully_replaces_current_and_best_checkpoints(self, checkpoint_kind, tmp_path, monkeypatch):
         import torch
@@ -147,6 +174,8 @@ class TestPTFileModelPersistorSave:
 
         final_path = tmp_path / f"{checkpoint_kind}.pt"
         torch.save({"model": {"weight": torch.tensor([1.0])}}, final_path)
+        if os.name != "nt":
+            final_path.chmod(0o640)
 
         new_checkpoint = {
             "model": {"weight": torch.tensor([2.0])},
@@ -185,4 +214,6 @@ class TestPTFileModelPersistorSave:
         assert loaded["train_conf"] == new_checkpoint["train_conf"]
         assert persistence_manager.updated_model is model
         assert len(fsync_calls) >= (1 if os.name == "nt" else 2)
+        if os.name != "nt":
+            assert stat.S_IMODE(final_path.stat().st_mode) == 0o640
         assert list(tmp_path.glob(f".{final_path.name}.*.tmp")) == []
