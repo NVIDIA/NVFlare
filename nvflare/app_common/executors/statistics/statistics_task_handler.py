@@ -62,7 +62,7 @@ class StatisticsTaskHandler(TaskHandler):
             ds_features = self.get_numeric_features()
             statistics_task = shareable.get(StC.STATISTICS_TASK_KEY)
             target_statistics: List[StatisticConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_STATISTICS))
-            if StC.STATS_FAILURE_COUNT not in target_statistics:
+            if not any(tm.name == StC.STATS_FAILURE_COUNT for tm in target_statistics):
                 target_statistics.append(StatisticConfig(StC.STATS_FAILURE_COUNT, {}))
 
             for tm in target_statistics:

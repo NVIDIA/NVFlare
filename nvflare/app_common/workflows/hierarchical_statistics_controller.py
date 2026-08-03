@@ -258,11 +258,21 @@ class HierarchicalStatisticsController(StatisticsController):
             abort_signal=abort_signal,
         )
 
-        self.global_statistics = get_global_stats(
-            self.global_statistics, self.client_statistics, statistic_task, hierarchy_config_json
-        )
+        self._rebuild_hierarchical_global_statistics(statistic_task, hierarchy_config_json)
 
         self.log_info(fl_ctx, f"task {self.task_name} statistics_flow for {statistic_task} flow end.")
+
+    def _rebuild_hierarchical_global_statistics(self, statistic_task: str, hierarchy_config: dict):
+        self.global_statistics = get_global_stats(
+            {}, self.client_statistics, StC.STATS_1st_STATISTICS, hierarchy_config
+        )
+        if statistic_task == StC.STATS_2nd_STATISTICS:
+            self.global_statistics = get_global_stats(
+                self.global_statistics,
+                self.client_statistics,
+                StC.STATS_2nd_STATISTICS,
+                hierarchy_config,
+            )
 
     def _recursively_round_global_stats(self, global_stats):
         """Apply given precision to the calculated global statistics.

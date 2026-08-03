@@ -13,9 +13,10 @@
 # limitations under the License.
 
 
+from copy import deepcopy
 from unittest.mock import patch
 
-from nvflare.app_common.abstract.statistics_spec import StatisticConfig
+from nvflare.app_common.abstract.statistics_spec import Bin, Histogram, HistogramType, StatisticConfig
 from nvflare.app_common.app_constant import StatisticsConstants as SC
 from nvflare.app_common.workflows.statistics_controller import StatisticsController
 from nvflare.fuel.utils import fobs
@@ -79,6 +80,42 @@ class TestStatisticsController:
         assert result is True
         assert set(client_statistics["count"]) == {"site-1", "site-2", "site-3"}
         mock_sleep.assert_called_once_with(0.1)
+
+    def test_rebuild_global_statistics_uses_latest_client_results(self):
+        controller = MockStatisticsController(
+            statistic_configs={
+                SC.STATS_COUNT: {},
+                SC.STATS_FAILURE_COUNT: {},
+                SC.STATS_HISTOGRAM: {"*": {"bins": 1}},
+            },
+            writer_id="",
+        )
+        controller.client_statistics = {
+            SC.STATS_COUNT: {
+                "site-1": {"train": {"Age": 4}},
+                "site-2": {"train": {"Age": 4}},
+            },
+            SC.STATS_FAILURE_COUNT: {
+                "site-1": {"train": {"Age": 0}},
+                "site-2": {"train": {"Age": 0}},
+            },
+        }
+        controller._rebuild_global_statistics(SC.STATS_1st_STATISTICS)
+
+        controller.client_statistics[SC.STATS_FAILURE_COUNT]["site-1"]["train"]["Age"] = 1
+        controller.client_statistics[SC.STATS_HISTOGRAM] = {
+            "site-1": {"train": {"Age": Histogram(HistogramType.STANDARD, [Bin(0, 10, 3)])}},
+            "site-2": {"train": {"Age": Histogram(HistogramType.STANDARD, [Bin(0, 10, 4)])}},
+        }
+        controller._rebuild_global_statistics(SC.STATS_2nd_STATISTICS)
+
+        assert controller.global_statistics[SC.STATS_COUNT]["train"]["Age"] == 8
+        assert controller.global_statistics[SC.STATS_FAILURE_COUNT]["train"]["Age"] == 1
+        assert controller.global_statistics[SC.STATS_HISTOGRAM]["train"]["Age"].bins == [Bin(0, 10, 7)]
+
+        rebuilt_statistics = deepcopy(controller.global_statistics)
+        controller._rebuild_global_statistics(SC.STATS_2nd_STATISTICS)
+        assert controller.global_statistics == rebuilt_statistics
 
     def test_prepare_input(self):
         xs = self.stats_controller._prepare_inputs(SC.STATS_1st_STATISTICS)

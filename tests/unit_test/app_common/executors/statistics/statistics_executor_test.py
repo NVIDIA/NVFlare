@@ -13,12 +13,17 @@
 # limitations under the License.
 
 
+from unittest.mock import patch
+
 import pytest
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.statistics_spec import Feature, HistogramType, StatisticConfig
+from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.executors.statistics.statistics_task_handler import StatisticsTaskHandler
+from nvflare.fuel.utils import fobs
 from tests.unit_test.app_common.executors.statistics.mock_df_stats_executor import MockDFStatistics
 
 
@@ -44,6 +49,18 @@ class TestStatisticsExecutor:
         assert len(features["train"]) == 1
         assert features["train"][0].feature_name == "Age"
         assert len(features["test"]) == 1
+
+    def test_execute_task_does_not_duplicate_configured_failure_count(self):
+        inputs = Shareable()
+        inputs[StC.STATISTICS_TASK_KEY] = StC.STATS_1st_STATISTICS
+        inputs[StC.STATS_TARGET_STATISTICS] = fobs.dumps([StatisticConfig(StC.STATS_FAILURE_COUNT, {})])
+        fl_ctx = FLContext()
+
+        with patch.object(self.stats_executor, "_populate_result_statistics") as populate_result:
+            self.stats_executor.execute_task(StC.FED_STATS_TASK, inputs, fl_ctx, Signal())
+
+        populated_statistics = [call.args[2].name for call in populate_result.call_args_list]
+        assert populated_statistics == [StC.STATS_FAILURE_COUNT, StC.STATS_COUNT]
 
     def test_method_implementation(self):
         with pytest.raises(NotImplementedError):
