@@ -128,6 +128,89 @@ _PT_JOB_SCRIPT = textwrap.dedent(
 )
 
 
+_INGESTION_PT_CLIENT_SCRIPT = textwrap.dedent(
+    """
+    import threading
+    import time
+    import torch
+    import nvflare.client as flare
+    from nvflare.client.cell.api import CellClientAPI
+
+    # Make the bounded ingestion grace the only liveness source for this regression.
+    materialized = threading.Event()
+    original_heartbeat_loop = CellClientAPI._heartbeat_loop
+
+    def heartbeat_after_receive(self):
+        materialized.wait()
+        original_heartbeat_loop(self)
+
+    CellClientAPI._heartbeat_loop = heartbeat_after_receive
+    original_as_tensor = torch.as_tensor
+
+    def delayed_as_tensor(value, *args, **kwargs):
+        time.sleep(0.15)
+        return original_as_tensor(value, *args, **kwargs)
+
+    torch.as_tensor = delayed_as_tensor
+    try:
+        flare.init()
+        model = flare.receive()
+        materialized.set()
+        assert model is not None
+        flare.send(flare.FLModel(params=model.params, params_type=flare.ParamsType.FULL))
+    finally:
+        materialized.set()
+        flare.shutdown()
+    """
+)
+
+_INGESTION_PT_MODEL_SCRIPT = textwrap.dedent(
+    """
+    import torch
+    import torch.nn as nn
+
+    class StreamedNet(nn.Module):
+        def __init__(self):
+            super().__init__()
+            # Exceeds ViaDownloader's 2 MiB array threshold.
+            self.weight = nn.Parameter(torch.zeros(1024, 1024))
+    """
+)
+
+_INGESTION_PT_JOB_SCRIPT = textwrap.dedent(
+    """
+    import sys
+    from model import StreamedNet
+    from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
+    from nvflare.app_common.workflows.fedavg import FedAvg
+    from nvflare.app_opt.pt.job_config.model import PTModel
+    from nvflare.client.config import ExchangeFormat
+    from nvflare.job_config.base_fed_job import BaseFedJob
+    from nvflare.recipe.utils import extract_persistor_id
+
+    workdir, command = sys.argv[1], sys.argv[2]
+    job = BaseFedJob(name="ext-ingestion-grace-e2e", min_clients=1)
+    pid = extract_persistor_id(job.to_server(PTModel(StreamedNet()), id="persistor"))
+    job.to_server(FedAvg(num_clients=1, num_rounds=1, persistor_id=pid, task_name="train"))
+    job.to_clients(
+        ClientAPIExecutor(
+            execution_mode="external_process",
+            command=f"{command} custom/client.py",
+            shutdown_timeout=5.0,
+            heartbeat_interval=0.01,
+            heartbeat_timeout=0.05,
+            task_wait_timeout=0.5,
+            params_exchange_format=ExchangeFormat.PYTORCH,
+            server_expected_format=ExchangeFormat.NUMPY,
+        ),
+        tasks=["train"],
+    )
+    job.add_file_to_clients("client.py")
+    job.simulator_run(workdir, n_clients=1, threads=1)
+    """
+)
+
+
 _SK_CLIENT_SCRIPT = textwrap.dedent(
     """
     import numpy as np
@@ -286,6 +369,35 @@ def test_external_process_pytorch_fedavg_end_to_end(tmp_path):
     assert "Aggregated 2/2 results" in out, f"server did not aggregate both clients:\n{out[-3000:]}"
     assert "expected torch tensors" not in out, f"client did not receive torch tensors:\n{out[-3000:]}"
     assert "AssertionError" not in out, f"trainer script assertion failed:\n{out[-3000:]}"
+
+
+@pytest.mark.skipif(not _torch_available(), reason="requires torch for streamed PyTorch materialization")
+def test_external_process_completed_download_survives_delayed_materialization(tmp_path):
+    """Exercise the real subprocess/Cell path after the raw task download has completed."""
+    jobdir = tmp_path / "job"
+    jobdir.mkdir()
+    (jobdir / "client.py").write_text(_INGESTION_PT_CLIENT_SCRIPT)
+    (jobdir / "model.py").write_text(_INGESTION_PT_MODEL_SCRIPT)
+    (jobdir / "run_job.py").write_text(_INGESTION_PT_JOB_SCRIPT)
+    workdir = tmp_path / "sim"
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
+    command = f"{sys.executable} -u"
+    proc = subprocess.run(
+        [sys.executable, "-u", str(jobdir / "run_job.py"), str(workdir), command],
+        cwd=str(jobdir),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    out = proc.stdout + proc.stderr
+
+    assert "Finished FedAvg." in out, f"streamed task did not complete:\n{out[-4000:]}"
+    assert "Aggregated 1/1 results" in out, f"server did not accept the trainer result:\n{out[-4000:]}"
+    assert "trainer heartbeat timed out" not in out, f"materialization hit the heartbeat lease:\n{out[-4000:]}"
+    assert "task ingestion stalled" not in out, f"ingestion grace expired:\n{out[-4000:]}"
 
 
 @pytest.mark.skipif(not _sklearn_available(), reason="requires scikit-learn for the sklearn example")

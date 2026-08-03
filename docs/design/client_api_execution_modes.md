@@ -171,6 +171,10 @@ Task direction:
 3. Only then does the trainer's `TASK_READY` handler validate and queue the task and return
    `TASK_ACCEPTED`.
 
+For a streamed task, `task_wait_timeout` also bounds the grace for download, decode, framework
+conversion, and handler handoff (600 seconds when unset). Transfer failure, process exit, and task
+abort terminate that grace immediately; inline tasks retain heartbeat-only behavior.
+
 Result direction:
 
 1. The trainer sends `RESULT_READY` with per-message Cell pass-through enabled and declares the

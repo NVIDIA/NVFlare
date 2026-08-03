@@ -57,7 +57,7 @@ from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils.fobs import FOBSContextKey
-from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY, LazyDownloadRef
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_traceback
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
@@ -168,6 +168,16 @@ class _TaskContext:
         self.task_id = task_id
         self.result_ready = threading.Event()
         self.result: Optional[Shareable] = None
+
+
+def _contains_lazy_download_ref(value) -> bool:
+    if isinstance(value, LazyDownloadRef):
+        return True
+    if isinstance(value, dict):
+        return any(_contains_lazy_download_ref(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_contains_lazy_download_ref(item) for item in value)
+    return False
 
 
 class ExternalProcessBackend(ClientAPIBackendSpec):
@@ -838,6 +848,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
             if send_status == _SEND_SESSION_DEAD:
                 reason = f"{reply} while TASK_READY was pending"
+                self._send_abort(trainer, reason)
                 self._latch_abort(reason)
                 executor.log_error(fl_ctx, f"{reason} for task '{task_name}'")
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
@@ -904,13 +915,54 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
     def _send_task_ready(self, trainer: _TrainerSession, task_message: dict, abort_signal: Signal) -> Tuple[str, Any]:
         """Send TASK_READY with native cancellation for abort and liveness failures."""
         timeout = self._context.task_wait_timeout
+        ingestion_timeout = timeout if timeout is not None else DEFAULT_STREAMING_IDLE_TIMEOUT
         transfer_waiters = []
+        ingestion_lock = threading.Lock()
+        has_lazy_download_ref = _contains_lazy_download_ref(task_message.get(MsgKey.MODEL))
+        ingestion_grace_started = None
 
         def _on_transaction_created(transaction):
-            transfer_waiters.append(DownloadService.get_transfer_waiter(transaction.tx_id))
+            nonlocal ingestion_grace_started
+            waiter = DownloadService.get_transfer_waiter(transaction.tx_id)
+            with ingestion_lock:
+                transfer_waiters.append(waiter)
+                ingestion_grace_started = None
 
-        def _has_live_task_download():
-            return any(not waiter.done() for waiter in tuple(transfer_waiters))
+        def _ingestion_liveness():
+            nonlocal ingestion_grace_started
+            with ingestion_lock:
+                has_active_transfer = False
+                for waiter in transfer_waiters:
+                    if not waiter.done():
+                        has_active_transfer = True
+                        continue
+                    outcome = waiter.outcome
+                    if outcome is None:
+                        return (
+                            False,
+                            f"streamed task transfer outcome unavailable (transaction_id={waiter.transaction_id})",
+                        )
+                    if not outcome.completed:
+                        return (
+                            False,
+                            f"streamed task transfer {outcome.status}: {outcome.reason} "
+                            f"(transaction_id={waiter.transaction_id})",
+                        )
+                if has_active_transfer:
+                    return True, None
+                if not transfer_waiters and not has_lazy_download_ref:
+                    return False, None
+                now = time.monotonic()
+                if ingestion_grace_started is None:
+                    ingestion_grace_started = now
+                elapsed = now - ingestion_grace_started
+            if elapsed > ingestion_timeout:
+                return (
+                    False,
+                    f"trainer task ingestion stalled for {elapsed:.1f}s while completing streamed task "
+                    f"(timeout={ingestion_timeout}s)",
+                )
+            return True, None
 
         def _cancel_cause():
             if abort_signal.triggered or (self._context.launch_once and self._abort):
@@ -919,14 +971,21 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 return _SEND_CLOSED, None
             if not self._process_group_alive(trainer):
                 return _SEND_PROCESS_DEAD, None
-            # Transfer progress supersedes heartbeat expiry while materialization is active.
-            if not _has_live_task_download():
+            ingestion_live, ingestion_error = _ingestion_liveness()
+            if ingestion_error:
+                return _SEND_SESSION_DEAD, ingestion_error
+            # A streamed task gets a bounded grace while completing ingestion.
+            if not ingestion_live:
                 liveness_error = self._trainer_liveness_error(trainer)
                 if liveness_error:
                     return _SEND_SESSION_DEAD, liveness_error
             return None
 
         cancel = _TaskReadyCancelSignal(_cancel_cause)
+
+        def _has_live_task_ingestion():
+            return not cancel.triggered
+
         try:
             reply = self._cell.send_request(
                 channel=CHANNEL,
@@ -935,7 +994,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 request=new_cell_message({}, task_message),
                 timeout=timeout,
                 abort_signal=cancel,
-                progress_wait_cb=_has_live_task_download,
+                progress_wait_cb=_has_live_task_ingestion,
                 receiver_ids=(trainer.trainer_fqcn,),
                 fobs_ctx_props={
                     FOBSContextKey.STREAM_PROGRESS_CB: lambda **_kwargs: None,
@@ -958,6 +1017,9 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         if cause is not None:
             self._delete_task_transfers(transfer_waiters)
             return cause
+        if reply is not None and reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.OK:
+            # Only a real trainer reply closes ingestion and starts a fresh heartbeat lease.
+            trainer.touch_peer_activity()
         if self._check_task_accepted(reply) is not None:
             # A rejected task has no future consumer for its payload. Receiver
             # confirmation is asynchronous, so retire the source deterministically.
