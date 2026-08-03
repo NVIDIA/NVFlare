@@ -15,7 +15,7 @@ import json
 import threading
 import time
 import uuid
-from typing import List
+from typing import Callable, List
 
 from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.fuel.f3.cellnet.defs import CellChannel
@@ -114,6 +114,7 @@ class SessionManager(CommandModule):
         self.cell = cell
         self.sess_update_lock = threading.Lock()
         self.sessions = {}  # token => Session
+        self.downloads = {}  # session ID => {transaction ID: cancel callback}
         self.idle_timeout = idle_timeout
         self.monitor_interval = monitor_interval
         self.asked_to_stop = False
@@ -121,31 +122,21 @@ class SessionManager(CommandModule):
         self.monitor.daemon = True
         self.monitor.start()
 
-    def monitor_sessions(self):
-        """Runs loop in a thread to end sessions that time out."""
-        while True:
-            # print('checking for dead sessions ...')
-            if self.asked_to_stop:
+    def check_sessions(self):
+        """End sessions whose idle or certificate budget has expired."""
+        now = time.time()
+        with self.sess_update_lock:
+            sessions = list(self.sessions.values())
+
+        for sess in sessions:
+            if now - sess.last_active_time > self.idle_timeout or sess.is_cert_expired(now):
+                self.end_session_by_id(sess.sess_id, "Your session is closed due to inactivity or cert expiry.")
                 break
 
-            dead_sess = None
-            for _, sess in self.sessions.items():
-                time_passed = time.time() - sess.last_active_time
-                # print('time passed: {} secs'.format(time_passed))
-                if time_passed > self.idle_timeout:
-                    dead_sess = sess
-                    break
-                if sess.is_cert_expired():
-                    dead_sess = sess
-                    break
-
-            if dead_sess:
-                # print('ending dead session {}'.format(dead_sess.token))
-                self.end_session_by_id(dead_sess.sess_id, "Your session is closed due to inactivity or cert expiry.")
-            else:
-                # print('no dead sessions found')
-                pass
-
+    def monitor_sessions(self):
+        """Runs loop in a thread to end sessions that time out."""
+        while not self.asked_to_stop:
+            self.check_sessions()
             time.sleep(self.monitor_interval)
 
     def shutdown(self):
@@ -197,10 +188,38 @@ class SessionManager(CommandModule):
 
         with self.sess_update_lock:
             stored_session = self.sessions.get(sess.sess_id)
-            if stored_session and stored_session.is_cert_expired():
-                self.sessions.pop(sess.sess_id, None)
-                return None
-            return stored_session
+        if stored_session and stored_session.is_cert_expired():
+            self.end_session_by_id(stored_session.sess_id, "Your session is closed due to inactivity or cert expiry.")
+            return None
+        return stored_session
+
+    def bind_download(self, sess_id: str, tx_id: str, cancel_cb: Callable[[], None]) -> bool:
+        """Bind an authorized download transaction to its current session."""
+        with self.sess_update_lock:
+            sess = self.sessions.get(sess_id)
+            if not sess or sess.is_cert_expired():
+                return False
+            self.downloads.setdefault(sess_id, {})[tx_id] = cancel_cb
+        return True
+
+    def mark_download_active(self, sess_id: str, tx_id: str) -> bool:
+        """Refresh a session only for verified progress from one of its bound downloads."""
+        with self.sess_update_lock:
+            sess = self.sessions.get(sess_id)
+            session_downloads = self.downloads.get(sess_id)
+            if not sess or sess.is_cert_expired() or not session_downloads or tx_id not in session_downloads:
+                return False
+            sess.mark_active()
+        return True
+
+    def end_download(self, sess_id: str, tx_id: str):
+        with self.sess_update_lock:
+            session_downloads = self.downloads.get(sess_id)
+            if not session_downloads:
+                return
+            session_downloads.pop(tx_id, None)
+            if not session_downloads:
+                self.downloads.pop(sess_id, None)
 
     def get_sessions(self):
         result = []
@@ -219,14 +238,17 @@ class SessionManager(CommandModule):
     def end_session_by_id(self, sess_id: str, reason=None):
         with self.sess_update_lock:
             sess = self.sessions.pop(sess_id, None)
-            if sess and reason:
-                self.cell.fire_and_forget(
-                    channel=CellChannel.HCI,
-                    topic="SESSION_EXPIRED",
-                    targets=sess.origin_fqcn,
-                    message=CellMessage(payload=reason),
-                    optional=True,
-                )
+            downloads = self.downloads.pop(sess_id, {})
+        if sess and reason:
+            self.cell.fire_and_forget(
+                channel=CellChannel.HCI,
+                topic="SESSION_EXPIRED",
+                targets=sess.origin_fqcn,
+                message=CellMessage(payload=reason),
+                optional=True,
+            )
+        for cancel_cb in downloads.values():
+            cancel_cb()
 
     def get_spec(self):
         return CommandModuleSpec(
