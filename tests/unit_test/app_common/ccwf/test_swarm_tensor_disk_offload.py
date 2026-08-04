@@ -18,17 +18,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, ReservedTopic
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
 from nvflare.app_common.ccwf.swarm_client_ctl import SwarmClientController
-from nvflare.private.defs import CellChannel
 
 
 class _MockCell:
     def __init__(self):
         self.ctx = {"enable_tensor_disk_offload": False}
-        self.decode_pass_through_relay_topics = set()
 
     def get_fobs_context(self):
         return dict(self.ctx)
@@ -136,33 +133,6 @@ def test_finalize_preserves_offload_root_until_end_run():
         controller.handle_event(EventType.END_RUN, fl_ctx)
         assert not os.path.exists(root_dir)
         assert controller._tensor_disk_offload_root_dir is None
-
-
-def test_secure_swarm_relays_forwarded_learn_tensors_through_client_job():
-    cell = _MockCell()
-    controller = SwarmClientController(enable_tensor_disk_offload=True)
-    controller.engine = _MockEngine(cell, InTimeAccumulateWeightedAggregator())
-    controller.log_debug = MagicMock()
-    fl_ctx = MagicMock()
-    fl_ctx.get_job_id.return_value = "swarm-job"
-    fl_ctx.get_prop.side_effect = lambda key, default=None: key == FLContextKey.SECURE_MODE
-    route = (CellChannel.AUX_COMMUNICATION, ReservedTopic.DO_TASK)
-
-    with (
-        patch.object(ClientSideController, "start_run", autospec=True),
-        patch.object(ClientSideController, "finalize", autospec=True),
-        patch("nvflare.app_common.ccwf.swarm_client_ctl.threading.Thread") as thread_cls,
-    ):
-        thread_cls.return_value.is_alive.return_value = False
-        controller.start_run(fl_ctx)
-        assert route in cell.decode_pass_through_relay_topics
-        controller.finalize(fl_ctx)
-        assert route in cell.decode_pass_through_relay_topics
-
-        controller.workflow_done = True
-        controller.handle_event(EventType.END_RUN, fl_ctx)
-
-    assert route not in cell.decode_pass_through_relay_topics
 
 
 def test_cleanup_waits_for_controller_owned_threads_before_removing_root(tmp_path):

@@ -61,7 +61,15 @@ ATTACH_ID = "trainer_a"
 ATTACH_TRAINER_FQCN = f"{CJ_FQCN}.-client_api_trainer_a"
 
 
-def _hello_accepted_reply(heartbeat_interval=0.05, heartbeat_timeout=0.0):
+def _hello_accepted_reply(heartbeat_interval=0.05, heartbeat_timeout=0.0, secure_mode=False):
+    security = {MsgKey.SECURE_MODE: secure_mode}
+    if secure_mode:
+        security.update(
+            {
+                MsgKey.AUTH_TOKEN: "site-auth-token",
+                MsgKey.AUTH_TOKEN_SIGNATURE: "site-auth-signature",
+            }
+        )
     return make_cell_reply(
         CellReturnCode.OK,
         body={
@@ -71,6 +79,7 @@ def _hello_accepted_reply(heartbeat_interval=0.05, heartbeat_timeout=0.0):
             MsgKey.SITE_NAME: "site-1",
             MsgKey.HEARTBEAT_INTERVAL: heartbeat_interval,
             MsgKey.HEARTBEAT_TIMEOUT: heartbeat_timeout,
+            **security,
         },
     )
 
@@ -97,6 +106,7 @@ class FakeCell:
         self.fobs_context = {}
         self.heartbeat_interval = 0.05
         self.heartbeat_timeout = 0.0
+        self.secure_mode = False
 
     def get_fqcn(self):
         return self.fqcn
@@ -122,7 +132,7 @@ class FakeCell:
         if self.on_request is not None:
             return self.on_request(topic, target, request)
         if topic == Topic.HELLO:
-            return _hello_accepted_reply(self.heartbeat_interval, self.heartbeat_timeout)
+            return _hello_accepted_reply(self.heartbeat_interval, self.heartbeat_timeout, self.secure_mode)
         if topic == Topic.HEARTBEAT:
             return make_cell_reply(
                 CellReturnCode.OK,
@@ -161,7 +171,7 @@ class AttachFakeCell(FakeCell):
             MsgKey.RANK: "0",
             MsgKey.HEARTBEAT_INTERVAL: 0.05,
             MsgKey.HEARTBEAT_TIMEOUT: 0.0,
-            MsgKey.RESULT_RELAY: False,
+            MsgKey.SECURE_MODE: False,
             MsgKey.TASK_EXCHANGE: {
                 ConfigKey.TRAIN_TASK_NAME: "train",
                 ConfigKey.EVAL_TASK_NAME: "validate",
@@ -216,6 +226,8 @@ def env(bootstrap_path, monkeypatch):
     # the process-global streaming executors used by later tests.
     cell.shutdown_f3_streaming = MagicMock()
     monkeypatch.setattr(cell_api, "_shutdown_f3_streaming", cell.shutdown_f3_streaming)
+    cell.auth_filter = MagicMock()
+    monkeypatch.setattr(cell_api, "set_add_auth_headers_filters", cell.auth_filter)
     return cell
 
 
@@ -246,6 +258,8 @@ def attach_env(attach_bootstrap_path, monkeypatch):
     cell.cell_ctor = cell_ctor
     cell.shutdown_f3_streaming = MagicMock()
     monkeypatch.setattr(cell_api, "_shutdown_f3_streaming", cell.shutdown_f3_streaming)
+    cell.auth_filter = MagicMock()
+    monkeypatch.setattr(cell_api, "set_add_auth_headers_filters", cell.auth_filter)
     return cell
 
 
@@ -315,8 +329,10 @@ def _init_and_capture_error(api, errors):
         errors.append(e)
 
 
-def _deliver_attach_task(env, task_id="task-1", attempt_id="attempt-1"):
+def _deliver_attach_task(env, task_id="task-1", attempt_id="attempt-1", result_receiver_ids=None):
     shareable = FLModelUtils.to_shareable(FLModel(params={"w": [1.0]}, params_type=ParamsType.FULL))
+    if result_receiver_ids is not None:
+        shareable.set_header(FOBSContextKey.RECEIVER_IDS, result_receiver_ids)
     return env.deliver(
         Topic.TASK_READY,
         CJ_FQCN,
@@ -474,7 +490,7 @@ class TestAttachMode:
             (MsgKey.PROTOCOL_VERSION, PROTOCOL_VERSION + 1),
             (MsgKey.RANK, "1"),
             (MsgKey.HEARTBEAT_INTERVAL, 0),
-            (MsgKey.RESULT_RELAY, "true"),
+            (MsgKey.SECURE_MODE, "true"),
             (MsgKey.TASK_EXCHANGE, "not-a-dict"),
             (MsgKey.MEMORY_GC_ROUNDS, -1),
         ):
@@ -485,6 +501,10 @@ class TestAttachMode:
         missing_session.pop(MsgKey.SESSION_ID)
         invalid_job = dict(attach_env.session_open_payload)
         invalid_job[MsgKey.JOB_ID] = "job.with.extra.segment"
+        missing_secure_token = dict(attach_env.session_open_payload)
+        missing_secure_token[MsgKey.SECURE_MODE] = True
+        missing_secure_signature = dict(missing_secure_token)
+        missing_secure_signature[MsgKey.AUTH_TOKEN] = "site-auth-token"
         invalid_opens.extend(
             [
                 ("", dict(attach_env.session_open_payload)),
@@ -492,6 +512,8 @@ class TestAttachMode:
                 ("site-1.other-job", dict(attach_env.session_open_payload)),
                 (CJ_FQCN, missing_session),
                 (CJ_FQCN, invalid_job),
+                (CJ_FQCN, missing_secure_token),
+                (CJ_FQCN, missing_secure_signature),
             ]
         )
 
@@ -511,11 +533,17 @@ class TestAttachMode:
         assert api._session_id == SESSION_ID
         api.shutdown()
 
-    def test_attach_result_relay_is_independent_of_clear_trainer_transport(self, attach_bootstrap_path, attach_env):
-        attach_env.session_open_payload[MsgKey.RESULT_RELAY] = True
+    def test_secure_attach_installs_auth_and_preserves_ultimate_receiver(self, attach_bootstrap_path, attach_env):
+        attach_env.session_open_payload.update(
+            {
+                MsgKey.SECURE_MODE: True,
+                MsgKey.AUTH_TOKEN: "site-auth-token",
+                MsgKey.AUTH_TOKEN_SIGNATURE: "site-auth-signature",
+            }
+        )
         api = _init_api(attach_bootstrap_path, attach_env)
         try:
-            _deliver_attach_task(attach_env)
+            _deliver_attach_task(attach_env, result_receiver_ids=["server.job"])
             api.receive()
 
             def _on_request(topic, target, request):
@@ -536,7 +564,13 @@ class TestAttachMode:
             result_request = [m for m in attach_env.request_messages if MsgKey.RESULT in m.payload][0]
             result_kwargs = attach_env.request_kwargs[attach_env.request_messages.index(result_request)]
             assert attach_env.cell_ctor.call_args.kwargs["secure"] is False
-            assert result_kwargs["receiver_ids"] == (CJ_FQCN,)
+            attach_env.auth_filter.assert_called_once_with(
+                attach_env,
+                client_name="site-1",
+                auth_token="site-auth-token",
+                token_signature="site-auth-signature",
+            )
+            assert result_kwargs["receiver_ids"] == ("server.job",)
             assert result_kwargs["num_receivers"] == 1
         finally:
             api.shutdown()
@@ -1026,6 +1060,19 @@ class TestInit:
             api.init(rank="0")
         assert env.stopped, "a failed HELLO must stop the cell"
 
+    def test_secure_init_rejects_missing_accepted_credential_without_binding_session(self, bootstrap_path, env):
+        _set_secure_mode(bootstrap_path, True)
+        reply = _hello_accepted_reply(secure_mode=True)
+        reply.payload.pop(MsgKey.AUTH_TOKEN_SIGNATURE)
+        env.on_request = lambda _topic, _target, _request: reply
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+
+        with pytest.raises(TrainerSessionError, match="no site auth token signature"):
+            api.init(rank="0")
+
+        assert api._session_id is None
+        assert env.stopped
+
     def test_init_stops_retrying_hello_at_overall_deadline(self, bootstrap_path, env, monkeypatch):
         monkeypatch.setattr(cell_api, "_HELLO_TIMEOUT", 0.03)
         monkeypatch.setattr(cell_api, "_HELLO_RETRY_INTERVAL", 0.005)
@@ -1314,6 +1361,7 @@ class TestReceiveSend:
 
     def test_secure_mode_send_keeps_pass_through_and_ultimate_receivers(self, bootstrap_path, env):
         _set_secure_mode(bootstrap_path, True)
+        env.secure_mode = True
         api = _init_api(bootstrap_path, env)
         try:
             _deliver_task(env, result_receiver_ids=["server.job"])
@@ -1324,7 +1372,13 @@ class TestReceiveSend:
             result_request = [m for m in env.request_messages if MsgKey.RESULT in m.payload][0]
             result_kwargs = env.request_kwargs[env.request_messages.index(result_request)]
             assert result_request.get_header(MessageHeaderKey.PASS_THROUGH) is True
-            assert result_kwargs["receiver_ids"] == (CJ_FQCN,)
+            env.auth_filter.assert_called_once_with(
+                env,
+                client_name="site-1",
+                auth_token="site-auth-token",
+                token_signature="site-auth-signature",
+            )
+            assert result_kwargs["receiver_ids"] == ("server.job",)
             assert result_kwargs["num_receivers"] == 1
         finally:
             api.shutdown()

@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented design for `execution_mode="attach"`, updated 2026-08-03.
+Implemented design for `execution_mode="attach"`, updated 2026-08-04.
 
 This design assumes the Cell-based external-process Client API from PR #4906:
 
@@ -14,7 +14,8 @@ This design assumes the Cell-based external-process Client API from PR #4906:
 - an accepted lazy-result source remains alive until the receiver confirms a
   terminal transfer outcome.
 
-Attach adds an externally owned trainer without changing `nvflare/fuel/f3/**`.
+Attach adds an externally owned trainer and uses the ordinary F3 pass-through
+contract without changing the source FQCN or reference ID.
 
 ## Decision Summary
 
@@ -83,7 +84,7 @@ job-specific.
 - Bind a job to one trainer session and reject stale or foreign sessions.
 - Retry transport failures without retrying semantic task rejection.
 - Never launch, signal, kill, or `waitpid` an externally owned process.
-- Keep the shared F3 implementation unchanged.
+- Preserve ordinary F3 pass-through and original source references.
 
 ## Non-Goals
 
@@ -344,7 +345,8 @@ URL before starting the trainer.
 A clear direct network URL, including a loopback URL, must explicitly set
 `connection_security="clear"`; omission is rejected rather than silently
 downgrading the trainer connection. The CJ independently requires
-`allow_insecure_attach=True` for every clear network listener.
+`allow_insecure_attach=True` for every clear network listener in a non-secure FL
+job. A secure FL job rejects a clear route even with that opt-in.
 
 The mTLS credential helper locates `client.crt` and `client.key` beside
 `rootCA.pem`. All three files must exist and be readable before Cell
@@ -361,7 +363,8 @@ Supported paths are:
 - `shared-file`: accepted when the FileDriver-owned root, listener directory,
   connection directory, and owner marker form a protected filesystem boundary;
 - mTLS network: accepted when the actual listener is mTLS;
-- clear network: accepted only with `allow_insecure_attach=True`.
+- clear network: accepted only for a non-secure FL job with
+  `allow_insecure_attach=True`.
 
 An unsafe shared-file listener is rejected even when the insecure flag is set.
 Bare-CA TLS is always rejected.
@@ -374,6 +377,9 @@ operator acknowledgement for a trusted development network. It:
 - does not change `comm_config.json.internal`;
 - does not turn clear transport into secure transport; and
 - emits a warning when used.
+
+It cannot authorize site-credential delegation. Consequently, a secure FL job
+fails closed before `SESSION_OPEN` on every unprotected Attach route.
 
 Shared-file Attach does not need this flag because filesystem permissions are its
 peer-access boundary.
@@ -398,6 +404,17 @@ or from the CJ published in a validated rendezvous record. Header-only message
 interception rejects unauthorized Attach streams before FOBS decoding or lazy
 payload acquisition.
 
+For a secure FL job, the authenticated `SESSION_OPEN` also carries the site's
+`AUTH_TOKEN` and `AUTH_TOKEN_SIGNATURE`. The trainer installs the normal outgoing
+site authentication-header filters only after validating the complete open. The
+`attach_id` and the legacy CellPipe-style "token" used for FQCN uniqueness are
+not authentication credentials.
+
+This full site-token delegation is temporary 2.9 technical debt: the attached
+trainer has the site's server-facing authority for the life of its Cell. The
+2.10 design target is a short-lived, scoped trainer identity with
+`DownloadService` ACLs and revocation.
+
 ## Session Protocol
 
 The CJ initiates the session so the trainer may wait without knowing runtime task
@@ -412,10 +429,11 @@ configuration.
    not a blob-stream request, so an early driver-level unreachable result returns
    promptly to this retry loop.
 4. The request carries the attach ID, job/site identity, trainer FQCN, protocol
-   version, rank, heartbeat policy, task exchange, memory settings, and whether
-   trainer-hosted lazy results are relayed through the CJ.
-5. The trainer validates the entire request and registers framework decomposers
-   before committing any session binding.
+   version, rank, heartbeat policy, task exchange, memory settings, secure-mode
+   value, and—only for a secure job—the site's signed authentication credential.
+5. The trainer validates the entire request, installs site auth headers when
+   required, and registers framework decomposers before committing any session
+   binding.
 6. It returns `SESSION_ACCEPTED`.
 
 Duplicate `SESSION_OPEN` for the same session is idempotent. A stray, malformed,
@@ -470,11 +488,14 @@ receiver-confirmed terminal success. Until then:
 - its lifecycle guard must not stop the Cell while a canonical source is still
   being served.
 
-The expected source receiver is a session property supplied by the CJ. In a
-secure relayed job it is the CJ; otherwise it is the ultimate receiver stamped
-on the task. This choice is independent of the Attach listener driver and its
-connection security: a clear `shared-file` trainer route may still feed a
-secure CP/CJ route whose CJ performs the relay.
+The expected source receivers are the ultimate receiver identities stamped on
+the task. Secure and non-secure jobs use the same rule. The trainer remains the
+`DownloadService` source and consumer-accounting authority; pass-through keeps
+its original FQCN and reference ID.
+
+The CJ remains involved as a control endpoint and may physically route Cell
+messages between the trainer and the ultimate receiver. It does not create a
+second CJ-owned download transaction or substitute itself as the lazy source.
 
 If `TensorClientStreamer` is configured for a task, it explicitly declares that
 it consumes concrete result tensors. `ClientAPIExecutor` then makes the CJ the
@@ -570,7 +591,8 @@ configuration because it is only a name. No Attach secret is defined.
   constructs the Cell only after connection resolution and preserves Attach
   runtime ownership.
 
-No change is required under `nvflare/fuel/f3/**`.
+Lazy forwarding uses ordinary `PASS_THROUGH`, preserving the original trainer
+source FQCN and reference ID.
 
 ## Verification
 
@@ -583,12 +605,18 @@ Unit coverage must verify:
 - direct profiles require a valid job-specific CJ FQCN;
 - rendezvous records derive the same CJ-child trainer FQCN on both sides;
 - mTLS requires readable CA/client cert/client key and exact identity binding;
-- clear network requires the explicit flag, while shared-file does not;
+- non-secure clear network requires the explicit flag, while protected
+  shared-file does not;
+- secure jobs reject unprotected Attach before `SESSION_OPEN`, even with the
+  insecure opt-in;
+- protected secure Attach delivers the site credential only in a validated
+  `SESSION_OPEN` and installs the normal trainer auth-header filters;
 - SESSION_OPEN rejection cannot poison `init()`;
 - task delivery does not retry semantic rejection;
 - reconnect, stale-session rejection, task deduplication, and result recovery;
 - trainer-first and CJ-first rendezvous over each supported Attach driver;
-- secure-job result relay is independent of clear shared-file Attach transport;
+- secure and non-secure results retain the trainer's source FQCN/reference and
+  ultimate receiver accounting without a second CJ transaction;
 - canonical lazy sources survive uncertain status and routine shutdown; and
 - Attach finalization never invokes process-ownership operations.
 
@@ -597,14 +625,17 @@ with both trainer-first and CJ-first startup, for:
 
 1. a clear TCP listener with explicit insecure opt-in; and
 2. clear gRPC and HTTP listeners with explicit insecure opt-in; and
-3. `shared-file` with a trainer audit hook that rejects all socket operations.
+3. protected `shared-file`, including secure-job credential delivery, a trainer
+   origin accepted by the server's descendant-origin binding, and a trainer
+   audit hook that rejects all socket operations.
 
-All cases send a NumPy task, accept a lazy result, and have the CP pull the
-result through the CJ from the trainer. This verifies the load-bearing
-CJ-child routing and source-lifetime path.
+All cases send a NumPy task, accept a lazy result, and have the ultimate receiver
+pull the result from the trainer over the Cell topology. The CJ can be a physical
+routing hop, but the test verifies that it creates no second `DownloadService`
+transaction and does not become the source.
 
 Regression gates:
 
 - external-process tests remain green;
 - the project style check passes; and
-- `git diff -- nvflare/fuel/f3` is empty.
+- source FQCN/reference preservation and ultimate-receiver accounting tests pass.

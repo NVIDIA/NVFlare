@@ -2,7 +2,7 @@
 
 ## Status
 
-**Implemented architecture, updated 2026-08-03.**
+**Implemented architecture, updated 2026-08-04.**
 
 This document records the architecture implemented for `ClientAPIExecutor`.
 
@@ -116,7 +116,8 @@ metadata needed before a Cell session exists:
 - job and site identity;
 - task-exchange and memory-management configuration needed by the trainer-side API.
 
-It contains no task model, result payload, payload manifest, or transfer state.
+It contains no task model, result payload, payload manifest, transfer state, site
+authentication token, or token signature.
 
 The writer creates an owner-only (`0600`) sibling temporary file and atomically installs it with
 `os.replace`. Each launch gets a fresh filename, FQCN, and token. The backend passes the file path
@@ -132,7 +133,11 @@ used for ongoing communication.
 
 The launched trainer reads the bootstrap, creates `CellClientAPI`, and sends `HELLO`. The backend
 validates the launch identity, rank, protocol version, origin FQCN, job/site scope, and current
-launch token before returning `HELLO_ACCEPTED` with the session and heartbeat policy.
+launch token before returning `HELLO_ACCEPTED` with the session and heartbeat policy. In a secure
+FL job, that accepted reply also carries the site's `AUTH_TOKEN` and `AUTH_TOKEN_SIGNATURE`; the
+trainer then installs the normal outgoing site authentication-header filters on its Cell. The
+launch token only proves possession of this launch's bootstrap. It is not the FL authentication
+credential and is never used as an auth header.
 
 V1 assumes a trusted host for launch availability. A same-host process that can claim the
 prescribed trainer FQCN can race the real trainer with a bogus token and cause that launch to fail.
@@ -158,6 +163,25 @@ together so ambiguous delivery cannot execute a task twice.
 
 There is no separate Client-API payload envelope, manifest, transfer ID, or payload-transfer
 state machine layered over these messages.
+
+### Secure trainer trust model for 2.9
+
+Both Cell-based modes use the trust model that the pre-2.8 `CellPipe` path used. After the CJ has
+authenticated the trainer session, a secure job delegates the site's signed bearer credential to
+the trainer. The trainer FQCN remains a descendant of the registered site/CJ FQCN, so the server's
+current origin binding accepts requests carrying that site credential.
+
+Credential delivery is mode-specific and never occurs in a static profile:
+
+- `external_process` sends it only in `HELLO_ACCEPTED`, after the launch token and all identity,
+  job, site, protocol, and rank checks succeed;
+- `attach` sends it only in an authenticated `SESSION_OPEN` over a protected shared-file or mTLS
+  route. A secure job rejects a clear network Attach route even when `allow_insecure_attach=True`.
+
+This is intentionally a temporary full site-token delegation for 2.9. It gives the trainer the
+same server-facing authority as the site for the life of the trainer Cell. The 2.10 follow-up is
+to replace it with a short-lived, scoped trainer identity plus `DownloadService` ACL enforcement
+and revocation.
 
 ### Payload handling
 
@@ -187,7 +211,7 @@ Task direction:
 
 Result direction:
 
-1. The trainer sends `RESULT_READY` with per-message Cell pass-through enabled and declares the
+1. The trainer sends `RESULT_READY` with ordinary per-message Cell pass-through enabled and declares the
    receiver identities supplied with the task. Those are the ultimate server/workflow receivers
    when the workflow supplies them.
 2. Cell/FOBS invokes the CJ handler with inline values and/or lazy `ViaDownloader` references.
@@ -203,6 +227,12 @@ Result direction:
    not provide terminal confirmation has no acknowledgement after its terminal serve, so that
    path remains monitor-settled: this preserves a post-reply interval before a one-shot producer
    can observe completion and tear down its Cell.
+
+Pass-through always preserves the trainer's original FQCN and reference ID. The CJ may still be a
+physical Cell routing hop for the result envelope and subsequent download messages, depending on
+the topology, but it does not substitute itself as source, create a second CJ-owned
+`DownloadService` transaction, or rewrite the receiver accounting. This is ordinary
+`PASS_THROUGH`.
 
 In the task direction at the CJ entry point, the CJ decodes only the
 `(SERVER_COMMAND, GET_TASK)` route lazily for the external-process executor. `ClientRunner`

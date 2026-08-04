@@ -428,9 +428,7 @@ class ClientAPIExecutor(Executor):
     @staticmethod
     def _materialize_result(result: Shareable, cell, abort_signal: Signal) -> Shareable:
         """Resolve a pass-through result at the CJ for a declared local consumer."""
-        encode_ctx = cell.get_fobs_context(
-            props={FOBSContextKey.PASS_THROUGH: False, FOBSContextKey.RELAY_PASS_THROUGH: False}
-        )
+        encode_ctx = cell.get_fobs_context(props={FOBSContextKey.PASS_THROUGH: False})
         encoded = fobs.dumps(result, fobs_ctx=encode_ctx)
         decode_ctx = cell.get_fobs_context(
             props={FOBSContextKey.PASS_THROUGH: False, FOBSContextKey.ABORT_SIGNAL: abort_signal}

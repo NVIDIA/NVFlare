@@ -575,7 +575,6 @@ class TestBackendPlumbing:
             call(
                 props={
                     FOBSContextKey.PASS_THROUGH: False,
-                    FOBSContextKey.RELAY_PASS_THROUGH: False,
                 }
             ),
             call(props={FOBSContextKey.PASS_THROUGH: False, FOBSContextKey.ABORT_SIGNAL: abort_signal}),

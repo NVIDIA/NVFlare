@@ -21,7 +21,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -29,6 +29,7 @@ from nvflare.app_common.executors.client_api.attach_backend import AttachBackend
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext
 from nvflare.client.cell.defs import CHANNEL, MsgKey, TaskState, Topic
 from nvflare.client.config import ConfigKey
+from nvflare.fuel.data_event.utils import set_scope_property
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
@@ -54,7 +55,6 @@ class FakeCell:
         attach_config=True,
     ):
         self.decode_pass_through_topics = set()
-        self.decode_pass_through_relay_topics = set()
         self.cbs = {}
         self.sent = []
         self.fired = []
@@ -186,6 +186,9 @@ class FakeCell:
 
 
 def _fl_ctx(cell, secure_mode=True):
+    if secure_mode:
+        set_scope_property("site-1", FLMetaKey.AUTH_TOKEN, "site-auth-token")
+        set_scope_property("site-1", FLMetaKey.AUTH_TOKEN_SIGNATURE, "site-auth-signature")
     engine = MagicMock()
     engine.get_cell.return_value = cell
     engine.new_context.return_value.__enter__.return_value = FLContext()
@@ -297,7 +300,9 @@ def test_session_open_task_exchange_uses_wire_primitive_values():
     session_open = next(payload for topic, _, payload in cell.sent if topic == Topic.SESSION_OPEN)
     task_exchange = session_open[MsgKey.TASK_EXCHANGE]
 
-    assert session_open[MsgKey.RESULT_RELAY] is True
+    assert session_open[MsgKey.SECURE_MODE] is True
+    assert session_open[MsgKey.AUTH_TOKEN] == "site-auth-token"
+    assert session_open[MsgKey.AUTH_TOKEN_SIGNATURE] == "site-auth-signature"
     for key in (
         ConfigKey.EXCHANGE_FORMAT,
         ConfigKey.SERVER_EXPECTED_FORMAT,
@@ -551,7 +556,7 @@ def test_clear_attach_listener_requires_explicit_opt_in_before_session_open():
     allowed.finalize(fl_ctx)
 
 
-def test_secure_site_still_requires_mtls_attach_listener_before_session_open():
+def test_secure_job_rejects_insecure_opt_in_before_session_open():
     cell = FakeCell(listener_scheme="grpc", listener_connection_security="mtls")
     backend = AttachBackend()
     fl_ctx = _fl_ctx(cell, secure_mode=True)
@@ -559,17 +564,19 @@ def test_secure_site_still_requires_mtls_attach_listener_before_session_open():
     try:
         backend.initialize(_context(), fl_ctx)
     except ValueError as e:
-        assert "CJ-owned attach listener" in str(e)
+        assert "secure Client API attach requires" in str(e)
     else:
         raise AssertionError("a secure-mode site with a clear attach listener must be rejected")
     assert not any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
 
     allowed = AttachBackend()
-    allowed_context = _context(allow_insecure_attach=True)
-    allowed.initialize(allowed_context, fl_ctx)
-    assert _wait_ready(allowed).ready.is_set()
-    allowed_context.executor.log_warning.assert_called_once()
-    allowed.finalize(fl_ctx)
+    try:
+        allowed.initialize(_context(allow_insecure_attach=True), fl_ctx)
+    except ValueError as e:
+        assert "allow_insecure_attach cannot authorize" in str(e)
+    else:
+        raise AssertionError("secure attach must reject an unprotected route even with explicit insecure opt-in")
+    assert not any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
 
 
 def _shared_file_listener_params(tmp_path: Path) -> dict:
@@ -600,13 +607,17 @@ def test_shared_file_attach_listener_does_not_require_insecure_opt_in(tmp_path):
         listener_params=params,
     )
     backend = AttachBackend()
-    fl_ctx = _fl_ctx(cell, secure_mode=False)
+    fl_ctx = _fl_ctx(cell, secure_mode=True)
     context = _context()
 
     backend.initialize(context, fl_ctx)
 
     assert _wait_ready(backend).ready.is_set()
     context.executor.log_warning.assert_not_called()
+    session_open = next(payload for topic, _, payload in cell.sent if topic == Topic.SESSION_OPEN)
+    assert session_open[MsgKey.SECURE_MODE] is True
+    assert session_open[MsgKey.AUTH_TOKEN] == "site-auth-token"
+    assert session_open[MsgKey.AUTH_TOKEN_SIGNATURE] == "site-auth-signature"
     backend.finalize(fl_ctx)
 
 

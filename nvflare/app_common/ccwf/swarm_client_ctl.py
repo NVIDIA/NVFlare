@@ -22,7 +22,7 @@ from typing import Optional
 from nvflare.apis.controller_spec import Task
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedTopic, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -43,7 +43,6 @@ from nvflare.fuel.utils.validation_utils import (
     check_positive_int,
     check_positive_number,
 )
-from nvflare.private.defs import CellChannel
 from nvflare.security.logging import secure_format_traceback
 
 
@@ -402,7 +401,6 @@ class SwarmClientController(ClientSideController):
         self.last_aggr_round_done = -1
         self.enable_tensor_disk_offload = enable_tensor_disk_offload
         self._tensor_disk_offload_root_dir = None
-        self._owned_tensor_forward_relay_route = None
         self._aggr_thread = None
         self.memory_gc_rounds = memory_gc_rounds
         self.cuda_empty_cache = cuda_empty_cache
@@ -451,11 +449,6 @@ class SwarmClientController(ClientSideController):
                     "enable_tensor_disk_offload=True but no active cell is available; "
                     "falling back to in-memory tensor download",
                 )
-        if self.enable_tensor_disk_offload and cell and fl_ctx.get_prop(FLContextKey.SECURE_MODE, False) is True:
-            route = (CellChannel.AUX_COMMUNICATION, ReservedTopic.DO_TASK)
-            if route not in cell.decode_pass_through_relay_topics:
-                cell.decode_pass_through_relay_topics.add(route)
-                self._owned_tensor_forward_relay_route = route
         self.aggregator = self.engine.get_component(self.aggregator_id)
         if not isinstance(self.aggregator, Aggregator):
             self.system_panic(
@@ -485,15 +478,6 @@ class SwarmClientController(ClientSideController):
     def _cleanup_tensor_disk_offload(self, fl_ctx: FLContext):
         root_dir = self._tensor_disk_offload_root_dir
         self._tensor_disk_offload_root_dir = None
-        route = self._owned_tensor_forward_relay_route
-        self._owned_tensor_forward_relay_route = None
-        try:
-            if route:
-                cell = self.engine.get_cell()
-                if cell:
-                    cell.decode_pass_through_relay_topics.discard(route)
-        except Exception:
-            self.log_warning(fl_ctx, f"failed to remove tensor forwarding relay route: {secure_format_traceback()}")
         try:
             if root_dir:
                 try:
@@ -855,8 +839,7 @@ class SwarmClientController(ClientSideController):
 
         Uses an FOBS round-trip:
           encode: LazyDownloadRefDecomposer.decompose() re-emits the original source
-                  datum (fqcn + ref_id) as a TEXT datum. Relay refs require the CELL
-                  in this context to create a download transaction on the client job.
+                  datum (fqcn + ref_id) as a TEXT datum.
           decode: process_datum() with PASS_THROUGH=False calls _download_from_remote_cell()
                   which downloads tensors through that transaction. A fresh FOBS
                   context prevents encode-only state from leaking into decode and

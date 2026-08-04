@@ -1009,6 +1009,7 @@ class ExternalProcessBackend(CellBackendBase):
                 MsgKey.SITE_NAME: self._site_name,
                 MsgKey.HEARTBEAT_INTERVAL: self._context.heartbeat_interval,
                 MsgKey.HEARTBEAT_TIMEOUT: self._context.heartbeat_timeout,
+                **self._session_security_payload(),
             },
         )
 
