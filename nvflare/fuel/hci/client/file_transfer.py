@@ -266,6 +266,7 @@ class FileTransferModule(CommandModule):
                 ProtoKey.META: {MetaKey.LOCATION: location},
             }
         else:
+            shutil.rmtree(self._tx_path(tx_id, folder_name), ignore_errors=True)
             return error
 
     @staticmethod
