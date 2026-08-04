@@ -68,7 +68,13 @@ def _directory_source_state(scan: SourceScan, ownership: dict, graph: LocalImpor
             return "credible"
         if len(roots) > 1 or len(authoritative) > 1:
             return "possible"
-        return "credible" if authoritative else "none"
+        if authoritative:
+            return "credible"
+        # Independent non-secondary jobs are real evidence but cannot override the selected owner.
+        # Secondary fixtures remain ignored so they do not suppress an active conversion target.
+        has_active_candidate = any(not is_secondary(candidate) for candidate in candidates)
+        secondary_only_owner = bool(owner_files) and all(is_secondary(path) for path in owner_files)
+        return "possible" if has_active_candidate or secondary_only_owner else "none"
 
     roots = {candidate for candidate in candidates if _is_root(candidate) and not is_secondary(candidate)}
     if len(roots) == 1:
@@ -92,7 +98,9 @@ def _directory_source_state(scan: SourceScan, ownership: dict, graph: LocalImpor
         return "credible" if len(next(iter(independent.values()))) == 1 else "possible"
     if len(independent) > 1:
         return "possible"
-    return "possible" if active else "none"
+    # Candidates exist, but no active owner or launcher can distinguish a secondary-only project
+    # from a fixture. Preserve that uncertainty instead of reporting that no job evidence exists.
+    return "possible"
 
 
 def _exported_marker_state(scan: SourceScan) -> str:
