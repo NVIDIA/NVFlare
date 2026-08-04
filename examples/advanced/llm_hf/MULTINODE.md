@@ -15,10 +15,10 @@ NVFlare provides those responsibilities through two existing mechanisms:
 - `nvflare.app_opt.pt.torchrun_node` translates the launcher-provided
   `NVFL_*` environment into a static multi-node `torchrun` rendezvous.
 
-Only global rank 0 owns the NVFlare Client API session. Nonzero ranks receive
-the model and lifecycle state through PyTorch distributed collectives, so the
-Client API's rank-0-local bootstrap address does not need to be changed for
-other nodes.
+Only global rank 0 owns the NVFlare Client API session. The Hugging Face Client
+API patched into `SFTTrainer` broadcasts task, model, lifecycle, and error state
+through PyTorch distributed collectives. The Client API's rank-0-local
+bootstrap address therefore does not need to be changed for other nodes.
 
 ## Prerequisites
 
@@ -100,9 +100,9 @@ server assigns work to the site.
 4. `torchrun_node` uses `NVFL_NNODES`, `NVFL_NODE_RANK`,
    `NVFL_MASTER_ADDR`, `NVFL_MASTER_PORT`, and `NVFL_RUN_ID` to start one
    `torchrun` worker group across all nodes.
-5. Global rank 0 exchanges models with NVFlare. `client.py` broadcasts the
-   running state and global model to the remaining ranks, and all ranks train
-   with Hugging Face DDP.
+5. Global rank 0 exchanges models with NVFlare. The patched Hugging Face Client
+   API broadcasts task and model state to the remaining ranks, and all ranks
+   execute the same `trainer.evaluate()` and `trainer.train()` calls.
 
 `torchrun_node` also supports `nodes=1`, where it starts standalone
 single-node `torchrun` with the requested number of processes.

@@ -68,6 +68,10 @@ class CausalLMPEFTModel(torch.nn.Module):
                                  bias="none", task_type="CAUSAL_LM")
         full_model = AutoModelForCausalLM.from_pretrained(model_name_or_path)
         self.model = get_peft_model(full_model, peft_config)
+
+    def state_dict(self, *args, **kwargs):
+        adapter_state = get_peft_model_state_dict(self.model)
+        return {f"model.{key}": value for key, value in adapter_state.items()}
 ```
 
 ### Client-Side Code
@@ -75,20 +79,22 @@ class CausalLMPEFTModel(torch.nn.Module):
 
 Key features:
 - **Multi-GPU Support**: Automatic DDP setup via `torch.distributed`
-- **Rank Management**: Only rank 0 communicates with NVFlare server
-- **Model Synchronization**: Broadcasts global model from rank 0 to all ranks
-- **Federated Training Loop**: Integrates with NVFlare using numbered steps:
-  1. Import nvflare client API
-  2. Initialize NVFlare client API (`flare.init()`)
-  3. Enter the federated training rounds loop (`while True`)
-  4. On global rank 0, check `flare.is_running()` and broadcast the running state to all ranks
-  5. On global rank 0, receive the global model (`flare.receive()`), then broadcast the round state and model
-  6. Load the global model state dict on all ranks
-  7. Evaluate the global model for server-side model selection
-  8. Train locally using SFTTrainer
-  9. Compose output model parameters
-  10. Construct the trained FL model with metrics on global rank 0
-  11. Send the model back to NVFlare from global rank 0 (`flare.send()`)
+- **Hugging Face Client API**: `flare.patch(trainer)` owns FL task exchange, local-round budgets, and checkpoint state
+- **Rank Management**: Only global rank 0 communicates with NVFlare; the patched API broadcasts task and model state
+- **Parameter Scope**: Full-model parameters are exchanged for SFT and adapter-only parameters for PEFT
+- **Federated Training Loop**: All ranks execute the same standard Trainer calls:
+  ```python
+  flare.patch(
+      trainer,
+      params_scope="auto",
+      server_key_prefix="model.",
+      local_epochs=args.local_epoch,
+  )
+
+  while flare.is_running():
+      trainer.evaluate()
+      trainer.train()
+  ```
 
 **Launch Modes:**
 - Single GPU: `python client.py [args]`
@@ -113,7 +119,7 @@ recipe = FedAvgRecipe(
     train_script="client.py",
     server_expected_format=server_expected_format,  # "pytorch" or "numpy"
     launch_external_process=True,
-    key_metric="neg_eval_loss",
+    key_metric="model_score",
 )
 ```
 
@@ -207,11 +213,9 @@ Below, we illustrate how to adapt a standard HuggingFace SFT/PEFT training scrip
 The original HuggingFace training script is located at `utils/hf_sft_peft.py`, which is a modified version of [HuggingFace SFT Trainer](https://huggingface.co/docs/trl/sft_trainer).
 To illustrate the adaptation process, we use a single dataset [databricks-dolly-15k](https://huggingface.co/datasets/databricks/databricks-dolly-15k).
 
-Unlike a basic iterative pytorch-based training script, HuggingFace training is usually a single call to `trainer.train()`, which is not suitable for federated training.
+HuggingFace training is usually a single call to `trainer.train()`. NVFlare's Hugging Face Client API patches that call with federated task handling, so applications do not need to implement `flare.receive()`, `flare.send()`, or distributed model broadcasts themselves.
 
-Therefore, we will perform the adaptation process in two steps:
-1. Adapt the one-call training script to iterative training by breaking the single `.train()` call to several iterations, which is a prerequisite for federated training.
-2. Adapt the iterative training script to federated training with NVFlare.
+The centralized iterative scripts below remain useful for understanding scheduler and checkpoint behavior. The federated client then uses `flare.patch(trainer)` to apply the same round boundaries through the supported Hugging Face integration.
 
 During the process, we will examine three training modes:
 1. Centralized one-call training (baseline) without NVFlare
@@ -295,13 +299,24 @@ We can see the three curves align well.
 ![sft](./figs/callback_multigpu.png)
 
 ### Adaptation Step 2: federated with NVFlare
-Once we have the iterative training script ready with "starting model" loading capability, scheduler alignment, and mult-gpu support, it can be easily adapted to a NVFlare trainer by using the [Client API](../../../docs/programming_guide/execution_api_type/client_api.rst).
+Construct the same `SFTTrainer`, then patch it with the [Hugging Face Client API](../../../docs/user_guide/data_scientist_guide/hf_client_api.rst):
 
-The major code modifications are for replacing the fixed model reloading processing with 
-receiving and returning the global model, as shown below:
+```python
+import nvflare.client.hf as flare
 
-![diff](./figs/diff_fl_1.png)
-![diff](./figs/diff_fl_2.png)
+flare.patch(
+    trainer,
+    params_scope="auto",
+    server_key_prefix="model.",
+    local_epochs=args.local_epoch,
+)
+
+while flare.is_running():
+    trainer.evaluate()
+    trainer.train()
+```
+
+The patched API receives and loads the global model, synchronizes distributed ranks, preserves Trainer checkpoint and scheduler state, applies the per-round epoch budget, and sends parameters and metrics from rank 0. `params_scope="auto"` selects full-model exchange for SFT and adapter-only exchange for PEFT. The PEFT server wrapper exposes the same adapter-only state used by the client.
 
 We run the federated training on a single client with single GPU using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html).
 ```
