@@ -29,6 +29,7 @@ from nvflare.fuel.flare_api.api_spec import (
     MonitorReturnCode,
     NoConnection,
     ServerInfo,
+    SessionExpired,
     SubmitTokenJobDeleted,
 )
 from nvflare.fuel.flare_api.flare_api import Session, new_session
@@ -220,6 +221,36 @@ def test_do_command_raises_no_connection_for_server_connection_error():
 
     with pytest.raises(NoConnection, match=r"cannot connect to server: ERROR_SERVER_CONNECTION"):
         session._do_command("list_jobs", enforce_meta=False)
+
+
+def test_do_command_returns_typed_session_expired_without_retry_after_expiry_event():
+    session = Session.__new__(Session)
+    session.api = MagicMock()
+    session.api.session_expired_reason = "idle timeout"
+    session.api.closed = True
+
+    with pytest.raises(SessionExpired, match="idle timeout"):
+        session._do_command("download_job job-1", enforce_meta=False)
+
+    session.api.do_command.assert_not_called()
+
+
+def test_do_command_returns_typed_session_expired_once_when_event_arrives_in_flight():
+    session = Session.__new__(Session)
+    session.api = MagicMock()
+    session.api.session_expired_reason = None
+    session.api.closed = False
+
+    def expire_session(*args, **kwargs):
+        session.api.session_expired_reason = "idle timeout"
+        return {ResultKey.STATUS: APIStatus.ERROR_RUNTIME, ResultKey.DETAILS: "cell stopped"}
+
+    session.api.do_command.side_effect = expire_session
+
+    with pytest.raises(SessionExpired, match="idle timeout"):
+        session._do_command("download_job job-1", enforce_meta=False)
+
+    session.api.do_command.assert_called_once_with("download_job job-1", props=None)
 
 
 @pytest.mark.parametrize(
