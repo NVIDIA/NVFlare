@@ -92,7 +92,7 @@ Key features:
 **Launch Modes:**
 - Single GPU: `python client.py [args]`
 - Multi-GPU: `python -m torch.distributed.run --nnodes=1 --nproc_per_node=N --master_port=7777 client.py [args]`
-- Multi-node: via `client_wrapper.sh`
+- Multi-node Slurm: launcher-owned execution via `nvflare.app_opt.pt.torchrun_node`
 
 ### Server-Side Code / Job Recipe
 **`job.py`** - Job configuration using NVFlare's `FedAvgRecipe` pattern
@@ -172,6 +172,21 @@ python job.py \
     --username admin@nvidia.com
 ```
 
+For a Slurm client site, add the topology requested for each client allocation:
+
+```bash
+python job.py \
+    --client_ids dolly \
+    --data_path /shared/dataset \
+    --startup_kit_location /path/to/admin/startup_kit \
+    --slurm_nodes 2 \
+    --slurm_gpus_per_node 8
+```
+
+The recipe writes this topology to the job's `launcher_spec`; the NVFlare Slurm
+launcher owns node allocation and starts `torchrun_node` on every node. See
+[Multi-node Slurm Training](MULTINODE.md) for deployment and execution details.
+
 **Key Job Arguments:**
 - `--client_ids`: Client/site names (space-separated). Used directly as site names (e.g., `dolly`, `hospital-1`)
 - `--data_path`: Root directory containing client datasets
@@ -180,6 +195,8 @@ python job.py \
 - `--quantize_mode`: Optional quantization (`float16`, `blockwise8`, `float4`, `normfloat4`)
 - `--gpu`: GPU assignments, e.g., `"[0,1],[2,3]"` for two clients with 2 GPUs each
 - `--ports`: Master ports for DDP, e.g., `7777 8888`
+- `--slurm_nodes`: Number of Slurm nodes allocated to each client site
+- `--slurm_gpus_per_node`: Number of GPUs requested on each Slurm node
 - `--num_rounds`: Number of federated learning rounds
 - `--use_tracking`: Enable TensorBoard experiment tracking
 
@@ -391,4 +408,7 @@ Oasst1:
 ![peft](./figs/peft_oasst1.png)
 
 ## Multi-node Training
-The NVFlare client can run in a multi-node environment as well. The deployment depends on your cluster environment. We provide an example on how to test this with a SLURM-based cluster. See the details and some findings on ensuring the job runs correctly in multi-node setting in [MULTINODE.md](MULTINODE.md).
+The NVFlare client can also train across multiple Slurm nodes. The example uses
+NVFlare's Slurm Job Launcher directly; it does not require a custom wrapper,
+nested `srun`, or rewriting `client_api_config.json`. See
+[MULTINODE.md](MULTINODE.md).

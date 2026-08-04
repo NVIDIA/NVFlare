@@ -19,7 +19,7 @@ Supports both SFT (Supervised Fine-Tuning) and PEFT (Parameter-Efficient Fine-Tu
 Launch with:
     - Single GPU: python client.py [args]
     - Multi GPU: python -m torch.distributed.run --nnodes=1 --nproc_per_node=N --master_port=7777 client.py [args]
-    - Multi-node: via client_wrapper.sh
+    - Multi-node: python -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=N client.py [args]
 """
 
 import argparse
@@ -297,37 +297,40 @@ def main():
             "SFTTrainer may have failed to wrap the model with PEFT."
         )
 
-    # (3) Train federated rounds
-    # Start with global model at the beginning of each round
-    while flare.is_running():
+    # (3) Train federated rounds. Only rank 0 owns the NVFlare Client API
+    # session, so it broadcasts the loop state to every torchrun process.
+    while True:
+        running = [flare.is_running() if rank == 0 else None]
+        if dist.is_initialized():
+            dist.broadcast_object_list(running, src=0)
+        if not running[0]:
+            break
+
         # (4) Receive global model from NVFlare (only on rank 0)
         if rank == 0:
             print("Rank 0: Waiting to receive model from FL server...")
             input_model = flare.receive(timeout=600)
             if input_model is None:
                 print("Rank 0: Received None from FL server, stopping training")
-                if dist.is_initialized():
-                    stop_signal = [False]
-                    dist.broadcast_object_list(stop_signal, src=0)
-                break
-            curr_round = input_model.current_round
-            print(f"Rank 0: Received model for round {curr_round}, Site={flare.get_site_name()}")
-            # Update the key name received from global model if using model def file
-            global_model = copy.deepcopy(input_model.params)
-            for key in list(global_model.keys()):
-                global_model[key.replace("model.", "", 1)] = global_model.pop(key)
+                round_state = [False, None, None]
+            else:
+                curr_round = input_model.current_round
+                print(f"Rank 0: Received model for round {curr_round}, Site={flare.get_site_name()}")
+                # Update the key name received from global model if using model def file
+                global_model = copy.deepcopy(input_model.params)
+                for key in list(global_model.keys()):
+                    global_model[key.replace("model.", "", 1)] = global_model.pop(key)
+                round_state = [True, curr_round, global_model]
         else:
-            curr_round = None
-            global_model = None
+            round_state = [None, None, None]
 
-        # Broadcast current round and global_model to all processes
+        # Broadcast stop state, current round, and global model together so all
+        # ranks execute the same collective sequence even during shutdown.
         if dist.is_initialized():
-            curr_round_list = [curr_round]
-            global_model_list = [global_model]
-            dist.broadcast_object_list(curr_round_list, src=0)
-            dist.broadcast_object_list(global_model_list, src=0)
-            curr_round = curr_round_list[0]
-            global_model = global_model_list[0]
+            dist.broadcast_object_list(round_state, src=0)
+        if not round_state[0]:
+            break
+        _, curr_round, global_model = round_state
 
         # Sync all processes before loading model
         if dist.is_initialized():
