@@ -19,10 +19,10 @@ import pytest
 
 
 @pytest.mark.parametrize("extra", ["app_opt", "app_opt_cpu"])
-def test_xgboost_dependency_uses_last_column_split_compatible_release(extra):
+def test_xgboost_dependency_excludes_release_without_column_split_support(extra):
     config = ConfigParser()
     config.read(Path(__file__).resolve().parents[4] / "setup.cfg")
 
     requirements = config["options.extras_require"][extra].splitlines()
 
-    assert "xgboost==3.2.0" in requirements
+    assert "xgboost<3.4" in requirements
