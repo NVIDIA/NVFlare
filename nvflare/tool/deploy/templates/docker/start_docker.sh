@@ -14,12 +14,13 @@ if [ -z "${NVFL_DOCKER_SOCK:-}" ] && [ -L "$DOCKER_SOCK" ]; then
                 DOCKER_SOCK="$RESOLVED_DOCKER_SOCK"
                 ;;
             *)
-                RESOLVED_DOCKER_SOCK_DIR="$(
+                if RESOLVED_DOCKER_SOCK_DIR="$(
                     cd "$(dirname "$DOCKER_SOCK")" &&
                     cd "$(dirname "$RESOLVED_DOCKER_SOCK")" &&
                     pwd
-                )"
-                DOCKER_SOCK="$RESOLVED_DOCKER_SOCK_DIR/$(basename "$RESOLVED_DOCKER_SOCK")"
+                )"; then
+                    DOCKER_SOCK="$RESOLVED_DOCKER_SOCK_DIR/$(basename "$RESOLVED_DOCKER_SOCK")"
+                fi
                 ;;
         esac
     fi
@@ -52,7 +53,11 @@ fi
 rm -f "$HOST_WORKSPACE/daemon_pid.fl"
 
 SOCK_GID=$(stat -c '%g' "$DOCKER_SOCK" 2>/dev/null || stat -f '%g' "$DOCKER_SOCK" 2>/dev/null || echo "")
-GROUP_ADD_ARGS=(--group-add 0)
+HOST_OS=$(uname -s)
+GROUP_ADD_ARGS=()
+if [ "$HOST_OS" = "Darwin" ] || [ "$SOCK_GID" = "0" ]; then
+    GROUP_ADD_ARGS+=(--group-add 0)
+fi
 if [ -n "$SOCK_GID" ] && [ "$SOCK_GID" != "0" ]; then
     GROUP_ADD_ARGS+=(--group-add "$SOCK_GID")
 fi

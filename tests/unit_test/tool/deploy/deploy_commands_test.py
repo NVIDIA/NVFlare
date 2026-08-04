@@ -318,6 +318,7 @@ def test_prepare_docker_start_script_handles_docker_socket_path_and_groups(tmp_p
     assert 'DOCKER_SOCK="${NVFL_DOCKER_SOCK:-/var/run/docker.sock}"' in script
     assert 'if [ -z "${NVFL_DOCKER_SOCK:-}" ] && [ -L "$DOCKER_SOCK" ]; then' in script
     assert 'RESOLVED_DOCKER_SOCK=$(readlink "$DOCKER_SOCK")' in script
+    assert 'if RESOLVED_DOCKER_SOCK_DIR="$(' in script
     assert 'if [ ! -S "$DOCKER_SOCK" ]; then' in script
     assert "Set NVFL_DOCKER_SOCK=/path/to/docker.sock" in script
     assert 'DOCKER_HOST_URI="unix://$DOCKER_SOCK"' in script
@@ -329,7 +330,11 @@ def test_prepare_docker_start_script_handles_docker_socket_path_and_groups(tmp_p
         "SOCK_GID=$(stat -c '%g' \"$DOCKER_SOCK\" 2>/dev/null || "
         'stat -f \'%g\' "$DOCKER_SOCK" 2>/dev/null || echo "")'
     ) in script
-    assert "GROUP_ADD_ARGS=(--group-add 0)" in script
+    assert "HOST_OS=$(uname -s)" in script
+    assert "GROUP_ADD_ARGS=()" in script
+    assert 'if [ "$HOST_OS" = "Darwin" ] || [ "$SOCK_GID" = "0" ]; then' in script
+    assert "GROUP_ADD_ARGS+=(--group-add 0)" in script
+    assert "GROUP_ADD_ARGS=(--group-add 0)" not in script
     assert 'GROUP_ADD_ARGS+=(--group-add "$SOCK_GID")' in script
     assert '"${GROUP_ADD_ARGS[@]}"' in script
     assert '-v "$DOCKER_SOCK":/var/run/docker.sock' in script
