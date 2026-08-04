@@ -476,7 +476,7 @@ modes. Heartbeats apply only to the out-of-process modes.
      - Session lease on missed heartbeats; active payload transfer preserves
        liveness.
    * - ``task_wait_timeout``
-     - all modes
+     - ``external_process``, ``attach``
      - ``None``
      - Bound trainer acceptance of a delivered task. Attach applies a
        600-second task-delivery budget when unset.
@@ -1359,21 +1359,21 @@ Framework-level settings for large payload transfers (fl_constant.py:553, comm_c
      - 2097152
      - Chunk size for PyTorch tensor downloads (bytes)
 
-For Client API subprocess jobs, keep these download settings aligned with the
-subprocess pipe settings:
+For ``ClientAPIExecutor``, large-payload transfer uses the shared streaming
+download service rather than the legacy Pipe/FlareAgent retry path. Keep the
+download idle budget aligned with the streaming request budget:
 
 - ``tensor_min_download_timeout`` / ``np_min_download_timeout`` should be at
   least ``tensor_streaming_per_request_timeout`` /
   ``np_streaming_per_request_timeout``.
-- ``PEER_READ_TIMEOUT`` should be at least the configured streaming per-request
-  timeout so the parent client job does not resend the task while the subprocess
-  is still downloading a large payload.
-- ``download_complete_timeout`` should be at least the configured streaming
-  per-request timeout and long enough for the server to pull large tensor
-  results from the subprocess after result ACK.
-- ``max_resends`` should stay finite. The recipe default is ``3``; raise it
-  only when the network is expected to recover after a small number of delayed
-  result acknowledgments.
+- ``task_wait_timeout`` and ``result_wait_timeout`` bound task acceptance and
+  result production in ``external_process`` and ``attach`` modes; active payload
+  transfer is progress-aware and is not capped by those waits.
+
+The settings ``PEER_READ_TIMEOUT``, ``submit_result_timeout``,
+``download_complete_timeout``, and ``max_resends`` apply only to the legacy
+``BaseScriptRunner`` / ``ClientAPILauncherExecutor`` Pipe path. They are not
+consumed by ``ClientAPIExecutor``.
 
 Swarm Learning Large Model Setup
 --------------------------------
@@ -1399,13 +1399,10 @@ Recommended timeouts for large models in Swarm Learning:
        "streaming_per_request_timeout": 600,
    })
 
-   # Subprocess-mode timeouts (when launch_external_process=True)
+   # Client-side streaming idle budget. Swarm's ordinary external-process path
+   # uses ClientAPIExecutor, so legacy Pipe/FlareAgent retry settings do not apply.
    recipe.add_client_config({
-       "submit_result_timeout": 1800,
-       "download_complete_timeout": 1800,
        "tensor_min_download_timeout": 600,
-       "PEER_READ_TIMEOUT": 600,
-       "max_resends": 5,
    })
 
 

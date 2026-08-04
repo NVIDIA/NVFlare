@@ -250,9 +250,6 @@ Most Commonly Adjusted Timeouts
    * - job_wait_timeout (Attach profile only)
      - None
      - Bound how long a trainer waits to discover a matching Client Job
-   * - task_wait_timeout / result_wait_timeout (Attach mode only)
-     - None
-     - Bound trainer task acceptance or control-side result waiting when required by site policy
    * - train_timeout
      - 0
      - Long training rounds
@@ -337,11 +334,7 @@ Large Model Training (100M+ parameters)
    recipe.add_client_config({
        "get_task_timeout": 600,
        "submit_task_result_timeout": 600,
-       "submit_result_timeout": 600,        # subprocess mode only
-       "download_complete_timeout": 1800,   # subprocess mode only
-       "tensor_min_download_timeout": 300,  # subprocess mode only; use np_min_download_timeout for NumPy
-       "PEER_READ_TIMEOUT": 600,            # subprocess mode only
-       "max_resends": 3,                    # subprocess mode only; finite default
+       "tensor_min_download_timeout": 300,  # use np_min_download_timeout for NumPy
    })
 
 
@@ -352,13 +345,18 @@ LLM/Foundation Model Training
 
    recipe.add_client_config({
        "get_task_timeout": 1200,
-       "submit_task_result_timeout": 1800,  # server-side; must be >= submit_result_timeout
-       "submit_result_timeout": 1800,       # subprocess mode only
-       "download_complete_timeout": 1800,   # subprocess mode only
+       "submit_task_result_timeout": 1800,
        "tensor_min_download_timeout": 600,  # PyTorch; use np_min_download_timeout for NumPy
-       "PEER_READ_TIMEOUT": 600,            # subprocess mode only
-       "max_resends": 5,                    # subprocess mode only
    })
+
+These recipe settings configure site task exchange and the shared streaming
+download service. For ``ClientAPIExecutor`` out-of-process modes, configure
+``launch_timeout``, ``task_wait_timeout``, ``result_wait_timeout``, and the
+heartbeat settings on the executor itself when those bounds are needed. The
+legacy Pipe/FlareAgent settings ``submit_result_timeout``,
+``download_complete_timeout``, ``PEER_READ_TIMEOUT``, and ``max_resends`` are
+used only by ``BaseScriptRunner`` / ``ClientAPILauncherExecutor`` and have no
+effect on ``ClientAPIExecutor``.
 
 
 High-Latency Networks
