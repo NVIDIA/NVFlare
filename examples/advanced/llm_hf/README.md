@@ -80,14 +80,15 @@ Key features:
 - **Federated Training Loop**: Integrates with NVFlare using numbered steps:
   1. Import nvflare client API
   2. Initialize NVFlare client API (`flare.init()`)
-  3. Federated training rounds loop (`while flare.is_running()`)
-  4. Receive global model from NVFlare (`flare.receive()`)
-  5. Load global model state dict
-  6. Evaluate global model for server-side model selection
-  7. Train locally using SFTTrainer
-  8. Compose output model parameters
-  9. Construct trained FL model with metrics
-  10. Send model back to NVFlare (`flare.send()`)
+  3. Enter the federated training rounds loop (`while True`)
+  4. On global rank 0, check `flare.is_running()` and broadcast the running state to all ranks
+  5. On global rank 0, receive the global model (`flare.receive()`), then broadcast the round state and model
+  6. Load the global model state dict on all ranks
+  7. Evaluate the global model for server-side model selection
+  8. Train locally using SFTTrainer
+  9. Compose output model parameters
+  10. Construct the trained FL model with metrics on global rank 0
+  11. Send the model back to NVFlare from global rank 0 (`flare.send()`)
 
 **Launch Modes:**
 - Single GPU: `python client.py [args]`
