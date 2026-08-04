@@ -258,11 +258,11 @@ class HierarchicalStatisticsController(StatisticsController):
             abort_signal=abort_signal,
         )
 
-        self._rebuild_hierarchical_global_statistics(statistic_task, hierarchy_config_json)
+        self._rebuild_global_statistics_with_hierarchy_config(statistic_task, hierarchy_config_json)
 
         self.log_info(fl_ctx, f"task {self.task_name} statistics_flow for {statistic_task} flow end.")
 
-    def _rebuild_hierarchical_global_statistics(self, statistic_task: str, hierarchy_config: dict):
+    def _rebuild_global_statistics_with_hierarchy_config(self, statistic_task: str, hierarchy_config: dict):
         self.global_statistics = get_global_stats(
             {}, self.client_statistics, StC.STATS_1st_STATISTICS, hierarchy_config
         )

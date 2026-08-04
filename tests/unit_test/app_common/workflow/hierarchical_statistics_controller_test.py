@@ -35,10 +35,10 @@ class TestHierarchicalStatisticsController:
             },
         }
         hierarchy_config = {"Sites": ["site-1", "site-2"]}
-        controller._rebuild_hierarchical_global_statistics(StC.STATS_1st_STATISTICS, hierarchy_config)
+        controller._rebuild_global_statistics_with_hierarchy_config(StC.STATS_1st_STATISTICS, hierarchy_config)
 
         controller.client_statistics[StC.STATS_FAILURE_COUNT]["site-1"]["train"]["Age"] = 1
-        controller._rebuild_hierarchical_global_statistics(StC.STATS_2nd_STATISTICS, hierarchy_config)
+        controller._rebuild_global_statistics_with_hierarchy_config(StC.STATS_2nd_STATISTICS, hierarchy_config)
 
         global_statistics = controller.global_statistics[StC.GLOBAL]
         assert global_statistics[StC.STATS_COUNT]["train"]["Age"] == 8
@@ -49,5 +49,5 @@ class TestHierarchicalStatisticsController:
         assert site_statistics[1][StC.LOCAL][StC.STATS_FAILURE_COUNT]["train"]["Age"] == 0
 
         rebuilt_statistics = deepcopy(controller.global_statistics)
-        controller._rebuild_hierarchical_global_statistics(StC.STATS_2nd_STATISTICS, hierarchy_config)
+        controller._rebuild_global_statistics_with_hierarchy_config(StC.STATS_2nd_STATISTICS, hierarchy_config)
         assert controller.global_statistics == rebuilt_statistics
