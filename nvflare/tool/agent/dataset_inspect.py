@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Static dataset classification for `nvflare agent inspect`.
+"""Static dataset classification for `nvflare agent inspect data`.
 
 Classifies a data-only directory as a tabular or image dataset and emits a
 metadata-only evidence block. It never emits values from rows classified
@@ -37,8 +37,7 @@ Dataset block contract (all keys always present per modality):
   target); tiny sites inside both tolerance windows resolve to the side
   with more files overall; anything else — an image-only site among
   tabular sites, materially both modalities, or a dead file-count tie —
-  is ``mixed``, reported but not routed (``target_type`` stays
-  ``unknown_target``).
+  is ``mixed`` and routes to read-only orientation as an ambiguous dataset.
 - ``layout``: ``per_site_directories`` | ``flat`` |
   ``root_and_site_directories`` (root-level data files coexist with site
   directories — ambiguous site mapping, an ask/fail-closed input for the
@@ -127,9 +126,20 @@ _NON_NUMERIC_FLOAT_TOKENS = {"nan", "inf", "-inf", "+inf", "infinity", "-infinit
 
 def inspect_dataset(root: Path, max_files: int, max_file_bytes: int) -> Optional[dict]:
     """Classify a directory as a dataset; None when it holds no data files."""
-    groups, census, truncated = _collect_data_files(root, max_files)
+    dataset, _ = _inspect_dataset_with_audit(root, max_files, max_file_bytes)
+    return dataset
+
+
+def _inspect_dataset_with_audit(root: Path, max_files: int, max_file_bytes: int) -> tuple[Optional[dict], dict]:
+    """Return the public dataset block and audit data from the same walk."""
+    groups, census, truncated, entries_seen = _walk_data_files(root, max_files)
+    audit = {
+        "entries_visited": entries_seen,
+        "files_considered": sum(census.values()),
+        "truncated": truncated,
+    }
     if not groups:
-        return None
+        return None, audit
     modality = _dataset_modality(groups)
 
     # Dataset classification reads data bytes (bounded, metadata-only);
@@ -178,7 +188,7 @@ def inspect_dataset(root: Path, max_files: int, max_file_bytes: int) -> Optional
     }
     if modality == "tabular":
         dataset["schema_agreement"] = _schema_agreement(sites)
-    return dataset
+    return dataset, audit
 
 
 def _dataset_modality(groups: Dict[str, List[Path]]) -> str:
@@ -219,6 +229,11 @@ def _dataset_modality(groups: Dict[str, List[Path]]) -> str:
 
 
 def _collect_data_files(root: Path, max_files: int):
+    groups, census, truncated, _ = _walk_data_files(root, max_files)
+    return groups, census, truncated
+
+
+def _walk_data_files(root: Path, max_files: int):
     """Bounded, sorted, symlink-free walk grouping data files by top-level dir.
 
     ``max_files`` counts *data* files, so non-data clutter cannot exhaust the
@@ -271,7 +286,7 @@ def _collect_data_files(root: Path, max_files: int):
             groups.setdefault(group, []).append(child)
     for files in groups.values():
         files.sort()
-    return groups, census, truncated
+    return groups, census, truncated, min(entries_seen, MAX_WALK_ENTRIES)
 
 
 def _data_extension(path: Path) -> Optional[str]:

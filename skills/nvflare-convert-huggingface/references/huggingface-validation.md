@@ -75,10 +75,18 @@ reaches the applicable phase, and stop at the first failure.
 ## Parameter Checks
 
 - Instantiate the adapted `server_model.ServerModel` and the source Trainer
-  model factory with the same local constructor values, then compare their
-  state-dict key sets and shapes without training. Do not inspect NVFLARE
-  persistors or class loaders; the exported job and final simulation validate
-  product-side construction.
+  model through the same importable factory path and with the same local
+  constructor arguments. Always compare state-dict key sets, shapes, and dtypes
+  without training. Do not inspect NVFLARE persistors or class loaders; the
+  exported job and final simulation validate product-side construction.
+- When source evidence proves deterministic construction, also require exact
+  per-tensor equality or an equivalent stable state hash between independently
+  constructed source and server models. Deterministic evidence includes loading
+  the same fixed checkpoint or a factory that explicitly resets all
+  initialization seeds/state on every call. A single coincidentally equal run
+  is not proof. For a genuinely nondeterministic factory, record that fact and
+  do not require equality across independent calls; retain the factory-path,
+  argument, key, shape, and dtype checks.
 - Require exact full-model key agreement after any documented prefix
   transformation. For PEFT or auxiliary trainable models, load
   `huggingface-state-and-distributed.md` and run its adapter/ownership checks.
@@ -111,6 +119,10 @@ reaches the applicable phase, and stop at the first failure.
 - For non-default checkpoint/restore behavior, PEFT, auxiliary trainable
   models, or DDP, load `huggingface-state-and-distributed.md` and run only its
   applicable checks.
+- Do not report DDP validated from a single-process or rank-zero-only
+  simulation. A DDP validation claim requires a two-process `torchrun` case in
+  which each process records its resolved global rank and the rank passed to
+  `flare.init()`, and the observed ranks are exactly `{0, 1}`.
 
 ## Report
 
