@@ -15,65 +15,9 @@
 import argparse
 import os
 
-from server import KM
-from server_he import KM_HE
+from km_recipe import KaplanMeierRecipe
 
-from nvflare import FedJob
-from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe import ProdEnv, SimEnv
-from nvflare.recipe.spec import Recipe
-
-
-class KMRecipe(Recipe):
-    """Recipe wrapper around the Kaplan-Meier job configuration.
-
-    This provides a recipe-style API for easy job configuration and execution
-    in both simulation and production environments.
-    """
-
-    def __init__(
-        self,
-        *,
-        num_clients: int,
-        encryption: bool = False,
-        data_root: str = "/tmp/nvflare/dataset/km_data",
-        he_context_path_client: str = "/tmp/nvflare/he_context/he_context_client.txt",
-        he_context_path_server: str = "/tmp/nvflare/he_context/he_context_server.txt",
-    ):
-        self.num_clients = num_clients
-        self.encryption = encryption
-        self.data_root = data_root
-        self.he_context_path_client = he_context_path_client
-        self.he_context_path_server = he_context_path_server
-
-        # Set job name and script based on encryption mode
-        if self.encryption:
-            job_name = "KM_HE"
-            train_script = "client_he.py"
-            script_args = f"--data_root {data_root} --he_context_path {he_context_path_client}"
-            controller = KM_HE(min_clients=num_clients, he_context_path=he_context_path_server)
-        else:
-            job_name = "KM"
-            train_script = "client.py"
-            script_args = f"--data_root {data_root}"
-            controller = KM(min_clients=num_clients)
-
-        # Create the FedJob
-        job = FedJob(name=job_name, min_clients=num_clients)
-
-        # Add controller workflow to server
-        job.to_server(controller)
-
-        # Add ScriptRunner to all clients
-        runner = ScriptRunner(
-            script=train_script,
-            script_args=script_args,
-            framework="raw",
-            launch_external_process=False,
-        )
-        job.to_clients(runner, tasks=["train"])
-
-        super().__init__(job)
 
 
 def define_parser():
@@ -160,7 +104,7 @@ def main():
         he_context_path_server = None
 
     # Create the recipe
-    recipe = KMRecipe(
+    recipe = KaplanMeierRecipe(
         num_clients=num_clients,
         encryption=args.encryption,
         data_root=args.data_root,

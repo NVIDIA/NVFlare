@@ -39,9 +39,11 @@ Trainer factory, which requires the read-only choice described above.
 
 1. Clarify the target path or use the current workspace when the user already
    gives enough context.
-2. Run `nvflare agent inspect <path> --format json` for static project evidence,
-   including detected framework routing, FLARE integration, local readiness, and
-   the recommended skill.
+2. Run `nvflare agent inspect source <path> --format json` for project or job
+   evidence, or `nvflare agent inspect data <path> --format json` for data and
+   statistics requests. If data inspection returns `dataset: null`, run source
+   inspection on the same target. Use its ownership, integration, scan,
+   routing, or dataset evidence as applicable.
 3. Classify the request into one next action: conversion, optimization, local
    validation, POC workflow, production workflow, diagnosis, deployment, or no
    FLARE skill.
