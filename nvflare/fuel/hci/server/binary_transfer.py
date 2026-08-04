@@ -16,8 +16,9 @@ import os
 import shutil
 
 from nvflare.fuel.f3.streaming.file_downloader import ObjectDownloader, add_file
+from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ReplyKeyword, make_meta
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -40,17 +41,31 @@ class BinaryTransfer:
 
         engine = conn.get_prop(ConnProps.ENGINE)
         admin = conn.get_prop(ConnProps.ADMIN_SERVER)
-        timeout = admin.timeout if admin else 5
+        session = conn.get_prop(ConnProps.SESSION)
+        session_mgr = admin.sess_mgr
+        session_id = session.sess_id
+
+        def _download_progress(tx_id, bytes_done, state, **kwargs):
+            if bytes_done > 0 and state == TransferProgressState.ACTIVE:
+                session_mgr.mark_download_active(session_id, tx_id)
 
         cell = engine.get_cell()
         source_fqcn = cell.get_fqcn()
         downloader = ObjectDownloader(
             num_receivers=1,
-            cell=engine.get_cell(),
-            timeout=timeout,
+            cell=cell,
+            timeout=admin.timeout,
             transaction_done_cb=self._cleanup_tx,
+            progress_cb=_download_progress,
+            progress_interval=min(30.0, max(0.0, session_mgr.idle_timeout / 3.0)),
             tx_path=tx_path,
+            session_mgr=session_mgr,
+            session_id=session_id,
         )
+        if not session_mgr.bind_download(session_id, downloader.tx_id, downloader.delete_transaction):
+            downloader.delete_transaction()
+            conn.append_error(ReplyKeyword.SESSION_INACTIVE)
+            return
 
         # return list of the files
         files = []
@@ -76,6 +91,7 @@ class BinaryTransfer:
                 ),
             )
         else:
+            downloader.delete_transaction()
             conn.append_error(
                 "No data to download",
                 meta=make_meta(
@@ -84,9 +100,10 @@ class BinaryTransfer:
                 ),
             )
 
-    def _cleanup_tx(self, tx_id: str, status, files, tx_path):
+    def _cleanup_tx(self, tx_id: str, status, files, tx_path, session_mgr, session_id):
         """
         Remove the job download folder
         """
+        session_mgr.end_download(session_id, tx_id)
         shutil.rmtree(tx_path, ignore_errors=True)
         self.logger.debug(f"deleted download path: {tx_id=} {status=} {tx_path=} {files=}")
