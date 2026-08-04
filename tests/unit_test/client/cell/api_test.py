@@ -1229,12 +1229,17 @@ class TestReceiveSend:
         _set_formats(bootstrap_path, ExchangeFormat.PYTORCH, ExchangeFormat.NUMPY)
         api = _init_api(bootstrap_path, env)
         try:
+            env.fobs_context[FOBSContextKey.STREAM_PROGRESS_CB](bytes_done=1)
             _deliver_task(
                 env,
                 model=FLModel(params={"w": np.asarray([1.0, 2.0])}, params_type=ParamsType.FULL),
             )
             received = api.receive()
             assert isinstance(received.params["w"], torch.Tensor)
+            phases = [payload[MsgKey.TASK_PHASE] for topic, _, payload in env.fired if topic == Topic.TASK_PROGRESS]
+            assert phases[0] == "download"
+            assert "materialization" in phases
+            assert phases[-1] == "handoff"
 
             api.send(FLModel(params={"w": received.params["w"] + 1}), clear_cache=False)
 

@@ -18,6 +18,7 @@ import numpy as np
 import torch
 
 from nvflare.app_common.abstract.params_converter import ParamsConverter
+from nvflare.client.converter_utils import CONVERSION_PROGRESS_CB
 
 
 class NumpyToPTParamsConverter(ParamsConverter):
@@ -26,15 +27,15 @@ class NumpyToPTParamsConverter(ParamsConverter):
             raise TypeError(f"NumPy-to-PyTorch conversion expects a parameter dict, got {type(params)}")
         tensor_shapes = fl_ctx.get_prop("tensor_shapes")
         exclude_vars = fl_ctx.get_prop("exclude_vars")
+        progress_cb = fl_ctx.get_prop(CONVERSION_PROGRESS_CB)
 
         return_params = {}
-        if tensor_shapes:
-            return_params = {
-                k: torch.as_tensor(np.reshape(v, tensor_shapes[k])) if k in tensor_shapes else torch.as_tensor(v)
-                for k, v in params.items()
-            }
-        else:
-            return_params = {k: torch.as_tensor(v) for k, v in params.items()}
+        for k, v in params.items():
+            if tensor_shapes and k in tensor_shapes:
+                v = np.reshape(v, tensor_shapes[k])
+            return_params[k] = torch.as_tensor(v)
+            if progress_cb:
+                progress_cb()
 
         if exclude_vars:
             for k, v in exclude_vars.items():

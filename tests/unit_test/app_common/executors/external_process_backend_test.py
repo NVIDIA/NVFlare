@@ -53,7 +53,7 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
 CJ_FQCN = "site-1.job-1"
 
-PROTOCOL_TOPICS = (Topic.HELLO, Topic.RESULT_READY, Topic.LOG, Topic.HEARTBEAT)
+PROTOCOL_TOPICS = (Topic.HELLO, Topic.RESULT_READY, Topic.LOG, Topic.HEARTBEAT, Topic.TASK_PROGRESS)
 
 
 def _task_accepted_reply():
@@ -1190,6 +1190,7 @@ class TestHeartbeatAndOperationalLiveness:
 
     @pytest.mark.parametrize("completed_download", [False, True], ids=["inline", "completed-download"])
     def test_task_deadline_keeps_delayed_materialization_alive(self, env, monkeypatch, completed_download):
+        monkeypatch.setattr(ebp, "DEFAULT_STREAMING_IDLE_TIMEOUT", 0.03)
         waiter = _completed_transfer_waiter("completed-task-tx")
         monkeypatch.setattr(ebp.DownloadService, "get_transfer_waiter", lambda _tx_id: waiter)
         backend, fl_ctx = _initialized_backend(
@@ -1209,10 +1210,15 @@ class TestHeartbeatAndOperationalLiveness:
                     )
                 assert kwargs["progress_wait_cb"]() is False
                 cancel = kwargs["abort_signal"]
-                deadline = time.monotonic() + 0.08
-                while time.monotonic() < deadline:
+                for phase in ("download", "materialization", "handoff"):
+                    env.cell.deliver(
+                        Topic.TASK_PROGRESS,
+                        target,
+                        {MsgKey.SESSION_ID: request.payload[MsgKey.SESSION_ID], MsgKey.TASK_PHASE: phase},
+                    )
+                    time.sleep(0.04)
                     assert not cancel.triggered
-                    time.sleep(0.005)
+                    assert kwargs["progress_wait_cb"]() is True
                 payload = request.payload
                 result_payload = {
                     MsgKey.SESSION_ID: payload[MsgKey.SESSION_ID],
@@ -1250,19 +1256,76 @@ class TestHeartbeatAndOperationalLiveness:
                 kwargs["fobs_ctx_props"][ebp.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](
                     SimpleNamespace(tx_id=waiter.transaction_id)
                 )
+                env.cell.deliver(
+                    Topic.TASK_PROGRESS,
+                    target,
+                    {
+                        MsgKey.SESSION_ID: request.payload[MsgKey.SESSION_ID],
+                        MsgKey.TASK_PHASE: "materialization",
+                    },
+                )
                 with trainer._activity_lock:
                     trainer._last_peer_activity = time.monotonic() - 1.0
-                return make_cell_reply(CellReturnCode.TIMEOUT)
+                time.sleep(0.05)
+                assert kwargs["abort_signal"].triggered
+                return _task_accepted_reply()
 
             env.cell.on_request = timed_out_materialization
             result = backend.execute("train", Shareable(), fl_ctx, Signal())
 
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert "TASK_READY deadline expired after 0.04s" in backend._abort_reason
+            assert "TASK_READY maximum deadline expired after 0.04s" in backend._abort_reason
             assert backend._abort is True
             assert trainer.peer_silent_for() >= 0.5
             assert deleted == [waiter.transaction_id]
             assert [f for f in env.cell.fired if f[0] == Topic.ABORT]
+        finally:
+            backend.finalize(FLContext())
+
+    def test_task_ready_stalled_progress_aborts_pending_trainer(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "DEFAULT_STREAMING_IDLE_TIMEOUT", 0.04)
+        backend, fl_ctx = _initialized_backend(
+            env,
+            heartbeat_interval=0.01,
+            heartbeat_timeout=0.02,
+            task_wait_timeout=1.0,
+            result_wait_timeout=1.0,
+        )
+        try:
+
+            def stalled_materialization(topic, target, request):
+                env.cell.deliver(
+                    Topic.TASK_PROGRESS,
+                    target,
+                    {
+                        MsgKey.SESSION_ID: request.payload[MsgKey.SESSION_ID],
+                        MsgKey.TASK_PHASE: "materialization",
+                    },
+                )
+                time.sleep(0.05)
+                assert env.cell.sent_kwargs[-1]["progress_wait_cb"]() is True
+                time.sleep(0.05)
+                assert env.cell.sent_kwargs[-1]["progress_wait_cb"]() is False
+                return make_cell_reply(CellReturnCode.TIMEOUT)
+
+            env.cell.on_request = stalled_materialization
+            result = backend.execute("train", Shareable(), fl_ctx, Signal())
+
+            assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+            assert "TASK_READY ingestion stalled" in backend._abort_reason
+            assert "during materialization" in backend._abort_reason
+            assert "idle timeout=0.04s" in backend._abort_reason
+            trainer = backend._active_launch
+            assert trainer.task_ingestion_active is False
+            with trainer._activity_lock:
+                trainer._last_peer_activity = 1.0
+            env.cell.deliver(
+                Topic.TASK_PROGRESS,
+                trainer.trainer_fqcn,
+                {MsgKey.SESSION_ID: trainer.session_id, MsgKey.TASK_PHASE: "stale"},
+            )
+            with trainer._activity_lock:
+                assert trainer._last_peer_activity == 1.0
         finally:
             backend.finalize(FLContext())
 

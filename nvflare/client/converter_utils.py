@@ -18,14 +18,19 @@ from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.client.config import ExchangeFormat, normalize_exchange_format
 from nvflare.fuel.utils.import_utils import optional_import
 
+CONVERSION_PROGRESS_CB = "conversion_progress_cb"
+
 
 class _ConverterContext:
     """Minimal state context for ParamsConverters running in a trainer process."""
 
-    def __init__(self, props: Optional[MutableMapping[str, Any]] = None):
+    def __init__(self, props: Optional[MutableMapping[str, Any]] = None, progress_cb=None):
         self._props = props if props is not None else {}
+        self._progress_cb = progress_cb
 
     def get_prop(self, key: str, default=None):
+        if key == CONVERSION_PROGRESS_CB:
+            return self._progress_cb or default
         return self._props.get(key, default)
 
     def set_prop(self, key: str, value: Any, private: Optional[bool] = None, sticky: Optional[bool] = None):
@@ -89,6 +94,7 @@ def convert_params(
     target_format,
     state: MutableMapping[str, Any],
     logger: Optional[Any] = None,
+    progress_cb=None,
 ) -> Any:
     """Adapt trainer parameters according to an explicit source/target declaration."""
 
@@ -108,7 +114,7 @@ def convert_params(
     converter = _create_converter(source, target)
     if logger is not None:
         converter.logger = logger
-    return converter.convert(params, _ConverterContext(state))
+    return converter.convert(params, _ConverterContext(state, progress_cb))
 
 
 def create_default_params_converters(

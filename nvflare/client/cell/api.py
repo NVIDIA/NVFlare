@@ -170,6 +170,7 @@ class CellClientAPI(APISpec):
         self._last_cj_activity: Optional[float] = None
         self._heartbeat_stop = threading.Event()
         self._heartbeat_thread: Optional[threading.Thread] = None
+        self._last_task_progress_sent: Optional[float] = None
         self._initialized = False
         # An external-process trainer owns its standalone F3 runtime. Attach owns
         # only this Cell session and must not tear down process-global services.
@@ -220,6 +221,7 @@ class CellClientAPI(APISpec):
             self._heartbeat_cancel = Signal()
             with self._liveness_lock:
                 self._last_cj_activity = None
+                self._last_task_progress_sent = None
 
             connect_url = self._attach.prepare_connection() if self._attach else self._config[BootstrapKey.CONNECT_URL]
             credentials = {}
@@ -240,7 +242,12 @@ class CellClientAPI(APISpec):
                 if self._attach:
                     self._attach.install_pre_decode_guard(self._cell)
                 # Propagate concurrent ABORT/SHUTDOWN into nested task-payload downloads.
-                self._cell.update_fobs_context({FOBSContextKey.ABORT_SIGNAL: self._abort_signal})
+                fobs_context = {FOBSContextKey.ABORT_SIGNAL: self._abort_signal}
+                if not self._is_attach:
+                    fobs_context[FOBSContextKey.STREAM_PROGRESS_CB] = lambda **_kwargs: self._send_task_progress(
+                        "download"
+                    )
+                self._cell.update_fobs_context(fobs_context)
                 self._register_control_cbs(self._cell)
                 self._cell.start()
                 if self._attach:
@@ -721,6 +728,7 @@ class CellClientAPI(APISpec):
                 },
             )
         try:
+            self._send_task_progress("materialization", force=True)
             model = FLModelUtils.from_shareable(shareable)
             model.params = convert_params(
                 model.params,
@@ -728,6 +736,7 @@ class CellClientAPI(APISpec):
                 self._task_exchange.get(ConfigKey.EXCHANGE_FORMAT, ExchangeFormat.RAW),
                 self._params_conversion_state,
                 self.logger,
+                progress_cb=lambda: self._send_task_progress("materialization"),
             )
         except Exception as e:
             self._forget_reserved_task(task_id, attempt_id)
@@ -740,6 +749,7 @@ class CellClientAPI(APISpec):
             terminal_reason = self._session_end_reason()
             if terminal_reason is None:
                 self._task_queue.put({"task": payload, "model": model, "result_receiver_ids": result_receiver_ids})
+                self._send_task_progress("handoff", force=True)
                 if self._attach:
                     self._attach.commit_reserved_task_locked(task_id, attempt_id)
         if terminal_reason:
@@ -749,6 +759,30 @@ class CellClientAPI(APISpec):
                 **{MsgKey.TASK_ID: task_id, MsgKey.REASON: terminal_reason},
             )
         return self._reply(Topic.TASK_ACCEPTED, **{MsgKey.TASK_ID: task_id})
+
+    def _send_task_progress(self, phase: str, force: bool = False) -> None:
+        if self._is_attach or self._closed or self._session_id is None:
+            return
+        now = time.monotonic()
+        with self._liveness_lock:
+            min_interval = min(self._heartbeat_interval, 1.0)
+            if not force and self._last_task_progress_sent is not None:
+                if now - self._last_task_progress_sent < min_interval:
+                    return
+            self._last_task_progress_sent = now
+        try:
+            self._cell.fire_and_forget(
+                channel=CHANNEL,
+                topic=Topic.TASK_PROGRESS,
+                targets=[self._cj_fqcn],
+                message=new_cell_message(
+                    {},
+                    {MsgKey.SESSION_ID: self._session_id, MsgKey.TASK_PHASE: phase},
+                ),
+                optional=True,
+            )
+        except Exception as e:
+            self.logger.debug(f"failed to report task ingestion progress: {e}")
 
     def _forget_reserved_task(self, task_id, attempt_id) -> None:
         if self._attach:

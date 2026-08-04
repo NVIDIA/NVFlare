@@ -97,6 +97,21 @@ def test_pytorch_conversion_requires_parameter_dict():
         convert_params([np.asarray([1.0])], ExchangeFormat.NUMPY, ExchangeFormat.PYTORCH, {})
 
 
+def test_pytorch_receive_conversion_reports_per_parameter_progress():
+    pytest.importorskip("torch")
+    progress = MagicMock()
+
+    convert_params(
+        {"w": np.asarray([1.0]), "b": np.asarray([2.0])},
+        ExchangeFormat.NUMPY,
+        ExchangeFormat.PYTORCH,
+        {},
+        progress_cb=progress,
+    )
+
+    assert progress.call_count == 2
+
+
 @pytest.mark.parametrize(
     "source_format,target_format",
     [

@@ -148,7 +148,7 @@ _INGESTION_PT_CLIENT_SCRIPT = textwrap.dedent(
     original_as_tensor = torch.as_tensor
 
     def delayed_as_tensor(value, *args, **kwargs):
-        time.sleep(0.75)
+        time.sleep(0.15)
         return original_as_tensor(value, *args, **kwargs)
 
     torch.as_tensor = delayed_as_tensor
@@ -168,6 +168,7 @@ _INGESTION_PT_JOB_SCRIPT = textwrap.dedent(
     """
     import sys
     import torch.nn as nn
+    import nvflare.app_common.executors.client_api.external_process_backend as external_backend
     from model import TinyNet
     from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
     from nvflare.app_common.workflows.fedavg import FedAvg
@@ -177,9 +178,13 @@ _INGESTION_PT_JOB_SCRIPT = textwrap.dedent(
     from nvflare.recipe.utils import extract_persistor_id
 
     workdir, command = sys.argv[1], sys.argv[2]
+    external_backend.DEFAULT_STREAMING_IDLE_TIMEOUT = 0.25
     job = BaseFedJob(name="ext-task-deadline-e2e", min_clients=1)
     model = TinyNet()
-    model.fc = nn.Linear(1024, 1024, bias=False)  # Exceeds ViaDownloader's 2 MiB array threshold.
+    model.fc = nn.Linear(1024, 1024, bias=False)
+    model.fc2 = nn.Linear(1024, 1024, bias=False)
+    model.fc3 = nn.Linear(1024, 1024, bias=False)
+    model.fc4 = nn.Linear(1024, 1024, bias=False)
     pid = extract_persistor_id(job.to_server(PTModel(model), id="persistor"))
     job.to_server(FedAvg(num_clients=1, num_rounds=1, persistor_id=pid, task_name="train"))
     job.to_clients(
@@ -189,7 +194,7 @@ _INGESTION_PT_JOB_SCRIPT = textwrap.dedent(
             shutdown_timeout=5.0,
             heartbeat_interval=0.1,
             heartbeat_timeout=0.5,
-            task_wait_timeout=3.0,
+            task_wait_timeout=30.0,
             params_exchange_format=ExchangeFormat.PYTORCH,
             server_expected_format=ExchangeFormat.NUMPY,
         ),

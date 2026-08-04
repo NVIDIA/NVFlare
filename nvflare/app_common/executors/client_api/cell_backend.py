@@ -142,7 +142,9 @@ class CellBackendBase(ClientAPIBackendSpec):
     def _get_protocol_session(self) -> Optional[CellSession]:
         raise NotImplementedError
 
-    def _validate_session_msg(self, request, payload) -> Tuple[Optional[CellSession], Optional[str]]:
+    def _validate_session_msg(
+        self, request, payload, touch: bool = True
+    ) -> Tuple[Optional[CellSession], Optional[str]]:
         session = self._get_protocol_session()
         if (
             session is None
@@ -156,7 +158,8 @@ class CellBackendBase(ClientAPIBackendSpec):
             return None, f"unexpected origin {origin!r}"
         if payload.get(MsgKey.SESSION_ID) != session.session_id:
             return None, "stale or unknown session id"
-        session.touch()
+        if touch:
+            session.touch()
         return session, None
 
     def _handle_result_ready(self, request):

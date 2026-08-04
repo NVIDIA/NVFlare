@@ -142,6 +142,9 @@ class _TrainerSession(CellSession):
         self._stop_lock = threading.Lock()
         self._cleanup_lock = threading.Lock()
         self._cleaned = False
+        self.task_ingestion_active = False
+        self.task_progress_time: Optional[float] = None
+        self.task_progress_phase: Optional[str] = None
 
 
 # Kept as a private compatibility alias for existing backend tests/extensions.
@@ -188,6 +191,7 @@ class ExternalProcessBackend(CellBackendBase):
             self._connect_url = connect_url
 
             cell.register_request_cb(channel=CHANNEL, topic=Topic.HELLO, cb=self._handle_hello)
+            cell.register_request_cb(channel=CHANNEL, topic=Topic.TASK_PROGRESS, cb=self._handle_task_progress)
 
             if context.launch_once:
                 self._launch_trainer(timeout=context.launch_timeout)
@@ -648,6 +652,19 @@ class ExternalProcessBackend(CellBackendBase):
                 return f"trainer heartbeat timed out after {silent_for:.1f}s " f"(timeout={heartbeat_timeout}s)"
         return None
 
+    def _handle_task_progress(self, request):
+        payload = request.payload
+        if not isinstance(payload, dict):
+            return None
+        trainer, reason = self._validate_session_msg(request, payload, touch=False)
+        if reason:
+            return None
+        with trainer._activity_lock:
+            if trainer.task_ingestion_active:
+                trainer.task_progress_time = time.monotonic()
+                trainer.task_progress_phase = str(payload.get(MsgKey.TASK_PHASE) or "task ingestion")
+        return None
+
     def _await_group_exit(self, trainer: _TrainerSession, timeout: float) -> bool:
         """Waits (bounded) for the whole process group to exit; reaps the leader."""
         deadline = time.monotonic() + timeout
@@ -841,16 +858,36 @@ class ExternalProcessBackend(CellBackendBase):
 
     def _send_task_ready(self, trainer: _TrainerSession, task_message: dict, abort_signal: Signal) -> Tuple[str, Any]:
         """Send TASK_READY with native cancellation for abort, backend closure, and process death."""
-        timeout = self._context.task_wait_timeout
-        if timeout is None:
-            timeout = DEFAULT_STREAMING_IDLE_TIMEOUT
+        max_timeout = self._context.task_wait_timeout
+        timeout = DEFAULT_STREAMING_IDLE_TIMEOUT
+        if max_timeout is not None:
+            timeout = min(timeout, max_timeout)
         transfer_waiters = []
+        started = time.monotonic()
+        observed_progress_time = started
+
+        with trainer._activity_lock:
+            trainer.task_ingestion_active = True
+            trainer.task_progress_time = started
+            trainer.task_progress_phase = "task delivery"
 
         def _on_transaction_created(transaction):
             transfer_waiters.append(DownloadService.get_transfer_waiter(transaction.tx_id))
 
-        def _has_live_task_download():
-            return any(not waiter.done() for waiter in tuple(transfer_waiters))
+        def _has_task_ingestion_progress():
+            nonlocal observed_progress_time
+            now = time.monotonic()
+            if any(not waiter.done() for waiter in tuple(transfer_waiters)):
+                with trainer._activity_lock:
+                    trainer.task_progress_time = now
+                    trainer.task_progress_phase = "task download"
+                return True
+            with trainer._activity_lock:
+                progress_time = trainer.task_progress_time
+            if progress_time is None or progress_time <= observed_progress_time:
+                return False
+            observed_progress_time = progress_time
+            return True
 
         def _cancel_cause():
             if abort_signal.triggered or (self._context.launch_once and self._abort):
@@ -859,52 +896,70 @@ class ExternalProcessBackend(CellBackendBase):
                 return _SEND_CLOSED, None
             if not self._process_group_alive(trainer):
                 return _SEND_PROCESS_DEAD, None
+            if max_timeout is not None and time.monotonic() - started >= max_timeout:
+                return _SEND_SESSION_DEAD, f"TASK_READY maximum deadline expired after {max_timeout}s"
             return None
 
-        cancel = _TaskReadyCancelSignal(_cancel_cause)
         try:
-            reply = self._cell.send_request(
-                channel=CHANNEL,
-                topic=Topic.TASK_READY,
-                target=trainer.trainer_fqcn,
-                request=new_cell_message({}, task_message),
-                timeout=timeout,
-                abort_signal=cancel,
-                progress_wait_cb=_has_live_task_download,
-                receiver_ids=(trainer.trainer_fqcn,),
-                fobs_ctx_props={
-                    FOBSContextKey.STREAM_PROGRESS_CB: lambda **_kwargs: None,
-                    RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: _on_transaction_created,
-                },
-            )
-        except BaseException:
+            cancel = _TaskReadyCancelSignal(_cancel_cause)
+            try:
+                reply = self._cell.send_request(
+                    channel=CHANNEL,
+                    topic=Topic.TASK_READY,
+                    target=trainer.trainer_fqcn,
+                    request=new_cell_message({}, task_message),
+                    timeout=timeout,
+                    abort_signal=cancel,
+                    progress_wait_cb=_has_task_ingestion_progress,
+                    receiver_ids=(trainer.trainer_fqcn,),
+                    fobs_ctx_props={
+                        FOBSContextKey.STREAM_PROGRESS_CB: lambda **_kwargs: None,
+                        RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: _on_transaction_created,
+                    },
+                )
+            except BaseException:
+                cause = cancel.value
+                self._delete_task_transfers(transfer_waiters)
+                if cancel.error is not None:
+                    raise cancel.error
+                if cause is not None:
+                    return cause
+                raise
+
             cause = cancel.value
-            self._delete_task_transfers(transfer_waiters)
             if cancel.error is not None:
+                self._delete_task_transfers(transfer_waiters)
                 raise cancel.error
             if cause is not None:
+                self._delete_task_transfers(transfer_waiters)
                 return cause
-            raise
-
-        cause = cancel.value
-        if cancel.error is not None:
-            self._delete_task_transfers(transfer_waiters)
-            raise cancel.error
-        if cause is not None:
-            self._delete_task_transfers(transfer_waiters)
-            return cause
-        reply_rc = reply.get_header(MessageHeaderKey.RETURN_CODE) if reply is not None else None
-        if reply_rc == CellReturnCode.TIMEOUT:
-            self._delete_task_transfers(transfer_waiters)
-            return _SEND_SESSION_DEAD, f"TASK_READY deadline expired after {timeout}s"
-        if reply_rc == CellReturnCode.OK:
-            # Only a real trainer reply closes ingestion and starts a fresh heartbeat lease.
-            trainer.touch_peer_activity()
-        if self._check_task_accepted(reply) is not None:
-            # A rejected task has no future consumer for its payload. Receiver
-            # confirmation is asynchronous, so retire the source deterministically.
-            self._delete_task_transfers(transfer_waiters)
-        return _SEND_OK, reply
+            reply_rc = reply.get_header(MessageHeaderKey.RETURN_CODE) if reply is not None else None
+            if reply_rc == CellReturnCode.TIMEOUT:
+                self._delete_task_transfers(transfer_waiters)
+                elapsed = time.monotonic() - started
+                if max_timeout is not None and elapsed >= max_timeout:
+                    reason = f"TASK_READY maximum deadline expired after {max_timeout}s"
+                else:
+                    with trainer._activity_lock:
+                        phase = trainer.task_progress_phase
+                        last_progress = trainer.task_progress_time
+                    silent_for = elapsed if last_progress is None else max(0.0, time.monotonic() - last_progress)
+                    reason = (
+                        f"TASK_READY ingestion stalled for {silent_for:.1f}s during {phase} "
+                        f"(idle timeout={DEFAULT_STREAMING_IDLE_TIMEOUT}s)"
+                    )
+                return _SEND_SESSION_DEAD, reason
+            if reply_rc == CellReturnCode.OK:
+                # Only a real trainer reply closes ingestion and starts a fresh heartbeat lease.
+                trainer.touch_peer_activity()
+            if self._check_task_accepted(reply) is not None:
+                # A rejected task has no future consumer for its payload. Receiver
+                # confirmation is asynchronous, so retire the source deterministically.
+                self._delete_task_transfers(transfer_waiters)
+            return _SEND_OK, reply
+        finally:
+            with trainer._activity_lock:
+                trainer.task_ingestion_active = False
 
     @staticmethod
     def _delete_task_transfers(transfer_waiters) -> None:

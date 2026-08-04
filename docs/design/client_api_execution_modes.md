@@ -185,10 +185,10 @@ Task direction:
 3. Only then does the trainer's `TASK_READY` handler validate and queue the task and return
    `TASK_ACCEPTED`.
 
-`task_wait_timeout` is the idle bound for the complete `TASK_READY` operation, including download,
-decode, conversion, and handler handoff (600 seconds when unset). Active source-side downloads extend
-the wait; process exit and abort terminate it immediately. Previously, an unset timeout left inline
-tasks heartbeat-governed and unbounded.
+The complete `TASK_READY` operation, including download, decode, conversion, and handler handoff,
+must make progress within the streaming layer's 600-second idle timeout. Trainer-side progress makes
+this independent of whether the payload downloads directly or through the CJ. `task_wait_timeout`
+optionally adds an absolute deadline; process exit and abort terminate the wait immediately.
 
 Result direction:
 

@@ -41,6 +41,7 @@ class Topic:
     TASK_READY = "client_api.task_ready"
     TASK_ACCEPTED = "client_api.task_accepted"
     TASK_FAILED = "client_api.task_failed"
+    TASK_PROGRESS = "client_api.task_progress"
     TASK_STATUS = "client_api.task_status"
     RESULT_READY = "client_api.result_ready"
     RESULT_ACCEPTED = "client_api.result_accepted"
@@ -76,6 +77,7 @@ class MsgKey:
     ATTEMPT_ID = "attempt_id"
     TASK_NAME = "task_name"
     TASK_STATE = "task_state"
+    TASK_PHASE = "task_phase"
     # Task Shareable; FOBS chooses inline or ViaDownloader encoding.
     MODEL = "model"
     # Result Shareable with the same FOBS encoding policy.
