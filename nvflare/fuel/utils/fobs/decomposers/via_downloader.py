@@ -382,25 +382,28 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         # tensor data ever materialised on CJ.
         if isinstance(target, LazyDownloadRef):
             fobs_ctx = manager.fobs_ctx
+            relay = target.relay
+            if fobs.FOBSContextKey.RELAY_PASS_THROUGH in fobs_ctx:
+                relay = bool(fobs_ctx[fobs.FOBSContextKey.RELAY_PASS_THROUGH])
             lazy_batch_key = f"{self.prefix}{_LAZY_BATCH_CTX_SUFFIX}"
             if lazy_batch_key not in fobs_ctx:
                 # First LazyDownloadRef of this batch: register a post-callback
                 # that will add the single shared datum (fqcn + ref_id) after all
                 # items have been serialised.
-                fobs_ctx[lazy_batch_key] = {"fqcn": target.fqcn, "ref_id": target.ref_id, "relay": target.relay}
+                fobs_ctx[lazy_batch_key] = {"fqcn": target.fqcn, "ref_id": target.ref_id, "relay": relay}
                 manager.register_post_cb(self._finalize_lazy_batch)
             else:
                 lazy_batch = fobs_ctx[lazy_batch_key]
                 if (
                     lazy_batch["fqcn"] != target.fqcn
                     or lazy_batch["ref_id"] != target.ref_id
-                    or lazy_batch.get("relay", False) != target.relay
+                    or lazy_batch.get("relay", False) != relay
                 ):
                     raise RuntimeError(
                         "LazyDownloadRef payload mixes download batches: "
                         f"existing fqcn={lazy_batch['fqcn']} ref_id={lazy_batch['ref_id']}, "
                         f"relay={lazy_batch.get('relay', False)}, "
-                        f"new fqcn={target.fqcn} ref_id={target.ref_id} relay={target.relay}"
+                        f"new fqcn={target.fqcn} ref_id={target.ref_id} relay={relay}"
                     )
 
             self.logger.debug(

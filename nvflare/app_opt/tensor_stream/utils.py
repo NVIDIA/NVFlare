@@ -26,6 +26,19 @@ from nvflare.apis.shareable import Shareable
 from .types import TensorTopics
 
 
+def contains_lazy_download_ref(value) -> bool:
+    """Return whether a nested value contains a PASS_THROUGH download reference."""
+    from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
+
+    if isinstance(value, LazyDownloadRef):
+        return True
+    if isinstance(value, dict):
+        return any(contains_lazy_download_ref(item) for item in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return any(contains_lazy_download_ref(item) for item in value)
+    return False
+
+
 def clean_task_data(fl_ctx: FLContext):
     """Clean the task data in the FLContext.
 

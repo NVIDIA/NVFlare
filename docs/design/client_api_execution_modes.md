@@ -2,7 +2,7 @@
 
 ## Status
 
-**Implemented architecture, updated 2026-07-14.**
+**Implemented architecture, updated 2026-08-03.**
 
 This document records the architecture implemented for `ClientAPIExecutor`.
 
@@ -12,9 +12,7 @@ The currently available modes are:
 |---|---|---|---|
 | `in_process` | DataBus | Thread in the Client Job (CJ) process | Available |
 | `external_process` | Cell | Trainer process/group launched by the CJ | Available |
-| `attach` | — | — | Reserved; not implemented |
-
-Selecting `attach` fails clearly rather than silently falling back to another transport.
+| `attach` | Cell | Independently started and externally owned trainer | Available |
 
 ## Goals and Boundaries
 
@@ -37,6 +35,8 @@ The implemented architecture has these boundaries:
 - `InProcessBackend` uses DataBus and runs the training script in the CJ process.
 - `ExternalProcessBackend` runs Client API jobs in a launched subprocess and communicates
   with the trainer directly over Cell.
+- `AttachBackend` communicates over Cell with an independently started trainer and owns only
+  the listener and protocol session, never the trainer process.
 - Cell, FOBS, `ViaDownloader`, and `DownloadService` provide serialization, large-object
   transfer, progress, and terminal transfer status. The Client API does not add another
   payload wrapper or streaming protocol.
@@ -60,8 +60,8 @@ ScriptRunner(
 )
 ```
 
-`execution_mode` remains available as an explicit mode override and for future modes such as
-attach.
+``execution_mode`` is also available as an explicit mode selector, including
+``execution_mode="attach"`` for an independently managed trainer.
 
 For `external_process`, the resulting path is:
 
@@ -71,6 +71,19 @@ ClientAPIExecutor
   -> Cell request/reply + FOBS/ViaDownloader
   -> CellClientAPI (trainer)
 ```
+
+For ``attach``, the protocol data path is the same, but process and connection
+ownership differ:
+
+```text
+ClientAPIExecutor
+  -> AttachBackend (CJ-owned listener/session)
+  -> Cell request/reply + FOBS/ViaDownloader
+  -> CellClientAPI (externally owned trainer)
+```
+
+See [Client API Attach Mode](client_api_attach_mode.md) for its listener,
+rendezvous, security, retry, and non-owning lifecycle contract.
 
 ## External Process Architecture
 
@@ -139,8 +152,9 @@ CJ -> trainer : RESULT_ACCEPTED | RESULT_REJECTED
 `TASK_ACCEPTED`/`TASK_FAILED` and `RESULT_ACCEPTED`/`RESULT_REJECTED` are Cell request replies.
 LOG and HEARTBEAT use the same Cell connection. ABORT and SHUTDOWN provide task/session teardown.
 The task ID correlates each single task/result delivery attempt.
-There is deliberately no receiver-only dedup cache while no sender retries exist. Attach-mode
-redelivery tolerance must add sender retry and receiver deduplication together.
+External-process mode deliberately has no receiver-only dedup cache while its sender does not
+retry. Attach mode adds sender retry, status recovery, and a bounded trainer-side task ledger
+together so ambiguous delivery cannot execute a task twice.
 
 There is no separate Client-API payload envelope, manifest, transfer ID, or payload-transfer
 state machine layered over these messages.
@@ -283,9 +297,10 @@ trainer's task-exchange metadata, and is applied by the trainer-side Client API 
 result. A DIFF is computed in the trainer-native representation before outgoing conversion.
 
 CJ task-data/task-result filter ordering is unchanged. Filters receive the payload representation
-delivered by the transport, which can contain lazy references when pass-through is active. This
-execution-mode change does not make filter presence imply CJ materialization and does not add an
-executor or filter capability contract.
+delivered by the transport, which can contain lazy references when pass-through is active. Filter
+presence does not imply CJ materialization. An explicit result-event consumer such as
+`TensorClientStreamer` may instead declare that it requires concrete results; `ClientAPIExecutor`
+then terminates that result's pass-through route at the CJ before the component runs.
 
 Relocating content transformations from CJ filters to explicit send/receive endpoints is deferred
 to a separate design and change. That work must first inventory the existing privacy, HE,
@@ -332,17 +347,17 @@ Validate at least:
 - abort, timeout, trainer exit, CJ loss, and process-group cleanup;
 - both `launch_once` policies.
 
-## Deferred Work
-
-- `attach` remains reserved and unimplemented. Its external ownership, credential delivery, and
-  reconnect policy require a separate implemented contract.
-
 ## Implementation References
 
 - `nvflare/app_common/executors/client_api_executor.py`
+- `nvflare/app_common/executors/client_api/attach_backend.py`
+- `nvflare/app_common/executors/client_api/cell_backend.py`
 - `nvflare/app_common/executors/client_api/external_process_backend.py`
 - `nvflare/app_common/executors/client_api/in_process_backend.py`
 - `nvflare/client/cell/api.py`
+- `nvflare/client/cell/attach.py`
+- `nvflare/client/cell/attach_rendezvous.py`
+- `nvflare/client/cell/attach_session.py`
 - `nvflare/client/cell/bootstrap.py`
 - `nvflare/client/cell/defs.py`
 - `nvflare/client/converter_utils.py`
