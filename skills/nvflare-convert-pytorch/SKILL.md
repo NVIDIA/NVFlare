@@ -47,7 +47,7 @@ distribution; handle conversion later as a separate request.
    Load `../nvflare-shared/references/conversion-workflow.md` only for a non-standard
    case that needs its detailed rerun, data-location, authorization, or
    missing-semantics guidance.
-2. Inspect before editing with `nvflare agent inspect <path> --format json`
+2. Inspect before editing with `nvflare agent inspect source <path> --format json`
    plus direct reading. Fact extraction is static; do not import or execute
    user training modules to discover fields. Extract: training entrypoint,
    model class path and constructor args, checkpoint behavior, train/eval

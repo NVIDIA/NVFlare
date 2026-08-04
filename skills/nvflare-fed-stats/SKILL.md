@@ -60,11 +60,11 @@ silently dropped or approximated.
    report it as an anomaly. Generated source sits beside the user's data;
    workspace, outputs, and logs go in a host runtime or temporary
    directory, with paths reported.
-2. Inspect deterministically: run `nvflare agent inspect <path> --format
-   json` first; its `target_type` and `dataset` block are the evidence —
-   do not hand-roll data inspection. `image_dataset` follows the image
+2. Inspect deterministically: run `nvflare agent inspect data <path> --format
+   json` first; its `dataset` block is the evidence — do not hand-roll data
+   inspection. `dataset.modality: image` follows the image
    path (`references/image-statistics.md` with
-   `assets/image_stats_client.py`); `tabular_dataset` supplies site
+   `assets/image_stats_client.py`); `dataset.modality: tabular` supplies site
    layout, per-site row counts, and feature names with dtype classes when
    `header` is `present`. On `header: ambiguous` (no names extracted),
    names must come from the request, a README/metadata file, or a names

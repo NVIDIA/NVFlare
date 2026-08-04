@@ -50,7 +50,7 @@ user's purpose is to understand data distribution; handle conversion later as a 
    Load `../nvflare-shared/references/conversion-workflow.md` only for a non-standard
    case that needs its detailed rerun, data-location, authorization, or
    missing-semantics guidance.
-2. Inspect before editing with `nvflare agent inspect <path> --format json`
+2. Inspect before editing with `nvflare agent inspect source <path> --format json`
    plus direct source reading. Load `references/huggingface-detection.md` during
    this phase. If inspect recommends `nvflare-orient` for unresolved Trainer
    ownership or active Lightning/Hugging Face owners, stop before editing.
@@ -120,8 +120,11 @@ user's purpose is to understand data distribution; handle conversion later as a 
 - Must use `flare.patch(trainer)` as the sole model-exchange owner. `receive()`
   inside a patched loop may inspect task metadata only; it must not load a
   second copy of the global model.
-- Must pass the distributed rank to `flare.init(rank=rank)`; Client API
-  initialization order otherwise follows `../nvflare-shared/references/conversion-common.md`.
+- Must make the client entry's global `rank` argument required and pass it to
+  `flare.init(rank=rank)`; never default every process to rank zero. Resolve it
+  from an initialized process group or global `RANK`, using explicit zero only
+  for a verified single-process launch. Client API initialization order
+  otherwise follows `../nvflare-shared/references/conversion-common.md`.
 - Must preserve source evaluation. When per-round global-model evaluation is
   required, call `trainer.evaluate()` before `trainer.train()` on every rank.
   Do not invent `compute_metrics`, label mappings, averaging denominators, or
@@ -135,9 +138,8 @@ user's purpose is to understand data distribution; handle conversion later as a 
   and report the source-to-server mapping. When best-model selection is
   requested, every lower-is-better metric, including Trainer-generated
   `eval_loss`, is delivered as an explicitly negated companion and selected by
-  that key — never as raw loss. Otherwise leave `key_metric` unspecified and
-  retain the recipe default; do not add a skill-specific sentinel or claim that
-  the selector was disabled.
+  that key — never as raw loss. When selection is not requested, use
+  `key_metric=""`; do not omit it and accidentally activate the recipe default.
 - Must preserve PEFT configuration exactly and verify adapter key compatibility
   between the server model and patched Trainer. Do not infer LoRA target
   modules, silently switch adapter/full-model scope, or solve key mismatches
