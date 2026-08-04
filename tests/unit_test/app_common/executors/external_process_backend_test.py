@@ -68,7 +68,6 @@ def _completed_transfer_waiter(transaction_id):
     return SimpleNamespace(
         transaction_id=transaction_id,
         done=lambda: True,
-        outcome=SimpleNamespace(completed=True),
     )
 
 
@@ -1164,6 +1163,7 @@ class TestHeartbeatAndOperationalLiveness:
                 assert topic == Topic.TASK_READY
                 tx_created = env.cell.sent_kwargs[-1]["fobs_ctx_props"][ebp.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY]
                 tx_created(SimpleNamespace(tx_id="task-payload-tx"))
+                assert env.cell.sent_kwargs[-1]["progress_wait_cb"]() is True
                 time.sleep(0.1)  # longer than the heartbeat timeout
                 transfer_settled.set()
                 payload = request.payload
@@ -1188,7 +1188,8 @@ class TestHeartbeatAndOperationalLiveness:
         finally:
             backend.finalize(FLContext())
 
-    def test_completed_transfer_waiter_keeps_delayed_materialization_alive(self, env, monkeypatch):
+    @pytest.mark.parametrize("completed_download", [False, True], ids=["inline", "completed-download"])
+    def test_task_deadline_keeps_delayed_materialization_alive(self, env, monkeypatch, completed_download):
         waiter = _completed_transfer_waiter("completed-task-tx")
         monkeypatch.setattr(ebp.DownloadService, "get_transfer_waiter", lambda _tx_id: waiter)
         backend, fl_ctx = _initialized_backend(
@@ -1202,10 +1203,11 @@ class TestHeartbeatAndOperationalLiveness:
 
             def delayed_after_download(topic, target, request):
                 kwargs = env.cell.sent_kwargs[-1]
-                kwargs["fobs_ctx_props"][ebp.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](
-                    SimpleNamespace(tx_id=waiter.transaction_id)
-                )
-                assert kwargs["progress_wait_cb"]() is True
+                if completed_download:
+                    kwargs["fobs_ctx_props"][ebp.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](
+                        SimpleNamespace(tx_id=waiter.transaction_id)
+                    )
+                assert kwargs["progress_wait_cb"]() is False
                 cancel = kwargs["abort_signal"]
                 deadline = time.monotonic() + 0.08
                 while time.monotonic() < deadline:
@@ -1228,9 +1230,11 @@ class TestHeartbeatAndOperationalLiveness:
         finally:
             backend.finalize(FLContext())
 
-    def test_completed_transfer_waiter_stalls_at_ingestion_timeout(self, env, monkeypatch):
+    def test_task_ready_timeout_aborts_pending_trainer(self, env, monkeypatch):
         waiter = _completed_transfer_waiter("stalled-task-tx")
+        deleted = []
         monkeypatch.setattr(ebp.DownloadService, "get_transfer_waiter", lambda _tx_id: waiter)
+        monkeypatch.setattr(ebp.DownloadService, "delete_transaction", deleted.append)
         backend, fl_ctx = _initialized_backend(
             env,
             heartbeat_interval=0.01,
@@ -1239,60 +1243,25 @@ class TestHeartbeatAndOperationalLiveness:
             result_wait_timeout=1.0,
         )
         try:
+            trainer = backend._active_launch
 
-            def stalled_materialization(topic, target, request):
+            def timed_out_materialization(topic, target, request):
                 kwargs = env.cell.sent_kwargs[-1]
                 kwargs["fobs_ctx_props"][ebp.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](
                     SimpleNamespace(tx_id=waiter.transaction_id)
                 )
-                cancel = kwargs["abort_signal"]
-                while not cancel.triggered:
-                    time.sleep(0.005)
-                assert kwargs["progress_wait_cb"]() is False
-                return _task_accepted_reply()
+                with trainer._activity_lock:
+                    trainer._last_peer_activity = time.monotonic() - 1.0
+                return make_cell_reply(CellReturnCode.TIMEOUT)
 
-            env.cell.on_request = stalled_materialization
+            env.cell.on_request = timed_out_materialization
             result = backend.execute("train", Shareable(), fl_ctx, Signal())
 
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert "task ingestion stalled" in backend._abort_reason
-            assert "timeout=0.04s" in backend._abort_reason
-            assert [f for f in env.cell.fired if f[0] == Topic.ABORT]
-        finally:
-            backend.finalize(FLContext())
-
-    def test_failed_task_transfer_terminates_ingestion_immediately(self, env, monkeypatch):
-        waiter = SimpleNamespace(
-            transaction_id="failed-transfer-tx",
-            done=lambda: True,
-            outcome=SimpleNamespace(completed=False, status="failed", reason="receiver disconnected"),
-        )
-        monkeypatch.setattr(ebp.DownloadService, "get_transfer_waiter", lambda _tx_id: waiter)
-        backend, fl_ctx = _initialized_backend(
-            env,
-            heartbeat_interval=0.1,
-            heartbeat_timeout=1.0,
-            task_wait_timeout=10.0,
-        )
-        try:
-
-            def failed_transfer(topic, target, request):
-                kwargs = env.cell.sent_kwargs[-1]
-                kwargs["fobs_ctx_props"][ebp.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](
-                    SimpleNamespace(tx_id=waiter.transaction_id)
-                )
-                cancel = kwargs["abort_signal"]
-                while not cancel.triggered:
-                    time.sleep(0.005)
-                return _task_accepted_reply()
-
-            env.cell.on_request = failed_transfer
-            start = time.monotonic()
-            result = backend.execute("train", Shareable(), fl_ctx, Signal())
-
-            assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert time.monotonic() - start < 0.5
-            assert "streamed task transfer failed: receiver disconnected" in backend._abort_reason
+            assert "TASK_READY deadline expired after 0.04s" in backend._abort_reason
+            assert backend._abort is True
+            assert trainer.peer_silent_for() >= 0.5
+            assert deleted == [waiter.transaction_id]
             assert [f for f in env.cell.fired if f[0] == Topic.ABORT]
         finally:
             backend.finalize(FLContext())
@@ -1326,68 +1295,10 @@ class TestHeartbeatAndOperationalLiveness:
             result = backend.execute("train", Shareable(), fl_ctx, Signal())
 
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+            assert backend._abort is False
             logged = " ".join(str(call) for call in executor.log_error.call_args_list)
             assert "safetensors decode failed" in logged
             assert "heartbeat timed out" not in logged
-        finally:
-            backend.finalize(FLContext())
-
-    def test_synthesized_task_timeout_does_not_refresh_heartbeat(self, env, monkeypatch):
-        waiter = _completed_transfer_waiter("completed-task-tx")
-        monkeypatch.setattr(ebp.DownloadService, "get_transfer_waiter", lambda _tx_id: waiter)
-        backend, fl_ctx = _initialized_backend(
-            env,
-            heartbeat_interval=0.01,
-            heartbeat_timeout=0.03,
-            task_wait_timeout=0.2,
-        )
-        try:
-            trainer = backend._active_launch
-
-            def timed_out_request(topic, target, request):
-                kwargs = env.cell.sent_kwargs[-1]
-                kwargs["fobs_ctx_props"][ebp.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](
-                    SimpleNamespace(tx_id=waiter.transaction_id)
-                )
-                with trainer._activity_lock:
-                    trainer._last_peer_activity = time.monotonic() - 1.0
-                return make_cell_reply(CellReturnCode.TIMEOUT)
-
-            env.cell.on_request = timed_out_request
-            result = backend.execute("train", Shareable(), fl_ctx, Signal())
-
-            assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert trainer.peer_silent_for() >= 0.5
-        finally:
-            backend.finalize(FLContext())
-
-    def test_inline_task_ready_pending_is_bounded_by_heartbeat(self, env, monkeypatch):
-        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.01)
-        backend, fl_ctx = _initialized_backend(
-            env,
-            heartbeat_interval=0.02,
-            heartbeat_timeout=0.05,
-            task_wait_timeout=None,
-            result_wait_timeout=None,
-        )
-        try:
-
-            def wedged_inline_request(topic, target, request):
-                assert topic == Topic.TASK_READY
-                cancel = env.cell.sent_kwargs[-1]["abort_signal"]
-                while not cancel.triggered:
-                    time.sleep(0.005)
-                return _task_accepted_reply()
-
-            env.cell.on_request = wedged_inline_request
-            start = time.monotonic()
-            result = backend.execute("train", Shareable(), fl_ctx, Signal())
-            elapsed = time.monotonic() - start
-
-            assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert elapsed < 0.5
-            assert "heartbeat timed out" in backend._abort_reason
-            assert "TASK_READY was pending" in backend._abort_reason
         finally:
             backend.finalize(FLContext())
 
@@ -1495,7 +1406,7 @@ class TestExecute:
             topic, target, payload = seen.task_payloads[0]
             trainer = backend._active_launch
             assert topic == Topic.TASK_READY and target == trainer.trainer_fqcn
-            assert env.cell.sent[0][3] is None
+            assert env.cell.sent[0][3] == ebp.DEFAULT_STREAMING_IDLE_TIMEOUT
             assert payload[MsgKey.SESSION_ID] == trainer.session_id
             assert payload[MsgKey.TASK_NAME] == "train"
             assert payload[MsgKey.TASK_ID]
@@ -1587,19 +1498,13 @@ class TestExecute:
         finally:
             backend.finalize(FLContext())
 
-    def test_task_ready_send_does_not_hang_past_abort(self, env, monkeypatch):
-        waiter = _completed_transfer_waiter("completed-task-tx")
-        monkeypatch.setattr(ebp.DownloadService, "get_transfer_waiter", lambda _tx_id: waiter)
-        backend, fl_ctx = _initialized_backend(env, task_wait_timeout=1.0, result_wait_timeout=30.0)
+    def test_task_ready_send_does_not_hang_past_abort(self, env):
+        backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
         try:
             abort_signal = Signal()
 
             def wedged_handler(topic, target, request):
-                kwargs = env.cell.sent_kwargs[-1]
-                kwargs["fobs_ctx_props"][ebp.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](
-                    SimpleNamespace(tx_id=waiter.transaction_id)
-                )
-                cancel = kwargs["abort_signal"]
+                cancel = env.cell.sent_kwargs[-1]["abort_signal"]
                 while not cancel.triggered:
                     time.sleep(0.005)
                 return _task_accepted_reply()
@@ -1621,18 +1526,12 @@ class TestExecute:
         finally:
             backend.finalize(FLContext())
 
-    def test_task_ready_send_detects_process_death(self, env, monkeypatch):
-        waiter = _completed_transfer_waiter("completed-task-tx")
-        monkeypatch.setattr(ebp.DownloadService, "get_transfer_waiter", lambda _tx_id: waiter)
-        backend, fl_ctx = _initialized_backend(env, task_wait_timeout=1.0, result_wait_timeout=30.0)
+    def test_task_ready_send_detects_process_death(self, env):
+        backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
         try:
 
             def wedged_handler(topic, target, request):
-                kwargs = env.cell.sent_kwargs[-1]
-                kwargs["fobs_ctx_props"][ebp.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](
-                    SimpleNamespace(tx_id=waiter.transaction_id)
-                )
-                cancel = kwargs["abort_signal"]
+                cancel = env.cell.sent_kwargs[-1]["abort_signal"]
                 while not cancel.triggered:
                     time.sleep(0.005)
                 return _task_accepted_reply()

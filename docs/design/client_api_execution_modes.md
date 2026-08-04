@@ -185,9 +185,10 @@ Task direction:
 3. Only then does the trainer's `TASK_READY` handler validate and queue the task and return
    `TASK_ACCEPTED`.
 
-For a streamed task, `task_wait_timeout` also bounds the grace for download, decode, framework
-conversion, and handler handoff (600 seconds when unset). Transfer failure, process exit, and task
-abort terminate that grace immediately; inline tasks retain heartbeat-only behavior.
+`task_wait_timeout` is the idle bound for the complete `TASK_READY` operation, including download,
+decode, conversion, and handler handoff (600 seconds when unset). Active source-side downloads extend
+the wait; process exit and abort terminate it immediately. Previously, an unset timeout left inline
+tasks heartbeat-governed and unbounded.
 
 Result direction:
 

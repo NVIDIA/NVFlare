@@ -136,7 +136,7 @@ _INGESTION_PT_CLIENT_SCRIPT = textwrap.dedent(
     import nvflare.client as flare
     from nvflare.client.cell.api import CellClientAPI
 
-    # Make the bounded ingestion grace the only liveness source for this regression.
+    # Withhold heartbeats until materialization finishes so the TASK_READY deadline is the only bound.
     materialized = threading.Event()
     original_heartbeat_loop = CellClientAPI._heartbeat_loop
 
@@ -148,7 +148,7 @@ _INGESTION_PT_CLIENT_SCRIPT = textwrap.dedent(
     original_as_tensor = torch.as_tensor
 
     def delayed_as_tensor(value, *args, **kwargs):
-        time.sleep(0.15)
+        time.sleep(0.75)
         return original_as_tensor(value, *args, **kwargs)
 
     torch.as_tensor = delayed_as_tensor
@@ -164,23 +164,11 @@ _INGESTION_PT_CLIENT_SCRIPT = textwrap.dedent(
     """
 )
 
-_INGESTION_PT_MODEL_SCRIPT = textwrap.dedent(
-    """
-    import torch
-    import torch.nn as nn
-
-    class StreamedNet(nn.Module):
-        def __init__(self):
-            super().__init__()
-            # Exceeds ViaDownloader's 2 MiB array threshold.
-            self.weight = nn.Parameter(torch.zeros(1024, 1024))
-    """
-)
-
 _INGESTION_PT_JOB_SCRIPT = textwrap.dedent(
     """
     import sys
-    from model import StreamedNet
+    import torch.nn as nn
+    from model import TinyNet
     from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
     from nvflare.app_common.workflows.fedavg import FedAvg
     from nvflare.app_opt.pt.job_config.model import PTModel
@@ -189,17 +177,19 @@ _INGESTION_PT_JOB_SCRIPT = textwrap.dedent(
     from nvflare.recipe.utils import extract_persistor_id
 
     workdir, command = sys.argv[1], sys.argv[2]
-    job = BaseFedJob(name="ext-ingestion-grace-e2e", min_clients=1)
-    pid = extract_persistor_id(job.to_server(PTModel(StreamedNet()), id="persistor"))
+    job = BaseFedJob(name="ext-task-deadline-e2e", min_clients=1)
+    model = TinyNet()
+    model.fc = nn.Linear(1024, 1024, bias=False)  # Exceeds ViaDownloader's 2 MiB array threshold.
+    pid = extract_persistor_id(job.to_server(PTModel(model), id="persistor"))
     job.to_server(FedAvg(num_clients=1, num_rounds=1, persistor_id=pid, task_name="train"))
     job.to_clients(
         ClientAPIExecutor(
             execution_mode="external_process",
             command=f"{command} custom/client.py",
             shutdown_timeout=5.0,
-            heartbeat_interval=0.01,
-            heartbeat_timeout=0.05,
-            task_wait_timeout=0.5,
+            heartbeat_interval=0.1,
+            heartbeat_timeout=0.5,
+            task_wait_timeout=3.0,
             params_exchange_format=ExchangeFormat.PYTORCH,
             server_expected_format=ExchangeFormat.NUMPY,
         ),
@@ -377,7 +367,7 @@ def test_external_process_completed_download_survives_delayed_materialization(tm
     jobdir = tmp_path / "job"
     jobdir.mkdir()
     (jobdir / "client.py").write_text(_INGESTION_PT_CLIENT_SCRIPT)
-    (jobdir / "model.py").write_text(_INGESTION_PT_MODEL_SCRIPT)
+    (jobdir / "model.py").write_text(_PT_MODEL_SCRIPT)
     (jobdir / "run_job.py").write_text(_INGESTION_PT_JOB_SCRIPT)
     workdir = tmp_path / "sim"
 
@@ -397,7 +387,7 @@ def test_external_process_completed_download_survives_delayed_materialization(tm
     assert "Finished FedAvg." in out, f"streamed task did not complete:\n{out[-4000:]}"
     assert "Aggregated 1/1 results" in out, f"server did not accept the trainer result:\n{out[-4000:]}"
     assert "trainer heartbeat timed out" not in out, f"materialization hit the heartbeat lease:\n{out[-4000:]}"
-    assert "task ingestion stalled" not in out, f"ingestion grace expired:\n{out[-4000:]}"
+    assert "TASK_READY deadline expired" not in out, f"task delivery deadline expired:\n{out[-4000:]}"
 
 
 @pytest.mark.skipif(not _sklearn_available(), reason="requires scikit-learn for the sklearn example")

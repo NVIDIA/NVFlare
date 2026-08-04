@@ -124,11 +124,10 @@ class ClientAPIExecutor(Executor):
             heartbeat_interval (float): out-of-process only (external_process/attach). Interval
                 (seconds) for session heartbeats.
             heartbeat_timeout (float): out-of-process only (external_process/attach). Session lease
-                timeout (seconds) on missed heartbeats. Streamed TASK_READY delivery gets a bounded
-                task-acceptance grace (design: "Heartbeat and Liveness").
-            task_wait_timeout (Optional[float]): Bound for the trainer to accept a delivered
-                task. For streamed tasks, this also bounds post-transfer ingestion; None uses the
-                streaming layer's 600-second idle timeout for that grace.
+                timeout (seconds) on missed heartbeats (design: "Heartbeat and Liveness").
+            task_wait_timeout (Optional[float]): Maximum idle wait for the trainer to accept a
+                delivered task, including payload download and materialization. Active source
+                downloads extend the wait. None uses the streaming layer's 600-second idle timeout.
             result_wait_timeout (Optional[float]): Control-side bound for retrieving the task
                 result. Payload transfer completion is governed by the shared transfer layer,
                 not by this value. None means no timeout.
