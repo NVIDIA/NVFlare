@@ -233,6 +233,7 @@ class ExternalProcessBackend(CellBackendBase):
                 self._send_abort(trainer, f"'{task_name}' is aborted, abort_signal_triggered")
                 if trainer is not None:
                     self._latch_abort(f"'{task_name}' aborted at entry, abort_signal_triggered")
+                self._finish_task_trainer(trainer, launch_once=True)
             return make_reply(ReturnCode.TASK_ABORTED)
 
         launch_once = context.launch_once
@@ -274,11 +275,16 @@ class ExternalProcessBackend(CellBackendBase):
             self._finish_task_trainer(trainer, launch_once)
 
     def _finish_task_trainer(self, trainer: Optional[_TrainerSession], launch_once: bool) -> None:
-        """Retire a per-task trainer without letting cleanup failure mask the task result."""
-        if launch_once or trainer is None:
+        """Retire a per-task trainer, or a persistent trainer after a terminal abort."""
+        if trainer is None or (launch_once and not self._abort):
             return
         try:
-            if trainer.result_source_live.is_set():
+            if launch_once:
+                # A persistent trainer cannot serve another task after the backend latches
+                # an abort. Stop it before execute() returns: abort teardown may destroy the
+                # CJ process without delivering END_RUN to this executor.
+                self._stop_trainer(trainer, natural_exit_wait=self._stop_wait_bound())
+            elif trainer.result_source_live.is_set():
                 self._reap_trainer_after_result(trainer)
             else:
                 self._stop_trainer(trainer, natural_exit_wait=self._stop_wait_bound())
@@ -711,7 +717,7 @@ class ExternalProcessBackend(CellBackendBase):
         return 0.0 if self._abort else self._shutdown_wait_bound()
 
     def _termination_grace(self) -> float:
-        return 0.0 if self._abort else self._context.stop_grace_period
+        return self._context.stop_grace_period
 
     def _result_source_disconnect_grace(self) -> float:
         """Return a nonzero disconnect grace for an accepted result source."""
