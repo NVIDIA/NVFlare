@@ -414,9 +414,10 @@ class SlurmJobManager:
                 self.adapter.cancel(handle.job_id, timeout=self.config.cancel_timeout)
             return JobReturnCode.UNKNOWN
 
-    def _abort_handle(self, handle: "SlurmJobHandle") -> None:
-        self.logger.info("user abort requested for Slurm job %s", handle.job_id)
-        handle._request_cancel(user_abort=True)
+    def _abort_handle(self, handle: "SlurmJobHandle", user_abort: bool = True) -> None:
+        if user_abort:
+            self.logger.info("user abort requested for Slurm job %s", handle.job_id)
+        handle._request_cancel(user_abort=user_abort)
         try:
             self._poll_handle(handle)
         except SlurmProtocolError:
@@ -473,6 +474,10 @@ class SlurmJobHandle(JobHandleSpec):
     def terminate(self):
         if self.terminal_result is None:
             self.manager._abort_handle(self)
+
+    def _terminate_for_heartbeat_cleanup(self):
+        if self.terminal_result is None:
+            self.manager._abort_handle(self, user_abort=False)
 
     def poll(self):
         try:
