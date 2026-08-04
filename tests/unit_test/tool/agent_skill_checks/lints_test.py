@@ -250,7 +250,7 @@ def test_run_v1_lints_parses_quoted_nvflare_command_with_shlex(tmp_path):
     _write_skill(
         tmp_path / "skills",
         "nvflare-command-skill",
-        body='Run `nvflare agent inspect "./my project/train.py" --redact on`.\n',
+        body='Run `nvflare agent inspect source "./my project/train.py" --redact on`.\n',
     )
 
     result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_COMMAND_DRIFT])
@@ -754,13 +754,39 @@ def test_run_v1_lints_undrifted_command_in_apostrophe_line_passes(tmp_path):
     _write_skill(
         tmp_path / "skills",
         "nvflare-command-skill",
-        body="Run `nvflare agent inspect` to check the server's state.\n",
+        body="Run `nvflare agent inspect source <path>` to check the server's state.\n",
     )
 
     result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_COMMAND_DRIFT])
 
     assert result["status"] == "ok"
     assert result["findings"] == []
+
+
+def test_run_v1_lints_rejects_unknown_inspect_capability(tmp_path):
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-command-skill",
+        body="Run `nvflare agent inspect bogus <path>`.\n",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_COMMAND_DRIFT])
+
+    finding = _finding(result, LINT_SKILL_COMMAND_DRIFT, "skill-command-drift")
+    assert "unknown nvflare agent inspect capability 'bogus'" in finding["message"]
+
+
+def test_run_v1_lints_rejects_removed_generic_inspect_command(tmp_path):
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-command-skill",
+        body="Run `nvflare agent inspect ./train.py`.\n",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_COMMAND_DRIFT])
+
+    finding = _finding(result, LINT_SKILL_COMMAND_DRIFT, "skill-command-drift")
+    assert "requires a source or data capability" in finding["message"]
 
 
 def test_iter_files_no_follow_skips_symlinked_file(tmp_path):

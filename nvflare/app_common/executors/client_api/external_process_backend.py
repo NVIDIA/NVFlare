@@ -29,14 +29,14 @@ import time
 import uuid
 from typing import Any, Optional, Sequence, Tuple, Union
 
-from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReturnCode, ServerCommandNames
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
+from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext
+from nvflare.app_common.executors.client_api.cell_backend import CellBackendBase, CellSession, CellTask
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.client.cell.bootstrap import (
     BOOTSTRAP_FILE_ENV_VAR,
@@ -47,9 +47,7 @@ from nvflare.client.cell.bootstrap import (
     write_bootstrap_config,
 )
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
-from nvflare.client.config import ConfigKey
-from nvflare.client.decomposers import register_framework_decomposers
-from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
@@ -58,7 +56,6 @@ from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY, LazyDownloadRef
-from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_traceback
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
 from nvflare.utils.process_utils import log_subprocess_output, prepare_subprocess_command
@@ -120,14 +117,12 @@ class _TaskReadyCancelSignal(Signal):
             return super().triggered
 
 
-class _TrainerSession:
+class _TrainerSession(CellSession):
     """One launched trainer process and its (at most one) authenticated protocol session."""
 
     def __init__(self, token: str, trainer_fqcn: str):
+        super().__init__(trainer_fqcn)
         self.token = token
-        self.trainer_fqcn = trainer_fqcn
-        self.session_id: Optional[str] = None
-        self.ready = threading.Event()
         # latched when the HELLO of THIS launch's own process is rejected, so the launch
         # wait fails fast instead of waiting out launch_timeout
         self.reject_reason: Optional[str] = None
@@ -140,7 +135,6 @@ class _TrainerSession:
         # Conservative CJ-side latch: an accepted result may still be inside the
         # trainer's send() acknowledgement/payload barrier. SHUTDOWN reply truth clears
         # it once the trainer has crossed that barrier.
-        self.result_source_live = threading.Event()
         self.reaper_thread: Optional[threading.Thread] = None
         self.shutdown_requested = threading.Event()
         self._shutdown_request_lock = threading.Lock()
@@ -148,26 +142,10 @@ class _TrainerSession:
         self._stop_lock = threading.Lock()
         self._cleanup_lock = threading.Lock()
         self._cleaned = False
-        self._activity_lock = threading.Lock()
-        self._last_peer_activity: Optional[float] = None
-
-    def touch_peer_activity(self) -> None:
-        with self._activity_lock:
-            self._last_peer_activity = time.monotonic()
-
-    def peer_silent_for(self) -> Optional[float]:
-        with self._activity_lock:
-            last_activity = self._last_peer_activity
-        return None if last_activity is None else max(0.0, time.monotonic() - last_activity)
 
 
-class _TaskContext:
-    """Correlation state for the one task execute() is currently running."""
-
-    def __init__(self, task_id: str):
-        self.task_id = task_id
-        self.result_ready = threading.Event()
-        self.result: Optional[Shareable] = None
+# Kept as a private compatibility alias for existing backend tests/extensions.
+_TaskContext = CellTask
 
 
 def _contains_lazy_download_ref(value) -> bool:
@@ -180,23 +158,12 @@ def _contains_lazy_download_ref(value) -> bool:
     return False
 
 
-class ExternalProcessBackend(ClientAPIBackendSpec):
+class ExternalProcessBackend(CellBackendBase):
     """Launches and owns the external trainer process/group, bridged over the CJ cell."""
 
     def __init__(self):
         super().__init__()
-        self.logger = get_obj_logger(self)
-        self._context: Optional[ClientAPIBackendContext] = None
-        self._engine = None
-        self._cell = None
-        self._cj_fqcn: Optional[str] = None
         self._connect_url: Optional[str] = None
-        self._pass_through_routes: tuple[Tuple[str, str], ...] = ()
-        self._owned_pass_through_routes: set[Tuple[str, str]] = set()
-        self._owned_relay_pass_through_routes: set[Tuple[str, str]] = set()
-        self._secure_mode = False
-        self._job_id: Optional[str] = None
-        self._site_name: Optional[str] = None
         self._app_dir: Optional[str] = None
         self._custom_dir: Optional[str] = None
         self._active_launch: Optional[_TrainerSession] = None
@@ -205,55 +172,24 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         self._result_reapers = set()
         self._result_reapers_lock = threading.Lock()
         self._launch_seq = 0
-        self._current_task: Optional[_TaskContext] = None
-        self._task_lock = threading.Lock()
-        self._execute_gate = threading.Lock()
         self._abort = False
         self._abort_reason: Optional[str] = None
-        self._finalized = False
-        # Cell request callbacks cannot be unregistered, so late messages need an explicit gate.
-        self._closed = False
 
     # ------------------------------------------------------------------ lifecycle
 
     def initialize(self, context: ClientAPIBackendContext, fl_ctx: FLContext) -> None:
-        self._context = context
         if not context.command:
             raise ValueError("external_process mode requires a non-empty command")
 
         try:
-            self._engine = fl_ctx.get_engine()
-            if self._engine is None:
-                raise RuntimeError("no engine available in fl_ctx")
-            cell = self._engine.get_cell()
-            if cell is None:
-                raise RuntimeError("no Cell available from the engine: external_process mode requires the CJ cell")
-            self._cell = cell
-            self._cj_fqcn = cell.get_fqcn()
-
-            # SERVER_COMMAND also carries unrelated request types (notably
-            # subordinate-client SUBMIT_UPDATE), so never opt in the whole channel.
-            task_route = (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK)
-            result_route = (CHANNEL, Topic.RESULT_READY)
-            self._pass_through_routes = (task_route, result_route)
-            self._secure_mode = bool(fl_ctx.get_prop(FLContextKey.SECURE_MODE, False))
-            for route in self._pass_through_routes:
-                if route not in cell.decode_pass_through_topics:
-                    self._owned_pass_through_routes.add(route)
-                cell.decode_pass_through_topics.add(route)
-                if self._secure_mode:
-                    if route not in cell.decode_pass_through_relay_topics:
-                        self._owned_relay_pass_through_routes.add(route)
-                    cell.decode_pass_through_relay_topics.add(route)
+            self._initialize_cell(context, fl_ctx, "external_process")
+            cell = self._cell
 
             workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-            job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
-            if workspace is None or not job_id:
+            if workspace is None:
                 raise RuntimeError("workspace/job id not available in fl_ctx")
-            self._job_id = job_id
-            self._site_name = fl_ctx.get_identity_name()
-            self._app_dir = workspace.get_app_dir(job_id)
-            self._custom_dir = workspace.get_app_custom_dir(job_id)
+            self._app_dir = workspace.get_app_dir(self._job_id)
+            self._custom_dir = workspace.get_app_custom_dir(self._job_id)
 
             cell.make_internal_listener()
             connect_url = cell.get_internal_listener_url()
@@ -261,10 +197,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 raise RuntimeError("CJ cell has no internal listener url for the trainer to connect to")
             self._connect_url = connect_url
 
-            self._register_protocol_cbs(cell)
-            register_framework_decomposers(context.params_exchange_format, context.server_expected_format, self.logger)
-
-            context.executor.set_analytics_fire_fed_event(True)
+            cell.register_request_cb(channel=CHANNEL, topic=Topic.HELLO, cb=self._handle_hello)
 
             if context.launch_once:
                 self._launch_trainer(timeout=context.launch_timeout)
@@ -694,15 +627,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 self._active_launch = None
 
     def _disable_task_pass_through(self) -> None:
-        cell = self._cell
-        if cell is not None:
-            for route in self._owned_pass_through_routes:
-                cell.decode_pass_through_topics.discard(route)
-            for route in self._owned_relay_pass_through_routes:
-                cell.decode_pass_through_relay_topics.discard(route)
-        self._pass_through_routes = ()
-        self._owned_pass_through_routes.clear()
-        self._owned_relay_pass_through_routes.clear()
+        self._disable_pass_through()
 
     def _process_group_alive(self, trainer: _TrainerSession) -> bool:
         """Return group liveness even when a launcher exits before its workers."""
@@ -833,7 +758,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         executor = context.executor
         launch_once = context.launch_once
 
-        task = _TaskContext(task_id=uuid.uuid4().hex)
+        task = CellTask(task_id=uuid.uuid4().hex)
 
         shareable.set_header(FLMetaKey.JOB_ID, fl_ctx.get_job_id())
         shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())
@@ -1065,21 +990,8 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
 
     # ------------------------------------------------------------------ control-plane handlers
 
-    def _register_protocol_cbs(self, cell) -> None:
-        # NOTE: cellnet request callbacks cannot be unregistered. The CJ cell is job-scoped
-        # and every state-mutating handler is gated on self._closed after backend teardown.
-        cell.register_request_cb(channel=CHANNEL, topic=Topic.HELLO, cb=self._handle_hello)
-        cell.register_request_cb(channel=CHANNEL, topic=Topic.RESULT_READY, cb=self._handle_result_ready)
-        cell.register_request_cb(channel=CHANNEL, topic=Topic.LOG, cb=self._handle_log)
-        cell.register_request_cb(channel=CHANNEL, topic=Topic.HEARTBEAT, cb=self._handle_heartbeat)
-
-    @staticmethod
-    def _protocol_reply(reply_topic: str, **fields):
-        body = {MsgKey.REPLY_TOPIC: reply_topic}
-        body.update(fields)
-        # semantic accept/reject rides an rc=OK reply body (see defs.Topic: reply-type
-        # messages are modeled as request replies); cell-level rc is for transport faults
-        return make_cell_reply(CellReturnCode.OK, body=body)
+    def _get_protocol_session(self) -> Optional[_TrainerSession]:
+        return self._active_launch
 
     def _handle_hello(self, request):
         """Validates HELLO per the V1 trusted-host proof: plain launch-token match, plus
@@ -1162,125 +1074,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             trainer.reject_reason = reason
         return self._protocol_reply(Topic.HELLO_REJECTED, **{MsgKey.REASON: reason})
 
-    def _validate_session_msg(self, request, payload) -> Tuple[Optional[_TrainerSession], Optional[str]]:
-        """Binds a post-HELLO message to the current authenticated session."""
-        trainer = self._active_launch
-        if trainer is None or not trainer.ready.is_set() or trainer.session_id is None:
-            return None, "no active trainer session"
-        origin = request.get_header(MessageHeaderKey.ORIGIN) or ""
-        if origin != trainer.trainer_fqcn:
-            return None, f"unexpected origin {origin!r}"
-        if payload.get(MsgKey.SESSION_ID) != trainer.session_id:
-            return None, "stale or unknown session id"
-        trainer.touch_peer_activity()
-        return trainer, None
-
-    def _handle_result_ready(self, request):
-        """Accept a possibly lazy result; attach retries require paired receiver deduplication."""
-        if self._closed:
-            return self._protocol_reply(Topic.RESULT_REJECTED, **{MsgKey.REASON: "backend is closed"})
-        payload = request.payload
-        if not isinstance(payload, dict):
-            return make_cell_reply(CellReturnCode.INVALID_REQUEST, error="RESULT_READY payload must be a dict")
-
-        trainer, reject_reason = self._validate_session_msg(request, payload)
-        if reject_reason:
-            self.logger.warning(f"rejecting RESULT_READY: {reject_reason}")
-            return self._protocol_reply(Topic.RESULT_REJECTED, **{MsgKey.REASON: reject_reason})
-
-        task_id = payload.get(MsgKey.TASK_ID)
-        result = payload.get(MsgKey.RESULT)
-        # Validate and commit atomically against task retirement and teardown.
-        with self._task_lock:
-            if self._closed:
-                return self._protocol_reply(Topic.RESULT_REJECTED, **{MsgKey.REASON: "backend is closed"})
-            task = self._current_task
-            if task is None or task_id != task.task_id:
-                reason = f"no current task matching task_id {task_id!r}"
-                self.logger.warning(f"rejecting RESULT_READY: {reason}")
-                return self._protocol_reply(Topic.RESULT_REJECTED, **{MsgKey.REASON: reason})
-
-            if task.result is not None:
-                return self._protocol_reply(
-                    Topic.RESULT_REJECTED,
-                    **{MsgKey.REASON: "a result was already accepted for this task"},
-                )
-            if not isinstance(result, Shareable):
-                return self._protocol_reply(
-                    Topic.RESULT_REJECTED,
-                    **{MsgKey.REASON: "invalid result envelope: Shareable result required"},
-                )
-            task.result = result
-            # Acceptance precedes send settlement, even for an inline result.
-            trainer.result_source_live.set()
-            task.result_ready.set()
-        return self._protocol_reply(Topic.RESULT_ACCEPTED)
-
-    def _handle_log(self, request):
-        """Route trainer LOG data without raising into the Cell dispatcher."""
-        if self._closed:
-            return None
-        try:
-            payload = request.payload
-            if not isinstance(payload, dict):
-                self.logger.error(f"invalid LOG data format, expecting Dict, but got {type(payload)}")
-                return None
-            trainer, reject_reason = self._validate_session_msg(request, payload)
-            if reject_reason:
-                self.logger.warning(f"dropping LOG data: {reject_reason}")
-                return None
-            record = {k: v for k, v in payload.items() if k != MsgKey.SESSION_ID}
-            if "key" in record:
-                record["tag"] = record.pop("key")
-            dxo = create_analytic_dxo(**record)
-            with self._engine.new_context() as fl_ctx:
-                self._context.executor.fire_log_analytics(fl_ctx, dxo)
-        except Exception:
-            self.logger.error(f"failed to process trainer LOG data: {secure_format_traceback()}")
-        return None
-
-    def _handle_heartbeat(self, request):
-        if self._closed:
-            return self._protocol_reply(Topic.ERROR, **{MsgKey.REASON: "backend is closed"})
-        payload = request.payload
-        if not isinstance(payload, dict):
-            return make_cell_reply(CellReturnCode.INVALID_REQUEST, error="HEARTBEAT payload must be a dict")
-        trainer, reject_reason = self._validate_session_msg(request, payload)
-        if reject_reason:
-            self.logger.warning(f"rejecting HEARTBEAT: {reject_reason}")
-            return self._protocol_reply(Topic.ERROR, **{MsgKey.REASON: reject_reason})
-        return self._protocol_reply(Topic.HEARTBEAT, **{MsgKey.SESSION_ID: trainer.session_id})
-
-    # ------------------------------------------------------------------ helpers
-
-    def _send_abort(self, trainer: Optional[_TrainerSession], reason: str) -> None:
-        if trainer is None or trainer.session_id is None:
-            return
-        try:
-            self._cell.fire_and_forget(
-                channel=CHANNEL,
-                topic=Topic.ABORT,
-                targets=[trainer.trainer_fqcn],
-                message=new_cell_message({}, {MsgKey.SESSION_ID: trainer.session_id, MsgKey.REASON: reason}),
-                optional=True,
-            )
-        except Exception:
-            self.logger.error(secure_format_traceback())
-
     def _latch_abort(self, reason: str) -> None:
         self._abort = True
         if self._abort_reason is None:
             self._abort_reason = reason
-
-    def _task_exchange_config(self) -> dict:
-        context = self._context
-        return {
-            ConfigKey.TRAIN_WITH_EVAL: context.train_with_evaluation,
-            ConfigKey.EXCHANGE_FORMAT: context.params_exchange_format,
-            ConfigKey.SERVER_EXPECTED_FORMAT: context.server_expected_format,
-            ConfigKey.TRANSFER_TYPE: context.params_transfer_type,
-            ConfigKey.TRAIN_TASK_NAME: context.train_task_name,
-            ConfigKey.EVAL_TASK_NAME: context.evaluate_task_name,
-            ConfigKey.SUBMIT_MODEL_TASK_NAME: context.submit_model_task_name,
-            ConfigKey.LAUNCH_ONCE: context.launch_once,
-        }

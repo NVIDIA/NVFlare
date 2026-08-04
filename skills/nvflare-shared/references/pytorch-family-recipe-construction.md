@@ -188,18 +188,23 @@ the client emits that exact metric, and ask or fail closed when the metric
 direction is unclear — not merely because the only available metric is a loss.
 Do not pass `key_metric` when the recipe does not expose it.
 
-When best-model selection is not requested, or no source-backed override is
-justified, leave `key_metric` unspecified and retain the recipe's documented
-default. Do not add a skill-specific sentinel or claim that omitting the
-argument disables the recipe's model selector.
+Resolve model selection to exactly one state before constructing the recipe:
 
-Retaining the default leaves the recipe's model selector active on that default
-key. When the generated client does not deliver that key, the selector logs a
-per-round warning naming the missing metric and the run finishes without a
-best-model artifact. The run still succeeds; this is expected behavior, not a
-conversion failure. Report it as a known limitation of the selected metric
-configuration instead of suppressing the warning, renaming a client metric to
-match the default, or switching recipes.
+- **Disabled:** Best-model selection is not requested. When the recipe exposes
+  `key_metric` and documents empty-string disabling, pass `key_metric=""`.
+  Omitting the argument is not disabling when the recipe has a non-empty
+  default. If the selected recipe cannot disable selection, report the
+  capability gap.
+- **Metric:** Best-model selection is requested and an exact higher-is-better
+  client metric is available. Pass that non-empty key.
+- **Recipe default:** Accept the documented default only deliberately, when the
+  client delivers that exact key. Omit `key_metric` and report the resolved
+  default; never use this state as a fallback for an unavailable metric.
+
+After export, inspect the server configuration. The disabled state must contain
+no active model-selector component. The metric and recipe-default states must
+contain a selector with the resolved key. Treat a mismatch, or missing-metric
+warnings from a supposedly disabled job, as validation failure.
 
 A correctly negated key can also draw a startup warning that it "looks like a
 lower-is-better metric". The model selector applies a name heuristic that
