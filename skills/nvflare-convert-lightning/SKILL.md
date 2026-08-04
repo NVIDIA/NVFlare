@@ -55,7 +55,7 @@ distribution; handle conversion later as a separate request.
    Load `../nvflare-shared/references/conversion-workflow.md` only for a non-standard
    case that needs its detailed rerun, data-location, authorization, or
    missing-semantics guidance.
-2. Inspect before editing with `nvflare agent inspect <path> --format json`
+2. Inspect before editing with `nvflare agent inspect source <path> --format json`
    plus direct reading; fact extraction is static. Use
    `references/lightning-detection.md` to confirm Lightning versus plain
    PyTorch and hand off to `nvflare-convert-pytorch` when no Lightning evidence

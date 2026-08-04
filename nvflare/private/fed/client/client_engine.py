@@ -387,7 +387,7 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
     def get_client_name(self):
         return self.client.client_name
 
-    def abort_app(self, job_id: str) -> str:
+    def abort_app(self, job_id: str, heartbeat_cleanup: bool = False) -> str:
         status = self.client_executor.get_status(job_id)
         if status == ClientStatus.STOPPED:
             return "Client app already stopped."
@@ -395,7 +395,7 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         if status == ClientStatus.NOT_STARTED:
             return "Client app has not started."
 
-        self.client_executor.abort_app(job_id)
+        self.client_executor.abort_app(job_id, heartbeat_cleanup=heartbeat_cleanup)
 
         return "Abort signal has been sent to the client App."
 

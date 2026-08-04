@@ -40,7 +40,7 @@ debugging.
 2. If mode or evidence is ambiguous, ask for the missing mode, job ID, local
    log path, simulation output path, or startup-kit context before diagnosing.
 3. For simulation mode, inspect local artifacts only. Use
-   `nvflare agent inspect <path> --format json` when a project or job path is
+   `nvflare agent inspect source <path> --format json` when a project or job path is
    available, then read bounded local logs and generated job/config artifacts.
    For completed simulations, check the server workspace's
    `simulate_job/metrics/` directory for `metrics_summary.json` and

@@ -71,7 +71,10 @@ _SENSITIVE_KEY_NAMES = {
     "secret_key",
     "session_token",
 }
-_SENSITIVE_TEXT_VALUE_PATTERN = r'"(?:\\.|[^"\\])*(?:"|$)|' r"'(?:\\.|[^'\\])*(?:'|$)|" r"[^\s,;]+"
+_QUOTED_TEXT_VALUE_PATTERN = (
+    r'"(?:\\[^\r\n]|[^"\\\r\n])*(?:"|(?=[\r\n]|\Z))|' r"'(?:\\[^\r\n]|[^'\\\r\n])*(?:'|(?=[\r\n]|\Z))"
+)
+_SENSITIVE_TEXT_VALUE_PATTERN = rf"{_QUOTED_TEXT_VALUE_PATTERN}|[^\s,;]+"
 _SENSITIVE_ASSIGNMENT_PATTERN = re.compile(
     r"(?i)\b(?P<prefix>(?:"
     r"password|passwd|passphrase|credential|credentials|"
@@ -88,10 +91,10 @@ _SENSITIVE_CLI_OPTION_PATTERN = re.compile(
     r")(?:\s+|=))"
     rf"(?P<value>{_SENSITIVE_TEXT_VALUE_PATTERN})"
 )
-_BEARER_TOKEN_PATTERN = re.compile(r"(?i)\b(authorization[\"']?\s*:\s*[\"']?bearer\s+)([A-Za-z0-9._~+/=-]+)")
+_BEARER_TOKEN_PATTERN = re.compile(r"(?i)\b(authorization[\"']?\s*[:=]\s*[\"']?bearer\s+)([A-Za-z0-9._~+/=-]+)")
 _AUTH_VALUE_PATTERN = re.compile(
     r"(?i)(?P<prefix>\bauthorization[\"']?\s*[:=](?!\s*[\"']?bearer\s+)\s*)"
-    r"(?P<value>\"(?:\\.|[^\"\\])*(?:\"|$)|'(?:\\.|[^'\\])*(?:'|$)|[^\r\n]+)"
+    rf"(?P<value>{_QUOTED_TEXT_VALUE_PATTERN}|[^\r\n]+)"
 )
 _PEM_PRIVATE_KEY_PATTERN = re.compile(
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",

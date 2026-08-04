@@ -11,6 +11,10 @@ provided.
 * [Collab API](./collab/README.md)
   * Advanced examples for custom server workflows, in-time aggregation, and decentralized client-to-client calls.
 
+## Client API
+* [Attach an externally managed trainer](./client-api-attach/README.md)
+  * Connects the same Client API training loop through either a direct network profile or shared-file rendezvous.
+
 ## FL algorithms
 * [Federated Learning with CIFAR-10](./cifar10/README.md)
   * [Simulated Federated Learning with CIFAR-10](./cifar10/pt/cifar10-sim/README.md)

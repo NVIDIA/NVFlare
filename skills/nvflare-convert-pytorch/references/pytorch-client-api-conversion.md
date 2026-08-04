@@ -9,7 +9,7 @@ tensor payload rules before changing model exchange code.
 
 Use this path for plain PyTorch conversion:
 
-1. Confirm PyTorch routing with `nvflare agent inspect`.
+1. Confirm PyTorch routing with `nvflare agent inspect source`.
 2. Select a PyTorch-family recipe with `nvflare recipe list/show`.
 3. Generate `client.py` with `nvflare.client` `receive` / `send` and
    `FLModel(params=...)` as the model exchange path.
