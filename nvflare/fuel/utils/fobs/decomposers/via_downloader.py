@@ -300,6 +300,16 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
     ) -> tuple[str, dict]:
         pass
 
+    def _get_download_kwargs(self, fobs_ctx: dict) -> dict:
+        """Return optional context-aware arguments for ``download``.
+
+        The default must remain empty because external subclasses may implement
+        the legacy ``download`` signature without accepting arbitrary keyword
+        arguments. Subclasses that need call-scoped FOBS context can explicitly
+        opt in by overriding this hook.
+        """
+        return {}
+
     def supported_dots(self):
         return [self.get_download_dot()]
 
@@ -372,25 +382,28 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         # tensor data ever materialised on CJ.
         if isinstance(target, LazyDownloadRef):
             fobs_ctx = manager.fobs_ctx
+            relay = target.relay
+            if fobs.FOBSContextKey.RELAY_PASS_THROUGH in fobs_ctx:
+                relay = bool(fobs_ctx[fobs.FOBSContextKey.RELAY_PASS_THROUGH])
             lazy_batch_key = f"{self.prefix}{_LAZY_BATCH_CTX_SUFFIX}"
             if lazy_batch_key not in fobs_ctx:
                 # First LazyDownloadRef of this batch: register a post-callback
                 # that will add the single shared datum (fqcn + ref_id) after all
                 # items have been serialised.
-                fobs_ctx[lazy_batch_key] = {"fqcn": target.fqcn, "ref_id": target.ref_id, "relay": target.relay}
+                fobs_ctx[lazy_batch_key] = {"fqcn": target.fqcn, "ref_id": target.ref_id, "relay": relay}
                 manager.register_post_cb(self._finalize_lazy_batch)
             else:
                 lazy_batch = fobs_ctx[lazy_batch_key]
                 if (
                     lazy_batch["fqcn"] != target.fqcn
                     or lazy_batch["ref_id"] != target.ref_id
-                    or lazy_batch.get("relay", False) != target.relay
+                    or lazy_batch.get("relay", False) != relay
                 ):
                     raise RuntimeError(
                         "LazyDownloadRef payload mixes download batches: "
                         f"existing fqcn={lazy_batch['fqcn']} ref_id={lazy_batch['ref_id']}, "
                         f"relay={lazy_batch.get('relay', False)}, "
-                        f"new fqcn={target.fqcn} ref_id={target.ref_id} relay={target.relay}"
+                        f"new fqcn={target.fqcn} ref_id={target.ref_id} relay={relay}"
                     )
 
             self.logger.debug(
@@ -886,6 +899,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         stream_progress_cb = self._make_stream_progress_cb(fobs_ctx, ref_id)
 
         self.logger.debug(f"trying to download: {ref_id=} {fqcn=}")
+        download_kwargs = self._get_download_kwargs(fobs_ctx)
         err, items = self.download(
             from_fqcn=fqcn,
             ref_id=ref_id,
@@ -893,6 +907,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             cell=cell,
             abort_signal=abort_signal,
             progress_cb=stream_progress_cb,
+            **download_kwargs,
         )
         if err:
             self.logger.error(f"failed to download from {fqcn} for source {ref}: {err}")

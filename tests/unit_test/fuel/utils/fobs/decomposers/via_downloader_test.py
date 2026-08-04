@@ -55,6 +55,7 @@ class _DummyViaDownloader(ViaDownloaderDecomposer):
         optional=False,
         abort_signal=None,
         progress_cb=None,
+        fobs_ctx: dict = None,
     ) -> tuple[str, dict]:
         raise NotImplementedError
 
@@ -66,6 +67,35 @@ class _DummyViaDownloader(ViaDownloaderDecomposer):
 
     def native_recompose(self, data: bytes, manager=None):
         return data
+
+
+class _LegacyViaDownloader(_DummyViaDownloader):
+    """Downloader implementing the public signature from before FOBS context support."""
+
+    def __init__(self):
+        super().__init__()
+        self.download_call = None
+
+    def download(
+        self,
+        from_fqcn: str,
+        ref_id: str,
+        per_request_timeout: float,
+        cell,
+        secure=False,
+        optional=False,
+        abort_signal=None,
+        progress_cb=None,
+    ) -> tuple[str, dict]:
+        self.download_call = {
+            "from_fqcn": from_fqcn,
+            "ref_id": ref_id,
+            "per_request_timeout": per_request_timeout,
+            "cell": cell,
+            "abort_signal": abort_signal,
+            "progress_cb": progress_cb,
+        }
+        return None, {"T0": "downloaded"}
 
 
 class _ItemsWithNonCallableLazyRef:
@@ -427,6 +457,29 @@ class TestForwardProgressCallback:
 
 
 class TestConcreteViaDownloaderProgressCallback:
+    def test_remote_download_preserves_legacy_subclass_signature(self):
+        decomposer = _LegacyViaDownloader()
+        cell = object()
+        fobs_ctx = {
+            fobs.FOBSContextKey.CELL: cell,
+            fobs.FOBSContextKey.DOWNLOAD_REQ_TIMEOUT: 1.0,
+        }
+
+        result = decomposer._download_from_remote_cell(
+            fobs_ctx=fobs_ctx,
+            ref={"fqcn": "source", "ref_id": "ref-1"},
+        )
+
+        assert result == {"T0": "downloaded"}
+        assert decomposer.download_call == {
+            "from_fqcn": "source",
+            "ref_id": "ref-1",
+            "per_request_timeout": 1.0,
+            "cell": cell,
+            "abort_signal": None,
+            "progress_cb": None,
+        }
+
     def test_numpy_decomposer_passes_progress_callback_to_download_object(self, monkeypatch):
         from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
         from nvflare.app_common.np import np_downloader
@@ -515,6 +568,36 @@ class TestConcreteViaDownloaderProgressCallback:
         assert err is None
         assert result is not None
         assert observed["progress_cb"] is progress_cb
+        result.cleanup()
+
+    def test_tensor_decomposer_honors_call_scoped_disk_offload(self, monkeypatch, tmp_path):
+        pytest.importorskip("torch")
+        from nvflare.app_opt.pt import tensor_downloader
+        from nvflare.app_opt.pt.decomposers import TensorDecomposer
+
+        class FakeCell:
+            def get_fobs_context(self):
+                return {
+                    fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: False,
+                }
+
+        def fake_download_object(**kwargs):
+            kwargs["consumer"].result = {}
+            kwargs["consumer"].download_completed(kwargs["ref_id"])
+
+        monkeypatch.setattr(tensor_downloader, "download_object", fake_download_object)
+
+        result = TensorDecomposer()._download_from_remote_cell(
+            fobs_ctx={
+                fobs.FOBSContextKey.CELL: FakeCell(),
+                fobs.FOBSContextKey.DOWNLOAD_REQ_TIMEOUT: 1.0,
+                fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: True,
+                tensor_downloader._TENSOR_DISK_OFFLOAD_ROOT_DIR: str(tmp_path),
+            },
+            ref={"fqcn": "trainer", "ref_id": "result-ref"},
+        )
+
+        assert result is not None
         result.cleanup()
 
 

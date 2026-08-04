@@ -122,7 +122,7 @@ class TestAPIContextSelection:
             (
                 {
                     BootstrapKey.SCHEMA_VERSION: BOOTSTRAP_SCHEMA_VERSION,
-                    BootstrapKey.EXECUTION_MODE: "attach",
+                    BootstrapKey.EXECUTION_MODE: "bogus",
                 },
                 "unsupported Client API bootstrap execution_mode",
             ),

@@ -500,6 +500,24 @@ class TestInitializeAndFinalize:
         assert process.returncode == 0
         assert env.harness.signals_sent() == [], "no signals for a trainer that exited naturally"
 
+    def test_abort_preserves_finalize_gate_ordering_and_skips_natural_exit_wait(self, env):
+        backend, _ = _initialized_backend(env, shutdown_timeout=30.0)
+        process = env.harness.processes[0]
+        backend._latch_abort("job aborted")
+        execute_gate = MagicMock()
+        execute_gate.acquire.return_value = True
+        backend._execute_gate = execute_gate
+
+        backend.finalize(FLContext())
+
+        gate_timeout = execute_gate.acquire.call_args.kwargs["timeout"]
+        assert gate_timeout == 30.0
+        assert process.wait_timeouts == []
+        assert [request for request in env.cell.sent if request[0] == Topic.SHUTDOWN] == []
+        assert len([message for message in env.cell.fired if message[0] == Topic.SHUTDOWN]) == 1
+        assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
+        execute_gate.release.assert_called_once_with()
+
     def test_finalize_does_not_kill_an_accepted_lazy_result_source(self, env):
         backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
         process = env.harness.processes[0]
@@ -564,7 +582,7 @@ class TestInitializeAndFinalize:
         def natural_wait(timeout=None):
             wait_entered.set()
             assert ebp._DEFAULT_SHUTDOWN_TIMEOUT - 1.0 < timeout <= ebp._DEFAULT_SHUTDOWN_TIMEOUT
-            assert release_exit.wait(2.0)
+            release_exit.wait()
             process.exit(0)
             return 0
 
@@ -579,11 +597,14 @@ class TestInitializeAndFinalize:
         finalize_thread = threading.Thread(target=backend.finalize, args=(FLContext(),))
         finalize_thread.start()
 
-        assert wait_entered.wait(1.0)
-        assert env.harness.signals_sent() == []
-        assert finalize_thread.is_alive()
-
-        release_exit.set()
+        try:
+            assert wait_entered.wait(2.0)
+            assert env.harness.signals_sent() == []
+            assert finalize_thread.is_alive()
+        finally:
+            # Always release the mocked wait, including when an assertion fails, so
+            # test-runner scheduling cannot turn this synchronization into SIGTERM.
+            release_exit.set()
         finalize_thread.join(timeout=2.0)
         assert not finalize_thread.is_alive()
         assert env.harness.signals_sent() == []
@@ -772,6 +793,31 @@ class TestInitializeAndFinalize:
 
         backend.finalize(FLContext())
 
+        if os.name == "posix":
+            assert env.harness.signals_sent() == [
+                (env.harness.processes[0].pid, signal.SIGTERM),
+                (env.harness.processes[0].pid, signal.SIGKILL),
+            ]
+
+    @pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
+    def test_abort_escalates_sigterm_to_sigkill_without_configured_grace(self, env, monkeypatch):
+        backend, _ = _initialized_backend(env, stop_grace_period=30.0)
+        backend._latch_abort("job aborted")
+        monkeypatch.setattr(env.harness, "killpg", lambda pgid, sig: env.harness.killpg_calls.append((pgid, sig)))
+        monkeypatch.setattr(ebp.os, "killpg", env.harness.killpg, raising=False)
+        monkeypatch.setattr(ebp, "_LOG_THREAD_JOIN_TIMEOUT", 0.0)
+        await_timeouts = []
+        real_await_group_exit = backend._await_group_exit
+
+        def record_await_timeout(trainer, timeout):
+            await_timeouts.append(timeout)
+            return real_await_group_exit(trainer, timeout)
+
+        monkeypatch.setattr(backend, "_await_group_exit", record_await_timeout)
+
+        backend.finalize(FLContext())
+
+        assert await_timeouts == [0.0, 0.0]
         if os.name == "posix":
             assert env.harness.signals_sent() == [
                 (env.harness.processes[0].pid, signal.SIGTERM),
@@ -1050,6 +1096,27 @@ class TestHeartbeatAndOperationalLiveness:
             }
             assert trainer.peer_silent_for() < 0.5
         finally:
+            backend.finalize(FLContext())
+
+    def test_heartbeat_cannot_clear_external_process_result_barrier(self, env):
+        backend, _ = _initialized_backend(env)
+        trainer = backend._active_launch
+        try:
+            trainer.result_source_live.set()
+
+            reply = env.cell.deliver(
+                Topic.HEARTBEAT,
+                trainer.trainer_fqcn,
+                {
+                    MsgKey.SESSION_ID: trainer.session_id,
+                    MsgKey.RESULT_SOURCE_LIVE: False,
+                },
+            )
+
+            assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.HEARTBEAT
+            assert trainer.result_source_live.is_set()
+        finally:
+            trainer.result_source_live.clear()
             backend.finalize(FLContext())
 
     def test_missing_heartbeat_bounds_unlimited_result_wait(self, env):
@@ -1610,8 +1677,81 @@ class TestExecute:
         assert env.harness.processes == [], "no trainer process may be started after finalize set _closed"
         assert box["r"].get_return_code() == ReturnCode.EXECUTION_EXCEPTION
 
-    def test_finalize_stops_process_returned_after_launch_cleanup(self, env, monkeypatch):
-        """A process whose Popen returns after finalize cleanup must not be orphaned."""
+    def test_closed_launch_path_does_not_self_deadlock(self, env, monkeypatch):
+        """Launch releases its stop lock before exception cleanup reacquires it."""
+        backend, fl_ctx = _initialized_backend(env, launch_once=False, shutdown_timeout=0.0)
+        in_write = threading.Event()
+        let_write_finish = threading.Event()
+        launch_has_stop_lock = threading.Event()
+        let_launch_check_closed = threading.Event()
+        finalize_reached_gate = threading.Event()
+        real_write = ebp.write_bootstrap_config
+
+        def hooked_write(path, config):
+            in_write.set()
+            assert let_write_finish.wait(5.0)
+            return real_write(path, config)
+
+        monkeypatch.setattr(ebp, "write_bootstrap_config", hooked_write)
+
+        box = {}
+        execute_thread = threading.Thread(
+            target=lambda: box.__setitem__("result", backend.execute("train", Shareable(), fl_ctx, Signal()))
+        )
+        execute_thread.start()
+        assert in_write.wait(5.0), "execute did not register its trainer before Popen"
+
+        trainer = backend._active_launch
+        real_stop_lock = trainer._stop_lock
+
+        class PausingStopLock:
+            pause_next_enter = True
+
+            def __enter__(self):
+                real_stop_lock.acquire()
+                if self.pause_next_enter:
+                    self.pause_next_enter = False
+                    launch_has_stop_lock.set()
+                    if not let_launch_check_closed.wait(5.0):
+                        real_stop_lock.release()
+                        raise AssertionError("finalize did not close the backend while launch held the stop lock")
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                real_stop_lock.release()
+
+        real_execute_gate = backend._execute_gate
+
+        class ObservedExecuteGate:
+            def acquire(self, *args, **kwargs):
+                finalize_reached_gate.set()
+                return real_execute_gate.acquire(*args, **kwargs)
+
+            def release(self):
+                real_execute_gate.release()
+
+        trainer._stop_lock = PausingStopLock()
+        backend._execute_gate = ObservedExecuteGate()
+        let_write_finish.set()
+        assert launch_has_stop_lock.wait(5.0), "launch did not enter the stop-lock critical section"
+
+        finalize_thread = threading.Thread(target=lambda: backend.finalize(FLContext()))
+        finalize_thread.start()
+        assert finalize_reached_gate.wait(5.0), "finalize did not close the backend before its gate wait"
+        assert backend._closed
+        let_launch_check_closed.set()
+
+        execute_thread.join(5.0)
+        finalize_thread.join(5.0)
+
+        assert not execute_thread.is_alive()
+        assert not finalize_thread.is_alive()
+        assert env.harness.processes == []
+        assert box["result"].get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+
+    @pytest.mark.parametrize("abort_latched", [False, True], ids=["normal", "abort"])
+    def test_finalize_stops_process_returned_after_launch_cleanup(self, env, monkeypatch, abort_latched):
+        """Finalize must wait for an in-flight Popen and stop its process before returning."""
         backend, fl_ctx = _initialized_backend(
             env,
             launch_once=False,
@@ -1638,18 +1778,40 @@ class TestExecute:
         execute_thread.start()
         assert process_started.wait(5.0), "execute did not enter the Popen-in-flight window"
 
-        trainer = backend._active_launch
+        if abort_latched:
+            backend._latch_abort("job aborted")
         process = env.harness.processes[0]
-        backend.finalize(FLContext())
-        assert trainer._cleaned
-        assert process.returncode is None, "finalize cannot stop a process whose handle Popen has not returned"
+        stop_started = threading.Event()
+        finalize_done = threading.Event()
+        process_alive_at_finalize_return = []
+        real_stop = backend._stop_trainer
+
+        def observed_stop(trainer, natural_exit_wait):
+            stop_started.set()
+            return real_stop(trainer, natural_exit_wait)
+
+        monkeypatch.setattr(backend, "_stop_trainer", observed_stop)
+
+        def finalize():
+            backend.finalize(FLContext())
+            process_alive_at_finalize_return.append(process.returncode is None)
+            finalize_done.set()
+
+        finalize_thread = threading.Thread(target=finalize)
+        finalize_thread.start()
+        assert stop_started.wait(5.0), "finalize did not reach trainer cleanup"
+        assert not finalize_done.is_set(), "finalize returned before the Popen handle was installed"
 
         let_popen_return.set()
         execute_thread.join(5.0)
+        finalize_thread.join(5.0)
 
         assert not execute_thread.is_alive()
+        assert not finalize_thread.is_alive()
+        assert finalize_done.is_set()
+        assert process_alive_at_finalize_return == [False]
         assert box["result"].get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-        assert process.returncode is not None, "the process returned after cleanup must be terminated"
+        assert process.returncode is not None, "finalize returned with the spawned process still alive"
 
     def test_abort_signal_mid_wait_returns_task_aborted(self, env):
         backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
@@ -2079,6 +2241,64 @@ class TestLaunchPerTask:
             assert env.harness.processes[0].returncode is not None, "the aborted launch was unwound"
         finally:
             backend.finalize(FLContext())
+
+    def test_abort_skips_per_task_natural_exit_wait(self, env):
+        backend, fl_ctx = _initialized_backend(env, launch_once=False, shutdown_timeout=30.0)
+        abort_signal = Signal()
+
+        def accept_then_abort(topic, target, request):
+            abort_signal.trigger("stop")
+            return _task_accepted_reply()
+
+        env.cell.on_request = accept_then_abort
+        result = backend.execute("train", Shareable(), fl_ctx, abort_signal)
+
+        process = env.harness.processes[0]
+        assert result.get_return_code() == ReturnCode.TASK_ABORTED
+        assert process.wait_timeouts == []
+        assert [request for request in env.cell.sent if request[0] == Topic.SHUTDOWN] == []
+        assert len([message for message in env.cell.fired if message[0] == Topic.SHUTDOWN]) == 1
+        assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
+
+    def test_abort_finalize_waits_for_mid_popen_launch_cleanup(self, env):
+        """Abort finalize must not return while Popen has created an unowned process."""
+        backend, fl_ctx = _initialized_backend(env, launch_once=False, shutdown_timeout=30.0)
+        backend._latch_abort("job aborted")
+        env.harness.auto_hello = False  # the child never gets far enough to HELLO
+        inner_popen = env.harness.popen
+        seen = {}
+        finalize_done = threading.Event()
+
+        def popen_with_concurrent_finalize(args, **kwargs):
+            process = inner_popen(args, **kwargs)
+
+            def finalize():
+                backend.finalize(FLContext())
+                finalize_done.set()
+
+            finalize_thread = threading.Thread(target=finalize)
+            seen["finalize_thread"] = finalize_thread
+            finalize_thread.start()
+
+            deadline = time.monotonic() + 5.0
+            while not backend._closed and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert backend._closed
+            seen["finalize_done_before_popen_return"] = finalize_done.is_set()
+            return process
+
+        env.harness.popen = popen_with_concurrent_finalize
+        result = backend.execute("train", Shareable(), fl_ctx, Signal())
+        seen["finalize_thread"].join(5.0)
+
+        process = env.harness.processes[0]
+        assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+        assert not seen["finalize_done_before_popen_return"]
+        assert finalize_done.is_set()
+        assert not seen["finalize_thread"].is_alive()
+        assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
+        assert process.returncode == -signal.SIGTERM
+        assert backend._active_launch is None
 
     def test_execute_after_finalize_fails_without_launching(self, env):
         backend, fl_ctx = _initialized_backend(env, launch_once=False)

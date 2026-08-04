@@ -63,35 +63,43 @@ selected recipe path and the generated client's actual parser.
 
 ## Tensor-Native Transport
 
-When `server_expected_format` is exposed, pass
-`server_expected_format=ExchangeFormat.PYTORCH`. This selects tensor-native
-transport. When tensor-native transport was selected, call
+Use the workflow-side format keyword exposed by the selected recipe:
+
+- When `aggregation_format` is exposed, pass
+  `aggregation_format=ExchangeFormat.PYTORCH`. This names the representation
+  consumed by a client-side aggregation workflow such as Swarm.
+- Otherwise, when `server_expected_format` is exposed, pass
+  `server_expected_format=ExchangeFormat.PYTORCH`. This names the representation
+  consumed by a server-side workflow.
+
+Either form selects tensor-native transport. When tensor-native transport was selected, call
 `recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])`
 after any `set_per_site_config(...)` call and before export or execution.
 
-If `server_expected_format` is absent, preserve the recipe's documented
-transport default and do not infer tensor-native transport from its framework
-name. Register `TensorDecomposer` only when another public recipe surface
-explicitly selects tensor-native transport. If the user requires tensor-native
-transport and the selected recipe has no public way to select it, report a
-recipe-capability gap instead of passing unsupported keywords or switching
-recipes.
+If neither workflow-side format keyword is exposed, preserve the recipe's
+documented transport default and do not infer tensor-native transport from its
+framework name. Register `TensorDecomposer` only when another public recipe
+surface explicitly selects tensor-native transport. If the user requires
+tensor-native transport and the selected recipe has no public way to select it,
+report a recipe-capability gap instead of passing unsupported keywords or
+switching recipes.
 
 `pytorch-model-exchange.md` is the canonical owner of framework payload and
 state-dict rules.
 
-## Server Tensor Disk Offload
+## Workflow Tensor Disk Offload
 
-Disk offload is a server memory optimization, not a model-exchange format. It
-causes incoming streamed tensors to be downloaded to server-side temporary files
-and materialized lazily during aggregation instead of being deserialized into
-memory immediately, reducing peak server memory pressure and OOM risk.
+Disk offload is an aggregation-workflow memory optimization, not a
+model-exchange format. It causes incoming streamed tensors to be downloaded to
+temporary files on the aggregation host and materialized lazily during
+aggregation instead of being deserialized into memory immediately, reducing
+peak memory pressure and OOM risk.
 
 When tensor-native transport was selected and `enable_tensor_disk_offload` is
 exposed, pass `enable_tensor_disk_offload=True`. NVFLARE activates this
-optimization only with `server_expected_format=ExchangeFormat.PYTORCH`;
-otherwise it warns and treats the setting as a no-op. Never pass the keyword to
-a recipe that does not expose it.
+optimization only when the exposed workflow-side format is
+`ExchangeFormat.PYTORCH`; otherwise it warns and treats the setting as a no-op.
+Never pass the keyword to a recipe that does not expose it.
 
 If the user requires disk offload and the selected recipe cannot expose both
 tensor-native transport and `enable_tensor_disk_offload`, report a
@@ -180,18 +188,23 @@ the client emits that exact metric, and ask or fail closed when the metric
 direction is unclear — not merely because the only available metric is a loss.
 Do not pass `key_metric` when the recipe does not expose it.
 
-When best-model selection is not requested, or no source-backed override is
-justified, leave `key_metric` unspecified and retain the recipe's documented
-default. Do not add a skill-specific sentinel or claim that omitting the
-argument disables the recipe's model selector.
+Resolve model selection to exactly one state before constructing the recipe:
 
-Retaining the default leaves the recipe's model selector active on that default
-key. When the generated client does not deliver that key, the selector logs a
-per-round warning naming the missing metric and the run finishes without a
-best-model artifact. The run still succeeds; this is expected behavior, not a
-conversion failure. Report it as a known limitation of the selected metric
-configuration instead of suppressing the warning, renaming a client metric to
-match the default, or switching recipes.
+- **Disabled:** Best-model selection is not requested. When the recipe exposes
+  `key_metric` and documents empty-string disabling, pass `key_metric=""`.
+  Omitting the argument is not disabling when the recipe has a non-empty
+  default. If the selected recipe cannot disable selection, report the
+  capability gap.
+- **Metric:** Best-model selection is requested and an exact higher-is-better
+  client metric is available. Pass that non-empty key.
+- **Recipe default:** Accept the documented default only deliberately, when the
+  client delivers that exact key. Omit `key_metric` and report the resolved
+  default; never use this state as a fallback for an unavailable metric.
+
+After export, inspect the server configuration. The disabled state must contain
+no active model-selector component. The metric and recipe-default states must
+contain a selector with the resolved key. Treat a mismatch, or missing-metric
+warnings from a supposedly disabled job, as validation failure.
 
 A correctly negated key can also draw a startup warning that it "looks like a
 lower-is-better metric". The model selector applies a name heuristic that

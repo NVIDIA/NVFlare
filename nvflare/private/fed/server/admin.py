@@ -169,6 +169,7 @@ class FedAdminServer(AdminServer):
         self.client_lock = threading.Lock()
 
         sess_mgr = SessionManager(cell)
+        self.sess_mgr = sess_mgr
         login_module = LoginModule(sess_mgr)
         cmd_reg.register_module(login_module)
 

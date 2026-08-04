@@ -1528,12 +1528,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     def _set_duration(job):
         if job.meta.get(JobMetaKey.STATUS) == RunStatus.RUNNING.value:
             try:
-                start_time = datetime.datetime.strptime(
-                    job.meta.get(JobMetaKey.START_TIME.value), "%Y-%m-%d %H:%M:%S.%f"
-                )
+                start_time = datetime.datetime.fromisoformat(job.meta.get(JobMetaKey.START_TIME.value))
             except (TypeError, ValueError):
                 return
-            duration = datetime.datetime.now() - start_time
+            if start_time.tzinfo is not None:
+                duration = datetime.datetime.now(datetime.timezone.utc) - start_time.astimezone(datetime.timezone.utc)
+            else:
+                duration = datetime.datetime.now() - start_time
             job.meta[JobMetaKey.DURATION.value] = str(duration)
 
     def submit_job(self, conn: Connection, args: List[str]):

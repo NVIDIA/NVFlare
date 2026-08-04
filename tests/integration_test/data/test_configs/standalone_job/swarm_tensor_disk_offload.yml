@@ -1,0 +1,34 @@
+# Secure two-client integration coverage for Swarm PyTorch tensor disk offload.
+project_yaml: ./data/projects/client_api.yml
+jobs_root_dir: ./data/jobs
+cleanup: true
+event_sequence_timeout: 600
+
+
+tests:
+  - test_name: "run swarm-tensor-disk-offload"
+    event_sequence:
+      - trigger:
+          type: server_log
+          data: "Server started"
+        actions: [ "submit_job swarm_tensor_disk_offload" ]
+        result:
+          type: job_submit_success
+      - trigger:
+          type: run_state
+          data: { "run_finished": true }
+        actions: [ "ensure_current_job_done" ]
+        result:
+          type: run_state
+          data: { "run_finished": true }
+    validators:
+      - path: tests.integration_test.src.validators.swarm_tensor_offload_validator.SwarmTensorOffloadValidator
+      - path: tests.integration_test.src.validators.LogPatternValidator
+        args:
+          required_patterns:
+            - "TENSOR_OFFLOAD_ACTIVE"
+            - "tensor offload trainer"
+          forbidden_patterns:
+            - "falling back to in-memory tensor download"
+            - "Traceback (most recent call last)"
+            - "EXECUTION_EXCEPTION"

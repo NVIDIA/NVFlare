@@ -531,13 +531,13 @@ def test_terminal_accounting_cleans_job_artifacts_and_leaves_generic_rc_file(tmp
     assert rc_file.read_text(encoding="utf-8") == "0\n"
 
 
-def test_infrastructure_terminal_state_is_an_exception(tmp_path):
+def test_infrastructure_terminal_state_is_an_infrastructure_error(tmp_path):
     adapter = Adapter()
     adapter.live = _query(LookupStatus.NOT_FOUND)
     adapter.accounting_id = _query(LookupStatus.FOUND, _record(state="TIMEOUT"))
     handle = _manager(tmp_path, adapter).launch(_plan(tmp_path))
 
-    assert handle.poll() == ProcessExitCode.EXCEPTION
+    assert handle.poll() == ProcessExitCode.INFRASTRUCTURE_ERROR
 
 
 def test_terminal_cleanup_restores_access_to_pyxis_mount_directories(tmp_path):
@@ -583,23 +583,32 @@ def test_terminal_squeue_row_moves_directly_to_accounting(tmp_path):
     manager = _manager(tmp_path, adapter)
     handle = manager.launch(_plan(tmp_path))
 
-    assert handle.poll() == ProcessExitCode.EXCEPTION
+    assert handle.poll() == ProcessExitCode.INFRASTRUCTURE_ERROR
     assert not os.path.exists(handle.job_dir)
     assert not any(call[0] == "cancel" for call in adapter.calls)
 
 
-def test_clean_completion_after_user_abort_remains_aborted(tmp_path):
+@pytest.mark.parametrize(
+    ("stop_method", "expected_result"),
+    [("terminate", JobReturnCode.ABORTED), ("_terminate_for_heartbeat_cleanup", JobReturnCode.SUCCESS)],
+    ids=["user_abort", "heartbeat_cleanup"],
+)
+def test_clean_completion_preserves_stop_intent(tmp_path, stop_method, expected_result):
+    clock = Clock()
     adapter = Adapter()
     adapter.live = _query(LookupStatus.NOT_FOUND)
+    adapter.accounting_id = _query(LookupStatus.NOT_FOUND)
+    manager = _manager(tmp_path, adapter, monotonic=clock)
+    handle = manager.launch(_plan(tmp_path))
+    getattr(handle, stop_method)()
+
     adapter.accounting_id = _query(
         LookupStatus.FOUND,
         _record(state="COMPLETED", exit_status=0, exit_signal=0),
     )
-    manager = _manager(tmp_path, adapter)
-    handle = manager.launch(_plan(tmp_path))
-    handle._request_cancel(user_abort=True)
+    clock.value = 7
 
-    assert handle.poll() == JobReturnCode.ABORTED
+    assert handle.poll() == expected_result
     assert not os.path.exists(handle.job_dir)
 
 
@@ -742,7 +751,7 @@ def test_five_spaced_healthy_accounting_misses_are_infrastructure_failure(tmp_pa
         assert handle.poll() == JobReturnCode.UNKNOWN
     clock.value = 24
 
-    assert handle.poll() == ProcessExitCode.EXCEPTION
+    assert handle.poll() == ProcessExitCode.INFRASTRUCTURE_ERROR
     assert not os.path.exists(handle.job_dir)
     assert not manager._handles
 

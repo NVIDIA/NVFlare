@@ -486,6 +486,12 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
     def get_cell(self):
         return self.cell
 
+    def set_cell(self, cell: Cell):
+        """Set the communication cell without registering message handlers."""
+        self.cell = cell
+        if self.run_manager:
+            self.run_manager.cell = cell
+
     def initialize_comm(self, cell: Cell):
         """This is called when the communication cell has been created.
         We will set up aux message handler here.
@@ -497,13 +503,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
         """
         self.logger.debug("initialize_comm called!")
-        self.cell = cell
-        if self.run_manager:
-            # Note that the aux_runner is created with the self.run_manager as the "engine".
-            # We must set the cell in it; otherwise it won't be able to send messages.
-            # The timing of the creation of the run_manager and the cell is not deterministic, we set the cell here
-            # only if the run_manager has been created.
-            self.run_manager.cell = cell
+        self.set_cell(cell)
 
         cell.register_request_cb(
             channel=CellChannel.AUX_COMMUNICATION,

@@ -200,21 +200,18 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     # requested. No converter may carve itself out of it.
     assert "This applies to loss in every framework" in normalized_construction
     assert "do not fail closed merely because loss is the only available metric" in normalized_construction
-    assert "leave `key_metric` unspecified" in normalized_construction
-    assert "retain the recipe's documented default" in normalized_construction
-    assert "Do not add a skill-specific sentinel" in construction_text
+    assert "Resolve model selection to exactly one state" in normalized_construction
+    assert 'pass `key_metric=""`' in normalized_construction
+    assert "Omitting the argument is not disabling" in normalized_construction
+    assert "Accept the documented default only deliberately" in normalized_construction
 
-    # Retaining the default leaves the selector ACTIVE on that default key: BaseFedJob
-    # installs IntimeModelSelector for any truthy key_metric, and the selector logs a
-    # warning and skips the client when the key is absent from the delivered metrics.
-    # The guidance must state that observable consequence so the agent can report it.
+    # The recipe default remains active unless conversion explicitly selects the
+    # disabled empty-string state.
     from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 
     assert inspect.signature(FedAvgRecipe).parameters["key_metric"].default == "accuracy"
-    assert "leaves the recipe's model selector active on that default key" in normalized_construction
-    assert "logs a per-round warning naming the missing metric" in normalized_construction
-    assert "without a best-model artifact" in normalized_construction
-    assert "Report it as a known limitation" in normalized_construction
+    assert "disabled state must contain no active model-selector component" in normalized_construction
+    assert "missing-metric warnings from a supposedly disabled job" in normalized_construction
 
     # The selector's lower-is-better name heuristic matches the "loss" substring and a
     # neg_ prefix does not clear it, so the recommended negated key trips a false
@@ -262,9 +259,13 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     for consumer_text in (skill_text, recipe_text, client_text, validation_text, hf_skill_text, hf_conversion_text):
         assert "pytorch-family-recipe-construction.md" in consumer_text
         assert 'metrics={"neg_loss": -loss}' not in consumer_text
-        assert 'key_metric=""' not in consumer_text
         # No skill may carve itself out of the negate-the-loss rule.
         assert "no safe conversion-owned negation hook" not in consumer_text
+
+    for generic_consumer in (skill_text, recipe_text, client_text, validation_text):
+        assert 'key_metric=""' not in generic_consumer
+    assert 'key_metric=""' in hf_skill_text
+    assert 'key_metric=""' in hf_conversion_text
 
 
 def test_pytorch_model_exchange_owns_plain_pytorch_send_pattern():
@@ -312,11 +313,12 @@ def test_pytorch_family_construction_policy_is_canonical_and_capability_based():
         "Every recipe construction or construction preflight must include one model source" in normalized_construction
     )
     assert "Never instantiate an incomplete `FedAvgRecipe`" in normalized_construction
-    assert "When `server_expected_format` is exposed" in normalized_construction
+    assert "When `aggregation_format` is exposed" in normalized_construction
+    assert "when `server_expected_format` is exposed" in normalized_construction
     assert "When tensor-native transport was selected" in normalized_construction
-    assert "Disk offload is a server memory optimization, not a model-exchange format" in normalized_construction
-    assert "downloaded to server-side temporary files and materialized lazily" in normalized_construction
-    assert "optimization only with `server_expected_format=ExchangeFormat.PYTORCH`" in normalized_construction
+    assert "Disk offload is an aggregation-workflow memory optimization" in normalized_construction
+    assert "temporary files on the aggregation host and materialized lazily" in normalized_construction
+    assert "only when the exposed workflow-side format is `ExchangeFormat.PYTORCH`" in normalized_construction
     assert "When `params_transfer_type` is exposed" in normalized_construction
     assert "single-process multi-GPU `torch.nn.DataParallel` stay in-process" in normalized_construction
     assert "Do not also pass `save_filename`" in normalized_construction
@@ -377,7 +379,7 @@ def test_lightning_training_metrics_have_one_canonical_delivery_bridge():
     assert "metrics=metrics or None" in aggregator_template
 
 
-def test_pytorch_recipe_capability_profiles_include_non_fedavg_without_disk_offload():
+def test_pytorch_recipe_capability_profiles_match_tensor_disk_offload_support():
     from nvflare.tool.recipe.recipe_cli import _load_catalog, _recipe_detail
 
     catalog = {entry["name"]: entry for entry in _load_catalog()}
@@ -390,8 +392,8 @@ def test_pytorch_recipe_capability_profiles_include_non_fedavg_without_disk_offl
     for recipe_name in ("cyclic-pt", "fedeval-pt"):
         assert "server_expected_format" in parameter_names[recipe_name]
         assert "enable_tensor_disk_offload" not in parameter_names[recipe_name]
+    assert {"aggregation_format", "enable_tensor_disk_offload"} <= parameter_names["swarm-pt"]
     assert "server_expected_format" not in parameter_names["swarm-pt"]
-    assert "enable_tensor_disk_offload" not in parameter_names["swarm-pt"]
 
 
 def test_pytorch_family_capability_evals_cover_fedeval_and_dataparallel():
@@ -538,6 +540,46 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
     assert {"no-raising-cache-only-model-probe", "no-unguarded-platform-specific-diagnostic"} <= prohibited_ids
 
 
+def test_huggingface_train_only_model_selection_contract_is_explicit():
+    repo_root = Path(__file__).resolve().parents[4]
+    hf_root = repo_root / "skills" / "nvflare-convert-huggingface"
+    skill_text = " ".join(hf_root.joinpath("SKILL.md").read_text(encoding="utf-8").split())
+    conversion_text = " ".join(
+        hf_root.joinpath("references/huggingface-conversion.md").read_text(encoding="utf-8").split()
+    )
+    job_text = hf_root.joinpath("assets/job.py").read_text(encoding="utf-8")
+    construction_text = " ".join(
+        repo_root.joinpath("skills/nvflare-shared/references/pytorch-family-recipe-construction.md")
+        .read_text(encoding="utf-8")
+        .split()
+    )
+    validation_text = " ".join(
+        repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md")
+        .read_text(encoding="utf-8")
+        .split()
+    )
+    eval_data = json.loads(
+        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-convert-huggingface/evals.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    train_only_eval = _eval_by_id(eval_data, "huggingface-train-only-disables-model-selection")
+
+    assert "Resolve model selection to exactly one state" in construction_text
+    assert "**Disabled:**" in construction_text
+    assert "**Metric:**" in construction_text
+    assert "**Recipe default:**" in construction_text
+    assert 'use `key_metric=""`' in skill_text
+    assert '`evaluate_before_train=False` and `key_metric=""`' in conversion_text
+    assert 'key_metric: str = ""' in job_text
+    assert 'default=""' in job_text
+    assert "disabled means no active model selector" in validation_text
+    mandatory_ids = {item["id"] for item in train_only_eval["nvflare"]["mandatory_behavior"]}
+    prohibited_ids = {item["id"] for item in train_only_eval["nvflare"]["prohibited_behavior"]}
+    assert "disable-unrequested-model-selection" in mandatory_ids
+    assert "no-active-default-selector-for-train-only" in prohibited_ids
+
+
 def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
     repo_root = Path(__file__).resolve().parents[4]
     construction_text = repo_root.joinpath(
@@ -634,6 +676,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     skill_text = skill_root.joinpath("SKILL.md").read_text(encoding="utf-8")
     conversion_text = skill_root.joinpath("references/huggingface-conversion.md").read_text(encoding="utf-8")
     validation_text = skill_root.joinpath("references/huggingface-validation.md").read_text(encoding="utf-8")
+    state_text = skill_root.joinpath("references/huggingface-state-and-distributed.md").read_text(encoding="utf-8")
     shared_validation = repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md").read_text(
         encoding="utf-8"
     )
@@ -652,9 +695,17 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     recipe_text = repo_root.joinpath(
         "skills/nvflare-shared/references/pytorch-family-recipe-construction.md"
     ).read_text(encoding="utf-8")
+    eval_data = json.loads(
+        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-convert-huggingface/evals.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    basic_eval = _eval_by_id(eval_data, "huggingface-convert-basic")["nvflare"]
+    ddp_eval = _eval_by_id(eval_data, "huggingface-ddp-contract")["nvflare"]
     normalized_skill = " ".join(skill_text.split())
     normalized_conversion = " ".join(conversion_text.split())
     normalized_validation = " ".join(validation_text.split())
+    normalized_state = " ".join(state_text.split())
     normalized_shared_validation = " ".join(shared_validation.split())
     normalized_shared = " ".join(shared_workflow.split())
     normalized_pytorch = " ".join(pytorch_conversion.split())
@@ -724,6 +775,8 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "rejects parent-traversal external-script paths" in normalized_conversion
     assert "inspecting NVFLARE implementation source" in normalized_conversion
     assert "flare.patch(trainer)" in client_template
+    assert "def main(trainer_factory, *, rank, evaluate_before_train=True)" in client_template
+    assert "flare.init(rank=rank)" in client_template
     assert "HfArgumentParser(dataclass_types, allow_abbrev=False)" in client_template
     assert "while flare.is_running()" in client_template
     assert "return model" in server_model_template
@@ -755,6 +808,20 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     )
     assert "Do not call `flare.init()`, `flare.patch()`, `flare.is_running()`" in normalized_validation
     assert "let the first bounded simulation validate runtime patch acceptance" in normalized_validation
+    assert "same importable factory path and with the same local constructor arguments" in normalized_validation
+    assert "state-dict key sets, shapes, and dtypes" in normalized_validation
+    assert "require exact per-tensor equality or an equivalent stable state hash" in normalized_validation
+    assert "For a genuinely nondeterministic factory" in normalized_validation
+    assert "do not require equality across independent calls" in normalized_validation
+    assert "two-process `torchrun` case" in normalized_validation
+    assert "generated client's required `rank` argument" in normalized_state
+    assert "do not pass it as the FLARE rank" in normalized_state
+    basic_mandatory = {item["id"]: item["description"] for item in basic_eval["mandatory_behavior"]}
+    ddp_mandatory = {item["id"]: item["description"] for item in ddp_eval["mandatory_behavior"]}
+    assert "same importable factory path and arguments" in basic_mandatory["explicit-server-model-config"]
+    assert "exact values or a stable state hash" in basic_mandatory["explicit-server-model-config"]
+    assert "without a rank-zero default" in ddp_mandatory["initialize-distributed-before-patch"]
+    assert "observed global and flare.init ranks 0 and 1" in ddp_mandatory["rank-symmetric-trainer-loop"]
     assert "Version-check only fields claimed to belong to a framework" in normalized_validation
     assert "project-defined subclass field" in normalized_validation
     assert "actual parser accepts it" in normalized_validation
