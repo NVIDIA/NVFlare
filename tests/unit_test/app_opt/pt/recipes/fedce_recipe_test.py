@@ -32,6 +32,17 @@ def test_fedce_recipe_uses_fedavg_with_contribution_aggregator():
     assert recipe.server_expected_format == ExchangeFormat.PYTORCH
 
 
+@pytest.mark.parametrize("min_clients", [0, 1])
+def test_fedce_recipe_requires_at_least_two_clients(min_clients):
+    with pytest.raises(ValueError, match="requires min_clients >= 2"):
+        FedCERecipe(model=nn.Linear(2, 1), min_clients=min_clients, train_script=__file__)
+
+
+def test_fedce_recipe_requires_integer_min_clients():
+    with pytest.raises(TypeError, match="min_clients must be int"):
+        FedCERecipe(model=nn.Linear(2, 1), min_clients=2.0, train_script=__file__)
+
+
 def test_fedce_recipe_rejects_non_pytorch_exchange():
     with pytest.raises(ValueError, match="requires server_expected_format"):
         FedCERecipe(

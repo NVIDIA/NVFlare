@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 import json
+import os
+import time
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
@@ -26,7 +29,12 @@ from nvflare.fuel.flare_api.api_spec import (
     NoConnection,
 )
 from nvflare.tool import cli_output
-from nvflare.tool.job.job_cli import _parse_monitor_duration_seconds, _parse_monitor_start_ts
+from nvflare.tool.job.job_cli import (
+    _calculate_monitor_elapsed,
+    _format_job_meta_timestamp,
+    _parse_monitor_duration_seconds,
+    _parse_monitor_start_ts,
+)
 
 
 def _configure_active_startup_kit(tmp_path, monkeypatch):
@@ -85,28 +93,182 @@ def _make_meta(status="FINISHED_OK", job_name="test-job", duration="0:01:30"):
     }
 
 
-def test_parse_monitor_start_ts_from_start_time():
+@contextmanager
+def _process_timezone(zone):
+    if not hasattr(time, "tzset"):
+        pytest.skip("time.tzset() is unavailable")
+    previous = os.environ.get("TZ")
+    try:
+        os.environ["TZ"] = zone
+        time.tzset()
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = previous
+        time.tzset()
+
+
+@pytest.mark.parametrize(
+    ("zone", "expected_time", "expected_zone"),
+    [
+        ("UTC", "2026-08-03 21:30:05", "UTC"),
+        ("America/Los_Angeles", "2026-08-03 14:30:05", "PDT"),
+    ],
+)
+def test_job_meta_timestamps_display_in_process_timezone(zone, expected_time, expected_zone):
+    with _process_timezone(zone):
+        submitted = _format_job_meta_timestamp("2026-08-03T14:30:05-07:00", include_zone=True)
+        started = _format_job_meta_timestamp("2026-08-03T21:30:05+00:00")
+
+    assert submitted == f"{expected_time} {expected_zone}"
+    assert started == expected_time
+
+
+@pytest.mark.parametrize(
+    ("producer_zone", "consumer_zone"),
+    [
+        ("UTC", "America/Los_Angeles"),
+        ("America/Los_Angeles", "UTC"),
+        ("Asia/Kathmandu", "America/Los_Angeles"),
+    ],
+)
+def test_canonical_start_is_timezone_independent(tmp_path, producer_zone, consumer_zone):
+    from nvflare.apis.fl_context import FLContext
+    from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
+    from nvflare.apis.job_def import JobMetaKey, RunStatus
+
+    manager = SimpleJobDefManager(uri_root=str(tmp_path / "jobs"))
+    store = MagicMock()
+    with patch.object(manager, "_get_job_store", return_value=store):
+        with _process_timezone(producer_zone):
+            manager.set_status("job-1", RunStatus.RUNNING, FLContext())
+
+    produced_meta = store.update_meta.call_args.kwargs["meta"]
+    canonical_value = produced_meta[JobMetaKey.START_TIME.value]
+    expected = datetime.datetime.fromisoformat(canonical_value).timestamp()
+
+    with _process_timezone(consumer_zone):
+        now = time.time()
+        start_ts = _parse_monitor_start_ts(produced_meta, JobMetaKey.START_TIME.value, JobMetaKey.SUBMIT_TIME_ISO.value)
+
+    assert start_ts == pytest.approx(expected)
+    assert _calculate_monitor_elapsed(now, now - 1, start_ts) >= 0
+
+
+@pytest.mark.parametrize(
+    "canonical_value",
+    [
+        "2026-04-16T12:34:56+00:00",
+        "2026-04-16T12:34:56-07:00",
+        "2026-04-16T12:34:56+05:45",
+    ],
+)
+def test_parse_monitor_start_accepts_explicit_offsets(canonical_value):
     from nvflare.apis.job_def import JobMetaKey
 
-    meta = {
-        JobMetaKey.START_TIME.value: "2026-04-16 12:34:56.000000",
-    }
+    expected = datetime.datetime.fromisoformat(canonical_value).timestamp()
+    start_ts = _parse_monitor_start_ts(
+        {JobMetaKey.START_TIME.value: canonical_value},
+        JobMetaKey.START_TIME.value,
+        JobMetaKey.SUBMIT_TIME_ISO.value,
+    )
 
-    result = _parse_monitor_start_ts(meta, JobMetaKey.START_TIME.value, JobMetaKey.SUBMIT_TIME_ISO.value)
-
-    assert result is not None
+    assert start_ts == pytest.approx(expected)
 
 
-def test_parse_monitor_start_ts_from_submit_time_iso():
+def test_legacy_naive_start_clamps_negative_elapsed_to_zero():
     from nvflare.apis.job_def import JobMetaKey
 
+    now = datetime.datetime.fromisoformat("2026-04-16T12:35:00+00:00").timestamp()
+    meta = {JobMetaKey.START_TIME.value: "2026-04-16 12:34:56.000000"}
+
+    with _process_timezone("America/Los_Angeles"):
+        start_ts = _parse_monitor_start_ts(meta, JobMetaKey.START_TIME.value, JobMetaKey.SUBMIT_TIME_ISO.value)
+
+    assert start_ts > now
+    assert _calculate_monitor_elapsed(now, now - 1, start_ts) == 0
+
+
+def test_malformed_start_uses_submit_time():
+    from nvflare.apis.job_def import JobMetaKey
+
+    submit_time = "2026-04-16T12:34:00+00:00"
     meta = {
-        JobMetaKey.SUBMIT_TIME_ISO.value: "2026-04-16T12:34:56",
+        JobMetaKey.START_TIME.value: "not-a-timestamp",
+        JobMetaKey.SUBMIT_TIME_ISO.value: submit_time,
     }
 
-    result = _parse_monitor_start_ts(meta, JobMetaKey.START_TIME.value, JobMetaKey.SUBMIT_TIME_ISO.value)
+    start_ts = _parse_monitor_start_ts(meta, JobMetaKey.START_TIME.value, JobMetaKey.SUBMIT_TIME_ISO.value)
 
-    assert result is not None
+    assert start_ts == datetime.datetime.fromisoformat(submit_time).timestamp()
+
+
+def test_future_start_clamps_elapsed_to_zero():
+    now = 100.0
+    assert _calculate_monitor_elapsed(now, 95.0, now + 60) == 0
+
+
+def test_missing_start_uses_monitor_start():
+    now = 100.0
+    start_ts = _parse_monitor_start_ts({}, "start_time", "submit_time_iso")
+    assert start_ts is None
+    assert _calculate_monitor_elapsed(now, 95.0, start_ts) == 5.0
+
+
+def test_human_jsonl_timeout_and_terminal_elapsed_share_calculation(capsys, monkeypatch):
+    from nvflare.apis.job_def import JobMetaKey
+    from nvflare.tool.job.job_cli import (
+        _build_monitor_output_data,
+        _build_monitor_terminal_event,
+        _build_monitor_timeout_event,
+        _emit_monitor_jsonl_progress,
+        _emit_monitor_progress,
+        _make_monitor_state,
+    )
+
+    now = 1_000.0
+    monitor_start = 995.0
+    job_start = 910.0
+    running_meta = {
+        JobMetaKey.STATUS.value: "RUNNING",
+    }
+    monitor_state = _make_monitor_state()
+
+    monkeypatch.setattr(cli_output, "_output_format", "txt")
+    _emit_monitor_progress("job-1", running_meta, monitor_state, now, monitor_start, job_start)
+    human_output = capsys.readouterr().out
+
+    _emit_monitor_jsonl_progress("job-1", running_meta, monitor_state, now, monitor_start, job_start)
+    jsonl_event = json.loads(capsys.readouterr().out)
+
+    with patch("nvflare.tool.job.job_cli.time.time", return_value=now):
+        timeout_event = _build_monitor_timeout_event("job-1", 120, monitor_start, job_start, monitor_state)
+        live_terminal = _build_monitor_output_data(
+            "job-1",
+            {JobMetaKey.STATUS.value: "RUNNING", JobMetaKey.DURATION.value: "N/A"},
+            monitor_start,
+            job_start,
+            monitor_state,
+            json_mode=True,
+        )
+        final_terminal = _build_monitor_output_data(
+            "job-1",
+            {JobMetaKey.STATUS.value: "FINISHED:COMPLETED", JobMetaKey.DURATION.value: "0:01:30"},
+            monitor_start,
+            job_start,
+            monitor_state,
+            json_mode=True,
+        )
+        terminal_event = _build_monitor_terminal_event(final_terminal)
+
+    assert "elapsed_s: 90.0" in human_output
+    assert jsonl_event["elapsed_s"] == 90.0
+    assert timeout_event["elapsed_s"] == 90.0
+    assert live_terminal["duration_s"] == 90.0
+    assert final_terminal["duration_s"] == 90.0
+    assert terminal_event["duration_s"] == 90.0
 
 
 def test_parse_monitor_duration_seconds_preserves_zero():

@@ -22,7 +22,7 @@ import threading
 from nvflare.apis.fl_constant import ConfigVarName, JobConstants, SiteType, SystemConfigs
 from nvflare.apis.job_launcher_spec import JobProcessEnv, pop_credential_env
 from nvflare.apis.workspace import Workspace
-from nvflare.app_opt.job_launcher.workspace_cell_transfer import download_workspace, upload_results_safely
+from nvflare.app_opt.job_launcher.workspace_cell_transfer import download_workspace, upload_results_on_shutdown
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
@@ -102,6 +102,7 @@ def main(args):
             server.cell = server.create_job_cell(
                 args.job_id, args.root_url, args.parent_url, secure_train, server_config
             )
+            server.engine.set_cell(server.cell)
 
             # set filter to add additional auth headers
             set_add_auth_headers_filters(
@@ -135,7 +136,7 @@ def main(args):
             if err:
                 if logger:
                     logger.warning(err)
-            upload_results_safely(args, secure_train, log=logger)
+            upload_results_on_shutdown(args, secure_train, log=logger)
 
     except ConfigError as e:
         logger = get_script_logger()

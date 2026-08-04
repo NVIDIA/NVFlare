@@ -111,13 +111,13 @@ candidate comparability, or production submission before running candidates.
 may match `trust_contract.allowed_create_patterns` under the job root.
 - Record every candidate in `results.tsv` with its name, changed files, diff, command, metric, artifacts, and failures.
 - Use `mutation_schema.yaml` `preferred_targets` only after the runner reflects them in the trust contract; surface unresolved targets.
-- You may create and register new Python server aggregators through `job.py`;
-do not limit exploration to existing FedAvg/FedAvgM/FedAdam/FedOpt/SCAFFOLD choices.
+- You may create and register new Python server aggregators through `job.py`; do not limit exploration to existing
+FedAvg/FedAvgM/FedAdam/FedOpt/SCAFFOLD choices.
 - Preserve `budget.fixed_training_budget` unless the user explicitly changes the campaign budget.
-- Preserve `objective.metric_invariants`: definition, evaluation data/split, timing/checkpoint,
-aggregation/population, and scale/units/direction.
-- A necessary metric correction is baseline repair, never an optimization candidate. Abandon the draft, report prior
-scores as incomparable, obtain human approval to fix the source, and initialize a clean campaign; never credit or compare scores across baselines.
+- Preserve `objective.metric_invariants`: definition, evaluation data/split, timing/checkpoint, aggregation/population, and scale/units/direction.
+- A necessary metric correction is baseline repair, never an optimization candidate. Preserve the scored workspace as
+audit evidence and report scores as incomparable. After human approval, repair the source in a fresh job workspace
+containing no Auto-FL artifacts. Never run `initialize` in the scored workspace; it resumes old evidence.
 - If the environment provides `PYTHON`, `VIRTUAL_ENV`, or a venv on `PATH`,
 treat that prepared runtime as authoritative: verify it, then use it for import, validation, execution, metric
 extraction, plotting, and reporting. Do not search for alternate interpreters or install dependencies unless the user
