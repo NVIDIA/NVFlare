@@ -21,7 +21,7 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.apis.dxo import DataKind
-from nvflare.apis.job_def import ALL_SITES
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.secret_utils import PotentialSecretWarning
 
@@ -674,6 +674,44 @@ class TestSwarmLearningRecipePipeType:
 
 class TestSwarmLearningRecipeExport:
     """Export behavior tests for SwarmLearningRecipe."""
+
+    def test_export_nested_relative_ckpt_uses_configured_basename(self, tmp_path, monkeypatch):
+        """A nested relative checkpoint is flattened into each client app."""
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        checkpoint = tmp_path / "models" / "checkpoint.pt"
+        checkpoint.parent.mkdir()
+        checkpoint.write_bytes(b"checkpoint")
+        train_script = tmp_path / "train.py"
+        train_script.write_text("print('train')\n")
+        monkeypatch.chdir(tmp_path)
+
+        job_name = "swarm_nested_ckpt"
+        recipe = SwarmLearningRecipe(
+            name=job_name,
+            model={"class_path": "torch.nn.Linear", "args": {"in_features": 2, "out_features": 2}},
+            num_rounds=1,
+            train_script="train.py",
+            min_clients=2,
+            initial_ckpt="models/checkpoint.pt",
+        )
+
+        checkpoint_source = ("models/checkpoint.pt", None, None)
+        assert checkpoint_source in recipe._job._deploy_map[ALL_SITES].app_config.file_sources
+        assert checkpoint_source not in recipe._job._deploy_map[SERVER_SITE_NAME].app_config.file_sources
+
+        export_dir = tmp_path / "job"
+        recipe.export(str(export_dir))
+
+        custom_dir = export_dir / job_name / "app" / "custom"
+        assert (custom_dir / "checkpoint.pt").is_file()
+        assert not (custom_dir / "models" / "checkpoint.pt").exists()
+
+        config_path = export_dir / job_name / "app" / "config" / "config_fed_client.json"
+        with open(config_path, "r") as f:
+            config = json.load(f)
+        persistor = next(component for component in config["components"] if component["id"] == "persistor")
+        assert persistor["args"]["source_ckpt_file_full_name"] == "checkpoint.pt"
 
     def test_export_preserves_dict_model_args_in_client_config(self, tmp_path):
         """Regression: exported client config keeps dict model args for PTFileModelPersistor."""
