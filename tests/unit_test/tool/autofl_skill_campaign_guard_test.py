@@ -492,7 +492,10 @@ def test_autofl_skill_requires_semantic_metric_comparability():
     assert "`objective.metric_invariants`" in normalized_skill
     assert "definition, evaluation data/split, timing/checkpoint" in normalized_skill
     assert "baseline repair, never an optimization candidate" in normalized_skill
-    assert "initialize a clean campaign" in normalized_skill
+    assert "Preserve the scored workspace as audit evidence" in normalized_skill
+    assert "fresh job workspace containing no Auto-FL artifacts" in normalized_skill
+    assert "Never run `initialize` in the scored workspace; it resumes old evidence" in normalized_skill
     assert "Keeping the same metric name is not sufficient" in normalized_reference
     assert "static analysis can prove arbitrary metric equivalence" in normalized_reference
+    assert "Running `initialize` in the scored workspace resumes its old evidence" in normalized_reference
     assert "never retain the correction as an optimization gain" in normalized_reference

@@ -33,6 +33,7 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     download_workspace,
     make_workspace_transfer_fqcn,
     upload_results,
+    upload_results_on_shutdown,
 )
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
@@ -560,6 +561,14 @@ class TestWorkspaceBootstrapHelpers:
         with pytest.raises(RuntimeError, match=ENV_WORKSPACE_TRANSFER_TOKEN):
             upload_results(args, secure_mode=False)
 
+    def test_upload_results_raises_when_run_dir_missing(self, monkeypatch, tmp_path):
+        monkeypatch.setenv(ENV_WORKSPACE_OWNER_FQCN, "site-1.parent")
+        monkeypatch.setenv(ENV_WORKSPACE_TRANSFER_TOKEN, "token-1")
+        args = SimpleNamespace(workspace=str(tmp_path), job_id=JOB_ID, parent_url="tcp://parent")
+
+        with pytest.raises(RuntimeError, match="results workspace does not exist"):
+            upload_results(args, secure_mode=False)
+
     def test_upload_results_publishes_ref_to_parent(self, monkeypatch):
         with tempfile.TemporaryDirectory() as ws_root:
             _write_file(os.path.join(ws_root, JOB_ID, "result.txt"), b"done")
@@ -599,6 +608,47 @@ class TestWorkspaceBootstrapHelpers:
             assert request.payload["job_id"] == JOB_ID
             assert request.payload["ref_id"] == "ref-upload"
             assert request.payload["transfer_token"] == "token-1"
+            fake_downloader.delete_transaction.assert_called_once_with()
+
+    def test_upload_results_raises_on_negative_reply(self, monkeypatch):
+        with tempfile.TemporaryDirectory() as ws_root:
+            _write_file(os.path.join(ws_root, JOB_ID, "result.txt"), b"done")
+            fake_cell = _FakeCell(
+                fqcn="site-1.parent",
+                reply=make_reply(ReturnCode.COMM_ERROR, error="receiver failed"),
+            )
+            fake_downloader = MagicMock()
+            fake_downloader.tx_id = "tx-upload"
+
+            monkeypatch.setenv(ENV_WORKSPACE_OWNER_FQCN, "site-1.parent")
+            monkeypatch.setenv(ENV_WORKSPACE_TRANSFER_TOKEN, "token-1")
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer._get_bootstrap_cell",
+                lambda *a, **kw: fake_cell,
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer._close_bootstrap_cell",
+                lambda: None,
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer.ObjectDownloader",
+                lambda *args, **kwargs: fake_downloader,
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer.add_file",
+                lambda downloader, file_name: "ref-upload",
+            )
+
+            args = SimpleNamespace(
+                workspace=ws_root,
+                job_id=JOB_ID,
+                parent_url="tcp://parent",
+                root_url="tcp://root",
+            )
+
+            with pytest.raises(RuntimeError, match="results upload failed"):
+                upload_results(args, secure_mode=False)
+
             fake_downloader.delete_transaction.assert_called_once_with()
 
     def test_upload_results_waits_for_bootstrap_ready(self, monkeypatch):
@@ -681,3 +731,29 @@ class TestWorkspaceBootstrapHelpers:
 
             assert created["path"]
             assert not os.path.exists(created["path"])
+
+    def test_upload_results_on_shutdown_propagates_publication_failure(self, monkeypatch):
+        args = SimpleNamespace(job_id=JOB_ID)
+        monkeypatch.setattr(
+            "nvflare.app_opt.job_launcher.workspace_cell_transfer.upload_results",
+            MagicMock(side_effect=RuntimeError("publication failed")),
+        )
+
+        with pytest.raises(RuntimeError, match="publication failed"):
+            upload_results_on_shutdown(args, secure_mode=False)
+
+    def test_upload_results_on_shutdown_preserves_primary_failure(self, monkeypatch):
+        args = SimpleNamespace(job_id=JOB_ID)
+        log = MagicMock()
+        monkeypatch.setattr(
+            "nvflare.app_opt.job_launcher.workspace_cell_transfer.upload_results",
+            MagicMock(side_effect=RuntimeError("publication failed")),
+        )
+
+        with pytest.raises(RuntimeError, match="execution failed"):
+            try:
+                raise RuntimeError("execution failed")
+            finally:
+                upload_results_on_shutdown(args, secure_mode=False, log=log)
+
+        log.error.assert_called_once()

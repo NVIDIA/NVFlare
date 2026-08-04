@@ -42,7 +42,7 @@
         "files/hello-pt/model.py"
       ],
       "assertions": [
-        "The agent runs nvflare agent inspect before editing and extracts source facts statically without importing or executing user training modules during planning.",
+        "The agent runs nvflare agent inspect source on the target before editing and extracts source facts statically without importing or executing user training modules during planning.",
         "The agent edits only training, model, job, or small config files.",
         "Because PyTorch and FedAvg are explicit, the agent runs nvflare recipe show fedavg-pt --format json directly and does not run recipe list before constructing it.",
         "The generated job.py imports the selected recipe class from the module returned by recipe show, using nvflare.app_opt.pt.recipes.fedavg.FedAvgRecipe for fedavg-pt and not nvflare.recipe.FedAvgRecipe.",
@@ -77,7 +77,7 @@
         "mandatory_behavior": [
           {
             "id": "inspect-first",
-            "description": "runs nvflare agent inspect before editing, keeps planning-phase fact extraction static, and does not import or execute user training modules to discover fields"
+            "description": "runs nvflare agent inspect source before editing, keeps planning-phase fact extraction static, and does not import or execute user training modules to discover fields"
           },
           {
             "id": "scoped-edits",

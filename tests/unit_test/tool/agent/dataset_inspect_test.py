@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from pathlib import Path
+
 from nvflare.tool.agent.dataset_inspect import inspect_dataset
-from nvflare.tool.agent.inspector import inspect_path
+from nvflare.tool.agent.inspector import inspect_data, inspect_source
 
 HEADER = "age,occupation,income\n"
 ROWS = "39,clerical,100\n50,managerial,220\n38,service,90\n41,clerical,150\n"
@@ -154,13 +156,10 @@ def test_mixed_modality_is_reported_but_not_routed(tmp_path):
     (d / "scan.png").write_bytes(b"\x89PNG not really")
 
     dataset = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
-    result = inspect_path(tmp_path)
+    result = inspect_data(tmp_path)
 
     assert dataset["modality"] == "mixed"
-    assert result["target_type"] == "unknown_target"
-    # mixed is the ambiguous case: it routes to orient, never to fed-stats
-    # and never to an empty recommendation
-    assert result["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
+    assert result["routing"] == {"recommended_skill": "nvflare-orient", "reason": "ambiguous_dataset"}
 
 
 def test_dtype_drift_with_same_names_is_a_mismatch(tmp_path):
@@ -243,11 +242,10 @@ def test_numpy_helper_script_does_not_hide_the_dataset(tmp_path):
         _write_site(tmp_path, site, HEADER + ROWS)
     (tmp_path / "compute_stats.py").write_text("import numpy as np\n\n\ndef main():\n    pass\n", encoding="utf-8")
 
-    result = inspect_path(tmp_path)
+    result = inspect_data(tmp_path)
 
-    assert result["target_type"] == "tabular_dataset"
     assert result["dataset"] is not None
-    assert result["skill_selection"]["recommended_skills"] == ["nvflare-fed-stats"]
+    assert result["routing"] == {"recommended_skill": "nvflare-fed-stats", "reason": "dataset"}
 
 
 def test_parquet_duplicate_names_flagged_invalid(tmp_path):
@@ -278,32 +276,29 @@ def test_image_sites_report_their_formats(tmp_path):
     assert site["pixel_depth"] is None or site["pixel_depth"] == "uint8"
 
 
-def test_flare_job_with_data_keeps_code_priority(tmp_path):
-    # Codex repro: a FLARE job source beside CSV fixtures must never be
-    # overridden by dataset classification
+def test_source_and_data_capabilities_do_not_override_each_other(tmp_path):
     (tmp_path / "job.py").write_text(
         "from nvflare.recipe.fedstats import FedStatsRecipe\n\n\ndef main():\n    pass\n",
         encoding="utf-8",
     )
     _write_site(tmp_path, "site-1", HEADER + ROWS)
 
-    result = inspect_path(tmp_path)
+    source = inspect_source(tmp_path)
+    data = inspect_data(tmp_path)
 
-    assert result["target_type"] != "tabular_dataset"
-    assert result["dataset"] is None
+    assert source["routing"]["reason"] == "existing_job"
+    assert data["dataset"]["modality"] == "tabular"
 
 
-def test_import_only_training_framework_keeps_code_priority(tmp_path):
-    # TensorFlow has no converter skill yet, but it is a real training
-    # framework, not a utility bucket: the dataset must not override it
+def test_data_capability_does_not_invoke_source_ownership(tmp_path):
     (tmp_path / "train.py").write_text("import tensorflow as tf\n\n\ndef main():\n    pass\n", encoding="utf-8")
     _write_site(tmp_path, "site-1", HEADER + ROWS)
 
-    result = inspect_path(tmp_path)
+    source = inspect_source(tmp_path)
+    data = inspect_data(tmp_path)
 
-    assert result["target_type"] != "tabular_dataset"
-    assert result["dataset"] is None
-    assert "nvflare-fed-stats" not in result["skill_selection"]["recommended_skills"]
+    assert source["routing"]["recommended_skill"] is None
+    assert data["routing"]["recommended_skill"] == "nvflare-fed-stats"
 
 
 def test_distinct_masked_tokens_residual_is_the_documented_one(tmp_path):
@@ -419,11 +414,10 @@ def test_more_tabular_than_stray_images_is_tabular(tmp_path):
     (d / "scan.png").write_bytes(b"\x89PNG not really")
 
     dataset = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
-    result = inspect_path(tmp_path)
+    result = inspect_data(tmp_path)
 
     assert dataset["modality"] == "tabular"
-    assert result["target_type"] == "tabular_dataset"
-    assert result["skill_selection"]["recommended_skills"] == ["nvflare-fed-stats"]
+    assert result["routing"]["recommended_skill"] == "nvflare-fed-stats"
 
 
 def test_tabular_shards_with_one_stray_plot_stay_tabular(tmp_path):
@@ -463,11 +457,10 @@ def test_image_only_site_among_tabular_sites_is_mixed_and_unrouted(tmp_path):
     (d / "scan.png").write_bytes(b"\x89PNG not really")
 
     dataset = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
-    result = inspect_path(tmp_path)
+    result = inspect_data(tmp_path)
 
     assert dataset["modality"] == "mixed"
-    assert result["target_type"] == "unknown_target"
-    assert result["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
+    assert result["routing"]["recommended_skill"] == "nvflare-orient"
     image_site = [s for s in dataset["sites"] if s["name"] == "site-99"][0]
     assert image_site["image_files"] == 1 and image_site["tabular_files"] == 0
 
@@ -624,69 +617,91 @@ def test_file_limit_marks_counts_approximate(tmp_path):
     assert result["counts_approximate"] is True
 
 
-def test_inspect_path_routes_tabular_dataset_to_fed_stats(tmp_path):
+def test_inspect_data_routes_tabular_dataset_to_fed_stats(tmp_path):
     for site in ("site-1", "site-2"):
         _write_site(tmp_path, site, HEADER + ROWS)
 
-    result = inspect_path(tmp_path)
+    result = inspect_data(tmp_path)
 
-    assert result["target_type"] == "tabular_dataset"
     assert result["dataset"]["modality"] == "tabular"
-    assert result["skill_selection"]["recommended_skills"] == ["nvflare-fed-stats"]
+    assert result["routing"]["recommended_skill"] == "nvflare-fed-stats"
 
 
-def test_inspect_path_routes_image_dataset_to_fed_stats(tmp_path):
+def test_inspect_data_routes_image_dataset_to_fed_stats(tmp_path):
     d = tmp_path / "site-1"
     d.mkdir()
     (d / "scan.png").write_bytes(b"\x89PNG not really")
 
-    result = inspect_path(tmp_path)
+    result = inspect_data(tmp_path)
 
-    assert result["target_type"] == "image_dataset"
-    assert result["skill_selection"]["recommended_skills"] == ["nvflare-fed-stats"]
+    assert result["routing"]["recommended_skill"] == "nvflare-fed-stats"
 
 
-def test_truncated_dataset_recommends_only_fed_stats(tmp_path, monkeypatch):
-    # A classified dataset keeps a single recommendation even when the walk
-    # truncated (classification_incomplete would otherwise add orient).
-    import nvflare.tool.agent.inspector as inspector_module
-
-    monkeypatch.setattr(inspector_module, "DEFAULT_MAX_FILES", 3)
+def test_truncated_dataset_recommends_only_fed_stats(tmp_path):
+    # A classified dataset keeps the FedStats recommendation even when the
+    # bounded walk is incomplete.
     d = tmp_path / "site-1"
     d.mkdir()
     for i in range(10):
         (d / f"part_{i}.csv").write_text(HEADER + ROWS, encoding="utf-8")
 
-    result = inspect_path(tmp_path, max_files=3)
+    result = inspect_data(tmp_path, max_files=3)
 
-    assert result["target_type"] == "tabular_dataset"
-    assert result["skill_selection"]["recommended_skills"] == ["nvflare-fed-stats"]
+    assert result["scan"]["complete"] is False
+    assert result["routing"]["recommended_skill"] == "nvflare-fed-stats"
 
 
-def test_inspect_path_max_files_flows_to_dataset_walk(tmp_path):
+def test_inspect_data_common_scan_comes_from_the_single_dataset_walk(tmp_path, monkeypatch):
+    _write_site(tmp_path, "site-1", HEADER + ROWS)
+    calls = []
+    original = Path.iterdir
+
+    def counted(path):
+        calls.append(path)
+        return original(path)
+
+    monkeypatch.setattr(Path, "iterdir", counted)
+
+    result = inspect_data(tmp_path)
+
+    assert calls == [tmp_path, tmp_path / "site-1"]
+    assert result["scan"]["entries_visited"] == 2
+    assert result["scan"]["files_considered"] == sum(result["dataset"]["file_census"].values())
+    assert result["scan"]["files_read"] == result["dataset"]["scan"]["files_read"]
+
+
+def test_inspect_data_preserves_the_existing_dataset_dictionary(tmp_path):
+    _write_site(tmp_path, "site-1", HEADER + ROWS)
+
+    expected = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+    result = inspect_data(tmp_path)
+
+    assert result["dataset"] == expected
+
+
+def test_inspect_data_max_files_flows_to_dataset_walk(tmp_path):
     d = tmp_path / "site-1"
     d.mkdir()
     for i in range(10):
         (d / f"part_{i}.csv").write_text(HEADER + ROWS, encoding="utf-8")
 
-    capped = inspect_path(tmp_path, max_files=3)
-    uncapped = inspect_path(tmp_path, max_files=250)
+    capped = inspect_data(tmp_path, max_files=3)
+    uncapped = inspect_data(tmp_path, max_files=250)
 
     assert capped["dataset"]["counts_approximate"] is True
     assert uncapped["dataset"]["counts_approximate"] is False
     assert uncapped["dataset"]["sites"][0]["data_files"] == 10
 
 
-def test_inspect_path_keeps_code_classification_priority(tmp_path):
-    # A training repo that also contains CSVs stays a code target: dataset
-    # classification only runs when code classification found nothing.
+def test_source_and_data_results_have_disjoint_capability_blocks(tmp_path):
     (tmp_path / "train.py").write_text(
         "import torch\nfrom torch.optim import Adam\n\n\ndef main():\n    pass\n", encoding="utf-8"
     )
     _write_site(tmp_path, "data", HEADER + ROWS)
 
-    result = inspect_path(tmp_path)
+    source = inspect_source(tmp_path)
+    data = inspect_data(tmp_path)
 
-    assert result["target_type"] != "tabular_dataset"
-    assert result["dataset"] is None
-    assert "nvflare-fed-stats" not in result["skill_selection"]["recommended_skills"]
+    assert "dataset" not in source
+    assert "ownership" not in data
+    assert data["dataset"]["modality"] == "tabular"

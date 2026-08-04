@@ -17,7 +17,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import ReservedKey, ReturnCode, StreamCtxKey, WorkspaceConstants
+from nvflare.apis.fl_constant import ReservedKey, ReturnCode, StreamCtxKey, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.storage import DataTypes, StorageSpec
 from nvflare.apis.streaming import StreamContextKey
@@ -66,7 +66,8 @@ def test_job_log_receiver_uses_trusted_peer_identity_for_storage(tmp_path, file_
     stream_ctx[StreamContextKey.RC] = ReturnCode.OK
 
     receiver._on_chunk_received(b"log line\n", stream_ctx, fl_ctx)
-    receiver._on_stream_done(stream_ctx, fl_ctx)
+    with patch.object(receiver, "log_info") as log_info:
+        receiver._on_stream_done(stream_ctx, fl_ctx)
 
     expected_path = tmp_path / "trusted_job" / "trusted_client" / file_name
     assert expected_path.exists()
@@ -79,6 +80,10 @@ def test_job_log_receiver_uses_trusted_peer_identity_for_storage(tmp_path, file_
         fl_ctx,
     )
     assert StorageSpec.is_valid_component(f"{expected_data_type}_trusted_client")
+    log_info.assert_called_once_with(
+        fl_ctx,
+        f"Saved live log '{file_name}' from trusted_client for job trusted_job",
+    )
 
 
 def _make_recv_fl_ctx(client_name="trusted_client", site_allows: bool = True):
@@ -179,6 +184,24 @@ def test_job_log_receiver_warns_for_empty_regular_log_stream(tmp_path):
 
     log_warning.assert_called_once()
     assert "No log data received from trusted_client for job trusted_job" in log_warning.call_args.args[1]
+
+
+def test_job_log_receiver_does_not_log_saved_when_storage_fails(tmp_path):
+    receiver = JobLogReceiver(dest_dir=str(tmp_path))
+    fl_ctx = _make_recv_fl_ctx()
+    job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
+    job_manager.set_client_data.side_effect = RuntimeError("storage failed")
+    stream_ctx = {
+        KEY_FILE_NAME: WorkspaceConstants.ERROR_LOG_FILE_NAME,
+        StreamContextKey.RC: ReturnCode.OK,
+    }
+
+    receiver._on_chunk_received(b"error\n", stream_ctx, fl_ctx)
+    with patch.object(receiver, "log_info") as log_info:
+        with pytest.raises(RuntimeError, match="storage failed"):
+            receiver._on_stream_done(stream_ctx, fl_ctx)
+
+    log_info.assert_not_called()
 
 
 @pytest.mark.parametrize(
