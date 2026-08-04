@@ -27,6 +27,7 @@ import subprocess
 import threading
 import time
 import uuid
+from enum import Enum
 from typing import Any, Optional, Sequence, Tuple, Union
 
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReturnCode
@@ -77,6 +78,14 @@ _TRAINER_LEAF_PREFIX = "client_api_trainer"
 
 class _LaunchAborted(Exception):
     """The task's abort_signal triggered while waiting for a per-task trainer launch."""
+
+
+class _TaskDeliveryPhase(Enum):
+    """Derived TASK_READY phases; TRANSFER_COMPLETE uses normal heartbeat liveness."""
+
+    INLINE_WAIT = "inline_wait"
+    TRANSFERRING = "transferring"
+    TRANSFER_COMPLETE = "transfer_complete"
 
 
 # Conditions that can interrupt TASK_READY delivery.
@@ -846,8 +855,16 @@ class ExternalProcessBackend(CellBackendBase):
         def _on_transaction_created(transaction):
             transfer_waiters.append(DownloadService.get_transfer_waiter(transaction.tx_id))
 
-        def _has_live_task_download():
-            return any(not waiter.done() for waiter in tuple(transfer_waiters))
+        def _delivery_phase():
+            waiters = tuple(transfer_waiters)
+            if not waiters:
+                return _TaskDeliveryPhase.INLINE_WAIT
+            if any(not waiter.done() for waiter in waiters):
+                return _TaskDeliveryPhase.TRANSFERRING
+            return _TaskDeliveryPhase.TRANSFER_COMPLETE
+
+        def _is_transferring():
+            return _delivery_phase() is _TaskDeliveryPhase.TRANSFERRING
 
         def _cancel_cause():
             if abort_signal.triggered or (self._context.launch_once and self._abort):
@@ -856,8 +873,7 @@ class ExternalProcessBackend(CellBackendBase):
                 return _SEND_CLOSED, None
             if not self._process_group_alive(trainer):
                 return _SEND_PROCESS_DEAD, None
-            # Transfer progress supersedes heartbeat expiry while materialization is active.
-            if not _has_live_task_download():
+            if not _is_transferring():
                 liveness_error = self._trainer_liveness_error(trainer)
                 if liveness_error:
                     return _SEND_SESSION_DEAD, liveness_error
@@ -872,7 +888,7 @@ class ExternalProcessBackend(CellBackendBase):
                 request=new_cell_message({}, task_message),
                 timeout=timeout,
                 abort_signal=cancel,
-                progress_wait_cb=_has_live_task_download,
+                progress_wait_cb=_is_transferring,
                 receiver_ids=(trainer.trainer_fqcn,),
                 fobs_ctx_props={
                     FOBSContextKey.STREAM_PROGRESS_CB: lambda **_kwargs: None,

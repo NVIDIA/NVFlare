@@ -1157,6 +1157,8 @@ class TestHeartbeatAndOperationalLiveness:
                 tx_created = env.cell.sent_kwargs[-1]["fobs_ctx_props"][ebp.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY]
                 tx_created(SimpleNamespace(tx_id="task-payload-tx"))
                 time.sleep(0.1)  # longer than the heartbeat timeout
+                cancel = env.cell.sent_kwargs[-1]["abort_signal"]
+                assert not cancel.triggered
                 transfer_settled.set()
                 payload = request.payload
                 env.cell.deliver(
@@ -1176,6 +1178,43 @@ class TestHeartbeatAndOperationalLiveness:
             )
             result = backend.execute("train", Shareable(), fl_ctx, Signal())
             assert result.get_return_code() == ReturnCode.OK
+            get_transfer_waiter.assert_called_once_with("task-payload-tx")
+        finally:
+            backend.finalize(FLContext())
+
+    def test_completed_task_payload_transaction_resumes_heartbeat_expiry(self, env, monkeypatch):
+        transfer_settled = threading.Event()
+        waiter = SimpleNamespace(transaction_id="task-payload-tx", done=lambda: transfer_settled.is_set())
+        get_transfer_waiter = MagicMock(return_value=waiter)
+        monkeypatch.setattr(ebp.DownloadService, "get_transfer_waiter", get_transfer_waiter)
+        backend, fl_ctx = _initialized_backend(
+            env,
+            heartbeat_interval=0.02,
+            heartbeat_timeout=0.05,
+            task_wait_timeout=None,
+            result_wait_timeout=None,
+        )
+        try:
+
+            def completed_transfer_pending_reply(topic, target, request):
+                assert topic == Topic.TASK_READY
+                tx_created = env.cell.sent_kwargs[-1]["fobs_ctx_props"][ebp.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY]
+                tx_created(SimpleNamespace(tx_id="task-payload-tx"))
+                transfer_settled.set()
+                cancel = env.cell.sent_kwargs[-1]["abort_signal"]
+                while not cancel.triggered:
+                    time.sleep(0.005)
+                return _task_accepted_reply()
+
+            env.cell.on_request = completed_transfer_pending_reply
+            start = time.monotonic()
+            result = backend.execute("train", Shareable(), fl_ctx, Signal())
+            elapsed = time.monotonic() - start
+
+            assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+            assert elapsed < 0.5
+            assert "heartbeat timed out" in backend._abort_reason
+            assert "TASK_READY was pending" in backend._abort_reason
             get_transfer_waiter.assert_called_once_with("task-payload-tx")
         finally:
             backend.finalize(FLContext())
