@@ -6,6 +6,14 @@ FedJob API
 
 The FLARE :class:`FedJob<nvflare.job_config.api.FedJob>` API allows users to Pythonically define and create job configurations.
 
+.. note::
+
+   This lower-level API is intentionally documented separately from the
+   :ref:`job_recipe` and :ref:`recipe_api` guides. Start with a concrete recipe
+   for a supported workflow. Use ``FedJob`` when you need arbitrary component
+   placement or custom job construction that a named Recipe API does not
+   provide.
+
 Core Concepts
 =============
 

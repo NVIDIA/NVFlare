@@ -298,7 +298,7 @@ Upgrading from 2.5/2.6 to 2.7
 
 FLARE 2.7.0 introduced several major changes:
 
-- **Job Recipe API** (technical preview): A higher-level API for creating FL jobs. See :ref:`job_recipe`.
+- **Job Recipe API**: A higher-level API for creating FL jobs. See :ref:`job_recipe`.
 - **Client API** is now the recommended pattern for all new FL jobs.
 - **Hierarchical FL**: New relay-based communication hierarchy for large-scale deployments.
   See :ref:`flare_hierarchical_architecture`.
