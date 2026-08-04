@@ -186,7 +186,7 @@ Example configuration and output:
 
 .. code-block:: json
 
-    {"asctime": "2025-01-14 14:44:46,559", "name": "ClientAPIExecutor", "fullName": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor", "levelname": "INFO", "fl_ctx": "[identity=site-1, run=fc711945-a7cf-4834-9fc4-aa9cb60e327b, peer=example_project, peer_run=fc711945-a7cf-4834-9fc4-aa9cb60e327b, task_name=train, task_id=a16b7a02-b2ea-4db8-9fc4-aa9cb60e327b]", "message": "execute for task (train)"}
+    {"asctime": "2025-01-14 14:44:46,559", "name": "ClientAPIExecutor", "fullName": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor", "levelname": "INFO", "fl_ctx": "[identity=site-1, run=fc711945-a7cf-4834-9fc4-aa9cb60e327b, peer=example_project, peer_run=fc711945-a7cf-4834-9fc4-aa9cb60e327b, task_name=train, task_id=a16b7a02-b2ea-4eb5-895a-b40d507b2c5c]", "message": "execute for task (train)"}
 
 
 Filters

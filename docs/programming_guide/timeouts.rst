@@ -2760,8 +2760,7 @@ job to fail.
 
 2. **Heartbeat Relationships**: Always maintain proper ratios
    
-   - ``heartbeat_timeout`` = 3-6x ``heartbeat_interval``
-   - ``heartbeat_timeout`` = 3-6x ``heartbeat_interval`` for out-of-process Client API modes
+   - ``heartbeat_timeout`` = 3-6x ``heartbeat_interval``, including for out-of-process Client API modes
 
 3. **Retry Allowance**: Leave room for retries
    
