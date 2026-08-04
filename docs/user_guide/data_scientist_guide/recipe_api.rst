@@ -3,9 +3,11 @@
 Recipe API Reference
 ====================
 
-This page describes the stable Recipe APIs you can rely on when writing,
-exporting, and running recipe-based jobs. It also calls out which generated-job
-details are internal implementation details rather than user-facing Recipe APIs.
+This page is the authoritative reference for the stable Recipe APIs you can
+rely on when writing, exporting, and running recipe-based jobs. It also calls
+out which generated-job details are internal implementation details rather
+than user-facing Recipe APIs. For a runnable introduction, see
+:ref:`job_recipe`.
 
 How Recipe Jobs Fit Together
 ----------------------------
@@ -38,9 +40,17 @@ or returned by:
 
    nvflare recipe show <recipe-name> --format json
 
-The base ``Recipe`` type defines behavior shared by concrete recipes. Most
-scripts do not instantiate the base type directly. The public constructor
-surface is the documented constructor of each concrete recipe.
+The base ``Recipe`` type is an implementation base shared by concrete recipes;
+it is not a user-facing job constructor. Application entrypoints should import
+and instantiate a named concrete recipe rather than importing ``Recipe`` from
+``nvflare.recipe.spec`` or passing around its generated job. The public
+constructor surface is the documented constructor of each concrete recipe.
+
+Recipe documentation and the lower-level :ref:`fed_job_api` documentation are
+intentionally separate. Use recipes for supported high-level workflows. Use
+``FedJob`` when implementing an advanced workflow that requires arbitrary
+component placement or custom job construction, and keep that assembly behind
+a dedicated recipe when exposing a reusable high-level entrypoint.
 
 Recipe Execution
 ----------------
@@ -194,6 +204,8 @@ Utility helpers:
    Add a final evaluation of a PyTorch recipe's persisted global model without
    asking clients to submit their local models.
 
+.. _recipe_per_site_and_metadata:
+
 Per-Site And Metadata Helpers
 -----------------------------
 
@@ -204,14 +216,32 @@ For NVFlare 2.9, the public Recipe configuration surface also includes:
    immediately after recipe construction and before client customizations. Each
    concrete recipe interprets the site dictionaries for its own workflow.
    Built-in FedAvg, FedEval, and XGBoost recipes require at least ``min_clients``
-   entries. The helper validates and stores the mapping; the recipe creates its
+   entries, and reserved targets such as ``server`` and ``@ALL`` are not site
+   names. The helper validates and stores the mapping; the recipe creates its
    client apps once, immediately before the first client customization or before
-   export or execution. Nested values become part of the job definition and must
-   not contain secret values.
+   export or execution. Built-in FedAvg recipes and ``FedEvalRecipe`` create one
+   app per configured site; without per-site configuration, they create the
+   default ``@ALL`` client app at that preparation point. Nested values become
+   part of the job definition and must not contain secret values.
+
+   FedAvg recipes accept ``train_script``, ``train_args``,
+   ``launch_external_process``, ``command``, ``framework``,
+   ``server_expected_format``, ``params_transfer_type``, ``launch_once``, and
+   ``shutdown_timeout`` in each site's dictionary. ``FedEvalRecipe`` accepts the
+   corresponding ``eval_script`` and ``eval_args`` fields plus its launch,
+   command, and exchange-format overrides. XGBoost recipes require a
+   ``data_loader`` for every site; bagging also accepts ``lr_scale``. They add
+   their required data loader and executor components directly to each
+   configured site.
+
+   Where present, the deprecated ``per_site_config=...`` constructor argument
+   delegates to this helper and emits ``FutureWarning``. New code should call
+   ``set_per_site_config``.
 
 ``recipe.configured_sites()``
    Return top-level site names from applied per-site config. This method does
-   not indicate that sites are connected or replace the execution environment.
+   not infer sites from metadata, indicate that sites are connected, validate
+   production enrollment, or replace the execution environment.
 
 ``set_recipe_meta(recipe, key, value)``
    Set selected generated job metadata by ``JobMetaKey``. The accepted keys are
@@ -220,9 +250,24 @@ For NVFlare 2.9, the public Recipe configuration surface also includes:
    through this helper: runtime/submission metadata managed by NVFlare
    internals, keys with dedicated constructor fields (``min_clients``,
    ``mandatory_clients``), and ``study``, which the server assigns from the
-   admin session at submission. See the Recipe Metadata section of the Recipe
-   guide for per-key value shapes and examples. Metadata is stored in clear
-   text and must not contain secret values.
+   admin session at submission. Set constructor fields through a concrete
+   recipe constructor that exposes them, and select the study through ``PocEnv``
+   or ``ProdEnv``. Metadata is stored in clear text and must not contain secret
+   values. Raw strings and other ``JobMetaKey`` values are rejected.
+
+   Accepted key and value shapes are:
+
+   * ``JobMetaKey.RESOURCE_SPEC``: a dict of per-site resource requirements,
+     keyed by site name with dict values.
+   * ``JobMetaKey.JOB_LAUNCHER_SPEC``: a dict of per-site launcher
+     requirements, keyed by site name with dict values.
+   * ``JobMetaKey.SCOPE``: a string job-scope name.
+   * ``JobMetaKey.CUSTOM_PROPS``: a dict of nested custom metadata.
+
+   Dict values and nested dictionary or list contents must be JSON-serializable.
+   Dictionary keys are coerced to strings as they appear in ``meta.json``, and
+   non-finite floating-point values such as ``NaN`` and ``Infinity`` are
+   rejected.
 
 Repeated metadata calls for the same key replace that key's previous helper
 value. Different metadata keys accumulate. Keys that overlap a dedicated
@@ -232,6 +277,10 @@ keys, the helper value is what appears in the generated ``meta.json``
 specs on the generated job, a warning is emitted for specs already registered
 when the helper is called, but specs added afterwards are overridden without
 one.
+
+Metadata helpers do not validate runtime resource availability, production
+enrollment, or whether named sites are present for a run. Deployment through
+the execution environment determines which sites are present.
 
 .. _recipe_secrets:
 
@@ -369,11 +418,55 @@ secret-bearing command arguments in the simulator, or preferably read a
 site-local secret directly inside code, rather than relying on in-process
 per-client argument isolation.
 
+.. _recipe_execution_environments:
+
 Execution Environments
 ----------------------
 
 Most scripts pass an environment to ``recipe.execute(env)``. Built-in
 environments include ``SimEnv``, ``PocEnv``, and ``ProdEnv``.
+
+Their public constructor signatures are:
+
+.. code-block:: python
+
+   SimEnv(
+       *, num_clients=0, clients=None, num_threads=None, gpu_config=None,
+       log_config=None, workspace_root="/tmp/nvflare/simulation", extra=None
+   )
+   PocEnv(
+       *, num_clients=2, clients=None, gpu_ids=None, use_he=False,
+       docker_image=None, project_conf_path="", username="admin@nvidia.com",
+       study="default", extra=None
+   )
+   ProdEnv(
+       startup_kit_location, login_timeout=5.0,
+       username="admin@nvidia.com", study="default", extra=None
+   )
+
+``SimEnv`` requires either a positive ``num_clients`` or a non-empty ``clients``
+list; if both are supplied, their sizes must match. ``num_threads`` controls
+simulated client worker-process concurrency. ``gpu_config`` assigns GPU IDs,
+``log_config`` selects logging configuration, and ``workspace_root`` selects
+the simulation artifact root.
+
+``NVFLARE_SIMULATOR_WORKSPACE_ROOT`` is a process-level orchestration override.
+When set, it takes precedence over ``workspace_root`` (including an explicitly
+supplied value), and ``SimEnv`` emits ``RuntimeWarning`` if it changes the
+configured path. Normal Recipe applications should leave the variable unset
+and configure ``workspace_root`` directly.
+
+``PocEnv`` runs server and clients as separate local processes. ``clients``
+selects explicit site names; ``gpu_ids`` assigns client GPUs; ``use_he`` enables
+homomorphic encryption; and ``docker_image`` selects the SP/CP image for Docker
+POC mode. Jobs in Docker POC mode specify their SJ/CJ image in recipe launcher
+metadata. When ``project_conf_path`` is supplied, its project definition takes
+precedence over client-count and Docker preparation options.
+
+``ProdEnv`` submits through an admin startup kit. ``login_timeout`` must be
+positive, and ``username`` selects the admin identity. ``PocEnv`` and
+``ProdEnv`` use ``study`` to select the submission context; see
+:ref:`multi_study_guide` for named-study configuration.
 
 Most recipe scripts do not call environment methods directly. They are listed
 here for anyone implementing an execution environment.
