@@ -32,6 +32,9 @@ class FedCERecipe(FedAvgRecipe):
 
     This recipe intentionally requires PyTorch exchange format and DIFF transfer.
     It is a dedicated algorithm rather than a passive FedAvg option.
+    FedCE requires at least two clients and assumes that the same clients
+    participate in every round. If participation changes, the aggregator logs
+    a warning and carries prior contribution weights forward.
     """
 
     def __init__(
@@ -61,6 +64,10 @@ class FedCERecipe(FedAvgRecipe):
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
     ):
+        if not isinstance(min_clients, int):
+            raise TypeError(f"min_clients must be int, got {type(min_clients).__name__}")
+        if min_clients < 2:
+            raise ValueError(f"FedCERecipe requires min_clients >= 2, got {min_clients}")
         if server_expected_format != ExchangeFormat.PYTORCH:
             raise ValueError("FedCERecipe requires server_expected_format=ExchangeFormat.PYTORCH")
 

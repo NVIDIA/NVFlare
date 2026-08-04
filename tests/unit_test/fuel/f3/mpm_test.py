@@ -15,6 +15,7 @@ import os
 from unittest.mock import MagicMock, patch
 
 from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.mpm import MainProcessMonitor
 
 
@@ -77,3 +78,10 @@ class TestMainProcessMonitorReturnCode:
         # any other non-int return value also stays int-parseable
         content = self._run_and_read_rc(tmp_path, lambda: "done")
         assert int(content) == 0
+
+    def test_unhandled_publication_failure_writes_nonzero_exit_code(self, tmp_path):
+        def _fail_publication():
+            raise RuntimeError("result publication failed")
+
+        content = self._run_and_read_rc(tmp_path, _fail_publication)
+        assert int(content) == ProcessExitCode.EXCEPTION

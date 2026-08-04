@@ -33,7 +33,7 @@ that a credential was redacted, and never reproduce its value.
 
 Install `nvflare` into the host-provided environment if it is not already
 present, and run `nvflare` commands, import probes, export, and simulation from
-that same environment. A successful `nvflare agent inspect`, `nvflare
+that same environment. A successful `nvflare agent inspect source`, `nvflare
 --version`, or other NVFLARE CLI command from the intended host executable is
 authoritative evidence that NVFLARE is present. Host-provided overlays, editable
 installs, and source checkouts may have no `importlib.metadata` distribution
