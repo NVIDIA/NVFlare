@@ -1,14 +1,24 @@
 # Client API Attach Mode
 
-This example runs the ordinary Client API loop in an externally owned process.
+This example runs the ordinary Client API loop in a trainer process that is
+started and owned independently of NVFlare. The trainer initiates the Attach
+connection to a dedicated listener owned by the Client Job (CJ); NVFlare never
+starts, signals, or terminates the trainer process.
 With the default shared-filesystem profile, the trainer may start before or after
 the NVFlare job; both sides rendezvous on `attach_id=numpy_trainer`.
+
+Use Attach only for this ownership model. If NVFlare should launch and own the
+trainer process, use `external_process`; if training runs in the Client Job, use
+`in_process`. See the
+[Client API Attach guide](../../../docs/programming_guide/execution_api_type/client_api_attach.rst)
+for the mode decision, configuration responsibilities, and legacy migration
+mapping.
 
 Attach uses a listener owned by the Client Job (CJ). It does not reuse or change
 the site's ordinary CP-to-CJ `internal` connection:
 
 ```text
-federation network <-> CP <-> CJ <-> dedicated Attach listener <-> trainer
+federation network <-> CP <-> CJ <- dedicated Attach listener <- trainer
 ```
 
 The site operator configures the dedicated listener in the site-local
@@ -105,8 +115,8 @@ template:
 }
 ```
 
-Keep `client.crt` and `client.key` beside `rootCA.pem`; Cell discovers them using
-the same credential-folder convention as `IPCAgent`. The CJ listener requires its
+Keep `client.crt` and `client.key` beside `rootCA.pem`; the Cell credential
+helper discovers all three files from that directory. The CJ listener requires its
 site-local CA, server certificate, and server key. A default provisioned client
 kit does not contain `server.crt`/`server.key`; provision the site with
 `listening_host` set (or otherwise install a site-local listener certificate and

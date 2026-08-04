@@ -81,8 +81,7 @@ The Tensor Downloader is built into all PyTorch workflows in FLARE 2.7.2+. When 
 
 - ``PTFedAvg`` controller
 - ``PTFileModelPersistor``
-- ``PTClientAPILauncherExecutor``
-- ``PTInProcessClientAPIExecutor``
+- ``ClientAPIExecutor`` with ``params_exchange_format="pytorch"``
 - Any PyTorch-based Recipe (``FedAvgRecipe`` from ``nvflare.app_opt.pt.recipes``)
 
 The TensorDecomposer is automatically registered and handles tensor streaming transparently.

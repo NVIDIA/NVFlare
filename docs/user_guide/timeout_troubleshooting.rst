@@ -34,15 +34,16 @@ Task Fetch Timeout
    })
 
 
-External Process Pre-Init Timeout (Client API Only)
-----------------------------------------------------
+External-Process Launch Timeout (Client API Only)
+--------------------------------------------------
 
-**Applies to**: Client API with subprocess launcher (``ScriptRunner``, ``ClientAPILauncherExecutor``)
+**Applies to**: ``ClientAPIExecutor(execution_mode="external_process")``
 
-**Symptom**: Job fails before training starts with "external_pre_init_timeout" error.
+**Symptom**: Job fails before training starts because the launched trainer does
+not establish its Client API session before ``launch_timeout``.
 
-This timeout controls how long NVFlare waits for your external training script to call ``flare.init()``.
-When using Client API, NVFlare launches your script as a subprocess and waits for it to connect back.
+This timeout controls how long NVFLARE waits for the launched trainer to call
+``flare.init()`` and complete its Cell session setup.
 
 **Common Causes**:
 
@@ -50,15 +51,16 @@ When using Client API, NVFlare launches your script as a subprocess and waits fo
 - Heavy library imports (PyTorch, TensorFlow, transformers)
 - Slow disk I/O reading model weights
 
-**Solution**: Increase ``external_pre_init_timeout`` in the executor configuration:
+**Solution**: Increase ``launch_timeout`` in the executor configuration:
 
 .. code-block:: python
 
-   from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
+   from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
 
-   executor = ClientAPILauncherExecutor(
-       external_pre_init_timeout=600,  # 10 minutes for LLMs
-       ...
+   executor = ClientAPIExecutor(
+       execution_mode="external_process",
+       command=["python3", "custom/train.py"],
+       launch_timeout=600,  # 10 minutes for LLMs
    )
 
 
@@ -131,52 +133,41 @@ Result Submission Timeout
    })
 
 
-Subprocess Large-Model Result Submission Timeout
+Out-of-Process Client API Task and Result Waiting
 -------------------------------------------------
 
-**Applies to**: Subprocess-mode clients (``launch_external_process=True``) with large models
+**Applies to**: Client API ``external_process`` and ``attach`` modes
 
-**Symptom**: Training completes in the subprocess but the job hangs or fails immediately
-after, with no result acknowledgment received. With very large payloads and many
-clients, logs may also show repeated ``no ref found`` messages from
-``DownloadService`` after delayed retries.
+**Symptom**: The trainer does not accept a task in time, or a long training round
+finishes after the Client Job has stopped waiting for its result.
 
-**Cause**: ``submit_result_timeout`` is the time the training subprocess waits for
-the client job process to acknowledge its result. ``PEER_READ_TIMEOUT`` is the
-client config key for the parent client job's corresponding wait for the
-subprocess to read a task. For large models (5 GB+) and many clients, either side
-can exceed short defaults if streaming request timeouts are configured higher
-than the pipe timeout. The subprocess also must remain alive long enough for the
-server to finish pulling tensors from its ``DownloadService`` after result ACK.
+**Cause**: ``task_wait_timeout`` bounds task delivery and acceptance.
+``result_wait_timeout`` starts after task acceptance and therefore must cover the
+training round. Large payload transfer is progress-aware and is governed by the
+shared streaming idle policy rather than ``result_wait_timeout``.
 
 **Solution**:
 
 .. code-block:: python
 
-   recipe.add_client_config({
-       "submit_result_timeout": 1800,      # 30 min for LLM-scale results
-       "download_complete_timeout": 1800,  # keep subprocess alive for server tensor download
-       "PEER_READ_TIMEOUT": 600,           # parent CJ read budget; match configured streaming timeout
-       "tensor_min_download_timeout": 600, # PyTorch: increase if inter-chunk gaps exceed 300s default
-       # "np_min_download_timeout": 600,   # NumPy/sklearn: same, use instead of tensor variant
-       "max_resends": 3,                   # finite value; 0 disables retries, None is rejected
-   })
+   from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
+
+   executor = ClientAPIExecutor(
+       execution_mode="attach",
+       attach_id="trainer_a",
+       task_wait_timeout=600,    # task materialization and trainer acceptance
+       result_wait_timeout=7200, # complete training round before result publication
+       heartbeat_interval=5,
+       heartbeat_timeout=30,
+   )
 
 .. note::
-   ``submit_result_timeout`` is the subprocess-side wait for acknowledgment.
-   It is distinct from ``submit_task_result_timeout``, which is the server-side wait
-   for the client to deliver a result.  For large models, set ``submit_task_result_timeout``
-   (server-side) to be at least as large as ``submit_result_timeout`` (subprocess-side)
-   so the server is still listening when the subprocess finishes sending.
+   ``result_wait_timeout`` does not bound a result payload that is actively
+   streaming. Do not shorten it to control large-object transfer duration.
 
 .. note::
-   In FLARE 2.8.0, ``ClientAPILauncherExecutor`` rejects
-   ``download_complete_timeout=None`` and ``max_resends=None`` at job
-   initialization. Use a positive ``download_complete_timeout`` and a finite
-   non-negative ``max_resends`` value. Recipe-based external-process jobs
-   serialize the default ``max_resends=3`` in executor args; use
-   ``recipe.add_client_config({"max_resends": N})`` only to override that
-   default.
+   An attached trainer owns its process and any result-transfer source. Keep it
+   alive until ``flare.send()`` returns; NVFLARE will not terminate or restart it.
 
 Swarm Learning P2P Transfer Timeout
 ------------------------------------
@@ -238,30 +229,30 @@ Most Commonly Adjusted Timeouts
    * - submit_task_result_timeout
      - None
      - Large result payloads
-   * - submit_result_timeout (subprocess mode only)
-     - 300 s through Client API job config; 60 s in raw ``FlareAgent``
-     - Large model result transfers from subprocess; set 1800 s for LLMs
-   * - tensor_min_download_timeout / np_min_download_timeout (subprocess mode only)
+   * - launch_timeout (Client API external-process only)
      - 300 s
-     - 70B+ models on congested networks; increase to 600 s (tensor = PyTorch, np = NumPy/sklearn)
-   * - PEER_READ_TIMEOUT (Client API subprocess only)
-     - 300 s
-     - Large task payloads when streaming per-request timeout is explicitly increased
-   * - download_complete_timeout (subprocess mode only)
-     - 1800 s
-     - Keep subprocess alive while the server downloads large tensor results
-   * - max_resends (subprocess mode only)
-     - 3
-     - Persistent network failures; keep finite; use 0 to disable retries
+     - Heavy imports or model initialization before ``flare.init()``
+   * - task_wait_timeout (out-of-process Client API)
+     - None; Attach applies a 600 s task-delivery budget when unset
+     - Slow task materialization or delayed trainer acceptance
+   * - result_wait_timeout (out-of-process Client API)
+     - None
+     - Long training rounds before the trainer publishes its result
    * - round_timeout (Swarm Learning only)
      - 3600 s
      - 7B+ model P2P transfers between Swarm peers
-   * - external_pre_init_timeout (Client API subprocess only)
-     - 60-300s
-     - LLMs, heavy imports before ``flare.init()``
    * - heartbeat_timeout
      - 60-300s
      - Long training iterations, slow networks
+   * - attach_timeout (Attach mode only)
+     - None
+     - Bound how long a Client Job waits for an independently started trainer
+   * - job_wait_timeout (Attach profile only)
+     - None
+     - Bound how long a trainer waits to discover a matching Client Job
+   * - task_wait_timeout / result_wait_timeout (Attach mode only)
+     - None
+     - Bound trainer task acceptance or control-side result waiting when required by site policy
    * - train_timeout
      - 0
      - Long training rounds

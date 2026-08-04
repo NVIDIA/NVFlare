@@ -175,9 +175,13 @@ The client configuration is ``config_fed_client.json`` in the config folder of e
                "*"
             ],
             "executor": {
-               "path": "nvflare.app_opt.tf.in_process_client_api_executor.TFInProcessClientAPIExecutor",
+               "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
                "args": {
-                  "task_script_path": "src/hello-tf_fl.py"
+                  "execution_mode": "in_process",
+                  "task_script_path": "src/hello-tf_fl.py",
+                  "params_exchange_format": "keras_layer_weights",
+                  "server_expected_format": "numpy",
+                  "train_with_evaluation": true
                }
             }
          }

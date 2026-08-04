@@ -27,6 +27,7 @@ The following aspects of the communication system can be configured:
 - Selection of gRPC driver implementation (asyncio vs. non-asyncio)
 - Configuration of ad-hoc connections
 - Configuration of internal connections
+- Configuration of Client API Attach listeners
 - Messaging parameters
 
 General Configuration
@@ -233,6 +234,77 @@ If this default setup does not work for you, you can configure it to your liking
 In this example, we changed to use "grpc" as the communication scheme.
 
 The syntax and meanings of the properties are exactly the same as the "adhoc" configurations.
+
+.. _client_api_attach_configuration:
+
+Client API Attach Listeners
+===========================
+
+Client API Attach lets an independently started trainer connect to a running
+Client Job (CJ). The CJ creates a dedicated, job-lifetime listener from the
+``client_api_attach`` section. This listener is separate from ``internal``
+(CP-to-CJ communication) and ``adhoc`` (best-effort direct Cell routing).
+
+Changing ``client_api_attach`` requires restarting the site.
+
+Shared-Filesystem Attach
+------------------------
+
+Use the ``shared-file`` driver when the CJ and trainer share a filesystem. Both
+processes must see ``root_dir`` at the same absolute path.
+
+.. code-block:: json
+
+  {
+    "client_api_attach": {
+      "scheme": "shared-file",
+      "resources": {
+        "root_dir": "/absolute/shared/nvflare-client-api-attach",
+        "connection_security": "clear"
+      }
+    }
+  }
+
+Filesystem ownership and permissions form the peer-access boundary. Use a
+dedicated, non-world-writable root and restrict its group to the intended site
+and trainer principals. The filesystem must support coherent atomic rename and
+working cross-node POSIX advisory locks.
+
+Shared-file Attach supports trainer-first or job-first startup. The CJ publishes
+its dynamic listener URL under a locked rendezvous claim keyed by site name and
+``attach_id``.
+
+Network Attach
+--------------
+
+Use a registered network driver when the trainer cannot share a filesystem with
+the CJ. Production network Attach requires mTLS:
+
+.. code-block:: json
+
+  {
+    "client_api_attach": {
+      "scheme": "grpcs",
+      "resources": {
+        "host": "site-1.example.com",
+        "port": 8102,
+        "connection_security": "mtls"
+      }
+    }
+  }
+
+The client site must have access to its CA, listener certificate, and listener
+key. Provision a client with ``listening_host`` or install equivalent site-local
+listener credentials. The trainer receives the CA and site client credentials;
+never distribute the listener's private key to the trainer.
+
+The listener port must be reachable from the trainer and reserved against
+concurrent jobs. A direct trainer profile is job-specific because it contains
+the CJ FQCN and final listener URL. One-way TLS is rejected. Clear network
+Attach is development-only and requires ``connection_security="clear"`` in the
+trainer profile plus ``allow_insecure_attach=True`` in the job.
+
+See :ref:`client_api_attach` for job and trainer configuration.
 
 Messaging Parameters
 ====================

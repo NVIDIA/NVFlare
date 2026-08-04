@@ -161,9 +161,10 @@ Before discussing this advanced topic, let's first show an example of job config
                "train"
             ],
             "executor": {
-               "path": "nvflare.app_common.executors.task_exchanger.TaskExchanger",
+               "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
                "args": {
-                  "pipe_id": "task_pipe"
+                  "execution_mode": "in_process",
+                  "task_script_path": "trainer.py"
                }
             }
          }
@@ -206,7 +207,8 @@ Before discussing this advanced topic, let's first show an example of job config
    }
 
 
-This job requires two pipes, one for task exchange (task_pipe), another for metrics collection (metric_pipe).
+This illustrative job declares two application pipes, ``task_pipe`` and
+``metric_pipe``, in addition to its Client API executor.
 If you look at their configuration closely, you will see that: there are many args to configure, and the configs of the two pipes are identical except for their ``id`` values. It is tedious and error-prone to configure many args in multiple places.
 
 One way to improve is to make use of SVR for the args of the two pipes:
@@ -222,9 +224,10 @@ One way to improve is to make use of SVR for the args of the two pipes:
                "train"
             ],
             "executor": {
-               "path": "nvflare.app_common.executors.task_exchanger.TaskExchanger",
+               "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
                "args": {
-                  "pipe_id": "task_pipe"
+                  "execution_mode": "in_process",
+                  "task_script_path": "trainer.py"
                }
             }
          }
@@ -276,9 +279,10 @@ Using Parameterized Variable Definition, we can further improve it:
             "train"
          ],
          "executor": {
-            "path": "nvflare.app_common.executors.task_exchanger.TaskExchanger",
+            "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
             "args": {
-               "pipe_id": "task_pipe"
+               "execution_mode": "in_process",
+               "task_script_path": "trainer.py"
             }
          }
          }
