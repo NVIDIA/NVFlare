@@ -43,7 +43,7 @@
       "assertions": [
         "The agent recognizes both asks are satisfied by one FedStatsRecipe job and does not create separate per-site scripts or run the job once per site.",
         "The agent builds a real federated statistics job; it does not pool the site CSVs into one DataFrame and present pandas output as the federated result.",
-        "The agent runs nvflare agent inspect and takes the 27 feature names, dtype classes, site layout, and row counts from its dataset block instead of hand-rolling data inspection, and runs end-to-end without pausing for confirmation.",
+        "The agent runs nvflare agent inspect data and takes the 27 feature names, dtype classes, site layout, and row counts from its dataset block instead of hand-rolling data inspection, and runs end-to-end without pausing for confirmation.",
         "The generated client subclasses DFStatisticsCore and points each site at its own site directory; the generated job.py imports FedStatsRecipe from nvflare.recipe.fedstats and passes one canonical site list to both FedStatsRecipe(sites=sites) and SimEnv(clients=sites).",
         "statistic_configs includes count, and the default statistic selection is stated.",
         "The categorical features (sex, smoker, diagnosis_group, readmitted_30d) are named as excluded, derived from observed dtypes.",
@@ -76,7 +76,7 @@
           },
           {
             "id": "inspect-dataset-block",
-            "description": "consumes nvflare agent inspect's dataset block (target_type, features, dtypes, site layout, row counts) as the inspection evidence instead of hand-rolled data reads"
+            "description": "consumes nvflare agent inspect data's dataset block (modality, features, dtypes, site layout, row counts) as the inspection evidence instead of hand-rolled data reads"
           },
           {
             "id": "automatic-end-to-end",
@@ -640,7 +640,7 @@
       ],
       "assertions": [
         "The agent runs generate_images.py because the user explicitly requested it, and only that script — data generation is a user-requested effect, not skill initiative.",
-        "The agent detects the image modality via inspect (target_type: image_dataset) and generates the client from the image template as a Statistics implementation, not DFStatisticsCore.",
+        "The agent detects the image modality via inspect data (dataset.modality: image) and generates the client from the image template as a Statistics implementation, not DFStatisticsCore.",
         "statistic_configs contains count, failure_count, and histogram with 10 bins and range [0, 256] derived from the 8-bit pixel depth (stated, not guessed from file names).",
         "Because the fixture exceeds the default inspect walk cap (counts_approximate: true), the agent does not trust the block's per-site image counts: it verifies counts directly or re-runs inspect with --max-files raised before the bin-cap decision.",
         "The grayscale conversion policy is stated in the report.",
@@ -655,7 +655,7 @@
         "mandatory_behavior": [
           {
             "id": "image-path-routing",
-            "description": "routes on inspect's image_dataset classification and uses the image template instead of DFStatisticsCore"
+            "description": "routes on inspect data's dataset.modality: image result and uses the image template instead of DFStatisticsCore"
           },
           {
             "id": "image-statistic-set",
