@@ -373,6 +373,20 @@ class TestDecomposeWithLazyDownloadRef:
         assert len(objects) == 1
         assert isinstance(objects[0][1], _LazyRelayDownloadable)
 
+    def test_explicit_no_relay_reemits_original_ref_for_local_materialization(self):
+        decomposer = _make_decomposer()
+        mgr = _make_manager({FOBSContextKey.RELAY_PASS_THROUGH: False})
+        lazy = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0, relay=True)
+
+        decomposer.decompose(lazy, mgr)
+        mgr.post_process()
+
+        datums = list(mgr.get_datums().values())
+        assert len(datums) == 1
+        ref = json.loads(datums[0].value)
+        assert ref == {_RefKey.FQCN: _SERVER_FQCN, _RefKey.REF_ID: _REF_ID}
+        assert _CtxKey.OBJECTS not in mgr.fobs_ctx
+
     def test_finalize_lazy_batch_datum_dot_matches_decomposer(self):
         """The datum DOT must equal the decomposer's download DOT."""
         decomposer = _make_decomposer()

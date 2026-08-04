@@ -19,7 +19,7 @@ Design: docs/design/client_api_execution_modes.md ("Overview", "Execution Modes"
 
 - in_process: trainer runs inside the Client Job (CJ) process over DataBus
 - external_process: NVFlare launches and owns the trainer process tree over Cell
-- attach: reserved by the public executor but not implemented
+- attach: externally owned trainer rendezvous over Cell
 
 This module is internal to NVFlare. It is not a user extension point; users configure
 ``ClientAPIExecutor(execution_mode=...)`` only.
@@ -77,6 +77,11 @@ class ClientAPIBackendContext:
     heartbeat_timeout: float = 30.0
     task_wait_timeout: Optional[float] = None
     result_wait_timeout: Optional[float] = None
+    # attach rendezvous / lifecycle
+    attach_id: Optional[str] = None
+    attach_timeout: Optional[float] = None
+    allow_reconnect: bool = False
+    allow_insecure_attach: bool = False
     # Declarative API-boundary representation contract. Backends transport these values in
     # TASK_EXCHANGE; conversion happens in the trainer-side Client API, never in the executor.
     params_exchange_format: ExchangeFormat = ExchangeFormat.RAW
@@ -101,7 +106,8 @@ class ClientAPIBackendSpec(ABC):
     - in_process: the backend runs the trainer inside the CJ process and owns its thread.
     - external_process: the backend launches and owns the external trainer process tree; it must
       not stop the trainer before the payload transfer of a pending result reaches terminal state.
-    The reserved attach mode has no backend yet and therefore no lifecycle contract here.
+    - attach: the backend owns only its protocol session. The trainer process is externally
+      owned and must never be signalled, terminated, or waited on by the backend.
     """
 
     @abstractmethod

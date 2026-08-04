@@ -1098,6 +1098,27 @@ class TestHeartbeatAndOperationalLiveness:
         finally:
             backend.finalize(FLContext())
 
+    def test_heartbeat_cannot_clear_external_process_result_barrier(self, env):
+        backend, _ = _initialized_backend(env)
+        trainer = backend._active_launch
+        try:
+            trainer.result_source_live.set()
+
+            reply = env.cell.deliver(
+                Topic.HEARTBEAT,
+                trainer.trainer_fqcn,
+                {
+                    MsgKey.SESSION_ID: trainer.session_id,
+                    MsgKey.RESULT_SOURCE_LIVE: False,
+                },
+            )
+
+            assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.HEARTBEAT
+            assert trainer.result_source_live.is_set()
+        finally:
+            trainer.result_source_live.clear()
+            backend.finalize(FLContext())
+
     def test_missing_heartbeat_bounds_unlimited_result_wait(self, env):
         backend, fl_ctx = _initialized_backend(
             env,
