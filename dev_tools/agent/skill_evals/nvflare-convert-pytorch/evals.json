@@ -2,6 +2,38 @@
   "skill_name": "nvflare-convert-pytorch",
   "evals": [
     {
+      "id": "pytorch-combined-fedstats-workflow-boundary",
+      "prompt": "Convert my plain PyTorch training loop into an NVFLARE job and also run federated statistics over the site data in this same request. I have not chosen which workflow should run first.",
+      "expected_output": "The agent does not generate or run either job yet. It explains that federated statistics and model-training conversion are two independent jobs and workflows, asks which workflow to run first without recommending FedStats because no data-distribution purpose was stated, and does not route to nvflare-orient or automatically chain the jobs.",
+      "files": [],
+      "assertions": [
+        "The agent states that federated statistics and PyTorch training conversion are two independent jobs and workflows.",
+        "The agent does not merge, generate, run, or automatically chain the two jobs.",
+        "The agent asks which workflow to run first without selecting one for the user.",
+        "The agent does not recommend nvflare-fed-stats first because the prompt does not state a data-distribution purpose.",
+        "The agent does not route the combined request to nvflare-orient."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-pytorch",
+        "mandatory_behavior": [
+          {
+            "id": "separate-training-and-statistics-workflows",
+            "description": "explains that federated statistics and model-training conversion are independent jobs and asks which to run first"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-combined-or-auto-chained-jobs",
+            "description": "does not merge or automatically chain statistics and PyTorch conversion jobs"
+          },
+          {
+            "id": "no-orient-for-combined-workflow",
+            "description": "does not route the combined statistics and training request to nvflare-orient"
+          }
+        ]
+      }
+    },
+    {
       "id": "pytorch-convert-basic",
       "prompt": "Here is my PyTorch training code. Convert it to FLARE FL code, run the converted job with 3 simulated sites using this dataset, split the dataset evenly for the 3 sites, use FedAvg, and train for 3 rounds.",
       "expected_output": "A FLARE-compatible PyTorch Client API conversion following inspect -> recipe show -> fill -> transform -> construct -> validate: standard client.py/job.py/model.py layout, a runnable job.py that constructs FedAvg with explicit class_path model config for 3 simulated sites and 3 rounds, local validation evidence, and metric evidence. Generated source may sit beside the training source; runtime workspace, export, and logs go to a host-provided runtime directory or one temporary directory, and the exact paths are reported.",
@@ -10,7 +42,7 @@
         "files/hello-pt/model.py"
       ],
       "assertions": [
-        "The agent runs nvflare agent inspect before editing and extracts source facts statically without importing or executing user training modules during planning.",
+        "The agent runs nvflare agent inspect source on the target before editing and extracts source facts statically without importing or executing user training modules during planning.",
         "The agent edits only training, model, job, or small config files.",
         "Because PyTorch and FedAvg are explicit, the agent runs nvflare recipe show fedavg-pt --format json directly and does not run recipe list before constructing it.",
         "The generated job.py imports the selected recipe class from the module returned by recipe show, using nvflare.app_opt.pt.recipes.fedavg.FedAvgRecipe for fedavg-pt and not nvflare.recipe.FedAvgRecipe.",
@@ -45,7 +77,7 @@
         "mandatory_behavior": [
           {
             "id": "inspect-first",
-            "description": "runs nvflare agent inspect before editing, keeps planning-phase fact extraction static, and does not import or execute user training modules to discover fields"
+            "description": "runs nvflare agent inspect source before editing, keeps planning-phase fact extraction static, and does not import or execute user training modules to discover fields"
           },
           {
             "id": "scoped-edits",
@@ -522,7 +554,7 @@
     {
       "id": "pytorch-convert-custom-aggregation",
       "prompt": "Convert this PyTorch training code to a FLARE job over 3 simulated sites, but aggregate the client updates with a custom weighted average that weights each client's update by its local step count instead of plain FedAvg averaging.",
-      "expected_output": "A FLARE PyTorch Client API conversion whose server-side aggregation uses the product extension point: a ModelAggregator subclass in aggregators.py implementing accept_model, aggregate_model, and reset_stats, weighting by FLModel.meta NUM_STEPS_CURRENT_ROUND, wired through the recipe aggregator= parameter with matching aggregator_data_kind, while the client keeps the standard Client API exchange.",
+      "expected_output": "A FLARE PyTorch Client API conversion whose server-side aggregation uses the product extension point: a ModelAggregator subclass in aggregators.py implementing accept_model, aggregate_model, and reset_stats, weighting by FLModel.meta NUM_STEPS_CURRENT_ROUND, preserving finite numeric and boolean client metrics in aggregated FLModel.metrics, warning or failing visibly when any client omits metrics, wired through the recipe aggregator= parameter with matching aggregator_data_kind, while the client keeps the standard Client API exchange.",
       "files": [
         "files/hello-pt/train.py",
         "files/hello-pt/model.py"
@@ -531,6 +563,8 @@
         "The agent generates aggregators.py with a ModelAggregator subclass implementing accept_model, aggregate_model, and reset_stats.",
         "The generated aggregator operates on FLModel.params and preserves or intentionally sets FLModel.params_type.",
         "The generated aggregator weights client contributions using FLModel.meta such as NUM_STEPS_CURRENT_ROUND.",
+        "The generated aggregator carries finite numeric and boolean client metrics into the aggregated FLModel.metrics with the same contribution weights used for parameters.",
+        "If any client omits FLModel.metrics, the generated aggregator warns or fails visibly instead of publishing a partial metric average as though all clients reported it.",
         "The generated aggregator logs concise accept/aggregate evidence through its FLComponent logger before the full simulation runs.",
         "The agent wires the aggregator through the recipe aggregator= parameter with matching aggregator_data_kind and parameter transfer settings.",
         "The client keeps the standard Client API exchange and sends step-count metadata the aggregator needs.",
@@ -551,6 +585,14 @@
           {
             "id": "meta-weighted-aggregation",
             "description": "uses FLModel.meta client contribution metadata such as NUM_STEPS_CURRENT_ROUND for weighting"
+          },
+          {
+            "id": "custom-aggregator-preserves-metrics",
+            "description": "carries finite numeric and boolean client metrics into aggregated FLModel.metrics using the same contribution weights as parameters"
+          },
+          {
+            "id": "custom-aggregator-missing-metrics-visible",
+            "description": "warns or fails visibly if any accepted client model omits FLModel.metrics, rather than producing silent partial metrics"
           },
           {
             "id": "aggregator-logs-runtime-evidence",
@@ -750,6 +792,20 @@
       ],
       "nvflare": {
         "expected_skill": "nvflare-convert-lightning",
+        "negative_for": "nvflare-convert-pytorch"
+      }
+    },
+    {
+      "id": "pytorch-negative-huggingface",
+      "prompt": "Convert my transformers.Trainer training script to an NVFLARE job. The Trainer owns optimization and evaluation.",
+      "expected_output": "The PyTorch conversion skill should not be the lead; route to nvflare-convert-huggingface because Hugging Face Trainer owns training.",
+      "files": [],
+      "assertions": [
+        "The selected skill is not nvflare-convert-pytorch.",
+        "The selected skill is nvflare-convert-huggingface."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-huggingface",
         "negative_for": "nvflare-convert-pytorch"
       }
     },

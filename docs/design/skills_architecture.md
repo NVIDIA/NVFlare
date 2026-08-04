@@ -41,8 +41,9 @@ executes them. The packaged skills today are:
 
 - `nvflare-orient` — read-only router that inspects a project and recommends the
   next skill or workflow;
-- `nvflare-convert-pytorch` and `nvflare-convert-lightning` — convert existing
-  PyTorch / PyTorch Lightning training code into a federated NVFLARE job via the
+- `nvflare-convert-pytorch`, `nvflare-convert-lightning`, and
+  `nvflare-convert-huggingface` — convert existing PyTorch, PyTorch Lightning,
+  or Hugging Face Trainer code into a federated NVFLARE job via the
   Client API, with local validation and export;
 - `nvflare-diagnose-job` — read-only diagnosis of a failed job from bounded
   evidence.
@@ -127,7 +128,7 @@ flowchart TB
 | Authoring source | Dev-time | `skills/`, `SKILL.md`, `references/` (runtime); `dev_tools/agent/skill_evals/<skill>/` (repo-only eval suites) | Human-readable skill instructions and supporting evidence; eval suites live outside the shipped skill tree. |
 | Engineering lint tool | Dev-time / CI | `dev_tools/agent/skills/checks`, `python dev_tools/agent/skills/checks/cli.py`, pytest coverage | Deterministic admission checks for frontmatter, triggers, command drift, policy coverage, fixtures, and process metrics. This is a repo-local tool validated by pytest; it is not shipped in the wheel. |
 | Skill install | Install-time bridge | `npx skills add ./skills -a claude-code -a codex` (local) or `npx skills add NVIDIA/<skills-repo> -a claude-code -a codex` (published) | Standard [agentskills.io](https://agentskills.io) installer that copies the `skills/` tree into the Codex and Claude skill directories. Install the whole set together so cross-skill references (`nvflare-shared/`) resolve. NVFLARE ships no custom installer command. |
-| Runtime agent surface | Runtime | Codex/Claude skill loading, `nvflare agent inspect`, recipe/job CLI | The agent reads skill instructions and uses NVFLARE commands to inspect, convert, validate, or diagnose. `nvflare agent inspect` also reports installed skills discovered from the agent skill directories. |
+| Runtime agent surface | Runtime | Codex/Claude skill loading, `nvflare agent inspect source|data`, recipe/job CLI | The agent reads skill instructions and uses NVFLARE commands to inspect, convert, validate, or diagnose. Source and data inspection are separate static capabilities. |
 | Benchmark harness | Separate | Follow-up work outside this PR | Separate architecture for measuring skill impact with Docker, SDK profiles, agent plugins, and reporting. |
 
 ## Lint Engine Independence (Design Invariant)
@@ -189,7 +190,7 @@ flowchart TB
     subgraph NVFLARESurface["NVFLARE command surface"]
         direction TB
         AgentCLI["nvflare agent runtime commands"] --> Info["info: command surface metadata"]
-        AgentCLI --> Inspect["inspect: static AST scan + installed-skill discovery"]
+        AgentCLI --> Inspect["inspect source/data: bounded static evidence"]
         Recipes["recipes / job.py / simulator / job CLI"]
     end
 
@@ -197,7 +198,7 @@ flowchart TB
     Agent -->|skill-guided calls| AgentCLI
     Agent -->|normal NVFLARE work| Recipes
 
-    Inspect --> Project["Local training code / FLARE job artifacts"]
+    Inspect --> Project["Local training source / FLARE artifacts / data directories"]
 
     style SkillDelivery fill:#f8fbff,stroke:#4f7fb8,stroke-width:2px
     style AgentRuntime fill:#fafbfc,stroke:#334155,stroke-width:3px
@@ -208,13 +209,13 @@ flowchart TB
 
 ```mermaid
 flowchart TD
-    SkillsRoot["repo-root skills/ (or published NVIDIA/<skills-repo>)"] --> SkillDirs["nvflare-orient, nvflare-convert-pytorch, nvflare-convert-lightning, nvflare-diagnose-job, nvflare-shared (internal)"]
+    SkillsRoot["repo-root skills/ (or published NVIDIA/<skills-repo>)"] --> SkillDirs["nvflare-orient, nvflare-convert-pytorch, nvflare-convert-lightning, nvflare-convert-huggingface, nvflare-diagnose-job, nvflare-shared (internal)"]
 
     SkillDirs --> Lint["Engineering lint tool: dev_tools/agent/skills/checks (frontmatter validation, admission checks)"]
 
     SkillsRoot --> Install["npx skills add ./skills -a claude-code -a codex"]
     Install --> Target["Agent skill dirs (.claude/skills, .agents/skills, ~/.claude/skills, ~/.codex/skills)"]
-    Target --> Discover["nvflare agent inspect installed_skills discovery"]
+    Target --> Discover["Codex/Claude load installed skills"]
 
     Install --> WholeSet["Install the whole set together so nvflare-shared relative refs resolve"]
 ```
@@ -224,7 +225,7 @@ flowchart TD
 ```mermaid
 flowchart LR
     Project["User project or NVFLARE artifacts"] --> Orient["nvflare-orient: read-only router"]
-    Project --> Convert["nvflare-convert-pytorch / nvflare-convert-lightning: conversion skills"]
+    Project --> Convert["nvflare-convert-pytorch / nvflare-convert-lightning / nvflare-convert-huggingface: conversion skills"]
     Project --> Diagnose["nvflare-diagnose-job: read-only diagnosis"]
 
     Orient --> OrientInspect["Inspect project shape and FLARE readiness"]
@@ -257,12 +258,12 @@ Runtime (installed on the user's machine):
 
 - Agent-facing CLI: `nvflare/tool/agent/agent_cli.py`
 - Command surface metadata: `nvflare/tool/agent/command_registry.py`
-- Static inspection engine: `nvflare/tool/agent/inspector.py` (framework-agnostic
-  AST walk and evidence ranking; also reports installed skills discovered from
-  agent skill directories)
-- Per-framework detectors: `nvflare/tool/agent/frameworks/` (one module per
-  framework; add a framework here, not in the engine)
-- Implemented skills: `nvflare-orient`, `nvflare-convert-pytorch`, `nvflare-convert-lightning`, and `nvflare-diagnose-job`
+- Static inspection facade: `nvflare/tool/agent/inspector.py`
+- Bounded source/data inspection core: `nvflare/tool/agent/inspection/` (one
+  source walk and fact pass, one forward authority graph, fixed owner tables,
+  pure routing, and the existing dataset adapter)
+- Implemented skills: `nvflare-orient`, `nvflare-convert-pytorch`, `nvflare-convert-lightning`,
+  `nvflare-convert-huggingface`, and `nvflare-diagnose-job`
 
 Separate:
 

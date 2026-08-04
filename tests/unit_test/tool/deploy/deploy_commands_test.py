@@ -1268,12 +1268,14 @@ def test_stage_k8_rejects_invalid_stage_argument_values(tmp_path, capsys, monkey
     assert "valid Kubernetes namespace" in err
     assert calls == []
 
+    rejected_kubectl = "opaque-kubectl-value"
     with pytest.raises(SystemExit):
-        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare", kubectl="python"))
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare", kubectl=rejected_kubectl))
 
     err = capsys.readouterr().err
     assert "INVALID_ARGS" in err
     assert "Kubernetes CLI command must be one of" in err
+    assert rejected_kubectl not in err
     assert calls == []
 
     with pytest.raises(SystemExit):
@@ -1283,6 +1285,19 @@ def test_stage_k8_rejects_invalid_stage_argument_values(tmp_path, capsys, monkey
     assert "INVALID_ARGS" in err
     assert "Kubernetes CLI command must be one of" in err
     assert calls == []
+
+
+def test_stage_k8_redacts_authorization_in_missing_kit_error(tmp_path, capsys):
+    token = "sample-token-123"
+    missing_kit = tmp_path / f'Authorization = "Bearer {token}"'
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(missing_kit, namespace="nvflare"))
+
+    err = capsys.readouterr().err
+    assert "INVALID_KIT" in err
+    assert 'Authorization = "Bearer <redacted>"' in err
+    assert token not in err
 
 
 def test_stage_k8_rejects_symlinked_stage_folder(tmp_path, capsys, monkeypatch):

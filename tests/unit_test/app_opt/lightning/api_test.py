@@ -26,6 +26,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
 from nvflare.app_common.app_constant import AlgorithmConstants
+from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_opt.lightning.algorithm import _AlgorithmHandlerManager, _AlgorithmResult
 from nvflare.app_opt.lightning.api import FLCallback
 from nvflare.app_opt.lightning.api import patch as lightning_patch
@@ -1097,6 +1098,27 @@ def test_train_end_preserves_explicit_user_step_count_for_scaffold():
 
     output_model = callback._send_model.call_args.args[0]
     assert output_model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == 5
+
+
+def test_train_end_delivers_initial_metrics_when_train_with_evaluation_is_disabled():
+    callback = _make_callback()
+    callback._is_training = True
+    callback._send_model = MagicMock()
+    callback.reset_state = MagicMock()
+    module = SimpleNet()
+    metrics = {"val_auroc": 0.8}
+    module.__fl_meta__ = {MetaKey.INITIAL_METRICS: metrics}
+    trainer = SimpleNamespace(global_step=3)
+    callback._round_start_global_step = 0
+
+    callback.on_train_end(trainer, module)
+
+    outgoing_model = callback._send_model.call_args.args[0]
+    assert outgoing_model.metrics is None
+    assert outgoing_model.meta[MetaKey.INITIAL_METRICS] == metrics
+
+    server_model = FLModelUtils.from_shareable(FLModelUtils.to_shareable(outgoing_model))
+    assert server_model.metrics == metrics
 
 
 def test_train_end_rejects_user_metadata_that_conflicts_with_automatic_algorithm_metadata():

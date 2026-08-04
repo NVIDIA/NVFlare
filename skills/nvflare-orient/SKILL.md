@@ -1,21 +1,16 @@
 ---
 name: nvflare-orient
-description: "Route open-ended or ambiguous NVFLARE requests by inspecting the local project and recommending one specific workflow skill without editing files; do not use for an explicit conversion request, even when its framework still needs detection."
+description: "Route open-ended or ambiguous NVFLARE requests by inspecting the local project and recommending one specific workflow skill without editing files; explicit conversions normally route directly to a converter, except when inspection reports unresolved Trainer ownership or active Lightning and Hugging Face Trainer entrypoints."
 license: Apache-2.0
-version: "0.1.0"
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-  min_flare_version: "2.8.0"
+  min_flare_version: "2.9.0"
   blast_radius: read_only
   category: Orientation
-  tags:
-    - nvflare
-    - federated-learning
-    - routing
-  languages:
-    - python
-  frameworks:
-    - nvflare
+  version: "0.1.0"
+  tags: "nvflare, federated-learning, routing"
+  languages: "python"
+  frameworks: "nvflare"
   domain: ml
 ---
 
@@ -24,7 +19,10 @@ metadata:
 ## Use When
 
 Use when the user asks where to start with NVFLARE, how a local project maps to
-FLARE workflows, or which FLARE skill should handle an ambiguous request.
+FLARE workflows, or which FLARE skill should handle an ambiguous request. Also
+use when inspection explicitly reports unresolved Hugging Face Trainer
+ownership or active Lightning and Hugging Face Trainer owners that require a
+user choice.
 
 ## Do Not Use When
 
@@ -32,17 +30,20 @@ Do not use when the user already names a specific workflow such as PyTorch
 conversion, federated statistics, job submission, production deployment,
 Kubernetes setup, log diagnosis, or optimization of an existing FLARE job.
 Route to the narrower skill instead. An explicit conversion request does not
-need orientation merely to detect the framework: the converter skill performs
-static inspection and selects the framework itself, so hand off directly
-rather than invoking orient first.
+need orientation merely to detect the framework when one training owner is
+clear: the converter skill performs static inspection and selects the framework
+itself. The exception is an inspector-reported ownership conflict or unresolved
+Trainer factory, which requires the read-only choice described above.
 
 ## Workflow
 
 1. Clarify the target path or use the current workspace when the user already
    gives enough context.
-2. Run `nvflare agent inspect <path> --format json` for static project evidence,
-   including detected framework routing, FLARE integration, local readiness, and
-   the recommended skill.
+2. Run `nvflare agent inspect source <path> --format json` for project or job
+   evidence, or `nvflare agent inspect data <path> --format json` for data and
+   statistics requests. If data inspection returns `dataset: null`, run source
+   inspection on the same target. Use its ownership, integration, scan,
+   routing, or dataset evidence as applicable.
 3. Classify the request into one next action: conversion, optimization, local
    validation, POC workflow, production workflow, diagnosis, deployment, or no
    FLARE skill.

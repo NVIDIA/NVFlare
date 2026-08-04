@@ -2,15 +2,14 @@
 
 Use this reference to decide whether to apply the Lightning conversion pattern or
 hand off to another framework skill. It covers **how to use and when to override**
-`nvflare agent inspect`, not a second copy of its detection rules.
+`nvflare agent inspect source`, not a second copy of its detection rules.
 
 ## Default Evidence Source
 
-`nvflare agent inspect <path> --format json` is the default detection source. It
-enumerates Lightning framework evidence (imports, `LightningModule` /
-`LightningDataModule` subclasses, and `Trainer` usage, including aliased and
-submodule import forms) and reports `conversion_state`. Trust its `frameworks`
-and `conversion_state` by default.
+`nvflare agent inspect source <path> --format json` is the default detection
+source. It reports supported direct Trainer ownership and routing; direct
+reading supplies imports and module evidence outside those closed forms. Trust
+its result by default.
 
 At a high level, a Lightning project uses a `LightningModule` /
 `LightningDataModule` and a `Trainer` fit/validate/test loop. Do not maintain a
@@ -33,6 +32,15 @@ the skill from the training entry point the user asks to federate:
 - if the user federates the `Trainer` fit/validate/test loop, use this skill;
 - if the user federates a manual PyTorch loop and only borrows an `nn.Module`,
   use `nvflare-convert-pytorch`.
+
+## Hugging Face Trainer Ownership
+
+Hugging Face models and tokenizers inside a Lightning-owned training loop do
+not change ownership; keep the Lightning conversion. A Hugging Face
+Trainer-only entrypoint routes to `nvflare-convert-huggingface`. When inspection
+finds active Lightning and Hugging Face Trainer entrypoints in the same
+project, route to `nvflare-orient` and ask the user to select one owner or split
+the entrypoints/jobs. Never patch both Trainers in one federated round loop.
 
 ## Lightning Trainer Wrappers
 

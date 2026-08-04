@@ -20,6 +20,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.streaming import StreamableEngine
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
@@ -27,7 +28,8 @@ from nvflare.client.config import ExchangeFormat
 
 from .receiver import TensorReceiver
 from .sender import TensorSender
-from .utils import clean_task_data
+from .types import TensorCustomKeys
+from .utils import clean_task_data, contains_lazy_download_ref
 
 
 class TensorServerStreamer(FLComponent):
@@ -171,8 +173,22 @@ class TensorServerStreamer(FLComponent):
             self.wait_sending_task_data_all_clients(num_clients, fl_ctx)
             self.try_to_clean_task_data(num_clients, fl_ctx)
         elif event_type == EventType.BEFORE_TASK_RESULT_FILTER:
+            task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
+            if task_name not in self.tasks:
+                return
             task_id = fl_ctx.get_prop(FLContextKey.TASK_ID)
             peer_name = fl_ctx.get_peer_context().get_identity_name()
+            task_result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
+            streaming_skipped = isinstance(task_result, Shareable) and task_result.get_header(
+                TensorCustomKeys.TASK_RESULT_STREAMING_SKIPPED, False
+            )
+            if streaming_skipped or contains_lazy_download_ref(task_result):
+                self.log_info(
+                    fl_ctx,
+                    f"Skipping task-result tensor rendezvous for peer '{peer_name}' and task '{task_id}' because "
+                    "the result was sent through the ordinary payload path.",
+                )
+                return
             try:
                 self.receiver.wait_for_tensors(task_id, peer_name)
                 self.receiver.set_ctx_with_tensors(fl_ctx)

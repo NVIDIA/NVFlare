@@ -28,7 +28,10 @@ from nvflare.fuel.f3.streaming.stream_const import (
     EOS,
     STREAM_ACK_TOPIC,
     STREAM_CHANNEL,
+    STREAM_CHUNK_SIZE,
     STREAM_DATA_TOPIC,
+    STREAM_RETRY_MAX_PENDING_BYTES,
+    STREAM_WINDOW_SIZE,
     StreamDataType,
     StreamHeaderKey,
 )
@@ -38,8 +41,10 @@ from nvflare.fuel.f3.streaming.stream_utils import ONE_MB, stream_stats_category
 log = logging.getLogger(__name__)
 
 MAX_OUT_SEQ_CHUNKS = 16
-# 1/4 of the window size
-ACK_INTERVAL = 1024 * 1024 * 4
+# Headerless legacy senders can use windows smaller than the new sender
+# default. Keep their receiver-side fallback at the historical 4 MiB so an
+# ACK is sent before those senders exhaust their flow-control window.
+ACK_INTERVAL = 4 * ONE_MB
 READ_TIMEOUT = 300
 COMPLETED_TASK_TTL = 60.0
 RETRY_WAIT = 5.0
@@ -107,7 +112,11 @@ class RxTask:
 
         config = CommConfigurator()
         self.timeout = config.get_streaming_read_timeout(READ_TIMEOUT)
+        self.chunk_size = config.get_streaming_chunk_size(STREAM_CHUNK_SIZE)
+        self.window_size = config.get_streaming_window_size(STREAM_WINDOW_SIZE)
         self.ack_interval = config.get_streaming_ack_interval(ACK_INTERVAL)
+        retry_max_pending_default = max(STREAM_RETRY_MAX_PENDING_BYTES, 2 * self.window_size)
+        self.retry_max_pending_bytes = config.get_streaming_retry_max_pending_bytes(retry_max_pending_default)
         self.max_out_seq = config.get_streaming_max_out_seq_chunks(MAX_OUT_SEQ_CHUNKS)
         self.completed_task_ttl = config.get_streaming_retry_timeout(
             COMPLETED_TASK_TTL
@@ -218,6 +227,28 @@ class RxTask:
         self.topic = message.get_header(StreamHeaderKey.TOPIC)
         self.headers = message.headers
         self.size = message.get_header(StreamHeaderKey.SIZE, 0)
+        self.chunk_size = self._get_sender_parameter(
+            message, StreamHeaderKey.CHUNK_SIZE, "streaming_chunk_size", self.chunk_size
+        )
+        self.window_size = self._get_sender_parameter(
+            message, StreamHeaderKey.WINDOW_SIZE, "streaming_window_size", self.window_size
+        )
+        self.ack_interval = self._get_sender_parameter(
+            message, StreamHeaderKey.ACK_INTERVAL, "streaming_ack_interval", self.ack_interval
+        )
+        self.retry_max_pending_bytes = self._get_sender_parameter(
+            message,
+            StreamHeaderKey.RETRY_MAX_PENDING_BYTES,
+            "streaming_retry_max_pending_bytes",
+            self.retry_max_pending_bytes,
+            allow_non_positive=True,
+        )
+        if self.ack_interval > self.window_size:
+            log.warning(
+                f"{self} streaming_ack_interval {self.ack_interval} from {self.origin} exceeds "
+                f"streaming_window_size {self.window_size}; using {self.window_size}"
+            )
+            self.ack_interval = self.window_size
         retry_timeout = message.get_header(StreamHeaderKey.RETRY_TIMEOUT, None)
         retry_wait = message.get_header(StreamHeaderKey.RETRY_WAIT, None)
         if retry_timeout is not None and retry_wait is not None:
@@ -252,6 +283,23 @@ class RxTask:
 
         self.stream_future = StreamFuture(self.sid, self.headers)
         self.stream_future.set_size(self.size)
+
+    def _get_sender_parameter(
+        self,
+        message: Message,
+        header_key: str,
+        parameter_name: str,
+        local_value: int,
+        allow_non_positive: bool = False,
+    ) -> int:
+        value = message.get_header(header_key, None)
+        if value is None:
+            return local_value
+
+        if isinstance(value, bool) or not isinstance(value, int) or (value <= 0 and not allow_non_positive):
+            log.warning(f"{self} ignoring invalid {parameter_name} header from {self.origin}: {_abbrev(value)}")
+            return local_value
+        return value
 
     def _handle_incoming_data(
         self, seq: int, message: Message

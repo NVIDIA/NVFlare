@@ -81,6 +81,7 @@ class MetricsArtifactWriter(Widget):
         self._round_sites = {}
         self._round_skipped = {}
         self._round_site_metric_counts = {}
+        self._custom_aggregator_no_metric_rounds = []
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -104,6 +105,7 @@ class MetricsArtifactWriter(Widget):
         info = meta.get(METRICS_AGGREGATION_INFO, {})
         if not isinstance(info, dict):
             info = {}
+        custom_aggregator_metrics = info.get("metric_source") == "custom_aggregator_flmodel_metrics"
 
         skipped = []
         aggregated_metrics = self._normalize_metrics(
@@ -122,6 +124,8 @@ class MetricsArtifactWriter(Widget):
         self._apply_site_weights(sites, site_weights)
 
         if not aggregated_metrics and not sites and not skipped:
+            if custom_aggregator_metrics:
+                self._custom_aggregator_no_metric_rounds.append(current_round)
             return
 
         aggregation = self._sanitize_json_object(info.get("aggregation"))
@@ -416,6 +420,22 @@ class MetricsArtifactWriter(Widget):
             f.write(line + "\n")
 
     def _write_summary_if_needed(self, fl_ctx):
+        if self._custom_aggregator_no_metric_rounds:
+            missing_rounds = self._custom_aggregator_no_metric_rounds
+            if len(missing_rounds) <= 10:
+                missing_rounds_summary = str(missing_rounds)
+            else:
+                missing_rounds_summary = (
+                    f"{len(missing_rounds)} rounds (first={missing_rounds[0]}, last={missing_rounds[-1]})"
+                )
+            self.log_warning(
+                fl_ctx,
+                "MetricsArtifactWriter did not write metrics artifacts for custom aggregator round(s): "
+                f"{missing_rounds_summary} because aggregator results did not include "
+                "FLModel.metrics. Custom aggregators must return aggregated metrics in FLModel.metrics for "
+                "server-side metric artifacts.",
+                fire_event=False,
+            )
         if not self._has_metrics:
             return
         self._ensure_paths(fl_ctx)

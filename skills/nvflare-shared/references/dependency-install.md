@@ -33,7 +33,19 @@ that a credential was redacted, and never reproduce its value.
 
 Install `nvflare` into the host-provided environment if it is not already
 present, and run `nvflare` commands, import probes, export, and simulation from
-that same environment.
+that same environment. A successful `nvflare agent inspect source`, `nvflare
+--version`, or other NVFLARE CLI command from the intended host executable is
+authoritative evidence that NVFLARE is present. Host-provided overlays, editable
+installs, and source checkouts may have no `importlib.metadata` distribution
+record or may report a development base version below an upcoming requirement
+pin. Check NVFLARE separately with the intended host CLI before generic package
+inventory. Never include `nvflare` in a batch of
+`importlib.metadata.version()` lookups. Do not append, install, or replace
+`nvflare` based only on missing package metadata or that development-version
+mismatch. Preserve the generated requirements pin and use a public capability
+check to verify the required NVFLARE API; if the host product lacks it, report a
+version/capability mismatch instead of installing a second NVFLARE copy over the
+host environment.
 
 Order is mandatory:
 
@@ -46,6 +58,17 @@ Package inventory before installation may use installer metadata or
 `importlib.metadata`, but the command must not import user, framework, product,
 or declared dependency modules. A compound Python command containing any such
 import is an import-level preflight and belongs after installation.
+Inventory only non-product dependencies this way. Handle a missing distribution
+record per package as an inventory result that identifies a dependency to
+install. Run the inventory with the same interpreter selected for installation
+and validation, catch `PackageNotFoundError` around version lookups, and make
+the inventory command exit zero after reporting an absent package or unknown
+version. Missing distribution metadata alone does not prove that a module or
+CLI supplied by a source checkout, `PYTHONPATH`, or another path is unavailable.
+Metadata absence is not authoritative for a host-provided NVFLARE product whose
+CLI already succeeded. If every applicable non-product requirement is already
+installed at a compatible version and NVFLARE availability is established by
+the host CLI, skip dependency installation and continue to validation.
 
 Do not run an import-level preflight first to discover a missing package when an
 applicable requirements file is already present. A `ModuleNotFoundError` from
@@ -53,8 +76,9 @@ such a preflight is an ordering error, not validation evidence.
 
 ## Build One Combined Install Plan
 
-Before running an installer, identify every applicable dependency input for the
-conversion:
+Build an install plan only when inventory identifies at least one dependency
+that genuinely requires installation. Before running that installer, identify
+every applicable dependency input for the conversion:
 
 - include every applicable requirements file, using one `-r <file>` argument
   per file;
@@ -71,14 +95,21 @@ combined invocation can contain
 
 ## Installer Choice
 
+- Resolve the host-provided Python interpreter before choosing the installer
+  target. A standard-library-only command such as
+  `<python> -c "import sys; print(sys.executable)"` is allowed for this purpose.
 - Prefer `uv pip install <combined-inputs>` when `uv` is available and the
-  host-provided environment is active.
+  host-provided environment is active and `uv` resolves that same interpreter.
 - If that environment is not active, use
   `uv pip install --python <python> <combined-inputs>` with its Python
   interpreter.
 - If `uv` is unavailable, use
   `<python> -m pip install <combined-inputs>` with the host-provided
   environment's interpreter.
+- Never add `uv pip install --system` merely because no virtual environment is
+  active or because `uv` is installed outside the Python environment. Use
+  `--system` only when the agent host explicitly supplies and identifies that
+  system interpreter as the writable dependency target.
 
 Run the selected combined canonical install command once. If it returns a
 nonzero exit, stop dependency installation and validation for this conversion

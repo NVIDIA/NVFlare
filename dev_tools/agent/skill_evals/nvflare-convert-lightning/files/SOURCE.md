@@ -34,3 +34,7 @@ The `hello-lightning` fixture's `LitNet` includes `validation_step` with
 `self.log("val_loss", ...)` and the training entry point builds a validation
 dataloader, so evaluation-focused evals can assert Lightning-native evaluation
 (`trainer.validate` before `trainer.fit`) without a separate fixture.
+
+The `routing-dual` fixture contains independent Lightning and Hugging Face
+Trainer entrypoints in one project. It verifies that project-wide dual training
+ownership routes to `nvflare-orient` instead of either framework converter.
