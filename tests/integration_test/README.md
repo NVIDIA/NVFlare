@@ -33,6 +33,7 @@ through `ci/run_integration.sh slow`. For direct local pytest runs, install the 
 Run one direct pytest suite:
 
 ```bash
+python -m pytest -v --log-cli-level=INFO --capture=no fast/client_api_attach_e2e_test.py
 python -m pytest -v --log-cli-level=INFO --capture=no fast/study_session_test.py
 python -m pytest -v --log-cli-level=INFO --capture=no slow/external_process_e2e_test.py
 python -m pytest -v --log-cli-level=INFO --capture=no slow/preflight_check_test.py
@@ -213,6 +214,7 @@ tests/integration_test/
   README.md
   test_configs.yml
   fast/
+    client_api_attach_e2e_test.py
     study_session_test.py
   slow/
     external_process_e2e_test.py

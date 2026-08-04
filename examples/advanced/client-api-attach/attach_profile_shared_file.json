@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "execution_mode": "attach",
+  "attach_id": "numpy_trainer",
+  "site_name": "site-1",
+  "rendezvous_dir": "/absolute/shared/nvflare-client-api-attach",
+  "job_wait_timeout": null
+}
