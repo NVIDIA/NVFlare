@@ -233,9 +233,11 @@ def test_find_or_create_task_records_reliable_header():
 @pytest.mark.parametrize(
     "window_size, chunk_size, expected",
     [
-        # window // chunk, plus one slot for a final frame or pre-">=" sender
+        # ceil(window / chunk), plus one slot for a final frame or pre-">=" sender
         (64 * MB, MB, 65),
         (128 * MB, 2 * MB, 65),
+        # non-multiple windows require ceiling division before the final-frame slot
+        (65 * MB, 2 * MB, 34),
         (8 * MB, MB, MAX_OUT_SEQ_CHUNKS),
         (64 * MB, 0, MAX_OUT_SEQ_CHUNKS),
         # a peer-supplied window/chunk ratio cannot size the buffer without limit

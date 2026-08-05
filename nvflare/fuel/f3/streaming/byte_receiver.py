@@ -82,10 +82,10 @@ def required_out_seq_chunks(window_size: int, chunk_size: int) -> int:
     that grows under scheduling jitter. The depth is bounded by how many chunks the
     sender may have unacked, which is what its flow-control window governs:
     TxTask.send_loop blocks while ``window >= window_size`` and every non-final chunk
-    is exactly chunk_size bytes, so at most ``window_size // chunk_size`` normal chunks
-    are unacked at a time. Tolerating fewer than that aborts healthy streams under load
-    -- the FLARE-3093 regression, where a 64 MiB default window put 64 chunks in flight
-    against a fixed tolerance of 16.
+    is exactly chunk_size bytes, so at most ``ceil(window_size / chunk_size)`` normal
+    chunks are unacked at a time. Tolerating fewer than that aborts healthy streams
+    under load -- the FLARE-3093 regression, where a 64 MiB default window put 64
+    chunks in flight against a fixed tolerance of 16.
 
     The extra chunk covers the final frame, which TxTask sends from its EOS branch
     before applying the normal flow-control check. It also supports senders predating
@@ -98,7 +98,8 @@ def required_out_seq_chunks(window_size: int, chunk_size: int) -> int:
     """
     if chunk_size <= 0:
         return MAX_OUT_SEQ_CHUNKS
-    return max(MAX_OUT_SEQ_CHUNKS, min(window_size // chunk_size + 1, MAX_DERIVED_OUT_SEQ_CHUNKS))
+    window_chunks = (window_size + chunk_size - 1) // chunk_size
+    return max(MAX_OUT_SEQ_CHUNKS, min(window_chunks + 1, MAX_DERIVED_OUT_SEQ_CHUNKS))
 
 
 class RxTask:
@@ -328,13 +329,15 @@ class RxTask:
             self.retry_max_pending_bytes,
             allow_non_positive=True,
         )
-        if self.chunk_size > 0 and self.window_size // self.chunk_size > MAX_DERIVED_OUT_SEQ_CHUNKS:
-            log.warning(
-                f"{self} streaming_window_size {self.window_size} from {self.origin} needs "
-                f"{self.window_size // self.chunk_size} out-of-sequence chunks, above the "
-                f"{MAX_DERIVED_OUT_SEQ_CHUNKS} cap; raise streaming_max_out_seq_chunks on this "
-                f"site if this peer's window is legitimate"
-            )
+        if self.chunk_size > 0:
+            window_chunks = (self.window_size + self.chunk_size - 1) // self.chunk_size
+            if window_chunks + 1 > MAX_DERIVED_OUT_SEQ_CHUNKS:
+                log.warning(
+                    f"{self} streaming_window_size {self.window_size} from {self.origin} needs "
+                    f"{window_chunks + 1} out-of-sequence chunks, above the "
+                    f"{MAX_DERIVED_OUT_SEQ_CHUNKS} cap; raise streaming_max_out_seq_chunks on this "
+                    f"site if this peer's window is legitimate"
+                )
         self.max_out_seq = max(self.max_out_seq, required_out_seq_chunks(self.window_size, self.chunk_size))
         if self.ack_interval > self.window_size:
             log.warning(
