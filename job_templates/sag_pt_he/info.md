@@ -5,7 +5,7 @@
     description = "FedAvg with Scatter and Gather workflow using PyTorch and homomorphic encryption" 
     class_name = "ScatterAndGather"
     controller_type = "server"
-    executor_type = "launcher_executor"
+    executor_type = "client_api_executor"
     contributor = "NVIDIA"
     init_publish_date = "2023-12-20"
     last_updated_date = "2023-12-20" # yyyy-mm-dd

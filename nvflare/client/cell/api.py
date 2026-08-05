@@ -22,6 +22,7 @@ passive and rely on their training framework's collectives.
 import copy
 import math
 import os
+import signal as process_signal
 import threading
 import time
 from queue import Empty, Queue
@@ -71,6 +72,8 @@ _HELLO_RETRY_INTERVAL = 1.0
 # Queue polling bounds abort/stop detection latency.
 _RECEIVE_POLL_INTERVAL = 0.5
 _HEARTBEAT_JOIN_TIMEOUT = 1.0
+_OWNER_WATCHDOG_INTERVAL = 0.5
+_OWNER_TERM_GRACE = 5.0
 
 
 def _shutdown_f3_streaming() -> None:
@@ -134,6 +137,7 @@ class CellClientAPI(APISpec):
         self._cell: Optional[Cell] = None
         self._session_id: Optional[str] = None
         self._cj_fqcn: Optional[str] = self._config.get(BootstrapKey.CJ_FQCN)
+        self._cj_pid: Optional[int] = self._config.get(BootstrapKey.CJ_PID)
         self._site_name: str = self._config[BootstrapKey.SITE_NAME]
         self._attach = AttachTrainerSession(self) if self._is_attach else None
         self._trainer_fqcn = self._attach.trainer_fqcn if self._attach else self._config[BootstrapKey.TRAINER_FQCN]
@@ -173,6 +177,8 @@ class CellClientAPI(APISpec):
         self._last_cj_activity: Optional[float] = None
         self._heartbeat_stop = threading.Event()
         self._heartbeat_thread: Optional[threading.Thread] = None
+        self._owner_watchdog_stop = threading.Event()
+        self._owner_watchdog_thread: Optional[threading.Thread] = None
         self._initialized = False
         # An external-process trainer owns its standalone F3 runtime. Attach owns
         # only this Cell session and must not tear down process-global services.
@@ -257,8 +263,10 @@ class CellClientAPI(APISpec):
                     self._attach.wait_for_open()
                 else:
                     self._hello()
+                self._start_owner_watchdog()
                 self._start_heartbeat()
             except Exception:
+                self._stop_owner_watchdog()
                 self._stop_heartbeat()
                 self._stop_cell()
                 raise
@@ -722,6 +730,7 @@ class CellClientAPI(APISpec):
             if close_resources:
                 self._abort_signal.trigger("client api shutdown")
                 self._result_abort_signal.trigger("client api shutdown")
+                self._stop_owner_watchdog()
                 self._stop_heartbeat()
                 self._stop_cell()
             if self._owns_f3_runtime:
@@ -907,6 +916,62 @@ class CellClientAPI(APISpec):
         thread = threading.Thread(target=self._heartbeat_loop, name="client_api_heartbeat", daemon=True)
         self._heartbeat_thread = thread
         thread.start()
+
+    def _start_owner_watchdog(self) -> None:
+        """Terminate a launched trainer group if its owning CJ process disappears."""
+        if self._is_attach or self._cj_pid is None:
+            return
+        self._owner_watchdog_stop.clear()
+        thread = threading.Thread(
+            target=self._owner_watchdog_loop,
+            name="client_api_owner_watchdog",
+            daemon=True,
+        )
+        self._owner_watchdog_thread = thread
+        thread.start()
+
+    def _owner_watchdog_loop(self) -> None:
+        while not self._owner_watchdog_stop.wait(_OWNER_WATCHDOG_INTERVAL):
+            if self._owner_process_alive():
+                continue
+            self.logger.error(f"owning CJ process {self._cj_pid} exited; terminating external trainer process group")
+            self._terminate_orphaned_process_group()
+            return
+
+    def _owner_process_alive(self) -> bool:
+        try:
+            os.kill(self._cj_pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            # The process still exists even if a platform denies the probe.
+            return True
+
+    def _terminate_orphaned_process_group(self) -> None:
+        """Terminate this owned process group; hard-stop it if SIGTERM is ignored."""
+        if os.name != "posix":
+            os._exit(1)
+        pgid = os.getpgrp()
+        try:
+            os.killpg(pgid, process_signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except Exception as e:
+            self.logger.error(f"failed to terminate orphaned trainer process group {pgid}: {e}")
+            os._exit(1)
+        time.sleep(_OWNER_TERM_GRACE)
+        try:
+            os.killpg(pgid, process_signal.SIGKILL)
+        except ProcessLookupError:
+            return
+        os._exit(1)
+
+    def _stop_owner_watchdog(self) -> None:
+        self._owner_watchdog_stop.set()
+        thread = self._owner_watchdog_thread
+        if thread is not None and thread is not threading.current_thread() and thread.is_alive():
+            thread.join(timeout=_HEARTBEAT_JOIN_TIMEOUT)
 
     def _heartbeat_loop(self) -> None:
         while not self._heartbeat_stop.wait(self._heartbeat_interval):

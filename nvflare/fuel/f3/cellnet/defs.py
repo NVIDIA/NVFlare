@@ -50,7 +50,8 @@ class MessageHeaderKey:
     # When True on an incoming cell message, Adapter.call() builds a per-call
     # FOBS decode context with FOBSContextKey.PASS_THROUGH=True so that tensors
     # in that message arrive as LazyDownloadRef placeholders rather than being
-    # downloaded inline.  Set by CellPipe.send() when pass_through_on_send=True.
+    # downloaded inline. Set by a sender that wants the receiver to preserve
+    # lazy payload references for another hop.
     PASS_THROUGH = CELLNET_PREFIX + "pass_through"
 
 

@@ -18,6 +18,8 @@ Drives the trainer's half of the external_process protocol against a fake CJ cel
 HELLO handshake, direct Cell Shareable tasks/results, result transaction progress, the
 batch-loop is_running() semantics, and ABORT/SHUTDOWN session ends."""
 
+import os
+import signal as process_signal
 import threading
 import time
 import uuid
@@ -1076,6 +1078,36 @@ def test_trainer_session_error_is_runtime_error():
 
 
 class TestInit:
+    def test_external_owner_watchdog_terminates_group_when_cj_disappears(self, bootstrap_path, monkeypatch):
+        config = read_bootstrap_config(bootstrap_path)
+        config[BootstrapKey.CJ_PID] = 424242
+        write_bootstrap_config(bootstrap_path, config)
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        terminated = threading.Event()
+        monkeypatch.setattr(cell_api, "_OWNER_WATCHDOG_INTERVAL", 0.001)
+        monkeypatch.setattr(api, "_owner_process_alive", lambda: False)
+        monkeypatch.setattr(api, "_terminate_orphaned_process_group", terminated.set)
+
+        api._start_owner_watchdog()
+
+        assert terminated.wait(1.0)
+        api._stop_owner_watchdog()
+
+    @pytest.mark.skipif(os.name != "posix", reason="process-group signals are POSIX")
+    def test_orphan_termination_escalates_ignored_sigterm(self, bootstrap_path, monkeypatch):
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        signals = []
+        exits = []
+        monkeypatch.setattr(cell_api.os, "getpgrp", lambda: 1234)
+        monkeypatch.setattr(cell_api.os, "killpg", lambda pgid, sig: signals.append((pgid, sig)))
+        monkeypatch.setattr(cell_api.time, "sleep", lambda _timeout: None)
+        monkeypatch.setattr(cell_api.os, "_exit", exits.append)
+
+        api._terminate_orphaned_process_group()
+
+        assert signals == [(1234, process_signal.SIGTERM), (1234, process_signal.SIGKILL)]
+        assert exits == [1]
+
     def test_init_does_hello_handshake(self, bootstrap_path, env):
         api = _init_api(bootstrap_path, env)
         try:

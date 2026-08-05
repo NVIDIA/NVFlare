@@ -41,9 +41,6 @@
     "InitFinalComponent": [
         "nvflare.app_common.abstract.init_final_component"
     ],
-    "Launcher": [
-        "nvflare.app_common.abstract.launcher"
-    ],
     "LearnablePersistor": [
         "nvflare.app_common.abstract.learnable_persistor"
     ],
@@ -150,20 +147,14 @@
     "SwarmServerController": [
         "nvflare.app_common.ccwf.swarm_server_ctl"
     ],
-    "ClientAPILauncherExecutor": [
-        "nvflare.app_common.executors.client_api_launcher_executor"
+    "ClientAPIExecutor": [
+        "nvflare.app_common.executors.client_api_executor"
     ],
     "ErrorHandlingExecutor": [
         "nvflare.app_common.executors.error_handling_executor"
     ],
-    "InProcessClientAPIExecutor": [
-        "nvflare.app_common.executors.in_process_client_api_executor"
-    ],
     "IPCExchanger": [
         "nvflare.app_common.executors.ipc_exchanger"
-    ],
-    "LauncherExecutor": [
-        "nvflare.app_common.executors.launcher_executor"
     ],
     "LearnerExecutor": [
         "nvflare.app_common.executors.learner_executor"
@@ -182,9 +173,6 @@
     ],
     "StatisticsTaskHandler": [
         "nvflare.app_common.executors.statistics.statistics_task_handler"
-    ],
-    "TaskExchanger": [
-        "nvflare.app_common.executors.task_exchanger"
     ],
     "ConvertWeights": [
         "nvflare.app_common.filters.convert_weights"
@@ -206,12 +194,6 @@
     ],
     "DefaultJobScheduler": [
         "nvflare.app_common.job_schedulers.job_scheduler"
-    ],
-    "SubprocessLauncher": [
-        "nvflare.app_common.launchers.subprocess_launcher"
-    ],
-    "MetricsSender": [
-        "nvflare.app_common.metrics_exchange.metrics_sender"
     ],
     "ListModelLocator": [
         "nvflare.app_common.model_locator.list_model_locator"
@@ -318,17 +300,11 @@
     "ServerEventRecorder": [
         "nvflare.app_common.widgets.event_recorder"
     ],
-    "ExternalConfigurator": [
-        "nvflare.app_common.widgets.external_configurator"
-    ],
     "IntimeModelSelectionHandler": [
         "nvflare.app_common.widgets.intime_model_selector"
     ],
     "IntimeModelSelector": [
         "nvflare.app_common.widgets.intime_model_selector"
-    ],
-    "MetricRelay": [
-        "nvflare.app_common.widgets.metric_relay"
     ],
     "AnalyticsReceiver": [
         "nvflare.app_common.widgets.streaming"
@@ -429,6 +405,9 @@
     "FlowerExecutor": [
         "nvflare.app_opt.flower.executor"
     ],
+    "FlowerMetricsReceiver": [
+        "nvflare.app_opt.flower.metrics"
+    ],
     "MockClientApplet": [
         "nvflare.app_opt.flower.mock.applet"
     ],
@@ -468,9 +447,6 @@
     "DhPSITaskHandler": [
         "nvflare.app_opt.psi.dh_psi.dh_psi_task_handler"
     ],
-    "PTClientAPILauncherExecutor": [
-        "nvflare.app_opt.pt.client_api_launcher_executor"
-    ],
     "PTFedAvg": [
         "nvflare.app_opt.pt.fedavg"
     ],
@@ -490,9 +466,6 @@
     "PTFileModelPersistor": [
         "nvflare.app_opt.pt.file_model_persistor"
     ],
-    "PTInProcessClientAPIExecutor": [
-        "nvflare.app_opt.pt.in_process_client_api_executor"
-    ],
     "PTMultiProcessExecutor": [
         "nvflare.app_opt.pt.multi_process_executor"
     ],
@@ -501,12 +474,6 @@
     ],
     "SKLearnExecutor": [
         "nvflare.app_opt.sklearn.sklearn_executor"
-    ],
-    "TFClientAPILauncherExecutor": [
-        "nvflare.app_opt.tf.client_api_launcher_executor"
-    ],
-    "TFInProcessClientAPIExecutor": [
-        "nvflare.app_opt.tf.in_process_client_api_executor"
     ],
     "TFModelPersistor": [
         "nvflare.app_opt.tf.model_persistor"

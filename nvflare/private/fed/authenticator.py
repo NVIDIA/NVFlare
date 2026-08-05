@@ -28,10 +28,9 @@ from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
-from nvflare.fuel.f3.cellnet.fqcn import CELL_PIPE_ALIAS_PREFIX, FQCN, parse_cell_pipe_alias
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.message import Message as CellMessage
-from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, ClientRegMsgKey, new_cell_message
 from nvflare.private.fed.utils.identity_utils import (
@@ -319,35 +318,7 @@ class Authenticator:
 def _origin_matches_fqcn(origin: str, fqcn: str, channel: Optional[str] = None) -> bool:
     if not origin or not fqcn:
         return False
-    if origin == fqcn or FQCN.is_ancestor(fqcn, origin):
-        return True
-
-    # CellPipe stream cells can use an alias leaf such as
-    # "cellpipe~alias~site-1~<job-id>~active" when connected through another
-    # cell, but their auth token is issued to the owning site FQCN. Treat only stream aliases
-    # under the same FQCN parent as the owning site; normal server-command
-    # origins remain bound to the exact registered FQCN/descendant relationship.
-    if channel != STREAM_CHANNEL:
-        return False
-
-    origin_parent = FQCN.get_parent(origin)
-    fqcn_parent = FQCN.get_parent(fqcn)
-    if origin_parent != fqcn_parent:
-        return False
-
-    # The bare alias grammar is only valid for single-segment origins (the legacy
-    # flat CellPipe names used in 2.8 and earlier); at any depth the alias must carry the
-    # explicit cellpipe~alias~ marker, so an unmarked leaf
-    # can never be misread as an alias.
-    origin_leaf = FQCN.split(origin)[-1]
-    if origin_parent and not origin_leaf.startswith(CELL_PIPE_ALIAS_PREFIX):
-        return False
-
-    # parse_cell_pipe_alias returns exact "~"-delimited fields, so hyphens and
-    # underscores in an owner cannot be confused with field separators.
-    owner = FQCN.split(fqcn)[-1]
-    parsed = parse_cell_pipe_alias(origin_leaf)
-    return parsed is not None and parsed[0] == owner
+    return origin == fqcn or FQCN.is_ancestor(fqcn, origin)
 
 
 def validate_auth_headers(

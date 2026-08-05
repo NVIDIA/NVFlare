@@ -72,7 +72,7 @@ def was_download_initiated() -> bool:
     """Return True if _finalize_download_tx() created a download transaction in
     the current thread's most recent encode_payload() call.
 
-    Called by FlareAgent._do_submit_result() immediately after send_to_peer()
+    Called by the trainer-side Client API immediately after publishing a result
     returns to decide whether to wait for the server to finish downloading tensors.
     Returns False for validate results (metrics only, no tensors).
     """
@@ -446,7 +446,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             )
             num_receivers = num if num else 1
 
-            # Optional lifecycle callback set by FlareAgent._do_submit_result()
+            # Optional lifecycle callback set by the trainer-side Client API
             # (subprocess → CJ → server reverse path) so the subprocess can wait
             # until the server has finished downloading from its DownloadService
             # before exiting.  None when no gating is needed (forward path).
@@ -650,9 +650,9 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             for ref_id, obj in downloadable_objs:
                 self.logger.debug(f"ViaDownloader: adding object to downloader: {ref_id=}")
                 downloader.add_object(obj, ref_id=ref_id)
-            # Signal FlareAgent (same thread) that a download transaction was created.
-            # Thread-local avoids shared-state races when task pipe and metric pipe
-            # share the same CoreCell (RC12 Bug 3).
+            # Signal the trainer-side Client API that a download transaction was created.
+            # Thread-local avoids shared-state races when task and metric payloads
+            # share the same CoreCell.
             _tls.download_initiated = True
 
     def _finalize_lazy_batch(self, mgr: DatumManager):

@@ -114,7 +114,7 @@ class ClientAPIExecutor(Executor):
             launch_timeout (Optional[float]): external_process only. Bound for the launched
                 trainer to complete its HELLO/session setup (this replaces the legacy
                 external_pre_init_timeout). Defaults to 300 seconds for compatibility with
-                ClientAPILauncherExecutor; an explicit None means no timeout.
+                prior releases; an explicit None means no timeout.
             shutdown_timeout (Optional[float]): external_process only. How long to wait for the
                 trainer to exit naturally after an orderly SHUTDOWN before starting forced
                 process-tree termination. None means the backend default.

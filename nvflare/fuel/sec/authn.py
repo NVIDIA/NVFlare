@@ -14,13 +14,33 @@
 from nvflare.apis.fl_constant import CellMessageAuthHeaderKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
-from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
+from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.validation_utils import check_object_type, check_str
 
 
 def _is_server_fqcn(fqcn: str) -> bool:
     return bool(fqcn) and FqcnInfo(fqcn).is_on_server
+
+
+def _is_cross_site_reply_via_local_parent(origin: str, destination: str, to_cell: str) -> bool:
+    """Return whether a peer reply first travels upward through its local client family.
+
+    A job cell can connect directly to the server or connect to its client parent first
+    (for example through the shared-file internal driver). In the latter topology,
+    ``TO_CELL`` is a local ancestor even though the reply must subsequently cross the
+    server trust boundary to reach a different client family.
+    """
+    if not origin or not destination or not to_cell:
+        return False
+    origin_info = FqcnInfo(origin)
+    destination_info = FqcnInfo(destination)
+    return (
+        not origin_info.is_on_server
+        and not destination_info.is_on_server
+        and origin_info.root != destination_info.root
+        and FQCN.is_ancestor(to_cell, origin)
+    )
 
 
 def add_authentication_headers(msg: Message, client_name: str, auth_token, token_signature, ssid=None):
@@ -52,10 +72,17 @@ def add_server_path_reply_authentication_headers(
     origin = msg.get_header(MessageHeaderKey.ORIGIN)
     destination = msg.get_header(MessageHeaderKey.DESTINATION)
     to_cell = msg.get_header(MessageHeaderKey.TO_CELL)
-    # Auth headers are for the server trust boundary, not for peer clients. A peer reply routed through the server
-    # must authenticate to the server on the next hop, and the server strips these headers before forwarding to peer.
-    # Server-owned job/transfer cells also keep auth on replies from or to server paths.
-    if _is_server_fqcn(origin) or _is_server_fqcn(destination) or _is_server_fqcn(to_cell):
+    # Auth headers are for the server trust boundary, not for peer clients. A peer
+    # reply may reach that boundary directly or first travel through its local client
+    # parent. The server validates and strips these headers before forwarding to the
+    # peer. Server-owned job/transfer cells also keep auth on replies from or to server
+    # paths.
+    if (
+        _is_server_fqcn(origin)
+        or _is_server_fqcn(destination)
+        or _is_server_fqcn(to_cell)
+        or _is_cross_site_reply_via_local_parent(origin, destination, to_cell)
+    ):
         add_authentication_headers(msg, client_name, auth_token, token_signature, ssid)
 
 

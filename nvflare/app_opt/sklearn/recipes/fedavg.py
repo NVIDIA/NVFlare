@@ -144,6 +144,7 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         key_metric: str = "accuracy",
         key_metric_mode: Literal["min", "max"] = "max",
         launch_once: bool = True,
+        launch_timeout: Optional[float] = 300.0,
         shutdown_timeout: float = 0.0,
     ):
         validate_model_path(model_path)
@@ -173,5 +174,6 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             key_metric=key_metric,
             key_metric_mode=key_metric_mode,
             launch_once=launch_once,
+            launch_timeout=launch_timeout,
             shutdown_timeout=shutdown_timeout,
         )

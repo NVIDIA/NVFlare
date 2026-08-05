@@ -11,41 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import shlex
-from enum import Enum
-from typing import Optional, Type, Union
+from typing import Optional, Union
 
-from nvflare.apis.fl_constant import SystemVarName
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
-from nvflare.app_common.abstract.launcher import Launcher
-from nvflare.app_common.executors.client_api_executor import ALL_EXECUTION_MODES, ClientAPIExecutor, ExecutionMode
-from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
-from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
-from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
-from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
-from nvflare.app_common.widgets.metric_relay import MetricRelay
+from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor, ExecutionMode
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.fuel.utils.constants import FrameworkType  # noqa: F401 - re-exported for backward compatibility
-from nvflare.fuel.utils.import_utils import optional_import
-from nvflare.fuel.utils.pipe.cell_pipe import CellPipe, Mode
-from nvflare.fuel.utils.pipe.pipe import Pipe
+from nvflare.fuel.utils.constants import FrameworkType  # noqa: F401 - public re-export
 from nvflare.fuel.utils.secret_utils import has_secret_refs, split_command_preserving_secret_refs
-from nvflare.fuel.utils.validation_utils import check_str
 
-from .api import FedJob, validate_object_for_job
-
-
-class PipeConnectType(str, Enum):
-    VIA_ROOT = "via_root"
-    VIA_CP = "via_cp"
-    VIA_RELAY = "via_relay"
-
-
-_PIPE_CONNECT_URL = {
-    PipeConnectType.VIA_CP: "{" + SystemVarName.CP_URL + "}",
-    PipeConnectType.VIA_RELAY: "{" + SystemVarName.RELAY_URL + "}",
-    PipeConnectType.VIA_ROOT: "{" + SystemVarName.ROOT_URL + "}",
-}
+from .api import FedJob
 
 _CommandArg = Union[str, list[str]]
 _ADDITIONAL_NODE_COMMAND = "additional_node_command"
@@ -92,199 +68,89 @@ def _fill_additional_node_command(job: FedJob, target: str, command: list[str], 
             block[_ADDITIONAL_NODE_COMMAND] = command_text
 
 
-class BaseScriptRunner:
+class ScriptRunner:
+    """Adds a Client API training script to a FedJob.
+
+    Transport is selected by the site's Cell driver configuration. The runner only
+    selects whether the trainer runs in the Client Job process or in a process owned
+    and launched by NVFlare.
+    """
+
     def __init__(
         self,
         script: str,
         script_args: _CommandArg = "",
         launch_external_process: bool = False,
         command: _CommandArg = "python3 -u",
-        server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         framework: FrameworkType = FrameworkType.PYTORCH,
+        server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
-        executor: Union[ClientAPILauncherExecutor, InProcessClientAPIExecutor, None] = None,
-        task_pipe: Optional[Pipe] = None,
-        launcher: Optional[Launcher] = None,
-        metric_relay: Optional[MetricRelay] = None,
-        metric_pipe: Optional[Pipe] = None,
-        pipe_connect_type: str = None,
         launch_once: bool = True,
+        launch_timeout: Optional[float] = 300.0,
         shutdown_timeout: float = 0.0,
         memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
         execution_mode: Optional[str] = None,
     ):
-        """BaseScriptRunner is used with FedJob API to run or launch a script.
-
-        If executor is not provided,
-            `launch_external_process=False` uses InProcessClientAPIExecutor.
-            `launch_external_process=True` uses ClientAPILauncherExecutor.
-        else the provided executor will be used.
-
-        If some components are passed in, it is user's responsibility to make sure they are consistent with each other.
-        For example, if user provide a task_pipe, the default task_pipe_id is "task_pipe",
-        please make sure the ClientAPILauncherExecutor is created using the matching pipe_id.
+        """Initializes the runner.
 
         Args:
-            script (str): Script to run. For in-process must be a python script path. For ex-process can be any script support by `command`.
-            script_args (Union[str, list[str]]): Optional arguments appended to the script. External-process
-                runners also accept pre-tokenized argv when exact argument boundaries must be preserved.
-                Values are written in clear text into the generated job config, so they must never contain actual secrets; use
-                :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
-                :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The executing site
-                resolves the placeholder at runtime.
-            launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
-            command (Union[str, list[str]]): If launch_external_process=True, command prepended to the script.
-                Pass pre-tokenized argv to preserve exact argument boundaries. Defaults to "python3 -u".
-            framework (str): Framework is used to determine the `params_exchange_format`. Defaults to FrameworkType.PYTORCH.
-            server_expected_format (str): What format to exchange the parameters between server and client.
-            params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
-                DIFF means that only the difference is sent. Defaults to TransferType.FULL.
-            executor (Union[ClientAPILauncherExecutor, InProcessClientAPIExecutor, None], optional):
-                The executor to use in client process. Can be an instance of
-                `ClientAPILauncherExecutor`, `InProcessClientAPIExecutor`, or `None`. Defaults to `None`.
-                If specified, the `script`, `script_args`, `command`, `server_expected_format`, `params_transfer_type` will be ignored.
-            task_pipe (Optional[Pipe], optional):
-                An optional Pipe instance for passing task between ClientAPILauncherExecutor
-                and client api, this is only used if `launch_external_process` is True.
-
-            launcher (Optional[Launcher], optional):
-                The launcher to use with ClientAPILauncherExecutor, only used if `launch_external_process` is True.
-                Defaults to `None`.
-
-            metric_relay (Optional[MetricRelay], optional):
-                An optional MetricRelay instance that can be used to relay metrics to the server.
-                Defaults to `None`.
-
-            metric_pipe (Optional[Pipe], optional):
-                An optional Pipe instance for passing metric data between components. This allows
-                for real-time metric handling during execution. Defaults to `None`.
-
-            pipe_connect_type: how pipe peers are to be connected:
-                Via Root: peers are both connected to the root of the cellnet
-                Via Relay: peers are both connected to the relay if a relay is used; otherwise via root.
-                Via CP: peers are both connected to the CP
-                If not specified, will be via CP.
-
-            launch_once (bool): Whether the external process will be launched only once at the beginning
-                or on each task. Only used if `launch_external_process` is True. Defaults to True.
-
-            shutdown_timeout (float): If provided, will wait for this number of seconds before shutdown.
-                Only used if `launch_external_process` is True. Defaults to 0.0.
-
-            execution_mode (Optional[str]): Selects the new ClientAPIExecutor
-                (design: docs/design/client_api_execution_modes.md) instead of the legacy
-                executor stack. ``in_process`` and ``external_process`` are available;
-                ``attach`` lands with its backend. When set, the recipe declares framework and
-                server representations in ``TASK_EXCHANGE``; the trainer-side Client API adapts
-                at receive/send without constructing ParamsConverters. ``params_transfer_type``
-                is applied by the Client API model state. The
-                legacy stack args (`executor`, `task_pipe`, `launcher`, `metric_relay`,
-                `metric_pipe`, `pipe_connect_type`) must not be set. If
-                ``launch_external_process=True``, the mode must be ``external_process``.
-                Defaults to None (legacy BaseScriptRunner behavior).
+            script: Training script path.
+            script_args: Arguments appended to the script. Pre-tokenized argv preserves
+                exact argument boundaries for external processes.
+            launch_external_process: Select ``external_process`` when ``execution_mode``
+                is omitted; otherwise select ``in_process``.
+            command: Command prepended to the script in ``external_process`` mode.
+            framework: Trainer-native parameter representation.
+            server_expected_format: Parameter representation expected by the server.
+            params_transfer_type: Whether the trainer returns FULL parameters or a DIFF.
+            launch_once: Launch once per job or once per task in ``external_process`` mode.
+            launch_timeout: Maximum time for the external trainer to initialize and connect.
+            shutdown_timeout: Wait for orderly trainer exit before forced termination.
+            memory_gc_rounds: Force memory cleanup every N rounds; zero disables it.
+            cuda_empty_cache: Empty the CUDA cache during configured memory cleanup.
+            execution_mode: Optional explicit ``in_process`` or ``external_process`` mode.
+                Use ``ClientAPIExecutor`` directly for an independently managed trainer
+                in ``attach`` mode.
         """
+        if execution_mode is None:
+            execution_mode = ExecutionMode.EXTERNAL_PROCESS if launch_external_process else ExecutionMode.IN_PROCESS
+        available_modes = (ExecutionMode.IN_PROCESS, ExecutionMode.EXTERNAL_PROCESS)
+        if execution_mode not in available_modes:
+            raise ValueError(
+                f"invalid execution_mode {execution_mode!r} for ScriptRunner: "
+                f"must be one of {list(available_modes)}; use ClientAPIExecutor directly for attach mode"
+            )
+        if launch_external_process and execution_mode != ExecutionMode.EXTERNAL_PROCESS:
+            raise ValueError(
+                "launch_external_process=True requires execution_mode='external_process', "
+                f"but got execution_mode={execution_mode!r}"
+            )
+
+        format_by_framework = {
+            FrameworkType.PYTORCH: ExchangeFormat.PYTORCH,
+            FrameworkType.TENSORFLOW: ExchangeFormat.KERAS_LAYER_WEIGHTS,
+            FrameworkType.NUMPY: ExchangeFormat.NUMPY,
+            FrameworkType.RAW: ExchangeFormat.RAW,
+        }
+        params_exchange_format = format_by_framework.get(framework)
+        if params_exchange_format is None:
+            raise ValueError(f"Framework {framework} unsupported")
+
         self._script = script
         self._script_args = script_args
         self._command = command
-        self._launch_external_process = launch_external_process
+        self._launch_external_process = execution_mode == ExecutionMode.EXTERNAL_PROCESS
         self._server_expected_format = server_expected_format
         self._framework = framework
         self._params_transfer_type = params_transfer_type
-        self._pipe_connect_type = pipe_connect_type
         self._launch_once = launch_once
+        self._launch_timeout = launch_timeout
         self._shutdown_timeout = shutdown_timeout
-
-        if execution_mode is not None:
-            if execution_mode not in ALL_EXECUTION_MODES:
-                raise ValueError(f"invalid execution_mode '{execution_mode}': must be one of {ALL_EXECUTION_MODES}")
-            _available_modes = (ExecutionMode.IN_PROCESS, ExecutionMode.EXTERNAL_PROCESS)
-            if execution_mode not in _available_modes:
-                raise ValueError(
-                    f"execution_mode '{execution_mode}' is not yet available via ScriptRunner: "
-                    f"supported modes are {list(_available_modes)} until the corresponding backend lands"
-                )
-            if launch_external_process and execution_mode != ExecutionMode.EXTERNAL_PROCESS:
-                raise ValueError(
-                    "launch_external_process=True requires execution_mode='external_process', "
-                    f"but got execution_mode='{execution_mode}'"
-                )
-            conflicts = {
-                "executor": executor,
-                "task_pipe": task_pipe,
-                "launcher": launcher,
-                "metric_relay": metric_relay,
-                "metric_pipe": metric_pipe,
-                "pipe_connect_type": pipe_connect_type,
-            }
-            set_conflicts = [name for name, value in conflicts.items() if value is not None]
-            if set_conflicts:
-                raise ValueError(
-                    f"execution_mode is mutually exclusive with the legacy executor stack args: {set_conflicts}"
-                )
-        self._execution_mode = execution_mode
-
-        self._params_exchange_format = None
-
-        # The new-executor path does not instantiate ParamsConverters or import a framework
-        # during job construction. It declares the trainer-native representation so the
-        # trainer-side Client API can adapt lazily at receive/send.
-        if execution_mode is not None:
-            format_by_framework = {
-                FrameworkType.PYTORCH: ExchangeFormat.PYTORCH,
-                FrameworkType.TENSORFLOW: ExchangeFormat.KERAS_LAYER_WEIGHTS,
-                FrameworkType.NUMPY: ExchangeFormat.NUMPY,
-                FrameworkType.RAW: ExchangeFormat.RAW,
-            }
-            self._params_exchange_format = format_by_framework.get(self._framework)
-            if self._params_exchange_format is None:
-                raise ValueError(f"Framework {self._framework} unsupported")
-        elif self._framework == FrameworkType.PYTORCH:
-            _, torch_ok = optional_import(module="torch")
-            if torch_ok:
-                self._params_exchange_format = ExchangeFormat.PYTORCH
-            else:
-                raise ValueError("Using FrameworkType.PYTORCH, but unable to import torch")
-        elif self._framework == FrameworkType.TENSORFLOW:
-            _, tf_ok = optional_import(module="tensorflow")
-            if tf_ok:
-                self._params_exchange_format = ExchangeFormat.KERAS_LAYER_WEIGHTS
-            else:
-                raise ValueError("Using FrameworkType.TENSORFLOW, but unable to import tensorflow")
-        elif self._framework == FrameworkType.NUMPY:
-            self._params_exchange_format = ExchangeFormat.NUMPY
-        elif self._framework == FrameworkType.RAW:
-            self._params_exchange_format = ExchangeFormat.RAW
-        else:
-            raise ValueError(f"Framework {self._framework} unsupported")
-
-        if launch_external_process:
-            if metric_pipe is not None:
-                validate_object_for_job("metric_pipe", metric_pipe, Pipe)
-            if metric_relay is not None:
-                validate_object_for_job("metric_relay", metric_relay, MetricRelay)
-            if task_pipe is not None:
-                validate_object_for_job("task_pipe", task_pipe, Pipe)
-            if executor is not None:
-                validate_object_for_job("executor", executor, ClientAPILauncherExecutor)
-            if launcher is not None:
-                validate_object_for_job("launcher", launcher, Launcher)
-        elif executor is not None:
-            validate_object_for_job("executor", executor, InProcessClientAPIExecutor)
-
-        if pipe_connect_type:
-            check_str("pipe_connect_type", pipe_connect_type)
-            valid_connect_types = [connect_type.value for connect_type in PipeConnectType]
-            if pipe_connect_type not in valid_connect_types:
-                raise ValueError(f"invalid pipe_connect_type '{pipe_connect_type}': must be {valid_connect_types}")
-
-        self._metric_pipe = metric_pipe
-        self._metric_relay = metric_relay
-        self._task_pipe = task_pipe
-        self._executor = executor
-        self._launcher = launcher
         self._memory_gc_rounds = memory_gc_rounds
         self._cuda_empty_cache = cuda_empty_cache
+        self._execution_mode = execution_mode
+        self._params_exchange_format = params_exchange_format
 
     def _external_process_argv(self) -> list[str]:
         command = _to_external_process_argv(self._command, "command")
@@ -292,246 +158,36 @@ class BaseScriptRunner:
         command.extend(_to_external_process_argv(self._script_args, "script_args"))
         return command
 
-    def _create_cell_pipe(self):
-        ct = self._pipe_connect_type
-        if not ct:
-            ct = PipeConnectType.VIA_CP
-        conn_url = _PIPE_CONNECT_URL.get(ct)
-        if not conn_url:
-            raise RuntimeError(f"cannot determine pipe connect url for {self._pipe_connect_type}")
-
-        return CellPipe(
-            mode=Mode.PASSIVE,
-            site_name="{" + SystemVarName.SITE_NAME + "}",
-            token="{" + SystemVarName.JOB_ID + "}",
-            root_url=conn_url,
-            secure_mode="{" + SystemVarName.SECURE_MODE + "}",
-            workspace_dir="{" + SystemVarName.WORKSPACE + "}",
-        )
-
     def add_to_fed_job(self, job: FedJob, ctx, **kwargs):
-        """This method is used by Job API.
-
-        Args:
-            job: the Job object to add to
-            ctx: Job Context
-
-        Returns:
-
-        """
+        """Adds the configured ClientAPIExecutor and script resource to the job."""
         job.check_kwargs(args_to_check=kwargs, args_expected={"tasks": False})
         tasks = kwargs.get("tasks", ["*"])
-        comp_ids = {}
 
-        if self._execution_mode is not None:
-            if self._execution_mode == ExecutionMode.EXTERNAL_PROCESS:
-                # external_process launches the trainer as its own process, named by a
-                # shell-free argv, not by an in-CJ-process task_script_path. Parse the
-                # user-authored strings once here so the exported config carries stable
-                # argv boundaries to each target site.
-                command = self._external_process_argv()
-                _fill_additional_node_command(job, ctx.target, command, self._launch_once)
-                executor = ClientAPIExecutor(
-                    execution_mode=self._execution_mode,
-                    command=command,
-                    launch_once=self._launch_once,
-                    shutdown_timeout=self._shutdown_timeout,
-                    params_exchange_format=self._params_exchange_format,
-                    server_expected_format=self._server_expected_format,
-                    params_transfer_type=self._params_transfer_type,
-                    memory_gc_rounds=self._memory_gc_rounds,
-                    cuda_empty_cache=self._cuda_empty_cache,
-                )
-            else:
-                executor = ClientAPIExecutor(
-                    execution_mode=self._execution_mode,
-                    task_script_path=self._script,
-                    task_script_args=self._script_args,
-                    params_exchange_format=self._params_exchange_format,
-                    server_expected_format=self._server_expected_format,
-                    params_transfer_type=self._params_transfer_type,
-                    memory_gc_rounds=self._memory_gc_rounds,
-                    cuda_empty_cache=self._cuda_empty_cache,
-                )
-            job.add_executor(executor, tasks=tasks, ctx=ctx)
-            job.add_resources(resources=[self._script], ctx=ctx)
-            return comp_ids
-
-        if self._launch_external_process:
-            task_pipe = self._task_pipe if self._task_pipe else self._create_cell_pipe()
-            task_pipe_id = job.add_component("pipe", task_pipe, ctx)
-            comp_ids["pipe_id"] = task_pipe_id
-
-            if self._launcher:
-                launcher = self._launcher
-            else:
-                command = self._external_process_argv()
-                launcher = SubprocessLauncher(
-                    script=command,
-                    launch_once=self._launch_once,
-                    shutdown_timeout=self._shutdown_timeout,
-                )
-            launcher_id = job.add_component("launcher", launcher, ctx)
-            comp_ids["launcher_id"] = launcher_id
-
-            executor = (
-                self._executor
-                if self._executor
-                else self._get_ex_process_executor_cls(self._framework)(
-                    pipe_id=task_pipe_id,
-                    launcher_id=launcher_id,
-                    params_exchange_format=self._params_exchange_format,
-                    params_transfer_type=self._params_transfer_type,
-                    server_expected_format=self._server_expected_format,
-                    memory_gc_rounds=self._memory_gc_rounds,
-                    cuda_empty_cache=self._cuda_empty_cache,
-                )
+        common_args = {
+            "execution_mode": self._execution_mode,
+            "params_exchange_format": self._params_exchange_format,
+            "server_expected_format": self._server_expected_format,
+            "params_transfer_type": self._params_transfer_type,
+            "memory_gc_rounds": self._memory_gc_rounds,
+            "cuda_empty_cache": self._cuda_empty_cache,
+        }
+        if self._execution_mode == ExecutionMode.EXTERNAL_PROCESS:
+            command = self._external_process_argv()
+            _fill_additional_node_command(job, ctx.target, command, self._launch_once)
+            executor = ClientAPIExecutor(
+                command=command,
+                launch_once=self._launch_once,
+                launch_timeout=self._launch_timeout,
+                shutdown_timeout=self._shutdown_timeout,
+                **common_args,
             )
-            job.add_executor(executor, tasks=tasks, ctx=ctx)
-
-            metric_pipe = self._metric_pipe if self._metric_pipe else self._create_cell_pipe()
-            metric_pipe_id = job.add_component("metrics_pipe", metric_pipe, ctx)
-            comp_ids["metric_pipe_id"] = metric_pipe_id
-
-            component = (
-                self._metric_relay
-                if self._metric_relay
-                else MetricRelay(
-                    pipe_id=metric_pipe_id,
-                    event_type="fed.analytix_log_stats",
-                    heartbeat_timeout=0,
-                )
-            )
-            metric_relay_id = job.add_component("metric_relay", component, ctx)
-            comp_ids["metric_relay_id"] = metric_relay_id
-
-            component = ExternalConfigurator(
-                component_ids=[metric_relay_id],
-            )
-            comp_ids["config_preparer_id"] = job.add_component("config_preparer", component, ctx)
         else:
-            executor = (
-                self._executor
-                if self._executor
-                else self._get_in_process_executor_cls(self._framework)(
-                    task_script_path=self._script,
-                    task_script_args=self._script_args,
-                    params_exchange_format=self._params_exchange_format,
-                    params_transfer_type=self._params_transfer_type,
-                    server_expected_format=self._server_expected_format,
-                    memory_gc_rounds=self._memory_gc_rounds,
-                    cuda_empty_cache=self._cuda_empty_cache,
-                )
+            executor = ClientAPIExecutor(
+                task_script_path=self._script,
+                task_script_args=self._script_args,
+                **common_args,
             )
-            job.add_executor(executor, tasks=tasks, ctx=ctx)
 
+        job.add_executor(executor, tasks=tasks, ctx=ctx)
         job.add_resources(resources=[self._script], ctx=ctx)
-        return comp_ids
-
-    def _get_ex_process_executor_cls(self, framework: FrameworkType) -> Type[ClientAPILauncherExecutor]:
-        if framework == FrameworkType.PYTORCH:
-            from nvflare.app_opt.pt.client_api_launcher_executor import PTClientAPILauncherExecutor
-
-            return PTClientAPILauncherExecutor
-        elif framework == FrameworkType.TENSORFLOW:
-            from nvflare.app_opt.tf.client_api_launcher_executor import TFClientAPILauncherExecutor
-
-            return TFClientAPILauncherExecutor
-        else:
-            return ClientAPILauncherExecutor
-
-    def _get_in_process_executor_cls(self, framework: FrameworkType) -> Type[InProcessClientAPIExecutor]:
-        if framework == FrameworkType.PYTORCH:
-            from nvflare.app_opt.pt.in_process_client_api_executor import PTInProcessClientAPIExecutor
-
-            return PTInProcessClientAPIExecutor
-        elif framework == FrameworkType.TENSORFLOW:
-            from nvflare.app_opt.tf.in_process_client_api_executor import TFInProcessClientAPIExecutor
-
-            return TFInProcessClientAPIExecutor
-        else:
-            return InProcessClientAPIExecutor
-
-
-class ScriptRunner(BaseScriptRunner):
-    def __init__(
-        self,
-        script: str,
-        script_args: _CommandArg = "",
-        launch_external_process: bool = False,
-        command: _CommandArg = "python3 -u",
-        framework: FrameworkType = FrameworkType.PYTORCH,
-        server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
-        params_transfer_type: TransferType = TransferType.FULL,
-        pipe_connect_type: Optional[PipeConnectType] = None,
-        task_pipe: Optional[Pipe] = None,
-        launch_once: bool = True,
-        shutdown_timeout: float = 0.0,
-        memory_gc_rounds: int = 0,
-        cuda_empty_cache: bool = False,
-        execution_mode: Optional[str] = None,
-    ):
-        """ScriptRunner is used with FedJob API to run or launch a script.
-
-        ``launch_external_process=False`` uses ``ClientAPIExecutor(in_process)`` (default).
-        ``launch_external_process=True`` uses ``ClientAPIExecutor(external_process)``.
-
-        Args:
-            script (str): Script to run. For in-process must be a python script path. For ex-process can be any script support by `command`.
-            script_args (Union[str, list[str]]): Optional arguments appended to the script. External-process
-                runners also accept pre-tokenized argv when exact argument boundaries must be preserved.
-                Values are written in clear text into the generated job config, so they must never contain actual secrets; use
-                :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
-                :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The executing site
-                resolves the placeholder at runtime.
-            launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
-            command (Union[str, list[str]]): If launch_external_process=True, command prepended to the script.
-                Pass pre-tokenized argv to preserve exact argument boundaries. Defaults to "python3 -u".
-            framework (str): Framework is used to determine the `params_exchange_format`. Defaults to FrameworkType.PYTORCH.
-            server_expected_format (str): What format to exchange the parameters between server and client.
-            params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
-                DIFF means that only the difference is sent. Defaults to TransferType.FULL.
-            pipe_connect_type (str): Legacy pipe connection configuration. It is not supported
-                by ScriptRunner's ClientAPIExecutor path; use BaseScriptRunner when an explicit
-                legacy Pipe/Launcher stack is required.
-            task_pipe (Optional[Pipe]): Optional Pipe instance for task exchange between
-                ClientAPILauncherExecutor and the client API. It is not supported by
-                ScriptRunner's ClientAPIExecutor path; use BaseScriptRunner for legacy custom
-                pipes.
-            launch_once (bool): Whether the external process will be launched only once at the beginning
-                or on each task. Only used if `launch_external_process` is True. Defaults to True.
-            shutdown_timeout (float): If provided, will wait for this number of seconds before shutdown.
-                Only used if `launch_external_process` is True. Defaults to 0.0.
-            execution_mode (Optional[str]): Explicit ClientAPIExecutor mode override.
-                ``in_process`` and ``external_process`` are available. When omitted, the mode is
-                derived from ``launch_external_process``. See BaseScriptRunner for the full
-                contract.
-        """
-        legacy_args = [
-            name
-            for name, value in {"task_pipe": task_pipe, "pipe_connect_type": pipe_connect_type}.items()
-            if value is not None
-        ]
-        if legacy_args:
-            raise ValueError(
-                f"ScriptRunner uses ClientAPIExecutor and does not support legacy arguments {legacy_args}; "
-                "use BaseScriptRunner for an explicit legacy Pipe/Launcher stack"
-            )
-        if execution_mode is None:
-            execution_mode = ExecutionMode.EXTERNAL_PROCESS if launch_external_process else ExecutionMode.IN_PROCESS
-        super().__init__(
-            script=script,
-            script_args=script_args,
-            launch_external_process=launch_external_process,
-            command=command,
-            server_expected_format=server_expected_format,
-            framework=framework,
-            params_transfer_type=params_transfer_type,
-            pipe_connect_type=pipe_connect_type,
-            task_pipe=task_pipe,
-            launch_once=launch_once,
-            shutdown_timeout=shutdown_timeout,
-            memory_gc_rounds=memory_gc_rounds,
-            cuda_empty_cache=cuda_empty_cache,
-            execution_mode=execution_mode,
-        )
+        return {}

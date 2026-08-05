@@ -448,6 +448,17 @@ local to the CJ/trainer boundary. Scoped, short-lived trainer identity,
 DownloadService ACLs, and revocation are planned for 2.10 before lazy Attach
 transfer can cross the CJ boundary.
 
+Parameter conversion
+====================
+
+There is no converter-component or converter-plugin API. Built-in PyTorch,
+TensorFlow, and NumPy representation adaptation is performed at the trainer-side
+Client API boundary according to ``params_exchange_format`` and
+``server_expected_format``. Applications that need a custom transformation
+should perform it explicitly after ``flare.receive()`` or before
+``flare.send()``. Reusable built-in conversion functions are available in
+:mod:`nvflare.client.converter_utils`.
+
 Examples
 ========
 

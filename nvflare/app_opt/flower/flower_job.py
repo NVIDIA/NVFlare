@@ -15,14 +15,15 @@
 import os.path
 from typing import List, Optional
 
-from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
-from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
-from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
+from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
+from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR
+from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.job_config.api import FedJob
 
 from .controller import FlowerController
 from .executor import FlowerExecutor
+from .metrics import FlowerMetricsReceiver
 from .path_utils import validate_flower_app_path
 
 
@@ -109,37 +110,30 @@ class FlowerJob(FedJob):
         if flower_content:
             self.to_server(obj=flower_content)
 
+        env = extra_env.copy() if extra_env is not None else {}
+        if CLIENT_API_TYPE_KEY in env:
+            raise ValueError(
+                f"extra_env must not set reserved variable {CLIENT_API_TYPE_KEY!r}; "
+                "Flower configures its Client API session automatically"
+            )
+        bootstrap_path = os.path.join("config", CLIENT_API_CONFIG)
+        configured_bootstrap = env.get(BOOTSTRAP_FILE_ENV_VAR)
+        if configured_bootstrap is not None and configured_bootstrap != bootstrap_path:
+            raise ValueError(
+                f"extra_env[{BOOTSTRAP_FILE_ENV_VAR!r}] is reserved by Flower and must be {bootstrap_path!r}"
+            )
+        env[BOOTSTRAP_FILE_ENV_VAR] = bootstrap_path
+
+        metrics_receiver = FlowerMetricsReceiver(config_file_name=CLIENT_API_CONFIG)
+        self.to_clients(metrics_receiver, "flower_metrics_receiver")
+
         executor = FlowerExecutor(
             per_msg_timeout=per_msg_timeout,
             tx_timeout=tx_timeout,
             client_shutdown_timeout=client_shutdown_timeout,
-            extra_env=extra_env,
+            extra_env=env,
             allow_runtime_dependency_installation=allow_runtime_dependency_installation,
         )
         self.to_clients(executor)
         if flower_content:
             self.to_clients(obj=flower_content)
-
-        # client side
-        # cell pipe to support streaming metrics
-        cell_pipe = CellPipe(
-            mode="PASSIVE",
-            site_name="{SITE_NAME}",
-            token="{JOB_ID}",
-            root_url="{CP_URL}",
-            secure_mode="{SECURE_MODE}",
-            workspace_dir="{WORKSPACE}",
-        )
-        pipe_id = self.to_clients(cell_pipe, "metrics_pipe")
-
-        metric_relay = MetricRelay(
-            pipe_id=pipe_id,
-            event_type="fed.analytix_log_stats",
-            read_interval=0.1,
-            heartbeat_timeout=0,
-            fed_event=True,
-        )
-
-        relay_id = self.to_clients(metric_relay, "metric_relay")
-        conf = ExternalConfigurator(component_ids=[relay_id])
-        self.to_clients(conf, "client_api_config_preparer")

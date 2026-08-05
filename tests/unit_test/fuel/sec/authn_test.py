@@ -149,6 +149,43 @@ def test_client_to_client_reply_routed_through_server_is_not_blocked_by_server_a
     }
 
 
+def test_client_job_reply_routed_via_local_parents_authenticates_at_server(monkeypatch):
+    site_a_name = _unique_fqcn("site_a")
+    site_b_name = _unique_fqcn("site_b")
+    site_a = _make_running_cell(site_a_name)
+    site_b = _make_running_cell(site_b_name)
+    site_a_job = _make_running_cell(f"{site_a_name}.job")
+    site_b_job = _make_running_cell(f"{site_b_name}.job")
+    server = _make_running_cell(f"server.{_unique_fqcn('auth_server')}")
+
+    server.core_cell.add_incoming_filter(channel="*", topic="*", cb=_make_server_auth_filter(monkeypatch))
+    set_add_auth_headers_filters(site_a_job, site_a_name, "tok-a", "sig-a")
+    set_add_auth_headers_filters(site_b_job, site_b_name, "tok-b", "sig-b")
+    site_b_job.core_cell.register_request_cb("peer", "ping", lambda _request: Message(payload="pong"))
+
+    routes = {
+        site_a_job: {site_b_job.get_fqcn(): site_a},
+        site_a: {site_b_job.get_fqcn(): server, site_a_job.get_fqcn(): site_a_job},
+        server: {site_b_job.get_fqcn(): site_b, site_a_job.get_fqcn(): site_a},
+        site_b: {site_b_job.get_fqcn(): site_b_job, site_a_job.get_fqcn(): server},
+        site_b_job: {site_a_job.get_fqcn(): site_b},
+    }
+    for cell, target_routes in routes.items():
+        original_find_ep = cell.core_cell._try_find_ep
+
+        def _route(target_fqcn, for_msg, *, mapping=target_routes, fallback=original_find_ep):
+            next_cell = mapping.get(target_fqcn)
+            return Endpoint(next_cell.get_fqcn()) if next_cell else fallback(target_fqcn, for_msg)
+
+        monkeypatch.setattr(cell.core_cell, "_try_find_ep", _route)
+
+    reply = site_a_job.send_request("peer", "ping", site_b_job.get_fqcn(), Message(payload="hello"), timeout=1.0)
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+    assert reply.payload == "pong"
+    assert _auth_header_values(reply) == {key: None for key in AUTH_HEADERS}
+
+
 def test_server_auth_filter_strips_validated_client_reply_transit_auth(monkeypatch):
     auth_filter = _make_server_auth_filter(monkeypatch)
     reply_msg = _make_routed_message("site-a", MessageType.REPLY, origin="site-b", with_auth=True)
@@ -252,3 +289,46 @@ def test_auth_filter_keeps_auth_on_replies_from_server_path_origin():
         CellMessageAuthHeaderKey.TOKEN_SIGNATURE: "sig-server",
         CellMessageAuthHeaderKey.SSID: "ssid-server",
     }
+
+
+def test_auth_filter_keeps_cross_site_reply_auth_when_routed_via_local_parent():
+    origin = f"site-a.{_unique_fqcn('job')}"
+    victim = _make_running_cell(origin)
+    set_add_auth_headers_filters(victim, "site-a", "tok-a", "sig-a", "ssid-a")
+    reply = Message(
+        headers={
+            MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
+            MessageHeaderKey.ORIGIN: origin,
+            MessageHeaderKey.DESTINATION: "site-b.job-1",
+            MessageHeaderKey.TO_CELL: "site-a",
+        }
+    )
+
+    for callback in victim.core_cell.out_reply_filter_reg.find("peer", "reply"):
+        callback.cb(reply, *callback.args, **callback.kwargs)
+
+    assert _auth_header_values(reply) == {
+        CellMessageAuthHeaderKey.CLIENT_NAME: "site-a",
+        CellMessageAuthHeaderKey.TOKEN: "tok-a",
+        CellMessageAuthHeaderKey.TOKEN_SIGNATURE: "sig-a",
+        CellMessageAuthHeaderKey.SSID: "ssid-a",
+    }
+
+
+def test_auth_filter_does_not_add_auth_to_same_site_reply_via_parent():
+    origin = f"site-a.{_unique_fqcn('job')}"
+    victim = _make_running_cell(origin)
+    set_add_auth_headers_filters(victim, "site-a", "tok-a", "sig-a", "ssid-a")
+    reply = Message(
+        headers={
+            MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
+            MessageHeaderKey.ORIGIN: origin,
+            MessageHeaderKey.DESTINATION: "site-a.job-2",
+            MessageHeaderKey.TO_CELL: "site-a",
+        }
+    )
+
+    for callback in victim.core_cell.out_reply_filter_reg.find("peer", "reply"):
+        callback.cb(reply, *callback.args, **callback.kwargs)
+
+    assert _auth_header_values(reply) == {key: None for key in AUTH_HEADERS}

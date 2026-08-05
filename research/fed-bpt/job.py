@@ -31,7 +31,7 @@ if REPO_ROOT not in sys.path:
 from nvflare.client.config import ExchangeFormat, TransferType  # noqa: E402
 from nvflare.fuel.utils.constants import FrameworkType  # noqa: E402
 from nvflare.job_config.api import FedJob  # noqa: E402
-from nvflare.job_config.script_runner import BaseScriptRunner  # noqa: E402
+from nvflare.job_config.script_runner import ScriptRunner  # noqa: E402
 
 
 @contextmanager
@@ -164,7 +164,6 @@ def _create_fedbpt_recipe(job):
 
 
 def create_recipe(args, extra_train_args: list[str] | None = None):
-    from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
     from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 
     GlobalES, RegisterDecomposer = _load_fedbpt_components()
@@ -189,18 +188,16 @@ def create_recipe(args, extra_train_args: list[str] | None = None):
     job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]), id="receiver")
     job.to_server(RegisterDecomposer(), id="register_decomposer")
 
-    launcher = SubprocessLauncher(
-        script=f"python3 -u custom/fedbpt_train.py {train_args}",
-        launch_once=True,
-        shutdown_timeout=10.0,
-    )
-    runner = BaseScriptRunner(
+    runner = ScriptRunner(
         script=TRAIN_SCRIPT,
+        script_args=train_args,
         launch_external_process=True,
+        command="python3 -u",
         framework=FrameworkType.NUMPY,
         server_expected_format=ExchangeFormat.NUMPY,
         params_transfer_type=TransferType.FULL,
-        launcher=launcher,
+        launch_once=True,
+        shutdown_timeout=10.0,
     )
     job.to_clients(runner, tasks=["train"])
     job.to_clients(RegisterDecomposer(), id="register_decomposer")

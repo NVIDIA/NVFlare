@@ -20,8 +20,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.job_def import ALL_SITES
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.app_opt.flower.flower_job import FlowerJob
+from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
+from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR
+from nvflare.client.constants import CLIENT_API_CONFIG
 
 
 @pytest.fixture
@@ -40,6 +44,23 @@ def _make_mock_component(target_type):
 
 
 class TestFlowerJob:
+    def test_flower_job_uses_direct_cell_metrics_receiver(self, tmp_flower_content_dir):
+        job = FlowerJob(name="test_job", flower_content=tmp_flower_content_dir)
+        client_app = job._deploy_map[ALL_SITES].app_config
+
+        assert "flower_metrics_receiver" in client_app.components
+        assert client_app.components["flower_metrics_receiver"].__class__.__name__ == "FlowerMetricsReceiver"
+        executor = client_app.executors[0].executor
+        assert executor.extra_env[BOOTSTRAP_FILE_ENV_VAR] == os.path.join("config", CLIENT_API_CONFIG)
+
+    def test_flower_job_rejects_legacy_client_api_selector(self, tmp_flower_content_dir):
+        with pytest.raises(ValueError, match=CLIENT_API_TYPE_KEY):
+            FlowerJob(
+                name="test_job",
+                flower_content=tmp_flower_content_dir,
+                extra_env={CLIENT_API_TYPE_KEY: "legacy-selector"},
+            )
+
     def test_flower_job_with_byoc_content(self, tmp_flower_content_dir):
         job = FlowerJob(
             name="test_job",

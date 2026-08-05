@@ -762,7 +762,7 @@ class TestAnalyticsOwnership:
 
     def test_fed_path_fires_federation_scoped_event(self):
         # The fed path must fire the already-"fed."-prefixed event name so it lands on the same
-        # server-side event as MetricRelay (job_config/script_runner.py) and flower_job.py
+        # server-side event used by Client API and Flower integrations
         # ("fed.analytix_log_stats"); firing the un-prefixed name federation-scoped would miss every
         # consumer listening on "fed.analytix_log_stats".
         assert FED_ANALYTIC_EVENT_TYPE == "fed.analytix_log_stats"
