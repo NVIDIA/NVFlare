@@ -29,7 +29,6 @@ class TestStatisticsController:
         print("starting class: {} execution".format(cls.__name__))
         statistic_configs = {
             "count": {},
-            "failure_count": {},
             "mean": {},
             "sum": {},
             "stddev": {},
@@ -105,7 +104,10 @@ class TestStatisticsController:
 
         xs = self.stats_controller._prepare_inputs(SC.STATS_2nd_STATISTICS)
         assert xs[SC.STATISTICS_TASK_KEY] == SC.STATS_2nd_STATISTICS
-        rhs = SC.ordered_statistics[SC.STATS_2nd_STATISTICS]
+        seq = StatisticsController._get_target_statistics(
+            self.stats_controller.statistic_configs, SC.ordered_statistics[SC.STATS_2nd_STATISTICS]
+        )
+        rhs = [mc.name for mc in seq]
         rhs.sort()
         target_statistics: list[StatisticConfig] = fobs.loads(xs[SC.STATS_TARGET_STATISTICS])
         lhs = [mc.name for mc in target_statistics]
