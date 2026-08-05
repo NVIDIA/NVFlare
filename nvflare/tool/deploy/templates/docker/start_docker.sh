@@ -5,6 +5,27 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 HOST_WORKSPACE="$(cd "$DIR/.." && pwd)"
 DOCKER_IMAGE=${NVFL_P_IMAGE:-@@NVFLARE_DOCKER_IMAGE@@}
 DOCKER_SOCK="${NVFL_DOCKER_SOCK:-/var/run/docker.sock}"
+DOCKER_ENDPOINT="${DOCKER_HOST:-}"
+
+if [ -z "$DOCKER_ENDPOINT" ]; then
+    DOCKER_CONTEXT=$(docker context show 2>/dev/null || echo "")
+    if [ -n "$DOCKER_CONTEXT" ]; then
+        DOCKER_ENDPOINT=$(
+            docker context inspect "$DOCKER_CONTEXT" --format '{{.Endpoints.docker.Host}}' 2>/dev/null || echo ""
+        )
+    fi
+fi
+
+if [ -z "${NVFL_DOCKER_SOCK:-}" ]; then
+    case "$DOCKER_ENDPOINT" in
+        unix://*)
+            ENDPOINT_DOCKER_SOCK=${DOCKER_ENDPOINT#unix://}
+            if [ -S "$ENDPOINT_DOCKER_SOCK" ]; then
+                DOCKER_SOCK="$ENDPOINT_DOCKER_SOCK"
+            fi
+            ;;
+    esac
+fi
 
 if [ -z "${NVFL_DOCKER_SOCK:-}" ] && [ -L "$DOCKER_SOCK" ]; then
     RESOLVED_DOCKER_SOCK=$(readlink "$DOCKER_SOCK")
@@ -26,15 +47,23 @@ if [ -z "${NVFL_DOCKER_SOCK:-}" ] && [ -L "$DOCKER_SOCK" ]; then
     fi
 fi
 
-if [ ! -S "$DOCKER_SOCK" ]; then
-    echo "ERROR: Docker socket not found or not a socket: $DOCKER_SOCK"
-    echo "Set NVFL_DOCKER_SOCK=/path/to/docker.sock to override the Docker socket path."
-    exit 1
+DOCKER_SOCK_IS_LOCAL=false
+if [ -S "$DOCKER_SOCK" ]; then
+    DOCKER_SOCK_IS_LOCAL=true
+else
+    case "$DOCKER_ENDPOINT" in
+        unix://*)
+            echo "ERROR: Docker socket not found or not a socket: $DOCKER_SOCK"
+            echo "Set NVFL_DOCKER_SOCK=/path/to/docker.sock to override the Docker socket path."
+            exit 1
+            ;;
+        *)
+            echo "Docker socket is not visible locally; using daemon-host path: $DOCKER_SOCK"
+            ;;
+    esac
 fi
 
-DOCKER_HOST_URI="unix://$DOCKER_SOCK"
-
-if ! docker --host "$DOCKER_HOST_URI" info > /dev/null 2>&1; then
+if ! docker info > /dev/null 2>&1; then
     echo "ERROR: cannot connect to Docker daemon. Make sure your user has permission to run docker."
     echo "  Option 1 (docker group): sudo usermod -aG docker \$USER  then log out and back in."
     echo "  Option 2 (rootless Docker): https://docs.docker.com/engine/security/rootless/"
@@ -45,24 +74,26 @@ echo "Starting NVFlare @@NVFLARE_ROLE_LABEL@@ @@NVFLARE_SITE_NAME@@ with image $
 echo "Host workspace: $HOST_WORKSPACE"
 
 NETWORK_NAME=@@NVFLARE_NETWORK_NAME@@
-if ! docker --host "$DOCKER_HOST_URI" network ls --filter name="$NETWORK_NAME" --format "{{.Name}}" | grep -wq "$NETWORK_NAME"; then
-    docker --host "$DOCKER_HOST_URI" network create "$NETWORK_NAME"
+if ! docker network ls --filter name="$NETWORK_NAME" --format "{{.Name}}" | grep -wq "$NETWORK_NAME"; then
+    docker network create "$NETWORK_NAME"
     echo "Created Docker network: $NETWORK_NAME"
 fi
 
 rm -f "$HOST_WORKSPACE/daemon_pid.fl"
 
-SOCK_GID=$(stat -c '%g' "$DOCKER_SOCK" 2>/dev/null || stat -f '%g' "$DOCKER_SOCK" 2>/dev/null || echo "")
-HOST_OS=$(uname -s)
 GROUP_ADD_ARGS=()
-if [ "$HOST_OS" = "Darwin" ] || [ "$SOCK_GID" = "0" ]; then
-    GROUP_ADD_ARGS+=(--group-add 0)
-fi
-if [ -n "$SOCK_GID" ] && [ "$SOCK_GID" != "0" ]; then
-    GROUP_ADD_ARGS+=(--group-add "$SOCK_GID")
+if [ "$DOCKER_SOCK_IS_LOCAL" = "true" ]; then
+    SOCK_GID=$(stat -c '%g' "$DOCKER_SOCK" 2>/dev/null || stat -f '%g' "$DOCKER_SOCK" 2>/dev/null || echo "")
+    HOST_OS=$(uname -s)
+    if [ "$HOST_OS" = "Darwin" ] || [ "$SOCK_GID" = "0" ]; then
+        GROUP_ADD_ARGS+=(--group-add 0)
+    fi
+    if [ -n "$SOCK_GID" ] && [ "$SOCK_GID" != "0" ]; then
+        GROUP_ADD_ARGS+=(--group-add "$SOCK_GID")
+    fi
 fi
 
-docker --host "$DOCKER_HOST_URI" run --name @@NVFLARE_CONTAINER_NAME@@ \
+docker run --name @@NVFLARE_CONTAINER_NAME@@ \
     --user "$(id -u):$(id -g)" \
     "${GROUP_ADD_ARGS[@]}" \
     --network "$NETWORK_NAME" \

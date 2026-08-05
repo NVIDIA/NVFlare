@@ -15,6 +15,7 @@
 import argparse
 import base64
 import json
+import os
 import shutil
 import subprocess
 from datetime import datetime, timedelta
@@ -316,16 +317,22 @@ def test_prepare_docker_start_script_handles_docker_socket_path_and_groups(tmp_p
 
     script = (output / "startup" / "start_docker.sh").read_text()
     assert 'DOCKER_SOCK="${NVFL_DOCKER_SOCK:-/var/run/docker.sock}"' in script
+    assert 'DOCKER_ENDPOINT="${DOCKER_HOST:-}"' in script
+    assert "docker context inspect" in script
+    assert "ENDPOINT_DOCKER_SOCK=${DOCKER_ENDPOINT#unix://}" in script
     assert 'if [ -z "${NVFL_DOCKER_SOCK:-}" ] && [ -L "$DOCKER_SOCK" ]; then' in script
     assert 'RESOLVED_DOCKER_SOCK=$(readlink "$DOCKER_SOCK")' in script
     assert 'if RESOLVED_DOCKER_SOCK_DIR="$(' in script
-    assert 'if [ ! -S "$DOCKER_SOCK" ]; then' in script
+    assert "DOCKER_SOCK_IS_LOCAL=false" in script
+    assert "DOCKER_SOCK_IS_LOCAL=true" in script
+    assert "Docker socket is not visible locally; using daemon-host path" in script
     assert "Set NVFL_DOCKER_SOCK=/path/to/docker.sock" in script
-    assert 'DOCKER_HOST_URI="unix://$DOCKER_SOCK"' in script
-    assert 'docker --host "$DOCKER_HOST_URI" info' in script
-    assert 'docker --host "$DOCKER_HOST_URI" network ls' in script
-    assert 'docker --host "$DOCKER_HOST_URI" network create' in script
-    assert 'docker --host "$DOCKER_HOST_URI" run' in script
+    assert "DOCKER_HOST_URI" not in script
+    assert "docker --host" not in script
+    assert "if ! docker info" in script
+    assert "if ! docker network ls" in script
+    assert "docker network create" in script
+    assert "docker run" in script
     assert (
         "SOCK_GID=$(stat -c '%g' \"$DOCKER_SOCK\" 2>/dev/null || "
         'stat -f \'%g\' "$DOCKER_SOCK" 2>/dev/null || echo "")'
@@ -339,6 +346,84 @@ def test_prepare_docker_start_script_handles_docker_socket_path_and_groups(tmp_p
     assert '"${GROUP_ADD_ARGS[@]}"' in script
     assert '-v "$DOCKER_SOCK":/var/run/docker.sock' in script
     assert "-v /var/run/docker.sock:/var/run/docker.sock" not in script
+
+
+def test_prepare_docker_start_script_allows_daemon_host_socket_path(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    docker_log = tmp_path / "docker.log"
+    fake_docker = fake_bin / "docker"
+    fake_docker.write_text(
+        "#!/usr/bin/env bash\n"
+        'printf \'%s\\n\' "$*" >> "$NVFL_TEST_DOCKER_LOG"\n'
+        'if [ "$1" = "network" ] && [ "$2" = "ls" ]; then\n'
+        "    echo nvflare-network\n"
+        "fi\n"
+    )
+    fake_docker.chmod(0o755)
+
+    daemon_socket = tmp_path / "daemon-host" / "docker.sock"
+    monkeypatch.setenv("DOCKER_HOST", "tcp://dind:2375")
+    monkeypatch.setenv("NVFL_DOCKER_SOCK", str(daemon_socket))
+    monkeypatch.setenv("NVFL_TEST_DOCKER_LOG", str(docker_log))
+    monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ['PATH']}")
+
+    result = subprocess.run(
+        ["bash", str(output / "startup" / "start_docker.sh")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Docker socket is not visible locally; using daemon-host path" in result.stdout
+    calls = docker_log.read_text().splitlines()
+    assert calls[0] == "info"
+    assert calls[1].startswith("network ls")
+    run_call = next(call for call in calls if call.startswith("run "))
+    assert "--host" not in run_call
+    assert "--group-add" not in run_call
+    assert f"-v {daemon_socket}:/var/run/docker.sock" in run_call
+
+
+def test_prepare_docker_start_script_rejects_missing_local_socket(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    missing_socket = tmp_path / "missing" / "docker.sock"
+    monkeypatch.setenv("DOCKER_HOST", f"unix://{missing_socket}")
+    monkeypatch.setenv("NVFL_DOCKER_SOCK", str(missing_socket))
+
+    result = subprocess.run(
+        ["bash", str(output / "startup" / "start_docker.sh")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert f"ERROR: Docker socket not found or not a socket: {missing_socket}" in result.stdout
 
 
 @pytest.mark.parametrize(

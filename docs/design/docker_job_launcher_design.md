@@ -175,8 +175,8 @@ docker run ... -e NVFL_DOCKER_WORKSPACE="$HOST_WORKSPACE" ...
 SP/CP container (site admin grants via start_docker.sh)
   ├── /var/run/docker.sock mounted            ← can create job containers
   ├── --user $(id -u):$(id -g)               ← runs as calling user (workspace files not root-owned)
-  ├── --group-add <docker-socket-gid>         ← grants socket access on standard Linux engines
-  ├── --group-add 0 when needed               ← grants access when the mounted socket appears root-owned
+  ├── --group-add <docker-socket-gid>         ← grants access when the socket is locally visible
+  ├── --group-add 0 when needed               ← handles locally visible sockets that appear root-owned
   ├── workspace bind mount at /var/tmp/nvflare/workspace
   ├── nvflare-network                         ← intra-site: SP↔SJ / CP↔CJ (PARENT_URL, Docker DNS)
   └── host network (-p fed_learn_port)        ← cross-site: CP→SP over HTTPS, same as process mode
@@ -424,7 +424,7 @@ On the server machine:
 cd workspace/server/startup
 nohup ./start_docker.sh > server.log 2>&1 &
 # → creates nvflare-network if it doesn't exist
-# → docker --host "unix://$DOCKER_SOCK" run --name server \
+# → docker run --name server \
 #              --user "$(id -u):$(id -g)" \
 #              --group-add 0 (on macOS or when the socket GID is 0) \
 #              --group-add <docker-socket-gid> (if non-zero) \
@@ -455,8 +455,10 @@ different Docker socket explicitly:
 NVFL_DOCKER_SOCK=/path/to/docker.sock ./start_docker.sh
 ```
 
-The script pins its Docker CLI operations to the selected Unix socket so the parent and job containers use the same
-local daemon, regardless of the active Docker context.
+The Docker CLI uses the caller's existing `DOCKER_HOST` or Docker context. `NVFL_DOCKER_SOCK` selects the bind-mount
+source path on the daemon host; it does not select the Docker CLI endpoint. When that socket is locally visible, the
+script validates it and adds the supplementary groups needed by the non-root parent. With a remote daemon such as a
+DinD sidecar, the path is evaluated on the daemon host and cannot be validated or inspected by the CLI container.
 
 ### Step 4 — Configure site data (optional)
 
