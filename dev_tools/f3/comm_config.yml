@@ -18,7 +18,6 @@
 streaming_chunk_size: 1M
 streaming_window_size: 64M                 # 64 chunks
 streaming_ack_interval: 16M                # one quarter of the window
-streaming_max_out_seq_chunks: 16
 streaming_retry_max_pending_bytes: 128M
 
 # Any native F3 comm_config option can be added here. Common flat options are:

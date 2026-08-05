@@ -56,6 +56,14 @@ class ConformingShortReadStream(Stream):
         return b"x" * result_size
 
 
+class OversizedReadStream(Stream):
+    def __init__(self):
+        super().__init__(size=0, headers={})
+
+    def read(self, size):
+        return b"x" * (size + 1)
+
+
 class TestByteStreamerAckWatchdog:
     def _make_task(
         self,
@@ -180,6 +188,21 @@ class TestByteStreamerAckWatchdog:
         assert [len(message.payload) for message in messages] == [8, 8, 8, 1]
         assert all(message.get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.CHUNK for message in messages[:-1])
         assert messages[-1].get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.FINAL
+
+    def test_stream_cannot_return_more_than_requested(self, monkeypatch):
+        task, _ = self._make_task(
+            monkeypatch,
+            window_size=1024,
+            ack_wait=0.5,
+            ack_progress_timeout=2.0,
+            ack_progress_check_interval=0.01,
+            chunks=[b""],
+            chunk_size=8,
+        )
+        task.stream = OversizedReadStream()
+
+        with pytest.raises(StreamError, match=r"invalid size: 9 \(requested 8\)"):
+            task.send_loop()
 
     def test_watchdog_stops_when_no_ack_progress(self, monkeypatch):
         task, _ = self._make_task(
