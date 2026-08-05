@@ -157,6 +157,10 @@ For example, the current job's run directory is
 `collab.fl_ctx` is the live `FLContext` for the current site. Because it is a
 runtime object, `CollabRecipe` adds it to the site's application properties
 when the server or client app starts rather than serializing it into the job.
+For an externally launched distributed client, it is a rank-local worker
+context containing the site identity, job ID, rank information, workspace, and
+the worker's reconstructed client components. The parent site's engine remains
+in the FLARE site process and is not exposed across the process boundary.
 
 Per-site values use the standard Recipe configuration mechanism:
 
@@ -215,10 +219,14 @@ which is useful for decentralized client-to-client workflows.
 `_InvocationDispatcher` is an internal strategy used by proxies. It is private
 because applications should not choose transport or branch on transport type.
 `CellDispatcher` serializes a logical invocation onto CellNet and is used by
-`CollabController` and `CollabExecutor` in every standard environment.
+`CollabController` and `CollabExecutor`. With external distributed client
+execution, the executor is also a supervisor: it forwards each invocation to
+global rank zero, which broadcasts it to the rank group before all ranks invoke
+the same published method.
 
-Invocation dispatch is separate from execution placement. The current execution
-placement is always the FLARE site process.
+Invocation dispatch is separate from execution placement. The default placement
+is the FLARE site process. A Collab recipe can instead select a persistent
+externally launched client rank group.
 
 ### FLARE runtime layer
 
@@ -231,6 +239,104 @@ placement is always the FLARE site process.
 At startup, the controller and executors exchange publish interfaces. Each side
 registers a CellNet callback, builds proxies for the other sites, sets up the
 application, and enters the Collab lifecycle.
+
+## Distributed Client Execution
+
+Collab uses the same launcher-prefix model as Client API recipes, but owns a
+separate distributed execution protocol. The site-side supervisor creates a
+private child Cell connection for global rank zero, launches the configured
+rank group, and forwards Collab invocations over that connection. Client API
+task/result protocols and backends are not involved.
+
+The recipe selects external execution, and either its global `command` or each
+site's `command` defines the process topology:
+
+```python
+recipe = CollabRecipe(
+    job_name="collab_ddp",
+    server=server,
+    client=client,
+    launch_external_process=True,
+)
+
+recipe.set_per_site_config(
+    {
+        "site-1": {
+            "command": "python3 -m torch.distributed.run --nnodes=1 --nproc_per_node=2 --master_port=7777",
+        },
+        "site-2": {
+            "command": "python3 -m torch.distributed.run --nnodes=1 --nproc_per_node=2 --master_port=8888",
+        },
+    }
+)
+```
+
+Collab appends `-m nvflare.collab.runtime.distributed_worker` and its private
+bootstrap arguments to the configured prefix. The command must therefore be a
+launcher prefix, not a command that already names a training script. Collab
+launches the configured command on the NVFlare client host. For a multi-node
+launcher, rendezvous, remote-node startup, networking, a shared or equivalent
+job workspace, and GPU allocation remain deployment responsibilities of that
+launcher and the site operator; Collab does not provision or launch the other
+machines.
+
+The distributed execution contract is SPMD:
+
+- every rank reconstructs the client app and runs every `@collab.init` method;
+- every incoming published call runs on every rank in the same order;
+- an exception reported by any participating rank fails the published call;
+- only the global-rank-zero return value crosses the federated boundary;
+- every rank runs `@collab.final` during normal shutdown.
+
+There are no rank/scope options on decorators. Rank-specific behavior stays in
+ordinary PyTorch code. In particular, outbound Collab proxy calls and other
+federated side effects from a distributed client must be guarded to global rank
+zero. Recursive calls through the client's own site proxy are not supported.
+Collab serializes incoming calls for a site so all ranks observe the same
+collective order; applications must also avoid synchronous callback cycles that
+re-enter the same distributed client before its current call completes.
+If an invocation times out at the rank-group boundary, that client session is
+failed and rejects later calls because the runtime can no longer prove that all
+ranks are ready for the next collective in the same order.
+
+```python
+import os
+
+import torch
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel
+from torch.utils.data.distributed import DistributedSampler
+
+from nvflare.collab import collab
+
+
+@collab.init
+def initialize():
+    local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(local_rank)
+    dist.init_process_group("nccl")
+
+
+@collab.publish
+def train(weights):
+    local_rank = int(os.environ["LOCAL_RANK"])
+    model = make_model().to(local_rank)
+    model.load_state_dict(weights)
+    model = DistributedDataParallel(model, device_ids=[local_rank])
+    sampler = DistributedSampler(dataset)
+    train_model(model, sampler)
+    return model.module.state_dict() if dist.get_rank() == 0 else None
+
+
+@collab.final
+def finalize():
+    dist.destroy_process_group()
+```
+
+The launcher may also run a single external process. When it creates more than
+one process through `torchrun`, the client initializer must initialize
+`torch.distributed`; the runtime uses that process group to distribute calls and
+collect per-rank status.
 
 ## Standard Environments
 
@@ -264,6 +370,7 @@ nvflare/collab/
     ├── controller.py    server workflow integration
     ├── executor.py      client site integration
     ├── cell_dispatcher.py / dispatch.py
+    ├── distributed.py / distributed_worker.py
     └── lifecycle.py     init/main/final orchestration
 ```
 
@@ -286,23 +393,12 @@ A future direct-call filter design must make policy site-owned and enforce it
 consistently for native Collab calls and task-plane Executor clients before any
 `CallFilter` or `ResultFilter` API is published.
 
-Bridging Collab to the Client API is also deferred. The bridge should schedule a
-normal NVFlare `Task` whose configured `Shareable -> Shareable` Executor runs
-through `ClientRunner`, preserving site filters, lifecycle, abort handling,
-accounting, external-process execution, and DDP. It must not host an Executor or
-a callback behind a client-side Collab RPC.
+A separate bridge from Collab calls to user-authored Client API training scripts
+is deferred. Such a bridge should schedule a normal NVFlare `Task` whose
+configured `Shareable -> Shareable` Executor runs through `ClientRunner`,
+preserving site filters and task accounting. It is distinct from distributed
+execution of the Collab app itself and must not host an Executor behind a
+client-side Collab RPC.
 
 Collab-specific events are deferred; published functions provide the current
 notification mechanism without introducing a second event system.
-
-External-process execution is intentionally deferred. Before it can become a
-public feature, its design must specify:
-
-- a typed execution policy selectable independently per server/client site;
-- object reconstruction and `init`/published-call/`final` lifecycle parity;
-- exception, abort, timeout, workspace, and application-property propagation;
-- multi-rank invocation semantics that call every participating rank safely;
-- tracking and result aggregation without a control-rank deadlock.
-
-Free-form launcher commands and global recipe flags are not a durable substitute
-for that contract.

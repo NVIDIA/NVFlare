@@ -22,12 +22,19 @@ from nvflare.collab.api.app import App, ClientApp, ServerApp
 from nvflare.collab.api.module_wrapper import ModuleWrapper, resolve_server_client, wrap_if_module
 from nvflare.collab.runtime.controller import CollabController
 from nvflare.collab.runtime.executor import CollabExecutor
-from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number, check_str
+from nvflare.fuel.utils.validation_utils import (
+    check_non_empty_str,
+    check_positive_int,
+    check_positive_number,
+    check_str,
+)
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import Recipe
 
 
 class CollabRecipe(Recipe):
+
+    _SUPPORTED_PER_SITE_SECRET_REF_KEYS = frozenset({"command"})
 
     def __init__(
         self,
@@ -44,8 +51,19 @@ class CollabRecipe(Recipe):
         max_outbound_call_threads_for_server=None,
         max_inbound_call_threads_for_client=None,
         max_outbound_call_threads_for_client=None,
+        launch_external_process: bool = False,
+        command: str = "python3 -u",
+        distributed_startup_timeout: float = 60.0,
+        distributed_shutdown_timeout: float = 30.0,
     ):
-        """Create a recipe for collaborative training."""
+        """Create a recipe for collaborative training.
+
+        When ``launch_external_process`` is enabled, the command is used as a
+        launcher prefix and the Collab distributed worker is appended to it.
+        A launcher such as ``torchrun`` therefore starts one persistent Collab
+        worker per rank, and every client lifecycle and published method runs
+        on all ranks. The global rank-zero result is returned to the caller.
+        """
         check_str("job_name", job_name)
         check_positive_number("sync_task_timeout", sync_task_timeout)
         check_positive_int("max_call_threads_for_server", max_call_threads_for_server)
@@ -59,6 +77,11 @@ class CollabRecipe(Recipe):
             check_positive_int("max_inbound_call_threads_for_client", max_inbound_call_threads_for_client)
         if max_outbound_call_threads_for_client is not None:
             check_positive_int("max_outbound_call_threads_for_client", max_outbound_call_threads_for_client)
+        if not isinstance(launch_external_process, bool):
+            raise TypeError(f"launch_external_process must be a bool but got {type(launch_external_process).__name__}")
+        check_non_empty_str("command", command)
+        check_positive_number("distributed_startup_timeout", distributed_startup_timeout)
+        check_positive_number("distributed_shutdown_timeout", distributed_shutdown_timeout)
 
         # When server/client are not specified, use the caller's module
         # (@collab.main / @collab.publish functions defined at module level).
@@ -106,6 +129,10 @@ class CollabRecipe(Recipe):
             else max_outbound_call_threads_for_client
         )
         self.min_clients = min_clients
+        self.launch_external_process = launch_external_process
+        self.command = command
+        self.distributed_startup_timeout = distributed_startup_timeout
+        self.distributed_shutdown_timeout = distributed_shutdown_timeout
         job = FedJob(name=self.job_name, min_clients=self.min_clients)
         self._finalized = False
         self._per_site_config: Dict[str, dict] = {}
@@ -117,6 +144,9 @@ class CollabRecipe(Recipe):
         Each site's values are materialized only in that site's client app
         configuration and are readable via ``collab.get_app_prop(name)``.
         """
+        for site, values in config.items():
+            if "command" in values:
+                check_non_empty_str(f"command for {site}", values["command"])
         self._per_site_config = {site: dict(values) for site, values in config.items()}
 
     def set_server_prop(self, name: str, value):
@@ -182,7 +212,10 @@ class CollabRecipe(Recipe):
             lambda obj, id: job.to(obj, target, id=id),
         )
         props = dict(self.client_app.get_props() or {})
-        props.update(self._per_site_config.get(target, {}))
+        site_config = self._per_site_config.get(target, {})
+        props.update(site_config)
+        command = site_config.get("command", self.command)
+        check_non_empty_str(f"command for {target}", command)
         executor = CollabExecutor(
             client_obj_id=client_obj_id,
             collab_obj_ids=c_collab_obj_ids,
@@ -190,6 +223,10 @@ class CollabRecipe(Recipe):
             max_inbound_call_threads=self.max_inbound_call_threads_for_client,
             max_outbound_call_threads=self.max_outbound_call_threads_for_client,
             props=props,
+            launch_external_process=self.launch_external_process,
+            command=command,
+            distributed_startup_timeout=self.distributed_startup_timeout,
+            distributed_shutdown_timeout=self.distributed_shutdown_timeout,
         )
         job.to(executor, target, id="executor", tasks=["*"])
 

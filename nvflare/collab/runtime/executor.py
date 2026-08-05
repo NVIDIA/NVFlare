@@ -32,8 +32,9 @@ from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.security.logging import secure_format_exception
 
 from .adaptor import CollabAdaptor
-from .defs import SETUP_TASK_NAME, SYNC_TASK_NAME, SyncKey
-from .dispatch import prepare_for_remote_call
+from .defs import SETUP_TASK_NAME, SYNC_TASK_NAME, DistributedKey, SyncKey
+from .dispatch import prepare_for_distributed_call, prepare_for_remote_call
+from .distributed import DistributedClientSession
 
 
 class CollabExecutor(Executor, CollabAdaptor):
@@ -47,6 +48,10 @@ class CollabExecutor(Executor, CollabAdaptor):
         max_call_threads=100,
         max_inbound_call_threads=None,
         max_outbound_call_threads=None,
+        launch_external_process: bool = False,
+        command: str = "python3 -u",
+        distributed_startup_timeout: float = 60.0,
+        distributed_shutdown_timeout: float = 30.0,
     ):
         Executor.__init__(self)
         CollabAdaptor.__init__(
@@ -56,10 +61,15 @@ class CollabExecutor(Executor, CollabAdaptor):
         )
         self.client_obj_id = client_obj_id
         self.max_call_threads = max_call_threads
+        self.launch_external_process = launch_external_process
+        self.command = command
+        self.distributed_startup_timeout = distributed_startup_timeout
+        self.distributed_shutdown_timeout = distributed_shutdown_timeout
         self.register_event_handler(EventType.START_RUN, self._handle_start_run)
         self.register_event_handler(EventType.END_RUN, self._handle_end_run)
         self.client_app = None
         self.client_ctx = None
+        self.distributed_session = None
         if max_inbound_call_threads is None:
             max_inbound_call_threads = max_call_threads
         if max_outbound_call_threads is None:
@@ -109,7 +119,10 @@ class CollabExecutor(Executor, CollabAdaptor):
 
     def _handle_end_run(self, event_type: str, fl_ctx: FLContext):
         try:
-            if self.client_ctx:
+            if self.distributed_session:
+                self.logger.info(f"finalizing distributed client app {self.client_app.name}")
+                self.distributed_session.stop(finalize=True)
+            elif self.client_ctx:
                 self.logger.info(f"finalizing client app {self.client_app.name}")
                 self.client_app.finalize(self.client_ctx)
         finally:
@@ -121,69 +134,78 @@ class CollabExecutor(Executor, CollabAdaptor):
         finally:
             self.outbound_executor.shutdown(wait=True, cancel_futures=True)
 
-    def _prepare_server_proxy(self, server_fqcn, cell, collab_interface: dict, abort_signal, fl_ctx: FLContext):
-        server_name = "server"
+    def _prepare_proxy(
+        self,
+        target_name,
+        target_fqn,
+        target_fqcn,
+        cell,
+        collab_interface: dict,
+        abort_signal,
+        fl_ctx: FLContext,
+    ):
         backend = CellDispatcher(
             manager=self,
             engine=fl_ctx.get_engine(),
             caller=self.client_app.name,
             cell=cell,
-            target_fqcn=server_fqcn,
+            target_fqcn=target_fqcn,
             abort_signal=abort_signal,
             thread_executor=self.outbound_executor,
         )
         proxy = Proxy(
             app=self.client_app,
-            target_name=server_name,
-            target_fqn=server_name,
+            target_name=target_name,
+            target_fqn=target_fqn,
             backend=backend,
             target_interface=collab_interface.get(""),
         )
-
         for name, itf in collab_interface.items():
-            if name == "":
-                # this is the server app itself
+            if not name:
                 continue
-            p = Proxy(
-                app=self.client_app,
-                target_name=f"{server_name}.{name}",
-                target_fqn="",
-                backend=backend,
-                target_interface=itf,
+            proxy.add_child(
+                name,
+                Proxy(
+                    app=self.client_app,
+                    target_name=f"{target_name}.{name}",
+                    target_fqn="",
+                    backend=backend,
+                    target_interface=itf,
+                ),
             )
-            proxy.add_child(name, p)
         return proxy
+
+    def _prepare_server_proxy(self, server_fqcn, cell, collab_interface: dict, abort_signal, fl_ctx: FLContext):
+        return self._prepare_proxy("server", "server", server_fqcn, cell, collab_interface, abort_signal, fl_ctx)
 
     def _prepare_client_proxy(self, job_id, cell, client: Client, abort_signal, collab_interface, fl_ctx: FLContext):
-        backend = CellDispatcher(
-            manager=self,
-            engine=fl_ctx.get_engine(),
-            caller=self.client_app.name,
-            cell=cell,
-            target_fqcn=FQCN.join([client.get_fqcn(), job_id]),
-            abort_signal=abort_signal,
-            thread_executor=self.outbound_executor,
-        )
-        proxy = Proxy(
-            app=self.client_app,
-            target_name=client.name,
-            target_fqn=client.get_fqsn(),
-            backend=backend,
-            target_interface=collab_interface.get(""),
+        return self._prepare_proxy(
+            client.name,
+            client.get_fqsn(),
+            FQCN.join([client.get_fqcn(), job_id]),
+            cell,
+            collab_interface,
+            abort_signal,
+            fl_ctx,
         )
 
-        for name, itf in collab_interface.items():
-            if name == "":
-                continue
-            p = Proxy(
-                app=self.client_app,
-                target_name=f"{client.name}.{name}",
-                target_fqn="",
-                backend=backend,
-                target_interface=itf,
-            )
-            proxy.add_child(name, p)
-        return proxy
+    @staticmethod
+    def _distributed_server_spec(server_fqcn, collab_interface):
+        return {
+            "name": "server",
+            "fqn": "server",
+            DistributedKey.TARGET: server_fqcn,
+            "interface": collab_interface,
+        }
+
+    @staticmethod
+    def _distributed_client_spec(job_id, client: Client, collab_interface):
+        return {
+            "name": client.name,
+            "fqn": client.get_fqsn(),
+            DistributedKey.TARGET: FQCN.join([client.get_fqcn(), job_id]),
+            "interface": collab_interface,
+        }
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name not in (SYNC_TASK_NAME, SETUP_TASK_NAME):
@@ -218,6 +240,49 @@ class CollabExecutor(Executor, CollabAdaptor):
         job_clients = job_meta.get(JobMetaKey.JOB_CLIENTS)
         all_clients = [from_dict(d) for d in job_clients]
 
+        job_id = fl_ctx.get_job_id()
+        if self.launch_external_process:
+            server_spec = self._distributed_server_spec(server_fqcn, server_collab_interface)
+            client_specs = []
+            for c in all_clients:
+                remote_interface = client_interfaces.get(c.name)
+                if not isinstance(remote_interface, dict):
+                    self.log_error(fl_ctx, f"missing collab interface for client {c.name}")
+                    return make_reply(ReturnCode.BAD_TASK_DATA)
+                client_specs.append(self._distributed_client_spec(job_id, c, remote_interface))
+
+            session = DistributedClientSession(
+                command=self.command,
+                startup_timeout=self.distributed_startup_timeout,
+                shutdown_timeout=self.distributed_shutdown_timeout,
+                logger=self.logger,
+            )
+            self.distributed_session = session
+            try:
+                session.start(
+                    fl_ctx=fl_ctx,
+                    client_obj_id=self.client_obj_id,
+                    collab_obj_ids=self.collab_obj_ids,
+                    props=dict(self.props or {}),
+                    server_spec=server_spec,
+                    client_specs=client_specs,
+                    abort_signal=abort_signal,
+                )
+                prepare_for_distributed_call(
+                    cell=cell,
+                    session=session,
+                    logger=self.logger,
+                    executor=self.inbound_executor,
+                )
+            except Exception as ex:
+                session.stop(finalize=False)
+                self.log_exception(
+                    fl_ctx,
+                    f"failed to set up distributed client app {self.client_app.name}: {secure_format_exception(ex)}",
+                )
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            return make_reply(ReturnCode.OK)
+
         prepare_for_remote_call(
             cell=cell,
             app=self.client_app,
@@ -226,7 +291,6 @@ class CollabExecutor(Executor, CollabAdaptor):
         )
 
         # build proxies
-        job_id = fl_ctx.get_job_id()
         server_proxy = self._prepare_server_proxy(server_fqcn, cell, server_collab_interface, abort_signal, fl_ctx)
 
         client_proxies = []
