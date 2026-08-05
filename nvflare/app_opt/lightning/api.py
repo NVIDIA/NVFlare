@@ -239,7 +239,8 @@ class FLCallback(Callback):
                         "train with evaluation missing training metrics, please remember to call validate."
                     )
                 model.metrics = self.metrics
-            self._send_model(model, trainer)
+            if trainer.global_rank == 0:
+                self._send_model(model)
             self.reset_state(trainer)
 
     def on_validation_start(self, trainer, pl_module):
@@ -271,7 +272,8 @@ class FLCallback(Callback):
         if pl_module and self.metrics is None:
             self.metrics = _extract_metrics(trainer.callback_metrics)
             if self._is_evaluation:
-                self._send_model(FLModel(metrics=self.metrics), trainer)
+                if trainer.global_rank == 0:
+                    self._send_model(FLModel(metrics=self.metrics))
                 self.reset_state(trainer)
 
     def _receive_and_update_model(self, trainer, pl_module):
@@ -343,9 +345,7 @@ class FLCallback(Callback):
         self._is_submit_model = trainer.strategy.broadcast(_is_submit_model, src=0)
         return model
 
-    def _send_model(self, output_model: FLModel, trainer: pl.Trainer):
-        if trainer.global_rank != 0:
-            return
+    def _send_model(self, output_model: FLModel):
         try:
             send(output_model, clear_cache=False)
         except Exception as e:
