@@ -275,7 +275,11 @@ class TxTask(StreamTaskSpec):
         """Read/send loop to transmit the whole stream with flow control"""
 
         while not self.stopped:
-            buf = self.stream.read(self.chunk_size)
+            if self.buffer_size == self.chunk_size:
+                read_size = self.chunk_size
+            else:
+                read_size = self.chunk_size - self.buffer_size
+            buf = self.stream.read(read_size)
             if not buf:
                 # End of Stream
                 if not self.send_pending_buffer(final=True):
@@ -286,15 +290,14 @@ class TxTask(StreamTaskSpec):
             # Flow control
             window = self.offset - self.offset_ack
             # It may take several ACKs to clear up the window.
-            # The comparison is >=, not >, so a normal data chunk does not add
-            # another full chunk once the window reaches its limit. The EOS path
-            # above can still send one final frame; RxTask includes that slot when
-            # sizing its reassembly buffer.
-            while window >= self.window_size:
-                log.debug(f"{self} window size {window} reached limit: {self.window_size}")
+            # Keep the historical strict comparison: a zero window provides
+            # stop-and-wait behavior by allowing the first frame to be sent.
+            # RxTask includes the possible boundary frame in its buffer sizing.
+            while window > self.window_size:
+                log.debug(f"{self} window size {window} exceeds limit: {self.window_size}")
                 wait_start = time.monotonic()
 
-                while window >= self.window_size:
+                while window > self.window_size:
                     if self.stopped:
                         return
 
@@ -314,12 +317,13 @@ class TxTask(StreamTaskSpec):
                     window = self.offset - self.offset_ack
 
             size = len(buf)
-            if size > self.chunk_size:
-                raise StreamError(f"{self} Stream returns invalid size: {size}")
+            if size > read_size:
+                raise StreamError(f"{self} Stream returns invalid size: {size} (requested {read_size})")
 
-            # Don't push out chunk when it's equal, wait till next round to detect EOS
-            # For example, if the stream size is chunk size (1M), this avoids sending two chunks.
-            if size + self.buffer_size > self.chunk_size:
+            # A full pending buffer is sent only after a non-empty lookahead read.
+            # This avoids an empty final frame when the stream size is an exact
+            # multiple of chunk_size while ensuring all non-final frames are full.
+            if self.buffer_size == self.chunk_size:
                 if not self.send_pending_buffer():
                     return
 

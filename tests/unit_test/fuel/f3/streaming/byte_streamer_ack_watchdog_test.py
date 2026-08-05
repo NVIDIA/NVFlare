@@ -39,6 +39,23 @@ class DummyStream(Stream):
         return self._chunks.pop(0)
 
 
+class ConformingShortReadStream(Stream):
+    def __init__(self, size, read_pattern):
+        super().__init__(size=size, headers={})
+        self.remaining = size
+        self.read_pattern = read_pattern
+        self.read_count = 0
+
+    def read(self, size):
+        if not self.remaining:
+            return b""
+        pattern_size = self.read_pattern[self.read_count % len(self.read_pattern)]
+        self.read_count += 1
+        result_size = min(size, pattern_size, self.remaining)
+        self.remaining -= result_size
+        return b"x" * result_size
+
+
 class TestByteStreamerAckWatchdog:
     def _make_task(
         self,
@@ -118,9 +135,7 @@ class TestByteStreamerAckWatchdog:
     def test_watchdog_allows_progress_and_stream_completes(self, monkeypatch):
         task, _ = self._make_task(
             monkeypatch,
-            # smallest window the ACK can actually clear: send_loop waits while
-            # window >= window_size, so a 0 window would never open again
-            window_size=1,
+            window_size=0,
             ack_wait=0.5,
             ack_progress_timeout=2.0,
             ack_progress_check_interval=0.01,
@@ -145,6 +160,26 @@ class TestByteStreamerAckWatchdog:
 
         assert task.stream_future.done()
         assert task.stream_future.exception() is None
+
+    def test_short_reads_are_coalesced_into_full_non_final_frames(self, monkeypatch):
+        task, cell = self._make_task(
+            monkeypatch,
+            window_size=1024,
+            ack_wait=0.5,
+            ack_progress_timeout=2.0,
+            ack_progress_check_interval=0.01,
+            chunks=[b""],
+            chunk_size=8,
+        )
+        task.stream = ConformingShortReadStream(size=25, read_pattern=[7, 2])
+        task.stream_future.set_size(25)
+
+        task.send_loop()
+
+        messages = [call.args[3] for call in cell.fire_and_forget.call_args_list]
+        assert [len(message.payload) for message in messages] == [8, 8, 8, 1]
+        assert all(message.get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.CHUNK for message in messages[:-1])
+        assert messages[-1].get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.FINAL
 
     def test_watchdog_stops_when_no_ack_progress(self, monkeypatch):
         task, _ = self._make_task(

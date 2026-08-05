@@ -25,7 +25,7 @@ from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import (
     MAX_COMPLETED_TASK_TTL,
     MAX_DERIVED_OUT_SEQ_CHUNKS,
-    MAX_OUT_SEQ_CHUNKS,
+    MIN_OUT_SEQ_CHUNKS,
     RxStream,
     RxTask,
     required_out_seq_chunks,
@@ -238,8 +238,8 @@ def test_find_or_create_task_records_reliable_header():
         (128 * MB, 2 * MB, 65),
         # non-multiple windows require ceiling division before the final-frame slot
         (65 * MB, 2 * MB, 34),
-        (8 * MB, MB, MAX_OUT_SEQ_CHUNKS),
-        (64 * MB, 0, MAX_OUT_SEQ_CHUNKS),
+        (8 * MB, MB, MIN_OUT_SEQ_CHUNKS),
+        (64 * MB, 0, MIN_OUT_SEQ_CHUNKS),
         # a peer-supplied window/chunk ratio cannot size the buffer without limit
         (8192 * MB, MB, MAX_DERIVED_OUT_SEQ_CHUNKS),
     ],
@@ -315,9 +315,16 @@ def test_new_stream_uses_sender_streaming_parameters():
     assert task.max_out_seq == 65
 
 
-@pytest.mark.parametrize("configured_max, expected", [(MAX_OUT_SEQ_CHUNKS, 129), (256, 256)])
-def test_new_stream_raises_out_seq_limit_for_sender_window(monkeypatch, configured_max, expected):
-    monkeypatch.setattr(CommConfigurator, "get_streaming_max_out_seq_chunks", lambda self, default: configured_max)
+@pytest.mark.parametrize(
+    "configured_max, expected, warns",
+    [(None, 129, False), (MIN_OUT_SEQ_CHUNKS, 16, True), (256, 256, False)],
+)
+def test_new_stream_applies_sender_window_or_explicit_limit(monkeypatch, caplog, configured_max, expected, warns):
+    monkeypatch.setattr(
+        CommConfigurator,
+        "get_streaming_max_out_seq_chunks",
+        lambda self, default: default if configured_max is None else configured_max,
+    )
     sender_parameters = {
         StreamHeaderKey.CHUNK_SIZE: MB,
         StreamHeaderKey.WINDOW_SIZE: 128 * MB,
@@ -330,10 +337,34 @@ def test_new_stream_raises_out_seq_limit_for_sender_window(monkeypatch, configur
         streaming_parameters=sender_parameters,
     )
 
-    task = RxTask.find_or_create_task(message, SimpleNamespace())
-    assert task.process_chunk(message) is True
+    with caplog.at_level(logging.WARNING):
+        task = RxTask.find_or_create_task(message, SimpleNamespace())
+        assert task.process_chunk(message) is True
 
     assert task.max_out_seq == expected
+    warning = "above configured streaming_max_out_seq_chunks"
+    assert (warning in caplog.text) is warns
+
+
+def test_new_stream_warns_when_sender_window_exceeds_derived_limit(caplog):
+    sender_parameters = {
+        StreamHeaderKey.CHUNK_SIZE: MB,
+        StreamHeaderKey.WINDOW_SIZE: 8192 * MB,
+    }
+    message = _make_chunk(
+        "site-1",
+        sid=536,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        streaming_parameters=sender_parameters,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        task = RxTask.find_or_create_task(message, SimpleNamespace())
+        assert task.process_chunk(message) is True
+
+    assert task.max_out_seq == MAX_DERIVED_OUT_SEQ_CHUNKS
+    assert "above the 1024 cap" in caplog.text
 
 
 def test_later_chunks_adopt_sender_limit_before_delayed_sequence_zero(monkeypatch):

@@ -39,7 +39,7 @@ from nvflare.fuel.f3.streaming.stream_utils import ONE_MB, stream_stats_category
 
 log = logging.getLogger(__name__)
 
-MAX_OUT_SEQ_CHUNKS = 16
+MIN_OUT_SEQ_CHUNKS = 16
 # Upper bound on the out-of-sequence tolerance derived from a peer's
 # WINDOW_SIZE/CHUNK_SIZE headers. Those headers are hints, and an unbounded
 # ratio would let a peer size this receiver's reassembly buffer at will. A site
@@ -79,26 +79,22 @@ def required_out_seq_chunks(window_size: int, chunk_size: int) -> int:
     Inbound frames are dispatched to a thread pool (ConnManager.process_frame), so
     chunks that arrive in order can still be *processed* out of order, with a depth
     that grows under scheduling jitter. The depth is bounded by how many chunks the
-    sender may have unacked, which is what its flow-control window governs:
-    TxTask.send_loop blocks while ``window >= window_size`` and every non-final chunk
-    is exactly chunk_size bytes, so at most ``ceil(window_size / chunk_size)`` normal
-    chunks are unacked at a time. Tolerating fewer than that aborts healthy streams
-    under load -- the FLARE-3093 regression, where a 64 MiB default window put 64
-    chunks in flight against a fixed tolerance of 16.
-
-    The extra chunk covers the final frame, which TxTask sends from its EOS branch
-    before applying the normal flow-control check. It also supports senders predating
-    the current ``>=`` check: they blocked only while ``window > window_size`` and
-    could therefore send one additional full chunk. Both cases matter during a
-    rolling upgrade.
+    sender may have unacked, which is what its flow-control window governs.
+    TxTask coalesces short reads so every non-final frame is chunk_size bytes and
+    pauses while ``window > window_size``. The EOS path may add one final frame,
+    while the missing expected frame is never stored in out_seq_chunks. Therefore
+    ``ceil(window_size / chunk_size) + 1`` slots cover both divisible and
+    non-divisible windows. Tolerating fewer aborts healthy streams under load --
+    the FLARE-3093 regression, where a 64 MiB default window put far more than 16
+    chunks in flight.
 
     The result is capped at MAX_DERIVED_OUT_SEQ_CHUNKS because window_size and
     chunk_size may be adopted from peer-supplied headers.
     """
     if chunk_size <= 0:
-        return MAX_OUT_SEQ_CHUNKS
+        return MIN_OUT_SEQ_CHUNKS
     window_chunks = (window_size + chunk_size - 1) // chunk_size
-    return max(MAX_OUT_SEQ_CHUNKS, min(window_chunks + 1, MAX_DERIVED_OUT_SEQ_CHUNKS))
+    return max(MIN_OUT_SEQ_CHUNKS, min(window_chunks + 1, MAX_DERIVED_OUT_SEQ_CHUNKS))
 
 
 class RxTask:
@@ -150,7 +146,9 @@ class RxTask:
         self.window_size = config.get_streaming_window_size(STREAM_WINDOW_SIZE)
         self.ack_interval = config.get_streaming_ack_interval(ACK_INTERVAL)
         required_max_out_seq = required_out_seq_chunks(self.window_size, self.chunk_size)
-        self.max_out_seq = config.get_streaming_max_out_seq_chunks(required_max_out_seq)
+        configured_max_out_seq = config.get_streaming_max_out_seq_chunks(None)
+        self.max_out_seq_is_configured = configured_max_out_seq is not None
+        self.max_out_seq = configured_max_out_seq if self.max_out_seq_is_configured else required_max_out_seq
         self.completed_task_ttl = config.get_streaming_retry_timeout(
             COMPLETED_TASK_TTL
         ) + config.get_streaming_retry_wait(RETRY_WAIT)
@@ -328,7 +326,15 @@ class RxTask:
                     f"{MAX_DERIVED_OUT_SEQ_CHUNKS} cap; raise streaming_max_out_seq_chunks on this "
                     f"site if this peer's window is legitimate"
                 )
-        self.max_out_seq = max(self.max_out_seq, required_out_seq_chunks(self.window_size, self.chunk_size))
+        required_max_out_seq = required_out_seq_chunks(self.window_size, self.chunk_size)
+        if self.max_out_seq_is_configured:
+            if required_max_out_seq > self.max_out_seq:
+                log.warning(
+                    f"{self} sender flow-control window needs {required_max_out_seq} out-of-sequence chunks, "
+                    f"above configured streaming_max_out_seq_chunks {self.max_out_seq}; stream may fail under load"
+                )
+        else:
+            self.max_out_seq = max(self.max_out_seq, required_max_out_seq)
         if self.ack_interval > self.window_size:
             log.warning(
                 f"{self} streaming_ack_interval {self.ack_interval} from {self.origin} exceeds "
