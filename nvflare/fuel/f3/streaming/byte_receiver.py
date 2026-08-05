@@ -45,7 +45,7 @@ MIN_OUT_SEQ_CHUNKS = 16
 # ratio would let a peer size this receiver's reassembly buffer at will. A site
 # that legitimately needs more can raise streaming_max_out_seq_chunks in its own
 # config, which is not capped.
-MAX_DERIVED_OUT_SEQ_CHUNKS = 1024
+MAX_PEER_DERIVED_OUT_SEQ_CHUNKS = 1024
 # Headerless legacy senders can use windows smaller than the new sender
 # default. Keep their receiver-side fallback at the historical 4 MiB so an
 # ACK is sent before those senders exhaust their flow-control window.
@@ -88,13 +88,13 @@ def required_out_seq_chunks(window_size: int, chunk_size: int) -> int:
     the FLARE-3093 regression, where a 64 MiB default window put far more than 16
     chunks in flight.
 
-    The result is capped at MAX_DERIVED_OUT_SEQ_CHUNKS because window_size and
+    The result is capped at MAX_PEER_DERIVED_OUT_SEQ_CHUNKS because window_size and
     chunk_size may be adopted from peer-supplied headers.
     """
     if chunk_size <= 0:
         return MIN_OUT_SEQ_CHUNKS
     window_chunks = (window_size + chunk_size - 1) // chunk_size
-    return max(MIN_OUT_SEQ_CHUNKS, min(window_chunks + 1, MAX_DERIVED_OUT_SEQ_CHUNKS))
+    return max(MIN_OUT_SEQ_CHUNKS, min(window_chunks + 1, MAX_PEER_DERIVED_OUT_SEQ_CHUNKS))
 
 
 class RxTask:
@@ -319,11 +319,11 @@ class RxTask:
         )
         if self.chunk_size > 0:
             window_chunks = (self.window_size + self.chunk_size - 1) // self.chunk_size
-            if window_chunks + 1 > MAX_DERIVED_OUT_SEQ_CHUNKS:
+            if window_chunks + 1 > MAX_PEER_DERIVED_OUT_SEQ_CHUNKS:
                 log.warning(
                     f"{self} streaming_window_size {self.window_size} from {self.origin} needs "
                     f"{window_chunks + 1} out-of-sequence chunks, above the "
-                    f"{MAX_DERIVED_OUT_SEQ_CHUNKS} cap; raise streaming_max_out_seq_chunks on this "
+                    f"{MAX_PEER_DERIVED_OUT_SEQ_CHUNKS} cap; raise streaming_max_out_seq_chunks on this "
                     f"site if this peer's window is legitimate"
                 )
         required_max_out_seq = required_out_seq_chunks(self.window_size, self.chunk_size)

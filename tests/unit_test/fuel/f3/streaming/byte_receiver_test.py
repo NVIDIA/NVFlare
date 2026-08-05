@@ -24,7 +24,7 @@ from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import (
     MAX_COMPLETED_TASK_TTL,
-    MAX_DERIVED_OUT_SEQ_CHUNKS,
+    MAX_PEER_DERIVED_OUT_SEQ_CHUNKS,
     MIN_OUT_SEQ_CHUNKS,
     RxStream,
     RxTask,
@@ -241,7 +241,7 @@ def test_find_or_create_task_records_reliable_header():
         (8 * MB, MB, MIN_OUT_SEQ_CHUNKS),
         (64 * MB, 0, MIN_OUT_SEQ_CHUNKS),
         # a peer-supplied window/chunk ratio cannot size the buffer without limit
-        (8192 * MB, MB, MAX_DERIVED_OUT_SEQ_CHUNKS),
+        (8192 * MB, MB, MAX_PEER_DERIVED_OUT_SEQ_CHUNKS),
     ],
 )
 def test_required_out_seq_chunks(window_size, chunk_size, expected):
@@ -363,7 +363,7 @@ def test_new_stream_warns_when_sender_window_exceeds_derived_limit(caplog):
         task = RxTask.find_or_create_task(message, SimpleNamespace())
         assert task.process_chunk(message) is True
 
-    assert task.max_out_seq == MAX_DERIVED_OUT_SEQ_CHUNKS
+    assert task.max_out_seq == MAX_PEER_DERIVED_OUT_SEQ_CHUNKS
     assert "above the 1024 cap" in caplog.text
 
 
