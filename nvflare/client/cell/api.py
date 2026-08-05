@@ -215,6 +215,7 @@ class CellClientAPI(APISpec):
 
             # A failed attempt may be retried on the same API object.
             self._session_id = None
+            self._session_security_configured = False
             self._heartbeat_interval = 0.0
             self._heartbeat_timeout = 0.0
             self._heartbeat_stop.clear()
@@ -317,7 +318,10 @@ class CellClientAPI(APISpec):
                 f"timeout {heartbeat_timeout}"
             )
         self._install_site_auth_headers(
-            secure_mode=body.get(MsgKey.SECURE_MODE),
+            # SECURE_MODE was added without changing protocol v1. Preserve
+            # compatibility with an earlier non-secure CJ that omitted it;
+            # a secure bootstrap still rejects False as a mismatch.
+            secure_mode=body.get(MsgKey.SECURE_MODE, False),
             auth_token=body.get(MsgKey.AUTH_TOKEN),
             token_signature=body.get(MsgKey.AUTH_TOKEN_SIGNATURE),
         )

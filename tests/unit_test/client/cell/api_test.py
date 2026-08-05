@@ -1054,6 +1054,34 @@ class TestInit:
         assert api._session_id is None
         assert env.stopped
 
+    def test_non_secure_init_accepts_protocol_v1_reply_without_secure_mode(self, bootstrap_path, env):
+        reply = _hello_accepted_reply(secure_mode=False)
+        reply.payload.pop(MsgKey.SECURE_MODE)
+        env.on_request = lambda _topic, _target, _request: reply
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+
+        try:
+            api.init(rank="0")
+
+            assert api._session_id == SESSION_ID
+            assert api._secure_mode is False
+            env.auth_filter.assert_not_called()
+        finally:
+            api.shutdown()
+
+    def test_secure_init_rejects_protocol_v1_reply_without_secure_mode(self, bootstrap_path, env):
+        _set_secure_mode(bootstrap_path, True)
+        reply = _hello_accepted_reply(secure_mode=True)
+        reply.payload.pop(MsgKey.SECURE_MODE)
+        env.on_request = lambda _topic, _target, _request: reply
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+
+        with pytest.raises(TrainerSessionError, match="secure_mode disagrees"):
+            api.init(rank="0")
+
+        assert api._session_id is None
+        assert env.stopped
+
     def test_init_stops_retrying_hello_at_overall_deadline(self, bootstrap_path, env, monkeypatch):
         monkeypatch.setattr(cell_api, "_HELLO_TIMEOUT", 0.03)
         monkeypatch.setattr(cell_api, "_HELLO_RETRY_INTERVAL", 0.005)
@@ -1096,6 +1124,38 @@ class TestInit:
             assert first_cell.stopped
             assert second_cell.started
             assert api._heartbeat_thread is not None and api._heartbeat_thread.is_alive()
+        finally:
+            api.shutdown()
+
+    def test_secure_init_retry_installs_auth_filters_on_replacement_cell(self, bootstrap_path, monkeypatch):
+        _set_secure_mode(bootstrap_path, True)
+        first_cell = FakeCell()
+        first_cell.secure_mode = True
+        second_cell = FakeCell()
+        second_cell.secure_mode = True
+        auth_filter = MagicMock()
+        monkeypatch.setattr(cell_api, "Cell", MagicMock(side_effect=[first_cell, second_cell]))
+        monkeypatch.setattr(cell_api, "set_add_auth_headers_filters", auth_filter)
+        monkeypatch.setattr(cell_api, "_shutdown_f3_streaming", MagicMock())
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        start_heartbeat = MagicMock(side_effect=[RuntimeError("heartbeat start failed"), None])
+        monkeypatch.setattr(api, "_start_heartbeat", start_heartbeat)
+
+        try:
+            with pytest.raises(RuntimeError, match="heartbeat start failed"):
+                api.init(rank="0")
+
+            api.init(rank="0")
+
+            assert first_cell.stopped
+            assert second_cell.started
+            assert [entry.args[0] for entry in auth_filter.call_args_list] == [first_cell, second_cell]
+            for entry in auth_filter.call_args_list:
+                assert entry.kwargs == {
+                    "client_name": "site-1",
+                    "auth_token": "site-auth-token",
+                    "token_signature": "site-auth-signature",
+                }
         finally:
             api.shutdown()
 

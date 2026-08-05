@@ -139,6 +139,13 @@ trainer then installs the normal outgoing site authentication-header filters on 
 launch token only proves possession of this launch's bootstrap. It is not the FL authentication
 credential and is never used as an auth header.
 
+The managed trainer connects to the CJ's local listener with Cell transport security disabled.
+Consequently, `HELLO_ACCEPTED` is authenticated by the launch token but its delegated site
+credential is not TLS-encrypted on this same-host hop. Confidentiality relies on the host/OS trust
+boundary and the owner-only launch bootstrap. Unlike the 2.8 external-process configuration, the
+site credential is not written to the launch file. The scoped-identity work targeted for 2.10 also
+removes this full bearer-token handoff.
+
 V1 assumes a trusted host for launch availability. A same-host process that can claim the
 prescribed trainer FQCN can race the real trainer with a bogus token and cause that launch to fail.
 The process cannot authenticate the session or access task/result data; this is a bounded launch
