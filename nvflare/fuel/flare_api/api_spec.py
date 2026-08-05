@@ -33,6 +33,10 @@ class SessionClosed(Exception):
     pass
 
 
+class SessionExpired(SessionClosed):
+    pass
+
+
 class InvalidArgumentError(Exception):
     pass
 
