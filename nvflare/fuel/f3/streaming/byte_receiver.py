@@ -68,6 +68,13 @@ def _abbrev(value, limit: int = 64) -> str:
     return text
 
 
+def required_out_seq_chunks(window_size: int, chunk_size: int) -> int:
+    """Return the number of chunks that can be in flight for a stream window."""
+    if chunk_size <= 0:
+        return MAX_OUT_SEQ_CHUNKS
+    return max(MAX_OUT_SEQ_CHUNKS, window_size // chunk_size + 1)
+
+
 class RxTask:
     """Receiving task for ByteStream"""
 
@@ -117,7 +124,8 @@ class RxTask:
         self.ack_interval = config.get_streaming_ack_interval(ACK_INTERVAL)
         retry_max_pending_default = max(STREAM_RETRY_MAX_PENDING_BYTES, 2 * self.window_size)
         self.retry_max_pending_bytes = config.get_streaming_retry_max_pending_bytes(retry_max_pending_default)
-        self.max_out_seq = config.get_streaming_max_out_seq_chunks(MAX_OUT_SEQ_CHUNKS)
+        required_max_out_seq = required_out_seq_chunks(self.window_size, self.chunk_size)
+        self.max_out_seq = config.get_streaming_max_out_seq_chunks(required_max_out_seq)
         self.completed_task_ttl = config.get_streaming_retry_timeout(
             COMPLETED_TASK_TTL
         ) + config.get_streaming_retry_wait(RETRY_WAIT)
@@ -243,6 +251,7 @@ class RxTask:
             self.retry_max_pending_bytes,
             allow_non_positive=True,
         )
+        self.max_out_seq = max(self.max_out_seq, required_out_seq_chunks(self.window_size, self.chunk_size))
         if self.ack_interval > self.window_size:
             log.warning(
                 f"{self} streaming_ack_interval {self.ack_interval} from {self.origin} exceeds "
