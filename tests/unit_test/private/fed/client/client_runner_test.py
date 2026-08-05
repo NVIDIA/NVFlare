@@ -226,6 +226,24 @@ def test_try_send_result_once_sends_after_task_check(monkeypatch):
     assert result.get_header(ReservedHeaderKey.MSG_ROOT_ID)
 
 
+def test_send_task_result_retries_after_transport_failure(monkeypatch):
+    runner = _runner()
+    runner._check_task_once = MagicMock(return_value=_TASK_CHECK_RESULT_OK)
+    # Cell._send_one_request maps a failed StreamFuture to a timeout reply,
+    # which send_task_result reports as False.
+    runner.engine.send_task_result.side_effect = [False, True]
+    monkeypatch.setattr("nvflare.private.fed.client.client_runner.time.sleep", MagicMock())
+    monkeypatch.setattr("nvflare.private.fed.client.client_runner.delete_msg_root", MagicMock())
+    result = Shareable()
+
+    assert runner._send_task_result(result, "task-1", FLContext()) is True
+
+    assert runner._check_task_once.call_count == 2
+    assert runner.engine.send_task_result.call_count == 2
+    assert all(call.args[0] is result for call in runner.engine.send_task_result.call_args_list)
+    runner.log_error.assert_called_once()
+
+
 def test_task_check_and_control_handlers():
     runner = _runner()
     fl_ctx = FLContext()
