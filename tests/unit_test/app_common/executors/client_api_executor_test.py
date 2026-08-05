@@ -557,6 +557,7 @@ class TestBackendPlumbing:
         decode_ctx = {"cell": cell, "phase": "decode"}
         cell.get_fobs_context.side_effect = [encode_ctx, decode_ctx]
         fl_ctx = _make_fl_ctx(engine)
+        fl_ctx.set_prop(FLContextKey.TASK_NAME, "train", private=True, sticky=False)
         task = Shareable()
         abort_signal = Signal()
         materialized = Shareable({"weight": "concrete"})
@@ -625,6 +626,27 @@ class TestBackendPlumbing:
 
         assert reply is backend.result
         assert task.get_header(FOBSContextKey.RECEIVER_IDS) is None
+        engine.get_cell.assert_not_called()
+
+    def test_execute_keeps_nested_swarm_result_pass_through(self):
+        backend = _StubBackend()
+        backend.result = Shareable({"weight": LazyDownloadRef("trainer", "ref-1", "T0")})
+        executor = ClientAPIExecutor(execution_mode="external_process", command="python custom/train.py")
+        executor._backend = backend
+        engine = Mock()
+        component = Mock()
+        component.requires_materialized_task_result.side_effect = lambda task_name: task_name == "train"
+        engine.get_all_components.return_value = {"tensor_streamer": component}
+        fl_ctx = _make_fl_ctx(engine)
+        fl_ctx.set_prop(FLContextKey.TASK_NAME, "swarm_learn", private=True, sticky=False)
+        task = Shareable()
+        task.set_header(FOBSContextKey.RECEIVER_IDS, ["site-1.job-1"])
+
+        reply = executor.execute("train", task, fl_ctx, Signal())
+
+        assert reply is backend.result
+        assert task.get_header(FOBSContextKey.RECEIVER_IDS) == ["site-1.job-1"]
+        component.requires_materialized_task_result.assert_not_called()
         engine.get_cell.assert_not_called()
 
     def test_unrelated_events_are_not_relayed_to_backend(self):

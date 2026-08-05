@@ -505,6 +505,12 @@ competing result paths while preserving the tensor-streaming contract. Without a
 declared concrete consumer, the CJ remains a pure pass-through hop and the
 ultimate receiver downloads directly from the trainer.
 
+The declaration applies only when the executor call belongs to the active
+`ClientRunner` task of the same name, because that pipeline fires the result event
+consumed by `TensorClientStreamer`. A nested client-controlled workflow call, such
+as Swarm invoking its `train` executor from a background workflow task, has no
+matching result event and therefore keeps the original receiver and lazy source.
+
 After acceptance, transient status-probe failure must not delete transfer
 sources. Reusing a result ID for another `send()` is rejected explicitly.
 

@@ -25,7 +25,7 @@ from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import DXO
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable, make_reply
@@ -379,7 +379,10 @@ class ClientAPIExecutor(Executor):
 
     @staticmethod
     def _requires_materialized_result(task_name: str, fl_ctx: FLContext) -> bool:
-        """Whether a configured component explicitly consumes the concrete Client API result."""
+        """Whether the active ClientRunner pipeline consumes the concrete Client API result."""
+        if fl_ctx.get_prop(FLContextKey.TASK_NAME) != task_name:
+            return False
+
         engine = fl_ctx.get_engine()
         get_all_components = getattr(engine, "get_all_components", None) if engine is not None else None
         components = get_all_components() if callable(get_all_components) else None

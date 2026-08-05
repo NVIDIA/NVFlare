@@ -330,7 +330,10 @@ CJ task-data/task-result filter ordering is unchanged. Filters receive the paylo
 delivered by the transport, which can contain lazy references when pass-through is active. Filter
 presence does not imply CJ materialization. An explicit result-event consumer such as
 `TensorClientStreamer` may instead declare that it requires concrete results; `ClientAPIExecutor`
-then terminates that result's pass-through route at the CJ before the component runs.
+then terminates that result's pass-through route at the CJ before the component runs. This applies
+only when the executor call is part of the active `ClientRunner` task with the same name. Nested
+client-controlled workflow calls do not fire that result event, so they preserve the original
+receiver and lazy source.
 
 Relocating content transformations from CJ filters to explicit send/receive endpoints is deferred
 to a separate design and change. That work must first inventory the existing privacy, HE,
