@@ -13,13 +13,9 @@
 # limitations under the License.
 
 
-from copy import deepcopy
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
-from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.statistics_spec import Bin, Histogram, HistogramType, StatisticConfig
+from nvflare.app_common.abstract.statistics_spec import StatisticConfig
 from nvflare.app_common.app_constant import StatisticsConstants as SC
 from nvflare.app_common.workflows.statistics_controller import StatisticsController
 from nvflare.fuel.utils import fobs
@@ -33,6 +29,7 @@ class TestStatisticsController:
         print("starting class: {} execution".format(cls.__name__))
         statistic_configs = {
             "count": {},
+            "failure_count": {},
             "mean": {},
             "sum": {},
             "stddev": {},
@@ -83,46 +80,6 @@ class TestStatisticsController:
         assert result is True
         assert set(client_statistics["count"]) == {"site-1", "site-2", "site-3"}
         mock_sleep.assert_called_once_with(0.1)
-
-    def test_rebuild_global_statistics_uses_latest_client_results(self):
-        controller = StatisticsController(
-            statistic_configs={
-                SC.STATS_COUNT: {},
-                SC.STATS_FAILURE_COUNT: {},
-                SC.STATS_HISTOGRAM: {"*": {"bins": 1}},
-            },
-            writer_id="",
-        )
-        controller._prepare_inputs = MagicMock(return_value=Shareable())
-        controller._get_result_cb = MagicMock(return_value=MagicMock())
-        controller.broadcast_and_wait = MagicMock()
-        controller.log_info = MagicMock()
-        controller.client_statistics = {
-            SC.STATS_COUNT: {
-                "site-1": {"train": {"Age": 4}},
-                "site-2": {"train": {"Age": 4}},
-            },
-            SC.STATS_FAILURE_COUNT: {
-                "site-1": {"train": {"Age": 0}},
-                "site-2": {"train": {"Age": 0}},
-            },
-        }
-        controller.statistics_task_flow(Signal(), FLContext(), SC.STATS_1st_STATISTICS)
-
-        controller.client_statistics[SC.STATS_FAILURE_COUNT]["site-1"]["train"]["Age"] = 1
-        controller.client_statistics[SC.STATS_HISTOGRAM] = {
-            "site-1": {"train": {"Age": Histogram(HistogramType.STANDARD, [Bin(0, 10, 3)])}},
-            "site-2": {"train": {"Age": Histogram(HistogramType.STANDARD, [Bin(0, 10, 4)])}},
-        }
-        controller.statistics_task_flow(Signal(), FLContext(), SC.STATS_2nd_STATISTICS)
-
-        assert controller.global_statistics[SC.STATS_COUNT]["train"]["Age"] == 8
-        assert controller.global_statistics[SC.STATS_FAILURE_COUNT]["train"]["Age"] == 1
-        assert controller.global_statistics[SC.STATS_HISTOGRAM]["train"]["Age"].bins == [Bin(0, 10, 7)]
-
-        rebuilt_statistics = deepcopy(controller.global_statistics)
-        controller.statistics_task_flow(Signal(), FLContext(), SC.STATS_2nd_STATISTICS)
-        assert controller.global_statistics == rebuilt_statistics
 
     def test_prepare_input(self):
         xs = self.stats_controller._prepare_inputs(SC.STATS_1st_STATISTICS)

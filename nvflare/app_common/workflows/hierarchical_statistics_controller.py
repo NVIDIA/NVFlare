@@ -258,13 +258,6 @@ class HierarchicalStatisticsController(StatisticsController):
             abort_signal=abort_signal,
         )
 
-        if statistic_task == StC.STATS_2nd_STATISTICS:
-            self.global_statistics = get_global_stats(
-                {},
-                self.client_statistics,
-                StC.STATS_1st_STATISTICS,
-                hierarchy_config_json,
-            )
         self.global_statistics = get_global_stats(
             self.global_statistics, self.client_statistics, statistic_task, hierarchy_config_json
         )

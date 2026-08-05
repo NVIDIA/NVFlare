@@ -269,14 +269,6 @@ class StatisticsController(Controller):
             abort_signal=abort_signal,
         )
 
-        if statistic_task == StC.STATS_2nd_STATISTICS:
-            self.global_statistics = get_global_stats(
-                {},
-                self.client_statistics,
-                StC.STATS_1st_STATISTICS,
-                self.statistic_configs,
-                self.precision,
-            )
         self.global_statistics = get_global_stats(
             self.global_statistics, self.client_statistics, statistic_task, self.statistic_configs, self.precision
         )
