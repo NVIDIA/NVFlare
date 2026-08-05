@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import tempfile
+import warnings
 
 import pytest
 
@@ -655,6 +656,61 @@ def test_recipe_spec_import_strips_export_dir_equals_form(monkeypatch):
 
 
 @pytest.mark.parametrize(
+    ("export_dir_args", "expected_export_dir"),
+    [
+        (["--export-dir", "/tmp/user-output"], "/tmp/user-output"),
+        (["--export-dir=/tmp/user-output"], "/tmp/user-output"),
+    ],
+)
+def test_recipe_spec_import_warns_when_export_dir_is_unused(monkeypatch, export_dir_args, expected_export_dir):
+    import sys
+
+    monkeypatch.setattr(sys, "argv", ["python", "job.py", "--rounds", "3", *export_dir_args])
+
+    import nvflare.recipe.spec as spec_module
+
+    with pytest.warns(UserWarning, match="reserved '--export-dir'.*without '--export'"):
+        importlib.reload(spec_module)
+
+    assert sys.argv == ["python", "job.py", "--rounds", "3"]
+    assert spec_module._peek_recipe_args() == (False, expected_export_dir)
+
+
+def test_recipe_spec_import_does_not_warn_for_export_with_export_dir(monkeypatch):
+    import sys
+
+    monkeypatch.setattr(sys, "argv", ["python", "job.py", "--export", "--export-dir", "/tmp/out"])
+
+    import nvflare.recipe.spec as spec_module
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        importlib.reload(spec_module)
+
+    assert sys.argv == ["python", "job.py"]
+    assert spec_module._peek_recipe_args() == (True, "/tmp/out")
+
+
+def test_consume_recipe_args_warning_as_error_preserves_sys_argv(monkeypatch):
+    import sys
+
+    monkeypatch.setattr(sys, "argv", ["python", "job.py"])
+
+    import nvflare.recipe.spec as spec_module
+
+    importlib.reload(spec_module)
+    monkeypatch.setattr(spec_module, "_CONSUMED", False)
+    monkeypatch.setattr(sys, "argv", ["python", "job.py", "--export-dir", "/tmp/user-output", "--other"])
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        with pytest.raises(UserWarning, match="reserved '--export-dir'.*without '--export'"):
+            spec_module._consume_recipe_args()
+
+    assert sys.argv == ["python", "job.py", "--export-dir", "/tmp/user-output", "--other"]
+
+
+@pytest.mark.parametrize(
     ("local_flag", "should_parse"),
     [
         ("--max_train_samples", True),
@@ -694,7 +750,9 @@ def test_consume_recipe_args_dangling_export_dir_does_not_raise(monkeypatch):
 
     import nvflare.recipe.spec as spec_module
 
-    importlib.reload(spec_module)  # malformed input must not raise on import
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        importlib.reload(spec_module)  # malformed input must not raise or warn on import
 
     # Transactional: the whole pass is abandoned -- export stays disabled and sys.argv
     # is left untouched so the caller's own parser can surface the leftover flags.

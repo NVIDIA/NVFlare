@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import sys
+import warnings
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from typing import Dict, List, Optional, Union
@@ -47,6 +48,7 @@ def _consume_recipe_args() -> tuple:
     argv = sys.argv[1:]
     export = False
     export_dir = DEFAULT_EXPORT_DIR
+    export_dir_seen = False
     remaining = []
     i = 0
     while i < len(argv):
@@ -64,13 +66,24 @@ def _consume_recipe_args() -> tuple:
                 _CONSUMED = True
                 return False, DEFAULT_EXPORT_DIR
             export_dir = argv[i + 1]
+            export_dir_seen = True
             i += 2
         elif argv[i].startswith("--export-dir="):
             export_dir = argv[i].split("=", 1)[1]
+            export_dir_seen = True
             i += 1
         else:
             remaining.append(argv[i])
             i += 1
+
+    if export_dir_seen and not export:
+        warnings.warn(
+            "NVFlare recipe consumed the reserved '--export-dir' argument without '--export'; "
+            "the directory will not be used. Add '--export' for recipe export or rename the script option.",
+            UserWarning,
+            stacklevel=2,
+        )
+
     sys.argv[1:] = remaining
     _CONSUMED = True
     return export, export_dir
