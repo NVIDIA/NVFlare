@@ -139,7 +139,7 @@ class AttachBackend(CellBackendBase):
             if self._secure_mode and not protected_route:
                 raise ValueError(
                     "secure Client API attach requires a protected shared-file or mTLS route; "
-                    "allow_insecure_attach cannot authorize site credential delegation"
+                    "allow_insecure_attach cannot weaken secure job transport"
                 )
             if not protected_route and not context.allow_insecure_attach:
                 raise ValueError(
@@ -343,11 +343,9 @@ class AttachBackend(CellBackendBase):
                 continue
 
             reason = liveness_error
-            # RESULT_READY acceptance can outlive execute(): the downstream
-            # consumer may still be pulling trainer-owned lazy sources after
-            # _current_task is cleared. Keep this session authoritative until
-            # the trainer reports release; otherwise finalize() could observe a
-            # replacement session and tear down the live source route.
+            # Keep the session authoritative until the trainer reports that its
+            # result publication to the CJ has settled. Otherwise finalize()
+            # could replace the session while the CJ is still materializing it.
             if self._context.allow_reconnect and session.result_source_live.is_set():
                 self._session_stop.wait(_SESSION_MONITOR_INTERVAL)
                 continue
@@ -381,7 +379,6 @@ class AttachBackend(CellBackendBase):
             MsgKey.TASK_EXCHANGE: self._task_exchange_config(),
             MsgKey.MEMORY_GC_ROUNDS: self._context.memory_gc_rounds,
             MsgKey.CUDA_EMPTY_CACHE: self._context.cuda_empty_cache,
-            **self._session_security_payload(),
         }
         try:
             # SESSION_OPEN is a small control-plane message. Use CoreCell rather

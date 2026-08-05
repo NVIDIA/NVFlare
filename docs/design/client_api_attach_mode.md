@@ -11,11 +11,12 @@ This design assumes the Cell-based external-process Client API from PR #4906:
   `send()`, and `log()` behavior.
 - tasks and results travel as Cell `Shareable` objects;
 - FOBS and `ViaDownloader` choose inline or lazy transfer; and
-- an accepted lazy-result source remains alive until the receiver confirms a
-  terminal transfer outcome.
+- a lazy trainer-to-CJ source remains alive until the CJ confirms a terminal
+  transfer outcome.
 
-Attach adds an externally owned trainer and uses the ordinary F3 pass-through
-contract without changing the source FQCN or reference ID.
+Attach adds an externally owned trainer while keeping the CJ as the federation
+trust and materialization boundary, matching the server-facing containment of
+the 2.8 `IPCExchanger`/`IPCAgent` path.
 
 ## Decision Summary
 
@@ -60,8 +61,9 @@ a child of the job Cell:
 <site>.<job_id>.-client_api_<attach_id>
 ```
 
-This topology confines ingress to the CJ-owned listener and preserves normal
-hierarchical routing for lazy-result pulls:
+This topology confines ingress to the CJ-owned listener. The CJ may pull a lazy
+payload from the trainer, but the trainer never serves it directly to the
+server:
 
 ```text
 server -> CP -> CJ -> trainer
@@ -84,7 +86,9 @@ job-specific.
 - Bind a job to one trainer session and reject stale or foreign sessions.
 - Retry transport failures without retrying semantic task rejection.
 - Never launch, signal, kill, or `waitpid` an externally owned process.
-- Preserve ordinary F3 pass-through and original source references.
+- Materialize tasks and results at the CJ before they cross the federation
+  boundary.
+- Never delegate the site's server authentication credential to Attach.
 
 ## Non-Goals
 
@@ -106,7 +110,7 @@ job-specific.
 - CJ Cell lookup and protocol callback registration;
 - one-task execution admission;
 - task/result correlation and status;
-- lazy decode/pass-through handling;
+- FOBS transfer and result-publication handling;
 - task exchange settings;
 - heartbeat and analytics handling; and
 - closed/finalized callback gates.
@@ -162,7 +166,7 @@ The CJ-side files have distinct responsibilities:
 | File | Why it exists |
 |---|---|
 | `backend_spec.py` | Keeps `ClientAPIExecutor` independent of process placement and exposes one lifecycle/config contract to every backend. |
-| `cell_backend.py` | Holds the Cell callbacks, one-task correlation, result authority, heartbeat, analytics, and lazy-source lifetime behavior shared by launched and attached trainers. |
+| `cell_backend.py` | Holds the Cell callbacks, one-task correlation, result authority, heartbeat, analytics, and transfer-publication state shared by launched and attached trainers. |
 | `external_process_backend.py` | Retains process launch, monitoring, signalling, and reap behavior for a CJ-owned trainer. |
 | `attach_backend.py` | Owns the dedicated listener, `SESSION_OPEN`, retry/reconnect, and non-owning teardown required for an externally owned trainer. |
 
@@ -378,8 +382,9 @@ operator acknowledgement for a trusted development network. It:
 - does not turn clear transport into secure transport; and
 - emits a warning when used.
 
-It cannot authorize site-credential delegation. Consequently, a secure FL job
-fails closed before `SESSION_OPEN` on every unprotected Attach route.
+It cannot protect secure job data or authenticate the trainer. Consequently, a
+secure FL job fails closed before `SESSION_OPEN` on every unprotected Attach
+route.
 
 Shared-file Attach does not need this flag because filesystem permissions are its
 peer-access boundary.
@@ -404,16 +409,16 @@ or from the CJ published in a validated rendezvous record. Header-only message
 interception rejects unauthorized Attach streams before FOBS decoding or lazy
 payload acquisition.
 
-For a secure FL job, the authenticated `SESSION_OPEN` also carries the site's
-`AUTH_TOKEN` and `AUTH_TOKEN_SIGNATURE`. The trainer installs the normal outgoing
-site authentication-header filters only after validating the complete open. The
-`attach_id` and the legacy CellPipe-style "token" used for FQCN uniqueness are
-not authentication credentials.
+`SESSION_OPEN` never carries the site's `AUTH_TOKEN` or
+`AUTH_TOKEN_SIGNATURE`, and the attached trainer installs no site auth-header
+filters. It communicates only with the CJ. This is the same server-facing trust
+boundary as the 2.8 `IPCExchanger`/`IPCAgent` design, although the 2.9 Attach
+transport and session protocol use Cell.
 
-This full site-token delegation is temporary 2.9 technical debt: the attached
-trainer has the site's server-facing authority for the life of its Cell. The
-2.10 design target is a short-lived, scoped trainer identity with
-`DownloadService` ACLs and revocation.
+Direct Attach pass-through is deferred until a trainer can receive a
+short-lived, scoped identity with `DownloadService` ACLs and revocation. That
+work is targeted for 2.10. The `attach_id` remains only a rendezvous name, not an
+authentication credential.
 
 ## Session Protocol
 
@@ -429,11 +434,10 @@ configuration.
    not a blob-stream request, so an early driver-level unreachable result returns
    promptly to this retry loop.
 4. The request carries the attach ID, job/site identity, trainer FQCN, protocol
-   version, rank, heartbeat policy, task exchange, memory settings, secure-mode
-   value, and—only for a secure job—the site's signed authentication credential.
-5. The trainer validates the entire request, installs site auth headers when
-   required, and registers framework decomposers before committing any session
-   binding.
+   version, rank, heartbeat policy, task exchange, and memory settings. It
+   carries no site authentication credential.
+5. The trainer validates the entire request and registers framework decomposers
+   before committing any session binding.
 6. It returns `SESSION_ACCEPTED`.
 
 Duplicate `SESSION_OPEN` for the same session is idempotent. A stray, malformed,
@@ -476,40 +480,30 @@ The CJ canonicalizes only the first valid attempt for the active task. Duplicate
 publication is idempotent. If the acknowledgement is lost, the trainer probes
 `RESULT_STATUS` before treating session shutdown as final.
 
-`flare.send()` returns only after the result's lazy references reach
-receiver-confirmed terminal success. Until then:
+Attach sends `RESULT_READY` without `PASS_THROUGH` and declares the CJ as the
+source receiver. Cell/FOBS therefore materializes the complete result before the
+CJ handler accepts it. `flare.send()` returns only after any trainer-to-CJ lazy
+references reach receiver-confirmed terminal success. Until then:
 
 - an explicit local API shutdown, like protocol `SHUTDOWN`, stops new task
   admission but defers Cell and owned F3 teardown until the accepted source
   settles; and
 - the external trainer must remain alive and attached;
-- the trainer must preserve canonical result transfers across ambiguous status
-  failures or routine `SHUTDOWN`; and
+- the trainer must preserve canonical result transfers to the CJ across
+  ambiguous status failures or routine `SHUTDOWN`; and
 - its lifecycle guard must not stop the Cell while a canonical source is still
   being served.
 
-The expected source receivers are the ultimate receiver identities stamped on
-the task. Secure and non-secure jobs use the same rule. The trainer remains the
-`DownloadService` source and consumer-accounting authority; pass-through keeps
-its original FQCN and reference ID.
+The CJ is the trainer transaction's `DownloadService` receiver and
+consumer-accounting endpoint. After materialization, `ClientRunner` handles an
+ordinary concrete result. Sending a sufficiently large result onward may create
+a new CJ-owned `DownloadService` transaction with a new source reference. This
+is expected eager materialization and re-serialization, not the removed Client
+API relay mechanism.
 
-The CJ remains involved as a control endpoint and may physically route Cell
-messages between the trainer and the ultimate receiver. It does not create a
-second CJ-owned download transaction or substitute itself as the lazy source.
-
-If `TensorClientStreamer` is configured for a task, it explicitly declares that
-it consumes concrete result tensors. `ClientAPIExecutor` then makes the CJ the
-terminal receiver of the trainer-hosted lazy result, materializes it there, and
-lets the existing tensor streamer send the tensors to the server. This avoids two
-competing result paths while preserving the tensor-streaming contract. Without a
-declared concrete consumer, the CJ remains a pure pass-through hop and the
-ultimate receiver downloads directly from the trainer.
-
-The declaration applies only when the executor call belongs to the active
-`ClientRunner` task of the same name, because that pipeline fires the result event
-consumed by `TensorClientStreamer`. A nested client-controlled workflow call, such
-as Swarm invoking its `train` executor from a background workflow task, has no
-matching result event and therefore keeps the original receiver and lazy source.
+The rule applies to every Attach task, including nested client-controlled
+workflow calls, and does not depend on a tensor-streamer component being
+configured.
 
 After acceptance, transient status-probe failure must not delete transfer
 sources. Reusing a result ID for another `send()` is rejected explicitly.
@@ -523,14 +517,13 @@ leave post-acceptance result waiting unbounded.
 If `allow_reconnect=False`, loss ends the session. If true and no task is active,
 the backend creates a fresh session and attach-timeout budget for the same trainer
 FQCN, but only after any accepted trainer-owned lazy-result source is released.
-It never silently replays an ambiguous active task or rotates away from a live
-result-source barrier.
+That source serves only the CJ. The backend never silently replays an ambiguous
+active task or rotates away from a live result-publication barrier.
 
 ## Lifecycle
 
 Initialization owns:
 
-- pass-through registration;
 - the exact mTLS identity mapping, when added;
 - the dedicated Attach listener;
 - the shared-file endpoint claim, when used; and
@@ -542,15 +535,14 @@ Finalization:
 
 1. marks the backend closed;
 2. asks an established trainer to shut down its session;
-3. if an accepted lazy-result source is still live, keeps the route available
-   until it settles, disconnects, or reaches the streaming idle timeout (600
-   seconds by default, plus disconnect grace); this can intentionally delay
-   `END_RUN` to preserve an already-canonical result;
+3. if an accepted trainer-to-CJ result publication is still live, keeps the
+   route available until it settles, disconnects, or reaches the streaming idle
+   timeout (600 seconds by default, plus disconnect grace); this can
+   intentionally delay `END_RUN` to preserve an already-canonical result;
 4. waits briefly for the monitor thread;
 5. removes the endpoint claim;
 6. removes the exact listener connector;
-7. removes the identity mapping it added; and
-8. disables pass-through.
+7. removes the identity mapping it added.
 
 It never sends OS signals, terminates a process group, calls `waitpid`, or assumes
 the trainer's PID exists.
@@ -597,8 +589,7 @@ configuration because it is only a name. No Attach secret is defined.
   constructs the Cell only after connection resolution and preserves Attach
   runtime ownership.
 
-Lazy forwarding uses ordinary `PASS_THROUGH`, preserving the original trainer
-source FQCN and reference ID.
+Attach does not enable `PASS_THROUGH`. Its CJ materializes both directions.
 
 ## Verification
 
@@ -615,15 +606,16 @@ Unit coverage must verify:
   shared-file does not;
 - secure jobs reject unprotected Attach before `SESSION_OPEN`, even with the
   insecure opt-in;
-- protected secure Attach delivers the site credential only in a validated
-  `SESSION_OPEN` and installs the normal trainer auth-header filters;
+- protected secure Attach establishes without site credentials and installs no
+  trainer auth-header filters;
 - SESSION_OPEN rejection cannot poison `init()`;
 - task delivery does not retry semantic rejection;
 - reconnect, stale-session rejection, task deduplication, and result recovery;
 - trainer-first and CJ-first rendezvous over each supported Attach driver;
-- secure and non-secure results retain the trainer's source FQCN/reference and
-  ultimate receiver accounting without a second CJ transaction;
-- canonical lazy sources survive uncertain status and routine shutdown; and
+- secure and non-secure results materialize at the CJ, account the CJ as the
+  trainer transaction's receiver, and create a CJ source when re-serialized;
+- canonical trainer-to-CJ lazy sources survive uncertain status and routine
+  shutdown; and
 - Attach finalization never invokes process-ownership operations.
 
 The fast integration test must run a real trainer subprocess and real Cells,
@@ -631,17 +623,15 @@ with both trainer-first and CJ-first startup, for:
 
 1. a clear TCP listener with explicit insecure opt-in; and
 2. clear gRPC and HTTP listeners with explicit insecure opt-in; and
-3. protected `shared-file`, including secure-job credential delivery, a trainer
-   origin accepted by the server's descendant-origin binding, and a trainer
-   audit hook that rejects all socket operations.
+3. protected `shared-file`, including a secure job with no credential delivery
+   and a trainer audit hook that rejects all socket operations.
 
-All cases send a NumPy task, accept a lazy result, and have the ultimate receiver
-pull the result from the trainer over the Cell topology. The CJ can be a physical
-routing hop, but the test verifies that it creates no second `DownloadService`
-transaction and does not become the source.
+All cases send a NumPy task, accept a lazy trainer-to-CJ result, and verify that
+the CJ materializes it before forwarding. A large forwarded result must create
+the expected CJ-owned `DownloadService` transaction.
 
 Regression gates:
 
 - external-process tests remain green;
 - the project style check passes; and
-- source FQCN/reference preservation and ultimate-receiver accounting tests pass.
+- Attach CJ materialization/receiver-accounting tests pass.

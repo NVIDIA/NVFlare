@@ -356,7 +356,7 @@ class AttachTrainerSession:
             attempt_fobs_ctx = dict(fobs_ctx_props)
             attempt_fobs_ctx[RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY] = _on_transaction_created
             request = new_cell_message(
-                {MessageHeaderKey.PASS_THROUGH: True},
+                {},
                 {
                     MsgKey.SESSION_ID: api._session_id,
                     MsgKey.TASK_ID: task_id,
@@ -548,17 +548,6 @@ class AttachTrainerSession:
                             MsgKey.REASON: f"failed to configure trainer runtime: {e}",
                         },
                     )
-                try:
-                    api._install_site_auth_headers(
-                        secure_mode=runtime["secure_mode"],
-                        auth_token=runtime["auth_token"],
-                        token_signature=runtime["auth_token_signature"],
-                    )
-                except TrainerSessionError as e:
-                    return api._reply(
-                        Topic.SESSION_REJECTED,
-                        **{MsgKey.SESSION_ID: session_id, MsgKey.REASON: str(e)},
-                    )
                 api._cj_fqcn = origin
                 api._session_id = session_id
                 api._job_id = payload.get(MsgKey.JOB_ID)
@@ -624,9 +613,6 @@ class AttachTrainerSession:
             task_exchange = payload.get(MsgKey.TASK_EXCHANGE)
             if not isinstance(task_exchange, dict):
                 raise TrainerSessionError("SESSION_OPEN task_exchange must be a dict")
-            secure_mode = payload.get(MsgKey.SECURE_MODE)
-            if type(secure_mode) is not bool:
-                raise TrainerSessionError("SESSION_OPEN secure_mode must be a bool")
             memory_gc_rounds = payload.get(MsgKey.MEMORY_GC_ROUNDS, 0)
             if not isinstance(memory_gc_rounds, int) or isinstance(memory_gc_rounds, bool) or memory_gc_rounds < 0:
                 raise TrainerSessionError("SESSION_OPEN memory_gc_rounds must be an integer >= 0")
@@ -635,9 +621,6 @@ class AttachTrainerSession:
         return {
             "heartbeat_interval": heartbeat_interval,
             "heartbeat_timeout": heartbeat_timeout,
-            "secure_mode": secure_mode,
-            "auth_token": payload.get(MsgKey.AUTH_TOKEN),
-            "auth_token_signature": payload.get(MsgKey.AUTH_TOKEN_SIGNATURE),
             "task_exchange": dict(task_exchange),
             "memory_gc_rounds": memory_gc_rounds,
         }, None

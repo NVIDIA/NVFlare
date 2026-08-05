@@ -72,12 +72,12 @@ ClientAPIExecutor
   -> CellClientAPI (trainer)
 ```
 
-For ``attach``, the protocol data path is the same, but process and connection
-ownership differ:
+For ``attach``, process and connection ownership differ, and the CJ is also the
+payload trust boundary:
 
 ```text
 ClientAPIExecutor
-  -> AttachBackend (CJ-owned listener/session)
+  -> AttachBackend (CJ-owned listener/session and materialization boundary)
   -> Cell request/reply + FOBS/ViaDownloader
   -> CellClientAPI (externally owned trainer)
 ```
@@ -166,22 +166,23 @@ state machine layered over these messages.
 
 ### Secure trainer trust model for 2.9
 
-Both Cell-based modes use the trust model that the pre-2.8 `CellPipe` path used. After the CJ has
-authenticated the trainer session, a secure job delegates the site's signed bearer credential to
-the trainer. The trainer FQCN remains a descendant of the registered site/CJ FQCN, so the server's
-current origin binding accepts requests carrying that site credential.
+The two Cell-based modes deliberately have different server-facing trust in 2.9:
 
-Credential delivery is mode-specific and never occurs in a static profile:
+- `external_process` uses the 2.8 `CellPipe` mechanism. After the CJ authenticates the launch-token
+  `HELLO`, `HELLO_ACCEPTED` carries the site's `AUTH_TOKEN` and `AUTH_TOKEN_SIGNATURE`. The trainer
+  installs the normal outgoing site auth-header filters. Its FQCN remains a descendant of the
+  registered site/CJ FQCN so the server's current origin binding accepts the delegated token.
+- `attach` follows the server-facing trust boundary of the 2.8 `IPCExchanger`/`IPCAgent` path. The
+  independently owned trainer communicates only with its CJ. The CJ materializes task and result
+  payloads, and `SESSION_OPEN` never carries the site's authentication token or signature. Attach
+  still requires mTLS or protected shared-file transport for a secure FL job; a clear network route
+  is rejected even when `allow_insecure_attach=True`.
 
-- `external_process` sends it only in `HELLO_ACCEPTED`, after the launch token and all identity,
-  job, site, protocol, and rank checks succeed;
-- `attach` sends it only in an authenticated `SESSION_OPEN` over a protected shared-file or mTLS
-  route. A secure job rejects a clear network Attach route even when `allow_insecure_attach=True`.
-
-This is intentionally a temporary full site-token delegation for 2.9. It gives the trainer the
-same server-facing authority as the site for the life of the trainer Cell. The 2.10 follow-up is
-to replace it with a short-lived, scoped trainer identity plus `DownloadService` ACL enforcement
-and revocation.
+The Attach protocol is Cell rather than the 2.8 IPC implementation, so this is equivalence of the
+trust boundary, not identity of implementation. Only managed external-process mode temporarily
+delegates the full site token in 2.9. Replacing that delegation, and enabling safe direct Attach
+pass-through, requires a short-lived scoped trainer identity, `DownloadService` ACL enforcement,
+and revocation; that work is targeted for 2.10.
 
 ### Payload handling
 
@@ -209,7 +210,7 @@ Task direction:
 3. Only then does the trainer's `TASK_READY` handler validate and queue the task and return
    `TASK_ACCEPTED`.
 
-Result direction:
+Result direction for `external_process`:
 
 1. The trainer sends `RESULT_READY` with ordinary per-message Cell pass-through enabled and declares the
    receiver identities supplied with the task. Those are the ultimate server/workflow receivers
@@ -233,6 +234,20 @@ physical Cell routing hop for the result envelope and subsequent download messag
 the topology, but it does not substitute itself as source, create a second CJ-owned
 `DownloadService` transaction, or rewrite the receiver accounting. This is ordinary
 `PASS_THROUGH`.
+
+Result direction for `attach`:
+
+1. The trainer sends `RESULT_READY` to its CJ without pass-through and declares the CJ as the
+   `DownloadService` receiver.
+2. Cell/FOBS fully materializes the result at the CJ before invoking the result handler.
+3. The CJ validates and stores the concrete result, returns `RESULT_ACCEPTED`, and later returns the
+   ordinary result through `ClientRunner`.
+4. Sending a sufficiently large result onward can create a new CJ-owned `DownloadService`
+   transaction. The attached trainer's source reference and server-facing authority do not cross
+   the CJ boundary.
+
+This follows the 2.8 `IPCExchanger`/`IPCAgent` containment model: the external trainer is not a
+direct federation participant even though the CJ-to-trainer protocol now uses Cell.
 
 In the task direction at the CJ entry point, the CJ decodes only the
 `(SERVER_COMMAND, GET_TASK)` route lazily for the external-process executor. `ClientRunner`
@@ -326,14 +341,12 @@ not a concrete representation guarantee.
 trainer's task-exchange metadata, and is applied by the trainer-side Client API when preparing a
 result. A DIFF is computed in the trainer-native representation before outgoing conversion.
 
-CJ task-data/task-result filter ordering is unchanged. Filters receive the payload representation
-delivered by the transport, which can contain lazy references when pass-through is active. Filter
-presence does not imply CJ materialization. An explicit result-event consumer such as
-`TensorClientStreamer` may instead declare that it requires concrete results; `ClientAPIExecutor`
-then terminates that result's pass-through route at the CJ before the component runs. This applies
-only when the executor call is part of the active `ClientRunner` task with the same name. Nested
-client-controlled workflow calls do not fire that result event, so they preserve the original
-receiver and lazy source.
+CJ task-data/task-result filter ordering is unchanged. In external-process mode, filters receive
+the payload representation delivered by the transport, which can contain lazy references when
+pass-through is active. Filter presence alone does not imply CJ materialization; an explicit
+result-event consumer may require a concrete result. Attach always presents concrete task and
+result values at the CJ boundary, independent of event consumers or whether the executor call is
+part of the active `ClientRunner` task.
 
 Relocating content transformations from CJ filters to explicit send/receive endpoints is deferred
 to a separate design and change. That work must first inventory the existing privacy, HE,

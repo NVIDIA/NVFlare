@@ -171,7 +171,6 @@ class AttachFakeCell(FakeCell):
             MsgKey.RANK: "0",
             MsgKey.HEARTBEAT_INTERVAL: 0.05,
             MsgKey.HEARTBEAT_TIMEOUT: 0.0,
-            MsgKey.SECURE_MODE: False,
             MsgKey.TASK_EXCHANGE: {
                 ConfigKey.TRAIN_TASK_NAME: "train",
                 ConfigKey.EVAL_TASK_NAME: "validate",
@@ -490,7 +489,6 @@ class TestAttachMode:
             (MsgKey.PROTOCOL_VERSION, PROTOCOL_VERSION + 1),
             (MsgKey.RANK, "1"),
             (MsgKey.HEARTBEAT_INTERVAL, 0),
-            (MsgKey.SECURE_MODE, "true"),
             (MsgKey.TASK_EXCHANGE, "not-a-dict"),
             (MsgKey.MEMORY_GC_ROUNDS, -1),
         ):
@@ -501,10 +499,6 @@ class TestAttachMode:
         missing_session.pop(MsgKey.SESSION_ID)
         invalid_job = dict(attach_env.session_open_payload)
         invalid_job[MsgKey.JOB_ID] = "job.with.extra.segment"
-        missing_secure_token = dict(attach_env.session_open_payload)
-        missing_secure_token[MsgKey.SECURE_MODE] = True
-        missing_secure_signature = dict(missing_secure_token)
-        missing_secure_signature[MsgKey.AUTH_TOKEN] = "site-auth-token"
         invalid_opens.extend(
             [
                 ("", dict(attach_env.session_open_payload)),
@@ -512,8 +506,6 @@ class TestAttachMode:
                 ("site-1.other-job", dict(attach_env.session_open_payload)),
                 (CJ_FQCN, missing_session),
                 (CJ_FQCN, invalid_job),
-                (CJ_FQCN, missing_secure_token),
-                (CJ_FQCN, missing_secure_signature),
             ]
         )
 
@@ -533,14 +525,7 @@ class TestAttachMode:
         assert api._session_id == SESSION_ID
         api.shutdown()
 
-    def test_secure_attach_installs_auth_and_preserves_ultimate_receiver(self, attach_bootstrap_path, attach_env):
-        attach_env.session_open_payload.update(
-            {
-                MsgKey.SECURE_MODE: True,
-                MsgKey.AUTH_TOKEN: "site-auth-token",
-                MsgKey.AUTH_TOKEN_SIGNATURE: "site-auth-signature",
-            }
-        )
+    def test_attach_materializes_result_at_cj_without_site_auth(self, attach_bootstrap_path, attach_env):
         api = _init_api(attach_bootstrap_path, attach_env)
         try:
             _deliver_attach_task(attach_env, result_receiver_ids=["server.job"])
@@ -564,13 +549,9 @@ class TestAttachMode:
             result_request = [m for m in attach_env.request_messages if MsgKey.RESULT in m.payload][0]
             result_kwargs = attach_env.request_kwargs[attach_env.request_messages.index(result_request)]
             assert attach_env.cell_ctor.call_args.kwargs["secure"] is False
-            attach_env.auth_filter.assert_called_once_with(
-                attach_env,
-                client_name="site-1",
-                auth_token="site-auth-token",
-                token_signature="site-auth-signature",
-            )
-            assert result_kwargs["receiver_ids"] == ("server.job",)
+            attach_env.auth_filter.assert_not_called()
+            assert result_request.get_header(MessageHeaderKey.PASS_THROUGH) is not True
+            assert result_kwargs["receiver_ids"] == (CJ_FQCN,)
             assert result_kwargs["num_receivers"] == 1
         finally:
             api.shutdown()

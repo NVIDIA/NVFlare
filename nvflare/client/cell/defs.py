@@ -71,8 +71,8 @@ class MsgKey:
     ATTACH_ID = "attach_id"
     CONNECT_URL = "connect_url"
     CONNECTION_SECURITY = "connection_security"
-    # Secure FL jobs temporarily delegate the site's bearer credential to the
-    # authenticated trainer session. These values are never launch-profile fields.
+    # Secure managed external-process jobs temporarily delegate the site's bearer
+    # credential after HELLO. These values are never launch-profile fields.
     SECURE_MODE = "secure_mode"
     AUTH_TOKEN = "auth_token"
     AUTH_TOKEN_SIGNATURE = "auth_token_signature"

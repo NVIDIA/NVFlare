@@ -138,8 +138,8 @@ class CellClientAPI(APISpec):
         self._attach = AttachTrainerSession(self) if self._is_attach else None
         self._trainer_fqcn = self._attach.trainer_fqcn if self._attach else self._config[BootstrapKey.TRAINER_FQCN]
         self._job_id: Optional[str] = self._config.get(BootstrapKey.JOB_ID)
-        # Attach profile security describes its transport, not the FL job. The
-        # job's secure-mode value and credentials arrive only in SESSION_OPEN.
+        # Attach profile security describes its transport. Attach never receives
+        # the site's FL authentication credential and communicates only with CJ.
         self._secure_mode = False if self._is_attach else bool(self._config.get(BootstrapKey.SECURE_MODE, False))
         self._session_security_configured = False
         self._task_exchange: dict = self._config.get(BootstrapKey.TASK_EXCHANGE, {})
@@ -450,9 +450,10 @@ class CellClientAPI(APISpec):
                 ResultUploadProgressContextKey.STREAMING_IDLE_TIMEOUT: DEFAULT_STREAMING_IDLE_TIMEOUT,
             },
         }
-        # The trainer remains the DownloadService source. Account for the
-        # ultimate server/peer consumers propagated with TASK_READY, not the CJ.
-        source_receiver_ids = self._result_receiver_ids
+        # Attach follows the IPC boundary: its CJ is the terminal receiver and
+        # materializes the result. A managed external trainer remains the source
+        # for the ultimate server/peer receivers propagated with TASK_READY.
+        source_receiver_ids = (self._cj_fqcn,) if self._attach else self._result_receiver_ids
 
         result_accepted = False
         result_id = self._attach.mark_result_publishing(task.get(MsgKey.TASK_ID)) if self._attach else None

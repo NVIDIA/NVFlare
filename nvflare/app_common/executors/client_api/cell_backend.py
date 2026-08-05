@@ -19,7 +19,7 @@ import time
 from collections import OrderedDict
 from typing import Optional, Tuple
 
-from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ServerCommandNames
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
@@ -28,7 +28,7 @@ from nvflare.client.cell.defs import CHANNEL, MsgKey, ResultState, Topic
 from nvflare.client.config import ConfigKey
 from nvflare.client.decomposers import register_framework_decomposers
 from nvflare.fuel.data_event.utils import get_scope_property
-from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
@@ -103,7 +103,14 @@ class CellBackendBase(ClientAPIBackendSpec):
         self._closed = False
         self._finalized = False
 
-    def _initialize_cell(self, context: ClientAPIBackendContext, fl_ctx: FLContext, mode: str) -> None:
+    def _initialize_cell(
+        self,
+        context: ClientAPIBackendContext,
+        fl_ctx: FLContext,
+        mode: str,
+        pass_through_routes: Tuple[Tuple[str, str], ...] = (),
+        delegate_site_auth: bool = False,
+    ) -> None:
         self._context = context
         self._engine = fl_ctx.get_engine()
         if self._engine is None:
@@ -118,13 +125,10 @@ class CellBackendBase(ClientAPIBackendSpec):
             raise RuntimeError("job id/site name not available in fl_ctx")
 
         self._secure_mode = bool(fl_ctx.get_prop(FLContextKey.SECURE_MODE, False))
-        if self._secure_mode:
+        if self._secure_mode and delegate_site_auth:
             self._site_auth_token = self._get_site_auth_value(FLMetaKey.AUTH_TOKEN)
             self._site_auth_token_signature = self._get_site_auth_value(FLMetaKey.AUTH_TOKEN_SIGNATURE)
-        for route in (
-            (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK),
-            (CHANNEL, Topic.RESULT_READY),
-        ):
+        for route in pass_through_routes:
             if route not in self._cell.decode_pass_through_topics:
                 self._owned_pass_through_routes.add(route)
             self._cell.decode_pass_through_topics.add(route)

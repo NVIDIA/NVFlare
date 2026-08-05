@@ -105,8 +105,14 @@ def _wait_for_listener(cell: Cell, timeout: float = 10.0) -> str:
     raise AssertionError(f"Cell {cell.get_fqcn()} did not create an internal listener")
 
 
-def _fl_ctx(cell: Cell, site_name: str, job_id: str, secure_mode: bool = False) -> FLContext:
-    if secure_mode:
+def _fl_ctx(
+    cell: Cell,
+    site_name: str,
+    job_id: str,
+    secure_mode: bool = False,
+    with_site_credentials: bool = False,
+) -> FLContext:
+    if with_site_credentials:
         set_scope_property(site_name, FLMetaKey.AUTH_TOKEN, "site-auth-token")
         set_scope_property(site_name, FLMetaKey.AUTH_TOKEN_SIGNATURE, "site-auth-signature")
     engine = MagicMock()
@@ -286,9 +292,9 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, monkeypatc
             )
 
         backend = AttachBackend()
-        # Protected shared-file exercises secure credential delegation without
-        # granting the trainer any socket access. Clear network cases remain
-        # explicit non-secure development routes.
+        # Protected shared-file exercises secure Attach without granting the
+        # trainer socket access or delegating the site's authentication token.
+        # Clear network cases remain explicit non-secure development routes.
         fl_ctx = _fl_ctx(cj, site_name, job_id, secure_mode=secure_job)
         context = ClientAPIBackendContext(
             executor=MagicMock(),
@@ -314,16 +320,13 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, monkeypatc
             assert backend._session_thread.is_alive()
             trainer = start_trainer()
 
-        authenticated_origins = []
         if secure_job:
-            # Wait until protected SESSION_OPEN has installed the trainer's
-            # outgoing auth filters, then apply the server's auth policy to
-            # subsequent trainer-originated requests arriving at the CJ.
+            # A secure Attach session must establish over the protected route
+            # even though the trainer receives no server authentication token.
             deadline = time.monotonic() + 20.0
             while not backend._get_session().ready.is_set() and time.monotonic() < deadline:
                 time.sleep(0.05)
             assert backend._get_session().ready.is_set()
-            _add_server_auth_policy(cj, site_name, authenticated_origins)
 
         created_transaction_cells = _record_download_transactions(monkeypatch)
 
@@ -337,9 +340,8 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, monkeypatc
             task.set_header(FOBSContextKey.RECEIVER_IDS, [site.get_fqcn()])
             result = backend.execute("train", task, fl_ctx, Signal())
 
-            # The CJ deliberately holds lazy references. Forward the result to
-            # the ultimate site receiver. Cell messages physically traverse
-            # the CJ, but the trainer must remain the DownloadService source.
+            # Attach terminates at the CJ. The trainer-to-CJ transfer is fully
+            # materialized before the CJ forwards the ordinary result to site.
             received.clear()
             created_transaction_cells.clear()
             reply = cj.send_request(
@@ -350,15 +352,12 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, monkeypatc
                 timeout=20.0,
             )
             assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
-            assert not any(
+            assert any(
                 cell is cj for cell in created_transaction_cells
-            ), "pass-through forwarding created a second CJ DownloadService transaction"
+            ), "Attach forwarding did not create the expected CJ DownloadService transaction"
             result_dxo = from_shareable(received["result"])
             np.testing.assert_array_equal(result_dxo.data[NPConstants.NUMPY_KEY], initial + 1)
             initial = result_dxo.data[NPConstants.NUMPY_KEY]
-        if secure_job:
-            trainer_fqcn = f"{site_name}.{job_id}.-client_api_{attach_id}"
-            assert trainer_fqcn in authenticated_origins
         completed = True
     finally:
         if backend is not None:
@@ -417,7 +416,7 @@ def test_secure_external_process_delegates_auth_and_keeps_trainer_as_source(tmp_
 
         trainer_script = tmp_path / "trainer.py"
         trainer_script.write_text(_TRAINER_SCRIPT)
-        fl_ctx = _fl_ctx(cj, site_name, job_id, secure_mode=True)
+        fl_ctx = _fl_ctx(cj, site_name, job_id, secure_mode=True, with_site_credentials=True)
         workspace = MagicMock()
         workspace.get_app_dir.return_value = str(tmp_path)
         workspace.get_app_custom_dir.return_value = str(tmp_path)

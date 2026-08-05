@@ -135,8 +135,8 @@ listeners—including loopback listeners—require both an explicit
 `--allow_insecure_attach` on `job.py`. The flag only acknowledges an unprotected
 CJ-to-trainer network route; it does not affect CP-to-CJ communication and must
 not be used on an untrusted network. A secure FL job rejects this route even
-when the flag is set, because it cannot safely carry delegated site
-authentication credentials. Use mTLS or protected shared-file Attach instead.
+when the flag is set because secure job data must remain on an authenticated,
+confidential route. Use mTLS or protected shared-file Attach instead.
 
 Changing site-local `comm_config.json` requires restarting the site. A fixed
 network port must also be reserved so another concurrent job cannot bind it.
@@ -241,9 +241,11 @@ The expected value is:
 The server job log is `<RESULT_DIR>/workspace/log.txt`. The client job log is
 `/tmp/nvflare-attach-poc/example_project/prod_00/site-1/<JOB_ID>/log.txt`.
 
-`flare.send()` returns only after lazy result payloads reach receiver-confirmed
-terminal success. Keep the trainer alive through that confirmation. Job teardown
-closes the Attach Cell session but never terminates the externally owned process.
-The trainer remains the lazy `DownloadService` source; the CJ may route Cell
-messages but does not create a second CJ-owned download transaction or rewrite
-the source reference.
+`flare.send()` returns after any lazy trainer-to-CJ result payload reaches
+receiver-confirmed terminal success. The CJ materializes that result before
+returning it through the job, so forwarding a large result can create a new
+CJ-owned `DownloadService` transaction. The trainer receives no site
+authentication token and does not communicate directly with the server. This
+matches the server-facing trust boundary of the 2.8 `IPCExchanger`/`IPCAgent`
+path while using Cell for the dedicated Attach connection. Job teardown closes
+the Attach Cell session but never terminates the externally owned process.
