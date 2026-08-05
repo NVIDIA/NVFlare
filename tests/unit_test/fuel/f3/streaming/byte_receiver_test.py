@@ -296,7 +296,6 @@ def test_new_stream_uses_sender_streaming_parameters():
         StreamHeaderKey.CHUNK_SIZE: 2 * 1024**2,
         StreamHeaderKey.WINDOW_SIZE: 128 * 1024**2,
         StreamHeaderKey.ACK_INTERVAL: 32 * 1024**2,
-        StreamHeaderKey.RETRY_MAX_PENDING_BYTES: 256 * 1024**2,
     }
     message = _make_chunk(
         "site-1",
@@ -312,7 +311,6 @@ def test_new_stream_uses_sender_streaming_parameters():
     assert task.chunk_size == sender_parameters[StreamHeaderKey.CHUNK_SIZE]
     assert task.window_size == sender_parameters[StreamHeaderKey.WINDOW_SIZE]
     assert task.ack_interval == sender_parameters[StreamHeaderKey.ACK_INTERVAL]
-    assert task.retry_max_pending_bytes == sender_parameters[StreamHeaderKey.RETRY_MAX_PENDING_BYTES]
     # 128 MiB window / 2 MiB chunks, plus one slot of margin
     assert task.max_out_seq == 65
 
@@ -349,7 +347,6 @@ def test_later_chunks_adopt_sender_limit_before_delayed_sequence_zero(monkeypatc
     first_chunk_parameters = {
         **repeated_parameters,
         StreamHeaderKey.ACK_INTERVAL: 16 * MB,
-        StreamHeaderKey.RETRY_MAX_PENDING_BYTES: 256 * MB,
     }
     task = RxTask(sid=535, origin="site-1", cell=MagicMock(), reliable=False)
 
@@ -387,7 +384,6 @@ def test_new_stream_without_sender_parameters_uses_local_configuration(monkeypat
     monkeypatch.setattr(CommConfigurator, "get_streaming_chunk_size", lambda self, default: 2)
     monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: 8)
     monkeypatch.setattr(CommConfigurator, "get_streaming_ack_interval", lambda self, default: 4)
-    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_max_pending_bytes", lambda self, default: 16)
     cell = SimpleNamespace()
     message = _make_chunk("site-1", sid=533, seq=0, data_type=StreamDataType.CHUNK)
 
@@ -397,7 +393,6 @@ def test_new_stream_without_sender_parameters_uses_local_configuration(monkeypat
     assert task.chunk_size == 2
     assert task.window_size == 8
     assert task.ack_interval == 4
-    assert task.retry_max_pending_bytes == 16
 
 
 def test_headerless_legacy_sender_with_small_window_completes_transfer(monkeypatch):
@@ -442,7 +437,6 @@ def test_headerless_legacy_sender_with_small_window_completes_transfer(monkeypat
                 StreamHeaderKey.CHUNK_SIZE,
                 StreamHeaderKey.WINDOW_SIZE,
                 StreamHeaderKey.ACK_INTERVAL,
-                StreamHeaderKey.RETRY_MAX_PENDING_BYTES,
             ):
                 message.remove_header(key)
             message.set_header(MessageHeaderKey.ORIGIN, "legacy-sender")

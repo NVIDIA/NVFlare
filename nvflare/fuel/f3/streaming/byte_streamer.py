@@ -367,7 +367,6 @@ class TxTask(StreamTaskSpec):
         }
         if self.seq == 0:
             stream_headers[StreamHeaderKey.ACK_INTERVAL] = self.ack_interval
-            stream_headers[StreamHeaderKey.RETRY_MAX_PENDING_BYTES] = self.retry_max_pending_bytes
             if self.reliable:
                 stream_headers[StreamHeaderKey.RETRY_WAIT] = self.retry_wait
                 stream_headers[StreamHeaderKey.RETRY_TIMEOUT] = self.retry_timeout

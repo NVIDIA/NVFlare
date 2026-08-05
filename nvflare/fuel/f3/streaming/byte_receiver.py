@@ -30,7 +30,6 @@ from nvflare.fuel.f3.streaming.stream_const import (
     STREAM_CHANNEL,
     STREAM_CHUNK_SIZE,
     STREAM_DATA_TOPIC,
-    STREAM_RETRY_MAX_PENDING_BYTES,
     STREAM_WINDOW_SIZE,
     StreamDataType,
     StreamHeaderKey,
@@ -150,8 +149,6 @@ class RxTask:
         self.chunk_size = config.get_streaming_chunk_size(STREAM_CHUNK_SIZE)
         self.window_size = config.get_streaming_window_size(STREAM_WINDOW_SIZE)
         self.ack_interval = config.get_streaming_ack_interval(ACK_INTERVAL)
-        retry_max_pending_default = max(STREAM_RETRY_MAX_PENDING_BYTES, 2 * self.window_size)
-        self.retry_max_pending_bytes = config.get_streaming_retry_max_pending_bytes(retry_max_pending_default)
         required_max_out_seq = required_out_seq_chunks(self.window_size, self.chunk_size)
         self.max_out_seq = config.get_streaming_max_out_seq_chunks(required_max_out_seq)
         self.completed_task_ttl = config.get_streaming_retry_timeout(
@@ -321,13 +318,6 @@ class RxTask:
         )
         self.ack_interval = self._get_sender_parameter(
             message, StreamHeaderKey.ACK_INTERVAL, "streaming_ack_interval", self.ack_interval
-        )
-        self.retry_max_pending_bytes = self._get_sender_parameter(
-            message,
-            StreamHeaderKey.RETRY_MAX_PENDING_BYTES,
-            "streaming_retry_max_pending_bytes",
-            self.retry_max_pending_bytes,
-            allow_non_positive=True,
         )
         if self.chunk_size > 0:
             window_chunks = (self.window_size + self.chunk_size - 1) // self.chunk_size

@@ -424,7 +424,7 @@ class TestReliableByteStreamer:
         assert message.get_header(StreamHeaderKey.CHUNK_SIZE) == task.chunk_size
         assert message.get_header(StreamHeaderKey.WINDOW_SIZE) == task.window_size
         assert message.get_header(StreamHeaderKey.ACK_INTERVAL) == task.ack_interval
-        assert message.get_header(StreamHeaderKey.RETRY_MAX_PENDING_BYTES) == task.retry_max_pending_bytes
+        assert message.get_header(StreamHeaderKey.RETRY_MAX_PENDING_BYTES) is None
 
         task.buffer[0:1] = b"e"
         task.buffer_size = 1
