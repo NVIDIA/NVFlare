@@ -1,4 +1,4 @@
-# Copyright (c) 2025-2026, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,9 +20,8 @@ from unittest.mock import Mock, patch
 import pytest
 
 from nvflare.apis.job_def import SERVER_SITE_NAME, JobMetaKey
-from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.job_config.script_runner import BaseScriptRunner, FrameworkType, PipeConnectType, ScriptRunner
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 
 
 class TestScriptRunner:
@@ -89,22 +88,8 @@ class TestScriptRunner:
         assert runner._shutdown_timeout == 10.0
         assert runner._launch_external_process is False
 
-    @pytest.mark.parametrize(
-        "connect_type",
-        [connect_type.value for connect_type in PipeConnectType],
-    )
-    def test_pipe_connect_types_require_legacy_base_runner(self, base_script_runner_params, connect_type):
-        with pytest.raises(ValueError, match="use BaseScriptRunner"):
-            ScriptRunner(launch_external_process=True, pipe_connect_type=connect_type, **base_script_runner_params)
-
-    def test_invalid_pipe_connect_type_rejected(self, base_script_runner_params):
-        with pytest.raises(ValueError, match="invalid pipe_connect_type"):
-            BaseScriptRunner(
-                launch_external_process=True, pipe_connect_type="via_carrier_pigeon", **base_script_runner_params
-            )
-
     def test_subprocess_launcher_creation_with_default_values(self, mock_file_system, base_script_runner_params):
-        """Test that SubprocessLauncher is created with default launch_once and shutdown_timeout."""
+        """Test default external-process launch settings."""
         runner = ScriptRunner(launch_external_process=True, **base_script_runner_params)
 
         # Verify the runner stores default values
@@ -112,7 +97,7 @@ class TestScriptRunner:
         assert runner._shutdown_timeout == 0.0
 
     def test_subprocess_launcher_creation_with_custom_values(self, mock_file_system, base_script_runner_params):
-        """Test that SubprocessLauncher is created with custom launch_once and shutdown_timeout."""
+        """Test custom external-process launch settings."""
         runner = ScriptRunner(
             launch_external_process=True, launch_once=False, shutdown_timeout=20.0, **base_script_runner_params
         )
@@ -201,126 +186,6 @@ class TestScriptRunner:
         assert runner._launch_once is False
         assert runner._shutdown_timeout == 30.0
         assert runner._framework == framework
-
-    def test_custom_launcher_passed_through(self, mock_file_system, base_script_runner_params):
-        """Test that providing a custom launcher through BaseScriptRunner works."""
-        # Create a custom launcher with specific settings
-        custom_launcher = SubprocessLauncher(script="custom_script.sh", launch_once=True, shutdown_timeout=5.0)
-
-        # Use BaseScriptRunner which accepts a launcher parameter
-        runner = BaseScriptRunner(
-            launch_external_process=True,
-            launcher=custom_launcher,  # Provide custom launcher
-            launch_once=False,  # These should be stored but custom launcher takes precedence
-            shutdown_timeout=100.0,
-            **base_script_runner_params,
-        )
-
-        # The runner should store the parameters
-        assert runner._launch_once is False
-        assert runner._shutdown_timeout == 100.0
-        assert runner._launcher is custom_launcher
-
-    def test_legacy_external_process_command_preserves_argv_boundaries(self):
-        from nvflare.job_config.api import FedJob
-
-        with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
-            job = FedJob(name="legacy-spaced-command")
-            runner = BaseScriptRunner(
-                script="train model.py",
-                script_args='--label "two words" --empty ""',
-                launch_external_process=True,
-                command="python3 -u",
-                framework=FrameworkType.NUMPY,
-                execution_mode=None,
-            )
-            job.to(runner, "site-1", tasks=["train"])
-
-        launcher = job._deploy_map["site-1"].app_config.components["launcher"]
-        assert isinstance(launcher, SubprocessLauncher)
-        assert "metric_relay" not in job._deploy_map["site-1"].app_config.components
-        assert "config_preparer" not in job._deploy_map["site-1"].app_config.components
-        assert launcher._script == [
-            "python3",
-            "-u",
-            "custom/train model.py",
-            "--label",
-            "two words",
-            "--empty",
-            "",
-        ]
-
-    def test_legacy_external_process_command_argv_is_serialized(self, tmp_path, monkeypatch):
-        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
-        from nvflare.job_config.api import FedJob
-
-        monkeypatch.chdir(tmp_path)
-        script = tmp_path / "train model.py"
-        script.write_text("# test trainer\n")
-        job = FedJob(name="legacy-spaced-command-export")
-        job.to_server(ScatterAndGather(min_clients=1, num_rounds=1, wait_time_after_min_received=0))
-        job.to_clients(
-            BaseScriptRunner(
-                script=script.name,
-                script_args='--label "two words" --empty ""',
-                launch_external_process=True,
-                command="python3 -u",
-                framework=FrameworkType.NUMPY,
-                execution_mode=None,
-            )
-        )
-
-        export_dir = tmp_path / "export"
-        job.export_job(str(export_dir))
-        config_path = export_dir / job.name / "app" / "config" / "config_fed_client.json"
-        config = json.loads(config_path.read_text())
-        launcher = next(component for component in config["components"] if component["id"] == "launcher")
-
-        assert launcher["args"]["script"] == [
-            "python3",
-            "-u",
-            "custom/train model.py",
-            "--label",
-            "two words",
-            "--empty",
-            "",
-        ]
-
-    def test_legacy_external_process_pre_tokenized_argv_is_preserved_and_serialized(self, tmp_path, monkeypatch):
-        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
-        from nvflare.job_config.api import FedJob
-
-        monkeypatch.chdir(tmp_path)
-        script = tmp_path / "train.py"
-        script.write_text("# test trainer\n")
-        command = ["/opt/python env/bin/python3", "-u"]
-        script_args = ["--output-dir", "/mnt/training runs/site-1", "--api-key", "${secret:API_TOKEN}"]
-        expected = [*command, "custom/train.py", *script_args]
-
-        job = FedJob(name="legacy-argv-command-export")
-        job.to_server(ScatterAndGather(min_clients=1, num_rounds=1, wait_time_after_min_received=0))
-        job.to_clients(
-            BaseScriptRunner(
-                script=script.name,
-                script_args=script_args,
-                launch_external_process=True,
-                command=command,
-                framework=FrameworkType.NUMPY,
-                execution_mode=None,
-            )
-        )
-
-        # Building the command must not mutate caller-owned argv lists.
-        assert command == ["/opt/python env/bin/python3", "-u"]
-        assert script_args == ["--output-dir", "/mnt/training runs/site-1", "--api-key", "${secret:API_TOKEN}"]
-
-        export_dir = tmp_path / "export"
-        job.export_job(str(export_dir))
-        config_path = export_dir / job.name / "app" / "config" / "config_fed_client.json"
-        config = json.loads(config_path.read_text())
-        launcher = next(component for component in config["components"] if component["id"] == "launcher")
-
-        assert launcher["args"]["script"] == expected
 
 
 class TestScriptRunnerMemoryManagement:
@@ -417,7 +282,7 @@ class TestExecutionModeSelection:
     """execution_mode selects the new ClientAPIExecutor (design: client_api_execution_modes.md)."""
 
     def test_in_process_mode_constructs_without_framework_imports(self):
-        # The new path declares PYTORCH without constructing ParamsConverters or
+        # The new path declares PYTORCH without constructing converter components or
         # importing torch during job construction.
         runner = ScriptRunner(script="train.py", execution_mode="in_process")
         assert runner._execution_mode == "in_process"
@@ -430,7 +295,7 @@ class TestExecutionModeSelection:
     @pytest.mark.parametrize("mode", ["attach"])
     def test_not_yet_available_modes_fail_at_build_time(self, mode):
         # fail when the job is BUILT, not when the backend panics at START_RUN
-        with pytest.raises(ValueError, match="not yet available"):
+        with pytest.raises(ValueError, match="invalid execution_mode"):
             ScriptRunner(script="train.py", execution_mode=mode)
 
     def test_external_process_mode_available(self):
@@ -562,21 +427,6 @@ class TestExecutionModeSelection:
         assert launcher_spec["site-1"]["slurm"]["additional_node_command"] == "python3 -u custom/client.py"
         assert "additional_node_command" not in launcher_spec["site-2"]["slurm"]
 
-    def test_legacy_external_process_does_not_generate_additional_node_command(self):
-        from nvflare.job_config.api import FedJob
-
-        block = {"nodes": 2}
-        job = FedJob(
-            name="legacy-command",
-            meta_props={JobMetaKey.JOB_LAUNCHER_SPEC.value: {"site-1": {"slurm": block}}},
-        )
-        runner = BaseScriptRunner(script="client.py", launch_external_process=True)
-
-        with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
-            job.to_clients(runner)
-
-        assert "additional_node_command" not in block
-
     @pytest.mark.parametrize("explicit_value", [None, "custom-worker --arg"])
     def test_explicit_additional_node_command_wins(self, explicit_value):
         from nvflare.job_config.api import FedJob
@@ -694,7 +544,7 @@ class TestExecutionModeSelection:
 
         assert config["executors"][0]["executor"]["args"]["command"] == expected
 
-    def test_conflicts_with_legacy_stack_args(self):
+    def test_launch_flag_conflicts_with_explicit_in_process_mode(self):
         with pytest.raises(ValueError, match="launch_external_process=True requires"):
             ScriptRunner(script="train.py", execution_mode="in_process", launch_external_process=True)
 

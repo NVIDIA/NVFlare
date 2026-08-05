@@ -93,7 +93,7 @@ def _set_class_policy(allow_list, enforcement_mode):
 
 
 def test_allows_component_on_exact_path_from_class_allow_list():
-    component_path = "nvflare.app_common.widgets.metric_relay.MetricRelay"
+    component_path = "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent"
     _set_class_allow_list([component_path])
     authorizer = ComponentPathAuthorizer()
     fl_ctx = _make_fl_ctx({"path": component_path})
@@ -106,7 +106,7 @@ def test_allows_component_from_resources_class_allow_list(tmp_path):
     resources_file.write_text(json.dumps({CLASS_ALLOW_LIST: ["nvflare.app_common.widgets."]}))
     authorizer = ComponentPathAuthorizer()
     fl_ctx = _make_fl_ctx(
-        {"path": "nvflare.app_common.widgets.metric_relay.MetricRelay"},
+        {"path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent"},
         workspace=_FakeWorkspace(resources_file),
     )
 
@@ -114,7 +114,7 @@ def test_allows_component_from_resources_class_allow_list(tmp_path):
 
 
 def test_direct_authorize_component_config_uses_workspace_class_allow_list(tmp_path):
-    component_path = "nvflare.app_common.widgets.metric_relay.MetricRelay"
+    component_path = "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent"
     resources_file = tmp_path / "resources.json"
     resources_file.write_text(json.dumps({CLASS_ALLOW_LIST: [component_path]}))
     authorizer = ComponentPathAuthorizer()
@@ -133,7 +133,7 @@ def test_workspace_class_allow_list_is_cached(tmp_path, monkeypatch):
     resources_file.write_text(json.dumps({CLASS_ALLOW_LIST: ["nvflare.app_common.widgets."]}))
     authorizer = ComponentPathAuthorizer()
     fl_ctx = _make_fl_ctx(
-        {"path": "nvflare.app_common.widgets.metric_relay.MetricRelay"},
+        {"path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent"},
         workspace=_FakeWorkspace(resources_file),
     )
     load_calls = []
@@ -187,7 +187,7 @@ def test_workspace_class_allow_list_cache_invalidates_when_file_changes(tmp_path
     resources_file.write_text(json.dumps({CLASS_ALLOW_LIST: ["nvflare."]}))
     authorizer = ComponentPathAuthorizer()
     fl_ctx = _make_fl_ctx(
-        {"path": "nvflare.app_common.widgets.metric_relay.MetricRelay"},
+        {"path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent"},
         workspace=_FakeWorkspace(resources_file),
     )
 
@@ -197,14 +197,14 @@ def test_workspace_class_allow_list_cache_invalidates_when_file_changes(tmp_path
     resources_file.write_text(json.dumps({CLASS_ALLOW_LIST: ["subprocess."]}))
     os.utime(resources_file, ns=(stat_result.st_atime_ns + 1_000_000, stat_result.st_mtime_ns + 1_000_000))
 
-    with pytest.raises(UnsafeComponentError, match="MetricRelay.*allow_list"):
+    with pytest.raises(UnsafeComponentError, match="ConvertToFedEvent.*allow_list"):
         authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
 
 
 def test_allows_component_from_config_service_resources():
     _set_class_allow_list(["nvflare.app_common.widgets."])
     authorizer = ComponentPathAuthorizer()
-    fl_ctx = _make_fl_ctx({"path": "nvflare.app_common.widgets.metric_relay.MetricRelay"})
+    fl_ctx = _make_fl_ctx({"path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent"})
 
     authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
 
@@ -247,7 +247,7 @@ def test_implicit_default_allow_list_is_audited_and_warned_once_per_job(monkeypa
 
 
 def test_explicit_allow_list_does_not_emit_default_policy_audit(monkeypatch):
-    component_path = "nvflare.app_common.widgets.metric_relay.MetricRelay"
+    component_path = "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent"
     _set_class_allow_list([component_path])
     audit = MagicMock(return_value="event-id")
     monkeypatch.setattr(AuditService, "add_event", audit)
@@ -483,7 +483,7 @@ def test_warn_mode_does_not_log_for_allowed_component(caplog):
     with caplog.at_level("WARNING"):
         authorizer.handle_event(
             EventType.BEFORE_BUILD_COMPONENT,
-            _make_fl_ctx({"path": "nvflare.app_common.widgets.metric_relay.MetricRelay"}),
+            _make_fl_ctx({"path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent"}),
         )
 
     assert not caplog.records
@@ -553,8 +553,8 @@ def test_direct_authorize_component_config_skips_all_checks_for_byoc_job():
         (["nvflare."], "nvflareevil.app.Component"),
         (["nvflare.app_common"], "nvflare.app_commonx.widgets.Component"),
         (
-            ["nvflare.app_common.widgets.metric_relay.MetricRelay"],
-            "nvflare.app_common.widgets.metric_relay.MetricRelay2",
+            ["nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent"],
+            "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent2",
         ),
     ],
 )
@@ -570,13 +570,13 @@ def test_rejects_component_when_allow_entry_is_not_on_path_boundary(allow_list, 
 def test_allows_component_on_dotted_prefix_boundary():
     _set_class_allow_list(["nvflare.app_common.widgets"])
     authorizer = ComponentPathAuthorizer()
-    fl_ctx = _make_fl_ctx({"path": "nvflare.app_common.widgets.metric_relay.MetricRelay"})
+    fl_ctx = _make_fl_ctx({"path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent"})
 
     authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
 
 
 def test_allows_component_with_exact_path_allow_entry():
-    component_path = "nvflare.app_common.widgets.metric_relay.MetricRelay"
+    component_path = "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent"
     _set_class_allow_list([component_path])
     authorizer = ComponentPathAuthorizer()
     fl_ctx = _make_fl_ctx({"path": component_path})
@@ -585,7 +585,7 @@ def test_allows_component_with_exact_path_allow_entry():
 
 
 def test_allows_component_with_class_path():
-    component_path = "nvflare.app_common.widgets.metric_relay.MetricRelay"
+    component_path = "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent"
     _set_class_allow_list([component_path])
     authorizer = ComponentPathAuthorizer()
     fl_ctx = _make_fl_ctx({"class_path": component_path})
@@ -595,7 +595,7 @@ def test_allows_component_with_class_path():
 
 def test_rejects_component_with_name():
     authorizer = ComponentPathAuthorizer()
-    fl_ctx = _make_fl_ctx({"name": "MetricRelay"})
+    fl_ctx = _make_fl_ctx({"name": "ConvertToFedEvent"})
 
     with pytest.raises(UnsafeComponentError, match="name is not allowed"):
         authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
@@ -605,14 +605,14 @@ def test_direct_authorize_component_config_rejects_name():
     authorizer = ComponentPathAuthorizer()
 
     with pytest.raises(UnsafeComponentError, match="name is not allowed"):
-        authorizer.authorize_component_config({"name": "MetricRelay"})
+        authorizer.authorize_component_config({"name": "ConvertToFedEvent"})
 
 
 def test_path_takes_precedence_over_class_path():
     _set_class_allow_list(["nvflare."])
     authorizer = ComponentPathAuthorizer()
     fl_ctx = _make_fl_ctx(
-        {"path": "nvflare.app_common.widgets.metric_relay.MetricRelay", "class_path": "subprocess.Popen"}
+        {"path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent", "class_path": "subprocess.Popen"}
     )
 
     authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
@@ -621,7 +621,9 @@ def test_path_takes_precedence_over_class_path():
 def test_rejects_component_with_path_and_name():
     _set_class_allow_list(["nvflare."])
     authorizer = ComponentPathAuthorizer()
-    fl_ctx = _make_fl_ctx({"path": "nvflare.app_common.widgets.metric_relay.MetricRelay", "name": "Popen"})
+    fl_ctx = _make_fl_ctx(
+        {"path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent", "name": "Popen"}
+    )
 
     with pytest.raises(UnsafeComponentError, match="name is not allowed"):
         authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
@@ -630,7 +632,7 @@ def test_rejects_component_with_path_and_name():
 def test_rejects_component_with_path_missing_from_allow_list_and_name():
     _set_class_allow_list(["nvflare."])
     authorizer = ComponentPathAuthorizer()
-    fl_ctx = _make_fl_ctx({"path": "subprocess.Popen", "name": "MetricRelay"})
+    fl_ctx = _make_fl_ctx({"path": "subprocess.Popen", "name": "ConvertToFedEvent"})
 
     with pytest.raises(UnsafeComponentError, match="name is not allowed"):
         authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
@@ -680,7 +682,7 @@ def test_ignores_other_events():
 def test_rejects_invalid_allow_list(allow_list):
     _set_class_allow_list(allow_list)
     authorizer = ComponentPathAuthorizer()
-    fl_ctx = _make_fl_ctx({"path": "nvflare.app_common.widgets.metric_relay.MetricRelay"})
+    fl_ctx = _make_fl_ctx({"path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent"})
 
     with pytest.raises(UnsafeComponentError):
         authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
@@ -690,7 +692,7 @@ def test_rejects_invalid_allow_list(allow_list):
 def test_rejects_invalid_enforcement_mode(enforcement_mode):
     _set_class_policy(["nvflare."], enforcement_mode)
     authorizer = ComponentPathAuthorizer()
-    fl_ctx = _make_fl_ctx({"path": "nvflare.app_common.widgets.metric_relay.MetricRelay"})
+    fl_ctx = _make_fl_ctx({"path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent"})
 
     with pytest.raises(UnsafeComponentError, match=CLASS_LIST_ENFORCEMENT_MODE):
         authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
@@ -699,7 +701,7 @@ def test_rejects_invalid_enforcement_mode(enforcement_mode):
 def test_empty_allow_list_rejects_component():
     _set_class_allow_list([])
     authorizer = ComponentPathAuthorizer()
-    fl_ctx = _make_fl_ctx({"path": "nvflare.app_common.widgets.metric_relay.MetricRelay"})
+    fl_ctx = _make_fl_ctx({"path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent"})
 
     with pytest.raises(UnsafeComponentError, match="allow_list"):
         authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)

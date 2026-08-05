@@ -41,38 +41,28 @@ Compatibility and Migration Notes
   ``fedprox-pt`` and no longer advertises the ``fedprox-tf`` manual pattern as
   a concrete recipe. TensorFlow clients can continue to combine a FedAvg
   recipe with ``TFFedProxLoss`` explicitly.
-- CellPipe cell names now keep the runtime token and pipe mode in one
-  explicitly marked, ``~``-delimited FQCN leaf segment
-  (``site-1.cellpipe~plain~<job-id>~active``, or
-  ``<relay>.cellpipe~alias~<site>~<job-id>~active`` behind a relay) so a
-  pipe cell's FQCN parent matches the cell it actually connects to and pipe
-  names can never be confused with other cell names. As part of this change,
-  CellPipe validates tokens at construction: tokens must be non-empty, may
-  not contain the reserved ``~`` separator, and may not contain ``.`` when
-  the pipe connects to the site's own CP or a relay. Custom
-  ``FlareAgentWithCellPipe`` agent ids that violate these rules now fail fast
-  with a ``ValueError`` instead of producing unroutable cell names.
-- Both ends of a CellPipe pair derive each other's cell names independently,
-  so a Client Job process and an external training process must run the same
-  NVFlare naming scheme. A training environment pinned to an older NVFlare
-  fails with "peer FQCN mismatch" when paired with a 2.9 CJ; align the
-  training environment's NVFlare version with the site's. Only the flat
-  whole-FQCN alias used by NVFlare 2.8 and earlier (a root-connected pipe
-  named ``<site>_<token>_<mode>``) is still recognized for backward
-  compatibility. The forms used through 2.8 when nested under a CP or relay
-  (``<parent>.<site>_<token>_<mode>``) are not, because an unmarked leaf
-  inside a longer FQCN is indistinguishable from a real cell of that name.
-  When upgrading to 2.9, upgrade a site and its relay together, including
-  sites currently running NVFlare 2.8.
+- The legacy Client API execution stack has been removed. This includes
+  ``ParamsConverter``, the framework-specific converter components,
+  ``InProcessClientAPIExecutor``, ``ClientAPILauncherExecutor``,
+  ``LauncherExecutor``, ``SubprocessLauncher``, ``TaskExchanger``,
+  ``FlareAgent``, ``BaseScriptRunner``, ``ExternalConfigurator``, and the
+  ``Pipe``/``PipeHandler`` implementations (including ``FilePipe`` and
+  ``CellPipe``). Use ``ClientAPIExecutor`` with
+  ``in_process``, ``external_process``, or ``attach`` execution mode. Custom
+  parameter transformations belong in trainer code around
+  ``flare.receive()``/``flare.send()``; common functions remain available in
+  ``nvflare.client.converter_utils``.
+- Recipe-level ``pipe_type`` and ``pipe_root_path`` options have been removed.
+  Transport is selected through site communication configuration. The F3
+  ``FileDriver`` remains available as scheme ``shared-file`` for either a
+  launched external process or an attached trainer.
 - ``ScriptRunner`` now exports ``ClientAPIExecutor`` for both in-process and
   external-process execution. Jobs generated with FLARE 2.9 therefore require
   a client runtime that provides this executor and are not runnable on older
   client runtimes. ``ScriptRunner`` no longer performs a build-time PyTorch or
   TensorFlow import check; ensure the required framework dependencies are
-  available in the execution environment. Code that explicitly passes
-  ``pipe_connect_type`` (including its former default value) or supplies a
-  custom ``task_pipe`` must use ``BaseScriptRunner``. A client app may contain
-  only one ``ClientAPIExecutor``; configurations that previously added multiple
+  available in the execution environment. A client app may contain only one
+  ``ClientAPIExecutor``; configurations that previously added multiple
   script runners to one site must combine the scripts behind one entry point
   and dispatch on the Client API task name.
 - PyTorch swarm learning can now combine client-to-client tensor streaming with

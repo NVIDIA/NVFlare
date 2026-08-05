@@ -145,8 +145,7 @@ the WandBWriter and WandBReceiver to log metrics.
 MONAI Integration
 =================
 
-:github_nvflare_link:`Integration with MONAI <integration/monai>` uses the `NVFlareStatsHandler`
-:class:`LogWriterForMetricsExchanger <nvflare.app_common.tracking.LogWriterForMetricsExchanger>` to connect to
-:class:`MetricsRetriever <nvflare.app_common.metrics_exchange.MetricsRetriever>`. See the job
+:github_nvflare_link:`Integration with MONAI <integration/monai>` uses the
+``NVFlareStatsHandler`` with the Client API tracking writers. See the job
 :github_nvflare_link:`spleen_ct_segmentation_local <integration/monai/examples/spleen_ct_segmentation_local/jobs/spleen_ct_segmentation_local>`
 for more details on this configuration.
