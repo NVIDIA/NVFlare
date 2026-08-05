@@ -187,6 +187,19 @@ def test_receive_model_broadcasts_scaffold_metadata_to_non_root_rank():
     assert callback._is_training is True
 
 
+@pytest.mark.parametrize(("runtime_rank", "expected_send_count"), [(0, 1), (1, 0)])
+def test_send_model_uses_runtime_global_rank(runtime_rank, expected_send_count):
+    callback = _make_callback()
+    callback.rank = 0
+    output_model = FLModel(params={"weight": torch.tensor([1.0])})
+    trainer = SimpleNamespace(global_rank=runtime_rank)
+
+    with patch("nvflare.app_opt.lightning.api.send") as send:
+        callback._send_model(output_model, trainer)
+
+    assert send.call_count == expected_send_count
+
+
 def test_patch_is_idempotent():
     trainer = SimpleNamespace(callbacks=[], global_rank=0)
 
