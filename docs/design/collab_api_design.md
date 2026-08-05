@@ -7,19 +7,20 @@ distributed workflows. A user publishes client functions, writes a server
 workflow that calls those functions through proxies, and packages both sides in
 a normal NVFlare `FedJob` through `CollabRecipe`.
 
-This version deliberately has one execution contract:
+This version has one job and environment contract with two client execution
+placements:
 
 - `CollabRecipe` always finalizes to a regular `FedJob`.
 - The job runs with the standard Recipe environments: `SimEnv`, `PocEnv`, or
   `ProdEnv`.
-- Server and client code runs inside its FLARE site process.
-- External worker processes and multi-rank/DDP execution are not part of the
-  current public API.
+- Server code and, by default, client code run inside their FLARE site process.
+- A recipe can instead launch a persistent external client rank group, including
+  multi-rank/DDP execution, while retaining the same Collab lifecycle and call
+  semantics.
 
-This boundary keeps deployment, lifecycle, call context, and failure handling
-consistent across simulation, POC, and production. A future external-process
-feature must define a typed, per-site execution policy and preserve the full
-Collab lifecycle before it is added to the public contract.
+Both placements keep deployment, lifecycle, call context, and failure handling
+consistent across simulation, POC, and production. Distributed placement uses
+the launcher-prefix and SPMD contract described below.
 
 ## User Model
 
