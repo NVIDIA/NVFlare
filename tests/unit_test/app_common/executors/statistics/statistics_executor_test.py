@@ -53,14 +53,38 @@ class TestStatisticsExecutor:
     def test_execute_task_does_not_duplicate_configured_failure_count(self):
         inputs = Shareable()
         inputs[StC.STATISTICS_TASK_KEY] = StC.STATS_1st_STATISTICS
-        inputs[StC.STATS_TARGET_STATISTICS] = fobs.dumps([StatisticConfig(StC.STATS_FAILURE_COUNT, {})])
-        fl_ctx = FLContext()
+        inputs[StC.STATS_TARGET_STATISTICS] = fobs.dumps(
+            [StatisticConfig(StC.STATS_COUNT, {}), StatisticConfig(StC.STATS_FAILURE_COUNT, {})]
+        )
 
-        with patch.object(self.stats_executor, "_populate_result_statistics") as populate_result:
-            self.stats_executor.execute_task(StC.FED_STATS_TASK, inputs, fl_ctx, Signal())
+        with (
+            patch.object(self.stats_executor.stats_generator, "count", return_value=10),
+            patch.object(
+                self.stats_executor.stats_generator,
+                "failure_count",
+                wraps=self.stats_executor.stats_generator.failure_count,
+            ) as failure_count,
+        ):
+            self.stats_executor.execute_task(StC.FED_STATS_TASK, inputs, FLContext(), Signal())
 
-        populated_statistics = [call.args[2].name for call in populate_result.call_args_list]
-        assert populated_statistics == [StC.STATS_FAILURE_COUNT, StC.STATS_COUNT]
+        assert failure_count.call_count == 2
+
+    def test_execute_task_adds_missing_failure_count(self):
+        inputs = Shareable()
+        inputs[StC.STATISTICS_TASK_KEY] = StC.STATS_1st_STATISTICS
+        inputs[StC.STATS_TARGET_STATISTICS] = fobs.dumps([StatisticConfig(StC.STATS_COUNT, {})])
+
+        with (
+            patch.object(self.stats_executor.stats_generator, "count", return_value=10),
+            patch.object(
+                self.stats_executor.stats_generator,
+                "failure_count",
+                wraps=self.stats_executor.stats_generator.failure_count,
+            ) as failure_count,
+        ):
+            self.stats_executor.execute_task(StC.FED_STATS_TASK, inputs, FLContext(), Signal())
+
+        assert failure_count.call_count == 2
 
     def test_method_implementation(self):
         with pytest.raises(NotImplementedError):
