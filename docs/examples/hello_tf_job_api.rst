@@ -31,7 +31,7 @@ Use ``--n_clients`` and ``--num_rounds`` to change the defaults:
    $ python3 job.py --n_clients 3 --num_rounds 5
 
 The recipe executes with :class:`SimEnv<nvflare.recipe.sim_env.SimEnv>`. Results
-and logs are written under ``/tmp/nvflare/jobs/workdir`` by default.
+and logs are written under ``/tmp/nvflare/simulation`` by default.
 
 Job Recipe
 ----------
@@ -108,8 +108,7 @@ training file, ``client.py``:
          "execution_mode": "in_process",
          "task_script_path": "client.py",
          "params_exchange_format": "keras_layer_weights",
-         "server_expected_format": "numpy",
-         "train_with_evaluation": true
+         "server_expected_format": "numpy"
        }
      }
    }

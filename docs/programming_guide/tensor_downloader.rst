@@ -213,10 +213,13 @@ reduce memory but increase network overhead.
 
 When tensor streaming is used with ``ClientAPIExecutor``, keep
 ``tensor_min_download_timeout`` (or ``np_min_download_timeout`` for NumPy)
-aligned with the configured streaming per-request timeout. Active payload
-transfer is progress-aware; ``task_wait_timeout`` and ``result_wait_timeout``
-in the out-of-process modes bound task acceptance and result production, not
-the streaming transfer itself. The legacy Pipe/FlareAgent settings
+aligned with the configured streaming per-request timeout. In
+``external_process`` mode, an active task download extends the
+``task_wait_timeout`` wait while progress remains live. Attach instead applies
+an absolute ``task_wait_timeout`` deadline to task download and trainer
+acceptance, so configure it for the complete delivery path.
+``result_wait_timeout`` bounds result publication; subsequent payload streaming
+uses the shared transfer idle policy. The legacy Pipe/FlareAgent settings
 ``PEER_READ_TIMEOUT`` and ``download_complete_timeout`` are not consumed by
 ``ClientAPIExecutor``. See :ref:`timeout_troubleshooting` and
 :doc:`/programming_guide/timeouts`.

@@ -1366,9 +1366,12 @@ download idle budget aligned with the streaming request budget:
 - ``tensor_min_download_timeout`` / ``np_min_download_timeout`` should be at
   least ``tensor_streaming_per_request_timeout`` /
   ``np_streaming_per_request_timeout``.
-- ``task_wait_timeout`` and ``result_wait_timeout`` bound task acceptance and
-  result production in ``external_process`` and ``attach`` modes; active payload
-  transfer is progress-aware and is not capped by those waits.
+- In ``external_process`` mode, an active task download extends the
+  ``task_wait_timeout`` wait while transfer progress remains live.
+- Attach uses an absolute ``task_wait_timeout`` deadline, including task payload
+  download and trainer acceptance. Size it for the complete delivery path.
+- ``result_wait_timeout`` bounds waiting for result publication; subsequent
+  payload streaming uses the shared transfer idle policy.
 
 The settings ``PEER_READ_TIMEOUT``, ``submit_result_timeout``,
 ``download_complete_timeout``, and ``max_resends`` apply only to the legacy

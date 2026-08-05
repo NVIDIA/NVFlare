@@ -261,8 +261,7 @@ The client configuration is ``config_fed_client.json`` in the config folder of e
                   "task_script_path": "client.py",
                   "task_script_args": "--batch_size 16 --epochs 2 --num_workers 2",
                   "params_exchange_format": "pytorch",
-                  "server_expected_format": "numpy",
-                  "train_with_evaluation": true
+                  "server_expected_format": "numpy"
                }
             }
          }

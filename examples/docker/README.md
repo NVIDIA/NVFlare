@@ -29,16 +29,6 @@ nvflare provision -p project.yml
 
 This generates a workspace under `workspace/docker_test_project/` relative to the current directory.
 
-Before preparing the client kits, copy each client's
-`local/resources.json.default` to `local/resources.json` and add the exact
-executor class below to its existing `class_allow_list`:
-
-```text
-nvflare.app_common.executors.client_api_executor.ClientAPIExecutor
-```
-
-Keep the rest of the generated allow-list and resource configuration intact.
-
 ## Step 2: Prepare Docker runtime kits
 
 Prepare the server and both client startup kits for Docker mode:
