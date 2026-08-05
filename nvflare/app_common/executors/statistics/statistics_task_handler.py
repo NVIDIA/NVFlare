@@ -62,19 +62,15 @@ class StatisticsTaskHandler(TaskHandler):
             ds_features = self.get_numeric_features()
             statistics_task = shareable.get(StC.STATISTICS_TASK_KEY)
             target_statistics: List[StatisticConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_STATISTICS))
-            target_statistics.sort(key=lambda t: t.name == StC.STATS_FAILURE_COUNT)
-            if StC.STATS_FAILURE_COUNT not in [t.name for t in target_statistics]:
+            target_statistic_names = [t.name for t in target_statistics]
+            if StC.STATS_COUNT not in target_statistic_names:
+                target_statistics.append(StatisticConfig(StC.STATS_COUNT, {}))
+            if StC.STATS_FAILURE_COUNT not in target_statistic_names:
                 target_statistics.append(StatisticConfig(StC.STATS_FAILURE_COUNT, {}))
+            target_statistics.sort(key=lambda t: t.name == StC.STATS_FAILURE_COUNT)
 
             for tm in target_statistics:
                 fn = self.statistic_functions()[tm.name]
-                statistics_result[tm.name] = {}
-                self._populate_result_statistics(statistics_result, ds_features, tm, shareable, fl_ctx, fn)
-
-            # always add count for data privacy needs
-            if StC.STATS_COUNT not in statistics_result:
-                tm = StatisticConfig(StC.STATS_COUNT, {})
-                fn = self.get_count
                 statistics_result[tm.name] = {}
                 self._populate_result_statistics(statistics_result, ds_features, tm, shareable, fl_ctx, fn)
 

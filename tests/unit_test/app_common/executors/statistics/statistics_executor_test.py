@@ -146,6 +146,29 @@ class TestStatisticsExecutor:
         assert global_statistics[StC.STATS_FAILURE_COUNT]["train"]["Age"] == 1
         assert global_statistics[StC.STATS_HISTOGRAM]["train"]["Age"].bins == [Bin(0, 10, 7)]
 
+    def test_second_round_failure_count_includes_implicit_count_failures(self):
+        inputs = Shareable()
+        inputs[StC.STATISTICS_TASK_KEY] = StC.STATS_2nd_STATISTICS
+        inputs[StC.STATS_TARGET_STATISTICS] = fobs.dumps([])
+        failures = {"train": 0, "test": 0}
+
+        def get_count(dataset_name, feature_name):
+            failures[dataset_name] += 1
+            return 4
+
+        def get_failure_count(dataset_name, feature_name):
+            return failures[dataset_name]
+
+        with (
+            patch.object(self.stats_executor.stats_generator, "count", side_effect=get_count),
+            patch.object(self.stats_executor.stats_generator, "failure_count", side_effect=get_failure_count),
+        ):
+            result = self.stats_executor.execute_task(StC.FED_STATS_TASK, inputs, FLContext(), Signal())
+
+        statistics = fobs.loads(result[StC.STATS_2nd_STATISTICS])
+        assert statistics[StC.STATS_FAILURE_COUNT]["train"]["Age"] == 1
+        assert statistics[StC.STATS_FAILURE_COUNT]["test"]["Age"] == 1
+
     def test_method_implementation(self):
         with pytest.raises(NotImplementedError):
             r = self.stats_executor.get_sum("train", "Age", StatisticConfig("sum", {}), None, None)
