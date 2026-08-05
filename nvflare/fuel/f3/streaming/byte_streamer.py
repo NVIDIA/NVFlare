@@ -285,12 +285,16 @@ class TxTask(StreamTaskSpec):
 
             # Flow control
             window = self.offset - self.offset_ack
-            # It may take several ACKs to clear up the window
-            while window > self.window_size:
-                log.debug(f"{self} window size {window} exceeds limit: {self.window_size}")
+            # It may take several ACKs to clear up the window.
+            # The comparison is >=, not >, so a normal data chunk does not add
+            # another full chunk once the window reaches its limit. The EOS path
+            # above can still send one final frame; RxTask includes that slot when
+            # sizing its reassembly buffer.
+            while window >= self.window_size:
+                log.debug(f"{self} window size {window} reached limit: {self.window_size}")
                 wait_start = time.monotonic()
 
-                while window > self.window_size:
+                while window >= self.window_size:
                     if self.stopped:
                         return
 
@@ -355,16 +359,15 @@ class TxTask(StreamTaskSpec):
             StreamHeaderKey.OFFSET: self.offset,
             StreamHeaderKey.RELIABLE: self.reliable,
             StreamHeaderKey.OPTIONAL: self.optional,
+            # Repeat the buffer-sizing parameters because ConnManager may process a
+            # later frame before sequence 0. Older receivers ignore these headers
+            # after the first frame, so this is wire-compatible.
+            StreamHeaderKey.CHUNK_SIZE: self.chunk_size,
+            StreamHeaderKey.WINDOW_SIZE: self.window_size,
         }
         if self.seq == 0:
-            stream_headers.update(
-                {
-                    StreamHeaderKey.CHUNK_SIZE: self.chunk_size,
-                    StreamHeaderKey.WINDOW_SIZE: self.window_size,
-                    StreamHeaderKey.ACK_INTERVAL: self.ack_interval,
-                    StreamHeaderKey.RETRY_MAX_PENDING_BYTES: self.retry_max_pending_bytes,
-                }
-            )
+            stream_headers[StreamHeaderKey.ACK_INTERVAL] = self.ack_interval
+            stream_headers[StreamHeaderKey.RETRY_MAX_PENDING_BYTES] = self.retry_max_pending_bytes
             if self.reliable:
                 stream_headers[StreamHeaderKey.RETRY_WAIT] = self.retry_wait
                 stream_headers[StreamHeaderKey.RETRY_TIMEOUT] = self.retry_timeout

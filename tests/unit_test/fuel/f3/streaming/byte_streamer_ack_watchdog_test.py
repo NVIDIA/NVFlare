@@ -118,7 +118,9 @@ class TestByteStreamerAckWatchdog:
     def test_watchdog_allows_progress_and_stream_completes(self, monkeypatch):
         task, _ = self._make_task(
             monkeypatch,
-            window_size=0,
+            # smallest window the ACK can actually clear: send_loop waits while
+            # window >= window_size, so a 0 window would never open again
+            window_size=1,
             ack_wait=0.5,
             ack_progress_timeout=2.0,
             ack_progress_check_interval=0.01,
@@ -432,8 +434,8 @@ class TestReliableByteStreamer:
         assert task.pending_message_bytes == 5
         assert next_message.get_header(StreamHeaderKey.RETRY_WAIT) is None
         assert next_message.get_header(StreamHeaderKey.RETRY_TIMEOUT) is None
-        assert next_message.get_header(StreamHeaderKey.CHUNK_SIZE) is None
-        assert next_message.get_header(StreamHeaderKey.WINDOW_SIZE) is None
+        assert next_message.get_header(StreamHeaderKey.CHUNK_SIZE) == task.chunk_size
+        assert next_message.get_header(StreamHeaderKey.WINDOW_SIZE) == task.window_size
         assert next_message.get_header(StreamHeaderKey.ACK_INTERVAL) is None
         assert next_message.get_header(StreamHeaderKey.RETRY_MAX_PENDING_BYTES) is None
 

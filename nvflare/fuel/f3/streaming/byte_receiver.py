@@ -41,6 +41,12 @@ from nvflare.fuel.f3.streaming.stream_utils import ONE_MB, stream_stats_category
 log = logging.getLogger(__name__)
 
 MAX_OUT_SEQ_CHUNKS = 16
+# Upper bound on the out-of-sequence tolerance derived from a peer's
+# WINDOW_SIZE/CHUNK_SIZE headers. Those headers are hints, and an unbounded
+# ratio would let a peer size this receiver's reassembly buffer at will. A site
+# that legitimately needs more can raise streaming_max_out_seq_chunks in its own
+# config, which is not capped.
+MAX_DERIVED_OUT_SEQ_CHUNKS = 1024
 # Headerless legacy senders can use windows smaller than the new sender
 # default. Keep their receiver-side fallback at the historical 4 MiB so an
 # ACK is sent before those senders exhaust their flow-control window.
@@ -69,10 +75,30 @@ def _abbrev(value, limit: int = 64) -> str:
 
 
 def required_out_seq_chunks(window_size: int, chunk_size: int) -> int:
-    """Return the number of chunks that can be in flight for a stream window."""
+    """Return the out-of-sequence tolerance needed for a sender's flow-control window.
+
+    Inbound frames are dispatched to a thread pool (ConnManager.process_frame), so
+    chunks that arrive in order can still be *processed* out of order, with a depth
+    that grows under scheduling jitter. The depth is bounded by how many chunks the
+    sender may have unacked, which is what its flow-control window governs:
+    TxTask.send_loop blocks while ``window >= window_size`` and every non-final chunk
+    is exactly chunk_size bytes, so at most ``window_size // chunk_size`` normal chunks
+    are unacked at a time. Tolerating fewer than that aborts healthy streams under load
+    -- the FLARE-3093 regression, where a 64 MiB default window put 64 chunks in flight
+    against a fixed tolerance of 16.
+
+    The extra chunk covers the final frame, which TxTask sends from its EOS branch
+    before applying the normal flow-control check. It also supports senders predating
+    the current ``>=`` check: they blocked only while ``window > window_size`` and
+    could therefore send one additional full chunk. Both cases matter during a
+    rolling upgrade.
+
+    The result is capped at MAX_DERIVED_OUT_SEQ_CHUNKS because window_size and
+    chunk_size may be adopted from peer-supplied headers.
+    """
     if chunk_size <= 0:
         return MAX_OUT_SEQ_CHUNKS
-    return max(MAX_OUT_SEQ_CHUNKS, window_size // chunk_size + 1)
+    return max(MAX_OUT_SEQ_CHUNKS, min(window_size // chunk_size + 1, MAX_DERIVED_OUT_SEQ_CHUNKS))
 
 
 class RxTask:
@@ -99,6 +125,7 @@ class RxTask:
         # Out-of-sequence chunks to be assembled
         self.out_seq_chunks: Dict[int, Tuple[bool, BytesAlike]] = {}
         self.stream_future = None
+        self.sender_flow_control_received = False
         self.next_seq = 0
         self.offset = 0
         self.received_offset = 0
@@ -216,6 +243,11 @@ class RxTask:
                 else:
                     self._handle_new_stream(message)
                     new_stream = True
+            elif not self.stream_future and not self.sender_flow_control_received:
+                # Sequence 0 can be delayed by ConnManager's frame-processing pool.
+                # New senders repeat these headers so the reassembly limit can be
+                # raised before admitting later chunks.
+                self._update_sender_flow_control(message)
 
             if not duplicate_start:
                 should_stop, ack_to_send, stop_error = self._handle_incoming_data(seq, message)
@@ -235,29 +267,8 @@ class RxTask:
         self.topic = message.get_header(StreamHeaderKey.TOPIC)
         self.headers = message.headers
         self.size = message.get_header(StreamHeaderKey.SIZE, 0)
-        self.chunk_size = self._get_sender_parameter(
-            message, StreamHeaderKey.CHUNK_SIZE, "streaming_chunk_size", self.chunk_size
-        )
-        self.window_size = self._get_sender_parameter(
-            message, StreamHeaderKey.WINDOW_SIZE, "streaming_window_size", self.window_size
-        )
-        self.ack_interval = self._get_sender_parameter(
-            message, StreamHeaderKey.ACK_INTERVAL, "streaming_ack_interval", self.ack_interval
-        )
-        self.retry_max_pending_bytes = self._get_sender_parameter(
-            message,
-            StreamHeaderKey.RETRY_MAX_PENDING_BYTES,
-            "streaming_retry_max_pending_bytes",
-            self.retry_max_pending_bytes,
-            allow_non_positive=True,
-        )
-        self.max_out_seq = max(self.max_out_seq, required_out_seq_chunks(self.window_size, self.chunk_size))
-        if self.ack_interval > self.window_size:
-            log.warning(
-                f"{self} streaming_ack_interval {self.ack_interval} from {self.origin} exceeds "
-                f"streaming_window_size {self.window_size}; using {self.window_size}"
-            )
-            self.ack_interval = self.window_size
+        self._update_sender_flow_control(message)
+
         retry_timeout = message.get_header(StreamHeaderKey.RETRY_TIMEOUT, None)
         retry_wait = message.get_header(StreamHeaderKey.RETRY_WAIT, None)
         if retry_timeout is not None and retry_wait is not None:
@@ -292,6 +303,46 @@ class RxTask:
 
         self.stream_future = StreamFuture(self.sid, self.headers)
         self.stream_future.set_size(self.size)
+
+    def _update_sender_flow_control(self, message: Message):
+        has_flow_control_headers = all(
+            message.get_header(key, None) is not None
+            for key in (
+                StreamHeaderKey.CHUNK_SIZE,
+                StreamHeaderKey.WINDOW_SIZE,
+            )
+        )
+        self.chunk_size = self._get_sender_parameter(
+            message, StreamHeaderKey.CHUNK_SIZE, "streaming_chunk_size", self.chunk_size
+        )
+        self.window_size = self._get_sender_parameter(
+            message, StreamHeaderKey.WINDOW_SIZE, "streaming_window_size", self.window_size
+        )
+        self.ack_interval = self._get_sender_parameter(
+            message, StreamHeaderKey.ACK_INTERVAL, "streaming_ack_interval", self.ack_interval
+        )
+        self.retry_max_pending_bytes = self._get_sender_parameter(
+            message,
+            StreamHeaderKey.RETRY_MAX_PENDING_BYTES,
+            "streaming_retry_max_pending_bytes",
+            self.retry_max_pending_bytes,
+            allow_non_positive=True,
+        )
+        if self.chunk_size > 0 and self.window_size // self.chunk_size > MAX_DERIVED_OUT_SEQ_CHUNKS:
+            log.warning(
+                f"{self} streaming_window_size {self.window_size} from {self.origin} needs "
+                f"{self.window_size // self.chunk_size} out-of-sequence chunks, above the "
+                f"{MAX_DERIVED_OUT_SEQ_CHUNKS} cap; raise streaming_max_out_seq_chunks on this "
+                f"site if this peer's window is legitimate"
+            )
+        self.max_out_seq = max(self.max_out_seq, required_out_seq_chunks(self.window_size, self.chunk_size))
+        if self.ack_interval > self.window_size:
+            log.warning(
+                f"{self} streaming_ack_interval {self.ack_interval} from {self.origin} exceeds "
+                f"streaming_window_size {self.window_size}; using {self.window_size}"
+            )
+            self.ack_interval = self.window_size
+        self.sender_flow_control_received = has_flow_control_headers
 
     def _get_sender_parameter(
         self,
