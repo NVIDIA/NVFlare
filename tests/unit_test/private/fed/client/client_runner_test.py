@@ -228,10 +228,21 @@ def test_try_send_result_once_sends_after_task_check(monkeypatch):
 
 def test_send_task_result_retries_after_transport_failure(monkeypatch):
     runner = _runner()
-    runner._check_task_once = MagicMock(return_value=_TASK_CHECK_RESULT_OK)
+    call_order = []
+    send_results = iter([False, True])
+
+    def check_task(*_args, **_kwargs):
+        call_order.append("check")
+        return _TASK_CHECK_RESULT_OK
+
+    def send_result(*_args, **_kwargs):
+        call_order.append("send")
+        return next(send_results)
+
+    runner._check_task_once = MagicMock(side_effect=check_task)
     # Cell._send_one_request maps a failed StreamFuture to a timeout reply,
     # which send_task_result reports as False.
-    runner.engine.send_task_result.side_effect = [False, True]
+    runner.engine.send_task_result.side_effect = send_result
     monkeypatch.setattr("nvflare.private.fed.client.client_runner.time.sleep", MagicMock())
     monkeypatch.setattr("nvflare.private.fed.client.client_runner.delete_msg_root", MagicMock())
     result = Shareable()
@@ -240,6 +251,7 @@ def test_send_task_result_retries_after_transport_failure(monkeypatch):
 
     assert runner._check_task_once.call_count == 2
     assert runner.engine.send_task_result.call_count == 2
+    assert call_order == ["check", "send", "check", "send"]
     assert all(call.args[0] is result for call in runner.engine.send_task_result.call_args_list)
     runner.log_error.assert_called_once()
 
