@@ -16,13 +16,18 @@ if [ -z "$DOCKER_ENDPOINT" ]; then
     fi
 fi
 
+DOCKER_ENDPOINT_IS_LOCAL=false
+case "$DOCKER_ENDPOINT" in
+    ""|unix://*)
+        DOCKER_ENDPOINT_IS_LOCAL=true
+        ;;
+esac
+
 if [ -z "${NVFL_DOCKER_SOCK:-}" ]; then
     case "$DOCKER_ENDPOINT" in
         unix://*)
             ENDPOINT_DOCKER_SOCK=${DOCKER_ENDPOINT#unix://}
-            if [ -S "$ENDPOINT_DOCKER_SOCK" ]; then
-                DOCKER_SOCK="$ENDPOINT_DOCKER_SOCK"
-            fi
+            DOCKER_SOCK="$ENDPOINT_DOCKER_SOCK"
             ;;
     esac
 fi
@@ -47,23 +52,27 @@ if [ -z "${NVFL_DOCKER_SOCK:-}" ] && [ -L "$DOCKER_SOCK" ]; then
     fi
 fi
 
-DOCKER_SOCK_IS_LOCAL=false
-if [ -S "$DOCKER_SOCK" ]; then
-    DOCKER_SOCK_IS_LOCAL=true
+case "$DOCKER_SOCK" in
+    /*) ;;
+    *)
+        echo "ERROR: Docker socket path must be absolute: $DOCKER_SOCK"
+        exit 1
+        ;;
+esac
+
+DOCKER_CLI_ARGS=()
+if [ "$DOCKER_ENDPOINT_IS_LOCAL" = "true" ]; then
+    if [ ! -S "$DOCKER_SOCK" ]; then
+        echo "ERROR: Docker socket not found or not a socket: $DOCKER_SOCK"
+        echo "Set NVFL_DOCKER_SOCK=/path/to/docker.sock to override the Docker socket path."
+        exit 1
+    fi
+    DOCKER_CLI_ARGS=(--host "unix://$DOCKER_SOCK")
 else
-    case "$DOCKER_ENDPOINT" in
-        unix://*)
-            echo "ERROR: Docker socket not found or not a socket: $DOCKER_SOCK"
-            echo "Set NVFL_DOCKER_SOCK=/path/to/docker.sock to override the Docker socket path."
-            exit 1
-            ;;
-        *)
-            echo "Docker socket is not visible locally; using daemon-host path: $DOCKER_SOCK"
-            ;;
-    esac
+    echo "Using Docker socket on daemon host: $DOCKER_SOCK"
 fi
 
-if ! docker info > /dev/null 2>&1; then
+if ! docker "${DOCKER_CLI_ARGS[@]}" info > /dev/null 2>&1; then
     echo "ERROR: cannot connect to Docker daemon. Make sure your user has permission to run docker."
     echo "  Option 1 (docker group): sudo usermod -aG docker \$USER  then log out and back in."
     echo "  Option 2 (rootless Docker): https://docs.docker.com/engine/security/rootless/"
@@ -74,15 +83,16 @@ echo "Starting NVFlare @@NVFLARE_ROLE_LABEL@@ @@NVFLARE_SITE_NAME@@ with image $
 echo "Host workspace: $HOST_WORKSPACE"
 
 NETWORK_NAME=@@NVFLARE_NETWORK_NAME@@
-if ! docker network ls --filter name="$NETWORK_NAME" --format "{{.Name}}" | grep -wq "$NETWORK_NAME"; then
-    docker network create "$NETWORK_NAME"
+if ! docker "${DOCKER_CLI_ARGS[@]}" network ls --filter name="$NETWORK_NAME" --format "{{.Name}}" \
+    | grep -wq "$NETWORK_NAME"; then
+    docker "${DOCKER_CLI_ARGS[@]}" network create "$NETWORK_NAME"
     echo "Created Docker network: $NETWORK_NAME"
 fi
 
 rm -f "$HOST_WORKSPACE/daemon_pid.fl"
 
 GROUP_ADD_ARGS=()
-if [ "$DOCKER_SOCK_IS_LOCAL" = "true" ]; then
+if [ "$DOCKER_ENDPOINT_IS_LOCAL" = "true" ]; then
     SOCK_GID=$(stat -c '%g' "$DOCKER_SOCK" 2>/dev/null || stat -f '%g' "$DOCKER_SOCK" 2>/dev/null || echo "")
     HOST_OS=$(uname -s)
     if [ "$HOST_OS" = "Darwin" ] || [ "$SOCK_GID" = "0" ]; then
@@ -91,14 +101,42 @@ if [ "$DOCKER_SOCK_IS_LOCAL" = "true" ]; then
     if [ -n "$SOCK_GID" ] && [ "$SOCK_GID" != "0" ]; then
         GROUP_ADD_ARGS+=(--group-add "$SOCK_GID")
     fi
+else
+    if [ -n "${NVFL_DOCKER_SOCK_GID:-}" ]; then
+        case "$NVFL_DOCKER_SOCK_GID" in
+            *[!0-9]*)
+                echo "ERROR: NVFL_DOCKER_SOCK_GID must be a numeric group ID."
+                exit 1
+                ;;
+        esac
+        SOCK_GID="$NVFL_DOCKER_SOCK_GID"
+        echo "Using configured daemon-host Docker socket GID: $SOCK_GID"
+    elif ! SOCK_GID=$(
+        docker "${DOCKER_CLI_ARGS[@]}" run --rm \
+            --mount "type=bind,src=$DOCKER_SOCK,dst=/var/run/docker.sock" \
+            --entrypoint /usr/local/bin/python3 \
+            "$DOCKER_IMAGE" \
+            -c 'import os, stat, sys; s = os.stat("/var/run/docker.sock"); sys.exit("not a socket") if not stat.S_ISSOCK(s.st_mode) else print(s.st_gid)'
+    ); then
+        echo "ERROR: Docker socket could not be validated on the daemon host: $DOCKER_SOCK"
+        echo "Set NVFL_DOCKER_SOCK_GID to the verified numeric socket GID to bypass this probe."
+        exit 1
+    fi
+    case "$SOCK_GID" in
+        ""|*[!0-9]*)
+            echo "ERROR: invalid Docker socket GID reported by daemon-host probe: $SOCK_GID"
+            exit 1
+            ;;
+    esac
+    GROUP_ADD_ARGS+=(--group-add "$SOCK_GID")
 fi
 
-docker run --name @@NVFLARE_CONTAINER_NAME@@ \
+docker "${DOCKER_CLI_ARGS[@]}" run --name @@NVFLARE_CONTAINER_NAME@@ \
     --user "$(id -u):$(id -g)" \
     "${GROUP_ADD_ARGS[@]}" \
     --network "$NETWORK_NAME" \
 @@NVFLARE_NETWORK_ALIAS@@    -v "$HOST_WORKSPACE":@@NVFLARE_WORKSPACE_MOUNT_PATH@@ \
-    -v "$DOCKER_SOCK":/var/run/docker.sock \
+    --mount "type=bind,src=$DOCKER_SOCK,dst=/var/run/docker.sock" \
     -e NVFL_DOCKER_WORKSPACE="$HOST_WORKSPACE" \
 @@NVFLARE_PUBLISH_PORTS@@    --rm "$DOCKER_IMAGE" \
     @@NVFLARE_PARENT_COMMAND@@

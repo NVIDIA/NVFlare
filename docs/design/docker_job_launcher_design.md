@@ -175,8 +175,8 @@ docker run ... -e NVFL_DOCKER_WORKSPACE="$HOST_WORKSPACE" ...
 SP/CP container (site admin grants via start_docker.sh)
   ├── /var/run/docker.sock mounted            ← can create job containers
   ├── --user $(id -u):$(id -g)               ← runs as calling user (workspace files not root-owned)
-  ├── --group-add <docker-socket-gid>         ← grants access when the socket is locally visible
-  ├── --group-add 0 when needed               ← handles locally visible sockets that appear root-owned
+  ├── --group-add <docker-socket-gid>         ← grants access using the local stat or daemon-host probe
+  ├── --group-add 0 when needed               ← handles sockets that appear root-owned
   ├── workspace bind mount at /var/tmp/nvflare/workspace
   ├── nvflare-network                         ← intra-site: SP↔SJ / CP↔CJ (PARENT_URL, Docker DNS)
   └── host network (-p fed_learn_port)        ← cross-site: CP→SP over HTTPS, same as process mode
@@ -424,13 +424,13 @@ On the server machine:
 cd workspace/server/startup
 nohup ./start_docker.sh > server.log 2>&1 &
 # → creates nvflare-network if it doesn't exist
-# → docker run --name server \
+# → docker [--host unix://$DOCKER_SOCK] run --name server \
 #              --user "$(id -u):$(id -g)" \
 #              --group-add 0 (on macOS or when the socket GID is 0) \
 #              --group-add <docker-socket-gid> (if non-zero) \
 #              --network nvflare-network \
 #              -v $HOST_WORKSPACE:/var/tmp/nvflare/workspace \
-#              -v $DOCKER_SOCK:/var/run/docker.sock \
+#              --mount type=bind,src=$DOCKER_SOCK,dst=/var/run/docker.sock \
 #              -e NVFL_DOCKER_WORKSPACE=$HOST_WORKSPACE \
 #              -p 8002:8002 \
 #              --rm nvflare-site:latest \
@@ -455,10 +455,22 @@ different Docker socket explicitly:
 NVFL_DOCKER_SOCK=/path/to/docker.sock ./start_docker.sh
 ```
 
-The Docker CLI uses the caller's existing `DOCKER_HOST` or Docker context. `NVFL_DOCKER_SOCK` selects the bind-mount
-source path on the daemon host; it does not select the Docker CLI endpoint. When that socket is locally visible, the
-script validates it and adds the supplementary groups needed by the non-root parent. With a remote daemon such as a
-DinD sidecar, the path is evaluated on the daemon host and cannot be validated or inspected by the CLI container.
+For a local Unix endpoint, the script pins all outer Docker CLI commands to the selected socket. This ensures the
+parent, its network, and the job containers all use the same daemon when `NVFL_DOCKER_SOCK` overrides the default.
+
+For a remote endpoint such as a DinD sidecar, the Docker CLI continues to use the caller's `DOCKER_HOST` or Docker
+context, while `NVFL_DOCKER_SOCK` is interpreted as a bind-mount source path on the daemon host. The script starts a
+short-lived container from the configured parent image to verify that the mounted path is a socket and discover its
+numeric GID. The parent receives that GID through `--group-add`, so its non-root process can access the socket.
+
+An administrator can bypass the remote probe by supplying a verified numeric GID explicitly:
+
+```bash
+NVFL_DOCKER_SOCK=/var/run/docker.sock NVFL_DOCKER_SOCK_GID=999 ./start_docker.sh
+```
+
+This override trusts the administrator's daemon-host path and GID. The socket uses Docker's `--mount` syntax so a
+missing bind source is rejected instead of being silently created as a directory.
 
 ### Step 4 — Configure site data (optional)
 
