@@ -76,10 +76,15 @@ def _consume_recipe_args() -> tuple:
             remaining.append(argv[i])
             i += 1
 
-    if export_dir_seen and not export:
+    if export or export_dir_seen:
+        message = (
+            "NVFlare reserves '--export' and '--export-dir' as system-level recipe arguments and consumes them "
+            "before the script's argument parser runs. Rename any script-defined arguments that use these names."
+        )
+        if export_dir_seen and not export:
+            message += " '--export-dir' was provided without '--export', so the directory will not be used."
         warnings.warn(
-            "NVFlare recipe consumed the reserved '--export-dir' argument without '--export'; "
-            "the directory will not be used. Add '--export' for recipe export or rename the script option.",
+            message,
             UserWarning,
             stacklevel=2,
         )

@@ -622,7 +622,8 @@ def test_recipe_spec_import_strips_export_flags_from_sys_argv(monkeypatch):
 
     import nvflare.recipe.spec as spec_module
 
-    importlib.reload(spec_module)
+    with pytest.warns(UserWarning, match="system-level recipe arguments"):
+        importlib.reload(spec_module)
 
     assert sys.argv == ["python", "job.py", "--other", "value"]
     assert spec_module._peek_recipe_args() == (True, "/tmp/out")
@@ -636,7 +637,8 @@ def test_recipe_spec_import_bare_export_uses_default_dir(monkeypatch):
 
     import nvflare.recipe.spec as spec_module
 
-    importlib.reload(spec_module)
+    with pytest.warns(UserWarning, match="system-level recipe arguments"):
+        importlib.reload(spec_module)
 
     assert sys.argv == ["python", "job.py", "--other"]
     assert spec_module._peek_recipe_args() == (True, spec_module.DEFAULT_EXPORT_DIR)
@@ -649,7 +651,8 @@ def test_recipe_spec_import_strips_export_dir_equals_form(monkeypatch):
 
     import nvflare.recipe.spec as spec_module
 
-    importlib.reload(spec_module)
+    with pytest.warns(UserWarning, match="system-level recipe arguments"):
+        importlib.reload(spec_module)
 
     assert sys.argv == ["python", "job.py", "--other"]
     assert spec_module._peek_recipe_args() == (True, "out")
@@ -669,29 +672,42 @@ def test_recipe_spec_import_warns_when_export_dir_is_unused(monkeypatch, export_
 
     import nvflare.recipe.spec as spec_module
 
-    with pytest.warns(UserWarning, match="reserved '--export-dir'.*without '--export'"):
+    with pytest.warns(UserWarning, match="system-level recipe arguments.*without '--export'"):
         importlib.reload(spec_module)
 
     assert sys.argv == ["python", "job.py", "--rounds", "3"]
     assert spec_module._peek_recipe_args() == (False, expected_export_dir)
 
 
-def test_recipe_spec_import_does_not_warn_for_export_with_export_dir(monkeypatch):
+def test_recipe_spec_import_warns_script_parser_about_reserved_args(monkeypatch):
     import sys
 
-    monkeypatch.setattr(sys, "argv", ["python", "job.py", "--export", "--export-dir", "/tmp/out"])
+    monkeypatch.setattr(sys, "argv", ["job.py", "--export", "--export-dir", "/tmp/out"])
 
     import nvflare.recipe.spec as spec_module
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", UserWarning)
+    with pytest.warns(UserWarning, match="system-level recipe arguments.*Rename any script-defined arguments"):
         importlib.reload(spec_module)
 
-    assert sys.argv == ["python", "job.py"]
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--export", action="store_true")
+    parser.add_argument("--export-dir")
+    args = parser.parse_args()
+
+    assert args.export is False
+    assert args.export_dir is None
+    assert sys.argv == ["job.py"]
     assert spec_module._peek_recipe_args() == (True, "/tmp/out")
 
 
-def test_consume_recipe_args_warning_as_error_preserves_sys_argv(monkeypatch):
+@pytest.mark.parametrize(
+    "recipe_args",
+    [
+        ["--export", "--export-dir", "/tmp/user-output"],
+        ["--export-dir", "/tmp/user-output"],
+    ],
+)
+def test_consume_recipe_args_warning_as_error_preserves_sys_argv(monkeypatch, recipe_args):
     import sys
 
     monkeypatch.setattr(sys, "argv", ["python", "job.py"])
@@ -700,14 +716,15 @@ def test_consume_recipe_args_warning_as_error_preserves_sys_argv(monkeypatch):
 
     importlib.reload(spec_module)
     monkeypatch.setattr(spec_module, "_CONSUMED", False)
-    monkeypatch.setattr(sys, "argv", ["python", "job.py", "--export-dir", "/tmp/user-output", "--other"])
+    original_argv = ["job.py", *recipe_args, "--other"]
+    monkeypatch.setattr(sys, "argv", original_argv.copy())
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", UserWarning)
-        with pytest.raises(UserWarning, match="reserved '--export-dir'.*without '--export'"):
+        with pytest.raises(UserWarning, match="system-level recipe arguments"):
             spec_module._consume_recipe_args()
 
-    assert sys.argv == ["python", "job.py", "--export-dir", "/tmp/user-output", "--other"]
+    assert sys.argv == original_argv
 
 
 @pytest.mark.parametrize(
@@ -729,7 +746,8 @@ def test_recipe_export_flags_allow_strict_local_argument_parsing(monkeypatch, lo
 
     import nvflare.recipe.spec as spec_module
 
-    importlib.reload(spec_module)
+    with pytest.warns(UserWarning, match="system-level recipe arguments"):
+        importlib.reload(spec_module)
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument("--max_train_samples", type=int)
 
