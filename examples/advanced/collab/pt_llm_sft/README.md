@@ -93,6 +93,10 @@ The Hugging Face model is downloaded on the first run if it is not already in
 the local cache. CUDA GPUs are recommended; CPU execution is supported but is
 considerably slower and stores the default model state in FP32. Use
 `--model-name-or-path` to select another compatible causal-LM checkpoint.
+Pass `--gpu-config 0,1,2,3` to place four clients on four GPUs, one client per
+GPU. A bracketed group assigns multiple GPUs to one client, for example
+`--gpu-config "[0,1],[2,3]"`. If `--gpu-config` is omitted, no per-client GPU
+placement is applied by the simulator.
 Remote checkpoint code is disabled by default. If a model requires custom
 code, review its repository, pin a trusted revision with `--model-revision`,
 and only then pass `--trust-remote-code`; this option allows repository-supplied
@@ -123,48 +127,9 @@ multi-GPU launch, experiment tracking, and deployment configuration. It keeps
 the LLM code close to an ordinary SFT program so direct, tensor-native Collab
 calls remain easy to see.
 
-## Recorded simulator comparison
+## Training-curve alignment
 
-To validate the native-object path, we compared the standard NVFlare simulator
-and the Collab simulator on a matched full-model SFT workload. Both schemes
-used the same prepared `databricks/databricks-dolly-15k` shards, model,
-optimizer steps, BF16 precision, and GPU assignment within each pair:
-
-- four clients with 50 training and 10 validation examples each;
-- one epoch divided into five federated synchronizations;
-- 10 local optimizer steps per client and synchronization;
-- batch size 1, sequence length 64, and learning rate `2e-5`;
-- evaluation disabled so the measurement focused on training and exchange.
-
-For reference, run the regular NVFlare simulator from
-`examples/advanced/llm_hf` with:
-
-```bash
-python job.py \
-    --client_ids dolly \
-    --data_path ${PWD}/dataset \
-    --workspace_dir ${PWD}/workspace/simulation \
-    --job_dir ${PWD}/workspace/jobs/simulation
-```
-
-| Model | Placement | Standard | Collab | Collab difference |
-|---|---|---:|---:|---:|
-| TinyLlama 1.1B | Four clients on one A100 80 GB | 270.45s | 228.60s | **41.86s / 15.48% faster** |
-| Qwen3-8B | One A100 80 GB per client | 1,310.18s | 1,232.48s | **77.70s / 5.93% faster** |
-
-The primary metric is end-to-end process time, including model initialization,
-simulator startup, all five synchronizations, and shutdown. For Qwen3-8B, each
-native full-model payload was 16,381,470,720 bytes. Mean application-level
-native-object transition time was 73.7 ms on the server and 5.37 microseconds
-on a client.
-
-The persisted Qwen3-8B round metrics show that both simulators followed the
-same training curve:
+The standard and Collab simulator paths produce similar training-loss
+trajectories, confirming that they execute comparable learning workloads:
 
 ![Qwen3-8B aggregated training loss for the Standard and Collab simulators](figures/training_loss.png)
-
-The larger model increased the absolute time saved, while model initialization,
-local learning, full-state movement, and aggregation grew enough to reduce the
-relative percentage. Each model result is one Standard-then-Collab observation;
-repeated pairs with alternating order are required for a statistical
-performance claim.

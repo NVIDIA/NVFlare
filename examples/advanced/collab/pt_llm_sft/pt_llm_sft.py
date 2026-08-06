@@ -396,6 +396,10 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--data-root", default=DEFAULT_DATA_ROOT)
     parser.add_argument("--output-root", default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--workspace-root", default="/tmp/nvflare/collab/pt_llm_sft/workspace")
+    parser.add_argument(
+        "--gpu-config",
+        help='Simulator GPU assignment, for example "0,1,2,3" for one GPU per client',
+    )
     parser.add_argument("--model-name-or-path", default=DEFAULT_MODEL_NAME)
     parser.add_argument("--model-revision")
     parser.add_argument(
@@ -431,9 +435,16 @@ def main() -> None:
         f"  clients: {args.num_clients}\n"
         f"  epochs: {args.num_epochs}\n"
         f"  syncs per epoch: {args.syncs_per_epoch}\n"
+        f"  GPU config: {args.gpu_config or 'not set'}\n"
         f"  data: {args.data_root}"
     )
-    run = make_recipe(args).execute(SimEnv(num_clients=args.num_clients, workspace_root=args.workspace_root))
+    run = make_recipe(args).execute(
+        SimEnv(
+            num_clients=args.num_clients,
+            gpu_config=args.gpu_config,
+            workspace_root=args.workspace_root,
+        )
+    )
     print("Job Status:", run.get_status())
     print("Results at:", run.get_result())
 
