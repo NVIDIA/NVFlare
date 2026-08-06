@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, conint, field_validator
 
@@ -86,8 +86,8 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
             a dict, key_metric selects the metric used for global model selection. Higher values must
             indicate a better model. Defaults to "metrics"
             (which corresponds to the homogeneity score sent by the K-Means client).
-        negate_key_metric: Whether the model selector should invert key_metric before comparing models.
-            Use this if key_metric is a lower-is-better metric. Defaults to False.
+        key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better
+            and "max" when higher values are better. Defaults to "max".
 
     Example:
         Basic usage with same config for all clients:
@@ -151,7 +151,7 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
         command: str = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "metrics",  # Matches client's metric key
-        negate_key_metric: bool = False,
+        key_metric_mode: Literal["min", "max"] = "max",
     ):
         v = _KMeansValidator(n_clusters=n_clusters, model_path=model_path)
         self.n_clusters = v.n_clusters
@@ -186,6 +186,6 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
             model_persistor=persistor,
             per_site_config=per_site_config,
             key_metric=key_metric,
-            negate_key_metric=negate_key_metric,
+            key_metric_mode=key_metric_mode,
         )
         self._job.to_server(assembler, id=assembler_id)

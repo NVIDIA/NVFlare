@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Literal, Optional, Union
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -69,11 +69,9 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
             ``set_per_site_config(recipe, config)`` immediately after construction.
         launch_once: Whether external process is launched once or per task. Defaults to True.
         shutdown_timeout: Seconds to wait before shutdown. Defaults to 0.0.
-        key_metric: Metric used to determine if the model is globally best. Higher values must indicate
-            a better model; for lower-is-better metrics such as a loss, set negate_key_metric=True or
-            report a negated value from the client (e.g., "neg_loss"). Defaults to "accuracy".
-        negate_key_metric: Whether the model selector should invert key_metric before comparing models.
-            Use this for lower-is-better metrics such as losses. Defaults to False.
+        key_metric: Metric used to determine if the model is globally best. Defaults to "accuracy".
+        key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better,
+            such as for loss, and "max" when higher values are better. Defaults to "max".
         stop_cond: Early stopping condition based on metric. String literal in the format of
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
@@ -131,7 +129,7 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
-        negate_key_metric: bool = False,
+        key_metric_mode: Literal["min", "max"] = "max",
         # New FedAvg features
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
@@ -167,7 +165,7 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
-            negate_key_metric=negate_key_metric,
+            key_metric_mode=key_metric_mode,
             stop_cond=stop_cond,
             patience=patience,
             best_model_filename=best_model_filename,

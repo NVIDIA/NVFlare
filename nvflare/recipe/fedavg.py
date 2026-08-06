@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import warnings
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Literal, Optional, Union
 
 from pydantic import BaseModel
 
@@ -55,7 +55,7 @@ class _FedAvgValidator(BaseModel):
     launch_once: bool = True
     shutdown_timeout: float = 0.0
     key_metric: str = "accuracy"
-    negate_key_metric: bool = False
+    key_metric_mode: Literal["min", "max"] = "max"
     # New FedAvg features
     stop_cond: Optional[str] = None
     patience: Optional[int] = None
@@ -146,11 +146,9 @@ class FedAvgRecipe(Recipe):
             Only used if `launch_external_process` is True. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
             key_metric selects the metric used for global model selection by the IntimeModelSelector.
-            Higher values must indicate a better model; for lower-is-better metrics such as a loss,
-            set negate_key_metric=True or report a negated value from the client (e.g., "neg_loss").
             Defaults to "accuracy".
-        negate_key_metric: Whether the model selector should invert key_metric before comparing models.
-            Use this for lower-is-better metrics such as losses. Defaults to False.
+        key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better,
+            such as for loss, and "max" when higher values are better. Defaults to "max".
         stop_cond: Early stopping condition based on metric. String literal in the format of
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
@@ -201,7 +199,7 @@ class FedAvgRecipe(Recipe):
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
-        negate_key_metric: bool = False,
+        key_metric_mode: Literal["min", "max"] = "max",
         # New FedAvg features
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
@@ -251,7 +249,7 @@ class FedAvgRecipe(Recipe):
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
-            negate_key_metric=negate_key_metric,
+            key_metric_mode=key_metric_mode,
             stop_cond=stop_cond,
             patience=patience,
             best_model_filename=best_model_filename,
@@ -297,7 +295,7 @@ class FedAvgRecipe(Recipe):
         self.launch_once = v.launch_once
         self.shutdown_timeout = v.shutdown_timeout
         self.key_metric = v.key_metric
-        self.negate_key_metric = v.negate_key_metric
+        self.key_metric_mode = v.key_metric_mode
         self.stop_cond = v.stop_cond
         self.patience = v.patience
         self.best_model_filename = v.best_model_filename
@@ -331,7 +329,7 @@ class FedAvgRecipe(Recipe):
             name=self.name,
             min_clients=self.min_clients,
             key_metric=self.key_metric,
-            negate_key_metric=self.negate_key_metric,
+            key_metric_mode=self.key_metric_mode,
         )
 
         # Setup framework-specific model components and persistor

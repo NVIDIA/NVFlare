@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -78,11 +78,9 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             Only used if `launch_external_process` is True. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
             key_metric selects the metric used for global model selection by the IntimeModelSelector.
-            Higher values must indicate a better model; for lower-is-better metrics such as a loss,
-            set negate_key_metric=True or report a negated value from the client (e.g., "neg_loss").
             Defaults to "accuracy".
-        negate_key_metric: Whether the model selector should invert key_metric before comparing models.
-            Use this for lower-is-better metrics such as losses. Defaults to False.
+        key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better,
+            such as for loss, and "max" when higher values are better. Defaults to "max".
         best_model_filename: Filename for saving the best model. Accepted for API compatibility.
             The default TensorFlow persistor does not currently create a separate best-model artifact.
         save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.
@@ -132,7 +130,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
-        negate_key_metric: bool = False,
+        key_metric_mode: Literal["min", "max"] = "max",
         best_model_filename: Optional[str] = None,
         save_filename: Optional[str] = None,
         server_memory_gc_rounds: int = 0,
@@ -159,7 +157,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
-            negate_key_metric=negate_key_metric,
+            key_metric_mode=key_metric_mode,
             best_model_filename=best_model_filename,
             save_filename=save_filename,
             server_memory_gc_rounds=server_memory_gc_rounds,

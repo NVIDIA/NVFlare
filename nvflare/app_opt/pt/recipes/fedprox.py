@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -55,6 +55,7 @@ class FedProxRecipe(FedAvgRecipe):
         launch_once: Whether an external client process is launched once.
         shutdown_timeout: Seconds to wait for client shutdown.
         key_metric: Metric used for best-model selection.
+        key_metric_mode: Whether the key metric should be minimized ("min") or maximized ("max").
         stop_cond: Optional early-stopping condition.
         patience: Optional early-stopping patience.
         best_model_filename: Optional best-model filename.
@@ -90,6 +91,7 @@ class FedProxRecipe(FedAvgRecipe):
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
+        key_metric_mode: Literal["min", "max"] = "max",
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
         best_model_filename: Optional[str] = None,
@@ -124,6 +126,7 @@ class FedProxRecipe(FedAvgRecipe):
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
+            key_metric_mode=key_metric_mode,
             stop_cond=stop_cond,
             patience=patience,
             best_model_filename=best_model_filename,

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import Literal, Optional
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -60,11 +60,9 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             ``set_per_site_config(recipe, config)`` immediately after construction. Nested values become
             part of the generated job definition and must not contain secrets.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are
-            a dict, key_metric selects the metric used for global model selection. Higher values must
-            indicate a better model; for lower-is-better metrics such as a loss, set negate_key_metric=True
-            or report a negated value from the client (e.g., "neg_loss"). Defaults to "accuracy".
-        negate_key_metric: Whether the model selector should invert key_metric before comparing models.
-            Use this for lower-is-better metrics such as losses. Defaults to False.
+            a dict, key_metric selects the metric used for global model selection. Defaults to "accuracy".
+        key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better,
+            such as for loss, and "max" when higher values are better. Defaults to "max".
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
@@ -144,7 +142,7 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         command: str = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "accuracy",
-        negate_key_metric: bool = False,
+        key_metric_mode: Literal["min", "max"] = "max",
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
     ):
@@ -173,7 +171,7 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             model_persistor=persistor,  # Pass sklearn-specific persistor
             per_site_config=per_site_config,
             key_metric=key_metric,
-            negate_key_metric=negate_key_metric,
+            key_metric_mode=key_metric_mode,
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
         )
