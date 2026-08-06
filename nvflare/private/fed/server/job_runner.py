@@ -472,6 +472,7 @@ class JobRunner(FLComponent):
             elif process_return_code in (
                 ProcessExitCode.CONFIG_ERROR,
                 ProcessExitCode.EXCEPTION,
+                ProcessExitCode.UNSAFE_COMPONENT,
                 JobReturnCode.EXECUTION_ERROR,
             ):
                 # An external failure (e.g. launcher resource timeout) marked

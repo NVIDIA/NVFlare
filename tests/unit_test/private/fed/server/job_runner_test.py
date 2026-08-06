@@ -342,7 +342,12 @@ def test_get_finished_job_status_maps_failure_return_code(failure_code, expected
 
 @pytest.mark.parametrize(
     "failure_code",
-    [ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION, JobReturnCode.EXECUTION_ERROR],
+    [
+        ProcessExitCode.CONFIG_ERROR,
+        ProcessExitCode.EXCEPTION,
+        ProcessExitCode.UNSAFE_COMPONENT,
+        JobReturnCode.EXECUTION_ERROR,
+    ],
 )
 def test_get_finished_job_status_exception_return_code_overrides_clean_sj_finish(failure_code):
     """fail_run sets PROCESS_RETURN_CODE=EXCEPTION before _stop_run aborts the SJ.
