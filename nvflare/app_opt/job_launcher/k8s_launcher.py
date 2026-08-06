@@ -44,6 +44,7 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     ENV_WORKSPACE_TRANSFER_TOKEN,
     WorkspaceTransferManager,
 )
+from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
     get_credential_env,
@@ -516,8 +517,7 @@ class K8sJobHandle(JobHandleSpec):
             if job_state in job_states_to_enter:
                 return True
             elif pod_phase in [PodPhase.FAILED.value, PodPhase.SUCCEEDED.value]:  # terminal state
-                self.terminal_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
-                self._release_job_resources()
+                self._record_terminal_state(pod, pod_phase)
                 return False
             elif self.timeout is not None and now - starting_time >= self.timeout:
                 self._terminate_for_timeout(f"timed out waiting for pod to enter {job_states_to_enter}")
@@ -589,6 +589,27 @@ class K8sJobHandle(JobHandleSpec):
             return self.terminal_return_code
         return JOB_RETURN_CODE_MAPPING.get(job_state)
 
+    def _record_terminal_state(self, pod, pod_phase):
+        self.terminal_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
+        if self.terminal_state == JobState.TERMINATED:
+            job_container_name = self.job_container["name"]
+            statuses = getattr(getattr(pod, "status", None), "container_statuses", None)
+            if not isinstance(statuses, (list, tuple)):
+                statuses = []
+            for container_status in statuses:
+                if getattr(container_status, "name", None) != job_container_name:
+                    continue
+                terminated = getattr(getattr(container_status, "state", None), "terminated", None)
+                exit_code = getattr(terminated, "exit_code", None)
+                if exit_code in (
+                    ProcessExitCode.EXCEPTION,
+                    ProcessExitCode.UNSAFE_COMPONENT,
+                    ProcessExitCode.CONFIG_ERROR,
+                ):
+                    self.terminal_return_code = exit_code
+                break
+        self._release_job_resources()
+
     def poll(self):
         if self.terminal_state is not None:
             return self._get_return_code(self.terminal_state)
@@ -600,8 +621,7 @@ class K8sJobHandle(JobHandleSpec):
             return self._get_return_code(self.terminal_state)
         job_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
         if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
-            self.terminal_state = job_state
-            self._release_job_resources()
+            self._record_terminal_state(pod, pod_phase)
         return self._get_return_code(job_state)
 
     def _query_pod(self):
@@ -841,8 +861,7 @@ class K8sJobHandle(JobHandleSpec):
                 return
             job_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
             if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
-                self.terminal_state = job_state  # persist so poll() stays accurate
-                self._release_job_resources()
+                self._record_terminal_state(pod, pod_phase)
                 return
             time.sleep(POLL_INTERVAL)
 
