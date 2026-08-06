@@ -215,6 +215,11 @@ def test_apptainer_node_group_containerizes_each_rank_on_its_node(tmp_path):
     assert 'export APPTAINERENV_NVFL_MASTER_ADDR="${NVFL_MASTER_ADDR}"' in batch
 
     assert 'export APPTAINERENV_NVFL_NODE_RANK="${NVFL_NODE_RANK}"' in node
+    gpu_env_names = ("CUDA_VISIBLE_DEVICES", "GPU_DEVICE_ORDINAL", "ROCR_VISIBLE_DEVICES")
+    assert f"unset {' '.join(f'APPTAINERENV_{name}' for name in gpu_env_names)}" in node
+    for name in gpu_env_names:
+        assert f"APPTAINERENV_{name}" not in batch
+        assert f'then export APPTAINERENV_{name}="${{{name}}}"; fi' in node
     assert node.count('"${NVFL_APPTAINER}"') == 2
     assert f"--pwd {plan.run_dir}" in node
     assert f"--pwd {plan.node_app_dir}" in node
@@ -313,6 +318,9 @@ def test_apptainer_renderer_keeps_isolation_contract(tmp_path):
 
     for option in ("--userns", "--containall", "--no-privs", "--nv"):
         assert option in script
+    assert "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" in script
+    for name in ("CUDA_VISIBLE_DEVICES", "GPU_DEVICE_ORDINAL", "ROCR_VISIBLE_DEVICES"):
+        assert f'then export APPTAINERENV_{name}="${{{name}}}"; fi' in script
     assert "NVFL_APPTAINER=apptainer" in script
     assert "/data/source:/data/study/data:ro" in script
 
