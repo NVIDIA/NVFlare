@@ -26,6 +26,7 @@ python -m collab.swarm.swarm --num-clients 3
 | `async_aggregation` | In-time aggregation with a response callback |
 | `swarm` | Decentralized swarm learning with client-to-client calls |
 | [`pt_async_cifar10`](pt_async_cifar10/README.md) | Asynchronous PyTorch CIFAR-10 training with prepared logical-client shards |
+| [`pt_splitnn`](pt_splitnn/README.md) | Two-party PyTorch SplitNN on CIFAR-10 with direct activation and gradient return values |
 
 Every server object or module must define exactly one `@collab.main` entry
 point. A workflow with multiple stages should call them from that single entry
@@ -47,10 +48,13 @@ its first run.
 `pt_async_cifar10` additionally needs TensorBoard; follow its
 [setup and prepared-data workflow](pt_async_cifar10/README.md) before running
 the Collab recipe.
+`pt_splitnn` uses PyTorch, torchvision, and TensorBoard; follow its
+[prepared-data and two-site workflow](pt_splitnn/README.md) before running the
+Collab recipe.
 
 The advanced Collab examples run against an NVFlare installation from this
-repository. The `pt_async_cifar10` requirements file contains only its
-additional framework dependencies; add NVFlare package pins once Collab is
+repository. The PyTorch example requirements files list only their additional
+framework dependencies; add NVFlare package pins once the Collab API is
 available in a released package.
 
 For the design behind the API see the
