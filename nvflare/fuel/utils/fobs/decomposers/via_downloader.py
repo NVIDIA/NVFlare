@@ -820,6 +820,11 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
 
         self.logger.debug(f"trying to download: {ref_id=} {fqcn=}")
         download_kwargs = self._get_download_kwargs(fobs_ctx)
+        message = fobs_ctx.get(fobs.FOBSContextKey.MESSAGE)
+        download_kwargs.setdefault(
+            "secure",
+            bool(message and message.get_header(MessageHeaderKey.SECURE, False)),
+        )
         err, items = self.download(
             from_fqcn=fqcn,
             ref_id=ref_id,

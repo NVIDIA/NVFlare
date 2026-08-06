@@ -137,6 +137,10 @@ Attach adds no payload wrapper or streaming implementation. Task/result
 `Shareable` objects are encoded by FOBS. Objects above the configured threshold
 use `ViaDownloader` and `DownloadService`.
 
+For secure network Attach, the protected FOBS message context is inherited by
+every `DownloadService` chunk request, so tensor streaming and tensor offloading
+remain authenticated and encrypted end to end while the CP only routes them.
+
 Attach deliberately does not enable `PASS_THROUGH`:
 
 1. The trainer sends `RESULT_READY` to the CJ and declares the CJ as the lazy

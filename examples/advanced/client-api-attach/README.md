@@ -49,8 +49,9 @@ Start from `attach_profile_network.json`:
 
 `connect_url` must be the provisioned CP internal listener, not a CJ URL. Keep
 `client.crt` and `client.key` beside `rootCA.pem`. `secure_mode=true` uses those
-site credentials for Cell authentication even when the CP transport itself is
-`connection_security="clear"`, matching the old IPCAgent model.
+site credentials for Cell authentication and end-to-end payload encryption even
+when the CP transport itself is `connection_security="clear"`, matching the old
+IPCAgent model.
 
 The trainer identity is stable:
 

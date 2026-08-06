@@ -93,6 +93,7 @@ class CellBackendBase(ClientAPIBackendSpec):
         self._job_id: Optional[str] = None
         self._site_name: Optional[str] = None
         self._secure_mode = False
+        self._protocol_secure = False
         self._site_auth_token: Optional[str] = None
         self._site_auth_token_signature: Optional[str] = None
         self._owned_pass_through_routes: set[Tuple[str, str]] = set()
@@ -341,6 +342,7 @@ class CellBackendBase(ClientAPIBackendSpec):
                 targets=[session.trainer_fqcn],
                 message=new_cell_message({}, {MsgKey.SESSION_ID: session.session_id, MsgKey.REASON: reason}),
                 optional=True,
+                secure=self._protocol_secure,
             )
         except Exception:
             self.logger.error(secure_format_traceback())

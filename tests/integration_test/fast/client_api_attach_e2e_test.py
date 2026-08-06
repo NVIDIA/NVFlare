@@ -45,11 +45,13 @@ from nvflare.fuel.data_event.utils import set_scope_property
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.identity import get_cert_common_name_from_pem
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.f3.streaming.download_service import DownloadService
-from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
+from nvflare.fuel.f3.streaming.download_service import OBJ_DOWNLOADER_CHANNEL, OBJ_DOWNLOADER_TOPIC, DownloadService
+from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys
@@ -205,7 +207,6 @@ def _make_cell_credentials(root_dir, root_key, root_cert, identity):
         DriverParams.CA_CERT.value: str(ca_path),
         DriverParams.CLIENT_CERT.value: str(cert_path),
         DriverParams.CLIENT_KEY.value: str(key_path),
-        DriverParams.CONNECTION_SECURITY.value: "clear",
     }
 
 
@@ -423,7 +424,7 @@ def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeyp
     flare_decomposers.register()
     common_decomposers.register()
     suffix = uuid.uuid4().hex[:8]
-    server_fqcn = f"server-{suffix}"
+    server_fqcn = FQCN.ROOT_SERVER
     site_name = f"site-{suffix}"
     job_id = f"job-{suffix}"
     attach_id = f"trainer_{suffix}"
@@ -432,6 +433,9 @@ def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeyp
     backend = None
     trainer = None
     completed = False
+    protected_events = []
+    stdout = ""
+    stderr = ""
 
     root_key, root_public_key = generate_keys()
     root_cert = generate_cert(
@@ -441,7 +445,6 @@ def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeyp
         subject_pub_key=root_public_key,
         ca=True,
     )
-    server_credentials = _make_cell_credentials(tmp_path / "server-creds", root_key, root_cert, server_fqcn)
     site_credentials = _make_cell_credentials(tmp_path / "site-creds", root_key, root_cert, site_name)
 
     monkeypatch.setattr(CommConfigurator, "_config_loaded", True)
@@ -464,9 +467,8 @@ def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeyp
         server = Cell(
             server_fqcn,
             server_url,
-            secure=True,
-            credentials=server_credentials,
-            auth_identity_map={site_name: site_name},
+            secure=False,
+            credentials={},
         )
         server.start()
         cells.append(server)
@@ -474,10 +476,9 @@ def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeyp
         site = Cell(
             site_name,
             server_url,
-            secure=True,
-            credentials=site_credentials,
+            secure=False,
+            credentials={},
             create_internal_listener=True,
-            auth_identity_map={server_fqcn: server_fqcn},
         )
         site.start()
         cells.append(site)
@@ -494,11 +495,48 @@ def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeyp
             secure=True,
             credentials=site_credentials,
             parent_url=site_listener,
+            parent_resources={DriverParams.CONNECTION_SECURITY.value: "clear"},
             create_internal_listener=False,
-            auth_identity_map={site_name: site_name, server_fqcn: server_fqcn},
+            auth_identity_map={site_name: site_name},
         )
         cj.start()
         cells.append(cj)
+
+        trainer_fqcn = f"{site_name}.-client_api_{attach_id}"
+
+        def record_protected(direction):
+            def _record(message):
+                channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+                topic = message.get_header(MessageHeaderKey.TOPIC, "")
+                if channel == STREAM_CHANNEL and topic == STREAM_DATA_TOPIC:
+                    channel = message.get_header(StreamHeaderKey.CHANNEL, "")
+                    topic = message.get_header(StreamHeaderKey.TOPIC, "")
+                origin = message.get_header(MessageHeaderKey.ORIGIN)
+                destination = message.get_header(MessageHeaderKey.DESTINATION)
+                if {origin, destination} == {cj.get_fqcn(), trainer_fqcn} and channel in (
+                    CHANNEL,
+                    OBJ_DOWNLOADER_CHANNEL,
+                ):
+                    protected_events.append(
+                        {
+                            "direction": direction,
+                            "channel": channel,
+                            "topic": topic,
+                            "secure": bool(message.get_header(MessageHeaderKey.SECURE, False)),
+                            "encrypted": bool(message.get_header(MessageHeaderKey.ENCRYPTED, False)),
+                        }
+                    )
+                return None
+
+            return _record
+
+        # Record at the clear CP hop, after the sender encrypted the stream and
+        # before CP forwards it, so both directions prove wire protection.
+        site.core_cell.add_incoming_filter(
+            channel=STREAM_CHANNEL,
+            topic=STREAM_DATA_TOPIC,
+            cb=record_protected("cp_route"),
+        )
 
         profile = tmp_path / "secure_attach_profile.json"
         profile.write_text(
@@ -545,6 +583,16 @@ def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeyp
             fl_ctx,
         )
 
+        heartbeat_deadline = time.monotonic() + 20.0
+        while not any(event["topic"] == Topic.HEARTBEAT for event in protected_events):
+            if time.monotonic() >= heartbeat_deadline:
+                stdout, stderr = _stop_process(trainer)
+                raise AssertionError(
+                    "secure Attach trainer sent no protected heartbeat:"
+                    f"\nevents:\n{protected_events}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+                )
+            time.sleep(0.05)
+
         initial = np.arange(1024 * 1024, dtype=np.float32).reshape(1024, 1024)
         task = DXO(DataKind.WEIGHTS, {NPConstants.NUMPY_KEY: initial}).to_shareable()
         task.set_header(FOBSContextKey.RECEIVER_IDS, [site.get_fqcn()])
@@ -560,6 +608,12 @@ def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeyp
         assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
         result_dxo = from_shareable(received["result"])
         np.testing.assert_array_equal(result_dxo.data[NPConstants.NUMPY_KEY], initial + 1)
+        assert backend._protocol_secure is True
+        assert cj.core_cell.is_secure() is True
+        assert cj.core_cell.supports_secure_messages() is True
+        assert cj.core_cell.credential_manager.enforce_identity is True
+        trainer_cert = cj.core_cell.credential_manager.get_certificate(trainer_fqcn)
+        assert get_cert_common_name_from_pem(trainer_cert) == site_name
         completed = True
     finally:
         if backend is not None:
@@ -568,13 +622,25 @@ def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeyp
                 if session is not None:
                     session.result_source_live.clear()
             backend.finalize(_fl_ctx(cells[-1], site_name, job_id, secure_mode=True))
-        stdout, stderr = _stop_process(trainer) if trainer is not None else ("", "")
+        if trainer is not None and trainer.poll() is None:
+            stdout, stderr = _stop_process(trainer)
         for cell in reversed(cells):
             fqcn = cell.get_fqcn()
             cell.stop()
             CoreCell.ALL_CELLS.pop(fqcn, None)
 
     assert trainer.returncode == 0, f"trainer failed:\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    assert protected_events
+    assert all(event["secure"] and event["encrypted"] for event in protected_events), protected_events
+    observed_topics = {event["topic"] for event in protected_events}
+    assert {
+        Topic.SESSION_OPEN,
+        Topic.TASK_READY,
+        Topic.RESULT_READY,
+        Topic.HEARTBEAT,
+        Topic.SHUTDOWN,
+        OBJ_DOWNLOADER_TOPIC,
+    } <= observed_topics
 
 
 @pytest.mark.timeout(60)

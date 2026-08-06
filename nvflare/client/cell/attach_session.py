@@ -36,7 +36,7 @@ from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import enhance_credential_info
-from nvflare.fuel.f3.streaming.download_service import DownloadService
+from nvflare.fuel.f3.streaming.download_service import OBJ_DOWNLOADER_CHANNEL, DownloadService
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
@@ -125,7 +125,7 @@ class AttachTrainerSession:
             raise RuntimeError("attach connection was not resolved before Cell construction")
         secure = bool(self._api._config.get(BootstrapKey.SECURE_MODE, False))
         secure = secure or self.connection_security != ConnectionSecurity.CLEAR
-        credentials = {DriverParams.CONNECTION_SECURITY.value: self.connection_security}
+        credentials = {}
         if secure:
             ca_cert = self._api._config.get(BootstrapKey.CA_CERT)
             if not ca_cert:
@@ -144,6 +144,12 @@ class AttachTrainerSession:
                     f"missing or unreadable: {', '.join(missing)}"
                 )
         return secure, credentials
+
+    def connection_resources(self) -> dict:
+        """Keep physical CP transport policy separate from Cell message security."""
+        if self.connection_security is None:
+            raise RuntimeError("attach connection was not resolved before Cell construction")
+        return {DriverParams.CONNECTION_SECURITY.value: self.connection_security}
 
     def auth_identity_map(self) -> dict:
         identity = self._api._config.get(BootstrapKey.AUTH_IDENTITY, self._api._site_name)
@@ -166,12 +172,27 @@ class AttachTrainerSession:
         if channel == STREAM_CHANNEL and topic == STREAM_DATA_TOPIC:
             channel = message.get_header(StreamHeaderKey.CHANNEL, "")
             topic = message.get_header(StreamHeaderKey.TOPIC, "")
-        if channel != CHANNEL:
+        if channel not in (CHANNEL, OBJ_DOWNLOADER_CHANNEL):
             return None
 
         origin = message.get_header(MessageHeaderKey.ORIGIN) or ""
         with self._api._lock:
             bound_origin = self._api._cj_fqcn
+        is_protected = message.get_header(MessageHeaderKey.SECURE, False) and message.get_header(
+            MessageHeaderKey.ENCRYPTED, False
+        )
+        if self._api._protocol_secure and not is_protected:
+            return make_cell_reply(
+                CellReturnCode.AUTHENTICATION_ERROR,
+                error=f"secure attach message {topic!r} from {origin!r} was not protected",
+            )
+        if channel == OBJ_DOWNLOADER_CHANNEL:
+            if bound_origin and origin == bound_origin:
+                return None
+            return make_cell_reply(
+                CellReturnCode.AUTHENTICATION_ERROR,
+                error=f"attach download message from unauthorized origin {origin!r}",
+            )
         if bound_origin:
             authorized = origin == bound_origin
         else:
@@ -386,6 +407,7 @@ class AttachTrainerSession:
                     num_receivers=len(source_receiver_ids) if source_receiver_ids else 1,
                     receiver_ids=source_receiver_ids,
                     fobs_ctx_props=attempt_fobs_ctx,
+                    secure=api._protocol_secure,
                 )
                 accepted_attempt_id = self._accepted_result_attempt(reply, result_id)
             except _UncertainResultReply as e:
@@ -485,6 +507,7 @@ class AttachTrainerSession:
                 ),
                 timeout=_RESULT_STATUS_TIMEOUT,
                 optional=True,
+                secure=api._protocol_secure,
             )
         except Exception:
             return None

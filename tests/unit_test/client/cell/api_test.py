@@ -357,7 +357,8 @@ class TestAttachMode:
         assert kwargs["fqcn"] == ATTACH_TRAINER_FQCN
         assert kwargs["parent_url"] == "grpc://127.0.0.1:12345"
         assert kwargs["secure"] is False
-        assert kwargs["credentials"]["connection_security"] == "clear"
+        assert kwargs["credentials"] == {}
+        assert kwargs["parent_resources"] == {"connection_security": "clear"}
         assert kwargs["auth_identity_map"] == {"site-1": "site-1"}
         assert MsgKey.CONNECT_URL not in attach_env.session_reply.payload
         assert MsgKey.CONNECTION_SECURITY not in attach_env.session_reply.payload
@@ -617,8 +618,8 @@ class TestAttachMode:
             "ca_cert": str(ca_cert),
             "client_cert": str(client_cert),
             "client_key": str(client_key),
-            "connection_security": "mtls",
         }
+        assert kwargs["parent_resources"] == {"connection_security": "mtls"}
         api.shutdown()
 
     def test_secure_cell_uses_site_credentials_over_clear_cp_transport(self, attach_bootstrap_path, attach_env):
@@ -643,10 +644,44 @@ class TestAttachMode:
             "ca_cert": str(ca_cert),
             "client_cert": str(client_cert),
             "client_key": str(client_key),
-            "connection_security": "clear",
         }
+        assert kwargs["parent_resources"] == {"connection_security": "clear"}
         assert kwargs["auth_identity_map"] == {"site-1": "custom-site-cn"}
         attach_env.auth_filter.assert_not_called()
+
+        claimed_secure = new_cell_message(
+            {
+                MessageHeaderKey.CHANNEL: STREAM_CHANNEL,
+                MessageHeaderKey.TOPIC: STREAM_DATA_TOPIC,
+                MessageHeaderKey.ORIGIN: CJ_FQCN,
+                MessageHeaderKey.SECURE: True,
+                StreamHeaderKey.CHANNEL: CHANNEL,
+                StreamHeaderKey.TOPIC: Topic.TASK_READY,
+            },
+            MagicMock(name="undecoded_task"),
+        )
+        rejected = api._attach._pre_decode_guard(claimed_secure)
+        claimed_secure.set_header(MessageHeaderKey.ENCRYPTED, True)
+        assert rejected.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.AUTHENTICATION_ERROR
+        assert api._attach._pre_decode_guard(claimed_secure) is None
+
+        def _accept_result(topic, _target, request):
+            assert topic == Topic.RESULT_READY
+            return make_cell_reply(
+                CellReturnCode.OK,
+                body={
+                    MsgKey.REPLY_TOPIC: Topic.RESULT_ACCEPTED,
+                    MsgKey.RESULT_ID: request.payload[MsgKey.RESULT_ID],
+                    MsgKey.ACCEPTED_ATTEMPT_ID: request.payload[MsgKey.ATTEMPT_ID],
+                },
+            )
+
+        attach_env.on_request = _accept_result
+        _deliver_attach_task(attach_env)
+        model = api.receive(timeout=0.1)
+        api.send(FLModel(params=model.params, params_type=ParamsType.FULL))
+        result_index = next(i for i, (topic, _, _) in enumerate(attach_env.requests) if topic == Topic.RESULT_READY)
+        assert attach_env.request_kwargs[result_index]["secure"] is True
         api.shutdown()
 
     def test_secure_profile_rejects_missing_mtls_client_credentials(self, attach_bootstrap_path, attach_env):

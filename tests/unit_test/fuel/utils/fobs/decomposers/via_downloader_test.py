@@ -17,6 +17,8 @@ from types import SimpleNamespace
 import pytest
 
 from nvflare.apis.fl_constant import ConfigVarName
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.streaming.download_service import Downloadable, ProduceRC
 from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT, STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils import fobs
@@ -92,6 +94,7 @@ class _LegacyViaDownloader(_DummyViaDownloader):
             "ref_id": ref_id,
             "per_request_timeout": per_request_timeout,
             "cell": cell,
+            "secure": secure,
             "abort_signal": abort_signal,
             "progress_cb": progress_cb,
         }
@@ -476,9 +479,25 @@ class TestConcreteViaDownloaderProgressCallback:
             "ref_id": "ref-1",
             "per_request_timeout": 1.0,
             "cell": cell,
+            "secure": False,
             "abort_signal": None,
             "progress_cb": None,
         }
+
+    def test_remote_download_inherits_secure_message_context(self):
+        decomposer = _LegacyViaDownloader()
+        message = new_cell_message({MessageHeaderKey.SECURE: True}, None)
+
+        decomposer._download_from_remote_cell(
+            fobs_ctx={
+                fobs.FOBSContextKey.CELL: object(),
+                fobs.FOBSContextKey.DOWNLOAD_REQ_TIMEOUT: 1.0,
+                fobs.FOBSContextKey.MESSAGE: message,
+            },
+            ref={"fqcn": "source", "ref_id": "ref-1"},
+        )
+
+        assert decomposer.download_call["secure"] is True
 
     def test_numpy_decomposer_passes_progress_callback_to_download_object(self, monkeypatch):
         from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer

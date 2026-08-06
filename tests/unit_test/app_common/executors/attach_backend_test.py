@@ -58,7 +58,9 @@ class FakeCell:
         self.decode_pass_through_topics = set()
         self.cbs = {}
         self.sent = []
+        self.sent_security = []
         self.fired = []
+        self.fired_security = []
         self.connect_url = connect_url
         self.deliver_session = True
         self.connected = True
@@ -101,6 +103,7 @@ class FakeCell:
             comm_configurator=configurator,
             identity_resolver=SimpleNamespace(exact_identity_map={}),
             send_request=self._send_control_request,
+            add_incoming_filter=MagicMock(),
         )
 
     def register_request_cb(self, channel, topic, cb):
@@ -114,9 +117,12 @@ class FakeCell:
         return self.connected
 
     def send_request(self, channel, topic, target, request, timeout=None, **kwargs):
-        self.sent.append((topic, target, request.payload))
         if topic == Topic.SESSION_OPEN:
-            raise AssertionError("SESSION_OPEN must use the CoreCell control path")
+            if kwargs.get("secure"):
+                return self._send_control_request(channel, topic, target, request, timeout=timeout, **kwargs)
+            raise AssertionError("clear SESSION_OPEN must use the CoreCell control path")
+        self.sent.append((topic, target, request.payload))
+        self.sent_security.append((topic, bool(kwargs.get("secure", False))))
         if topic == Topic.TASK_READY:
             self.task_ready_count += 1
             if self.task_serialization_error:
@@ -152,6 +158,7 @@ class FakeCell:
 
     def _send_control_request(self, channel, topic, target, request, timeout=None, **kwargs):
         self.sent.append((topic, target, request.payload))
+        self.sent_security.append((topic, bool(kwargs.get("secure", False))))
         assert topic == Topic.SESSION_OPEN
         self.session_open_count += 1
         if not self.deliver_session or self.session_open_count <= self.session_open_failures:
@@ -167,6 +174,7 @@ class FakeCell:
 
     def fire_and_forget(self, channel, topic, targets, message, **kwargs):
         self.fired.append((topic, tuple(targets), message.payload))
+        self.fired_security.append((topic, bool(kwargs.get("secure", False))))
 
     def deliver(self, topic, origin, payload):
         return self.cbs[topic](new_cell_message({MessageHeaderKey.ORIGIN: origin}, payload))
@@ -255,6 +263,8 @@ def test_attach_session_executes_task_and_finalize_only_closes_protocol():
     assert task_ready[MsgKey.TASK_SEQ] == 1
     assert any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
     assert any(topic == Topic.SHUTDOWN for topic, _, _ in cell.sent)
+    protected_topics = (Topic.SESSION_OPEN, Topic.TASK_READY, Topic.SHUTDOWN)
+    assert all(secure for topic, secure in cell.sent_security if topic in protected_topics)
     assert not backend._session_thread.is_alive()
     cell.core_cell.communicator.remove_connector.assert_not_called()
     assert TRAINER_FQCN not in cell.core_cell.identity_resolver.exact_identity_map
@@ -527,6 +537,44 @@ def test_network_attach_uses_existing_cp_route_without_a_cj_listener():
     assert _wait_ready(backend).ready.is_set()
     cell.core_cell.communicator.start_listener.assert_not_called()
     assert any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
+    assert (Topic.SESSION_OPEN, True) in cell.sent_security
+    backend.finalize(fl_ctx)
+
+
+def test_secure_network_attach_rejects_clear_protocol_before_decode():
+    cell = FakeCell(attach_config=False)
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell, secure_mode=True)
+    backend.initialize(_context(), fl_ctx)
+    _wait_ready(backend)
+
+    clear = new_cell_message(
+        {
+            MessageHeaderKey.DESTINATION: CJ_FQCN,
+            MessageHeaderKey.ORIGIN: TRAINER_FQCN,
+            StreamHeaderKey.CHANNEL: CHANNEL,
+            StreamHeaderKey.TOPIC: Topic.RESULT_READY,
+        },
+        MagicMock(name="undecoded_result"),
+    )
+    rejected = backend._secure_protocol_guard(clear)
+    clear.set_header(MessageHeaderKey.SECURE, True)
+    claimed_secure = backend._secure_protocol_guard(clear)
+    clear.set_header(MessageHeaderKey.ENCRYPTED, True)
+    other_trainer = new_cell_message(
+        {
+            MessageHeaderKey.DESTINATION: CJ_FQCN,
+            MessageHeaderKey.ORIGIN: "site-1.-client_api_other",
+            StreamHeaderKey.CHANNEL: CHANNEL,
+            StreamHeaderKey.TOPIC: Topic.RESULT_READY,
+        },
+        MagicMock(name="other_undecoded_result"),
+    )
+
+    assert rejected.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.AUTHENTICATION_ERROR
+    assert claimed_secure.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.AUTHENTICATION_ERROR
+    assert backend._secure_protocol_guard(clear) is None
+    assert backend._secure_protocol_guard(other_trainer) is None
     backend.finalize(fl_ctx)
 
 
@@ -582,6 +630,7 @@ def test_shared_file_attach_listener_does_not_require_insecure_opt_in(tmp_path):
     assert MsgKey.AUTH_TOKEN not in session_open
     assert MsgKey.AUTH_TOKEN_SIGNATURE not in session_open
     assert cell.decode_pass_through_topics == set()
+    assert (Topic.SESSION_OPEN, False) in cell.sent_security
     backend.finalize(fl_ctx)
 
 

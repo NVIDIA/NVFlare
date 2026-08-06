@@ -142,6 +142,7 @@ class CellClientAPI(APISpec):
         # the site's FL bearer credential; its separate profile SECURE_MODE
         # controls Cell identity protection in AttachTrainerSession.
         self._secure_mode = False if self._is_attach else bool(self._config.get(BootstrapKey.SECURE_MODE, False))
+        self._protocol_secure = False
         self._session_security_configured = False
         self._task_exchange: dict = self._config.get(BootstrapKey.TASK_EXCHANGE, {})
         # Typed files predating LAUNCH_ONCE default to persistent; one-shot close is irreversible.
@@ -216,6 +217,7 @@ class CellClientAPI(APISpec):
 
             # A failed attempt may be retried on the same API object.
             self._session_id = None
+            self._protocol_secure = False
             self._session_security_configured = False
             self._heartbeat_interval = 0.0
             self._heartbeat_timeout = 0.0
@@ -227,8 +229,11 @@ class CellClientAPI(APISpec):
             connect_url = self._attach.prepare_connection() if self._attach else self._config[BootstrapKey.CONNECT_URL]
             credentials = {}
             secure = False
+            parent_resources = None
             if self._attach:
                 secure, credentials = self._attach.cell_security()
+                parent_resources = self._attach.connection_resources()
+                self._protocol_secure = secure
             self._cell = Cell(
                 fqcn=self._trainer_fqcn,
                 root_url=None,
@@ -237,6 +242,7 @@ class CellClientAPI(APISpec):
                 secure=secure,
                 credentials=credentials,
                 parent_url=connect_url,
+                parent_resources=parent_resources,
                 create_internal_listener=False,
                 auth_identity_map=self._attach.auth_identity_map() if self._attach else None,
             )
@@ -622,6 +628,7 @@ class CellClientAPI(APISpec):
                     },
                 ),
                 optional=True,
+                secure=self._protocol_secure,
             )
         except Exception as e:
             self.logger.warning(f"failed to send LOG '{key}': {e}")
@@ -923,6 +930,7 @@ class CellClientAPI(APISpec):
                     ),
                     timeout=min(self._heartbeat_interval, self._heartbeat_timeout),
                     abort_signal=self._heartbeat_cancel,
+                    secure=self._protocol_secure,
                 )
                 if self._heartbeat_reply_valid(reply):
                     self._note_cj_activity()

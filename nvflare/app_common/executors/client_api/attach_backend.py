@@ -36,12 +36,13 @@ from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, TaskStat
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.file_driver import ROOT_DIR as SHARED_FILE_ROOT_DIR
 from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
-from nvflare.fuel.f3.streaming.download_service import DownloadService
-from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
+from nvflare.fuel.f3.streaming.download_service import OBJ_DOWNLOADER_CHANNEL, DownloadService
+from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
@@ -133,6 +134,10 @@ class AttachBackend(CellBackendBase):
                 )
             if listener_route == _ROUTE_SHARED_FILE:
                 self._publish_shared_file_endpoint()
+            else:
+                self._protocol_secure = self._secure_mode
+                if self._protocol_secure:
+                    self._install_secure_protocol_guard()
 
             timeout = context.attach_timeout
             self._attach_deadline = None if timeout is None else time.monotonic() + timeout
@@ -152,6 +157,34 @@ class AttachBackend(CellBackendBase):
         except BaseException:
             self._unwind()
             raise
+
+    def _install_secure_protocol_guard(self) -> None:
+        core_cell = getattr(self._cell, "core_cell", None)
+        add_filter = getattr(core_cell, "add_incoming_filter", None)
+        if not callable(add_filter):
+            raise RuntimeError("secure network Attach requires a pre-decode Cell incoming filter")
+        add_filter(channel=STREAM_CHANNEL, topic=STREAM_DATA_TOPIC, cb=self._secure_protocol_guard)
+
+    def _secure_protocol_guard(self, message):
+        """Reject a clear Attach request before the shared CJ Cell decodes its payload."""
+        if not self._protocol_secure or self._closed:
+            return None
+        if message.get_header(MessageHeaderKey.DESTINATION) != self._cj_fqcn:
+            return None
+
+        origin = message.get_header(MessageHeaderKey.ORIGIN)
+        if origin != self._trainer_fqcn:
+            return None
+        channel = message.get_header(StreamHeaderKey.CHANNEL, "")
+        is_protected = message.get_header(MessageHeaderKey.SECURE, False) and message.get_header(
+            MessageHeaderKey.ENCRYPTED, False
+        )
+        if channel in (CHANNEL, OBJ_DOWNLOADER_CHANNEL) and not is_protected:
+            return make_cell_reply(
+                CellReturnCode.AUTHENTICATION_ERROR,
+                error=f"secure attach message on channel {channel!r} was not protected",
+            )
+        return None
 
     def _start_shared_file_listener(self) -> Optional[str]:
         core_cell = getattr(self._cell, "core_cell", None)
@@ -354,12 +387,13 @@ class AttachBackend(CellBackendBase):
             MsgKey.CUDA_EMPTY_CACHE: self._context.cuda_empty_cache,
         }
         try:
-            # SESSION_OPEN is a small control-plane message. Use CoreCell rather
-            # than the blob-stream request path so an early gRPC
-            # TARGET_UNREACHABLE returns promptly and the attach loop can retry.
-            # TASK_READY and result payloads still use the streaming Cell.
-            core_cell = getattr(self._cell, "core_cell", None)
-            send_request = getattr(core_cell, "send_request", None)
+            # Secure SESSION_OPEN uses the streaming Cell so FOBS buffer lists
+            # are encrypted chunk by chunk. A clear route retains the CoreCell
+            # fast-failure path for trainer-first rendezvous retries.
+            send_request = None
+            if not self._protocol_secure:
+                core_cell = getattr(self._cell, "core_cell", None)
+                send_request = getattr(core_cell, "send_request", None)
             if not callable(send_request):
                 send_request = self._cell.send_request
             reply = send_request(
@@ -369,6 +403,7 @@ class AttachBackend(CellBackendBase):
                 request=new_cell_message({}, payload),
                 timeout=_CONTROL_ATTEMPT_TIMEOUT,
                 optional=True,
+                secure=self._protocol_secure,
             )
         except Exception:
             self.logger.debug(f"SESSION_OPEN to {session.trainer_fqcn} not delivered")
@@ -562,6 +597,7 @@ class AttachBackend(CellBackendBase):
                         FOBSContextKey.STREAM_PROGRESS_CB: lambda **_kwargs: None,
                         RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: _on_transaction_created,
                     },
+                    secure=self._protocol_secure,
                 )
                 if task.result_ready.is_set():
                     return True, None
@@ -617,6 +653,7 @@ class AttachBackend(CellBackendBase):
                 ),
                 timeout=timeout,
                 optional=True,
+                secure=self._protocol_secure,
             )
         except Exception:
             return None
@@ -665,6 +702,7 @@ class AttachBackend(CellBackendBase):
                 ),
                 timeout=_CONTROL_ATTEMPT_TIMEOUT,
                 optional=True,
+                secure=self._protocol_secure,
             )
             if reply is not None and isinstance(reply.payload, dict):
                 if reply.payload.get(MsgKey.RESULT_SOURCE_LIVE) is False:
