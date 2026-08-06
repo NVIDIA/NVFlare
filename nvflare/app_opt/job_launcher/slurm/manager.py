@@ -54,7 +54,7 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     resolve_slurm_parent_executables,
 )
 from nvflare.app_opt.job_launcher.slurm.scheduler_client import _command_diagnostic, _SlurmCliAdapter
-from nvflare.fuel.common.exit_codes import ProcessExitCode
+from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
 
 _HEALTHY_MISSES = 5
 _ACCOUNTING_RETRY_INTERVAL = 6.0
@@ -336,6 +336,8 @@ class SlurmJobManager:
             return JobReturnCode.ABORTED
         if record.state == "CANCELLED":
             return ProcessExitCode.INFRASTRUCTURE_ERROR
+        if record.exit_status in PROCESS_EXIT_REASON:
+            return record.exit_status
         if record.exit_status or record.exit_signal:
             return JobReturnCode.EXECUTION_ERROR
         return JobReturnCode.SUCCESS if record.state == "COMPLETED" else JobReturnCode.EXECUTION_ERROR
@@ -414,9 +416,10 @@ class SlurmJobManager:
                 self.adapter.cancel(handle.job_id, timeout=self.config.cancel_timeout)
             return JobReturnCode.UNKNOWN
 
-    def _abort_handle(self, handle: "SlurmJobHandle") -> None:
-        self.logger.info("user abort requested for Slurm job %s", handle.job_id)
-        handle._request_cancel(user_abort=True)
+    def _abort_handle(self, handle: "SlurmJobHandle", user_abort: bool = True) -> None:
+        if user_abort:
+            self.logger.info("user abort requested for Slurm job %s", handle.job_id)
+        handle._request_cancel(user_abort=user_abort)
         try:
             self._poll_handle(handle)
         except SlurmProtocolError:
@@ -473,6 +476,10 @@ class SlurmJobHandle(JobHandleSpec):
     def terminate(self):
         if self.terminal_result is None:
             self.manager._abort_handle(self)
+
+    def _terminate_for_heartbeat_cleanup(self):
+        if self.terminal_result is None:
+            self.manager._abort_handle(self, user_abort=False)
 
     def poll(self):
         try:

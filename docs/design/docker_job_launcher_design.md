@@ -175,7 +175,8 @@ docker run ... -e NVFL_DOCKER_WORKSPACE="$HOST_WORKSPACE" ...
 SP/CP container (site admin grants via start_docker.sh)
   ├── /var/run/docker.sock mounted            ← can create job containers
   ├── --user $(id -u):$(id -g)               ← runs as calling user (workspace files not root-owned)
-  ├── --group-add <docker-socket-gid>         ← grants socket access; omitted when GID is 0 or unavailable (macOS Docker Desktop)
+  ├── --group-add <docker-socket-gid>         ← grants socket access on standard Linux engines
+  ├── --group-add 0 when needed               ← grants access when the mounted socket appears root-owned
   ├── workspace bind mount at /var/tmp/nvflare/workspace
   ├── nvflare-network                         ← intra-site: SP↔SJ / CP↔CJ (PARENT_URL, Docker DNS)
   └── host network (-p fed_learn_port)        ← cross-site: CP→SP over HTTPS, same as process mode
@@ -423,12 +424,13 @@ On the server machine:
 cd workspace/server/startup
 nohup ./start_docker.sh > server.log 2>&1 &
 # → creates nvflare-network if it doesn't exist
-# → docker run --name server \
+# → docker --host "unix://$DOCKER_SOCK" run --name server \
 #              --user "$(id -u):$(id -g)" \
+#              --group-add 0 (on macOS or when the socket GID is 0) \
 #              --group-add <docker-socket-gid> (if non-zero) \
 #              --network nvflare-network \
 #              -v $HOST_WORKSPACE:/var/tmp/nvflare/workspace \
-#              -v /var/run/docker.sock:/var/run/docker.sock \
+#              -v $DOCKER_SOCK:/var/run/docker.sock \
 #              -e NVFL_DOCKER_WORKSPACE=$HOST_WORKSPACE \
 #              -p 8002:8002 \
 #              --rm nvflare-site:latest \
@@ -445,6 +447,16 @@ To use a different image without re-provisioning:
 ```bash
 NVFL_P_IMAGE=nvflare-site:2.7.2 ./start_docker.sh
 ```
+
+By default, `start_docker.sh` uses `/var/run/docker.sock` and resolves that path when it is a symlink. To select a
+different Docker socket explicitly:
+
+```bash
+NVFL_DOCKER_SOCK=/path/to/docker.sock ./start_docker.sh
+```
+
+The script pins its Docker CLI operations to the selected Unix socket so the parent and job containers use the same
+local daemon, regardless of the active Docker context.
 
 ### Step 4 — Configure site data (optional)
 

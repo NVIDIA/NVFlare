@@ -588,18 +588,27 @@ def test_terminal_squeue_row_moves_directly_to_accounting(tmp_path):
     assert not any(call[0] == "cancel" for call in adapter.calls)
 
 
-def test_clean_completion_after_user_abort_remains_aborted(tmp_path):
+@pytest.mark.parametrize(
+    ("stop_method", "expected_result"),
+    [("terminate", JobReturnCode.ABORTED), ("_terminate_for_heartbeat_cleanup", JobReturnCode.SUCCESS)],
+    ids=["user_abort", "heartbeat_cleanup"],
+)
+def test_clean_completion_preserves_stop_intent(tmp_path, stop_method, expected_result):
+    clock = Clock()
     adapter = Adapter()
     adapter.live = _query(LookupStatus.NOT_FOUND)
+    adapter.accounting_id = _query(LookupStatus.NOT_FOUND)
+    manager = _manager(tmp_path, adapter, monotonic=clock)
+    handle = manager.launch(_plan(tmp_path))
+    getattr(handle, stop_method)()
+
     adapter.accounting_id = _query(
         LookupStatus.FOUND,
         _record(state="COMPLETED", exit_status=0, exit_signal=0),
     )
-    manager = _manager(tmp_path, adapter)
-    handle = manager.launch(_plan(tmp_path))
-    handle._request_cancel(user_abort=True)
+    clock.value = 7
 
-    assert handle.poll() == JobReturnCode.ABORTED
+    assert handle.poll() == expected_result
     assert not os.path.exists(handle.job_dir)
 
 
@@ -654,7 +663,7 @@ def test_requeued_job_is_refused_by_batch_guard(tmp_path):
     assert "SLURM_RESTART_COUNT" in adapter.submitted_batch
     assert handle.poll() == JobReturnCode.UNKNOWN
     assert not any(call[0] == "cancel" for call in adapter.calls)
-    assert handle.poll() == JobReturnCode.EXECUTION_ERROR
+    assert handle.poll() == ProcessExitCode.EXCEPTION
 
 
 def test_framework_termination_path_handles_job_without_slurm_system_end_sweep(tmp_path):

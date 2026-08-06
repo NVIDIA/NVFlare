@@ -1445,6 +1445,13 @@ Normally finished download refs are tombstoned temporarily so a late retry from
 the same receiver can receive the original EOF or error status instead of a
 fatal missing-ref response. Timeout and deleted transactions are not tombstoned.
 
+For authenticated admin result downloads, the producer transaction uses the
+larger of the admin command timeout and the server session idle timeout plus
+one session-monitor interval. This keeps the source reference available through
+receiver request retries and backoff while allowing the session manager to own
+expiry. The transaction remains bound to its session and is removed immediately
+when that session logs out or expires.
+
 
 Tensor Streaming Timeouts
 -------------------------

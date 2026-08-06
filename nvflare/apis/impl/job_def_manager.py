@@ -460,7 +460,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         meta = {JobMetaKey.STATUS.value: status.value}
         store = self._get_job_store(fl_ctx)
         if status == RunStatus.RUNNING.value:
-            meta[JobMetaKey.START_TIME.value] = str(datetime.datetime.now())
+            meta[JobMetaKey.START_TIME.value] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         elif status in [
             RunStatus.FINISHED_ABORTED.value,
             RunStatus.FINISHED_ABNORMAL.value,
@@ -471,8 +471,13 @@ class SimpleJobDefManager(JobDefManagerSpec):
             job_meta = store.get_meta(self.job_uri(jid))
             start_time_value = job_meta.get(JobMetaKey.START_TIME.value)
             if start_time_value:
-                start_time = datetime.datetime.strptime(start_time_value, "%Y-%m-%d %H:%M:%S.%f")
-                meta[JobMetaKey.DURATION.value] = str(datetime.datetime.now() - start_time)
+                start_time = datetime.datetime.fromisoformat(start_time_value)
+                if start_time.tzinfo is not None:
+                    meta[JobMetaKey.DURATION.value] = str(
+                        datetime.datetime.now(datetime.timezone.utc) - start_time.astimezone(datetime.timezone.utc)
+                    )
+                else:
+                    meta[JobMetaKey.DURATION.value] = str(datetime.datetime.now() - start_time)
         store.update_meta(uri=self.job_uri(jid), meta=meta, replace=False)
 
     def update_meta(self, jid: str, meta, fl_ctx: FLContext):
