@@ -262,6 +262,24 @@ def test_containerized_client_mounts_shared_file_attach_root_read_write(tmp_path
     assert plan.mounts == (BindMount(str(attach_root), str(attach_root), "rw"),)
 
 
+@pytest.mark.parametrize("root_dir_format", ["{root}/", "{parent}//attach"])
+def test_containerized_client_normalizes_shared_file_attach_root(tmp_path, root_dir_format):
+    workspace = _workspace(tmp_path)
+    image = tmp_path / "image.sif"
+    image.write_text("image", encoding="utf-8")
+    attach_root = tmp_path / "attach"
+    attach_root.mkdir()
+    _write_attach_config(
+        workspace,
+        root_dir_format.format(root=attach_root, parent=attach_root.parent),
+    )
+    launcher = _launcher(tmp_path, workspace, sandbox="apptainer", image=str(image))
+
+    plan = launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _fl_ctx(workspace))
+
+    assert plan.mounts == (BindMount(str(attach_root), str(attach_root), "rw"),)
+
+
 def test_bare_client_does_not_mount_shared_file_attach_root(tmp_path):
     workspace = _workspace(tmp_path)
     attach_root = tmp_path / "attach"

@@ -255,8 +255,12 @@ def _file_attach_mount(workspace: Workspace, workspace_path: str) -> Optional[Bi
     if not isinstance(attach_config, dict) or attach_config.get("scheme") != SHARED_FILE_SCHEME:
         return None
     resources = _mapping_or_empty(attach_config.get("resources"), f"{ATTACH_COMM_CONFIG}.resources in comm_config.json")
-    root_dir = resources.get(SHARED_FILE_ROOT_DIR)
-    destination = _validate_mount_destination(root_dir, "shared-file Client API Attach root")
+    root_dir = _require_string(
+        resources.get(SHARED_FILE_ROOT_DIR), f"{ATTACH_COMM_CONFIG}.resources.{SHARED_FILE_ROOT_DIR}"
+    )
+    if ".." in root_dir.split("/"):
+        _validate_mount_destination(root_dir, "shared-file Client API Attach root")
+    destination = _validate_mount_destination(os.path.normpath(root_dir), "shared-file Client API Attach root")
     if os.path.islink(destination) or not os.path.isdir(destination):
         raise SlurmLauncherError(
             f"shared-file Client API Attach root must be an existing non-symlink directory: {destination}"
