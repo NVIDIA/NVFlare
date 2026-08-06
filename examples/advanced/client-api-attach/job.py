@@ -63,6 +63,7 @@ def main():
         min_clients=1,
         num_rounds=3,
         model=[[1, 2, 3], [4, 5, 6]],
+        key_metric="weight_mean",
         # The recipe requires an entry-point resource, but Attach never launches it.
         # The operator starts trainer.py independently with its connection profile.
         train_script=str(Path(__file__).with_name("trainer.py")),
