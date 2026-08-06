@@ -195,14 +195,13 @@ class StatisticsConstants(AppConstants):
         # statistics can only require one/two-round of calculations
         STATS_1st_STATISTICS: [
             STATS_COUNT,
-            STATS_FAILURE_COUNT,
             STATS_SUM,
             STATS_MEAN,
             STATS_MIN,
             STATS_MAX,
             STATS_QUANTILE,
         ],
-        STATS_2nd_STATISTICS: [STATS_HISTOGRAM, STATS_VAR, STATS_STDDEV],
+        STATS_2nd_STATISTICS: [STATS_FAILURE_COUNT, STATS_HISTOGRAM, STATS_VAR, STATS_STDDEV],
     }
 
     PRE_RUN_RESULT = "fed_stats_pre_run_result"

@@ -100,6 +100,8 @@ tests, through an assertion wrapper. The wrapper must check the child process's
 expected nonzero status and diagnostic, then exit 0 only when the rejection is
 correct. Do not leave an expected child failure as a failed top-level validation
 command, where it is indistinguishable from an unexpected failure and recovery.
+Keep every required argument valid and append the invalid option; never replace
+a required option, because missing-required rejection masks the intended check.
 Match the parser's documented rejection type: for example,
 `HfArgumentParser.parse_args_into_dataclasses()` can raise `ValueError` for
 unused arguments instead of `SystemExit`. Accept only the expected exception and
@@ -119,6 +121,9 @@ Before spending time on full simulation, run cheap checks when applicable:
 - construct or instantiate the selected recipe;
 - export to a temporary directory;
 - inspect exported server/client app folders and expected config files;
+- compare the resolved model-selection state with the exported server config:
+  disabled means no active model selector, while metric or deliberately accepted
+  recipe-default selection means a selector with the resolved key;
 - verify generated files required by server and client code are packaged;
 - run local partition sanity checks when generated site splits or data
   partitions are introduced;
@@ -146,8 +151,10 @@ names when a required field is absent. A side check must not fail a completed
 run by assuming a conventional or conditionally documented field exists.
 For generated Python structure, validate semantic AST nodes rather than textual
 occurrences. Scope traversal to the field being checked; for example, inspect a
-loop's condition and body separately. Do not run a speculative assertion that
-valid code is expected to fail and then repair the verification command.
+loop's condition and body separately. Filter traversal results by node type
+before accessing type-specific fields such as `func` or `body`. Do not run a
+speculative assertion that valid code is expected to fail and then repair the
+verification command.
 
 ## Evidence To Report
 

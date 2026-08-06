@@ -27,6 +27,7 @@ python -m collab.swarm.swarm --num-clients 3
 | `simple_split_learning` | Split learning on MNIST with client-side images and bottom model, server-side labels and top model, and direct activation/gradient exchange |
 | `async_aggregation` | In-time aggregation with a response callback |
 | `swarm` | Decentralized swarm learning with client-to-client calls |
+| [`pt_async_cifar10`](pt_async_cifar10/README.md) | Asynchronous PyTorch CIFAR-10 training with prepared logical-client shards |
 
 Every server object or module must define exactly one `@collab.main` entry
 point. A workflow with multiple stages should call them from that single entry
@@ -46,10 +47,14 @@ The NumPy examples run in a base installation; `hello_fedavg` needs PyTorch.
 `distributed_training` needs PyTorch with CUDA and NCCL support and at least two
 GPUs. `simple_split_learning` needs PyTorch and torchvision and downloads MNIST
 on its first run.
+`pt_async_cifar10` additionally needs TensorBoard; follow its
+[setup and prepared-data workflow](pt_async_cifar10/README.md) before running
+the Collab recipe.
 
 The advanced Collab examples run against an NVFlare installation from this
-repository and intentionally have no per-folder `requirements.txt` files. Add
-those files once Collab is available in a released NVFlare package.
+repository. The `pt_async_cifar10` requirements file contains only its
+additional framework dependencies; add NVFlare package pins once Collab is
+available in a released package.
 
 For the design behind the API see the
 [Collab API design](../../../docs/design/collab_api_design.md). For a step-by-step

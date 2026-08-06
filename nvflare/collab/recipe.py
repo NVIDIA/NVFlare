@@ -22,12 +22,7 @@ from nvflare.collab.api.app import App, ClientApp, ServerApp
 from nvflare.collab.api.module_wrapper import ModuleWrapper, resolve_server_client, wrap_if_module
 from nvflare.collab.runtime.controller import CollabController
 from nvflare.collab.runtime.executor import CollabExecutor
-from nvflare.fuel.utils.validation_utils import (
-    check_non_empty_str,
-    check_positive_int,
-    check_positive_number,
-    check_str,
-)
+from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_positive_int, check_positive_number
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import Recipe
 
@@ -64,7 +59,7 @@ class CollabRecipe(Recipe):
         worker per rank, and every client lifecycle and published method runs
         on all ranks. The global rank-zero result is returned to the caller.
         """
-        check_str("job_name", job_name)
+        check_non_empty_str("job_name", job_name)
         check_positive_number("sync_task_timeout", sync_task_timeout)
         check_positive_int("max_call_threads_for_server", max_call_threads_for_server)
         check_positive_int("max_call_threads_for_client", max_call_threads_for_client)

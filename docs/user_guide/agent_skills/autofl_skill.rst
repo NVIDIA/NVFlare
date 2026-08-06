@@ -66,8 +66,12 @@ data and split, timing and checkpoint, aggregation and evaluated population,
 and scale, units, and direction. A candidate is not comparable merely because
 it emits the same metric name. If the metric implementation needs correction,
 the agent abandons that candidate, reports prior scores as incomparable, and
-asks the human to approve a source fix followed by a clean campaign and new
-baseline. The correction is never credited as an optimization gain.
+preserves the scored workspace as audit evidence. After human approval, the
+source is repaired in a fresh job workspace containing no prior Auto-FL
+campaign metadata or generated artifacts, and a new baseline is initialized
+there. Running ``initialize`` in the scored workspace resumes its old evidence
+instead of creating a new baseline. The correction is never credited as an
+optimization gain.
 
 Simulation Execution Permission
 ===============================
@@ -179,6 +183,9 @@ identified strictly by ``status=baseline``; ``best`` includes only a scored
 baseline or ``keep`` row, while a better unretained ``discard`` is reported as
 ``best_observed``. If a valid plot cannot be produced, the Markdown and JSON
 reports are still generated with an explicit plot-availability warning.
+An exploration batch stopped before its required candidate count is reported
+as incomplete, and the Markdown report references ``progress.png`` relatively
+so the two artifacts can be moved together.
 
 The concise synthesis follows the same evidence rules. "What helped" contains
 only strict improvements that were retained. "What did not help" presents

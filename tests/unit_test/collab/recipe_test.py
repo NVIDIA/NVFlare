@@ -63,6 +63,12 @@ def _make_module(name):
     return module
 
 
+@pytest.mark.parametrize("job_name", ["", " "])
+def test_recipe_rejects_empty_job_name(job_name):
+    with pytest.raises(ValueError, match="job_name must not be empty"):
+        CollabRecipe(job_name=job_name)
+
+
 def test_recipe_uses_caller_module_for_missing_server_and_client():
     explicit_module = _make_module("explicit_recipe_module")
 

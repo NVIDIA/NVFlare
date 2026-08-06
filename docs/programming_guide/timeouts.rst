@@ -45,7 +45,7 @@ Low-level communication configuration (comm_config.py):
      - 300
      - Timeout for reading streamed data
    * - streaming_ack_interval
-     - 4MB
+     - 16MB
      - Bytes between ACK messages during streaming
    * - streaming_ack_wait
      - varies
@@ -60,7 +60,7 @@ Low-level communication configuration (comm_config.py):
      - 60.0
      - Maximum time to retry an unacknowledged reliable streaming chunk
    * - streaming_retry_max_pending_bytes
-     - 2 * streaming_window_size
+     - max(128MB, 2 * streaming_window_size)
      - Maximum payload bytes held in memory for reliable streaming retry
 
 
@@ -118,7 +118,8 @@ Example ``comm_config.json``:
      "heartbeat_interval": 10,
      "subnet_heartbeat_interval": 5,
      "streaming_read_timeout": 300,
-     "streaming_ack_interval": 4194304,
+     "streaming_window_size": 67108864,
+     "streaming_ack_interval": 16777216,
      "max_message_size": 1048576
    }
 
@@ -1444,6 +1445,13 @@ Normally finished download refs are tombstoned temporarily so a late retry from
 the same receiver can receive the original EOF or error status instead of a
 fatal missing-ref response. Timeout and deleted transactions are not tombstoned.
 
+For authenticated admin result downloads, the producer transaction uses the
+larger of the admin command timeout and the server session idle timeout plus
+one session-monitor interval. This keeps the source reference available through
+receiver request retries and backoff while allowing the session manager to own
+expiry. The transaction remains bound to its session and is removed immediately
+when that session logs out or expires.
+
 
 Tensor Streaming Timeouts
 -------------------------
@@ -2588,11 +2596,12 @@ comm_config.json (F3/CellNet Layer)
      "heartbeat_interval": 10,
      "subnet_heartbeat_interval": 5,
      "streaming_read_timeout": 300,
-     "streaming_ack_interval": 4194304,
+     "streaming_window_size": 67108864,
+     "streaming_ack_interval": 16777216,
      "streaming_reliable": false,
      "streaming_retry_wait": 5.0,
      "streaming_retry_timeout": 60.0,
-     "streaming_retry_max_pending_bytes": 33554432,
+     "streaming_retry_max_pending_bytes": 134217728,
      "streaming_chunk_size": 1048576,
      "max_message_size": 1048576
    }

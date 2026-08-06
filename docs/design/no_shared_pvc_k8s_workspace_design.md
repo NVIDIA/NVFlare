@@ -159,8 +159,11 @@ The upload sequence is:
 7. The parent extracts the uploaded results back into the parent workspace and
    removes the per-job transfer state.
 
-Upload is performed from the process shutdown path. If upload fails, the worker
-or runner logs a warning with the failure details.
+Upload is performed from the process shutdown path. When a workspace owner is
+configured, successful upload is required for successful child completion. An
+upload failure makes an otherwise successful child fail; if another error is
+already being handled, that primary error is preserved and the upload failure
+is logged as a secondary error.
 
 ## Security Model
 

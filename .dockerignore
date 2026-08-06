@@ -2,6 +2,15 @@
 
 !MANIFEST.in
 !README.md
+!.git/
+!.git/HEAD
+!.git/index
+!.git/objects/
+!.git/objects/**
+!.git/packed-refs
+!.git/refs/
+!.git/refs/**
+!.git/shallow
 !job_templates/
 !job_templates/**
 !nvflare/
