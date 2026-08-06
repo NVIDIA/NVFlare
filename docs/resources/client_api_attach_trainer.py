@@ -12,35 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""An externally owned trainer; it may start before or after the NVFlare job."""
-
 import argparse
 
-import numpy as np
-
 import nvflare.client as flare
-from nvflare.app_common.np.constants import NPConstants
+
+
+def train(model):
+    """Run application-specific training and return an updated FLModel."""
+    return model
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="attach_profile_shared_file.json")
+    parser.add_argument("--config", required=True, help="Path to a Client API Attach profile")
     args = parser.parse_args()
 
     flare.init(config_file=args.config)
     try:
-        print(f"Attached as {flare.get_site_name()} to job {flare.get_job_id()}")
         while flare.is_running():
             model = flare.receive()
-            weights = model.params[NPConstants.NUMPY_KEY]
-            updated = np.asarray(weights) + 1
-            flare.send(
-                flare.FLModel(
-                    params={NPConstants.NUMPY_KEY: updated},
-                    metrics={"weight_mean": float(updated.mean())},
-                    current_round=model.current_round,
-                )
-            )
+            trained_model = train(model)
+            flare.send(trained_model)
     finally:
         flare.shutdown()
 
