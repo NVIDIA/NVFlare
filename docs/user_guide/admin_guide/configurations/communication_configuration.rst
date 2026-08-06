@@ -242,7 +242,9 @@ This section describes all parameters that you can configure.
                                                                    
 The messaging parameters can be specified in <site_workspace>/local/comm_config.json file as first-level elements, or by using environment variables as described in the beginning of this document.
 
-This is an example of comm_config.json file with default values for all the parameters,
+This is an example of comm_config.json with the fixed default values. Parameters
+whose defaults are derived from other settings, such as ``streaming_max_out_seq_chunks``,
+are intentionally omitted.
 
 .. code-block:: json
 
@@ -253,7 +255,6 @@ This is an example of comm_config.json file with default values for all the para
     "streaming_chunk_size": 1048576,
     "streaming_max_blob_size": 2144337904,
     "streaming_read_timeout": 60,
-    "streaming_max_out_seq_chunks": 16,
     "streaming_window_size": 67108864,
     "streaming_ack_interval": 16777216,
     "streaming_ack_wait": 10,
@@ -345,7 +346,12 @@ streaming_max_out_seq_chunks
 
 The chunks may arrive on the receiving end out of sequence. 
 The receiver keeps out-of-sequence chunks in a reassembly buffer while waiting for the expected chunk to arrive.
-The streaming terminates with error if the number of chunks in the reassembly buffer is larger than this value. The default is 16. 
+The streaming terminates with error if the number of chunks in the reassembly buffer is larger than this value.
+
+When this parameter is unset, the limit is derived from the effective streaming window and chunk sizes, with a minimum
+fallback of 16 chunks and a peer-derived ceiling of 1024. An explicitly configured value is a hard receiver-side maximum
+and is not increased to match a sender's window. Configure it only when a fixed memory-control limit is required, and
+ensure that it can accommodate the number of chunks allowed by the streaming window.
 
 The streaming implements a sliding-window protocol for flow-control. The receiver sends ACKs after the chunks are retrieved by the reader.
 The window is all the chunks sent but not being acknowledged by the receiver. Once the window reaches a certain size, the sender pauses and waits for more ACKs.

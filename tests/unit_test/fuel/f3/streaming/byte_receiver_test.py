@@ -22,7 +22,14 @@ import pytest
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.streaming.byte_receiver import MAX_COMPLETED_TASK_TTL, RxStream, RxTask
+from nvflare.fuel.f3.streaming.byte_receiver import (
+    MAX_COMPLETED_TASK_TTL,
+    MAX_PEER_DERIVED_OUT_SEQ_CHUNKS,
+    MIN_OUT_SEQ_CHUNKS,
+    RxStream,
+    RxTask,
+    required_out_seq_chunks,
+)
 from nvflare.fuel.f3.streaming.byte_streamer import TxTask
 from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_TOPIC, STREAM_CHANNEL, StreamDataType, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError
@@ -223,13 +230,72 @@ def test_find_or_create_task_records_reliable_header():
     assert task.reliable is True
 
 
+@pytest.mark.parametrize(
+    "window_size, chunk_size, expected",
+    [
+        # ceil(window / chunk), plus one slot for a final frame or pre-">=" sender
+        (64 * MB, MB, 65),
+        (128 * MB, 2 * MB, 65),
+        # non-multiple windows require ceiling division before the final-frame slot
+        (65 * MB, 2 * MB, 34),
+        (8 * MB, MB, MIN_OUT_SEQ_CHUNKS),
+        (64 * MB, 0, MIN_OUT_SEQ_CHUNKS),
+        # a peer-supplied window/chunk ratio cannot size the buffer without limit
+        (8192 * MB, MB, MAX_PEER_DERIVED_OUT_SEQ_CHUNKS),
+    ],
+)
+def test_required_out_seq_chunks(window_size, chunk_size, expected):
+    assert required_out_seq_chunks(window_size, chunk_size) == expected
+
+
+def test_rx_task_default_out_seq_limit_covers_stream_window(monkeypatch):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_chunk_size", lambda self, default: MB)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: 64 * MB)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_max_out_seq_chunks", lambda self, default: default)
+
+    task = RxTask(sid=531, origin="site-1", cell=SimpleNamespace())
+
+    assert task.max_out_seq == 65
+
+    for seq in range(1, task.max_out_seq + 1):
+        message = _make_chunk("site-1", task.sid, seq, StreamDataType.CHUNK)
+        should_stop, _, error = task._handle_incoming_data(seq, message)
+        assert should_stop is False
+        assert error is None
+
+    assert len(task.out_seq_chunks) == 65
+
+    first_message = _make_chunk("site-1", task.sid, 0, StreamDataType.CHUNK)
+    _, _, error = task._handle_incoming_data(0, first_message)
+    assert error is None
+    assert task.out_seq_chunks == {}
+
+
+def test_rx_task_still_rejects_reordering_beyond_the_limit(monkeypatch):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_chunk_size", lambda self, default: MB)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: 64 * MB)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_max_out_seq_chunks", lambda self, default: default)
+
+    task = RxTask(sid=533, origin="site-1", cell=SimpleNamespace())
+
+    for seq in range(1, task.max_out_seq + 1):
+        message = _make_chunk("site-1", task.sid, seq, StreamDataType.CHUNK)
+        _, _, error = task._handle_incoming_data(seq, message)
+        assert error is None
+
+    # one chunk past what the sender's window can put in flight
+    over_limit = _make_chunk("site-1", task.sid, task.max_out_seq + 1, StreamDataType.CHUNK)
+    _, _, error = task._handle_incoming_data(task.max_out_seq + 1, over_limit)
+    assert isinstance(error, StreamError)
+    assert "Too many out-of-sequence chunks" in str(error)
+
+
 def test_new_stream_uses_sender_streaming_parameters():
     cell = SimpleNamespace()
     sender_parameters = {
         StreamHeaderKey.CHUNK_SIZE: 2 * 1024**2,
         StreamHeaderKey.WINDOW_SIZE: 128 * 1024**2,
         StreamHeaderKey.ACK_INTERVAL: 32 * 1024**2,
-        StreamHeaderKey.RETRY_MAX_PENDING_BYTES: 256 * 1024**2,
     }
     message = _make_chunk(
         "site-1",
@@ -245,14 +311,110 @@ def test_new_stream_uses_sender_streaming_parameters():
     assert task.chunk_size == sender_parameters[StreamHeaderKey.CHUNK_SIZE]
     assert task.window_size == sender_parameters[StreamHeaderKey.WINDOW_SIZE]
     assert task.ack_interval == sender_parameters[StreamHeaderKey.ACK_INTERVAL]
-    assert task.retry_max_pending_bytes == sender_parameters[StreamHeaderKey.RETRY_MAX_PENDING_BYTES]
+    # 128 MiB window / 2 MiB chunks, plus one slot of margin
+    assert task.max_out_seq == 65
+
+
+@pytest.mark.parametrize(
+    "configured_max, expected, warns",
+    [(None, 129, False), (MIN_OUT_SEQ_CHUNKS, 16, True), (256, 256, False)],
+)
+def test_new_stream_applies_sender_window_or_explicit_limit(monkeypatch, caplog, configured_max, expected, warns):
+    monkeypatch.setattr(
+        CommConfigurator,
+        "get_streaming_max_out_seq_chunks",
+        lambda self, default: default if configured_max is None else configured_max,
+    )
+    sender_parameters = {
+        StreamHeaderKey.CHUNK_SIZE: MB,
+        StreamHeaderKey.WINDOW_SIZE: 128 * MB,
+    }
+    message = _make_chunk(
+        "site-1",
+        sid=534,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        streaming_parameters=sender_parameters,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        task = RxTask.find_or_create_task(message, SimpleNamespace())
+        assert task.process_chunk(message) is True
+
+    assert task.max_out_seq == expected
+    warning = "above configured streaming_max_out_seq_chunks"
+    assert (warning in caplog.text) is warns
+
+
+def test_new_stream_warns_when_sender_window_exceeds_derived_limit(caplog):
+    sender_parameters = {
+        StreamHeaderKey.CHUNK_SIZE: MB,
+        StreamHeaderKey.WINDOW_SIZE: 8192 * MB,
+    }
+    message = _make_chunk(
+        "site-1",
+        sid=536,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        streaming_parameters=sender_parameters,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        task = RxTask.find_or_create_task(message, SimpleNamespace())
+        assert task.process_chunk(message) is True
+
+    assert task.max_out_seq == MAX_PEER_DERIVED_OUT_SEQ_CHUNKS
+    assert "above the 1024 cap" in caplog.text
+
+
+def test_later_chunks_adopt_sender_limit_before_delayed_sequence_zero(monkeypatch):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_chunk_size", lambda self, default: MB)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: 64 * MB)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_max_out_seq_chunks", lambda self, default: default)
+    repeated_parameters = {
+        StreamHeaderKey.CHUNK_SIZE: MB,
+        StreamHeaderKey.WINDOW_SIZE: 128 * MB,
+    }
+    first_chunk_parameters = {
+        **repeated_parameters,
+        StreamHeaderKey.ACK_INTERVAL: 16 * MB,
+    }
+    task = RxTask(sid=535, origin="site-1", cell=MagicMock(), reliable=False)
+
+    # Model ConnManager processing sequence 0 behind more frames than the
+    # receiver's local 65-chunk default can hold.
+    for seq in range(1, 67):
+        message = _make_chunk(
+            "site-1",
+            task.sid,
+            seq,
+            StreamDataType.CHUNK,
+            reliable=False,
+            streaming_parameters=repeated_parameters,
+        )
+        assert task.process_chunk(message) is False
+
+    assert task.max_out_seq == 129
+    assert task.failed is False
+    assert len(task.out_seq_chunks) == 66
+
+    first_message = _make_chunk(
+        "site-1",
+        task.sid,
+        0,
+        StreamDataType.CHUNK,
+        reliable=False,
+        streaming_parameters=first_chunk_parameters,
+    )
+    assert task.process_chunk(first_message) is True
+    assert task.failed is False
+    assert task.out_seq_chunks == {}
 
 
 def test_new_stream_without_sender_parameters_uses_local_configuration(monkeypatch):
     monkeypatch.setattr(CommConfigurator, "get_streaming_chunk_size", lambda self, default: 2)
     monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: 8)
     monkeypatch.setattr(CommConfigurator, "get_streaming_ack_interval", lambda self, default: 4)
-    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_max_pending_bytes", lambda self, default: 16)
     cell = SimpleNamespace()
     message = _make_chunk("site-1", sid=533, seq=0, data_type=StreamDataType.CHUNK)
 
@@ -262,7 +424,6 @@ def test_new_stream_without_sender_parameters_uses_local_configuration(monkeypat
     assert task.chunk_size == 2
     assert task.window_size == 8
     assert task.ack_interval == 4
-    assert task.retry_max_pending_bytes == 16
 
 
 def test_headerless_legacy_sender_with_small_window_completes_transfer(monkeypatch):
@@ -307,7 +468,6 @@ def test_headerless_legacy_sender_with_small_window_completes_transfer(monkeypat
                 StreamHeaderKey.CHUNK_SIZE,
                 StreamHeaderKey.WINDOW_SIZE,
                 StreamHeaderKey.ACK_INTERVAL,
-                StreamHeaderKey.RETRY_MAX_PENDING_BYTES,
             ):
                 message.remove_header(key)
             message.set_header(MessageHeaderKey.ORIGIN, "legacy-sender")
