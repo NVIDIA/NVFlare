@@ -800,24 +800,23 @@ class TestInitializeAndFinalize:
             ]
 
     @pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
-    def test_abort_escalates_sigterm_to_sigkill_without_configured_grace(self, env, monkeypatch):
+    def test_abort_preserves_configured_sigterm_grace_before_sigkill(self, env, monkeypatch):
         backend, _ = _initialized_backend(env, stop_grace_period=30.0)
         backend._latch_abort("job aborted")
         monkeypatch.setattr(env.harness, "killpg", lambda pgid, sig: env.harness.killpg_calls.append((pgid, sig)))
         monkeypatch.setattr(ebp.os, "killpg", env.harness.killpg, raising=False)
         monkeypatch.setattr(ebp, "_LOG_THREAD_JOIN_TIMEOUT", 0.0)
         await_timeouts = []
-        real_await_group_exit = backend._await_group_exit
 
         def record_await_timeout(trainer, timeout):
             await_timeouts.append(timeout)
-            return real_await_group_exit(trainer, timeout)
+            return False
 
         monkeypatch.setattr(backend, "_await_group_exit", record_await_timeout)
 
         backend.finalize(FLContext())
 
-        assert await_timeouts == [0.0, 0.0]
+        assert await_timeouts == [30.0, 0.0]
         if os.name == "posix":
             assert env.harness.signals_sent() == [
                 (env.harness.processes[0].pid, signal.SIGTERM),
@@ -1833,6 +1832,52 @@ class TestExecute:
         finally:
             backend.finalize(FLContext())
 
+    @pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
+    def test_launch_once_abort_after_result_stops_owned_trainer_before_execute_returns(self, env):
+        backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
+        abort_signal = Signal()
+        task_count = 0
+
+        def result_then_abort(topic, target, request):
+            nonlocal task_count
+            task_count += 1
+            if task_count == 1:
+                task_payload = request.payload
+                env.cell.deliver(
+                    Topic.RESULT_READY,
+                    target,
+                    {
+                        MsgKey.SESSION_ID: task_payload[MsgKey.SESSION_ID],
+                        MsgKey.TASK_ID: task_payload[MsgKey.TASK_ID],
+                        MsgKey.RESULT: _result_shareable(),
+                    },
+                )
+            else:
+                abort_signal.trigger("stop round 1")
+            return _task_accepted_reply()
+
+        env.cell.on_request = result_then_abort
+        process = env.harness.processes[0]
+        try:
+            round_0 = Shareable()
+            round_0.set_header(AppConstants.CURRENT_ROUND, 0)
+            first = backend.execute("train", round_0, fl_ctx, Signal())
+            assert first.get_return_code() == ReturnCode.OK
+            assert process.returncode is None
+            assert backend._active_launch.result_source_live.is_set()
+
+            round_1 = Shareable()
+            round_1.set_header(AppConstants.CURRENT_ROUND, 1)
+            second = backend.execute("train", round_1, fl_ctx, abort_signal)
+
+            assert second.get_return_code() == ReturnCode.TASK_ABORTED
+            assert len(env.harness.processes) == 1, "launch_once must reuse the round-0 trainer"
+            assert process.returncode == -signal.SIGTERM
+            assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
+            assert backend._active_launch is None
+        finally:
+            backend.finalize(FLContext())
+
     def test_execute_returns_task_aborted_on_triggered_signal(self, env):
         backend, fl_ctx = _initialized_backend(env)
         try:
@@ -1843,6 +1888,8 @@ class TestExecute:
             assert result.get_return_code() == ReturnCode.TASK_ABORTED
             # the trainer was told the task is aborted
             assert [f for f in env.cell.fired if f[0] == Topic.ABORT]
+            assert backend._active_launch is None
+            assert env.harness.processes[0].returncode is not None
         finally:
             backend.finalize(FLContext())
 
