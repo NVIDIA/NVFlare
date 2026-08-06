@@ -16,6 +16,8 @@ import hashlib
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.streaming.download_service import ProduceRC, _PropKey
 from nvflare.fuel.f3.streaming.file_downloader import FileDownloadable
@@ -28,7 +30,11 @@ from nvflare.fuel.hci.proto import MetaKey, ProtoKey
 from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.server.sess import SessionManager
-from tests.unit_test.fuel.f3.streaming.download_test_utils import make_service_no_monitor, pull_request
+from tests.unit_test.fuel.f3.streaming.download_test_utils import (
+    make_service_no_monitor,
+    pull_request,
+    run_monitor_once,
+)
 
 
 class _Clock:
@@ -147,7 +153,29 @@ def test_session_teardown_isolates_notification_and_cancel_failures(monkeypatch)
     assert manager.downloads == {}
 
 
-def test_binary_transfer_binds_verified_progress_and_detaches_on_failure(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    (
+        "admin_timeout",
+        "session_idle_timeout",
+        "session_monitor_interval",
+        "expected_download_timeout",
+        "expected_progress_interval",
+    ),
+    [
+        (10, 1800, 5, 1805, 30.0),
+        (2400, 1800, 5, 2400, 30.0),
+        (20, 9, 5, 20, 3.0),
+    ],
+)
+def test_binary_transfer_binds_verified_progress_and_detaches_on_failure(
+    monkeypatch,
+    tmp_path,
+    admin_timeout,
+    session_idle_timeout,
+    session_monitor_interval,
+    expected_download_timeout,
+    expected_progress_interval,
+):
     download_root = tmp_path / "download"
     source_folder = download_root / "command-tx" / "job-1"
     source_folder.mkdir(parents=True)
@@ -166,9 +194,9 @@ def test_binary_transfer_binds_verified_progress_and_detaches_on_failure(monkeyp
 
     monkeypatch.setattr("nvflare.fuel.hci.server.binary_transfer.ObjectDownloader", _Downloader)
 
-    session_mgr = MagicMock(idle_timeout=9)
+    session_mgr = MagicMock(idle_timeout=session_idle_timeout, monitor_interval=session_monitor_interval)
     session_mgr.bind_download.return_value = True
-    admin = SimpleNamespace(timeout=20, sess_mgr=session_mgr)
+    admin = SimpleNamespace(timeout=admin_timeout, sess_mgr=session_mgr)
     cell = MagicMock()
     cell.get_fqcn.return_value = "server"
     engine = MagicMock()
@@ -186,7 +214,8 @@ def test_binary_transfer_binds_verified_progress_and_detaches_on_failure(monkeyp
     BinaryTransfer().download_folder(conn, "command-tx", "job-1")
 
     session_mgr.bind_download.assert_called_once()
-    assert created["progress_interval"] == 3.0
+    assert created["timeout"] == expected_download_timeout
+    assert created["progress_interval"] == expected_progress_interval
     progress_cb = created["progress_cb"]
     progress_cb(tx_id="stream-tx", bytes_done=0, state=TransferProgressState.ACTIVE)
     progress_cb(tx_id="stream-tx", bytes_done=10, state=TransferProgressState.ACTIVE)
@@ -202,6 +231,155 @@ def test_binary_transfer_binds_verified_progress_and_detaches_on_failure(monkeyp
         session_id=created["session_id"],
     )
     session_mgr.end_download.assert_called_once_with("session-1", "stream-tx")
+
+
+def test_binary_transfer_cancels_bound_download_when_setup_fails(monkeypatch, tmp_path):
+    download_root = tmp_path / "download"
+    source_folder = download_root / "command-tx" / "job-1"
+    source_folder.mkdir(parents=True)
+    (source_folder / "result.zip").write_bytes(b"result")
+
+    created = {}
+
+    class _Downloader:
+        def __init__(self, **kwargs):
+            created.update(kwargs)
+            self.tx_id = "stream-tx"
+            self.delete_transaction = MagicMock()
+            created["downloader"] = self
+
+    monkeypatch.setattr("nvflare.fuel.hci.server.binary_transfer.ObjectDownloader", _Downloader)
+    monkeypatch.setattr(
+        "nvflare.fuel.hci.server.binary_transfer.add_file", MagicMock(side_effect=RuntimeError("setup failed"))
+    )
+
+    session_mgr = MagicMock(idle_timeout=1800, monitor_interval=5)
+    session_mgr.bind_download.return_value = True
+    admin = SimpleNamespace(timeout=10, sess_mgr=session_mgr)
+    cell = MagicMock()
+    cell.get_fqcn.return_value = "server"
+    engine = MagicMock()
+    engine.get_cell.return_value = cell
+    session = SimpleNamespace(sess_id="session-1")
+    conn = Connection(
+        props={
+            ConnProps.DOWNLOAD_DIR: str(download_root),
+            ConnProps.ENGINE: engine,
+            ConnProps.ADMIN_SERVER: admin,
+            ConnProps.SESSION: session,
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="setup failed"):
+        BinaryTransfer().download_folder(conn, "command-tx", "job-1")
+
+    session_mgr.bind_download.assert_called_once()
+    created["downloader"].delete_transaction.assert_called_once_with()
+
+
+def test_result_download_reference_survives_default_retry_envelope_and_resumes(monkeypatch, tmp_path):
+    clock = _Clock()
+    session_mgr = _new_manager(monkeypatch, _Cell(), clock, idle_timeout=1800)
+    session = _new_session(session_mgr, "admin")
+    service = make_service_no_monitor()
+    created = {}
+
+    download_root = tmp_path / "download"
+    source_folder = download_root / "command-tx" / "job-1"
+    source_folder.mkdir(parents=True)
+    source = source_folder / "result.bin"
+    expected = b"0123456789abcdef"
+    source.write_bytes(expected)
+
+    class _Downloader:
+        def __init__(
+            self,
+            cell,
+            timeout,
+            num_receivers,
+            transaction_done_cb,
+            progress_cb,
+            progress_interval,
+            **cb_kwargs,
+        ):
+            created["timeout"] = timeout
+            self.tx_id = service.new_transaction(
+                cell=cell,
+                timeout=timeout,
+                num_receivers=num_receivers,
+                transaction_done_cb=transaction_done_cb,
+                progress_cb=progress_cb,
+                progress_interval=progress_interval,
+                **cb_kwargs,
+            )
+            created["tx_id"] = self.tx_id
+
+        def add_object(self, obj, ref_id=None):
+            ref_id = service.add_object(self.tx_id, obj, ref_id=ref_id)
+            created["ref_id"] = ref_id
+            return ref_id
+
+        def delete_transaction(self):
+            service.delete_transaction(self.tx_id)
+
+    def _add_small_file(downloader, file_name):
+        return downloader.add_object(FileDownloadable(file_name, chunk_size=4))
+
+    monkeypatch.setattr("nvflare.fuel.hci.server.binary_transfer.ObjectDownloader", _Downloader)
+    monkeypatch.setattr("nvflare.fuel.hci.server.binary_transfer.add_file", _add_small_file)
+
+    admin = SimpleNamespace(timeout=10, sess_mgr=session_mgr)
+    cell = MagicMock()
+    cell.get_fqcn.return_value = "server"
+    engine = MagicMock()
+    engine.get_cell.return_value = cell
+    conn = Connection(
+        props={
+            ConnProps.DOWNLOAD_DIR: str(download_root),
+            ConnProps.ENGINE: engine,
+            ConnProps.ADMIN_SERVER: admin,
+            ConnProps.SESSION: session,
+        }
+    )
+
+    BinaryTransfer().download_folder(conn, "command-tx", "job-1")
+
+    tx_id = created["tx_id"]
+    ref_id = created["ref_id"]
+    assert created["timeout"] == session_mgr.idle_timeout + session_mgr.monitor_interval
+
+    first_reply = service._handle_download(pull_request(ref_id, "admin-cell"))
+    assert first_reply.payload[_PropKey.STATUS] == ProduceRC.OK
+    received = bytearray(first_reply.payload[_PropKey.DATA])
+    committed_state = first_reply.payload[_PropKey.STATE]
+
+    # Simulate all three timed-out requests failing to reach the producer. The final
+    # permitted request starts at 29 seconds and can arrive near its 5-second deadline.
+    for quiet_seconds in (7, 9, 13, 5):
+        clock.advance(quiet_seconds)
+        run_monitor_once(service, now=clock.now)
+        session_mgr.check_sessions()
+        assert service.get_transaction_id(ref_id) == tx_id
+
+    state = committed_state
+    while True:
+        reply = service._handle_download(pull_request(ref_id, "admin-cell", state=state))
+        status = reply.payload[_PropKey.STATUS]
+        if status == ProduceRC.EOF:
+            break
+        assert status == ProduceRC.OK
+        received.extend(reply.payload[_PropKey.DATA])
+        state = reply.payload[_PropKey.STATE]
+
+    assert len(received) == len(expected)
+    assert hashlib.sha256(received).digest() == hashlib.sha256(expected).digest()
+
+    # Legacy receivers settle on the monitor pass after the terminal reply has left
+    # the request path. Drive that pass explicitly because this test suppresses the
+    # real monitor thread.
+    run_monitor_once(service, now=service._tx_table[tx_id].last_active_time)
+    assert not source_folder.exists()
+    assert session_mgr.downloads == {}
 
 
 def test_progressing_download_outlives_idle_timeout_with_matching_size_and_hash(monkeypatch, tmp_path):
