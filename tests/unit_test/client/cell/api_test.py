@@ -58,7 +58,7 @@ CJ_FQCN = "site-1.job-1"
 TRAINER_FQCN = "site-1.job-1.client_api_trainer_1"
 SESSION_ID = "session-abc"
 ATTACH_ID = "trainer_a"
-ATTACH_TRAINER_FQCN = f"{CJ_FQCN}.-client_api_trainer_a"
+ATTACH_TRAINER_FQCN = "site-1.-client_api_trainer_a"
 
 
 def _hello_accepted_reply(heartbeat_interval=0.05, heartbeat_timeout=0.0, secure_mode=False):
@@ -240,7 +240,6 @@ def attach_bootstrap_path(tmp_path):
             BootstrapKey.EXECUTION_MODE: ATTACH_EXECUTION_MODE,
             BootstrapKey.ATTACH_ID: ATTACH_ID,
             BootstrapKey.SITE_NAME: "site-1",
-            BootstrapKey.CJ_FQCN: CJ_FQCN,
             BootstrapKey.CONNECT_URL: "grpc://127.0.0.1:12345",
             BootstrapKey.CONNECTION_SECURITY: "clear",
             BootstrapKey.JOB_WAIT_TIMEOUT: 1.0,
@@ -347,7 +346,7 @@ def _deliver_attach_task(env, task_id="task-1", attempt_id="attempt-1", result_r
 
 
 class TestAttachMode:
-    def test_init_waits_for_session_open_and_derives_cj_child_fqcn(self, attach_bootstrap_path, attach_env):
+    def test_init_connects_to_cp_and_discovers_dynamic_cj(self, attach_bootstrap_path, attach_env):
         api = _init_api(attach_bootstrap_path, attach_env)
 
         assert api._cj_fqcn == CJ_FQCN
@@ -359,6 +358,7 @@ class TestAttachMode:
         assert kwargs["parent_url"] == "grpc://127.0.0.1:12345"
         assert kwargs["secure"] is False
         assert kwargs["credentials"]["connection_security"] == "clear"
+        assert kwargs["auth_identity_map"] == {"site-1": "site-1"}
         assert MsgKey.CONNECT_URL not in attach_env.session_reply.payload
         assert MsgKey.CONNECTION_SECURITY not in attach_env.session_reply.payload
         assert attach_env.core_cell.message_interceptor == api._attach._pre_decode_guard
@@ -376,7 +376,7 @@ class TestAttachMode:
         config = read_bootstrap_config(attach_bootstrap_path)
         del config[BootstrapKey.CONNECT_URL]
         del config[BootstrapKey.CONNECTION_SECURITY]
-        del config[BootstrapKey.CJ_FQCN]
+        config.pop(BootstrapKey.CJ_FQCN, None)
         config[BootstrapKey.RENDEZVOUS_DIR] = rendezvous_dir
         write_bootstrap_config(attach_bootstrap_path, config)
         publisher = AttachEndpointPublisher(rendezvous_dir, "site-1", ATTACH_ID)
@@ -401,7 +401,7 @@ class TestAttachMode:
         config = read_bootstrap_config(attach_bootstrap_path)
         del config[BootstrapKey.CONNECT_URL]
         del config[BootstrapKey.CONNECTION_SECURITY]
-        del config[BootstrapKey.CJ_FQCN]
+        config.pop(BootstrapKey.CJ_FQCN, None)
         config[BootstrapKey.RENDEZVOUS_DIR] = str(Path(attach_bootstrap_path).parent)
         config[BootstrapKey.JOB_WAIT_TIMEOUT] = None
         write_bootstrap_config(attach_bootstrap_path, config)
@@ -422,7 +422,7 @@ class TestAttachMode:
         config = read_bootstrap_config(attach_bootstrap_path)
         del config[BootstrapKey.CONNECT_URL]
         del config[BootstrapKey.CONNECTION_SECURITY]
-        del config[BootstrapKey.CJ_FQCN]
+        config.pop(BootstrapKey.CJ_FQCN, None)
         config[BootstrapKey.RENDEZVOUS_DIR] = str(Path(attach_bootstrap_path).parent)
         write_bootstrap_config(attach_bootstrap_path, config)
         api = CellClientAPI(bootstrap_file=attach_bootstrap_path)
@@ -485,7 +485,7 @@ class TestAttachMode:
         for key, value in (
             (MsgKey.ATTACH_ID, "other"),
             (MsgKey.SITE_NAME, "other-site"),
-            (MsgKey.TRAINER_FQCN, f"{CJ_FQCN}.-client_api_other"),
+            (MsgKey.TRAINER_FQCN, "site-1.-client_api_other"),
             (MsgKey.PROTOCOL_VERSION, PROTOCOL_VERSION + 1),
             (MsgKey.RANK, "1"),
             (MsgKey.HEARTBEAT_INTERVAL, 0),
@@ -577,9 +577,8 @@ class TestAttachMode:
 
         assert rejected.payload[MsgKey.REPLY_TOPIC] == Topic.SESSION_REJECTED
         assert "torch is unavailable" in rejected.payload[MsgKey.REASON]
-        # Direct profiles pre-bind the job Cell as the only transport origin;
-        # the session itself must remain unbound after semantic initialization fails.
-        assert api._cj_fqcn == CJ_FQCN
+        # A rejected open must not bind the dynamic job Cell.
+        assert api._cj_fqcn is None
         assert api._session_id is None
         assert not api._attach._opened.is_set()
         assert init_thread.is_alive()
@@ -607,6 +606,7 @@ class TestAttachMode:
         config[BootstrapKey.CONNECT_URL] = "grpcs://site.example:9000"
         config[BootstrapKey.CONNECTION_SECURITY] = "mtls"
         config[BootstrapKey.CA_CERT] = str(ca_cert)
+        config[BootstrapKey.SECURE_MODE] = True
         write_bootstrap_config(attach_bootstrap_path, config)
 
         api = _init_api(attach_bootstrap_path, attach_env)
@@ -621,6 +621,34 @@ class TestAttachMode:
         }
         api.shutdown()
 
+    def test_secure_cell_uses_site_credentials_over_clear_cp_transport(self, attach_bootstrap_path, attach_env):
+        profile_dir = Path(attach_bootstrap_path).parent
+        ca_cert = profile_dir / "rootCA.pem"
+        client_cert = profile_dir / "client.crt"
+        client_key = profile_dir / "client.key"
+        for path in (ca_cert, client_cert, client_key):
+            path.write_text("test credential", encoding="utf-8")
+
+        config = read_bootstrap_config(attach_bootstrap_path)
+        config[BootstrapKey.SECURE_MODE] = True
+        config[BootstrapKey.CA_CERT] = str(ca_cert)
+        config[BootstrapKey.AUTH_IDENTITY] = "custom-site-cn"
+        write_bootstrap_config(attach_bootstrap_path, config)
+
+        api = _init_api(attach_bootstrap_path, attach_env)
+
+        kwargs = attach_env.cell_ctor.call_args.kwargs
+        assert kwargs["secure"] is True
+        assert kwargs["credentials"] == {
+            "ca_cert": str(ca_cert),
+            "client_cert": str(client_cert),
+            "client_key": str(client_key),
+            "connection_security": "clear",
+        }
+        assert kwargs["auth_identity_map"] == {"site-1": "custom-site-cn"}
+        attach_env.auth_filter.assert_not_called()
+        api.shutdown()
+
     def test_secure_profile_rejects_missing_mtls_client_credentials(self, attach_bootstrap_path, attach_env):
         ca_cert = Path(attach_bootstrap_path).parent / "rootCA.pem"
         ca_cert.write_text("test credential", encoding="utf-8")
@@ -628,6 +656,7 @@ class TestAttachMode:
         config[BootstrapKey.CONNECT_URL] = "grpcs://site.example:9000"
         config[BootstrapKey.CONNECTION_SECURITY] = "mtls"
         config[BootstrapKey.CA_CERT] = str(ca_cert)
+        config[BootstrapKey.SECURE_MODE] = True
         write_bootstrap_config(attach_bootstrap_path, config)
 
         api = CellClientAPI(bootstrap_file=attach_bootstrap_path)

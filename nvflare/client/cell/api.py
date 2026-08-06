@@ -138,8 +138,9 @@ class CellClientAPI(APISpec):
         self._attach = AttachTrainerSession(self) if self._is_attach else None
         self._trainer_fqcn = self._attach.trainer_fqcn if self._attach else self._config[BootstrapKey.TRAINER_FQCN]
         self._job_id: Optional[str] = self._config.get(BootstrapKey.JOB_ID)
-        # Attach profile security describes its transport. Attach never receives
-        # the site's FL authentication credential and communicates only with CJ.
+        # This flag controls delegated FL auth headers. Attach never receives
+        # the site's FL bearer credential; its separate profile SECURE_MODE
+        # controls Cell identity protection in AttachTrainerSession.
         self._secure_mode = False if self._is_attach else bool(self._config.get(BootstrapKey.SECURE_MODE, False))
         self._session_security_configured = False
         self._task_exchange: dict = self._config.get(BootstrapKey.TASK_EXCHANGE, {})
@@ -237,6 +238,7 @@ class CellClientAPI(APISpec):
                 credentials=credentials,
                 parent_url=connect_url,
                 create_internal_listener=False,
+                auth_identity_map=self._attach.auth_identity_map() if self._attach else None,
             )
             try:
                 if self._attach:

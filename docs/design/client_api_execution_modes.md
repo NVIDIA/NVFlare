@@ -35,8 +35,9 @@ The implemented architecture has these boundaries:
 - `InProcessBackend` uses DataBus and runs the training script in the CJ process.
 - `ExternalProcessBackend` runs Client API jobs in a launched subprocess and communicates
   with the trainer directly over Cell.
-- `AttachBackend` communicates over Cell with an independently started trainer and owns only
-  the listener and protocol session, never the trainer process.
+- `AttachBackend` communicates over Cell with an independently started trainer. Network Attach
+  reuses the site's stable CP listener; protected shared-file Attach owns a job-local listener.
+  The backend owns the protocol session, never the trainer process.
 - Cell, FOBS, `ViaDownloader`, and `DownloadService` provide serialization, large-object
   transfer, progress, and terminal transfer status. The Client API does not add another
   payload wrapper or streaming protocol.
@@ -77,12 +78,13 @@ payload trust boundary:
 
 ```text
 ClientAPIExecutor
-  -> AttachBackend (CJ-owned listener/session and materialization boundary)
+  -> AttachBackend (CJ session and materialization boundary)
+  -> existing CP Cell route, or protected shared-file
   -> Cell request/reply + FOBS/ViaDownloader
   -> CellClientAPI (externally owned trainer)
 ```
 
-See [Client API Attach Mode](client_api_attach_mode.md) for its listener,
+See [Client API Attach Mode](client_api_attach_mode.md) for its CP route,
 rendezvous, security, retry, and non-owning lifecycle contract.
 
 ## External Process Architecture
@@ -180,16 +182,19 @@ The two Cell-based modes deliberately have different server-facing trust in 2.9:
   installs the normal outgoing site auth-header filters. Its FQCN remains a descendant of the
   registered site/CJ FQCN so the server's current origin binding accepts the delegated token.
 - `attach` follows the server-facing trust boundary of the 2.8 `IPCExchanger`/`IPCAgent` path. The
-  independently owned trainer communicates only with its CJ. The CJ materializes task and result
-  payloads, and `SESSION_OPEN` never carries the site's authentication token or signature. Attach
-  still requires mTLS or protected shared-file transport for a secure FL job; a clear network route
-  is rejected even when `allow_insecure_attach=True`.
+  independently owned trainer physically connects through the stable CP route and communicates at
+  the application layer only with its CJ. It uses the site's provisioned client certificate for
+  secure Cell identity, as IPCAgent did. The CJ materializes task and result payloads, and
+  `SESSION_OPEN` never carries the site's authentication token or signature. Protected shared-file
+  remains available when the trainer must have no network access.
 
-The Attach protocol is Cell rather than the 2.8 IPC implementation, so this is equivalence of the
-trust boundary, not identity of implementation. Only managed external-process mode temporarily
-delegates the full site token in 2.9. Replacing that delegation, and enabling safe direct Attach
-pass-through, requires a short-lived scoped trainer identity, `DownloadService` ACL enforcement,
-and revocation; that work is targeted for 2.10.
+The Attach protocol is Cell rather than the 2.8 IPC implementation, so the protocol is new while
+the topology and server-facing trust boundary are equivalent. Only managed external-process mode
+temporarily delegates the full site token in 2.9. Network Attach delegates the provisioned site
+Cell certificate, which is also broad authority but does not authorize server requests. Replacing
+both broad delegations, and enabling safe direct Attach pass-through, requires a short-lived scoped
+trainer identity, `DownloadService` ACL enforcement, and revocation; that work is targeted for
+2.10.
 
 ### Payload handling
 
@@ -254,7 +259,7 @@ Result direction for `attach`:
    the CJ boundary.
 
 This follows the 2.8 `IPCExchanger`/`IPCAgent` containment model: the external trainer is not a
-direct federation participant even though the CJ-to-trainer protocol now uses Cell.
+direct federation participant even though the trainer physically joins Cell through the CP.
 
 In the task direction at the CJ entry point, the CJ decodes only the
 `(SERVER_COMMAND, GET_TASK)` route lazily for the external-process executor. `ClientRunner`

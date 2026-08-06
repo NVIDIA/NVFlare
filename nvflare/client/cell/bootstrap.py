@@ -51,6 +51,7 @@ class BootstrapKey:
 
     # Launch-scoped FQCNs prevent stale trainers from colliding with a later launch.
     CONNECT_URL = "connect_url"
+    CP_FQCN = "cp_fqcn"
     CJ_FQCN = "cj_fqcn"
     TRAINER_FQCN = "trainer_fqcn"
 
@@ -61,6 +62,7 @@ class BootstrapKey:
     SECURE_MODE = "secure_mode"
     CONNECTION_SECURITY = "connection_security"
     CA_CERT = "ca_cert"
+    AUTH_IDENTITY = "auth_identity"
 
     ATTACH_ID = "attach_id"
     RENDEZVOUS_DIR = "rendezvous_dir"
@@ -158,6 +160,17 @@ def get_bootstrap_client_api_type(config: dict, path: str = "<bootstrap config>"
                     f"invalid Client API bootstrap config {path}: shared-file rendezvous discovers "
                     f"{BootstrapKey.CJ_FQCN!r}; do not configure it"
                 )
+            for field in (BootstrapKey.CP_FQCN, BootstrapKey.AUTH_IDENTITY):
+                if field in config:
+                    raise ValueError(
+                        f"invalid Client API bootstrap config {path}: shared-file rendezvous discovers "
+                        f"{field!r}; do not configure it"
+                    )
+            if config.get(BootstrapKey.SECURE_MODE, False):
+                raise ValueError(
+                    f"invalid Client API bootstrap config {path}: shared-file rendezvous uses its protected "
+                    f"filesystem boundary; do not configure {BootstrapKey.SECURE_MODE!r}=true"
+                )
             connection_security = ConnectionSecurity.CLEAR
         else:
             if not isinstance(connect_url, str) or not connect_url.strip():
@@ -165,20 +178,31 @@ def get_bootstrap_client_api_type(config: dict, path: str = "<bootstrap config>"
                     f"invalid Client API bootstrap config {path}: field "
                     f"{BootstrapKey.CONNECT_URL!r} must be a non-empty string"
                 )
-            cj_fqcn = config.get(BootstrapKey.CJ_FQCN)
-            if not isinstance(cj_fqcn, str) or not cj_fqcn:
-                raise ValueError(
-                    f"invalid Client API bootstrap config {path}: a direct attach profile requires "
-                    f"field {BootstrapKey.CJ_FQCN!r}"
-                )
             from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
-            cj_path = FQCN.split(cj_fqcn)
-            if len(cj_path) != 2 or cj_path[0] != config[BootstrapKey.SITE_NAME] or FQCN.validate(cj_fqcn):
+            cp_fqcn = config.get(BootstrapKey.CP_FQCN, config[BootstrapKey.SITE_NAME])
+            if not isinstance(cp_fqcn, str) or not cp_fqcn or FQCN.validate(cp_fqcn):
                 raise ValueError(
                     f"invalid Client API bootstrap config {path}: field "
-                    f"{BootstrapKey.CJ_FQCN!r} must be '<site_name>.<job_id>'"
+                    f"{BootstrapKey.CP_FQCN!r} must be a valid Cell FQCN"
                 )
+            if FQCN.split(cp_fqcn)[-1] != config[BootstrapKey.SITE_NAME]:
+                raise ValueError(
+                    f"invalid Client API bootstrap config {path}: field {BootstrapKey.CP_FQCN!r} "
+                    f"must end with site_name {config[BootstrapKey.SITE_NAME]!r}"
+                )
+            cj_fqcn = config.get(BootstrapKey.CJ_FQCN)
+            if cj_fqcn is not None:
+                if (
+                    not isinstance(cj_fqcn, str)
+                    or not cj_fqcn
+                    or FQCN.validate(cj_fqcn)
+                    or FQCN.get_parent(cj_fqcn) != cp_fqcn
+                ):
+                    raise ValueError(
+                        f"invalid Client API bootstrap config {path}: optional field "
+                        f"{BootstrapKey.CJ_FQCN!r} must be a direct child of {cp_fqcn!r}"
+                    )
             connection_security = validate_attach_profile(
                 connect_url,
                 config.get(BootstrapKey.CONNECTION_SECURITY),
@@ -189,24 +213,28 @@ def get_bootstrap_client_api_type(config: dict, path: str = "<bootstrap config>"
                 f"invalid Client API bootstrap config {path}: field "
                 f"{BootstrapKey.CA_CERT!r} must be a non-empty string"
             )
+        secure_mode = bool(config.get(BootstrapKey.SECURE_MODE, False))
         if rendezvous_dir and ca_cert:
             raise ValueError(
                 f"invalid Client API bootstrap config {path}: shared-file rendezvous does not use "
                 f"{BootstrapKey.CA_CERT!r}"
             )
-        if connection_security != ConnectionSecurity.CLEAR and not ca_cert:
+        if (connection_security != ConnectionSecurity.CLEAR or secure_mode) and not ca_cert:
             raise ValueError(
                 f"invalid Client API bootstrap config {path}: "
-                f"{connection_security!r} attach requires field {BootstrapKey.CA_CERT!r}"
+                f"secure Cell or {connection_security!r} transport requires field {BootstrapKey.CA_CERT!r}"
             )
-        if BootstrapKey.SECURE_MODE in config:
-            expected_secure = connection_security != ConnectionSecurity.CLEAR
-            if config[BootstrapKey.SECURE_MODE] is not expected_secure:
-                raise ValueError(
-                    f"invalid Client API bootstrap config {path}: "
-                    f"{BootstrapKey.SECURE_MODE!r} disagrees with "
-                    f"{BootstrapKey.CONNECTION_SECURITY!r}"
-                )
+        if connection_security != ConnectionSecurity.CLEAR and not secure_mode:
+            raise ValueError(
+                f"invalid Client API bootstrap config {path}: secure transport requires "
+                f"{BootstrapKey.SECURE_MODE}=true"
+            )
+        auth_identity = config.get(BootstrapKey.AUTH_IDENTITY)
+        if auth_identity is not None and (not isinstance(auth_identity, str) or not auth_identity.strip()):
+            raise ValueError(
+                f"invalid Client API bootstrap config {path}: field "
+                f"{BootstrapKey.AUTH_IDENTITY!r} must be a non-empty string"
+            )
     if BootstrapKey.JOB_WAIT_TIMEOUT in config:
         value = config[BootstrapKey.JOB_WAIT_TIMEOUT]
         if value is not None and (not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0):

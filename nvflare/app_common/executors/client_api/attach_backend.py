@@ -35,7 +35,7 @@ from nvflare.client.cell.attach_rendezvous import (
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, TaskState, Topic
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
-from nvflare.fuel.f3.cellnet.identity import is_mtls_connection
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.file_driver import ROOT_DIR as SHARED_FILE_ROOT_DIR
@@ -52,10 +52,8 @@ _CONTROL_ATTEMPT_TIMEOUT = 2.0
 _RESULT_POLL_INTERVAL = 0.25
 _SESSION_MONITOR_INTERVAL = 0.2
 _DEFAULT_ATTACH_TASK_TIMEOUT = 600.0
-_ROUTE_MTLS = "mtls"
 _ROUTE_SHARED_FILE = "shared-file"
 _ROUTE_UNSAFE_SHARED_FILE = "unsafe-shared-file"
-_ROUTE_UNPROTECTED = "unprotected"
 
 
 class _AttachCancelSignal(Signal):
@@ -113,7 +111,6 @@ class AttachBackend(CellBackendBase):
         self._attach_listener_url: Optional[str] = None
         self._attach_listener_params: Optional[dict] = None
         self._endpoint_publisher: Optional[AttachEndpointPublisher] = None
-        self._trainer_identity_added = False
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -127,30 +124,12 @@ class AttachBackend(CellBackendBase):
             )
         try:
             self._initialize_cell(context, fl_ctx, "attach")
-            self._trainer_fqcn = make_attach_trainer_fqcn(self._cj_fqcn, context.attach_id)
-            self._bind_trainer_transport_identity()
-            listener_route = self._start_attach_listener()
+            self._trainer_fqcn = make_attach_trainer_fqcn(FQCN.get_parent(self._cj_fqcn), context.attach_id)
+            listener_route = self._start_shared_file_listener()
             if listener_route == _ROUTE_UNSAFE_SHARED_FILE:
                 raise ValueError(
                     "shared-file attach requires a FileDriver-owned listener whose root is not world-writable "
                     "and whose listener artifacts grant no access to other users"
-                )
-            protected_route = listener_route in (_ROUTE_SHARED_FILE, _ROUTE_MTLS)
-            if self._secure_mode and not protected_route:
-                raise ValueError(
-                    "secure Client API attach requires a protected shared-file or mTLS route; "
-                    "allow_insecure_attach cannot weaken secure job transport"
-                )
-            if not protected_route and not context.allow_insecure_attach:
-                raise ValueError(
-                    "the CJ-owned attach listener requires either the shared-file driver or mTLS when "
-                    "allow_insecure_attach=False; configure comm_config.json client_api_attach accordingly"
-                )
-            if not protected_route:
-                context.executor.log_warning(
-                    fl_ctx,
-                    "Client API attach is using an unprotected CJ-owned listener because "
-                    "allow_insecure_attach=True; peer identity and transport confidentiality are not guaranteed",
                 )
             if listener_route == _ROUTE_SHARED_FILE:
                 self._publish_shared_file_endpoint()
@@ -167,32 +146,42 @@ class AttachBackend(CellBackendBase):
             self._session_thread.start()
             context.executor.log_info(
                 fl_ctx,
-                f"waiting for attached trainer {self._trainer_fqcn} on {self._attach_listener_url}",
+                f"waiting for attached trainer {self._trainer_fqcn} "
+                f"via {self._attach_listener_url or 'the site CP route'}",
             )
         except BaseException:
             self._unwind()
             raise
 
-    def _start_attach_listener(self) -> str:
+    def _start_shared_file_listener(self) -> Optional[str]:
         core_cell = getattr(self._cell, "core_cell", None)
         communicator = getattr(core_cell, "communicator", None)
         configurator = getattr(core_cell, "comm_configurator", None)
-        if communicator is None or configurator is None:
+        if configurator is None:
             raise RuntimeError("CJ Cell does not expose the communication configuration needed by Attach")
         comm_config = configurator.get_config()
+        if comm_config is None:
+            return None
         if not isinstance(comm_config, dict):
-            raise ValueError(f"attach mode requires a site-local {ATTACH_COMM_CONFIG!r} section in comm_config.json")
+            raise ValueError("attach mode requires a valid site-local comm_config.json")
         listener_config = comm_config.get(ATTACH_COMM_CONFIG)
+        if listener_config is None:
+            return None
         if not isinstance(listener_config, dict):
-            raise ValueError(
-                f"attach mode requires comm_config.json field {ATTACH_COMM_CONFIG!r} to be a listener object"
-            )
+            raise ValueError(f"comm_config.json field {ATTACH_COMM_CONFIG!r} must be a listener object")
         scheme = listener_config.get("scheme")
         resources = listener_config.get("resources")
         if not isinstance(scheme, str) or not scheme or "://" in scheme:
             raise ValueError(f"{ATTACH_COMM_CONFIG}.scheme must be a non-empty driver scheme")
         if not isinstance(resources, dict):
             raise ValueError(f"{ATTACH_COMM_CONFIG}.resources must be a dict")
+        if scheme != SHARED_FILE_SCHEME:
+            raise ValueError(
+                f"{ATTACH_COMM_CONFIG} supports only {SHARED_FILE_SCHEME!r}; "
+                "network Attach trainers must connect through the site's existing CP listener"
+            )
+        if communicator is None:
+            raise RuntimeError("CJ Cell does not expose the communicator needed by shared-file Attach")
 
         try:
             handle, connect_url, params = communicator.start_listener(scheme, dict(resources))
@@ -201,24 +190,10 @@ class AttachBackend(CellBackendBase):
         self._attach_listener_handle = handle
         self._attach_listener_url = connect_url
         self._attach_listener_params = params
-        return self._listener_route_kind(params)
-
-    def _bind_trainer_transport_identity(self) -> None:
-        """Bind a provisioned site certificate to the CJ-child trainer FQCN."""
-        core_cell = getattr(self._cell, "core_cell", None)
-        resolver = getattr(core_cell, "identity_resolver", None)
-        exact_map = getattr(resolver, "exact_identity_map", None)
-        if isinstance(exact_map, dict):
-            existing = exact_map.get(self._trainer_fqcn)
-            if existing and existing != self._site_name:
-                raise ValueError(
-                    f"trainer FQCN {self._trainer_fqcn!r} is already bound to transport identity {existing!r}"
-                )
-            exact_map[self._trainer_fqcn] = self._site_name
-            self._trainer_identity_added = existing is None
+        return self._shared_file_route_kind(params)
 
     @staticmethod
-    def _listener_route_kind(params: dict) -> str:
+    def _shared_file_route_kind(params: dict) -> str:
         scheme = params.get(DriverParams.SCHEME.value, params.get(DriverParams.SCHEME))
         if scheme == SHARED_FILE_SCHEME:
             return (
@@ -226,9 +201,7 @@ class AttachBackend(CellBackendBase):
                 if AttachBackend._shared_file_listener_is_protected(params)
                 else _ROUTE_UNSAFE_SHARED_FILE
             )
-        if is_mtls_connection(params):
-            return _ROUTE_MTLS
-        return _ROUTE_UNPROTECTED
+        raise ValueError("the CJ-owned Attach listener supports only shared-file transport")
 
     @staticmethod
     def _shared_file_listener_is_protected(params: dict) -> bool:
@@ -317,7 +290,7 @@ class AttachBackend(CellBackendBase):
         if session.result_source_live.is_set():
             self.logger.warning(
                 f"timed out waiting {wait_bound}s for accepted result source "
-                f"{session.trainer_fqcn}; closing the Attach listener"
+                f"{session.trainer_fqcn}; closing the Attach route"
             )
 
     # ------------------------------------------------------------------ session
@@ -726,13 +699,3 @@ class AttachBackend(CellBackendBase):
                 communicator.remove_connector(handle)
             except Exception:
                 self.logger.debug("failed to remove CJ-owned attach listener", exc_info=True)
-        resolver = getattr(core_cell, "identity_resolver", None)
-        exact_map = getattr(resolver, "exact_identity_map", None)
-        if (
-            isinstance(exact_map, dict)
-            and self._trainer_identity_added
-            and self._trainer_fqcn
-            and exact_map.get(self._trainer_fqcn) == self._site_name
-        ):
-            exact_map.pop(self._trainer_fqcn, None)
-        self._trainer_identity_added = False

@@ -156,11 +156,9 @@ class ClientAPIExecutor(Executor):
                 trainer to attach. None means no timeout.
             allow_reconnect (bool): attach only. Whether a trainer may re-attach to an existing
                 session after a disconnect.
-            allow_insecure_attach (bool): attach only. Explicitly allow an unprotected route.
-                When False, the dedicated CJ-owned Attach listener must use either the
-                shared-file driver or mTLS. This does not configure TLS and does not affect
-                the site's independent CP-to-CJ route. Intended only for trusted development
-                environments using clear network transport.
+            allow_insecure_attach (bool): attach only. Deprecated compatibility argument with
+                no effect. Network Attach uses the site's existing CP trust model; a CJ-owned
+                shared-file route must always satisfy its filesystem protection checks.
         """
         super().__init__()
 

@@ -18,12 +18,11 @@ import re
 from urllib.parse import urlsplit
 
 from nvflare.apis.fl_constant import ConnectionSecurity
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.fqcn import CLIENT_API_ATTACH_LEAF_PREFIX, FQCN
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.fuel.f3.drivers.file_driver import parse_file_url
 
-ATTACH_LEAF_PREFIX = "client_api_"
 ATTACH_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 SECURE_NETWORK_SCHEMES = {"https", "grpcs", "agrpcs", "ngrpcs", "stcp", "satcp"}
 
@@ -35,15 +34,15 @@ def validate_attach_id(attach_id: str) -> str:
     return attach_id
 
 
-def make_attach_trainer_fqcn(cj_fqcn: str, attach_id: str) -> str:
-    """Derive the trainer identity below the CJ that owns its Attach listener."""
-    if not isinstance(cj_fqcn, str) or not cj_fqcn:
-        raise ValueError(f"cj_fqcn must be a non-empty string, but got {cj_fqcn!r}")
-    error = FQCN.validate(cj_fqcn)
+def make_attach_trainer_fqcn(cp_fqcn: str, attach_id: str) -> str:
+    """Derive the stable trainer identity below the site's CP."""
+    if not isinstance(cp_fqcn, str) or not cp_fqcn:
+        raise ValueError(f"cp_fqcn must be a non-empty string, but got {cp_fqcn!r}")
+    error = FQCN.validate(cp_fqcn)
     if error:
-        raise ValueError(f"invalid cj_fqcn {cj_fqcn!r}: {error}")
+        raise ValueError(f"invalid cp_fqcn {cp_fqcn!r}: {error}")
     attach_id = validate_attach_id(attach_id)
-    fqcn = FQCN.join([cj_fqcn, f"-{ATTACH_LEAF_PREFIX}{attach_id}"])
+    fqcn = FQCN.join([cp_fqcn, f"{CLIENT_API_ATTACH_LEAF_PREFIX}{attach_id}"])
     error = FQCN.validate(fqcn)
     if error:
         raise ValueError(f"invalid attach trainer FQCN {fqcn!r}: {error}")

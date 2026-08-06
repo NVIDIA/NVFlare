@@ -25,6 +25,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+from cryptography.hazmat.primitives import serialization
 
 import nvflare
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
@@ -45,11 +46,13 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.network_utils import get_open_ports
+from nvflare.lighter.utils import Identity, generate_cert, generate_keys
 from nvflare.private.fed.authenticator import validate_auth_headers
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(nvflare.__file__)))
@@ -177,6 +180,35 @@ def _record_download_transactions(monkeypatch):
     return created_transaction_cells
 
 
+def _make_cell_credentials(root_dir, root_key, root_cert, identity):
+    root_dir.mkdir()
+    key, public_key = generate_keys()
+    cert = generate_cert(
+        subject=Identity(identity),
+        issuer=Identity("test-root"),
+        signing_pri_key=root_key,
+        subject_pub_key=public_key,
+    )
+    ca_path = root_dir / "rootCA.pem"
+    cert_path = root_dir / "client.crt"
+    key_path = root_dir / "client.key"
+    ca_path.write_bytes(root_cert.public_bytes(serialization.Encoding.PEM))
+    cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        )
+    )
+    return {
+        DriverParams.CA_CERT.value: str(ca_path),
+        DriverParams.CLIENT_CERT.value: str(cert_path),
+        DriverParams.CLIENT_KEY.value: str(key_path),
+        DriverParams.CONNECTION_SECURITY.value: "clear",
+    }
+
+
 @pytest.mark.timeout(60)
 @pytest.mark.parametrize("transport", ["tcp", "grpc", "http", "shared-file"])
 @pytest.mark.parametrize("startup_order", ["trainer-first", "cj-first"])
@@ -195,6 +227,21 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, monkeypatc
     completed = False
 
     try:
+        internal_transport = "tcp" if transport == "shared-file" else transport
+        monkeypatch.setattr(CommConfigurator, "_config_loaded", True)
+        monkeypatch.setattr(
+            CommConfigurator,
+            "_configuration",
+            {
+                "internal": {
+                    "scheme": internal_transport,
+                    "resources": {
+                        "host": "127.0.0.1",
+                        DriverParams.CONNECTION_SECURITY.value: "clear",
+                    },
+                }
+            },
+        )
         received = {}
         server = Cell(f"server-{suffix}", server_url, secure=False, credentials={})
         server.start()
@@ -229,15 +276,11 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, monkeypatc
                 "rendezvous_dir": attach_resources["root_dir"],
             }
         else:
-            attach_port = get_open_ports(1)[0]
-            attach_resources = {
-                "host": "127.0.0.1",
-                "port": attach_port,
-                DriverParams.CONNECTION_SECURITY.value: "clear",
-            }
+            attach_resources = None
             trainer_connection = {
-                "connect_url": f"{transport}://127.0.0.1:{attach_port}",
-                "cj_fqcn": f"{site_name}.{job_id}",
+                # Network Attach reuses the stable CP listener. SESSION_OPEN
+                # discovers and binds the dynamic CJ after the trainer joins.
+                "connect_url": site_listener,
                 "connection_security": "clear",
             }
 
@@ -251,12 +294,13 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, monkeypatc
         )
         cj.start()
         cells.append(cj)
-        cj.core_cell.comm_configurator.config = {
-            "client_api_attach": {
-                "scheme": transport,
-                "resources": attach_resources,
+        if transport == "shared-file":
+            cj.core_cell.comm_configurator.config = {
+                "client_api_attach": {
+                    "scheme": transport,
+                    "resources": attach_resources,
+                }
             }
-        }
 
         profile = tmp_path / "attach_profile.json"
         profile.write_text(
@@ -304,7 +348,6 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, monkeypatc
             heartbeat_timeout=5.0,
             task_wait_timeout=20.0,
             result_wait_timeout=20.0,
-            allow_insecure_attach=transport != "shared-file",
             params_exchange_format=ExchangeFormat.NUMPY,
             server_expected_format=ExchangeFormat.NUMPY,
         )
@@ -366,6 +409,165 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, monkeypatc
                 if session is not None:
                     session.result_source_live.clear()
             backend.finalize(_fl_ctx(cells[-1], site_name, job_id, secure_mode=secure_job))
+        stdout, stderr = _stop_process(trainer) if trainer is not None else ("", "")
+        for cell in reversed(cells):
+            fqcn = cell.get_fqcn()
+            cell.stop()
+            CoreCell.ALL_CELLS.pop(fqcn, None)
+
+    assert trainer.returncode == 0, f"trainer failed:\nstdout:\n{stdout}\nstderr:\n{stderr}"
+
+
+@pytest.mark.timeout(60)
+def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeypatch):
+    flare_decomposers.register()
+    common_decomposers.register()
+    suffix = uuid.uuid4().hex[:8]
+    server_fqcn = f"server-{suffix}"
+    site_name = f"site-{suffix}"
+    job_id = f"job-{suffix}"
+    attach_id = f"trainer_{suffix}"
+    server_url = f"tcp://127.0.0.1:{get_open_ports(1)[0]}"
+    cells = []
+    backend = None
+    trainer = None
+    completed = False
+
+    root_key, root_public_key = generate_keys()
+    root_cert = generate_cert(
+        subject=Identity("test-root"),
+        issuer=Identity("test-root"),
+        signing_pri_key=root_key,
+        subject_pub_key=root_public_key,
+        ca=True,
+    )
+    server_credentials = _make_cell_credentials(tmp_path / "server-creds", root_key, root_cert, server_fqcn)
+    site_credentials = _make_cell_credentials(tmp_path / "site-creds", root_key, root_cert, site_name)
+
+    monkeypatch.setattr(CommConfigurator, "_config_loaded", True)
+    monkeypatch.setattr(
+        CommConfigurator,
+        "_configuration",
+        {
+            "internal": {
+                "scheme": "tcp",
+                "resources": {
+                    "host": "127.0.0.1",
+                    DriverParams.CONNECTION_SECURITY.value: "clear",
+                },
+            }
+        },
+    )
+
+    try:
+        received = {}
+        server = Cell(
+            server_fqcn,
+            server_url,
+            secure=True,
+            credentials=server_credentials,
+            auth_identity_map={site_name: site_name},
+        )
+        server.start()
+        cells.append(server)
+
+        site = Cell(
+            site_name,
+            server_url,
+            secure=True,
+            credentials=site_credentials,
+            create_internal_listener=True,
+            auth_identity_map={server_fqcn: server_fqcn},
+        )
+        site.start()
+        cells.append(site)
+        site_listener = _wait_for_listener(site)
+        site.register_request_cb(
+            channel="secure_attach_e2e",
+            topic="result",
+            cb=lambda request: received.update(result=request.payload) or make_reply(ReturnCode.OK),
+        )
+
+        cj = Cell(
+            f"{site_name}.{job_id}",
+            server_url,
+            secure=True,
+            credentials=site_credentials,
+            parent_url=site_listener,
+            create_internal_listener=False,
+            auth_identity_map={site_name: site_name, server_fqcn: server_fqcn},
+        )
+        cj.start()
+        cells.append(cj)
+
+        profile = tmp_path / "secure_attach_profile.json"
+        profile.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "execution_mode": "attach",
+                    "attach_id": attach_id,
+                    "site_name": site_name,
+                    "connect_url": site_listener,
+                    "connection_security": "clear",
+                    "secure_mode": True,
+                    "ca_cert": site_credentials[DriverParams.CA_CERT.value],
+                    "job_wait_timeout": 20.0,
+                }
+            )
+        )
+        trainer_script = tmp_path / "secure_trainer.py"
+        trainer_script.write_text(_TRAINER_SCRIPT)
+        env = os.environ.copy()
+        env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
+        trainer = subprocess.Popen(
+            [sys.executable, "-u", str(trainer_script), str(profile)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+        )
+
+        fl_ctx = _fl_ctx(cj, site_name, job_id, secure_mode=True, with_site_credentials=False)
+        backend = AttachBackend()
+        backend.initialize(
+            ClientAPIBackendContext(
+                executor=MagicMock(),
+                attach_id=attach_id,
+                attach_timeout=20.0,
+                heartbeat_interval=0.5,
+                heartbeat_timeout=5.0,
+                task_wait_timeout=20.0,
+                result_wait_timeout=20.0,
+                params_exchange_format=ExchangeFormat.NUMPY,
+                server_expected_format=ExchangeFormat.NUMPY,
+            ),
+            fl_ctx,
+        )
+
+        initial = np.arange(1024 * 1024, dtype=np.float32).reshape(1024, 1024)
+        task = DXO(DataKind.WEIGHTS, {NPConstants.NUMPY_KEY: initial}).to_shareable()
+        task.set_header(FOBSContextKey.RECEIVER_IDS, [site.get_fqcn()])
+        result = backend.execute("train", task, fl_ctx, Signal())
+
+        reply = cj.send_request(
+            channel="secure_attach_e2e",
+            topic="result",
+            target=site.get_fqcn(),
+            request=new_cell_message({}, result),
+            timeout=20.0,
+        )
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        result_dxo = from_shareable(received["result"])
+        np.testing.assert_array_equal(result_dxo.data[NPConstants.NUMPY_KEY], initial + 1)
+        completed = True
+    finally:
+        if backend is not None:
+            if not completed:
+                session = backend._get_session()
+                if session is not None:
+                    session.result_source_live.clear()
+            backend.finalize(_fl_ctx(cells[-1], site_name, job_id, secure_mode=True))
         stdout, stderr = _stop_process(trainer) if trainer is not None else ("", "")
         for cell in reversed(cells):
             fqcn = cell.get_fqcn()

@@ -21,6 +21,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
@@ -37,7 +39,7 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 
 CJ_FQCN = "site-1.job-1"
-TRAINER_FQCN = f"{CJ_FQCN}.-client_api_trainer_a"
+TRAINER_FQCN = "site-1.-client_api_trainer_a"
 
 
 def _accepted(topic, **fields):
@@ -51,7 +53,7 @@ class FakeCell:
         listener_scheme="grpcs",
         listener_connection_security="mtls",
         listener_params=None,
-        attach_config=True,
+        attach_config=False,
     ):
         self.decode_pass_through_topics = set()
         self.cbs = {}
@@ -254,36 +256,20 @@ def test_attach_session_executes_task_and_finalize_only_closes_protocol():
     assert any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
     assert any(topic == Topic.SHUTDOWN for topic, _, _ in cell.sent)
     assert not backend._session_thread.is_alive()
-    cell.core_cell.communicator.remove_connector.assert_called_once_with("attach-listener")
+    cell.core_cell.communicator.remove_connector.assert_not_called()
     assert TRAINER_FQCN not in cell.core_cell.identity_resolver.exact_identity_map
 
 
-def test_mtls_listener_binds_trainer_fqcn_to_site_certificate_identity():
+def test_cp_routed_trainer_does_not_mutate_cj_identity_map():
     cell = FakeCell()
     backend = AttachBackend()
     fl_ctx = _fl_ctx(cell)
 
     backend.initialize(_context(), fl_ctx)
 
-    assert cell.core_cell.identity_resolver.exact_identity_map[TRAINER_FQCN] == "site-1"
+    assert TRAINER_FQCN not in cell.core_cell.identity_resolver.exact_identity_map
     backend.finalize(fl_ctx)
     assert TRAINER_FQCN not in cell.core_cell.identity_resolver.exact_identity_map
-
-
-def test_conflicting_trainer_transport_identity_fails_before_listener_or_session():
-    cell = FakeCell()
-    cell.core_cell.identity_resolver.exact_identity_map[TRAINER_FQCN] = "other-site"
-    backend = AttachBackend()
-
-    try:
-        backend.initialize(_context(), _fl_ctx(cell))
-    except ValueError as e:
-        assert "already bound" in str(e)
-    else:
-        raise AssertionError("a conflicting transport identity must be rejected")
-
-    cell.core_cell.communicator.start_listener.assert_not_called()
-    assert not any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
 
 
 def test_session_open_task_exchange_uses_wire_primitive_values():
@@ -532,47 +518,26 @@ def test_reconnect_does_not_replay_task_interrupted_by_session_loss():
     backend.finalize(fl_ctx)
 
 
-def test_clear_attach_listener_requires_explicit_opt_in_before_session_open():
-    cell = FakeCell(listener_scheme="grpc", listener_connection_security="clear")
-    backend = AttachBackend()
-    fl_ctx = _fl_ctx(cell, secure_mode=False)
-
-    try:
-        backend.initialize(_context(), fl_ctx)
-    except ValueError as e:
-        assert "CJ-owned attach listener" in str(e)
-    else:
-        raise AssertionError("non-secure attach must require explicit opt-in")
-    assert not any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
-
-    allowed = AttachBackend()
-    allowed_context = _context(allow_insecure_attach=True)
-    allowed.initialize(allowed_context, fl_ctx)
-    assert _wait_ready(allowed).ready.is_set()
-    allowed_context.executor.log_warning.assert_called_once()
-    allowed.finalize(fl_ctx)
-
-
-def test_secure_job_rejects_insecure_opt_in_before_session_open():
-    cell = FakeCell(listener_scheme="grpc", listener_connection_security="mtls")
+def test_network_attach_uses_existing_cp_route_without_a_cj_listener():
+    cell = FakeCell(attach_config=False)
     backend = AttachBackend()
     fl_ctx = _fl_ctx(cell, secure_mode=True)
 
-    try:
-        backend.initialize(_context(), fl_ctx)
-    except ValueError as e:
-        assert "secure Client API attach requires" in str(e)
-    else:
-        raise AssertionError("a secure-mode site with a clear attach listener must be rejected")
-    assert not any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
+    backend.initialize(_context(), fl_ctx)
+    assert _wait_ready(backend).ready.is_set()
+    cell.core_cell.communicator.start_listener.assert_not_called()
+    assert any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
+    backend.finalize(fl_ctx)
 
-    allowed = AttachBackend()
-    try:
-        allowed.initialize(_context(allow_insecure_attach=True), fl_ctx)
-    except ValueError as e:
-        assert "allow_insecure_attach cannot weaken" in str(e)
-    else:
-        raise AssertionError("secure attach must reject an unprotected route even with explicit insecure opt-in")
+
+def test_dedicated_network_attach_listener_is_rejected():
+    cell = FakeCell(listener_scheme="grpc", listener_connection_security="clear", attach_config=True)
+    backend = AttachBackend()
+
+    with pytest.raises(ValueError, match="network Attach trainers must connect through"):
+        backend.initialize(_context(), _fl_ctx(cell, secure_mode=False))
+
+    cell.core_cell.communicator.start_listener.assert_not_called()
     assert not any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
 
 
@@ -602,6 +567,7 @@ def test_shared_file_attach_listener_does_not_require_insecure_opt_in(tmp_path):
         listener_scheme="shared-file",
         listener_connection_security="clear",
         listener_params=params,
+        attach_config=True,
     )
     backend = AttachBackend()
     fl_ctx = _fl_ctx(cell, secure_mode=True)
@@ -628,6 +594,7 @@ def test_world_accessible_shared_file_attach_listener_is_rejected(tmp_path):
         listener_scheme="shared-file",
         listener_connection_security="clear",
         listener_params=params,
+        attach_config=True,
     )
     backend = AttachBackend()
     fl_ctx = _fl_ctx(cell, secure_mode=False)
@@ -641,18 +608,15 @@ def test_world_accessible_shared_file_attach_listener_is_rejected(tmp_path):
     assert not any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
 
 
-def test_missing_attach_listener_config_fails_before_session_open():
+def test_missing_attach_listener_config_selects_cp_route():
     cell = FakeCell(attach_config=False)
     backend = AttachBackend()
     fl_ctx = _fl_ctx(cell)
 
-    try:
-        backend.initialize(_context(), fl_ctx)
-    except ValueError as e:
-        assert "client_api_attach" in str(e)
-    else:
-        raise AssertionError("attach must require a dedicated listener configuration")
-    assert not any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
+    backend.initialize(_context(), fl_ctx)
+    assert _wait_ready(backend).ready.is_set()
+    cell.core_cell.communicator.start_listener.assert_not_called()
+    backend.finalize(fl_ctx)
 
 
 def test_finalize_unblocks_pending_result_wait():
@@ -680,7 +644,7 @@ def test_finalize_unblocks_pending_result_wait():
     assert result_box["result"].get_return_code() == ReturnCode.EXECUTION_EXCEPTION
 
 
-def test_finalize_keeps_attach_listener_until_accepted_result_source_disconnects():
+def test_finalize_keeps_attach_route_until_accepted_result_source_disconnects():
     cell = FakeCell()
     cell.shutdown_source_live = True
     backend = AttachBackend()
@@ -699,4 +663,4 @@ def test_finalize_keeps_attach_listener_until_accepted_result_source_disconnects
     finalizer.join(timeout=2.0)
 
     assert not finalizer.is_alive()
-    cell.core_cell.communicator.remove_connector.assert_called_once_with("attach-listener")
+    cell.core_cell.communicator.remove_connector.assert_not_called()

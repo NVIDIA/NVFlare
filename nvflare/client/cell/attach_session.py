@@ -66,8 +66,9 @@ class AttachTrainerSession:
         self._api = api
         config = api._config
         self.attach_id = config[BootstrapKey.ATTACH_ID]
+        self.cp_fqcn = config.get(BootstrapKey.CP_FQCN, config[BootstrapKey.SITE_NAME])
         cj_fqcn = config.get(BootstrapKey.CJ_FQCN)
-        self.trainer_fqcn = make_attach_trainer_fqcn(cj_fqcn, self.attach_id) if cj_fqcn else None
+        self.trainer_fqcn = make_attach_trainer_fqcn(self.cp_fqcn, self.attach_id)
         connect_url = config.get(BootstrapKey.CONNECT_URL)
         # A direct network profile is validated immediately. A shared-file
         # profile resolves the CJ-owned listener through its rendezvous record
@@ -92,7 +93,7 @@ class AttachTrainerSession:
         self._wait_deadline = None if timeout is None else time.monotonic() + timeout
         connect_url = self._api._config.get(BootstrapKey.CONNECT_URL)
         if connect_url:
-            self._api._cj_fqcn = self._api._config[BootstrapKey.CJ_FQCN]
+            self._api._cj_fqcn = self._api._config.get(BootstrapKey.CJ_FQCN)
             self._api._trainer_fqcn = self.trainer_fqcn
             return connect_url
 
@@ -104,6 +105,7 @@ class AttachTrainerSession:
             stop_event=self._closed,
         )
         self._api._cj_fqcn = record[AttachEndpointKey.CJ_FQCN]
+        self.cp_fqcn = FQCN.get_parent(self._api._cj_fqcn)
         self.trainer_fqcn = record[AttachEndpointKey.TRAINER_FQCN]
         self._api._trainer_fqcn = self.trainer_fqcn
         connect_url = record[AttachEndpointKey.CONNECT_URL]
@@ -121,15 +123,14 @@ class AttachTrainerSession:
     def cell_security(self) -> tuple[bool, dict]:
         if self.connection_security is None:
             raise RuntimeError("attach connection was not resolved before Cell construction")
+        secure = bool(self._api._config.get(BootstrapKey.SECURE_MODE, False))
+        secure = secure or self.connection_security != ConnectionSecurity.CLEAR
         credentials = {DriverParams.CONNECTION_SECURITY.value: self.connection_security}
-        if self.connection_security != ConnectionSecurity.CLEAR:
+        if secure:
             ca_cert = self._api._config.get(BootstrapKey.CA_CERT)
             if not ca_cert:
-                raise RuntimeError(
-                    f"attach profile using {self.connection_security!r} requires {BootstrapKey.CA_CERT!r}"
-                )
+                raise RuntimeError(f"secure attach profile requires {BootstrapKey.CA_CERT!r}")
             credentials[DriverParams.CA_CERT.value] = ca_cert
-        if self.connection_security == ConnectionSecurity.MTLS:
             enhance_credential_info(credentials)
             missing = [
                 param.value
@@ -139,10 +140,14 @@ class AttachTrainerSession:
             ]
             if missing:
                 raise RuntimeError(
-                    "mTLS attach requires readable ca_cert, client_cert, and client_key files; "
+                    "secure attach requires readable ca_cert, client_cert, and client_key files; "
                     f"missing or unreadable: {', '.join(missing)}"
                 )
-        return self.connection_security != ConnectionSecurity.CLEAR, credentials
+        return secure, credentials
+
+    def auth_identity_map(self) -> dict:
+        identity = self._api._config.get(BootstrapKey.AUTH_IDENTITY, self._api._site_name)
+        return {self.cp_fqcn: identity}
 
     def register_callbacks(self, cell) -> None:
         cell.register_request_cb(channel=CHANNEL, topic=Topic.SESSION_OPEN, cb=self._handle_session_open)
@@ -171,7 +176,11 @@ class AttachTrainerSession:
             authorized = origin == bound_origin
         else:
             path = FQCN.split(origin) if isinstance(origin, str) else []
-            authorized = topic == Topic.SESSION_OPEN and len(path) == 2 and path[0] == self._api._site_name
+            authorized = (
+                topic == Topic.SESSION_OPEN
+                and len(path) == len(FQCN.split(self.cp_fqcn)) + 1
+                and FQCN.get_parent(origin) == self.cp_fqcn
+            )
         if authorized:
             return None
         return make_cell_reply(
@@ -581,7 +590,7 @@ class AttachTrainerSession:
         job_id = payload.get(MsgKey.JOB_ID)
         if not isinstance(job_id, str) or not job_id or len(FQCN.split(job_id)) != 1 or FQCN.validate(job_id):
             return "SESSION_OPEN has invalid job id"
-        expected_origin = FQCN.join([api._site_name, job_id])
+        expected_origin = FQCN.join([self.cp_fqcn, job_id])
         if origin != expected_origin:
             return f"CJ origin mismatch: expected {expected_origin!r}, got {origin!r}"
         if api._cj_fqcn and origin != api._cj_fqcn:
