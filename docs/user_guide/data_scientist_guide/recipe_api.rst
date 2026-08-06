@@ -73,6 +73,11 @@ All concrete recipes support the common execution surface:
 
       python job.py --export --export-dir /tmp/nvflare/job
 
+   Recipe scripts reserve ``--export`` and ``--export-dir``. NVFlare consumes
+   these arguments during module import, before the script's argument parser
+   runs, and emits a warning identifying them as system-level arguments. Use
+   different option names for script-specific behavior.
+
 ``recipe.run(env, server_exec_params=None, client_exec_params=None)``
    Submit directly through the environment and return a ``Run`` handle. Most
    user examples should use ``execute`` so export flags continue to work.
