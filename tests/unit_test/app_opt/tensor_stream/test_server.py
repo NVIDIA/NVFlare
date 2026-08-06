@@ -15,14 +15,18 @@
 from unittest.mock import Mock, patch
 
 import pytest
+import torch
 
+from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_opt.tensor_stream.receiver import TensorReceiver
 from nvflare.app_opt.tensor_stream.sender import TensorSender
 from nvflare.app_opt.tensor_stream.server import TensorServerStreamer
+from nvflare.app_opt.tensor_stream.types import TensorCustomKeys
 from nvflare.client.config import ExchangeFormat
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
 
 class TestTensorServerStreamer:
@@ -224,12 +228,82 @@ class TestTensorServerStreamer:
         streamer = TensorServerStreamer()
         mock_receiver = Mock(spec=TensorReceiver)
         streamer.receiver = mock_receiver
+        mock_fl_context.get_prop.side_effect = lambda key, default=None: {
+            FLContextKey.TASK_NAME: "train",
+            FLContextKey.TASK_ID: "task-1",
+        }.get(key, default)
 
         # Handle BEFORE_TASK_RESULT_FILTER event
         streamer.handle_event(EventType.BEFORE_TASK_RESULT_FILTER, mock_fl_context)
 
         # Verify receiver.set_ctx_with_tensors was called
         mock_receiver.set_ctx_with_tensors.assert_called_once_with(mock_fl_context)
+
+    def test_handle_event_before_task_result_filter_skips_unconfigured_task(self, mock_fl_context):
+        streamer = TensorServerStreamer(tasks=["train"])
+        mock_receiver = Mock(spec=TensorReceiver)
+        streamer.receiver = mock_receiver
+        mock_fl_context.get_prop.side_effect = lambda key, default=None: {
+            FLContextKey.TASK_NAME: "swarm_config",
+            FLContextKey.TASK_ID: "task-1",
+        }.get(key, default)
+
+        streamer.handle_event(EventType.BEFORE_TASK_RESULT_FILTER, mock_fl_context)
+
+        mock_receiver.wait_for_tensors.assert_not_called()
+        mock_receiver.set_ctx_with_tensors.assert_not_called()
+        mock_fl_context.get_peer_context.assert_not_called()
+
+    def test_handle_event_before_task_result_filter_skips_pass_through_result(self, mock_fl_context):
+        task_id = "task-1"
+        task_result = DXO(
+            data_kind=DataKind.WEIGHTS,
+            data={
+                "large_weight": LazyDownloadRef("site-3.trainer", "result-ref", "T0"),
+                "small_weight": torch.tensor([1.0]),
+            },
+        ).to_shareable()
+        mock_fl_context.get_prop.side_effect = lambda key, default=None: {
+            FLContextKey.TASK_NAME: "train",
+            FLContextKey.TASK_ID: task_id,
+            FLContextKey.TASK_RESULT: task_result,
+        }.get(key, default)
+        mock_fl_context.get_peer_context.return_value.get_identity_name.return_value = "site-3"
+        streamer = TensorServerStreamer()
+        mock_receiver = Mock(spec=TensorReceiver)
+        streamer.receiver = mock_receiver
+
+        streamer.handle_event(EventType.BEFORE_TASK_RESULT_FILTER, mock_fl_context)
+
+        mock_receiver.wait_for_tensors.assert_not_called()
+        mock_receiver.set_ctx_with_tensors.assert_not_called()
+        assert task_result["DXO"]["data"]["large_weight"].fqcn == "site-3.trainer"
+        assert torch.equal(task_result["DXO"]["data"]["small_weight"], torch.tensor([1.0]))
+
+    def test_handle_event_before_task_result_filter_skips_eagerly_downloaded_pass_through_result(self, mock_fl_context):
+        task_id = "task-1"
+        task_result = DXO(
+            data_kind=DataKind.WEIGHTS,
+            data={
+                "large_weight": torch.ones(1024),
+                "small_weight": torch.tensor([1.0]),
+            },
+        ).to_shareable()
+        task_result.set_header(TensorCustomKeys.TASK_RESULT_STREAMING_SKIPPED, True)
+        mock_fl_context.get_prop.side_effect = lambda key, default=None: {
+            FLContextKey.TASK_NAME: "train",
+            FLContextKey.TASK_ID: task_id,
+            FLContextKey.TASK_RESULT: task_result,
+        }.get(key, default)
+        mock_fl_context.get_peer_context.return_value.get_identity_name.return_value = "site-3"
+        streamer = TensorServerStreamer()
+        mock_receiver = Mock(spec=TensorReceiver)
+        streamer.receiver = mock_receiver
+
+        streamer.handle_event(EventType.BEFORE_TASK_RESULT_FILTER, mock_fl_context)
+
+        mock_receiver.wait_for_tensors.assert_not_called()
+        mock_receiver.set_ctx_with_tensors.assert_not_called()
 
     def test_sender_creation_on_after_task_data_filter(self, mock_fl_context, mock_engine_with_clients):
         """Test that TensorSender is already created during initialization, not during AFTER_TASK_DATA_FILTER event."""
@@ -437,6 +511,7 @@ class TestTensorServerStreamer:
         mock_fl_context.get_engine.return_value = mock_engine_with_clients
         mock_fl_context.get_prop.side_effect = lambda key, default=None: {
             AppConstants.CURRENT_ROUND: current_round,
+            FLContextKey.TASK_NAME: "train",
             FLContextKey.TASK_ID: task_id,
         }.get(key, default)
 

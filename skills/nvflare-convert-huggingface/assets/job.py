@@ -111,7 +111,7 @@ def build_recipe(
     data_root: str,
     num_clients: int,
     num_rounds: int,
-    key_metric: str,
+    key_metric: str = "",
     max_steps: int | None = None,
     num_train_epochs: float | None = None,
     preserve_source_budget: bool = False,
@@ -176,7 +176,11 @@ def main():
     budget.add_argument("--max_steps", type=_positive_int_arg)
     budget.add_argument("--num_train_epochs", type=_positive_float_arg)
     budget.add_argument("--preserve_source_budget", action="store_true")
-    parser.add_argument("--key_metric", required=True)
+    parser.add_argument(
+        "--key_metric",
+        default="",
+        help="exact higher-is-better server metric key; leave empty to disable best-model selection",
+    )
     parser.add_argument("--workspace_root", type=Path, default=Path("/tmp/nvflare/hf-trainer"))
     args = parser.parse_args()
 

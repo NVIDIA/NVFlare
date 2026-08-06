@@ -39,6 +39,31 @@ class DummyStream(Stream):
         return self._chunks.pop(0)
 
 
+class ConformingShortReadStream(Stream):
+    def __init__(self, size, read_pattern):
+        super().__init__(size=size, headers={})
+        self.remaining = size
+        self.read_pattern = read_pattern
+        self.read_count = 0
+
+    def read(self, size):
+        if not self.remaining:
+            return b""
+        pattern_size = self.read_pattern[self.read_count % len(self.read_pattern)]
+        self.read_count += 1
+        result_size = min(size, pattern_size, self.remaining)
+        self.remaining -= result_size
+        return b"x" * result_size
+
+
+class OversizedReadStream(Stream):
+    def __init__(self):
+        super().__init__(size=0, headers={})
+
+    def read(self, size):
+        return b"x" * (size + 1)
+
+
 class TestByteStreamerAckWatchdog:
     def _make_task(
         self,
@@ -143,6 +168,41 @@ class TestByteStreamerAckWatchdog:
 
         assert task.stream_future.done()
         assert task.stream_future.exception() is None
+
+    def test_short_reads_are_coalesced_into_full_non_final_frames(self, monkeypatch):
+        task, cell = self._make_task(
+            monkeypatch,
+            window_size=1024,
+            ack_wait=0.5,
+            ack_progress_timeout=2.0,
+            ack_progress_check_interval=0.01,
+            chunks=[b""],
+            chunk_size=8,
+        )
+        task.stream = ConformingShortReadStream(size=25, read_pattern=[7, 2])
+        task.stream_future.set_size(25)
+
+        task.send_loop()
+
+        messages = [call.args[3] for call in cell.fire_and_forget.call_args_list]
+        assert [len(message.payload) for message in messages] == [8, 8, 8, 1]
+        assert all(message.get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.CHUNK for message in messages[:-1])
+        assert messages[-1].get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.FINAL
+
+    def test_stream_cannot_return_more_than_requested(self, monkeypatch):
+        task, _ = self._make_task(
+            monkeypatch,
+            window_size=1024,
+            ack_wait=0.5,
+            ack_progress_timeout=2.0,
+            ack_progress_check_interval=0.01,
+            chunks=[b""],
+            chunk_size=8,
+        )
+        task.stream = OversizedReadStream()
+
+        with pytest.raises(StreamError, match=r"invalid size: 9 \(requested 8\)"):
+            task.send_loop()
 
     def test_watchdog_stops_when_no_ack_progress(self, monkeypatch):
         task, _ = self._make_task(
@@ -344,6 +404,26 @@ class TestReliableByteStreamer:
 
         assert task.retry_max_pending_bytes == 7
 
+    def test_retry_pending_byte_limit_default_scales_with_large_window(self, monkeypatch, retry_scheduler):
+        self._patch_common_config(monkeypatch)
+        window_size = 256 * 1024**2
+        monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: window_size)
+
+        task = self._make_task_with_reliable(True, monkeypatch)
+
+        assert task.retry_max_pending_bytes == 2 * window_size
+
+    def test_ack_interval_is_clamped_to_window_size(self, monkeypatch, retry_scheduler, caplog):
+        self._patch_common_config(monkeypatch)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: 8)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_ack_interval", lambda self, default: 16)
+
+        with caplog.at_level("WARNING"):
+            task = self._make_task_with_reliable(True, monkeypatch)
+
+        assert task.ack_interval == 8
+        assert "streaming_ack_interval 16 exceeds streaming_window_size 8" in caplog.text
+
     def test_retry_timeout_has_positive_floor(self, monkeypatch, retry_scheduler):
         self._patch_common_config(monkeypatch)
         monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 0.0)
@@ -399,6 +479,10 @@ class TestReliableByteStreamer:
         assert task.pending_message_bytes == 4
         assert message.get_header(StreamHeaderKey.RETRY_WAIT) == task.retry_wait
         assert message.get_header(StreamHeaderKey.RETRY_TIMEOUT) == task.retry_timeout
+        assert message.get_header(StreamHeaderKey.CHUNK_SIZE) == task.chunk_size
+        assert message.get_header(StreamHeaderKey.WINDOW_SIZE) == task.window_size
+        assert message.get_header(StreamHeaderKey.ACK_INTERVAL) == task.ack_interval
+        assert message.get_header(StreamHeaderKey.RETRY_MAX_PENDING_BYTES) is None
 
         task.buffer[0:1] = b"e"
         task.buffer_size = 1
@@ -408,6 +492,10 @@ class TestReliableByteStreamer:
         assert task.pending_message_bytes == 5
         assert next_message.get_header(StreamHeaderKey.RETRY_WAIT) is None
         assert next_message.get_header(StreamHeaderKey.RETRY_TIMEOUT) is None
+        assert next_message.get_header(StreamHeaderKey.CHUNK_SIZE) == task.chunk_size
+        assert next_message.get_header(StreamHeaderKey.WINDOW_SIZE) == task.window_size
+        assert next_message.get_header(StreamHeaderKey.ACK_INTERVAL) is None
+        assert next_message.get_header(StreamHeaderKey.RETRY_MAX_PENDING_BYTES) is None
 
     def test_reliable_send_blocks_concurrent_error_stop_until_send_returns(self, monkeypatch, retry_scheduler):
         task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)

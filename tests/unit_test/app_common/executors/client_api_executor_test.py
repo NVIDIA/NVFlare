@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the ClientAPIExecutor interface-freeze skeleton (plan: EX-2).
+"""Tests for the ClientAPIExecutor public surface and mode dispatch.
 
 Covers the constructor-validation matrix, the per-mode dispatch failure behavior
 (NotImplementedError naming the follow-up PR + system_panic, no hang), the analytics-event
@@ -20,8 +20,9 @@ ownership hook, and the surface-freeze contract on the frozen constructor parame
 """
 
 import inspect
-from unittest.mock import Mock
+from unittest.mock import Mock, call, patch
 
+import numpy as np
 import pytest
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE, AnalyticsDataType
@@ -33,7 +34,10 @@ from nvflare.apis.fl_exception import UnsafeComponentError, UnsafeJobError
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
+from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.decomposers import common_decomposers
+from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
 from nvflare.app_common.executors.client_api_executor import (
     ALL_EXECUTION_MODES,
@@ -42,6 +46,9 @@ from nvflare.app_common.executors.client_api_executor import (
     ExecutionMode,
 )
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.fobs import FOBSContextKey, dots
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
 # The frozen V1 constructor surface (design: "Configuration Surface" in
 # docs/design/client_api_execution_modes.md, plus the load-bearing args added beyond that list -
@@ -69,15 +76,17 @@ FROZEN_CONSTRUCTOR_PARAMS = [
     "params_transfer_type",
     "memory_gc_rounds",
     "cuda_empty_cache",
+    "attach_id",
     "attach_timeout",
     "allow_reconnect",
+    "allow_insecure_attach",
 ]
 
 # Minimal valid constructor kwargs per mode.
 MODE_KWARGS = {
     ExecutionMode.IN_PROCESS: {"execution_mode": "in_process"},
     ExecutionMode.EXTERNAL_PROCESS: {"execution_mode": "external_process", "command": "python custom/train.py"},
-    ExecutionMode.ATTACH: {"execution_mode": "attach"},
+    ExecutionMode.ATTACH: {"execution_mode": "attach", "attach_id": "trainer_a"},
 }
 
 
@@ -106,6 +115,7 @@ class _StubBackend(ClientAPIBackendSpec):
         self.calls = []
         self.result = make_reply(ReturnCode.OK)
         self.context = None
+        self.receiver_ids_during_execute = None
 
     def initialize(self, context, fl_ctx):
         self.context = context
@@ -113,6 +123,7 @@ class _StubBackend(ClientAPIBackendSpec):
 
     def execute(self, task_name, shareable, fl_ctx, abort_signal):
         self.calls.append(("execute", task_name))
+        self.receiver_ids_during_execute = shareable.get_header(FOBSContextKey.RECEIVER_IDS)
         return self.result
 
     def finalize(self, fl_ctx):
@@ -144,9 +155,38 @@ class TestConstructorValidation:
         assert executor._build_backend_context().launch_timeout == 300.0
 
     def test_valid_attach_with_attach_args(self):
-        executor = ClientAPIExecutor(execution_mode="attach", attach_timeout=60.0, allow_reconnect=True)
+        executor = ClientAPIExecutor(
+            execution_mode="attach",
+            attach_id="trainer_a",
+            attach_timeout=60.0,
+            allow_reconnect=True,
+            allow_insecure_attach=True,
+        )
+        assert executor._attach_id == "trainer_a"
         assert executor._attach_timeout == 60.0
         assert executor._allow_reconnect is True
+        assert executor._allow_insecure_attach is True
+
+    @pytest.mark.parametrize("attach_id", [None, "", "has.dot", "has space", "a" * 65])
+    def test_attach_requires_canonical_attach_id(self, attach_id):
+        with pytest.raises(ValueError, match="attach_id"):
+            ClientAPIExecutor(execution_mode="attach", attach_id=attach_id)
+
+    def test_attach_requires_a_liveness_bound_for_result_wait(self):
+        with pytest.raises(ValueError, match="heartbeat_timeout > 0 or a finite result_wait_timeout"):
+            ClientAPIExecutor(
+                execution_mode="attach",
+                attach_id="trainer_a",
+                heartbeat_timeout=0,
+                result_wait_timeout=None,
+            )
+
+        ClientAPIExecutor(
+            execution_mode="attach",
+            attach_id="trainer_a",
+            heartbeat_timeout=0,
+            result_wait_timeout=10,
+        )
 
     def test_valid_full_surface(self):
         executor = ClientAPIExecutor(
@@ -279,7 +319,8 @@ class TestConstructorValidation:
     def test_empty_command_treated_as_unset_for_non_external_modes(self, mode, command):
         # An empty/whitespace command is "unset", not a wrong-mode command, so it must not be
         # rejected with the misleading "only valid for external_process" message.
-        executor = ClientAPIExecutor(execution_mode=mode, command=command)
+        kwargs = {"attach_id": "trainer_a"} if mode == "attach" else {}
+        executor = ClientAPIExecutor(execution_mode=mode, command=command, **kwargs)
         assert executor._command is None
 
     @pytest.mark.parametrize("command", ["", "   "])
@@ -418,14 +459,7 @@ class TestConstructorValidation:
 
 
 class TestDispatch:
-    """in_process and external_process now resolve real backends; attach remains
-    skeleton-only: resolving its backend at START_RUN must fail the job cleanly
-    (system_panic naming the mode), and execute() must reply with an error instead of
-    hanging. in_process START_RUN without a valid task_script_path — and external_process
-    START_RUN without a workspace/cell — fail the same clean way, so the all-modes panic
-    tests below still hold."""
-
-    NOT_IMPLEMENTED_MODES = [ExecutionMode.ATTACH]
+    """All modes resolve real backends and fail initialization cleanly."""
 
     def test_in_process_factory_returns_real_backend(self):
         from nvflare.app_common.executors.client_api.in_process_backend import InProcessBackend
@@ -439,17 +473,11 @@ class TestDispatch:
         executor = ClientAPIExecutor(**MODE_KWARGS[ExecutionMode.EXTERNAL_PROCESS])
         assert isinstance(executor._create_backend(), ExternalProcessBackend)
 
-    @pytest.mark.parametrize("mode", NOT_IMPLEMENTED_MODES)
-    def test_backend_factory_raises_not_implemented(self, mode):
-        # The user-facing message must not carry an internal plan id (EX-3/EP-4/AT-2); it names the
-        # mode and says "not yet implemented".
-        executor = ClientAPIExecutor(**MODE_KWARGS[mode])
-        with pytest.raises(NotImplementedError, match="not yet implemented") as exc_info:
-            executor._create_backend()
-        message = str(exc_info.value)
-        assert mode in message
-        for plan_id in ("EX-3", "EP-4", "AT-2"):
-            assert plan_id not in message
+    def test_attach_factory_returns_real_backend(self):
+        from nvflare.app_common.executors.client_api.attach_backend import AttachBackend
+
+        executor = ClientAPIExecutor(**MODE_KWARGS[ExecutionMode.ATTACH])
+        assert isinstance(executor._create_backend(), AttachBackend)
 
     @pytest.mark.parametrize("mode", list(ALL_EXECUTION_MODES))
     def test_start_run_panics_naming_the_mode(self, mode):
@@ -513,6 +541,92 @@ class TestBackendPlumbing:
         reply = executor.execute("train", Shareable(), fl_ctx, Signal())
         assert reply is backend.result
         assert ("execute", "train") in backend.calls
+
+    def test_execute_materializes_result_for_declared_component(self):
+        backend = _StubBackend()
+        backend.result = Shareable({"weight": LazyDownloadRef("trainer", "ref-1", "T0")})
+        executor = ClientAPIExecutor(execution_mode="attach", attach_id="trainer_a")
+        executor._backend = backend
+        engine = Mock()
+        component = Mock()
+        component.requires_materialized_task_result.side_effect = lambda task_name: task_name == "train"
+        engine.get_all_components.return_value = {"tensor_streamer": component}
+        cell = engine.get_cell.return_value
+        cell.get_fqcn.return_value = "site-1.job-1"
+        encode_ctx = {"cell": cell, "phase": "encode"}
+        decode_ctx = {"cell": cell, "phase": "decode"}
+        cell.get_fobs_context.side_effect = [encode_ctx, decode_ctx]
+        fl_ctx = _make_fl_ctx(engine)
+        task = Shareable()
+        abort_signal = Signal()
+        materialized = Shareable({"weight": "concrete"})
+
+        with (
+            patch("nvflare.app_common.executors.client_api_executor.fobs.dumps", return_value=b"encoded") as dumps,
+            patch("nvflare.app_common.executors.client_api_executor.fobs.loads", return_value=materialized) as loads,
+        ):
+            reply = executor.execute("train", task, fl_ctx, abort_signal)
+
+        assert reply is materialized
+        assert task.get_header(FOBSContextKey.RECEIVER_IDS) == ["site-1.job-1"]
+        assert backend.receiver_ids_during_execute == ["site-1.job-1"]
+        dumps.assert_called_once_with(backend.result, fobs_ctx=encode_ctx)
+        assert cell.get_fobs_context.call_args_list == [
+            call(
+                props={
+                    FOBSContextKey.PASS_THROUGH: False,
+                    FOBSContextKey.RELAY_PASS_THROUGH: False,
+                }
+            ),
+            call(props={FOBSContextKey.PASS_THROUGH: False, FOBSContextKey.ABORT_SIGNAL: abort_signal}),
+        ]
+        loads.assert_called_once_with(b"encoded", fobs_ctx=decode_ctx)
+
+    def test_materialize_result_uses_real_fobs_to_resolve_lazy_reference(self):
+        flare_decomposers.register()
+        common_decomposers.register()
+        fobs.register(NumpyArrayDecomposer)
+        cell = Mock()
+        cell.get_fobs_context.side_effect = lambda props: {FOBSContextKey.CELL: cell, **props}
+        abort_signal = Signal()
+        expected = np.asarray([1.0, 2.0, 3.0])
+        result = Shareable(
+            {
+                "weight": LazyDownloadRef(
+                    fqcn="site-1.trainer",
+                    ref_id="ref-1",
+                    item_id="T0",
+                    dot=dots.NUMPY_DOWNLOAD,
+                )
+            }
+        )
+
+        with patch(
+            "nvflare.app_common.decomposers.numpy_decomposers.download_arrays",
+            return_value=(None, {"T0": expected}),
+        ) as download:
+            materialized = ClientAPIExecutor._materialize_result(result, cell, abort_signal)
+
+        np.testing.assert_array_equal(materialized["weight"], expected)
+        download.assert_called_once()
+
+    def test_execute_keeps_pass_through_result_for_unrelated_task(self):
+        backend = _StubBackend()
+        backend.result = Shareable({"weight": LazyDownloadRef("trainer", "ref-1", "T0")})
+        executor = ClientAPIExecutor(execution_mode="attach", attach_id="trainer_a")
+        executor._backend = backend
+        engine = Mock()
+        component = Mock()
+        component.requires_materialized_task_result.side_effect = lambda task_name: task_name == "train"
+        engine.get_all_components.return_value = {"tensor_streamer": component}
+        fl_ctx = _make_fl_ctx(engine)
+        task = Shareable()
+
+        reply = executor.execute("validate", task, fl_ctx, Signal())
+
+        assert reply is backend.result
+        assert task.get_header(FOBSContextKey.RECEIVER_IDS) is None
+        engine.get_cell.assert_not_called()
 
     def test_unrelated_events_are_not_relayed_to_backend(self):
         executor, backend, fl_ctx, _ = self._make_started_executor()
@@ -671,8 +785,10 @@ class TestSurfaceFreeze:
             "params_transfer_type": TransferType.FULL,
             "memory_gc_rounds": 0,
             "cuda_empty_cache": False,
+            "attach_id": None,
             "attach_timeout": None,
             "allow_reconnect": False,
+            "allow_insecure_attach": False,
         }
         actual_defaults = {name: p.default for name, p in sig.parameters.items() if name != "self"}
         actual_defaults.pop("execution_mode")

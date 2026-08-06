@@ -4,7 +4,7 @@
 
 Use this path for a standard Trainer conversion:
 
-1. Confirm Hugging Face Trainer ownership with `nvflare agent inspect`.
+1. Confirm Hugging Face Trainer ownership with `nvflare agent inspect source`.
 2. Run `nvflare recipe show` and apply the shared PyTorch-family construction
    profile.
 3. Adapt `../assets/client_with_eval.py` into `client.py`, preserving the
@@ -34,9 +34,9 @@ path behind an entry point that passes `federated=False` explicitly.
 
 When the source has no valid evaluation dataset or metric and neither per-round
 evaluation nor best-model selection is requested, adapt the asset with
-`evaluate_before_train=False` and leave `key_metric` unspecified so the recipe's
-documented default remains active. Do not add a skill-specific sentinel or claim
-that the model selector was disabled. See the Best-Model Metric section of
+`evaluate_before_train=False` and `key_metric=""` so model selection is disabled.
+Do not omit `key_metric`: `FedAvgRecipe` otherwise activates its documented
+default selector. See the Best-Model Metric section of
 `../../nvflare-shared/references/pytorch-family-recipe-construction.md`.
 
 Import the Client API as `import nvflare.client.hf as flare`, as the asset does,

@@ -300,6 +300,47 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
     assert not (output / "local" / "study_data.yaml").exists()
 
 
+def test_prepare_docker_start_script_handles_docker_socket_path_and_groups(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    script = (output / "startup" / "start_docker.sh").read_text()
+    assert 'DOCKER_SOCK="${NVFL_DOCKER_SOCK:-/var/run/docker.sock}"' in script
+    assert 'if [ -z "${NVFL_DOCKER_SOCK:-}" ] && [ -L "$DOCKER_SOCK" ]; then' in script
+    assert 'RESOLVED_DOCKER_SOCK=$(readlink "$DOCKER_SOCK")' in script
+    assert 'if RESOLVED_DOCKER_SOCK_DIR="$(' in script
+    assert 'if [ ! -S "$DOCKER_SOCK" ]; then' in script
+    assert "Set NVFL_DOCKER_SOCK=/path/to/docker.sock" in script
+    assert 'DOCKER_HOST_URI="unix://$DOCKER_SOCK"' in script
+    assert 'docker --host "$DOCKER_HOST_URI" info' in script
+    assert 'docker --host "$DOCKER_HOST_URI" network ls' in script
+    assert 'docker --host "$DOCKER_HOST_URI" network create' in script
+    assert 'docker --host "$DOCKER_HOST_URI" run' in script
+    assert (
+        "SOCK_GID=$(stat -c '%g' \"$DOCKER_SOCK\" 2>/dev/null || "
+        'stat -f \'%g\' "$DOCKER_SOCK" 2>/dev/null || echo "")'
+    ) in script
+    assert "HOST_OS=$(uname -s)" in script
+    assert "GROUP_ADD_ARGS=()" in script
+    assert 'if [ "$HOST_OS" = "Darwin" ] || [ "$SOCK_GID" = "0" ]; then' in script
+    assert "GROUP_ADD_ARGS+=(--group-add 0)" in script
+    assert "GROUP_ADD_ARGS=(--group-add 0)" not in script
+    assert 'GROUP_ADD_ARGS+=(--group-add "$SOCK_GID")' in script
+    assert '"${GROUP_ADD_ARGS[@]}"' in script
+    assert '-v "$DOCKER_SOCK":/var/run/docker.sock' in script
+    assert "-v /var/run/docker.sock:/var/run/docker.sock" not in script
+
+
 @pytest.mark.parametrize(
     "admin_port, expected_admin_publish_count",
     [
@@ -1285,6 +1326,19 @@ def test_stage_k8_rejects_invalid_stage_argument_values(tmp_path, capsys, monkey
     assert "INVALID_ARGS" in err
     assert "Kubernetes CLI command must be one of" in err
     assert calls == []
+
+
+def test_stage_k8_redacts_authorization_in_missing_kit_error(tmp_path, capsys):
+    token = "sample-token-123"
+    missing_kit = tmp_path / f'Authorization = "Bearer {token}"'
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(missing_kit, namespace="nvflare"))
+
+    err = capsys.readouterr().err
+    assert "INVALID_KIT" in err
+    assert 'Authorization = "Bearer <redacted>"' in err
+    assert token not in err
 
 
 def test_stage_k8_rejects_symlinked_stage_folder(tmp_path, capsys, monkeypatch):
