@@ -56,6 +56,8 @@ class FedProxRecipe(FedAvgRecipe):
         shutdown_timeout: Seconds to wait for client shutdown.
         key_metric: Metric used for best-model selection.
         key_metric_mode: Whether the key metric should be minimized ("min") or maximized ("max").
+            If omitted and stop_cond uses the same metric, the mode is inferred from its comparison operator;
+            otherwise it defaults to "max".
         stop_cond: Optional early-stopping condition.
         patience: Optional early-stopping patience.
         best_model_filename: Optional best-model filename.
@@ -91,7 +93,7 @@ class FedProxRecipe(FedAvgRecipe):
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
-        key_metric_mode: Literal["min", "max"] = "max",
+        key_metric_mode: Optional[Literal["min", "max"]] = None,
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
         best_model_filename: Optional[str] = None,

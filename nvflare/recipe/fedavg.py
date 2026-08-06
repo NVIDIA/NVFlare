@@ -12,15 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import operator
 import warnings
 from typing import Any, Dict, Literal, Optional, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import DefaultCheckpointFileName
+from nvflare.app_common.utils.math_utils import parse_compare_criteria
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
@@ -28,6 +30,13 @@ from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import _apply_legacy_constructor_config, _validate_per_site_targets
+
+_KEY_METRIC_MODE_BY_STOP_OPERATOR = {
+    operator.gt: "max",
+    operator.ge: "max",
+    operator.lt: "min",
+    operator.le: "min",
+}
 
 
 # Internal — not part of the public API
@@ -55,7 +64,7 @@ class _FedAvgValidator(BaseModel):
     launch_once: bool = True
     shutdown_timeout: float = 0.0
     key_metric: str = "accuracy"
-    key_metric_mode: Literal["min", "max"] = "max"
+    key_metric_mode: Optional[Literal["min", "max"]] = None
     # New FedAvg features
     stop_cond: Optional[str] = None
     patience: Optional[int] = None
@@ -68,6 +77,23 @@ class _FedAvgValidator(BaseModel):
     enable_tensor_disk_offload: bool = False
     client_memory_gc_rounds: int = 0
     cuda_empty_cache: bool = False
+
+    @model_validator(mode="after")
+    def resolve_key_metric_mode(self):
+        stop_metric = None
+        stop_mode = None
+        if self.stop_cond:
+            stop_metric, _, op_fn = parse_compare_criteria(self.stop_cond)
+            stop_mode = _KEY_METRIC_MODE_BY_STOP_OPERATOR.get(op_fn)
+
+        if self.key_metric_mode is None:
+            self.key_metric_mode = stop_mode if stop_metric == self.key_metric and stop_mode else "max"
+        elif stop_metric == self.key_metric and stop_mode and self.key_metric_mode != stop_mode:
+            raise ValueError(
+                f"key_metric_mode={self.key_metric_mode!r} conflicts with stop_cond={self.stop_cond!r}: "
+                f"both use metric {self.key_metric!r}, but stop_cond implies mode {stop_mode!r}"
+            )
+        return self
 
 
 class FedAvgRecipe(Recipe):
@@ -147,8 +173,9 @@ class FedAvgRecipe(Recipe):
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
             key_metric selects the metric used for global model selection by the IntimeModelSelector.
             Defaults to "accuracy".
-        key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better,
-            such as for loss, and "max" when higher values are better. Defaults to "max".
+        key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better
+            and "max" when higher values are better. If omitted and stop_cond uses the same metric,
+            the mode is inferred from its comparison operator; otherwise it defaults to "max".
         stop_cond: Early stopping condition based on metric. String literal in the format of
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
@@ -199,7 +226,7 @@ class FedAvgRecipe(Recipe):
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
-        key_metric_mode: Literal["min", "max"] = "max",
+        key_metric_mode: Optional[Literal["min", "max"]] = None,
         # New FedAvg features
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,

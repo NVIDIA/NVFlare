@@ -56,7 +56,7 @@ class FedCERecipe(FedAvgRecipe):
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
-        key_metric_mode: Literal["min", "max"] = "max",
+        key_metric_mode: Optional[Literal["min", "max"]] = None,
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
         best_model_filename: Optional[str] = None,

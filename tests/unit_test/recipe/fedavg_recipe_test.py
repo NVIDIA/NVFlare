@@ -400,6 +400,53 @@ class TestFedAvgRecipe:
                 **base_recipe_params,
             )
 
+    def test_key_metric_mode_is_inferred_from_matching_stop_condition(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        recipe = FedAvgRecipe(
+            name="test_fedavg_inferred_key_metric_mode",
+            model=simple_model,
+            key_metric="loss",
+            stop_cond="loss <= 0.2",
+            **base_recipe_params,
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert recipe.key_metric_mode == "min"
+        assert model_selector.negate_key_metric is True
+
+    def test_matching_stop_condition_rejects_conflicting_key_metric_mode(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        with pytest.raises(ValueError, match="both use metric 'loss'.*implies mode 'min'"):
+            FedAvgRecipe(
+                name="test_fedavg_conflicting_key_metric_mode",
+                model=simple_model,
+                key_metric="loss",
+                key_metric_mode="max",
+                stop_cond="loss <= 0.2",
+                **base_recipe_params,
+            )
+
+    def test_different_selection_and_stop_metrics_are_supported(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        recipe = FedAvgRecipe(
+            name="test_fedavg_different_selection_and_stop_metrics",
+            model=simple_model,
+            key_metric="accuracy",
+            key_metric_mode="max",
+            stop_cond="loss <= 0.2",
+            **base_recipe_params,
+        )
+
+        model_selector = get_model_selector(recipe)
+        controller = get_server_controller(recipe)
+        assert recipe.key_metric_mode == "max"
+        assert model_selector.key_metric == "accuracy"
+        assert model_selector.negate_key_metric is False
+        assert controller.stop_condition[0] == "loss"
+
     def test_base_fed_job_rejects_invalid_key_metric_mode(self):
         with pytest.raises(ValueError, match="key_metric_mode must be 'min' or 'max'"):
             BaseFedJob(key_metric_mode="median")
