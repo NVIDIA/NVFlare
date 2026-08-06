@@ -697,7 +697,7 @@ class JobRunner(FLComponent):
             job.run_aborted = True
             return ""
         else:
-            self.log_error(fl_ctx, f"Job {job_id} is not running. It can not be stopped.")
+            self.log_info(fl_ctx, f"Job {job_id} is not running. It can not be stopped.")
             return f"Job {job_id} is not running."
 
     def fail_run(self, job_id: str, process_return_code: int, fl_ctx: FLContext):
@@ -721,7 +721,7 @@ class JobRunner(FLComponent):
             fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
             return ""
         else:
-            self.log_error(fl_ctx, f"Job {job_id} is not running. It can not be failed.")
+            self.log_info(fl_ctx, f"Job {job_id} is not running. It can not be failed.")
             return f"Job {job_id} is not running."
 
     def stop_all_runs(self, fl_ctx: FLContext):
