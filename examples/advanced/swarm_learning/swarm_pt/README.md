@@ -134,7 +134,7 @@ recipe = SwarmLearningRecipe(
 ```
 
 `SwarmLearningRecipe` handles all component wiring automatically:
-- `PTClientAPILauncherExecutor` + `SubprocessLauncher` + `CellPipe` for subprocess execution
+- `ClientAPIExecutor(execution_mode="external_process")` for NVFlare-managed subprocess execution
 - `PTFileModelPersistor` for checkpoint management (stores only LoRA adapter weights)
 - `InTimeAccumulateWeightedAggregator` for peer-to-peer adapter aggregation
 - `SimpleModelShareableGenerator` for model ↔ shareable conversion

@@ -1,4 +1,4 @@
-.. _flare_system_architecture:
+.. _detailed_system_architecture:
 
 ####################
 FLARE Architecture
@@ -87,8 +87,8 @@ Primary System Modules
      - Cell, CoreCell, StreamCell, Pipe
      - Secure inter-party communication with streaming support
    * - Client Integration
-     - ClientAPI (flare.receive(), flare.send()), LauncherExecutor
-     - ML framework integration and external process management
+     - Client API (``flare.receive()``, ``flare.send()``), ``ClientAPIExecutor``
+     - In-process, NVFLARE-managed external-process, and Attach execution modes
    * - Administration
      - Dashboard, Admin Console
      - Programmatic and GUI-based system management
@@ -169,14 +169,16 @@ Process Responsibilities
 
 - Runs ``ClientRunner`` for task execution
 - Pulls tasks from server via Cell network
-- Launches training processes using ``LauncherExecutor``
-- Routes task data to/from training process via Pipe
+- Delegates Client API tasks through ``ClientAPIExecutor``
+- Runs training in the CJ, launches an owned trainer process, or accepts an
+  independently managed trainer through Attach mode
 
 **Training Process**
 
 - User's ML training script
 - Uses Client API: ``flare.init()``, ``flare.receive()``, ``flare.send()``
-- Communicates with CJ via FilePipe (file-based) or CellPipe (network-based)
+- Is either owned by NVFLARE (in-process or external-process mode) or by an
+  external system (Attach mode)
 
 
 Process Lifecycle and Spawning
@@ -499,8 +501,8 @@ FLARE uses JSON configuration files to assemble components:
        }
      ],
      "components": [
-       {"id": "persistor", "path": "..."},
-       {"id": "aggregator", "path": "..."}
+       {"id": "persistor", "path": "<persistor-component-path>"},
+       {"id": "aggregator", "path": "<aggregator-component-path>"}
      ]
    }
 
@@ -513,7 +515,7 @@ FLARE uses JSON configuration files to assemble components:
      "executors": [
        {
          "tasks": ["train", "validate"],
-         "executor": {"path": "...", "args": {...}}
+         "executor": {"path": "<executor-component-path>", "args": {}}
        }
      ]
    }

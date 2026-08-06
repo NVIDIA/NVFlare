@@ -27,6 +27,7 @@ The following aspects of the communication system can be configured:
 - Selection of gRPC driver implementation (asyncio vs. non-asyncio)
 - Configuration of ad-hoc connections
 - Configuration of internal connections
+- Configuration of Client API Attach listeners
 - Messaging parameters
 
 General Configuration
@@ -234,6 +235,77 @@ In this example, we changed to use "grpc" as the communication scheme.
 
 The syntax and meanings of the properties are exactly the same as the "adhoc" configurations.
 
+.. _client_api_attach_configuration:
+
+Client API Attach Listeners
+===========================
+
+Client API Attach lets an independently started trainer connect to a running
+Client Job (CJ). The CJ creates a dedicated, job-lifetime listener from the
+``client_api_attach`` section. This listener is separate from ``internal``
+(CP-to-CJ communication) and ``adhoc`` (best-effort direct Cell routing).
+
+Changing ``client_api_attach`` requires restarting the site.
+
+Shared-Filesystem Attach
+------------------------
+
+Use the ``shared-file`` driver when the CJ and trainer share a filesystem. Both
+processes must see ``root_dir`` at the same absolute path.
+
+.. code-block:: json
+
+  {
+    "client_api_attach": {
+      "scheme": "shared-file",
+      "resources": {
+        "root_dir": "/absolute/shared/nvflare-client-api-attach",
+        "connection_security": "clear"
+      }
+    }
+  }
+
+Filesystem ownership and permissions form the peer-access boundary. Use a
+dedicated, non-world-writable root and restrict its group to the intended site
+and trainer principals. The filesystem must support coherent atomic rename and
+working cross-node POSIX advisory locks.
+
+Shared-file Attach supports trainer-first or job-first startup. The CJ publishes
+its dynamic listener URL under a locked rendezvous claim keyed by site name and
+``attach_id``.
+
+Network Attach
+--------------
+
+Use a registered network driver when the trainer cannot share a filesystem with
+the CJ. Production network Attach requires mTLS:
+
+.. code-block:: json
+
+  {
+    "client_api_attach": {
+      "scheme": "grpcs",
+      "resources": {
+        "host": "site-1.example.com",
+        "port": 8102,
+        "connection_security": "mtls"
+      }
+    }
+  }
+
+The client site must have access to its CA, listener certificate, and listener
+key. Provision a client with ``listening_host`` or install equivalent site-local
+listener credentials. The trainer receives the CA and site client credentials;
+never distribute the listener's private key to the trainer.
+
+The listener port must be reachable from the trainer and reserved against
+concurrent jobs. A direct trainer profile is job-specific because it contains
+the CJ FQCN and final listener URL. One-way TLS is rejected. Clear network
+Attach is development-only and requires ``connection_security="clear"`` in the
+trainer profile plus ``allow_insecure_attach=True`` in the job.
+
+See :ref:`client_api_attach` for job and trainer configuration.
+
 Messaging Parameters
 ====================
 
@@ -242,7 +314,9 @@ This section describes all parameters that you can configure.
                                                                    
 The messaging parameters can be specified in <site_workspace>/local/comm_config.json file as first-level elements, or by using environment variables as described in the beginning of this document.
 
-This is an example of comm_config.json file with default values for all the parameters,
+This is an example of comm_config.json with the fixed default values. Parameters
+whose defaults are derived from other settings, such as ``streaming_max_out_seq_chunks``,
+are intentionally omitted.
 
 .. code-block:: json
 
@@ -253,7 +327,6 @@ This is an example of comm_config.json file with default values for all the para
     "streaming_chunk_size": 1048576,
     "streaming_max_blob_size": 2144337904,
     "streaming_read_timeout": 60,
-    "streaming_max_out_seq_chunks": 16,
     "streaming_window_size": 67108864,
     "streaming_ack_interval": 16777216,
     "streaming_ack_wait": 10,
@@ -345,7 +418,12 @@ streaming_max_out_seq_chunks
 
 The chunks may arrive on the receiving end out of sequence. 
 The receiver keeps out-of-sequence chunks in a reassembly buffer while waiting for the expected chunk to arrive.
-The streaming terminates with error if the number of chunks in the reassembly buffer is larger than this value. The default is 16. 
+The streaming terminates with error if the number of chunks in the reassembly buffer is larger than this value.
+
+When this parameter is unset, the limit is derived from the effective streaming window and chunk sizes, with a minimum
+fallback of 16 chunks and a peer-derived ceiling of 1024. An explicitly configured value is a hard receiver-side maximum
+and is not increased to match a sender's window. Configure it only when a fixed memory-control limit is required, and
+ensure that it can accommodate the number of chunks allowed by the streaming window.
 
 The streaming implements a sliding-window protocol for flow-control. The receiver sends ACKs after the chunks are retrieved by the reader.
 The window is all the chunks sent but not being acknowledged by the receiver. Once the window reaches a certain size, the sender pauses and waits for more ACKs.

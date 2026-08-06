@@ -248,10 +248,11 @@ Low-level client communication timeouts (communicator.py, fed_client_base.py):
      - 30.0
      - Retry timeout for operations
 
-Flare Agent
-^^^^^^^^^^^
+Client API Attach
+^^^^^^^^^^^^^^^^^
 
-FlareAgent for external process integration (flare_agent.py):
+Attach-mode timeouts are configured on ``ClientAPIExecutor`` and in the
+trainer's typed Attach profile:
 
 .. list-table::
    :header-rows: 1
@@ -260,54 +261,33 @@ FlareAgent for external process integration (flare_agent.py):
    * - Parameter
      - Default
      - Purpose
-   * - heartbeat_timeout
-     - 60.0
-     - Time without heartbeat before peer is dead
-   * - submit_result_timeout
-     - 60.0
-     - Timeout for submitting task result to the client training process. 60 s is too short
-       for large models; configure via ``add_client_config({"submit_result_timeout": 1800})``.
-   * - max_resends
-     - None in raw ``FlareAgent``; 3 through Client API job config
-     - Maximum send retries on failure. For ``ClientAPILauncherExecutor`` jobs,
-       the default is the finite value ``3``; ``None`` is rejected at job
-       initialization. Override via ``add_client_config({"max_resends": N})``.
-   * - download_complete_timeout
-     - 1800.0
-     - Time the subprocess waits after result ACK while the server finishes
-       downloading tensors from the subprocess ``DownloadService``. Must not be
-       ``None`` for ``ClientAPILauncherExecutor`` jobs.
-
-**Note**: Raw ``FlareAgentWithCellPipe`` defaults to 60.0 s for
-``submit_result_timeout`` and unlimited ``max_resends``. When launched through
-``ClientAPILauncherExecutor``, the generated Client API config supplies the
-safer job defaults described above. Recipe-based external-process jobs also
-serialize ``max_resends=3`` in the executor args, so reloaded jobs do not fall
-back to the raw unlimited retry default. Use
-``recipe.add_client_config({"max_resends": N})`` only when a job needs a
-different finite retry budget.
-
-IPC Agent
-^^^^^^^^^
-
-IPC Agent for inter-process communication (ipc_agent.py):
-
-.. list-table::
-   :header-rows: 1
-   :widths: 32 10 58
-
-   * - Parameter
-     - Default
-     - Purpose
-   * - submit_result_timeout
+   * - ``attach_timeout``
+     - ``None``
+     - How long the CJ waits for the independently started trainer to attach.
+   * - ``heartbeat_interval``
+     - 5.0
+     - Interval between Attach session heartbeats.
+   * - ``heartbeat_timeout``
      - 30.0
-     - Timeout for submitting results
-   * - flare_site_connection_timeout
-     - 60.0
-     - Timeout for CJ disconnection
-   * - flare_site_heartbeat_timeout
-     - None
-     - Timeout for missing CJ heartbeats
+     - Session lease on missed heartbeats. An active payload transfer keeps the
+       lease alive.
+   * - ``task_wait_timeout``
+     - ``None``
+     - How long the CJ waits for the trainer to accept a delivered task. Attach
+       applies a 600-second task-delivery budget when unset.
+   * - ``result_wait_timeout``
+     - ``None``
+     - Control-side bound for receiving a task result. Payload transfer uses the
+       shared streaming idle policy instead.
+   * - ``job_wait_timeout``
+     - ``None``
+     - Trainer-profile bound for discovering a job and receiving
+       ``SESSION_OPEN``.
+
+Attach requires either a positive ``heartbeat_timeout`` or a finite
+``result_wait_timeout`` because NVFLARE does not own the trainer process and
+cannot use process liveness as a fallback. See
+:ref:`client_api_attach` for the full lifecycle contract.
 
 
 gRPC Utility Timeouts
@@ -460,235 +440,59 @@ Session management for programmatic API (flare_api.py):
    rc = sess.monitor_job(job_id, timeout=3600, poll_interval=5.0)
 
 
-Heartbeat Timeouts
-==================
+Client API Executor Timeouts
+============================
 
-Executor Heartbeat
-------------------
-
-Heartbeat mechanisms ensure connectivity between components:
+``ClientAPIExecutor`` exposes one timeout surface across its three execution
+modes. Heartbeats apply only to the out-of-process modes.
 
 .. list-table::
    :header-rows: 1
-   :widths: 25 10 35 30
-
-   * - Timeout
-     - Default
-     - Location
-     - Purpose
-   * - heartbeat_interval
-     - 5.0
-     - ``LauncherExecutor`` launcher_executor.py:49
-     - Interval for sending heartbeat messages
-   * - heartbeat_timeout
-     - 60.0
-     - ``LauncherExecutor`` launcher_executor.py:50
-     - Timeout for waiting for heartbeat from peer
-   * - peer_read_timeout
-     - 60.0
-     - ``LauncherExecutor`` launcher_executor.py:46
-     - Time to wait for peer to accept sent message
-
-Client API Heartbeat
-^^^^^^^^^^^^^^^^^^^^
-
-The Client API inherits heartbeat configuration from the task exchange settings (config.py:154-159):
-
-.. code-block:: python
-
-   def get_heartbeat_timeout(self):
-       return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(
-           ConfigKey.HEARTBEAT_TIMEOUT,
-           self.config.get(ConfigKey.METRICS_EXCHANGE, {}).get(ConfigKey.HEARTBEAT_TIMEOUT, 60),
-       )
-
-Executor and Launcher Timeouts
-==============================
-
-LauncherExecutor Base Class
----------------------------
-
-The ``LauncherExecutor`` class defines core timeout parameters for external process management
-(launcher_executor.py:38-58):
-
-.. list-table::
-   :header-rows: 1
-   :widths: 30 12 58
+   :widths: 25 19 12 44
 
    * - Parameter
+     - Mode
      - Default
      - Purpose
-   * - launch_timeout
-     - None
-     - Timeout for launcher's "launch_task" method completion
-   * - task_wait_timeout
-     - None
-     - Timeout for retrieving task results
-   * - last_result_transfer_timeout
+   * - ``launch_timeout``
+     - ``external_process``
      - 300.0
-     - Timeout for transmitting final result from external process
-   * - external_pre_init_timeout
-     - 60.0
-     - Time to wait for external process before ``flare.init()`` call
-
-ClientAPILauncherExecutor
--------------------------
-
-The Client API executor extends base timeouts with more conservative defaults
-(client_api_launcher_executor.py:29-53):
-
-.. list-table::
-   :header-rows: 1
-   :widths: 30 12 58
-
-   * - Parameter
-     - Default
-     - Purpose
-   * - external_pre_init_timeout
-     - 300.0
-     - Extended timeout for heavy library imports
-   * - peer_read_timeout
-     - 300.0
-     - Timeout for peer message acceptance
-   * - heartbeat_timeout
-     - 300.0
-     - Extended heartbeat timeout for Client API
-   * - submit_result_timeout
-     - 300.0
-     - Subprocess-side wait for CJ to acknowledge each result message
-   * - max_resends
-     - 3
-     - Maximum retries after the initial result send; ``None`` is rejected
-   * - download_complete_timeout
-     - 1800.0
-     - Time the subprocess remains alive for server-side tensor download completion
-
-For subprocess-mode Client API jobs with large payloads, FLARE validates the
-following at job start:
-
-- ``download_complete_timeout`` must not be ``None``.
-- ``max_resends`` must be a finite non-negative integer. Recipe-based jobs
-  serialize the default value ``3`` in executor args. Use ``0`` to disable
-  retries; do not use ``None`` for unlimited retries.
-
-Values supplied through ``recipe.add_client_config()`` are top-level entries in
-``config_fed_client.json``. For subprocess-mode Client API jobs,
-``ClientAPILauncherExecutor`` applies these overrides before writing the
-subprocess ``client_api_config.json``, so ``submit_result_timeout``,
-``download_complete_timeout``, and ``max_resends`` are seen by both the parent
-client job process and the external training process.
-
-When ``tensor_streaming_per_request_timeout`` or
-``np_streaming_per_request_timeout`` is explicitly configured, FLARE also warns
-if ``PEER_READ_TIMEOUT`` or ``download_complete_timeout`` is shorter than that
-streaming timeout. Set ``PEER_READ_TIMEOUT`` through ``add_client_config`` when
-the parent client job needs a larger pipe-read budget:
-
-.. code-block:: python
-
-   recipe.add_client_config({
-       "tensor_streaming_per_request_timeout": 600,
-       "tensor_min_download_timeout": 600,
-       "PEER_READ_TIMEOUT": 600,
-       "download_complete_timeout": 1800,
-       "max_resends": 3,
-   })
-
-External Pre-Init Override
-^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Jobs can override the external pre-init timeout via client configuration (constants.py:20-22):
-
-.. code-block:: python
-
-   # Configuration key for overriding external_pre_init_timeout in ClientAPILauncherExecutor
-   EXTERNAL_PRE_INIT_TIMEOUT = "EXTERNAL_PRE_INIT_TIMEOUT"
-
-
-TaskExchanger
--------------
-
-The ``TaskExchanger`` base class manages pipe-based task exchange with external processes
-(task_exchanger.py:38-68):
-
-.. list-table::
-   :header-rows: 1
-   :widths: 28 12 60
-
-   * - Parameter
-     - Default
-     - Purpose
-   * - read_interval
-     - 0.5
-     - How often to read from pipe
-   * - heartbeat_interval
+     - Bound trainer launch and Cell session establishment.
+   * - ``shutdown_timeout``
+     - ``external_process``
+     - ``None``
+     - Wait for orderly exit before forced process-tree termination.
+   * - ``stop_grace_period``
+     - ``external_process``
+     - 30.0
+     - Grace period between soft and hard process termination.
+   * - ``heartbeat_interval``
+     - ``external_process``, ``attach``
      - 5.0
-     - How often to send heartbeat to peer
-   * - heartbeat_timeout
-     - 60.0
-     - Time to wait for heartbeat from peer (None = disable)
-   * - resend_interval
-     - 2.0
-     - How often to resend a message if failing to send
-   * - peer_read_timeout
-     - 60.0
-     - Time to wait for peer to accept sent message
-   * - result_poll_interval
-     - 0.5
-     - How often to poll for task result
+     - Interval between session heartbeats.
+   * - ``heartbeat_timeout``
+     - ``external_process``, ``attach``
+     - 30.0
+     - Session lease on missed heartbeats; active payload transfer preserves
+       liveness.
+   * - ``task_wait_timeout``
+     - ``external_process``, ``attach``
+     - ``None``
+     - Bound trainer acceptance of a delivered task. Attach applies a
+       600-second task-delivery budget when unset.
+   * - ``result_wait_timeout``
+     - all modes
+     - ``None``
+     - Bound control-side result retrieval, excluding payload streaming.
+   * - ``attach_timeout``
+     - ``attach``
+     - ``None``
+     - Bound how long the CJ waits for an external trainer to attach.
 
-
-IPCExchanger
-------------
-
-The ``IPCExchanger`` manages IPC-based communication with Flare Agents
-(ipc_exchanger.py:50-82):
-
-.. list-table::
-   :header-rows: 1
-   :widths: 28 12 60
-
-   * - Parameter
-     - Default
-     - Purpose
-   * - send_task_timeout
-     - 5.0
-     - How long to wait for response when sending task to Agent
-   * - resend_task_interval
-     - 2.0
-     - How often to resend task if failed
-   * - agent_connection_timeout
-     - 60.0
-     - Time allowed to miss heartbeat before considering agent disconnected
-   * - agent_heartbeat_timeout
-     - None
-     - Time allowed to miss heartbeat before stopping (None = disabled)
-   * - agent_heartbeat_interval
-     - 5.0
-     - How often to send heartbeats to the agent
-   * - agent_ack_timeout
-     - 5.0
-     - How long to wait for agent ack (heartbeat and bye messages)
-
-
-InProcessClientAPIExecutor
---------------------------
-
-The in-process executor for Client API (in_process_client_api_executor.py:50-70):
-
-.. list-table::
-   :header-rows: 1
-   :widths: 25 12 63
-
-   * - Parameter
-     - Default
-     - Purpose
-   * - result_pull_interval
-     - 0.5
-     - How often to poll for task result
-   * - log_pull_interval
-     - None
-     - How often to pull logs (None = same as result_pull_interval)
+The trainer-side Attach profile separately provides ``job_wait_timeout`` to
+bound job discovery and ``SESSION_OPEN``. Attach requires either a positive
+``heartbeat_timeout`` or a finite ``result_wait_timeout`` because NVFLARE does
+not own the trainer process.
 
 
 Pipe Handler
@@ -1139,10 +943,11 @@ Split learning controller (splitnn_workflow.py:47-79):
      - Timeout for auxiliary message requests
 
 
-TIE Controller (Third-party Integration)
-----------------------------------------
+TIE Controller (Technology for Integrating Everything)
+-------------------------------------------------------
 
-Base controller for third-party integration (tie/controller.py, tie/defs.py):
+Base controller for NVFLARE-managed application integration
+(tie/controller.py, tie/defs.py):
 
 .. list-table::
    :header-rows: 1
@@ -1167,7 +972,8 @@ Base controller for third-party integration (tie/controller.py, tie/defs.py):
      - 3600.0
      - Max time allowed with no workflow progress
 
-**Note**: TIE is used by XGBoost, Flower, and other third-party framework integrations.
+**Note**: The current production integration built on TIE is Flower, through
+``FlowerController`` and ``FlowerExecutor``.
 
 
 Flower Integration Timeouts
@@ -1445,6 +1251,13 @@ Normally finished download refs are tombstoned temporarily so a late retry from
 the same receiver can receive the original EOF or error status instead of a
 fatal missing-ref response. Timeout and deleted transactions are not tombstoned.
 
+For authenticated admin result downloads, the producer transaction uses the
+larger of the admin command timeout and the server session idle timeout plus
+one session-monitor interval. This keeps the source reference available through
+receiver request retries and backoff while allowing the session manager to own
+expiry. The transaction remains bound to its session and is removed immediately
+when that session logs out or expires.
+
 
 Tensor Streaming Timeouts
 -------------------------
@@ -1553,21 +1366,24 @@ Framework-level settings for large payload transfers (fl_constant.py:553, comm_c
      - 2097152
      - Chunk size for PyTorch tensor downloads (bytes)
 
-For Client API subprocess jobs, keep these download settings aligned with the
-subprocess pipe settings:
+For ``ClientAPIExecutor``, large-payload transfer uses the shared streaming
+download service rather than the legacy Pipe/FlareAgent retry path. Keep the
+download idle budget aligned with the streaming request budget:
 
 - ``tensor_min_download_timeout`` / ``np_min_download_timeout`` should be at
   least ``tensor_streaming_per_request_timeout`` /
   ``np_streaming_per_request_timeout``.
-- ``PEER_READ_TIMEOUT`` should be at least the configured streaming per-request
-  timeout so the parent client job does not resend the task while the subprocess
-  is still downloading a large payload.
-- ``download_complete_timeout`` should be at least the configured streaming
-  per-request timeout and long enough for the server to pull large tensor
-  results from the subprocess after result ACK.
-- ``max_resends`` should stay finite. The recipe default is ``3``; raise it
-  only when the network is expected to recover after a small number of delayed
-  result acknowledgments.
+- In ``external_process`` mode, an active task download extends the
+  ``task_wait_timeout`` wait while transfer progress remains live.
+- Attach uses an absolute ``task_wait_timeout`` deadline, including task payload
+  download and trainer acceptance. Size it for the complete delivery path.
+- ``result_wait_timeout`` bounds waiting for result publication; subsequent
+  payload streaming uses the shared transfer idle policy.
+
+The settings ``PEER_READ_TIMEOUT``, ``submit_result_timeout``,
+``download_complete_timeout``, and ``max_resends`` apply only to the legacy
+``BaseScriptRunner`` / ``ClientAPILauncherExecutor`` Pipe path. They are not
+consumed by ``ClientAPIExecutor``.
 
 Swarm Learning Large Model Setup
 --------------------------------
@@ -1593,13 +1409,10 @@ Recommended timeouts for large models in Swarm Learning:
        "streaming_per_request_timeout": 600,
    })
 
-   # Subprocess-mode timeouts (when launch_external_process=True)
+   # Client-side streaming idle budget. Swarm's ordinary external-process path
+   # uses ClientAPIExecutor, so legacy Pipe/FlareAgent retry settings do not apply.
    recipe.add_client_config({
-       "submit_result_timeout": 1800,
-       "download_complete_timeout": 1800,
        "tensor_min_download_timeout": 600,
-       "PEER_READ_TIMEOUT": 600,
-       "max_resends": 5,
    })
 
 
@@ -2066,7 +1879,7 @@ Hierarchical Relationships
    │  SplitNNController                                              │
    │  └── task_timeout (10s)                                         │
    │                                                                 │
-   │  TIE Controller (XGBoost, Flower, etc.)                         │
+   │  TIE Controller (Flower)                                       │
    │  ├── configure_task_timeout (10s)                               │
    │  ├── start_task_timeout (10s)                                   │
    │  ├── job_status_check_interval (2s)                             │
@@ -2093,30 +1906,13 @@ Hierarchical Relationships
    ┌─────────────────────────────────────────────────────────────────┐
    │                    EXECUTOR LAYER                               │
    ├─────────────────────────────────────────────────────────────────┤
-   │  LauncherExecutor / ClientAPILauncherExecutor                   │
-   │  ├── launch_timeout                                             │
-   │  ├── external_pre_init_timeout (60-300s)                        │
-   │  ├── task_wait_timeout                                          │
-   │  ├── last_result_transfer_timeout (300s)                        │
-   │  └── heartbeat_timeout (60-300s)                                │
-   │                                                                 │
-   │  TaskExchanger (Pipe Handler)                                   │
-   │  ├── heartbeat_interval < heartbeat_timeout (REQUIRED)          │
-   │  ├── read_interval (0.5s)                                       │
-   │  ├── resend_interval (2s)                                       │
-   │  ├── peer_read_timeout (60s)                                    │
-   │  └── result_poll_interval (0.5s)                                │
-   │                                                                 │
-   │  IPCExchanger (Agent-based)                                     │
-   │  ├── send_task_timeout (5s)                                     │
-   │  ├── resend_task_interval (2s)                                  │
-   │  ├── agent_connection_timeout (60s)                             │
-   │  ├── agent_heartbeat_timeout (None)                             │
-   │  └── agent_ack_timeout (5s)                                     │
-   │                                                                 │
-   │  InProcessClientAPIExecutor                                     │
-   │  ├── result_pull_interval (0.5s)                                │
-   │  └── log_pull_interval (None)                                   │
+   │  ClientAPIExecutor                                               │
+   │  ├── launch_timeout (external_process: 300s)                    │
+   │  ├── attach_timeout (attach: None)                              │
+   │  ├── heartbeat_interval (out-of-process: 5s)                    │
+   │  ├── heartbeat_timeout (out-of-process: 30s)                    │
+   │  ├── task_wait_timeout (None)                                   │
+   │  └── result_wait_timeout (None)                                 │
    └─────────────────────────────────────────────────────────────────┘
 
    ┌─────────────────────────────────────────────────────────────────┐
@@ -2170,10 +1966,10 @@ Impact Analysis
      - Validation tasks fail prematurely
    * - result_wait_timeout (Statistics)
      - Statistics collection aborted before all clients respond
-   * - agent_connection_timeout (IPC)
-     - External agent incorrectly marked disconnected
-   * - send_task_timeout (IPC)
-     - Task delivery to agent fails, triggers resends
+   * - attach_timeout (Attach)
+     - A correctly starting external trainer is rejected before it attaches
+   * - job_wait_timeout (Attach)
+     - A trainer stops waiting before the matching Client Job starts
    * - superlink_ready_timeout (Flower)
      - Flower integration fails to initialize
    * - configure_task_timeout (TIE)
@@ -2201,10 +1997,10 @@ Impact Analysis
      - Slow job termination, resource cleanup delayed
    * - wait_for_clients_timeout (CrossSiteEval)
      - Long wait for clients that won't join
-   * - agent_heartbeat_timeout (IPC)
-     - Hung agents not detected, job stalls
-   * - resend_task_interval (IPC/TaskExchanger)
-     - Slow recovery from transient failures
+   * - attach_timeout (Attach)
+     - A Client Job waits too long for a trainer that will not attach
+   * - job_wait_timeout (Attach)
+     - An externally owned trainer waits too long for a job that will not start
    * - result_poll_interval (Executor)
      - Delayed result detection, slower job completion
    * - job_status_check_interval (TIE)
@@ -2411,8 +2207,8 @@ Settings for split neural network training:
    )
 
 
-Flower Integration
-------------------
+Flower Integration Configuration
+--------------------------------
 
 Settings for Flower framework integration:
 
@@ -2790,40 +2586,33 @@ Edge Device Configuration
    )
 
 
-TaskExchanger Configuration
----------------------------
+ClientAPIExecutor Configuration
+-------------------------------
 
 .. code-block:: python
 
-   from nvflare.app_common.executors.task_exchanger import TaskExchanger
+   from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
 
-   executor = TaskExchanger(
-       read_interval=0.5,
+   # An independently started and externally owned trainer
+   attach_executor = ClientAPIExecutor(
+       execution_mode="attach",
+       attach_id="trainer_a",
+       attach_timeout=300.0,
        heartbeat_interval=5.0,
-       heartbeat_timeout=120.0,
-       resend_interval=5.0,
-       peer_read_timeout=120.0,
-       result_poll_interval=1.0,
+       heartbeat_timeout=30.0,
+       task_wait_timeout=600.0,
+       result_wait_timeout=3600.0,
    )
 
-
-LauncherExecutor Configuration
-------------------------------
-
-.. code-block:: python
-
-   from nvflare.app_common.executors.launcher_executor import LauncherExecutor
-
-   executor = LauncherExecutor(
-       launch_timeout=60.0,
-       task_wait_timeout=3600.0,
-       last_result_transfer_timeout=600.0,
-       external_pre_init_timeout=300.0,
-       peer_read_timeout=120.0,
-       monitor_interval=0.5,
-       read_interval=0.5,
-       heartbeat_interval=10.0,
-       heartbeat_timeout=120.0,
+   # A separate trainer process launched and owned by NVFLARE
+   external_executor = ClientAPIExecutor(
+       execution_mode="external_process",
+       command=["python3", "custom/train.py"],
+       launch_timeout=300.0,
+       heartbeat_interval=5.0,
+       heartbeat_timeout=30.0,
+       task_wait_timeout=600.0,
+       result_wait_timeout=3600.0,
    )
 
 
@@ -2907,7 +2696,7 @@ Notes and Best Practices
 - ``task_assignment_timeout`` must be **less than or equal to** ``task.timeout``
 - ``task_result_timeout`` must be **less than or equal to** ``task.timeout``
 - ``per_msg_timeout`` should be **less than or equal to** ``tx_timeout`` for retries to work
-- ``agent_heartbeat_interval`` must be **less than** ``agent_connection_timeout``
+- For out-of-process Client API modes, ``heartbeat_interval`` must be **less than** ``heartbeat_timeout``
 - **IMPORTANT**: When using tensor streaming, ``get_task_timeout`` must be **greater than or equal to** 
   ``wait_send_task_data_all_clients_timeout`` to prevent task fetch timeouts while waiting for all 
   clients to receive tensors
@@ -2966,8 +2755,8 @@ job to fail.
 - Check ``num_timeout_reqs`` counter in CoreCell for timeout statistics
 - Monitor heartbeat status to detect connectivity issues early
 - Look for "timeout" in logs to identify which timeouts are triggering
-- For IPC issues, check ``agent_connection_timeout`` and agent logs
-- For third-party integration (TIE), monitor ``max_client_op_interval`` triggers
+- For Attach issues, check ``attach_timeout``, ``job_wait_timeout``, and both CJ and trainer logs
+- For Flower/TIE issues, monitor ``max_client_op_interval`` triggers
 
 **Common Timeout Patterns:**
 
@@ -2978,8 +2767,7 @@ job to fail.
 
 2. **Heartbeat Relationships**: Always maintain proper ratios
    
-   - ``heartbeat_timeout`` = 3-6x ``heartbeat_interval``
-   - ``agent_heartbeat_timeout`` = 3-6x ``agent_heartbeat_interval``
+   - ``heartbeat_timeout`` = 3-6x ``heartbeat_interval``, including for out-of-process Client API modes
 
 3. **Retry Allowance**: Leave room for retries
    

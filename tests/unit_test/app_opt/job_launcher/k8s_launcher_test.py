@@ -71,6 +71,7 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     uuid4_to_rfc1123,
 )
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_WORKSPACE_OWNER_FQCN, ENV_WORKSPACE_TRANSFER_TOKEN
+from nvflare.fuel.common.exit_codes import ProcessExitCode
 
 _DEFAULT_DATA_VOLUME_NAME = study_dataset_volume_name("study-a", "training")
 
@@ -124,6 +125,12 @@ def _make_waiting_container_status(reason, message=None):
     state.waiting = waiting
     container_status = Mock()
     container_status.state = state
+    return container_status
+
+
+def _make_terminated_container_status(name, exit_code):
+    container_status = Mock(state=Mock(terminated=Mock(exit_code=exit_code)))
+    container_status.name = name
     return container_status
 
 
@@ -761,6 +768,36 @@ class TestK8sJobHandle:
         handle = _make_handle(api=api)
         handle.wait()
         assert handle.terminal_state == JobState.TERMINATED
+
+    @pytest.mark.parametrize(
+        "exit_code",
+        [ProcessExitCode.EXCEPTION, ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR],
+    )
+    def test_wait_preserves_deliberate_process_exit_code(self, exit_code):
+        api = _make_api_instance()
+        resp = _make_pod_response(
+            phase=PodPhase.FAILED.value,
+            container_statuses=[_make_terminated_container_status("container-test-job-123", exit_code)],
+        )
+        api.read_namespaced_pod.return_value = resp
+        handle = _make_handle(api=api)
+
+        handle.wait()
+
+        assert handle.poll() == exit_code
+
+    def test_wait_keeps_sigkill_exit_aborted(self):
+        api = _make_api_instance()
+        resp = _make_pod_response(
+            phase=PodPhase.FAILED.value,
+            container_statuses=[_make_terminated_container_status("container-test-job-123", 137)],
+        )
+        api.read_namespaced_pod.return_value = resp
+        handle = _make_handle(api=api)
+
+        handle.wait()
+
+        assert handle.poll() == JobReturnCode.ABORTED
 
     def test_wait_poll_consistent_after_wait(self):
         api = _make_api_instance()
