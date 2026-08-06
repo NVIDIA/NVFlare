@@ -288,6 +288,14 @@ scheduler, and aggregation weights.
 
 ## Why SCAFFOLD highlights the Collab API difference
 
+SCAFFOLD demonstrates **one-stop algorithm integration** with Collab. Its model
+exchange, auxiliary control state, and aggregation are visible through one
+direct client/server method contract instead of being distributed across
+multiple framework extension points. "One-stop" describes where the
+application-specific integration happens; client and server responsibilities
+remain distinct, and the SCAFFOLD equations must still be implemented
+correctly.
+
 The [current standard simulator example](../../cifar10/pt/cifar10-sim/cifar10_scaffold/README.md)
 can keep its job setup concise because NVFlare already provides
 SCAFFOLD-specific framework components. `ScaffoldRecipe` assembles a `PTModel`

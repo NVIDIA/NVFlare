@@ -78,7 +78,10 @@ def make_train_loader(
     if not indices_file.is_file():
         raise FileNotFoundError(f"Missing prepared split for {site_name}: {indices_file}")
     dataset = datasets.CIFAR10(root=str(data_root), train=True, download=False, transform=_TRAIN_TRANSFORM)
-    indices = np.load(indices_file).tolist()
+    indices = np.load(indices_file)
+    if indices.size == 0:
+        raise ValueError(f"Prepared split for {site_name} contains no examples: {indices_file}")
+    indices = indices.tolist()
     return DataLoader(
         Subset(dataset, indices),
         batch_size=batch_size,

@@ -22,13 +22,15 @@ import numpy as np
 from data import DEFAULT_DATA_ROOT, MANIFEST_FILE, SPLITS_DIR
 from torchvision import datasets
 
+MIN_SAMPLES_PER_CLIENT = 10
+
 
 def partition_data(
     labels: np.ndarray,
     num_clients: int,
     alpha: float,
     seed: int,
-    min_samples: int = 10,
+    min_samples: int = MIN_SAMPLES_PER_CLIENT,
     max_attempts: int = 1000,
 ) -> list[np.ndarray]:
     """Match the Dirichlet partitioning used by the standard CIFAR-10 examples."""
@@ -95,8 +97,21 @@ def prepare_data(args) -> Path:
     train_dataset = datasets.CIFAR10(root=str(data_root), train=True, download=True)
     test_dataset = datasets.CIFAR10(root=str(data_root), train=False, download=True)
 
+    minimum_required = args.num_clients * MIN_SAMPLES_PER_CLIENT
+    if minimum_required > len(train_dataset):
+        raise ValueError(
+            f"--num-clients={args.num_clients} requires at least {minimum_required} training examples "
+            f"to keep {MIN_SAMPLES_PER_CLIENT} per client, but CIFAR-10 has {len(train_dataset)}"
+        )
+
     labels = np.asarray(train_dataset.targets)
-    partitions = partition_data(labels, args.num_clients, args.alpha, args.seed)
+    partitions = partition_data(
+        labels,
+        args.num_clients,
+        args.alpha,
+        args.seed,
+        min_samples=MIN_SAMPLES_PER_CLIENT,
+    )
     expected_files = set()
     site_counts = {}
     class_counts = {}

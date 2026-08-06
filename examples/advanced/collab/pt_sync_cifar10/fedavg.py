@@ -166,6 +166,8 @@ class FedAvgClient:
         }
 
     def _local_train(self) -> tuple[float, int]:
+        if len(self.train_loader) == 0:
+            raise ValueError("Training data loader contains no examples; check the prepared client split")
         criterion = nn.CrossEntropyLoss()
         self._prepare_local_training()
         self.model.train()
@@ -190,6 +192,8 @@ class FedAvgClient:
                 local_steps += 1
             self.scheduler.step()
 
+        if examples_seen == 0:
+            raise ValueError("Training data loader contains no examples; check the prepared client split")
         return loss_sum / examples_seen, local_steps
 
 
