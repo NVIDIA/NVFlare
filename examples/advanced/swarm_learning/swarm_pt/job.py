@@ -27,7 +27,6 @@ Usage:
 
 import argparse
 import os
-import shutil
 
 from model import QwenLoRAModelWrapper
 
@@ -124,10 +123,6 @@ def main():
             "np_streaming_per_request_timeout": 120,
         }
     )
-
-    job_workspace = os.path.join(args.workspace, JOB_NAME)
-    if os.path.isdir(job_workspace):
-        shutil.rmtree(job_workspace)
 
     env = SimEnv(num_clients=args.n_clients, workspace_root=args.workspace)
     recipe.execute(env)
