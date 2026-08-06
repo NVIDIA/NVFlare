@@ -21,8 +21,8 @@ Usage:
     # Simulator run with pre-split data from prepare_data.py
     python job.py --n_clients 4 --num_rounds 5 --data_dir /tmp/swarm_data
 
-    # Export job directory for production deployment
-    python job.py --export_dir /tmp/swarm_lora_job
+    # Export the job without running it
+    python job.py --export --export-dir /tmp/swarm_lora_job
 """
 
 import argparse
@@ -34,7 +34,7 @@ from model import QwenLoRAModelWrapper
 from nvflare.apis.dxo import DataKind
 from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 from nvflare.client.config import TransferType
-from nvflare.recipe.sim_env import SimEnv
+from nvflare.recipe import SimEnv
 
 JOB_NAME = "ccwf_swarm_pt_lora"
 MODEL_SIZES = {
@@ -47,7 +47,6 @@ def define_parser():
     parser = argparse.ArgumentParser(description="Swarm LoRA fine-tuning job")
     parser.add_argument("--n_clients", type=int, default=2, help="Number of clients")
     parser.add_argument("--num_rounds", type=int, default=3, help="Number of FL rounds")
-    parser.add_argument("--export_dir", type=str, default="", help="Export job to this directory instead of running")
     parser.add_argument(
         "--data_dir",
         type=str,
@@ -125,11 +124,6 @@ def main():
             "np_streaming_per_request_timeout": 120,
         }
     )
-
-    if args.export_dir:
-        recipe.export(args.export_dir)
-        print(f"Exported job to: {args.export_dir}")
-        return
 
     job_workspace = os.path.join(args.workspace, JOB_NAME)
     if os.path.isdir(job_workspace):

@@ -34,7 +34,6 @@ def define_parser():
     parser.add_argument("--num_rounds", type=int, default=3)
     parser.add_argument("--update_type", type=str, default="full", choices=["full", "diff"])
     parser.add_argument("--launch_process", action=argparse.BooleanOptionalAction, default=False)
-    parser.add_argument("--export_config", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument(
         "--log_config",
         type=str,
@@ -68,17 +67,12 @@ def main():
     # Stream live log from each client to the server while the job is running.
     recipe.enable_log_streaming()
 
-    if args.export_config:
-        job_dir = "/tmp/nvflare/jobs/job_config"
-        recipe.export(job_dir)
-        print(f"Job config exported to {job_dir}")
-    else:
-        env = SimEnv(num_clients=n_clients, log_config=args.log_config)
-        run = recipe.execute(env)
-        print()
-        print("Result can be found in :", run.get_result())
-        print("Job Status is:", run.get_status())
-        print()
+    env = SimEnv(num_clients=n_clients, log_config=args.log_config)
+    run = recipe.execute(env)
+    print()
+    print("Result can be found in :", run.get_result())
+    print("Job Status is:", run.get_status())
+    print()
 
 
 if __name__ == "__main__":

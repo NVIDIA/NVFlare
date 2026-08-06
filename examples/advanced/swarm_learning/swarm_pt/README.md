@@ -223,7 +223,7 @@ The simulation results are written to `/tmp/nvflare/simulation/ccwf_swarm_pt_lor
 ### Step 5 — (Optional) Export job for production deployment
 
 ```bash
-python job.py --export_dir /tmp/swarm_lora_job
+python job.py --export --export-dir /tmp/swarm_lora_job
 ```
 
 This writes a standard NVFlare job folder that can be submitted to a production provisioned system.
@@ -240,7 +240,6 @@ This writes a standard NVFlare job folder that can be submitted to a production 
 | `--max_seq_len` | 128 | Maximum tokenized sequence length |
 | `--data_dir` | *(empty)* | Pre-split data root from `prepare_data.py`; in-memory if omitted |
 | `--workspace` | `/tmp/nvflare/simulation` | Root directory for simulation output |
-| `--export_dir` | *(empty)* | If set, export job folder instead of running |
 | `round_timeout` *(recipe)* | 3600 | P2P model transfer ACK budget in seconds — how long the aggregator waits for a receiver to acknowledge a model download (including the full tensor transfer). Does **not** cap per-round training time. Increase for models ≥2 GB where P2P transfer can take minutes. |
 
 ## Output Summary

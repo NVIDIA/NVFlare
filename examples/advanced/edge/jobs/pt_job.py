@@ -146,11 +146,6 @@ def main():
         action="store_true",
         help="If set, disable communication delay and device speed variations (set to 0.0)",
     )
-    parser.add_argument(
-        "--export_job",
-        action="store_true",
-        help="If set, export the recipe to the admin'stransfer directory",
-    )
     parser.add_argument("--project_name", type=str, default="edge_example", help="Project name")
 
     args = parser.parse_args()
@@ -173,17 +168,12 @@ def main():
         print(f"Error creating recipe: {e}")
         return 1
 
-    if args.export_job:
-        output_dir = os.path.join(admin_startup_kit_dir, "transfer")
-        print(f"Exporting recipe to {output_dir}")
-        recipe.export(job_dir=output_dir)
-    else:
-        env = ProdEnv(startup_kit_location=admin_startup_kit_dir, username="admin@nvidia.com")
-        run = recipe.execute(env)
-        print()
-        print("Result can be found in :", run.get_result())
-        print("Job Status is:", run.get_status())
-        print()
+    env = ProdEnv(startup_kit_location=admin_startup_kit_dir, username="admin@nvidia.com")
+    run = recipe.execute(env)
+    print()
+    print("Result can be found in :", run.get_result())
+    print("Job Status is:", run.get_status())
+    print()
 
 
 if __name__ == "__main__":

@@ -26,9 +26,7 @@ WORKSPACE = "/tmp/nvflare/jobs/workdir"
 def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", "--n_clients", type=int, default=2)
-    parser.add_argument("-j", "--job_configs", type=str, nargs="?", default="/tmp/nvflare/jobs")
     parser.add_argument("-w", "--work_dir", type=str, nargs="?", default=WORKSPACE)
-    parser.add_argument("-e", "--export_config", action="store_true", help="config only mode, export config")
     parser.add_argument("-l", "--log_config", type=str, default="concise")
 
     return parser.parse_args()
@@ -55,14 +53,9 @@ if __name__ == "__main__":
         server_side=False,
     )
 
-    # Run or export
-    if args.export_config:
-        print(f"Exporting job config...{args.job_configs}/fedavg_mlflow_client")
-        recipe.export(args.job_configs)
-    else:
-        env = SimEnv(num_clients=args.n_clients, workspace_root=args.work_dir, log_config=args.log_config)
-        run = recipe.execute(env)
-        print()
-        print("Result can be found in:", run.get_result())
-        print("Job Status is:", run.get_status())
-        print()
+    env = SimEnv(num_clients=args.n_clients, workspace_root=args.work_dir, log_config=args.log_config)
+    run = recipe.execute(env)
+    print()
+    print("Result can be found in:", run.get_result())
+    print("Job Status is:", run.get_status())
+    print()

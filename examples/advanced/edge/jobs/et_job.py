@@ -25,7 +25,6 @@ from nvflare.edge.tools.et_fed_buff_recipe import (
 from nvflare.recipe.prod_env import ProdEnv
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--export_job", action="store_true")
 parser.add_argument("--dataset", type=str, default="cifar10")
 parser.add_argument("--workspace_dir", type=str, default="/tmp/nvflare/workspaces")
 parser.add_argument("--project_name", type=str, default="edge_example")
@@ -109,14 +108,9 @@ recipe = ETFedBuffRecipe(
     ),
     device_training_params={"epoch": 3, "lr": 0.0001, "batch_size": batch_size},
 )
-if args.export_job:
-    output_dir = os.path.join(admin_startup_kit_dir, "transfer")
-    print(f"Exporting recipe to {output_dir}")
-    recipe.export(job_dir=output_dir)
-else:
-    env = ProdEnv(startup_kit_location=admin_startup_kit_dir, username="admin@nvidia.com")
-    run = recipe.execute(env)
-    print()
-    print("Result can be found in :", run.get_result())
-    print("Job Status is:", run.get_status())
-    print()
+env = ProdEnv(startup_kit_location=admin_startup_kit_dir, username="admin@nvidia.com")
+run = recipe.execute(env)
+print()
+print("Result can be found in :", run.get_result())
+print("Job Status is:", run.get_status())
+print()
