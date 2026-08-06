@@ -31,14 +31,27 @@ EXAMPLE_DIR = Path(__file__).resolve().parent
 
 
 def weighted_control_average(client_results) -> dict[str, torch.Tensor]:
+    """Average control deltas by local steps, matching NVFlare's framework SCAFFOLD path.
+
+    Canonical SCAFFOLD uses an unweighted participating-client average. This
+    example intentionally uses the framework-compatible variant so its Collab
+    and standard-recipe comparisons have the same aggregation behavior.
+    """
+
     updates = dict(client_results)
+    if not updates:
+        raise ValueError("SCAFFOLD control aggregation requires at least one client update")
     total_weight = sum(update["num_steps"] for update in updates.values())
+    if total_weight <= 0:
+        raise ValueError("SCAFFOLD client updates contain no training steps")
     control_names = set(next(iter(updates.values()))["control_delta"])
     averaged = {}
     for name in sorted(control_names):
         reference = next(iter(updates.values()))["control_delta"][name]
         accumulator = torch.zeros_like(reference, device="cpu")
         for site_name, update in updates.items():
+            if update["num_steps"] <= 0:
+                raise ValueError(f"{site_name} returned an invalid step count")
             delta = update["control_delta"]
             if set(delta) != control_names or delta[name].shape != reference.shape:
                 raise ValueError(f"{site_name} returned incompatible SCAFFOLD controls")

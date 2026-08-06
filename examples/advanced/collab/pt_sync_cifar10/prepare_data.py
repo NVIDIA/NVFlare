@@ -16,6 +16,8 @@
 
 import argparse
 import json
+import os
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -112,37 +114,48 @@ def prepare_data(args) -> Path:
         args.seed,
         min_samples=MIN_SAMPLES_PER_CLIENT,
     )
-    expected_files = set()
-    site_counts = {}
-    class_counts = {}
-    for client_index, indices in enumerate(partitions, start=1):
-        site_name = f"site-{client_index}"
-        filename = f"{site_name}.npy"
-        np.save(splits_dir / filename, indices)
-        expected_files.add(filename)
-        site_counts[site_name] = len(indices)
-        classes, counts = np.unique(labels[indices], return_counts=True)
-        class_counts[site_name] = {str(class_id): int(count) for class_id, count in zip(classes, counts)}
+    with tempfile.TemporaryDirectory(dir=data_root, prefix=".prepare-") as staging_root_name:
+        staging_root = Path(staging_root_name)
+        staging_splits_dir = staging_root / SPLITS_DIR
+        staging_splits_dir.mkdir()
 
-    if args.overwrite:
+        expected_files = set()
+        site_counts = {}
+        class_counts = {}
+        for client_index, indices in enumerate(partitions, start=1):
+            site_name = f"site-{client_index}"
+            filename = f"{site_name}.npy"
+            np.save(staging_splits_dir / filename, indices)
+            expected_files.add(filename)
+            site_counts[site_name] = len(indices)
+            classes, counts = np.unique(labels[indices], return_counts=True)
+            class_counts[site_name] = {str(class_id): int(count) for class_id, count in zip(classes, counts)}
+
+        manifest = {
+            "format_version": 1,
+            "dataset": "CIFAR10",
+            "num_clients": args.num_clients,
+            "dirichlet_alpha": args.alpha,
+            "split_seed": args.seed,
+            "train_size": len(train_dataset),
+            "test_size": len(test_dataset),
+            "site_counts": site_counts,
+            "class_counts": class_counts,
+        }
+        staged_manifest_path = staging_root / MANIFEST_FILE
+        with staged_manifest_path.open("w", encoding="utf-8") as stream:
+            json.dump(manifest, stream, indent=2, sort_keys=True)
+            stream.write("\n")
+
+        # The manifest is the validity marker for the complete split generation.
+        # Remove the old marker before changing any split and publish the new one last.
+        manifest_path.unlink(missing_ok=True)
+        for filename in sorted(expected_files):
+            os.replace(staging_splits_dir / filename, splits_dir / filename)
         for stale_file in splits_dir.glob("site-*.npy"):
             if stale_file.name not in expected_files:
                 stale_file.unlink()
-
-    manifest = {
-        "format_version": 1,
-        "dataset": "CIFAR10",
-        "num_clients": args.num_clients,
-        "dirichlet_alpha": args.alpha,
-        "split_seed": args.seed,
-        "train_size": len(train_dataset),
-        "test_size": len(test_dataset),
-        "site_counts": site_counts,
-        "class_counts": class_counts,
-    }
-    with manifest_path.open("w", encoding="utf-8") as stream:
-        json.dump(manifest, stream, indent=2, sort_keys=True)
-        stream.write("\n")
+        os.replace(staged_manifest_path, manifest_path)
 
     print(f"Prepared {args.num_clients} disjoint client partitions under {data_root}")
     print(f"Next: python fedavg.py --data-root {data_root} --num-clients {args.num_clients}")

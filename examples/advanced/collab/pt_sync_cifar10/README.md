@@ -60,6 +60,21 @@ Use `--overwrite` when intentionally replacing an existing partition.
 The training job uses `download=False`, so data download and partitioning
 never happen inside simulated client processes.
 
+### Deployment data and output topology
+
+The supplied command-line entry points execute with `SimEnv`. A single-host
+simulator or POC run can use one shared prepared-data root.
+
+For a distributed `ProdEnv` run, creating the recipe with a production
+environment does not copy CIFAR-10 data. Prepare the same split generation in
+advance and stage it at the configured absolute `data_root` on the submitter,
+server, and every client system. Copying the complete prepared-data root is the
+simplest option. At minimum, the submitter needs the manifest and every split
+file for validation, the server needs the CIFAR-10 test files, and each client
+needs the training files and its matching `splits/site-N.npy`.
+The configured `output_root` is also server-local. Retrieve `model_final.pt`
+and `metrics.json` from that server after the run.
+
 ## 2. Run FedAvg
 
 ```bash
@@ -140,6 +155,16 @@ for name, delta in control_delta.items():
     global_controls[name].add_(delta)
 ```
 
+This example deliberately weights both model updates and control deltas by
+each client's local optimizer-step count. That matches NVFlare's existing
+framework SCAFFOLD aggregation and keeps the standard-recipe comparison on the
+same weighting rule. Canonical SCAFFOLD Algorithm 1 instead averages client
+control deltas uniformly (and scales by the participating-client fraction when
+participation is partial). With heterogeneous partitions these variants can
+differ, so this example is specifically the NVFlare-compatible step-weighted
+variant rather than a claim that step weighting is the paper's canonical
+update.
+
 Run SCAFFOLD against the same prepared partitions:
 
 ```bash
@@ -167,7 +192,7 @@ algorithm inputs:
 | Optimizer | SGD, learning rate 0.01, momentum 0.9 |
 | Learning-rate schedule | Cosine annealing to 0.0001 over 5 local epochs |
 | Batch size | 64 |
-| Aggregation weight | Local optimizer steps |
+| Model and SCAFFOLD control aggregation weight | Local optimizer steps (NVFlare-compatible variant) |
 | Data partition | Dirichlet alpha 0.5, split seed 0 |
 | Model seed | 42 |
 | FedProx coefficient | 0.01 |
@@ -293,8 +318,8 @@ exchange, auxiliary control state, and aggregation are visible through one
 direct client/server method contract instead of being distributed across
 multiple framework extension points. "One-stop" describes where the
 application-specific integration happens; client and server responsibilities
-remain distinct, and the SCAFFOLD equations must still be implemented
-correctly.
+remain distinct, and the chosen SCAFFOLD update and weighting variant must
+still be implemented and documented correctly.
 
 The [current standard simulator example](../../cifar10/pt/cifar10-sim/cifar10_scaffold/README.md)
 can keep its job setup concise because NVFlare already provides
@@ -329,7 +354,8 @@ generator to define. This concentrates the application-specific integration in
 one direct method contract: the server operates on the same values returned by
 the client method instead of reconnecting them through several independent
 component contracts. It removes that class of multi-point consistency failure;
-the SCAFFOLD equations and aggregation logic must, of course, still be correct.
+the selected SCAFFOLD equations and aggregation variant must, of course, still
+be correct.
 
 | Concern | Standard SCAFFOLD path | Collab SCAFFOLD path |
 |---|---|---|

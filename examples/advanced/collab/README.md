@@ -40,7 +40,12 @@ copied or adapted on its own.
 
 To use another deployment mode, execute the same recipe with `PocEnv` or
 `ProdEnv` from `nvflare.recipe`; Collab has no separate runner or environment
-abstraction.
+abstraction. Recipes pass configured filesystem paths to their server and
+clients; deployment environments do not copy data at those paths or retrieve
+server-local outputs automatically. Stage required data on every participating
+system before a distributed run and collect outputs from the server afterward.
+The synchronous CIFAR-10 example documents its exact
+[data and output topology](pt_sync_cifar10/README.md#deployment-data-and-output-topology).
 
 The NumPy examples run in a base installation; `hello_fedavg` needs PyTorch.
 `simple_split_learning` needs PyTorch and torchvision and downloads MNIST on

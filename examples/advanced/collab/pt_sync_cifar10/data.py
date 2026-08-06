@@ -61,10 +61,35 @@ def validate_prepared_data(data_root: str | Path, num_clients: int) -> dict:
             f"Prepared data contains {manifest.get('num_clients')} clients, but --num-clients={num_clients}; "
             "run prepare_data.py with matching arguments"
         )
-    missing = [split_path(data_root, f"site-{index}") for index in range(1, num_clients + 1)]
-    missing = [path for path in missing if not path.is_file()]
-    if missing:
-        raise FileNotFoundError(f"Missing prepared client split: {missing[0]}")
+    site_counts = manifest.get("site_counts")
+    if not isinstance(site_counts, dict):
+        raise ValueError("Prepared-data manifest is missing site_counts")
+
+    all_indices = []
+    for index in range(1, num_clients + 1):
+        site_name = f"site-{index}"
+        path = split_path(data_root, site_name)
+        if not path.is_file():
+            raise FileNotFoundError(f"Missing prepared client split: {path}")
+        indices = np.load(path, allow_pickle=False)
+        if indices.ndim != 1 or not np.issubdtype(indices.dtype, np.integer):
+            raise ValueError(f"Prepared split for {site_name} must be a one-dimensional integer array")
+        expected_count = site_counts.get(site_name)
+        if not isinstance(expected_count, int) or expected_count <= 0 or indices.size != expected_count:
+            raise ValueError(
+                f"Prepared split for {site_name} contains {indices.size} examples, "
+                f"but the manifest records {expected_count}"
+            )
+        all_indices.append(indices)
+
+    combined_indices = np.concatenate(all_indices)
+    train_size = manifest.get("train_size")
+    if not isinstance(train_size, int) or train_size <= 0:
+        raise ValueError("Prepared-data manifest contains an invalid train_size")
+    if combined_indices.size != train_size or np.unique(combined_indices).size != train_size:
+        raise ValueError("Prepared client splits must contain every training example exactly once")
+    if combined_indices.min() < 0 or combined_indices.max() >= train_size:
+        raise ValueError("Prepared client split contains an out-of-range training index")
     return manifest
 
 
@@ -78,7 +103,7 @@ def make_train_loader(
     if not indices_file.is_file():
         raise FileNotFoundError(f"Missing prepared split for {site_name}: {indices_file}")
     dataset = datasets.CIFAR10(root=str(data_root), train=True, download=False, transform=_TRAIN_TRANSFORM)
-    indices = np.load(indices_file)
+    indices = np.load(indices_file, allow_pickle=False)
     if indices.size == 0:
         raise ValueError(f"Prepared split for {site_name} contains no examples: {indices_file}")
     indices = indices.tolist()
