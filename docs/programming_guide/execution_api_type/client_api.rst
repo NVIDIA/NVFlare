@@ -369,49 +369,62 @@ Additional Resources
 * :ref:`job_recipe` - Job Recipe tutorial
 * :ref:`fl_simulator` - Simulation environment details
 
-Client API communication patterns
-=================================
+Client API Execution Modes
+==========================
 
-.. image:: ../../resources/client_api.png
-    :height: 300px
+``ClientAPIExecutor`` provides three execution modes. Choose the mode according
+to who starts and owns the trainer process.
 
-We offer various implementations of Client APIs tailored to different scenarios, each linked with distinct communication patterns.
+.. list-table:: Client API execution modes
+   :header-rows: 1
+   :widths: 22 25 53
 
-In-process Client API
+   * - Mode
+     - Trainer owner
+     - Behavior
+   * - ``in_process``
+     - NVFLARE
+     - Runs the training script inside the Client Job process and exchanges
+       data through the in-process DataBus.
+   * - ``external_process``
+     - NVFLARE
+     - Launches a separate trainer process and manages its startup, liveness,
+       shutdown, and process-tree termination.
+   * - ``attach``
+     - External system
+     - Waits for an independently started trainer to attach. NVFLARE owns only
+       the listener and protocol session, never the trainer process.
+
+All three modes expose the same ``flare.init()``, ``flare.receive()``, and
+``flare.send()`` training interface. Their main difference is process placement
+and lifecycle ownership.
+
+In-Process Mode
+---------------
+
+Use ``in_process`` when the training script can safely run inside the CJ. This
+mode has the lowest communication overhead because task and result exchange use
+an in-memory DataBus. It is the default for ``ScriptRunner`` when
+``launch_external_process=False``.
+
+External-Process Mode
 ---------------------
 
-The in-process executor entails both the training script and client executor operating within the same process.
-The training script will be launched once at the event of START_RUN and will keep on running till the END_RUN event.
-Communication between them occurs through an efficient in-memory databus.
+Use ``external_process`` when NVFLARE should launch the trainer in a separate
+process, including multi-process or distributed launch commands. The backend
+uses Cell for task/result exchange and owns the trainer lifecycle. It can launch
+one trainer for the job or a fresh trainer for each task.
 
-When the training process involves either a single GPU or no GPUs, and the training script doesn't integrate third-party
-training systems, the in-process executor is preferable (when available).
+Attach Mode
+-----------
 
-Sub-process Client API
-----------------------
+Use ``attach`` only when another system independently starts and owns the
+trainer. The trainer initiates a connection to a dedicated Client Job listener
+using a shared-file or direct network Attach profile. Job teardown closes the
+session but does not signal or terminate the trainer process.
 
-On the other hand, the LauncherExecutor employs the SubprocessLauncher to use a sub-process to execute the training script. This results in the client executor
-and training script residing in separate processes. The "launch_once" option is provided to the SubprocessLauncher to control
-whether to launch the external script every time when getting the task from server, or just launch the script once at the event
-of START_RUN and keeps running till the END_RUN event. Communication between them is facilitated by either CellPipe
-(default) or FilePipe.
-
-For scenarios involving multi-GPU training or the utilization of external training infrastructure, opting for the Launcher executor might be more suitable.
-
-
-Choice of different Pipes
-=========================
-In the 2.5.x release, for most users, we recommend utilizing the default setting with the in-process executor
-(defaulting to memory-based data exchanges).
-Conversely, in the 2.4.x release, we suggest using the default setting with CellPipe for most users.
-
-CellPipe facilitates TCP-based cell-to-cell connections between the Executor and training script processes on
-the local host. The term cell represents logical endpoints. This communication enables the exchange of models, metrics,
-and metadata between the two processes.
-
-In contrast, FilePipe offers file-based communication between the Executor and training script processes,
-utilizing a job-specific file directory for exchanging models and metadata via files. While FilePipe is easier to set up
-than CellPipe, it's not suitable for high-frequency metrics exchange.
+See :ref:`client_api_attach` for configuration, security, migration,
+and runnable examples.
 
 Examples
 ========
