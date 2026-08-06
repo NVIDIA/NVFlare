@@ -276,6 +276,22 @@ def test_end_run_finalizes_distributed_session_instead_of_parent_app():
     executor.client_app.finalize.assert_not_called()
 
 
+def test_end_run_shuts_down_call_executors_when_distributed_finalize_fails():
+    executor = CollabExecutor(client_obj_id="client", launch_external_process=True)
+    executor.client_app = MagicMock()
+    executor.client_app.name = "site-1"
+    executor.distributed_session = MagicMock()
+    executor.distributed_session.stop.side_effect = RuntimeError("rank 1 finalization failed")
+    executor.inbound_executor.shutdown = MagicMock(wraps=executor.inbound_executor.shutdown)
+    executor.outbound_executor.shutdown = MagicMock(wraps=executor.outbound_executor.shutdown)
+
+    with pytest.raises(RuntimeError, match="rank 1 finalization failed"):
+        executor._handle_end_run("end_run", FLContext())
+
+    executor.inbound_executor.shutdown.assert_called_once_with(wait=True, cancel_futures=True)
+    executor.outbound_executor.shutdown.assert_called_once_with(wait=True, cancel_futures=True)
+
+
 @pytest.mark.parametrize("failing_method", ["setup", "initialize"])
 def test_setup_returns_error_without_publishing_context_when_client_setup_fails(monkeypatch, failing_method):
     client = MagicMock()

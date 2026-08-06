@@ -20,7 +20,7 @@ import tempfile
 import threading
 import time
 import uuid
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from nvflare.apis.signal import Signal
 from nvflare.collab.api.call_opt import DEFAULT_CALL_TIMEOUT
@@ -404,8 +404,11 @@ class DistributedClientSession:
             if self.stopped:
                 return
             self.stopped = True
+            finalization_error = None
+            worker_return_code = None
+            finalization_requested = finalize and self.started
             try:
-                if finalize and self.started:
+                if finalization_requested:
                     with self.call_lock:
                         reply = self._send_worker_request(
                             DistributedTopic.FINALIZE,
@@ -414,12 +417,12 @@ class DistributedClientSession:
                             abort_signal=Signal(),
                         )
                     if reply.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK) != ReturnCode.OK:
-                        self.logger.error(f"distributed Collab finalization failed: {reply.payload}")
+                        finalization_error = f"distributed Collab finalization failed: {reply.payload}"
             except Exception as ex:
-                self.logger.error(f"error while finalizing distributed Collab client: {secure_format_exception(ex)}")
+                finalization_error = f"error while finalizing distributed Collab client: {secure_format_exception(ex)}"
             finally:
                 self._close_worker()
-                self._wait_or_terminate_worker()
+                worker_return_code = self._wait_or_terminate_worker()
                 self.closed = True
                 self.auth_token = ""
                 self.session_id = None
@@ -428,6 +431,18 @@ class DistributedClientSession:
                         os.remove(self.bootstrap_path)
                     except OSError:
                         pass
+            if finalization_requested and self.process is not None and worker_return_code != 0:
+                if worker_return_code is None:
+                    process_error = "distributed Collab worker launcher did not exit after finalization"
+                else:
+                    process_error = (
+                        "distributed Collab worker launcher exited with "
+                        f"code {worker_return_code} after finalization"
+                    )
+                finalization_error = f"{finalization_error}; {process_error}" if finalization_error else process_error
+            if finalization_error:
+                self.logger.error(finalization_error)
+                raise RuntimeError(finalization_error)
 
     def _close_worker(self) -> None:
         if self.cell is None or not self.worker_fqcn or not self.session_id:
@@ -487,9 +502,9 @@ class DistributedClientSession:
         if self.process is not None:
             self.process.kill() if hard else self.process.terminate()
 
-    def _wait_or_terminate_worker(self) -> None:
+    def _wait_or_terminate_worker(self) -> Optional[int]:
         if self.process is None:
-            return
+            return None
         if not self._wait_for_group_exit(self.shutdown_timeout):
             self.logger.info("terminating distributed Collab worker process group")
             self._signal_worker(hard=False)
@@ -499,3 +514,4 @@ class DistributedClientSession:
                 self._wait_for_group_exit(_LOG_THREAD_JOIN_TIMEOUT)
         if self.log_thread is not None and self.log_thread.is_alive():
             self.log_thread.join(timeout=_LOG_THREAD_JOIN_TIMEOUT)
+        return self.process.poll()

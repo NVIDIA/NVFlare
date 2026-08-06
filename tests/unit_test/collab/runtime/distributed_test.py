@@ -31,6 +31,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.collab import collab
 from nvflare.collab.api.app import ClientApp
+from nvflare.collab.runtime import distributed_worker as distributed_worker_module
 from nvflare.collab.runtime.defs import CallReplyKey, DistributedKey, DistributedTopic, ObjectCallKey
 from nvflare.collab.runtime.distributed import DistributedClientSession
 from nvflare.collab.runtime.distributed_worker import DistributedWorker, _RelayCell
@@ -250,6 +251,51 @@ def test_first_rank_error_is_selected_deterministically():
     assert DistributedWorker._first_error(statuses) == statuses[1]
 
 
+def test_worker_component_builder_keeps_authorization_enabled(tmp_path, monkeypatch):
+    client_config = tmp_path / "config_fed_client.json"
+    client_config.write_text(
+        json.dumps(
+            {
+                "components": [
+                    {
+                        "id": "client",
+                        "path": "nvflare.collab.api.module_wrapper.ModuleWrapper",
+                        "args": {"module": "client_module"},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    worker = DistributedWorker.__new__(DistributedWorker)
+    worker.workspace = MagicMock()
+    worker.context = MagicMock()
+    worker.components = {}
+    builder = MagicMock()
+    builder.build_component.return_value = object()
+    builder_type = MagicMock(return_value=builder)
+    monkeypatch.setattr(distributed_worker_module, "WorkerComponentBuilder", builder_type)
+
+    worker._build_components(
+        {
+            "client_config": str(client_config),
+            "client_obj_id": "client",
+            "collab_obj_ids": [],
+        }
+    )
+
+    builder_type.assert_called_once_with(fl_ctx=worker.context, workspace=worker.workspace)
+    assert worker.components["client"] is builder.build_component.return_value
+
+
+def test_nonzero_rank_skips_broadcast_loop_after_failed_initialization():
+    worker = DistributedWorker.__new__(DistributedWorker)
+    worker.initialized = False
+    worker.dist = None
+
+    worker._run_nonzero_rank()
+
+
 def test_session_forwards_invocation_timeout_to_worker_cell():
     session = DistributedClientSession(
         command="python3 -u",
@@ -319,6 +365,26 @@ def test_session_finalizes_with_fresh_signal_after_run_signal_is_triggered():
     assert finalize_signal is not session.abort_signal
     assert not finalize_signal.triggered
     assert session.cell.send_request.call_count == 2
+
+
+def test_session_reports_nonzero_worker_exit_after_finalization():
+    session = DistributedClientSession(
+        command="python3 -u",
+        startup_timeout=10.0,
+        shutdown_timeout=10.0,
+        logger=MagicMock(),
+    )
+    session.started = True
+    session.process = MagicMock()
+    session._send_worker_request = MagicMock(return_value=new_cell_message({}, None))
+    session._close_worker = MagicMock()
+    session._wait_or_terminate_worker = MagicMock(return_value=1)
+
+    with pytest.raises(RuntimeError, match="worker launcher exited with code 1 after finalization"):
+        session.stop(finalize=True)
+
+    assert session.closed is True
+    assert session.session_id is None
 
 
 @pytest.mark.timeout(30)

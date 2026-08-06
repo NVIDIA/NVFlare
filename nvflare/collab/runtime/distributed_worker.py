@@ -35,7 +35,7 @@ from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.private.fed.utils.fed_utils import fobs_initialize
+from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_job_meta_from_workspace
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 from .defs import DIST_CHANNEL, CallReplyKey, DistributedKey, DistributedTopic, decode_message, encode_message
@@ -296,12 +296,30 @@ class DistributedWorker:
         timer.start()
         return make_reply(ReturnCode.OK)
 
+    def _build_context(self):
+        engine = _WorkerEngine(self.workspace, self.components)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
+        fl_ctx.set_prop(ReservedKey.RUN_NUM, self.args.job_id, private=True, sticky=False)
+        fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, self.args.client_name, private=True, sticky=False)
+        fl_ctx.set_prop(ReservedKey.RUN_ABORT_SIGNAL, self.abort_signal, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.RANK_NUMBER, self.rank, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.NUM_OF_PROCESSES, self.env_world_size, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, self.workspace, private=True, sticky=False)
+        fl_ctx.set_prop(
+            FLContextKey.JOB_META,
+            get_job_meta_from_workspace(self.workspace, self.args.job_id),
+            private=True,
+            sticky=False,
+        )
+        self.context = fl_ctx
+
     def _build_components(self, bootstrap):
         with open(bootstrap["client_config"], "r", encoding="utf-8") as f:
             app_config = json.load(f)
         entries = {entry.get("id"): (i, entry) for i, entry in enumerate(app_config.get("components", []), 1)}
         required_ids = [bootstrap["client_obj_id"]] + list(bootstrap.get("collab_obj_ids") or [])
-        builder = WorkerComponentBuilder(workspace=self.workspace, enforce_authorization=False)
+        builder = WorkerComponentBuilder(fl_ctx=self.context, workspace=self.workspace)
         for component_id in required_ids:
             found = entries.get(component_id)
             if not found:
@@ -312,14 +330,7 @@ class DistributedWorker:
             self.components[component_id] = builder.build_component(component_config, node)
 
     def _build_app(self, bootstrap):
-        engine = _WorkerEngine(self.workspace, self.components)
-        fl_ctx = FLContext()
-        fl_ctx.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
-        fl_ctx.set_prop(ReservedKey.RUN_NUM, self.args.job_id, private=True, sticky=False)
-        fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, self.args.client_name, private=True, sticky=False)
-        fl_ctx.set_prop(ReservedKey.RUN_ABORT_SIGNAL, self.abort_signal, private=True, sticky=False)
-        fl_ctx.set_prop(FLContextKey.RANK_NUMBER, self.rank, private=True, sticky=False)
-        fl_ctx.set_prop(FLContextKey.NUM_OF_PROCESSES, self.env_world_size, private=True, sticky=False)
+        fl_ctx = self.context
 
         collab_executor = CollabExecutor(
             client_obj_id=bootstrap["client_obj_id"],
@@ -479,6 +490,8 @@ class DistributedWorker:
             self.finalized = True
 
     def _run_nonzero_rank(self):
+        if not self.initialized or self.dist is None:
+            return
         while True:
             command = [None]
             self.dist.broadcast_object_list(command, src=0)
@@ -506,10 +519,11 @@ class DistributedWorker:
             self.parent_fqcn = bootstrap[DistributedKey.PARENT_FQCN]
             self.protocol_id = bootstrap[DistributedKey.PROTOCOL_ID]
             self.secure_supported = bool(bootstrap.get(DistributedKey.SECURE_SUPPORTED, False))
+        self._build_context()
         self._build_components(bootstrap)
         self._build_app(bootstrap)
         init_status = self._initialize_app()
-        self.initialized = True
+        self.initialized = bool(init_status.get(DistributedKey.OK, False))
         if self.rank == 0:
             self._send_ready(init_status)
             self.exit_event.wait()
