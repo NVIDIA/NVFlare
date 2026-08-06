@@ -215,6 +215,16 @@ whereas Attach needs an isolated, job-lifetime listener.
 Missing or malformed `client_api_attach` configuration fails job initialization
 before any session metadata is sent.
 
+For a containerized Slurm client job, the client launcher reads this site-local
+configuration before submission. When `client_api_attach.scheme` is
+`shared-file`, it bind-mounts the configured `root_dir` read-write at the same
+absolute path in Apptainer and Pyxis. The root must already be an existing,
+non-symlink directory outside the NVFlare workspace and must not overlap another
+container mount. Bare Slurm and network Attach do not add this mount. The
+launcher only establishes filesystem visibility; `AttachBackend` remains
+authoritative for the shared-file root, listener, owner-marker, and permission
+checks described below.
+
 ### Trainer identity and routing
 
 The CJ derives:
@@ -588,6 +598,9 @@ Unit coverage must verify:
 - task delivery does not retry semantic rejection;
 - reconnect, stale-session rejection, task deduplication, and result recovery;
 - trainer-first and CJ-first rendezvous over each supported Attach driver;
+- containerized Slurm mounts a site-configured shared-file Attach root at the
+  same path read-write for both Apptainer and Pyxis without changing bare or
+  network Attach;
 - secure-job result relay is independent of clear shared-file Attach transport;
 - canonical lazy sources survive uncertain status and routine shutdown; and
 - Attach finalization never invokes process-ownership operations.

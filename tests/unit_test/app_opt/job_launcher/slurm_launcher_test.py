@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -214,6 +215,20 @@ def _file_parent_context(workspace, listener):
     return context
 
 
+def _write_attach_config(workspace, root_dir, scheme="shared-file"):
+    (workspace / "local" / "comm_config.json").write_text(
+        json.dumps(
+            {
+                "client_api_attach": {
+                    "scheme": scheme,
+                    "resources": {"root_dir": str(root_dir), "connection_security": "clear"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 @pytest.mark.parametrize("sandbox", ["pyxis", "apptainer"])
 def test_containerized_slurm_mounts_shared_file_parent_directory_read_write(tmp_path, sandbox):
     workspace = _workspace(tmp_path)
@@ -230,6 +245,109 @@ def test_containerized_slurm_mounts_shared_file_parent_directory_read_write(tmp_
     assert plan.mounts[0].source == str(transport_parent)
     assert plan.mounts[0].destination == str(transport_parent)
     assert plan.mounts[0].mode == "rw"
+
+
+@pytest.mark.parametrize("sandbox", ["pyxis", "apptainer"])
+def test_containerized_client_mounts_shared_file_attach_root_read_write(tmp_path, sandbox):
+    workspace = _workspace(tmp_path)
+    image = tmp_path / ("image.sqsh" if sandbox == "pyxis" else "image.sif")
+    image.write_text("image", encoding="utf-8")
+    attach_root = tmp_path / "attach"
+    attach_root.mkdir()
+    _write_attach_config(workspace, attach_root)
+    launcher = _launcher(tmp_path, workspace, sandbox=sandbox, image=str(image))
+
+    plan = launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _fl_ctx(workspace))
+
+    assert plan.mounts == (BindMount(str(attach_root), str(attach_root), "rw"),)
+
+
+def test_bare_client_does_not_mount_shared_file_attach_root(tmp_path):
+    workspace = _workspace(tmp_path)
+    attach_root = tmp_path / "attach"
+    attach_root.mkdir()
+    _write_attach_config(workspace, attach_root)
+    launcher = _launcher(tmp_path, workspace, sandbox="none")
+
+    plan = launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _fl_ctx(workspace))
+
+    assert plan.mounts == ()
+
+
+def test_containerized_client_does_not_mount_network_attach_root(tmp_path):
+    workspace = _workspace(tmp_path)
+    image = tmp_path / "image.sif"
+    image.write_text("image", encoding="utf-8")
+    attach_root = tmp_path / "attach"
+    attach_root.mkdir()
+    _write_attach_config(workspace, attach_root, scheme="grpc")
+    launcher = _launcher(tmp_path, workspace, sandbox="apptainer", image=str(image))
+
+    plan = launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _fl_ctx(workspace))
+
+    assert plan.mounts == ()
+
+
+def test_containerized_server_does_not_mount_client_attach_root(tmp_path):
+    workspace = _workspace(tmp_path)
+    image = tmp_path / "image.sif"
+    image.write_text("image", encoding="utf-8")
+    attach_root = tmp_path / "attach"
+    attach_root.mkdir()
+    _write_attach_config(workspace, attach_root)
+    launcher = _launcher(
+        tmp_path, workspace, sandbox="apptainer", image=str(image), launcher_class=ServerSlurmJobLauncher
+    )
+
+    plan = launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _fl_ctx(workspace))
+
+    assert plan.mounts == ()
+
+
+def test_shared_file_parent_and_attach_root_share_one_mount(tmp_path):
+    workspace = _workspace(tmp_path)
+    image = tmp_path / "image.sif"
+    image.write_text("image", encoding="utf-8")
+    transport_root = tmp_path / "shared"
+    listener = transport_root / "lst_12345678"
+    listener.mkdir(parents=True)
+    _write_attach_config(workspace, transport_root)
+    launcher = _launcher(tmp_path, workspace, sandbox="apptainer", image=str(image))
+
+    plan = launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _file_parent_context(workspace, listener))
+
+    assert plan.mounts == (BindMount(str(transport_root), str(transport_root), "rw"),)
+
+
+def test_shared_file_attach_root_overlapping_study_mount_is_rejected(tmp_path, monkeypatch):
+    workspace = _workspace(tmp_path)
+    image = tmp_path / "image.sif"
+    image.write_text("image", encoding="utf-8")
+    attach_root = tmp_path / "attach"
+    attach_root.mkdir()
+    _write_attach_config(workspace, attach_root)
+    launcher = _launcher(tmp_path, workspace, sandbox="apptainer", image=str(image))
+    monkeypatch.setattr(
+        launcher,
+        "_study_mounts",
+        lambda runtime: (BindMount(str(attach_root), str(attach_root), "ro"),),
+    )
+
+    with pytest.raises(SlurmLauncherError, match="Client API Attach root overlaps"):
+        launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _fl_ctx(workspace))
+
+
+def test_shared_file_attach_root_inside_workspace_is_rejected(tmp_path):
+    workspace = _workspace(tmp_path)
+    image = tmp_path / "image.sif"
+    image.write_text("image", encoding="utf-8")
+    attach_root = workspace / "attach"
+    attach_root.mkdir()
+    _write_attach_config(workspace, attach_root)
+    launcher = _launcher(tmp_path, workspace, sandbox="apptainer", image=str(image))
+
+    with pytest.raises(SlurmLauncherError, match="must be outside workspace_path"):
+        launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _fl_ctx(workspace))
 
 
 def test_bare_slurm_does_not_mount_shared_file_parent_directory(tmp_path):
