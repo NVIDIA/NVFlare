@@ -19,7 +19,7 @@ import time
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 
@@ -31,15 +31,24 @@ from nvflare.app_common.executors.client_api.attach_backend import AttachBackend
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext
 from nvflare.client.cell.defs import CHANNEL, MsgKey, TaskState, Topic
 from nvflare.client.config import ConfigKey
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
+from nvflare.fuel.f3.cellnet.registry import Registry
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
+from nvflare.fuel.f3.endpoint import Endpoint
+from nvflare.fuel.f3.streaming.download_service import OBJ_DOWNLOADER_CHANNEL
+from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 
 CJ_FQCN = "site-1.job-1"
 TRAINER_FQCN = "site-1.-client_api_trainer_a"
+
+
+class _NoOpStats:
+    def increment(self, *args, **kwargs):
+        pass
 
 
 def _accepted(topic, **fields):
@@ -212,7 +221,8 @@ def _context(**overrides):
         "executor": MagicMock(),
         "attach_id": "trainer_a",
         "attach_timeout": 1.0,
-        "heartbeat_timeout": 0.0,
+        "heartbeat_interval": 5.0,
+        "heartbeat_timeout": 30.0,
         "task_wait_timeout": 2.0,
         "result_wait_timeout": 2.0,
     }
@@ -500,6 +510,73 @@ def test_reconnect_waits_for_accepted_result_source_to_be_released():
     backend.finalize(fl_ctx)
 
 
+def test_reconnect_retires_accepted_result_source_after_confirmed_disconnect():
+    cell = FakeCell()
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell)
+    backend.initialize(
+        _context(allow_reconnect=True, heartbeat_interval=0.01, heartbeat_timeout=0.05),
+        fl_ctx,
+    )
+    first = _wait_ready(backend)
+
+    result = backend.execute("train", Shareable(), fl_ctx, Signal())
+    assert result["answer"] == 42
+    assert first.result_source_live.is_set()
+
+    cell.connected = False
+    with first._activity_lock:
+        first._last_peer_activity = time.monotonic() - 1.0
+
+    assert _wait_until(lambda: backend._get_session() is not first and backend._get_session().ready.is_set())
+    assert not first.result_source_live.is_set()
+    backend.finalize(fl_ctx)
+
+
+def test_reconnect_preserves_accepted_result_source_during_transient_disconnect():
+    cell = FakeCell()
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell)
+    backend.initialize(
+        _context(allow_reconnect=True, heartbeat_interval=0.01, heartbeat_timeout=0.5),
+        fl_ctx,
+    )
+    first = _wait_ready(backend)
+
+    result = backend.execute("train", Shareable(), fl_ctx, Signal())
+    assert result["answer"] == 42
+    cell.connected = False
+    with first._activity_lock:
+        first._last_peer_activity = time.monotonic() - 1.0
+
+    assert _wait_until(lambda: first.result_source_disconnect_since is not None)
+    cell.connected = True
+    time.sleep(0.6)
+
+    assert backend._get_session() is first
+    assert first.result_source_live.is_set()
+    assert first.result_source_disconnect_since is None
+    heartbeat = cell.deliver(
+        Topic.HEARTBEAT,
+        TRAINER_FQCN,
+        {MsgKey.SESSION_ID: first.session_id, MsgKey.RESULT_SOURCE_LIVE: False},
+    )
+    assert heartbeat.payload[MsgKey.REPLY_TOPIC] == Topic.HEARTBEAT
+    backend.finalize(fl_ctx)
+
+
+def test_attach_rejects_heartbeat_disabled_session_before_shutdown_can_be_lost():
+    cell = FakeCell()
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell)
+
+    with pytest.raises(ValueError, match="heartbeat_timeout > 0.*SHUTDOWN"):
+        backend.initialize(_context(heartbeat_timeout=0.0, result_wait_timeout=2.0), fl_ctx)
+
+    assert not any(topic == Topic.SESSION_OPEN for topic, _, _ in cell.sent)
+    assert not any(topic == Topic.SHUTDOWN for topic, _, _ in cell.sent)
+
+
 def test_reconnect_does_not_replay_task_interrupted_by_session_loss():
     cell = FakeCell()
     cell.deliver_result = False
@@ -541,17 +618,26 @@ def test_network_attach_uses_existing_cp_route_without_a_cj_listener():
     backend.finalize(fl_ctx)
 
 
-def test_secure_network_attach_rejects_clear_protocol_before_decode():
+def test_secure_network_attach_guard_covers_streamed_and_direct_protocol_before_decode():
     cell = FakeCell(attach_config=False)
     backend = AttachBackend()
     fl_ctx = _fl_ctx(cell, secure_mode=True)
     backend.initialize(_context(), fl_ctx)
     _wait_ready(backend)
+    cell.core_cell.add_incoming_filter.assert_has_calls(
+        [
+            call(channel=STREAM_CHANNEL, topic=STREAM_DATA_TOPIC, cb=backend._protocol_guard.check),
+            call(channel=CHANNEL, topic="*", cb=backend._protocol_guard.check),
+            call(channel=OBJ_DOWNLOADER_CHANNEL, topic="*", cb=backend._protocol_guard.check),
+        ]
+    )
 
     clear = new_cell_message(
         {
             MessageHeaderKey.DESTINATION: CJ_FQCN,
             MessageHeaderKey.ORIGIN: TRAINER_FQCN,
+            MessageHeaderKey.CHANNEL: STREAM_CHANNEL,
+            MessageHeaderKey.TOPIC: STREAM_DATA_TOPIC,
             StreamHeaderKey.CHANNEL: CHANNEL,
             StreamHeaderKey.TOPIC: Topic.RESULT_READY,
         },
@@ -561,21 +647,152 @@ def test_secure_network_attach_rejects_clear_protocol_before_decode():
     clear.set_header(MessageHeaderKey.SECURE, True)
     claimed_secure = backend._secure_protocol_guard(clear)
     clear.set_header(MessageHeaderKey.ENCRYPTED, True)
-    other_trainer = new_cell_message(
+    foreign_trainer = new_cell_message(
         {
             MessageHeaderKey.DESTINATION: CJ_FQCN,
             MessageHeaderKey.ORIGIN: "site-1.-client_api_other",
+            MessageHeaderKey.SECURE: True,
+            MessageHeaderKey.ENCRYPTED: True,
+            MessageHeaderKey.CHANNEL: STREAM_CHANNEL,
+            MessageHeaderKey.TOPIC: STREAM_DATA_TOPIC,
             StreamHeaderKey.CHANNEL: CHANNEL,
             StreamHeaderKey.TOPIC: Topic.RESULT_READY,
         },
         MagicMock(name="other_undecoded_result"),
     )
+    direct_clear = new_cell_message(
+        {
+            MessageHeaderKey.DESTINATION: CJ_FQCN,
+            MessageHeaderKey.ORIGIN: TRAINER_FQCN,
+            MessageHeaderKey.CHANNEL: CHANNEL,
+            MessageHeaderKey.TOPIC: Topic.RESULT_READY,
+        },
+        MagicMock(name="direct_undecoded_result"),
+    )
+    direct_clear_download = new_cell_message(
+        {
+            MessageHeaderKey.DESTINATION: CJ_FQCN,
+            MessageHeaderKey.ORIGIN: TRAINER_FQCN,
+            MessageHeaderKey.CHANNEL: OBJ_DOWNLOADER_CHANNEL,
+            MessageHeaderKey.TOPIC: "download",
+        },
+        MagicMock(name="direct_undecoded_download"),
+    )
 
     assert rejected.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.AUTHENTICATION_ERROR
     assert claimed_secure.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.AUTHENTICATION_ERROR
     assert backend._secure_protocol_guard(clear) is None
-    assert backend._secure_protocol_guard(other_trainer) is None
+    assert (
+        backend._secure_protocol_guard(foreign_trainer).get_header(MessageHeaderKey.RETURN_CODE)
+        == CellReturnCode.AUTHENTICATION_ERROR
+    )
+    assert (
+        backend._secure_protocol_guard(direct_clear).get_header(MessageHeaderKey.RETURN_CODE)
+        == CellReturnCode.AUTHENTICATION_ERROR
+    )
+    assert (
+        backend._secure_protocol_guard(direct_clear_download).get_header(MessageHeaderKey.RETURN_CODE)
+        == CellReturnCode.AUTHENTICATION_ERROR
+    )
+
+    other_owner = object()
+    backend._protocol_guard.claim(other_owner, "site-1.-client_api_other", "site-1")
+    assert backend._secure_protocol_guard(foreign_trainer) is None
+    backend._protocol_guard.release(other_owner)
     backend.finalize(fl_ctx)
+
+
+def test_secure_attach_adversaries_stop_in_core_cell_before_application_decode():
+    cell = FakeCell(attach_config=False)
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell, secure_mode=True)
+    backend.initialize(_context(), fl_ctx)
+    _wait_ready(backend)
+
+    core = CoreCell.__new__(CoreCell)
+    core.my_info = SimpleNamespace(fqcn=CJ_FQCN)
+    core.logger = MagicMock()
+    core.received_msg_counter_pool = _NoOpStats()
+    core.in_filter_reg = Registry()
+    core.message_interceptor = None
+    core._stats_category = MagicMock(return_value="test")
+    core._process_request = MagicMock(side_effect=AssertionError("application decode was reached"))
+    for filter_call in cell.core_cell.add_incoming_filter.call_args_list:
+        core.add_incoming_filter(**filter_call.kwargs)
+
+    common_headers = {
+        MessageHeaderKey.MSG_TYPE: MessageType.REQ,
+        MessageHeaderKey.DESTINATION: CJ_FQCN,
+        MessageHeaderKey.REPLY_EXPECTED: False,
+    }
+    foreign_stream = new_cell_message(
+        {
+            **common_headers,
+            MessageHeaderKey.ORIGIN: "site-1.-client_api_foreign",
+            MessageHeaderKey.CHANNEL: STREAM_CHANNEL,
+            MessageHeaderKey.TOPIC: STREAM_DATA_TOPIC,
+            MessageHeaderKey.SECURE: True,
+            MessageHeaderKey.ENCRYPTED: True,
+            StreamHeaderKey.CHANNEL: CHANNEL,
+            StreamHeaderKey.TOPIC: Topic.RESULT_READY,
+        },
+        MagicMock(name="foreign_stream_payload"),
+    )
+    direct_clear = new_cell_message(
+        {
+            **common_headers,
+            MessageHeaderKey.ORIGIN: TRAINER_FQCN,
+            MessageHeaderKey.CHANNEL: CHANNEL,
+            MessageHeaderKey.TOPIC: Topic.RESULT_READY,
+        },
+        MagicMock(name="direct_clear_payload"),
+    )
+
+    foreign_reply = CoreCell._process_received_msg(core, Endpoint("site-1"), None, foreign_stream)
+    direct_reply = CoreCell._process_received_msg(core, Endpoint("site-1"), None, direct_clear)
+
+    assert foreign_reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.AUTHENTICATION_ERROR
+    assert direct_reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.AUTHENTICATION_ERROR
+    core._process_request.assert_not_called()
+    backend.finalize(fl_ctx)
+
+
+def test_secure_attach_guard_shares_claims_across_concurrent_backends():
+    cell = FakeCell(attach_config=False)
+    fl_ctx = _fl_ctx(cell, secure_mode=True)
+    first = AttachBackend()
+    second = AttachBackend()
+    first.initialize(_context(attach_id="trainer_a"), fl_ctx)
+    second.initialize(_context(attach_id="trainer_b"), fl_ctx)
+    _wait_ready(first)
+    _wait_ready(second)
+
+    guard = first._protocol_guard
+    assert guard is second._protocol_guard
+    assert cell.core_cell.add_incoming_filter.call_count == 3
+
+    def protected(origin):
+        return new_cell_message(
+            {
+                MessageHeaderKey.DESTINATION: CJ_FQCN,
+                MessageHeaderKey.ORIGIN: origin,
+                MessageHeaderKey.CHANNEL: CHANNEL,
+                MessageHeaderKey.TOPIC: Topic.HEARTBEAT,
+                MessageHeaderKey.SECURE: True,
+                MessageHeaderKey.ENCRYPTED: True,
+            },
+            MagicMock(name="undecoded_heartbeat"),
+        )
+
+    assert guard(protected("site-1.-client_api_trainer_a")) is None
+    assert guard(protected("site-1.-client_api_trainer_b")) is None
+    rejected = guard(protected("site-1.-client_api_foreign"))
+    assert rejected.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.AUTHENTICATION_ERROR
+
+    first.finalize(fl_ctx)
+    assert guard(protected("site-1.-client_api_trainer_b")) is None
+    second.finalize(fl_ctx)
+    assert guard(protected("site-1.-client_api_foreign")) is None
 
 
 def test_dedicated_network_attach_listener_is_rejected():
@@ -698,7 +915,7 @@ def test_finalize_keeps_attach_route_until_accepted_result_source_disconnects():
     cell.shutdown_source_live = True
     backend = AttachBackend()
     fl_ctx = _fl_ctx(cell)
-    backend.initialize(_context(), fl_ctx)
+    backend.initialize(_context(heartbeat_interval=0.01, heartbeat_timeout=0.05), fl_ctx)
     session = _wait_ready(backend)
     session.result_source_live.set()
 

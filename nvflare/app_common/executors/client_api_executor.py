@@ -125,7 +125,9 @@ class ClientAPIExecutor(Executor):
                 (seconds) for session heartbeats.
             heartbeat_timeout (float): out-of-process only (external_process/attach). Session lease
                 timeout (seconds) on missed heartbeats. An in-flight payload transfer keeps the
-                lease alive (design: "Heartbeat and Liveness").
+                lease alive (design: "Heartbeat and Liveness"). Zero disables heartbeat checks
+                for external_process but is invalid for attach, whose external trainer requires
+                heartbeat liveness as the fallback for a lost terminal SHUTDOWN.
             task_wait_timeout (Optional[float]): Bound for the trainer to accept a delivered
                 task. None means no timeout.
             result_wait_timeout (Optional[float]): Control-side bound for retrieving the task
@@ -235,10 +237,10 @@ class ClientAPIExecutor(Executor):
             from nvflare.client.cell.attach import validate_attach_id
 
             attach_id = validate_attach_id(attach_id)
-            if heartbeat_timeout == 0 and result_wait_timeout is None:
+            if heartbeat_timeout == 0:
                 raise ValueError(
-                    "attach mode requires heartbeat_timeout > 0 or a finite result_wait_timeout "
-                    "because it does not own a trainer process for liveness detection"
+                    "attach mode requires heartbeat_timeout > 0 because heartbeat liveness is the terminal fallback "
+                    "when protocol SHUTDOWN is lost"
                 )
         else:
             if attach_id is not None:

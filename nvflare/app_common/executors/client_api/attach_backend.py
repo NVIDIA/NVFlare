@@ -33,7 +33,7 @@ from nvflare.client.cell.attach_rendezvous import (
     validate_shared_file_listener,
 )
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, TaskState, Topic
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
@@ -52,9 +52,83 @@ _CONTROL_RETRY_INTERVAL = 0.5
 _CONTROL_ATTEMPT_TIMEOUT = 2.0
 _RESULT_POLL_INTERVAL = 0.25
 _SESSION_MONITOR_INTERVAL = 0.2
+_MAX_RESULT_SOURCE_DISCONNECT_GRACE = 5.0
 _DEFAULT_ATTACH_TASK_TIMEOUT = 600.0
 _ROUTE_SHARED_FILE = "shared-file"
 _ROUTE_UNSAFE_SHARED_FILE = "unsafe-shared-file"
+_ATTACH_PROTOCOL_GUARD_ATTR = "_client_api_attach_protocol_guard"
+_ATTACH_PROTOCOL_GUARD_INSTALL_LOCK = threading.Lock()
+
+
+class _AttachProtocolGuard:
+    """Authorize all secure Attach protocol ingress before the CJ decodes it."""
+
+    def __init__(self, cj_fqcn: str, logger):
+        self.cj_fqcn = cj_fqcn
+        self.logger = logger
+        self._claims = {}
+        self._lock = threading.Lock()
+
+    def claim(self, owner, trainer_fqcn: str, cp_fqcn: str) -> None:
+        with self._lock:
+            self._claims[owner] = (trainer_fqcn, cp_fqcn)
+
+    def release(self, owner) -> None:
+        with self._lock:
+            self._claims.pop(owner, None)
+
+    @staticmethod
+    def _application_route(message) -> tuple[str, str]:
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "")
+        if channel == STREAM_CHANNEL and topic == STREAM_DATA_TOPIC:
+            channel = message.get_header(StreamHeaderKey.CHANNEL, "")
+            topic = message.get_header(StreamHeaderKey.TOPIC, "")
+            if channel == CellChannel.RETURN_ONLY:
+                original_channel, separator, original_topic = topic.partition(":")
+                if separator:
+                    channel, topic = original_channel, original_topic
+        return channel, topic
+
+    def __call__(self, message):
+        if message.get_header(MessageHeaderKey.DESTINATION) != self.cj_fqcn:
+            return None
+
+        channel, topic = self._application_route(message)
+        if channel not in (CHANNEL, OBJ_DOWNLOADER_CHANNEL):
+            return None
+
+        origin = message.get_header(MessageHeaderKey.ORIGIN) or ""
+        with self._lock:
+            claims = tuple(self._claims.values())
+        if not claims:
+            return None
+
+        claimed_origins = {trainer_fqcn for trainer_fqcn, _ in claims}
+        if origin in claimed_origins:
+            is_protected = message.get_header(MessageHeaderKey.SECURE, False) and message.get_header(
+                MessageHeaderKey.ENCRYPTED, False
+            )
+            if is_protected:
+                return None
+            return self._reject(f"secure attach message on channel {channel!r} from {origin!r} was not protected")
+
+        # Client API requests have no legitimate non-trainer source. DownloadService
+        # is shared with server/peer transfers, so reject only an unclaimed branch
+        # entering from this site's CP while allowing those ordinary remote callers.
+        if channel == CHANNEL or any(
+            FQCN.is_ancestor(cp_fqcn, origin) and not FQCN.is_ancestor(self.cj_fqcn, origin) for _, cp_fqcn in claims
+        ):
+            return self._reject(f"attach message on channel {channel!r} from unauthorized origin {origin!r}")
+        return None
+
+    def check(self, message):
+        """Named callback entry point required by CoreCell's filter dispatcher."""
+        return self(message)
+
+    def _reject(self, reason: str):
+        self.logger.warning(f"rejecting pre-decode Attach traffic: {reason}")
+        return make_cell_reply(CellReturnCode.AUTHENTICATION_ERROR, error=reason)
 
 
 class _AttachCancelSignal(Signal):
@@ -93,6 +167,7 @@ class _AttachedTrainerSession(CellSession):
         super().__init__(trainer_fqcn, uuid.uuid4().hex)
         self.error: Optional[str] = None
         self.task_sequence = 0
+        self.result_source_disconnect_since: Optional[float] = None
 
 
 class AttachBackend(CellBackendBase):
@@ -112,16 +187,17 @@ class AttachBackend(CellBackendBase):
         self._attach_listener_url: Optional[str] = None
         self._attach_listener_params: Optional[dict] = None
         self._endpoint_publisher: Optional[AttachEndpointPublisher] = None
+        self._protocol_guard: Optional[_AttachProtocolGuard] = None
 
     # ------------------------------------------------------------------ lifecycle
 
     def initialize(self, context: ClientAPIBackendContext, fl_ctx: FLContext) -> None:
         if not context.attach_id:
             raise ValueError("attach mode requires attach_id")
-        if context.heartbeat_timeout == 0 and context.result_wait_timeout is None:
+        if context.heartbeat_timeout <= 0:
             raise ValueError(
-                "attach mode requires heartbeat_timeout > 0 or a finite result_wait_timeout "
-                "because it does not own a trainer process for liveness detection"
+                "attach mode requires heartbeat_timeout > 0 because heartbeat liveness is the terminal fallback "
+                "when protocol SHUTDOWN is lost"
             )
         try:
             self._initialize_cell(context, fl_ctx, "attach")
@@ -163,28 +239,38 @@ class AttachBackend(CellBackendBase):
         add_filter = getattr(core_cell, "add_incoming_filter", None)
         if not callable(add_filter):
             raise RuntimeError("secure network Attach requires a pre-decode Cell incoming filter")
-        add_filter(channel=STREAM_CHANNEL, topic=STREAM_DATA_TOPIC, cb=self._secure_protocol_guard)
+        with _ATTACH_PROTOCOL_GUARD_INSTALL_LOCK:
+            guard = getattr(core_cell, _ATTACH_PROTOCOL_GUARD_ATTR, None)
+            if guard is None:
+                guard = _AttachProtocolGuard(self._cj_fqcn, self.logger)
+                guard.claim(self, self._trainer_fqcn, FQCN.get_parent(self._cj_fqcn))
+                # CoreCell invokes these filters before decrypting or decoding.
+                # Cover both Cell's streamed envelope and callers that bypass it
+                # by sending the application request through CoreCell directly.
+                try:
+                    add_filter(channel=STREAM_CHANNEL, topic=STREAM_DATA_TOPIC, cb=guard.check)
+                    add_filter(channel=CHANNEL, topic="*", cb=guard.check)
+                    add_filter(channel=OBJ_DOWNLOADER_CHANNEL, topic="*", cb=guard.check)
+                except Exception:
+                    guard.release(self)
+                    raise
+                setattr(core_cell, _ATTACH_PROTOCOL_GUARD_ATTR, guard)
+            elif not isinstance(guard, _AttachProtocolGuard) or guard.cj_fqcn != self._cj_fqcn:
+                raise RuntimeError("CJ Cell has an incompatible secure Attach protocol guard")
+            else:
+                guard.claim(self, self._trainer_fqcn, FQCN.get_parent(self._cj_fqcn))
+            self._protocol_guard = guard
 
     def _secure_protocol_guard(self, message):
-        """Reject a clear Attach request before the shared CJ Cell decodes its payload."""
-        if not self._protocol_secure or self._closed:
-            return None
-        if message.get_header(MessageHeaderKey.DESTINATION) != self._cj_fqcn:
-            return None
+        """Compatibility entry point for tests and extensions using the old guard method."""
+        guard = self._protocol_guard
+        return guard(message) if guard is not None else None
 
-        origin = message.get_header(MessageHeaderKey.ORIGIN)
-        if origin != self._trainer_fqcn:
-            return None
-        channel = message.get_header(StreamHeaderKey.CHANNEL, "")
-        is_protected = message.get_header(MessageHeaderKey.SECURE, False) and message.get_header(
-            MessageHeaderKey.ENCRYPTED, False
-        )
-        if channel in (CHANNEL, OBJ_DOWNLOADER_CHANNEL) and not is_protected:
-            return make_cell_reply(
-                CellReturnCode.AUTHENTICATION_ERROR,
-                error=f"secure attach message on channel {channel!r} was not protected",
-            )
-        return None
+    def _remove_secure_protocol_guard(self) -> None:
+        guard = self._protocol_guard
+        self._protocol_guard = None
+        if guard is not None:
+            guard.release(self)
 
     def _start_shared_file_listener(self) -> Optional[str]:
         core_cell = getattr(self._cell, "core_cell", None)
@@ -303,20 +389,17 @@ class AttachBackend(CellBackendBase):
             thread.join(timeout=_CONTROL_ATTEMPT_TIMEOUT + _SESSION_MONITOR_INTERVAL)
         self._close_attach_listener()
         self._disable_pass_through()
+        self._remove_secure_protocol_guard()
 
     def _wait_for_result_source_release(self, session: _AttachedTrainerSession) -> None:
         """Keep the CJ route alive while an accepted trainer source settles."""
         if not session.result_source_live.is_set():
             return
-        disconnect_grace = self._context.heartbeat_timeout if self._context.heartbeat_timeout > 0 else 5.0
+        disconnect_grace = self._result_source_disconnect_grace()
         wait_bound = DEFAULT_STREAMING_IDLE_TIMEOUT + disconnect_grace
         deadline = time.monotonic() + wait_bound
         while session.result_source_live.is_set() and time.monotonic() < deadline:
-            try:
-                connected = self._cell.is_cell_connected(session.trainer_fqcn)
-            except Exception:
-                connected = True
-            if not connected:
+            if self._result_source_confirmed_disconnected(session):
                 session.result_source_live.clear()
                 break
             time.sleep(_SESSION_MONITOR_INTERVAL)
@@ -349,12 +432,18 @@ class AttachBackend(CellBackendBase):
                 continue
 
             reason = liveness_error
-            # Keep the session authoritative until the trainer reports that its
-            # result publication to the CJ has settled. Otherwise finalize()
-            # could replace the session while the CJ is still materializing it.
+            # Keep the session authoritative while the accepted result source is
+            # connected. A sustained, confirmed disconnect retires a source that
+            # can no longer send the heartbeat that would clear this latch.
             if self._context.allow_reconnect and session.result_source_live.is_set():
-                self._session_stop.wait(_SESSION_MONITOR_INTERVAL)
-                continue
+                if not self._result_source_confirmed_disconnected(session):
+                    self._session_stop.wait(_SESSION_MONITOR_INTERVAL)
+                    continue
+                session.result_source_live.clear()
+                with self._task_lock:
+                    self._trim_result_authority()
+                reason = f"{reason}; accepted result source disconnected"
+                self.logger.warning(f"retiring {session.trainer_fqcn}: {reason}")
             with self._task_lock:
                 active_task = self._current_task is not None
             if active_task:
@@ -370,6 +459,26 @@ class AttachBackend(CellBackendBase):
                     # Reconnect gets a fresh bound and a fresh timeout budget.
                     timeout = self._context.attach_timeout
                     self._attach_deadline = None if timeout is None else time.monotonic() + timeout
+
+    def _result_source_disconnect_grace(self) -> float:
+        return min(self._context.heartbeat_timeout, _MAX_RESULT_SOURCE_DISCONNECT_GRACE)
+
+    def _result_source_confirmed_disconnected(self, session: _AttachedTrainerSession) -> bool:
+        """Return true only after the accepted source stays disconnected for its grace period."""
+        try:
+            connected = self._cell.is_cell_connected(session.trainer_fqcn)
+        except Exception:
+            # Failure to inspect the route is not proof that the source is gone.
+            connected = True
+        if connected:
+            session.result_source_disconnect_since = None
+            return False
+
+        now = time.monotonic()
+        if session.result_source_disconnect_since is None:
+            session.result_source_disconnect_since = now
+            return False
+        return now - session.result_source_disconnect_since >= self._result_source_disconnect_grace()
 
     def _try_session_open(self, session: _AttachedTrainerSession) -> None:
         payload = {
@@ -718,6 +827,7 @@ class AttachBackend(CellBackendBase):
         self._session_stop.set()
         self._close_attach_listener()
         self._disable_pass_through()
+        self._remove_secure_protocol_guard()
 
     def _close_attach_listener(self) -> None:
         publisher = self._endpoint_publisher

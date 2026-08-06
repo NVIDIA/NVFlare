@@ -34,10 +34,13 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.ccwf.common import Constant
+from nvflare.app_common.ccwf.swarm_client_ctl import SwarmClientController
 from nvflare.app_common.decomposers import common_decomposers
 from nvflare.app_common.executors.client_api.attach_backend import AttachBackend
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext
 from nvflare.app_common.executors.client_api.external_process_backend import ExternalProcessBackend
+from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor, ExecutionMode
 from nvflare.app_common.np.constants import NPConstants
 from nvflare.client.cell.defs import CHANNEL, Topic
 from nvflare.client.config import ExchangeFormat
@@ -52,7 +55,9 @@ from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.streaming.download_service import OBJ_DOWNLOADER_CHANNEL, OBJ_DOWNLOADER_TOPIC, DownloadService
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
+from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs import FOBSContextKey
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys
 from nvflare.private.fed.authenticator import validate_auth_headers
@@ -593,10 +598,38 @@ def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeyp
                 )
             time.sleep(0.05)
 
+        created_transaction_cells = _record_download_transactions(monkeypatch)
         initial = np.arange(1024 * 1024, dtype=np.float32).reshape(1024, 1024)
-        task = DXO(DataKind.WEIGHTS, {NPConstants.NUMPY_KEY: initial}).to_shareable()
-        task.set_header(FOBSContextKey.RECEIVER_IDS, [site.get_fqcn()])
-        result = backend.execute("train", task, fl_ctx, Signal())
+        source_task = DXO(DataKind.WEIGHTS, {NPConstants.NUMPY_KEY: initial}).to_shareable()
+        source_task.set_header(AppConstants.CURRENT_ROUND, 0)
+        source_task.set_header(Constant.AGGREGATOR, "other-site")
+        encoded = fobs.dumps(
+            source_task,
+            fobs_ctx=server.get_fobs_context(props={FOBSContextKey.NUM_RECEIVERS: 1}),
+        )
+        lazy_task = fobs.loads(
+            encoded,
+            fobs_ctx=cj.get_fobs_context(props={FOBSContextKey.PASS_THROUGH: True}),
+        )
+        lazy_ref = from_shareable(lazy_task).data[NPConstants.NUMPY_KEY]
+        assert isinstance(lazy_ref, LazyDownloadRef)
+        assert lazy_ref.fqcn == server.get_fqcn()
+        assert any(cell is server for cell in created_transaction_cells)
+
+        controller = SwarmClientController.__new__(SwarmClientController)
+        controller.me = site_name
+        controller.learn_executor = ClientAPIExecutor(execution_mode=ExecutionMode.ATTACH, attach_id=attach_id)
+        controller_data, trainer_task = controller._prepare_learn_task_data(lazy_task, fl_ctx)
+        assert controller_data is trainer_task
+        assert not controller._has_lazy_refs(trainer_task)
+        np.testing.assert_array_equal(from_shareable(trainer_task).data[NPConstants.NUMPY_KEY], initial)
+
+        created_transaction_cells.clear()
+        trainer_task.set_header(FOBSContextKey.RECEIVER_IDS, [site.get_fqcn()])
+        result = backend.execute("train", trainer_task, fl_ctx, Signal())
+        assert any(
+            cell is cj for cell in created_transaction_cells
+        ), "secure Attach task delivery did not create a CJ-owned DownloadService transaction"
 
         reply = cj.send_request(
             channel="secure_attach_e2e",

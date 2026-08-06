@@ -484,9 +484,15 @@ class TestConcreteViaDownloaderProgressCallback:
             "progress_cb": None,
         }
 
-    def test_remote_download_inherits_secure_message_context(self):
+    def test_remote_download_inherits_secure_context_from_direct_source(self):
         decomposer = _LegacyViaDownloader()
-        message = new_cell_message({MessageHeaderKey.SECURE: True}, None)
+        message = new_cell_message(
+            {
+                MessageHeaderKey.ORIGIN: "source",
+                MessageHeaderKey.SECURE: True,
+            },
+            None,
+        )
 
         decomposer._download_from_remote_cell(
             fobs_ctx={
@@ -498,6 +504,27 @@ class TestConcreteViaDownloaderProgressCallback:
         )
 
         assert decomposer.download_call["secure"] is True
+
+    def test_remote_download_does_not_inherit_secure_context_from_forwarder(self):
+        decomposer = _LegacyViaDownloader()
+        message = new_cell_message(
+            {
+                MessageHeaderKey.ORIGIN: "forwarder",
+                MessageHeaderKey.SECURE: True,
+            },
+            None,
+        )
+
+        decomposer._download_from_remote_cell(
+            fobs_ctx={
+                fobs.FOBSContextKey.CELL: object(),
+                fobs.FOBSContextKey.DOWNLOAD_REQ_TIMEOUT: 1.0,
+                fobs.FOBSContextKey.MESSAGE: message,
+            },
+            ref={"fqcn": "source", "ref_id": "ref-1"},
+        )
+
+        assert decomposer.download_call["secure"] is False
 
     def test_numpy_decomposer_passes_progress_callback_to_download_object(self, monkeypatch):
         from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer

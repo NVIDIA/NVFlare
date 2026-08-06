@@ -821,9 +821,16 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         self.logger.debug(f"trying to download: {ref_id=} {fqcn=}")
         download_kwargs = self._get_download_kwargs(fobs_ctx)
         message = fobs_ctx.get(fobs.FOBSContextKey.MESSAGE)
+        # A protected forwarding hop does not prove that the original source has
+        # Cell encryption credentials. Inherit protection only from that source's
+        # own message; managed external trainers use an authenticated clear local hop.
         download_kwargs.setdefault(
             "secure",
-            bool(message and message.get_header(MessageHeaderKey.SECURE, False)),
+            bool(
+                message
+                and message.get_header(MessageHeaderKey.SECURE, False)
+                and message.get_header(MessageHeaderKey.ORIGIN) == fqcn
+            ),
         )
         err, items = self.download(
             from_fqcn=fqcn,

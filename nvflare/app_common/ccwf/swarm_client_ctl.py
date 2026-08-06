@@ -790,21 +790,21 @@ class SwarmClientController(ClientSideController):
         return False
 
     def _learn_executor_accepts_lazy_refs(self) -> bool:
-        """Whether the learner has another Cell hop that can materialize transport refs."""
-        return isinstance(self.learn_executor, ClientAPIExecutor) and self.learn_executor.execution_mode in (
-            ExecutionMode.EXTERNAL_PROCESS,
-            ExecutionMode.ATTACH,
+        """Whether the learner may consume original transport refs directly."""
+        return (
+            isinstance(self.learn_executor, ClientAPIExecutor)
+            and self.learn_executor.execution_mode == ExecutionMode.EXTERNAL_PROCESS
         )
 
     def _prepare_learn_task_data(self, task_data: Shareable, fl_ctx: FLContext) -> tuple[Shareable, Shareable]:
         """Prepare the controller and learner views of an incoming learn task.
 
-        A Cell-based trainer on a non-aggregation client is the sole
-        consumer of the incoming transport refs, so both views remain lazy. If
-        this client is the aggregator, the controller needs an in-memory base
-        model and resolves the task once; the trainer receives that same
-        resolved payload instead of trying to consume the source refs a second
-        time. All other executors are treated as in-process and receive the
+        A managed external trainer on a non-aggregation client is the sole
+        consumer of the incoming transport refs, so both views remain lazy. An
+        attached trainer must not receive remote source refs: its CJ resolves
+        them before task delivery and owns any new trainer-facing transaction.
+        If this client is the aggregator, the controller also needs an in-memory
+        base model and resolves the task once. All other executors receive the
         resolved in-memory view.
         """
         if not self._has_lazy_refs(task_data):

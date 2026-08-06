@@ -65,6 +65,14 @@ binds it to one dynamic CJ/session. Before binding, the trainer accepts only a
 its pre-decode interceptor rejects all Client API traffic from any other origin,
 including lazy stream data, before FOBS decoding.
 
+The CJ applies the reciprocal rule through one shared pre-decode guard per job
+Cell. The guard tracks every active Attach trainer claim, rejects unclaimed
+Client API origins, and requires both `SECURE` and `ENCRYPTED` on claimed
+Client API and DownloadService traffic. It covers the normal streamed envelope
+and direct CoreCell application requests, so neither path can reach FOBS decode
+first. Sharing the claim registry prevents one concurrent Attach session from
+rejecting another session's trainer.
+
 ### Network Attach
 
 A secure network profile uses the site's existing CA/client certificate for
@@ -129,7 +137,9 @@ Heartbeat, log, abort, and shutdown messages use the same Cell route. The CJ
 assigns monotonically increasing task sequences. The trainer keeps a bounded
 task ledger so ambiguous delivery can be recovered without executing a task
 twice. Result attempt IDs and `RESULT_STATUS` similarly recover a lost result
-acknowledgement.
+acknowledgement. Attach requires a positive `heartbeat_timeout`: because NVFlare
+does not own the external process, heartbeat liveness is the terminal fallback
+that unblocks the trainer if the one-shot protocol `SHUTDOWN` is lost.
 
 ## Payload and Streaming Semantics
 
@@ -254,7 +264,12 @@ Finalization:
 4. joins the session monitor; and
 5. removes only the shared-file endpoint claim/listener it owns.
 
-The external owner decides when the trainer process exits.
+The external owner decides when the trainer process exits. With reconnect
+enabled, an accepted result source remains authoritative through a transient
+route interruption. If the Cell reports that source continuously disconnected
+for a bounded grace period, the CJ retires the stale source and admits a fresh
+session; this covers a trainer that dies before it can report
+`RESULT_SOURCE_LIVE=false`.
 
 ## Verification Requirements
 
