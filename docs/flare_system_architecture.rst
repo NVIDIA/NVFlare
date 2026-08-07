@@ -114,8 +114,11 @@ Communication Mechanisms
   
 **Client API Backends**: ``ClientAPIExecutor`` selects the communication and
 lifecycle backend for ``in_process``, ``external_process``, or ``attach`` mode.
-Network Attach reuses the site's Client Parent listener; protected shared-file
-Attach uses a dedicated Client Job-owned listener.
+For network Attach, the external trainer connects to the site's existing Client
+Parent endpoint, which routes the Attach session to the per-job Client Job.
+Only protected shared-file Attach creates a separate listener: a job-specific
+FileDriver listener owned by the Client Job and secured by filesystem
+permissions.
 
 Deployment Modes
 ################
