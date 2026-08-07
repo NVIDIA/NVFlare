@@ -69,11 +69,13 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             ``set_per_site_config(recipe, config)`` immediately after construction. Each config dict can
             contain optional overrides:
             train_script, train_args, launch_external_process, command, framework,
-            server_expected_format, params_transfer_type, launch_once, shutdown_timeout.
+            server_expected_format, params_transfer_type, launch_once, launch_timeout, shutdown_timeout.
             Nested values become part of the generated job definition and must not contain secrets.
             If not provided, the same configuration will be used for all clients.
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
+        launch_timeout: Seconds to wait for an external process to launch and establish its
+            Client API session. ``None`` disables this timeout. Defaults to 300.0.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,

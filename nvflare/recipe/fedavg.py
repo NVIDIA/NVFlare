@@ -162,6 +162,7 @@ class FedAvgRecipe(Recipe):
             - server_expected_format (ExchangeFormat): Exchange format
             - params_transfer_type (TransferType): Parameter transfer type
             - launch_once (bool): Whether to launch external process once or per task
+            - launch_timeout (float or None): Seconds to wait for a launched process to establish its session
             - shutdown_timeout (float): Shutdown timeout in seconds
             If not provided, the same configuration will be used for all clients.
             Like train_args, per-site values are written in clear text into the generated job
@@ -169,6 +170,8 @@ class FedAvgRecipe(Recipe):
             :mod:`nvflare.recipe.secrets` for how to pass secrets safely.
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
+        launch_timeout: Seconds to wait for an external process to launch and establish its
+            Client API session. ``None`` disables this timeout. Defaults to 300.0.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
