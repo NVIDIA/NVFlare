@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ntpath
 import random
 
 SYMBOL_ALL = "@all"
@@ -88,6 +89,14 @@ def check_non_empty_str(name, value):
     v = value.strip()
     if not v:
         raise ValueError(f"{name} must not be empty")
+
+
+def check_job_name(name, value):
+    """Validate a job name that will be used as one directory component."""
+    check_non_empty_str(name, value)
+    drive, _ = ntpath.splitdrive(value)
+    if value in (".", "..") or "/" in value or "\\" in value or drive:
+        raise ValueError(f"{name} must be a single directory name without path components")
 
 
 def check_object_type(name, value, obj_type):

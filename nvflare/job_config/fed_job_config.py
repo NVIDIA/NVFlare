@@ -27,7 +27,7 @@ from typing import Dict, List
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.fuel.utils.validation_utils import check_object_type
+from nvflare.fuel.utils.validation_utils import check_job_name, check_object_type
 from nvflare.job_config.base_app_config import BaseAppConfig
 from nvflare.job_config.fed_app_config import FedAppConfig
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
@@ -148,6 +148,9 @@ class FedJobConfig:
         Returns:
 
         """
+        # Revalidate at the filesystem boundary in case this low-level object was
+        # constructed directly or job_name was changed after construction.
+        check_job_name("job_name", self.job_name)
         job_dir = os.path.join(job_root, self.job_name)
         if os.path.exists(job_dir):
             if self._is_valid_job_folder(job_dir) or self._is_partial_export_folder(job_dir):

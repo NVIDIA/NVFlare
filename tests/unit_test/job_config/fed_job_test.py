@@ -36,6 +36,14 @@ def _create_model_learner():
 
 
 class TestFedJob:
+    @pytest.mark.parametrize(
+        "name",
+        ["", " ", ".", "..", "../job", "nested/job", r"nested\job", "/tmp/job", r"C:\job", "C:job"],
+    )
+    def test_rejects_invalid_job_name(self, name):
+        with pytest.raises(ValueError):
+            FedJob(name=name)
+
     def test_validate_targets(self):
         job = FedJob()
         controller = FedAvg()
