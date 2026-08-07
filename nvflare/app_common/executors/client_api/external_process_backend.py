@@ -897,7 +897,7 @@ class ExternalProcessBackend(CellBackendBase):
                 return cause
             raise
 
-        cause = cancel.value
+        cause = cancel.value if cancel.triggered else None
         if cancel.error is not None:
             self._delete_task_transfers(transfer_waiters)
             raise cancel.error

@@ -1189,7 +1189,7 @@ class TestHeartbeatAndOperationalLiveness:
         finally:
             backend.finalize(FLContext())
 
-    def test_inline_task_ready_pending_is_bounded_by_task_wait_timeout(self, env, monkeypatch):
+    def test_task_ready_late_reply_is_rejected_by_task_wait_timeout(self, env, monkeypatch):
         monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.01)
         backend, fl_ctx = _initialized_backend(
             env,
@@ -1200,14 +1200,12 @@ class TestHeartbeatAndOperationalLiveness:
         )
         try:
 
-            def wedged_inline_request(topic, target, request):
+            def delayed_inline_reply(topic, target, request):
                 assert topic == Topic.TASK_READY
-                cancel = env.cell.sent_kwargs[-1]["abort_signal"]
-                while not cancel.triggered:
-                    time.sleep(0.005)
+                time.sleep(0.15)
                 return _task_accepted_reply()
 
-            env.cell.on_request = wedged_inline_request
+            env.cell.on_request = delayed_inline_reply
             start = time.monotonic()
             result = backend.execute("train", Shareable(), fl_ctx, Signal())
             elapsed = time.monotonic() - start
