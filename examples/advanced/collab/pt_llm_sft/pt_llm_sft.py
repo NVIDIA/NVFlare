@@ -16,7 +16,6 @@
 
 import argparse
 import inspect
-import json
 import random
 from pathlib import Path
 
@@ -343,24 +342,6 @@ class SFTFedAvg:
         return global_weights
 
 
-def validate_prepared_data(data_root: Path, num_clients: int) -> None:
-    manifest_path = data_root / "manifest.json"
-    if not manifest_path.is_file():
-        raise FileNotFoundError(f"missing {manifest_path}; run prepare_data.py first")
-    with manifest_path.open(encoding="utf-8") as stream:
-        manifest = json.load(stream)
-
-    prepared_sites = set(manifest.get("sites", []))
-    requested_sites = {f"site-{site_number}" for site_number in range(1, num_clients + 1)}
-    missing_sites = sorted(requested_sites - prepared_sites)
-    if missing_sites:
-        raise ValueError(f"data is not prepared for: {', '.join(missing_sites)}")
-    for site_name in requested_sites:
-        for filename in ("train.jsonl", "valid.jsonl"):
-            if not (data_root / site_name / filename).is_file():
-                raise FileNotFoundError(f"missing {data_root / site_name / filename}; run prepare_data.py again")
-
-
 def make_recipe(args) -> CollabRecipe:
     trainer = LLMSFTClient(
         model_name_or_path=args.model_name_or_path,
@@ -388,6 +369,14 @@ def make_recipe(args) -> CollabRecipe:
         client=trainer,
         min_clients=args.num_clients,
         sync_task_timeout=args.call_timeout,
+    )
+
+
+def make_env(args) -> SimEnv:
+    return SimEnv(
+        num_clients=args.num_clients,
+        gpu_config=args.gpu_config,
+        workspace_root=args.workspace_root,
     )
 
 
@@ -426,7 +415,6 @@ def main() -> None:
 
     args.data_root = Path(args.data_root).expanduser().resolve()
     args.output_root = Path(args.output_root).expanduser().resolve()
-    validate_prepared_data(args.data_root, args.num_clients)
 
     simple_logging()
     print(
@@ -438,13 +426,7 @@ def main() -> None:
         f"  GPU config: {args.gpu_config or 'not set'}\n"
         f"  data: {args.data_root}"
     )
-    run = make_recipe(args).execute(
-        SimEnv(
-            num_clients=args.num_clients,
-            gpu_config=args.gpu_config,
-            workspace_root=args.workspace_root,
-        )
-    )
+    run = make_recipe(args).execute(make_env(args))
     print("Job Status:", run.get_status())
     print("Results at:", run.get_result())
 
