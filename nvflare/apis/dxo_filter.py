@@ -63,10 +63,6 @@ class DXOFilter(Filter, ABC):
             # not a DXO based shareable - pass
             return shareable
 
-        if dxo.data is None:
-            self.log_debug(fl_ctx, "DXO has no data to filter")
-            return shareable
-
         start = [dxo]
         self._filter_dxos(start, shareable, fl_ctx)
         result_dxo = start[0]
@@ -77,7 +73,7 @@ class DXOFilter(Filter, ABC):
         """Subclass must implement this method to filter the provided DXO
 
         Args:
-            dxo: the DXO to be filtered
+            dxo: the DXO to be filtered. This method is called for matching DXOs even when their data is empty.
             shareable: the shareable that the dxo belongs to
             fl_ctx: the FL context
 
@@ -89,10 +85,6 @@ class DXOFilter(Filter, ABC):
         pass
 
     def _apply_filter(self, dxo: DXO, shareable, fl_ctx: FLContext) -> DXO:
-        if not dxo.data:
-            self.log_debug(fl_ctx, "DXO has no data to filter")
-            return dxo
-
         filter_name = self.__class__.__name__
         result = self.process_dxo(dxo, shareable, fl_ctx)
         if not result:

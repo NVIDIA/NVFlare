@@ -51,6 +51,12 @@ class TestModelQuantizer(unittest.TestCase):
         quantizer = ModelQuantizer(quantization_type="FLOAT16")
         self.assertEqual(quantizer.quantization_type, "float16")
 
+    def test_process_dxo_skips_empty_data(self):
+        quantizer = ModelQuantizer()
+        dxo = DXO(data_kind=DataKind.WEIGHTS, data={})
+
+        self.assertIsNone(quantizer.process_dxo(dxo, Shareable(), self.fl_ctx))
+
     def test_quantization_float16_numpy(self):
         """Test float16 quantization with numpy arrays."""
         quantizer = ModelQuantizer(quantization_type="float16")

@@ -43,6 +43,9 @@ class StatisticsPrivacyFilter(DXOFilter):
         return filters
 
     def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
+        if not dxo.data:
+            return None
+
         if dxo.data_kind == DataKind.STATISTICS:
             self.log_info(fl_ctx, "start StatisticsPrivacyFilter")
             cleansers: List[StatisticsPrivacyCleanser] = self.get_cleansers(self.result_cleanser_ids, fl_ctx)

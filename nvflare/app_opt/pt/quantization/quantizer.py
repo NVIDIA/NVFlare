@@ -229,6 +229,8 @@ class ModelQuantizer(DXOFilter):
         Returns: DXO object with quantized weights
 
         """
+        if not dxo.data:
+            return None
 
         self.log_info(fl_ctx, "Running quantization...")
 

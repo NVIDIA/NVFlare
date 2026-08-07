@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import fnmatch
+
 from nvflare.apis.fl_constant import FilterKey, FLContextKey
+
+
+def _find_task_filters(config_filters, task_name, direction):
+    task_filter_list = config_filters.get(task_name + FilterKey.DELIMITER + direction)
+    if task_filter_list:
+        return task_filter_list
+
+    direction_suffix = FilterKey.DELIMITER + direction
+    for key, filters in config_filters.items():
+        if not key.endswith(direction_suffix):
+            continue
+
+        task_pattern = key[: -len(direction_suffix)]
+        if "*" in task_pattern and fnmatch.fnmatch(task_name, task_pattern):
+            return filters
+
+    return None
 
 
 def apply_filters(filters_name, filter_data, fl_ctx, config_filters, task_name, direction):
@@ -24,7 +43,7 @@ def apply_filters(filters_name, filter_data, fl_ctx, config_filters, task_name, 
         if filters:
             filter_list.extend(filters.get(direction, []))
 
-    task_filter_list = config_filters.get(task_name + FilterKey.DELIMITER + direction)
+    task_filter_list = _find_task_filters(config_filters, task_name, direction)
     if task_filter_list:
         filter_list.extend(task_filter_list)
 
