@@ -2,7 +2,7 @@
 
 ## Status
 
-**Implemented architecture, updated 2026-08-03.**
+**Implemented architecture, updated 2026-08-04.**
 
 This document records the architecture implemented for `ClientAPIExecutor`.
 
@@ -35,8 +35,9 @@ The implemented architecture has these boundaries:
 - `InProcessBackend` uses DataBus and runs the training script in the CJ process.
 - `ExternalProcessBackend` runs Client API jobs in a launched subprocess and communicates
   with the trainer directly over Cell.
-- `AttachBackend` communicates over Cell with an independently started trainer and owns only
-  the listener and protocol session, never the trainer process.
+- `AttachBackend` communicates over Cell with an independently started trainer. Network Attach
+  reuses the site's stable CP listener; protected shared-file Attach owns a job-local listener.
+  The backend owns the protocol session, never the trainer process.
 - Cell, FOBS, `ViaDownloader`, and `DownloadService` provide serialization, large-object
   transfer, progress, and terminal transfer status. The Client API does not add another
   payload wrapper or streaming protocol.
@@ -72,17 +73,18 @@ ClientAPIExecutor
   -> CellClientAPI (trainer)
 ```
 
-For ``attach``, the protocol data path is the same, but process and connection
-ownership differ:
+For ``attach``, process and connection ownership differ, and the CJ is also the
+payload trust boundary:
 
 ```text
 ClientAPIExecutor
-  -> AttachBackend (CJ-owned listener/session)
+  -> AttachBackend (CJ session and materialization boundary)
+  -> existing CP Cell route, or protected shared-file
   -> Cell request/reply + FOBS/ViaDownloader
   -> CellClientAPI (externally owned trainer)
 ```
 
-See [Client API Attach Mode](client_api_attach_mode.md) for its listener,
+See [Client API Attach Mode](client_api_attach_mode.md) for its CP route,
 rendezvous, security, retry, and non-owning lifecycle contract.
 
 ## External Process Architecture
@@ -116,7 +118,8 @@ metadata needed before a Cell session exists:
 - job and site identity;
 - task-exchange and memory-management configuration needed by the trainer-side API.
 
-It contains no task model, result payload, payload manifest, or transfer state.
+It contains no task model, result payload, payload manifest, transfer state, site
+authentication token, or token signature.
 
 The writer creates an owner-only (`0600`) sibling temporary file and atomically installs it with
 `os.replace`. Each launch gets a fresh filename, FQCN, and token. The backend passes the file path
@@ -132,7 +135,18 @@ used for ongoing communication.
 
 The launched trainer reads the bootstrap, creates `CellClientAPI`, and sends `HELLO`. The backend
 validates the launch identity, rank, protocol version, origin FQCN, job/site scope, and current
-launch token before returning `HELLO_ACCEPTED` with the session and heartbeat policy.
+launch token before returning `HELLO_ACCEPTED` with the session and heartbeat policy. In a secure
+FL job, that accepted reply also carries the site's `AUTH_TOKEN` and `AUTH_TOKEN_SIGNATURE`; the
+trainer then installs the normal outgoing site authentication-header filters on its Cell. The
+launch token only proves possession of this launch's bootstrap. It is not the FL authentication
+credential and is never used as an auth header.
+
+The managed trainer connects to the CJ's local listener with Cell transport security disabled.
+Consequently, `HELLO_ACCEPTED` is authenticated by the launch token but its delegated site
+credential is not TLS-encrypted on this same-host hop. Confidentiality relies on the host/OS trust
+boundary and the owner-only launch bootstrap. Unlike the 2.8 external-process configuration, the
+site credential is not written to the launch file. The scoped-identity work targeted for 2.10 also
+removes this full bearer-token handoff.
 
 V1 assumes a trusted host for launch availability. A same-host process that can claim the
 prescribed trainer FQCN can race the real trainer with a bogus token and cause that launch to fail.
@@ -158,6 +172,29 @@ together so ambiguous delivery cannot execute a task twice.
 
 There is no separate Client-API payload envelope, manifest, transfer ID, or payload-transfer
 state machine layered over these messages.
+
+### Secure trainer trust model for 2.9
+
+The two Cell-based modes deliberately have different server-facing trust in 2.9:
+
+- `external_process` uses the 2.8 `CellPipe` mechanism. After the CJ authenticates the launch-token
+  `HELLO`, `HELLO_ACCEPTED` carries the site's `AUTH_TOKEN` and `AUTH_TOKEN_SIGNATURE`. The trainer
+  installs the normal outgoing site auth-header filters. Its FQCN remains a descendant of the
+  registered site/CJ FQCN so the server's current origin binding accepts the delegated token.
+- `attach` follows the server-facing trust boundary of the 2.8 `IPCExchanger`/`IPCAgent` path. The
+  independently owned trainer physically connects through the stable CP route and communicates at
+  the application layer only with its CJ. It uses the site's provisioned client certificate for
+  secure Cell identity, as IPCAgent did. The CJ materializes task and result payloads, and
+  `SESSION_OPEN` never carries the site's authentication token or signature. Protected shared-file
+  remains available when the trainer must have no network access.
+
+The Attach protocol is Cell rather than the 2.8 IPC implementation, so the protocol is new while
+the topology and server-facing trust boundary are equivalent. Only managed external-process mode
+temporarily delegates the full site token in 2.9. Network Attach delegates the provisioned site
+Cell certificate, which is also broad authority but does not authorize server requests. Replacing
+both broad delegations, and enabling safe direct Attach pass-through, requires a short-lived scoped
+trainer identity, `DownloadService` ACL enforcement, and revocation; that work is targeted for
+2.10.
 
 ### Payload handling
 
@@ -185,9 +222,9 @@ Task direction:
 3. Only then does the trainer's `TASK_READY` handler validate and queue the task and return
    `TASK_ACCEPTED`.
 
-Result direction:
+Result direction for `external_process`:
 
-1. The trainer sends `RESULT_READY` with per-message Cell pass-through enabled and declares the
+1. The trainer sends `RESULT_READY` with ordinary per-message Cell pass-through enabled and declares the
    receiver identities supplied with the task. Those are the ultimate server/workflow receivers
    when the workflow supplies them.
 2. Cell/FOBS invokes the CJ handler with inline values and/or lazy `ViaDownloader` references.
@@ -203,6 +240,26 @@ Result direction:
    not provide terminal confirmation has no acknowledgement after its terminal serve, so that
    path remains monitor-settled: this preserves a post-reply interval before a one-shot producer
    can observe completion and tear down its Cell.
+
+Pass-through always preserves the trainer's original FQCN and reference ID. The CJ may still be a
+physical Cell routing hop for the result envelope and subsequent download messages, depending on
+the topology, but it does not substitute itself as source, create a second CJ-owned
+`DownloadService` transaction, or rewrite the receiver accounting. This is ordinary
+`PASS_THROUGH`.
+
+Result direction for `attach`:
+
+1. The trainer sends `RESULT_READY` to its CJ without pass-through and declares the CJ as the
+   `DownloadService` receiver.
+2. Cell/FOBS fully materializes the result at the CJ before invoking the result handler.
+3. The CJ validates and stores the concrete result, returns `RESULT_ACCEPTED`, and later returns the
+   ordinary result through `ClientRunner`.
+4. Sending a sufficiently large result onward can create a new CJ-owned `DownloadService`
+   transaction. The attached trainer's source reference and server-facing authority do not cross
+   the CJ boundary.
+
+This follows the 2.8 `IPCExchanger`/`IPCAgent` containment model: the external trainer is not a
+direct federation participant even though the trainer physically joins Cell through the CP.
 
 In the task direction at the CJ entry point, the CJ decodes only the
 `(SERVER_COMMAND, GET_TASK)` route lazily for the external-process executor. `ClientRunner`
@@ -296,11 +353,12 @@ not a concrete representation guarantee.
 trainer's task-exchange metadata, and is applied by the trainer-side Client API when preparing a
 result. A DIFF is computed in the trainer-native representation before outgoing conversion.
 
-CJ task-data/task-result filter ordering is unchanged. Filters receive the payload representation
-delivered by the transport, which can contain lazy references when pass-through is active. Filter
-presence does not imply CJ materialization. An explicit result-event consumer such as
-`TensorClientStreamer` may instead declare that it requires concrete results; `ClientAPIExecutor`
-then terminates that result's pass-through route at the CJ before the component runs.
+CJ task-data/task-result filter ordering is unchanged. In external-process mode, filters receive
+the payload representation delivered by the transport, which can contain lazy references when
+pass-through is active. Filter presence alone does not imply CJ materialization; an explicit
+result-event consumer may require a concrete result. Attach always presents concrete task and
+result values at the CJ boundary, independent of event consumers or whether the executor call is
+part of the active `ClientRunner` task.
 
 Relocating content transformations from CJ filters to explicit send/receive endpoints is deferred
 to a separate design and change. That work must first inventory the existing privacy, HE,

@@ -18,7 +18,13 @@ from cryptography import x509
 from cryptography.x509.oid import NameOID
 
 from nvflare.apis.fl_constant import ConnectionSecurity
-from nvflare.fuel.f3.cellnet.fqcn import CELL_PIPE_ALIAS_PREFIX, CELL_PIPE_LEAF_PREFIX, FQCN, parse_cell_pipe_alias
+from nvflare.fuel.f3.cellnet.fqcn import (
+    CELL_PIPE_ALIAS_PREFIX,
+    CELL_PIPE_LEAF_PREFIX,
+    CLIENT_API_ATTACH_LEAF_PREFIX,
+    FQCN,
+    parse_cell_pipe_alias,
+)
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import SECURE_SCHEMES
 from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
@@ -191,6 +197,13 @@ class CellIdentityResolver:
         # its own pipe child expects the site's identity, not one named after
         # the leaf segment.
         if len(parts) > 1 and leaf.startswith(CELL_PIPE_LEAF_PREFIX):
+            return self.resolve(FQCN.join(parts[:-1]))
+
+        # Network Attach trainers are children of the stable site CP and use
+        # that site's provisioned certificate, matching the 2.8 IPCAgent trust
+        # model. The dynamic CJ is a sibling and remains the application-level
+        # task/result boundary.
+        if len(parts) > 1 and leaf.startswith(CLIENT_API_ATTACH_LEAF_PREFIX):
             return self.resolve(FQCN.join(parts[:-1]))
 
         identity = self._resolve_local_child_identity(fqcn)

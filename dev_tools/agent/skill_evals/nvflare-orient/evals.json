@@ -126,11 +126,11 @@
     },
     {
       "id": "orient-huggingface-owner-handoff",
-      "prompt": "Inspection found Hugging Face Trainer configuration, but the Trainer is built through a factory and the train() owner is unresolved. What should I do next?",
-      "expected_output": "The orientation skill asks for the training entrypoint or Trainer construction that owns train(), then routes confirmed Hugging Face Trainer ownership to nvflare-convert-huggingface.",
+      "prompt": "Inspection found Hugging Face Trainer configuration, but build_trainer(flag) conditionally returns either Trainer(...) or a non-Trainer object, so the train() owner is unresolved. What should I do next?",
+      "expected_output": "The orientation skill asks which conditional branch and training entrypoint owns train(), then routes only confirmed Hugging Face Trainer ownership to nvflare-convert-huggingface.",
       "files": [],
       "assertions": [
-        "The orientation step asks the user to identify the training entrypoint or owning Trainer construction.",
+        "The orientation step asks the user to identify the active conditional branch and owning Trainer construction.",
         "Confirmed Hugging Face Trainer ownership routes to nvflare-convert-huggingface.",
         "The orientation step remains read-only and does not route the unresolved request to nvflare-convert-pytorch."
       ],

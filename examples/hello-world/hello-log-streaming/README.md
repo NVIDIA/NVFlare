@@ -35,6 +35,12 @@ hello-log-streaming
 python job.py
 ```
 
+To export the Recipe job without running it:
+
+```bash
+python job.py --export --export-dir /tmp/nvflare/jobs/job_config
+```
+
 ## How to Add Log Streaming to Any Job
 
 Log streaming requires two components: one on the client side that tails the

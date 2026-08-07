@@ -105,8 +105,9 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         train_script: Path to the training script.
         min_clients: Minimum number of clients required.
         initial_ckpt: Path to a pre-trained checkpoint file (.pt, .pth). Can be:
-            - Relative path: file will be bundled into the job's custom/ directory.
-            - Absolute path: treated as a server-side path, used as-is at runtime.
+            - Relative path: file will be bundled into each client app's custom/ directory.
+            - Absolute path: used as-is at runtime. The file is not distributed and must
+              be readable at the same path on every client.
         train_args: Additional arguments for the training script. The dictionary is stored
             in the job definition and must not contain actual secret values; see
             :mod:`nvflare.recipe.secrets` for safe runtime references.
@@ -383,7 +384,7 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 raise ValueError(f"train_args contains reserved keys that conflict with ScriptRunner: {conflicts}")
 
         # The persistor uses the exported basename for a relative checkpoint. The
-        # source file is added to the generated server app after the base recipe
+        # source file is added to the generated client apps after the base recipe
         # creates its backing job.
         ckpt_path = (
             os.path.basename(initial_ckpt)

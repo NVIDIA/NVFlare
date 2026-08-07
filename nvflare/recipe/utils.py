@@ -798,8 +798,9 @@ def ensure_config_type_dict(config: Optional[Dict[str, Any]]) -> Optional[Dict[s
 def validate_ckpt(ckpt: Optional[str]) -> None:
     """Validate a checkpoint path if provided.
 
-    For absolute paths: no local existence check (file may be a server-side path).
-    For relative paths: verifies the file exists locally (it will be bundled into the job).
+    For absolute paths, no local existence check is performed because the path is
+    resolved by the persistor at runtime. For relative paths, this verifies that the
+    file exists locally so the calling recipe can bundle it into the job.
 
     Args:
         ckpt: Checkpoint file path to validate (e.g. initial_ckpt or eval_ckpt).
@@ -813,12 +814,16 @@ def validate_ckpt(ckpt: Optional[str]) -> None:
                 raise ValueError(
                     f"Checkpoint relative path does not exist locally: {ckpt}. "
                     "Relative paths are treated as local files that will be bundled into the job. "
-                    "Use an absolute path for server-side checkpoints."
+                    "Use an absolute path only when the checkpoint is available to the persistor at runtime."
                 )
 
 
 def prepare_initial_ckpt(initial_ckpt: Optional[str], job) -> Optional[str]:
     """Prepare initial_ckpt for job deployment.
+
+    This helper is for recipes whose model persistor runs on the server. Recipes with
+    client-side persistors, such as SwarmLearningRecipe, must prepare the checkpoint
+    for their client apps instead.
 
     - Relative path: treated as a local file. The file is bundled into the server
       app's custom directory and the basename is returned for runtime resolution.

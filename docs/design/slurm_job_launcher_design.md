@@ -54,8 +54,8 @@ parents run on a service or login host with a stable public endpoint.
 The prepare host does not resolve scheduler commands. It preserves optional configured absolute paths in the workspace,
 and generated parent-submission guidance uses `sbatch` from the submission host's `PATH`. After the parent reaches
 its actual runtime host and trusted environment setup has run, bootstrap resolves `sbatch`, `squeue`, `sacct`, and
-`scancel`, verifies Slurm 23.02 or later, and freezes canonical paths in memory for that parent process. A restart
-therefore follows changes to a cluster-managed stable symlink without requiring a new prepare.
+`scancel` and freezes canonical paths in memory for that parent process. A restart therefore follows changes to a
+cluster-managed stable symlink without requiring a new prepare.
 
 Operators use a separate output for each NVFlare site or federation and run one parent per workspace. Preparing
 again with the same output replaces the complete workspace, including runtime data. Stop the parent and preserve
@@ -290,7 +290,7 @@ scheduler to start the ranks themselves.
 
 ## Required environment
 
-The runtime parent requires Slurm 23.02 or later because the launcher uses `sbatch --export=NIL`. Parent bootstrap
+The runtime parent requires Slurm 23.02.3 or later because the launcher uses `sbatch --export=NIL`. Parent bootstrap
 requires working `sbatch`, `squeue`, `sacct`, and `scancel` commands and working `slurmdbd` accounting. Default
 `AccountingStoreFlags` is sufficient. It targets a single, non-federated cluster, and site plugins must preserve
 local submission routing. Apptainer or Pyxis/Enroot must be installed on eligible nodes when selected; Pyxis and
