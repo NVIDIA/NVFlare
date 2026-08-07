@@ -886,12 +886,6 @@ class ExternalProcessBackend(CellBackendBase):
 
         def _has_task_ingestion_progress():
             nonlocal observed_progress_time
-            now = time.monotonic()
-            if any(not waiter.done() for waiter in tuple(transfer_waiters)):
-                with trainer._activity_lock:
-                    trainer.task_progress_time = now
-                    trainer.task_progress_phase = "task download"
-                return True
             with trainer._activity_lock:
                 progress_time = trainer.task_progress_time
             if progress_time is None or progress_time <= observed_progress_time:

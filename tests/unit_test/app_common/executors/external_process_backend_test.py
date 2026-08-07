@@ -1176,7 +1176,6 @@ class TestHeartbeatAndOperationalLiveness:
                 assert topic == Topic.TASK_READY
                 tx_created = env.cell.sent_kwargs[-1]["fobs_ctx_props"][ebp.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY]
                 tx_created(SimpleNamespace(tx_id="task-payload-tx"))
-                assert env.cell.sent_kwargs[-1]["progress_wait_cb"]() is True
                 time.sleep(0.1)  # longer than the heartbeat timeout
                 transfer_settled.set()
                 payload = request.payload
