@@ -71,7 +71,7 @@ Example ``docker.yaml``:
    runtime: docker
 
    parent:
-     docker_image: registry.example.com/nvflare-site:2.8
+     docker_image: registry.example.com/nvflare-site:2.9
      network: nvflare-network
 
    job_launcher:
@@ -134,7 +134,7 @@ Example ``k8s.yaml``:
    namespace: nvflare
 
    parent:
-     docker_image: registry.example.com/nvflare-site:2.8
+     docker_image: registry.example.com/nvflare-site:2.9
      image_pull_secrets:
        - registry-credentials
      parent_port: 8102
@@ -379,13 +379,17 @@ Job Images
 Docker, Kubernetes, and Slurm jobs can select a job image in ``meta.json``. The
 preferred form is ``launcher_spec``:
 
+For NVFlare 2.9, Docker and Kubernetes job images must contain NVFlare 2.9. A
+2.8 or earlier job image cannot consume the environment-based credential
+bootstrap used by a 2.9 parent.
+
 .. code-block:: json
 
    {
      "launcher_spec": {
        "default": {
-         "docker": {"image": "registry.example.com/nvflare-job:2.8"},
-         "k8s": {"image": "registry.example.com/nvflare-job:2.8"},
+         "docker": {"image": "registry.example.com/nvflare-job:2.9"},
+         "k8s": {"image": "registry.example.com/nvflare-job:2.9"},
          "slurm": {"image": "/shared/images/nvflare-job.sif"}
        },
        "site-1": {

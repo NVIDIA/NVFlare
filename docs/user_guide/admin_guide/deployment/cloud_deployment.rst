@@ -42,11 +42,12 @@ To run NVFlare dashboard on Azure, run:
 
 .. code-block:: shell
 
-    nvflare dashboard --cloud azure -i nvflare/nvflare:2.7.2
+    nvflare dashboard --cloud azure -i nvflare/nvflare:2.9.0
 
 The ``-i`` value can be any image reference that the cloud VM can pull, including images hosted in Docker Hub,
 NGC, a cloud registry, or another private registry. For example, use
-``registry.example.com/nvflare/nvflare:2.7.2`` when that registry is reachable from the VM.
+``registry.example.com/nvflare/nvflare:2.9.0`` when that registry is reachable from the VM.
+Keep the image's NVFlare version aligned with the installed CLI version.
 
 .. note::
 
@@ -103,7 +104,7 @@ To run NVFlare dashboard on AWS, run:
 
 .. code-block:: shell
 
-    nvflare dashboard --cloud aws -i nvflare/nvflare:2.7.2
+    nvflare dashboard --cloud aws -i nvflare/nvflare:2.9.0
 
 .. note::
 

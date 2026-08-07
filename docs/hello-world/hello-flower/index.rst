@@ -25,6 +25,7 @@ Then navigate to the ``hello-flower`` directory:
 
 .. code-block:: bash
 
+   cd NVFlare
    git switch <release branch>
    cd examples/hello-world/hello-flower
 
@@ -36,10 +37,9 @@ Install the dependencies:
 
 .. warning::
 
-   This ``main`` branch example uses Flower 1.26+ and the newer Flower SuperLink
-   configuration flow. Use the NVFlare 2.8 release candidate line
-   (``nvflare~=2.8.0rc``), or install NVFlare from this repository if that
-   package is not available from PyPI yet.
+   This example uses Flower 1.26+ and the newer Flower SuperLink configuration
+   flow. Flower 1.26+ support starts with NVFlare 2.8. The
+   ``nvflare~=2.8.0rc`` requirement selects the compatible 2.8 release line.
 
    If you are using released NVFlare 2.7.x, switch to the 2.7 branch or tag of
    this example and use ``flwr>=1.16,<1.26``. NVFlare 2.7.x still uses Flower's

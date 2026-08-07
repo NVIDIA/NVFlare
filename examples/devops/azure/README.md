@@ -164,7 +164,7 @@ Example `meta.json` launcher settings for AKS job pods:
   "launcher_spec": {
     "default": {
       "k8s": {
-        "image": "mynvflareregistry.azurecr.io/nvflare/nvflare:2.8.0",
+        "image": "<acr>.azurecr.io/<repo>:<tag>",
         "cpu": "1000m",
         "memory": "4Gi"
       }

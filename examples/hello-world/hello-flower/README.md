@@ -1,6 +1,6 @@
 # Hello Flower (PyTorch)
 
-This example demonstrates how to use NVIDIA FLARE with Flower to train an image classifier using federated averaging (FedAvg). The complete example code can be found in the `hello-flower directory <examples/hello-world/hello-flower/>`. It is recommended to create a virtual environment and run everything within a virtualenv.
+This example demonstrates how to use NVIDIA FLARE with Flower to train an image classifier using federated averaging (FedAvg). The complete example code can be found in the [hello-flower directory](.). It is recommended to create a virtual environment and run everything within a virtualenv.
 
 ## NVIDIA FLARE Installation
 
@@ -15,6 +15,7 @@ Get the example code from github:
 then navigate to the hello-flower directory:
 
 ```
+  cd NVFlare
   git switch <release branch>
   cd examples/hello-world/hello-flower
 ```
@@ -26,9 +27,9 @@ Install the dependency
 ```
 
 > [!IMPORTANT]
-> This `main` branch example uses Flower 1.26+ and the newer Flower SuperLink configuration flow.
-> Use the NVFlare 2.8 release candidate line (`nvflare~=2.8.0rc`), or install NVFlare from this
-> repository if that package is not available from PyPI yet.
+> This example uses Flower 1.26+ and the newer Flower SuperLink configuration flow.
+> Flower 1.26+ support starts with NVFlare 2.8. The `nvflare~=2.8.0rc`
+> requirement selects the compatible 2.8 release line.
 > If you are using released NVFlare 2.7.x, switch to the 2.7 branch or tag of this example and use `flwr>=1.16,<1.26`.
 > NVFlare 2.7.x still uses Flower's legacy `--federation-config` CLI option, which Flower 1.26+ ignores.
 

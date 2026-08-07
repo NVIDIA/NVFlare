@@ -3,8 +3,8 @@ Run Flower Application as FLARE Job
 ***********************************
 
 Before running Flower applications with FLARE, you must have both FLARE and Flower frameworks
-installed in your Python environment. Current NVFlare ``main`` and the NVFlare 2.8 release
-candidate line use Flower's SuperLink configuration flow and require ``flwr>=1.26``.
+installed in your Python environment. NVFlare 2.8 and later use Flower's
+SuperLink configuration flow and require ``flwr>=1.26``.
 
 .. code-block:: shell
 

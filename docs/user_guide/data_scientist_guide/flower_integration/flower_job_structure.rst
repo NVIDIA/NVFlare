@@ -80,10 +80,10 @@ Here is an example of ``pyproject.toml``, taken from :github_nvflare_link:`this 
    need to define a ``[tool.flwr.federations]`` section in ``pyproject.toml`` for
    FLARE execution.
 
-.. note:: Flower 1.26+ support requires the NVFlare 2.8 release candidate line
-   (``nvflare~=2.8.0rc``), or NVFlare installed from current ``main``. If you
-   are using released NVFlare 2.7.x, use ``flwr>=1.16,<1.26`` and the 2.7 branch
-   or tag of the Flower examples.
+.. note:: Flower 1.26+ support starts with NVFlare 2.8. This example's
+   ``nvflare~=2.8.0rc`` requirement selects the compatible 2.8 release line.
+   If you are using released NVFlare 2.7.x, use ``flwr>=1.16,<1.26`` and the
+   2.7 branch or tag of the Flower examples.
 
 Project Name
 ~~~~~~~~~~~~

@@ -117,16 +117,20 @@ Docker, Kubernetes, and Slurm launchers read job runtime settings from
 in the site's prepared startup kit. A job can carry settings for multiple
 launcher modes without choosing which mode a site uses.
 
+For NVFlare 2.9, Docker and Kubernetes job images must contain NVFlare 2.9. A
+2.8 or earlier job image cannot consume the environment-based credential
+bootstrap used by a 2.9 parent.
+
 .. code-block:: json
 
     {
         "launcher_spec": {
             "default": {
                 "docker": {
-                    "image": "registry.example.com/nvflare-job:2.8"
+                    "image": "registry.example.com/nvflare-job:2.9"
                 },
                 "k8s": {
-                    "image": "registry.example.com/nvflare-job:2.8",
+                    "image": "registry.example.com/nvflare-job:2.9",
                     "cpu": "2",
                     "memory": "8Gi"
                 },

@@ -44,22 +44,19 @@ model = model + averaged_update if update_type == "diff" else averaged_update
 
 ## Run it
 
-> [!IMPORTANT]
-> The `nvflare~=2.9.0rc` entry in `requirements.txt` records the first
-> compatible release. Until that package is published, install NVFlare from
-> this repository instead.
-
-Then run the self-contained script from its directory:
+The `nvflare~=2.9.0rc` entry in `requirements.txt` records the first compatible
+2.9 release. From the repository root, change into the example directory and
+install its dependencies:
 
 ```bash
 cd examples/hello-world/hello-collab
-python job.py
+python -m pip install -r requirements.txt
 ```
 
-Once NVFlare 2.9 is available, install the example directly with:
+Then run the self-contained script:
 
 ```bash
-python -m pip install -r requirements.txt
+python job.py
 ```
 
 The Collab rewrite accepts the same core experiment options as the original.
