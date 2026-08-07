@@ -18,9 +18,10 @@ import pytest
 
 from nvflare.fuel.f3.cellnet.defs import Encoding
 from nvflare.fuel.f3.comm_config import CommConfigurator
-from nvflare.fuel.f3.streaming.blob_streamer import BlobHandler, BlobTask
+from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.streaming.blob_streamer import BlobHandler, BlobStreamer, BlobTask
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
+from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, Stream, StreamError, StreamFuture
 
 
 class _FakeStream(Stream):
@@ -167,6 +168,31 @@ def test_blob_handler_uses_dedicated_streaming_blob_limit(monkeypatch):
     handler = BlobHandler(lambda future: None)
 
     assert handler.max_blob_size == 8
+
+
+def test_blob_streamer_rejects_oversized_blob_before_sending(monkeypatch):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_max_blob_size", lambda self: 4)
+    byte_streamer = SimpleNamespace(send=lambda *args, **kwargs: pytest.fail("oversized blob was sent"))
+    streamer = BlobStreamer(byte_streamer, SimpleNamespace())
+
+    with pytest.raises(BlobSizeError) as exc_info:
+        streamer.send("channel", "topic", "target", Message(payload=b"abcde"), False, False)
+
+    error = str(exc_info.value)
+    assert "limit 4 (streaming_max_blob_size)" in error
+    assert "NVFLARE_STREAMING_MAX_BLOB_SIZE" in error
+    assert "shard the object" in error
+
+
+def test_blob_streamer_allows_blob_at_exact_limit(monkeypatch):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_max_blob_size", lambda self: 4)
+    expected_future = StreamFuture(stream_id=17)
+    byte_streamer = SimpleNamespace(send=lambda *args, **kwargs: expected_future)
+    streamer = BlobStreamer(byte_streamer, SimpleNamespace())
+
+    future = streamer.send("channel", "topic", "target", Message(payload=b"abcd"), False, False)
+
+    assert future is expected_future
 
 
 def test_handle_blob_cb_stops_task_on_declared_size_above_limit(monkeypatch):

@@ -28,7 +28,7 @@ from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, make_r
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import StreamFuture
+from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, StreamFuture
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.waiter_utils import WaiterRC, conditional_wait
@@ -167,9 +167,18 @@ class Adapter:
 
         encode_payload(response, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=self.cell.get_fobs_context())
         self.logger.debug(f"sending: {stream_req_id=}: {response.headers=}, target={origin}")
-        reply_future = self.cell.send_blob(
-            CellChannel.RETURN_ONLY, f"{channel}:{topic}", origin, response, secure, optional
-        )
+        try:
+            reply_future = self.cell.send_blob(
+                CellChannel.RETURN_ONLY, f"{channel}:{topic}", origin, response, secure, optional
+            )
+        except BlobSizeError as ex:
+            if _is_server_job_cell(self.my_info):
+                self.logger.critical(
+                    f"streamed response from server job cell {self.my_info.fqcn} is too large; "
+                    f"exiting job process to fail the job: {secure_format_exception(ex)}"
+                )
+                os._exit(1)
+            raise
         self.logger.debug(f"Done sending: {stream_req_id=}: {reply_future=}")
 
 

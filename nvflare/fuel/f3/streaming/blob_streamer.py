@@ -22,12 +22,20 @@ from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver
 from nvflare.fuel.f3.streaming.byte_streamer import STREAM_CHUNK_SIZE, STREAM_TYPE_BLOB, ByteStreamer
 from nvflare.fuel.f3.streaming.stream_const import EOS, StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
+from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, Stream, StreamError, StreamFuture
 from nvflare.fuel.f3.streaming.stream_utils import FastBuffer, callback_thread_pool, stream_thread_pool, wrap_view
 from nvflare.fuel.utils.buffer_list import BufferList, ConsumableBufferList
 from nvflare.security.logging import secure_format_traceback
 
 log = logging.getLogger(__name__)
+
+
+def _make_blob_size_error(size: int, limit: int) -> BlobSizeError:
+    return BlobSizeError(
+        f"Blob size {size} exceeds configured limit {limit} (streaming_max_blob_size). "
+        "Increase NVFLARE_STREAMING_MAX_BLOB_SIZE (or streaming_max_blob_size), "
+        "shard the object, or use the object downloader."
+    )
 
 
 class BlobStream(Stream):
@@ -80,7 +88,7 @@ class BlobTask:
             raise StreamError(f"Declared blob size cannot be negative: {self.size}")
 
         if self.max_size > 0 and self.size > self.max_size:
-            raise StreamError(f"Declared blob size {self.size} exceeds configured limit {self.max_size}")
+            raise _make_blob_size_error(self.size, self.max_size)
 
         self.pre_allocated = self.size > 0 and not self.preserve_chunks
 
@@ -246,6 +254,7 @@ class BlobStreamer:
     def __init__(self, byte_streamer: ByteStreamer, byte_receiver: ByteReceiver):
         self.byte_streamer = byte_streamer
         self.byte_receiver = byte_receiver
+        self.max_blob_size = CommConfigurator().get_streaming_max_blob_size()
 
     def send(
         self,
@@ -264,6 +273,8 @@ class BlobStreamer:
             raise StreamError(f"BLOB is invalid type: {type(message.payload)}")
 
         blob_stream = BlobStream(message.payload, message.headers)
+        if self.max_blob_size > 0 and blob_stream.get_size() > self.max_blob_size:
+            raise _make_blob_size_error(blob_stream.get_size(), self.max_blob_size)
         return self.byte_streamer.send(
             channel,
             topic,
