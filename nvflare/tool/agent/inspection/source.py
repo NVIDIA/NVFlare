@@ -40,6 +40,13 @@ CLASS_BODY_COMPOUND_NODES = (ast.If, ast.While, ast.For, ast.AsyncFor, ast.With,
 EXCLUDED_EXPRESSION_SCOPES = (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
 
 
+@dataclass(frozen=True)
+class _RecognizedReceiver:
+    framework: str
+    kind: str
+    dependencies: tuple[Dependency, ...]
+
+
 @dataclass
 class Bindings:
     path: str = "."
@@ -47,6 +54,7 @@ class Bindings:
     findings: list[dict] = field(default_factory=list)
     symbols: dict[str, str] = field(default_factory=dict)
     subclasses: dict[str, str] = field(default_factory=dict)
+    factories: dict[str, _RecognizedReceiver] = field(default_factory=dict)
     instances: dict[str, str] = field(default_factory=dict)
     optimizers: set[str] = field(default_factory=set)
     scalers: set[str] = field(default_factory=set)
@@ -67,6 +75,7 @@ class Bindings:
             findings=self.findings,
             symbols=dict(self.symbols),
             subclasses=dict(self.subclasses),
+            factories=dict(self.factories),
             client_names_seen=dict(self.client_names_seen),
             uncertain_client_names=set(self.uncertain_client_names),
             inherited_names=set(self.symbols) | set(self.subclasses),
@@ -93,6 +102,7 @@ class Bindings:
             findings=self.findings,
             symbols=dict(self.symbols),
             subclasses=dict(self.subclasses),
+            factories=dict(self.factories),
             instances=dict(self.instances),
             optimizers=set(self.optimizers),
             scalers=set(self.scalers),
@@ -112,6 +122,7 @@ class Bindings:
             self.outer_symbol_kills.add(name)
         self.symbols.pop(name, None)
         self.subclasses.pop(name, None)
+        self.factories.pop(name, None)
         self.instances.pop(name, None)
         self.optimizers.discard(name)
         self.scalers.discard(name)
@@ -231,6 +242,10 @@ def _analyze_body(
             )
             if statement.decorator_list or child_yield:
                 _move_owners_to_unresolved(facts, owner_start)
+            elif function_depth == 0 and isinstance(statement, ast.FunctionDef):
+                factory = _factory_result(statement, child)
+                if factory:
+                    bindings.factories[statement.name] = factory
         elif isinstance(statement, (ast.Global, ast.Nonlocal)):
             bindings.outer_names.update(statement.names)
         elif isinstance(statement, ast.ClassDef):
@@ -537,34 +552,32 @@ def _record_assignment(
     names = set().union(*(_target_names(target) for target in targets)) if targets else set()
     simple_name = targets[0].id if len(targets) == 1 and isinstance(targets[0], ast.Name) else None
     _record_secret_assignment(node, names, bindings)
-    canonical = (
-        _resolve_expr(value.func, bindings, allow_outer=bool(names & bindings.outer_names))
-        if isinstance(value, ast.Call)
-        else None
-    )
-    dependencies = _inherited_dependencies(value.func, bindings) if isinstance(value, ast.Call) else ()
+    receiver = None
+    factory = None
+    if isinstance(value, ast.Call):
+        receiver = _classify_constructor(
+            value.func,
+            bindings,
+            allow_outer=bool(names & bindings.outer_names),
+        )
+        factory_name = value.func.id if isinstance(value.func, ast.Name) else None
+        factory = bindings.factories.get(factory_name or "")
+        if factory and factory_name:
+            receiver = _RecognizedReceiver(
+                framework=factory.framework,
+                kind=factory.kind,
+                dependencies=tuple(sorted({*factory.dependencies, (factory_name, ())})),
+            )
     contains_yield = _record_expression_calls(value, bindings, facts, bound_names) if value is not None else False
     _invalidate(bindings, names, remember_framework=False)
     bound_names.update(names)
-    if not isinstance(value, ast.Call) or simple_name is None:
+    if simple_name is None or receiver is None:
         return contains_yield
-    framework = bindings.subclasses.get(canonical or "") or _trainer_framework(canonical)
-    optimizer = _is_optimizer(canonical)
-    scaler = _is_scaler(canonical)
     if simple_name in bindings.outer_names:
-        candidate = framework or ("pytorch" if optimizer or scaler else None)
-        if candidate:
-            facts.unresolved.append((candidate, node.lineno, dependencies))
+        if factory is None:
+            facts.unresolved.append((receiver.framework, node.lineno, receiver.dependencies))
         return contains_yield
-    if framework:
-        bindings.instances[simple_name] = framework
-        bindings.dependencies[simple_name] = dependencies
-    elif optimizer:
-        bindings.optimizers.add(simple_name)
-        bindings.dependencies[simple_name] = dependencies
-    elif scaler:
-        bindings.scalers.add(simple_name)
-        bindings.dependencies[simple_name] = dependencies
+    _bind_receiver(simple_name, receiver, bindings)
     return contains_yield
 
 
@@ -635,7 +648,9 @@ def _invalidate(bindings: Bindings, names: set[str], *, remember_framework: bool
     for name in names:
         if remember_framework:
             canonical = bindings.symbols.get(name)
+            factory = bindings.factories.get(name)
             framework = bindings.instances.get(name) or bindings.subclasses.get(name)
+            framework = framework or (factory.framework if factory else None)
             framework = framework or _trainer_framework(canonical) or _framework_family(canonical)
             if (
                 name in bindings.optimizers
@@ -780,6 +795,7 @@ def _merge_framework_context(target: Bindings, source: Bindings) -> None:
     frameworks.update(filter(None, (_trainer_framework(value) for value in source.symbols.values())))
     frameworks.update(filter(None, (_framework_family(value) for value in source.symbols.values())))
     frameworks.update(source.subclasses.values())
+    frameworks.update(factory.framework for factory in source.factories.values())
     frameworks.update(source.instances.values())
     if source.optimizers or source.scalers:
         frameworks.add("pytorch")
@@ -846,6 +862,90 @@ def _record_parameter_bindings(arguments: ast.arguments, bindings: Bindings) -> 
             bindings.optimizers.add(parameter.arg)
 
 
+def _factory_result(function: ast.FunctionDef, bindings: Bindings) -> _RecognizedReceiver | None:
+    if not function.body or not isinstance(function.body[-1], ast.Return):
+        return None
+    returns = _scope_returns(function.body)
+    if len(returns) != 1 or returns[0] is not function.body[-1]:
+        return None
+    value = returns[0].value
+    receiver = None
+    if isinstance(value, ast.Call):
+        receiver = _classify_constructor(value.func, bindings)
+    elif isinstance(value, ast.Name):
+        receiver = _classify_bound_receiver(value.id, bindings)
+    chained_factory = receiver and any(
+        not suffix and name in bindings.factories for name, suffix in receiver.dependencies
+    )
+    if (
+        receiver
+        and not chained_factory
+        and all(
+            _dependency_framework(name, suffix, bindings) == receiver.framework
+            for name, suffix in receiver.dependencies
+        )
+    ):
+        return receiver
+    return None
+
+
+def _classify_constructor(
+    constructor: ast.AST, bindings: Bindings, *, allow_outer: bool = False
+) -> _RecognizedReceiver | None:
+    canonical = _resolve_expr(constructor, bindings, allow_outer=allow_outer)
+    framework = bindings.subclasses.get(canonical or "") or _trainer_framework(canonical)
+    kind = "trainer"
+    if _is_optimizer(canonical):
+        framework, kind = "pytorch", "optimizer"
+    elif _is_scaler(canonical):
+        framework, kind = "pytorch", "scaler"
+    if not framework:
+        return None
+    return _RecognizedReceiver(
+        framework=framework,
+        kind=kind,
+        dependencies=_inherited_dependencies(constructor, bindings),
+    )
+
+
+def _classify_bound_receiver(name: str, bindings: Bindings) -> _RecognizedReceiver | None:
+    framework = bindings.instances.get(name)
+    kind = "trainer"
+    if name in bindings.optimizers:
+        framework, kind = "pytorch", "optimizer"
+    elif name in bindings.scalers:
+        framework, kind = "pytorch", "scaler"
+    if not framework:
+        return None
+    return _RecognizedReceiver(
+        framework=framework,
+        kind=kind,
+        dependencies=bindings.dependencies.get(name, ()),
+    )
+
+
+def _bind_receiver(name: str, receiver: _RecognizedReceiver, bindings: Bindings) -> None:
+    if receiver.kind == "trainer":
+        bindings.instances[name] = receiver.framework
+    elif receiver.kind == "optimizer":
+        bindings.optimizers.add(name)
+    else:
+        bindings.scalers.add(name)
+    bindings.dependencies[name] = receiver.dependencies
+
+
+def _scope_returns(body: list[ast.stmt]) -> list[ast.Return]:
+    returns: list[ast.Return] = []
+    pending: list[ast.AST] = list(reversed(body))
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ast.Return):
+            returns.append(node)
+        elif not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            pending.extend(reversed(list(ast.iter_child_nodes(node))))
+    return returns
+
+
 def _inherited_dependencies(node: ast.AST, bindings: Bindings) -> tuple[Dependency, ...]:
     root = _root_name(node)
     suffix = _attribute_suffix(node)
@@ -854,7 +954,7 @@ def _inherited_dependencies(node: ast.AST, bindings: Bindings) -> tuple[Dependen
 
 
 def _shadowed_names(parent: Bindings, child: Bindings, bound_names: set[str]) -> set[str]:
-    inherited = set(parent.symbols) | set(parent.subclasses)
+    inherited = set(parent.symbols) | set(parent.subclasses) | set(parent.factories)
     return (bound_names - child.outer_names) & inherited
 
 
@@ -898,6 +998,8 @@ def _constructor_framework(node: ast.AST, bindings: Bindings) -> str | None:
 
 
 def _dependency_framework(name: str, suffix: tuple[str, ...], bindings: Bindings) -> str | None:
+    if not suffix and name in bindings.factories:
+        return bindings.factories[name].framework
     if not suffix and name in bindings.subclasses:
         return bindings.subclasses[name]
     canonical = bindings.symbols.get(name)
