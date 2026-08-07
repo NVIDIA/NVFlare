@@ -7,9 +7,11 @@ Client API Attach Mode
 ######################
 
 Client API Attach connects an independently started and externally owned trainer
-process to an NVFLARE Client Job (CJ). The trainer initiates the connection to a
-dedicated listener owned by the CJ. NVFLARE exchanges tasks and results with the
-trainer, but never starts, stops, signals, or waits for the trainer process.
+process to an NVFLARE Client Job (CJ). A network trainer connects through the
+site's existing Client Parent (CP) listener; a network-isolated trainer can use
+a protected shared-filesystem listener owned by the CJ. NVFLARE exchanges tasks
+and results with the trainer, but never starts, stops, signals, or waits for the
+trainer process.
 
 An *independently managed trainer* is defined by process ownership, not by its
 ML library or vendor: an external system starts, monitors, and stops it.
@@ -19,8 +21,11 @@ Flower, are not Attach integrations.
 .. code-block:: text
 
    External system  -- starts and owns -->  Trainer
-   NVFLARE runtime  -- starts and owns -->  Client Job
-   Trainer          ------ attaches ----->  Client Job Attach listener
+   NVFLARE runtime  -- starts and owns -->  CP --> Client Job
+   Trainer          ------ attaches ----->  CP --> Client Job session
+
+Only protected shared-file Attach uses a separate CJ-owned listener. The
+site's normal CP-to-CJ connection remains networked in that topology.
 
 Choose an Execution Mode
 ========================
@@ -54,19 +59,22 @@ and its application processes remain orchestrated by NVFLARE.
 How Attach Works
 ================
 
-The CJ owns a dedicated Attach listener and one Attach protocol session. The
-trainer uses an Attach profile to discover or address that listener and then
-uses the ordinary :mod:`nvflare.client` API. Task and result payloads travel
-over Cell and use NVFLARE's existing serialization and large-object transfer
-support.
+The trainer uses a typed Attach profile and the ordinary
+:mod:`nvflare.client` API. A network profile addresses the stable CP listener;
+authenticated ``SESSION_OPEN`` binds the trainer to one dynamic CJ protocol
+session. A shared-file profile discovers a dynamic CJ-owned FileDriver
+listener. Task and result payloads travel over Cell and use NVFLARE's existing
+serialization and large-object transfer support.
 
 The job and trainer share an ``attach_id``. It is a stable rendezvous and
-routing name, not a password or authentication secret. Transport security is
-provided by a protected shared filesystem or mutual TLS (mTLS).
+routing name, not a password or authentication secret. Security is provided by
+a protected shared filesystem or the provisioned site Cell identity over the CP
+route.
 
 Attach separates three configuration responsibilities:
 
-* The **site administrator** configures the dedicated listener in the site's
+* The **site administrator** provisions the normal CP listener and site Cell
+  credentials; only shared-file Attach needs a ``client_api_attach`` entry in
   ``local/comm_config.json``.
 * The **job author** configures
   :class:`ClientAPIExecutor<nvflare.app_common.executors.client_api_executor.ClientAPIExecutor>`
@@ -74,11 +82,15 @@ Attach separates three configuration responsibilities:
 * The **trainer owner** supplies the matching Attach profile and starts the
   trainer independently.
 
-Configure the Site Listener
-===========================
+Configure Site Routing
+======================
 
-The ``client_api_attach`` section is independent of the site's ``internal``
-connection between the Client Parent (CP) and CJ. Changing
+Network Attach uses the site's existing ``internal`` CP listener and requires
+no job-specific listener, certificate, key, port, or ``listening_host``. Do not
+put a network driver under ``client_api_attach``; the backend rejects it.
+
+The ``client_api_attach`` section is used only for protected shared-file Attach
+and is independent of the normal CP-to-CJ connection. Changing
 ``local/comm_config.json`` requires restarting the site.
 
 Shared-Filesystem Listener
@@ -196,44 +208,67 @@ The CJ publishes its dynamic listener information while it holds the rendezvous
 claim. A trainer that starts first waits for that claim; a job that starts first
 waits for the trainer until ``attach_timeout`` expires.
 
-Successful attachment creates a trainer Cell whose FQCN is a child of the CJ:
+Successful attachment creates a stable trainer Cell whose FQCN is a child of
+the CP rather than a dynamic job:
 
 .. code-block:: text
 
-   <site>.<job_id>.-client_api_<attach_id>
+   <cp_fqcn>.-client_api_<attach_id>
 
-When the job ends, the CJ closes the Attach session and listener. It does not
-terminate the trainer process. The trainer's ``is_running()``/``receive()`` loop
-observes session shutdown and exits; its external owner remains responsible for
-the process and any restart policy.
+When the job ends, the CJ closes the Attach session and any shared-file listener
+it owns. It does not terminate the trainer process. The trainer's
+``is_running()``/``receive()`` loop observes session shutdown and exits; its
+external owner remains responsible for the process and any restart policy.
 
 Network Attach
 ==============
 
 Use network Attach when the trainer cannot share a filesystem with the CJ.
-Production network Attach requires mTLS. The site needs a provisioned listener
-certificate and key, and the trainer needs the site client certificate, client
-key, and CA certificate.
+The trainer connects to the provisioned CP internal listener. In a secure job,
+``secure_mode=true`` uses the site's CA, client certificate, and client key for
+Cell authentication and end-to-end message protection. The CP transport setting
+is separate and may itself be clear or protected; ``connection_security`` in
+the profile must match that listener.
 
-A direct network profile contains the job-specific CJ FQCN and listener URL, so
-the trainer normally starts after the job identity is known. Clear network
-Attach, including loopback, is development-only and requires explicit insecure
-opt-in on both the profile and job.
+.. code-block:: json
+
+   {
+     "schema_version": 1,
+     "execution_mode": "attach",
+     "attach_id": "trainer_a",
+     "site_name": "site-1",
+     "connect_url": "tcp://site-1.example.com:8004",
+     "connection_security": "clear",
+     "secure_mode": true,
+     "ca_cert": "/absolute/path/to/site/startup/rootCA.pem",
+     "job_wait_timeout": null
+   }
+
+Keep ``client.crt`` and ``client.key`` beside ``rootCA.pem``. The stable trainer
+identity lets it start before the job and discover the dynamic CJ through
+authenticated ``SESSION_OPEN``. For a relayed site, include ``cp_fqcn``; include
+``auth_identity`` when the provisioned certificate CN differs from
+``site_name``. An optional ``cj_fqcn`` can pin the profile to one job.
 
 See the :github_nvflare_link:`Client API Attach example <examples/advanced/client-api-attach>`
-for complete shared-file, mTLS network, and local POC instructions.
+for complete shared-file, CP-routed network, and local POC instructions.
 
 Security and Lifecycle Requirements
 ===================================
 
 * Treat ``attach_id`` as public routing metadata, not a credential.
 * Protect shared-file roots with filesystem ownership and group permissions.
-* Use mTLS for production network Attach; one-way TLS is not supported.
-* Do not use clear network Attach on an untrusted network.
+* Use ``secure_mode=true`` and the provisioned site Cell credentials for secure
+  network Attach. The trainer receives no site bearer token and cannot issue an
+  authenticated server-facing request.
 * Keep the trainer alive until ``flare.send()`` returns. Large results may still
   be served from the trainer after their result envelope is accepted.
-* Use a finite heartbeat or result-wait policy so a dead external trainer cannot
-  leave a job waiting indefinitely.
+* Configure a positive ``heartbeat_timeout``. Attach rejects a disabled
+  heartbeat because it is the terminal fallback if protocol ``SHUTDOWN`` is
+  lost.
+* Expect the CJ to materialize complete task/result objects. This preserves the
+  2.8 trust boundary but means DownloadService chunk size is not a hard peak-RSS
+  bound for one large tensor.
 
 Migration from Legacy External-Trainer Integration
 ==================================================
@@ -254,7 +289,8 @@ trainers.
    * - ``FlareAgent`` or ``IPCAgent`` in the trainer
      - :mod:`nvflare.client` initialized with an Attach profile
    * - General ad-hoc connection or task pipe
-     - Dedicated site-local ``client_api_attach`` listener
+     - Existing CP route for network Attach, or a protected CJ-owned
+       ``client_api_attach`` FileDriver listener
    * - Trainer workspace containing generated live job configuration
      - Independently supplied shared-file or direct network Attach profile
 
@@ -269,8 +305,8 @@ Troubleshooting
   match and that ``attach_timeout`` has not expired.
 * **A shared-file trainer never discovers the job:** verify identical absolute
   paths, cross-node advisory locking, and directory permissions.
-* **A network trainer cannot connect:** verify the job-specific ``cj_fqcn``,
-  listener URL, mTLS certificate paths, hostname, and firewall rules.
+* **A network trainer cannot connect:** verify the stable CP URL/FQCN, site
+  certificate paths and identity, transport setting, and firewall rules.
 * **A second job is rejected:** one live job owns a given shared-file
   ``(site_name, attach_id)`` claim. Use a distinct ``attach_id`` for concurrent
   jobs.

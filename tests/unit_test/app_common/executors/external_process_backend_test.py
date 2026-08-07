@@ -32,6 +32,7 @@ from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.executors.client_api import cell_backend as cbp
 from nvflare.app_common.executors.client_api import external_process_backend as ebp
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext
 from nvflare.app_common.executors.client_api.external_process_backend import ExternalProcessBackend, bootstrap_file_name
@@ -45,6 +46,7 @@ from nvflare.client.cell.bootstrap import (
 )
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
+from nvflare.fuel.data_event.utils import set_scope_property
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
@@ -110,7 +112,6 @@ class FakeCell:
         self.fqcn = CJ_FQCN
         self.decode_pass_through_channels = set()
         self.decode_pass_through_topics = set()
-        self.decode_pass_through_relay_topics = set()
         self.listener_url = "tcp://127.0.0.1:56789"
         self.internal_listener_made = False
         self.cbs = {}
@@ -242,6 +243,9 @@ def _make_engine(cell):
 
 
 def _make_fl_ctx(engine, app_dir, secure_mode=False):
+    if secure_mode:
+        set_scope_property("site-1", FLMetaKey.AUTH_TOKEN, "site-auth-token")
+        set_scope_property("site-1", FLMetaKey.AUTH_TOKEN_SIGNATURE, "site-auth-signature")
     fl_ctx = FLContext()
     fl_ctx.put(key=ReservedKey.ENGINE, value=engine, private=True, sticky=False)
     fl_ctx.put(key=ReservedKey.RUN_NUM, value="job-1", private=False, sticky=False)
@@ -339,7 +343,6 @@ class TestInitializeAndFinalize:
             assert env.cell.internal_listener_made
             assert (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK) in env.cell.decode_pass_through_topics
             assert (CHANNEL, Topic.RESULT_READY) in env.cell.decode_pass_through_topics
-            assert not env.cell.decode_pass_through_relay_topics
             assert CellChannel.SERVER_COMMAND not in env.cell.decode_pass_through_channels
             for topic in PROTOCOL_TOPICS:
                 assert topic in env.cell.cbs, f"backend must register a handler for {topic}"
@@ -359,7 +362,7 @@ class TestInitializeAndFinalize:
         # launch-token file is removed after teardown
         assert not os.path.exists(os.path.join(env.app_dir, bootstrap_file_name(1)))
 
-    def test_initialize_relays_pass_through_refs_in_secure_mode(self, env):
+    def test_initialize_preserves_pass_through_refs_in_secure_mode(self, env):
         backend = ExternalProcessBackend()
         fl_ctx = _make_fl_ctx(_make_engine(env.cell), env.app_dir, secure_mode=True)
 
@@ -367,17 +370,28 @@ class TestInitializeAndFinalize:
         try:
             assert (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK) in env.cell.decode_pass_through_topics
             assert (CHANNEL, Topic.RESULT_READY) in env.cell.decode_pass_through_topics
-            assert (
-                CellChannel.SERVER_COMMAND,
-                ServerCommandNames.GET_TASK,
-            ) in env.cell.decode_pass_through_relay_topics
-            assert (CHANNEL, Topic.RESULT_READY) in env.cell.decode_pass_through_relay_topics
             assert CellChannel.SERVER_COMMAND not in env.cell.decode_pass_through_channels
             bootstrap_path = env.harness.processes[0].kwargs["env"][BOOTSTRAP_FILE_ENV_VAR]
-            assert read_bootstrap_config(bootstrap_path)[BootstrapKey.SECURE_MODE] is True
+            bootstrap = read_bootstrap_config(bootstrap_path)
+            assert bootstrap[BootstrapKey.SECURE_MODE] is True
+            assert MsgKey.AUTH_TOKEN not in bootstrap
+            assert MsgKey.AUTH_TOKEN_SIGNATURE not in bootstrap
+            hello_reply = env.harness.hello_replies[-1].payload
+            assert hello_reply[MsgKey.SECURE_MODE] is True
+            assert hello_reply[MsgKey.AUTH_TOKEN] == "site-auth-token"
+            assert hello_reply[MsgKey.AUTH_TOKEN_SIGNATURE] == "site-auth-signature"
         finally:
             backend.finalize(FLContext())
-        assert not env.cell.decode_pass_through_relay_topics
+
+    def test_secure_initialize_fails_before_launch_when_site_credentials_are_missing(self, env, monkeypatch):
+        monkeypatch.setattr(cbp, "get_scope_property", lambda **_kwargs: None)
+        backend = ExternalProcessBackend()
+        fl_ctx = _make_fl_ctx(_make_engine(env.cell), env.app_dir, secure_mode=True)
+
+        with pytest.raises(RuntimeError, match="missing site credential"):
+            backend.initialize(_make_context(), fl_ctx)
+
+        assert not env.harness.processes
 
     def test_initialize_does_not_log_configured_command(self, env):
         literal_secret = "literal-secret-sentinel"

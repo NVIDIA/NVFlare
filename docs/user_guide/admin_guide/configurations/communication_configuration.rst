@@ -237,15 +237,17 @@ The syntax and meanings of the properties are exactly the same as the "adhoc" co
 
 .. _client_api_attach_configuration:
 
-Client API Attach Listeners
-===========================
+Client API Attach Routing
+=========================
 
 Client API Attach lets an independently started trainer connect to a running
-Client Job (CJ). The CJ creates a dedicated, job-lifetime listener from the
-``client_api_attach`` section. This listener is separate from ``internal``
-(CP-to-CJ communication) and ``adhoc`` (best-effort direct Cell routing).
+Client Job (CJ). Network Attach uses the site's existing ``internal`` Client
+Parent (CP) listener. Only protected shared-file Attach creates a dedicated,
+job-lifetime CJ listener from the ``client_api_attach`` section.
 
-Changing ``client_api_attach`` requires restarting the site.
+Do not configure a network driver under ``client_api_attach``; the backend
+rejects it. Changing a shared-file ``client_api_attach`` entry requires
+restarting the site.
 
 Shared-Filesystem Attach
 ------------------------
@@ -274,35 +276,34 @@ Shared-file Attach supports trainer-first or job-first startup. The CJ publishes
 its dynamic listener URL under a locked rendezvous claim keyed by site name and
 ``attach_id``.
 
-Network Attach
---------------
+Network Attach through the CP
+-----------------------------
 
-Use a registered network driver when the trainer cannot share a filesystem with
-the CJ. Production network Attach requires mTLS:
+When the trainer cannot share a filesystem with the CJ, connect it to the
+existing CP listener described by ``internal``. No dynamic CJ listener,
+job-specific server certificate/key, fixed Attach port, or ``listening_host``
+is required. A secure trainer profile uses the provisioned site CA/client
+certificate/key for Cell authentication and end-to-end message protection.
 
 .. code-block:: json
 
   {
-    "client_api_attach": {
-      "scheme": "grpcs",
-      "resources": {
-        "host": "site-1.example.com",
-        "port": 8102,
-        "connection_security": "mtls"
-      }
-    }
+    "schema_version": 1,
+    "execution_mode": "attach",
+    "attach_id": "trainer_a",
+    "site_name": "site-1",
+    "connect_url": "tcp://site-1.example.com:8004",
+    "connection_security": "clear",
+    "secure_mode": true,
+    "ca_cert": "/absolute/path/to/site/startup/rootCA.pem",
+    "job_wait_timeout": null
   }
 
-The client site must have access to its CA, listener certificate, and listener
-key. Provision a client with ``listening_host`` or install equivalent site-local
-listener credentials. The trainer receives the CA and site client credentials;
-never distribute the listener's private key to the trainer.
-
-The listener port must be reachable from the trainer and reserved against
-concurrent jobs. A direct trainer profile is job-specific because it contains
-the CJ FQCN and final listener URL. One-way TLS is rejected. Clear network
-Attach is development-only and requires ``connection_security="clear"`` in the
-trainer profile plus ``allow_insecure_attach=True`` in the job.
+``connect_url`` and ``connection_security`` must match the CP listener. Keep
+``client.crt`` and ``client.key`` beside ``rootCA.pem``. The stable CP-child
+trainer identity can start before the job and bind the dynamic CJ through
+authenticated ``SESSION_OPEN``; the trainer never receives the site's server
+bearer token.
 
 See :ref:`client_api_attach` for job and trainer configuration.
 

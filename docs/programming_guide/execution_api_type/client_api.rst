@@ -419,12 +419,34 @@ Attach Mode
 -----------
 
 Use ``attach`` only when another system independently starts and owns the
-trainer. The trainer initiates a connection to a dedicated Client Job listener
-using a shared-file or direct network Attach profile. Job teardown closes the
-session but does not signal or terminate the trainer process.
+trainer. A network trainer connects through the site's existing Client Parent
+listener; a protected shared-filesystem profile uses a job-owned CJ listener.
+Job teardown closes the protocol session but does not signal or terminate the
+trainer process.
 
 See :ref:`client_api_attach` for configuration, security, migration,
 and runnable examples.
+
+Large payloads and secure jobs
+==============================
+
+Both Cell modes use FOBS and ``DownloadService`` for large values, but they have
+different trust boundaries. Managed ``external_process`` keeps lazy references
+as pass-through: the trainer remains the source, the original source FQCN and
+reference ID are preserved, and the ultimate workflow receiver downloads from
+the trainer. ``attach`` instead materializes task and result payloads at the CJ;
+an original remote reference never crosses that boundary into or out of the
+externally owned trainer. Serializing the concrete object onward may create a
+new CJ-owned transaction.
+
+For secure jobs, a managed external trainer receives the site's ``AUTH_TOKEN``
+and ``AUTH_TOKEN_SIGNATURE`` only after authenticated ``HELLO`` and installs the
+normal outgoing authentication headers. An attached trainer never receives
+those bearer credentials. Network Attach uses the provisioned site Cell
+identity over the existing CP route, while protected shared-file Attach remains
+local to the CJ/trainer boundary. Scoped, short-lived trainer identity,
+DownloadService ACLs, and revocation are planned for 2.10 before lazy Attach
+transfer can cross the CJ boundary.
 
 Examples
 ========

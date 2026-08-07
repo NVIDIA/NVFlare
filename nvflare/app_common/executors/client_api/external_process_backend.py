@@ -29,7 +29,7 @@ import time
 import uuid
 from typing import Any, Optional, Sequence, Tuple, Union
 
-from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReturnCode, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable, make_reply
@@ -47,7 +47,7 @@ from nvflare.client.cell.bootstrap import (
     write_bootstrap_config,
 )
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
@@ -172,7 +172,16 @@ class ExternalProcessBackend(CellBackendBase):
             raise ValueError("external_process mode requires a non-empty command")
 
         try:
-            self._initialize_cell(context, fl_ctx, "external_process")
+            self._initialize_cell(
+                context,
+                fl_ctx,
+                "external_process",
+                pass_through_routes=(
+                    (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK),
+                    (CHANNEL, Topic.RESULT_READY),
+                ),
+                delegate_site_auth=True,
+            )
             cell = self._cell
 
             workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
@@ -1009,6 +1018,7 @@ class ExternalProcessBackend(CellBackendBase):
                 MsgKey.SITE_NAME: self._site_name,
                 MsgKey.HEARTBEAT_INTERVAL: self._context.heartbeat_interval,
                 MsgKey.HEARTBEAT_TIMEOUT: self._context.heartbeat_timeout,
+                **self._session_security_payload(),
             },
         )
 

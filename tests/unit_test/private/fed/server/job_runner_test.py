@@ -483,6 +483,57 @@ def test_stop_run_does_not_publish_terminal_status_before_completion():
     runner.fire_event.assert_not_called()
 
 
+def test_stop_all_runs_logs_info_for_untracked_run_process():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_info = MagicMock()
+    runner._stop_run = MagicMock()
+
+    engine = MagicMock()
+    engine.run_processes = {"job-1": {}}
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = engine
+    runner.running_jobs = {}
+
+    runner.stop_all_runs(fl_ctx)
+
+    runner._stop_run.assert_called_once_with("job-1", fl_ctx)
+    assert runner.log_info.call_args_list == [
+        call(fl_ctx, "Job job-1 is not running. It can not be stopped."),
+        call(fl_ctx, "Stop all the running jobs."),
+    ]
+    assert runner.ask_to_stop is True
+
+
+def test_mark_run_aborted_logs_info_when_job_not_running():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_info = MagicMock()
+    fl_ctx = MagicMock()
+    runner.running_jobs = {}
+
+    msg = runner.mark_run_aborted("job-1", fl_ctx)
+
+    assert msg == "Job job-1 is not running."
+    runner.log_info.assert_called_once_with(fl_ctx, "Job job-1 is not running. It can not be stopped.")
+
+
+def test_fail_run_logs_info_when_job_not_running():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_info = MagicMock()
+    runner._stop_run = MagicMock()
+
+    engine = MagicMock()
+    engine.lock = MagicMock()
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = engine
+    runner.running_jobs = {}
+
+    msg = runner.fail_run("job-1", ProcessExitCode.EXCEPTION, fl_ctx)
+
+    assert msg == "Job job-1 is not running."
+    runner.log_info.assert_called_once_with(fl_ctx, "Job job-1 is not running. It can not be failed.")
+    runner._stop_run.assert_called_once_with("job-1", fl_ctx)
+
+
 def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code():
     runner = JobRunner(workspace_root="/tmp")
     runner.fire_event = MagicMock()

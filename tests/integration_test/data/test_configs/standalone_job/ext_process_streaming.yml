@@ -6,6 +6,9 @@
 # client_api group and the ext_process_streaming group, so the streaming path
 # can also be exercised on its own:
 #   NVFLARE_TEST_FRAMEWORK=ext_process_streaming pytest system_test.py
+# The project is provisioned secure. The large-model case therefore also gates
+# post-HELLO site credential delegation to the descendant trainer Cell: a trainer
+# missing those auth headers fails the existing "unauthenticated msg" validator.
 project_yaml: ./data/projects/client_api.yml
 jobs_root_dir: ./data/jobs
 cleanup: True
