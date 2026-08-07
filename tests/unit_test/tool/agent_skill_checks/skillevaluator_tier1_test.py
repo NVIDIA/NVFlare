@@ -39,6 +39,14 @@ TIER1_VALIDATE_CHECKS = "schema,pii,license,unicode,quality,lint"
 TIER1_STANDALONE_COMMANDS = ("quality-check", "pii-scan", "lint-scripts")
 
 BLOCKING_SEVERITIES = ("critical", "high")
+
+# Quality findings are emitted as advisory MEDIUM/LOW and never reach a blocking severity,
+# so `quality-check` exits 0 even for a skill riddled with them: a skill with 12 findings
+# still passes. The graded score is the only signal that actually moves, so gate on it.
+# The bundled skills currently score 90.2-98.2 (grade A) and a deliberately poor skill
+# scores 72.8 (grade C); 85.0 leaves headroom below today's worst while still catching a
+# real regression.
+QUALITY_SCORE_FLOOR = 85.0
 KEY_ENV_NAMES = (
     "ANTHROPIC_API_KEY",
     "AWS_ACCESS_KEY_ID",
@@ -91,6 +99,19 @@ def test_skillevaluator_tier1_validate_of_bundled_skill(skill_dir, tmp_path):
             f"{skill_dir.name} has {severity_counts[severity]} {severity.upper()} Tier 1 finding(s)\n"
             f"{_failure_message(command, completed)}"
         )
+
+    quality = _quality_entry(report, skill_dir.name)
+    assert quality["overall_score"] >= QUALITY_SCORE_FLOOR, (
+        f"{skill_dir.name} quality score {quality['overall_score']} (grade {quality['grade']}) "
+        f"fell below the {QUALITY_SCORE_FLOOR} floor\n{_failure_message(command, completed)}"
+    )
+
+
+def _quality_entry(report, skill_name):
+    summary = report.get("quality_summary") or []
+    entries = [entry for entry in summary if entry.get("skill_name") == skill_name]
+    assert entries, f"no quality_summary entry for {skill_name}; got {[e.get('skill_name') for e in summary]}"
+    return entries[0]
 
 
 @pytest.mark.parametrize("skill_dir", SKILL_DIRS, ids=lambda path: path.name)
