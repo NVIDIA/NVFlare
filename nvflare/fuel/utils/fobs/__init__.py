@@ -62,9 +62,6 @@ class FOBSContextKey:
     # forwarding node (the CJ) and is the foundation of the B1 pass-through
     # architecture.
     PASS_THROUGH = "pass_through"
-    # When PASS_THROUGH is active, preserve laziness but relay future downloads
-    # through this Cell instead of re-emitting the original source reference.
-    RELAY_PASS_THROUGH = "relay_pass_through"
     # When True, streamed PyTorch tensors are downloaded into temporary files
     # and recomposed as disk-backed lazy tensor references.
     TENSOR_DISK_OFFLOAD = "enable_tensor_disk_offload"

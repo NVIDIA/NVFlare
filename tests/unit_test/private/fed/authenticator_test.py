@@ -60,6 +60,17 @@ def test_validate_auth_headers_accepts_token_from_registered_origin(origin):
 @pytest.mark.parametrize(
     "origin",
     [
+        "site-a.job-1.client_api_trainer_1",
+        "site-a.job-1.-client_api_trainer_a",
+    ],
+)
+def test_validate_auth_headers_accepts_delegated_site_token_from_client_api_trainer(origin):
+    assert _validate(origin, lambda _client_name, _token: "site-a") is None
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
         "site-a_8065f1c4-fd35-47ef-b945-800f4d0d5176_active",
         "site-a_8065f1c4-fd35-47ef-b945-800f4d0d5176_passive",
     ],

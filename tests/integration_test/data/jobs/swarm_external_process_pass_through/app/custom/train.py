@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Produce a streamed result from an external-process Swarm trainer."""
+"""Produce a large pass-through result from an external-process Swarm trainer."""
 
 import numpy as np
 
@@ -25,9 +25,6 @@ def main():
     while flare.is_running():
         input_model = flare.receive()
         weights = np.asarray(input_model.params["numpy_key"])
-
-        # A 4 MiB result makes the DownloadService path visible while keeping the
-        # reproducer CPU-only and independent of any dataset or ML framework.
         trained_weights = np.full((1024, 1024), weights.mean() + 1, dtype=np.float32)
         flare.send(
             flare.FLModel(

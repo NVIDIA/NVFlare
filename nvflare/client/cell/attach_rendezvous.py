@@ -400,10 +400,16 @@ def _validate_endpoint_record(record: dict, site_name: str, attach_id: str) -> d
     ):
         if not isinstance(record.get(key), str) or not record[key]:
             raise ValueError(f"attach endpoint record requires non-empty {key!r}")
-    cj_path = FQCN.split(record[AttachEndpointKey.CJ_FQCN])
-    if len(cj_path) != 2 or cj_path[0] != site_name or FQCN.validate(record[AttachEndpointKey.CJ_FQCN]):
+    cj_fqcn = record[AttachEndpointKey.CJ_FQCN]
+    cp_fqcn = FQCN.get_parent(cj_fqcn)
+    if (
+        not cp_fqcn
+        or FQCN.split(cp_fqcn)[-1] != site_name
+        or len(FQCN.split(cj_fqcn)) != len(FQCN.split(cp_fqcn)) + 1
+        or FQCN.validate(cj_fqcn)
+    ):
         raise ValueError("attach endpoint record has invalid CJ FQCN")
-    expected_trainer_fqcn = make_attach_trainer_fqcn(record[AttachEndpointKey.CJ_FQCN], attach_id)
+    expected_trainer_fqcn = make_attach_trainer_fqcn(cp_fqcn, attach_id)
     if record.get(AttachEndpointKey.TRAINER_FQCN) != expected_trainer_fqcn:
         raise ValueError(
             f"attach endpoint record {AttachEndpointKey.TRAINER_FQCN!r} mismatch: "

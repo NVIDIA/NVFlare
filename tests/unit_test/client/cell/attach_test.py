@@ -17,8 +17,8 @@ import pytest
 from nvflare.client.cell.attach import make_attach_trainer_fqcn, validate_attach_profile
 
 
-def test_rendezvous_fqcn_is_a_child_of_the_job_cell():
-    assert make_attach_trainer_fqcn("site-1.job-1", "trainer_a") == "site-1.job-1.-client_api_trainer_a"
+def test_rendezvous_fqcn_is_a_stable_child_of_the_site_cp():
+    assert make_attach_trainer_fqcn("site-1", "trainer_a") == "site-1.-client_api_trainer_a"
 
 
 @pytest.mark.parametrize(

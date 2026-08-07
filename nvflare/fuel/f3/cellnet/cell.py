@@ -100,16 +100,11 @@ class Adapter:
         channel = request.get_header(StreamHeaderKey.CHANNEL)
         topic = request.get_header(StreamHeaderKey.TOPIC)
         passthrough = bool(request.get_header(MessageHeaderKey.PASS_THROUGH, False))
-        relay_passthrough = False
         if channel in self.cell.decode_pass_through_channels:
             passthrough = True
         if (channel, topic) in self.cell.decode_pass_through_topics:
             passthrough = True
-        if passthrough and (channel, topic) in self.cell.decode_pass_through_relay_topics:
-            relay_passthrough = True
-        decode_ctx = self.cell.get_fobs_context(
-            props={FOBSContextKey.PASS_THROUGH: passthrough, FOBSContextKey.RELAY_PASS_THROUGH: relay_passthrough}
-        )
+        decode_ctx = self.cell.get_fobs_context(props={FOBSContextKey.PASS_THROUGH: passthrough})
         try:
             decode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=decode_ctx)
         except Exception as ex:
@@ -188,7 +183,6 @@ class Cell(StreamCell):
         self.core_cell.update_fobs_context({FOBSContextKey.CELL: self})
         self.decode_pass_through_channels: set = set()  # per-channel opt-in for receiver-side PASS_THROUGH
         self.decode_pass_through_topics: set = set()  # exact (channel, topic) receiver-side opt-in
-        self.decode_pass_through_relay_topics: set = set()  # exact routes that relay lazy refs through this cell
 
     def update_fobs_context(self, props: dict):
         self.core_cell.update_fobs_context(props)
@@ -529,13 +523,10 @@ class Cell(StreamCell):
             self.logger.debug(f"{req_id=}: receiving complete")
             waiter.result = Message(r_future.headers, r_future.result())
             pt = bool(waiter.result.get_header(MessageHeaderKey.PASS_THROUGH, False))
-            relay_pt = False
             if channel in self.decode_pass_through_channels:
                 pt = True
             if (channel, topic) in self.decode_pass_through_topics:
                 pt = True
-            if pt and (channel, topic) in self.decode_pass_through_relay_topics:
-                relay_pt = True
             decode_payload(
                 waiter.result,
                 encoding_key=StreamHeaderKey.PAYLOAD_ENCODING,
@@ -543,7 +534,6 @@ class Cell(StreamCell):
                     props={
                         FOBSContextKey.ABORT_SIGNAL: abort_signal,
                         FOBSContextKey.PASS_THROUGH: pt,
-                        FOBSContextKey.RELAY_PASS_THROUGH: relay_pt,
                     }
                 ),
             )
