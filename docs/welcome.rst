@@ -105,7 +105,7 @@ Key Features
 - **Cross-Silo to Edge** -- From a handful of hospital sites to millions of mobile devices
 - **Hierarchical Architecture** -- Multi-region, tiered FL for large-scale deployments
 - **Multi-Job Execution** -- Concurrent job execution with resource management
-- **3rd-Party Integration** -- FlareAgent for seamless integration with external systems
+- **Client API Attach Mode** -- Attach independently managed trainers without transferring process ownership to NVFLARE
 
 **Built for Customization**
 

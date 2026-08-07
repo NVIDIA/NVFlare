@@ -24,9 +24,8 @@ from nvflare.recipe import ProdEnv
 
 
 class AttachNumpyFedAvgRecipe(NumpyFedAvgRecipe):
-    def __init__(self, attach_id: str, allow_insecure_attach: bool, **kwargs):
+    def __init__(self, attach_id: str, **kwargs):
         self.attach_id = attach_id
-        self.allow_insecure_attach = allow_insecure_attach
         super().__init__(**kwargs)
 
     def _create_client_runner(self, site_config):
@@ -37,7 +36,6 @@ class AttachNumpyFedAvgRecipe(NumpyFedAvgRecipe):
             heartbeat_interval=5.0,
             heartbeat_timeout=30.0,
             task_wait_timeout=600.0,
-            allow_insecure_attach=self.allow_insecure_attach,
             params_exchange_format=ExchangeFormat.NUMPY,
             server_expected_format=ExchangeFormat.NUMPY,
             params_transfer_type=TransferType.FULL,
@@ -49,20 +47,15 @@ def main():
     parser.add_argument("--attach_id", default="numpy_trainer")
     parser.add_argument("--startup_kit_location", required=True)
     parser.add_argument("--username", default="admin@nvidia.com")
-    parser.add_argument(
-        "--allow_insecure_attach",
-        action="store_true",
-        help="Permit an unprotected CJ-owned network listener for a trusted development/POC environment",
-    )
     args = parser.parse_args()
 
     recipe = AttachNumpyFedAvgRecipe(
         attach_id=args.attach_id,
-        allow_insecure_attach=args.allow_insecure_attach,
         name="client-api-attach",
         min_clients=1,
         num_rounds=3,
         model=[[1, 2, 3], [4, 5, 6]],
+        key_metric="weight_mean",
         # The recipe requires an entry-point resource, but Attach never launches it.
         # The operator starts trainer.py independently with its connection profile.
         train_script=str(Path(__file__).with_name("trainer.py")),

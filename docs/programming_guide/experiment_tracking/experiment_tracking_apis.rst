@@ -78,39 +78,12 @@ Add this component to config_fed_client.json:
         "args": {"events_to_convert": ["analytix_log_stats"], "fed_event_prefix": "fed."}
     }
 
-If using the subprocess Client API with the ClientAPILauncherExecutor (rather than the in-process Client API with the InProcessClientAPIExecutor),
-we need to add the ``MetricRelay`` to fire fed events, a ``CellPipe`` for metrics, and an ``ExternalConfigurator`` for client api initialization.
-
-.. code-block::
-
-    {
-      id = "metric_relay"
-      path = "nvflare.app_common.widgets.metric_relay.MetricRelay"
-      args {
-        pipe_id = "metrics_pipe"
-        event_type = "fed.analytix_log_stats"
-        read_interval = 0.1
-      }
-    },
-    {
-      id = "metrics_pipe"
-      path = "nvflare.fuel.utils.pipe.cell_pipe.CellPipe"
-      args {
-        mode = "PASSIVE"
-        site_name = "{SITE_NAME}"
-        token = "{JOB_ID}"
-        root_url = "{ROOT_URL}"
-        secure_mode = "{SECURE_MODE}"
-        workspace_dir = "{WORKSPACE}"
-      }
-    },
-    {
-      id = "config_preparer"
-      path = "nvflare.app_common.widgets.external_configurator.ExternalConfigurator"
-      args {
-        component_ids = ["metric_relay"]
-      }
-    }
+``ClientAPIExecutor`` carries Client API log records in all three execution
+modes. With ``execution_mode="in_process"``, add ``ConvertToFedEvent`` as shown
+above to forward local analytics events to the server. The
+``external_process`` and ``attach`` backends forward the same records as
+federated analytics events directly; they do not require a separate
+``MetricRelay``, metrics ``CellPipe``, or ``ExternalConfigurator``.
 
 
 On the server, configure the experiment tracking system in ``config_fed_server.conf`` using one of the following receivers.
@@ -190,21 +163,7 @@ For example, in the TensorBoard configuration, add this component to ``config_fe
 
 Note that the ``events`` argument is ``analytix_log_stats``, not ``fed.analytix_log_stats``, indicating that this is a local event.
 
-If using the ``MetricRelay`` component, we can similarly component event_type value from ``fed.analytix_log_stats`` to ``analytix_log_stats`` for convention.
-We then must set the ``MetricRelay`` argument ``fed_event`` to ``false`` to fire local events rather than the default fed events.
-
-.. code-block:: yaml
-
-  {
-    id = "metric_relay"
-    path = "nvflare.app_common.widgets.metric_relay.MetricRelay"
-    args {
-      pipe_id = "metrics_pipe"
-      event_type = "analytix_log_stats"
-      # how fast should it read from the peer
-      read_interval = 0.1
-      fed_event = false
-    }
-  }
-
-Then, the metrics will stream to the client.
+``ClientAPIExecutor(execution_mode="in_process")`` emits local
+``analytix_log_stats`` events, so the client-side receiver can consume them
+directly. Out-of-process backends emit federated analytics events for server-side
+receivers instead.

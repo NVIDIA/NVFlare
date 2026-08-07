@@ -89,7 +89,6 @@ python3 -u job.py \
     --client_ids dolly \
     --data_path ${PWD}/dataset \
     --workspace_dir ${PWD}/workspace/dolly_fl_multi_node \
-    --job_dir ${PWD}/workspace/jobs/dolly_fl_multi_node \
     --ports 7777 \
     --gpu "[0,1,2,3,4,5,6,7]" \
     --multi_node \

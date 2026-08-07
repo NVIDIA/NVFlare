@@ -255,10 +255,13 @@ The client configuration is ``config_fed_client.json`` in the config folder of e
                "*"
             ],
             "executor": {
-               "path": "nvflare.app_opt.pt.in_process_client_api_executor.PTInProcessClientAPIExecutor",
+               "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
                "args": {
+                  "execution_mode": "in_process",
                   "task_script_path": "client.py",
-                  "task_script_args": "--batch_size 16 --epochs 2 --num_workers 2"
+                  "task_script_args": "--batch_size 16 --epochs 2 --num_workers 2",
+                  "params_exchange_format": "pytorch",
+                  "server_expected_format": "numpy"
                }
             }
          }

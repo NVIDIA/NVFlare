@@ -71,6 +71,11 @@ class MsgKey:
     ATTACH_ID = "attach_id"
     CONNECT_URL = "connect_url"
     CONNECTION_SECURITY = "connection_security"
+    # Secure managed external-process jobs temporarily delegate the site's bearer
+    # credential after HELLO. These values are never launch-profile fields.
+    SECURE_MODE = "secure_mode"
+    AUTH_TOKEN = "auth_token"
+    AUTH_TOKEN_SIGNATURE = "auth_token_signature"
     TASK_ID = "task_id"
     TASK_SEQ = "task_seq"
     ATTEMPT_ID = "attempt_id"
@@ -83,10 +88,6 @@ class MsgKey:
     RESULT_ID = "result_id"
     RESULT_STATE = "result_state"
     ACCEPTED_ATTEMPT_ID = "accepted_attempt_id"
-    # True when the CJ is the terminal requester for trainer-hosted lazy result
-    # sources. This is independent of the Attach driver's transport security:
-    # a clear shared-file trainer route may still feed a secure, relayed job.
-    RESULT_RELAY = "result_relay"
     # True while send() owns an accepted source, including the RESULT_ACCEPTED race;
     # SHUTDOWN may stop the process only after this becomes False.
     RESULT_SOURCE_LIVE = "result_source_live"
