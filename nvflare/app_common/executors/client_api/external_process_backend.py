@@ -854,15 +854,13 @@ class ExternalProcessBackend(CellBackendBase):
                     self._current_task = None
 
     def _send_task_ready(self, trainer: _TrainerSession, task_message: dict, abort_signal: Signal) -> Tuple[str, Any]:
-        """Send TASK_READY with native cancellation for abort and liveness failures."""
-        timeout = self._context.task_wait_timeout
+        """Send TASK_READY until reply, cancelling on abort, closure, process death, or deadline."""
+        max_timeout = self._context.task_wait_timeout
         transfer_waiters = []
+        started = time.monotonic()
 
         def _on_transaction_created(transaction):
             transfer_waiters.append(DownloadService.get_transfer_waiter(transaction.tx_id))
-
-        def _has_live_task_download():
-            return any(not waiter.done() for waiter in tuple(transfer_waiters))
 
         def _cancel_cause():
             if abort_signal.triggered or (self._context.launch_once and self._abort):
@@ -871,11 +869,8 @@ class ExternalProcessBackend(CellBackendBase):
                 return _SEND_CLOSED, None
             if not self._process_group_alive(trainer):
                 return _SEND_PROCESS_DEAD, None
-            # Transfer progress supersedes heartbeat expiry while materialization is active.
-            if not _has_live_task_download():
-                liveness_error = self._trainer_liveness_error(trainer)
-                if liveness_error:
-                    return _SEND_SESSION_DEAD, liveness_error
+            if max_timeout is not None and time.monotonic() - started >= max_timeout:
+                return _SEND_SESSION_DEAD, f"TASK_READY timed out after {max_timeout}s"
             return None
 
         cancel = _TaskReadyCancelSignal(_cancel_cause)
@@ -885,9 +880,8 @@ class ExternalProcessBackend(CellBackendBase):
                 topic=Topic.TASK_READY,
                 target=trainer.trainer_fqcn,
                 request=new_cell_message({}, task_message),
-                timeout=timeout,
+                timeout=None,
                 abort_signal=cancel,
-                progress_wait_cb=_has_live_task_download,
                 receiver_ids=(trainer.trainer_fqcn,),
                 fobs_ctx_props={
                     FOBSContextKey.STREAM_PROGRESS_CB: lambda **_kwargs: None,
@@ -910,6 +904,8 @@ class ExternalProcessBackend(CellBackendBase):
         if cause is not None:
             self._delete_task_transfers(transfer_waiters)
             return cause
+        if reply is not None and reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.OK:
+            trainer.touch_peer_activity()
         if self._check_task_accepted(reply) is not None:
             # A rejected task has no future consumer for its payload. Receiver
             # confirmation is asynchronous, so retire the source deterministically.
