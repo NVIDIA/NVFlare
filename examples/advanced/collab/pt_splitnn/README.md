@@ -10,92 +10,268 @@ using the Collab API:
 - site 1 sends aligned batch positions and cut-layer activations, while site 2
   returns cut-layer gradients and training metrics.
 
-The image-side coordinator expresses one training step directly:
+The application expresses the activation and gradient exchange as direct Python
+function calls. Tensors, indices, and metrics remain native Python and PyTorch
+values without application-level `Shareable`, `DXO`, data-kind, header,
+tensor-decomposer, or auxiliary-message conversion.
+
+## NVIDIA FLARE Installation
+
+For complete installation instructions, see the
+[NVIDIA FLARE Installation Guide](https://nvflare.readthedocs.io/en/main/installation.html).
+The parent [Advanced Collab API README](../README.md) describes the NVFlare
+setup expected by these examples.
+
+From `examples/advanced/collab/pt_splitnn`, install this example and the
+reused SplitNN/PSI workflow dependencies:
+
+```bash
+python -m pip install -r requirements.txt
+python -m pip install -r ../../vertical_federated_learning/cifar10-splitnn/requirements.txt
+```
+
+## Code Structure
+
+The example keeps deployment wiring, server workflow, client training, and the
+model definition in the same familiar layout as `hello-pt`:
+
+```text
+pt_splitnn/
+├── client.py          # client initialization and SplitNN training loop
+├── server.py          # server-side @collab.main workflow
+├── model.py           # bottom and top PyTorch model definitions
+├── job.py             # CollabRecipe and simulator configuration
+├── data.py            # role-specific views of prepared CIFAR-10 data
+├── requirements.txt   # additional Python dependencies
+└── figs/              # benchmark figures
+```
+
+## Data
+
+This example consumes the data and private-set-intersection artifacts produced
+by the existing
+[CIFAR-10 SplitNN example](../../vertical_federated_learning/cifar10-splitnn/README.md).
+It does not define a separate Collab-specific preparation format.
+
+From the repository root, run the existing vertical splitter:
+
+```bash
+cd examples/advanced/vertical_federated_learning/cifar10-splitnn
+export PYTHONPATH=${PWD}/src:${PWD}/../../cifar10:${PWD}/../../cifar10/pt/src
+python cifar10_split_data_vertical.py \
+    --split_dir /tmp/cifar10_vert_splits \
+    --overlap 10000
+```
+
+This downloads CIFAR-10 under `/tmp/cifar10` and creates the same per-site
+vertical splits used by the existing example. From the same directory, authorize
+its custom PSI adapter in the local simulator workspace and run the existing PSI
+job:
+
+```bash
+mkdir -p /tmp/nvflare/cifar10_psi/local
+printf '%s\n' \
+    '{"class_allow_list": ["nvflare.", "psi.cifar10_local_psi.Cifar10LocalPSI"]}' \
+    > /tmp/nvflare/cifar10_psi/local/resources.json
+
+python - <<'PY'
+from nvflare import SimulatorRunner
+
+simulator = SimulatorRunner(
+    job_folder="jobs/cifar10_psi",
+    workspace="/tmp/nvflare/cifar10_psi",
+    n_clients=2,
+    threads=2,
+    log_config="ERROR",
+)
+simulator.run()
+PY
+```
+
+The Collab job reads the resulting site-specific artifacts directly:
+
+```text
+/tmp/nvflare/cifar10_psi/
+├── site-1/simulate_job/site-1/psi/intersection.txt
+└── site-2/simulate_job/site-2/psi/intersection.txt
+```
+
+The existing SplitNN
+[notebook](../../vertical_federated_learning/cifar10-splitnn/cifar10_split_learning.ipynb)
+explains the vertical split and PSI stages in detail.
+
+## Model
+
+[model.py](model.py) divides the classifier at the SplitNN cut layer:
+
+- `BottomModel` runs at `site-1` and converts images into cut-layer
+  activations;
+- `TopModel` runs at `site-2`, consumes the flattened activations, and produces
+  CIFAR-10 class logits.
+
+During backpropagation, site 2 returns the gradient of the cut-layer activation.
+Site 1 applies that gradient to the retained bottom-model computation graph.
+Neither model half needs an NVFlare-specific base class.
+
+## Client Code
+
+[client.py](client.py) contains data access, model state, and the SplitNN
+training loop for both sites. `job.py` assigns each instance a role, so the
+same implementation initializes either the image-side bottom model or the
+label-side top model.
+
+The key Collab APIs are:
+
+- `@collab.init`: runs once per site and initializes role-specific data, model,
+  optimizer, and loss state;
+- `@collab.publish`: exposes only methods that another site calls;
+- `collab.get_app_prop()`: reads the common dataset root plus the per-site role
+  and PSI intersection file supplied by the recipe;
+- `collab.clients`: provides callable proxies for direct client-to-client calls;
+- `collab.is_aborted`: lets the long-running training method stop cooperatively.
+
+The main interaction remains ordinary Python control flow:
 
 ```python
 gradients = None
 for batch_indices in training_batches:
     if gradients is not None:
-        self.backward(gradients)
-    activations = self.forward(batch_indices)
+        self._backward(gradients)
+
+    activations = self._forward(batch_indices)
     gradients, metrics = label_client.compute_loss(batch_indices, activations)
 ```
 
-Tensors, indices, and metrics remain native Python and PyTorch values in the
-application. There are no application-level `Shareable`, `DXO`, data-kind,
-header, tensor-decomposer, or auxiliary-message conversions.
+`run_splitnn()`, `compute_loss()`, `validation_metrics()`, and `get_model()` are
+published because they cross site boundaries. `_forward()`, `_backward()`, and
+`_validation_forward()` remain local helpers. Native tensors, indices, tuples,
+and dictionaries are used directly without application-level `Shareable`,
+`DXO`, or serialization conversion.
 
-## Install
+## Server-Side Workflow
 
-From `examples/advanced/collab/pt_splitnn`, install the example dependencies:
+[server.py](server.py) defines the one required `@collab.main` entry point. After
+both clients initialize, the server selects the image-side proxy and starts its
+long-running coordinator method:
+
+```python
+@collab.main
+def run(self):
+    image_client, _ = self._clients()
+    return image_client(timeout=RUN_TIMEOUT).run_splitnn()
+```
+
+Site 1 then calls site 2 directly for loss computation, validation, and final
+model collection. The server does not define a parallel task-and-message
+protocol for each SplitNN step.
+
+## Job Recipe Code
+
+[job.py](job.py) connects the server and shared client implementation, supplies
+the common dataset root, and assigns each site its role and existing PSI
+intersection file:
+
+```python
+recipe = CollabRecipe(
+    job_name="collab_pt_splitnn",
+    server=SplitNNServer(),
+    client=SplitNNClient(),
+    min_clients=2,
+    sync_task_timeout=CALL_TIMEOUT,
+)
+recipe.set_client_prop("dataset_root", dataset_root)
+recipe.set_per_site_config(
+    {
+        "site-1": {
+            "role": "image",
+            "intersection_file": _intersection_file(psi_workspace, "site-1"),
+        },
+        "site-2": {
+            "role": "label",
+            "intersection_file": _intersection_file(psi_workspace, "site-2"),
+        },
+    }
+)
+recipe.add_client_file(str(EXAMPLE_DIR / "data.py"))
+recipe.add_client_file(str(EXAMPLE_DIR / "model.py"))
+
+env = SimEnv(clients=recipe.configured_sites(), log_config="ERROR")
+recipe.execute(env)
+```
+
+The imported data and model modules are added to each generated client
+application. The recipe itself is independent of the deployment environment;
+this example selects `SimEnv` for a local two-site simulation.
+
+## Run Job
+
+After completing the existing data-split and PSI workflow, run the Collab
+simulation from the repository root:
 
 ```bash
-python -m pip install -r requirements.txt
+cd examples/advanced/collab/pt_splitnn
+python job.py
 ```
 
-Run the example against the NVFlare installation from this repository.
-
-## Prepare data
-
-Download CIFAR-10 and prepare 10,000 aligned training indices:
-
-```bash
-python prepare_data.py \
-    --data-root /tmp/nvflare/datasets/cifar10 \
-    --overlap 10000
-```
-
-Preparation downloads or verifies both CIFAR-10 splits, then writes:
-
-```text
-/tmp/nvflare/datasets/cifar10/
-├── cifar-10-batches-py/
-├── splitnn_intersection.npy
-└── splitnn_manifest.json
-```
-
-The prepared intersection represents the aligned output that the training
-stage consumes. In a deployment where the parties do not already know their
-common sample IDs, use a private set intersection workflow before SplitNN
-training, as demonstrated by the existing vertical FL example.
-
-Use `--overwrite` when intentionally regenerating existing SplitNN metadata.
-
-## Run
-
-Run the two-site simulation with the settings used by the existing example:
+The defaults consume CIFAR-10 from `/tmp/cifar10` and the two intersection
+files under `/tmp/nvflare/cifar10_psi`. To use the same artifact layout under
+different roots, run:
 
 ```bash
 python job.py \
-    --data-root /tmp/nvflare/datasets/cifar10 \
-    --num-steps 15625 \
-    --batch-size 64 \
-    --validation-frequency 1000
+    --dataset-root /path/to/cifar10 \
+    --psi-workspace /path/to/cifar10_psi
 ```
 
-For a short functional run:
+The training settings are kept beside the algorithm in `client.py`: 15,625
+steps, batch size 64, learning rate 0.01, validation every 1,000 steps, seed 42,
+and float16 cut-layer exchange.
+
+To share one visible GPU between both simulator sites, run:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python job.py \
-    --data-root /tmp/nvflare/datasets/cifar10 \
-    --num-steps 10 \
-    --validation-frequency 0 \
-    --device cuda
+CUDA_VISIBLE_DEVICES=0 python job.py
 ```
 
-Both simulator sites share the single visible GPU in this command. Use
-`--device cpu` instead to run without a GPU.
+PyTorch selects CPU automatically when CUDA is unavailable.
 
-Activations and gradients use float16 for exchange by default, matching the
-bandwidth-saving behavior of the existing example. Pass `--fp32` to keep them
-in float32.
+## Output summary
+
+### Initialization
+
+- `site-1` initializes the image data view and `BottomModel`.
+- `site-2` initializes the label data view and `TopModel`.
+- The server waits for both configured clients, then invokes the published
+  `run_splitnn()` method at `site-1`.
+
+### Training
+
+- Site 1 computes cut-layer activations and calls `compute_loss()` at site 2.
+- Site 2 updates the top model and returns cut-layer gradients and metrics.
+- Site 1 applies the returned gradients to the bottom model.
+- Training and validation metrics are written to TensorBoard.
+
+### Completion
+
+The default simulation workspace is
+`/tmp/nvflare/collab/collab_pt_splitnn`. The `site-1` run directory contains:
+
+- `final_model/splitnn_model.pt`, with the trained bottom and top model states;
+- `tensorboard/`, with training and validation loss and accuracy.
+
+View the metrics with:
+
+```bash
+tensorboard --logdir /tmp/nvflare/collab/collab_pt_splitnn
+```
 
 ## Apples-to-apples comparison
 
-Both implementations were run from clean simulator workspaces with the same
-10,000-sample intersection, model initialization, random batches, 15,625
-steps, batch size 64, SGD parameters, validation cadence, and float16 cut-layer
-exchange.
+Both implementations use `/tmp/cifar10` and the exact same site-specific PSI
+artifacts produced once by the Data commands above. No second intersection is
+generated for the Collab run. The comparison also holds model initialization,
+random batches, 15,625 steps, batch size 64, SGD parameters, validation cadence,
+and float16 cut-layer exchange constant.
 
 ### Benchmark environment
 
@@ -110,14 +286,21 @@ exchange.
 | Python | 3.10.0 |
 | PyTorch | 2.6.0+cu126 |
 | torchvision | 0.21.0+cu126 |
-| NVFlare | Source checkout based on revision `f85d0cb1`, plus this example |
+| NVFlare | Source checkout based on revision `c467e40d`, plus this example |
 
 After preparing the data and configuring the intersection as shown in the
 [existing SplitNN notebook](../../vertical_federated_learning/cifar10-splitnn/cifar10_split_learning.ipynb),
-the existing implementation was launched with:
+the existing implementation was launched with the same local simulator
+authorization for its custom components:
 
 ```bash
 cd examples/advanced/vertical_federated_learning/cifar10-splitnn
+export PYTHONPATH=${PWD}/src:${PWD}/../../cifar10:${PWD}/../../cifar10/pt/src
+mkdir -p /tmp/nvflare/cifar10_splitnn/local
+printf '%s\n' \
+    '{"class_allow_list": ["nvflare.", "splitnn.", "pt.src.model.ModerateCNN"]}' \
+    > /tmp/nvflare/cifar10_splitnn/local/resources.json
+
 CUDA_VISIBLE_DEVICES=0 python - <<'PY'
 from nvflare import SimulatorRunner
 
@@ -136,48 +319,29 @@ The equivalent Collab API run was launched from this example directory with:
 
 ```bash
 cd examples/advanced/collab/pt_splitnn
-CUDA_VISIBLE_DEVICES=0 python job.py \
-    --data-root /tmp/nvflare/datasets/cifar10 \
-    --num-steps 15625 \
-    --batch-size 64 \
-    --learning-rate 0.01 \
-    --validation-frequency 1000 \
-    --device cuda \
-    --seed 42
+CUDA_VISIBLE_DEVICES=0 python job.py
 ```
 
 | Implementation | Elapsed time |
 | --- | ---: |
-| Existing SplitNN | 48m 57.7s |
-| Collab API SplitNN | 43m 55.9s |
+| Existing SplitNN | 50m 04.4s |
+| Collab API SplitNN | 41m 20.4s |
 
-Elapsed time covers each complete command, including simulator startup,
-validation, model export, and shutdown. These are single measurements rather
-than averages over repeated runs.
+Elapsed time covers each complete simulator command, including simulator startup,
+validation, model export, and shutdown. Both simulator environments used
+ERROR-level framework logging so per-message INFO logging did not distort the
+timing. These are single measurements rather than averages over repeated runs.
 
-The Collab API run was about 10.3% faster in this single-GPU simulator run.
-All 15,625 recorded training-loss and training-accuracy values were identical.
-The unsmoothed validation curves also align; occasional accuracy differences
-were limited to one prediction among the 10,000 validation images.
+The Collab API run was about 17.4% faster in this single-GPU simulator run.
+All 15,625 recorded training-loss and training-accuracy values were identical at
+the same steps. The 16 unsmoothed validation points also align: the largest
+loss difference was 4.23e-6, and the largest accuracy difference was one
+prediction among the 10,000 validation images.
 
 ![Existing and Collab API SplitNN curve alignment](figs/splitnn_curve_alignment.png)
 
 The training panels show a 200-step moving average for readability. The
 validation panels show every recorded value without smoothing.
-
-## Outputs
-
-The default simulation workspace is
-`/tmp/nvflare/collab/collab_pt_splitnn`. The `site-1` run directory contains:
-
-- `final_model/splitnn_model.pt`, with the trained bottom and top model states;
-- `tensorboard/`, with training and validation loss and accuracy.
-
-View the metrics with:
-
-```bash
-tensorboard --logdir /tmp/nvflare/collab/collab_pt_splitnn
-```
 
 ## Why the Collab implementation is simpler
 
@@ -201,7 +365,7 @@ any connection can break the algorithm.
 
 With Collab API, the server workflow makes one long-running call to the image
 site. The complete SplitNN loop is then implemented in one place in
-`trainer.py`: site 1 directly uses the label site's return value as the input
+`client.py`: site 1 directly uses the label site's return value as the input
 to its next backward pass. The forward/backward dependency, including the
 reference implementation's one-step-delayed bottom-model update, is visible as
 normal Python control flow.

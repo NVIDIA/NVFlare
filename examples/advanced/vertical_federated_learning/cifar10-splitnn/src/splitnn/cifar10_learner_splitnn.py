@@ -307,7 +307,7 @@ class CIFAR10LearnerSplitNN(Learner):
             pred = self.model.forward(activations)
 
             loss = self.criterion(pred, labels)
-            self.val_loss.append(loss.unsqueeze(0))  # unsqueeze needed for later concatenation
+            self.val_loss.append((loss * len(labels)).unsqueeze(0))
 
             _, pred_labels = torch.max(pred, 1)
 
@@ -318,10 +318,9 @@ class CIFAR10LearnerSplitNN(Learner):
 
     def _log_validation(self, fl_ctx: FLContext):
         if len(self.val_loss) > 0:
-            loss = torch.mean(torch.cat(self.val_loss))
-
             _val_pred_labels = torch.cat(self.val_pred_labels)
             _val_labels = torch.cat(self.val_labels)
+            loss = torch.sum(torch.cat(self.val_loss)) / len(_val_labels)
             acc = (_val_pred_labels == _val_labels).sum() / len(_val_labels)
 
             self.log_info(
@@ -541,7 +540,7 @@ class CIFAR10LearnerSplitNN(Learner):
                 return make_reply(ReturnCode.TASK_ABORTED)
 
             self.log_debug(fl_ctx, f"Starting current round={self.current_round} of {self.num_rounds}.")
-            self.train_batch_indices = np.random.randint(0, self.train_size - 1, self.batch_size)
+            self.train_batch_indices = np.random.randint(0, self.train_size, self.batch_size)
 
             # Site-1 image forward & backward (from 2nd round)
             fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=False)

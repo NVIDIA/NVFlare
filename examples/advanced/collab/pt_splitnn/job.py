@@ -18,97 +18,95 @@ import argparse
 import logging
 from pathlib import Path
 
-from data import validate_prepared_data
-from prepare_data import DEFAULT_DATA_ROOT
-from trainer import SplitNNTrainer
-from workflow import SplitNNWorkflow
+from client import BATCH_SIZE, CALL_TIMEOUT, NUM_STEPS, SplitNNClient
+from server import SplitNNServer
 
 from nvflare.collab import CollabRecipe, simple_logging
 from nvflare.recipe import SimEnv
 
 JOB_NAME = "collab_pt_splitnn"
+DEFAULT_DATASET_ROOT = "/tmp/cifar10"
+DEFAULT_PSI_WORKSPACE = "/tmp/nvflare/cifar10_psi"
 EXAMPLE_DIR = Path(__file__).resolve().parent
 
 
 def define_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="CIFAR-10 SplitNN training with the Collab API")
-    parser.add_argument("--data-root", default=DEFAULT_DATA_ROOT, help="Prepared data root from prepare_data.py")
-    parser.add_argument("--num-steps", type=int, default=15_625)
-    parser.add_argument("--batch-size", type=int, default=64)
-    parser.add_argument("--learning-rate", type=float, default=0.01)
-    parser.add_argument("--validation-frequency", type=int, default=1000)
-    parser.add_argument("--log-frequency", type=int, default=100)
-    parser.add_argument("--call-timeout", type=float, default=600.0)
-    parser.add_argument("--run-timeout", type=float, default=7200.0)
-    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
-    parser.add_argument("--fp32", action="store_true", help="Exchange float32 instead of float16 tensors")
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--dataset-root",
+        default=DEFAULT_DATASET_ROOT,
+        help="CIFAR-10 root populated by the existing vertical data splitter",
+    )
+    parser.add_argument(
+        "--psi-workspace",
+        default=DEFAULT_PSI_WORKSPACE,
+        help="Workspace produced by the existing cifar10_psi job",
+    )
     parser.add_argument("--workspace-root", default="/tmp/nvflare/collab")
     return parser
 
 
-def make_recipe(args, manifest: dict) -> CollabRecipe:
-    if args.num_steps < 1 or args.batch_size < 1:
-        raise ValueError("--num-steps and --batch-size must be >= 1")
-    if args.learning_rate <= 0 or args.call_timeout <= 0 or args.run_timeout <= 0:
-        raise ValueError("--learning-rate, --call-timeout, and --run-timeout must be > 0")
-    if args.validation_frequency < 0 or args.log_frequency < 1:
-        raise ValueError("--validation-frequency must be >= 0 and --log-frequency must be >= 1")
+def _intersection_file(psi_workspace: str, site_name: str) -> str:
+    path = (
+        Path(psi_workspace).expanduser().resolve() / site_name / "simulate_job" / site_name / "psi" / "intersection.txt"
+    )
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"PSI intersection file not found at {path}. "
+            "Run the existing CIFAR-10 vertical split and cifar10_psi workflow first."
+        )
+    return str(path)
 
-    device = None if args.device == "auto" else args.device
+
+def make_recipe(dataset_root: str, psi_workspace: str) -> CollabRecipe:
+    """Connect the server, shared client code, and existing PSI artifacts."""
+    dataset_root = str(Path(dataset_root).expanduser().resolve())
+    intersection_files = {site_name: _intersection_file(psi_workspace, site_name) for site_name in ("site-1", "site-2")}
+
+    # CollabRecipe packages the server object and shared client object as an
+    # NVFlare job while preserving their decorated Python call boundaries.
     recipe = CollabRecipe(
         job_name=JOB_NAME,
-        server=SplitNNWorkflow(
-            train_size=manifest["overlap"],
-            test_size=manifest["test_size"],
-            num_steps=args.num_steps,
-            batch_size=args.batch_size,
-            validation_frequency=args.validation_frequency,
-            run_timeout=args.run_timeout,
-            call_timeout=args.call_timeout,
-            seed=args.seed,
-            log_frequency=args.log_frequency,
-        ),
-        client=SplitNNTrainer(
-            data_root=args.data_root,
-            learning_rate=args.learning_rate,
-            fp16=not args.fp32,
-            device=device,
-            seed=args.seed,
-        ),
+        server=SplitNNServer(),
+        # The same client implementation is deployed to both sites.
+        client=SplitNNClient(),
         min_clients=2,
-        sync_task_timeout=args.call_timeout,
+        sync_task_timeout=CALL_TIMEOUT,
     )
-    recipe.set_client_prop("data_root", args.data_root)
+    # Common properties are read by clients with collab.get_app_prop().
+    recipe.set_client_prop("dataset_root", dataset_root)
+    # Each client receives the role and intersection file produced for its site.
     recipe.set_per_site_config(
         {
-            "site-1": {"role": "image"},
-            "site-2": {"role": "label"},
+            "site-1": {"role": "image", "intersection_file": intersection_files["site-1"]},
+            "site-2": {"role": "label", "intersection_file": intersection_files["site-2"]},
         }
     )
+    # Include modules imported by client.py in each generated client app.
     recipe.add_client_file(str(EXAMPLE_DIR / "data.py"))
     recipe.add_client_file(str(EXAMPLE_DIR / "model.py"))
     return recipe
 
 
 def main():
+    """Build the recipe from existing SplitNN data artifacts and simulate it."""
     args = define_parser().parse_args()
-    args.data_root = str(Path(args.data_root).expanduser().resolve())
-    manifest = validate_prepared_data(args.data_root)
     simple_logging(logging.INFO)
-    recipe = make_recipe(args, manifest)
+    recipe = make_recipe(args.dataset_root, args.psi_workspace)
 
     print("=" * 80)
     print("CIFAR-10 COLLAB SPLITNN")
     print("  Image/model-bottom site: site-1")
     print("  Label/model-top site: site-2")
-    print(f"  Aligned training samples: {manifest['overlap']}")
-    print(f"  Steps: {args.num_steps}")
-    print(f"  Batch size: {args.batch_size}")
-    print(f"  Data root: {args.data_root}")
+    print(f"  Steps: {NUM_STEPS}")
+    print(f"  Batch size: {BATCH_SIZE}")
+    print(f"  Dataset root: {Path(args.dataset_root).expanduser().resolve()}")
+    print(f"  PSI workspace: {Path(args.psi_workspace).expanduser().resolve()}")
     print("=" * 80)
 
-    env = SimEnv(clients=recipe.configured_sites(), workspace_root=args.workspace_root)
+    # The recipe is deployment-independent; SimEnv selects local simulation.
+    # Quiet framework transfer logs keep output and end-to-end timing focused on the workload.
+    env = SimEnv(clients=recipe.configured_sites(), workspace_root=args.workspace_root, log_config="ERROR")
     run = recipe.execute(env)
     print("Job Status:", run.get_status())
     print("Results at:", run.get_result())

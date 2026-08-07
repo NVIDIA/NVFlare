@@ -48,9 +48,9 @@ its first run.
 `pt_async_cifar10` additionally needs TensorBoard; follow its
 [setup and prepared-data workflow](pt_async_cifar10/README.md) before running
 the Collab recipe.
-`pt_splitnn` uses PyTorch, torchvision, and TensorBoard; follow its
-[prepared-data and two-site workflow](pt_splitnn/README.md) before running the
-Collab recipe.
+`pt_splitnn` uses PyTorch, torchvision, TensorBoard, and the existing
+CIFAR-10 vertical split/PSI artifacts; follow its
+[data and two-site workflow](pt_splitnn/README.md) before running the Collab recipe.
 
 The advanced Collab examples run against an NVFlare installation from this
 repository. The PyTorch example requirements files list only their additional

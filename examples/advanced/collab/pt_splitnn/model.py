@@ -43,7 +43,10 @@ import torch.nn as nn
 
 
 class BottomModel(nn.Module):
-    """Image-side convolutional model, ending at the SplitNN cut layer."""
+    """Image-side convolutional model, ending at the SplitNN cut layer.
+
+    Its activations are the only model features sent to the label site.
+    """
 
     def __init__(self):
         super().__init__()
@@ -71,7 +74,11 @@ class BottomModel(nn.Module):
 
 
 class TopModel(nn.Module):
-    """Label-side classifier consuming flattened cut-layer activations."""
+    """Label-side classifier consuming flattened cut-layer activations.
+
+    Backpropagation produces cut-layer gradients that are returned to the
+    image site; labels and classifier parameters remain local.
+    """
 
     def __init__(self):
         super().__init__()
