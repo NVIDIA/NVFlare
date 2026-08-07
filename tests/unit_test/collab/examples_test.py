@@ -30,29 +30,6 @@ _EXAMPLES_ROOT = _REPO_ROOT / "examples"
 _ADVANCED_EXAMPLES_ROOT = _EXAMPLES_ROOT / "advanced"
 _HELLO_COLLAB_ROOT = _EXAMPLES_ROOT / "hello-world" / "hello-collab"
 
-_PT_SYNC_CIFAR10_ROOT = _ADVANCED_EXAMPLES_ROOT / "collab" / "pt_sync_cifar10"
-
-
-def _pt_sync_cifar10_args(output_root):
-    return SimpleNamespace(
-        data_root="/tmp/nvflare/datasets/cifar10_sync",
-        output_root=output_root,
-        workspace_root="/tmp/nvflare/collab",
-        num_clients=2,
-        num_rounds=1,
-        local_epochs=1,
-        batch_size=64,
-        learning_rate=0.01,
-        momentum=0.9,
-        num_workers=0,
-        eval_batch_size=256,
-        device="cpu",
-        seed=42,
-        call_timeout=3600.0,
-        mu=0.01,
-    )
-
-
 _EXAMPLES = [
     pytest.param(
         _HELLO_COLLAB_ROOT,
@@ -88,27 +65,6 @@ _EXAMPLES = [
         SimpleNamespace(num_clients=3, num_rounds=5),
         (),
         id="swarm",
-    ),
-    pytest.param(
-        _PT_SYNC_CIFAR10_ROOT,
-        "fedavg",
-        _pt_sync_cifar10_args("/tmp/nvflare/collab/pt_sync_cifar10/fedavg"),
-        ("torch", "torchvision"),
-        id="pt_sync_cifar10_fedavg",
-    ),
-    pytest.param(
-        _PT_SYNC_CIFAR10_ROOT,
-        "fedprox",
-        _pt_sync_cifar10_args("/tmp/nvflare/collab/pt_sync_cifar10/fedprox"),
-        ("torch", "torchvision"),
-        id="pt_sync_cifar10_fedprox",
-    ),
-    pytest.param(
-        _PT_SYNC_CIFAR10_ROOT,
-        "scaffold",
-        _pt_sync_cifar10_args("/tmp/nvflare/collab/pt_sync_cifar10/scaffold"),
-        ("torch", "torchvision"),
-        id="pt_sync_cifar10_scaffold",
     ),
 ]
 

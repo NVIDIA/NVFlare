@@ -1,68 +1,56 @@
 # Advanced Collab API Examples
 
-These self-contained examples demonstrate custom workflows built with the core
-Collab programming model. For a minimal introduction that mirrors
-`hello-world/hello-numpy`, start with
-[Hello NumPy Collab](../../hello-world/hello-collab/README.md).
+These examples demonstrate custom workflows built with the Collab programming
+model. Start with
+[Hello NumPy Collab](../../hello-world/hello-collab/README.md) for the smallest
+introduction.
 
-Every entry point builds a `CollabRecipe` and runs it directly with the standard
-`SimEnv`:
+## Run
+
+Each entry point builds a `CollabRecipe` and executes it with `SimEnv`:
 
 ```bash
-cd examples/advanced   # makes the collab package available to module imports
+cd examples/advanced
 
 python -m collab.hello_fedavg.hello_fedavg
 python -m collab.simple_split_learning.simple_split_learning
 python -m collab.async_aggregation.async_aggregation
 python -m collab.swarm.swarm --num-clients 3
+python -m collab.pt_cifar10.fedavg.job
+python -m collab.pt_cifar10.fedprox.job
+python -m collab.pt_cifar10.scaffold.job
 ```
 
 ## Examples
 
 | Example | Demonstrates |
 |---|---|
-| `hello_fedavg` | The Collab API in one file: `@collab.main`, `@collab.publish`, `collab.clients.train(...)`, per-site config |
-| `simple_split_learning` | Split learning on MNIST with client-side images and bottom model, server-side labels and top model, and direct activation/gradient exchange |
+| `hello_fedavg` | The Collab API in one file: `@collab.main`, `@collab.publish`, and `collab.clients.train(...)` |
+| `simple_split_learning` | Direct activation and gradient exchange for split learning |
 | `async_aggregation` | In-time aggregation with a response callback |
-| `swarm` | Decentralized swarm learning with client-to-client calls |
-| [`pt_sync_cifar10`](pt_sync_cifar10/README.md) | Synchronous PyTorch CIFAR-10 FedAvg, FedProx, and SCAFFOLD with native tensor exchange |
-| [`pt_async_cifar10`](pt_async_cifar10/README.md) | Asynchronous PyTorch CIFAR-10 training with prepared logical-client shards |
+| `swarm` | Decentralized client-to-client calls |
+| [`pt_cifar10/fedavg`](pt_cifar10/README.md#fedavg) | Synchronous PyTorch FedAvg with direct client calls |
+| [`pt_cifar10/fedprox`](pt_cifar10/README.md#fedprox) | FedAvg client training extended with a proximal loss |
+| [`pt_cifar10/scaffold`](pt_cifar10/README.md#scaffold) | Model and control-variate exchange with SCAFFOLD |
+| [`pt_async_cifar10`](pt_async_cifar10/README.md) | Asynchronous PyTorch training with logical-client shards |
 
-Every server object or module must define exactly one `@collab.main` entry
-point. A workflow with multiple stages should call them from that single entry
-point.
-
-Each example is self-contained. Its entry point and any trainer,
-strategy, widget, or utility modules that it needs live together in that
-example's directory; there is no shared `common` package. A helper used by more
-than one example is intentionally kept with each consumer so an example can be
-copied or adapted on its own.
+Every server object or module defines one `@collab.main` entry point. Client
+operations callable by the workflow use `@collab.publish`. Related algorithm
+variants may share small model, data, or aggregation modules at their suite
+root.
 
 To use another deployment mode, execute the same recipe with `PocEnv` or
-`ProdEnv` from `nvflare.recipe`; Collab has no separate runner or environment
-abstraction. Recipes pass configured filesystem paths to their server and
-clients; deployment environments do not copy data at those paths or retrieve
-server-local outputs automatically. Stage required data on every participating
-system before a distributed run and collect outputs from the server afterward.
-The synchronous CIFAR-10 example documents its exact
-[data and output topology](pt_sync_cifar10/README.md#deployment-data-and-output-topology).
+`ProdEnv` from `nvflare.recipe`. Paths configured in a recipe must already
+exist on the system where each server or client runs.
 
-The NumPy examples run in a base installation; `hello_fedavg` needs PyTorch.
-`simple_split_learning` needs PyTorch and torchvision and downloads MNIST on
-its first run.
-`pt_sync_cifar10` needs PyTorch and torchvision; follow its
-[prepared-data workflow](pt_sync_cifar10/README.md) before running an
-algorithm.
-`pt_async_cifar10` additionally needs TensorBoard; follow its
-[setup and prepared-data workflow](pt_async_cifar10/README.md) before running
-the Collab recipe.
+The NumPy examples run in a base installation. PyTorch examples require
+PyTorch; the CIFAR-10 examples also require torchvision. The asynchronous
+CIFAR-10 example additionally requires TensorBoard and its documented
+prepared-data workflow.
 
-The advanced Collab examples run against an NVFlare installation from this
-repository. The per-example requirements files contain only their additional
-framework dependencies; add NVFlare package pins once Collab is available in a
-released package.
+These examples run against an NVFlare installation from this repository. Their
+requirements files list only extra framework dependencies.
 
-For the design behind the API see the
-[Collab API design](../../../docs/design/collab_api_design.md). For a step-by-step
-migration from local training to Collab see the
-[migration tutorial](../../../docs/design/collab_api_migration_tutorial.md).
+See the [Collab API design](../../../docs/design/collab_api_design.md) and
+[migration tutorial](../../../docs/design/collab_api_migration_tutorial.md) for
+more detail.
