@@ -45,6 +45,7 @@ REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.INFRASTRUCTURE_ERROR: PROCESS_EXIT_REASON[ProcessExitCode.INFRASTRUCTURE_ERROR],
     JobReturnCode.ABORTED: "aborted",
 }
+TERMINAL_OUTCOME_REPORT_ATTEMPTS = 3
 
 
 class _PendingJobHandle(JobHandleSpec):
@@ -623,15 +624,15 @@ class JobExecutor(ClientExecutor):
                     if return_code == JobReturnCode.SUCCESS
                     else f"client job exited with code {return_code}"
                 )
-            if failure_reason:
-                request = new_cell_message(
-                    headers={},
-                    payload={
-                        JobFailureMsgKey.JOB_ID: job_id,
-                        JobFailureMsgKey.CODE: return_code,
-                        JobFailureMsgKey.REASON: failure_reason,
-                    },
-                )
+            request = new_cell_message(
+                headers={},
+                payload={
+                    JobFailureMsgKey.JOB_ID: job_id,
+                    JobFailureMsgKey.CODE: return_code,
+                    JobFailureMsgKey.REASON: failure_reason,
+                },
+            )
+            for attempt in range(TERMINAL_OUTCOME_REPORT_ATTEMPTS):
                 try:
                     reply = self.client.cell.send_request(
                         target=FQCN.ROOT_SERVER,
@@ -641,12 +642,16 @@ class JobExecutor(ClientExecutor):
                         timeout=self.job_query_timeout,
                         optional=True,
                     )
-                    if reply.get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK:
-                        self.logger.error(f"could not report terminal outcome of job {job_id}")
+                    rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+                    if rc == ReturnCode.OK:
+                        break
+                    error = f"server returned {rc}"
                 except Exception as e:
-                    self.logger.error(
-                        f"could not report terminal outcome of job {job_id}: {secure_format_exception(e)}"
-                    )
+                    error = secure_format_exception(e)
+                if attempt + 1 == TERMINAL_OUTCOME_REPORT_ATTEMPTS:
+                    self.logger.error(f"could not report terminal outcome of job {job_id}: {error}")
+                else:
+                    time.sleep(1.0)
 
         if allocated_resource:
             resource_manager.free_resources(

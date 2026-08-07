@@ -102,6 +102,20 @@ class JobRunner(FLComponent):
         self._pending_client_outcomes = {}
         self.lock = threading.Lock()
 
+    def is_client_outcome_pending(self, job_id: str, client_name: str) -> bool:
+        with self.lock:
+            return client_name in self._pending_client_outcomes.get(job_id, set())
+
+    def resolve_client_outcome(self, job_id: str, client_name: str):
+        with self.lock:
+            self._pending_client_outcomes.get(job_id, set()).discard(client_name)
+
+    def get_client_outcome_jobs(self, client_name: str = None) -> set:
+        with self.lock:
+            if client_name is None:
+                return set(self._pending_client_outcomes)
+            return {job_id for job_id, clients in self._pending_client_outcomes.items() if client_name in clients}
+
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_START:
             engine = fl_ctx.get_engine()
@@ -415,7 +429,7 @@ class JobRunner(FLComponent):
                     job = self.running_jobs.get(job_id)
                     if job:
                         with self.lock:
-                            if self._pending_client_outcomes.get(job_id):
+                            if self._pending_client_outcomes.get(job_id) and not job.run_aborted:
                                 continue
                         with engine.new_context() as completion_ctx:
                             completion_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)

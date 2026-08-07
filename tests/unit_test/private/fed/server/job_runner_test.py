@@ -462,6 +462,17 @@ def test_fail_run_gives_infrastructure_error_precedence(first_code, second_code)
     assert run_process[RunProcessKey.PROCESS_RETURN_CODE] == ProcessExitCode.INFRASTRUCTURE_ERROR
 
 
+def test_client_outcome_tracking_api():
+    runner = JobRunner(workspace_root="/tmp")
+    runner._pending_client_outcomes = {"job-1": {"site-1", "site-2"}, "job-2": set()}
+
+    assert runner.get_client_outcome_jobs() == {"job-1", "job-2"}
+    assert runner.get_client_outcome_jobs("site-1") == {"job-1"}
+    assert runner.is_client_outcome_pending("job-1", "site-1")
+    runner.resolve_client_outcome("job-1", "site-1")
+    assert not runner.is_client_outcome_pending("job-1", "site-1")
+
+
 def test_stop_run_does_not_publish_terminal_status_before_completion():
     runner = JobRunner(workspace_root="/tmp")
     runner.log_info = MagicMock()
@@ -573,7 +584,7 @@ def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code
 
     job_manager.set_status.assert_not_called()
     runner.ask_to_stop = False
-    runner._pending_client_outcomes["job-1"].clear()
+    job.run_aborted = True
     with _patch_job_runner_sleep(_stop_after_first_pass):
         runner._job_complete_process(engine)
 

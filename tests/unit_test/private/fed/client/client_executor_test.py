@@ -27,6 +27,7 @@ from nvflare.apis.job_launcher_spec import JobHandleSpec, JobReturnCode
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
+from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_executor import REPORTABLE_JOB_FAILURES, JobExecutor, _PendingJobHandle
@@ -462,6 +463,7 @@ def test_start_app_rejects_launch_metadata_drift(tmp_path, deployed_meta, start_
 def test_wait_child_process_reports_failure_return_code_to_server(return_code, reason):
     client = MagicMock()
     client.client_name = "site-1"
+    client.cell.send_request.return_value.get_header.return_value = ReturnCode.OK
     job_executor = JobExecutor(client=client, startup="startup")
 
     job_handle = MagicMock()
@@ -505,6 +507,7 @@ def test_wait_child_process_reports_failure_return_code_to_server(return_code, r
 def test_wait_child_process_preserves_launcher_infrastructure_error_over_rc_file(tmp_path):
     client = MagicMock()
     client.client_name = "site-1"
+    client.cell.send_request.return_value.get_header.return_value = ReturnCode.OK
     job_executor = JobExecutor(client=client, startup="startup")
     job_handle = MagicMock()
     job_handle.poll.return_value = ProcessExitCode.INFRASTRUCTURE_ERROR
@@ -534,6 +537,7 @@ def test_wait_child_process_preserves_launcher_infrastructure_error_over_rc_file
 def test_wait_child_process_reports_non_failure_return_code(return_code):
     client = MagicMock()
     client.client_name = "site-1"
+    client.cell.send_request.return_value.get_header.return_value = ReturnCode.OK
     job_executor = JobExecutor(client=client, startup="startup")
 
     job_handle = MagicMock()
@@ -557,5 +561,38 @@ def test_wait_child_process_reports_non_failure_return_code(return_code):
     client.cell.send_request.assert_called_once()
     payload = client.cell.send_request.call_args.kwargs["request"].payload
     assert payload[JobFailureMsgKey.CODE] == return_code
+    assert "job-1" not in job_executor.run_processes
+    engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
+
+
+def test_wait_child_process_bounds_terminal_outcome_retries():
+    client = MagicMock()
+    client.client_name = "site-1"
+    client.cell.send_request.side_effect = RuntimeError("network unavailable")
+    job_executor = JobExecutor(client=client, startup="startup")
+
+    job_handle = MagicMock()
+    job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
+
+    engine = MagicMock()
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = engine
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_return_code", return_value=JobReturnCode.SUCCESS),
+        patch("nvflare.private.fed.client.client_executor.time.sleep") as sleep,
+    ):
+        job_executor._wait_child_process_finish(
+            client=client,
+            job_id="job-1",
+            allocated_resource=None,
+            token=None,
+            resource_manager=MagicMock(),
+            workspace="/tmp/workspace",
+            fl_ctx=fl_ctx,
+        )
+
+    assert client.cell.send_request.call_count == 3
+    assert sleep.call_count == 2
     assert "job-1" not in job_executor.run_processes
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)

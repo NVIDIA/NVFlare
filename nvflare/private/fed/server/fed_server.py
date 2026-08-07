@@ -850,11 +850,9 @@ class FederatedServer(BaseServer):
             return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED, "", None)
         client_name = registered_client.name
         job_runner = self.engine.job_runner
-        with job_runner.lock:
-            pending_clients = job_runner._pending_client_outcomes.get(job_id)
-            if not pending_clients or client_name not in pending_clients:
-                self.logger.warning(f"Dropped terminal outcome for untracked job/client {job_id}/{client_name}")
-                return make_cellnet_reply(F3ReturnCode.INVALID_REQUEST, "", None)
+        if not job_runner.is_client_outcome_pending(job_id, client_name):
+            self.logger.warning(f"Dropped terminal outcome for untracked job/client {job_id}/{client_name}")
+            return make_cellnet_reply(F3ReturnCode.INVALID_REQUEST, "", None)
 
         if code in (
             ProcessExitCode.CONFIG_ERROR,
@@ -869,8 +867,7 @@ class FederatedServer(BaseServer):
             with self.engine.new_context() as fl_ctx:
                 self.logger.info(f"Aborting job {job_id} due to reported failure from {client}: {reason}")
                 job_runner.stop_run(job_id, fl_ctx)
-        with job_runner.lock:
-            job_runner._pending_client_outcomes.get(job_id, set()).discard(client_name)
+        job_runner.resolve_client_outcome(job_id, client_name)
         return make_cellnet_reply(F3ReturnCode.OK, "", None)
 
     def client_heartbeat(self, request: Message) -> Message:
@@ -925,8 +922,7 @@ class FederatedServer(BaseServer):
             client_jobs = []
 
         client_jobs = set(client_jobs)
-        with self.engine.job_runner.lock:
-            outcome_jobs = set(self.engine.job_runner._pending_client_outcomes)
+        outcome_jobs = self.engine.job_runner.get_client_outcome_jobs()
         server_jobs = set(self.engine.run_processes.keys()).union(outcome_jobs)
         jobs_need_abort = list(client_jobs.difference(server_jobs))
 
@@ -959,10 +955,14 @@ class FederatedServer(BaseServer):
             # Also check jobs that are running on server but not on the client.
             jobs_on_server_but_not_on_client = list(server_jobs.difference(client_jobs))
             dead_job_notifications = []
+            missing_outcome_notifications = []
             if jobs_on_server_but_not_on_client:
                 for job_id in jobs_on_server_but_not_on_client:
                     job_info = self.engine.run_processes.get(job_id)
                     if not job_info:
+                        client = self.client_manager.clients.get(client_token)
+                        if client and self.engine.job_runner.is_client_outcome_pending(job_id, client.name):
+                            missing_outcome_notifications.append((client, job_id))
                         continue
 
                     participating_clients = job_info.get(RunProcessKey.PARTICIPANTS, None)
@@ -980,6 +980,8 @@ class FederatedServer(BaseServer):
 
         for client, job_id in dead_job_notifications:
             self._notify_dead_job(client, job_id, "missing job on client")
+        for client, job_id in missing_outcome_notifications:
+            self._resolve_missing_client_outcome(client, job_id, "missing job on client")
 
         return jobs_need_abort
 
@@ -991,6 +993,16 @@ class FederatedServer(BaseServer):
                 f"Failed to notify_dead_job to runner process of job {job_id}: {secure_format_exception(ex)}"
             )
 
+    def _resolve_missing_client_outcome(self, client, job_id: str, reason: str):
+        job_runner = self.engine.job_runner
+        if not job_runner.is_client_outcome_pending(job_id, client.name):
+            return
+        if job_id not in self.engine.run_processes:
+            with self.engine.new_context() as fl_ctx:
+                self.logger.warning(f"Failing job {job_id}: terminal outcome unavailable from {client.name}: {reason}")
+                job_runner.fail_run(job_id, ProcessExitCode.INFRASTRUCTURE_ERROR, fl_ctx)
+        job_runner.resolve_client_outcome(job_id, client.name)
+
     def notify_dead_client(self, client):
         """Called to do further processing of the dead client
 
@@ -1000,10 +1012,10 @@ class FederatedServer(BaseServer):
         Returns:
 
         """
-        # find all RUNs that this client is participating
-        if not self.engine.run_processes:
-            return
+        for job_id in self.engine.job_runner.get_client_outcome_jobs(client.name):
+            self._resolve_missing_client_outcome(client, job_id, "client dead")
 
+        # find all RUNs that this client is participating
         for job_id, process_info in self.engine.run_processes.items():
             assert isinstance(process_info, dict)
             participating_clients = process_info.get(RunProcessKey.PARTICIPANTS, None)
