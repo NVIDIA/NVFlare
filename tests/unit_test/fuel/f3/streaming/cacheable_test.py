@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, List
 
 import pytest
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
+from nvflare.fuel.f3.streaming import cacheable as cacheable_module
 from nvflare.fuel.f3.streaming.cacheable import CacheableObject, ItemConsumer
 from nvflare.fuel.f3.streaming.download_service import DownloadService, ProduceRC
 from nvflare.fuel.utils.network_utils import get_open_ports
@@ -34,6 +37,48 @@ class MockCacheableObject(CacheableObject):
 
     def produce_item(self, index: int) -> bytes:
         return self.items[index].encode() if isinstance(self.items[index], str) else self.items[index]
+
+
+class BlockingCacheableObject(MockCacheableObject):
+    """Cacheable object that exposes concurrent item production to tests."""
+
+    def __init__(self, items: list, max_chunk_size: int):
+        self.produce_started = threading.Event()
+        self.two_productions_started = threading.Event()
+        self.allow_produce = threading.Event()
+        self._produce_calls_lock = threading.Lock()
+        self.produce_calls = 0
+        self.fail_next_production = False
+        super().__init__(items, max_chunk_size)
+
+    def produce_item(self, index: int) -> bytes:
+        with self._produce_calls_lock:
+            self.produce_calls += 1
+            if self.produce_calls >= 2:
+                self.two_productions_started.set()
+        self.produce_started.set()
+        assert self.allow_produce.wait(timeout=5.0)
+        if self.fail_next_production:
+            self.fail_next_production = False
+            raise RuntimeError("production failed")
+        return super().produce_item(index)
+
+
+class ObservedFuture(Future):
+    """Future that signals after two receivers are waiting for its result."""
+
+    def __init__(self):
+        super().__init__()
+        self._waiter_lock = threading.Lock()
+        self._waiter_count = 0
+        self.two_waiters = threading.Event()
+
+    def result(self, timeout=None):
+        with self._waiter_lock:
+            self._waiter_count += 1
+            if self._waiter_count >= 2:
+                self.two_waiters.set()
+        return super().result(timeout=timeout)
 
 
 class MockItemConsumer(ItemConsumer):
@@ -140,6 +185,140 @@ class TestCacheableObject:
         rc2, data2, state2 = obj.produce({}, "receiver2")
         assert rc2 == ProduceRC.OK
         assert data2 == data1  # Same data from cache
+
+    def test_concurrent_receivers_share_in_flight_item_production(self, monkeypatch):
+        monkeypatch.setattr(cacheable_module, "Future", ObservedFuture)
+        obj = BlockingCacheableObject(["item1"], max_chunk_size=100)
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            results = [executor.submit(obj.produce, {}, f"receiver{i}") for i in range(3)]
+            assert obj.produce_started.wait(timeout=5.0)
+            with obj.lock:
+                production_future = obj._production_futures[0]
+            assert production_future.two_waiters.wait(timeout=5.0)
+            obj.allow_produce.set()
+
+        produced = [result.result() for result in results]
+        assert [data for rc, data, state in produced] == [[b"item1"]] * 3
+        assert all(rc == ProduceRC.OK and state == {"start": 0, "count": 1} for rc, data, state in produced)
+        assert obj.produce_calls == 1
+        assert not obj._production_futures
+        assert obj._get_item(0, "receiver3") == b"item1"
+        assert obj.produce_calls == 1
+
+    def test_failed_item_production_reaches_waiters_and_is_retryable(self, monkeypatch):
+        monkeypatch.setattr(cacheable_module, "Future", ObservedFuture)
+        obj = BlockingCacheableObject(["item1"], max_chunk_size=100)
+        obj.fail_next_production = True
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            results = [executor.submit(obj._get_item, 0, f"receiver{i}") for i in range(3)]
+            assert obj.produce_started.wait(timeout=5.0)
+            with obj.lock:
+                production_future = obj._production_futures[0]
+            assert production_future.two_waiters.wait(timeout=5.0)
+            obj.allow_produce.set()
+
+        for result in results:
+            with pytest.raises(RuntimeError, match="production failed"):
+                result.result()
+
+        assert not obj._production_futures
+        assert obj._get_item(0, "receiver2") == b"item1"
+        assert obj.produce_calls == 2
+
+    def test_different_items_can_be_produced_concurrently(self):
+        obj = BlockingCacheableObject(["item1", "item2"], max_chunk_size=100)
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = [executor.submit(obj._get_item, i, f"receiver{i}") for i in range(2)]
+            assert obj.two_productions_started.wait(timeout=5.0)
+            obj.allow_produce.set()
+
+        assert [result.result() for result in results] == [b"item1", b"item2"]
+        assert obj.produce_calls == 2
+        assert not obj._production_futures
+
+    def test_cleanup_does_not_strand_in_flight_waiters(self, monkeypatch):
+        monkeypatch.setattr(cacheable_module, "Future", ObservedFuture)
+        obj = BlockingCacheableObject(["item1"], max_chunk_size=100)
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            results = [executor.submit(obj._get_item, 0, f"receiver{i}") for i in range(3)]
+            assert obj.produce_started.wait(timeout=5.0)
+            with obj.lock:
+                production_future = obj._production_futures[0]
+            assert production_future.two_waiters.wait(timeout=5.0)
+            obj.clear_cache()
+            obj.release()
+            obj.allow_produce.set()
+
+        assert [result.result() for result in results] == [b"item1"] * 3
+        assert not obj._production_futures
+        with pytest.raises(RuntimeError, match="released"):
+            obj._get_item(0, "late_receiver")
+
+    def test_cache_publication_failure_does_not_strand_waiters(self, monkeypatch):
+        monkeypatch.setattr(cacheable_module, "Future", ObservedFuture)
+        obj = BlockingCacheableObject(["item1"], max_chunk_size=100)
+        original_debug = obj.logger.debug
+
+        def fail_cache_publication(message):
+            if message.startswith("created and cached"):
+                raise RuntimeError("cache publication failed")
+            original_debug(message)
+
+        monkeypatch.setattr(obj.logger, "debug", fail_cache_publication)
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            results = [executor.submit(obj._get_item, 0, f"receiver{i}") for i in range(3)]
+            assert obj.produce_started.wait(timeout=5.0)
+            with obj.lock:
+                production_future = obj._production_futures[0]
+            assert production_future.two_waiters.wait(timeout=5.0)
+            obj.allow_produce.set()
+
+        for result in results:
+            with pytest.raises(RuntimeError, match="cache publication failed"):
+                result.result()
+        assert not obj._production_futures
+
+    def test_uncached_flight_remains_visible_until_settled(self, monkeypatch):
+        class BlockingSetFuture(Future):
+            def __init__(self):
+                super().__init__()
+                self.set_entered = threading.Event()
+                self.allow_set = threading.Event()
+                self.result_entered = threading.Event()
+
+            def set_result(self, result):
+                self.set_entered.set()
+                assert self.allow_set.wait(timeout=5.0)
+                super().set_result(result)
+
+            def result(self, timeout=None):
+                self.result_entered.set()
+                return super().result(timeout=timeout)
+
+        production_future = BlockingSetFuture()
+        monkeypatch.setattr(cacheable_module, "Future", lambda: production_future)
+        obj = BlockingCacheableObject(["item1"], max_chunk_size=100)
+        obj.clear_cache()
+        obj.allow_produce.set()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first = executor.submit(obj._get_item, 0, "receiver1")
+            assert production_future.set_entered.wait(timeout=5.0)
+            second = executor.submit(obj._get_item, 0, "receiver2")
+            try:
+                assert production_future.result_entered.wait(timeout=5.0)
+                assert obj.produce_calls == 1
+            finally:
+                production_future.allow_set.set()
+
+        assert first.result() == b"item1"
+        assert second.result() == b"item1"
+        assert not obj._production_futures
 
     def test_cacheable_object_cache_clearing_per_item(self, cell):
         """Test that cache is cleared for each item after all receivers get it."""

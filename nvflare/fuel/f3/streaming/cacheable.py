@@ -13,6 +13,7 @@
 # limitations under the License.
 import threading
 from abc import abstractmethod
+from concurrent.futures import Future
 from typing import Any, List, Optional, Tuple
 
 from nvflare.fuel.f3.streaming.download_service import Consumer, Downloadable, DownloadService, ProduceRC
@@ -47,6 +48,10 @@ class CacheableObject(Downloadable):
         self.size = self.get_item_count()
         self.cache: list[tuple[Optional[bytes], int]] = [(None, 0)] * self.size
         self.lock = threading.Lock()
+        # Multiple receivers can request the same uncached item concurrently.
+        # Keep one shared future per item so only one of them performs the
+        # potentially expensive production work (for example safetensors.save).
+        self._production_futures: dict[int, Future] = {}
         self.num_receivers = 0
         self.logger = get_obj_logger(self)
 
@@ -124,40 +129,65 @@ class CacheableObject(Downloadable):
             cache_available = bool(self.cache)
             data = None if not cache_available else self.cache[index][0]
             base_obj = self.base_obj  # snapshot under lock for thread-safety
+            if data is not None:
+                self.logger.debug(f"got item {index} from cache for {requester}")
+                return data
 
-        if not cache_available:
             if base_obj is None:
                 # release() was already called — no new chunk requests should
                 # arrive after transaction_done(), but guard defensively.
                 raise RuntimeError(f"item {index} requested after base_obj released for {requester}")
+
+            production_future = self._production_futures.get(index)
+            if production_future is None:
+                production_future = Future()
+                self._production_futures[index] = production_future
+                produce = True
+            else:
+                produce = False
+
+        if not produce:
+            # Wait outside self.lock. The producer stores the result in the cache
+            # before resolving this future, so later requests use the cache too.
+            self.logger.debug(f"waiting for in-flight item {index} for {requester}")
+            return production_future.result()
+
+        try:
             # produce_item() reads self.base_obj internally and is called outside
-            # the lock.  A concurrent release() could set self.base_obj to None
-            # between the guard above and produce_item's first read.  In practice
-            # this window cannot open: release() is only invoked from
-            # transaction_done_cb, which fires after the download service confirms
-            # all chunks have been delivered — i.e. after this code path has
-            # already returned.  The guard above handles the only truly invalid
-            # state (request arriving after a completed transaction).
-            return self.produce_item(index)
+            # the lock. A concurrent release() cannot normally occur here because
+            # release() runs only after the download service confirms completion.
+            data = self.produce_item(index)
 
-        if data is not None:
-            self.logger.debug(f"got item {index} from cache for {requester}")
-            return data
+            # Publish the result before detaching the flight. A new requester
+            # therefore sees either the cached bytes or the shared future, never
+            # a gap in between that could trigger duplicate production.
+            with self.lock:
+                if self.cache:
+                    existing, count = self.cache[index]
+                    if existing is None:
+                        self.cache[index] = (data, count)
+                        self.logger.debug(f"created and cached item {index} for {requester}: {len(data)} bytes")
+                    else:
+                        data = existing
+                        self.logger.debug(f"got item {index} from cache for {requester}")
+        except BaseException as ex:
+            # Detach before waking waiters. A later request can retry while every
+            # receiver already holding this future observes the same failure.
+            with self.lock:
+                if self._production_futures.get(index) is production_future:
+                    self._production_futures.pop(index)
+            production_future.set_exception(ex)
+            raise
 
-        # Produce outside the lock so concurrent receivers aren't blocked.
-        # If two receivers produce the same item simultaneously, the first
-        # to re-acquire the lock stores its result; the second uses it.
-        data = self.produce_item(index)
-
-        with self.lock:
-            if self.cache:
-                existing, count = self.cache[index]
-                if existing is None:
-                    self.cache[index] = (data, count)
-                    self.logger.debug(f"created and cached item {index} for {requester}: {len(data)} bytes")
-                else:
-                    data = existing
-                    self.logger.debug(f"got item {index} from cache for {requester} (produced concurrently)")
+        # Keep an uncached flight discoverable until it is settled. This matters
+        # when clear_cache() races production: there are no cached bytes to bridge
+        # a detach-before-settle gap for a new requester.
+        try:
+            production_future.set_result(data)
+        finally:
+            with self.lock:
+                if self._production_futures.get(index) is production_future:
+                    self._production_futures.pop(index)
         return data
 
     def _adjust_cache(self, start: int, count: int):

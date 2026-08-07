@@ -62,26 +62,46 @@ class TensorDownloadable(CacheableObject):
     def produce_item(self, index: int) -> bytes:
         key = self.keys[index]
         with self._prefetch_lock:
-            future = self._prefetch_futures.pop(index, None)
-        if future:
-            return future.result()
-        base_obj = self.base_obj
-        if base_obj is None:
-            raise RuntimeError(f"item {index} requested after tensors were released")
-        return save_tensors({key: base_obj[key]})
+            if self._released:
+                raise RuntimeError(f"item {index} requested after tensors were released")
+            future = self._prefetch_futures.get(index)
+            if future is None:
+                base_obj = self.base_obj
+                if base_obj is None:
+                    raise RuntimeError(f"item {index} requested after tensors were released")
+                tensor = base_obj[key]
+        if future is not None:
+            try:
+                return future.result()
+            finally:
+                # Keep the future visible until it is settled so concurrent
+                # demand cannot start a second serialization for this item.
+                with self._prefetch_lock:
+                    if self._prefetch_futures.get(index) is future:
+                        self._prefetch_futures.pop(index)
+        return save_tensors({key: tensor})
 
     def prefetch_item(self, index: int):
-        with self._prefetch_lock:
-            if self._released or index in self._prefetch_futures:
+        # Coordinate cache demand and speculative work under the cache lock.
+        # Without this check, a receiver could schedule a second serialization
+        # after demand consumed a prefetch future but before its bytes reached
+        # the shared cache.
+        with self.lock:
+            if self.cache and self.cache[index][0] is not None:
                 return
-            base_obj = self.base_obj
-            if base_obj is None:
+            if index in self._production_futures:
                 return
-            key = self.keys[index]
-            tensor = base_obj[key]
-            future = stream_thread_pool.submit(save_tensors, {key: tensor})
-            if future:
-                self._prefetch_futures[index] = future
+            with self._prefetch_lock:
+                if self._released or index in self._prefetch_futures:
+                    return
+                base_obj = self.base_obj
+                if base_obj is None:
+                    return
+                key = self.keys[index]
+                tensor = base_obj[key]
+                future = stream_thread_pool.submit(save_tensors, {key: tensor})
+                if future:
+                    self._prefetch_futures[index] = future
 
     def get_item_size(self, index: int) -> Optional[int]:
         base_obj = self.base_obj
@@ -91,6 +111,8 @@ class TensorDownloadable(CacheableObject):
         return tensor.numel() * tensor.element_size()
 
     def release(self):
+        # prefetch_item() takes self.lock before _prefetch_lock, so drop
+        # _prefetch_lock before super().release() acquires self.lock.
         with self._prefetch_lock:
             self._released = True
             futures = list(self._prefetch_futures.values())
