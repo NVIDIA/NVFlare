@@ -512,7 +512,9 @@ Use ``SwarmLearningRecipe`` for a streamlined swarm learning setup:
 
     # Create swarm learning recipe
     # Model can be class instance or dict config
-    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
+    # A relative checkpoint path is bundled and distributed to every client.
+    # An absolute path is not distributed and must be readable at the same path on every client.
+    # For pre-trained weights: initial_ckpt="path/to/pretrained.pt"
     recipe = SwarmLearningRecipe(
         name="swarm_learning",
         model=MyModel(),
@@ -1079,7 +1081,9 @@ Use ``SwarmLearningRecipe`` for swarm learning with optional cross-site evaluati
 
     # Create swarm learning recipe with cross-site evaluation enabled
     # Model can be class instance or dict config
-    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
+    # A relative checkpoint path is bundled and distributed to every client.
+    # An absolute path is not distributed and must be readable at the same path on every client.
+    # For pre-trained weights: initial_ckpt="path/to/pretrained.pt"
     recipe = SwarmLearningRecipe(
         name="swarm_with_cse",
         model=MyModel(),
