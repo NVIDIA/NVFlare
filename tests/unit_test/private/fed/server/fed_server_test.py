@@ -32,6 +32,10 @@ from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, HotState, ServerState
 
 
+def assert_client_outcome_pending(job_runner, job_id, client_name):
+    assert client_name in job_runner._pending_client_outcomes[job_id]
+
+
 class TestFederatedServer:
     @staticmethod
     def _create_job_cell_with_command_agent(server_state):
@@ -365,6 +369,9 @@ class TestFederatedServer:
             other_request = new_cell_message({CellMessageHeaderKeys.JOB_IDS: []}, Shareable())
             server._sync_client_jobs(other_request, token)
             assert "job1" not in server._job_reported_clients
+            server.engine.job_runner._pending_client_outcomes = {"job1": {"site-1"}}
+            request = new_cell_message({CellMessageHeaderKeys.JOB_IDS: ["job1"]}, Shareable())
+            assert server._sync_client_jobs(request, token) == []
 
     def test_disabled_client_heartbeat_is_rejected(self, tmp_path):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
@@ -415,6 +422,9 @@ class TestFederatedServer:
             )
 
             server.client_manager.is_from_authorized_client = MagicMock(return_value=True)
+            server.client_manager.clients = {"token-1": MagicMock(name="site-1")}
+            server.client_manager.clients["token-1"].name = "site-1"
+            server.engine.job_runner._pending_client_outcomes = {"job-1": {"site-1"}}
             fl_ctx = MagicMock()
             server.engine.new_context.return_value = nullcontext(fl_ctx)
             server.engine.job_runner.stop_run = MagicMock()
@@ -459,10 +469,16 @@ class TestFederatedServer:
             )
 
             server.client_manager.is_from_authorized_client = MagicMock(return_value=True)
+            server.client_manager.clients = {"token-1": MagicMock(name="site-1")}
+            server.client_manager.clients["token-1"].name = "site-1"
+            server.engine.job_runner._pending_client_outcomes = {"job-1": {"site-1"}}
             fl_ctx = MagicMock()
             server.engine.new_context.return_value = nullcontext(fl_ctx)
             server.engine.job_runner.stop_run = MagicMock()
             server.engine.job_runner.fail_run = MagicMock()
+            server.engine.job_runner.fail_run.side_effect = lambda *_: assert_client_outcome_pending(
+                server.engine.job_runner, "job-1", "site-1"
+            )
 
             request = new_cell_message(
                 {
@@ -480,6 +496,7 @@ class TestFederatedServer:
 
             server.engine.job_runner.fail_run.assert_called_once_with("job-1", expected_code, fl_ctx)
             server.engine.job_runner.stop_run.assert_not_called()
+            assert server.engine.job_runner._pending_client_outcomes["job-1"] == set()
 
     def test_process_job_failure_ignores_generic_launcher_execution_error(self):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
@@ -495,6 +512,9 @@ class TestFederatedServer:
             )
 
             server.client_manager.is_from_authorized_client = MagicMock(return_value=True)
+            server.client_manager.clients = {"token-1": MagicMock(name="site-1")}
+            server.client_manager.clients["token-1"].name = "site-1"
+            server.engine.job_runner._pending_client_outcomes = {"job-1": {"site-1"}}
             server.engine.job_runner.stop_run = MagicMock()
             server.engine.job_runner.fail_run = MagicMock()
 

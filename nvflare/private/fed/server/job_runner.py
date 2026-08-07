@@ -99,6 +99,7 @@ class JobRunner(FLComponent):
         self.scheduler = None
         self.running_jobs = {}
         self._finished_job_states = {}
+        self._pending_client_outcomes = {}
         self.lock = threading.Lock()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
@@ -281,6 +282,8 @@ class JobRunner(FLComponent):
         if err:
             raise RuntimeError(f"Could not start the server App for job: {job_id}.")
 
+        with self.lock:
+            self._pending_client_outcomes[job_id] = set(client_sites)
         replies = engine.start_client_job(job, client_sites, fl_ctx)
         all_client_sites = list(client_sites.keys())
         active_client_sites = list(all_client_sites)
@@ -330,6 +333,8 @@ class JobRunner(FLComponent):
         active_sites = set(active_client_sites)
         participating_clients = [c.to_dict() for c in job_clients.values() if c.name in active_sites]
         job.meta[JobMetaKey.JOB_CLIENTS] = participating_clients
+        with self.lock:
+            self._pending_client_outcomes[job_id].intersection_update(active_client_sites)
         display_sites = ",".join(active_client_sites)
 
         self.log_info(fl_ctx, f"Started run: {job_id} for clients: {display_sites}")
@@ -409,6 +414,9 @@ class JobRunner(FLComponent):
                 if job_id not in engine.run_processes.keys():
                     job = self.running_jobs.get(job_id)
                     if job:
+                        with self.lock:
+                            if self._pending_client_outcomes.get(job_id):
+                                continue
                         with engine.new_context() as completion_ctx:
                             completion_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
                             finished_state = self._finished_job_states.get(job.job_id)
@@ -443,6 +451,7 @@ class JobRunner(FLComponent):
                             with self.lock:
                                 del self.running_jobs[job_id]
                                 self._finished_job_states.pop(job_id, None)
+                                self._pending_client_outcomes.pop(job_id, None)
                             if status == RunStatus.FINISHED_ABORTED:
                                 self.fire_event(EventType.JOB_ABORTED, completion_ctx)
                             self.fire_event(EventType.JOB_COMPLETED, completion_ctx)
@@ -605,9 +614,10 @@ class JobRunner(FLComponent):
                             self.log_info(fl_ctx, f"Job: {job_id} started to run, status changed to RUNNING.")
                         except Exception as e:
                             if job_id:
-                                if job_id in self.running_jobs:
-                                    with self.lock:
+                                with self.lock:
+                                    if job_id in self.running_jobs:
                                         del self.running_jobs[job_id]
+                                    self._pending_client_outcomes.pop(job_id, None)
                                 self._stop_run(job_id, fl_ctx)
                             job_manager.set_status(ready_job.job_id, RunStatus.FAILED_TO_RUN, fl_ctx)
 
@@ -644,6 +654,7 @@ class JobRunner(FLComponent):
                 raise RuntimeError(f"Could not restore the server App for job: {job_id}.")
             with self.lock:
                 self.running_jobs[job_id] = job
+                self._pending_client_outcomes[job_id] = {c.name for c in job_clients.values()}
             self.scheduler.restore_scheduled_job(job_id)
         except Exception as e:
             self.log_error(
@@ -738,4 +749,5 @@ class JobRunner(FLComponent):
         with self.lock:
             if job_id in self.running_jobs:
                 del self.running_jobs[job_id]
+            self._pending_client_outcomes.pop(job_id, None)
         self.scheduler.remove_scheduled_job(job_id)

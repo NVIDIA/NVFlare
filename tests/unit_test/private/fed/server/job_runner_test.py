@@ -563,10 +563,17 @@ def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code
     job.job_id = "job-1"
     job.run_aborted = False
     runner.running_jobs = {"job-1": job}
+    runner._pending_client_outcomes = {"job-1": {"site-1"}}
 
     def _stop_after_first_pass(_):
         runner.ask_to_stop = True
 
+    with _patch_job_runner_sleep(_stop_after_first_pass):
+        runner._job_complete_process(engine)
+
+    job_manager.set_status.assert_not_called()
+    runner.ask_to_stop = False
+    runner._pending_client_outcomes["job-1"].clear()
     with _patch_job_runner_sleep(_stop_after_first_pass):
         runner._job_complete_process(engine)
 
