@@ -75,8 +75,13 @@ All concrete recipes support the common execution surface:
 
    Recipe scripts reserve ``--export`` and ``--export-dir``. NVFlare consumes
    these arguments during module import, before the script's argument parser
-   runs, and emits a warning identifying them as system-level arguments. Use
-   different option names for script-specific behavior.
+   runs, and emits a warning identifying them as system-level arguments. Recipe
+   scripts should not redeclare these options or add aliases such as
+   ``--export_config`` or ``--export_dir``. For ordinary Recipe scripts, call
+   ``execute`` for both paths and let the system-level arguments select export
+   instead of execution. Keep an explicit export path only when constructing
+   the execution environment requires deployment artifacts that job export
+   itself does not need.
 
 ``recipe.run(env, server_exec_params=None, client_exec_params=None)``
    Submit directly through the environment and return a ``Run`` handle. Most

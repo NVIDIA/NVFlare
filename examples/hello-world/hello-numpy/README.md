@@ -106,6 +106,12 @@ Execute the script using the recipe API to create the job and run it with the si
 python job.py
 ```
 
+To export the same Recipe job without running it:
+
+```bash
+python job.py --export --export-dir /tmp/nvflare/jobs/job_config
+```
+
 ## Access the Logs and Results
 
 Find the running logs and results inside the simulator's workspace:

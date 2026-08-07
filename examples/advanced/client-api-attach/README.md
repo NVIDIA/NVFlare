@@ -1,11 +1,8 @@
 # Client API Attach Mode
 
 This example runs the ordinary Client API loop in a trainer process that is
-started and owned independently of NVFlare. The trainer initiates the Attach
-connection to a dedicated listener owned by the Client Job (CJ); NVFlare never
-starts, signals, or terminates the trainer process.
-With the default shared-filesystem profile, the trainer may start before or after
-the NVFlare job; both sides rendezvous on `attach_id=numpy_trainer`.
+started and owned independently of NVFlare. NVFlare owns the Cell protocol
+session but never starts, signals, or reaps the trainer process.
 
 Use Attach only for this ownership model. If NVFlare should launch and own the
 trainer process, use `external_process`; if training runs in the Client Job, use
@@ -14,24 +11,68 @@ trainer process, use `external_process`; if training runs in the Client Job, use
 for the mode decision, configuration responsibilities, and legacy migration
 mapping.
 
-Attach uses a listener owned by the Client Job (CJ). It does not reuse or change
-the site's ordinary CP-to-CJ `internal` connection:
+Attach keeps the 2.8 `IPCExchanger`/`IPCAgent` trust boundary: the Client Job
+(CJ) materializes trainer results, and the trainer receives no site
+`AUTH_TOKEN` or signature.
+
+## Network Attach through the CP
+
+Network Attach reuses the site's existing Client Parent (CP) listener:
 
 ```text
-federation network <-> CP <-> CJ <- dedicated Attach listener <- trainer
+federation network <-> CP <-> CJ
+                       ^
+                       |
+              externally owned trainer
 ```
 
-The site operator configures the dedicated listener in the site-local
-`comm_config.json` under `client_api_attach`. The trainer independently receives
-either a direct network URL or a shared-filesystem rendezvous directory.
+The CP routes Cell messages between the trainer and dynamic CJ without decoding
+their payloads. The CJ remains the task/result endpoint and materialization
+boundary. No dynamic CJ listener, server certificate, server key, fixed Attach
+port, or `listening_host` provisioning is needed.
+
+Start from `attach_profile_network.json`:
+
+```json
+{
+  "schema_version": 1,
+  "execution_mode": "attach",
+  "attach_id": "numpy_trainer",
+  "site_name": "site-1",
+  "connect_url": "tcp://site-1.example.com:8004",
+  "connection_security": "clear",
+  "secure_mode": true,
+  "ca_cert": "/absolute/path/to/site/startup/rootCA.pem",
+  "job_wait_timeout": null
+}
+```
+
+`connect_url` must be the provisioned CP internal listener, not a CJ URL. Keep
+`client.crt` and `client.key` beside `rootCA.pem`. `secure_mode=true` uses those
+site credentials for Cell authentication and end-to-end payload encryption even
+when the CP transport itself is `connection_security="clear"`, matching the old
+IPCAgent model.
+
+The trainer identity is stable:
+
+```text
+site-1.-client_api_numpy_trainer
+```
+
+It can therefore start before the job and bind the dynamic CJ from authenticated
+`SESSION_OPEN`. For a relayed site, add its stable `cp_fqcn`; add
+`auth_identity` as well when the provisioned site certificate CN differs from
+`site_name`.
+
+The site's normal `comm_config.json.internal` controls this route. Do not add a
+network `client_api_attach` listener; the backend rejects one.
 
 ## Shared-Filesystem Attach
 
-The existing F3 `FileDriver` supports a network-isolated trainer. Tasks,
-heartbeats, results, lazy-result transfers, and shutdown messages all use the
-shared filesystem. The trainer needs no network access, DNS, CA, or certificate.
+The existing F3 `FileDriver` supports a network-isolated trainer. Only this
+CJ-to-trainer connection uses shared-file; CP-to-CJ stays on the normal network.
 
-Add this section to the site's `local/comm_config.json`:
+Add this section to the site-local `comm_config.json`:
 
 ```json
 {
@@ -45,18 +86,7 @@ Add this section to the site's `local/comm_config.json`:
 }
 ```
 
-This section is independent of `internal`; CP-to-CJ communication may continue
-using its default TCP driver, gRPC, mTLS, or another configured driver.
-
-The site/CJ runtime and trainer must see `root_dir` at the same absolute path.
-Keep it owned by the dedicated site account and restrict its group to the intended
-trainer principals. `FileDriver` creates directories with mode `0770` and files
-with mode `0660`, explicitly restoring those group permissions after creation so
-a restrictive process umask cannot block a different user in the shared group;
-filesystem access is the peer-access boundary.
-
-The checked-in `attach_profile_shared_file.json` names the stable rendezvous
-directory, not the driver's dynamic `shared-file://.../lst_<id>` URL:
+The trainer profile names the stable rendezvous directory:
 
 ```json
 {
@@ -69,77 +99,21 @@ directory, not the driver's dynamic `shared-file://.../lst_<id>` URL:
 }
 ```
 
-When the CJ starts, it creates its Attach listener and atomically publishes the
-dynamic URL under the site/attach-ID rendezvous claim. A trainer started first
-waits for that record. The CJ holds a cross-node POSIX advisory lock for its
-lifetime, which rejects a concurrent live job using the same `attach_id` and
-makes an unlocked crash artifact ineligible for discovery. The shared filesystem
-must provide working cross-node advisory locks and coherent atomic rename.
+The site/CJ and trainer must see the same absolute path. Keep the path owned by
+the dedicated site account and restrict its group to the intended trainer
+principals. The backend validates the FileDriver ownership marker, directory and
+file permissions, and cross-node claim lock. A world-accessible route is always
+rejected.
 
-Shared-file Attach does not require `--allow_insecure_attach`. The backend checks
-the actual CJ-owned listener, FileDriver ownership marker, connection directory,
-root permissions, and rendezvous permissions. An unsafe shared-file path is
-rejected even when the insecure network opt-in is set.
+The trainer may start before or after the job. When the CJ starts, it publishes
+the dynamic FileDriver endpoint under `(site_name, attach_id)`. The trainer
+needs no network, DNS, CA, or certificate.
 
-## Network Attach
-
-A registered network driver can instead be configured on the dedicated listener:
-
-```json
-{
-  "client_api_attach": {
-    "scheme": "grpcs",
-    "resources": {
-      "host": "site-1.example.com",
-      "port": 8102,
-      "connection_security": "mtls"
-    }
-  }
-}
-```
-
-The checked-in `attach_profile_network.json` is the corresponding direct-profile
-template:
-
-```json
-{
-  "schema_version": 1,
-  "execution_mode": "attach",
-  "attach_id": "numpy_trainer",
-  "site_name": "site-1",
-  "cj_fqcn": "site-1.<job_id>",
-  "connect_url": "grpcs://site-1.example.com:8102",
-  "connection_security": "mtls",
-  "ca_cert": "/absolute/path/to/trainer-credentials/rootCA.pem",
-  "job_wait_timeout": null
-}
-```
-
-Keep `client.crt` and `client.key` beside `rootCA.pem`; the Cell credential
-helper discovers all three files from that directory. The CJ listener requires its
-site-local CA, server certificate, and server key. A default provisioned client
-kit does not contain `server.crt`/`server.key`; provision the site with
-`listening_host` set (or otherwise install a site-local listener certificate and
-key) before configuring the `grpcs` listener. Never distribute the server key to
-the trainer.
-
-The direct profile is job-specific: replace `<job_id>` with the submitted job ID.
-The trainer FQCN is derived as
-`<cj_fqcn>.-client_api_<attach_id>`, so a direct network trainer needs that CJ
-identity before constructing its Cell. Unlike shared-file rendezvous, a static
-direct profile cannot discover a later job automatically.
-
-Bare-CA one-way TLS (`connection_security=tls`) is rejected. Clear network
-listeners—including loopback listeners—require both an explicit
-`connection_security=clear` in the profile and
-`--allow_insecure_attach` on `job.py`. The flag only acknowledges an unprotected
-CJ-to-trainer network route; it does not affect CP-to-CJ communication and must
-not be used on an untrusted network.
-
-Changing site-local `comm_config.json` requires restarting the site. A fixed
-network port must also be reserved so another concurrent job cannot bind it.
-Shared-file rendezvous avoids a fixed port and is preferred for local,
-network-isolated trainers.
+FileDriver creates directories and files with group access for the intended
+site/trainer principals. The shared filesystem must support coherent atomic
+rename and cross-node POSIX advisory locks. Shared-file Attach does not require
+`--allow_insecure_attach`; an unsafe path is rejected regardless of that
+deprecated compatibility argument.
 
 ## Local POC
 
@@ -150,39 +124,21 @@ nvflare poc config --pw /tmp/nvflare-attach-poc
 nvflare poc prepare -n 1 --force
 ```
 
-Create
-`/tmp/nvflare-attach-poc/example_project/prod_00/site-1/local/comm_config.json`
-with a dedicated shared-file Attach listener. Replace `/absolute/shared/...`
-below and in a private copy of `attach_profile_shared_file.json` with the same
-existing, absolute directory; create it with mode `0770` under a
-non-world-writable parent:
+For the simplest POC, configure the shared-file section above in:
 
-```json
-{
-  "client_api_attach": {
-    "scheme": "shared-file",
-    "resources": {
-      "root_dir": "/absolute/shared/nvflare-client-api-attach",
-      "connection_security": "clear",
-      "poll_interval": 0.01,
-      "max_poll_interval": 0.25
-    }
-  }
-}
+```text
+/tmp/nvflare-attach-poc/example_project/prod_00/site-1/local/comm_config.json
 ```
 
-The checked-in `attach_profile_shared_file.json` uses the same explicit
-placeholder so the example never silently trusts a shared `/tmp` location.
+Use the same existing absolute directory in a private copy of
+`attach_profile_shared_file.json`, and create it with mode `0770` under a
+non-world-writable parent.
 
-The component policy must authorize the exact job components. In each directory,
-copy `resources.json.default` to `resources.json` if needed, preserve the existing
-`class_allow_list`, and add:
+The site component policy must allow:
 
-- `site-1/local/resources.json`:
-  `nvflare.app_common.executors.client_api_executor.ClientAPIExecutor`
-
-`MetricsArtifactWriter` is already in the default allow-list. Do not replace the
-site allow-list with a broad package prefix.
+```text
+nvflare.app_common.executors.client_api_executor.ClientAPIExecutor
+```
 
 Start the POC and install the example dependency:
 
@@ -191,7 +147,7 @@ nvflare poc start -ex admin@nvidia.com
 python -m pip install -r examples/advanced/client-api-attach/requirements.txt
 ```
 
-In one terminal, submit and monitor the job:
+Submit the job:
 
 ```bash
 python examples/advanced/client-api-attach/job.py \
@@ -199,46 +155,26 @@ python examples/advanced/client-api-attach/job.py \
   /tmp/nvflare-attach-poc/example_project/prod_00/admin@nvidia.com
 ```
 
-In another terminal, start the independently managed trainer:
+Start the externally managed trainer in either order:
 
 ```bash
 cd examples/advanced/client-api-attach
 python trainer.py --config attach_profile_shared_file.json
 ```
 
-The trainer and job commands may be started in either order. `job.py` uses
-`ProdEnv`, waits for completion, and prints the downloaded result directory.
-Pass `--username` if the startup kit belongs to another administrator.
-
-For network Attach, configure the `client_api_attach` network listener described
-above, replace every placeholder in `attach_profile_network.json`, and run:
-
-```bash
-python trainer.py --config attach_profile_network.json
-```
-
-The direct profile contains the job-specific CJ FQCN, so normally submit the job
-and generate the final profile before starting the network trainer. The training
-code and job recipe are otherwise identical to the shared-file example.
+For network Attach, replace the placeholders in
+`attach_profile_network.json` with the CP route and trainer credential paths,
+then run the same command with that profile.
 
 Successful output ends with `Status: FINISHED:COMPLETED`. For this three-round
-example, verify the final model with:
-
-```bash
-python -c 'import numpy as np, sys; print(np.load(sys.argv[1]))' \
-  <RESULT_DIR>/workspace/models/server.npy
-```
-
-The expected value is:
+example, the final model is:
 
 ```text
 [[4 5 6]
  [7 8 9]]
 ```
 
-The server job log is `<RESULT_DIR>/workspace/log.txt`. The client job log is
-`/tmp/nvflare-attach-poc/example_project/prod_00/site-1/<JOB_ID>/log.txt`.
-
-`flare.send()` returns only after lazy result payloads reach receiver-confirmed
-terminal success. Keep the trainer alive through that confirmation. Job teardown
-closes the Attach Cell session but never terminates the externally owned process.
+Large trainer results use ordinary FOBS `ViaDownloader` transfer to the CJ.
+The CJ materializes the result. Forwarding that concrete result may create a
+new CJ-owned `DownloadService` transaction; the trainer reference does not
+cross the CJ boundary.
