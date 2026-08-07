@@ -45,7 +45,7 @@ class CacheableObject(Downloadable):
         check_non_negative_int("max_chunk_size", max_chunk_size)
         self.max_chunk_size = max_chunk_size
         self.size = self.get_item_count()
-        self.cache: list[tuple[Optional[bytes], int]] = [(None, 0)] * self.size
+        self.cache: list[tuple[Optional[Any], int]] = [(None, 0)] * self.size
         self.lock = threading.Lock()
         self.num_receivers = 0
         self.logger = get_obj_logger(self)
@@ -60,13 +60,13 @@ class CacheableObject(Downloadable):
         pass
 
     @abstractmethod
-    def produce_item(self, index: int) -> bytes:
+    def produce_item(self, index: int) -> Any:
         """This method is called to produce the chunk for the specified item.
 
         Args:
             index: index of the item.
 
-        Returns: a chunk for the item
+        Returns: a download chunk for the item
 
         """
         pass
@@ -83,6 +83,14 @@ class CacheableObject(Downloadable):
     def get_item_size(self, index: int) -> Optional[int]:
         """Return a lower-bound item size when it is known without production."""
         return None
+
+    def is_item_exclusive(self, index: int, item: Any = None) -> bool:
+        """Whether an item must be the only item in a produced reply.
+
+        ``item`` is omitted for the pre-production check and supplied after
+        ``produce_item`` so subclasses can validate the actual representation.
+        """
+        return False
 
     def set_transaction(self, tx_id, ref_id):
         tx_info = DownloadService.get_transaction_info(tx_id)
@@ -119,7 +127,7 @@ class CacheableObject(Downloadable):
         with self.lock:
             self.base_obj = None
 
-    def _get_item(self, index: int, requester: str) -> bytes:
+    def _get_item(self, index: int, requester: str) -> Any:
         with self.lock:
             cache_available = bool(self.cache)
             data = None if not cache_available else self.cache[index][0]
@@ -197,6 +205,8 @@ class CacheableObject(Downloadable):
 
         for i in range(start, self.size):
             if result:
+                if self.is_item_exclusive(i):
+                    break
                 estimated_size = self.get_item_size(i)
                 if estimated_size is not None and total_size + estimated_size >= self.max_chunk_size:
                     break
@@ -205,6 +215,8 @@ class CacheableObject(Downloadable):
             if not result or total_size + item_size < self.max_chunk_size:
                 result.append(item)
                 total_size += item_size
+                if self.is_item_exclusive(i, item):
+                    break
             else:
                 # _get_item() already produced and cached this item.
                 should_prefetch = False

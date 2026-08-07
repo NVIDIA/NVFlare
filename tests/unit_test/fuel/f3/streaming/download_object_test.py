@@ -21,7 +21,7 @@ import nvflare.fuel.f3.streaming.download_service as download_service
 from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.streaming.download_service import Consumer, ProduceRC, download_object
+from nvflare.fuel.f3.streaming.download_service import Consumer, ProduceRC, _encode_direct_control, download_object
 
 
 class MockConsumer(Consumer):
@@ -101,6 +101,54 @@ class TestDownloadObject:
         assert not consumer.failed
         assert consumer.consumed_data == [b"chunk1"]
         assert cell.send_request.call_count == 2
+
+    def test_direct_chunk_uses_initial_capability_and_protected_control(self, cell):
+        class DirectConsumer(MockConsumer):
+            def get_initial_state(self):
+                return {"direct_capability": "v1"}
+
+            def consume_direct_chunk(self, data):
+                return bytes(data)
+
+        consumer = DirectConsumer()
+        state = {"start": 0, "count": 1, "direct_capability": "v1"}
+        direct_reply = Message(
+            headers={MessageHeaderKey.RETURN_CODE: ReturnCode.OK, "direct_download": True},
+            payload=bytearray(_encode_direct_control(ProduceRC.OK, state) + b"chunk1"),
+        )
+        cell.send_request.side_effect = [direct_reply, _make_reply(ReturnCode.OK, status=ProduceRC.EOF)]
+
+        download_object("server.site-1", "ref-001", 10.0, cell, consumer)
+
+        assert consumer.completed
+        assert consumer.consumed_data == [b"chunk1"]
+        first_request = cell.send_request.call_args_list[0].kwargs["request"]
+        assert first_request.payload["state"] == {"direct_capability": "v1"}
+        second_request = cell.send_request.call_args_list[1].kwargs["request"]
+        assert second_request.payload["state"] == state
+
+    def test_direct_chunk_rejects_non_data_status_before_materializing(self, cell):
+        class DirectConsumer(MockConsumer):
+            def __init__(self):
+                super().__init__()
+                self.direct_calls = 0
+
+            def consume_direct_chunk(self, data):
+                self.direct_calls += 1
+                return bytes(data)
+
+        consumer = DirectConsumer()
+        direct_reply = Message(
+            headers={MessageHeaderKey.RETURN_CODE: ReturnCode.OK, "direct_download": True},
+            payload=bytearray(_encode_direct_control(ProduceRC.EOF, {}) + b"unexpected"),
+        )
+        cell.send_request.return_value = direct_reply
+
+        download_object("server.site-1", "ref-001", 10.0, cell, consumer)
+
+        assert consumer.failed
+        assert "invalid direct download status" in consumer.failure_reason
+        assert consumer.direct_calls == 0
 
     def test_multi_chunk_download(self, cell, consumer):
         """Test download with multiple chunks before EOF."""

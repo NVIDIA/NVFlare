@@ -13,6 +13,7 @@
 # limitations under the License.
 import dataclasses
 import functools
+import struct
 import threading
 import time
 import uuid
@@ -20,12 +21,15 @@ import weakref
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Optional, Tuple
 
+import msgpack
+
 from nvflare.apis.fl_constant import SystemConfigs
 from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import Encoding, MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_utils import callback_thread_pool, download_request_thread_pool
 from nvflare.fuel.f3.streaming.transfer_outcome import (  # noqa: F401 (re-exported legacy names)
     DownloadStatus,
@@ -45,6 +49,10 @@ from nvflare.security.logging import secure_format_exception
 
 OBJ_DOWNLOADER_CHANNEL = "download_service__"
 OBJ_DOWNLOADER_TOPIC = "download_service__download"
+_DIRECT_MAGIC = b"NVFDR001"
+_DIRECT_HEADER = struct.Struct("<8sII")
+_DIRECT_ALIGNMENT = 64
+_DIRECT_MAX_CONTROL_SIZE = 1024 * 1024
 
 """
 This package provides a framework for building object downloading capability (file download, tensor download, etc.).
@@ -183,11 +191,68 @@ class Downloadable(ABC):
         pass
 
 
+class DirectDownloadChunk:
+    """A bytes-like chunk sent as the reply payload instead of through FOBS."""
+
+    def __init__(self, data):
+        buffers = data if isinstance(data, list) else [data]
+        if not buffers or any(not isinstance(item, (bytes, bytearray, memoryview)) for item in buffers):
+            raise TypeError("direct chunk data must be bytes-like or a non-empty list of bytes-like buffers")
+        self.data = []
+        for item in buffers:
+            view = memoryview(item)
+            if not view.c_contiguous:
+                raise ValueError("direct chunk buffers must be C-contiguous")
+            self.data.append(view.cast("B"))
+
+    def __len__(self) -> int:
+        return sum(item.nbytes for item in self.data)
+
+
+def _encode_direct_control(status: str, state: dict) -> bytes:
+    control = msgpack.packb({_PropKey.STATUS: status, _PropKey.STATE: state}, use_bin_type=True)
+    if len(control) > _DIRECT_MAX_CONTROL_SIZE:
+        raise ValueError(f"direct download control is too large: {len(control)} bytes")
+    unpadded_size = _DIRECT_HEADER.size + len(control)
+    header_size = (unpadded_size + _DIRECT_ALIGNMENT - 1) // _DIRECT_ALIGNMENT * _DIRECT_ALIGNMENT
+    return _DIRECT_HEADER.pack(_DIRECT_MAGIC, len(control), header_size) + control + bytes(header_size - unpadded_size)
+
+
+def _decode_direct_control(data) -> tuple[str, dict, memoryview]:
+    buffer = memoryview(data)
+    if not buffer.c_contiguous:
+        raise ValueError("direct download payload must be C-contiguous")
+    buffer = buffer.cast("B")
+    if len(buffer) < _DIRECT_HEADER.size:
+        raise ValueError("direct download payload is too short")
+    magic, control_size, header_size = _DIRECT_HEADER.unpack_from(buffer)
+    if magic != _DIRECT_MAGIC:
+        raise ValueError("invalid direct download magic")
+    expected_header_size = (
+        (_DIRECT_HEADER.size + control_size + _DIRECT_ALIGNMENT - 1) // _DIRECT_ALIGNMENT * _DIRECT_ALIGNMENT
+    )
+    if control_size > _DIRECT_MAX_CONTROL_SIZE or header_size != expected_header_size or header_size > len(buffer):
+        raise ValueError("invalid direct download header size")
+    if any(buffer[_DIRECT_HEADER.size + control_size : header_size]):
+        raise ValueError("invalid direct download header padding")
+    control = msgpack.unpackb(
+        buffer[_DIRECT_HEADER.size : _DIRECT_HEADER.size + control_size], raw=False, strict_map_key=True
+    )
+    if not isinstance(control, dict) or set(control) != {_PropKey.STATUS, _PropKey.STATE}:
+        raise ValueError("invalid direct download control schema")
+    status = control[_PropKey.STATUS]
+    state = control[_PropKey.STATE]
+    if not isinstance(status, str) or not isinstance(state, dict):
+        raise ValueError("invalid direct download control values")
+    return status, state, buffer[header_size:]
+
+
 class _PropKey:
     REF_ID = "ref_id"
     STATE = "state"
     DATA = "data"
     STATUS = "status"
+    DIRECT = "direct_download"
     # Receiver-confirmed completion. All three keys are OPTIONAL on the wire so both
     # version skews interop with legacy peers: an old receiver never sends CONFIRM_CAPABLE and
     # gets today's producer-served semantics; an old producer never sends CONFIRM_EXPECTED so a
@@ -1566,6 +1631,23 @@ class DownloadService:
                         bytes_delta=bytes_delta,
                         items_delta=items_delta,
                     )
+                direct_chunk = None
+                if isinstance(data, list):
+                    direct_items = [item for item in data if isinstance(item, DirectDownloadChunk)]
+                    if direct_items:
+                        if len(data) != 1:
+                            raise RuntimeError("a direct download chunk must be the only item in its reply")
+                        direct_chunk = direct_items[0]
+                elif isinstance(data, DirectDownloadChunk):
+                    direct_chunk = data
+
+                if direct_chunk is not None:
+                    reply = make_reply(ReturnCode.OK)
+                    reply.payload = [_encode_direct_control(rc, new_state), *direct_chunk.data]
+                    reply.set_header(_PropKey.DIRECT, True)
+                    reply.set_header(StreamHeaderKey.PAYLOAD_ENCODING, Encoding.BYTES)
+                    return reply
+
                 # no CONFIRM_EXPECTED on data chunks: the receiver only consumes it from the
                 # terminal reply (confirms are sent only after terminal serves), so advertising
                 # per chunk would be dead weight on the hottest wire message
@@ -1685,6 +1767,18 @@ class Consumer(ABC):
     def __init__(self):
         self.logger = get_obj_logger(self)
 
+    def get_initial_state(self) -> Optional[dict]:
+        """Return optional receiver capabilities for the first request.
+
+        Producers that do not recognize these values must ignore them and
+        return their normal state, preserving compatibility with older peers.
+        """
+        return None
+
+    def consume_direct_chunk(self, data) -> Any:
+        """Materialize a negotiated direct reply before ``consume`` is called."""
+        raise TypeError(f"{type(self).__name__} does not support direct download chunks")
+
     @abstractmethod
     def consume(self, ref_id: str, state: dict, data: Any) -> dict:
         """Called to process the received data.
@@ -1801,7 +1895,9 @@ def download_object(
     download_start = time.time()
     # Track current download state (None = initial request).
     # On retry, resend the same state so producer re-generates the same chunk.
-    current_state = None
+    current_state = consumer.get_initial_state()
+    if current_state is not None and not isinstance(current_state, dict):
+        raise TypeError(f"consumer initial state must be dict or None but got {type(current_state)}")
 
     # Receiver-confirmed completion: we advertise the capability on every request (when the
     # kill-switch is on) and learn from each reply whether the producer consumes confirmations.
@@ -1955,12 +2051,26 @@ def download_object(
             )
         consecutive_timeouts = 0
 
-        payload = reply.payload
-        assert isinstance(payload, dict)
-        if payload.get(_PropKey.CONFIRM_EXPECTED):
-            producer_expects_confirm = True
-            confirm_nonce = payload.get(_PropKey.CONFIRM_NONCE)
-        status = payload.get(_PropKey.STATUS)
+        if reply.get_header(_PropKey.DIRECT):
+            try:
+                status, state, direct_data = _decode_direct_control(reply.payload)
+                if status != ProduceRC.OK:
+                    raise ValueError(f"invalid direct download status {status!r}")
+                data = consumer.consume_direct_chunk(direct_data)
+            except Exception as ex:
+                consumer.download_failed(ref_id, f"exception decoding direct chunk: {secure_format_exception(ex)}")
+                _emit_progress("failed", force=True)
+                return
+            payload = None
+        else:
+            payload = reply.payload
+            assert isinstance(payload, dict)
+            if payload.get(_PropKey.CONFIRM_EXPECTED):
+                producer_expects_confirm = True
+                confirm_nonce = payload.get(_PropKey.CONFIRM_NONCE)
+            status = payload.get(_PropKey.STATUS)
+            data = payload.get(_PropKey.DATA)
+            state = payload.get(_PropKey.STATE)
         if status == ProduceRC.EOF:
             elapsed = time.time() - download_start
             size_mb = total_bytes / (1024 * 1024)
@@ -1988,12 +2098,10 @@ def download_object(
 
         # Good DATA reply.
         # CacheableObject sends a list of byte-chunks; FileDownloader sends raw bytes.
-        data = payload.get(_PropKey.DATA)
         if data is not None:
             total_bytes += sum(len(c) for c in data) if isinstance(data, list) else len(data)
             if isinstance(data, list):
                 total_items = (total_items or 0) + len(data)
-        state = payload.get(_PropKey.STATE)
 
         if pipeline_enabled:
             # Snapshot the request state so a contract-violating in-place

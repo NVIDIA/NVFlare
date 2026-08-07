@@ -20,15 +20,19 @@ from unittest.mock import Mock, patch
 import pytest
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import Encoding, MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.streaming.download_service import (
     Consumer,
+    DirectDownloadChunk,
     DownloadService,
     DownloadStatus,
     ProduceRC,
     TransactionDoneStatus,
+    _decode_direct_control,
+    _encode_direct_control,
 )
+from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.f3.streaming.transfer_outcome import compute_transfer_outcome
 from nvflare.fuel.utils.network_utils import get_open_ports
 from tests.unit_test.fuel.f3.streaming.download_test_utils import (
@@ -111,6 +115,58 @@ class TestDownloadService:
 
         # Clean up
         DownloadService.delete_transaction(tx_id)
+
+    def test_direct_chunk_is_encoded_as_raw_bytes_reply(self):
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        class DirectDownloadable(MockDownloadable):
+            def produce(self, state, requester):
+                return ProduceRC.OK, [DirectDownloadChunk([b"prefix", memoryview(b"body")])], {"next": 1}
+
+        service = _make_isolated_download_service()
+        tx = _Transaction(timeout=10.0, num_receivers=1)
+        ref = tx.add_object(DirectDownloadable([]))
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+            service._ref_table[ref.rid] = ref
+
+        reply = service._handle_download(_make_download_request(ref.rid, "receiver1"))
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        assert reply.get_header("direct_download") is True
+        assert reply.get_header(StreamHeaderKey.PAYLOAD_ENCODING) == Encoding.BYTES
+        wire = bytearray(b"".join(reply.payload))
+        status, state, body = _decode_direct_control(wire)
+        assert status == ProduceRC.OK
+        assert state == {"next": 1}
+        assert bytes(body) == b"prefixbody"
+
+    def test_direct_control_round_trip_keeps_writable_body_view(self):
+        wire = bytearray(_encode_direct_control(ProduceRC.OK, {"start": 3, "count": 1}) + b"body")
+
+        status, state, body = _decode_direct_control(wire)
+        body[0] = ord("B")
+
+        assert status == ProduceRC.OK
+        assert state == {"start": 3, "count": 1}
+        assert bytes(body) == b"Body"
+
+    @pytest.mark.parametrize("wire", [bytearray(b"short"), bytearray(b"BADMAGIC" + bytes(64))])
+    def test_direct_control_rejects_malformed_payload(self, wire):
+        with pytest.raises(ValueError):
+            _decode_direct_control(wire)
+
+    def test_direct_control_rejects_noncanonical_header_size(self):
+        from nvflare.fuel.f3.streaming import download_service
+
+        wire = bytearray(_encode_direct_control(ProduceRC.OK, {}) + bytes(128))
+        magic, control_size, header_size = download_service._DIRECT_HEADER.unpack_from(wire)
+        download_service._DIRECT_HEADER.pack_into(
+            wire, 0, magic, control_size, header_size + download_service._DIRECT_ALIGNMENT
+        )
+
+        with pytest.raises(ValueError, match="header size"):
+            _decode_direct_control(wire)
 
     def test_add_object_to_transaction(self, cell):
         """Test adding objects to a transaction."""
