@@ -205,12 +205,3 @@ After export, inspect the server configuration. The disabled state must contain
 no active model-selector component. The metric and recipe-default states must
 contain a selector with the resolved key. Treat a mismatch, or missing-metric
 warnings from a supposedly disabled job, as validation failure.
-
-A correctly negated key can also draw a startup warning that it "looks like a
-lower-is-better metric". The model selector applies a name heuristic that
-matches substrings such as `loss` and `err`, and a `neg_` prefix does not clear
-it, so `neg_loss`, `neg_val_loss`, and `eval_neg_loss` all trip it even though
-they are the recommended configuration. Treat that one-time warning as a known
-false positive on a negated key. Do not "fix" it by selecting the un-negated
-metric — that selects the worst global model — or by renaming the companion to
-hide the substring.
