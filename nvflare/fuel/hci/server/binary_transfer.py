@@ -51,10 +51,14 @@ class BinaryTransfer:
 
         cell = engine.get_cell()
         source_fqcn = cell.get_fqcn()
+        # A receiver can be silent while a request times out and follows its retry backoff.
+        # Keep the source reference through the owning session's next expiry sweep; the
+        # session binding below still cancels it immediately on logout or expiry.
+        download_timeout = max(admin.timeout, session_mgr.idle_timeout + session_mgr.monitor_interval)
         downloader = ObjectDownloader(
             num_receivers=1,
             cell=cell,
-            timeout=admin.timeout,
+            timeout=download_timeout,
             transaction_done_cb=self._cleanup_tx,
             progress_cb=_download_progress,
             progress_interval=min(30.0, max(0.0, session_mgr.idle_timeout / 3.0)),
@@ -67,38 +71,44 @@ class BinaryTransfer:
             conn.append_error(ReplyKeyword.SESSION_INACTIVE)
             return
 
-        # return list of the files
-        files = []
-        for dir_path, dir_names, file_names in os.walk(tx_path):
-            for f in file_names:
-                full_path = os.path.join(dir_path, f)
-                ref_id = add_file(downloader, file_name=full_path)
-                p = os.path.relpath(full_path, tx_path)
-                files.append([p, ref_id])
+        try:
+            # return list of the files
+            files = []
+            for dir_path, dir_names, file_names in os.walk(tx_path):
+                for f in file_names:
+                    full_path = os.path.join(dir_path, f)
+                    ref_id = add_file(downloader, file_name=full_path)
+                    p = os.path.relpath(full_path, tx_path)
+                    files.append([p, ref_id])
 
-        self.logger.debug(f"files of the folder to download: {files}")
-        if len(files) > 0:
-            conn.append_string(
-                "OK",
-                meta=make_meta(
-                    MetaStatusValue.OK,
-                    extra={
-                        MetaKey.SOURCE_FQCN: source_fqcn,
-                        MetaKey.FILES: files,
-                        MetaKey.TX_ID: tx_id,
-                        MetaKey.FOLDER_NAME: folder_name,
-                    },
-                ),
-            )
-        else:
+            self.logger.debug(f"files of the folder to download: {files}")
+            if len(files) > 0:
+                conn.append_string(
+                    "OK",
+                    meta=make_meta(
+                        MetaStatusValue.OK,
+                        extra={
+                            MetaKey.SOURCE_FQCN: source_fqcn,
+                            MetaKey.FILES: files,
+                            MetaKey.TX_ID: tx_id,
+                            MetaKey.FOLDER_NAME: folder_name,
+                        },
+                    ),
+                )
+            else:
+                conn.append_error(
+                    "No data to download",
+                    meta=make_meta(
+                        MetaStatusValue.ERROR,
+                        info="No data to download",
+                    ),
+                )
+        except Exception:
             downloader.delete_transaction()
-            conn.append_error(
-                "No data to download",
-                meta=make_meta(
-                    MetaStatusValue.ERROR,
-                    info="No data to download",
-                ),
-            )
+            raise
+
+        if not files:
+            downloader.delete_transaction()
 
     def _cleanup_tx(self, tx_id: str, status, files, tx_path, session_mgr, session_id):
         """

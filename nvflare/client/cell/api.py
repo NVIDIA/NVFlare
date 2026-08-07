@@ -57,6 +57,7 @@ from nvflare.fuel.f3.streaming.byte_streamer import reliable_retry_scheduler
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.f3.streaming.stream_utils import stream_shutdown
 from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT, TransferProgressState
+from nvflare.fuel.sec.authn import set_add_auth_headers_filters
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     RESULT_UPLOAD_PROGRESS_CTX_KEY,
@@ -137,10 +138,12 @@ class CellClientAPI(APISpec):
         self._attach = AttachTrainerSession(self) if self._is_attach else None
         self._trainer_fqcn = self._attach.trainer_fqcn if self._attach else self._config[BootstrapKey.TRAINER_FQCN]
         self._job_id: Optional[str] = self._config.get(BootstrapKey.JOB_ID)
-        # This controls who is expected to pull trainer-hosted lazy results,
-        # not how the trainer's own Cell transport is secured. Launched mode
-        # receives it in the bootstrap; Attach receives it in SESSION_OPEN.
-        self._result_relay_to_cj = bool(self._config.get(BootstrapKey.SECURE_MODE, False))
+        # This flag controls delegated FL auth headers. Attach never receives
+        # the site's FL bearer credential; its separate profile SECURE_MODE
+        # controls Cell identity protection in AttachTrainerSession.
+        self._secure_mode = False if self._is_attach else bool(self._config.get(BootstrapKey.SECURE_MODE, False))
+        self._protocol_secure = False
+        self._session_security_configured = False
         self._task_exchange: dict = self._config.get(BootstrapKey.TASK_EXCHANGE, {})
         # Typed files predating LAUNCH_ONCE default to persistent; one-shot close is irreversible.
         self._launch_once = bool(self._task_exchange.get(ConfigKey.LAUNCH_ONCE, True))
@@ -215,6 +218,8 @@ class CellClientAPI(APISpec):
 
             # A failed attempt may be retried on the same API object.
             self._session_id = None
+            self._protocol_secure = False
+            self._session_security_configured = False
             self._heartbeat_interval = 0.0
             self._heartbeat_timeout = 0.0
             self._heartbeat_stop.clear()
@@ -226,8 +231,11 @@ class CellClientAPI(APISpec):
             connect_url = self._attach.prepare_connection() if self._attach else self._config[BootstrapKey.CONNECT_URL]
             credentials = {}
             secure = False
+            parent_resources = None
             if self._attach:
                 secure, credentials = self._attach.cell_security()
+                parent_resources = self._attach.connection_resources()
+                self._protocol_secure = secure
             self._cell = Cell(
                 fqcn=self._trainer_fqcn,
                 root_url=None,
@@ -236,7 +244,9 @@ class CellClientAPI(APISpec):
                 secure=secure,
                 credentials=credentials,
                 parent_url=connect_url,
+                parent_resources=parent_resources,
                 create_internal_listener=False,
+                auth_identity_map=self._attach.auth_identity_map() if self._attach else None,
             )
             try:
                 if self._attach:
@@ -308,21 +318,55 @@ class CellClientAPI(APISpec):
         if not isinstance(body, dict) or body.get(MsgKey.REPLY_TOPIC) != Topic.HELLO_ACCEPTED:
             reason = body.get(MsgKey.REASON) if isinstance(body, dict) else body
             raise TrainerSessionError(f"HELLO not accepted: {reason}")
-        self._session_id = body.get(MsgKey.SESSION_ID)
-        if not self._session_id:
+        session_id = body.get(MsgKey.SESSION_ID)
+        if not session_id:
             raise TrainerSessionError("HELLO_ACCEPTED carried no session id")
-        self._heartbeat_interval = self._valid_heartbeat_number(
+        heartbeat_interval = self._valid_heartbeat_number(
             MsgKey.HEARTBEAT_INTERVAL, body.get(MsgKey.HEARTBEAT_INTERVAL), positive=True
         )
-        self._heartbeat_timeout = self._valid_heartbeat_number(
+        heartbeat_timeout = self._valid_heartbeat_number(
             MsgKey.HEARTBEAT_TIMEOUT, body.get(MsgKey.HEARTBEAT_TIMEOUT), positive=False
         )
-        if 0 < self._heartbeat_timeout <= self._heartbeat_interval:
+        if 0 < heartbeat_timeout <= heartbeat_interval:
             raise TrainerSessionError(
-                f"invalid heartbeat policy: interval {self._heartbeat_interval} must be less than "
-                f"timeout {self._heartbeat_timeout}"
+                f"invalid heartbeat policy: interval {heartbeat_interval} must be less than "
+                f"timeout {heartbeat_timeout}"
             )
+        self._install_site_auth_headers(
+            # SECURE_MODE was added without changing protocol v1. Preserve
+            # compatibility with an earlier non-secure CJ that omitted it;
+            # a secure bootstrap still rejects False as a mismatch.
+            secure_mode=body.get(MsgKey.SECURE_MODE, False),
+            auth_token=body.get(MsgKey.AUTH_TOKEN),
+            token_signature=body.get(MsgKey.AUTH_TOKEN_SIGNATURE),
+        )
+        self._session_id = session_id
+        self._heartbeat_interval = heartbeat_interval
+        self._heartbeat_timeout = heartbeat_timeout
         self._note_cj_activity()
+
+    def _install_site_auth_headers(self, secure_mode, auth_token=None, token_signature=None) -> None:
+        if type(secure_mode) is not bool:
+            raise TrainerSessionError(f"session secure_mode must be a bool, got {secure_mode!r}")
+        if self._session_security_configured:
+            if secure_mode != self._secure_mode:
+                raise TrainerSessionError("session secure_mode changed after authentication")
+            return
+        if not self._is_attach and secure_mode != self._secure_mode:
+            raise TrainerSessionError("HELLO_ACCEPTED secure_mode disagrees with the launch bootstrap")
+        if secure_mode:
+            if not isinstance(auth_token, str) or not auth_token or auth_token == "NA":
+                raise TrainerSessionError("secure session carried no site auth token")
+            if not isinstance(token_signature, str) or not token_signature or token_signature == "NA":
+                raise TrainerSessionError("secure session carried no site auth token signature")
+            set_add_auth_headers_filters(
+                self._cell,
+                client_name=self._site_name,
+                auth_token=auth_token,
+                token_signature=token_signature,
+            )
+        self._secure_mode = secure_mode
+        self._session_security_configured = True
 
     # ------------------------------------------------------------------ receive
 
@@ -425,7 +469,10 @@ class CellClientAPI(APISpec):
                 ResultUploadProgressContextKey.STREAMING_IDLE_TIMEOUT: DEFAULT_STREAMING_IDLE_TIMEOUT,
             },
         }
-        source_receiver_ids = (self._cj_fqcn,) if self._result_relay_to_cj else self._result_receiver_ids
+        # Attach follows the IPC boundary: its CJ is the terminal receiver and
+        # materializes the result. A managed external trainer remains the source
+        # for the ultimate server/peer receivers propagated with TASK_READY.
+        source_receiver_ids = (self._cj_fqcn,) if self._attach else self._result_receiver_ids
 
         result_accepted = False
         result_id = self._attach.mark_result_publishing(task.get(MsgKey.TASK_ID)) if self._attach else None
@@ -588,6 +635,7 @@ class CellClientAPI(APISpec):
                     },
                 ),
                 optional=True,
+                secure=self._protocol_secure,
             )
         except Exception as e:
             self.logger.warning(f"failed to send LOG '{key}': {e}")
@@ -916,6 +964,7 @@ class CellClientAPI(APISpec):
                     ),
                     timeout=min(self._heartbeat_interval, self._heartbeat_timeout),
                     abort_signal=self._heartbeat_cancel,
+                    secure=self._protocol_secure,
                 )
                 if self._heartbeat_reply_valid(reply):
                     self._note_cj_activity()

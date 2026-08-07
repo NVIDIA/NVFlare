@@ -32,6 +32,7 @@ from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.executors.client_api import cell_backend as cbp
 from nvflare.app_common.executors.client_api import external_process_backend as ebp
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext
 from nvflare.app_common.executors.client_api.external_process_backend import ExternalProcessBackend, bootstrap_file_name
@@ -45,6 +46,7 @@ from nvflare.client.cell.bootstrap import (
 )
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
+from nvflare.fuel.data_event.utils import set_scope_property
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
@@ -117,7 +119,6 @@ class FakeCell:
         self.fqcn = CJ_FQCN
         self.decode_pass_through_channels = set()
         self.decode_pass_through_topics = set()
-        self.decode_pass_through_relay_topics = set()
         self.listener_url = "tcp://127.0.0.1:56789"
         self.internal_listener_made = False
         self.cbs = {}
@@ -249,6 +250,9 @@ def _make_engine(cell):
 
 
 def _make_fl_ctx(engine, app_dir, secure_mode=False):
+    if secure_mode:
+        set_scope_property("site-1", FLMetaKey.AUTH_TOKEN, "site-auth-token")
+        set_scope_property("site-1", FLMetaKey.AUTH_TOKEN_SIGNATURE, "site-auth-signature")
     fl_ctx = FLContext()
     fl_ctx.put(key=ReservedKey.ENGINE, value=engine, private=True, sticky=False)
     fl_ctx.put(key=ReservedKey.RUN_NUM, value="job-1", private=False, sticky=False)
@@ -346,7 +350,6 @@ class TestInitializeAndFinalize:
             assert env.cell.internal_listener_made
             assert (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK) in env.cell.decode_pass_through_topics
             assert (CHANNEL, Topic.RESULT_READY) in env.cell.decode_pass_through_topics
-            assert not env.cell.decode_pass_through_relay_topics
             assert CellChannel.SERVER_COMMAND not in env.cell.decode_pass_through_channels
             for topic in PROTOCOL_TOPICS:
                 assert topic in env.cell.cbs, f"backend must register a handler for {topic}"
@@ -366,7 +369,7 @@ class TestInitializeAndFinalize:
         # launch-token file is removed after teardown
         assert not os.path.exists(os.path.join(env.app_dir, bootstrap_file_name(1)))
 
-    def test_initialize_relays_pass_through_refs_in_secure_mode(self, env):
+    def test_initialize_preserves_pass_through_refs_in_secure_mode(self, env):
         backend = ExternalProcessBackend()
         fl_ctx = _make_fl_ctx(_make_engine(env.cell), env.app_dir, secure_mode=True)
 
@@ -374,17 +377,28 @@ class TestInitializeAndFinalize:
         try:
             assert (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK) in env.cell.decode_pass_through_topics
             assert (CHANNEL, Topic.RESULT_READY) in env.cell.decode_pass_through_topics
-            assert (
-                CellChannel.SERVER_COMMAND,
-                ServerCommandNames.GET_TASK,
-            ) in env.cell.decode_pass_through_relay_topics
-            assert (CHANNEL, Topic.RESULT_READY) in env.cell.decode_pass_through_relay_topics
             assert CellChannel.SERVER_COMMAND not in env.cell.decode_pass_through_channels
             bootstrap_path = env.harness.processes[0].kwargs["env"][BOOTSTRAP_FILE_ENV_VAR]
-            assert read_bootstrap_config(bootstrap_path)[BootstrapKey.SECURE_MODE] is True
+            bootstrap = read_bootstrap_config(bootstrap_path)
+            assert bootstrap[BootstrapKey.SECURE_MODE] is True
+            assert MsgKey.AUTH_TOKEN not in bootstrap
+            assert MsgKey.AUTH_TOKEN_SIGNATURE not in bootstrap
+            hello_reply = env.harness.hello_replies[-1].payload
+            assert hello_reply[MsgKey.SECURE_MODE] is True
+            assert hello_reply[MsgKey.AUTH_TOKEN] == "site-auth-token"
+            assert hello_reply[MsgKey.AUTH_TOKEN_SIGNATURE] == "site-auth-signature"
         finally:
             backend.finalize(FLContext())
-        assert not env.cell.decode_pass_through_relay_topics
+
+    def test_secure_initialize_fails_before_launch_when_site_credentials_are_missing(self, env, monkeypatch):
+        monkeypatch.setattr(cbp, "get_scope_property", lambda **_kwargs: None)
+        backend = ExternalProcessBackend()
+        fl_ctx = _make_fl_ctx(_make_engine(env.cell), env.app_dir, secure_mode=True)
+
+        with pytest.raises(RuntimeError, match="missing site credential"):
+            backend.initialize(_make_context(), fl_ctx)
+
+        assert not env.harness.processes
 
     def test_initialize_does_not_log_configured_command(self, env):
         literal_secret = "literal-secret-sentinel"
@@ -807,24 +821,23 @@ class TestInitializeAndFinalize:
             ]
 
     @pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
-    def test_abort_escalates_sigterm_to_sigkill_without_configured_grace(self, env, monkeypatch):
+    def test_abort_preserves_configured_sigterm_grace_before_sigkill(self, env, monkeypatch):
         backend, _ = _initialized_backend(env, stop_grace_period=30.0)
         backend._latch_abort("job aborted")
         monkeypatch.setattr(env.harness, "killpg", lambda pgid, sig: env.harness.killpg_calls.append((pgid, sig)))
         monkeypatch.setattr(ebp.os, "killpg", env.harness.killpg, raising=False)
         monkeypatch.setattr(ebp, "_LOG_THREAD_JOIN_TIMEOUT", 0.0)
         await_timeouts = []
-        real_await_group_exit = backend._await_group_exit
 
         def record_await_timeout(trainer, timeout):
             await_timeouts.append(timeout)
-            return real_await_group_exit(trainer, timeout)
+            return False
 
         monkeypatch.setattr(backend, "_await_group_exit", record_await_timeout)
 
         backend.finalize(FLContext())
 
-        assert await_timeouts == [0.0, 0.0]
+        assert await_timeouts == [30.0, 0.0]
         if os.name == "posix":
             assert env.harness.signals_sent() == [
                 (env.harness.processes[0].pid, signal.SIGTERM),
@@ -1291,6 +1304,7 @@ class TestHeartbeatAndOperationalLiveness:
             task_wait_timeout=1.0,
             result_wait_timeout=1.0,
         )
+        trainer = backend._active_launch
         try:
 
             def stalled_materialization(topic, target, request):
@@ -1315,17 +1329,8 @@ class TestHeartbeatAndOperationalLiveness:
             assert "TASK_READY ingestion stalled" in backend._abort_reason
             assert "during materialization" in backend._abort_reason
             assert "idle timeout=0.04s" in backend._abort_reason
-            trainer = backend._active_launch
             assert trainer.task_ingestion_active is False
-            with trainer._activity_lock:
-                trainer._last_peer_activity = 1.0
-            env.cell.deliver(
-                Topic.TASK_PROGRESS,
-                trainer.trainer_fqcn,
-                {MsgKey.SESSION_ID: trainer.session_id, MsgKey.TASK_PHASE: "stale"},
-            )
-            with trainer._activity_lock:
-                assert trainer._last_peer_activity == 1.0
+            assert backend._active_launch is None
         finally:
             backend.finalize(FLContext())
 
@@ -1989,6 +1994,52 @@ class TestExecute:
         finally:
             backend.finalize(FLContext())
 
+    @pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
+    def test_launch_once_abort_after_result_stops_owned_trainer_before_execute_returns(self, env):
+        backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
+        abort_signal = Signal()
+        task_count = 0
+
+        def result_then_abort(topic, target, request):
+            nonlocal task_count
+            task_count += 1
+            if task_count == 1:
+                task_payload = request.payload
+                env.cell.deliver(
+                    Topic.RESULT_READY,
+                    target,
+                    {
+                        MsgKey.SESSION_ID: task_payload[MsgKey.SESSION_ID],
+                        MsgKey.TASK_ID: task_payload[MsgKey.TASK_ID],
+                        MsgKey.RESULT: _result_shareable(),
+                    },
+                )
+            else:
+                abort_signal.trigger("stop round 1")
+            return _task_accepted_reply()
+
+        env.cell.on_request = result_then_abort
+        process = env.harness.processes[0]
+        try:
+            round_0 = Shareable()
+            round_0.set_header(AppConstants.CURRENT_ROUND, 0)
+            first = backend.execute("train", round_0, fl_ctx, Signal())
+            assert first.get_return_code() == ReturnCode.OK
+            assert process.returncode is None
+            assert backend._active_launch.result_source_live.is_set()
+
+            round_1 = Shareable()
+            round_1.set_header(AppConstants.CURRENT_ROUND, 1)
+            second = backend.execute("train", round_1, fl_ctx, abort_signal)
+
+            assert second.get_return_code() == ReturnCode.TASK_ABORTED
+            assert len(env.harness.processes) == 1, "launch_once must reuse the round-0 trainer"
+            assert process.returncode == -signal.SIGTERM
+            assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
+            assert backend._active_launch is None
+        finally:
+            backend.finalize(FLContext())
+
     def test_execute_returns_task_aborted_on_triggered_signal(self, env):
         backend, fl_ctx = _initialized_backend(env)
         try:
@@ -1999,6 +2050,8 @@ class TestExecute:
             assert result.get_return_code() == ReturnCode.TASK_ABORTED
             # the trainer was told the task is aborted
             assert [f for f in env.cell.fired if f[0] == Topic.ABORT]
+            assert backend._active_launch is None
+            assert env.harness.processes[0].returncode is not None
         finally:
             backend.finalize(FLContext())
 

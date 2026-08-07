@@ -33,15 +33,16 @@ from nvflare.client.cell.attach_rendezvous import (
     validate_shared_file_listener,
 )
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, TaskState, Topic
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
-from nvflare.fuel.f3.cellnet.identity import is_mtls_connection
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.file_driver import ROOT_DIR as SHARED_FILE_ROOT_DIR
 from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
-from nvflare.fuel.f3.streaming.download_service import DownloadService
-from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
+from nvflare.fuel.f3.streaming.download_service import OBJ_DOWNLOADER_CHANNEL, DownloadService
+from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
@@ -51,11 +52,83 @@ _CONTROL_RETRY_INTERVAL = 0.5
 _CONTROL_ATTEMPT_TIMEOUT = 2.0
 _RESULT_POLL_INTERVAL = 0.25
 _SESSION_MONITOR_INTERVAL = 0.2
+_MAX_RESULT_SOURCE_DISCONNECT_GRACE = 5.0
 _DEFAULT_ATTACH_TASK_TIMEOUT = 600.0
-_ROUTE_MTLS = "mtls"
 _ROUTE_SHARED_FILE = "shared-file"
 _ROUTE_UNSAFE_SHARED_FILE = "unsafe-shared-file"
-_ROUTE_UNPROTECTED = "unprotected"
+_ATTACH_PROTOCOL_GUARD_ATTR = "_client_api_attach_protocol_guard"
+_ATTACH_PROTOCOL_GUARD_INSTALL_LOCK = threading.Lock()
+
+
+class _AttachProtocolGuard:
+    """Authorize all secure Attach protocol ingress before the CJ decodes it."""
+
+    def __init__(self, cj_fqcn: str, logger):
+        self.cj_fqcn = cj_fqcn
+        self.logger = logger
+        self._claims = {}
+        self._lock = threading.Lock()
+
+    def claim(self, owner, trainer_fqcn: str, cp_fqcn: str) -> None:
+        with self._lock:
+            self._claims[owner] = (trainer_fqcn, cp_fqcn)
+
+    def release(self, owner) -> None:
+        with self._lock:
+            self._claims.pop(owner, None)
+
+    @staticmethod
+    def _application_route(message) -> tuple[str, str]:
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "")
+        if channel == STREAM_CHANNEL and topic == STREAM_DATA_TOPIC:
+            channel = message.get_header(StreamHeaderKey.CHANNEL, "")
+            topic = message.get_header(StreamHeaderKey.TOPIC, "")
+            if channel == CellChannel.RETURN_ONLY:
+                original_channel, separator, original_topic = topic.partition(":")
+                if separator:
+                    channel, topic = original_channel, original_topic
+        return channel, topic
+
+    def __call__(self, message):
+        if message.get_header(MessageHeaderKey.DESTINATION) != self.cj_fqcn:
+            return None
+
+        channel, topic = self._application_route(message)
+        if channel not in (CHANNEL, OBJ_DOWNLOADER_CHANNEL):
+            return None
+
+        origin = message.get_header(MessageHeaderKey.ORIGIN) or ""
+        with self._lock:
+            claims = tuple(self._claims.values())
+        if not claims:
+            return None
+
+        claimed_origins = {trainer_fqcn for trainer_fqcn, _ in claims}
+        if origin in claimed_origins:
+            is_protected = message.get_header(MessageHeaderKey.SECURE, False) and message.get_header(
+                MessageHeaderKey.ENCRYPTED, False
+            )
+            if is_protected:
+                return None
+            return self._reject(f"secure attach message on channel {channel!r} from {origin!r} was not protected")
+
+        # Client API requests have no legitimate non-trainer source. DownloadService
+        # is shared with server/peer transfers, so reject only an unclaimed branch
+        # entering from this site's CP while allowing those ordinary remote callers.
+        if channel == CHANNEL or any(
+            FQCN.is_ancestor(cp_fqcn, origin) and not FQCN.is_ancestor(self.cj_fqcn, origin) for _, cp_fqcn in claims
+        ):
+            return self._reject(f"attach message on channel {channel!r} from unauthorized origin {origin!r}")
+        return None
+
+    def check(self, message):
+        """Named callback entry point required by CoreCell's filter dispatcher."""
+        return self(message)
+
+    def _reject(self, reason: str):
+        self.logger.warning(f"rejecting pre-decode Attach traffic: {reason}")
+        return make_cell_reply(CellReturnCode.AUTHENTICATION_ERROR, error=reason)
 
 
 class _AttachCancelSignal(Signal):
@@ -94,6 +167,7 @@ class _AttachedTrainerSession(CellSession):
         super().__init__(trainer_fqcn, uuid.uuid4().hex)
         self.error: Optional[str] = None
         self.task_sequence = 0
+        self.result_source_disconnect_since: Optional[float] = None
 
 
 class AttachBackend(CellBackendBase):
@@ -113,42 +187,33 @@ class AttachBackend(CellBackendBase):
         self._attach_listener_url: Optional[str] = None
         self._attach_listener_params: Optional[dict] = None
         self._endpoint_publisher: Optional[AttachEndpointPublisher] = None
-        self._trainer_identity_added = False
+        self._protocol_guard: Optional[_AttachProtocolGuard] = None
 
     # ------------------------------------------------------------------ lifecycle
 
     def initialize(self, context: ClientAPIBackendContext, fl_ctx: FLContext) -> None:
         if not context.attach_id:
             raise ValueError("attach mode requires attach_id")
-        if context.heartbeat_timeout == 0 and context.result_wait_timeout is None:
+        if context.heartbeat_timeout <= 0:
             raise ValueError(
-                "attach mode requires heartbeat_timeout > 0 or a finite result_wait_timeout "
-                "because it does not own a trainer process for liveness detection"
+                "attach mode requires heartbeat_timeout > 0 because heartbeat liveness is the terminal fallback "
+                "when protocol SHUTDOWN is lost"
             )
         try:
             self._initialize_cell(context, fl_ctx, "attach")
-            self._trainer_fqcn = make_attach_trainer_fqcn(self._cj_fqcn, context.attach_id)
-            self._bind_trainer_transport_identity()
-            listener_route = self._start_attach_listener()
+            self._trainer_fqcn = make_attach_trainer_fqcn(FQCN.get_parent(self._cj_fqcn), context.attach_id)
+            listener_route = self._start_shared_file_listener()
             if listener_route == _ROUTE_UNSAFE_SHARED_FILE:
                 raise ValueError(
                     "shared-file attach requires a FileDriver-owned listener whose root is not world-writable "
                     "and whose listener artifacts grant no access to other users"
                 )
-            protected_route = listener_route in (_ROUTE_SHARED_FILE, _ROUTE_MTLS)
-            if not protected_route and not context.allow_insecure_attach:
-                raise ValueError(
-                    "the CJ-owned attach listener requires either the shared-file driver or mTLS when "
-                    "allow_insecure_attach=False; configure comm_config.json client_api_attach accordingly"
-                )
-            if not protected_route:
-                context.executor.log_warning(
-                    fl_ctx,
-                    "Client API attach is using an unprotected CJ-owned listener because "
-                    "allow_insecure_attach=True; peer identity and transport confidentiality are not guaranteed",
-                )
             if listener_route == _ROUTE_SHARED_FILE:
                 self._publish_shared_file_endpoint()
+            else:
+                self._protocol_secure = self._secure_mode
+                if self._protocol_secure:
+                    self._install_secure_protocol_guard()
 
             timeout = context.attach_timeout
             self._attach_deadline = None if timeout is None else time.monotonic() + timeout
@@ -162,32 +227,80 @@ class AttachBackend(CellBackendBase):
             self._session_thread.start()
             context.executor.log_info(
                 fl_ctx,
-                f"waiting for attached trainer {self._trainer_fqcn} on {self._attach_listener_url}",
+                f"waiting for attached trainer {self._trainer_fqcn} "
+                f"via {self._attach_listener_url or 'the site CP route'}",
             )
         except BaseException:
             self._unwind()
             raise
 
-    def _start_attach_listener(self) -> str:
+    def _install_secure_protocol_guard(self) -> None:
+        core_cell = getattr(self._cell, "core_cell", None)
+        add_filter = getattr(core_cell, "add_incoming_filter", None)
+        if not callable(add_filter):
+            raise RuntimeError("secure network Attach requires a pre-decode Cell incoming filter")
+        with _ATTACH_PROTOCOL_GUARD_INSTALL_LOCK:
+            guard = getattr(core_cell, _ATTACH_PROTOCOL_GUARD_ATTR, None)
+            if guard is None:
+                guard = _AttachProtocolGuard(self._cj_fqcn, self.logger)
+                guard.claim(self, self._trainer_fqcn, FQCN.get_parent(self._cj_fqcn))
+                # CoreCell invokes these filters before decrypting or decoding.
+                # Cover both Cell's streamed envelope and callers that bypass it
+                # by sending the application request through CoreCell directly.
+                try:
+                    add_filter(channel=STREAM_CHANNEL, topic=STREAM_DATA_TOPIC, cb=guard.check)
+                    add_filter(channel=CHANNEL, topic="*", cb=guard.check)
+                    add_filter(channel=OBJ_DOWNLOADER_CHANNEL, topic="*", cb=guard.check)
+                except Exception:
+                    guard.release(self)
+                    raise
+                setattr(core_cell, _ATTACH_PROTOCOL_GUARD_ATTR, guard)
+            elif not isinstance(guard, _AttachProtocolGuard) or guard.cj_fqcn != self._cj_fqcn:
+                raise RuntimeError("CJ Cell has an incompatible secure Attach protocol guard")
+            else:
+                guard.claim(self, self._trainer_fqcn, FQCN.get_parent(self._cj_fqcn))
+            self._protocol_guard = guard
+
+    def _secure_protocol_guard(self, message):
+        """Compatibility entry point for tests and extensions using the old guard method."""
+        guard = self._protocol_guard
+        return guard(message) if guard is not None else None
+
+    def _remove_secure_protocol_guard(self) -> None:
+        guard = self._protocol_guard
+        self._protocol_guard = None
+        if guard is not None:
+            guard.release(self)
+
+    def _start_shared_file_listener(self) -> Optional[str]:
         core_cell = getattr(self._cell, "core_cell", None)
         communicator = getattr(core_cell, "communicator", None)
         configurator = getattr(core_cell, "comm_configurator", None)
-        if communicator is None or configurator is None:
+        if configurator is None:
             raise RuntimeError("CJ Cell does not expose the communication configuration needed by Attach")
         comm_config = configurator.get_config()
+        if comm_config is None:
+            return None
         if not isinstance(comm_config, dict):
-            raise ValueError(f"attach mode requires a site-local {ATTACH_COMM_CONFIG!r} section in comm_config.json")
+            raise ValueError("attach mode requires a valid site-local comm_config.json")
         listener_config = comm_config.get(ATTACH_COMM_CONFIG)
+        if listener_config is None:
+            return None
         if not isinstance(listener_config, dict):
-            raise ValueError(
-                f"attach mode requires comm_config.json field {ATTACH_COMM_CONFIG!r} to be a listener object"
-            )
+            raise ValueError(f"comm_config.json field {ATTACH_COMM_CONFIG!r} must be a listener object")
         scheme = listener_config.get("scheme")
         resources = listener_config.get("resources")
         if not isinstance(scheme, str) or not scheme or "://" in scheme:
             raise ValueError(f"{ATTACH_COMM_CONFIG}.scheme must be a non-empty driver scheme")
         if not isinstance(resources, dict):
             raise ValueError(f"{ATTACH_COMM_CONFIG}.resources must be a dict")
+        if scheme != SHARED_FILE_SCHEME:
+            raise ValueError(
+                f"{ATTACH_COMM_CONFIG} supports only {SHARED_FILE_SCHEME!r}; "
+                "network Attach trainers must connect through the site's existing CP listener"
+            )
+        if communicator is None:
+            raise RuntimeError("CJ Cell does not expose the communicator needed by shared-file Attach")
 
         try:
             handle, connect_url, params = communicator.start_listener(scheme, dict(resources))
@@ -196,24 +309,10 @@ class AttachBackend(CellBackendBase):
         self._attach_listener_handle = handle
         self._attach_listener_url = connect_url
         self._attach_listener_params = params
-        return self._listener_route_kind(params)
-
-    def _bind_trainer_transport_identity(self) -> None:
-        """Bind a provisioned site certificate to the CJ-child trainer FQCN."""
-        core_cell = getattr(self._cell, "core_cell", None)
-        resolver = getattr(core_cell, "identity_resolver", None)
-        exact_map = getattr(resolver, "exact_identity_map", None)
-        if isinstance(exact_map, dict):
-            existing = exact_map.get(self._trainer_fqcn)
-            if existing and existing != self._site_name:
-                raise ValueError(
-                    f"trainer FQCN {self._trainer_fqcn!r} is already bound to transport identity {existing!r}"
-                )
-            exact_map[self._trainer_fqcn] = self._site_name
-            self._trainer_identity_added = existing is None
+        return self._shared_file_route_kind(params)
 
     @staticmethod
-    def _listener_route_kind(params: dict) -> str:
+    def _shared_file_route_kind(params: dict) -> str:
         scheme = params.get(DriverParams.SCHEME.value, params.get(DriverParams.SCHEME))
         if scheme == SHARED_FILE_SCHEME:
             return (
@@ -221,9 +320,7 @@ class AttachBackend(CellBackendBase):
                 if AttachBackend._shared_file_listener_is_protected(params)
                 else _ROUTE_UNSAFE_SHARED_FILE
             )
-        if is_mtls_connection(params):
-            return _ROUTE_MTLS
-        return _ROUTE_UNPROTECTED
+        raise ValueError("the CJ-owned Attach listener supports only shared-file transport")
 
     @staticmethod
     def _shared_file_listener_is_protected(params: dict) -> bool:
@@ -292,27 +389,24 @@ class AttachBackend(CellBackendBase):
             thread.join(timeout=_CONTROL_ATTEMPT_TIMEOUT + _SESSION_MONITOR_INTERVAL)
         self._close_attach_listener()
         self._disable_pass_through()
+        self._remove_secure_protocol_guard()
 
     def _wait_for_result_source_release(self, session: _AttachedTrainerSession) -> None:
         """Keep the CJ route alive while an accepted trainer source settles."""
         if not session.result_source_live.is_set():
             return
-        disconnect_grace = self._context.heartbeat_timeout if self._context.heartbeat_timeout > 0 else 5.0
+        disconnect_grace = self._result_source_disconnect_grace()
         wait_bound = DEFAULT_STREAMING_IDLE_TIMEOUT + disconnect_grace
         deadline = time.monotonic() + wait_bound
         while session.result_source_live.is_set() and time.monotonic() < deadline:
-            try:
-                connected = self._cell.is_cell_connected(session.trainer_fqcn)
-            except Exception:
-                connected = True
-            if not connected:
+            if self._result_source_confirmed_disconnected(session):
                 session.result_source_live.clear()
                 break
             time.sleep(_SESSION_MONITOR_INTERVAL)
         if session.result_source_live.is_set():
             self.logger.warning(
                 f"timed out waiting {wait_bound}s for accepted result source "
-                f"{session.trainer_fqcn}; closing the Attach listener"
+                f"{session.trainer_fqcn}; closing the Attach route"
             )
 
     # ------------------------------------------------------------------ session
@@ -338,14 +432,18 @@ class AttachBackend(CellBackendBase):
                 continue
 
             reason = liveness_error
-            # RESULT_READY acceptance can outlive execute(): the downstream
-            # consumer may still be pulling trainer-owned lazy sources after
-            # _current_task is cleared. Keep this session authoritative until
-            # the trainer reports release; otherwise finalize() could observe a
-            # replacement session and tear down the live source route.
+            # Keep the session authoritative while the accepted result source is
+            # connected. A sustained, confirmed disconnect retires a source that
+            # can no longer send the heartbeat that would clear this latch.
             if self._context.allow_reconnect and session.result_source_live.is_set():
-                self._session_stop.wait(_SESSION_MONITOR_INTERVAL)
-                continue
+                if not self._result_source_confirmed_disconnected(session):
+                    self._session_stop.wait(_SESSION_MONITOR_INTERVAL)
+                    continue
+                session.result_source_live.clear()
+                with self._task_lock:
+                    self._trim_result_authority()
+                reason = f"{reason}; accepted result source disconnected"
+                self.logger.warning(f"retiring {session.trainer_fqcn}: {reason}")
             with self._task_lock:
                 active_task = self._current_task is not None
             if active_task:
@@ -362,6 +460,26 @@ class AttachBackend(CellBackendBase):
                     timeout = self._context.attach_timeout
                     self._attach_deadline = None if timeout is None else time.monotonic() + timeout
 
+    def _result_source_disconnect_grace(self) -> float:
+        return min(self._context.heartbeat_timeout, _MAX_RESULT_SOURCE_DISCONNECT_GRACE)
+
+    def _result_source_confirmed_disconnected(self, session: _AttachedTrainerSession) -> bool:
+        """Return true only after the accepted source stays disconnected for its grace period."""
+        try:
+            connected = self._cell.is_cell_connected(session.trainer_fqcn)
+        except Exception:
+            # Failure to inspect the route is not proof that the source is gone.
+            connected = True
+        if connected:
+            session.result_source_disconnect_since = None
+            return False
+
+        now = time.monotonic()
+        if session.result_source_disconnect_since is None:
+            session.result_source_disconnect_since = now
+            return False
+        return now - session.result_source_disconnect_since >= self._result_source_disconnect_grace()
+
     def _try_session_open(self, session: _AttachedTrainerSession) -> None:
         payload = {
             MsgKey.SESSION_ID: session.session_id,
@@ -373,21 +491,18 @@ class AttachBackend(CellBackendBase):
             MsgKey.RANK: "0",
             MsgKey.HEARTBEAT_INTERVAL: self._context.heartbeat_interval,
             MsgKey.HEARTBEAT_TIMEOUT: self._context.heartbeat_timeout,
-            # In secure jobs the CJ relays lazy result downloads. The Attach
-            # transport can independently be clear (for example shared-file),
-            # so tell the trainer the result route explicitly.
-            MsgKey.RESULT_RELAY: self._secure_mode,
             MsgKey.TASK_EXCHANGE: self._task_exchange_config(),
             MsgKey.MEMORY_GC_ROUNDS: self._context.memory_gc_rounds,
             MsgKey.CUDA_EMPTY_CACHE: self._context.cuda_empty_cache,
         }
         try:
-            # SESSION_OPEN is a small control-plane message. Use CoreCell rather
-            # than the blob-stream request path so an early gRPC
-            # TARGET_UNREACHABLE returns promptly and the attach loop can retry.
-            # TASK_READY and result payloads still use the streaming Cell.
-            core_cell = getattr(self._cell, "core_cell", None)
-            send_request = getattr(core_cell, "send_request", None)
+            # Secure SESSION_OPEN uses the streaming Cell so FOBS buffer lists
+            # are encrypted chunk by chunk. A clear route retains the CoreCell
+            # fast-failure path for trainer-first rendezvous retries.
+            send_request = None
+            if not self._protocol_secure:
+                core_cell = getattr(self._cell, "core_cell", None)
+                send_request = getattr(core_cell, "send_request", None)
             if not callable(send_request):
                 send_request = self._cell.send_request
             reply = send_request(
@@ -397,6 +512,7 @@ class AttachBackend(CellBackendBase):
                 request=new_cell_message({}, payload),
                 timeout=_CONTROL_ATTEMPT_TIMEOUT,
                 optional=True,
+                secure=self._protocol_secure,
             )
         except Exception:
             self.logger.debug(f"SESSION_OPEN to {session.trainer_fqcn} not delivered")
@@ -590,6 +706,7 @@ class AttachBackend(CellBackendBase):
                         FOBSContextKey.STREAM_PROGRESS_CB: lambda **_kwargs: None,
                         RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: _on_transaction_created,
                     },
+                    secure=self._protocol_secure,
                 )
                 if task.result_ready.is_set():
                     return True, None
@@ -645,6 +762,7 @@ class AttachBackend(CellBackendBase):
                 ),
                 timeout=timeout,
                 optional=True,
+                secure=self._protocol_secure,
             )
         except Exception:
             return None
@@ -693,6 +811,7 @@ class AttachBackend(CellBackendBase):
                 ),
                 timeout=_CONTROL_ATTEMPT_TIMEOUT,
                 optional=True,
+                secure=self._protocol_secure,
             )
             if reply is not None and isinstance(reply.payload, dict):
                 if reply.payload.get(MsgKey.RESULT_SOURCE_LIVE) is False:
@@ -708,6 +827,7 @@ class AttachBackend(CellBackendBase):
         self._session_stop.set()
         self._close_attach_listener()
         self._disable_pass_through()
+        self._remove_secure_protocol_guard()
 
     def _close_attach_listener(self) -> None:
         publisher = self._endpoint_publisher
@@ -727,13 +847,3 @@ class AttachBackend(CellBackendBase):
                 communicator.remove_connector(handle)
             except Exception:
                 self.logger.debug("failed to remove CJ-owned attach listener", exc_info=True)
-        resolver = getattr(core_cell, "identity_resolver", None)
-        exact_map = getattr(resolver, "exact_identity_map", None)
-        if (
-            isinstance(exact_map, dict)
-            and self._trainer_identity_added
-            and self._trainer_fqcn
-            and exact_map.get(self._trainer_fqcn) == self._site_name
-        ):
-            exact_map.pop(self._trainer_fqcn, None)
-        self._trainer_identity_added = False

@@ -19,7 +19,7 @@ import time
 from collections import OrderedDict
 from typing import Optional, Tuple
 
-from nvflare.apis.fl_constant import FLContextKey, ServerCommandNames
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
@@ -27,7 +27,8 @@ from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBacken
 from nvflare.client.cell.defs import CHANNEL, MsgKey, ResultState, Topic
 from nvflare.client.config import ConfigKey
 from nvflare.client.decomposers import register_framework_decomposers
-from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
+from nvflare.fuel.data_event.utils import get_scope_property
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
@@ -92,8 +93,10 @@ class CellBackendBase(ClientAPIBackendSpec):
         self._job_id: Optional[str] = None
         self._site_name: Optional[str] = None
         self._secure_mode = False
+        self._protocol_secure = False
+        self._site_auth_token: Optional[str] = None
+        self._site_auth_token_signature: Optional[str] = None
         self._owned_pass_through_routes: set[Tuple[str, str]] = set()
-        self._owned_relay_pass_through_routes: set[Tuple[str, str]] = set()
         self._current_task: Optional[CellTask] = None
         self._task_lock = threading.Lock()
         self._execute_gate = threading.Lock()
@@ -101,7 +104,14 @@ class CellBackendBase(ClientAPIBackendSpec):
         self._closed = False
         self._finalized = False
 
-    def _initialize_cell(self, context: ClientAPIBackendContext, fl_ctx: FLContext, mode: str) -> None:
+    def _initialize_cell(
+        self,
+        context: ClientAPIBackendContext,
+        fl_ctx: FLContext,
+        mode: str,
+        pass_through_routes: Tuple[Tuple[str, str], ...] = (),
+        delegate_site_auth: bool = False,
+    ) -> None:
         self._context = context
         self._engine = fl_ctx.get_engine()
         if self._engine is None:
@@ -116,21 +126,34 @@ class CellBackendBase(ClientAPIBackendSpec):
             raise RuntimeError("job id/site name not available in fl_ctx")
 
         self._secure_mode = bool(fl_ctx.get_prop(FLContextKey.SECURE_MODE, False))
-        for route in (
-            (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK),
-            (CHANNEL, Topic.RESULT_READY),
-        ):
+        if self._secure_mode and delegate_site_auth:
+            self._site_auth_token = self._get_site_auth_value(FLMetaKey.AUTH_TOKEN)
+            self._site_auth_token_signature = self._get_site_auth_value(FLMetaKey.AUTH_TOKEN_SIGNATURE)
+        for route in pass_through_routes:
             if route not in self._cell.decode_pass_through_topics:
                 self._owned_pass_through_routes.add(route)
             self._cell.decode_pass_through_topics.add(route)
-            if self._secure_mode:
-                if route not in self._cell.decode_pass_through_relay_topics:
-                    self._owned_relay_pass_through_routes.add(route)
-                self._cell.decode_pass_through_relay_topics.add(route)
 
         self._register_common_protocol_cbs()
         register_framework_decomposers(context.params_exchange_format, context.server_expected_format, self.logger)
         context.executor.set_analytics_fire_fed_event(True)
+
+    def _get_site_auth_value(self, key: str) -> str:
+        value = get_scope_property(scope_name=self._site_name, key=key)
+        if not isinstance(value, str) or not value or value == "NA":
+            raise RuntimeError(f"secure Client API session cannot delegate missing site credential {key!r}")
+        return value
+
+    def _session_security_payload(self) -> dict:
+        payload = {MsgKey.SECURE_MODE: self._secure_mode}
+        if self._secure_mode:
+            payload.update(
+                {
+                    MsgKey.AUTH_TOKEN: self._site_auth_token,
+                    MsgKey.AUTH_TOKEN_SIGNATURE: self._site_auth_token_signature,
+                }
+            )
+        return payload
 
     def _register_common_protocol_cbs(self) -> None:
         self._cell.register_request_cb(channel=CHANNEL, topic=Topic.RESULT_READY, cb=self._handle_result_ready)
@@ -322,6 +345,7 @@ class CellBackendBase(ClientAPIBackendSpec):
                 targets=[session.trainer_fqcn],
                 message=new_cell_message({}, {MsgKey.SESSION_ID: session.session_id, MsgKey.REASON: reason}),
                 optional=True,
+                secure=self._protocol_secure,
             )
         except Exception:
             self.logger.error(secure_format_traceback())
@@ -356,7 +380,6 @@ class CellBackendBase(ClientAPIBackendSpec):
         if self._cell is not None:
             for route in self._owned_pass_through_routes:
                 self._cell.decode_pass_through_topics.discard(route)
-            for route in self._owned_relay_pass_through_routes:
-                self._cell.decode_pass_through_relay_topics.discard(route)
         self._owned_pass_through_routes.clear()
-        self._owned_relay_pass_through_routes.clear()
+        self._site_auth_token = None
+        self._site_auth_token_signature = None

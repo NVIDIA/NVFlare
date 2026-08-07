@@ -36,7 +36,7 @@ from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import enhance_credential_info
-from nvflare.fuel.f3.streaming.download_service import DownloadService
+from nvflare.fuel.f3.streaming.download_service import OBJ_DOWNLOADER_CHANNEL, DownloadService
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
@@ -66,8 +66,9 @@ class AttachTrainerSession:
         self._api = api
         config = api._config
         self.attach_id = config[BootstrapKey.ATTACH_ID]
+        self.cp_fqcn = config.get(BootstrapKey.CP_FQCN, config[BootstrapKey.SITE_NAME])
         cj_fqcn = config.get(BootstrapKey.CJ_FQCN)
-        self.trainer_fqcn = make_attach_trainer_fqcn(cj_fqcn, self.attach_id) if cj_fqcn else None
+        self.trainer_fqcn = make_attach_trainer_fqcn(self.cp_fqcn, self.attach_id)
         connect_url = config.get(BootstrapKey.CONNECT_URL)
         # A direct network profile is validated immediately. A shared-file
         # profile resolves the CJ-owned listener through its rendezvous record
@@ -92,7 +93,7 @@ class AttachTrainerSession:
         self._wait_deadline = None if timeout is None else time.monotonic() + timeout
         connect_url = self._api._config.get(BootstrapKey.CONNECT_URL)
         if connect_url:
-            self._api._cj_fqcn = self._api._config[BootstrapKey.CJ_FQCN]
+            self._api._cj_fqcn = self._api._config.get(BootstrapKey.CJ_FQCN)
             self._api._trainer_fqcn = self.trainer_fqcn
             return connect_url
 
@@ -104,6 +105,7 @@ class AttachTrainerSession:
             stop_event=self._closed,
         )
         self._api._cj_fqcn = record[AttachEndpointKey.CJ_FQCN]
+        self.cp_fqcn = FQCN.get_parent(self._api._cj_fqcn)
         self.trainer_fqcn = record[AttachEndpointKey.TRAINER_FQCN]
         self._api._trainer_fqcn = self.trainer_fqcn
         connect_url = record[AttachEndpointKey.CONNECT_URL]
@@ -121,15 +123,14 @@ class AttachTrainerSession:
     def cell_security(self) -> tuple[bool, dict]:
         if self.connection_security is None:
             raise RuntimeError("attach connection was not resolved before Cell construction")
-        credentials = {DriverParams.CONNECTION_SECURITY.value: self.connection_security}
-        if self.connection_security != ConnectionSecurity.CLEAR:
+        secure = bool(self._api._config.get(BootstrapKey.SECURE_MODE, False))
+        secure = secure or self.connection_security != ConnectionSecurity.CLEAR
+        credentials = {}
+        if secure:
             ca_cert = self._api._config.get(BootstrapKey.CA_CERT)
             if not ca_cert:
-                raise RuntimeError(
-                    f"attach profile using {self.connection_security!r} requires {BootstrapKey.CA_CERT!r}"
-                )
+                raise RuntimeError(f"secure attach profile requires {BootstrapKey.CA_CERT!r}")
             credentials[DriverParams.CA_CERT.value] = ca_cert
-        if self.connection_security == ConnectionSecurity.MTLS:
             enhance_credential_info(credentials)
             missing = [
                 param.value
@@ -139,10 +140,20 @@ class AttachTrainerSession:
             ]
             if missing:
                 raise RuntimeError(
-                    "mTLS attach requires readable ca_cert, client_cert, and client_key files; "
+                    "secure attach requires readable ca_cert, client_cert, and client_key files; "
                     f"missing or unreadable: {', '.join(missing)}"
                 )
-        return self.connection_security != ConnectionSecurity.CLEAR, credentials
+        return secure, credentials
+
+    def connection_resources(self) -> dict:
+        """Keep physical CP transport policy separate from Cell message security."""
+        if self.connection_security is None:
+            raise RuntimeError("attach connection was not resolved before Cell construction")
+        return {DriverParams.CONNECTION_SECURITY.value: self.connection_security}
+
+    def auth_identity_map(self) -> dict:
+        identity = self._api._config.get(BootstrapKey.AUTH_IDENTITY, self._api._site_name)
+        return {self.cp_fqcn: identity}
 
     def register_callbacks(self, cell) -> None:
         cell.register_request_cb(channel=CHANNEL, topic=Topic.SESSION_OPEN, cb=self._handle_session_open)
@@ -161,17 +172,36 @@ class AttachTrainerSession:
         if channel == STREAM_CHANNEL and topic == STREAM_DATA_TOPIC:
             channel = message.get_header(StreamHeaderKey.CHANNEL, "")
             topic = message.get_header(StreamHeaderKey.TOPIC, "")
-        if channel != CHANNEL:
+        if channel not in (CHANNEL, OBJ_DOWNLOADER_CHANNEL):
             return None
 
         origin = message.get_header(MessageHeaderKey.ORIGIN) or ""
         with self._api._lock:
             bound_origin = self._api._cj_fqcn
+        is_protected = message.get_header(MessageHeaderKey.SECURE, False) and message.get_header(
+            MessageHeaderKey.ENCRYPTED, False
+        )
+        if self._api._protocol_secure and not is_protected:
+            return make_cell_reply(
+                CellReturnCode.AUTHENTICATION_ERROR,
+                error=f"secure attach message {topic!r} from {origin!r} was not protected",
+            )
+        if channel == OBJ_DOWNLOADER_CHANNEL:
+            if bound_origin and origin == bound_origin:
+                return None
+            return make_cell_reply(
+                CellReturnCode.AUTHENTICATION_ERROR,
+                error=f"attach download message from unauthorized origin {origin!r}",
+            )
         if bound_origin:
             authorized = origin == bound_origin
         else:
             path = FQCN.split(origin) if isinstance(origin, str) else []
-            authorized = topic == Topic.SESSION_OPEN and len(path) == 2 and path[0] == self._api._site_name
+            authorized = (
+                topic == Topic.SESSION_OPEN
+                and len(path) == len(FQCN.split(self.cp_fqcn)) + 1
+                and FQCN.get_parent(origin) == self.cp_fqcn
+            )
         if authorized:
             return None
         return make_cell_reply(
@@ -356,7 +386,7 @@ class AttachTrainerSession:
             attempt_fobs_ctx = dict(fobs_ctx_props)
             attempt_fobs_ctx[RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY] = _on_transaction_created
             request = new_cell_message(
-                {MessageHeaderKey.PASS_THROUGH: True},
+                {},
                 {
                     MsgKey.SESSION_ID: api._session_id,
                     MsgKey.TASK_ID: task_id,
@@ -377,6 +407,7 @@ class AttachTrainerSession:
                     num_receivers=len(source_receiver_ids) if source_receiver_ids else 1,
                     receiver_ids=source_receiver_ids,
                     fobs_ctx_props=attempt_fobs_ctx,
+                    secure=api._protocol_secure,
                 )
                 accepted_attempt_id = self._accepted_result_attempt(reply, result_id)
             except _UncertainResultReply as e:
@@ -476,6 +507,7 @@ class AttachTrainerSession:
                 ),
                 timeout=_RESULT_STATUS_TIMEOUT,
                 optional=True,
+                secure=api._protocol_secure,
             )
         except Exception:
             return None
@@ -553,7 +585,6 @@ class AttachTrainerSession:
                 api._job_id = payload.get(MsgKey.JOB_ID)
                 api._heartbeat_interval = runtime["heartbeat_interval"]
                 api._heartbeat_timeout = runtime["heartbeat_timeout"]
-                api._result_relay_to_cj = runtime["result_relay"]
                 api._task_exchange = runtime["task_exchange"]
                 api._launch_once = True
                 api._memory_gc_rounds = runtime["memory_gc_rounds"]
@@ -582,7 +613,7 @@ class AttachTrainerSession:
         job_id = payload.get(MsgKey.JOB_ID)
         if not isinstance(job_id, str) or not job_id or len(FQCN.split(job_id)) != 1 or FQCN.validate(job_id):
             return "SESSION_OPEN has invalid job id"
-        expected_origin = FQCN.join([api._site_name, job_id])
+        expected_origin = FQCN.join([self.cp_fqcn, job_id])
         if origin != expected_origin:
             return f"CJ origin mismatch: expected {expected_origin!r}, got {origin!r}"
         if api._cj_fqcn and origin != api._cj_fqcn:
@@ -614,9 +645,6 @@ class AttachTrainerSession:
             task_exchange = payload.get(MsgKey.TASK_EXCHANGE)
             if not isinstance(task_exchange, dict):
                 raise TrainerSessionError("SESSION_OPEN task_exchange must be a dict")
-            result_relay = payload.get(MsgKey.RESULT_RELAY)
-            if type(result_relay) is not bool:
-                raise TrainerSessionError("SESSION_OPEN result_relay must be a bool")
             memory_gc_rounds = payload.get(MsgKey.MEMORY_GC_ROUNDS, 0)
             if not isinstance(memory_gc_rounds, int) or isinstance(memory_gc_rounds, bool) or memory_gc_rounds < 0:
                 raise TrainerSessionError("SESSION_OPEN memory_gc_rounds must be an integer >= 0")
@@ -625,7 +653,6 @@ class AttachTrainerSession:
         return {
             "heartbeat_interval": heartbeat_interval,
             "heartbeat_timeout": heartbeat_timeout,
-            "result_relay": result_relay,
             "task_exchange": dict(task_exchange),
             "memory_gc_rounds": memory_gc_rounds,
         }, None

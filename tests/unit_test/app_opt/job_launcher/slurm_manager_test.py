@@ -663,7 +663,7 @@ def test_requeued_job_is_refused_by_batch_guard(tmp_path):
     assert "SLURM_RESTART_COUNT" in adapter.submitted_batch
     assert handle.poll() == JobReturnCode.UNKNOWN
     assert not any(call[0] == "cancel" for call in adapter.calls)
-    assert handle.poll() == JobReturnCode.EXECUTION_ERROR
+    assert handle.poll() == ProcessExitCode.EXCEPTION
 
 
 def test_framework_termination_path_handles_job_without_slurm_system_end_sweep(tmp_path):

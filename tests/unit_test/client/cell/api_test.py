@@ -58,10 +58,18 @@ CJ_FQCN = "site-1.job-1"
 TRAINER_FQCN = "site-1.job-1.client_api_trainer_1"
 SESSION_ID = "session-abc"
 ATTACH_ID = "trainer_a"
-ATTACH_TRAINER_FQCN = f"{CJ_FQCN}.-client_api_trainer_a"
+ATTACH_TRAINER_FQCN = "site-1.-client_api_trainer_a"
 
 
-def _hello_accepted_reply(heartbeat_interval=0.05, heartbeat_timeout=0.0):
+def _hello_accepted_reply(heartbeat_interval=0.05, heartbeat_timeout=0.0, secure_mode=False):
+    security = {MsgKey.SECURE_MODE: secure_mode}
+    if secure_mode:
+        security.update(
+            {
+                MsgKey.AUTH_TOKEN: "site-auth-token",
+                MsgKey.AUTH_TOKEN_SIGNATURE: "site-auth-signature",
+            }
+        )
     return make_cell_reply(
         CellReturnCode.OK,
         body={
@@ -71,6 +79,7 @@ def _hello_accepted_reply(heartbeat_interval=0.05, heartbeat_timeout=0.0):
             MsgKey.SITE_NAME: "site-1",
             MsgKey.HEARTBEAT_INTERVAL: heartbeat_interval,
             MsgKey.HEARTBEAT_TIMEOUT: heartbeat_timeout,
+            **security,
         },
     )
 
@@ -97,6 +106,7 @@ class FakeCell:
         self.fobs_context = {}
         self.heartbeat_interval = 0.05
         self.heartbeat_timeout = 0.0
+        self.secure_mode = False
 
     def get_fqcn(self):
         return self.fqcn
@@ -122,7 +132,7 @@ class FakeCell:
         if self.on_request is not None:
             return self.on_request(topic, target, request)
         if topic == Topic.HELLO:
-            return _hello_accepted_reply(self.heartbeat_interval, self.heartbeat_timeout)
+            return _hello_accepted_reply(self.heartbeat_interval, self.heartbeat_timeout, self.secure_mode)
         if topic == Topic.HEARTBEAT:
             return make_cell_reply(
                 CellReturnCode.OK,
@@ -161,7 +171,6 @@ class AttachFakeCell(FakeCell):
             MsgKey.RANK: "0",
             MsgKey.HEARTBEAT_INTERVAL: 0.05,
             MsgKey.HEARTBEAT_TIMEOUT: 0.0,
-            MsgKey.RESULT_RELAY: False,
             MsgKey.TASK_EXCHANGE: {
                 ConfigKey.TRAIN_TASK_NAME: "train",
                 ConfigKey.EVAL_TASK_NAME: "validate",
@@ -216,6 +225,8 @@ def env(bootstrap_path, monkeypatch):
     # the process-global streaming executors used by later tests.
     cell.shutdown_f3_streaming = MagicMock()
     monkeypatch.setattr(cell_api, "_shutdown_f3_streaming", cell.shutdown_f3_streaming)
+    cell.auth_filter = MagicMock()
+    monkeypatch.setattr(cell_api, "set_add_auth_headers_filters", cell.auth_filter)
     return cell
 
 
@@ -229,7 +240,6 @@ def attach_bootstrap_path(tmp_path):
             BootstrapKey.EXECUTION_MODE: ATTACH_EXECUTION_MODE,
             BootstrapKey.ATTACH_ID: ATTACH_ID,
             BootstrapKey.SITE_NAME: "site-1",
-            BootstrapKey.CJ_FQCN: CJ_FQCN,
             BootstrapKey.CONNECT_URL: "grpc://127.0.0.1:12345",
             BootstrapKey.CONNECTION_SECURITY: "clear",
             BootstrapKey.JOB_WAIT_TIMEOUT: 1.0,
@@ -246,6 +256,8 @@ def attach_env(attach_bootstrap_path, monkeypatch):
     cell.cell_ctor = cell_ctor
     cell.shutdown_f3_streaming = MagicMock()
     monkeypatch.setattr(cell_api, "_shutdown_f3_streaming", cell.shutdown_f3_streaming)
+    cell.auth_filter = MagicMock()
+    monkeypatch.setattr(cell_api, "set_add_auth_headers_filters", cell.auth_filter)
     return cell
 
 
@@ -315,8 +327,10 @@ def _init_and_capture_error(api, errors):
         errors.append(e)
 
 
-def _deliver_attach_task(env, task_id="task-1", attempt_id="attempt-1"):
+def _deliver_attach_task(env, task_id="task-1", attempt_id="attempt-1", result_receiver_ids=None):
     shareable = FLModelUtils.to_shareable(FLModel(params={"w": [1.0]}, params_type=ParamsType.FULL))
+    if result_receiver_ids is not None:
+        shareable.set_header(FOBSContextKey.RECEIVER_IDS, result_receiver_ids)
     return env.deliver(
         Topic.TASK_READY,
         CJ_FQCN,
@@ -332,7 +346,7 @@ def _deliver_attach_task(env, task_id="task-1", attempt_id="attempt-1"):
 
 
 class TestAttachMode:
-    def test_init_waits_for_session_open_and_derives_cj_child_fqcn(self, attach_bootstrap_path, attach_env):
+    def test_init_connects_to_cp_and_discovers_dynamic_cj(self, attach_bootstrap_path, attach_env):
         api = _init_api(attach_bootstrap_path, attach_env)
 
         assert api._cj_fqcn == CJ_FQCN
@@ -343,7 +357,9 @@ class TestAttachMode:
         assert kwargs["fqcn"] == ATTACH_TRAINER_FQCN
         assert kwargs["parent_url"] == "grpc://127.0.0.1:12345"
         assert kwargs["secure"] is False
-        assert kwargs["credentials"]["connection_security"] == "clear"
+        assert kwargs["credentials"] == {}
+        assert kwargs["parent_resources"] == {"connection_security": "clear"}
+        assert kwargs["auth_identity_map"] == {"site-1": "site-1"}
         assert MsgKey.CONNECT_URL not in attach_env.session_reply.payload
         assert MsgKey.CONNECTION_SECURITY not in attach_env.session_reply.payload
         assert attach_env.core_cell.message_interceptor == api._attach._pre_decode_guard
@@ -361,7 +377,7 @@ class TestAttachMode:
         config = read_bootstrap_config(attach_bootstrap_path)
         del config[BootstrapKey.CONNECT_URL]
         del config[BootstrapKey.CONNECTION_SECURITY]
-        del config[BootstrapKey.CJ_FQCN]
+        config.pop(BootstrapKey.CJ_FQCN, None)
         config[BootstrapKey.RENDEZVOUS_DIR] = rendezvous_dir
         write_bootstrap_config(attach_bootstrap_path, config)
         publisher = AttachEndpointPublisher(rendezvous_dir, "site-1", ATTACH_ID)
@@ -386,7 +402,7 @@ class TestAttachMode:
         config = read_bootstrap_config(attach_bootstrap_path)
         del config[BootstrapKey.CONNECT_URL]
         del config[BootstrapKey.CONNECTION_SECURITY]
-        del config[BootstrapKey.CJ_FQCN]
+        config.pop(BootstrapKey.CJ_FQCN, None)
         config[BootstrapKey.RENDEZVOUS_DIR] = str(Path(attach_bootstrap_path).parent)
         config[BootstrapKey.JOB_WAIT_TIMEOUT] = None
         write_bootstrap_config(attach_bootstrap_path, config)
@@ -407,7 +423,7 @@ class TestAttachMode:
         config = read_bootstrap_config(attach_bootstrap_path)
         del config[BootstrapKey.CONNECT_URL]
         del config[BootstrapKey.CONNECTION_SECURITY]
-        del config[BootstrapKey.CJ_FQCN]
+        config.pop(BootstrapKey.CJ_FQCN, None)
         config[BootstrapKey.RENDEZVOUS_DIR] = str(Path(attach_bootstrap_path).parent)
         write_bootstrap_config(attach_bootstrap_path, config)
         api = CellClientAPI(bootstrap_file=attach_bootstrap_path)
@@ -470,11 +486,10 @@ class TestAttachMode:
         for key, value in (
             (MsgKey.ATTACH_ID, "other"),
             (MsgKey.SITE_NAME, "other-site"),
-            (MsgKey.TRAINER_FQCN, f"{CJ_FQCN}.-client_api_other"),
+            (MsgKey.TRAINER_FQCN, "site-1.-client_api_other"),
             (MsgKey.PROTOCOL_VERSION, PROTOCOL_VERSION + 1),
             (MsgKey.RANK, "1"),
             (MsgKey.HEARTBEAT_INTERVAL, 0),
-            (MsgKey.RESULT_RELAY, "true"),
             (MsgKey.TASK_EXCHANGE, "not-a-dict"),
             (MsgKey.MEMORY_GC_ROUNDS, -1),
         ):
@@ -511,11 +526,10 @@ class TestAttachMode:
         assert api._session_id == SESSION_ID
         api.shutdown()
 
-    def test_attach_result_relay_is_independent_of_clear_trainer_transport(self, attach_bootstrap_path, attach_env):
-        attach_env.session_open_payload[MsgKey.RESULT_RELAY] = True
+    def test_attach_materializes_result_at_cj_without_site_auth(self, attach_bootstrap_path, attach_env):
         api = _init_api(attach_bootstrap_path, attach_env)
         try:
-            _deliver_attach_task(attach_env)
+            _deliver_attach_task(attach_env, result_receiver_ids=["server.job"])
             api.receive()
 
             def _on_request(topic, target, request):
@@ -536,6 +550,8 @@ class TestAttachMode:
             result_request = [m for m in attach_env.request_messages if MsgKey.RESULT in m.payload][0]
             result_kwargs = attach_env.request_kwargs[attach_env.request_messages.index(result_request)]
             assert attach_env.cell_ctor.call_args.kwargs["secure"] is False
+            attach_env.auth_filter.assert_not_called()
+            assert result_request.get_header(MessageHeaderKey.PASS_THROUGH) is not True
             assert result_kwargs["receiver_ids"] == (CJ_FQCN,)
             assert result_kwargs["num_receivers"] == 1
         finally:
@@ -562,9 +578,8 @@ class TestAttachMode:
 
         assert rejected.payload[MsgKey.REPLY_TOPIC] == Topic.SESSION_REJECTED
         assert "torch is unavailable" in rejected.payload[MsgKey.REASON]
-        # Direct profiles pre-bind the job Cell as the only transport origin;
-        # the session itself must remain unbound after semantic initialization fails.
-        assert api._cj_fqcn == CJ_FQCN
+        # A rejected open must not bind the dynamic job Cell.
+        assert api._cj_fqcn is None
         assert api._session_id is None
         assert not api._attach._opened.is_set()
         assert init_thread.is_alive()
@@ -592,6 +607,7 @@ class TestAttachMode:
         config[BootstrapKey.CONNECT_URL] = "grpcs://site.example:9000"
         config[BootstrapKey.CONNECTION_SECURITY] = "mtls"
         config[BootstrapKey.CA_CERT] = str(ca_cert)
+        config[BootstrapKey.SECURE_MODE] = True
         write_bootstrap_config(attach_bootstrap_path, config)
 
         api = _init_api(attach_bootstrap_path, attach_env)
@@ -602,8 +618,70 @@ class TestAttachMode:
             "ca_cert": str(ca_cert),
             "client_cert": str(client_cert),
             "client_key": str(client_key),
-            "connection_security": "mtls",
         }
+        assert kwargs["parent_resources"] == {"connection_security": "mtls"}
+        api.shutdown()
+
+    def test_secure_cell_uses_site_credentials_over_clear_cp_transport(self, attach_bootstrap_path, attach_env):
+        profile_dir = Path(attach_bootstrap_path).parent
+        ca_cert = profile_dir / "rootCA.pem"
+        client_cert = profile_dir / "client.crt"
+        client_key = profile_dir / "client.key"
+        for path in (ca_cert, client_cert, client_key):
+            path.write_text("test credential", encoding="utf-8")
+
+        config = read_bootstrap_config(attach_bootstrap_path)
+        config[BootstrapKey.SECURE_MODE] = True
+        config[BootstrapKey.CA_CERT] = str(ca_cert)
+        config[BootstrapKey.AUTH_IDENTITY] = "custom-site-cn"
+        write_bootstrap_config(attach_bootstrap_path, config)
+
+        api = _init_api(attach_bootstrap_path, attach_env)
+
+        kwargs = attach_env.cell_ctor.call_args.kwargs
+        assert kwargs["secure"] is True
+        assert kwargs["credentials"] == {
+            "ca_cert": str(ca_cert),
+            "client_cert": str(client_cert),
+            "client_key": str(client_key),
+        }
+        assert kwargs["parent_resources"] == {"connection_security": "clear"}
+        assert kwargs["auth_identity_map"] == {"site-1": "custom-site-cn"}
+        attach_env.auth_filter.assert_not_called()
+
+        claimed_secure = new_cell_message(
+            {
+                MessageHeaderKey.CHANNEL: STREAM_CHANNEL,
+                MessageHeaderKey.TOPIC: STREAM_DATA_TOPIC,
+                MessageHeaderKey.ORIGIN: CJ_FQCN,
+                MessageHeaderKey.SECURE: True,
+                StreamHeaderKey.CHANNEL: CHANNEL,
+                StreamHeaderKey.TOPIC: Topic.TASK_READY,
+            },
+            MagicMock(name="undecoded_task"),
+        )
+        rejected = api._attach._pre_decode_guard(claimed_secure)
+        claimed_secure.set_header(MessageHeaderKey.ENCRYPTED, True)
+        assert rejected.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.AUTHENTICATION_ERROR
+        assert api._attach._pre_decode_guard(claimed_secure) is None
+
+        def _accept_result(topic, _target, request):
+            assert topic == Topic.RESULT_READY
+            return make_cell_reply(
+                CellReturnCode.OK,
+                body={
+                    MsgKey.REPLY_TOPIC: Topic.RESULT_ACCEPTED,
+                    MsgKey.RESULT_ID: request.payload[MsgKey.RESULT_ID],
+                    MsgKey.ACCEPTED_ATTEMPT_ID: request.payload[MsgKey.ATTEMPT_ID],
+                },
+            )
+
+        attach_env.on_request = _accept_result
+        _deliver_attach_task(attach_env)
+        model = api.receive(timeout=0.1)
+        api.send(FLModel(params=model.params, params_type=ParamsType.FULL))
+        result_index = next(i for i, (topic, _, _) in enumerate(attach_env.requests) if topic == Topic.RESULT_READY)
+        assert attach_env.request_kwargs[result_index]["secure"] is True
         api.shutdown()
 
     def test_secure_profile_rejects_missing_mtls_client_credentials(self, attach_bootstrap_path, attach_env):
@@ -613,6 +691,7 @@ class TestAttachMode:
         config[BootstrapKey.CONNECT_URL] = "grpcs://site.example:9000"
         config[BootstrapKey.CONNECTION_SECURITY] = "mtls"
         config[BootstrapKey.CA_CERT] = str(ca_cert)
+        config[BootstrapKey.SECURE_MODE] = True
         write_bootstrap_config(attach_bootstrap_path, config)
 
         api = CellClientAPI(bootstrap_file=attach_bootstrap_path)
@@ -1026,6 +1105,47 @@ class TestInit:
             api.init(rank="0")
         assert env.stopped, "a failed HELLO must stop the cell"
 
+    def test_secure_init_rejects_missing_accepted_credential_without_binding_session(self, bootstrap_path, env):
+        _set_secure_mode(bootstrap_path, True)
+        reply = _hello_accepted_reply(secure_mode=True)
+        reply.payload.pop(MsgKey.AUTH_TOKEN_SIGNATURE)
+        env.on_request = lambda _topic, _target, _request: reply
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+
+        with pytest.raises(TrainerSessionError, match="no site auth token signature"):
+            api.init(rank="0")
+
+        assert api._session_id is None
+        assert env.stopped
+
+    def test_non_secure_init_accepts_protocol_v1_reply_without_secure_mode(self, bootstrap_path, env):
+        reply = _hello_accepted_reply(secure_mode=False)
+        reply.payload.pop(MsgKey.SECURE_MODE)
+        env.on_request = lambda _topic, _target, _request: reply
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+
+        try:
+            api.init(rank="0")
+
+            assert api._session_id == SESSION_ID
+            assert api._secure_mode is False
+            env.auth_filter.assert_not_called()
+        finally:
+            api.shutdown()
+
+    def test_secure_init_rejects_protocol_v1_reply_without_secure_mode(self, bootstrap_path, env):
+        _set_secure_mode(bootstrap_path, True)
+        reply = _hello_accepted_reply(secure_mode=True)
+        reply.payload.pop(MsgKey.SECURE_MODE)
+        env.on_request = lambda _topic, _target, _request: reply
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+
+        with pytest.raises(TrainerSessionError, match="secure_mode disagrees"):
+            api.init(rank="0")
+
+        assert api._session_id is None
+        assert env.stopped
+
     def test_init_stops_retrying_hello_at_overall_deadline(self, bootstrap_path, env, monkeypatch):
         monkeypatch.setattr(cell_api, "_HELLO_TIMEOUT", 0.03)
         monkeypatch.setattr(cell_api, "_HELLO_RETRY_INTERVAL", 0.005)
@@ -1068,6 +1188,38 @@ class TestInit:
             assert first_cell.stopped
             assert second_cell.started
             assert api._heartbeat_thread is not None and api._heartbeat_thread.is_alive()
+        finally:
+            api.shutdown()
+
+    def test_secure_init_retry_installs_auth_filters_on_replacement_cell(self, bootstrap_path, monkeypatch):
+        _set_secure_mode(bootstrap_path, True)
+        first_cell = FakeCell()
+        first_cell.secure_mode = True
+        second_cell = FakeCell()
+        second_cell.secure_mode = True
+        auth_filter = MagicMock()
+        monkeypatch.setattr(cell_api, "Cell", MagicMock(side_effect=[first_cell, second_cell]))
+        monkeypatch.setattr(cell_api, "set_add_auth_headers_filters", auth_filter)
+        monkeypatch.setattr(cell_api, "_shutdown_f3_streaming", MagicMock())
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        start_heartbeat = MagicMock(side_effect=[RuntimeError("heartbeat start failed"), None])
+        monkeypatch.setattr(api, "_start_heartbeat", start_heartbeat)
+
+        try:
+            with pytest.raises(RuntimeError, match="heartbeat start failed"):
+                api.init(rank="0")
+
+            api.init(rank="0")
+
+            assert first_cell.stopped
+            assert second_cell.started
+            assert [entry.args[0] for entry in auth_filter.call_args_list] == [first_cell, second_cell]
+            for entry in auth_filter.call_args_list:
+                assert entry.kwargs == {
+                    "client_name": "site-1",
+                    "auth_token": "site-auth-token",
+                    "token_signature": "site-auth-signature",
+                }
         finally:
             api.shutdown()
 
@@ -1319,6 +1471,7 @@ class TestReceiveSend:
 
     def test_secure_mode_send_keeps_pass_through_and_ultimate_receivers(self, bootstrap_path, env):
         _set_secure_mode(bootstrap_path, True)
+        env.secure_mode = True
         api = _init_api(bootstrap_path, env)
         try:
             _deliver_task(env, result_receiver_ids=["server.job"])
@@ -1329,7 +1482,13 @@ class TestReceiveSend:
             result_request = [m for m in env.request_messages if MsgKey.RESULT in m.payload][0]
             result_kwargs = env.request_kwargs[env.request_messages.index(result_request)]
             assert result_request.get_header(MessageHeaderKey.PASS_THROUGH) is True
-            assert result_kwargs["receiver_ids"] == (CJ_FQCN,)
+            env.auth_filter.assert_called_once_with(
+                env,
+                client_name="site-1",
+                auth_token="site-auth-token",
+                token_signature="site-auth-signature",
+            )
+            assert result_kwargs["receiver_ids"] == ("server.job",)
             assert result_kwargs["num_receivers"] == 1
         finally:
             api.shutdown()

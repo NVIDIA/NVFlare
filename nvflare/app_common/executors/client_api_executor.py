@@ -25,7 +25,7 @@ from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import DXO
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable, make_reply
@@ -124,7 +124,10 @@ class ClientAPIExecutor(Executor):
             heartbeat_interval (float): out-of-process only (external_process/attach). Interval
                 (seconds) for session heartbeats.
             heartbeat_timeout (float): out-of-process only (external_process/attach). Session lease
-                timeout (seconds) on missed heartbeats (design: "Heartbeat and Liveness").
+                timeout (seconds) on missed heartbeats (design: "Heartbeat and Liveness"). Zero
+                disables heartbeat checks for external_process but is invalid for attach, whose
+                external trainer requires heartbeat liveness as the fallback for a lost terminal
+                SHUTDOWN.
             task_wait_timeout (Optional[float]): Optional maximum time for the trainer to accept a
                 delivered task, including payload download and materialization. Independently, task
                 ingestion must report progress within the streaming layer's 600-second idle timeout.
@@ -157,11 +160,9 @@ class ClientAPIExecutor(Executor):
                 trainer to attach. None means no timeout.
             allow_reconnect (bool): attach only. Whether a trainer may re-attach to an existing
                 session after a disconnect.
-            allow_insecure_attach (bool): attach only. Explicitly allow an unprotected route.
-                When False, the dedicated CJ-owned Attach listener must use either the
-                shared-file driver or mTLS. This does not configure TLS and does not affect
-                the site's independent CP-to-CJ route. Intended only for trusted development
-                environments using clear network transport.
+            allow_insecure_attach (bool): attach only. Deprecated compatibility argument with
+                no effect. Network Attach uses the site's existing CP trust model; a CJ-owned
+                shared-file route must always satisfy its filesystem protection checks.
         """
         super().__init__()
 
@@ -238,10 +239,10 @@ class ClientAPIExecutor(Executor):
             from nvflare.client.cell.attach import validate_attach_id
 
             attach_id = validate_attach_id(attach_id)
-            if heartbeat_timeout == 0 and result_wait_timeout is None:
+            if heartbeat_timeout == 0:
                 raise ValueError(
-                    "attach mode requires heartbeat_timeout > 0 or a finite result_wait_timeout "
-                    "because it does not own a trainer process for liveness detection"
+                    "attach mode requires heartbeat_timeout > 0 because heartbeat liveness is the terminal fallback "
+                    "when protocol SHUTDOWN is lost"
                 )
         else:
             if attach_id is not None:
@@ -380,7 +381,10 @@ class ClientAPIExecutor(Executor):
 
     @staticmethod
     def _requires_materialized_result(task_name: str, fl_ctx: FLContext) -> bool:
-        """Whether a configured component explicitly consumes the concrete Client API result."""
+        """Whether the active ClientRunner pipeline consumes the concrete Client API result."""
+        if fl_ctx.get_prop(FLContextKey.TASK_NAME) != task_name:
+            return False
+
         engine = fl_ctx.get_engine()
         get_all_components = getattr(engine, "get_all_components", None) if engine is not None else None
         components = get_all_components() if callable(get_all_components) else None
@@ -429,9 +433,7 @@ class ClientAPIExecutor(Executor):
     @staticmethod
     def _materialize_result(result: Shareable, cell, abort_signal: Signal) -> Shareable:
         """Resolve a pass-through result at the CJ for a declared local consumer."""
-        encode_ctx = cell.get_fobs_context(
-            props={FOBSContextKey.PASS_THROUGH: False, FOBSContextKey.RELAY_PASS_THROUGH: False}
-        )
+        encode_ctx = cell.get_fobs_context(props={FOBSContextKey.PASS_THROUGH: False})
         encoded = fobs.dumps(result, fobs_ctx=encode_ctx)
         decode_ctx = cell.get_fobs_context(
             props={FOBSContextKey.PASS_THROUGH: False, FOBSContextKey.ABORT_SIGNAL: abort_signal}

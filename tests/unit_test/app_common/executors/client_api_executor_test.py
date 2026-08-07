@@ -172,8 +172,8 @@ class TestConstructorValidation:
         with pytest.raises(ValueError, match="attach_id"):
             ClientAPIExecutor(execution_mode="attach", attach_id=attach_id)
 
-    def test_attach_requires_a_liveness_bound_for_result_wait(self):
-        with pytest.raises(ValueError, match="heartbeat_timeout > 0 or a finite result_wait_timeout"):
+    def test_attach_requires_heartbeat_liveness_for_terminal_shutdown(self):
+        with pytest.raises(ValueError, match="heartbeat_timeout > 0.*SHUTDOWN"):
             ClientAPIExecutor(
                 execution_mode="attach",
                 attach_id="trainer_a",
@@ -181,12 +181,13 @@ class TestConstructorValidation:
                 result_wait_timeout=None,
             )
 
-        ClientAPIExecutor(
-            execution_mode="attach",
-            attach_id="trainer_a",
-            heartbeat_timeout=0,
-            result_wait_timeout=10,
-        )
+        with pytest.raises(ValueError, match="heartbeat_timeout > 0.*SHUTDOWN"):
+            ClientAPIExecutor(
+                execution_mode="attach",
+                attach_id="trainer_a",
+                heartbeat_timeout=0,
+                result_wait_timeout=10,
+            )
 
     def test_valid_full_surface(self):
         executor = ClientAPIExecutor(
@@ -557,6 +558,7 @@ class TestBackendPlumbing:
         decode_ctx = {"cell": cell, "phase": "decode"}
         cell.get_fobs_context.side_effect = [encode_ctx, decode_ctx]
         fl_ctx = _make_fl_ctx(engine)
+        fl_ctx.set_prop(FLContextKey.TASK_NAME, "train", private=True, sticky=False)
         task = Shareable()
         abort_signal = Signal()
         materialized = Shareable({"weight": "concrete"})
@@ -575,7 +577,6 @@ class TestBackendPlumbing:
             call(
                 props={
                     FOBSContextKey.PASS_THROUGH: False,
-                    FOBSContextKey.RELAY_PASS_THROUGH: False,
                 }
             ),
             call(props={FOBSContextKey.PASS_THROUGH: False, FOBSContextKey.ABORT_SIGNAL: abort_signal}),
@@ -626,6 +627,27 @@ class TestBackendPlumbing:
 
         assert reply is backend.result
         assert task.get_header(FOBSContextKey.RECEIVER_IDS) is None
+        engine.get_cell.assert_not_called()
+
+    def test_execute_keeps_nested_swarm_result_pass_through(self):
+        backend = _StubBackend()
+        backend.result = Shareable({"weight": LazyDownloadRef("trainer", "ref-1", "T0")})
+        executor = ClientAPIExecutor(execution_mode="external_process", command="python custom/train.py")
+        executor._backend = backend
+        engine = Mock()
+        component = Mock()
+        component.requires_materialized_task_result.side_effect = lambda task_name: task_name == "train"
+        engine.get_all_components.return_value = {"tensor_streamer": component}
+        fl_ctx = _make_fl_ctx(engine)
+        fl_ctx.set_prop(FLContextKey.TASK_NAME, "swarm_learn", private=True, sticky=False)
+        task = Shareable()
+        task.set_header(FOBSContextKey.RECEIVER_IDS, ["site-1.job-1"])
+
+        reply = executor.execute("train", task, fl_ctx, Signal())
+
+        assert reply is backend.result
+        assert task.get_header(FOBSContextKey.RECEIVER_IDS) == ["site-1.job-1"]
+        component.requires_materialized_task_result.assert_not_called()
         engine.get_cell.assert_not_called()
 
     def test_unrelated_events_are_not_relayed_to_backend(self):
