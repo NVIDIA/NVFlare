@@ -64,6 +64,28 @@ def _make_runner_inputs(num_clients=1):
     return runner, fl_ctx, engine, job, client_sites
 
 
+def _make_workspace_save_inputs(run_dir, result_root, log_root, audit_root):
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_debug = MagicMock()
+    runner.log_warning = MagicMock()
+
+    workspace = MagicMock()
+    workspace.get_run_dir.return_value = run_dir
+    workspace.get_result_root.return_value = result_root
+    workspace.get_log_root.return_value = log_root
+    workspace.get_audit_root.return_value = audit_root
+
+    job_manager = MagicMock()
+    engine = MagicMock()
+    engine.get_component.return_value = job_manager
+
+    fl_ctx = MagicMock()
+    fl_ctx.get_prop.return_value = "job-1"
+    fl_ctx.get_workspace.return_value = workspace
+    fl_ctx.get_engine.return_value = engine
+    return runner, fl_ctx, job_manager
+
+
 # ---------------------------------------------------------------------------
 # strict flag wiring
 # ---------------------------------------------------------------------------
@@ -233,6 +255,57 @@ def test_start_run_sets_job_clients_meta_before_start_client_job(mock_get_bool, 
     runner._start_run(job_id=job.job_id, job=job, client_sites=client_sites, fl_ctx=fl_ctx)
 
     assert seen_job_clients_meta["value"] == [{"name": "site-1"}, {"name": "site-2"}]
+
+
+def test_save_workspace_skips_duplicate_missing_sources(tmp_path):
+    missing = str(tmp_path / "missing")
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(missing, missing, missing, missing)
+
+    runner._save_workspace(fl_ctx)
+
+    job_manager.save_workspace.assert_not_called()
+    assert runner.log_warning.call_args_list == [
+        call(fl_ctx, f"Skipping unavailable workspace archive source for job job-1: {missing}"),
+        call(fl_ctx, "No workspace archive sources are available for finished job job-1"),
+    ]
+
+
+def test_save_workspace_archives_only_existing_deduplicated_sources(tmp_path):
+    run_dir = tmp_path / "run"
+    result_root = tmp_path / "result"
+    missing = str(tmp_path / "missing")
+    run_dir.mkdir()
+    result_root.mkdir()
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(result_root), missing)
+    job_manager.save_workspace.return_value = "/store/job-1/workspace"
+
+    runner._save_workspace(fl_ctx)
+
+    job_manager.save_workspace.assert_called_once_with("job-1", [str(run_dir), str(result_root)], fl_ctx)
+    runner.log_warning.assert_called_once_with(
+        fl_ctx, f"Skipping unavailable workspace archive source for job job-1: {missing}"
+    )
+    assert not run_dir.exists()
+    assert not result_root.exists()
+
+
+def test_save_workspace_tolerates_source_disappearing_during_cleanup(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(*([str(run_dir)] * 4))
+
+    def _archive_then_remove_source(*_args):
+        run_dir.rmdir()
+        return "/store/job-1/workspace"
+
+    job_manager.save_workspace.side_effect = _archive_then_remove_source
+
+    runner._save_workspace(fl_ctx)
+
+    job_manager.save_workspace.assert_called_once_with("job-1", [str(run_dir)], fl_ctx)
+    runner.log_warning.assert_called_once_with(
+        fl_ctx, f"Workspace archive source disappeared before cleanup for job job-1: {run_dir}"
+    )
 
 
 def test_job_complete_process_saves_workspace_before_publishing_aborted_status():
@@ -676,6 +749,62 @@ def test_job_complete_process_retries_save_without_recomputing_finished_status()
         call(EventType.JOB_ABORTED, second_ctx),
         call(EventType.JOB_COMPLETED, second_ctx),
     ]
+    engine.remove_exception_process.assert_called_once_with("job-1")
+    assert "job-1" not in runner.running_jobs
+    assert "job-1" not in runner._finished_job_states
+
+
+@patch("nvflare.private.fed.server.job_runner.monotonic", side_effect=[0.0, 60.0])
+def test_job_complete_process_publishes_terminal_status_after_workspace_save_grace_time(_mock_monotonic):
+    runner = JobRunner(workspace_root="/tmp")
+    runner.fire_event = MagicMock()
+    runner.log_debug = MagicMock()
+    runner.log_error = MagicMock()
+    runner.log_exception = MagicMock()
+    runner.log_info = MagicMock()
+    runner.abort_client_run = MagicMock()
+    runner._save_workspace = MagicMock(side_effect=RuntimeError("storage unavailable"))
+    runner.ask_to_stop = False
+
+    engine = MagicMock()
+    engine.run_processes = {}
+    engine.client_manager.clients = {}
+    engine.exception_run_processes = {
+        "job-1": {
+            RunProcessKey.PARTICIPANTS: {},
+            RunProcessKey.PROCESS_RETURN_CODE: ProcessExitCode.EXCEPTION,
+        }
+    }
+
+    job_manager = MagicMock()
+    engine.get_component.return_value = job_manager
+
+    first_ctx = MagicMock()
+    second_ctx = MagicMock()
+    engine.new_context.side_effect = [nullcontext(first_ctx), nullcontext(second_ctx)]
+
+    job = MagicMock()
+    job.job_id = "job-1"
+    job.run_aborted = False
+    runner.running_jobs = {"job-1": job}
+
+    sleep_count = 0
+
+    def _stop_after_second_pass(_):
+        nonlocal sleep_count
+        sleep_count += 1
+        if sleep_count == 2:
+            runner.ask_to_stop = True
+
+    with _patch_job_runner_sleep(_stop_after_second_pass):
+        runner._job_complete_process(engine)
+
+    assert runner._save_workspace.call_args_list == [call(first_ctx), call(second_ctx)]
+    runner.abort_client_run.assert_called_once_with("job-1", [], first_ctx)
+    runner.log_exception.assert_called_once()
+    runner.log_error.assert_called_once()
+    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_EXECUTION_EXCEPTION, second_ctx)
+    runner.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, second_ctx)
     engine.remove_exception_process.assert_called_once_with("job-1")
     assert "job-1" not in runner.running_jobs
     assert "job-1" not in runner._finished_job_states
