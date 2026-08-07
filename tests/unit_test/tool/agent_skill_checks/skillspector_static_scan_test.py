@@ -24,6 +24,10 @@ import pytest
 COMMAND_TIMEOUT = 30
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SKILL_DIRS = tuple(sorted(path.parent for path in (REPO_ROOT / "skills").glob("*/SKILL.md")))
+# Fail closed: pytest silently skips a test parametrized over an empty sequence and still
+# exits 0, so a moved or renamed skills layout would turn this gate green without ever
+# scanning a skill.
+assert SKILL_DIRS, f"no bundled skills discovered under {REPO_ROOT / 'skills'}"
 BLOCKING_SEVERITIES = {"HIGH", "CRITICAL"}
 KEY_ENV_NAMES = (
     "ANTHROPIC_API_KEY",
