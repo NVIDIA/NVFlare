@@ -83,6 +83,14 @@ def run_command_in_subprocess(command, stdin_data=None):
     return process
 
 
+def run_command_and_check(command: str) -> None:
+    """Run synchronously, stream child output, and fail on a nonzero exit."""
+    process = run_command_in_subprocess(command)
+    return_code = process.wait()
+    if return_code != 0:
+        raise subprocess.CalledProcessError(return_code, process.args)
+
+
 def _get_resource_json_file(workspace_path: str, site_name: str) -> str:
     resource_json_path = os.path.join(workspace_path, site_name, "local", RESOURCE_CONFIG)
     if not os.path.exists(resource_json_path):

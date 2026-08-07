@@ -28,7 +28,7 @@ from tests.integration_test.src import (
     ProvisionSiteLauncher,
     cleanup_path,
     read_yaml,
-    run_command_in_subprocess,
+    run_command_and_check,
 )
 
 
@@ -198,8 +198,7 @@ class TestSystem:
             start_time = time.time()
             for command in setup:
                 print(f"Running setup command: {command}")
-                process = run_command_in_subprocess(command)
-                process.wait()
+                run_command_and_check(command)
 
             test_driver.run_event_sequence(event_sequence)
 
@@ -234,8 +233,7 @@ class TestSystem:
             print(f"Finished running test {test_name!r} in {time.time() - start_time} seconds.")
             for command in teardown:
                 print(f"Running teardown command: {command}")
-                process = run_command_in_subprocess(command)
-                process.wait()
+                run_command_and_check(command)
             test_driver.reset_test_info(reset_job_info=reset_job_info)
             _print_newlines()
 
