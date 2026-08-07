@@ -38,7 +38,21 @@ def _create_model_learner():
 class TestFedJob:
     @pytest.mark.parametrize(
         "name",
-        ["", " ", ".", "..", "../job", "nested/job", r"nested\job", "/tmp/job", r"C:\job", "C:job"],
+        [
+            "",
+            " ",
+            ".",
+            "..",
+            "../job",
+            "nested/job",
+            r"nested\job",
+            "/tmp/job",
+            r"C:\job",
+            "C:job",
+            "job.",
+            "job ",
+            "CON",
+        ],
     )
     def test_rejects_invalid_job_name(self, name):
         with pytest.raises(ValueError):
