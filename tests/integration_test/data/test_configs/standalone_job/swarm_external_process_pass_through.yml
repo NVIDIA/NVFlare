@@ -1,20 +1,18 @@
-# Regression test for secure external-process result relay in Swarm.
-# This is registered under the client_api framework and uses a provisioned
-# project because secure mode is required to create relay=True lazy refs.
+# Secure nested Swarm coverage for external-process Client API pass-through.
 # To select only this config:
-#   NVFLARE_TEST_FRAMEWORK=client_api pytest -s system_test.py -k swarm_external_process_relay
+#   NVFLARE_TEST_FRAMEWORK=client_api pytest -s system_test.py -k swarm_external_process_pass_through
 project_yaml: ./data/projects/client_api.yml
 jobs_root_dir: ./data/jobs
 cleanup: True
 
 
 tests:
-  - test_name: "run swarm-external-process-relay"
+  - test_name: "run swarm-external-process-pass-through"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job swarm_external_process_relay" ]
+        "actions": [ "submit_job swarm_external_process_pass_through" ]
         "result":
           "type": "job_submit_success"
       - "trigger":
@@ -30,5 +28,6 @@ tests:
           required_patterns:
             - "swarm external trainer sent round 0 result shape=(1024, 1024)"
           forbidden_patterns:
-            - "cannot relay LazyDownloadRef because no Cell is available in fobs context"
+            - "unauthenticated msg"
+            - "Traceback (most recent call last)"
             - "EXECUTION_EXCEPTION"

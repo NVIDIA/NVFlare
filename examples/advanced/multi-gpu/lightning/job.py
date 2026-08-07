@@ -29,7 +29,6 @@ def define_parser():
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=5)
     parser.add_argument("--use_tracking", action="store_true", help="Enable TensorBoard tracking")
-    parser.add_argument("--export_config", action="store_true", help="Export job config only")
     return parser.parse_args()
 
 
@@ -63,16 +62,12 @@ def main():
     if args.use_tracking:
         add_experiment_tracking(recipe, tracking_type="tensorboard")
 
-    if args.export_config:
-        recipe.export("/tmp/nvflare/jobs/job_config")
-        print("Job config exported to /tmp/nvflare/jobs/job_config")
-    else:
-        env = SimEnv(num_clients=args.n_clients)
-        run = recipe.execute(env)
-        print()
-        print("Result:", run.get_result())
-        print("Status:", run.get_status())
-        print()
+    env = SimEnv(num_clients=args.n_clients)
+    run = recipe.execute(env)
+    print()
+    print("Result:", run.get_result())
+    print("Status:", run.get_status())
+    print()
 
 
 if __name__ == "__main__":
