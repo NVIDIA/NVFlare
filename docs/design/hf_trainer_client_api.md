@@ -672,8 +672,8 @@ The Phase 1 contract for the file exchange:
 
 No new components required:
 
-- Subprocess mode: existing `ScriptRunner` / `PTClientAPILauncherExecutor` +
-  `CellPipe`, unchanged.
+- External-process mode: `ScriptRunner` / `ClientAPIExecutor` with the direct
+  Cell backend.
 - In-process mode: existing in-process client API executor, unchanged.
 - Server: `FedAvgRecipe` (+ `PTModel` or an initial-model persistor). For large
   models enable `enable_tensor_disk_offload=True` in the recipe.
@@ -701,9 +701,8 @@ No new components required:
   hello-world example uses this single PEFT path; full-model and multi-node
   variants remain in the advanced `llm_hf` example.
 - The `server_key_prefix` option removes the example's hand-rolled `"model."`
-  renames; sites that prefer executor-side conversion can keep using a
-  `ParamsConverter` instead — the two mechanisms are alternatives, and the doc for
-  the API must say "pick one".
+  renames. Sites that need other custom transformations apply them in trainer code
+  after `flare.receive()` and before `flare.send()`.
 
 ## Example
 

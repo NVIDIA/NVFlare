@@ -76,6 +76,32 @@ timeouts above are configured consistently for very large models.
 Upcoming Main-Branch Changes
 ============================
 
+Legacy Client API Stack Removal
+-------------------------------
+
+The legacy converter, launcher, agent, exchanger, script-runner, metrics-relay,
+and pipe APIs have been removed. This includes ``BaseScriptRunner``,
+``MetricRelay``, ``MetricsSender``, and ``ExternalConfigurator`` in addition to
+the legacy executor and pipe classes. Migrate client jobs to
+:class:`ClientAPIExecutor<nvflare.app_common.executors.client_api_executor.ClientAPIExecutor>`
+using ``in_process``, ``external_process``, or ``attach`` mode.
+
+Recipe-level ``pipe_type`` and ``pipe_root_path`` settings are no longer
+accepted. Select transport in site ``comm_config.json`` instead; the F3
+``FileDriver`` remains available as scheme ``shared-file``. For custom model
+representation logic, transform parameters explicitly around
+``flare.receive()`` and ``flare.send()`` or use helpers in
+:mod:`nvflare.client.converter_utils`.
+
+Flower jobs no longer configure a ``MetricRelay``/``MetricsSender`` pair or a
+metrics ``CellPipe``. ``FlowerJob`` installs ``FlowerMetricsReceiver`` and the
+Flower ClientApp streams metrics through a direct, local Cell Client API
+session. Remove legacy Flower component IDs and selector overrides from custom
+job templates; keep ``stream_metrics=True`` when streamed metrics are wanted.
+Also remove ``FLARE_CLIENT_API_TYPE`` from ``FlowerJob.extra_env``: Flower now
+selects and bootstraps its metrics session internally, and the variable is
+reserved.
+
 FLARE API Compatibility Note
 ----------------------------
 

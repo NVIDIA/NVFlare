@@ -513,10 +513,7 @@ class TestFedAvgRecipe:
         from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe import FedAvgRecipe as UnifiedFedAvgRecipe
 
-        with (
-            patch("nvflare.job_config.script_runner.optional_import", return_value=(None, True)),
-            pytest.warns(UserWarning, match="default persistors do not currently create"),
-        ):
+        with pytest.warns(UserWarning, match="default persistors do not currently create"):
             recipe = UnifiedFedAvgRecipe(
                 name="test_tf_best_filename_warning",
                 framework=FrameworkType.TENSORFLOW,
@@ -1382,10 +1379,9 @@ class TestFedAvgRecipeExternalProcessStartup:
 
         assert train_executor["path"].endswith(".ClientAPIExecutor")
         assert train_executor_args["execution_mode"] == expected_mode
-        assert not any(
-            "LauncherExecutor" in component.get("path", "") or "Pipe" in component.get("path", "")
-            for component in client_config.get("components", [])
-        )
+        component_ids = {component["id"] for component in client_config.get("components", [])}
+        assert "launcher" not in component_ids
+        assert "pipe" not in component_ids
         if launch_external_process:
             assert train_executor_args["command"][:2] == ["python3", "-u"]
             assert train_executor_args["command"][-2:] == ["--epochs", "1"]

@@ -59,7 +59,7 @@ def _is_server_job_cell(my_info) -> bool:
     """Return True only for server cells owned by one job run.
 
     Parent server cell FQCN is "server"; server job cells start with
-    "server.<job_id>" and may have nested children like "server.<job_id>.cell_pipe".
+    "server.<job_id>" and may have nested child cells.
     The fail-fast path must only exit a job process, never the parent server.
     """
     fqcn = getattr(my_info, "fqcn", "")

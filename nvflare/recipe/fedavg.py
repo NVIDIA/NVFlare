@@ -62,6 +62,7 @@ class _FedAvgValidator(BaseModel):
     model_persistor: Optional[ModelPersistor] = None
     per_site_config: Optional[Dict[str, Dict]] = None
     launch_once: bool = True
+    launch_timeout: Optional[float] = 300.0
     shutdown_timeout: float = 0.0
     key_metric: str = "accuracy"
     key_metric_mode: Optional[Literal["min", "max"]] = None
@@ -161,6 +162,7 @@ class FedAvgRecipe(Recipe):
             - server_expected_format (ExchangeFormat): Exchange format
             - params_transfer_type (TransferType): Parameter transfer type
             - launch_once (bool): Whether to launch external process once or per task
+            - launch_timeout (float or None): Seconds to wait for a launched process to establish its session
             - shutdown_timeout (float): Shutdown timeout in seconds
             If not provided, the same configuration will be used for all clients.
             Like train_args, per-site values are written in clear text into the generated job
@@ -168,6 +170,8 @@ class FedAvgRecipe(Recipe):
             :mod:`nvflare.recipe.secrets` for how to pass secrets safely.
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
+        launch_timeout: Seconds to wait for an external process to launch and establish its
+            Client API session. ``None`` disables this timeout. Defaults to 300.0.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
@@ -224,6 +228,7 @@ class FedAvgRecipe(Recipe):
         model_persistor: Optional[ModelPersistor] = None,
         per_site_config: Optional[Dict[str, Dict]] = None,
         launch_once: bool = True,
+        launch_timeout: Optional[float] = 300.0,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
         key_metric_mode: Optional[Literal["min", "max"]] = None,
@@ -274,6 +279,7 @@ class FedAvgRecipe(Recipe):
             model_persistor=model_persistor,
             per_site_config=per_site_config,
             launch_once=launch_once,
+            launch_timeout=launch_timeout,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
             key_metric_mode=key_metric_mode,
@@ -320,6 +326,7 @@ class FedAvgRecipe(Recipe):
         self.per_site_config = None
         self._validate_aggregator_data_kind()
         self.launch_once = v.launch_once
+        self.launch_timeout = v.launch_timeout
         self.shutdown_timeout = v.shutdown_timeout
         self.key_metric = v.key_metric
         self.key_metric_mode = v.key_metric_mode
@@ -409,6 +416,7 @@ class FedAvgRecipe(Recipe):
             server_expected_format=self._site_value(site_config, "server_expected_format", self.server_expected_format),
             params_transfer_type=self._site_value(site_config, "params_transfer_type", self.params_transfer_type),
             launch_once=self._site_value(site_config, "launch_once", self.launch_once),
+            launch_timeout=self._site_value(site_config, "launch_timeout", self.launch_timeout),
             shutdown_timeout=self._site_value(site_config, "shutdown_timeout", self.shutdown_timeout),
             memory_gc_rounds=self.client_memory_gc_rounds,
             cuda_empty_cache=self.cuda_empty_cache,

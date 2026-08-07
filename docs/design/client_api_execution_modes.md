@@ -61,8 +61,9 @@ ScriptRunner(
 )
 ```
 
-``execution_mode`` is also available as an explicit mode selector, including
-``execution_mode="attach"`` for an independently managed trainer.
+``execution_mode`` is also available on ``ScriptRunner`` as an explicit selector
+for ``in_process`` and ``external_process``. For an independently managed
+trainer, configure ``ClientAPIExecutor(execution_mode="attach", ...)`` directly.
 
 For `external_process`, the resulting path is:
 
@@ -277,29 +278,30 @@ the trainer remains alive until its complete result-publication barrier settles:
 terminal outcome. It then closes its Cell synchronously, and the CJ reaps that natural process exit
 asynchronously. An orderly job SHUTDOWN cancels an incoming task materialization but not an already
 accepted result publication. If teardown finds such a publication still active, it asks the trainer
-to stop, starts the natural-exit reaper, and holds END_RUN until that truthful terminal exit. This
-also covers inline results, whose acceptance reply can race END_RUN even though they create no
-download transaction. Teardown cannot safely return with a daemon reaper because ClientRunner
-tears down streaming and the CJ Cell immediately after END_RUN. The lower `DownloadService`
-idle/receiver policy normally bounds a stalled transfer. END_RUN also applies a final total wait
-backstop just beyond the default streaming-idle budget; if a still-connected trainer remains wedged
-past that bound, the backend force-stops its owned process group rather than hanging job teardown.
-Other failure/teardown paths use the bounded SHUTDOWN/TERM/KILL sequence immediately.
+to stop and starts the natural-exit reaper. This also covers inline results, whose acceptance reply
+can race END_RUN even though they create no download transaction. Teardown cannot safely return
+with a daemon reaper because ClientRunner tears down streaming and the CJ Cell immediately after
+END_RUN. A result transfer retains its own `DownloadService` idle/receiver policy, but that longer
+data-transfer budget does not govern CJ process ownership. END_RUN gives a still-live result source
+one acknowledged SHUTDOWN interval, then force-stops every remaining owned process group. Other
+failure/teardown paths use the bounded SHUTDOWN/TERM/KILL sequence immediately.
 
 Startup waits at most `launch_timeout` for the trainer to complete its HELLO handshake. The
 default is 300 seconds; callers may explicitly use `None` when an unbounded wait is required. For
 ordinary shutdown, a `shutdown_timeout` of zero is kept as zero and starts process-group termination
 immediately after the orderly SHUTDOWN notification. An accepted result whose publication is
-different: its truthful terminal barrier takes precedence over ordinary process-shutdown timing,
-so historical `ScriptRunner` defaults cannot erase the source-lifetime contract.
+still live receives the short acknowledgement interval described above before process cleanup.
 
 The backend starts the command in an owned process group on POSIX, monitors process-group exit and
 the authenticated heartbeat lease, and rejects messages from stale sessions or unexpected Cell
-origins. With a positive orderly-shutdown bound, shutdown sends a bounded Cell request and charges
-its acknowledgement time against that bound; a zero bound keeps the immediate fire-and-forget
-notification for ordinary teardown. A live accepted-result publication always uses a short,
-acknowledged SHUTDOWN request because the trainer cannot be force-stopped before its send barrier
-settles; the source reaper retries transient control-path failures. Its acknowledgement also
+origins. Its owner-only bootstrap also records the launching CJ process ID. After HELLO, an external
+trainer watches that owner and terminates its isolated process group if the CJ disappears before
+normal finalization can reap it. Attach mode never receives or watches a CJ process ID because the
+attached process is externally owned. With a positive orderly-shutdown bound, shutdown sends a
+bounded Cell request and charges its acknowledgement time against that bound; a zero bound keeps the
+immediate fire-and-forget notification for ordinary teardown. A live accepted-result publication
+always uses a short, acknowledged SHUTDOWN request because the trainer cannot be force-stopped
+before its send barrier settles; the source reaper retries transient control-path failures. Its acknowledgement also
 reports whether `send()` still owns that barrier. This state transition is serialized with
 SHUTDOWN: either `send()` sees the stop and closes after terminal settlement, or the backend learns
 that settlement already happened and can stop the persistent process. A standard trainer loop also releases its Cell
@@ -330,7 +332,8 @@ calls rather than leaving the trainer waiting indefinitely.
 
 ## Parameter Representation and FULL/DIFF
 
-The execution-mode architecture does not use `ParamsConverter` or a ParamsConverter adapter.
+The execution-mode architecture uses function-based format adaptation and has no pluggable
+converter component or converter-object API.
 
 `ScriptRunner` maps its framework setting to an explicit `params_exchange_format` and carries
 that declaration, plus `server_expected_format`, through `ClientAPIExecutor` into
@@ -343,8 +346,7 @@ The trainer-side Client API honors the declaration at its API boundary:
 - send: framework-native `FLModel.params` -> server representation.
 
 The implementation is a small functional adapter with caller-owned state for PyTorch tensor
-shapes and non-tensor entries; it does not recreate the `ParamsConverter` component
-hierarchy. `RAW` explicitly means no representation adaptation. If either side of a declared pair
+shapes and non-tensor entries. `RAW` explicitly means no representation adaptation. If either side of a declared pair
 is `RAW`, conversion is a no-op and the payload passes unchanged; `RAW` is an adaptation off-switch,
 not a concrete representation guarantee.
 
@@ -366,6 +368,10 @@ compression, selection, and blocking filters, including which side is trusted, w
 each operation requires, and whether removing or blocking a lazy reference must explicitly abandon
 its source transaction. This execution-mode change does not add a partial ``supports_lazy_payload``
 filter contract.
+
+Applications that need custom parameter transformation perform it explicitly after
+``flare.receive()`` and before ``flare.send()``. Recipe and executor configuration deliberately
+does not provide a custom converter plugin surface.
 
 ## In-Process Mode
 
