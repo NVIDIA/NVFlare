@@ -104,10 +104,16 @@ def test_skillevaluator_tier1_standalone_command_of_bundled_skill(command_name, 
 
 def _require_skillevaluator():
     if sys.version_info[:2] not in {(3, 12), (3, 13)}:
-        pytest.skip("skillevaluator is included in NVFlare development dependencies on Python 3.12 and 3.13")
+        pytest.skip("skillevaluator supports Python 3.12 and 3.13")
 
+    # Not a pip-installed development dependency: it cannot be resolved alongside the
+    # dev extras (click>=8.3.3 vs NVFlare's click==8.1.7 below 3.14), so CI installs it
+    # into an isolated virtual environment and exposes only the CLI on PATH. Skipping
+    # when absent keeps local runs working; CI gates because its install step is not
+    # allowed to fail.
     skillevaluator = shutil.which("skillevaluator")
-    assert skillevaluator, "skillevaluator must be installed by NVFlare's Python 3.12/3.13 development dependencies"
+    if not skillevaluator:
+        pytest.skip("skillevaluator CLI not on PATH; install .[skill_eval] in a separate environment to run this check")
     return skillevaluator
 
 
