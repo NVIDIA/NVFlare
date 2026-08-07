@@ -1,0 +1,126 @@
+# NVFlare parent runtime for CoCo server/client processes. This purpose-built
+# image includes CPU/GPU attestation clients but intentionally excludes the
+# Kubernetes Python extra because this deployment uses ProcessJobLauncher.
+ARG PYTHON_BUILD_BASE=python:3.12.12-slim-trixie@sha256:f3fa41d74a768c2fce8016b98c191ae8c1bacd8f1152870a3f9f87d350920b7c
+ARG PYTHON_RUNTIME_BASE=nvcr.io/nvidia/distroless/python:3.12-v4.0.7@sha256:9e7012ce1816b720123ae11fc0edd005ff1373c9eb562ded2b3e9da869ed7bc9
+ARG PYTHON_MINOR=3.12
+ARG SNPGUEST_VERSION=0.10.0
+ARG SNPGUEST_SHA256=70e700465e3523e67dd5104583dc36cd11eef630c6f04c5b9ccafd6ba2e76ca0
+ARG TRUSTAUTHORITY_CLI_VERSION=v1.10.1
+ARG TRUSTAUTHORITY_CLI_SHA256=d3875adbee96268471c82dd54f012b726fa8d6eefdd8f3243c0e7650fb55ff4e
+ARG NVAT_VERSION=1.2.2
+ARG NVAT_REPO_SHA256=31b0a1646f2bbc08ee599d10dbae106124ef2903f39e37095b96493913b37657
+ARG NVAT_REPO_URL=https://developer.download.nvidia.com/compute/nvat/1.2.2/local_installers/nvat-local-repo-ubuntu2404-1-2-local_1.0-1_amd64.deb
+ARG NVAT_BUILD_BASE=ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
+ARG TENSORBOARD_VERSION=2.20.0
+
+FROM ${NVAT_BUILD_BASE} AS nvat-builder
+
+ARG NVAT_VERSION
+ARG NVAT_REPO_SHA256
+ARG NVAT_REPO_URL
+
+# Resolve NVAT against its supported Ubuntu release and relocate the complete
+# non-glibc dependency closure. Private RPATHs keep these libraries isolated
+# from the Python process in the final distroless image.
+# The glibc exclusion set below is validated only for the pinned NVAT 1.2.2
+# dependency graph. Re-audit lddtree output before changing NVAT_VERSION.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates curl gnupg patchelf pax-utils \
+    && curl -L --fail --silent --show-error "${NVAT_REPO_URL}" -o /tmp/nvat-repo.deb \
+    && echo "${NVAT_REPO_SHA256}  /tmp/nvat-repo.deb" | sha256sum -c - \
+    && dpkg -i /tmp/nvat-repo.deb \
+    && cp /var/nvat-local-repo-*/nvat-local-*-keyring.gpg /usr/share/keyrings/ \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nvattest \
+    && mkdir -p /opt/nvat/bin /opt/nvat/lib \
+    && install -m 0755 /usr/bin/nvattest /opt/nvat/bin/nvattest \
+    && lddtree -l /usr/bin/nvattest | while read -r library; do \
+         name="$(basename "$library")"; \
+         case "$name" in \
+           nvattest|ld-linux-x86-64.so.2|libc.so.6|libdl.so.2|libgcc_s.so.1|libm.so.6|libpthread.so.0|librt.so.1|libstdc++.so.6) continue ;; \
+         esac; \
+         cp -L "$library" "/opt/nvat/lib/$name"; \
+       done \
+    && patchelf --set-rpath '$ORIGIN/../lib' /opt/nvat/bin/nvattest \
+    && find /opt/nvat/lib -type f -exec patchelf --set-rpath '$ORIGIN' {} \; \
+    && /opt/nvat/bin/nvattest version \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM ${PYTHON_BUILD_BASE} AS builder
+
+ARG PYTHON_MINOR
+ARG SNPGUEST_VERSION
+ARG SNPGUEST_SHA256
+ARG TRUSTAUTHORITY_CLI_VERSION
+ARG TRUSTAUTHORITY_CLI_SHA256
+ARG TENSORBOARD_VERSION
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates curl git tar zip \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/NVFlare
+COPY . .
+
+# Install base NVFlare plus the standard hello-numpy job's TensorBoard
+# receiver. In particular, do not install the K8S extra or the kubernetes
+# Python package: jobs stay in these parent containers and are launched with
+# ProcessJobLauncher.
+RUN mkdir -p /opt/attestation/bin \
+    && NVFL_RELEASE=1 python -m pip install --prefix=/opt/nvflare . "tensorboard==${TENSORBOARD_VERSION}" \
+    && PYTHONPATH="/opt/nvflare/lib/python${PYTHON_MINOR}/site-packages" python -m pip check \
+    && PYTHONPATH="/opt/nvflare/lib/python${PYTHON_MINOR}/site-packages" \
+        python -c "import importlib.util, tensorboard; assert tensorboard.__version__ == '${TENSORBOARD_VERSION}'; assert importlib.util.find_spec('kubernetes') is None" \
+    && mkdir -p "/usr/local/lib/python${PYTHON_MINOR}/site-packages" \
+    && printf "/opt/nvflare/lib/python%s/site-packages\n" "${PYTHON_MINOR}" \
+        > "/usr/local/lib/python${PYTHON_MINOR}/site-packages/nvflare-prefix.pth"
+
+RUN curl -L --fail --silent --show-error \
+      "https://github.com/virtee/snpguest/releases/download/v${SNPGUEST_VERSION}/snpguest" \
+      -o /tmp/snpguest \
+    && echo "${SNPGUEST_SHA256}  /tmp/snpguest" | sha256sum -c - \
+    && install -D -m 0755 /tmp/snpguest /opt/attestation/bin/snpguest \
+    && curl -L --fail --silent --show-error \
+      "https://github.com/intel/trustauthority-client-for-go/releases/download/${TRUSTAUTHORITY_CLI_VERSION}/trustauthority-cli-${TRUSTAUTHORITY_CLI_VERSION}.tar.gz" \
+      -o /tmp/trustauthority-cli.tar \
+    && echo "${TRUSTAUTHORITY_CLI_SHA256}  /tmp/trustauthority-cli.tar" | sha256sum -c - \
+    && mkdir -p /tmp/trustauthority-cli \
+    && tar -xf /tmp/trustauthority-cli.tar -C /tmp/trustauthority-cli \
+    && install -m 0755 /tmp/trustauthority-cli/trustauthority-cli /opt/attestation/bin/trustauthority-cli \
+    && /opt/attestation/bin/snpguest --version \
+    && /opt/attestation/bin/trustauthority-cli version
+
+FROM ${PYTHON_RUNTIME_BASE}
+
+ARG PYTHON_MINOR
+
+ENV PATH=/opt/attestation/bin:/opt/nvflare/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+COPY --from=builder /opt/nvflare /opt/nvflare
+# CoCo rejects submitted BYOC. Keep the standard validation trainer inside the
+# signed parent image so Stage 60 submits configuration only.
+COPY --from=builder /opt/NVFlare/examples/hello-world/hello-numpy/client.py /opt/nvflare/examples/hello-numpy/client.py
+COPY --from=builder /opt/attestation /opt/attestation
+COPY --from=nvat-builder /opt/nvat/bin /opt/attestation/bin
+COPY --from=nvat-builder /opt/nvat/lib /opt/attestation/lib
+COPY --from=builder /usr/local/lib/python${PYTHON_MINOR}/site-packages/nvflare-prefix.pth /usr/local/lib/python${PYTHON_MINOR}/site-packages/nvflare-prefix.pth
+COPY --from=builder /usr/bin/zip /usr/bin/zip
+
+RUN ["python", "-c", "import importlib.util, nvflare; assert importlib.util.find_spec('kubernetes') is None"]
+RUN ["python", "-c", "import ast; ast.parse(open('/opt/nvflare/examples/hello-numpy/client.py', encoding='utf-8').read())"]
+RUN ["/opt/attestation/bin/nvattest", "version"]
+RUN ["/usr/bin/zip", "--version"]
+
+CMD ["python"]
