@@ -19,7 +19,7 @@ import torch
 from nvflare.collab import collab
 
 from ..aggregation import aggregate_result
-from ..data import make_data_loader
+from ..loader import make_data_loader
 from ..model import SimpleNetwork, get_model_state
 from .client import BATCH_SIZE
 

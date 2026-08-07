@@ -19,9 +19,9 @@ import torch
 from nvflare.collab import collab
 
 from ..aggregation import aggregate_result
-from ..data import make_data_loader
 from ..fedavg.client import BATCH_SIZE
 from ..fedavg.server import FedAvgServer
+from ..loader import make_data_loader
 from ..model import SimpleNetwork, get_model_state
 
 

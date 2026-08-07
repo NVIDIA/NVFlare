@@ -19,7 +19,7 @@ import torch.nn as nn
 
 from nvflare.collab import collab
 
-from ..data import make_data_loader
+from ..loader import make_data_loader
 from ..model import SimpleNetwork, get_model_state
 
 BATCH_SIZE = 64
@@ -39,7 +39,7 @@ class FedAvgClient:
     def initialize(self):
         self.model = SimpleNetwork().to(self.device)
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=LEARNING_RATE, momentum=0.9)
-        self.train_loader = make_data_loader(train=True, batch_size=BATCH_SIZE)
+        self.train_loader = make_data_loader(train=True, batch_size=BATCH_SIZE, site_name=collab.site_name)
 
     def _before_train(self) -> None:
         pass

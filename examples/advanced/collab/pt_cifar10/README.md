@@ -20,9 +20,13 @@ The layout follows the client/server/job organization used by
 
 ```text
 pt_cifar10/
-├── aggregation.py          # Reuses NVFlare weighted aggregation
-├── data.py                 # CIFAR-10 DataLoader
-├── model.py                # hello-pt SimpleNetwork
+├── aggregation.py             # Reuses NVFlare weighted aggregation
+├── prepare_data.py            # Standard CIFAR-10 Dirichlet splitter
+├── data/                      # Dependencies copied from cifar10/pt
+│   ├── cifar10_data_utils.py
+│   └── cifar10_dataset.py
+├── loader.py                  # Loads each site's prepared split
+├── model.py                   # hello-pt SimpleNetwork
 ├── fedavg/
 │   ├── client.py           # Local training
 │   ├── server.py           # Synchronous round loop
@@ -41,13 +45,22 @@ responsibilities that differ.
 
 ## Data
 
-The example uses the same simple CIFAR-10 loading approach as hello-pt:
-`torchvision.datasets.CIFAR10` downloads data under `/tmp/nvflare/data`.
-For teaching purposes, every simulated client uses the same training dataset.
-In a real deployment, each client would load its own local data.
+The preparation script and its supporting data modules are copied from the
+existing [`cifar10/pt`](../../cifar10/pt/README.md) example. It downloads
+CIFAR-10 and creates disjoint client partitions with Dirichlet sampling.
 
-Pre-download CIFAR-10 when several processes should not download it
-concurrently.
+Prepare the two client splits before starting a job:
+
+```bash
+cd examples/advanced/collab/pt_cifar10
+python prepare_data.py \
+    --split_dir_prefix /tmp/cifar10_splits/pt_cifar10 \
+    --num_sites 2 \
+    --alpha 0.5
+```
+
+This writes the split consumed by the examples to
+`/tmp/cifar10_splits/pt_cifar10_2sites_alpha0.50_seed0`.
 
 ## Key Collab interactions
 
