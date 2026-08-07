@@ -17,7 +17,7 @@ import os
 
 import pytest
 
-from nvflare.lighter.cc_provision.cc_constants import CCConfigKey, CCConfigValue
+from nvflare.lighter.cc_provision.cc_constants import CC_AUTHORIZERS_KEY, CCConfigKey, CCConfigValue
 from nvflare.lighter.cc_provision.impl.cc import CCBuilder
 from nvflare.lighter.constants import PropKey, ProvFileName
 from nvflare.lighter.ctx import ProvisionContext
@@ -114,3 +114,35 @@ def test_cc_builder_rejects_invalid_class_allow_list(tmp_path):
 
     with pytest.raises(ValueError, match=CCConfigKey.CLASS_ALLOW_LIST):
         builder.build(project, ctx)
+
+
+def test_cc_builder_provisions_manager_request_timeouts(tmp_path):
+    project = _project_with_server(
+        {
+            PropKey.CC_ENABLED: True,
+            PropKey.CC_CONFIG_DICT: {
+                CCConfigKey.COMPUTE_ENV: CCConfigValue.MOCK,
+                CCConfigKey.CC_ATTESTATION_CONFIG: {
+                    "check_frequency": 120,
+                    "get_site_request_timeout": 30,
+                    "get_token_request_timeout": 200,
+                },
+            },
+            PropKey.CC_ISSUERS: [],
+        }
+    )
+    ctx = ProvisionContext(str(tmp_path), project)
+    ctx[CC_AUTHORIZERS_KEY] = []
+    server = project.get_server()
+    os.makedirs(ctx.get_local_dir(server), exist_ok=True)
+    builder = CCBuilder()
+    builder._cc_enabled_sites = [server]
+
+    builder._build_cc_manager_component(server, ctx)
+
+    resources_file = os.path.join(ctx.get_local_dir(server), "cc_manager__p_resources.json")
+    with open(resources_file) as resources_stream:
+        manager = json.load(resources_stream)["components"][0]
+    assert manager["args"]["verify_frequency"] == 120
+    assert manager["args"]["get_site_request_timeout"] == 30
+    assert manager["args"]["get_token_request_timeout"] == 200

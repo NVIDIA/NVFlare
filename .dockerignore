@@ -13,6 +13,13 @@
 !.git/shallow
 !job_templates/
 !job_templates/**
+!examples/
+examples/*
+!examples/hello-world/
+examples/hello-world/*
+!examples/hello-world/hello-numpy/
+examples/hello-world/hello-numpy/*
+!examples/hello-world/hello-numpy/client.py
 !nvflare/
 !nvflare/**
 !pyproject.toml

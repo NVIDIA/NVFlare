@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coco-registry
+  namespace: @@NAMESPACE@@
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: coco-registry}
+  template:
+    metadata:
+      labels: {app: coco-registry}
+    spec:
+      containers:
+        - name: registry
+          image: @@REGISTRY_IMAGE@@
+          env:
+            - {name: REGISTRY_STORAGE_DELETE_ENABLED, value: "true"}
+            - {name: REGISTRY_HTTP_TLS_CERTIFICATE, value: /run/registry-tls/tls.crt}
+            - {name: REGISTRY_HTTP_TLS_KEY, value: /run/registry-tls/tls.key}
+          ports:
+            - {name: registry, containerPort: 5000, hostPort: @@PORT@@, hostIP: @@HOST_IP@@}
+          readinessProbe:
+            httpGet: {scheme: HTTPS, path: /v2/, port: registry}
+          volumeMounts:
+            - {name: registry-data, mountPath: /var/lib/registry}
+            - {name: registry-tls, mountPath: /run/registry-tls, readOnly: true}
+      volumes:
+        - name: registry-data
+          hostPath: {path: @@DATA_DIR@@, type: DirectoryOrCreate}
+        - name: registry-tls
+          secret: {secretName: coco-registry-tls}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coco-registry
+  namespace: @@NAMESPACE@@
+spec:
+  selector: {app: coco-registry}
+  ports:
+    - {name: registry, port: 5000, targetPort: registry}
