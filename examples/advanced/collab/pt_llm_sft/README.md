@@ -13,18 +13,21 @@ native PyTorch tensor dictionaries through the Collab API.
 ## NVIDIA FLARE Installation
 
 Follow the repository [installation instructions](../../../../README.md), then
-start from the `examples/advanced` directory and install this example's
-additional dependencies:
+start from the example directory and install its additional dependencies:
 
 ```bash
-python -m pip install -r collab/pt_llm_sft/requirements.txt
+cd examples/advanced/collab/pt_llm_sft
+python -m pip install -r requirements.txt
 ```
 
 ## Code Structure
 
 | File | Purpose |
 |---|---|
-| `pt_llm_sft.py` | Defines the stateful SFT client, synchronous server workflow, Collab recipe, and simulator entry point. |
+| `client.py` | Owns client initialization, local SFT state, and remotely published methods. |
+| `server.py` | Owns the `@collab.main` workflow and sample-weighted FedAvg. |
+| `model.py` | Owns model/tokenizer loading, text formatting, precision selection, and model-state copying. |
+| `job.py` | Owns CLI parsing, Collab recipe wiring, simulator configuration, and execution. |
 | `prepare_data.py` | Creates deterministic synthetic or Dolly JSONL shards for each client. |
 | `requirements.txt` | Lists the additional Hugging Face and PyTorch dependencies. |
 | `figures/training_loss.png` | Shows the observed training-curve alignment. |
@@ -33,11 +36,11 @@ python -m pip install -r collab/pt_llm_sft/requirements.txt
 
 ### Synthetic data (quick start)
 
-From `examples/advanced`, create small instruction-tuning shards for four
-logical clients:
+From `examples/advanced/collab/pt_llm_sft`, create small instruction-tuning
+shards for four logical clients:
 
 ```bash
-python collab/pt_llm_sft/prepare_data.py \
+python prepare_data.py \
     --data-mode synthetic \
     --num-clients 4 \
     --data-root /tmp/nvflare/collab/pt_llm_sft/data
@@ -52,7 +55,7 @@ synchronization intervals per epoch.
 Download `databricks/databricks-dolly-15k` and split it across four clients:
 
 ```bash
-python collab/pt_llm_sft/prepare_data.py \
+python prepare_data.py \
     --data-mode dolly \
     --num-clients 4 \
     --data-root /tmp/nvflare/collab/pt_llm_sft/dolly
@@ -85,6 +88,10 @@ loads its own prepared shard, tokenizer, model, trainer, dataloader, and
 optimizer once. `SFTTrainer` prepares the SFT batches and places the model on
 the process-local device selected by the simulator.
 
+`@collab.publish` registers a client method in the interface exposed to the
+server. The method name is the contract: the server's
+`collab.clients.train(...)` proxy call invokes the published `train()` method.
+
 The published training method receives and returns ordinary Python objects,
 including the complete `dict[str, torch.Tensor]` state:
 
@@ -111,14 +118,23 @@ Those concerns are intentionally outside this Collab example.
 
 ## Server-Side Workflow
 
-`SFTFedAvg.run()` is the single `@collab.main` entry point. It obtains the
-initial state from one initialized client, fans each global state out to all
-clients, and applies sample-weighted FedAvg to the returned tensors:
+`@collab.main` marks `SFTFedAvg.run()` as the single server-side entry point
+that drives the Collab workflow. It obtains the initial state from one
+initialized client, fans each global state out to all clients, and applies
+sample-weighted FedAvg to the returned tensors:
 
 ```python
+# Calls the published get_model_state() method on the first client.
+global_weights = collab.clients[0](timeout=self.call_timeout).get_model_state()
+
+# Calls the published train() method on every selected client.
 call_results = collab.clients(timeout=self.call_timeout).train(sync_number, global_weights)
 global_weights, average_loss = average_model_states(dict(call_results), self.min_clients)
 ```
+
+`call_results` iterates over successful site results. Its `.failures` mapping
+contains client call errors, so the workflow can report failures separately
+before enforcing the minimum successful-client count during aggregation.
 
 Floating-point tensors are accumulated in FP32 on the server and converted
 back to the model's original dtype. Non-floating state is copied from the first
@@ -136,31 +152,38 @@ writes the final state after the last one.
 count, workspace, and GPU placement:
 
 ```python
+# Wires the @collab.main server to one client object replicated across sites.
 recipe = CollabRecipe(
     job_name="pt_llm_sft",
     server=server,
-    client=trainer,
+    client=client,
     min_clients=args.num_clients,
 )
+
+# Ships model.py alongside the automatically packaged client.py.
+recipe.add_client_file(str(EXAMPLE_DIR / "model.py"))
 recipe.execute(make_env(args))
 ```
+
+`execute()` finalizes this wiring and then runs the recipe in the configured
+simulator, or exports the finalized job when `--export` is present.
 
 The standard Recipe export arguments are also supported. Export builds the job
 without loading the model or requiring prepared data on the machine performing
 the export:
 
 ```bash
-python -m collab.pt_llm_sft.pt_llm_sft \
+python job.py \
     --export \
     --export-dir /tmp/nvflare/jobs/job_config
 ```
 
 ## Run Job
 
-From `examples/advanced`, run the prepared synthetic quick start:
+From `examples/advanced/collab/pt_llm_sft`, run the prepared synthetic quick start:
 
 ```bash
-python -m collab.pt_llm_sft.pt_llm_sft \
+python job.py \
     --data-root /tmp/nvflare/collab/pt_llm_sft/data \
     --num-clients 4 \
     --num-epochs 1 \
