@@ -68,6 +68,8 @@ class FedAvgClient:
                 self.optimizer.step()
                 self._after_optimizer_step()
                 num_steps += 1
+        if num_steps == 0:
+            raise ValueError("Client training loader is empty; check the prepared data split.")
         return num_steps
 
     # @collab.publish exposes train so the server can call it through collab.clients.
