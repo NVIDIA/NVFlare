@@ -96,6 +96,8 @@ def _make_memory_shareable(kind: str, current_round: int) -> Shareable:
 def _make_executor(mode: str) -> ClientAPIExecutor:
     if mode == ExecutionMode.EXTERNAL_PROCESS:
         return ClientAPIExecutor(execution_mode=mode, command="python train.py")
+    if mode == ExecutionMode.ATTACH:
+        return ClientAPIExecutor(execution_mode=mode, attach_id="matrix-attach")
     return ClientAPIExecutor(execution_mode=mode, task_script_path="train.py")
 
 
@@ -195,12 +197,20 @@ def _make_controller(site_name: str, mode: str):
         (ExecutionMode.IN_PROCESS, ExecutionMode.IN_PROCESS),
         (ExecutionMode.EXTERNAL_PROCESS, ExecutionMode.EXTERNAL_PROCESS),
         (ExecutionMode.EXTERNAL_PROCESS, ExecutionMode.IN_PROCESS),
+        (ExecutionMode.IN_PROCESS, ExecutionMode.ATTACH),
+        (ExecutionMode.EXTERNAL_PROCESS, ExecutionMode.ATTACH),
+        (ExecutionMode.ATTACH, ExecutionMode.EXTERNAL_PROCESS),
+        (ExecutionMode.ATTACH, ExecutionMode.ATTACH),
     ],
     ids=[
         "site1-in_site2-ex",
         "site1-in_site2-in",
         "site1-ex_site2-ex",
         "site1-ex_site2-in",
+        "site1-in_site2-attach",
+        "site1-ex_site2-attach",
+        "site1-attach_site2-ex",
+        "site1-attach_site2-attach",
     ],
 )
 def test_two_round_aggregation_switch_covers_execution_mode_matrix(site_1_mode, site_2_mode):
