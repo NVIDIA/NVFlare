@@ -65,6 +65,8 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             such as for loss, and "max" when higher values are better. Defaults to "max".
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
+        launch_timeout: Seconds to wait for an external process to launch and establish its
+            Client API session. ``None`` disables this timeout. Defaults to 300.0.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.
 

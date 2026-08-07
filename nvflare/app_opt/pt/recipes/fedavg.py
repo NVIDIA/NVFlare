@@ -70,6 +70,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         per_site_config: Deprecated constructor form. New code should call
             ``set_per_site_config(recipe, config)`` immediately after construction.
         launch_once: Whether external process is launched once or per task. Defaults to True.
+        launch_timeout: Seconds to wait for an external process to launch and establish its
+            Client API session. ``None`` disables this timeout. Defaults to 300.0.
         shutdown_timeout: Seconds to wait before shutdown. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. Defaults to "accuracy".
         key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better

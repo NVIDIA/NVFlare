@@ -54,6 +54,7 @@ from nvflare.security.logging import secure_format_traceback
 from nvflare.widgets.widget import Widget
 
 _FLOWER_TRAINER_LEAF = "flower_client_api"
+_FLOWER_SESSION_SECURE_MODE = False
 
 
 class _FlowerSession(CellSession):
@@ -102,7 +103,10 @@ class _FlowerMetricsBackend(CellBackendBase):
                     BootstrapKey.LAUNCH_TOKEN: session.token,
                     BootstrapKey.JOB_ID: self._job_id,
                     BootstrapKey.SITE_NAME: self._site_name,
-                    BootstrapKey.SECURE_MODE: self._secure_mode,
+                    # The Flower ClientApp metrics session terminates at this local CJ.
+                    # It never sends server-bound traffic, so it must not receive the
+                    # site's delegated bearer credentials even when the FL job is secure.
+                    BootstrapKey.SECURE_MODE: _FLOWER_SESSION_SECURE_MODE,
                     BootstrapKey.TASK_EXCHANGE: self._task_exchange_config(),
                     BootstrapKey.MEMORY_GC_ROUNDS: context.memory_gc_rounds,
                     BootstrapKey.CUDA_EMPTY_CACHE: context.cuda_empty_cache,
@@ -197,6 +201,7 @@ class _FlowerMetricsBackend(CellBackendBase):
                 MsgKey.SITE_NAME: self._site_name,
                 MsgKey.HEARTBEAT_INTERVAL: self._context.heartbeat_interval,
                 MsgKey.HEARTBEAT_TIMEOUT: self._context.heartbeat_timeout,
+                MsgKey.SECURE_MODE: _FLOWER_SESSION_SECURE_MODE,
             },
         )
 

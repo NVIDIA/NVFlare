@@ -1084,14 +1084,32 @@ class TestInit:
         write_bootstrap_config(bootstrap_path, config)
         api = CellClientAPI(bootstrap_file=bootstrap_path)
         terminated = threading.Event()
+        owner_checks = iter([True, False])
         monkeypatch.setattr(cell_api, "_OWNER_WATCHDOG_INTERVAL", 0.001)
-        monkeypatch.setattr(api, "_owner_process_alive", lambda: False)
+        monkeypatch.setattr(api, "_owner_process_alive", lambda: next(owner_checks))
         monkeypatch.setattr(api, "_terminate_orphaned_process_group", terminated.set)
 
         api._start_owner_watchdog()
 
         assert terminated.wait(1.0)
         api._stop_owner_watchdog()
+
+    def test_external_owner_watchdog_disables_when_cj_pid_is_not_initially_visible(
+        self, bootstrap_path, monkeypatch, caplog
+    ):
+        config = read_bootstrap_config(bootstrap_path)
+        config[BootstrapKey.CJ_PID] = 424242
+        write_bootstrap_config(bootstrap_path, config)
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        terminated = threading.Event()
+        monkeypatch.setattr(api, "_owner_process_alive", lambda: False)
+        monkeypatch.setattr(api, "_terminate_orphaned_process_group", terminated.set)
+
+        api._start_owner_watchdog()
+
+        assert api._owner_watchdog_thread is None
+        assert not terminated.is_set()
+        assert "not visible from the trainer at session start" in caplog.text
 
     @pytest.mark.skipif(os.name != "posix", reason="process-group signals are POSIX")
     def test_orphan_termination_escalates_ignored_sigterm(self, bootstrap_path, monkeypatch):

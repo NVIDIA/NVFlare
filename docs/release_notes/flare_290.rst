@@ -41,12 +41,19 @@ Compatibility and Migration Notes
   ``ParamsConverter``, the framework-specific converter components,
   ``InProcessClientAPIExecutor``, ``ClientAPILauncherExecutor``,
   ``LauncherExecutor``, ``SubprocessLauncher``, ``TaskExchanger``,
-  ``FlareAgent``, and the ``Pipe``/``PipeHandler`` implementations (including
-  ``FilePipe`` and ``CellPipe``). Use ``ClientAPIExecutor`` with
+  ``FlareAgent``, ``BaseScriptRunner``, ``MetricRelay``, ``MetricsSender``,
+  ``ExternalConfigurator``, and the ``Pipe``/``PipeHandler`` implementations
+  (including ``FilePipe`` and ``CellPipe``). Use ``ClientAPIExecutor`` with
   ``in_process``, ``external_process``, or ``attach`` execution mode. Custom
   parameter transformations belong in trainer code around
   ``flare.receive()``/``flare.send()``; common functions remain available in
   ``nvflare.client.converter_utils``.
+- Flower metric streaming now uses ``FlowerMetricsReceiver`` and a direct local
+  Cell Client API session. Legacy ``MetricRelay``/``MetricsSender`` component
+  IDs, metrics ``CellPipe`` configuration, and selector overrides should be
+  removed from custom Flower job templates. ``FLARE_CLIENT_API_TYPE`` is now a
+  reserved ``FlowerJob.extra_env`` key and should also be removed; Flower
+  configures the metrics session automatically.
 - Recipe-level ``pipe_type`` and ``pipe_root_path`` options have been removed.
   Transport is selected through site communication configuration. The F3
   ``FileDriver`` remains available as scheme ``shared-file`` for either a

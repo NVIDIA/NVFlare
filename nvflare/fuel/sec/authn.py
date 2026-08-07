@@ -43,6 +43,16 @@ def _is_cross_site_reply_via_local_parent(origin: str, destination: str, to_cell
     )
 
 
+def _is_cross_client_family(origin: str, destination: str) -> bool:
+    if not origin or not destination:
+        return False
+    origin_info = FqcnInfo(origin)
+    destination_info = FqcnInfo(destination)
+    return (
+        not origin_info.is_on_server and not destination_info.is_on_server and origin_info.root != destination_info.root
+    )
+
+
 def add_authentication_headers(msg: Message, client_name: str, auth_token, token_signature, ssid=None):
     """Add authentication headers to the specified message.
 
@@ -64,6 +74,8 @@ def add_authentication_headers(msg: Message, client_name: str, auth_token, token
 
     msg.set_header(CellMessageAuthHeaderKey.TOKEN, auth_token if auth_token else "NA")
     msg.set_header(CellMessageAuthHeaderKey.TOKEN_SIGNATURE, token_signature if token_signature else "NA")
+    if _is_cross_client_family(msg.get_header(MessageHeaderKey.ORIGIN), msg.get_header(MessageHeaderKey.DESTINATION)):
+        msg.set_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, True)
 
 
 def add_server_path_reply_authentication_headers(

@@ -46,7 +46,7 @@ from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import Message
 from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
-from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey, MessageType
+from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
@@ -419,16 +419,19 @@ class FederatedServer(BaseServer):
         )
         self.logger.debug(f"added auth headers:  {origin=} {dest=} {channel=} {topic=}")
 
-    def _strip_peer_transit_reply_auth_headers(self, message: Message):
-        if message.get_header(MessageHeaderKey.MSG_TYPE) != MessageType.REPLY:
-            return
-
+    def _strip_peer_transit_auth_headers(self, message: Message):
+        origin = message.get_header(MessageHeaderKey.ORIGIN)
         destination = message.get_header(MessageHeaderKey.DESTINATION)
-        if not destination or FqcnInfo(destination).is_on_server:
+        if not origin or not destination:
+            return
+        origin_info = FqcnInfo(origin)
+        destination_info = FqcnInfo(destination)
+        if origin_info.is_on_server or destination_info.is_on_server or origin_info.root == destination_info.root:
             return
 
-        # Model: peer replies authenticate to the server if the server is the next hop, but peer clients must not
-        # receive another client's bearer material. This runs after successful server validation and before forwarding.
+        # Cross-client requests and replies authenticate at the server boundary,
+        # but a peer client must never receive another client's bearer material.
+        # This runs after successful server validation and before forwarding.
         for key in [
             CellMessageHeaderKeys.CLIENT_NAME,
             CellMessageHeaderKeys.TOKEN,
@@ -436,6 +439,7 @@ class FederatedServer(BaseServer):
             CellMessageHeaderKeys.SSID,
         ]:
             message.remove_header(key)
+        message.remove_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED)
 
     def _validate_auth_headers(self, message: Message):
         """Validate auth headers from messages that go through the server.
@@ -457,7 +461,7 @@ class FederatedServer(BaseServer):
             local_cell_fqcn=self.cell.get_fqcn() if getattr(self, "cell", None) else None,
         )
         if not reply:
-            self._strip_peer_transit_reply_auth_headers(message)
+            self._strip_peer_transit_auth_headers(message)
         return reply
 
     def _resolve_client_fqcn_for_auth(self, client_name: str, token: str):

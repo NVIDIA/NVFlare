@@ -24,6 +24,7 @@ from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
 from nvflare.private.fed.server.fed_server import FederatedServer
 
@@ -38,12 +39,16 @@ AUTH_HEADERS = [
 @pytest.fixture(autouse=True)
 def clean_core_cells():
     original_cells = dict(CoreCell.ALL_CELLS)
+    original_pools = dict(StatsPoolManager.pools)
     CoreCell.ALL_CELLS.clear()
+    StatsPoolManager.pools.clear()
     yield
     for cell in CoreCell.ALL_CELLS.values():
         cell.running = False
     CoreCell.ALL_CELLS.clear()
     CoreCell.ALL_CELLS.update(original_cells)
+    StatsPoolManager.pools.clear()
+    StatsPoolManager.pools.update(original_pools)
 
 
 def _make_running_cell(fqcn: str):
@@ -102,8 +107,9 @@ def _make_routed_message(
 
 
 def test_auth_filter_does_not_add_client_credentials_to_peer_replies():
-    victim = _make_running_cell(_unique_fqcn("victim"))
-    peer = _make_running_cell(_unique_fqcn("peer"))
+    victim_name = _unique_fqcn("victim")
+    victim = _make_running_cell(victim_name)
+    peer = _make_running_cell(f"{victim_name}.peer")
     set_add_auth_headers_filters(victim, "victim", "tok-victim", "sig-victim", "ssid-victim")
 
     victim.core_cell.register_request_cb("probe", "ping", lambda _request: Message(payload="pong"))
@@ -119,34 +125,35 @@ def test_auth_filter_does_not_add_client_credentials_to_peer_replies():
     }
 
 
-def test_client_to_client_reply_routed_through_server_is_not_blocked_by_server_auth(monkeypatch):
-    server = _make_running_cell(f"server.{_unique_fqcn('auth_server')}")
+def test_cross_client_auth_forces_server_transit_and_strips_credentials_from_peer(monkeypatch):
+    server = _make_running_cell("server")
     site_a = _make_running_cell(_unique_fqcn("site_a"))
     site_b = _make_running_cell(_unique_fqcn("site_b"))
     server.core_cell.add_incoming_filter(channel="*", topic="*", cb=_make_server_auth_filter(monkeypatch))
     set_add_auth_headers_filters(site_a, site_a.get_fqcn(), "tok-a", "sig-a")
     set_add_auth_headers_filters(site_b, site_b.get_fqcn(), "tok-b", "sig-b")
-    site_b.core_cell.register_request_cb("peer", "ping", lambda _request: Message(payload="pong"))
+    site_b.core_cell.register_request_cb(
+        "peer",
+        "ping",
+        lambda request: Message(
+            payload={
+                "auth": _auth_header_values(request),
+                "transit_required": request.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED),
+                "from_cell": request.get_header(MessageHeaderKey.FROM_CELL),
+            }
+        ),
+    )
 
-    original_find_ep = site_a.core_cell._try_find_ep
-
-    def _route_site_b_via_server(target_fqcn, for_msg):
-        if target_fqcn == site_b.get_fqcn():
-            return Endpoint(server.get_fqcn())
-        return original_find_ep(target_fqcn, for_msg)
-
-    monkeypatch.setattr(site_a.core_cell, "_try_find_ep", _route_site_b_via_server)
-
-    reply = site_a.send_request("peer", "ping", site_b.get_fqcn(), Message(payload="hello"), timeout=0.2)
+    reply = site_a.send_request("peer", "ping", site_b.get_fqcn(), Message(payload="hello"), timeout=1.0)
 
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
-    assert reply.payload == "pong"
-    assert _auth_header_values(reply) == {
-        CellMessageAuthHeaderKey.CLIENT_NAME: None,
-        CellMessageAuthHeaderKey.TOKEN: None,
-        CellMessageAuthHeaderKey.TOKEN_SIGNATURE: None,
-        CellMessageAuthHeaderKey.SSID: None,
+    assert reply.payload == {
+        "auth": {key: None for key in AUTH_HEADERS},
+        "transit_required": None,
+        "from_cell": "server",
     }
+    assert _auth_header_values(reply) == {key: None for key in AUTH_HEADERS}
+    assert reply.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED) is None
 
 
 def test_client_job_reply_routed_via_local_parents_authenticates_at_server(monkeypatch):
@@ -156,7 +163,7 @@ def test_client_job_reply_routed_via_local_parents_authenticates_at_server(monke
     site_b = _make_running_cell(site_b_name)
     site_a_job = _make_running_cell(f"{site_a_name}.job")
     site_b_job = _make_running_cell(f"{site_b_name}.job")
-    server = _make_running_cell(f"server.{_unique_fqcn('auth_server')}")
+    server = _make_running_cell("server")
 
     server.core_cell.add_incoming_filter(channel="*", topic="*", cb=_make_server_auth_filter(monkeypatch))
     set_add_auth_headers_filters(site_a_job, site_a_name, "tok-a", "sig-a")
@@ -199,6 +206,16 @@ def test_server_auth_filter_strips_validated_client_reply_transit_auth(monkeypat
     }
 
 
+def test_server_auth_filter_strips_validated_client_request_transit_auth(monkeypatch):
+    auth_filter = _make_server_auth_filter(monkeypatch)
+    request_msg = _make_routed_message("site-b", MessageType.REQ, with_auth=True)
+    request_msg.set_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, True)
+
+    assert auth_filter(request_msg) is None
+    assert _auth_header_values(request_msg) == {key: None for key in AUTH_HEADERS}
+    assert request_msg.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED) is None
+
+
 def test_server_auth_filter_rejects_untracked_unauthenticated_client_reply_transit(monkeypatch):
     auth_filter = _make_server_auth_filter(monkeypatch)
 
@@ -237,8 +254,9 @@ def test_server_auth_filter_still_rejects_unauthenticated_server_destination(mon
 
 
 def test_auth_filter_keeps_auth_on_outgoing_requests():
-    victim = _make_running_cell(_unique_fqcn("victim"))
-    peer = _make_running_cell(_unique_fqcn("peer"))
+    victim_name = _unique_fqcn("victim")
+    victim = _make_running_cell(victim_name)
+    peer = _make_running_cell(f"{victim_name}.peer")
     set_add_auth_headers_filters(victim, "victim", "tok-victim", "sig-victim", "ssid-victim")
     peer.core_cell.register_request_cb("probe", "echo", lambda request: Message(payload=_auth_header_values(request)))
 

@@ -921,6 +921,16 @@ class CellClientAPI(APISpec):
         """Terminate a launched trainer group if its owning CJ process disappears."""
         if self._is_attach or self._cj_pid is None:
             return
+        if not self._owner_process_alive():
+            # A containerized trainer can connect to its CJ while the host CJ PID is
+            # outside the trainer's PID namespace. Since HELLO already succeeded,
+            # absence on this initial probe means PID liveness is not authoritative;
+            # retain the Cell heartbeat/session timeout as the owner-death backstop.
+            self.logger.warning(
+                f"owning CJ process {self._cj_pid} is not visible from the trainer at session start; "
+                "disabling PID-based owner monitoring"
+            )
+            return
         self._owner_watchdog_stop.clear()
         thread = threading.Thread(
             target=self._owner_watchdog_loop,

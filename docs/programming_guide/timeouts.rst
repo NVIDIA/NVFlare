@@ -1933,7 +1933,7 @@ Impact Analysis
      - Clients incorrectly marked dead, frequent reconnections
    * - task.timeout / train_timeout
      - Training interrupted before completion, lost work
-   * - external_pre_init_timeout
+   * - launch_timeout
      - Large model loading fails, external processes killed
    * - streaming_read_timeout
      - Large file transfers fail mid-stream
@@ -2008,10 +2008,10 @@ Fast iteration with quick feedback:
    heart_beat_timeout = 60        # Quick dead client detection
    admin_timeout = 5.0            # Fast admin commands
 
-   # Client parameters
+   # Client API executor parameters
    heartbeat_timeout = 30.0
    task_wait_timeout = 60.0
-   external_pre_init_timeout = 60.0
+   launch_timeout = 60.0
 
    # Flare API
    login_timeout = 5.0
@@ -2035,10 +2035,9 @@ Balanced settings for typical federated learning:
    subnet_heartbeat_interval = 5
    streaming_read_timeout = 300
 
-   # Executor
-   external_pre_init_timeout = 300.0
+   # Client API executor
+   launch_timeout = 300.0
    heartbeat_timeout = 300.0
-   last_result_transfer_timeout = 300.0
 
 
 Production - Large Models (100M+ parameters)
@@ -2051,9 +2050,9 @@ Extended timeouts for large model training:
    # Server
    heart_beat_timeout = 1200      # 20 min for large model operations
 
-   # Executor/Launcher
-   external_pre_init_timeout = 600.0   # 10 min for model loading
-   task_wait_timeout = 3600.0          # 1 hour for training
+   # Client API executor
+   launch_timeout = 600.0      # 10 min for process launch and flare.init()
+   task_wait_timeout = 3600.0  # 1 hour for training
 
    # Streaming
    streaming_per_request_timeout = 900  # 15 min per chunk
@@ -2075,6 +2074,7 @@ For billion-parameter models (examples/advanced/llm_hf):
    recipe = FedAvgRecipe(
        name="llm_training",
        model=None,  # Use dict config for large models
+       launch_timeout=900.0,  # 15 min for external process launch and model init
        shutdown_timeout=120.0,
    )
 
@@ -2082,7 +2082,6 @@ For billion-parameter models (examples/advanced/llm_hf):
    recipe.add_client_config({
        "get_task_timeout": 600,            # 10 min to receive task
        "submit_task_result_timeout": 600,  # 10 min to submit results
-       "external_pre_init_timeout": 900,   # 15 min for model init
    })
 
 
@@ -2712,9 +2711,9 @@ job to fail.
 
 *Executors:*
 
-- ``external_pre_init_timeout`` should cover model loading + library imports
+- ``launch_timeout`` should cover process launch, library imports, model loading, and ``flare.init()``
 - ``heartbeat_timeout`` should be 2-3x ``heartbeat_interval``
-- Set ``last_result_transfer_timeout`` based on result size
+- Size the shared streaming idle/per-request timeouts for the largest expected task and result payloads
 - For IPC: ``agent_connection_timeout`` > ``agent_heartbeat_interval`` * 3
 
 *Workflows:*

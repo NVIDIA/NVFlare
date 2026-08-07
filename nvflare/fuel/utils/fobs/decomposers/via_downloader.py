@@ -38,15 +38,6 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 MIN_DOWNLOAD_TIMEOUT_DEFAULT = 300  # inactivity timeout between chunk requests; 5 min covers GC pauses
 _MIN_DOWNLOAD_TIMEOUT = MIN_DOWNLOAD_TIMEOUT_DEFAULT  # backward-compat alias
 
-# Thread-local flag for synchronous download-initiation detection.
-# Task pipe and metric pipe share the same CoreCell (same site_name + token + mode
-# → same FQCN → same _CellInfo cache entry → same core_cell.fobs_ctx).  A plain
-# fobs_ctx flag would be clobbered by concurrent serialisation calls from different
-# threads on the same cell.  Thread-local gives per-thread isolation because
-# _finalize_download_tx() is always called synchronously in the thread that invoked
-# send_to_peer() → encode_payload() → FOBS serialisation.
-_tls = threading.local()
-
 RESULT_UPLOAD_PROGRESS_CTX_KEY = "result_upload_progress_context"
 RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY = "result_upload_tx_created_cb"
 RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY = fobs.FOBSContextKey.RECEIVER_IDS
@@ -66,41 +57,6 @@ class DownloadTransactionInfo:
         self.tx_id = tx_id
         self.expected_pairs = expected_pairs
         self.created_time = created_time
-
-
-def was_download_initiated() -> bool:
-    """Return True if _finalize_download_tx() created a download transaction in
-    the current thread's most recent encode_payload() call.
-
-    Called by the trainer-side Client API immediately after publishing a result
-    returns to decide whether to wait for the server to finish downloading tensors.
-    Returns False for validate results (metrics only, no tensors).
-    """
-    return getattr(_tls, "download_initiated", False)
-
-
-def clear_download_initiated() -> None:
-    """Reset the thread-local flag before a send_to_peer() call.
-
-    Prevents a stale True from a previous training round (which did have tensors)
-    from carrying over to the current validate round (which has no tensors).
-    """
-    _tls.download_initiated = False
-    _tls.download_transactions = []
-
-
-def get_download_transactions() -> tuple[DownloadTransactionInfo, ...]:
-    """Return progress-trackable DownloadService transactions created by the current encode call."""
-
-    return tuple(getattr(_tls, "download_transactions", ()))
-
-
-def _append_download_transaction(info: DownloadTransactionInfo):
-    transactions = getattr(_tls, "download_transactions", None)
-    if transactions is None:
-        transactions = []
-        _tls.download_transactions = transactions
-    transactions.append(info)
 
 
 def _notify_download_transaction_created(fobs_ctx: dict, info: DownloadTransactionInfo, logger):
@@ -644,16 +600,11 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                     expected_pairs=tuple(expected_pairs),
                     created_time=time.time(),
                 )
-                _append_download_transaction(transaction_info)
                 _notify_download_transaction_created(fobs_ctx, transaction_info, self.logger)
 
             for ref_id, obj in downloadable_objs:
                 self.logger.debug(f"ViaDownloader: adding object to downloader: {ref_id=}")
                 downloader.add_object(obj, ref_id=ref_id)
-            # Signal the trainer-side Client API that a download transaction was created.
-            # Thread-local avoids shared-state races when task and metric payloads
-            # share the same CoreCell.
-            _tls.download_initiated = True
 
     def _finalize_lazy_batch(self, mgr: DatumManager):
         """Post-callback used when re-emitting a LazyDownloadRef batch.

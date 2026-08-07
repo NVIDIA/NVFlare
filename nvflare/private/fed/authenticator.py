@@ -315,7 +315,7 @@ class Authenticator:
         return token, token_signature, ssid, token_verifier
 
 
-def _origin_matches_fqcn(origin: str, fqcn: str, channel: Optional[str] = None) -> bool:
+def _origin_matches_fqcn(origin: str, fqcn: str) -> bool:
     if not origin or not fqcn:
         return False
     return origin == fqcn or FQCN.is_ancestor(fqcn, origin)
@@ -403,7 +403,7 @@ def validate_auth_headers(
 
     if client_fqcn_resolver:
         client_fqcn = client_fqcn_resolver(client_name, token)
-        if client_fqcn is not None and not _origin_matches_fqcn(origin, client_fqcn, channel):
+        if client_fqcn is not None and not _origin_matches_fqcn(origin, client_fqcn):
             registered_origin = client_fqcn or "<missing>"
             err = (
                 f"auth token for client {client_name} is bound to origin {registered_origin}, "

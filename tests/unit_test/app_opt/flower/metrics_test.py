@@ -17,8 +17,16 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_opt.flower.metrics import FlowerMetricsReceiver, _FlowerMetricsBackend, _FlowerSession
+from nvflare.app_opt.flower.metrics import (
+    _FLOWER_SESSION_SECURE_MODE,
+    FlowerMetricsReceiver,
+    _FlowerMetricsBackend,
+    _FlowerSession,
+)
+from nvflare.client.cell.api import CellClientAPI
+from nvflare.client.cell.bootstrap import BootstrapKey, read_bootstrap_config
 from nvflare.client.cell.defs import PROTOCOL_VERSION, MsgKey, Topic
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.message import Message
@@ -64,6 +72,60 @@ def test_flower_metrics_hello_authenticates_and_is_idempotent():
     assert second.payload[MsgKey.SESSION_ID] == first.payload[MsgKey.SESSION_ID]
     assert first.payload[MsgKey.HEARTBEAT_INTERVAL] == 5.0
     assert first.payload[MsgKey.HEARTBEAT_TIMEOUT] == 30.0
+    assert first.payload[MsgKey.SECURE_MODE] is _FLOWER_SESSION_SECURE_MODE
+
+
+def test_secure_fl_job_uses_non_delegated_local_flower_metrics_session():
+    backend, session = _metrics_backend()
+    backend._secure_mode = True
+
+    reply = backend._handle_hello(_hello_request(session.trainer_fqcn, session.token))
+
+    assert reply.payload[MsgKey.SECURE_MODE] is False
+    assert MsgKey.AUTH_TOKEN not in reply.payload
+    assert MsgKey.AUTH_TOKEN_SIGNATURE not in reply.payload
+
+    # This is the trainer-side security check performed after HELLO. The local
+    # metrics bootstrap also declares False, so a secure FL job does not create
+    # a mismatched or credential-delegating trainer session.
+    trainer_api = CellClientAPI.__new__(CellClientAPI)
+    trainer_api._is_attach = False
+    trainer_api._secure_mode = _FLOWER_SESSION_SECURE_MODE
+    trainer_api._session_security_configured = False
+    trainer_api._cell = MagicMock()
+    trainer_api._site_name = "site-1"
+    trainer_api._install_site_auth_headers(
+        secure_mode=reply.payload[MsgKey.SECURE_MODE],
+        auth_token=reply.payload.get(MsgKey.AUTH_TOKEN),
+        token_signature=reply.payload.get(MsgKey.AUTH_TOKEN_SIGNATURE),
+    )
+
+    assert trainer_api._session_security_configured is True
+    trainer_api._cell.core_cell.add_outgoing_reply_filter.assert_not_called()
+
+
+def test_secure_fl_job_writes_non_delegated_flower_metrics_bootstrap(tmp_path):
+    backend = _FlowerMetricsBackend("client_api_config.json")
+    backend._cell = MagicMock()
+    backend._cell.get_fqcn.return_value = "site-1.job-1"
+    backend._cell.get_internal_listener_url.return_value = "tcp://localhost:1234"
+    backend._cj_fqcn = "site-1.job-1"
+    backend._job_id = "job-1"
+    backend._site_name = "site-1"
+    backend._secure_mode = True
+    backend._initialize_cell = MagicMock()
+    backend._task_exchange_config = MagicMock(return_value={})
+
+    workspace = MagicMock()
+    workspace.get_app_config_dir.return_value = str(tmp_path)
+    fl_ctx = MagicMock()
+    fl_ctx.get_prop.side_effect = lambda key: workspace if key == FLContextKey.WORKSPACE_OBJECT else None
+    context = SimpleNamespace(memory_gc_rounds=0, cuda_empty_cache=False)
+
+    backend.initialize(context, fl_ctx)
+
+    config = read_bootstrap_config(str(tmp_path / "client_api_config.json"))
+    assert config[BootstrapKey.SECURE_MODE] is False
 
 
 def test_flower_metrics_hello_rejects_bad_token():
