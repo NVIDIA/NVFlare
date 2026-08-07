@@ -114,7 +114,8 @@ Communication Mechanisms
   
 **Client API Backends**: ``ClientAPIExecutor`` selects the communication and
 lifecycle backend for ``in_process``, ``external_process``, or ``attach`` mode.
-Attach uses a dedicated CJ-owned listener rather than the CP-to-CJ connection.
+Network Attach reuses the site's Client Parent listener; protected shared-file
+Attach uses a dedicated Client Job-owned listener.
 
 Deployment Modes
 ################
