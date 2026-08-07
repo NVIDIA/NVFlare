@@ -183,15 +183,16 @@ class TestPrepareLearnTaskData(unittest.TestCase):
         self.assertIs(controller_data, resolved)
         self.assertIs(learner_data, resolved)
 
-    def test_attach_non_aggregator_leaves_refs_for_trainer_as_sole_consumer(self):
+    def test_attach_non_aggregator_resolves_refs_at_cj_boundary(self):
         task_data = _make_shareable_with_lazy_refs()
         executor = ClientAPIExecutor(execution_mode=ExecutionMode.ATTACH, attach_id="test-attach")
 
         resolve_calls, resolved, controller_data, learner_data = self._prepare(task_data, executor)
-        self.assertEqual(resolve_calls, [])
-        self.assertIsNot(controller_data, resolved)
-        self.assertIs(controller_data, task_data)
-        self.assertIs(learner_data, task_data)
+        self.assertEqual(len(resolve_calls), 1)
+        self.assertIs(resolve_calls[0][0], task_data)
+        self.assertFalse(resolve_calls[0][1]["enable_tensor_disk_offload"])
+        self.assertIs(controller_data, resolved)
+        self.assertIs(learner_data, resolved)
 
     def test_attach_aggregator_resolves_once_for_controller_and_trainer(self):
         task_data = _make_shareable_with_lazy_refs()

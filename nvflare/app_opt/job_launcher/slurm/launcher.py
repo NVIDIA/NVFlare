@@ -56,9 +56,12 @@ from nvflare.app_opt.job_launcher.study_runtime import (
     resolve_study_runtime,
     study_runtime_file_path,
 )
+from nvflare.client.cell.attach_rendezvous import ATTACH_COMM_CONFIG
 from nvflare.fuel.f3.comm_error import CommError
+from nvflare.fuel.f3.drivers.file_driver import ROOT_DIR as SHARED_FILE_ROOT_DIR
 from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.fuel.f3.drivers.file_driver import parse_file_url
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.secret_utils import has_secret_refs
 from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
@@ -238,11 +241,40 @@ def _file_parent_mount(parent_url: str, workspace_path: str) -> Optional[BindMou
     return BindMount(source, destination, "rw")
 
 
+def _file_attach_mount(workspace: Workspace, workspace_path: str) -> Optional[BindMount]:
+    """Bind mount for a site-configured shared-file Client API Attach root."""
+    try:
+        comm_config = ConfigService.load_config_dict(
+            "comm_config.json", [workspace.get_site_config_dir()], raise_exception=False
+        )
+    except Exception as e:
+        raise SlurmLauncherError("cannot load site-local comm_config.json for Client API Attach") from e
+    if not isinstance(comm_config, dict):
+        return None
+    attach_config = comm_config.get(ATTACH_COMM_CONFIG)
+    if not isinstance(attach_config, dict) or attach_config.get("scheme") != SHARED_FILE_SCHEME:
+        return None
+    resources = _mapping_or_empty(attach_config.get("resources"), f"{ATTACH_COMM_CONFIG}.resources in comm_config.json")
+    root_dir = _require_string(
+        resources.get(SHARED_FILE_ROOT_DIR), f"{ATTACH_COMM_CONFIG}.resources.{SHARED_FILE_ROOT_DIR}"
+    )
+    if ".." in root_dir.split("/"):
+        _validate_mount_destination(root_dir, "shared-file Client API Attach root")
+    destination = _validate_mount_destination(os.path.normpath(root_dir), "shared-file Client API Attach root")
+    if os.path.islink(destination) or not os.path.isdir(destination):
+        raise SlurmLauncherError(
+            f"shared-file Client API Attach root must be an existing non-symlink directory: {destination}"
+        )
+    source = _validate_mount_source(destination, workspace_path, "shared-file Client API Attach root")
+    return BindMount(source, destination, "rw")
+
+
 class SlurmJobLauncher(JobLauncherSpec):
     """Common lifecycle and launch-plan construction for client and server jobs."""
 
     EXE_MODULE: Optional[str] = None
     SUPPORTS_ADDITIONAL_NODE_COMMAND = False
+    SUPPORTS_CLIENT_API_ATTACH = False
 
     def __init__(
         self,
@@ -461,6 +493,13 @@ class SlurmJobLauncher(JobLauncherSpec):
                 if any(_paths_overlap(parent_mount.destination, mount.destination) for mount in mounts):
                     raise SlurmLauncherError("shared-file parent directory overlaps a study mount destination")
                 mounts.append(parent_mount)
+            attach_mount = (
+                _file_attach_mount(workspace, self.config.workspace_path) if self.SUPPORTS_CLIENT_API_ATTACH else None
+            )
+            if attach_mount and attach_mount != parent_mount:
+                if any(_paths_overlap(attach_mount.destination, mount.destination) for mount in mounts):
+                    raise SlurmLauncherError("shared-file Client API Attach root overlaps another mount destination")
+                mounts.append(attach_mount)
         return LaunchPlan(
             job_id=job_id,
             site_name=site_name,
@@ -502,6 +541,7 @@ class SlurmJobLauncher(JobLauncherSpec):
 class ClientSlurmJobLauncher(SlurmJobLauncher):
     EXE_MODULE = "nvflare.private.fed.app.client.worker_process"
     SUPPORTS_ADDITIONAL_NODE_COMMAND = True
+    SUPPORTS_CLIENT_API_ATTACH = True
 
     def get_module_args(self, job_args: dict) -> tuple:
         return _module_args(job_args, get_client_job_args(include_exe_module=False, include_set_options=True))

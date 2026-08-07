@@ -56,6 +56,12 @@ CELL_PIPE_LEAF_PREFIX = f"{CELL_PIPE_PREFIX}plain{CELL_PIPE_SEPARATOR}"
 CELL_PIPE_ALIAS_PREFIX = f"{CELL_PIPE_PREFIX}alias{CELL_PIPE_SEPARATOR}"
 CELL_PIPE_ALIAS_MODES = ("active", "passive")
 
+# A Client API Attach trainer connects to the stable site CP while keeping its
+# task/result protocol scoped to a dynamic CJ. Like a plain CellPipe child, it
+# authenticates with the certificate of its physical parent rather than a
+# separately provisioned certificate named after this leaf.
+CLIENT_API_ATTACH_LEAF_PREFIX = "-client_api_"
+
 
 def make_cell_pipe_leaf(runtime_id: str, mode: str) -> str:
     return CELL_PIPE_SEPARATOR.join(("cellpipe", "plain", runtime_id, mode))

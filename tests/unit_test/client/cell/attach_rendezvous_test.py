@@ -47,7 +47,7 @@ def _publish(root_dir, connect_url=None):
     publisher = AttachEndpointPublisher(str(root_dir), "site-1", "trainer_a")
     publisher.publish(
         cj_fqcn="site-1.job-1",
-        trainer_fqcn="site-1.job-1.-client_api_trainer_a",
+        trainer_fqcn="site-1.-client_api_trainer_a",
         connect_url=connect_url,
         connection_security="clear",
     )
@@ -60,7 +60,7 @@ def test_publish_wait_and_close_round_trip(tmp_path):
     record = wait_for_attach_endpoint(str(tmp_path), "site-1", "trainer_a", timeout=0.5)
 
     assert record[AttachEndpointKey.CJ_FQCN] == "site-1.job-1"
-    assert record[AttachEndpointKey.TRAINER_FQCN] == "site-1.job-1.-client_api_trainer_a"
+    assert record[AttachEndpointKey.TRAINER_FQCN] == "site-1.-client_api_trainer_a"
     claim_dir = attach_claim_dir(str(tmp_path), "site-1", "trainer_a")
     assert os.stat(os.path.join(claim_dir, ATTACH_ENDPOINT_FILE)).st_mode & 0o777 == 0o660
 

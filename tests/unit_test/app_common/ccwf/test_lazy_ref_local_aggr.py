@@ -35,11 +35,11 @@ from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
 
-def _make_shareable_with_lazy_refs(relay=False):
+def _make_shareable_with_lazy_refs():
     """Return a WEIGHT_DIFF Shareable whose values are LazyDownloadRef placeholders."""
     lazy_data = {
-        "layer.weight": LazyDownloadRef(fqcn="site-1.subprocess", ref_id="ref-abc", item_id="T0", relay=relay),
-        "layer.bias": LazyDownloadRef(fqcn="site-1.subprocess", ref_id="ref-abc", item_id="T1", relay=relay),
+        "layer.weight": LazyDownloadRef(fqcn="site-1.subprocess", ref_id="ref-abc", item_id="T0"),
+        "layer.bias": LazyDownloadRef(fqcn="site-1.subprocess", ref_id="ref-abc", item_id="T1"),
     }
     dxo = DXO(data_kind=DataKind.WEIGHT_DIFF, data=lazy_data)
     return dxo.to_shareable()
@@ -147,9 +147,9 @@ class TestResolveRef(unittest.TestCase):
         self.assertIs(out, lazy_result)
 
     def test_resolve_lazy_refs_calls_fobs_round_trip(self):
-        """Relay refs must be encoded with a Cell and decoded with PASS_THROUGH=False."""
+        """Lazy refs must preserve their source and decode with PASS_THROUGH=False."""
         ctl = _make_controller()
-        lazy_result = _make_shareable_with_lazy_refs(relay=True)
+        lazy_result = _make_shareable_with_lazy_refs()
         real_result = _make_shareable_with_real_arrays()
 
         mock_cell = MagicMock()
