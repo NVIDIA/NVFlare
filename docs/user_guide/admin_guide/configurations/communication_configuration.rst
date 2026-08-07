@@ -62,7 +62,7 @@ The following is an example of the comm_config.json:
     "allow_adhoc_conns": false,
     "backbone_conn_gen": 2,
     "max_message_size": 2000000000,
-    "streaming_max_blob_size": 2144337904,
+    "streaming_max_blob_size": 4294967296,
     "internal": {
       "scheme": "tcp",
       "resources": {
@@ -326,7 +326,7 @@ are intentionally omitted.
     "heartbeat_interval": 60,
     "tcp_no_delay": true,
     "streaming_chunk_size": 1048576,
-    "streaming_max_blob_size": 2144337904,
+    "streaming_max_blob_size": 4294967296,
     "streaming_read_timeout": 60,
     "streaming_window_size": 67108864,
     "streaming_ack_interval": 16777216,
@@ -401,7 +401,7 @@ The chunk size in bytes. The default value is 1M. When deciding chunk size the f
 streaming_max_blob_size
 -----------------------
 
-The maximum total size in bytes of a received blob stream. The default value is 2144337904 (about 2 GB).
+The maximum total size in bytes of a received blob stream. The default value is 4294967296 (4 GiB).
 This limit is enforced before pre-allocating a declared-size blob and while buffering a blob whose size is not declared up front.
 
 This parameter is separate from ``max_message_size``. ``max_message_size`` limits each individual frame, while

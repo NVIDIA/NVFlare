@@ -117,33 +117,32 @@ Key Features
   communication backends without changing application code
 - **Rich Examples** -- Extensive library of FL algorithms, workflows, and application examples to build from
 
-What is New in 2.8.0
+What is New in 2.9.0
 ====================
 
-NVIDIA FLARE 2.8.0 expands deployment automation, CLI operations,
-multi-study support, and production hardening while adding Docker and
-Kubernetes job launchers for on-premises and cloud environments plus new
-multimodal and research examples.
+NVIDIA FLARE 2.9.0 makes collaborative workflows easier to write and operate.
+It introduces the Pythonic Collab API, expands Client API execution and
+framework integration, adds Slurm deployment support and agent-ready
+workflows, and strengthens large-model transport and runtime reliability.
 
 **Highlights:**
 
-- **Modern NVFlare CLI**: expanded ``job``, ``system``, ``config``,
-  ``recipe``, ``cert``, ``package``, and ``deploy`` command groups with JSON
-  output and schema support for automation
-- **Distributed Provisioning**: participant-managed certificate requests keep
-  private keys local while Project Admins approve signed packages and root CA
-  trust
-- **Docker and Kubernetes Job Launchers**: sites can configure process,
-  Docker, or Kubernetes job launchers for subprocess jobs, job containers, or
-  isolated job pods with study-scoped dataset mounts, including Kubernetes
-  deployments on AWS, Azure, and GCP
-- **Multi-Study Support**: study-scoped sessions, authorization, CLI commands,
-  and local PoC workflows let one deployment host multiple collaborations
-  without mixing operational or data-access context
-- **Live Log Streaming**: client job logs stream to the server while jobs are
-  running, shortening remote debugging loops
+- **Collab API**: write server workflows and published client functions as
+  ordinary Python while FLARE handles distributed calls and transport
+- **Client API execution modes**: choose in-process, NVFlare-managed external
+  process, or independently managed Attach trainers, with a new HuggingFace
+  Trainer integration
+- **Recipes and result artifacts**: configure sites through public Recipe APIs,
+  export jobs consistently, and consume standard round and summary metrics
+- **Agent-ready workflows**: use packaged coding-agent skills and the Auto-FL
+  workflow to inspect data, build experiments, and evaluate results
+- **Slurm and Kubernetes operations**: run jobs in HPC environments and use
+  stronger launcher lifecycle, credential, and cleanup behavior
+- **Large-model and framework reliability**: use receiver-confirmed F3 transfer
+  progress, larger streaming defaults, and automatic Lightning SCAFFOLD and
+  FedProx integration
 
-See :doc:`release_notes/flare_280` for full release notes.
+See :doc:`release_notes/flare_290` for full release notes.
 See :doc:`release_notes/previous` for previous releases.
 
 Real-World Use Cases & FLARE Day
