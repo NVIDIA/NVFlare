@@ -37,11 +37,14 @@ The security of the system comes from the PKI credentials in the Startup Kits. A
     The provisioning tools generate X.509 certificates with 2048-bit RSA
     private keys. Certificate lifetime depends on the provisioning workflow
     and configuration. Centralized ``nvflare provision`` defaults newly
-    created root and participant certificates to 360 days; participant
-    certificates may be shortened to the root CA's expiry, and
+    created root and participant certificates to 360 days, and
     ``root_valid_days`` can change a new root's validity. Distributed
     ``nvflare cert init`` defaults the root CA to 3650 days, while
     ``nvflare cert approve`` defaults participant certificates to 1095 days.
+    In both workflows, a participant certificate cannot outlive its signing
+    root CA. If the root has less validity remaining than the requested
+    participant lifetime, the participant certificate is shortened to expire
+    with the root.
     The cryptographic backend is supplied by the installed ``cryptography``
     runtime and is not fixed to one OpenSSL release.
  
