@@ -17,7 +17,6 @@ import shutil
 import threading
 import time
 from dataclasses import dataclass
-from time import monotonic
 from typing import Dict, List, Tuple
 
 from nvflare.apis.client import Client
@@ -49,7 +48,7 @@ from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import extract_participants, require_signed_jobs, set_message_security_data
 from nvflare.security.logging import secure_format_exception
 
-WORKSPACE_SAVE_RETRY_GRACE_TIME = 60.0
+WORKSPACE_SAVE_RETRY_GRACE_TIME = 60
 
 
 @dataclass
@@ -429,7 +428,7 @@ class JobRunner(FLComponent):
                                 try:
                                     self._save_workspace(completion_ctx)
                                 except Exception as e:
-                                    now = monotonic()
+                                    now = time.monotonic()
                                     if finished_state.workspace_save_started_at is None:
                                         finished_state.workspace_save_started_at = now
                                     if now - finished_state.workspace_save_started_at < WORKSPACE_SAVE_RETRY_GRACE_TIME:
@@ -445,8 +444,7 @@ class JobRunner(FLComponent):
                                         f"{WORKSPACE_SAVE_RETRY_GRACE_TIME} seconds; publishing terminal status without "
                                         f"archived artifacts: {secure_format_exception(e)}",
                                     )
-                                with self.lock:
-                                    finished_state.workspace_archival_complete = True
+                                finished_state.workspace_archival_complete = True
                             try:
                                 job_manager.set_status(job.job_id, status, completion_ctx)
                             except Exception as e:
@@ -545,11 +543,6 @@ class JobRunner(FLComponent):
                 shutil.rmtree(d)
             except FileNotFoundError:
                 self.log_warning(fl_ctx, f"Workspace archive source disappeared before cleanup for job {job_id}: {d}")
-            except OSError as e:
-                self.log_warning(
-                    fl_ctx,
-                    f"Failed to clean archived workspace source for job {job_id} ({d}): {secure_format_exception(e)}",
-                )
 
     def run(self, fl_ctx: FLContext):
         """Starts job runner."""

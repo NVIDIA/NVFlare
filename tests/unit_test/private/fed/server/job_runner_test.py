@@ -35,7 +35,10 @@ def _patch_job_runner_sleep(side_effect):
     calling ``time.sleep`` would run the side effect and trip the loop's stop
     condition early (FLARE-3034).
     """
-    return patch("nvflare.private.fed.server.job_runner.time", **{"sleep.side_effect": side_effect})
+    return patch(
+        "nvflare.private.fed.server.job_runner.time",
+        **{"sleep.side_effect": side_effect, "monotonic.return_value": 0.0},
+    )
 
 
 def _make_runner_inputs(num_clients=1):
@@ -306,6 +309,18 @@ def test_save_workspace_tolerates_source_disappearing_during_cleanup(tmp_path):
     runner.log_warning.assert_called_once_with(
         fl_ctx, f"Workspace archive source disappeared before cleanup for job job-1: {run_dir}"
     )
+
+
+def test_save_workspace_propagates_cleanup_errors_for_retry(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(*([str(run_dir)] * 4))
+
+    with patch("nvflare.private.fed.server.job_runner.shutil.rmtree", side_effect=PermissionError("denied")):
+        with pytest.raises(PermissionError, match="denied"):
+            runner._save_workspace(fl_ctx)
+
+    job_manager.save_workspace.assert_called_once_with("job-1", [str(run_dir)], fl_ctx)
 
 
 def test_job_complete_process_saves_workspace_before_publishing_aborted_status():
@@ -754,8 +769,7 @@ def test_job_complete_process_retries_save_without_recomputing_finished_status()
     assert "job-1" not in runner._finished_job_states
 
 
-@patch("nvflare.private.fed.server.job_runner.monotonic", side_effect=[0.0, 60.0])
-def test_job_complete_process_publishes_terminal_status_after_workspace_save_grace_time(_mock_monotonic):
+def test_job_complete_process_publishes_terminal_status_after_workspace_save_grace_time():
     runner = JobRunner(workspace_root="/tmp")
     runner.fire_event = MagicMock()
     runner.log_debug = MagicMock()
@@ -796,7 +810,10 @@ def test_job_complete_process_publishes_terminal_status_after_workspace_save_gra
         if sleep_count == 2:
             runner.ask_to_stop = True
 
-    with _patch_job_runner_sleep(_stop_after_second_pass):
+    with patch(
+        "nvflare.private.fed.server.job_runner.time",
+        **{"sleep.side_effect": _stop_after_second_pass, "monotonic.side_effect": [0.0, 60.0]},
+    ):
         runner._job_complete_process(engine)
 
     assert runner._save_workspace.call_args_list == [call(first_ctx), call(second_ctx)]
