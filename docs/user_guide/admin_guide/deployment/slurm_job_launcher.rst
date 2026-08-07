@@ -313,6 +313,14 @@ Directory permissions are the only access control on this channel, so keep
 ``root_dir`` owned by the dedicated site account with no wider group access
 than required.
 
+The same container rule applies to a site-local
+``client_api_attach.scheme: shared-file`` listener. The launcher bind-mounts its
+configured ``root_dir`` read-write at the same absolute path for containerized
+client jobs so an external trainer sees the CJ's listener and rendezvous claim.
+Create that root as a non-symlink directory outside the runtime workspace before
+launch. The Client API Attach permission and ownership checks remain
+authoritative; bare Slurm and network Attach do not add this mount.
+
 Polling intervals, lease timing, and fsync behavior are tunable through the
 ``internal.resources`` map; see the ``FileDriver`` documentation in
 ``nvflare.fuel.f3.drivers.file_driver`` for the parameters and their
