@@ -783,6 +783,27 @@
       }
     },
     {
+      "id": "pytorch-optimizer-factory-owner-routing",
+      "prompt": "Convert this manual PyTorch loop with an optimizer factory into a two-site NVFLARE FedAvg job.",
+      "expected_output": "Inspection resolves the same-module optimizer factory and optimizer.step lifecycle to a clear PyTorch owner, then the PyTorch conversion preserves the manual loop.",
+      "files": [
+        "files/factory-optimizer/train.py"
+      ],
+      "assertions": [
+        "The agent runs nvflare agent inspect source first, confirms clear PyTorch ownership, and selects nvflare-convert-pytorch.",
+        "The conversion preserves the optimizer factory, backward call, optimizer step, and manual training-loop semantics."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-pytorch",
+        "mandatory_behavior": [
+          {
+            "id": "factory-pytorch-optimizer-owner",
+            "description": "routes a recognized optimizer factory to PyTorch conversion and preserves the manual step lifecycle"
+          }
+        ]
+      }
+    },
+    {
       "id": "pytorch-negative-lightning",
       "prompt": "Convert my PyTorch Lightning Trainer and LightningModule to an NVFLARE workflow.",
       "expected_output": "The PyTorch conversion skill should not be the lead; route to the Lightning conversion skill when available.",
