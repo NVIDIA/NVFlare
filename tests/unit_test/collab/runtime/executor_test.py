@@ -202,6 +202,96 @@ def test_client_proxy_builds_children_from_remote_interface():
     assert proxy.backend.thread_executor is executor.outbound_executor
 
 
+def test_external_setup_starts_distributed_session_without_initializing_parent_app(monkeypatch):
+    client = MagicMock()
+    client.name = "site-1"
+    client.get_fqcn.return_value = "site-1"
+    client.get_fqsn.return_value = "site-1"
+    session = MagicMock()
+    session_type = MagicMock(return_value=session)
+    monkeypatch.setattr(executor_module, "from_dict", lambda value: value)
+    monkeypatch.setattr(executor_module, "DistributedClientSession", session_type)
+    prepare = MagicMock()
+    monkeypatch.setattr(executor_module, "prepare_for_distributed_call", prepare)
+
+    executor = CollabExecutor(
+        client_obj_id="client",
+        collab_obj_ids=["extra"],
+        props={"learning_rate": 0.1},
+        launch_external_process=True,
+        command="python3 -m torch.distributed.run --nproc_per_node=2",
+    )
+    executor.client_app = MagicMock()
+    executor.client_app.name = "site-1"
+    executor.client_app.get_collab_interface.return_value = {"": {"train": []}}
+    executor.log_info = MagicMock()
+
+    engine = MagicMock()
+    cell = engine.get_cell.return_value
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = engine
+    fl_ctx.get_identity_name.return_value = "site-1"
+    fl_ctx.get_job_id.return_value = "job"
+    fl_ctx.get_prop.side_effect = lambda key, default=None: {
+        FLContextKey.JOB_META: {JobMetaKey.JOB_CLIENTS: [client]}
+    }.get(key, default)
+    shareable = Shareable(
+        {
+            SyncKey.COLLAB_INTERFACE: {"": {"run": []}},
+            SyncKey.CLIENT_INTERFACES: {"site-1": {"": {"train": []}}},
+            SyncKey.SERVER_FQCN: "server/job",
+        }
+    )
+
+    try:
+        reply = executor.execute(SETUP_TASK_NAME, shareable, fl_ctx, MagicMock())
+    finally:
+        executor._shutdown_call_executors()
+
+    assert reply.get_return_code() == ReturnCode.OK
+    session.start.assert_called_once()
+    assert session.start.call_args.kwargs["client_obj_id"] == "client"
+    assert session.start.call_args.kwargs["collab_obj_ids"] == ["extra"]
+    assert session.start.call_args.kwargs["server_spec"]["target"] == "server/job"
+    assert session.start.call_args.kwargs["fl_ctx"] is fl_ctx
+    executor.client_app.setup.assert_not_called()
+    executor.client_app.initialize.assert_not_called()
+    prepare.assert_called_once_with(
+        cell=cell,
+        session=session,
+        logger=executor.logger,
+        executor=executor.inbound_executor,
+    )
+
+
+def test_end_run_finalizes_distributed_session_instead_of_parent_app():
+    executor = CollabExecutor(client_obj_id="client", launch_external_process=True)
+    executor.client_app = MagicMock()
+    executor.client_app.name = "site-1"
+    executor.distributed_session = MagicMock()
+
+    executor._handle_end_run("end_run", FLContext())
+
+    executor.distributed_session.stop.assert_called_once_with(finalize=True)
+    executor.client_app.finalize.assert_not_called()
+
+
+def test_end_run_shuts_down_call_executors_when_distributed_finalize_fails():
+    executor = CollabExecutor(client_obj_id="client", launch_external_process=True)
+    executor.client_app = MagicMock()
+    executor.client_app.name = "site-1"
+    executor.distributed_session = MagicMock()
+    executor.distributed_session.stop.side_effect = RuntimeError("rank 1 finalization failed")
+    executor.inbound_executor.shutdown = MagicMock(wraps=executor.inbound_executor.shutdown)
+    executor.outbound_executor.shutdown = MagicMock(wraps=executor.outbound_executor.shutdown)
+
+    with pytest.raises(RuntimeError, match="rank 1 finalization failed"):
+        executor._handle_end_run("end_run", FLContext())
+
+    executor.inbound_executor.shutdown.assert_called_once_with(wait=True, cancel_futures=True)
+    executor.outbound_executor.shutdown.assert_called_once_with(wait=True, cancel_futures=True)
+
+
 @pytest.mark.parametrize("failing_method", ["setup", "initialize"])
 def test_setup_returns_error_without_publishing_context_when_client_setup_fails(monkeypatch, failing_method):
     client = MagicMock()

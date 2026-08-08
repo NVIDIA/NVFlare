@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import importlib
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -203,6 +204,41 @@ def test_recipe_materializes_only_each_sites_config_into_targeted_executor_props
     assert site_2_executor.props == {"shared": "value", "learning_rate": 0.02}
     assert "__per_site_config__" not in site_1_executor.props
     assert "__per_site_config__" not in site_2_executor.props
+
+
+def test_recipe_materializes_distributed_launcher_command_per_site(tmp_path):
+    module = _make_module("distributed_recipe_module")
+    recipe = CollabRecipe(
+        job_name="distributed_recipe_test",
+        server=module,
+        client=module,
+        launch_external_process=True,
+        command="python3 -m torch.distributed.run --nproc_per_node=1",
+    )
+    recipe.set_per_site_config(
+        {
+            "site-1": {"command": "python3 -m torch.distributed.run --nproc_per_node=2 --master_port=7777"},
+            "site-2": {"command": "python3 -m torch.distributed.run --nproc_per_node=4 --master_port=8888"},
+        }
+    )
+
+    job = recipe.finalize()
+
+    site_1_executor = job._deploy_map["site-1"].app_config.executors[0].executor
+    site_2_executor = job._deploy_map["site-2"].app_config.executors[0].executor
+    assert site_1_executor.launch_external_process is True
+    assert site_2_executor.launch_external_process is True
+    assert site_1_executor.command.endswith("--nproc_per_node=2 --master_port=7777")
+    assert site_2_executor.command.endswith("--nproc_per_node=4 --master_port=8888")
+
+    recipe.export(str(tmp_path))
+    for site, process_count, port in (("site-1", 2, 7777), ("site-2", 4, 8888)):
+        config_path = tmp_path / "distributed_recipe_test" / f"app_{site}" / "config" / "config_fed_client.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        executor_config = config["executors"][0]["executor"]
+        assert executor_config["path"] == "nvflare.collab.runtime.executor.CollabExecutor"
+        assert executor_config["args"]["launch_external_process"] is True
+        assert executor_config["args"]["command"].endswith(f"--nproc_per_node={process_count} --master_port={port}")
 
 
 def test_exported_module_package_imports_in_clean_process(tmp_path, monkeypatch):

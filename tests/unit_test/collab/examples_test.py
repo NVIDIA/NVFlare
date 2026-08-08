@@ -47,6 +47,19 @@ _EXAMPLES = [
     ),
     pytest.param(
         _ADVANCED_EXAMPLES_ROOT,
+        "collab.distributed_training.distributed_training",
+        SimpleNamespace(
+            num_clients=2,
+            num_rounds=3,
+            nproc_per_client=2,
+            local_epochs=2,
+            master_port=29500,
+        ),
+        ("torch",),
+        id="distributed_training",
+    ),
+    pytest.param(
+        _ADVANCED_EXAMPLES_ROOT,
         "collab.simple_split_learning.simple_split_learning",
         None,
         ("torch", "torchvision"),
@@ -92,6 +105,27 @@ def test_hello_fedavg_sim_env_uses_configured_clients(monkeypatch):
     env = module.make_env(recipe)
 
     assert env.clients == recipe.configured_sites() == ["site-1", "site-2"]
+
+
+def test_distributed_training_configures_per_site_torchrun(monkeypatch):
+    pytest.importorskip("torch")
+    monkeypatch.syspath_prepend(str(_ADVANCED_EXAMPLES_ROOT))
+    module = importlib.import_module("collab.distributed_training.distributed_training")
+    args = SimpleNamespace(
+        num_clients=2,
+        num_rounds=3,
+        nproc_per_client=2,
+        local_epochs=2,
+        master_port=29500,
+    )
+
+    recipe = module.make_recipe(args)
+
+    assert recipe.launch_external_process is True
+    assert recipe.configured_sites() == ["site-1", "site-2"]
+    assert recipe._per_site_config["site-1"]["command"].endswith("--nproc_per_node=2 --master_port=29500")
+    assert recipe._per_site_config["site-2"]["command"].endswith("--nproc_per_node=2 --master_port=29501")
+    assert recipe._per_site_config["site-1"]["local_epochs"] == 2
 
 
 @pytest.mark.parametrize(

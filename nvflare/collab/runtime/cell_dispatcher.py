@@ -59,6 +59,7 @@ class CellDispatcher(_InvocationDispatcher):
             ObjectCallKey.METHOD_NAME: func_name,
             ObjectCallKey.ARGS: args,
             ObjectCallKey.KWARGS: kwargs,
+            ObjectCallKey.TIMEOUT: call_opt.timeout,
         }
         request = new_cell_message({}, payload)
 

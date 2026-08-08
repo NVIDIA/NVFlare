@@ -39,6 +39,32 @@ def prepare_for_remote_call(cell, app, logger, executor):
     logger.info(f"registered request CB for {MSG_CHANNEL}/{MSG_TOPIC}")
 
 
+def prepare_for_distributed_call(cell, session, logger, executor):
+    """Register a Collab callback that delegates invocation to external ranks."""
+    logger.info(f"register distributed cb for cell {cell.get_fqcn()}: {type(cell)}")
+    adapter = Adapter(_submit_distributed_method, cell.core_cell.my_info, cell)
+    cell.register_blob_cb(
+        channel=MSG_CHANNEL,
+        topic=MSG_TOPIC,
+        blob_cb=adapter.call,
+        session=session,
+        logger=logger,
+        executor=executor,
+    )
+    logger.info(f"registered distributed request CB for {MSG_CHANNEL}/{MSG_TOPIC}")
+
+
+def _submit_distributed_method(request: Message, session, logger, executor):
+    try:
+        return executor.submit(session.invoke, request)
+    except RuntimeError:
+        return _error_reply(
+            "cannot process remote call because the Collab runtime is shutting down",
+            logger,
+            error_type=RuntimeError.__name__,
+        )
+
+
 def _submit_app_method(request: Message, app: App, logger, executor):
     """Move user code off the shared Cell/stream callback executor."""
     try:
