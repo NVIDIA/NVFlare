@@ -149,6 +149,21 @@ def test_identity_resolver_maps_job_cell_to_configured_parent_identity():
     assert resolver.resolve("site-1.job-123") == "site-1"
 
 
+def test_identity_resolver_maps_attach_child_to_cp_identity():
+    resolver = CellIdentityResolver(local_fqcn="site-1", exact_identity_map={"site-1": "site-cert-cn"})
+
+    assert resolver.resolve("site-1.-client_api_trainer_a") == "site-cert-cn"
+
+
+def test_identity_resolver_maps_relayed_attach_child_to_site_identity():
+    resolver = CellIdentityResolver(
+        local_fqcn="relay-1.site-1",
+        exact_identity_map={"relay-1.site-1": "custom-site-cn"},
+    )
+
+    assert resolver.resolve("relay-1.site-1.-client_api_trainer_a") == "custom-site-cn"
+
+
 def test_identity_resolver_maps_relay_child_to_child_identity_without_configured_prefix():
     resolver = CellIdentityResolver(local_fqcn="relay-1", exact_identity_map={"relay-1": "relay-1"})
 

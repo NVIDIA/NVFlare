@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from nvflare.app_opt.pt.fedce import FedCEModelAggregator
 from nvflare.client.config import ExchangeFormat, TransferType
@@ -56,6 +56,7 @@ class FedCERecipe(FedAvgRecipe):
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
+        key_metric_mode: Optional[Literal["min", "max"]] = None,
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
         best_model_filename: Optional[str] = None,
@@ -112,6 +113,7 @@ class FedCERecipe(FedAvgRecipe):
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
+            key_metric_mode=key_metric_mode,
             stop_cond=stop_cond,
             patience=patience,
             best_model_filename=best_model_filename,

@@ -40,13 +40,13 @@ each node:
 
 ```bash
 python job.py \
+    --export \
+    --export-dir /shared/jobs/llm_hf_2x8 \
     --client_ids dolly \
     --data_path /shared/datasets/llm_hf \
-    --job_dir /shared/jobs/llm_hf_2x8 \
     --slurm_nodes 2 \
     --slurm_gpus_per_node 8 \
-    --message_mode tensor \
-    --export_config
+    --message_mode tensor
 ```
 
 The exported `meta.json` contains a site-specific launcher block like this:
@@ -72,13 +72,12 @@ arguments.
 
 ## Submit from an admin startup kit
 
-To export and submit the same recipe directly through `ProdEnv`:
+To submit the same recipe directly through `ProdEnv`:
 
 ```bash
 python job.py \
     --client_ids dolly \
     --data_path /shared/datasets/llm_hf \
-    --job_dir /shared/jobs/llm_hf_2x8 \
     --startup_kit_location /path/to/admin/startup_kit \
     --username admin@nvidia.com \
     --slurm_nodes 2 \
