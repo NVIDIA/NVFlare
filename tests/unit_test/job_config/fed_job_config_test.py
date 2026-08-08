@@ -21,6 +21,24 @@ from nvflare.job_config.fed_job_config import FedJobConfig
 
 
 class TestFedJobConfig:
+    @pytest.mark.parametrize(
+        "job_name", ["", ".", "..", "../job", "nested/job", r"nested\job", "/tmp/job", "job.", "job ", "CON"]
+    )
+    def test_generate_job_config_rejects_path_bearing_job_name(self, tmp_path, job_name):
+        # A meta.json makes the export root look like a replaceable job folder.
+        # Before validation, an empty or "." job name caused rmtree(tmp_path).
+        meta_file = tmp_path / "meta.json"
+        meta_file.write_text("{}", encoding="utf-8")
+        marker = tmp_path / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+        job_config = FedJobConfig(job_name=job_name, min_clients=1)
+
+        with pytest.raises(ValueError):
+            job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+        assert meta_file.exists()
+
     def test_locate_imports(self):
         job_config = FedJobConfig(job_name="job_name", min_clients=1)
         cwd = os.path.dirname(__file__)
