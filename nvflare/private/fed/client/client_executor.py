@@ -617,6 +617,12 @@ class JobExecutor(ClientExecutor):
             self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
 
             failure_reason = REPORTABLE_JOB_FAILURES.get(return_code)
+            if failure_reason is None:
+                failure_reason = (
+                    "completed"
+                    if return_code == JobReturnCode.SUCCESS
+                    else f"client job exited with code {return_code}"
+                )
             if failure_reason:
                 request = new_cell_message(
                     headers={},
@@ -626,14 +632,21 @@ class JobExecutor(ClientExecutor):
                         JobFailureMsgKey.REASON: failure_reason,
                     },
                 )
-                self.client.cell.fire_and_forget(
-                    targets=[FQCN.ROOT_SERVER],
-                    channel=CellChannel.SERVER_MAIN,
-                    topic=CellChannelTopic.REPORT_JOB_FAILURE,
-                    message=request,
-                    optional=True,
-                )
-                self.logger.info(f"reported failure of job {job_id} to server!")
+                try:
+                    reply = self.client.cell.send_request(
+                        target=FQCN.ROOT_SERVER,
+                        channel=CellChannel.SERVER_MAIN,
+                        topic=CellChannelTopic.REPORT_JOB_FAILURE,
+                        request=request,
+                        timeout=self.job_query_timeout,
+                        optional=True,
+                    )
+                    if reply.get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK:
+                        self.logger.error(f"could not report terminal outcome of job {job_id}")
+                except Exception as e:
+                    self.logger.error(
+                        f"could not report terminal outcome of job {job_id}: {secure_format_exception(e)}"
+                    )
 
         if allocated_resource:
             resource_manager.free_resources(

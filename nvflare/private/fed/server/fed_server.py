@@ -825,25 +825,37 @@ class FederatedServer(BaseServer):
         # Validate sender identity using token only.
         # Note: validate_client() cannot be used here because the
         # REPORT_JOB_FAILURE message (sent by ClientExecutor via
-        # fire_and_forget) does not carry a PROJECT_NAME header —
+        # send_request) does not carry a PROJECT_NAME header —
         # only TOKEN is injected by the outgoing auth filter.
         token = request.get_header(CellMessageHeaderKeys.TOKEN)
         if not token or not self.client_manager.is_from_authorized_client(token):
             self.logger.warning(f"Dropped unauthenticated Job Failure report from {client}")
-            return
+            return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED, "", None)
 
         if not isinstance(payload, dict):
             self.logger.error(
                 f"dropped bad Job Failure report from {client}: expect payload to be dict but got {type(payload)}"
             )
-            return
+            return make_cellnet_reply(F3ReturnCode.INVALID_REQUEST, "", None)
         job_id = payload.get(JobFailureMsgKey.JOB_ID)
         if not job_id:
             self.logger.error(f"dropped bad Job Failure report from {client}: no job_id")
-            return
+            return make_cellnet_reply(F3ReturnCode.INVALID_REQUEST, "", None)
 
         code = payload.get(JobFailureMsgKey.CODE)
         reason = payload.get(JobFailureMsgKey.REASON, "?")
+        registered_client = self.client_manager.clients.get(token)
+        if not registered_client:
+            self.logger.warning(f"Dropped terminal outcome from unknown client token for job {job_id}")
+            return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED, "", None)
+        client_name = registered_client.name
+        job_runner = self.engine.job_runner
+        with job_runner.lock:
+            pending_clients = job_runner._pending_client_outcomes.get(job_id)
+            if not pending_clients or client_name not in pending_clients:
+                self.logger.warning(f"Dropped terminal outcome for untracked job/client {job_id}/{client_name}")
+                return make_cellnet_reply(F3ReturnCode.INVALID_REQUEST, "", None)
+
         if code in (
             ProcessExitCode.CONFIG_ERROR,
             ProcessExitCode.EXCEPTION,
@@ -852,11 +864,14 @@ class FederatedServer(BaseServer):
             with self.engine.new_context() as fl_ctx:
                 self.logger.info(f"Failing job {job_id} due to reported failure from {client}: {reason}")
                 failure_code = code if code == ProcessExitCode.INFRASTRUCTURE_ERROR else ProcessExitCode.EXCEPTION
-                self.engine.job_runner.fail_run(job_id, failure_code, fl_ctx)
+                job_runner.fail_run(job_id, failure_code, fl_ctx)
         elif code in (ProcessExitCode.UNSAFE_COMPONENT, JobReturnCode.ABORTED):
             with self.engine.new_context() as fl_ctx:
                 self.logger.info(f"Aborting job {job_id} due to reported failure from {client}: {reason}")
-                self.engine.job_runner.stop_run(job_id, fl_ctx)
+                job_runner.stop_run(job_id, fl_ctx)
+        with job_runner.lock:
+            job_runner._pending_client_outcomes.get(job_id, set()).discard(client_name)
+        return make_cellnet_reply(F3ReturnCode.OK, "", None)
 
     def client_heartbeat(self, request: Message) -> Message:
 
@@ -910,7 +925,9 @@ class FederatedServer(BaseServer):
             client_jobs = []
 
         client_jobs = set(client_jobs)
-        server_jobs = set(self.engine.run_processes.keys())
+        with self.engine.job_runner.lock:
+            outcome_jobs = set(self.engine.job_runner._pending_client_outcomes)
+        server_jobs = set(self.engine.run_processes.keys()).union(outcome_jobs)
         jobs_need_abort = list(client_jobs.difference(server_jobs))
 
         require_previous_report = ConfigService.get_bool_var(
