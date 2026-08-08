@@ -44,12 +44,10 @@ class TestMainProcessMonitorReturnCode:
         MainProcessMonitor._logger = None
         MainProcessMonitor._aio_ctx = None
 
-    def _run_and_read_rc(self, run_dir, main_func):
-        rc_file = os.path.join(str(run_dir), FLMetaKey.PROCESS_RC_FILE)
-
+    def _run(self, run_dir, main_func):
         main_thread = _fake_thread("MainThread", daemon=False)
         # a non-daemon, non-MainThread worker (e.g. cellnet conn_mgr / frame_mgr pool)
-        # still alive at shutdown is what forces the rc-file write + SIGKILL path
+        # still alive at shutdown is what forces the rc-file write + immediate-exit path
         lingering = _fake_thread("cellnet-worker", daemon=False)
 
         with (
@@ -57,10 +55,14 @@ class TestMainProcessMonitorReturnCode:
             patch("nvflare.fuel.f3.mpm.threading.enumerate", return_value=[main_thread, lingering]),
             patch.object(MainProcessMonitor, "_start_shutdown"),
             patch("nvflare.fuel.f3.mpm.AioContext.close_global_context"),
-            patch("nvflare.fuel.f3.mpm.os.kill"),
+            patch("nvflare.fuel.f3.mpm.os._exit") as force_exit,
         ):
             MainProcessMonitor.run(main_func, run_dir=str(run_dir))
+        return force_exit
 
+    def _run_and_read_rc(self, run_dir, main_func):
+        rc_file = os.path.join(str(run_dir), FLMetaKey.PROCESS_RC_FILE)
+        self._run(run_dir, main_func)
         with open(rc_file) as f:
             return f.read().strip()
 
@@ -85,3 +87,10 @@ class TestMainProcessMonitorReturnCode:
 
         content = self._run_and_read_rc(tmp_path, _fail_publication)
         assert int(content) == ProcessExitCode.EXCEPTION
+
+    def test_force_exit_does_not_depend_on_rc_file(self, tmp_path):
+        def _fail_publication():
+            raise RuntimeError("result publication failed")
+
+        force_exit = self._run(tmp_path / "missing", _fail_publication)
+        force_exit.assert_called_once_with(ProcessExitCode.EXCEPTION)

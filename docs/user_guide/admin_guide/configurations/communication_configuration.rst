@@ -27,6 +27,7 @@ The following aspects of the communication system can be configured:
 - Selection of gRPC driver implementation (asyncio vs. non-asyncio)
 - Configuration of ad-hoc connections
 - Configuration of internal connections
+- Configuration of Client API Attach listeners
 - Messaging parameters
 
 General Configuration
@@ -233,6 +234,78 @@ If this default setup does not work for you, you can configure it to your liking
 In this example, we changed to use "grpc" as the communication scheme.
 
 The syntax and meanings of the properties are exactly the same as the "adhoc" configurations.
+
+.. _client_api_attach_configuration:
+
+Client API Attach Routing
+=========================
+
+Client API Attach lets an independently started trainer connect to a running
+Client Job (CJ). Network Attach uses the site's existing ``internal`` Client
+Parent (CP) listener. Only protected shared-file Attach creates a dedicated,
+job-lifetime CJ listener from the ``client_api_attach`` section.
+
+Do not configure a network driver under ``client_api_attach``; the backend
+rejects it. Changing a shared-file ``client_api_attach`` entry requires
+restarting the site.
+
+Shared-Filesystem Attach
+------------------------
+
+Use the ``shared-file`` driver when the CJ and trainer share a filesystem. Both
+processes must see ``root_dir`` at the same absolute path.
+
+.. code-block:: json
+
+  {
+    "client_api_attach": {
+      "scheme": "shared-file",
+      "resources": {
+        "root_dir": "/absolute/shared/nvflare-client-api-attach",
+        "connection_security": "clear"
+      }
+    }
+  }
+
+Filesystem ownership and permissions form the peer-access boundary. Use a
+dedicated, non-world-writable root and restrict its group to the intended site
+and trainer principals. The filesystem must support coherent atomic rename and
+working cross-node POSIX advisory locks.
+
+Shared-file Attach supports trainer-first or job-first startup. The CJ publishes
+its dynamic listener URL under a locked rendezvous claim keyed by site name and
+``attach_id``.
+
+Network Attach through the CP
+-----------------------------
+
+When the trainer cannot share a filesystem with the CJ, connect it to the
+existing CP listener described by ``internal``. No dynamic CJ listener,
+job-specific server certificate/key, fixed Attach port, or ``listening_host``
+is required. A secure trainer profile uses the provisioned site CA/client
+certificate/key for Cell authentication and end-to-end message protection.
+
+.. code-block:: json
+
+  {
+    "schema_version": 1,
+    "execution_mode": "attach",
+    "attach_id": "trainer_a",
+    "site_name": "site-1",
+    "connect_url": "tcp://site-1.example.com:8004",
+    "connection_security": "clear",
+    "secure_mode": true,
+    "ca_cert": "/absolute/path/to/site/startup/rootCA.pem",
+    "job_wait_timeout": null
+  }
+
+``connect_url`` and ``connection_security`` must match the CP listener. Keep
+``client.crt`` and ``client.key`` beside ``rootCA.pem``. The stable CP-child
+trainer identity can start before the job and bind the dynamic CJ through
+authenticated ``SESSION_OPEN``; the trainer never receives the site's server
+bearer token.
+
+See :ref:`client_api_attach` for job and trainer configuration.
 
 Messaging Parameters
 ====================

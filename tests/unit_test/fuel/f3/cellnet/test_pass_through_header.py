@@ -81,7 +81,6 @@ def _make_mock_cell(
     captured_ctx: dict,
     decode_pass_through_channels: set = None,
     decode_pass_through_topics: set = None,
-    decode_pass_through_relay_topics: set = None,
 ):
     """Return a mock Cell whose get_fobs_context() captures the props it receives.
 
@@ -94,9 +93,6 @@ def _make_mock_cell(
         decode_pass_through_channels if decode_pass_through_channels is not None else set()
     )
     cell.decode_pass_through_topics = decode_pass_through_topics if decode_pass_through_topics is not None else set()
-    cell.decode_pass_through_relay_topics = (
-        decode_pass_through_relay_topics if decode_pass_through_relay_topics is not None else set()
-    )
 
     def _get_fobs_context(props=None):
         ctx = {}
@@ -122,14 +118,12 @@ def _make_adapter(
     captured_ctx: dict,
     decode_pass_through_channels: set = None,
     decode_pass_through_topics: set = None,
-    decode_pass_through_relay_topics: set = None,
 ):
     """Return an Adapter backed by a mock cell and a trivial callback."""
     cell = _make_mock_cell(
         captured_ctx,
         decode_pass_through_channels=decode_pass_through_channels,
         decode_pass_through_topics=decode_pass_through_topics,
-        decode_pass_through_relay_topics=decode_pass_through_relay_topics,
     )
     cb = MagicMock(return_value=MagicMock())
     return Adapter(cb=cb, my_info=None, cell=cell)
@@ -300,24 +294,6 @@ class TestAdapterPassThroughHeader:
             adapter.call(_make_future(headers))
 
         assert captured.get(FOBSContextKey.PASS_THROUGH) is True
-        assert captured.get(FOBSContextKey.RELAY_PASS_THROUGH) is False
-
-    def test_exact_channel_topic_relay_route_marks_relay_pass_through(self):
-        captured = {}
-        route = (_TEST_CHANNEL, ServerCommandNames.GET_TASK)
-        adapter = _make_adapter(
-            captured,
-            decode_pass_through_topics={route},
-            decode_pass_through_relay_topics={route},
-        )
-        headers = _headers_without_pass_through()
-        headers[StreamHeaderKey.TOPIC] = ServerCommandNames.GET_TASK
-
-        with patch("nvflare.fuel.f3.cellnet.cell.decode_payload"):
-            adapter.call(_make_future(headers))
-
-        assert captured.get(FOBSContextKey.PASS_THROUGH) is True
-        assert captured.get(FOBSContextKey.RELAY_PASS_THROUGH) is True
 
     def test_decode_payload_receives_the_per_call_decode_ctx(self):
         """decode_payload must be called with the per-call decode_ctx, not None."""
@@ -360,9 +336,7 @@ class TestAdapterPassThroughHeader:
 
         # Verify the cell method was called with props, not without
         cell = adapter.cell
-        cell.get_fobs_context.assert_called_once_with(
-            props={FOBSContextKey.PASS_THROUGH: True, FOBSContextKey.RELAY_PASS_THROUGH: False}
-        )
+        cell.get_fobs_context.assert_called_once_with(props={FOBSContextKey.PASS_THROUGH: True})
 
     @pytest.mark.parametrize("fqcn", ["server.job-1", "server.job-1.cell_pipe"])
     def test_submit_update_decode_failure_exits_server_job_process(self, fqcn):
@@ -693,7 +667,6 @@ def _make_cell_stub(
     captured_ctx: dict,
     decode_pass_through_channels: set = None,
     decode_pass_through_topics: set = None,
-    decode_pass_through_relay_topics: set = None,
 ):
     """Minimal stub for Cell._send_one_request() — only the attributes that
     method touches are initialised; everything else stays as MagicMock."""
@@ -703,9 +676,6 @@ def _make_cell_stub(
         decode_pass_through_channels if decode_pass_through_channels is not None else set()
     )
     cell.decode_pass_through_topics = decode_pass_through_topics if decode_pass_through_topics is not None else set()
-    cell.decode_pass_through_relay_topics = (
-        decode_pass_through_relay_topics if decode_pass_through_relay_topics is not None else set()
-    )
     cell.logger = MagicMock()
     cell._future_wait.return_value = True  # both sending-complete and receiving-complete
     cell._get_result.return_value = MagicMock()
@@ -796,21 +766,6 @@ class TestSendOneRequestPassThrough:
         _run_send_one_request(cell, reply_headers={})
 
         assert captured.get(FOBSContextKey.PASS_THROUGH) is True
-        assert captured.get(FOBSContextKey.RELAY_PASS_THROUGH) is False
-
-    def test_exact_channel_topic_relay_route_marks_reply_lazy_refs_for_relay(self):
-        captured = {}
-        route = (_SEND_REQ_CHANNEL, "topic")
-        cell = _make_cell_stub(
-            captured,
-            decode_pass_through_topics={route},
-            decode_pass_through_relay_topics={route},
-        )
-
-        _run_send_one_request(cell, reply_headers={})
-
-        assert captured.get(FOBSContextKey.PASS_THROUGH) is True
-        assert captured.get(FOBSContextKey.RELAY_PASS_THROUGH) is True
 
     def test_exact_channel_topic_route_does_not_decode_sibling_reply_lazily(self):
         captured = {}

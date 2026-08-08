@@ -12,12 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-{
-  name = "swarm_external_process_relay"
-  resource_spec {}
-  deploy_map {
-    app = ["@ALL"]
-  }
-  min_clients = 2
-  mandatory_clients = ["site-1", "site-2"]
-}
+from datasets import Dataset
+from model import create_model
+from transformers import Trainer, TrainingArguments
+
+
+def build_trainer():
+    train_data = Dataset.from_dict({"input_ids": [[1, 2], [3, 4]], "labels": [0, 1]})
+    args = TrainingArguments(output_dir="outputs", max_steps=2, report_to=[])
+    return Trainer(model=create_model(), args=args, train_dataset=train_data)
+
+
+trainer = build_trainer()
+trainer.train()

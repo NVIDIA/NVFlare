@@ -23,8 +23,6 @@ def main():
     parser.add_argument("--job_name", type=str, required=True)
     parser.add_argument("--content_dir", type=str, required=True)
     parser.add_argument("--stream_metrics", action="store_true")
-    parser.add_argument("--export_job", action="store_true")
-    parser.add_argument("--export_dir", type=str, default="jobs")
     parser.add_argument("--workdir", type=str, default="/tmp/nvflare/hello-flower")
     parser.add_argument("--learning_rate", type=float)
     parser.add_argument("--momentum", type=float)
@@ -51,16 +49,12 @@ def main():
     if args.stream_metrics:
         add_experiment_tracking(recipe, tracking_type="tensorboard")
 
-    if args.export_job:
-        recipe.export(args.export_dir)
-        print(f"Job exported to {args.export_dir}")
-    else:
-        env = SimEnv(num_clients=num_of_clients, workspace_root=args.workdir)
-        run = recipe.execute(env)
-        print()
-        print("Result can be found in :", run.get_result())
-        print("Job Status is:", run.get_status())
-        print()
+    env = SimEnv(num_clients=num_of_clients, workspace_root=args.workdir)
+    run = recipe.execute(env)
+    print()
+    print("Result can be found in :", run.get_result())
+    print("Job Status is:", run.get_status())
+    print()
 
 
 if __name__ == "__main__":

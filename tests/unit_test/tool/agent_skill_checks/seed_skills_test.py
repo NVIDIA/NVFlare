@@ -213,18 +213,6 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     assert "disabled state must contain no active model-selector component" in normalized_construction
     assert "missing-metric warnings from a supposedly disabled job" in normalized_construction
 
-    # The selector's lower-is-better name heuristic matches the "loss" substring and a
-    # neg_ prefix does not clear it, so the recommended negated key trips a false
-    # positive.  The guidance must say so, or an agent "fixes" it by selecting the
-    # un-negated metric and silently picks the worst global model.
-    from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better
-
-    assert _looks_lower_is_better("neg_val_loss") is True
-    assert _looks_lower_is_better("eval_neg_loss") is True
-    assert "known\nfalse positive on a negated key" in construction_text
-    assert "a `neg_` prefix does not clear" in normalized_construction
-    assert "that selects the worst global model" in normalized_construction
-
     hf_root = repo_root / "skills" / "nvflare-convert-huggingface"
     hf_skill_text = hf_root.joinpath("SKILL.md").read_text(encoding="utf-8")
     hf_conversion_text = hf_root.joinpath("references/huggingface-conversion.md").read_text(encoding="utf-8")

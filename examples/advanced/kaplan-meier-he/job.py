@@ -29,12 +29,6 @@ def define_parser():
         help="Work directory for simulator runs, default to '/tmp/nvflare/workspaces'",
     )
     parser.add_argument(
-        "--job_dir",
-        type=str,
-        default="/tmp/nvflare/jobs",
-        help="Directory for job export, default to '/tmp/nvflare/jobs'",
-    )
-    parser.add_argument(
         "--encryption",
         action=argparse.BooleanOptionalAction,
         help="Whether to enable encryption, default to False",
@@ -111,9 +105,6 @@ def main():
         he_context_path_client=he_context_path_client,
         he_context_path_server=he_context_path_server,
     )
-
-    # Export job
-    recipe.export(args.job_dir)
 
     # Run recipe
     if args.startup_kit_location:

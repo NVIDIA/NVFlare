@@ -28,18 +28,21 @@ def main():
     args = parser.parse_args()
 
     flare.init(config_file=args.config)
-    print(f"Attached as {flare.get_site_name()} to job {flare.get_job_id()}")
-    while flare.is_running():
-        model = flare.receive()
-        weights = model.params[NPConstants.NUMPY_KEY]
-        updated = np.asarray(weights) + 1
-        flare.send(
-            flare.FLModel(
-                params={NPConstants.NUMPY_KEY: updated},
-                metrics={"weight_mean": float(updated.mean())},
-                current_round=model.current_round,
+    try:
+        print(f"Attached as {flare.get_site_name()} to job {flare.get_job_id()}")
+        while flare.is_running():
+            model = flare.receive()
+            weights = model.params[NPConstants.NUMPY_KEY]
+            updated = np.asarray(weights) + 1
+            flare.send(
+                flare.FLModel(
+                    params={NPConstants.NUMPY_KEY: updated},
+                    metrics={"weight_mean": float(updated.mean())},
+                    current_round=model.current_round,
+                )
             )
-        )
+    finally:
+        flare.shutdown()
 
 
 if __name__ == "__main__":

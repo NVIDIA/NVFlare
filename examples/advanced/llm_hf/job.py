@@ -43,12 +43,6 @@ def define_parser():
         default="/tmp/nvflare/jobs/llm_hf/workdir",
         help="Work directory for simulator runs",
     )
-    parser.add_argument(
-        "--job_dir",
-        type=str,
-        default="/tmp/nvflare/jobs/llm_hf/jobdir",
-        help="Directory for job export",
-    )
     parser.add_argument("--model_name_or_path", type=str, default="EleutherAI/gpt-neo-1.3B", help="Model name or path")
     parser.add_argument("--data_path", type=str, default="", help="Root directory for training and validation data")
     parser.add_argument("--train_mode", type=str, default="SFT", help="Training mode, SFT or PEFT")
@@ -74,7 +68,6 @@ def define_parser():
         "--wandb_run_name", type=str, default="nvflare_llm", help="WandB run name (default: nvflare_llm)"
     )
     parser.add_argument("--use_tracking", action="store_true", help="Enable TensorBoard tracking")
-    parser.add_argument("--export_config", action="store_true", help="Export job config only")
     return parser.parse_args()
 
 
@@ -203,15 +196,6 @@ def main():
     # Add experiment tracking if requested
     if args.use_tracking:
         add_experiment_tracking(recipe, tracking_type="tensorboard")
-
-    # Export job configuration
-    print("Exporting job to", args.job_dir)
-    recipe.export(args.job_dir)
-    print("Job config exported to", args.job_dir)
-
-    # If export-only mode, stop here
-    if args.export_config:
-        return
 
     # Run recipe
     if args.startup_kit_location:

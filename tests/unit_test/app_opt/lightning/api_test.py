@@ -187,6 +187,36 @@ def test_receive_model_broadcasts_scaffold_metadata_to_non_root_rank():
     assert callback._is_training is True
 
 
+@pytest.mark.parametrize(("runtime_rank", "expected_send_count"), [(0, 1), (1, 0)])
+def test_train_end_sends_only_from_runtime_global_rank_zero(runtime_rank, expected_send_count):
+    callback = _make_callback()
+    callback._is_training = True
+    callback._send_model = MagicMock()
+    callback.reset_state = MagicMock()
+    callback._round_start_global_step = 0
+    trainer = SimpleNamespace(global_rank=runtime_rank, global_step=1)
+
+    callback.on_train_end(trainer, SimpleNet())
+
+    assert callback._send_model.call_count == expected_send_count
+    callback.reset_state.assert_called_once_with(trainer)
+
+
+@pytest.mark.parametrize(("runtime_rank", "expected_send_count"), [(0, 1), (1, 0)])
+def test_validation_end_sends_only_from_runtime_global_rank_zero(runtime_rank, expected_send_count):
+    callback = _make_callback()
+    callback._is_evaluation = True
+    callback._send_model = MagicMock()
+    callback.reset_state = MagicMock()
+    trainer = SimpleNamespace(global_rank=runtime_rank, callback_metrics={"val_loss": torch.tensor(0.5)})
+
+    callback.on_validation_end(trainer, SimpleNet())
+
+    assert callback._send_model.call_count == expected_send_count
+    assert callback.metrics == {"val_loss": 0.5}
+    callback.reset_state.assert_called_once_with(trainer)
+
+
 def test_patch_is_idempotent():
     trainer = SimpleNamespace(callbacks=[], global_rank=0)
 
@@ -1071,7 +1101,7 @@ def test_train_end_uses_scaffold_completed_steps_and_preserves_user_metadata():
     callback.reset_state = MagicMock()
     module = SimpleNet()
     module.__fl_meta__ = {"custom": "value"}
-    trainer = SimpleNamespace(estimated_stepping_batches=6)
+    trainer = SimpleNamespace(estimated_stepping_batches=6, global_rank=0)
 
     callback.on_train_end(trainer, module)
 
@@ -1092,7 +1122,7 @@ def test_train_end_preserves_explicit_user_step_count_for_scaffold():
     callback.reset_state = MagicMock()
     module = SimpleNet()
     module.__fl_meta__ = {MetaKey.NUM_STEPS_CURRENT_ROUND: 5}
-    trainer = SimpleNamespace(estimated_stepping_batches=6)
+    trainer = SimpleNamespace(estimated_stepping_batches=6, global_rank=0)
 
     callback.on_train_end(trainer, module)
 
@@ -1108,7 +1138,7 @@ def test_train_end_delivers_initial_metrics_when_train_with_evaluation_is_disabl
     module = SimpleNet()
     metrics = {"val_auroc": 0.8}
     module.__fl_meta__ = {MetaKey.INITIAL_METRICS: metrics}
-    trainer = SimpleNamespace(global_step=3)
+    trainer = SimpleNamespace(global_rank=0, global_step=3)
     callback._round_start_global_step = 0
 
     callback.on_train_end(trainer, module)
@@ -1139,7 +1169,7 @@ def test_train_end_fedavg_reports_completed_steps_for_each_round():
     callback._is_training = True
     callback._send_model = MagicMock()
     callback.reset_state = MagicMock()
-    trainer = SimpleNamespace(global_step=5)
+    trainer = SimpleNamespace(global_rank=0, global_step=5)
     callback._round_start_global_step = 2
 
     callback.on_train_end(trainer, SimpleNet())

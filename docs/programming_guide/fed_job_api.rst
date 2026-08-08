@@ -190,7 +190,7 @@ ScriptRunner args:
 * ``script_args``: arguments appended to the end of script.
 * ``launch_external_process``: selects the ClientAPIExecutor backend: default in-process
   (``False``) or external-process (``True``).
-* ``command``: in the ex-process mode, command is prepended to the script (defaults to "python3").
+* ``command``: in external-process mode, command is prepended to the script (defaults to "python3 -u").
 * ``framework``: determines what :class:`FrameworkType<nvflare.job_config.script_runner.FrameworkType>` to use for the script.
 
 
