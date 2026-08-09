@@ -179,6 +179,10 @@ After running ``nvflare deploy prepare``, edit:
 
   workspace/<project>/prepared/site-1/local/study_runtime.yaml
 
+Keep a copy of this site-specific configuration outside the prepared output.
+Running ``nvflare deploy prepare`` again with the same output path replaces the
+entire prepared workspace, including edits to ``study_runtime.yaml``.
+
 Configure the dataset as follows:
 
 .. code-block:: yaml
