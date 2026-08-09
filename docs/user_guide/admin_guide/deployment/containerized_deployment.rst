@@ -217,8 +217,8 @@ startup kit. For example, ``site-2`` may map ``training`` to a different host
 directory while exposing the same path inside its job container.
 
 Use ``mode: ro`` for training datasets unless the job must modify the mounted
-data. The source path must exist on the Docker host before the parent process
-starts.
+data. The source path must exist on the Docker host before the job container
+launches.
 
 The dataset mount is controlled by the site operator through
 ``study_runtime.yaml``. Do not place arbitrary Docker ``volumes`` or ``mounts``
