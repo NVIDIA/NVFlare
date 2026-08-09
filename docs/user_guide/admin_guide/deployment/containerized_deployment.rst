@@ -154,6 +154,77 @@ scheduler-facing resource requests, such as ``num_of_gpus``, in
 ``resource_spec``. Sites that are not configured with the Docker job launcher
 continue to use their configured launcher, usually process mode.
 
+
+Mounting Local CSV Data into Job Containers
+-------------------------------------------
+
+The parent container and job container have different responsibilities. The
+parent container runs the long-lived FLARE client or server process, while
+``DockerJobLauncher`` launches a separate container for each job.
+
+Local datasets should not normally be copied into either Docker image. Instead,
+each site can define site-owned dataset mounts in the prepared startup kit's
+``local/study_runtime.yaml`` file. The Docker launcher mounts the configured
+host directory directly into the job container.
+
+For example, suppose ``site-1`` stores its local CSV file at:
+
+.. code-block:: text
+
+  /srv/nvflare/site-1-data/train.csv
+
+After running ``nvflare deploy prepare``, edit:
+
+.. code-block:: text
+
+  workspace/<project>/prepared/site-1/local/study_runtime.yaml
+
+Configure the dataset as follows:
+
+.. code-block:: yaml
+
+  format_version: 2
+  studies:
+    default:
+      datasets:
+        training:
+          source: /srv/nvflare/site-1-data
+          mode: ro
+
+For Docker deployments, ``source`` is an absolute path on the Docker host. The
+dataset is mounted into the job container at:
+
+.. code-block:: text
+
+  /data/<study-name>/<dataset-name>
+
+Therefore, the CSV file in this example is available to the training code at:
+
+.. code-block:: text
+
+  /data/default/training/train.csv
+
+The training program can read it normally. For example:
+
+.. code-block:: python
+
+  import pandas as pd
+
+  data = pd.read_csv("/data/default/training/train.csv")
+
+Each client should configure its own local source directory in its prepared
+startup kit. For example, ``site-2`` may map ``training`` to a different host
+directory while exposing the same path inside its job container.
+
+Use ``mode: ro`` for training datasets unless the job must modify the mounted
+data. The source path must exist on the Docker host before the parent process
+starts.
+
+The dataset mount is controlled by the site operator through
+``study_runtime.yaml``. Do not place arbitrary Docker ``volumes`` or ``mounts``
+settings in the submitted job's ``meta.json`` because these fields are managed
+by ``DockerJobLauncher``.
+
 Development Container
 ---------------------
 
