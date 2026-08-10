@@ -35,7 +35,31 @@ Before using the local-cluster scripts, install Red Hat OpenShift Local so the
 `https://console.redhat.com/openshift/create/local`, enable host hardware
 virtualization, and make sure the host has enough CPU, memory, and disk for
 OpenShift plus the NVFlare test pods. The create script defaults to 6 vCPUs,
-24576 MiB memory, and 120 GiB disk.
+24576 MiB memory, and 120 GiB disk. The deployment scripts make that local
+configuration practical by requesting `500m` CPU and `1Gi` memory for each of
+the three parent pods. Override `PARENT_CPU` and `PARENT_MEMORY` if the parent
+workload needs more resources; increase `CRC_CPUS` and `CRC_MEMORY` to match.
+If parent resources are omitted from a general `nvflare deploy prepare`
+configuration, the generated Helm chart requests `2` CPU and `8Gi` memory per
+parent pod, which does not fit this three-parent example on the default CRC
+size after OpenShift overhead.
+
+As a verified alternative for parent pods that need the generated `2` CPU and
+`8Gi` memory requests, or for heavier workloads, resize an existing CRC cluster
+before restarting it:
+
+```bash
+crc stop
+crc config set cpus 14
+crc config set memory 65536
+bash examples/devops/openshift/scripts/start_openshift_cluster.sh
+bash examples/devops/openshift/scripts/k8s_e2e.sh
+```
+
+This `14` vCPU / `65536` MiB configuration was verified with the complete
+example: after the restart, rerunning `k8s_e2e.sh` allowed the submitted job to
+reach `FINISHED:COMPLETED`. Make sure the host has enough capacity before using
+these settings.
 
 Use `scripts/create_openshift_cluster.sh` for first-time local CRC setup. It
 validates that `crc` exists, requires `PULL_SECRET_FILE` when the cluster will
