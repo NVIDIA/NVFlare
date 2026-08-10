@@ -74,6 +74,8 @@ export CONTAINER_TOOL="${CONTAINER_TOOL:-podman}"
 "$CONTAINER_TOOL" push "$WORKLOAD_IMAGE"
 ```
 
+After the images are pushed, keep `PARENT_IMAGE` and `WORKLOAD_IMAGE` in the same shell and map them to the variables consumed by `k8s_e2e.sh`:
+
 ```bash
 export IMAGE="$PARENT_IMAGE"
 export JOB_IMAGE="$WORKLOAD_IMAGE"
