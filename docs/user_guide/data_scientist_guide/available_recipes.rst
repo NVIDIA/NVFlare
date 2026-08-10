@@ -1040,7 +1040,7 @@ Decentralized federated learning without a central server.
         min_clients=3,
         num_rounds=5,
         train_script="client.py",
-        initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights
+        initial_ckpt="path/to/pretrained.pt",  # Optional: pre-trained weights
         progress_timeout=7200,
         learn_task_timeout=None,  # No training-task time limit
         learn_task_ack_timeout=3600,
@@ -1051,6 +1051,10 @@ Decentralized federated learning without a central server.
     )
     env = SimEnv(num_clients=3)
     run = recipe.execute(env)
+
+For ``initial_ckpt``, a relative path is bundled and distributed to every client.
+An absolute path is not distributed; it must be readable at the same path on every
+client because the Swarm model persistor runs client-side.
 
 .. note::
    For large models (>2 GB), tune the following parameters:
