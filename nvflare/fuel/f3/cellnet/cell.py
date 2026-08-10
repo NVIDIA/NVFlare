@@ -466,7 +466,7 @@ class Cell(StreamCell):
             self.logger.debug(f"{req_id=}: entering sending wait {timeout=}")
             sending_complete = self._future_wait(future, timeout, abort_signal)
             if not sending_complete:
-                stream_error = vars(waiter).get("stream_error")
+                stream_error = waiter.stream_error
                 if future.error and not stream_error:
                     waiter.result = make_reply(ReturnCode.COMM_ERROR, error=str(future.error))
                     self.logger.debug(f"{req_id=}: sending failed with stream error: {future.error}")
@@ -503,7 +503,7 @@ class Cell(StreamCell):
                 return self._get_result(req_id)
             self.logger.debug(f"{req_id=}: in receiving")
 
-            if vars(waiter).get("stream_error"):
+            if waiter.stream_error:
                 self.logger.debug(f"{req_id=}: returning stream error reply")
                 return self._get_result(req_id)
 

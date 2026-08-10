@@ -704,6 +704,7 @@ def _run_send_one_request(cell_stub, reply_headers: dict, topic: str = "topic"):
 
     mock_waiter = MagicMock()
     mock_waiter.receiving_future = r_future
+    mock_waiter.stream_error = None
 
     request = F3Message(headers={}, payload=b"")
 
