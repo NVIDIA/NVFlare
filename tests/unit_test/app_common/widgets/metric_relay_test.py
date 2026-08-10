@@ -26,13 +26,10 @@ from nvflare.app_common.metrics_exchange.metrics_sender import (
     TOPIC_LOG,
     read_bootstrap,
 )
-from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
 from nvflare.app_common.widgets.metric_relay import MetricRelay
-from nvflare.client.config import ConfigKey
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
-from nvflare.fuel.utils.attributes_exportable import AttributesExportable
 
 
 class _Cell:
@@ -73,17 +70,6 @@ def _request(config, origin=None, payload=None):
     if payload is None:
         payload = create_analytic_dxo("loss", 0.25, AnalyticsDataType.SCALAR, global_step=3).to_dict()
     return new_cell_message(headers, payload)
-
-
-def test_relay_provides_direct_cell_config_to_legacy_bridge(tmp_path):
-    relay, _, fl_ctx, config = _start_relay(tmp_path)
-    try:
-        assert not isinstance(relay, AttributesExportable)
-        fl_ctx.get_engine().get_all_components.return_value = {"relay": relay}
-        external_config = ExternalConfigurator(["relay"])._export_all_components(fl_ctx)
-        assert external_config == {ConfigKey.METRICS_EXCHANGE: config}
-    finally:
-        relay._stop(fl_ctx)
 
 
 def test_relay_accepts_only_the_launched_cell_origin(tmp_path):

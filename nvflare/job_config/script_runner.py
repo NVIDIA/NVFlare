@@ -22,8 +22,6 @@ from nvflare.app_common.executors.client_api_executor import ALL_EXECUTION_MODES
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
-from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
-from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType  # noqa: F401 - re-exported for backward compatibility
 from nvflare.fuel.utils.import_utils import optional_import
@@ -105,7 +103,6 @@ class BaseScriptRunner:
         executor: Union[ClientAPILauncherExecutor, InProcessClientAPIExecutor, None] = None,
         task_pipe: Optional[Pipe] = None,
         launcher: Optional[Launcher] = None,
-        metric_relay: Optional[MetricRelay] = None,
         pipe_connect_type: str = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
@@ -151,10 +148,6 @@ class BaseScriptRunner:
                 The launcher to use with ClientAPILauncherExecutor, only used if `launch_external_process` is True.
                 Defaults to `None`.
 
-            metric_relay (Optional[MetricRelay], optional):
-                An optional MetricRelay instance that can be used to relay metrics to the server.
-                Defaults to `None`.
-
             pipe_connect_type: how pipe peers are to be connected:
                 Via Root: peers are both connected to the root of the cellnet
                 Via Relay: peers are both connected to the relay if a relay is used; otherwise via root.
@@ -174,8 +167,8 @@ class BaseScriptRunner:
                 server representations in ``TASK_EXCHANGE``; the trainer-side Client API adapts
                 at receive/send without constructing ParamsConverters. ``params_transfer_type``
                 is applied by the Client API model state. The
-                legacy stack args (`executor`, `task_pipe`, `launcher`, `metric_relay`,
-                `pipe_connect_type`) must not be set. If
+                legacy stack args (`executor`, `task_pipe`, `launcher`, `pipe_connect_type`)
+                must not be set. If
                 ``launch_external_process=True``, the mode must be ``external_process``.
                 Defaults to None (legacy BaseScriptRunner behavior).
         """
@@ -208,7 +201,6 @@ class BaseScriptRunner:
                 "executor": executor,
                 "task_pipe": task_pipe,
                 "launcher": launcher,
-                "metric_relay": metric_relay,
                 "pipe_connect_type": pipe_connect_type,
             }
             set_conflicts = [name for name, value in conflicts.items() if value is not None]
@@ -253,8 +245,6 @@ class BaseScriptRunner:
             raise ValueError(f"Framework {self._framework} unsupported")
 
         if launch_external_process:
-            if metric_relay is not None:
-                validate_object_for_job("metric_relay", metric_relay, MetricRelay)
             if task_pipe is not None:
                 validate_object_for_job("task_pipe", task_pipe, Pipe)
             if executor is not None:
@@ -270,7 +260,6 @@ class BaseScriptRunner:
             if pipe_connect_type not in valid_connect_types:
                 raise ValueError(f"invalid pipe_connect_type '{pipe_connect_type}': must be {valid_connect_types}")
 
-        self._metric_relay = metric_relay
         self._task_pipe = task_pipe
         self._executor = executor
         self._launcher = launcher
@@ -379,15 +368,6 @@ class BaseScriptRunner:
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
-
-            component = self._metric_relay if self._metric_relay else MetricRelay()
-            metric_relay_id = job.add_component("metric_relay", component, ctx)
-            comp_ids["metric_relay_id"] = metric_relay_id
-
-            component = ExternalConfigurator(
-                component_ids=[metric_relay_id],
-            )
-            comp_ids["config_preparer_id"] = job.add_component("config_preparer", component, ctx)
         else:
             executor = (
                 self._executor

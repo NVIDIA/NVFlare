@@ -20,8 +20,8 @@ from typing import Any, Dict, Optional, Tuple
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey, WorkspaceConstants
+from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.fl_model import FLModel
-from nvflare.app_common.metrics_exchange.metrics_sender import MetricsSender
 from nvflare.client.api_spec import APISpec
 from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat, from_file
 from nvflare.client.converter_utils import create_default_params_converters
@@ -117,7 +117,6 @@ class ExProcessClientAPI(APISpec):
         self.receive_called = False
         self.config_file = config_file
         self.flare_agent = None
-        self.metrics_sender = None
         # Memory settings will be read from config in init()
 
     def _configure_subprocess_logging(self, client_config: ClientConfig) -> None:
@@ -227,9 +226,11 @@ class ExProcessClientAPI(APISpec):
 
                         pipe.cell.update_fobs_context({FOBSContextKey.STREAM_PROGRESS_CB: _send_stream_progress})
                         self.logger.info("PASS_THROUGH enabled on subprocess CellPipe (reverse path)")
+                metric_pipe, metric_channel_name = None, ""
                 if ConfigKey.METRICS_EXCHANGE in client_config.config:
-                    self.metrics_sender = MetricsSender(config=client_config.config[ConfigKey.METRICS_EXCHANGE])
-                    self.metrics_sender.init(rank=rank)
+                    metric_pipe, metric_channel_name = _create_pipe_using_config(
+                        client_config=client_config, section=ConfigKey.METRICS_EXCHANGE
+                    )
                 from_nvflare_converter, to_nvflare_converter = create_default_params_converters(
                     server_expected_format=client_config.get_server_expected_format(),
                     params_exchange_format=client_config.get_exchange_format(),
@@ -241,6 +242,8 @@ class ExProcessClientAPI(APISpec):
                 flare_agent = FlareAgentWithFLModel(
                     pipe=pipe,
                     task_channel_name=task_channel_name,
+                    metric_pipe=metric_pipe,
+                    metric_channel_name=metric_channel_name,
                     heartbeat_timeout=client_config.get_heartbeat_timeout(),
                     submit_result_timeout=client_config.get_submit_result_timeout(),
                     max_resends=client_config.get_max_resends(),
@@ -269,9 +272,6 @@ class ExProcessClientAPI(APISpec):
             if self._memory_gc_rounds > 0:
                 self.logger.info(f"Memory management enabled: cleanup every {self._memory_gc_rounds} round(s)")
         except Exception as e:
-            if self.metrics_sender:
-                self.metrics_sender.shutdown()
-                self.metrics_sender = None
             self.logger.error(f"flare.init failed: {e}")
             raise e
 
@@ -360,9 +360,9 @@ class ExProcessClientAPI(APISpec):
         if model_registry.rank != "0":
             raise RuntimeError("only rank 0 can call log!")
 
-        if not self.metrics_sender:
-            return False
-        return self.metrics_sender.add(tag=key, value=value, data_type=data_type, **kwargs)
+        flare_agent = model_registry.flare_agent
+        dxo = create_analytic_dxo(tag=key, value=value, data_type=data_type, **kwargs)
+        flare_agent.log(dxo)
 
     def clear(self):
         model_registry = self.get_model_registry()
@@ -370,8 +370,5 @@ class ExProcessClientAPI(APISpec):
         self.receive_called = False
 
     def shutdown(self):
-        if self.metrics_sender:
-            self.metrics_sender.shutdown()
-            self.metrics_sender = None
         if self.flare_agent:
             self.flare_agent.stop()

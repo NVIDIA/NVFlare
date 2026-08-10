@@ -108,9 +108,18 @@ class ClientConfig:
 
             {
               "METRICS_EXCHANGE": {
-                "connect_url": "tcp://127.0.0.1:51893",
-                "receiver_fqcn": "site-1.simulate_job",
-                "client_fqcn": "site-1.simulate_job.metrics~6f4a"
+                "pipe_channel_name": "metric",
+                "pipe": {
+                  "CLASS_NAME": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
+                  "ARG": {
+                    "mode": "ACTIVE",
+                    "site_name": "site-1",
+                    "token": "simulate_job",
+                    "root_url": "tcp://0:51893",
+                    "secure_mode": false,
+                    "workspace_dir": "xxx"
+                  }
+                }
               },
               "SITE_NAME": "site-1",
               "JOB_ID": "simulate_job",
@@ -175,7 +184,11 @@ class ClientConfig:
         return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.SUBMIT_MODEL_TASK_NAME, "")
 
     def get_heartbeat_timeout(self):
-        return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.HEARTBEAT_TIMEOUT, 60)
+        # TODO decouple task and metric heartbeat timeouts
+        return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(
+            ConfigKey.HEARTBEAT_TIMEOUT,
+            self.config.get(ConfigKey.METRICS_EXCHANGE, {}).get(ConfigKey.HEARTBEAT_TIMEOUT, 60),
+        )
 
     def get_max_resends(self):
         """Return the maximum number of pipe send retries for submitting task results.

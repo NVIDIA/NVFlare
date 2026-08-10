@@ -15,7 +15,6 @@
 import os
 import secrets
 import threading
-from typing import Tuple
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import from_dict
@@ -28,7 +27,6 @@ from nvflare.app_common.metrics_exchange.metrics_sender import (
     TOPIC_LOG,
     write_bootstrap,
 )
-from nvflare.client.config import ConfigKey
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -118,11 +116,3 @@ class MetricRelay(Widget):
                 pass
             except OSError as e:
                 self.log_warning(fl_ctx, f"failed to remove analytics bootstrap: {secure_format_exception(e)}")
-
-    def get_external_config(self) -> Tuple[str, dict]:
-        """Return the direct Cell config for the temporary legacy Client API bridge."""
-        with self._lock:
-            if not self._config:
-                raise RuntimeError("MetricRelay has not started")
-            config = dict(self._config)
-        return ConfigKey.METRICS_EXCHANGE, config

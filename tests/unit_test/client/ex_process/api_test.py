@@ -17,7 +17,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat
@@ -192,48 +191,6 @@ def test_ex_process_api_passes_submit_result_timeout_to_agent(monkeypatch):
     assert "submit_result_timeout" in captured_kwargs, "submit_result_timeout was not passed to FlareAgentWithFLModel"
     assert captured_kwargs["submit_result_timeout"] == 999.0
     assert captured_kwargs["streaming_idle_timeout"] == 1200.0
-
-
-def test_ex_process_api_uses_direct_metrics_sender(monkeypatch):
-    from nvflare.client.ex_process.api import ExProcessClientAPI
-
-    metrics_config = {
-        "connect_url": "tcp://127.0.0.1:1234",
-        "receiver_fqcn": "site.job",
-        "client_fqcn": "site.job.metrics~abc",
-    }
-    fake_config = ClientConfig(
-        {
-            ConfigKey.TASK_EXCHANGE: {
-                ConfigKey.EXCHANGE_FORMAT: ExchangeFormat.NUMPY,
-                ConfigKey.SERVER_EXPECTED_FORMAT: ExchangeFormat.NUMPY,
-            },
-            ConfigKey.METRICS_EXCHANGE: metrics_config,
-        }
-    )
-    sender = MagicMock()
-    agent = MagicMock()
-    registry = MagicMock(rank="0")
-
-    monkeypatch.setattr("nvflare.client.ex_process.api._create_client_config", lambda config: fake_config)
-    monkeypatch.setattr(
-        "nvflare.client.ex_process.api._create_pipe_using_config",
-        lambda client_config, section: (MagicMock(), "task"),
-    )
-    monkeypatch.setattr("nvflare.client.ex_process.api.MetricsSender", MagicMock(return_value=sender))
-    monkeypatch.setattr("nvflare.client.ex_process.api.FlareAgentWithFLModel", MagicMock(return_value=agent))
-    monkeypatch.setattr("nvflare.client.ex_process.api.create_default_params_converters", lambda **kwargs: (None, None))
-    monkeypatch.setattr("nvflare.client.ex_process.api.ModelRegistry", MagicMock(return_value=registry))
-
-    api = ExProcessClientAPI(config_file="fake_config.json")
-    api._configure_subprocess_logging = lambda client_config: None
-    api.init(rank="0")
-
-    sender.init.assert_called_once_with(rank="0")
-    assert api.log("loss", 0.25, AnalyticsDataType.SCALAR, global_step=2) is sender.add.return_value
-    sender.add.assert_called_once_with(tag="loss", value=0.25, data_type=AnalyticsDataType.SCALAR, global_step=2)
-    api.shutdown()
-    sender.shutdown.assert_called_once()
 
 
 def test_ex_process_receive_timeout_does_not_arm_send_under_congestion():

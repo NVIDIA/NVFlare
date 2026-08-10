@@ -29,12 +29,6 @@ creates `MetricsSender`; rank zero starts a credential-free child Cell and sends
 each analytic DXO directly to the relay. `FlowerExecutor` has no analytics
 responsibilities.
 
-For temporary compatibility, `ExternalConfigurator` reads the relay's direct
-Cell configuration through `get_external_config()`, allowing legacy
-`flare.log()` to use `MetricsSender` without making `MetricRelay` inherit the
-old `AttributesExportable` abstraction. This bridge is not used by Flower and
-can disappear with the remaining task-exchange stack.
-
 The maintained Flower example aliases the explicit tracking module as `flare`:
 `import nvflare.client.tracking as flare`. This preserves the familiar
 `flare.init()`/`flare.shutdown()` lifecycle spelling without initializing the
