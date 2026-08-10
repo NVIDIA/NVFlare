@@ -146,6 +146,22 @@ class Adapter:
             response = make_reply(ReturnCode.PROCESS_EXCEPTION)
         self._send_response(response, *reply_args)
 
+    def _handle_reply_stream_done(self, reply_future):
+        error = reply_future.exception()
+        if not error:
+            return
+
+        if isinstance(error, BlobSizeError) and _is_server_job_cell(self.my_info):
+            self.logger.critical(
+                f"streamed response from server job cell {self.my_info.fqcn} was rejected as too large; "
+                f"exiting job process to fail the job: {secure_format_exception(error)}"
+            )
+            os._exit(1)
+
+        self.logger.error(
+            f"streamed response from {self.my_info.fqcn} failed asynchronously: {secure_format_exception(error)}"
+        )
+
     def _send_response(self, response, stream_req_id, req_id, channel, topic, origin, secure, optional):
         self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
         if not stream_req_id:
@@ -179,6 +195,7 @@ class Adapter:
                 )
                 os._exit(1)
             raise
+        reply_future.add_done_callback(self._handle_reply_stream_done, reply_future)
         self.logger.debug(f"Done sending: {stream_req_id=}: {reply_future=}")
 
 

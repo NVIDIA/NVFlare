@@ -136,6 +136,7 @@ class RxTask:
         self.failed = False
         self.error = None
         self.error_msg = None
+        self.error_type = None
         self.error_notified = False  # protected by ack_lock, like the ack state
         self.stop_lock = threading.RLock()
         self.cleanup_timer = None
@@ -214,7 +215,7 @@ class RxTask:
             completed = self.completed
         if failed:
             if self.reliable and error_msg:
-                self._send_error(error_msg)
+                self._send_error(error_msg, self.error_type)
             return False
 
         if completed:
@@ -452,6 +453,7 @@ class RxTask:
             # expects error/error_msg to be populated once failed is observed
             self.error = error
             self.error_msg = str(error)
+            self.error_type = type(error).__name__
             self.failed = True
             if self.reliable:
                 schedule_remove = True
@@ -476,14 +478,14 @@ class RxTask:
             self.waiter.set()
 
         if notify:
-            self._send_error(str(error))
+            self._send_error(str(error), type(error).__name__)
 
         if schedule_remove:
             self._schedule_remove_task()
         elif remove_now:
             self._remove_task()
 
-    def _send_error(self, error_msg: str):
+    def _send_error(self, error_msg: str, error_type: str = None):
         # Only a re-notification of an error that was already delivered is optional: the
         # first error notification is required, and a failed first attempt keeps retries
         # at ERROR (mirrors _send_ack). A retained failed task re-notifies on every
@@ -494,13 +496,14 @@ class RxTask:
         log_func = log.debug if already_notified else log.error
         message = Message()
 
-        message.add_headers(
-            {
-                StreamHeaderKey.STREAM_ID: self.sid,
-                StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
-                StreamHeaderKey.ERROR_MSG: error_msg,
-            }
-        )
+        headers = {
+            StreamHeaderKey.STREAM_ID: self.sid,
+            StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
+            StreamHeaderKey.ERROR_MSG: error_msg,
+        }
+        if error_type:
+            headers[StreamHeaderKey.ERROR_TYPE] = error_type
+        message.add_headers(headers)
         try:
             errors = self.cell.fire_and_forget(
                 STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message, optional=already_notified

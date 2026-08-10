@@ -170,18 +170,17 @@ def test_blob_handler_uses_dedicated_streaming_blob_limit(monkeypatch):
     assert handler.max_blob_size == 8
 
 
-def test_blob_streamer_rejects_oversized_blob_before_sending(monkeypatch):
+def test_blob_streamer_does_not_apply_receiver_limit_on_sender(monkeypatch):
     monkeypatch.setattr(CommConfigurator, "get_streaming_max_blob_size", lambda self: 4)
-    byte_streamer = SimpleNamespace(send=lambda *args, **kwargs: pytest.fail("oversized blob was sent"))
+    expected_future = StreamFuture(stream_id=18)
+    sent = []
+    byte_streamer = SimpleNamespace(send=lambda *args, **kwargs: sent.append((args, kwargs)) or expected_future)
     streamer = BlobStreamer(byte_streamer, SimpleNamespace())
 
-    with pytest.raises(BlobSizeError) as exc_info:
-        streamer.send("channel", "topic", "target", Message(payload=b"abcde"), False, False)
+    future = streamer.send("channel", "topic", "target", Message(payload=b"abcde"), False, False)
 
-    error = str(exc_info.value)
-    assert "limit 4 (streaming_max_blob_size)" in error
-    assert "NVFLARE_STREAMING_MAX_BLOB_SIZE" in error
-    assert "shard the object" in error
+    assert future is expected_future
+    assert len(sent) == 1
 
 
 def test_blob_streamer_allows_blob_at_exact_limit(monkeypatch):
@@ -196,8 +195,12 @@ def test_blob_streamer_allows_blob_at_exact_limit(monkeypatch):
 
 
 def test_handle_blob_cb_stops_task_on_declared_size_above_limit(monkeypatch):
+    import nvflare.fuel.f3.streaming.blob_streamer as blob_streamer_module
+
     monkeypatch.setattr(CommConfigurator, "get_streaming_max_blob_size", lambda self: 4)
-    handler = BlobHandler(lambda future: None)
+    monkeypatch.setattr(blob_streamer_module.callback_thread_pool, "submit", lambda fn, *args: fn(*args))
+    callback_errors = []
+    handler = BlobHandler(lambda callback_future: callback_errors.append(callback_future.exception(timeout=0.1)))
     future = StreamFuture(stream_id=7)
     stopped = {}
 
@@ -212,8 +215,10 @@ def test_handle_blob_cb_stops_task_on_declared_size_above_limit(monkeypatch):
 
     error = future.exception(timeout=0.1)
     assert isinstance(error, StreamError)
+    assert isinstance(error, BlobSizeError)
     assert "exceeds configured limit" in str(error)
     assert stopped["error"] is error
+    assert callback_errors == [error]
 
 
 def test_handle_blob_cb_stops_task_on_memory_error(monkeypatch):

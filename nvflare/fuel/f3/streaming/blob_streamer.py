@@ -117,6 +117,17 @@ class BlobHandler:
         else:
             future.set_exception(error)
 
+    def _fail_and_notify(
+        self,
+        stream: Stream,
+        future: StreamFuture,
+        error: StreamError,
+        args: tuple,
+        kwargs: dict,
+    ):
+        self._fail(stream, future, error)
+        callback_thread_pool.submit(self._run_blob_cb, future, stream, args, kwargs)
+
     def _store_chunk(self, blob_task: BlobTask, buf: BytesAlike, buf_size: int, thread_id: int) -> bool:
         length = len(buf)
         if blob_task.pre_allocated:
@@ -175,12 +186,12 @@ class BlobHandler:
             else:
                 blob_task = BlobTask(future, stream, self.max_blob_size)
         except StreamError as ex:
-            self._fail(stream, future, ex)
+            self._fail_and_notify(stream, future, ex, args, kwargs)
             return 0
         except MemoryError as ex:
             error = StreamError(f"Unable to allocate buffer for declared blob size {stream.get_size()}")
             error.__cause__ = ex
-            self._fail(stream, future, error)
+            self._fail_and_notify(stream, future, error, args, kwargs)
             return 0
 
         stream_thread_pool.submit(self._read_stream, blob_task)
@@ -254,7 +265,6 @@ class BlobStreamer:
     def __init__(self, byte_streamer: ByteStreamer, byte_receiver: ByteReceiver):
         self.byte_streamer = byte_streamer
         self.byte_receiver = byte_receiver
-        self.max_blob_size = CommConfigurator().get_streaming_max_blob_size()
 
     def send(
         self,
@@ -273,8 +283,6 @@ class BlobStreamer:
             raise StreamError(f"BLOB is invalid type: {type(message.payload)}")
 
         blob_stream = BlobStream(message.payload, message.headers)
-        if self.max_blob_size > 0 and blob_stream.get_size() > self.max_blob_size:
-            raise _make_blob_size_error(blob_stream.get_size(), self.max_blob_size)
         return self.byte_streamer.send(
             channel,
             topic,
