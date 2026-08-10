@@ -10,6 +10,9 @@ rules:
   resources: ["pods"]
   verbs: ["create", "delete", "get", "list", "watch"]
 - apiGroups: [""]
+  resources: ["events"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
   resources: ["secrets"]
   verbs: ["create", "get", "update", "patch", "delete"]
 ---
