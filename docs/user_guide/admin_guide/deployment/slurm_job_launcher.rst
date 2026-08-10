@@ -39,10 +39,10 @@ Prerequisites
 
 Before starting a parent, verify:
 
-- Slurm 23.02 or later provides working ``sbatch``, ``squeue``, ``sacct``, and
+- Slurm 23.02.3 or later provides working ``sbatch``, ``squeue``, ``sacct``, and
   ``scancel`` commands on the runtime parent host. Parent bootstrap resolves
-  these commands and verifies the version; 23.02 is the minimum because the
-  launcher uses ``sbatch --export=NIL``. Production sites should run a Slurm
+  these commands; 23.02.3 is the minimum because the launcher uses
+  ``sbatch --export=NIL``. Production sites should run a Slurm
   release that is still supported by SchedMD.
 - ``slurmdbd`` accounting is enabled and ``sacct`` responds. The default
   ``AccountingStoreFlags`` is sufficient.
