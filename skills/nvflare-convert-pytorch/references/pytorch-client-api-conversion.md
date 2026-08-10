@@ -9,7 +9,7 @@ tensor payload rules before changing model exchange code.
 
 Use this path for plain PyTorch conversion:
 
-1. Confirm PyTorch routing with `nvflare agent inspect`.
+1. Confirm PyTorch routing with `nvflare agent inspect source`.
 2. Select a PyTorch-family recipe with `nvflare recipe list/show`.
 3. Generate `client.py` with `nvflare.client` `receive` / `send` and
    `FLModel(params=...)` as the model exchange path.
@@ -17,15 +17,12 @@ Use this path for plain PyTorch conversion:
    `recipe.execute(SimEnv(...))`.
 5. Validate with `python job.py`, inspect terminal evidence, then export.
 
-HE is not supported (steps 4–5): homomorphic-encryption recipes reject `SimEnv`
-and require provisioned `PocEnv`/`ProdEnv`, which are outside conversion scope.
-Follow the HE-not-supported rule in
-`../../nvflare-shared/references/pytorch-family-recipe-selection.md`: report HE
-as unsupported, route it to provisioning/deployment, and ask or fail closed
-instead of generating or running an HE `job.py`.
+HE is not supported at steps 4–5: follow the HE-not-supported rule in
+`../../nvflare-shared/references/pytorch-family-recipe-selection.md`.
 
-Follow the shared Source Of Truth Boundary in
-`../../nvflare-shared/references/conversion-workflow.md`.
+Follow the Source Of Truth Boundary and the generated-entry rule in
+`../../nvflare-shared/references/conversion-workflow.md`: `client.py` is an
+FL-only Client API entry point, not a standalone/FL auto-detecting launcher.
 
 ## Conversion Pattern
 
@@ -40,24 +37,18 @@ Follow the shared Source Of Truth Boundary in
 - Call `flare.receive()` to get the incoming `FLModel`.
 - Load `input_model.params` into the PyTorch model with `load_state_dict`.
 - Train or evaluate using the user's existing data loader and optimizer.
-- Send the trained weights without mutating the in-place model:
-  `params = {k: v.detach().cpu() for k, v in model.state_dict().items()}` then
-  `flare.send(flare.FLModel(params=params, metrics=..., meta=...))`. Do not call
+- Send the trained weights with the canonical plain-PyTorch payload pattern in
+  `../../nvflare-shared/references/pytorch-model-exchange.md`. Do not call
   `model.cpu()`, which moves the persistent model off the training device.
 
 ## PyTorch Parameter Payload Type
 
-For `PTInProcessClientAPIExecutor`, follow the shared PyTorch-family model
-exchange guidance: outbound `FLModel(params=...)` must contain `torch.Tensor`
-values. `PTSendParamsConverter` excludes non-tensor params.
-
-```python
-params = {k: v.detach().cpu() for k, v in model.state_dict().items()}
-assert all(isinstance(v, torch.Tensor) for v in params.values())
-flare.send(flare.FLModel(params=params, metrics=metrics, meta=meta))
-```
-
-Do not convert outbound weights to NumPy before sending.
+Use the exact outbound payload contract and send snippet in
+`../../nvflare-shared/references/pytorch-model-exchange.md`. Apply the separate
+recipe-capability policy in
+`../../nvflare-shared/references/pytorch-family-recipe-construction.md`; its
+server disk-offload optimization does not change the client payload contract or
+execution mode.
 
 ## Source Layout
 
@@ -68,6 +59,13 @@ and requirements files. Avoid ad hoc entry-point names such as `fl_train.py`
 unless the user explicitly requests that naming, and use
 `../../nvflare-shared/references/runtime-output-guidance.md` for runtime
 workspaces, exported job directories, and validation output locations.
+During export inspection, verify generated or project-local modules referenced
+by server-side `class_path` config are packaged into the server app with
+`recipe.add_server_file(...)` or an equivalent server-targeted API. The
+`train_script` import closure packages client apps and is not enough for
+per-site exports that create `app_server` separately. Installed NVFLARE,
+framework, and third-party class paths stay runtime dependencies and are
+validated through requirements installation plus import/preflight checks.
 
 For standard FedAvg, package shared generated files for all clients. Do not
 replace all-client deployment with explicit per-site deployment unless the
@@ -80,6 +78,8 @@ let every simulated site train on the full source training set unless the user
 explicitly asks for shared training data or the source already provides
 site-specific data that resolves to that behavior. Validation/test loaders may
 remain shared only when that matches the source's validation/test semantics.
+For generated Pandas partition code, follow "Site Data Partitioning" in
+`../../nvflare-shared/references/conversion-workflow.md`.
 
 ## Model Construction Consistency
 
@@ -120,51 +120,17 @@ validation loaders, label mappings, or averaging denominators from scratch
 without source evidence; when evaluation is required but the source has none,
 ask in interactive mode or fail closed in unattended mode.
 
-This template is self-contained packaged guidance; do not depend on NVFLARE
-repository `examples/` being present in the user's environment. The runnable
-form ships at `../assets/client_with_eval.py`; adapt it rather than inventing a
-new structure. It includes a setup hook for optimizer, loss, scheduler, and
-data-loader state so generated code has a concrete pre-loop setup location.
+Follow the "Best-Model Metric" contract in
+`../../nvflare-shared/references/pytorch-family-recipe-construction.md`. It owns
+metric-name matching and lower-is-better direction; this reference owns where
+evaluation occurs in the plain-PyTorch round loop.
 
-```python
-def evaluate(model, val_loader, device):
-    model.eval()
-    total, metric_sum = 0, 0.0
-    with torch.no_grad():
-        for inputs, labels in val_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-            outputs = model(inputs)
-            # accumulate the source-backed metric; keep the source's
-            # metric name and averaging denominator
-            metric_sum += source_metric(outputs, labels)
-            total += labels.numel()
-    if total == 0:
-        raise RuntimeError("evaluation data is empty; cannot report metrics")
-    return metric_sum / total
-
-model = model_factory()
-model.to(device)
-
-flare.init()
-train_state = train_setup_factory(model, device)
-val_loader = build_val_loader()
-
-while flare.is_running():
-    input_model = flare.receive()
-    model.load_state_dict(input_model.params)
-
-    # evaluate the received global model first so the server can do model selection
-    global_metric = evaluate(model, val_loader, device)
-
-    if flare.is_evaluate():
-        flare.send(flare.FLModel(metrics={metric_name: global_metric}))
-        continue
-
-    train_one_round(model, train_state)
-
-    params = {k: v.detach().cpu() for k, v in model.state_dict().items()}
-    flare.send(flare.FLModel(params=params, metrics={metric_name: global_metric}))
-```
+The self-contained runnable template ships at
+`../assets/client_with_eval.py`; adapt it rather than duplicating its code here
+or depending on repository `examples/`. It initializes setup once, receives and
+loads the global model, evaluates that received model, handles evaluation-only
+tasks, trains, and sends the canonical model payload plus the source-backed
+metric.
 
 The round `FLModel.metrics` is this pre-training evaluation of the received
 global model, not a post-training metric — see

@@ -309,6 +309,20 @@ Below is a table overview of key Client APIs.
      - Patches the PyTorch Lightning Trainer for usage with FLARE.
      - :func:`patch<nvflare.app_opt.lightning.api.patch>`
 
+.. list-table:: HuggingFace APIs
+   :widths: 25 25 50
+   :header-rows: 1
+
+   * - API
+     - Description
+     - API Doc Link
+   * - patch
+     - Patches a HuggingFace ``Trainer`` or TRL ``SFTTrainer`` for usage with FLARE.
+     - :func:`patch<nvflare.app_opt.hf.api.patch>`
+   * - is_running
+     - Coordinates the FL loop for a patched HuggingFace trainer.
+     - :func:`is_running<nvflare.client.hf.is_running>`
+
 .. list-table:: Metrics Logger
    :widths: 25 25 50
    :header-rows: 1
@@ -346,6 +360,7 @@ Additional Resources
 
 * Client API Module: :mod:`nvflare.client.api` - Complete API reference
 * PyTorch Lightning API: :mod:`nvflare.app_opt.lightning.api` - Lightning-specific integration
+* HuggingFace Client API: :ref:`hf_client_api` - HuggingFace Trainer integration guide
 * Job Recipe Guide: :ref:`job_recipe` - How to define and run FL jobs
 
 **Guides:**
@@ -354,49 +369,84 @@ Additional Resources
 * :ref:`job_recipe` - Job Recipe tutorial
 * :ref:`fl_simulator` - Simulation environment details
 
-Client API communication patterns
-=================================
+Client API Execution Modes
+==========================
 
-.. image:: ../../resources/client_api.png
-    :height: 300px
+``ClientAPIExecutor`` provides three execution modes. Choose the mode according
+to who starts and owns the trainer process.
 
-We offer various implementations of Client APIs tailored to different scenarios, each linked with distinct communication patterns.
+.. list-table:: Client API execution modes
+   :header-rows: 1
+   :widths: 22 25 53
 
-In-process Client API
+   * - Mode
+     - Trainer owner
+     - Behavior
+   * - ``in_process``
+     - NVFLARE
+     - Runs the training script inside the Client Job process and exchanges
+       data through the in-process DataBus.
+   * - ``external_process``
+     - NVFLARE
+     - Launches a separate trainer process and manages its startup, liveness,
+       shutdown, and process-tree termination.
+   * - ``attach``
+     - External system
+     - Waits for an independently started trainer to attach. NVFLARE owns only
+       the listener and protocol session, never the trainer process.
+
+All three modes expose the same ``flare.init()``, ``flare.receive()``, and
+``flare.send()`` training interface. Their main difference is process placement
+and lifecycle ownership.
+
+In-Process Mode
+---------------
+
+Use ``in_process`` when the training script can safely run inside the CJ. This
+mode has the lowest communication overhead because task and result exchange use
+an in-memory DataBus. It is the default for ``ScriptRunner`` when
+``launch_external_process=False``.
+
+External-Process Mode
 ---------------------
 
-The in-process executor entails both the training script and client executor operating within the same process.
-The training script will be launched once at the event of START_RUN and will keep on running till the END_RUN event.
-Communication between them occurs through an efficient in-memory databus.
+Use ``external_process`` when NVFLARE should launch the trainer in a separate
+process, including multi-process or distributed launch commands. The backend
+uses Cell for task/result exchange and owns the trainer lifecycle. It can launch
+one trainer for the job or a fresh trainer for each task.
 
-When the training process involves either a single GPU or no GPUs, and the training script doesn't integrate third-party
-training systems, the in-process executor is preferable (when available).
+Attach Mode
+-----------
 
-Sub-process Client API
-----------------------
+Use ``attach`` only when another system independently starts and owns the
+trainer. A network trainer connects through the site's existing Client Parent
+listener; a protected shared-filesystem profile uses a job-owned CJ listener.
+Job teardown closes the protocol session but does not signal or terminate the
+trainer process.
 
-On the other hand, the LauncherExecutor employs the SubprocessLauncher to use a sub-process to execute the training script. This results in the client executor
-and training script residing in separate processes. The "launch_once" option is provided to the SubprocessLauncher to control
-whether to launch the external script every time when getting the task from server, or just launch the script once at the event
-of START_RUN and keeps running till the END_RUN event. Communication between them is facilitated by either CellPipe
-(default) or FilePipe.
+See :ref:`client_api_attach` for configuration, security, migration,
+and runnable examples.
 
-For scenarios involving multi-GPU training or the utilization of external training infrastructure, opting for the Launcher executor might be more suitable.
+Large payloads and secure jobs
+==============================
 
+Both Cell modes use FOBS and ``DownloadService`` for large values, but they have
+different trust boundaries. Managed ``external_process`` keeps lazy references
+as pass-through: the trainer remains the source, the original source FQCN and
+reference ID are preserved, and the ultimate workflow receiver downloads from
+the trainer. ``attach`` instead materializes task and result payloads at the CJ;
+an original remote reference never crosses that boundary into or out of the
+externally owned trainer. Serializing the concrete object onward may create a
+new CJ-owned transaction.
 
-Choice of different Pipes
-=========================
-In the 2.5.x release, for most users, we recommend utilizing the default setting with the in-process executor
-(defaulting to memory-based data exchanges).
-Conversely, in the 2.4.x release, we suggest using the default setting with CellPipe for most users.
-
-CellPipe facilitates TCP-based cell-to-cell connections between the Executor and training script processes on
-the local host. The term cell represents logical endpoints. This communication enables the exchange of models, metrics,
-and metadata between the two processes.
-
-In contrast, FilePipe offers file-based communication between the Executor and training script processes,
-utilizing a job-specific file directory for exchanging models and metadata via files. While FilePipe is easier to set up
-than CellPipe, it's not suitable for high-frequency metrics exchange.
+For secure jobs, a managed external trainer receives the site's ``AUTH_TOKEN``
+and ``AUTH_TOKEN_SIGNATURE`` only after authenticated ``HELLO`` and installs the
+normal outgoing authentication headers. An attached trainer never receives
+those bearer credentials. Network Attach uses the provisioned site Cell
+identity over the existing CP route, while protected shared-file Attach remains
+local to the CJ/trainer boundary. Scoped, short-lived trainer identity,
+DownloadService ACLs, and revocation are planned for 2.10 before lazy Attach
+transfer can cross the CJ boundary.
 
 Examples
 ========
@@ -409,11 +459,12 @@ For complete working examples of using Client API with Job Recipes across differ
 - NumPy: :github_nvflare_link:`hello-numpy <examples/hello-world/hello-numpy>` - Basic FL concepts
 - PyTorch Lightning: :github_nvflare_link:`hello-lightning <examples/hello-world/hello-lightning>` - Lightning integration
 - TensorFlow: :ref:`hello_tf_job_api` - MNIST classification
+- HuggingFace Trainer: :github_nvflare_link:`hello-huggingface <examples/hello-world/hello-huggingface>` - Qwen SFT/PEFT with HuggingFace Client API
 - Flower: :github_nvflare_link:`hello-flower <examples/hello-world/hello-flower>` - Flower on FLARE
 
 **Advanced Examples:**
 
-- HuggingFace Transformers: :github_nvflare_link:`llm_hf <examples/llm_hf>` - Large language model training
+- HuggingFace LLM tuning: :github_nvflare_link:`llm_hf <examples/advanced/llm_hf>` - Large-model SFT/PEFT, quantization, and multi-GPU patterns
 - XGBoost: :github_nvflare_link:`xgboost examples <examples/advanced/xgboost>` - Tree-based federated learning
 - Scikit-learn: :github_nvflare_link:`sklearn-linear <examples/advanced/sklearn-linear>`, :github_nvflare_link:`sklearn-kmeans <examples/advanced/sklearn-kmeans>`, :github_nvflare_link:`sklearn-svm <examples/advanced/sklearn-svm>` - Traditional ML algorithms
 
@@ -438,9 +489,22 @@ For example:
             self.y = 2
 
 If your code uses classes derived from ``Enum`` or dataclasses, they will be handled by the default decomposers.
-For other custom classes, you will need to write a dedicated custom decomposer and ensure it is registered
-using fobs.register on both the server side and client side, as well as in train.py.
+For other custom classes, write a dedicated custom decomposer and register it
+with ``fobs.register`` in every process that serializes or deserializes the
+class.
 
-Please note that for the custom data class to work, it must be placed in a separate file from train.py.
+Define the custom type in an importable module separate from ``client.py``.
+The module must be packaged in every app that serializes or deserializes the
+type. Import discovery from ``client.py`` is best-effort and scoped to the client
+app containing that entry point; it does not make the module available to the
+server. With a Recipe, add the defining module to both generated app types::
+
+    custom_type_file = "custom_types.py"
+    recipe.add_client_file(custom_type_file)
+    recipe.add_server_file(custom_type_file)
+
+Keep the source package layout consistent with the type's fully qualified
+module name. Add imported dependencies explicitly when they are required on
+both sides rather than relying on best-effort discovery.
 
 For more details on serialization, please refer to :ref:`serialization`.

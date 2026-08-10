@@ -24,9 +24,13 @@ from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.f3.streaming.stream_const import (
+    STREAM_ACK_INTERVAL,
     STREAM_ACK_TOPIC,
     STREAM_CHANNEL,
+    STREAM_CHUNK_SIZE,
     STREAM_DATA_TOPIC,
+    STREAM_RETRY_MAX_PENDING_BYTES,
+    STREAM_WINDOW_SIZE,
     StreamDataType,
     StreamHeaderKey,
 )
@@ -40,8 +44,6 @@ from nvflare.fuel.f3.streaming.stream_utils import (
     wrap_view,
 )
 
-STREAM_CHUNK_SIZE = 1024 * 1024
-STREAM_WINDOW_SIZE = 16 * STREAM_CHUNK_SIZE
 STREAM_ACK_WAIT = 300
 STREAM_RETRY_WAIT = 5.0
 STREAM_RETRY_TIMEOUT = 60.0
@@ -239,6 +241,13 @@ class TxTask(StreamTaskSpec):
         config = CommConfigurator()
         self.reliable = config.get_streaming_reliable(False) if reliable is None else reliable
         self.window_size = config.get_streaming_window_size(STREAM_WINDOW_SIZE)
+        self.ack_interval = config.get_streaming_ack_interval(STREAM_ACK_INTERVAL)
+        if self.ack_interval > self.window_size:
+            log.warning(
+                f"{self} streaming_ack_interval {self.ack_interval} exceeds streaming_window_size "
+                f"{self.window_size}; using {self.window_size}"
+            )
+            self.ack_interval = self.window_size
         self.ack_wait = config.get_streaming_ack_wait(STREAM_ACK_WAIT)
         self.ack_progress_timeout = config.get_streaming_ack_progress_timeout(60.0)
         # Guard against zero/negative config to avoid wait(0) busy-spin loops.
@@ -246,7 +255,8 @@ class TxTask(StreamTaskSpec):
         self.last_ack_progress_ts = time.monotonic()
         self.retry_wait = max(0.01, config.get_streaming_retry_wait(STREAM_RETRY_WAIT))
         self.retry_timeout = max(0.01, config.get_streaming_retry_timeout(STREAM_RETRY_TIMEOUT))
-        self.retry_max_pending_bytes = config.get_streaming_retry_max_pending_bytes(2 * self.window_size)
+        retry_max_pending_default = max(STREAM_RETRY_MAX_PENDING_BYTES, 2 * self.window_size)
+        self.retry_max_pending_bytes = config.get_streaming_retry_max_pending_bytes(retry_max_pending_default)
 
         if self.reliable:
             self.pending_messages = {}
@@ -265,7 +275,11 @@ class TxTask(StreamTaskSpec):
         """Read/send loop to transmit the whole stream with flow control"""
 
         while not self.stopped:
-            buf = self.stream.read(self.chunk_size)
+            if self.buffer_size == self.chunk_size:
+                read_size = self.chunk_size
+            else:
+                read_size = self.chunk_size - self.buffer_size
+            buf = self.stream.read(read_size)
             if not buf:
                 # End of Stream
                 if not self.send_pending_buffer(final=True):
@@ -275,7 +289,10 @@ class TxTask(StreamTaskSpec):
 
             # Flow control
             window = self.offset - self.offset_ack
-            # It may take several ACKs to clear up the window
+            # It may take several ACKs to clear up the window.
+            # Keep the historical strict comparison: a zero window provides
+            # stop-and-wait behavior by allowing the first frame to be sent.
+            # RxTask includes the possible boundary frame in its buffer sizing.
             while window > self.window_size:
                 log.debug(f"{self} window size {window} exceeds limit: {self.window_size}")
                 wait_start = time.monotonic()
@@ -300,12 +317,13 @@ class TxTask(StreamTaskSpec):
                     window = self.offset - self.offset_ack
 
             size = len(buf)
-            if size > self.chunk_size:
-                raise StreamError(f"{self} Stream returns invalid size: {size}")
+            if size > read_size:
+                raise StreamError(f"{self} Stream returns invalid size: {size} (requested {read_size})")
 
-            # Don't push out chunk when it's equal, wait till next round to detect EOS
-            # For example, if the stream size is chunk size (1M), this avoids sending two chunks.
-            if size + self.buffer_size > self.chunk_size:
+            # A full pending buffer is sent only after a non-empty lookahead read.
+            # This avoids an empty final frame when the stream size is an exact
+            # multiple of chunk_size while ensuring all non-final frames are full.
+            if self.buffer_size == self.chunk_size:
                 if not self.send_pending_buffer():
                     return
 
@@ -345,10 +363,17 @@ class TxTask(StreamTaskSpec):
             StreamHeaderKey.OFFSET: self.offset,
             StreamHeaderKey.RELIABLE: self.reliable,
             StreamHeaderKey.OPTIONAL: self.optional,
+            # Repeat the buffer-sizing parameters because ConnManager may process a
+            # later frame before sequence 0. Older receivers ignore these headers
+            # after the first frame, so this is wire-compatible.
+            StreamHeaderKey.CHUNK_SIZE: self.chunk_size,
+            StreamHeaderKey.WINDOW_SIZE: self.window_size,
         }
-        if self.reliable and self.seq == 0:
-            stream_headers[StreamHeaderKey.RETRY_WAIT] = self.retry_wait
-            stream_headers[StreamHeaderKey.RETRY_TIMEOUT] = self.retry_timeout
+        if self.seq == 0:
+            stream_headers[StreamHeaderKey.ACK_INTERVAL] = self.ack_interval
+            if self.reliable:
+                stream_headers[StreamHeaderKey.RETRY_WAIT] = self.retry_wait
+                stream_headers[StreamHeaderKey.RETRY_TIMEOUT] = self.retry_timeout
         message.add_headers(stream_headers)
 
         if self.reliable:

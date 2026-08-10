@@ -592,6 +592,36 @@ class TestOutputError:
 
 
 class TestSensitiveOutputRedaction:
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ('password="correct horse battery staple"', 'password="<redacted>"'),
+            (
+                '{"client_secret": "alpha beta gamma", "safe": true}',
+                '{"client_secret": "<redacted>", "safe": true}',
+            ),
+            ("--client-secret='alpha beta gamma' --verbose", "--client-secret='<redacted>' --verbose"),
+            ("Authorization: 'alpha beta gamma'", "Authorization: '<redacted>'"),
+            ("Authorization: Basic dXNlcjpwYXNz", "Authorization: <redacted>"),
+            ('Authorization = "Bearer sample-token-123"', 'Authorization = "Bearer <redacted>"'),
+            ("Authorization = 'Bearer sample-token-123'", "Authorization = 'Bearer <redacted>'"),
+            ('Authorization="Bearer sample-token-123"', 'Authorization="Bearer <redacted>"'),
+            ("Authorization=Bearer sample-token-123", "Authorization=Bearer <redacted>"),
+            (
+                '{"Authorization": "Bearer sk-live-abc123"}',
+                '{"Authorization": "Bearer <redacted>"}',
+            ),
+            ('password="sample secret fragment\nsafe diagnostic', 'password="<redacted>\nsafe diagnostic'),
+        ],
+    )
+    def test_redacts_sensitive_text_values(self, text, expected):
+        assert cli_output.sanitize_cli_output(text) == expected
+
+    def test_redacts_authorization_dict_value(self):
+        value = {"headers": {"Authorization": "Bearer sk-live-abc123"}}
+
+        assert cli_output.sanitize_cli_output(value) == {"headers": {"Authorization": "<redacted>"}}
+
     def test_output_json_redacts_sensitive_fields(self, capsys):
         output({"credential": "cred-secret", "status": "ok"}, "json")
         payload = json.loads(capsys.readouterr().out)

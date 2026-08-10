@@ -20,8 +20,9 @@ import sys
 import threading
 
 from nvflare.apis.fl_constant import ConfigVarName, JobConstants, SiteType, SystemConfigs
+from nvflare.apis.job_launcher_spec import JobProcessEnv, pop_credential_env
 from nvflare.apis.workspace import Workspace
-from nvflare.app_opt.job_launcher.workspace_cell_transfer import download_workspace, upload_results_safely
+from nvflare.app_opt.job_launcher.workspace_cell_transfer import download_workspace, upload_results_on_shutdown
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
@@ -101,6 +102,7 @@ def main(args):
             server.cell = server.create_job_cell(
                 args.job_id, args.root_url, args.parent_url, secure_train, server_config
             )
+            server.engine.set_cell(server.cell)
 
             # set filter to add additional auth headers
             set_add_auth_headers_filters(
@@ -134,7 +136,7 @@ def main(args):
             if err:
                 if logger:
                     logger.warning(err)
-            upload_results_safely(args, secure_train, log=logger)
+            upload_results_on_shutdown(args, secure_train, log=logger)
 
     except ConfigError as e:
         logger = get_script_logger()
@@ -145,16 +147,24 @@ def main(args):
 
 def parse_arguments():
     """FL Server program starting point."""
+    # Credentials may arrive via the environment; a CLI-supplied value wins.
+    # The SJ auth token is the job id (public, already in argv), so AUTH_TOKEN goes unused.
+    creds = pop_credential_env()
+    ts = creds[JobProcessEnv.TOKEN_SIGNATURE]
+    ssid = creds[JobProcessEnv.SSID]
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument("--fed_server", "-s", type=str, help="server config json file", required=True)
     parser.add_argument("--app_root", "-r", type=str, help="App Root", required=True)
     parser.add_argument("--job_id", "-n", type=str, help="job id", required=True)
-    parser.add_argument("--token_signature", "-ts", type=str, help="auth token signature", required=True)
+    parser.add_argument(
+        "--token_signature", "-ts", type=str, help="auth token signature", default=ts, required=ts is None
+    )
     parser.add_argument("--root_url", "-u", type=str, help="root_url", required=True)
     parser.add_argument("--host", "-host", type=str, help="server host", required=True)
     parser.add_argument("--port", "-port", type=str, help="service port", required=True)
-    parser.add_argument("--ssid", "-id", type=str, help="SSID", required=True)
+    parser.add_argument("--ssid", "-id", type=str, help="SSID", default=ssid, required=ssid is None)
     parser.add_argument("--parent_url", "-p", type=str, help="parent_url", required=True)
     parser.add_argument(
         "--parent_conn_sec",

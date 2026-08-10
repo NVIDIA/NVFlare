@@ -14,6 +14,7 @@
 
 import logging
 import os
+import warnings
 from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel, field_validator
@@ -24,10 +25,16 @@ from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import In
 from nvflare.app_common.ccwf.ccwf_job import CCWFJob, CrossSiteEvalConfig, SwarmClientConfig, SwarmServerConfig
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+from nvflare.client.config import ExchangeFormat, normalize_exchange_format
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
-from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.fuel.utils.secret_utils import (
+    warn_on_potential_secrets,
+    warn_on_unsupported_secret_refs,
+    warn_on_unsupported_secret_refs_outside_keys,
+)
+from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int, check_positive_number
+from nvflare.job_config.script_runner import BaseScriptRunner, ScriptRunner
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import merge_config_overrides, validate_aggregator_data_kind, validate_ckpt
 
@@ -56,13 +63,17 @@ class _SwarmValidator(BaseModel):
 class BaseSwarmLearningRecipe(Recipe):
     """Base recipe for Swarm Learning (framework-agnostic).
 
+    Server, client, and cross-site-evaluation config values become part of the generated
+    job definition and must never contain actual secrets. Read secrets from site environment
+    variables or mounted files; references are supported only where documented in
+    :mod:`nvflare.recipe.secrets`.
+
     Args:
         name: Name of the federated learning job.
         server_config: Swarm server configuration.
         client_config: Swarm client configuration.
         cse_config: Optional cross-site evaluation configuration.
-        job: Optional pre-created CCWFJob. If None, a new one is created.
-            Subclasses may create the job early to add files before building configs.
+        min_clients: Minimum number of clients required to schedule the job.
     """
 
     def __init__(
@@ -71,10 +82,9 @@ class BaseSwarmLearningRecipe(Recipe):
         server_config: SwarmServerConfig,
         client_config: SwarmClientConfig,
         cse_config: CrossSiteEvalConfig = None,
-        job: CCWFJob = None,
+        min_clients: int = 1,
     ):
-        if job is None:
-            job = CCWFJob(name=name)
+        job = CCWFJob(name=name, min_clients=min_clients)
         job.add_swarm(
             server_config=server_config,
             client_config=client_config,
@@ -95,9 +105,12 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         train_script: Path to the training script.
         min_clients: Minimum number of clients required.
         initial_ckpt: Path to a pre-trained checkpoint file (.pt, .pth). Can be:
-            - Relative path: file will be bundled into the job's custom/ directory.
-            - Absolute path: treated as a server-side path, used as-is at runtime.
-        train_args: Additional arguments for the training script.
+            - Relative path: file will be bundled into each client app's custom/ directory.
+            - Absolute path: used as-is at runtime. The file is not distributed and must
+              be readable at the same path on every client.
+        train_args: Additional arguments for the training script. The dictionary is stored
+            in the job definition and must not contain actual secret values; see
+            :mod:`nvflare.recipe.secrets` for safe runtime references.
         do_cross_site_eval: Whether to perform cross-site evaluation. When combined with
             ``launch_external_process=True``, the trained model is loaded from the
             persistor on disk (saved by PTFileModelPersistor after each round).  Two
@@ -154,18 +167,19 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             Values here take precedence over named constructor parameters, except
             ``min_clients``, which must be set through the named parameter to keep
             scheduler, server-controller, and client aggregation quorums aligned.
+            This dictionary is stored in the job definition and must not contain secrets.
         client_config_overrides: Advanced shallow overrides for ``SwarmClientConfig``.
             Values here take precedence over named constructor parameters. Recipe-managed
             fields (executor, aggregator, persistor, shareable generator, and
             ``min_responses_required``) cannot be replaced through this dictionary; use
             ``BaseSwarmLearningRecipe`` for custom components or quorum settings.
-        pipe_type: Pipe used for communication between the NVFlare client process
-            and the external training process when ``launch_external_process=True``.
-            Accepted values:
+            This dictionary is stored in the job definition and must not contain secrets.
+        pipe_type: Transport used between the NVFlare client process and the external
+            training process when ``launch_external_process=True``. Accepted values:
 
-            - ``"cell_pipe"`` *(default)*: ``CellPipe`` with zero-copy tensor
-              forwarding — the NVFlare client process relays model tensors without
-              loading them into memory (~1 GB RAM for large models).
+            - ``"cell_pipe"`` *(default)*: Direct Cell transport through
+              ``ClientAPIExecutor`` with zero-copy tensor forwarding. Despite the option
+              name, this mode does not create a ``CellPipe`` component.
             - ``"file_pipe"``: ``FilePipe`` backed by a shared directory. The NVFlare
               client process fully loads and re-serializes the model (~2× model size
               in RAM). Use when cell networking is unavailable or for third-party
@@ -179,6 +193,13 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             the directory is treated as a runtime path and does not need to exist on the
             machine that builds or exports the job. ``{JOB_ID}/{SITE_NAME}`` is always
             appended so concurrent jobs and sites remain isolated. Ignored for ``"cell_pipe"``.
+        aggregation_format: Parameter representation used by the CCWF controllers and aggregator.
+            Use ``ExchangeFormat.PYTORCH`` to keep tensors on the streaming path. Defaults to
+            ``ExchangeFormat.NUMPY`` for backward compatibility.
+        enable_tensor_disk_offload: Download incoming streamed PyTorch tensors to temporary disk
+            files on aggregation clients and materialize them lazily during aggregation. The
+            trainer's source tensors remain in memory. This requires
+            ``aggregation_format=ExchangeFormat.PYTORCH`` to take effect. Defaults to False.
 
     Example:
         Using nn.Module instance:
@@ -236,8 +257,39 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         client_config_overrides: Optional[Dict[str, Any]] = None,
         pipe_type: str = "cell_pipe",
         pipe_root_path: Optional[str] = None,
+        aggregation_format: ExchangeFormat = ExchangeFormat.NUMPY,
+        enable_tensor_disk_offload: bool = False,
     ):
         _SwarmValidator(initial_ckpt=initial_ckpt)
+        warn_on_potential_secrets(command, context="recipe parameter 'command'")
+        aggregation_format = normalize_exchange_format(aggregation_format, "aggregation_format")
+        self.aggregation_format = aggregation_format
+
+        if train_args:
+            warn_on_potential_secrets(train_args, context="recipe parameter 'train_args'")
+            warn_on_unsupported_secret_refs_outside_keys(
+                train_args,
+                supported_value_keys={"script_args"},
+                context="recipe parameter 'train_args'",
+            )
+        if server_config_overrides:
+            warn_on_potential_secrets(
+                server_config_overrides,
+                context="recipe parameter 'server_config_overrides'",
+            )
+            warn_on_unsupported_secret_refs(
+                server_config_overrides,
+                context="recipe parameter 'server_config_overrides'",
+            )
+        if client_config_overrides:
+            warn_on_potential_secrets(
+                client_config_overrides,
+                context="recipe parameter 'client_config_overrides'",
+            )
+            warn_on_unsupported_secret_refs(
+                client_config_overrides,
+                context="recipe parameter 'client_config_overrides'",
+            )
 
         validated_server_config_overrides = merge_config_overrides(
             {}, server_config_overrides, "server_config_overrides"
@@ -288,7 +340,7 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         )
 
         task_pipe = None
-        if pipe_type == "file_pipe":
+        if pipe_type == "file_pipe" and launch_external_process:
             # Append {JOB_ID}/{SITE_NAME} so concurrent jobs and sites on the same
             # machine use isolated pipe directories (resolved at runtime by NVFlare).
             # Format matches the sag_cse_ccwf_pt reference template.
@@ -322,6 +374,8 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 "launch_external_process",
                 "command",
                 "framework",
+                "aggregation_format",
+                "server_expected_format",
                 "memory_gc_rounds",
                 "cuda_empty_cache",
             }
@@ -329,11 +383,14 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             if conflicts:
                 raise ValueError(f"train_args contains reserved keys that conflict with ScriptRunner: {conflicts}")
 
-        # Create job early so prepare_initial_ckpt can bundle files into it
-        from nvflare.recipe.utils import prepare_initial_ckpt
-
-        job = CCWFJob(name=name, min_clients=min_clients)
-        ckpt_path = prepare_initial_ckpt(initial_ckpt, job)
+        # The persistor uses the exported basename for a relative checkpoint. The
+        # source file is added to the generated client apps after the base recipe
+        # creates its backing job.
+        ckpt_path = (
+            os.path.basename(initial_ckpt)
+            if initial_ckpt is not None and not os.path.isabs(initial_ckpt)
+            else initial_ckpt
+        )
 
         server_config_args = merge_config_overrides(
             {
@@ -348,20 +405,30 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         )
         server_config = SwarmServerConfig(**server_config_args)
 
+        # FilePipe remains an explicit legacy compatibility option. Ordinary Swarm jobs use
+        # ScriptRunner's ClientAPIExecutor path; only the custom Pipe case opts into the old
+        # BaseScriptRunner/LauncherExecutor stack.
+        runner_cls = BaseScriptRunner if task_pipe is not None else ScriptRunner
         client_config_args = {
-            "executor": ScriptRunner(
+            "executor": runner_cls(
                 script=train_script,
                 launch_external_process=launch_external_process,
                 command=command,
                 memory_gc_rounds=memory_gc_rounds,
                 cuda_empty_cache=cuda_empty_cache,
+                server_expected_format=aggregation_format,
                 params_transfer_type=params_transfer_type,
                 task_pipe=task_pipe,
                 **train_args,
             ),
             "aggregator": aggregator,
-            "persistor": PTFileModelPersistor(model=model, source_ckpt_file_full_name=ckpt_path),
+            "persistor": PTFileModelPersistor(
+                model=model,
+                source_ckpt_file_full_name=ckpt_path,
+                allow_numpy_conversion=aggregation_format != ExchangeFormat.PYTORCH,
+            ),
             "shareable_generator": SimpleModelShareableGenerator(),
+            "enable_tensor_disk_offload": enable_tensor_disk_offload,
             "memory_gc_rounds": memory_gc_rounds,
             "cuda_empty_cache": cuda_empty_cache,
             "min_responses_required": min_clients,
@@ -379,6 +446,20 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             validated_client_config_overrides,
             "client_config_overrides",
         )
+        check_object_type(
+            "enable_tensor_disk_offload",
+            client_config_args["enable_tensor_disk_offload"],
+            bool,
+        )
+        self.enable_tensor_disk_offload = client_config_args["enable_tensor_disk_offload"]
+        if self.enable_tensor_disk_offload and self.aggregation_format != ExchangeFormat.PYTORCH:
+            warnings.warn(
+                "enable_tensor_disk_offload=True only applies to streamed PyTorch tensors. "
+                "Set aggregation_format=ExchangeFormat.PYTORCH to enable tensor disk offload; "
+                f"current aggregation_format={self.aggregation_format!r} will not offload NumPy payloads.",
+                UserWarning,
+                stacklevel=2,
+            )
         check_positive_int("max_concurrent_submissions", client_config_args["max_concurrent_submissions"])
         if client_config_args.get("learn_task_timeout") is not None:
             check_positive_number("learn_task_timeout", client_config_args["learn_task_timeout"])
@@ -386,4 +467,15 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             check_positive_number("learn_task_abort_timeout", client_config_args["learn_task_abort_timeout"])
         client_config = SwarmClientConfig(**client_config_args)
 
-        BaseSwarmLearningRecipe.__init__(self, name, server_config, client_config, cse_config, job=job)
+        BaseSwarmLearningRecipe.__init__(
+            self,
+            name,
+            server_config,
+            client_config,
+            cse_config,
+            min_clients=min_clients,
+        )
+        if initial_ckpt is not None and not os.path.isabs(initial_ckpt):
+            # FileSource copies the checkpoint basename into custom/, matching
+            # the path configured on the client-side PTFileModelPersistor above.
+            self._job.add_file_to_clients(initial_ckpt)

@@ -14,6 +14,7 @@
 
 """Tests for ScaffoldRecipe with initial_ckpt support."""
 
+import inspect
 from unittest.mock import patch
 
 import pytest
@@ -70,7 +71,14 @@ class TestPTScaffoldRecipe:
 
         assert recipe.name == "test_scaffold"
         assert recipe.model == simple_model
-        assert recipe.job is not None
+        assert recipe._job is not None
+
+    def test_constructors_do_not_expose_fedprox_mu(self):
+        from nvflare.app_common.workflows.scaffold import Scaffold
+        from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
+
+        assert "fedprox_mu" not in inspect.signature(Scaffold).parameters
+        assert "fedprox_mu" not in inspect.signature(ScaffoldRecipe).parameters
 
     def test_enable_tensor_disk_offload_configures_controller(self, mock_file_system, base_recipe_params, simple_model):
         """Test PT ScaffoldRecipe passes tensor disk offload settings to the Scaffold controller."""
@@ -88,7 +96,7 @@ class TestPTScaffoldRecipe:
         )
 
         assert recipe.enable_tensor_disk_offload is True
-        server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+        server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
         controller = server_app.app_config.workflows[0].controller
         assert isinstance(controller, Scaffold)
         assert controller.enable_tensor_disk_offload is True
@@ -190,7 +198,7 @@ class TestTFScaffoldRecipe:
         )
 
         assert recipe.name == "test_tf_scaffold"
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_initial_ckpt_parameter_accepted(self, mock_file_system, base_recipe_params):
         """Test that initial_ckpt parameter is accepted (TF can load without model)."""

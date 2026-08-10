@@ -155,10 +155,13 @@ _KNOWN_NVFLARE_ROOT_COMMANDS = {
     "system",
 }
 _KNOWN_AGENT_COMMANDS = {"info", "inspect"}
+_KNOWN_AGENT_INSPECT_CAPABILITIES = {"data", "source"}
 _KNOWN_AGENT_FLAGS = {
     "agent": {"--format", "--schema"},
     "agent info": {"--format", "--schema"},
-    "agent inspect": {"--format", "--redact", "--schema"},
+    "agent inspect": {"--format", "--schema"},
+    "agent inspect data": {"--format", "--max-file-bytes", "--max-files", "--redact", "--schema"},
+    "agent inspect source": {"--format", "--max-file-bytes", "--max-files", "--redact", "--schema"},
 }
 
 
@@ -871,7 +874,9 @@ def _lint_fixtures(context: LintContext) -> None:
                         )
                     )
                     continue
-                if not fixture_path.is_file():
+                # A fixture may be one file or a dataset directory (e.g. an
+                # image folder); a directory must contain at least one file.
+                if not fixture_path.is_file() and not (fixture_path.is_dir() and _has_files(fixture_path)):
                     context.findings.append(
                         _finding(
                             LINT_SKILL_FIXTURE,
@@ -879,7 +884,8 @@ def _lint_fixtures(context: LintContext) -> None:
                             record.evals_path,
                             f"eval fixture does not exist: {rel_path}",
                             "Place deterministic fixtures under the eval root "
-                            "(dev_tools/agent/skill_evals/<skill>/files/) and reference existing files.",
+                            "(dev_tools/agent/skill_evals/<skill>/files/) and reference existing "
+                            "files or non-empty dataset directories.",
                             code="skill-fixture-file-missing",
                             skill=record.name,
                         )
@@ -1293,7 +1299,17 @@ def _command_drift_message(command: str) -> Optional[str]:
     if len(positional) >= 2 and positional[1] not in _KNOWN_AGENT_COMMANDS:
         return f"unknown nvflare agent command '{positional[1]}' in '{command}'"
 
-    command_key = " ".join(positional[:2])
+    if positional[1:2] == ["inspect"]:
+        if len(positional) < 3:
+            if "--schema" not in tokens:
+                return f"nvflare agent inspect requires a source or data capability in '{command}'"
+            command_key = "agent inspect"
+        elif positional[2] not in _KNOWN_AGENT_INSPECT_CAPABILITIES:
+            return f"unknown nvflare agent inspect capability '{positional[2]}' in '{command}'"
+        else:
+            command_key = " ".join(positional[:3])
+    else:
+        command_key = " ".join(positional[:2])
     allowed_flags = _KNOWN_AGENT_FLAGS.get(command_key, _KNOWN_AGENT_FLAGS.get(root, set()))
     for token in tokens:
         if token.startswith("--"):

@@ -163,7 +163,7 @@ python3 job.py --site_num 5 --round_num 100 --split_method uniform
 **Code example** (`job.py`):
 ```python
 from nvflare.app_opt.xgboost.recipes import XGBHorizontalRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, set_per_site_config
 from higgs_data_loader import HIGGSDataLoader
 
 # Create recipe
@@ -185,8 +185,8 @@ recipe = XGBHorizontalRecipe(
         "objective": "binary:logistic",
         "eval_metric": "auc",
     },
-    per_site_config=per_site_config,
 )
+set_per_site_config(recipe, per_site_config)
 
 # Run simulation with explicit client list (required when using per_site_config)
 clients = list(per_site_config.keys())
@@ -237,6 +237,7 @@ Modify `--site_num`, `--split_method`, and `--lr_mode` parameters as needed for 
 **Python API:**
 ```python
 from nvflare.app_opt.xgboost.recipes import XGBBaggingRecipe
+from nvflare.recipe import set_per_site_config
 from higgs_data_loader import HIGGSDataLoader
 
 # Build per-site configuration with data loaders
@@ -255,8 +256,8 @@ recipe = XGBBaggingRecipe(
     num_rounds=1,
     num_local_parallel_tree=5,
     local_subsample=0.8,
-    per_site_config=per_site_config,
 )
+set_per_site_config(recipe, per_site_config)
 
 # Or Cyclic mode
 recipe = XGBBaggingRecipe(
@@ -264,8 +265,8 @@ recipe = XGBBaggingRecipe(
     min_clients=5,
     training_mode="cyclic",
     num_rounds=100,
-    per_site_config=per_site_config,
 )
+set_per_site_config(recipe, per_site_config)
 
 # Run with explicit client list (required when using per_site_config)
 clients = list(per_site_config.keys())
@@ -325,7 +326,7 @@ python3 job_vertical.py --run_psi --run_training
 **Code example** (`job_vertical.py`):
 ```python
 from nvflare.app_opt.xgboost.recipes import XGBVerticalRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, set_per_site_config
 from vertical_data_loader import VerticalDataLoader
 
 # Create vertical XGBoost recipe
@@ -353,6 +354,8 @@ for site_id in range(1, 3):
         train_proportion=0.8,
     )
     per_site_config[f"site-{site_id}"] = {"data_loader": data_loader}
+
+set_per_site_config(recipe, per_site_config)
 
 # Run simulation with explicit client list (required when using per_site_config)
 clients = list(per_site_config.keys())

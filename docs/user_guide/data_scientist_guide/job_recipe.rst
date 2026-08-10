@@ -1,30 +1,34 @@
 
 .. _job_recipe:
 
-NVFlare Job Recipe
-==================
+Getting Started with Recipes
+============================
 
-This tutorial covers how to use Job Recipes in NVFlare to simplify federated learning job creation and execution. 
-Job Recipes provide a simplified abstraction that hides the complexity of low-level job configurations while exposing only the key arguments users should care about.
+This task-oriented tutorial shows how to create and run an NVFlare job with a
+concrete Recipe. Recipes hide low-level job configuration while exposing the
+arguments needed for common federated learning workflows.
 
-.. note::
-   This is a technical preview. Not all algorithms are currently implemented with recipes.
+Use this page for motivation and runnable walkthroughs. The authoritative
+signatures, helper behavior, ordering requirements, and guarantees are in the
+:ref:`recipe_api`. The lower-level :ref:`fed_job_api` remains a separate path
+for advanced workflows that require arbitrary component placement or custom
+job construction.
 
-For the stable public Recipe surface, see :ref:`recipe_api`.
 
-
-Motivation for Using JobRecipe
-------------------------------
+Why Use Recipes
+---------------
 
 The **Job API** provides a powerful and flexible way to define FLARE FL workflows and configurations in Python without manually editing configuration files. While the API simplified the process compared to previous approaches, it is not simple enough. For new users and data scientists working with standard pipelines, learning detailed concepts such as controllers, executors, workflows, and how to wire them together is unnecessary.
 
-To address this, NVFlare introduces the concept of **Job Recipes**. A ``JobRecipe`` is a simplified abstraction designed to provide a high-level API with:
+To address this, NVFlare provides concrete **Recipes** as a simplified,
+high-level API with:
 
 * **Only the key arguments** a data scientist should care about, such as the number of clients, number of rounds, training scripts, and model definition.
 * **Consistent entry points** for common federated learning patterns such as **FedAvg** and **Cyclic Training**.
 * **Execution environments** from simulation to production for the same job.
 
-This makes ``JobRecipe`` particularly useful as a **first touchpoint** for new users and data scientists working with standard pipelines:
+This makes Recipes particularly useful as a **first touchpoint** for new users
+and data scientists working with standard pipelines:
 
 * Instead of learning the entire Job API, users can start with a recipe and focus only on high-level parameters (e.g., ``min_clients``, ``num_rounds``).
 * Recipes encapsulate the necessary job structure and execution logic, ensuring correctness while reducing the chance of misconfiguration.
@@ -175,9 +179,9 @@ Per-Site Configuration
 ----------------------
 
 Some recipes accept site-keyed configuration so that each site can use different
-arguments, scripts, data loaders, or validators. For recipes that support this
-helper, use ``set_per_site_config`` to attach the site-keyed input after
-creating the recipe:
+arguments, scripts, or data loaders. Call ``set_per_site_config`` immediately
+after constructing the recipe, before adding client configuration, files,
+filters, or tracking:
 
 .. code-block:: python
 
@@ -193,42 +197,23 @@ creating the recipe:
 
    env = SimEnv(clients=recipe.configured_sites())
 
-``configured_sites()`` returns the top-level site names from
-``set_per_site_config`` when helper-provided configuration exists. Otherwise, for
-backward compatibility, it returns site names from a recipe's constructor
-``per_site_config`` when available. It does not infer sites from recipe metadata
-such as resource specs, launcher specs, or mandatory clients. It also does not
-mean those sites are currently connected, validate production enrollment, or
-replace the execution environment.
+See :ref:`recipe_per_site_and_metadata` for supported recipes and fields,
+ordering and topology rules, validation, and ``configured_sites()`` behavior.
 
-``set_per_site_config`` stores the mapping and calls the recipe's per-site
-configuration hook. It does not by itself create client targets or rebuild an
-already generated job. A recipe must implement the hook for helper-provided
-per-site fields to affect generated app configuration, command-line arguments,
-data loaders, validators, or other recipe behavior.
+No Secrets In Recipe Parameters
+-------------------------------
 
-.. important::
-
-   The second argument to ``set_per_site_config`` is recipe-specific. The helper
-   validates only that it is a dictionary whose top-level keys are site names and
-   whose values are dictionaries. Users must ensure each per-site dictionary uses
-   fields that the selected recipe understands and can convert into generated app
-   configuration, command-line arguments, data loaders, validators, or other
-   recipe-specific settings.
-
-   For example, FedAvg's current per-site support is through the legacy
-   ``FedAvgRecipe(per_site_config=...)`` constructor argument. That constructor
-   path understands per-site values such as ``train_args``, ``train_script``,
-   and ``command``. It does not automatically interpret arbitrary keys such as
-   ``data_path`` or ``batch_size``. For FedAvg, pass those values through
-   ``train_args`` unless your recipe explicitly documents another shape.
+Recipe inputs can be serialized in clear text into the generated job. Never
+put passwords, API keys, tokens, private keys, or other credentials in them.
+See :ref:`recipe_secrets` for supported references, runtime boundaries,
+warnings, and deployment guidance.
 
 Recipe Metadata
 ---------------
 
 Use ``set_recipe_meta`` to add generated job metadata from a recipe without
-mutating ``recipe.job.job.meta_props`` directly. The helper sets one
-``JobMetaKey`` metadata entry at a time:
+mutating nested generated-job metadata directly. The helper sets one ``JobMetaKey``
+metadata entry at a time:
 
 .. code-block:: python
 
@@ -257,55 +242,8 @@ mutating ``recipe.job.job.meta_props`` directly. The helper sets one
        },
    )
 
-The settable keys are exactly the members of
-:data:`nvflare.apis.job_def.USER_SETTABLE_JOB_META_KEYS`; other enum members
-and raw strings are not accepted. Each key expects a specific value shape:
-
-* ``JobMetaKey.RESOURCE_SPEC`` (``resource_spec``): per-site resource
-  requirements -- a dict keyed by site name with dict values.
-* ``JobMetaKey.JOB_LAUNCHER_SPEC`` (``launcher_spec``): per-site launcher
-  requirements -- a dict keyed by site name with dict values.
-* ``JobMetaKey.SCOPE`` (``scope``): job scope name -- a string.
-* ``JobMetaKey.CUSTOM_PROPS`` (``custom_props``): nested custom metadata -- a
-  dict.
-
-Two groups of keys are intentionally **not** settable through this helper:
-
-* Keys with dedicated ``FedJob`` constructor fields -- ``min_clients`` and
-  ``mandatory_clients``. Set them when constructing the recipe/``FedJob``
-  (e.g. ``FedJob(..., min_clients=2, mandatory_clients=[...])``) so the
-  controller, scheduler, and generated metadata all use the same value;
-  setting them through ``meta_props`` would only change the metadata and
-  diverge from the value the recipe already used to build its controller.
-* ``study``: the server assigns it from the admin session's active study at
-  job submission, so a recipe-set value would be silently overwritten. Select
-  the study through the execution environment instead (e.g.
-  ``PocEnv(study=...)`` or ``ProdEnv(study=...)``, described below).
-
-Dict values, including all nested dictionary and list contents, must be
-JSON-serializable; dictionary keys are coerced to strings as they will appear
-in ``meta.json``, and non-finite floating-point values such as ``NaN`` and
-``Infinity`` are rejected. The helper writes the key/value pair through
-``meta_props``. If the generated ``meta.json`` also contains that key, the
-``meta_props`` value is written last by the job generator.
-
-.. note::
-
-   Per-site resource specs may also exist on the underlying generated job
-   (registered through the lower-level job object's ``add_resource_spec``,
-   an internal path -- prefer ``set_recipe_meta`` in recipe scripts; see
-   :ref:`recipe_api`). If you set ``RESOURCE_SPEC`` through
-   ``set_recipe_meta``, the ``meta_props`` value replaces those per-site
-   specs in the generated ``meta.json``; a warning is emitted for specs
-   already registered when the helper is called, but specs added afterwards
-   are overridden without one.
-
-If the same key already exists in ``meta_props``, ``set_recipe_meta`` replaces
-that value.
-
-The helper does not validate runtime resource availability, production
-enrollment, or whether sites named in metadata are present for a run. The
-execution environment and deployment still determine which sites are present.
+See :ref:`recipe_per_site_and_metadata` for accepted keys and value shapes,
+serialization rules, precedence, and validation guarantees.
 
 For a complete production example, see the
 :github_nvflare_link:`Recipe job on Kubernetes clients <examples/advanced/recipe-k8s>`.
@@ -325,6 +263,9 @@ A **Job Recipe** defines *what* to run in a federated learning setting, but it a
 
 This separation enables users to **prototype once and deploy anywhere** without modifying the core job definition.
 
+For the current environment constructor signatures and behavioral guarantees,
+see :ref:`recipe_execution_environments`.
+
 SimEnv – Simulation Environment
 -------------------------------
 
@@ -338,14 +279,6 @@ concurrency. Best suited for:
 * Educational use cases
 * Batch-scheduled experiments where one submitted job should run the complete
   federated workflow and then exit
-
-**Arguments:**
-
-* ``num_clients`` (int): Number of simulated clients
-* ``clients``: A list of client names (length needs to match ``num_clients`` if both are provided)
-* ``num_threads``: Number of concurrent simulated client worker processes
-* ``gpu_config`` (str): List of GPU device IDs, comma separated
-* ``log_config`` (str): Log config mode (``'concise'``, ``'full'``, ``'verbose'``), filepath, or level
 
 Now let's test running the prepared recipe with ``SimEnv``:
 
@@ -374,19 +307,6 @@ Best suited for:
 * Demonstrations
 * Small-scale validation before production deployment
 * Debugging orchestration logic
-
-**Arguments:**
-
-* ``num_clients`` (int, optional): Number of clients to use in POC mode. Defaults to 2.
-* ``clients`` (List[str], optional): List of client names. If ``None``, will generate ``site-1``, ``site-2``, etc.
-* ``gpu_ids`` (List[int], optional): List of GPU IDs to assign to clients. If ``None``, uses CPU only.
-* ``auto_stop`` (bool, optional): Whether to automatically stop POC services after job completion.
-* ``use_he`` (bool, optional): Whether to use HE. Defaults to ``False``.
-* ``docker_image`` (str, optional): SP/CP Docker image for Docker POC mode
-  prepared with the deploy Docker preparation path. Jobs submitted in this mode
-  must specify their SJ/CJ Docker image in ``launcher_spec``.
-* ``project_conf_path`` (str, optional): Path to the project configuration file.
-* ``study`` (str, optional): The study context for this execution environment. Jobs will be submitted and monitored within this study. Defaults to ``"default"``. Named studies require ``project_conf_path`` to point to a project with ``api_version: 4`` and ``studies:``. See :ref:`multi_study_guide`.
 
 Let's first set the path to the POC environment:
 
@@ -431,13 +351,6 @@ Best suited for:
 * Enterprise federated learning deployments
 * Multi-institution collaborations
 * Production-scale workloads
-
-**Arguments:**
-
-* ``startup_kit_location`` (str): The directory that contains the startup kit of the admin (generated by nvflare provisioning)
-* ``login_timeout`` (float): Timeout value for the admin to login to the system
-* ``monitor_job_duration`` (int): Duration to monitor the job execution. ``None`` means no monitoring at all
-* ``study`` (str): The study context for this execution environment. Jobs will be submitted and monitored within this study. Defaults to ``"default"``. See :ref:`multi_study_guide`.
 
 Let's first provision a startup kit:
 

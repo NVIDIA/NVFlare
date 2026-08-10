@@ -12,22 +12,19 @@ for normal Lightning training.
 
 Use this path for Lightning conversion:
 
-1. Confirm Lightning routing with `nvflare agent inspect`.
+1. Confirm Lightning routing with `nvflare agent inspect source`.
 2. Select a PyTorch-family recipe with `nvflare recipe list/show`.
 3. Generate `client.py` with `flare.patch(trainer)` as the model exchange path.
 4. Generate `job.py` that builds the selected recipe and calls
    `recipe.execute(SimEnv(...))`.
 5. Validate with `python job.py`, inspect terminal evidence, then export.
 
-HE is not supported (steps 4–5): homomorphic-encryption recipes reject `SimEnv`
-and require provisioned `PocEnv`/`ProdEnv`, which are outside conversion scope.
-Follow the HE-not-supported rule in
-`../../nvflare-shared/references/pytorch-family-recipe-selection.md`: report HE
-as unsupported, route it to provisioning/deployment, and ask or fail closed
-instead of generating or running an HE `job.py`.
+HE is not supported at steps 4–5: follow the HE-not-supported rule in
+`../../nvflare-shared/references/pytorch-family-recipe-selection.md`.
 
-Follow the shared Source Of Truth Boundary in
-`../../nvflare-shared/references/conversion-workflow.md`.
+Follow the Source Of Truth Boundary and the generated-entry rule in
+`../../nvflare-shared/references/conversion-workflow.md`: `client.py` is an
+FL-only Client API entry point, not a standalone/FL auto-detecting launcher.
 
 ## Conversion Pattern
 
@@ -49,10 +46,14 @@ while flare.is_running():
     # Optional: call receive() only when round/site/task metadata is needed.
     # The patched trainer loads the global model internally.
     flare.receive()
-    trainer.validate(model, datamodule=datamodule)
+    validate_global_model(trainer, model, datamodule=datamodule)
     trainer.fit(model, datamodule=datamodule)
     trainer.test(ckpt_path="best", datamodule=datamodule)  # when test evidence is requested/available
 ```
+
+Adapt `validate_global_model` from `../assets/lightning_client.py`; it keeps
+evaluation Lightning-native and preserves training-result metrics on the
+patched exchange.
 
 For evaluation-only / FedEval conversions, run `trainer.validate(...)` (the
 patched trainer sends the validation metrics) and **do not call
@@ -74,6 +75,13 @@ are sent can train an unwanted round or block the task. The packaged
   `flare.init()` before the first such Client API context access.
 - Use `flare.receive()` in the patched loop only for FL task progression,
   round/site logging, or task metadata, never for manual model loading.
+- During export inspection, verify generated or project-local modules
+  referenced by server-side `class_path` config are packaged into the server app
+  with `recipe.add_server_file(...)` or an equivalent server-targeted API. The
+  `train_script` import closure packages client apps and is not enough for
+  per-site exports that create `app_server` separately. Installed NVFLARE,
+  framework, and third-party class paths stay runtime dependencies and are
+  validated through requirements installation plus import/preflight checks.
 
 ## Lightning Evaluation Template
 
@@ -86,9 +94,8 @@ Keep evaluation inside Lightning; do not reuse the raw PyTorch
   they are visible in the trainer callback metrics.
 - After `flare.patch(trainer)` and `flare.receive()`, call
   `trainer.validate(model, datamodule=...)` before `trainer.fit(...)` when
-  training-with-evaluation or server-side model selection needs validation
-  metrics; keep this inside the `while flare.is_running()` loop so the round
-  reports global-model metrics.
+  server-side model selection or round metrics need validation; keep this
+  inside the `while flare.is_running()` loop.
 - Use `trainer.test(...)` only when the source workflow already has test
   semantics or the user requests test reporting.
 - Rely on Lightning's validate/test loops to set evaluation mode and disable
@@ -97,6 +104,55 @@ Keep evaluation inside Lightning; do not reuse the raw PyTorch
 - If the source project lacks validation/test steps or dataloaders, ask in
   interactive mode or fail closed in unattended mode instead of inventing
   metric semantics.
+
+### Training-result metric delivery
+
+For a training task, `trainer.validate(...)` and `self.log(...)` establish
+Lightning-local metrics but do not by themselves establish server delivery.
+The selected recipe can generate an executor whose
+`train_with_evaluation` setting is disabled or not exposed as a recipe
+capability. In that case the patched callback sends trained parameters without
+putting its captured validation result in `FLModel.metrics`.
+
+When the conversion requires server metrics, capture the return value from the
+pre-fit `trainer.validate(...)`, require finite scalar values, and preserve it
+on the patched module's supported metadata channel under
+`MetaKey.INITIAL_METRICS` before `trainer.fit(...)`. Use
+`../assets/lightning_client.py` as the copyable implementation. Preserve any
+other dictionary entries already present in `model.__fl_meta__`; fail closed if
+that attribute is not a dictionary. This metadata travels with the one patched
+model exchange and is not a reason to add a manual `flare.send(...)`.
+
+The metric names placed under `MetaKey.INITIAL_METRICS` must be the same names
+used for recipe `key_metric` and artifact reporting. They must describe the
+received global model evaluated before local training, not post-fit local
+metrics.
+
+`key_metric` selects on higher-is-better values only, so what the client
+delivers and the recipe selects must itself be a higher-is-better value. A
+source metric with the opposite direction — including a module that logs nothing
+but `val_loss` — must first be flipped into an explicitly negated companion.
+This is the Lightning implementation of the framework-neutral rule in
+`../../nvflare-shared/references/pytorch-family-recipe-construction.md`.
+
+Name those metrics with
+`validate_global_model(..., make_higher_is_better=("val_loss",))` in
+`../assets/lightning_client.py`, and thread the same argument through
+`main(...)` when adapting the round loop. The helper preserves the original
+metric and adds a higher-is-better `neg_val_loss` to the same
+`MetaKey.INITIAL_METRICS` dict; the recipe then selects
+`key_metric="neg_val_loss"`. Select the companion, never the original —
+`key_metric="val_loss"` would pick the worst global model. Only name keys whose
+direction the source establishes; do not invent a direction. A `val_loss`-only
+module is never a reason to fail closed or to skip best-model selection when
+that selection was requested.
+
+If a custom `ModelAggregator` is selected, it must also aggregate supported
+client `FLModel.metrics` values and return them in the aggregated
+`FLModel.metrics`. Follow the Custom Aggregation contract in
+`../../nvflare-shared/references/conversion-workflow.md` and adapt
+`../../nvflare-shared/assets/aggregator.py`; a parameters-only aggregate loses
+the server-level metric even when clients delivered it.
 
 This template is self-contained packaged guidance; do not depend on NVFLARE
 repository `examples/` being present in the user's environment. The runnable

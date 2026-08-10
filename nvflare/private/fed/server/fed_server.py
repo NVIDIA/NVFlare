@@ -233,8 +233,8 @@ class BaseServer(ABC):
         for token in delete:
             client = self.logout_client(token)
             self.logger.info(
-                "Remove the dead Client. Name: {}\t Token: {}.  Total clients: {}".format(
-                    client.name, token, len(self.client_manager.get_clients())
+                "Remove the dead Client. Name: {}.  Total clients: {}".format(
+                    client.name, len(self.client_manager.get_clients())
                 )
             )
 
@@ -454,6 +454,7 @@ class FederatedServer(BaseServer):
             token_verifier=token_verifier,
             logger=self.logger,
             client_fqcn_resolver=self._resolve_client_fqcn_for_auth,
+            local_cell_fqcn=self.cell.get_fqcn() if getattr(self, "cell", None) else None,
         )
         if not reply:
             self._strip_peer_transit_reply_auth_headers(message)
@@ -843,10 +844,15 @@ class FederatedServer(BaseServer):
 
         code = payload.get(JobFailureMsgKey.CODE)
         reason = payload.get(JobFailureMsgKey.REASON, "?")
-        if code in (ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION):
+        if code in (
+            ProcessExitCode.CONFIG_ERROR,
+            ProcessExitCode.EXCEPTION,
+            ProcessExitCode.INFRASTRUCTURE_ERROR,
+        ):
             with self.engine.new_context() as fl_ctx:
                 self.logger.info(f"Failing job {job_id} due to reported failure from {client}: {reason}")
-                self.engine.job_runner.fail_run(job_id, ProcessExitCode.EXCEPTION, fl_ctx)
+                failure_code = code if code == ProcessExitCode.INFRASTRUCTURE_ERROR else ProcessExitCode.EXCEPTION
+                self.engine.job_runner.fail_run(job_id, failure_code, fl_ctx)
         elif code in (ProcessExitCode.UNSAFE_COMPONENT, JobReturnCode.ABORTED):
             with self.engine.new_context() as fl_ctx:
                 self.logger.info(f"Aborting job {job_id} due to reported failure from {client}: {reason}")

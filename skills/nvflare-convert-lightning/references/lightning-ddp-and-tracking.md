@@ -1,27 +1,14 @@
 # Lightning DDP And Experiment Tracking
 
-Use this reference only for Lightning DDP/multi-GPU work or experiment-tracking
-work. Single-GPU or single-process Lightning training does not need it.
+Use this reference only for Lightning distributed-process work or
+experiment-tracking work. Single-process Lightning training does not need it.
 
 ## DDP Execution Model
 
-Lightning DDP maps to the external-process executor exactly like plain-PyTorch
-DDP. Lightning's process-spawning strategies — `ddp` and its variants such as
-`ddp_spawn`, and any other strategy that launches one worker process per device
-through a torchrun-style / `torch.distributed` launch — run the training script
-as multiple worker processes, and distributed workers cannot run inside an
-in-process executor. So DDP/multi-process evidence maps to
-`launch_external_process=True`.
-
-The one exception is single-process multi-GPU DataParallel (`dp`), which runs in
-a single process and stays in-process like single-GPU training; leave
-`launch_external_process` unset so the recipe applies its own default.
-
-When the source shows a DDP-family strategy, confirm the selected recipe exposes
-`launch_external_process` with `nvflare recipe show <recipe-name> --format json`,
-then set it to `True`. If the recipe does not expose it, ask in interactive mode
-or fail closed in unattended mode, reporting the DDP evidence and the missing
-product surface.
+Use the process-evidence criterion and capability checks in
+`../../nvflare-shared/references/pytorch-family-recipe-construction.md`; that
+reference owns the DDP/DataParallel-to-execution-mode decision. This reference
+only covers Lightning behavior after that decision.
 
 ## Rank-Synchronized Round Loop
 
@@ -39,10 +26,13 @@ while True:
     if not is_running:
         break
 
-    trainer.validate(model, datamodule=datamodule)
+    validate_global_model(trainer, model, datamodule=datamodule)
     trainer.fit(model, datamodule=datamodule)
     trainer.test(ckpt_path="best", datamodule=datamodule)  # when test evidence is requested/available
 ```
+
+Adapt `validate_global_model` from `../assets/lightning_client.py` when server
+metrics are required.
 
 Do not insert an unguarded `flare.receive()` on every rank for metadata. Outside
 the patched callback, rank 0 can fetch the cached `FLModel`; non-zero ranks do
@@ -67,22 +57,27 @@ In DDP, rank-0 communication with the FL server is either handled by the patched
 callback path or by explicit rank-0 guarded metadata code like the snippet above;
 non-zero ranks should read broadcast values, not `input_model`.
 
-### DDP validation metrics are not delivered to the server by default
+### DDP validation metrics need an explicit delivery bridge
 
 DDP requires the external-process launch (`launch_external_process=True`), which
 runs the script under `PTClientAPILauncherExecutor`. That executor defaults to
 `train_with_evaluation=False`, and the recipe's `ScriptRunner` does not expose a
-switch to change it, so the pre-`fit` `trainer.validate(...)` metrics are **not**
-attached to the training result. The `validate` call above still runs locally
-(useful for local logging), but server-side model selection and per-round metric
-reporting do **not** receive those metrics under the default DDP path.
+switch to change it. Consequently, `trainer.validate(...)` alone does not attach
+its metrics to the outgoing training result.
 
-Do not promise per-round server-side validation metrics for a DDP conversion.
-Report this as a recipe limitation, and only claim server-side round metrics when
-the user opts into an advanced, non-`ScriptRunner` configuration that constructs
-the launcher executor with `train_with_evaluation=True`. Otherwise surface the
-limitation (or a blocker in unattended mode) instead of promising metrics the
-default recipe path cannot deliver.
+When DDP training requires server metrics, use the canonical
+`MetaKey.INITIAL_METRICS` bridge in `lightning-conversion.md`: preserve the
+finite scalar pre-fit validation result on the patched module's `__fl_meta__`
+before `trainer.fit(...)`. Ensure Lightning reduces distributed validation
+metrics consistently (for example, preserve source `sync_dist` behavior) and
+that the sending rank receives the scalar result. This remains part of the
+patched exchange; do not add a second manual `flare.send(...)`.
+
+Only pass a source-derived `key_metric` or claim server-side round metrics after
+the generated execution path and validation evidence confirm that the exact
+metric reaches client and aggregated `FLModel.metrics`. Otherwise surface the
+limitation or fail closed instead of promising metrics from local Lightning
+logs.
 
 ## GPU/CPU Fallback
 

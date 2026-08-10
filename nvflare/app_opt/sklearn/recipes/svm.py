@@ -43,6 +43,10 @@ class _SVMValidator(BaseModel):
 class SVMFedAvgRecipe(FedAvgRecipe):
     """A recipe for Federated SVM with Scikit-learn.
 
+    Recipe parameters, including ``train_args`` and nested ``per_site_config`` values,
+    must never contain actual secrets. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
+
     This recipe implements federated SVM training using support vector aggregation.
     Unlike iterative algorithms, SVM training only requires one round:
     - Round 0: Each client trains a local SVM and sends their support vectors
@@ -74,12 +78,15 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         launch_external_process: Whether to launch the script in external process. Defaults to False.
         command: If launch_external_process=True, command to run script (prepended to script).
             Defaults to "python3 -u".
-        per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
-            site names to configuration dicts. If not provided, the same configuration will be used
-            for all clients.
+        per_site_config: Deprecated constructor form of per-site configuration. New code should call
+            ``set_per_site_config(recipe, config)`` immediately after construction. Nested values become
+            part of the generated job definition and must not contain secrets.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are
-            a dict, key_metric selects the metric used for global model selection. Defaults to "AUC"
+            a dict, key_metric selects the metric used for global model selection. Higher values must
+            indicate a better model. Defaults to "AUC"
             (which corresponds to the ROC AUC score sent by the SVM client in round 1).
+        key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better
+            and "max" when higher values are better. Defaults to "max".
 
     Example:
         Basic usage with same config for all clients:
@@ -103,13 +110,17 @@ class SVMFedAvgRecipe(FedAvgRecipe):
 
         ```python
         from nvflare.app_opt.sklearn import SVMFedAvgRecipe
+        from nvflare.recipe import set_per_site_config
 
         recipe = SVMFedAvgRecipe(
             name="svm_cancer",
             min_clients=3,
             kernel="rbf",
             train_script="client.py",
-            per_site_config={
+        )
+        set_per_site_config(
+            recipe,
+            {
                 "site-1": {"train_args": "--data_path /tmp/data/site1.csv --train_start 0 --train_end 100"},
                 "site-2": {"train_args": "--data_path /tmp/data/site2.csv --train_start 100 --train_end 200"},
                 "site-3": {"train_args": "--data_path /tmp/data/site3.csv --train_start 200 --train_end 300"},
@@ -137,6 +148,7 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         command: str = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "AUC",  # Matches client's metric key
+        key_metric_mode: Literal["min", "max"] = "max",
     ):
         v = _SVMValidator(kernel=kernel, model_path=model_path)
         self.kernel = v.kernel
@@ -172,8 +184,9 @@ class SVMFedAvgRecipe(FedAvgRecipe):
             model_persistor=persistor,
             per_site_config=per_site_config,
             key_metric=key_metric,
+            key_metric_mode=key_metric_mode,
         )
 
         # Add the SVMAssembler as a component to the job
         # CollectAndAssembleModelAggregator will fetch it by ID at runtime
-        self.job.to_server(self._svm_assembler, id="svm_assembler")
+        self._job.to_server(self._svm_assembler, id="svm_assembler")

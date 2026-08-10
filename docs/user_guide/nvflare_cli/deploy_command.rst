@@ -11,11 +11,12 @@ site deployment runtime. The first supported subcommand is
 ``deploy prepare`` does not create identities, certificates, startup kits, or
 Kubernetes clusters. Use ``nvflare provision`` or the distributed
 ``nvflare cert`` / ``nvflare package`` workflow first, then run
-``deploy prepare`` on each server or client kit that should run in Docker or
-Kubernetes.
+``deploy prepare`` on each server or client kit that should run in Docker,
+Kubernetes, or Slurm.
 
-For Kubernetes deployment workflow, see :ref:`helm_chart`. For job-level Docker
-and Kubernetes image settings, see :ref:`launcher_spec`.
+For Kubernetes deployment workflow, see :ref:`helm_chart`. For the Slurm
+deployment workflow and security checklist, see :ref:`slurm_job_launcher`. For
+job-level runtime settings, see :ref:`launcher_spec`.
 
 *****
 Usage
@@ -39,15 +40,25 @@ Default convention:
 
 Put the runtime config in the startup kit as ``config.yaml``, then run
 ``nvflare deploy prepare <startup-kit-dir>``. The command reads ``runtime`` from
-that config and writes the prepared copy to ``<startup-kit-dir>/prepared/docker``
-or ``<startup-kit-dir>/prepared/k8s``. Use ``--config`` to read a config file
-from another path, and use ``--output`` to write the prepared kit somewhere else.
+that config and writes the prepared copy to
+``<startup-kit-dir>/prepared/<runtime>`` (for example, ``docker``, ``k8s``, or
+``slurm``). Use ``--config`` to read a config file from another path, and use
+``--output`` to write the prepared kit somewhere else.
 
 Admin startup kits are not supported by ``deploy prepare`` because admin kits do
 not run parent server or client processes.
 
 The input kit is treated as read-only. Runtime-specific files are written to
 the prepared output directory.
+
+.. note::
+
+   Docker and Kubernetes preparation support only the TCP internal transport.
+   If the input kit's ``local/comm_config.json`` explicitly sets
+   ``internal.scheme`` to ``shared-file``, ``deploy prepare`` stops with an
+   ``INVALID_KIT`` error instead of rewriting the scheme to TCP. Run the
+   original kit in process mode or use the Slurm runtime for shared-file
+   transport (see :ref:`slurm_shared_file_channel`).
 
 *************
 Docker Config
@@ -190,6 +201,7 @@ Top-level keys:
   registry Secret names to ``meta.json``.
 - ``job_pod_security_context``: security context passed to dynamically
   launched job pods.
+
 Study-specific Pod templates are not launcher arguments. Configure them per
 study in ``local/study_runtime.yaml`` (``studies.<study>.pod_template``, inline
 or as a path relative to ``local/``). Matching studies use the template with
@@ -331,11 +343,40 @@ legacy or partially staged resources whose names are not recorded. Use
 the Helm release has been uninstalled; an installed parent pod still depends
 on these volumes.
 
+************
+Slurm Config
+************
+
+The Slurm backend requires a stable shared workspace and a launcher policy. A
+minimal ``slurm.yaml`` is:
+
+.. code-block:: yaml
+
+   runtime: slurm
+   job_launcher:
+     sandbox: apptainer
+     image: /lustre/images/nvflare-prod.sif
+     python_path: /usr/bin/python3
+     parent_host: nvflare-site1.internal
+
+Prepare directly into the shared runtime workspace, then start the parent:
+
+.. code-block:: shell
+
+   nvflare deploy prepare ./site-1 --config slurm.yaml --output /lustre/proj123/nvflare/site-1
+   /lustre/proj123/nvflare/site-1/startup/start_slurm.sh
+
+The output is the live workspace and must be visible at the same absolute path
+on the parent and compute nodes. Preparing to the same output again replaces
+the complete workspace. A client kit can optionally generate
+``startup/parent.slurm``; prepare prints the direct ``sbatch`` command that runs
+it in an allocation. See :ref:`slurm_job_launcher` for the complete guide.
+
 **********
 Job Images
 **********
 
-Docker and Kubernetes jobs must specify a job image in ``meta.json``. The
+Docker, Kubernetes, and Slurm jobs can select a job image in ``meta.json``. The
 preferred form is ``launcher_spec``:
 
 .. code-block:: json
@@ -344,7 +385,8 @@ preferred form is ``launcher_spec``:
      "launcher_spec": {
        "default": {
          "docker": {"image": "registry.example.com/nvflare-job:2.8"},
-         "k8s": {"image": "registry.example.com/nvflare-job:2.8"}
+         "k8s": {"image": "registry.example.com/nvflare-job:2.8"},
+         "slurm": {"image": "/shared/images/nvflare-job.sif"}
        },
        "site-1": {
          "docker": {"shm_size": "8g"}
@@ -361,6 +403,12 @@ preferred form is ``launcher_spec``:
 ``launcher_spec[site][mode]`` overrides the default for one site. Keep resource
 requests such as ``num_of_gpus`` in ``resource_spec``.
 
+A job-supplied image is executable content and requires the site's normal BYOC
+authorization. Slurm resolves the effective image as job, then study
+``container.image``, then site ``job_launcher.image``. Unlike registry image
+names used by Docker/Kubernetes, a Slurm image must be an absolute,
+site-visible existing file; see :ref:`slurm_job_launcher`.
+
 ***********
 Exit Status
 ***********
@@ -374,3 +422,6 @@ causes include:
 - invalid ``resources.json.default``
 - reserved Docker launcher kwargs
 - ``--output`` pointing at or inside the input kit
+- a Slurm ``--output`` path that is not valid as a runtime workspace
+- a missing/non-executable Slurm parent CLI, invalid sandbox/image, or
+  unsupported Slurm ``connection_security`` or server ``parent`` configuration

@@ -206,12 +206,14 @@ class _DecomposeCtx:
         with self.lock:
             target_id = id(item)
             item_id = self.target_to_item.get(target_id)
+            first_item = False
             if not item_id:
                 item_id = f"T{self.last_item_id}"
+                first_item = self.last_item_id == 0
                 self.last_item_id += 1
                 self.target_items[item_id] = item
                 self.target_to_item[target_id] = item_id
-            return item_id, target_id
+            return item_id, target_id, first_item
 
     def get_item_count(self):
         return len(self.target_items)
@@ -257,6 +259,16 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
     ) -> tuple[str, dict]:
         pass
 
+    def _get_download_kwargs(self, fobs_ctx: dict) -> dict:
+        """Return optional context-aware arguments for ``download``.
+
+        The default must remain empty because external subclasses may implement
+        the legacy ``download`` signature without accepting arbitrary keyword
+        arguments. Subclasses that need call-scoped FOBS context can explicitly
+        opt in by overriding this hook.
+        """
+        return {}
+
     def supported_dots(self):
         return [self.get_download_dot()]
 
@@ -281,8 +293,8 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         # create a reference item for the target object. The ref item represents the target object in
         # the serialized payload.
         dc = fobs_ctx.get(self.decompose_ctx_key)
-        item_id, target_id = dc.add_item(target)
-        if dc.get_item_count() == 1:
+        item_id, target_id, first_item = dc.add_item(target)
+        if first_item:
             # register the post_process callback to further process these items.
             # only register cb once!
             manager.register_post_cb(self._process_items_to_datum)
@@ -380,7 +392,9 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         self.logger.debug(f"ViaDownloader: created ref for target {target_id}: {item_id}")
         return {EncKey.TYPE: EncType.REF, EncKey.DATA: item_id}
 
-    def _create_downloader(self, fobs_ctx: dict, progress_cb=None, timeout_override=None, num_receivers_override=None):
+    def _create_downloader(
+        self, fobs_ctx: dict, progress_cb=None, timeout_override=None, num_receivers_override=None, receiver_ids=None
+    ):
         # Transaction lifecycle is managed solely by _monitor_tx() (download_service.py).
         # We deliberately do NOT subscribe to msg_root deletion here.  The msg_root is
         # deleted as soon as all blobs are delivered, but blob_cb fires asynchronously —
@@ -388,8 +402,8 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         # Subscribing caused a race: delete_transaction() removed refs from _ref_table
         # before blob_cb could finish its _download_from_remote_cell() calls, producing
         # "no ref found" FATAL_SYSTEM_ERROR (RC12 Bug 1).
-        # _monitor_tx() polls is_finished() every 5s and cleans up within 5s of the last
-        # receiver completing all chunk downloads — sufficient for all model sizes.
+        # The final accepted receiver confirmation retires a completed transaction
+        # immediately; _monitor_tx() remains the timeout/budget backstop.
         msg_root_id, msg_root_ttl = self._determine_msg_root(fobs_ctx)
 
         # The generic streaming idle timeout is the default lifetime floor for streamed
@@ -445,6 +459,9 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                 transaction_done_cb=on_complete_cb,
                 progress_cb=progress_cb,
                 progress_interval=RESULT_UPLOAD_PROGRESS_INTERVAL,
+                # expected receiver identities: enables the transaction's per-receiver
+                # acquire budget; None when any identity is unknown
+                receiver_ids=receiver_ids,
             )
 
         return downloader
@@ -603,11 +620,15 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                 progress_context = fobs_ctx.get(RESULT_UPLOAD_PROGRESS_CTX_KEY) or {}
                 timeout_override = progress_context.get(ResultUploadProgressContextKey.STREAMING_IDLE_TIMEOUT)
 
+            # forward receiver identities to the transaction only when every identity is
+            # actually known (a (None,) placeholder means unknown-single-receiver)
+            known_receiver_ids = receiver_ids if receiver_ids and all(r is not None for r in receiver_ids) else None
             downloader = self._create_downloader(
                 fobs_ctx,
                 progress_cb=progress_cb if progress_trackable else None,
                 timeout_override=timeout_override,
                 num_receivers_override=download_num_receivers,
+                receiver_ids=known_receiver_ids,
             )
             if downloader is None:
                 self.logger.warning("download transaction was not created because FOBS context has no cell")
@@ -685,7 +706,11 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             # from the originating source cell.
             ref = json.loads(datum.value)
             self.logger.debug(f"ViaDownloader PASS_THROUGH: preserving lazy ref {ref} instead of downloading")
-            fobs_ctx[self.items_key] = _LazyBatchInfo(ref[_RefKey.FQCN], ref[_RefKey.REF_ID], datum.dot)
+            fobs_ctx[self.items_key] = _LazyBatchInfo(
+                ref[_RefKey.FQCN],
+                ref[_RefKey.REF_ID],
+                datum.dot,
+            )
             return
 
         # data is to be downloaded
@@ -794,6 +819,19 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         stream_progress_cb = self._make_stream_progress_cb(fobs_ctx, ref_id)
 
         self.logger.debug(f"trying to download: {ref_id=} {fqcn=}")
+        download_kwargs = self._get_download_kwargs(fobs_ctx)
+        message = fobs_ctx.get(fobs.FOBSContextKey.MESSAGE)
+        # A protected forwarding hop does not prove that the original source has
+        # Cell encryption credentials. Inherit protection only from that source's
+        # own message; managed external trainers use an authenticated clear local hop.
+        download_kwargs.setdefault(
+            "secure",
+            bool(
+                message
+                and message.get_header(MessageHeaderKey.SECURE, False)
+                and message.get_header(MessageHeaderKey.ORIGIN) == fqcn
+            ),
+        )
         err, items = self.download(
             from_fqcn=fqcn,
             ref_id=ref_id,
@@ -801,6 +839,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             cell=cell,
             abort_signal=abort_signal,
             progress_cb=stream_progress_cb,
+            **download_kwargs,
         )
         if err:
             self.logger.error(f"failed to download from {fqcn} for source {ref}: {err}")

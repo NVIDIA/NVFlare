@@ -21,14 +21,13 @@ import argparse
 from model import Net
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import SimEnv, add_experiment_tracking
+from nvflare.recipe import SimEnv, add_experiment_tracking, set_per_site_config
 
 
 def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_rounds", type=int, default=5)
     parser.add_argument("--use_tracking", action="store_true", help="Enable TensorBoard tracking")
-    parser.add_argument("--export_config", action="store_true", help="Export job config only")
     return parser.parse_args()
 
 
@@ -52,7 +51,10 @@ def main():
         train_script=train_script,
         train_args=train_args,
         launch_external_process=True,  # DDP modes require external process launch
-        per_site_config={
+    )
+    set_per_site_config(
+        recipe,
+        {
             "site-1": {
                 "command": "python3 -m torch.distributed.run --nnodes=1 --nproc_per_node=2 --master_port=7777",
             },
@@ -65,16 +67,12 @@ def main():
     if args.use_tracking:
         add_experiment_tracking(recipe, tracking_type="tensorboard")
 
-    if args.export_config:
-        recipe.export("/tmp/nvflare/jobs/job_config")
-        print("Job config exported to /tmp/nvflare/jobs/job_config")
-    else:
-        env = SimEnv(clients=["site-1", "site-2"], num_threads=2, log_config="full")
-        run = recipe.execute(env)
-        print()
-        print("Result:", run.get_result())
-        print("Status:", run.get_status())
-        print()
+    env = SimEnv(clients=["site-1", "site-2"], num_threads=2, log_config="full")
+    run = recipe.execute(env)
+    print()
+    print("Result:", run.get_result())
+    print("Status:", run.get_status())
+    print()
 
 
 if __name__ == "__main__":

@@ -93,7 +93,7 @@ Install and prepare:
   - Red Hat OpenShift Local, which provides the `crc` command.
   - A Red Hat account and the OpenShift pull secret from `https://console.redhat.com/openshift/create/local`.
   - Hardware virtualization enabled on the host. The [OpenShift Local documentation](https://crc.dev/docs/getting-started/) lists the platform-specific minimum CPU, memory, disk, and hypervisor requirements.
-  - Enough host capacity for OpenShift plus FLARE test pods. The script defaults to `6` vCPUs, `24576` MiB memory, and `120` GiB disk; lower values may work for only the cluster but can be tight for the end-to-end FLARE workflow.
+  - Enough host capacity for OpenShift plus FLARE test pods. The cluster script defaults to `6` vCPUs, `24576` MiB memory, and `120` GiB disk. The deployment scripts keep the three-parent example schedulable on that CRC size by defaulting each parent pod request to `500m` CPU and `1Gi` memory. Increase `CRC_CPUS` and `CRC_MEMORY` if you increase the parent requests or run heavier workloads.
   - Network access to download the OpenShift Local bundle and pull cluster images, unless you provide a local bundle with `CRC_BUNDLE`.
   - Local administrator privileges when `crc setup` needs to configure host networking, DNS, or virtualization support.
 
@@ -183,19 +183,42 @@ Common variables for `start_openshift_cluster.sh`:
 | `CREATE_PROJECT`                          | Create or select the project named by `NAMESPACE`. Default: `true`.                                                                                               |
 | `NAMESPACE`                               | Project used by the scripted FLARE deployment. Default: `nvflare-e2e`.                                                                                            |
 
+### Resize an Existing CRC Cluster
+
+The deployment scripts use smaller parent pod requests by default so the
+example fits the default CRC size. If the parent pods need the generated `2`
+CPU and `8Gi` memory requests, or the workload needs more capacity, stop the
+cluster and increase its configured resources before restarting it:
+
+``` bash
+crc stop
+crc config set cpus 14
+crc config set memory 65536
+bash examples/devops/openshift/scripts/start_openshift_cluster.sh
+bash examples/devops/openshift/scripts/k8s_e2e.sh
+```
+
+This `14` vCPU / `65536` MiB configuration is a verified workaround. After the
+restart, rerunning `k8s_e2e.sh` completed the workflow and the submitted job
+reached `FINISHED:COMPLETED`. Make sure the host has enough CPU and memory for
+these CRC settings.
+
 ## Build an OpenShift-Compatible Image
 
-The maintained NVFlare Dockerfiles are in the repository `docker/` directory. Use the parent image for long-running server/client parent pods and the temporary admin pod. Use a job image for the submitted `hello-numpy` job pods:
+The maintained NVFlare Dockerfiles are in the repository `docker/` directory and can be built with Podman or Docker. Podman is typically available by default on RHEL OpenShift hosts and does not require a Docker daemon. The commands below use Podman; set `CONTAINER_TOOL=docker` to use Docker instead. On systems where `docker` is an alias for Podman, either command name works.
+
+Use the parent image for long-running server/client parent pods and the temporary admin pod. Use a job image for the submitted `hello-numpy` job pods:
 
 ``` bash
 export PARENT_IMAGE=registry.example.com/nvflare-parent:dev
 export WORKLOAD_IMAGE=registry.example.com/nvflare-job:dev
+export CONTAINER_TOOL="${CONTAINER_TOOL:-podman}"
 
-docker build -t "$PARENT_IMAGE" -f docker/Dockerfile.parent .
-docker build -t "$WORKLOAD_IMAGE" -f docker/Dockerfile.job .
+"$CONTAINER_TOOL" build -t "$PARENT_IMAGE" -f docker/Dockerfile.parent .
+"$CONTAINER_TOOL" build -t "$WORKLOAD_IMAGE" -f docker/Dockerfile.job .
 
-docker push "$PARENT_IMAGE"
-docker push "$WORKLOAD_IMAGE"
+"$CONTAINER_TOOL" push "$PARENT_IMAGE"
+"$CONTAINER_TOOL" push "$WORKLOAD_IMAGE"
 ```
 
 Set the OpenShift workflow image variables from those pushed images:
@@ -267,7 +290,7 @@ The phase scripts share these common variables:
 | `COPY_IMAGE`                                             | Image for temporary PVC copy pods when `WORKSPACE_STAGING_MODE=pvc`. Default: `busybox:1.36`. Set this to an internal image if your cluster cannot pull from Docker Hub. It must contain `sh`, `sleep`, and `tar` for `oc cp`.                   |
 | `STORAGE_CLASS`                                          | Optional StorageClass for generated workspace PVCs. Leave unset to use the cluster default.                                                                                                                                                      |
 | `WORKSPACE_STORAGE`                                      | Per-participant workspace PVC request. Default: `2Gi`.                                                                                                                                                                                           |
-| `PARENT_CPU` and `PARENT_MEMORY`                         | Optional resource requests for long-running parent pods, for example `500m` and `1Gi`.                                                                                                                                                           |
+| `PARENT_CPU` and `PARENT_MEMORY`                         | Resource requests for each long-running parent pod. Defaults: `500m` and `1Gi`, sized for this CRC quickstart; override them for heavier workloads and increase `CRC_CPUS` / `CRC_MEMORY` accordingly. Without resource overrides, `nvflare deploy prepare` generates Helm requests of `2` CPU and `8Gi` memory per parent, which do not fit all three parents on the default CRC size after OpenShift overhead. |
 | `PARENT_PYTHON_PATH`                                     | Python command used by parent pods. Default: `python`, matching `docker/Dockerfile.parent`.                                                                                                                                                      |
 | `ADMIN_PYTHON_PATH`                                      | Python command used by the temporary admin pod. Default: `PARENT_PYTHON_PATH`.                                                                                                                                                                   |
 | `JOB_IMAGE`                                              | Image for dynamically created job pods. Default: `IMAGE`. Set this to the workload image when `IMAGE` is parent-only.                                                                                                                            |

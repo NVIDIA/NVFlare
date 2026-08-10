@@ -12,31 +12,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib.util
+import inspect
 import json
-from unittest.mock import MagicMock, patch
+import sys
+import warnings
+from pathlib import Path
+from types import ModuleType
+from unittest.mock import patch
 
 import pytest
 import torch.nn as nn
 
 from nvflare.apis.dxo import DataKind
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.app_constant import DefaultCheckpointFileName
-from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
-from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.client.config import ConfigKey, TransferType
-from nvflare.client.constants import CLIENT_API_CONFIG
-from nvflare.fuel.utils.class_utils import instantiate_class
+from nvflare.app_opt.sklearn.recipes import KMeansFedAvgRecipe, SklearnFedAvgRecipe, SVMFedAvgRecipe
+from nvflare.client.config import TransferType
+from nvflare.fuel.utils.secret_utils import UnsupportedSecretRefWarning
 from nvflare.job_config.base_fed_job import BaseFedJob
+from nvflare.recipe import set_per_site_config, set_recipe_meta
+from nvflare.recipe.fedavg import FedAvgRecipe as BaseFedAvgRecipe
+
+_TF_FEDAVG_RECIPE_MODULE = "_nvflare_tf_fedavg_recipe_for_test"
 
 
 class SimpleTestModel(nn.Module):
@@ -156,17 +164,17 @@ def assert_recipe_basics(recipe, expected_name, expected_params):
     assert recipe.train_args == expected_params.get("train_args", "--epochs 10")
     assert recipe.min_clients == expected_params.get("min_clients", 2)
     assert recipe.num_rounds == expected_params.get("num_rounds", 5)
-    assert recipe.job is not None
-    assert recipe.job.name == expected_name
+    assert recipe._job is not None
+    assert recipe._job.name == expected_name
 
 
 def get_model_selector(recipe):
-    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
     return server_app.app_config.components.get("model_selector")
 
 
 def get_server_component(recipe, component_id):
-    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
     return server_app.app_config.components.get(component_id)
 
 
@@ -176,54 +184,61 @@ def get_server_component_from_job(job, component_id):
 
 
 def get_server_controller(recipe):
-    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
     return server_app.app_config.workflows[0].controller
+
+
+def get_client_executor(recipe, site_name):
+    client_app = recipe._job._deploy_map[site_name]
+    return client_app.app_config.executors[0].executor
+
+
+def load_tf_fedavg_recipe(monkeypatch):
+    """Load only tf/recipes/fedavg.py so this unit test does not require TensorFlow."""
+    fake_tf_model_module = ModuleType("nvflare.app_opt.tf.job_config.model")
+    fake_tf_model_module.TFModel = object
+    monkeypatch.setitem(sys.modules, "nvflare.app_opt.tf.job_config.model", fake_tf_model_module)
+
+    module_path = Path(__file__).parents[3] / "nvflare" / "app_opt" / "tf" / "recipes" / "fedavg.py"
+    spec = importlib.util.spec_from_file_location(_TF_FEDAVG_RECIPE_MODULE, module_path)
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, _TF_FEDAVG_RECIPE_MODULE, module)
+    spec.loader.exec_module(module)
+    return module.FedAvgRecipe
 
 
 def _get_train_executor_config(client_config):
     for executor_entry in client_config.get("executors", []):
         executor = executor_entry["executor"]
-        if "ClientAPILauncherExecutor" in executor.get("path", ""):
+        if executor.get("path", "").endswith(".ClientAPIExecutor"):
             return executor_entry["executor"]
-    raise AssertionError("External-process Client API launcher executor not found in exported client config")
-
-
-def _make_exported_executor_fl_ctx(config_dir, job_id):
-    workspace = MagicMock()
-    workspace.get_app_config_dir.return_value = str(config_dir)
-    engine = MagicMock()
-    engine.get_workspace.return_value = workspace
-    engine.get_component.return_value = None
-    fl_ctx = MagicMock()
-    fl_ctx.get_engine.return_value = engine
-    fl_ctx.get_job_id.return_value = job_id
-    fl_ctx.get_identity_name.return_value = "site-1"
-    return fl_ctx
-
-
-def _run_exported_external_process_executor_startup(executor_config, config_dir, job_id):
-    executor = instantiate_class(executor_config["path"], executor_config.get("args", {}))
-    pipe = MagicMock()
-    pipe.export.return_value = ("nvflare.fuel.utils.pipe.cell_pipe.CellPipe", {})
-    executor.pipe = pipe
-    fl_ctx = _make_exported_executor_fl_ctx(config_dir=config_dir, job_id=job_id)
-
-    with (
-        patch.object(LauncherExecutor, "initialize", lambda self, fl_ctx: None),
-        # Skip only advisory timeout relationship checks; prepare_config_for_launch()
-        # still exercises required startup validation before writing subprocess config.
-        patch.object(ClientAPILauncherExecutor, "_validate_timeout_config", lambda self, fl_ctx: None),
-        patch.object(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None),
-        patch.object(ClientAPILauncherExecutor, "log_error", lambda self, fl_ctx, msg: None),
-    ):
-        executor.initialize(fl_ctx)
-
-    client_api_config_path = config_dir / CLIENT_API_CONFIG
-    with open(client_api_config_path, "r") as f:
-        return json.load(f)
+    raise AssertionError("ClientAPIExecutor not found in exported client config")
 
 
 class TestFedAvgRecipe:
+    def test_class_docstrings_are_preserved(self):
+        assert BaseFedAvgRecipe.__doc__
+        assert FedAvgRecipe.__doc__
+
+    def test_external_command_secret_ref_is_supported(self, mock_file_system, base_recipe_params, simple_model):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UnsupportedSecretRefWarning)
+            recipe = FedAvgRecipe(
+                name="command_secret_ref",
+                model=simple_model,
+                **base_recipe_params,
+            )
+            set_per_site_config(
+                recipe,
+                {
+                    "site-1": {
+                        "launch_external_process": True,
+                        "command": "env API_TOKEN=${secret:API_TOKEN} python3 -u",
+                    },
+                    "site-2": {},
+                },
+            )
+
     """Test cases for FedAvgRecipe class."""
 
     def test_default_aggregator_initialization(self, mock_file_system, base_recipe_params, simple_model):
@@ -234,6 +249,105 @@ class TestFedAvgRecipe:
         assert recipe.model == simple_model
         # When no aggregator is passed, built-in weighted averaging is used
         assert recipe.aggregator is None
+
+    def test_set_per_site_config_prepares_site_runners_before_client_customization(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        recipe = FedAvgRecipe(name="test_helper_per_site", model=simple_model, **base_recipe_params)
+        config = {
+            "site-1": {"train_args": "--epochs 1"},
+            "site-2": {},
+        }
+
+        assert recipe._job.clients == []
+        set_per_site_config(recipe, config)
+
+        assert recipe.configured_sites() == ["site-1", "site-2"]
+        assert recipe._job.clients == []
+
+        recipe.add_client_config({"configured": True})
+
+        assert recipe._job.clients == ["site-1", "site-2"]
+        assert ALL_SITES not in recipe._job._deploy_map
+        assert get_client_executor(recipe, "site-1")._task_script_args == "--epochs 1"
+        assert get_client_executor(recipe, "site-2")._task_script_args == "--epochs 10"
+
+    def test_external_command_fills_explicit_multinode_launcher_block(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "qa_client.py").write_text("# test trainer\n")
+        recipe = FedAvgRecipe(
+            name="test_multinode_command",
+            model={"class_path": "model.SimpleNetwork", "args": {}},
+            train_script="qa_client.py",
+            min_clients=1,
+            num_rounds=1,
+            launch_external_process=True,
+            command="python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=1",
+        )
+        launcher_spec = {
+            "site-multi": {"slurm": {"nodes": 2, "gpus_per_node": 1}},
+            "site-single": {"slurm": {"nodes": 1, "gpus_per_node": 1}},
+        }
+        set_recipe_meta(recipe, JobMetaKey.JOB_LAUNCHER_SPEC, launcher_spec)
+
+        recipe.export(str(tmp_path / "export"))
+
+        exported_meta = json.loads((tmp_path / "export" / recipe.name / "meta.json").read_text())
+        exported_spec = exported_meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]
+        assert exported_spec["site-multi"]["slurm"]["additional_node_command"] == (
+            "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=1 custom/qa_client.py"
+        )
+        assert "additional_node_command" not in exported_spec["site-single"]["slurm"]
+
+    def test_set_per_site_config_snapshots_overrides_before_deferred_preparation(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        recipe = FedAvgRecipe(name="test_helper_snapshot", model=simple_model, **base_recipe_params)
+        config = {"site-1": {"train_args": "--epochs 1"}, "site-2": {}}
+
+        set_per_site_config(recipe, config)
+        config["site-1"]["train_args"] = "--epochs 99"
+
+        recipe._ensure_client_apps_prepared()
+
+        assert get_client_executor(recipe, "site-1")._task_script_args == "--epochs 1"
+
+    def test_legacy_constructor_config_delegates_to_helper(self, mock_file_system, base_recipe_params, simple_model):
+        config = {"site-1": {"train_args": "--epochs 1"}, "site-2": {}}
+
+        with pytest.warns(FutureWarning, match="set_per_site_config"):
+            recipe = FedAvgRecipe(
+                name="test_legacy_per_site",
+                model=simple_model,
+                per_site_config=config,
+                **base_recipe_params,
+            )
+
+        assert recipe.configured_sites() == ["site-1", "site-2"]
+        assert recipe._job.clients == []
+        recipe._ensure_client_apps_prepared()
+        assert recipe._job.clients == ["site-1", "site-2"]
+        assert get_client_executor(recipe, "site-1")._task_script_args == "--epochs 1"
+
+    def test_failed_per_site_config_leaves_topology_unprepared_and_can_retry(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        recipe = FedAvgRecipe(name="test_per_site_rollback", model=simple_model, **base_recipe_params)
+
+        with pytest.raises(ValueError, match="Framework invalid unsupported"):
+            set_per_site_config(recipe, {"site-1": {}, "site-2": {"framework": "invalid"}})
+
+        assert recipe._job.clients == []
+        assert recipe.configured_sites() == []
+        assert recipe.per_site_config is None
+
+        set_per_site_config(recipe, {"site-1": {}, "site-2": {}})
+        assert recipe._job.clients == []
+        recipe._ensure_client_apps_prepared()
+        assert recipe._job.clients == ["site-1", "site-2"]
+
+    def test_pt_constructor_does_not_expose_fedprox_mu(self):
+        assert "fedprox_mu" not in inspect.signature(FedAvgRecipe).parameters
 
     def test_tensor_disk_offload_warns_when_server_format_is_not_pytorch(
         self, mock_file_system, base_recipe_params, simple_model
@@ -256,9 +370,86 @@ class TestFedAvgRecipe:
         model_selector = get_model_selector(recipe)
         assert isinstance(model_selector, IntimeModelSelector)
         assert model_selector.key_metric == key_metric
+        assert model_selector.negate_key_metric is False
+        assert recipe.key_metric_mode == "max"
         metrics_writer = get_server_component(recipe, "metrics_artifact_writer")
         assert isinstance(metrics_writer, MetricsArtifactWriter)
         assert not hasattr(metrics_writer, "key_metric")
+
+    def test_key_metric_mode_min_pt(self, mock_file_system, base_recipe_params, simple_model):
+        recipe = FedAvgRecipe(
+            name="test_fedavg_key_metric_mode_min",
+            model=simple_model,
+            key_metric="eval_loss",
+            key_metric_mode="min",
+            **base_recipe_params,
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == "eval_loss"
+        assert model_selector.negate_key_metric is True
+        assert recipe.key_metric_mode == "min"
+
+    def test_key_metric_mode_rejects_invalid_value(self, mock_file_system, base_recipe_params, simple_model):
+        with pytest.raises(ValueError, match="key_metric_mode"):
+            FedAvgRecipe(
+                name="test_fedavg_invalid_key_metric_mode",
+                model=simple_model,
+                key_metric_mode="median",
+                **base_recipe_params,
+            )
+
+    def test_key_metric_mode_is_inferred_from_matching_stop_condition(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        recipe = FedAvgRecipe(
+            name="test_fedavg_inferred_key_metric_mode",
+            model=simple_model,
+            key_metric="loss",
+            stop_cond="loss <= 0.2",
+            **base_recipe_params,
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert recipe.key_metric_mode == "min"
+        assert model_selector.negate_key_metric is True
+
+    def test_matching_stop_condition_rejects_conflicting_key_metric_mode(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        with pytest.raises(ValueError, match="both use metric 'loss'.*implies mode 'min'"):
+            FedAvgRecipe(
+                name="test_fedavg_conflicting_key_metric_mode",
+                model=simple_model,
+                key_metric="loss",
+                key_metric_mode="max",
+                stop_cond="loss <= 0.2",
+                **base_recipe_params,
+            )
+
+    def test_different_selection_and_stop_metrics_are_supported(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        recipe = FedAvgRecipe(
+            name="test_fedavg_different_selection_and_stop_metrics",
+            model=simple_model,
+            key_metric="accuracy",
+            key_metric_mode="max",
+            stop_cond="loss <= 0.2",
+            **base_recipe_params,
+        )
+
+        model_selector = get_model_selector(recipe)
+        controller = get_server_controller(recipe)
+        assert recipe.key_metric_mode == "max"
+        assert model_selector.key_metric == "accuracy"
+        assert model_selector.negate_key_metric is False
+        assert controller.stop_condition[0] == "loss"
+
+    def test_base_fed_job_rejects_invalid_key_metric_mode(self):
+        with pytest.raises(ValueError, match="key_metric_mode must be 'min' or 'max'"):
+            BaseFedJob(key_metric_mode="median")
 
     def test_metrics_writer_does_not_copy_policy_from_custom_selector(self):
         key_metric = "custom_score"
@@ -385,7 +576,7 @@ class TestFedAvgRecipe:
 
 
 class TestFedAvgRecipeKeyMetricVariants:
-    """Test key_metric passthrough for NumPy FedAvg recipes."""
+    """Test key_metric passthrough for framework recipe variants."""
 
     def test_key_metric_passthrough_numpy(self, mock_file_system):
         key_metric = "val_loss"
@@ -400,6 +591,88 @@ class TestFedAvgRecipeKeyMetricVariants:
         model_selector = get_model_selector(recipe)
         assert isinstance(model_selector, IntimeModelSelector)
         assert model_selector.key_metric == key_metric
+        assert model_selector.negate_key_metric is False
+        assert recipe.key_metric_mode == "max"
+
+    def test_key_metric_mode_min_numpy(self, mock_file_system):
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_key_metric_mode_min",
+            model=[1.0, 2.0, 3.0],
+            min_clients=2,
+            train_script="mock_train_script.py",
+            key_metric="val_loss",
+            key_metric_mode="min",
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == "val_loss"
+        assert model_selector.negate_key_metric is True
+        assert recipe.key_metric_mode == "min"
+
+    def test_key_metric_mode_min_sklearn(self, mock_file_system):
+        recipe = SklearnFedAvgRecipe(
+            name="test_sklearn_key_metric_mode_min",
+            min_clients=2,
+            model_params={"n_classes": 2},
+            train_script="mock_train_script.py",
+            key_metric="val_loss",
+            key_metric_mode="min",
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == "val_loss"
+        assert model_selector.negate_key_metric is True
+        assert recipe.key_metric_mode == "min"
+
+    def test_key_metric_mode_min_kmeans(self, mock_file_system):
+        recipe = KMeansFedAvgRecipe(
+            name="test_kmeans_key_metric_mode_min",
+            min_clients=2,
+            n_clusters=3,
+            train_script="mock_train_script.py",
+            key_metric="inertia",
+            key_metric_mode="min",
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == "inertia"
+        assert model_selector.negate_key_metric is True
+        assert recipe.key_metric_mode == "min"
+
+    def test_key_metric_mode_min_svm(self, mock_file_system):
+        recipe = SVMFedAvgRecipe(
+            name="test_svm_key_metric_mode_min",
+            min_clients=2,
+            train_script="mock_train_script.py",
+            key_metric="hinge_loss",
+            key_metric_mode="min",
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == "hinge_loss"
+        assert model_selector.negate_key_metric is True
+        assert recipe.key_metric_mode == "min"
+
+    def test_key_metric_mode_min_tf(self, mock_file_system, monkeypatch):
+        TFFedAvgRecipe = load_tf_fedavg_recipe(monkeypatch)
+        recipe = TFFedAvgRecipe(
+            name="test_tf_key_metric_mode_min",
+            min_clients=2,
+            train_script="mock_train_script.py",
+            model_persistor=DummyPersistor(),
+            key_metric="val_loss",
+            key_metric_mode="min",
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == "val_loss"
+        assert model_selector.negate_key_metric is True
+        assert recipe.key_metric_mode == "min"
 
 
 class TestNumpyFedAvgRecipe:
@@ -418,7 +691,7 @@ class TestNumpyFedAvgRecipe:
         assert recipe.name == "test_numpy"
         assert recipe.min_clients == 2
         assert recipe.num_rounds == 3
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_numpy_recipe_with_early_stopping(self, mock_file_system):
         """Test NumpyFedAvgRecipe with early stopping configuration."""
@@ -501,16 +774,70 @@ class TestNumpyFedAvgRecipe:
             "site-1": {"train_args": "--data /path/to/site1"},
             "site-2": {"train_args": "--data /path/to/site2"},
         }
-        recipe = NumpyFedAvgRecipe(
-            name="test_numpy_per_site",
-            model=[1.0, 2.0],
-            min_clients=2,
-            num_rounds=3,
-            train_script="client.py",
-            per_site_config=per_site_config,
-        )
+        with pytest.warns(FutureWarning, match="set_per_site_config"):
+            recipe = NumpyFedAvgRecipe(
+                name="test_numpy_per_site",
+                model=[1.0, 2.0],
+                min_clients=2,
+                num_rounds=3,
+                train_script="client.py",
+                per_site_config=per_site_config,
+            )
 
         assert recipe.per_site_config == per_site_config
+
+    def test_numpy_helper_config_preserves_numpy_runner_exchange_format(self, mock_file_system):
+        from nvflare.client.config import ExchangeFormat
+        from nvflare.fuel.utils.constants import FrameworkType
+
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_helper_format",
+            model=[1.0, 2.0],
+            min_clients=2,
+            train_script="client.py",
+        )
+        set_per_site_config(recipe, {"site-1": {}, "site-2": {}})
+
+        # NumPy recipes identify as RAW to Recipe CSE utilities, but their
+        # training runners must continue exchanging NumPy parameters.
+        assert recipe.framework == FrameworkType.RAW
+        recipe._ensure_client_apps_prepared()
+
+        for site in ["site-1", "site-2"]:
+            executor = get_client_executor(recipe, site)
+            assert executor._params_exchange_format == ExchangeFormat.NUMPY
+
+    def test_numpy_cse_export_preserves_per_site_training_apps(self, tmp_path):
+        """Adding CSE must retain each per-site training executor alongside NPValidator."""
+        from nvflare.recipe.utils import add_cross_site_evaluation
+
+        train_script = tmp_path / "client.py"
+        train_script.write_text("# test client script\n")
+        sites = ["site-1", "site-2"]
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_per_site_cse",
+            model=[1.0, 2.0],
+            min_clients=2,
+            train_script=str(train_script),
+        )
+        set_per_site_config(recipe, {site: {"train_args": f"--site {site}"} for site in sites})
+
+        add_cross_site_evaluation(recipe)
+        export_dir = tmp_path / "export"
+        recipe.export(job_dir=str(export_dir))
+
+        job_dir = export_dir / recipe.name
+        assert not (job_dir / "app").exists()
+        for site in sites:
+            with open(job_dir / f"app_{site}" / "config" / "config_fed_client.json") as f:
+                client_config = json.load(f)
+
+            executors = client_config["executors"]
+            assert any("*" in executor["tasks"] for executor in executors)
+            assert any(
+                "validate" in executor["tasks"] and executor["executor"]["path"].endswith(".NPValidator")
+                for executor in executors
+            )
 
     def test_numpy_recipe_with_none_model_raises_error(self, mock_file_system):
         """Test NumpyFedAvgRecipe with no model raises error."""
@@ -671,25 +998,57 @@ class TestFedAvgRecipeValidation:
 
     def test_per_site_config_rejects_reserved_server_target(self, mock_file_system, base_recipe_params, simple_model):
         """Reserved target 'server' must not be allowed in per_site_config."""
+        recipe = FedAvgRecipe(name="test_reserved_server_target", model=simple_model, **base_recipe_params)
+
         with pytest.raises(ValueError, match="reserved target name"):
-            FedAvgRecipe(
-                name="test_reserved_server_target",
-                model=simple_model,
-                per_site_config={"server": {}},
-                **base_recipe_params,
-            )
+            set_per_site_config(recipe, {"server": {}})
 
     def test_per_site_config_rejects_reserved_all_sites_target(
         self, mock_file_system, base_recipe_params, simple_model
     ):
         """Reserved target '@ALL' must not be allowed in per_site_config."""
+        recipe = FedAvgRecipe(name="test_reserved_all_sites_target", model=simple_model, **base_recipe_params)
+
         with pytest.raises(ValueError, match="reserved target name"):
-            FedAvgRecipe(
-                name="test_reserved_all_sites_target",
-                model=simple_model,
-                per_site_config={ALL_SITES: {}},
-                **base_recipe_params,
-            )
+            set_per_site_config(recipe, {ALL_SITES: {}})
+
+    @pytest.mark.parametrize(
+        ("site_name", "match"),
+        [
+            ("", "valid target name"),
+            ("site/1", "invalid character"),
+            ("site@1", "invalid character"),
+        ],
+    )
+    def test_per_site_config_rejects_invalid_target_name(
+        self, mock_file_system, base_recipe_params, simple_model, site_name, match
+    ):
+        recipe = FedAvgRecipe(name="test_invalid_target_name", model=simple_model, **base_recipe_params)
+
+        with pytest.raises(ValueError, match=match):
+            set_per_site_config(recipe, {site_name: {}, "site-2": {}})
+
+        assert recipe.configured_sites() == []
+        assert recipe._job.clients == []
+
+    def test_per_site_config_requires_at_least_min_clients(self, mock_file_system, base_recipe_params, simple_model):
+        recipe = FedAvgRecipe(name="test_per_site_client_count", model=simple_model, **base_recipe_params)
+
+        with pytest.raises(ValueError, match=r"defines 1 site.*min_clients=2"):
+            set_per_site_config(recipe, {"site-1": {}})
+
+        assert recipe._job.clients == []
+
+    def test_per_site_config_rejects_after_export(self, tmp_path, base_recipe_params, simple_model):
+        train_script = tmp_path / "train.py"
+        train_script.write_text("print('training')\n")
+        params = dict(base_recipe_params, train_script=str(train_script))
+        recipe = FedAvgRecipe(name="test_deployed_per_site", model=simple_model, **params)
+        recipe.export(str(tmp_path))
+        assert recipe._job.clients == [ALL_SITES]
+
+        with pytest.raises(RuntimeError, match="immediately after recipe construction"):
+            set_per_site_config(recipe, {"site-1": {}, "site-2": {}})
 
     def test_per_site_empty_command_override_is_preserved(self, mock_file_system, base_recipe_params, simple_model):
         """Falsy per-site override values (e.g. command='') must not be replaced by defaults."""
@@ -697,16 +1056,17 @@ class TestFedAvgRecipeValidation:
             name="test_empty_command_override",
             model=simple_model,
             launch_external_process=True,
-            per_site_config={"site-1": {"command": ""}},
             **base_recipe_params,
         )
+        set_per_site_config(recipe, {"site-1": {"command": ""}, "site-2": {}})
+        recipe._ensure_client_apps_prepared()
 
-        site_app = recipe.job._deploy_map.get("site-1")
+        site_app = recipe._job._deploy_map.get("site-1")
         assert site_app is not None
-        launcher = site_app.app_config.components.get("launcher")
-        assert launcher is not None
-        assert "python3 -u" not in launcher._script
-        assert launcher._script.startswith(" custom/")
+        executor = site_app.app_config.executors[0].executor
+        assert executor._execution_mode == "external_process"
+        assert executor._command[0].startswith("custom/")
+        assert "python3" not in executor._command
 
     def test_custom_model_persistor_tracks_persistor_id(self, mock_file_system, base_recipe_params, simple_model):
         """Custom PT persistor path should persist comp_ids['persistor_id'] for later workflows."""
@@ -717,10 +1077,10 @@ class TestFedAvgRecipeValidation:
             **base_recipe_params,
         )
 
-        persistor_id = recipe.job.comp_ids.get("persistor_id", "")
+        persistor_id = recipe._job.comp_ids.get("persistor_id", "")
         assert persistor_id
-        assert "locator_id" not in recipe.job.comp_ids
-        server_app = recipe.job._deploy_map.get(SERVER_SITE_NAME)
+        assert "locator_id" not in recipe._job.comp_ids
+        server_app = recipe._job._deploy_map.get(SERVER_SITE_NAME)
         assert server_app is not None
         assert persistor_id in server_app.app_config.components
 
@@ -737,10 +1097,10 @@ class TestFedAvgRecipeValidation:
             **base_recipe_params,
         )
 
-        assert recipe.job.comp_ids.get("persistor_id", "")
-        locator_id = recipe.job.comp_ids.get("locator_id", "")
+        assert recipe._job.comp_ids.get("persistor_id", "")
+        locator_id = recipe._job.comp_ids.get("locator_id", "")
         assert locator_id
-        server_app = recipe.job._deploy_map.get(SERVER_SITE_NAME)
+        server_app = recipe._job._deploy_map.get(SERVER_SITE_NAME)
         assert server_app is not None
         assert server_app.app_config.components.get(locator_id) is locator
 
@@ -894,7 +1254,7 @@ class TestFedAvgRecipeInitialCkpt:
         )
 
         assert recipe.initial_ckpt == "/abs/path/to/model.npy"
-        server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+        server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
         persistor = server_app.app_config.components.get("persistor")
         assert isinstance(persistor, NPModelPersistor)
         assert persistor.source_ckpt_file_full_name == "/abs/path/to/model.npy"
@@ -916,7 +1276,7 @@ class TestFedAvgRecipeInitialCkpt:
             **base_recipe_params,
         )
 
-        server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+        server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
         persistor = server_app.app_config.components.get("persistor")
         assert isinstance(persistor, NPModelPersistor)
         assert persistor.model == [1.0, 2.0, 3.0]
@@ -988,16 +1348,16 @@ class TestFedAvgRecipeDictConfigJobExport:
 
 
 class TestFedAvgRecipeExternalProcessStartup:
-    """Regression coverage for recipe-based external-process executor startup."""
+    """Regression coverage for recipe-based ClientAPIExecutor selection."""
 
-    @pytest.mark.parametrize("top_level_max_resends,expected_max_resends", [(None, 3), (5, 5)])
-    def test_exported_external_process_executor_startup_uses_bounded_max_resends(
-        self, tmp_path, top_level_max_resends, expected_max_resends
-    ):
-        """Simulate the rc4 failure path: export recipe config, reload executor args, then initialize."""
+    @pytest.mark.parametrize(
+        "launch_external_process,expected_mode",
+        [(False, "in_process"), (True, "external_process")],
+    )
+    def test_exported_recipe_uses_selected_client_api_backend(self, tmp_path, launch_external_process, expected_mode):
         train_script = tmp_path / "train.py"
         train_script.write_text("# Dummy train script\n")
-        job_name = f"test_external_process_max_resends_{expected_max_resends}"
+        job_name = f"test_client_api_{expected_mode}"
 
         recipe = FedAvgRecipe(
             name=job_name,
@@ -1006,10 +1366,8 @@ class TestFedAvgRecipeExternalProcessStartup:
             train_args="--epochs 1",
             min_clients=2,
             num_rounds=1,
-            launch_external_process=True,
+            launch_external_process=launch_external_process,
         )
-        if top_level_max_resends is not None:
-            recipe.add_client_config({ConfigKey.MAX_RESENDS: top_level_max_resends})
 
         export_dir = tmp_path / "exported_job"
         recipe.export(job_dir=str(export_dir))
@@ -1022,54 +1380,18 @@ class TestFedAvgRecipeExternalProcessStartup:
         train_executor = _get_train_executor_config(client_config)
         train_executor_args = train_executor.get("args", {})
 
-        assert "PTClientAPILauncherExecutor" in train_executor["path"]
-        assert train_executor_args[ConfigKey.MAX_RESENDS] == 3
-        if top_level_max_resends is not None:
-            assert client_config[ConfigKey.MAX_RESENDS] == top_level_max_resends
-
-        client_api_config = _run_exported_external_process_executor_startup(
-            train_executor, config_dir=config_dir, job_id=job_name
+        assert train_executor["path"].endswith(".ClientAPIExecutor")
+        assert train_executor_args["execution_mode"] == expected_mode
+        assert not any(
+            "LauncherExecutor" in component.get("path", "") or "Pipe" in component.get("path", "")
+            for component in client_config.get("components", [])
         )
-
-        assert client_api_config[ConfigKey.TASK_EXCHANGE][ConfigKey.MAX_RESENDS] == expected_max_resends
-
-    def test_old_rc4_exported_null_max_resends_still_rejects_at_startup(self, tmp_path):
-        """Old exported configs with executor max_resends: null must fail instead of running unbounded."""
-        train_script = tmp_path / "train.py"
-        train_script.write_text("# Dummy train script\n")
-        job_name = "test_external_process_null_max_resends"
-
-        recipe = FedAvgRecipe(
-            name=job_name,
-            model={"class_path": "model.SimpleNetwork", "args": {}},
-            train_script=str(train_script),
-            train_args="--epochs 1",
-            min_clients=2,
-            num_rounds=1,
-            launch_external_process=True,
-        )
-
-        export_dir = tmp_path / "exported_job"
-        recipe.export(job_dir=str(export_dir))
-
-        config_dir = export_dir / job_name / "app" / "config"
-        client_config_path = config_dir / "config_fed_client.json"
-        with open(client_config_path, "r") as f:
-            client_config = json.load(f)
-
-        train_executor = _get_train_executor_config(client_config)
-        train_executor["args"][ConfigKey.MAX_RESENDS] = None
-        client_config_path.write_text(json.dumps(client_config))
-        with open(client_config_path, "r") as f:
-            reloaded_client_config = json.load(f)
-        reloaded_train_executor = _get_train_executor_config(reloaded_client_config)
-
-        with pytest.raises(ValueError, match="max_resends is None"):
-            _run_exported_external_process_executor_startup(
-                reloaded_train_executor, config_dir=config_dir, job_id=job_name
-            )
-
-        assert not (config_dir / CLIENT_API_CONFIG).exists()
+        if launch_external_process:
+            assert train_executor_args["command"][:2] == ["python3", "-u"]
+            assert train_executor_args["command"][-2:] == ["--epochs", "1"]
+        else:
+            assert train_executor_args["task_script_path"] == str(train_script)
+            assert train_executor_args["task_script_args"] == "--epochs 1"
 
 
 class TestNumpyFedAvgRecipeInitialCkpt:

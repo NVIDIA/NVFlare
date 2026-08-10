@@ -152,9 +152,13 @@ add_experiment_tracking(recipe, "wandb", tracking_config=wandb_config)
 
 ```python
 # Each client logs to its own WandB run
-for site_name in ["site-1", "site-2"]:
-    receiver = WandBReceiver(**client_config)
-    recipe.job.to(receiver, site_name, id="wandb_receiver")
+add_experiment_tracking(
+    recipe,
+    "wandb",
+    tracking_config=client_config,
+    client_side=True,
+    server_side=False,
+)
 ```
 
 **Event Flow**:
@@ -231,7 +235,12 @@ python job.py \
 - `--launch_external_process`: Run training in external process
 - `--streamed_to_clients`: Enable client-side tracking (default: disabled)
 - `--disable_server_tracking`: Disable server-side tracking (default: enabled)
-- `--export_config`: Export config without running
+
+To export the Recipe job without running it:
+
+```bash
+python job.py --export --export-dir /tmp/nvflare/jobs/job_config
+```
 
 ---
 

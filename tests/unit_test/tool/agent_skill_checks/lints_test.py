@@ -250,7 +250,7 @@ def test_run_v1_lints_parses_quoted_nvflare_command_with_shlex(tmp_path):
     _write_skill(
         tmp_path / "skills",
         "nvflare-command-skill",
-        body='Run `nvflare agent inspect "./my project/train.py" --redact on`.\n',
+        body='Run `nvflare agent inspect source "./my project/train.py" --redact on`.\n',
     )
 
     result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_COMMAND_DRIFT])
@@ -325,6 +325,37 @@ def test_run_v1_lints_reports_missing_fixture_file(tmp_path):
     _write_skill(tmp_path / "skills", "nvflare-fixture-skill", evals=evals, write_fixture=False)
 
     result = run_v1_lints(tmp_path / "skills")
+
+    assert _has_finding(result, LINT_SKILL_FIXTURE, "skill-fixture-file-missing")
+    _assert_structured_findings(result)
+
+
+def test_run_v1_lints_accepts_directory_fixture_with_files(tmp_path):
+    # A dataset directory (e.g. an image folder) is a valid fixture when it
+    # contains at least one file; an empty directory is not.
+    evals = _default_evals("nvflare-fixture-skill")
+    evals["evals"][0]["files"] = ["files/images/site-1"]
+    _write_skill(tmp_path / "skills", "nvflare-fixture-skill", evals=evals, write_fixture=False)
+    files_dir = tmp_path / "dev_tools" / "agent" / "skill_evals" / "nvflare-fixture-skill" / "files"
+    site_dir = files_dir / "images" / "site-1"
+    site_dir.mkdir(parents=True)
+    site_dir.joinpath("img_0001.png").write_bytes(b"\x89PNG fake")
+    files_dir.joinpath("README.md").write_text("# Fixtures\nsynthetic images\n", encoding="utf-8")
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_FIXTURE])
+
+    assert not _has_finding(result, LINT_SKILL_FIXTURE, "skill-fixture-file-missing")
+
+
+def test_run_v1_lints_rejects_empty_directory_fixture(tmp_path):
+    evals = _default_evals("nvflare-fixture-skill")
+    evals["evals"][0]["files"] = ["files/images/site-1"]
+    _write_skill(tmp_path / "skills", "nvflare-fixture-skill", evals=evals, write_fixture=False)
+    files_dir = tmp_path / "dev_tools" / "agent" / "skill_evals" / "nvflare-fixture-skill" / "files"
+    (files_dir / "images" / "site-1").mkdir(parents=True)
+    files_dir.joinpath("README.md").write_text("# Fixtures\n", encoding="utf-8")
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_FIXTURE])
 
     assert _has_finding(result, LINT_SKILL_FIXTURE, "skill-fixture-file-missing")
     _assert_structured_findings(result)
@@ -723,13 +754,39 @@ def test_run_v1_lints_undrifted_command_in_apostrophe_line_passes(tmp_path):
     _write_skill(
         tmp_path / "skills",
         "nvflare-command-skill",
-        body="Run `nvflare agent inspect` to check the server's state.\n",
+        body="Run `nvflare agent inspect source <path>` to check the server's state.\n",
     )
 
     result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_COMMAND_DRIFT])
 
     assert result["status"] == "ok"
     assert result["findings"] == []
+
+
+def test_run_v1_lints_rejects_unknown_inspect_capability(tmp_path):
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-command-skill",
+        body="Run `nvflare agent inspect bogus <path>`.\n",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_COMMAND_DRIFT])
+
+    finding = _finding(result, LINT_SKILL_COMMAND_DRIFT, "skill-command-drift")
+    assert "unknown nvflare agent inspect capability 'bogus'" in finding["message"]
+
+
+def test_run_v1_lints_rejects_removed_generic_inspect_command(tmp_path):
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-command-skill",
+        body="Run `nvflare agent inspect ./train.py`.\n",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_COMMAND_DRIFT])
+
+    finding = _finding(result, LINT_SKILL_COMMAND_DRIFT, "skill-command-drift")
+    assert "requires a source or data capability" in finding["message"]
 
 
 def test_iter_files_no_follow_skips_symlinked_file(tmp_path):

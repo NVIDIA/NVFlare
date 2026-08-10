@@ -4,6 +4,8 @@
 
 This document describes how to run NVIDIA FLARE in an SLURM-managed cluster environment for testing and development purposes. Both the NVFlare server and client run together in a single SLURM job.
 
+This standalone development workflow does not use the NVFlare Slurm job launcher.
+
 **Note**: This approach is designed for testing/development on a single cluster. For production deployments with multiple sites, consider deploying the NVFlare server on standalone infrastructure.
 
 ## Quick Reference
@@ -157,10 +159,10 @@ SLURM Job (2 nodes allocated)
    # Start NVFlare server and client
    python3 job.py --client_ids dolly --data_path ${PWD}/dataset \
        --gpu "[0,1,2,3,4,5,6,7]" --multi_node \
-       --workspace_dir ${PWD}/workspace --job_dir ${PWD}/jobs
+       --workspace_dir ${PWD}/workspace
    ```
 
-3. **`job.py` creates and exports FL job**:
+3. **`job.py` creates and executes the FL job**:
    - Uses `FedAvgRecipe` to configure the federated learning job
    - For multi-node mode (`--multi_node` flag):
      - Sets command via `per_site_config`: `"command": "bash custom/client_wrapper.sh"`
@@ -223,8 +225,7 @@ python3 job.py \
     --train_mode SFT \
     --message_mode tensor \
     --wandb_project my_llm_project \
-    --workspace_dir ${PWD}/workspace \
-    --job_dir ${PWD}/jobs
+    --workspace_dir ${PWD}/workspace
 ```
 
 ## Testing
@@ -236,7 +237,7 @@ When testing with a single node, you can either:
 ```bash
 python3 job.py --client_ids dolly --data_path ./dataset \
     --gpu "[0,1,2,3,4,5,6,7]" \
-    --workspace_dir ./workspace --job_dir ./jobs
+    --workspace_dir ./workspace
 ```
 
 **Option 2: With `--multi_node` flag** (uses wrapper script):

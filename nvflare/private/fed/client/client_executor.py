@@ -23,7 +23,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import AdminCommandNames, ConnPropKey, FLContextKey, RunProcessKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobLauncherSpec, JobProcessArgs, JobReturnCode
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
@@ -42,8 +42,51 @@ REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: PROCESS_EXIT_REASON[ProcessExitCode.EXCEPTION],
     ProcessExitCode.UNSAFE_COMPONENT: PROCESS_EXIT_REASON[ProcessExitCode.UNSAFE_COMPONENT],
     ProcessExitCode.CONFIG_ERROR: PROCESS_EXIT_REASON[ProcessExitCode.CONFIG_ERROR],
+    ProcessExitCode.INFRASTRUCTURE_ERROR: PROCESS_EXIT_REASON[ProcessExitCode.INFRASTRUCTURE_ERROR],
     JobReturnCode.ABORTED: "aborted",
 }
+
+
+class _PendingJobHandle(JobHandleSpec):
+    """Hold an abort request until a launcher returns the real job handle."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._job_handle = None
+        self._pending_heartbeat_cleanup: bool | None = None
+
+    def attach(self, job_handle: JobHandleSpec) -> bool | None:
+        with self._lock:
+            self._job_handle = job_handle
+            return self._pending_heartbeat_cleanup
+
+    def terminate(self, heartbeat_cleanup=False):
+        with self._lock:
+            job_handle = self._job_handle
+            if job_handle is None:
+                # Preserve a real abort if stop requests race before attachment.
+                if self._pending_heartbeat_cleanup is None or not heartbeat_cleanup:
+                    self._pending_heartbeat_cleanup = heartbeat_cleanup
+                return
+        if heartbeat_cleanup:
+            terminate_for_heartbeat_cleanup = getattr(job_handle, "_terminate_for_heartbeat_cleanup", None)
+            if terminate_for_heartbeat_cleanup:
+                return terminate_for_heartbeat_cleanup()
+        return job_handle.terminate()
+
+    def poll(self):
+        with self._lock:
+            job_handle = self._job_handle
+        if job_handle is None:
+            return None
+        return job_handle.poll()
+
+    def wait(self):
+        with self._lock:
+            job_handle = self._job_handle
+        if job_handle is None:
+            raise RuntimeError("cannot wait for a pending job handle before it is attached")
+        return job_handle.wait()
 
 
 class ClientExecutor(ABC):
@@ -251,7 +294,28 @@ class JobExecutor(ClientExecutor):
                 job_args[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", parent_conn_sec)
 
         fl_ctx.set_prop(key=FLContextKey.JOB_PROCESS_ARGS, value=job_args, private=True, sticky=False)
-        job_handle = job_launcher.launch_job(job_meta, fl_ctx)
+        pending_handle = _PendingJobHandle()
+        with self.lock:
+            if job_id in self.run_processes:
+                raise RuntimeError(f"client app for job '{job_id}' is still registered")
+            self.run_processes[job_id] = {
+                RunProcessKey.JOB_HANDLE: pending_handle,
+                RunProcessKey.STATUS: ClientStatus.STARTING,
+            }
+        try:
+            job_handle = job_launcher.launch_job(job_meta, fl_ctx)
+            if job_handle is None:
+                raise RuntimeError(f"job launcher returned no job handle for job '{job_id}'")
+        except BaseException:
+            with self.lock:
+                if self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE) is pending_handle:
+                    self.run_processes.pop(job_id, None)
+            raise
+
+        heartbeat_cleanup = pending_handle.attach(job_handle)
+        if heartbeat_cleanup is not None:
+            self.abort_app(job_id, heartbeat_cleanup=heartbeat_cleanup)
+
         self.logger.info(f"Launched job {job_id} with job launcher: {type(job_launcher)} ")
 
         fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
@@ -259,12 +323,6 @@ class JobExecutor(ClientExecutor):
         engine.fire_event(EventType.AFTER_JOB_LAUNCH, fl_ctx)
 
         client.multi_gpu = False
-
-        with self.lock:
-            self.run_processes[job_id] = {
-                RunProcessKey.JOB_HANDLE: job_handle,
-                RunProcessKey.STATUS: ClientStatus.STARTING,
-            }
 
         thread = threading.Thread(
             target=self._wait_child_process_finish,
@@ -422,21 +480,28 @@ class JobExecutor(ClientExecutor):
             self.logger.error(f"reset_errors execution exception: {secure_format_exception(e)}.")
             secure_log_traceback()
 
-    def abort_app(self, job_id):
+    def abort_app(self, job_id, heartbeat_cleanup=False):
         """Aborts the running app.
 
         Args:
             job_id: the job_id
+            heartbeat_cleanup: whether heartbeat cleanup requested the abort rather than a user or administrator
         """
         # When the HeartBeat cleanup process try to abort the worker process, the job maybe already terminated,
         # Use retry to avoid print out the error stack trace.
         retry = 1
         while retry >= 0:
             process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
-            if process_status == ClientStatus.STARTED:
+            if process_status in (ClientStatus.STARTING, ClientStatus.STARTED):
                 try:
                     with self.lock:
                         job_handle = self.run_processes[job_id][RunProcessKey.JOB_HANDLE]
+                    if process_status == ClientStatus.STARTING:
+                        if heartbeat_cleanup:
+                            job_handle.terminate(heartbeat_cleanup=True)
+                        else:
+                            job_handle.terminate()
+                        break
                     data = {}
                     request = new_cell_message({}, data)
                     self.client.cell.fire_and_forget(
@@ -447,7 +512,7 @@ class JobExecutor(ClientExecutor):
                         optional=True,
                     )
                     self.logger.debug("abort sent to worker")
-                    t = threading.Thread(target=self._terminate_job, args=[job_handle, job_id])
+                    t = threading.Thread(target=self._terminate_job, args=[job_handle, job_id, heartbeat_cleanup])
                     t.start()
                     t.join()
                     break
@@ -497,7 +562,7 @@ class JobExecutor(ClientExecutor):
             optional=optional,
         )
 
-    def _terminate_job(self, job_handle, job_id):
+    def _terminate_job(self, job_handle, job_id, heartbeat_cleanup=False):
         max_wait = 10.0
         done = False
         start = time.time()
@@ -514,7 +579,10 @@ class JobExecutor(ClientExecutor):
 
             time.sleep(0.05)  # we want to quickly check
 
-        job_handle.terminate()
+        if heartbeat_cleanup:
+            job_handle.terminate(heartbeat_cleanup=True)
+        else:
+            job_handle.terminate()
         self.logger.info(f"run ({job_id}): child worker process terminated")
 
     def abort_task(self, job_id):

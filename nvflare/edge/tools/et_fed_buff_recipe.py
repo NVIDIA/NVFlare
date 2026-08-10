@@ -34,6 +34,11 @@ _DEVICE_CONFIG_FILE_NAME = "device_config.json"
 class ETFedBuffRecipe(EdgeFedBuffRecipe):
     """Edge Training FedBuff Recipe for embedded/edge device training.
 
+    Recipe parameters and nested manager configuration values become part of the generated
+    job definition and must never contain actual secrets. Read secrets from site environment
+    variables or mounted files; references are supported only where documented in
+    :mod:`nvflare.recipe.secrets`.
+
     This recipe extends EdgeFedBuffRecipe for edge devices with DeviceModel wrapper.
 
     Args:

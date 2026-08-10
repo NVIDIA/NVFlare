@@ -48,11 +48,14 @@ from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import extract_participants, require_signed_jobs, set_message_security_data
 from nvflare.security.logging import secure_format_exception
 
+WORKSPACE_SAVE_RETRY_GRACE_TIME = 60
+
 
 @dataclass
 class _FinishedJobState:
     status: RunStatus
-    workspace_saved: bool = False
+    workspace_archival_complete: bool = False
+    workspace_save_started_at: float | None = None
 
 
 def _send_to_clients(admin_server, client_sites: List[str], engine, message, timeout=None, optional=False):
@@ -171,20 +174,18 @@ class JobRunner(FLComponent):
                         deploy_detail.append(f"server: {err}")
                         raise RuntimeError(f"Failed to deploy app '{app_name}': {err}")
 
-                    from_hub_site = job.meta.get(JobMetaKey.FROM_HUB_SITE.value)
-                    if not from_hub_site:
-                        app_path = workspace.get_app_dir(job.job_id)
-                        root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
-                        sig_file = os.path.join(app_path, NVFLARE_SIG_FILE)
-                        if os.path.exists(sig_file):
-                            if not verify_folder_signature(app_path, root_ca_path):
-                                err = "job signature verification failed"
-                                deploy_detail.append(f"server: {err}")
-                                raise RuntimeError(f"Failed to verify app '{app_name}': {err}")
-                        elif require_signed_jobs(workspace):
-                            err = "unsigned job rejected — require_signed_jobs is enabled"
+                    app_path = workspace.get_app_dir(job.job_id)
+                    root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
+                    sig_file = os.path.join(app_path, NVFLARE_SIG_FILE)
+                    if os.path.exists(sig_file):
+                        if not verify_folder_signature(app_path, root_ca_path):
+                            err = "job signature verification failed"
                             deploy_detail.append(f"server: {err}")
-                            raise RuntimeError(f"UNSIGNED_JOB_REJECTED: {err}")
+                            raise RuntimeError(f"Failed to verify app '{app_name}': {err}")
+                    elif require_signed_jobs(workspace):
+                        err = "unsigned job rejected — require_signed_jobs is enabled"
+                        deploy_detail.append(f"server: {err}")
+                        raise RuntimeError(f"UNSIGNED_JOB_REJECTED: {err}")
 
                     self.log_info(
                         fl_ctx, f"Application {app_name} deployed to the server for job: {run_number}", fire_event=False
@@ -423,17 +424,27 @@ class JobRunner(FLComponent):
                                 self._finished_job_states[job.job_id] = finished_state
                             status = finished_state.status
                             # Publish terminal status only after artifacts are ready for download.
-                            if not finished_state.workspace_saved:
+                            if not finished_state.workspace_archival_complete:
                                 try:
                                     self._save_workspace(completion_ctx)
-                                    with self.lock:
-                                        finished_state.workspace_saved = True
                                 except Exception as e:
-                                    self.log_exception(
+                                    now = time.monotonic()
+                                    if finished_state.workspace_save_started_at is None:
+                                        finished_state.workspace_save_started_at = now
+                                    if now - finished_state.workspace_save_started_at < WORKSPACE_SAVE_RETRY_GRACE_TIME:
+                                        self.log_exception(
+                                            completion_ctx,
+                                            f"Failed to save workspace for finished job ({job.job_id}): "
+                                            f"{secure_format_exception(e)}",
+                                        )
+                                        continue
+                                    self.log_error(
                                         completion_ctx,
-                                        f"Failed to save workspace for finished job ({job.job_id}): {secure_format_exception(e)}",
+                                        f"Workspace archival for finished job ({job.job_id}) kept failing for "
+                                        f"{WORKSPACE_SAVE_RETRY_GRACE_TIME} seconds; publishing terminal status without "
+                                        f"archived artifacts: {secure_format_exception(e)}",
                                     )
-                                    continue
+                                finished_state.workspace_archival_complete = True
                             try:
                                 job_manager.set_status(job.job_id, status, completion_ctx)
                             except Exception as e:
@@ -467,11 +478,14 @@ class JobRunner(FLComponent):
 
             finished = run_process.get(RunProcessKey.PROCESS_FINISHED, False)
             process_return_code = run_process.get(RunProcessKey.PROCESS_RETURN_CODE)
-            if process_return_code == JobReturnCode.ABORTED:
+            if process_return_code == ProcessExitCode.INFRASTRUCTURE_ERROR:
+                status = RunStatus.FINISHED_ABNORMAL
+            elif process_return_code == JobReturnCode.ABORTED:
                 status = RunStatus.FINISHED_ABORTED
             elif process_return_code in (
                 ProcessExitCode.CONFIG_ERROR,
                 ProcessExitCode.EXCEPTION,
+                ProcessExitCode.UNSAFE_COMPONENT,
                 JobReturnCode.EXECUTION_ERROR,
             ):
                 # An external failure (e.g. launcher resource timeout) marked
@@ -501,26 +515,34 @@ class JobRunner(FLComponent):
         run_dir = workspace.get_run_dir(job_id)
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
-        ws_dirs = [run_dir]
-
         result_root = workspace.get_result_root(job_id)
-        if result_root not in ws_dirs:
-            ws_dirs.append(result_root)
-
         log_root = workspace.get_log_root(job_id)
-        if log_root not in ws_dirs:
-            ws_dirs.append(log_root)
-
         audit_root = workspace.get_audit_root(job_id)
-        if audit_root not in ws_dirs:
-            ws_dirs.append(audit_root)
+
+        ws_dirs = []
+        seen_paths = set()
+        for path in (run_dir, result_root, log_root, audit_root):
+            if path in seen_paths:
+                continue
+            seen_paths.add(path)
+            if not os.path.isdir(path):
+                self.log_warning(fl_ctx, f"Skipping unavailable workspace archive source for job {job_id}: {path}")
+                continue
+            ws_dirs.append(path)
+
+        if not ws_dirs:
+            self.log_warning(fl_ctx, f"No workspace archive sources are available for finished job {job_id}")
+            return
 
         location = job_manager.save_workspace(job_id, ws_dirs, fl_ctx)
         self.log_debug(fl_ctx, f"Workspace {ws_dirs} saved to {location}")
 
-        # remove all ws dirs
+        # Only remove sources after the complete set has been archived successfully.
         for d in ws_dirs:
-            shutil.rmtree(d)
+            try:
+                shutil.rmtree(d)
+            except FileNotFoundError:
+                self.log_warning(fl_ctx, f"Workspace archive source disappeared before cleanup for job {job_id}: {d}")
 
     def run(self, fl_ctx: FLContext):
         """Starts job runner."""
@@ -697,7 +719,7 @@ class JobRunner(FLComponent):
             job.run_aborted = True
             return ""
         else:
-            self.log_error(fl_ctx, f"Job {job_id} is not running. It can not be stopped.")
+            self.log_info(fl_ctx, f"Job {job_id} is not running. It can not be stopped.")
             return f"Job {job_id} is not running."
 
     def fail_run(self, job_id: str, process_return_code: int, fl_ctx: FLContext):
@@ -710,7 +732,8 @@ class JobRunner(FLComponent):
                 run_process = engine.run_processes.get(job_id)
             if run_process is None:
                 run_process = {RunProcessKey.PARTICIPANTS: {}}
-            run_process[RunProcessKey.PROCESS_RETURN_CODE] = process_return_code
+            if run_process.get(RunProcessKey.PROCESS_RETURN_CODE) != ProcessExitCode.INFRASTRUCTURE_ERROR:
+                run_process[RunProcessKey.PROCESS_RETURN_CODE] = process_return_code
             engine.exception_run_processes[job_id] = run_process
         self._stop_run(job_id, fl_ctx)
 
@@ -720,7 +743,7 @@ class JobRunner(FLComponent):
             fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
             return ""
         else:
-            self.log_error(fl_ctx, f"Job {job_id} is not running. It can not be failed.")
+            self.log_info(fl_ctx, f"Job {job_id} is not running. It can not be failed.")
             return f"Job {job_id} is not running."
 
     def stop_all_runs(self, fl_ctx: FLContext):

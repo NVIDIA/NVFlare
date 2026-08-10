@@ -1,0 +1,308 @@
+# Slurm Job Launcher Design
+
+Status: implemented
+
+This document describes the architecture and behavioral contract of the NVFlare Slurm job launcher. Operator setup
+and configuration are in `docs/user_guide/admin_guide/deployment/slurm_job_launcher.rst`.
+
+## Purpose and scope
+
+The launcher runs each NVFlare client job process (CJ) or server job process (SJ) as a Slurm batch job. Slurm owns
+placement and resource enforcement. NVFlare submits, monitors, and cancels jobs started by the current parent process
+through the existing `JobLauncherSpec` and `JobHandleSpec` interfaces.
+
+Supported execution modes are:
+
+- one-node bare, Apptainer, and Pyxis jobs;
+- multi-node client jobs as launcher-owned node groups, bare or containerized;
+- trusted bare multi-node jobs with application-owned fan-out.
+
+The deployment targets one Slurm cluster, with scheduler routing controlled by trusted site policy. The internal
+worker-to-parent connection is clear TCP and runs on a trusted site network.
+
+## Main components
+
+```text
+NVFlare parent
+    |
+    | JobLauncherSpec / JobHandleSpec
+    v
+SlurmJobLauncher -> SlurmJobManager -> sbatch, squeue, sacct, scancel
+                         |
+                         v
+                 Slurm CJ or SJ allocation
+```
+
+The launcher resolves site, study, and job configuration into one immutable launch plan. The manager owns scheduler
+access and transient job artifacts. A live `SlurmJobHandle` holds the scheduler ID, whether cancellation was
+requested, whether it was a user abort, the pending timer, accounting miss count, and final result. After launch,
+the client or server framework calls
+`JobHandle.wait()` once in a background thread. For Slurm, `wait()` polls the scheduler and accounting until the
+allocation is terminal, cleans the job artifacts, and returns control to normal NVFlare completion handling.
+
+## Deployment and workspace
+
+`nvflare deploy prepare --output <workspace>` creates the complete runtime workspace directly. The output must be a
+stable shared-filesystem path visible to the parent and eligible compute nodes.
+
+The generated `start_slurm.sh` is an optional convenience wrapper. It sets the runtime workspace and starts the
+parent in the foreground. An external service manager may perform the same operations.
+
+Prepare can also create an optional `parent.slurm` script for running a client parent in a Slurm allocation. Server
+parents run on a service or login host with a stable public endpoint.
+
+The prepare host does not resolve scheduler commands. It preserves optional configured absolute paths in the workspace,
+and generated parent-submission guidance uses `sbatch` from the submission host's `PATH`. After the parent reaches
+its actual runtime host and trusted environment setup has run, bootstrap resolves `sbatch`, `squeue`, `sacct`, and
+`scancel` and freezes canonical paths in memory for that parent process. A restart therefore follows changes to a
+cluster-managed stable symlink without requiring a new prepare.
+
+Operators use a separate output for each NVFlare site or federation and run one parent per workspace. Preparing
+again with the same output replaces the complete workspace, including runtime data. Stop the parent and preserve
+required runs, snapshots, and server job data before replacement.
+
+The workspace and all configured images or mounts must be visible at the same absolute paths from the submit host
+and eligible compute nodes. The filesystem must support coherent exclusive create and atomic rename.
+
+## Configuration ownership
+
+| Owner | Source | Controls |
+| --- | --- | --- |
+| Site | `slurm.yaml` and prepare `--output` | workspace, default sandbox/image, scheduler policy, setup, commands, timeouts |
+| Site study policy | `local/study_runtime.yaml` | study image, mounts, environment, sandbox/setup/routing overrides |
+| Job | `launcher_spec` and `resource_spec` | BYOC-authorized image, node topology, additional-node command, CPU, memory, time, GPU total |
+
+The effective image is job, then study, then site. A job image uses the same BYOC authorization as Docker and
+Kubernetes. Container images must be absolute files visible on the compute nodes. Partition, account, QOS, sandbox,
+setup commands, and scheduler options remain under site or study policy.
+
+The portable `resource_spec[site].num_of_gpus` remains the total GPU request. Slurm topology is supplied through the
+effective Slurm launcher block. A job may reduce, but not increase, the site's pending timeout.
+
+Site files are trusted policy. They are checked for structure and for mistakes that could expose launcher-owned
+workspace or credential paths, but are not treated as hostile input. Job values and scheduler output remain
+untrusted and are validated at their boundaries.
+
+## Job artifacts and scheduler identity
+
+Each launched job uses one transient directory:
+
+```text
+.nvflare_slurm/jobs/<sha256-job-id>/
+  batch.sh
+  node.sh        # multi-node node groups only
+  secret.env
+  sandbox_root/  # container modes only
+```
+
+The job key is the SHA-256 digest of the NVFlare job ID. Runtime identity is deterministic:
+
+```text
+job name = nvfl-<first-32-site-name-characters>-<first-8-job-key>
+comment  = nvfl:<job-id>
+```
+
+The scheduler ID exists only in the live handle. The launcher removes job artifacts after submission failure or
+terminal completion. A leftover directory blocks relaunch of the same job ID until an operator verifies that no old
+allocation uses it and removes it.
+
+Duplicate protection is also in memory: one parent refuses a second launch while its live-handle map contains the
+same job ID.
+
+## Submission
+
+Launch proceeds as follows:
+
+1. Resolve one launch plan and reject a duplicate live handle for the same job.
+2. Create the job artifact directory and render its batch and secret-environment files.
+3. Invoke `sbatch --parsable` once with structured arguments, a scrubbed scheduler environment, and the configured
+   `submit_timeout`.
+4. Accept exactly one parsed bare job ID, add its handle to the live-handle map, and return it.
+
+An invocation timeout, exception, or output other than one line matching the Slurm job-ID format fails the launch.
+The manager immediately removes the job's artifacts.
+
+An out-of-contract `job-id;cluster` result triggers one best-effort `scancel -M`, a critical log, and an
+infrastructure launch failure.
+
+## Monitoring and results
+
+Live lookup uses `squeue --name=<job-name>` for the submitting user and selects the row with the handle's job ID.
+The site-qualified name avoids collisions when several NVFlare sites share a Slurm user and run the same federated
+job. Rows with other IDs are still ignored, and the selected row must match the numeric UID, full name, and derived
+comment.
+
+When a job is absent from `squeue`, `sacct --jobs=<job-id>` is authoritative. The returned allocation must match the
+exact ID, deterministic job name, and submitting user.
+
+An accounting outage leaves the handle non-terminal. If five successful `sacct` queries at least six seconds apart
+all return no record for a known job, the launcher reports an infrastructure exception. It does not infer a worker
+result from the missing record.
+
+`pending_timeout` starts when the scheduler first reports `PENDING`, `CONFIGURING`, `REQUEUE_HOLD`,
+`RESV_DEL_HOLD`, or `SPECIAL_EXIT`. Other ordinary live states remain active. Submission disables requeue, and the
+batch script refuses a restarted allocation before starting the worker.
+
+Slurm `State` and `ExitCode` determine the scheduler fallback result. The generic NVFlare
+`_process_rc.txt` handling may refine the application result after `wait()`.
+
+## Cancellation, startup, and shutdown
+
+`terminate()` records user-abort intent and requests cancellation. A pending-timeout expiry also requests
+cancellation. Every cancellation repeats live ownership verification before calling `scancel -Q --me`. A
+current-parent user abort maps scheduler `CANCELLED` or `COMPLETED` to `ABORTED`, so abort intent wins a race with
+normal completion.
+
+At startup, the manager validates the private runtime workspace and briefly retries the required accounting probe.
+
+During normal shutdown, the framework starts running-job termination before firing `SYSTEM_END`; captured handles
+are terminated through that framework abort path. The Slurm `SYSTEM_END` handler only closes launch admission after
+any in-progress submission boundary; it does not perform a second cancellation sweep.
+
+## Accepted crash limitations
+
+- Running a second parent on an already-active workspace is unsupported. Both parents would share deterministic job
+  artifact paths and scheduler ownership markers. The launcher provides no refusal mechanism.
+- After a parent crash, surviving Slurm allocations and their job artifacts are not cleaned up by the launcher. This
+  matches the Docker and Kubernetes launchers; allocations remain bounded by their Slurm wall-time and normal
+  FL-layer rejection.
+- An `sbatch` timeout fails the FL dispatch even if Slurm accepted the job, matching a timed-out Docker or Kubernetes
+  create. Removing `secret.env` prevents a pending allocation from starting unless a later launch of the same
+  job ID recreates that deterministic path first. Sites can increase `submit_timeout` to reduce this risk.
+
+## Execution backends and secrets
+
+| Sandbox | Execution | Trust model | Multi-node |
+| --- | --- | --- | --- |
+| `none` | worker directly in the allocation | trusted site workload | yes; launcher-owned node group or application-owned fan-out |
+| `apptainer` | contained unprivileged `apptainer exec` | cluster-accepted isolation | yes; launcher-owned node group only |
+| `pyxis` | read-only Pyxis/Enroot `srun` step | trusted container packaging | yes; launcher-owned node group only |
+
+Every backend uses `--export=NIL`, refuses requeue, and passes the standard NVFlare worker arguments without shell
+re-parsing. Bootstrap credentials and study `secret_env` values are written to a mode-0600 file, sourced with tracing
+disabled, and deleted before the worker starts. Bootstrap credentials are delivered to the job process through the
+shared `JobProcessEnv` contract and do not appear in its command line.
+
+Container mounts have normalized absolute destinations, protected launcher paths cannot be shadowed, and secret
+mounts are read-only. Apptainer uses the accepted containment and mount restrictions; Pyxis uses a read-only image,
+no home mount, and no image entrypoint. Backend isolation still depends on cluster configuration and must be
+accepted by the site.
+
+## Multi-node node groups
+
+A client job opts into launcher-owned multi-node execution by setting `nodes > 1` and
+`additional_node_command` in its effective Slurm launcher block. The launcher starts one task per allocated node.
+Node rank 0 runs the normal CJ worker unchanged; every other node runs `additional_node_command`. Extra nodes do
+not register separately with the server, and cross-node coordination belongs to the training framework.
+
+For an external-process `ScriptRunner`, export copies its fully assembled shell-free command into
+`additional_node_command` when an explicit site launcher block directly declares `nodes > 1` and omits the field.
+An explicit value always wins; explicit `null` keeps application-owned fan-out. Generation requires
+`launch_once=True`. Neither generated nor explicit additional-node commands support secret references.
+Legacy `BaseScriptRunner`, default/inherited launcher blocks, and custom launchers are not inferred and must
+provide the full command explicitly. Omitting the field in those cases keeps the previous application-owned
+fan-out behavior. The export hook is launcher-mode-neutral so another launcher can adopt the same field later;
+Slurm is the only runtime consumer in this release.
+
+### Environment contract
+
+The batch script, which always executes on the first node of the allocation, exports a scheduler-neutral contract
+and delegates to one `srun --nodes=N --ntasks=N --ntasks-per-node=1` invocation of the generated `node.sh`:
+
+| Variable | Value |
+| --- | --- |
+| `NVFL_NNODES` | `SLURM_JOB_NUM_NODES` |
+| `NVFL_NODE_RANK` | `SLURM_NODEID`, exported per task by `node.sh` |
+| `NVFL_MASTER_ADDR` | `SLURMD_NODENAME` of the batch node, which is node rank 0 |
+| `NVFL_MASTER_PORT` | derived from `SLURM_JOB_ID` within the site-owned `multi_node_port_range` (default `29400-30399`) |
+| `NVFL_RUN_ID` | `SLURM_JOB_ID`; used to isolate the framework rendezvous |
+
+Distinct concurrent jobs that share a node can map to the same port. `NVFL_RUN_ID` prevents their rendezvous
+memberships from mixing, but the jobs still contend for one endpoint. Sites that co-locate allocations pin
+`multi_node_port_range` in `slurm.yaml` (it must not contain `internal_port`) or use scheduler policy such as
+exclusive nodes. If an existing `internal_port` falls in the implicit default range, the launcher instead uses
+`30400-31399`.
+
+`node.sh` dispatches on `SLURM_NODEID`: rank 0 executes the standard worker command, so the CJ connects to the
+parent and reports the result exactly as a single-node job; every other rank executes
+`additional_node_command` in the deployed job app directory. The fan-out `srun` uses `--label`, so output carries
+its node rank. Both paths inherit the batch environment because the script exports `SLURM_EXPORT_ENV=ALL` before
+fan-out. Pyxis tasks instead receive the explicit `--export` list, so `setup`-created variables reach bare and
+Apptainer node groups but not Pyxis ranks (use study env or `forward_env` there). Non-zero ranks receive the
+launch-once Cell API bootstrap path. The CJ writes that bootstrap before starting rank 0's training
+process, and the framework rendezvous delays every training script until the file exists. Legacy Client API
+multi-node execution is not supported.
+
+The command is job-owned and validated at the launch boundary: it must be a single-line, shell-lexable,
+non-empty string without secret references. It is split once into argv, rendered fully quoted, and never
+re-parsed by a shell. It executes as the submitting user under the effective sandbox, with the same trust as
+the BYOC training code launched by the rank-0 CJ. It is rejected for server jobs and when the deployed job app
+directory is missing.
+
+### Sandboxed node groups
+
+Node groups compose with every sandbox because the ordering is fixed: scheduler fan-out first, on the bare
+allocation, containers second, as per-node leaves. All user code runs under the effective sandbox with the
+launcher-standard isolation flags. Application-owned fan-out (a Slurm `nodes > 1` request without an
+additional-node command) still requires effective sandbox `none`, since only a bare CJ can reach `srun`.
+
+| Sandbox | Fan-out | Containerization |
+| --- | --- | --- |
+| `none` | bare `srun` of `node.sh` | none |
+| `apptainer` | bare `srun` of `node.sh` on each node | `node.sh` starts one `apptainer exec` per rank, `--pwd` run dir (rank 0) or app dir (others) |
+| `pyxis` | one `srun` carrying the usual container flags | Pyxis creates the per-task container; `node.sh` dispatches inside it |
+
+Environment delivery follows each backend's existing mechanism: bare tasks inherit the exported batch environment;
+Apptainer receives the contract through `APPTAINERENV_*` mirrors (`NVFL_NODE_RANK` per task inside `node.sh`);
+Pyxis adds the contract names to the shared `--export`/`--container-env` list, with `SLURM_NODEID` provided per
+task by Slurm. For Pyxis the job artifact directory is bind-mounted read-only because `srun` starts `node.sh`
+inside the container; the secret file is already deleted before any task starts, and the image must provide
+`bash`.
+
+### Lifecycle and results
+
+The fan-out uses `--kill-on-bad-exit=1 --wait=0`: any task that exits non-zero terminates the whole step,
+including rank 0, so a failed worker node ends the allocation deterministically instead of idling until wall
+time; `--wait=0` waits indefinitely after clean task exits, so a worker that finishes training never kills a
+still-running CJ. When rank 0 is killed before writing `_process_rc.txt`, the existing scheduler fallback
+attributes the failure from allocation `State` and `ExitCode`. Cancellation, monitoring, and pending-timeout
+handling are unchanged because the node group is one allocation with one scheduler identity. Between training
+rounds the non-zero ranks hold their nodes idle, which is inherent to a static allocation.
+
+### Framework helpers
+
+The environment contract is the minimal single-coordinator rendezvous set that framework helpers can translate.
+`nvflare.app_opt.pt.torchrun_node` maps it onto torchrun's static TCP rendezvous so Slurm node rank 0 remains
+the global-rank-0 node. Its `--join-timeout` bounds the store connection and rendezvous. Without the contract it
+degrades to standalone single-node torchrun.
+
+```text
+python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 custom/client.py --epochs 2
+```
+
+Non-zero tasks start before the CJ has prepared Client API runtime files. A hand-written command must therefore
+join its framework rendezvous before reading CJ-created runtime state. `torchrun_node` satisfies this constraint
+because torchrun blocks the training script until node rank 0 starts.
+
+Known contract limits: frameworks that need every member's address up front (for example `TF_CONFIG`) would need
+an additive node-list variable, and PMI-launched MPI does not fit the per-node-exec model because PMI expects the
+scheduler to start the ranks themselves.
+
+## Required environment
+
+The runtime parent requires Slurm 23.02.3 or later because the launcher uses `sbatch --export=NIL`. Parent bootstrap
+requires working `sbatch`, `squeue`, `sacct`, and `scancel` commands and working `slurmdbd` accounting. Default
+`AccountingStoreFlags` is sufficient. It targets a single, non-federated cluster, and site plugins must preserve
+local submission routing. Apptainer or Pyxis/Enroot must be installed on eligible nodes when selected; Pyxis and
+launcher-owned multi-node fan-out also require `srun`. Production sites should use a Slurm release that is still
+supported by SchedMD.
+
+The environment selected by `python_path` must contain a compatible NVFlare installation. The launcher sets the
+worker `PYTHONPATH` to the resolved job and site custom directories, so a source overlay used only by the parent is
+not a worker installation.
+
+The parent address comes from explicit `parent_host`, which always wins, or `SLURMD_NODENAME` when the parent itself
+runs inside a Slurm allocation. A parent outside an allocation therefore requires `parent_host`. Node groups
+additionally require the Slurm NodeName of rank 0 (`SLURMD_NODENAME`) to be DNS-resolvable from the other
+allocated nodes, since it becomes `NVFL_MASTER_ADDR`; clusters whose NodeName differs from a resolvable hostname
+must fix name resolution or use exclusive-node policies compatible with their fabric.

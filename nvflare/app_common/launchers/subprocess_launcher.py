@@ -13,12 +13,10 @@
 # limitations under the License.
 
 import os
-import re
-import shlex
 import signal
 import subprocess
 from threading import Lock, Thread
-from typing import Optional
+from typing import Optional, Sequence, Union
 
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
@@ -27,91 +25,13 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.launcher import Launcher, LauncherRunStatus
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
-
-
-def get_line(buffer: bytearray):
-    """Read a line from the binary buffer. It treats all combinations of \n and \r as line breaks.
-
-    Args:
-        buffer: A binary buffer
-
-    Returns:
-        (line, remaining): Return the first line as str and the remaining buffer.
-        line is None if no newline found
-
-    """
-    size = len(buffer)
-    r = buffer.find(b"\r")
-    if r < 0:
-        r = size + 1
-    n = buffer.find(b"\n")
-    if n < 0:
-        n = size + 1
-    index = min(r, n)
-
-    if index >= size:
-        return None, buffer
-
-    # if \r and \n are adjacent, treat them as one
-    if abs(r - n) == 1:
-        index = index + 1
-
-    line = buffer[:index].decode().rstrip()
-    if index >= size - 1:
-        remaining = bytearray()
-    else:
-        remaining = buffer[index + 1 :]
-    return line, remaining
-
-
-# Matches the start of a formatted NVFlare log line after stripping ANSI color
-# codes: "YYYY-MM-DD HH:MM:SS" produced by BaseFormatter / ColorFormatter.
-# Lines from the subprocess consoleHandler match this; raw print() lines do not.
-_ANSI_ESC_RE = re.compile(r"\x1b\[[0-9;]*m")
-_LOG_LINE_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
-
-
-def _route_subprocess_line(line: str, logger) -> None:
-    """Route one stdout line from the subprocess to the right destination.
-
-    Formatted log lines (from the subprocess consoleHandler) are already written
-    to the shared log files by the subprocess file handler, so we just print them
-    to the terminal for interactive visibility.  Raw print() lines from user
-    training scripts have no timestamp, so we wrap them with logger.info() to
-    ensure they reach both the terminal and log.txt.
-    """
-    plain = _ANSI_ESC_RE.sub("", line)
-    if _LOG_LINE_RE.match(plain):
-        print(line)
-    else:
-        logger.info(line)
-
-
-def log_subprocess_output(process, logger):
-
-    buffer = bytearray()
-    while True:
-        chunk = process.stdout.read1(4096)
-        if not chunk:
-            break
-        buffer = buffer + chunk
-
-        while True:
-            line, buffer = get_line(buffer)
-            if line is None:
-                break
-
-            if line:
-                _route_subprocess_line(line, logger)
-
-    if buffer:
-        _route_subprocess_line(buffer.decode(), logger)
+from nvflare.utils.process_utils import log_subprocess_output, prepare_subprocess_command
 
 
 class SubprocessLauncher(Launcher):
     def __init__(
         self,
-        script: str,
+        script: Union[str, Sequence[str]],
         launch_once: Optional[bool] = True,
         clean_up_script: Optional[str] = None,
         shutdown_timeout: Optional[float] = 0.0,
@@ -119,7 +39,7 @@ class SubprocessLauncher(Launcher):
         """Initializes the SubprocessLauncher.
 
         Args:
-            script (str): Script to be launched using subprocess.
+            script: Command to launch, either as a command string or an argv sequence.
             launch_once (bool): Whether the external process will be launched only once at the beginning or on each task.
             clean_up_script (Optional[str]): Optional clean up script to be run after the main script execution.
             shutdown_timeout (float): If provided, will wait for this number of seconds before shutdown.
@@ -128,7 +48,7 @@ class SubprocessLauncher(Launcher):
 
         self._app_dir = None
         self._process = None
-        self._script = script
+        self._script = script if isinstance(script, str) else list(script)
         self._launch_once = launch_once
         self._clean_up_script = clean_up_script
         self._shutdown_timeout = shutdown_timeout
@@ -169,7 +89,12 @@ class SubprocessLauncher(Launcher):
                 app_custom_folder = workspace.get_app_custom_dir(job_id)
                 add_custom_dir_to_path(app_custom_folder, env)
 
-                command_seq = shlex.split(command)
+                # Resolve ${secret:ENV_VAR} references from this site's environment after argv
+                # boundaries are established, so injected values never re-tokenize. References
+                # in supported nested shell command strings are rejected because those strings
+                # are parsed again.
+                # Resolved values exist only in the subprocess argv and must never be logged.
+                command_seq = prepare_subprocess_command(command)
                 self._process = subprocess.Popen(
                     command_seq,
                     shell=False,
@@ -204,7 +129,7 @@ class SubprocessLauncher(Launcher):
                 self._terminate_process()
                 self._log_thread.join()
                 if self._clean_up_script:
-                    command_seq = shlex.split(self._clean_up_script)
+                    command_seq = prepare_subprocess_command(self._clean_up_script)
                     process = subprocess.Popen(command_seq, cwd=self._app_dir, shell=False)
                     process.wait()
                 self._process = None

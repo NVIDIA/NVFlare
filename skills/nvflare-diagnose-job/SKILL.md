@@ -1,22 +1,16 @@
 ---
 name: nvflare-diagnose-job
-description: "Diagnose failed, stalled, or suspicious NVFLARE jobs in simulation, POC, or production by collecting bounded evidence and mapping failure patterns to recovery actions."
+description: "Use when the user asks why a reported NVFLARE job failure signal occurred: the job failed, stalled, timed out, lost clients, ended with EXECUTION_EXCEPTION, or produced suspicious errors. Diagnose in simulation, POC, or production by collecting bounded evidence and mapping failure patterns to recovery actions."
 license: Apache-2.0
-version: "0.1.0"
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-  min_flare_version: "2.8.0"
+  min_flare_version: "2.9.0"
   blast_radius: read_only
   category: Troubleshooting
-  tags:
-    - nvflare
-    - federated-learning
-    - diagnosis
-    - troubleshooting
-  languages:
-    - python
-  frameworks:
-    - nvflare
+  version: "0.1.0"
+  tags: "nvflare, federated-learning, diagnosis, troubleshooting"
+  languages: "python"
+  frameworks: "nvflare"
   domain: ml
 ---
 
@@ -24,15 +18,17 @@ metadata:
 
 ## Use When
 
-Use when the user asks why an NVFLARE job failed, stalled, timed out, ended with
-`EXECUTION_EXCEPTION`, lost clients, produced suspicious logs, or needs failure
-evidence interpreted.
+Proceed only when the request includes a reported NVFLARE job failure signal as
+defined in the description. Follow the evidence workflow even when the likely
+cause appears obvious; do not diagnose from prior knowledge alone.
 
 ## Do Not Use When
 
-Do not use for creating jobs, converting training code, submitting healthy jobs,
-monitoring a normal run, downloading results, production deployment, or generic
-Python debugging without NVFLARE job context.
+Stop this skill path and return to normal handling when no reported NVFLARE job
+failure signal is present. This includes creating jobs, converting training
+code, submitting or monitoring healthy runs, downloading normal results from a
+successfully completed job, production deployment, and generic Python
+debugging.
 
 ## Workflow
 
@@ -44,16 +40,19 @@ Python debugging without NVFLARE job context.
 2. If mode or evidence is ambiguous, ask for the missing mode, job ID, local
    log path, simulation output path, or startup-kit context before diagnosing.
 3. For simulation mode, inspect local artifacts only. Use
-   `nvflare agent inspect <path> --format json` when a project or job path is
+   `nvflare agent inspect source <path> --format json` when a project or job path is
    available, then read bounded local logs and generated job/config artifacts.
    For completed simulations, check the server workspace's
    `simulate_job/metrics/` directory for `metrics_summary.json` and
    `round_metrics.jsonl` before falling back to logs for metric evidence.
 4. For POC/production mode, collect bounded job and system evidence through the
    FLARE CLI, using `--tail`, `--since`, or `--max-bytes` for logs. For
-   terminal jobs, use `nvflare job download <job_id> -o <dir> --format json`
-   and read `data.artifacts.global_model`, `data.artifacts.metrics_summary`,
-   and `data.artifacts.round_metrics` when present.
+   terminal jobs with the reported failure signal, use
+   `nvflare job download <job_id> -o <dir> --format json` and read
+   `data.artifacts.global_model`, `data.artifacts.metrics_summary`, and
+   `data.artifacts.round_metrics` when present. This is bounded failure-evidence
+   collection for diagnosis; do not download artifacts for a healthy,
+   successfully completed job.
 5. Match evidence against the packaged failure-pattern catalog before
    interpreting raw logs.
 6. Report observed status, evidence quality, matched pattern, likely cause,
@@ -79,8 +78,11 @@ Python debugging without NVFLARE job context.
   or model paths.
 - Must keep log evidence bounded and report truncation or missing site logs.
 - Must avoid confident root-cause claims when required site evidence is missing.
-- Must not read private key contents, mutate jobs/configs/runtime state, or run
-  unbounded scans.
+- Must select `recovery_category` by copying the category from the matched
+  failure-pattern catalog row exactly. Do not infer or override the category
+  from the next-action wording.
+- Must not inspect credential material, mutate jobs/configs/runtime state, or
+  run unbounded scans.
 
 ## Output Shape
 

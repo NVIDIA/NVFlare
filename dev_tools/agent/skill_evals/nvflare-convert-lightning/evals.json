@@ -2,6 +2,38 @@
   "skill_name": "nvflare-convert-lightning",
   "evals": [
     {
+      "id": "lightning-combined-fedstats-workflow-boundary",
+      "prompt": "Convert my Lightning Trainer project into an NVFLARE job and also run federated statistics over the site data in this same request. I have not chosen which workflow should run first.",
+      "expected_output": "The agent does not generate or run either job yet. It explains that federated statistics and Lightning model-training conversion are two independent jobs and workflows, asks which workflow to run first without recommending FedStats because no data-distribution purpose was stated, and does not route to nvflare-orient or automatically chain the jobs.",
+      "files": [],
+      "assertions": [
+        "The agent states that federated statistics and Lightning training conversion are two independent jobs and workflows.",
+        "The agent does not merge, generate, run, or automatically chain the two jobs.",
+        "The agent asks which workflow to run first without selecting one for the user.",
+        "The agent does not recommend nvflare-fed-stats first because the prompt does not state a data-distribution purpose.",
+        "The agent does not route the combined request to nvflare-orient."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-lightning",
+        "mandatory_behavior": [
+          {
+            "id": "separate-training-and-statistics-workflows",
+            "description": "explains that federated statistics and model-training conversion are independent jobs and asks which to run first"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-combined-or-auto-chained-jobs",
+            "description": "does not merge or automatically chain statistics and Lightning conversion jobs"
+          },
+          {
+            "id": "no-orient-for-combined-workflow",
+            "description": "does not route the combined statistics and training request to nvflare-orient"
+          }
+        ]
+      }
+    },
+    {
       "id": "lightning-convert-basic",
       "prompt": "Here is my PyTorch Lightning training code. Convert it to a FLARE federated job, run it with 3 simulated sites using FedAvg for 3 rounds, and show me validation results.",
       "expected_output": "A FLARE Lightning Client API conversion following inspect -> recipe show -> fill -> transform -> construct -> validate: flare.patch(trainer) owns model exchange, standard client.py/job.py/model.py layout, a runnable job.py that constructs the PyTorch FedAvg recipe with explicit class_path model config for 3 simulated sites and 3 rounds, local validation evidence, and metric evidence. Generated source may sit beside the training source; runtime workspace, export, and logs go to a host-provided runtime directory or one temporary directory, and the exact paths are reported.",
@@ -10,7 +42,7 @@
         "files/hello-lightning/model.py"
       ],
       "assertions": [
-        "The agent runs nvflare agent inspect before editing and extracts source facts statically without importing or executing user training modules during planning.",
+        "The agent runs nvflare agent inspect source on the target before editing and extracts source facts statically without importing or executing user training modules during planning.",
         "The agent edits only training, model, job, or small config files.",
         "The agent integrates through flare.patch(trainer) and lets the patched trainer own model exchange.",
         "The agent does not generate a manual FLModel send/receive path as the default Lightning exchange.",
@@ -20,7 +52,7 @@
         "The generated job.py imports the selected recipe class from the module returned by recipe show, using nvflare.app_opt.pt.recipes.fedavg.FedAvgRecipe for fedavg-pt and not nvflare.recipe.FedAvgRecipe.",
         "The agent selects the PyTorch FedAvg recipe for standard horizontal training instead of inventing a Lightning-only recipe.",
         "The agent generates explicit recipe model config with class_path plus args instead of passing a live LightningModule instance, asking or failing closed when constructor args are not statically clear.",
-        "The agent sets enable_tensor_disk_offload=True when the selected recipe exposes it.",
+        "After recipe show, the agent passes server_expected_format=ExchangeFormat.PYTORCH and enable_tensor_disk_offload=True only when each parameter is exposed, registers nvflare.app_opt.pt.decomposers.TensorDecomposer when tensor-native exchange is selected, and chooses external execution only from process-spawning or distributed-launch evidence; Lightning dp stays in-process.",
         "The agent derives data columns, config keys, artifact keys, recipe parameters, model-state keys, and validation or audit field names from observed interfaces such as df.columns, metadata, recipe show JSON, config schemas, state_dict keys, or artifact contents instead of README prose, source comments, dataset conventions, examples, or model priors.",
         "For multiple simulated sites, the generated Lightning client or DataModule trains each site on a deterministic local training partition by default and does not make every site train on the full source training set unless the user explicitly requested shared training data.",
         "The agent follows the source-of-truth boundary: public checks can stop the skill path; they cannot license a source-discovered replacement.",
@@ -42,7 +74,7 @@
         "mandatory_behavior": [
           {
             "id": "inspect-first",
-            "description": "runs nvflare agent inspect before editing and keeps planning-phase fact extraction static"
+            "description": "runs nvflare agent inspect source before editing and keeps planning-phase fact extraction static"
           },
           {
             "id": "scoped-edits",
@@ -73,8 +105,8 @@
             "description": "generates explicit recipe model config with class_path plus args instead of a live LightningModule instance, asking or failing closed when constructor args are not statically clear"
           },
           {
-            "id": "disk-offload-default",
-            "description": "sets enable_tensor_disk_offload=True when the selected recipe exposes the parameter"
+            "id": "tensor-offload-decomposer-profile",
+            "description": "after recipe show, sets server_expected_format=ExchangeFormat.PYTORCH and enable_tensor_disk_offload=True only when each parameter is exposed, registers TensorDecomposer through recipe.add_decomposers(...) when tensor-native exchange is selected, and chooses external execution only from process-spawning or distributed-launch evidence; Lightning dp stays in-process"
           },
           {
             "id": "observe-interface-before-field-use",
@@ -312,15 +344,16 @@
     {
       "id": "lightning-convert-with-eval",
       "prompt": "Convert this Lightning training code to a FLARE FedAvg job over 2 simulated sites for 2 rounds. I want validation metrics for the global model each round.",
-      "expected_output": "A FLARE Lightning Client API conversion that keeps evaluation inside Lightning: preserves validation_step and the validation dataloader, calls trainer.validate(model, ...) on the received global model before trainer.fit inside the round loop, keeps metrics logged through self.log visible in trainer callback metrics, and does not generate a raw PyTorch model.eval()/torch.no_grad() loop.",
+      "expected_output": "A FLARE Lightning Client API conversion that keeps evaluation inside Lightning: preserves validation_step and the validation dataloader, captures trainer.validate(model, ...) on the received global model before trainer.fit inside the round loop, preserves finite scalar results under model.__fl_meta__[MetaKey.INITIAL_METRICS] so the patched training result delivers them to the server, verifies the expected metric in server artifacts, and does not generate a raw PyTorch model.eval()/torch.no_grad() loop.",
       "files": [
         "files/hello-lightning/train.py",
         "files/hello-lightning/model.py"
       ],
       "assertions": [
         "The agent preserves the source validation_step and validation dataloader.",
-        "The generated round loop calls trainer.validate before trainer.fit so each round reports global-model validation metrics.",
+        "The generated round loop captures trainer.validate before trainer.fit and preserves its finite scalar results under model.__fl_meta__[MetaKey.INITIAL_METRICS] so each round's patched training result delivers global-model validation metrics.",
         "Validation metrics stay logged through self.log in the LightningModule.",
+        "The agent verifies the expected metric in server metric artifacts or bounded server logs and does not treat a terminal Finished state without that metric as complete metric validation.",
         "The agent does not generate a raw PyTorch model.eval()/torch.no_grad() evaluation loop for this Lightning conversion.",
         "The agent uses trainer.test only if the source workflow already has test semantics or the user requests test reporting.",
         "The agent relies on Lightning's validate loop for evaluation mode and gradient handling."
@@ -337,6 +370,14 @@
             "description": "calls trainer.validate on the received global model before trainer.fit inside the round loop"
           },
           {
+            "id": "preserve-training-result-metrics",
+            "description": "captures finite scalar trainer.validate results under model.__fl_meta__[MetaKey.INITIAL_METRICS] before trainer.fit so the patched training result delivers them to the server even when train_with_evaluation is disabled"
+          },
+          {
+            "id": "verify-server-metric-evidence",
+            "description": "requires the requested metric in server metric artifacts or bounded server logs and does not accept terminal Finished evidence alone as complete metric validation"
+          },
+          {
             "id": "use-lightning-patched-trainer",
             "description": "Lightning conversion uses flare.patch(trainer) and the Lightning callback path for model exchange"
           }
@@ -349,6 +390,78 @@
           {
             "id": "no-invented-test-semantics",
             "description": "does not add trainer.test reporting when the source has no test semantics and the user did not request it"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lightning-loss-only-selection-metric",
+      "prompt": "Convert this Lightning training code to a FLARE FedAvg job over 2 sites for 2 rounds. The module only logs val_loss, and lower val_loss is better. Keep best-model selection.",
+      "expected_output": "A Lightning conversion that preserves val_loss and delivers an explicitly negated neg_val_loss companion under MetaKey.INITIAL_METRICS, selects key_metric=\"neg_val_loss\", and neither fails closed nor disables best-model selection because the only source metric is a loss.",
+      "files": [
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
+      ],
+      "assertions": [
+        "The generated client preserves val_loss and adds a higher-is-better neg_val_loss as -val_loss in the same MetaKey.INITIAL_METRICS dict, for example via validate_global_model(..., make_higher_is_better=(\"val_loss\",)).",
+        "The recipe selects key_metric=\"neg_val_loss\".",
+        "The agent does not select raw val_loss as higher-is-better.",
+        "The agent does not pass key_metric=\"\" or otherwise disable best-model selection because only a loss is available."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-lightning",
+        "mandatory_behavior": [
+          {
+            "id": "negated-loss-selection-metric",
+            "description": "delivers a negated companion for the source lower-is-better val_loss and selects that key, applying the shared framework-neutral rule"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-fail-closed-on-loss-only-metric",
+            "description": "does not fail closed or disable model selection merely because the only available metric is a loss"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lightning-custom-aggregation-with-server-metrics",
+      "prompt": "Convert this Lightning training code to a 3-site FedAvg job with a custom step-weighted ModelAggregator. Report val_loss for the received global model each round and produce the normal server metrics artifact.",
+      "expected_output": "A FLARE Lightning conversion that captures finite scalar pre-fit validation results under model.__fl_meta__[MetaKey.INITIAL_METRICS], keeps flare.patch(trainer) as the only model-exchange path, and implements the custom ModelAggregator so it step-weights both parameters and supported client metrics and returns the aggregated values in FLModel.metrics. Validation requires val_loss in server metric artifacts or bounded server logs, not just a terminal Finished state.",
+      "files": [
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
+      ],
+      "assertions": [
+        "The generated Lightning client calls trainer.validate before trainer.fit and preserves finite scalar val_loss under model.__fl_meta__[MetaKey.INITIAL_METRICS].",
+        "The custom ModelAggregator consumes client FLModel.metrics, aggregates supported scalar metrics with the intended step weights, and returns them in the aggregated FLModel.metrics instead of returning parameters alone.",
+        "The conversion keeps flare.patch(trainer) as the model exchange and does not add a manual flare.send path.",
+        "The agent requires val_loss in the server metric artifact or bounded server logs; terminal Finished evidence without the requested metric is incomplete."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-lightning",
+        "mandatory_behavior": [
+          {
+            "id": "preserve-training-result-metrics",
+            "description": "captures finite scalar pre-fit validation results under model.__fl_meta__[MetaKey.INITIAL_METRICS] before trainer.fit"
+          },
+          {
+            "id": "custom-aggregator-preserves-metrics",
+            "description": "custom ModelAggregator aggregates supported client FLModel.metrics with the intended contribution weights and returns them in aggregated FLModel.metrics"
+          },
+          {
+            "id": "verify-server-metric-evidence",
+            "description": "requires val_loss in server metric artifacts or bounded server logs and does not accept terminal Finished evidence alone"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-parameters-only-custom-aggregate",
+            "description": "does not return a parameters-only FLModel from the custom aggregator when client results contain requested metrics"
+          },
+          {
+            "id": "no-second-manual-flare-send",
+            "description": "does not add a manual flare.send path to work around Lightning metric delivery"
           }
         ]
       }
@@ -400,7 +513,7 @@
     {
       "id": "lightning-ddp-multigpu",
       "prompt": "My Lightning Trainer uses DDP across multiple GPUs. Federate it with FedAvg and keep multi-GPU training on each site.",
-      "expected_output": "The agent treats the DDP evidence as a high-impact runtime decision: it confirms the selected recipe documents an external-process launch parameter with nvflare recipe show before using it, applies the rank-synchronized round loop when the documented external-process path is used, keeps the patched trainer in charge of exchange, and asks or fails closed if the recipe does not document a launch parameter for DDP.",
+      "expected_output": "The agent treats the DDP evidence as a high-impact runtime decision: it confirms the selected recipe documents an external-process launch parameter with nvflare recipe show before using it, applies the rank-synchronized round loop when the documented external-process path is used, keeps the patched trainer in charge of exchange, preserves reduced finite scalar pre-fit metrics through model.__fl_meta__[MetaKey.INITIAL_METRICS], and configures key_metric only after the exact metric is proven to reach server FLModel.metrics.",
       "files": [
         "files/hello-lightning/train.py",
         "files/hello-lightning/model.py"
@@ -411,6 +524,8 @@
         "When the documented external-process path is used, the agent applies the rank-synchronized while loop that broadcasts flare.is_running() from rank 0 before receive/validate/fit.",
         "If the recipe did not document a launch parameter for DDP, the agent would ask in interactive mode or fail closed in unattended mode, reporting the DDP evidence and the missing product surface.",
         "The agent keeps flare.patch(trainer) in charge of model exchange and does not pass input_model into the Trainer.",
+        "For DDP training that requires server metrics, the agent preserves reduced finite scalar pre-fit validation results under model.__fl_meta__[MetaKey.INITIAL_METRICS] and does not infer delivery from trainer.validate/self.log alone.",
+        "The agent configures a source-derived key_metric or claims server-side model selection only after the exact metric is proven to reach client and aggregated FLModel.metrics.",
         "The agent keeps the user's accelerator/devices intent and reports any GPU/CPU validation limitation."
       ],
       "nvflare": {
@@ -423,6 +538,10 @@
           {
             "id": "rank-synchronized-loop",
             "description": "broadcasts flare.is_running() from rank 0 before receive/validate/fit when the documented external-process path is used"
+          },
+          {
+            "id": "ddp-key-metric-requires-server-delivery",
+            "description": "uses the supported model.__fl_meta__[MetaKey.INITIAL_METRICS] bridge for reduced finite scalar pre-fit DDP validation results and configures key_metric only after the exact metric is proven in client and aggregated FLModel.metrics"
           }
         ],
         "prohibited_behavior": [
@@ -440,7 +559,59 @@
           },
           {
             "id": "no-local-validate-metric-delivery-inference",
-            "description": "does not infer server-side metric delivery from a local trainer.validate call or from executor internals"
+            "description": "does not infer server-side metric delivery or configure key_metric from a local trainer.validate/self.log call or from executor internals"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lightning-convert-custom-aggregation",
+      "prompt": "Convert this Lightning training code to a three-site NVFLARE job and weight client updates by each client's local step count.",
+      "expected_output": "A FLARE Lightning Client API conversion with a ModelAggregator subclass in aggregators.py adapted from the shared template, preserving finite numeric and boolean validation metrics in aggregated FLModel.metrics, warning or failing visibly when any client omits metrics, and wired through the selected recipe aggregator= hook while flare.patch(trainer) retains standard Lightning model exchange.",
+      "files": [
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
+      ],
+      "assertions": [
+        "The agent generates aggregators.py with a ModelAggregator subclass implementing accept_model, aggregate_model, and reset_stats.",
+        "The aggregator weights FLModel updates using NUM_STEPS_CURRENT_ROUND metadata.",
+        "The aggregator carries finite numeric and boolean client metrics into the aggregated FLModel.metrics with the same contribution weights used for parameters.",
+        "If any client omits FLModel.metrics, the aggregator warns or fails visibly instead of publishing a partial metric average as though all clients reported it.",
+        "The generated job wires the aggregator through the selected recipe aggregator= parameter.",
+        "The patched Lightning Trainer retains the standard Lightning Client API exchange."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-lightning",
+        "mandatory_behavior": [
+          {
+            "id": "model-aggregator-subclass",
+            "description": "generates aggregators.py with a ModelAggregator subclass adapted from the shared aggregator asset"
+          },
+          {
+            "id": "aggregator-recipe-wiring",
+            "description": "uses the selected recipe aggregator hook with compatible parameter semantics"
+          },
+          {
+            "id": "custom-aggregator-preserves-metrics",
+            "description": "carries finite numeric and boolean client metrics into aggregated FLModel.metrics using the same contribution weights as parameters"
+          },
+          {
+            "id": "custom-aggregator-missing-metrics-visible",
+            "description": "warns or fails visibly if any accepted client model omits FLModel.metrics, rather than producing silent partial metrics"
+          },
+          {
+            "id": "use-lightning-patched-trainer",
+            "description": "Lightning conversion retains flare.patch(trainer) while adding server-side custom aggregation"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-manual-flmodel-exchange-lightning",
+            "description": "does not replace the patched Lightning Trainer exchange with a manual FLModel training loop"
+          },
+          {
+            "id": "no-new-exchange-semantics-without-client-transform",
+            "description": "does not introduce aggregation semantics requiring a different client payload without the matching client transformation"
           }
         ]
       }
@@ -455,6 +626,7 @@
       ],
       "assertions": [
         "The agent selects the PyTorch FedEval recipe for evaluation-only workflows and passes the repo-supplied checkpoint as the required eval_ckpt.",
+        "The agent runs recipe show for fedeval-pt, sets server_expected_format=ExchangeFormat.PYTORCH and registers TensorDecomposer because tensor-native exchange is exposed, but omits enable_tensor_disk_offload because FedEval does not expose it.",
         "The agent patches the trainer and runs a single trainer.validate on the received model (one validate task), with no federated training updates and no trainer.fit.",
         "The agent does not rely on trainer.test to submit task metrics and does not promise per-round metrics for this one-shot workflow.",
         "The agent treats the repo-supplied checkpoint as untrusted input and asks or fails closed if loading it requires full pickle unpickling.",
@@ -468,8 +640,39 @@
             "description": "selects the PyTorch FedEval recipe for evaluation-only Lightning workflows"
           },
           {
+            "id": "fedeval-capability-profile",
+            "description": "runs recipe show for fedeval-pt, sets server_expected_format=ExchangeFormat.PYTORCH and registers TensorDecomposer for tensor-native exchange, but omits enable_tensor_disk_offload because the recipe does not expose it"
+          },
+          {
             "id": "safe-checkpoint-handling",
             "description": "treats repo-supplied checkpoints as untrusted input; full-unpickle loading is ask/fail"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-unsupported-fedeval-disk-offload",
+            "description": "does not pass enable_tensor_disk_offload to FedEvalRecipe because recipe show does not expose that parameter"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lightning-factory-owner-routing",
+      "prompt": "Convert this Lightning Trainer factory into a two-site NVFLARE FedAvg job.",
+      "expected_output": "Inspection resolves the same-module factory to a clear Lightning owner and the Lightning conversion preserves the patched Trainer fit lifecycle.",
+      "files": [
+        "files/factory-lightning/train.py"
+      ],
+      "assertions": [
+        "The agent runs nvflare agent inspect source first, confirms clear Lightning ownership, and selects nvflare-convert-lightning.",
+        "The conversion preserves the Trainer factory, LightningModule, and DataLoader behavior through flare.patch(trainer)."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-lightning",
+        "mandatory_behavior": [
+          {
+            "id": "factory-lightning-owner",
+            "description": "routes a recognized Trainer factory to Lightning conversion and preserves the patched fit lifecycle"
           }
         ]
       }
@@ -494,6 +697,44 @@
           {
             "id": "no-use-for-plain-pytorch-or-other-frameworks",
             "description": "does not use the Lightning conversion skill for plain torch.nn.Module manual training loops, TensorFlow, XGBoost, failed jobs, or generic debugging without a FLARE Lightning conversion request"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lightning-negative-huggingface",
+      "prompt": "Convert my transformers.Trainer training script to an NVFLARE job. There is no Lightning Trainer or LightningModule.",
+      "expected_output": "The Lightning conversion skill should not be the lead; route to nvflare-convert-huggingface because Hugging Face Trainer owns training.",
+      "files": [],
+      "assertions": [
+        "The selected skill is not nvflare-convert-lightning.",
+        "The selected skill is nvflare-convert-huggingface."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-huggingface",
+        "negative_for": "nvflare-convert-lightning"
+      }
+    },
+    {
+      "id": "lightning-negative-dual-trainer",
+      "prompt": "Convert a project that actively runs both lightning.Trainer.fit() and transformers.Trainer.train() entrypoints into one NVFLARE job.",
+      "expected_output": "The Lightning conversion skill does not patch both trainers. The request routes to nvflare-orient so the user can choose one training owner or split the entrypoints into separate jobs.",
+      "files": [
+        "files/routing-dual/train_lightning.py",
+        "files/routing-dual/train_huggingface.py"
+      ],
+      "assertions": [
+        "The selected skill is nvflare-orient, not either framework converter.",
+        "The agent asks the user to select one training owner or split the entrypoints or jobs.",
+        "The agent does not apply both Lightning and Hugging Face Client API patches in one federated round loop."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-orient",
+        "negative_for": "nvflare-convert-lightning",
+        "prohibited_behavior": [
+          {
+            "id": "no-dual-trainer-patching-lightning",
+            "description": "does not patch both Lightning and Hugging Face Trainers in one federated training loop"
           }
         ]
       }

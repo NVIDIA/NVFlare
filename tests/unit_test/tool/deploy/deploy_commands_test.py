@@ -15,8 +15,11 @@
 import argparse
 import base64
 import json
+import os
 import shutil
+import socket
 import subprocess
+import tempfile
 from datetime import datetime, timedelta
 
 import pytest
@@ -26,17 +29,9 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from nvflare.tool.deploy.deploy_commands import (
-    GPU_RESOURCE_CONSUMER,
-    GPU_RESOURCE_MANAGER,
-    HELM_RELEASE_NAME_MAX_LENGTH,
-    K8S_PARENT_PYTHON_PATH,
-    PROCESS_CLIENT_LAUNCHER,
-    _k8s_release_name,
-    prepare_deployment,
-    stage_k8_deployment,
-    unstage_k8_deployment,
-)
+from nvflare.tool.deploy.deploy_commands import prepare_deployment, stage_k8_deployment, unstage_k8_deployment
+from nvflare.tool.deploy.deploy_common import GPU_RESOURCE_CONSUMER, GPU_RESOURCE_MANAGER, PROCESS_CLIENT_LAUNCHER
+from nvflare.tool.deploy.k8s_deploy import HELM_RELEASE_NAME_MAX_LENGTH, K8S_PARENT_PYTHON_PATH, _k8s_release_name
 
 
 def _write_json(path, data):
@@ -184,6 +179,30 @@ def _run_prepare(kit, output, config):
     prepare_deployment(argparse.Namespace(kit=str(kit), output=str(output), config=str(config_path)))
 
 
+def _install_fake_docker(tmp_path, monkeypatch):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    docker_log = tmp_path / "docker.log"
+    fake_docker = fake_bin / "docker"
+    fake_docker.write_text(
+        "#!/usr/bin/env bash\n"
+        'printf \'%s\\n\' "$*" >> "$NVFL_TEST_DOCKER_LOG"\n'
+        'case " $* " in\n'
+        '    *" network ls "*) echo nvflare-network ;;\n'
+        "esac\n"
+        'case " $* " in\n'
+        '    *" --entrypoint /usr/local/bin/python3 "*)\n'
+        '        if [ "${NVFL_TEST_PROBE_FAIL:-}" = "1" ]; then exit 1; fi\n'
+        '        echo "${NVFL_TEST_REMOTE_SOCK_GID:-2375}"\n'
+        "        ;;\n"
+        "esac\n"
+    )
+    fake_docker.chmod(0o755)
+    monkeypatch.setenv("NVFL_TEST_DOCKER_LOG", str(docker_log))
+    monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ['PATH']}")
+    return docker_log
+
+
 def _stage_k8_args(kit, **overrides):
     args = {
         "kit": str(kit),
@@ -210,7 +229,7 @@ def _capture_kubectl(monkeypatch, returncode=0, fail_on=None):
             return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
         return subprocess.CompletedProcess(cmd, returncode, stdout="ok", stderr="")
 
-    monkeypatch.setattr("nvflare.tool.deploy.deploy_commands.subprocess.run", fake_run)
+    monkeypatch.setattr("nvflare.tool.deploy.k8s_stage.subprocess.run", fake_run)
     return calls
 
 
@@ -268,7 +287,11 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
     assert not (output / "startup" / "sub_start.sh").exists()
     assert not (output / "startup" / "stop_fl.sh").exists()
     assert not (output / "startup" / "docker.sh").exists()
-    script = (output / "startup" / "start_docker.sh").read_text()
+    script_path = output / "startup" / "start_docker.sh"
+    script_bytes = script_path.read_bytes()
+    assert script_path.stat().st_mode & 0o777 == 0o755
+    script = script_bytes.decode()
+    assert "@@NVFLARE_" not in script
     assert "repo/nvflare:dev" in script
     assert 'NETWORK_NAME="nvflare-test"' in script
     assert "--network-alias" not in script
@@ -296,9 +319,237 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
 
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"]["resources"]["host"] == "0.0.0.0"
-    study_runtime = yaml.safe_load((output / "local" / "study_runtime.yaml").read_text())
+    study_runtime_path = output / "local" / "study_runtime.yaml"
+    study_runtime_text = study_runtime_path.read_text()
+    assert "@@NVFLARE_" not in study_runtime_text
+    study_runtime = yaml.safe_load(study_runtime_text)
     assert study_runtime == {"format_version": 2, "studies": {}}
     assert not (output / "local" / "study_data.yaml").exists()
+
+
+def test_prepare_docker_start_script_handles_docker_socket_path_and_groups(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    script = (output / "startup" / "start_docker.sh").read_text()
+    assert 'DOCKER_SOCK="${NVFL_DOCKER_SOCK:-/var/run/docker.sock}"' in script
+    assert 'DOCKER_ENDPOINT="${DOCKER_HOST:-}"' in script
+    assert "docker context inspect" in script
+    assert "DOCKER_ENDPOINT_IS_LOCAL=false" in script
+    assert "DOCKER_ENDPOINT_IS_LOCAL=true" in script
+    assert "ENDPOINT_DOCKER_SOCK=${DOCKER_ENDPOINT#unix://}" in script
+    assert 'DOCKER_SOCK="$ENDPOINT_DOCKER_SOCK"' in script
+    assert 'if [ -z "${NVFL_DOCKER_SOCK:-}" ] && [ -L "$DOCKER_SOCK" ]; then' in script
+    assert 'RESOLVED_DOCKER_SOCK=$(readlink "$DOCKER_SOCK")' in script
+    assert 'if RESOLVED_DOCKER_SOCK_DIR="$(' in script
+    assert "Docker socket path must be absolute" in script
+    assert "Using Docker socket on daemon host" in script
+    assert "Set NVFL_DOCKER_SOCK=/path/to/docker.sock" in script
+    assert "DOCKER_HOST_URI" not in script
+    assert 'DOCKER_CLI_ARGS=(--host "unix://$DOCKER_SOCK")' in script
+    assert 'if ! docker "${DOCKER_CLI_ARGS[@]}" info' in script
+    assert 'if ! docker "${DOCKER_CLI_ARGS[@]}" network ls' in script
+    assert 'docker "${DOCKER_CLI_ARGS[@]}" network create' in script
+    assert 'docker "${DOCKER_CLI_ARGS[@]}" run' in script
+    assert (
+        "SOCK_GID=$(stat -c '%g' \"$DOCKER_SOCK\" 2>/dev/null || "
+        'stat -f \'%g\' "$DOCKER_SOCK" 2>/dev/null || echo "")'
+    ) in script
+    assert "HOST_OS=$(uname -s)" in script
+    assert "GROUP_ADD_ARGS=()" in script
+    assert 'if [ "$HOST_OS" = "Darwin" ] || [ "$SOCK_GID" = "0" ]; then' in script
+    assert "GROUP_ADD_ARGS+=(--group-add 0)" in script
+    assert "GROUP_ADD_ARGS=(--group-add 0)" not in script
+    assert 'GROUP_ADD_ARGS+=(--group-add "$SOCK_GID")' in script
+    assert '"${GROUP_ADD_ARGS[@]}"' in script
+    assert "NVFL_DOCKER_SOCK_GID" in script
+    assert "--entrypoint /usr/local/bin/python3" in script
+    assert "stat.S_ISSOCK" in script
+    assert '--mount "type=bind,src=$DOCKER_SOCK,dst=/var/run/docker.sock"' in script
+    assert '-v "$DOCKER_SOCK":/var/run/docker.sock' not in script
+    assert "-v /var/run/docker.sock:/var/run/docker.sock" not in script
+
+
+def test_prepare_docker_start_script_allows_daemon_host_socket_path(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    docker_log = _install_fake_docker(tmp_path, monkeypatch)
+
+    daemon_socket = tmp_path / "daemon-host" / "docker.sock"
+    monkeypatch.setenv("DOCKER_HOST", "tcp://dind:2375")
+    monkeypatch.setenv("NVFL_DOCKER_SOCK", str(daemon_socket))
+    monkeypatch.setenv("NVFL_TEST_REMOTE_SOCK_GID", "2375")
+
+    result = subprocess.run(
+        ["bash", str(output / "startup" / "start_docker.sh")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Using Docker socket on daemon host" in result.stdout
+    calls = docker_log.read_text().splitlines()
+    assert calls[0] == "info"
+    assert calls[1].startswith("network ls")
+    probe_call = next(call for call in calls if "--entrypoint /usr/local/bin/python3" in call)
+    assert f"--mount type=bind,src={daemon_socket},dst=/var/run/docker.sock" in probe_call
+    run_call = next(call for call in calls if call.startswith("run --name"))
+    assert "--host" not in run_call
+    assert "--group-add 2375" in run_call
+    assert f"--mount type=bind,src={daemon_socket},dst=/var/run/docker.sock" in run_call
+
+
+def test_prepare_docker_start_script_pins_local_socket_override(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    docker_log = _install_fake_docker(tmp_path, monkeypatch)
+
+    with tempfile.TemporaryDirectory(prefix=".nvfl-sock-", dir=os.getcwd()) as socket_dir:
+        docker_socket_path = os.path.join(socket_dir, "docker.sock")
+        with socket.socket(socket.AF_UNIX) as docker_socket:
+            docker_socket.bind(docker_socket_path)
+            monkeypatch.setenv("DOCKER_HOST", "unix:///var/run/docker.sock")
+            monkeypatch.setenv("NVFL_DOCKER_SOCK", docker_socket_path)
+
+            result = subprocess.run(
+                ["bash", str(output / "startup" / "start_docker.sh")],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+    assert result.returncode == 0, result.stderr
+    calls = docker_log.read_text().splitlines()
+    expected_prefix = f"--host unix://{docker_socket_path} "
+    assert calls
+    assert all(call.startswith(expected_prefix) for call in calls)
+    assert not any("--entrypoint /usr/local/bin/python3" in call for call in calls)
+    run_call = next(call for call in calls if " run --name" in call)
+    assert f"--mount type=bind,src={docker_socket_path},dst=/var/run/docker.sock" in run_call
+
+
+def test_prepare_docker_start_script_accepts_configured_daemon_host_socket_gid(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    docker_log = _install_fake_docker(tmp_path, monkeypatch)
+
+    daemon_socket = tmp_path / "daemon-host" / "docker.sock"
+    monkeypatch.setenv("DOCKER_HOST", "tcp://dind:2375")
+    monkeypatch.setenv("NVFL_DOCKER_SOCK", str(daemon_socket))
+    monkeypatch.setenv("NVFL_DOCKER_SOCK_GID", "4242")
+
+    result = subprocess.run(
+        ["bash", str(output / "startup" / "start_docker.sh")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Using configured daemon-host Docker socket GID: 4242" in result.stdout
+    calls = docker_log.read_text().splitlines()
+    assert not any("--entrypoint /usr/local/bin/python3" in call for call in calls)
+    run_call = next(call for call in calls if call.startswith("run --name"))
+    assert "--group-add 4242" in run_call
+
+
+def test_prepare_docker_start_script_fails_when_daemon_host_socket_probe_fails(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    docker_log = _install_fake_docker(tmp_path, monkeypatch)
+
+    daemon_socket = tmp_path / "daemon-host" / "docker.sock"
+    monkeypatch.setenv("DOCKER_HOST", "tcp://dind:2375")
+    monkeypatch.setenv("NVFL_DOCKER_SOCK", str(daemon_socket))
+    monkeypatch.setenv("NVFL_TEST_PROBE_FAIL", "1")
+
+    result = subprocess.run(
+        ["bash", str(output / "startup" / "start_docker.sh")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "Docker socket could not be validated on the daemon host" in result.stdout
+    assert "Set NVFL_DOCKER_SOCK_GID" in result.stdout
+    calls = docker_log.read_text().splitlines()
+    assert not any(call.startswith("run --name") for call in calls)
+
+
+def test_prepare_docker_start_script_rejects_missing_local_socket(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    missing_socket = tmp_path / "missing" / "docker.sock"
+    monkeypatch.setenv("DOCKER_HOST", f"unix://{missing_socket}")
+
+    result = subprocess.run(
+        ["bash", str(output / "startup" / "start_docker.sh")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert f"ERROR: Docker socket not found or not a socket: {missing_socket}" in result.stdout
 
 
 @pytest.mark.parametrize(
@@ -401,6 +652,31 @@ def test_prepare_k8s_server_exposes_admin_port_only_when_distinct(tmp_path, caps
     tcp_services = (output / "helm_chart" / "templates" / "server-tcp-services.yaml").read_text()
     assert ".Values.fedLearnPort" in tcp_services
     assert ".Values.adminPort" in tcp_services
+
+
+@pytest.mark.parametrize(
+    "make_kit",
+    [
+        _make_server_kit,
+        _make_client_kit,
+    ],
+)
+def test_prepare_k8s_parent_role_allows_reading_events(tmp_path, capsys, make_kit):
+    kit = make_kit(tmp_path)
+    output = tmp_path / "parent-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    role = (output / "helm_chart" / "templates" / "role.yaml").read_text()
+    assert '- apiGroups: [""]\n  resources: ["events"]\n  verbs: ["get", "list", "watch"]' in role
 
 
 def test_prepare_k8s_server_uses_configured_service_name(tmp_path, capsys):
@@ -584,6 +860,44 @@ def test_prepare_docker_creates_comm_config_when_missing(tmp_path, capsys):
         "host": "0.0.0.0",
         "connection_security": "clear",
     }
+
+
+@pytest.mark.parametrize(
+    "runtime, expected_runtime",
+    [
+        ("docker", "Docker"),
+        ("k8s", "Kubernetes"),
+    ],
+)
+def test_prepare_container_runtime_rejects_shared_file_transport(tmp_path, capsys, runtime, expected_runtime):
+    kit = _make_client_kit(tmp_path)
+    _write_json(
+        kit / "local" / "comm_config.json",
+        {
+            "backbone": {"connect_generation": 1},
+            "internal": {
+                "scheme": "shared-file",
+                "resources": {"root_dir": "/shared/nvflare", "connection_security": "clear"},
+            },
+        },
+    )
+    output = tmp_path / f"site-1-{runtime}"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": runtime,
+                "parent": {"docker_image": "repo/nvflare:dev"},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_KIT" in err
+    assert f"{expected_runtime} runtime does not support internal.scheme 'shared-file'." in err
+    assert "Use internal.scheme 'tcp', run the original kit in process mode, or choose the Slurm runtime." in err
+    assert not output.exists()
 
 
 def test_prepare_uses_conventional_config_and_output_paths(tmp_path, capsys):
@@ -1125,6 +1439,17 @@ def test_deploy_cli_routes_k8_unstage(alias, monkeypatch):
     assert calls == [args]
 
 
+def test_deploy_cli_does_not_register_slurm_stage():
+    from nvflare.tool.deploy.deploy_cli import def_deploy_cli_parser
+
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="sub_command")
+    def_deploy_cli_parser(subparsers)
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["deploy", "slurm", "stage", "/tmp/prepared-kit"])
+
+
 def test_stage_k8_reports_kubectl_failure(tmp_path, capsys, monkeypatch):
     kit = _make_client_kit(tmp_path)
     output = tmp_path / "site-1-k8s"
@@ -1164,7 +1489,7 @@ def test_stage_k8_reports_kubectl_launch_os_error(tmp_path, capsys, monkeypatch)
     def fake_run(_cmd, **_kwargs):
         raise PermissionError("denied")
 
-    monkeypatch.setattr("nvflare.tool.deploy.deploy_commands.subprocess.run", fake_run)
+    monkeypatch.setattr("nvflare.tool.deploy.k8s_stage.subprocess.run", fake_run)
 
     with pytest.raises(SystemExit):
         stage_k8_deployment(_stage_k8_args(output, namespace="nvflare"))
@@ -1220,12 +1545,14 @@ def test_stage_k8_rejects_invalid_stage_argument_values(tmp_path, capsys, monkey
     assert "valid Kubernetes namespace" in err
     assert calls == []
 
+    rejected_kubectl = "opaque-kubectl-value"
     with pytest.raises(SystemExit):
-        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare", kubectl="python"))
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare", kubectl=rejected_kubectl))
 
     err = capsys.readouterr().err
     assert "INVALID_ARGS" in err
     assert "Kubernetes CLI command must be one of" in err
+    assert rejected_kubectl not in err
     assert calls == []
 
     with pytest.raises(SystemExit):
@@ -1235,6 +1562,19 @@ def test_stage_k8_rejects_invalid_stage_argument_values(tmp_path, capsys, monkey
     assert "INVALID_ARGS" in err
     assert "Kubernetes CLI command must be one of" in err
     assert calls == []
+
+
+def test_stage_k8_redacts_authorization_in_missing_kit_error(tmp_path, capsys):
+    token = "sample-token-123"
+    missing_kit = tmp_path / f'Authorization = "Bearer {token}"'
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(missing_kit, namespace="nvflare"))
+
+    err = capsys.readouterr().err
+    assert "INVALID_KIT" in err
+    assert 'Authorization = "Bearer <redacted>"' in err
+    assert token not in err
 
 
 def test_stage_k8_rejects_symlinked_stage_folder(tmp_path, capsys, monkeypatch):

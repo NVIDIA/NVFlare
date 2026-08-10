@@ -1,6 +1,6 @@
 # NVIDIA FLARE Hello World Examples
 
-Welcome to the NVIDIA FLARE Hello World examples! These examples demonstrate how to use NVIDIA FLARE's **Job Recipe** API to quickly build and run federated learning applications across different frameworks.
+Welcome to the NVIDIA FLARE Hello World examples! These examples demonstrate how to use NVIDIA FLARE's high-level **Job Recipe** and **Collab** APIs to quickly build and run federated learning applications across different frameworks.
 
 ## Quick Start
 
@@ -19,7 +19,7 @@ Welcome to the NVIDIA FLARE Hello World examples! These examples demonstrate how
 
 3. **Choose an example and install dependencies:**
    ```bash
-   cd hello-pt  # or hello-jax, hello-numpy, hello-lightning, hello-tf, hello-flower
+   cd hello-pt  # or hello-huggingface, hello-jax, hello-numpy, hello-lightning, hello-tf, hello-flower
    pip install -r requirements.txt
    ```
 
@@ -178,6 +178,22 @@ python prepare_data.py
 python job.py
 ```
 
+#### [Hello HuggingFace](./hello-huggingface/)
+Federated Qwen SFT/PEFT using HuggingFace `Trainer`/TRL `SFTTrainer` and the HuggingFace Client API.
+
+**What you'll learn:**
+- Patching a HuggingFace trainer with `nvflare.client.hf`
+- Running Qwen LoRA fine-tuning with FedAvg
+- Preparing per-site JSONL instruction data
+
+**Run it:**
+```bash
+cd hello-huggingface
+pip install -r requirements.txt
+python prepare_data.py
+python job.py
+```
+
 ### Traditional ML
 
 #### [Hello NumPy](./hello-numpy/)
@@ -192,6 +208,20 @@ Demonstrate federated averaging with a simple NumPy model.
 ```bash
 cd hello-numpy
 pip install -r requirements.txt
+python job.py
+```
+
+#### [Hello NumPy Collab](./hello-collab/)
+Implement the same NumPy workflow with ordinary Python function calls.
+
+**What you'll learn:**
+- Defining a custom server workflow with `@collab.main`
+- Publishing client training code with `@collab.publish`
+- Passing NumPy arrays and tuples directly between server and clients
+
+**Run it:**
+```bash
+cd hello-collab
 python job.py
 ```
 
@@ -214,7 +244,7 @@ python job.py --job_name "flwr-pt" --content_dir "./flwr-pt"
 
 ## Understanding the Code Structure
 
-Each example follows a consistent structure:
+Most framework-focused examples follow a consistent structure:
 
 ```
 hello-<framework>/
@@ -223,6 +253,9 @@ hello-<framework>/
 ├── job.py            # Job recipe that creates and runs the FL job
 └── requirements.txt  # Dependencies
 ```
+
+The self-contained [Hello NumPy Collab](./hello-collab/) example keeps its
+published client function, server workflow, recipe, and launcher in one file.
 
 ### Client Code (`client.py`)
 

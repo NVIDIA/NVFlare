@@ -20,11 +20,13 @@ from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import (
+    AggregationStatsKey,
     WeightedAggregationHelper,
     filter_aggregatable_metrics,
 )
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.app_common.utils.fedprox_utils import normalize_fedprox_mu, set_fedprox_metadata
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
 from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_disk_offload, setup_tensor_disk_offload
 from nvflare.fuel.utils import fobs
@@ -47,6 +49,9 @@ class FedAvg(BaseFedAvg):
 
     Uses InTime (streaming) aggregation for memory efficiency - each client result is
     aggregated immediately upon receipt rather than collecting all results first.
+    Streaming accumulation applies contributions in result-arrival order; floating-point
+    addition is non-associative, so identical inputs can produce ulp-level differences
+    between runs and bitwise reproducibility is not guaranteed for >=2 clients.
 
     Supports custom aggregators via the ModelAggregator interface.
 
@@ -86,6 +91,8 @@ class FedAvg(BaseFedAvg):
             instead of deserializing into memory. Reduces peak server memory from ~N× to ~1×
             model size during aggregation. When used with a custom aggregator, lazy refs are
             passed through directly and must be handled by that aggregator. Defaults to False.
+        fedprox_mu (float or None, optional): Positive FedProx proximal coefficient sent to
+            compatible clients. ``None`` or ``0.0`` disables FedProx. Defaults to None.
     """
 
     def __init__(
@@ -100,6 +107,7 @@ class FedAvg(BaseFedAvg):
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
         enable_tensor_disk_offload: bool = False,
+        fedprox_mu: Optional[float] = None,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -120,6 +128,7 @@ class FedAvg(BaseFedAvg):
         self.exclude_vars = exclude_vars
         self.aggregation_weights = aggregation_weights or {}
         self.enable_tensor_disk_offload = enable_tensor_disk_offload
+        self.fedprox_mu = normalize_fedprox_mu(fedprox_mu)
 
         # Parse stop condition
         if self.stop_cond:
@@ -203,6 +212,7 @@ class FedAvg(BaseFedAvg):
                 self._site_metric_weights = {}
 
                 # Non-blocking send with callback for streaming aggregation
+                set_fedprox_metadata(model, self.fedprox_mu)
                 self.send_model(
                     task_name=self.task_name,
                     targets=clients,
@@ -255,12 +265,12 @@ class FedAvg(BaseFedAvg):
         finally:
             cleanup_tensor_disk_offload(engine=getattr(self, "engine", None), context=disk_offload_context)
 
-    def _aggregate_one_result(self, result: FLModel) -> None:
+    def _aggregate_one_result(self, result: FLModel) -> bool:
         """Callback: aggregate ONE client result immediately (InTime aggregation)."""
         if not result.params:
             client_name = _get_client_name(result)
             self.warning(f"Empty result from client {client_name}, skipping.")
-            return
+            return False
 
         # Store only params_type from first result (not the full model)
         if self._params_type is None:
@@ -317,6 +327,7 @@ class FedAvg(BaseFedAvg):
 
         self._received_count += 1
         self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
+        return True
 
     def _get_aggregated_result(self) -> FLModel:
         """Get the final aggregated result after all clients have responded."""
@@ -332,6 +343,11 @@ class FedAvg(BaseFedAvg):
             return result
         else:
             # Use built-in InTime aggregation
+            aggr_stats = self._aggr_helper.get_aggregation_stats()
+            aggr_stats[AggregationStatsKey.ROUND] = self.current_round
+            if self.fl_ctx:
+                self.fl_ctx.set_prop(AppConstants.AGGREGATION_STATS, aggr_stats, private=True, sticky=False)
+
             aggr_params = self._aggr_helper.get_result()
             aggr_metrics = self._aggr_metrics_helper.get_result() if self._all_metrics else None
             aggr_metrics = aggr_metrics or None

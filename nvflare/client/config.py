@@ -39,6 +39,15 @@ class ExchangeFormat(str, Enum):
     KERAS_LAYER_WEIGHTS = "keras_layer_weights"
 
 
+def normalize_exchange_format(value, name: str) -> ExchangeFormat:
+    """Return a validated ExchangeFormat value for a config declaration."""
+
+    try:
+        return ExchangeFormat(value)
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"invalid {name} {value!r}: must be one of {list(ExchangeFormat)}") from e
+
+
 class TransferType(str, Enum):
     FULL = "FULL"
     DIFF = "DIFF"

@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+from nvflare.app_common.aggregators.weighted_aggregation_helper import AggregationStatsKey, WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils.log_utils import get_module_logger
 
@@ -58,6 +58,7 @@ class DXOAggregator(FLComponent):
         self.warning_count = {}
         self.warning_limit = 10
         self.processed_algorithm = None
+        self.last_aggregation_stats = None
 
         if name_postfix:
             self._name += name_postfix
@@ -174,6 +175,12 @@ class DXOAggregator(FLComponent):
         self.log_info(fl_ctx, f"aggregating {self.aggregation_helper.get_len()} update(s) at round {current_round}")
         self.log_debug(fl_ctx, f"complete history {self.aggregation_helper.get_len()}")
         aggregated_dict = self.aggregation_helper.get_result()
+        # get_result() snapshots the stats atomically with its reset (under the helper lock), so a
+        # concurrent accept() cannot be included in the model but omitted from the stats; reading
+        # the stats separately before get_result() would leave exactly that race window.
+        stats = dict(self.aggregation_helper.last_aggregation_stats or {})
+        stats[AggregationStatsKey.ROUND] = current_round
+        self.last_aggregation_stats = stats
         self.log_debug(fl_ctx, "End aggregation")
 
         dxo = DXO(data_kind=self.expected_data_kind, data=aggregated_dict)

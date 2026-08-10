@@ -51,6 +51,7 @@ _SERVER_FQCN = "server/app_server"
 _REF_ID = "deadbeef-0000-1111-2222-333333333333"
 _ITEM_ID_0 = "T0"
 _ITEM_ID_1 = "T1"
+_CJ_FQCN = "site-1/job-1"
 
 
 def _make_decomposer():
@@ -64,6 +65,11 @@ def _make_manager(fobs_ctx: dict = None) -> DatumManager:
     """Return a DatumManager with an optional pre-populated fobs_ctx."""
     ctx = fobs_ctx if fobs_ctx is not None else {}
     return DatumManager(threshold=1024, fobs_ctx=ctx)
+
+
+class _FakeCell:
+    def get_fqcn(self):
+        return _CJ_FQCN
 
 
 def _ref_datum(fqcn: str = _SERVER_FQCN, ref_id: str = _REF_ID) -> Datum:

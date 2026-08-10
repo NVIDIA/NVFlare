@@ -28,7 +28,9 @@ from nvflare.fuel.f3.streaming.stream_const import (
     EOS,
     STREAM_ACK_TOPIC,
     STREAM_CHANNEL,
+    STREAM_CHUNK_SIZE,
     STREAM_DATA_TOPIC,
+    STREAM_WINDOW_SIZE,
     StreamDataType,
     StreamHeaderKey,
 )
@@ -37,9 +39,17 @@ from nvflare.fuel.f3.streaming.stream_utils import ONE_MB, stream_stats_category
 
 log = logging.getLogger(__name__)
 
-MAX_OUT_SEQ_CHUNKS = 16
-# 1/4 of the window size
-ACK_INTERVAL = 1024 * 1024 * 4
+MIN_OUT_SEQ_CHUNKS = 16
+# Upper bound on the out-of-sequence tolerance derived from a peer's
+# WINDOW_SIZE/CHUNK_SIZE headers. Those headers are hints, and an unbounded
+# ratio would let a peer size this receiver's reassembly buffer at will. A site
+# that legitimately needs more can raise streaming_max_out_seq_chunks in its own
+# config, which is not capped.
+MAX_PEER_DERIVED_OUT_SEQ_CHUNKS = 1024
+# Headerless legacy senders can use windows smaller than the new sender
+# default. Keep their receiver-side fallback at the historical 4 MiB so an
+# ACK is sent before those senders exhaust their flow-control window.
+ACK_INTERVAL = 4 * ONE_MB
 READ_TIMEOUT = 300
 COMPLETED_TASK_TTL = 60.0
 RETRY_WAIT = 5.0
@@ -61,6 +71,30 @@ def _abbrev(value, limit: int = 64) -> str:
     if len(text) > limit:
         text = f"{text[:limit]}...({len(text)} chars)"
     return text
+
+
+def required_out_seq_chunks(window_size: int, chunk_size: int) -> int:
+    """Return the out-of-sequence tolerance needed for a sender's flow-control window.
+
+    Inbound frames are dispatched to a thread pool (ConnManager.process_frame), so
+    chunks that arrive in order can still be *processed* out of order, with a depth
+    that grows under scheduling jitter. The depth is bounded by how many chunks the
+    sender may have unacked, which is what its flow-control window governs.
+    TxTask coalesces short reads so every non-final frame is chunk_size bytes and
+    pauses while ``window > window_size``. The EOS path may add one final frame,
+    while the missing expected frame is never stored in out_seq_chunks. Therefore
+    ``ceil(window_size / chunk_size) + 1`` slots cover both divisible and
+    non-divisible windows. Tolerating fewer aborts healthy streams under load --
+    the FLARE-3093 regression, where a 64 MiB default window put far more than 16
+    chunks in flight.
+
+    The result is capped at MAX_PEER_DERIVED_OUT_SEQ_CHUNKS because window_size and
+    chunk_size may be adopted from peer-supplied headers.
+    """
+    if chunk_size <= 0:
+        return MIN_OUT_SEQ_CHUNKS
+    window_chunks = (window_size + chunk_size - 1) // chunk_size
+    return max(MIN_OUT_SEQ_CHUNKS, min(window_chunks + 1, MAX_PEER_DERIVED_OUT_SEQ_CHUNKS))
 
 
 class RxTask:
@@ -87,6 +121,7 @@ class RxTask:
         # Out-of-sequence chunks to be assembled
         self.out_seq_chunks: Dict[int, Tuple[bool, BytesAlike]] = {}
         self.stream_future = None
+        self.sender_flow_control_received = False
         self.next_seq = 0
         self.offset = 0
         self.received_offset = 0
@@ -107,8 +142,13 @@ class RxTask:
 
         config = CommConfigurator()
         self.timeout = config.get_streaming_read_timeout(READ_TIMEOUT)
+        self.chunk_size = config.get_streaming_chunk_size(STREAM_CHUNK_SIZE)
+        self.window_size = config.get_streaming_window_size(STREAM_WINDOW_SIZE)
         self.ack_interval = config.get_streaming_ack_interval(ACK_INTERVAL)
-        self.max_out_seq = config.get_streaming_max_out_seq_chunks(MAX_OUT_SEQ_CHUNKS)
+        required_max_out_seq = required_out_seq_chunks(self.window_size, self.chunk_size)
+        configured_max_out_seq = config.get_streaming_max_out_seq_chunks(None)
+        self.max_out_seq_is_configured = configured_max_out_seq is not None
+        self.max_out_seq = configured_max_out_seq if self.max_out_seq_is_configured else required_max_out_seq
         self.completed_task_ttl = config.get_streaming_retry_timeout(
             COMPLETED_TASK_TTL
         ) + config.get_streaming_retry_wait(RETRY_WAIT)
@@ -199,6 +239,11 @@ class RxTask:
                 else:
                     self._handle_new_stream(message)
                     new_stream = True
+            elif not self.stream_future and not self.sender_flow_control_received:
+                # Sequence 0 can be delayed by ConnManager's frame-processing pool.
+                # New senders repeat these headers so the reassembly limit can be
+                # raised before admitting later chunks.
+                self._update_sender_flow_control(message)
 
             if not duplicate_start:
                 should_stop, ack_to_send, stop_error = self._handle_incoming_data(seq, message)
@@ -218,6 +263,8 @@ class RxTask:
         self.topic = message.get_header(StreamHeaderKey.TOPIC)
         self.headers = message.headers
         self.size = message.get_header(StreamHeaderKey.SIZE, 0)
+        self._update_sender_flow_control(message)
+
         retry_timeout = message.get_header(StreamHeaderKey.RETRY_TIMEOUT, None)
         retry_wait = message.get_header(StreamHeaderKey.RETRY_WAIT, None)
         if retry_timeout is not None and retry_wait is not None:
@@ -252,6 +299,66 @@ class RxTask:
 
         self.stream_future = StreamFuture(self.sid, self.headers)
         self.stream_future.set_size(self.size)
+
+    def _update_sender_flow_control(self, message: Message):
+        has_flow_control_headers = all(
+            message.get_header(key, None) is not None
+            for key in (
+                StreamHeaderKey.CHUNK_SIZE,
+                StreamHeaderKey.WINDOW_SIZE,
+            )
+        )
+        self.chunk_size = self._get_sender_parameter(
+            message, StreamHeaderKey.CHUNK_SIZE, "streaming_chunk_size", self.chunk_size
+        )
+        self.window_size = self._get_sender_parameter(
+            message, StreamHeaderKey.WINDOW_SIZE, "streaming_window_size", self.window_size
+        )
+        self.ack_interval = self._get_sender_parameter(
+            message, StreamHeaderKey.ACK_INTERVAL, "streaming_ack_interval", self.ack_interval
+        )
+        if self.chunk_size > 0:
+            window_chunks = (self.window_size + self.chunk_size - 1) // self.chunk_size
+            if window_chunks + 1 > MAX_PEER_DERIVED_OUT_SEQ_CHUNKS:
+                log.warning(
+                    f"{self} streaming_window_size {self.window_size} from {self.origin} needs "
+                    f"{window_chunks + 1} out-of-sequence chunks, above the "
+                    f"{MAX_PEER_DERIVED_OUT_SEQ_CHUNKS} cap; raise streaming_max_out_seq_chunks on this "
+                    f"site if this peer's window is legitimate"
+                )
+        required_max_out_seq = required_out_seq_chunks(self.window_size, self.chunk_size)
+        if self.max_out_seq_is_configured:
+            if required_max_out_seq > self.max_out_seq:
+                log.warning(
+                    f"{self} sender flow-control window needs {required_max_out_seq} out-of-sequence chunks, "
+                    f"above configured streaming_max_out_seq_chunks {self.max_out_seq}; stream may fail under load"
+                )
+        else:
+            self.max_out_seq = max(self.max_out_seq, required_max_out_seq)
+        if self.ack_interval > self.window_size:
+            log.warning(
+                f"{self} streaming_ack_interval {self.ack_interval} from {self.origin} exceeds "
+                f"streaming_window_size {self.window_size}; using {self.window_size}"
+            )
+            self.ack_interval = self.window_size
+        self.sender_flow_control_received = has_flow_control_headers
+
+    def _get_sender_parameter(
+        self,
+        message: Message,
+        header_key: str,
+        parameter_name: str,
+        local_value: int,
+        allow_non_positive: bool = False,
+    ) -> int:
+        value = message.get_header(header_key, None)
+        if value is None:
+            return local_value
+
+        if isinstance(value, bool) or not isinstance(value, int) or (value <= 0 and not allow_non_positive):
+            log.warning(f"{self} ignoring invalid {parameter_name} header from {self.origin}: {_abbrev(value)}")
+            return local_value
+        return value
 
     def _handle_incoming_data(
         self, seq: int, message: Message

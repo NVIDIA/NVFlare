@@ -99,6 +99,8 @@ Key features:
 
 **Recipe-Based Approach:**
 ```python
+from nvflare.recipe import set_per_site_config
+
 # Create recipe with FedAvgRecipe
 # Model can be class instance or dict config
 # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
@@ -110,7 +112,6 @@ recipe = FedAvgRecipe(
     train_script="client.py",
     server_expected_format=server_expected_format,  # "pytorch" or "numpy"
     launch_external_process=True,
-    per_site_config=per_site_config,  # Site-specific configurations
     key_metric="neg_eval_loss",
 )
 ```
@@ -133,6 +134,7 @@ per_site_config = {
                    "--nproc_per_node=2 --master_port=8888"
     }
 }
+set_per_site_config(recipe, per_site_config)
 ```
 
 **Optional Features:**
@@ -146,10 +148,10 @@ The recipe supports multiple execution modes:
 **1. Export Only** (generate job config without running):
 ```bash
 python job.py \
+    --export \
+    --export-dir ${PWD}/workspace/jobs/job_config \
     --client_ids dolly \
-    --data_path ${PWD}/dataset \
-    --job_dir ${PWD}/workspace/jobs/job_config \
-    --export_config
+    --data_path ${PWD}/dataset
 ```
 
 **2. Simulation Mode** (local testing):
@@ -157,8 +159,7 @@ python job.py \
 python job.py \
     --client_ids dolly \
     --data_path ${PWD}/dataset \
-    --workspace_dir ${PWD}/workspace/simulation \
-    --job_dir ${PWD}/workspace/jobs/simulation
+    --workspace_dir ${PWD}/workspace/simulation
 ```
 
 **3. Production Mode** (real deployment):
@@ -289,7 +290,6 @@ python3 job.py \
     --client_ids dolly \
     --data_path ${PWD}/dataset \
     --workspace_dir ${PWD}/workspace/dolly_fl_single_gpu \
-    --job_dir ${PWD}/workspace/jobs/dolly_fl_single_gpu \
     --message_mode tensor
 ```
 The loss curves are shown below, black for centralized results, magenta for FL training. With some training randomness, the two SFT training loss curves align with each other. 
@@ -301,7 +301,6 @@ python3 job.py \
        --client_ids dolly oasst1\
        --data_path ${PWD}/dataset \
        --workspace_dir ${PWD}/workspace/dolly_oasst1_fl_multi_gpu \
-       --job_dir ${PWD}/workspace/jobs/dolly_oasst1_fl_multi_gpu \
        --gpu "[0,1],[2,3]" \
        --ports 7777 8888
 ```
@@ -312,10 +311,10 @@ from float32 to 16-bit, 8-bit, and 4-bit for communication. Quantization is enab
 16-bit is a direct precision conversion, while 8-bit, 4-bit quantization is performed by [bitsandbytes](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/main).
 Note that 4-bit quantizations (`fp4` or `nf4`) need device support.
 ```
-python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_16 --job_dir ${PWD}/workspace/jobs/hf_sft_16 --train_mode SFT --quantize_mode float16
-python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_8 --job_dir ${PWD}/workspace/jobs/hf_sft_8 --train_mode SFT --quantize_mode blockwise8
-python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_fp4 --job_dir ${PWD}/workspace/jobs/hf_sft_fp4 --train_mode SFT --quantize_mode float4
-python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_nf4 --job_dir ${PWD}/workspace/jobs/hf_sft_nf4 --train_mode SFT --quantize_mode normfloat4
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_16 --train_mode SFT --quantize_mode float16
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_8 --train_mode SFT --quantize_mode blockwise8
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_fp4 --train_mode SFT --quantize_mode float4
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_nf4 --train_mode SFT --quantize_mode normfloat4
 ```
 The SFT curves are shown below, magenta for centralized results, others for FL training with quantization. We can see it achieves similar alignment comparing to centralized result with training randomness (similar to previous figure).
 ![sft](./figs/fl_sft_comp.png)
@@ -337,11 +336,11 @@ Note that quantization will generate additional meta data, which can be signific
 In addition, since the model is trained with bf16, instead of first converting to numpy in float32, we can directly communicate with tensor in bf16 to avoid the message size inflation due to the conversion. 
 We can use the following command to run the federated training with direct tensor communication.
 ```
-python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor --job_dir ${PWD}/workspace/jobs/hf_sft_tensor --train_mode SFT --message_mode tensor
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor --train_mode SFT --message_mode tensor
 ```
 Similarly, quantization can be applied to tensor communication as well.
 ```
-python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor_fp4 --job_dir ${PWD}/workspace/jobs/hf_sft_tensor_fp4 --train_mode SFT --message_mode tensor --quantize_mode float4
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor_fp4 --train_mode SFT --message_mode tensor --quantize_mode float4
 ```
 In this case, since the tensor is in bf16, and the quantization reduces it to float4, the message size change (from client to server after one local round) is thus:
 ```
@@ -351,7 +350,7 @@ Before quantization: 2705.58 MB. After quantization: 676.39 MB with meta: 84.57 
 ## Federated Training with Multiple Clients
 With the above example, we can easily extend the federated training to multiple clients. We can use the following command to run the federated training with multiple clients:
 ```
-python3 job.py --client_ids dolly alpaca oasst1 --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_multi --job_dir ${PWD}/workspace/jobs/hf_sft_multi --train_mode SFT --threads 1
+python3 job.py --client_ids dolly alpaca oasst1 --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_multi --train_mode SFT --threads 1
 ```
 
 For comparison, we run the other two sites in centralized training mode:
@@ -376,7 +375,7 @@ Similarly for PEFT, we can run the following command:
 python3 ./utils/hf_sft_peft.py --output_path ./workspace/dolly_cen_peft --train_mode PEFT
 python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/alpaca/training.jsonl --data_path_valid ./dataset/alpaca/validation.jsonl --output_path ./workspace/alpaca_cen_peft --train_mode PEFT
 python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/oasst1/training.jsonl --data_path_valid ./dataset/oasst1/validation.jsonl --output_path ./workspace/oasst1_cen_peft --train_mode PEFT
-python3 job.py --client_ids dolly alpaca oasst1 --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_peft_multi --job_dir ${PWD}/workspace/jobs/hf_peft_multi --train_mode PEFT --threads 1
+python3 job.py --client_ids dolly alpaca oasst1 --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_peft_multi --train_mode PEFT --threads 1
 ```
 
 The training loss curves are shown below:

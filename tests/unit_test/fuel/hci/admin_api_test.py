@@ -32,6 +32,9 @@ def test_admin_api_passes_server_identity_to_cell_auth_identity_map():
         def register_request_cb(self, **kwargs):
             pass
 
+        def get_fqcn(self):
+            return "admin@nvidia.com"
+
         def start(self):
             pass
 

@@ -35,19 +35,26 @@ transfer layer. That path may differ if collision handling adds a suffix.
    current directory parent, preventing a nested `./<job_id>/<job_id>` result
    while preserving the final `./<job_id>` default behavior.
 4. Explicit `--output-dir` is passed through as an absolute destination.
-5. Artifact discovery reports a global model when a common model file is present,
-   for example `FL_global_model.pt`, `global_model.pt`, or `global_model.pth`.
-6. Artifact discovery reports `metrics_summary` when `metrics_summary.json` is
+5. Artifact discovery reports a global model when a common model file is present
+   in a canonical server-owned location, for example `FL_global_model.pt`,
+   `global_model.pt`, or `global_model.pth` under `workspace`, `server`, or
+   `app_server`.
+6. Client-side checkpoints are never reported as the global model, including when
+   they use a common global-model filename or sort before the server directory.
+7. A canonical `artifact_manifest.json` resolves custom global-model filenames.
+   Manifest paths are relative to the manifest and must remain inside the download
+   tree without traversing symlinks.
+8. Artifact discovery reports `metrics_summary` when `metrics_summary.json` is
    present.
-7. Artifact discovery reports `client_logs` as a mapping from site name to local
+9. Artifact discovery reports `client_logs` as a mapping from site name to local
    `log.txt` path, excluding server logs when identifiable.
-8. Missing expected artifact categories are listed in `missing_artifacts` without
+10. Missing expected artifact categories are listed in `missing_artifacts` without
    failing the command.
-9. Empty or nonexistent download paths produce a successful response with an
+11. Empty or nonexistent download paths produce a successful response with an
    empty `artifacts` object and relevant `missing_artifacts`.
-10. Artifact discovery skips symlinked files or directories that could resolve
+12. Artifact discovery skips symlinked files or directories that could resolve
     outside `download_path`.
-11. Existing error behavior remains unchanged for `JobNotFound`,
+13. Existing error behavior remains unchanged for `JobNotFound`,
     `AuthenticationError`, and `NoConnection`.
 
 ## Documentation Checks
@@ -61,5 +68,6 @@ transfer layer. That path may differ if collision handling adds a suffix.
 
 - No server-side path disclosure.
 - No server protocol changes.
-- No attempt to guarantee every framework-specific model naming convention.
+- Custom model names require an authoritative artifact manifest; the CLI does not
+  infer their meaning from an extension or directory-walk order.
 - No command failure solely because model, metrics, or logs are absent.

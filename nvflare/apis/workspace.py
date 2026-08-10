@@ -157,6 +157,19 @@ class Workspace:
     def get_file_path_in_root(self, file_basename: str):
         return os.path.join(self.root_dir, file_basename)
 
+    def get_study_registry_write_path(self) -> str:
+        # The registry is runtime-mutable state kept in the workspace root, which stays writable
+        # in deployments that mount the site config dir read-only (e.g. K8s ConfigMap staging).
+        return self.get_file_path_in_root(WorkspaceConstants.STUDY_REGISTRY_CONFIG)
+
+    def get_study_registry_file_path(self) -> str:
+        # A provisioned copy in the site config dir only seeds the registry until the first
+        # runtime mutation is persisted to the workspace root; the root copy then shadows it.
+        write_path = self.get_study_registry_write_path()
+        if os.path.exists(write_path):
+            return write_path
+        return self._fallback_path([WorkspaceConstants.STUDY_REGISTRY_CONFIG]) or write_path
+
     def get_server_startup_file_path(self):
         # this is to get the full path to "fed_server.json"
         return self.get_file_path_in_startup(WorkspaceConstants.SERVER_STARTUP_CONFIG)

@@ -4,7 +4,16 @@ This folder contains advanced examples for NVFlare.
 
 Please make sure you set up a virtual environment and install JupyterLab following the [example root readme](../README.md).
 
-Please also install "./requirements.txt" in each example folder.
+Please also install "./requirements.txt" in each example folder where it is
+provided.
+
+## Custom workflows
+* [Collab API](./collab/README.md)
+  * Advanced examples for custom server workflows, in-time aggregation, and decentralized client-to-client calls.
+
+## Client API
+* [Attach an externally managed trainer](./client-api-attach/README.md)
+  * Connects the same Client API training loop through either a direct network profile or shared-file rendezvous.
 
 ## FL algorithms
 * [Federated Learning with CIFAR-10](./cifar10/README.md)

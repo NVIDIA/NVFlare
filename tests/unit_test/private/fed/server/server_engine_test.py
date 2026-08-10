@@ -250,9 +250,7 @@ def test_remove_run_processes_terminates_job_handle_when_graceful_wait_expires()
     run_process_info = {RunProcessKey.JOB_HANDLE: job_handle}
     engine = _make_remove_engine({"job-1": run_process_info})
 
-    with patch("nvflare.private.fed.server.server_engine.time.time", side_effect=[0.0, 99.0]):
-        with patch("nvflare.private.fed.server.server_engine.time.sleep"):
-            engine._remove_run_processes("job-1")
+    engine._remove_run_processes("job-1", max_wait=0.0)
 
     job_handle.terminate.assert_called_once()
     assert "job-1" not in engine.run_processes
@@ -289,9 +287,7 @@ def test_remove_run_processes_tolerates_terminate_failure():
     run_process_info = {RunProcessKey.JOB_HANDLE: job_handle}
     engine = _make_remove_engine({"job-1": run_process_info})
 
-    with patch("nvflare.private.fed.server.server_engine.time.time", side_effect=[0.0, 99.0]):
-        with patch("nvflare.private.fed.server.server_engine.time.sleep"):
-            engine._remove_run_processes("job-1")
+    engine._remove_run_processes("job-1", max_wait=0.0)
 
     job_handle.terminate.assert_called_once()
     assert "job-1" not in engine.run_processes
@@ -357,6 +353,20 @@ def test_set_run_manager_links_cell_and_registers_widgets():
     assert engine.run_manager is run_manager
     assert run_manager.cell is engine.cell
     assert run_manager.add_handler.call_count == 2
+
+
+@pytest.mark.parametrize("has_run_manager", [False, True])
+def test_set_cell_links_run_manager_without_registering_handler(has_run_manager):
+    engine = _basic_engine()
+    engine.run_manager = MagicMock() if has_run_manager else None
+    cell = MagicMock()
+
+    engine.set_cell(cell)
+
+    assert engine.cell is cell
+    if has_run_manager:
+        assert engine.run_manager.cell is cell
+    cell.register_request_cb.assert_not_called()
 
 
 def test_initialize_comm_links_run_manager_and_registers_handler():

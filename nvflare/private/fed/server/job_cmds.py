@@ -680,7 +680,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 if not log_name:
                     return None
                 with zip_file.open(log_name, "r") as log_file:
-                    data = log_file.read(self.MAX_RETURNED_JOB_LOG_BYTES + 1)
+                    data = self._read_job_log_tail_data(log_file)
         except (BadZipFile, KeyError, OSError, TypeError):
             return None
 
@@ -848,7 +848,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 if not log_name:
                     return None
                 with zip_file.open(log_name, "r") as log_file:
-                    data = log_file.read(self.MAX_RETURNED_JOB_LOG_BYTES + 1)
+                    data = self._read_job_log_tail_data(log_file)
         except (BadZipFile, KeyError, OSError, TypeError):
             return None
 
@@ -913,7 +913,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 for client_name, log_name in log_members.items():
                     try:
                         with zip_file.open(log_name, "r") as log_file:
-                            data = log_file.read(self.MAX_RETURNED_JOB_LOG_BYTES + 1)
+                            data = self._read_job_log_tail_data(log_file)
                     except (KeyError, OSError):
                         continue
                     text = self._decode_job_log_data(data)
@@ -966,6 +966,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 targets.add(site_name)
         return targets
 
+    def _read_job_log_tail_data(self, log_file) -> bytes:
+        read_size = self.MAX_RETURNED_JOB_LOG_BYTES + 1
+        log_file.seek(0, os.SEEK_END)
+        file_size = log_file.tell()
+        log_file.seek(max(0, file_size - read_size))
+        return log_file.read(read_size)
+
     def _decode_job_log_data(self, data) -> Optional[str]:
         if data is None:
             return None
@@ -976,29 +983,16 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
         truncated = len(raw_data) > self.MAX_RETURNED_JOB_LOG_BYTES
         if truncated:
-            raw_data = raw_data[: self.MAX_RETURNED_JOB_LOG_BYTES]
+            raw_data = raw_data[-self.MAX_RETURNED_JOB_LOG_BYTES :] if self.MAX_RETURNED_JOB_LOG_BYTES else b""
         text = raw_data.decode("utf-8", errors="replace")
         if truncated:
-            text += f"\n... output truncated after {self.MAX_RETURNED_JOB_LOG_BYTES} bytes ...\n"
+            text = f"... output truncated to last {self.MAX_RETURNED_JOB_LOG_BYTES} bytes ...\n{text}"
         return text
 
     def _collect_job_log_lines(self, log_file: str):
-        lines = []
-        collected_bytes = 0
-        truncated_by_bytes = False
-
-        with open(log_file, "r", encoding="utf-8", errors="replace") as f:
-            for line in f:
-                line_len = len(line.encode("utf-8", errors="replace"))
-                if collected_bytes + line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
-                    truncated_by_bytes = True
-                    break
-                collected_bytes += line_len
-                lines.append(line)
-
-        if truncated_by_bytes:
-            lines.append(f"... output truncated after {self.MAX_RETURNED_JOB_LOG_BYTES} bytes ...\n")
-        return lines
+        with open(log_file, "rb") as f:
+            data = self._read_job_log_tail_data(f)
+        return self._decode_job_log_data(data).splitlines(keepends=True)
 
     def list_job_components(self, conn: Connection, args: List[str]):
         if len(args) < 2:
@@ -1534,12 +1528,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     def _set_duration(job):
         if job.meta.get(JobMetaKey.STATUS) == RunStatus.RUNNING.value:
             try:
-                start_time = datetime.datetime.strptime(
-                    job.meta.get(JobMetaKey.START_TIME.value), "%Y-%m-%d %H:%M:%S.%f"
-                )
+                start_time = datetime.datetime.fromisoformat(job.meta.get(JobMetaKey.START_TIME.value))
             except (TypeError, ValueError):
                 return
-            duration = datetime.datetime.now() - start_time
+            if start_time.tzinfo is not None:
+                duration = datetime.datetime.now(datetime.timezone.utc) - start_time.astimezone(datetime.timezone.utc)
+            else:
+                duration = datetime.datetime.now() - start_time
             job.meta[JobMetaKey.DURATION.value] = str(duration)
 
     def submit_job(self, conn: Connection, args: List[str]):
@@ -1566,10 +1561,6 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     conn.append_error(error, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, error))
                     return
 
-                # Strip privileged meta keys that must only be set by internal server components.
-                # A user-submitted job is never "from hub site" — only HubAppDeployer sets this flag
-                # after verifying the job, and it operates on the server side.
-                meta.pop(JobMetaKey.FROM_HUB_SITE.value, None)
                 # Submit-token is server-owned submission metadata. User job metadata must not expose it.
                 meta.pop(SubmitRecordKey.SUBMIT_TOKEN.value, None)
 

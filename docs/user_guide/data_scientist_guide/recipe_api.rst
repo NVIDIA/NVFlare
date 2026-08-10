@@ -3,9 +3,11 @@
 Recipe API Reference
 ====================
 
-This page describes the stable Recipe APIs you can rely on when writing,
-exporting, and running recipe-based jobs. It also calls out which generated-job
-details are internal implementation details rather than user-facing Recipe APIs.
+This page is the authoritative reference for the stable Recipe APIs you can
+rely on when writing, exporting, and running recipe-based jobs. It also calls
+out which generated-job details are internal implementation details rather
+than user-facing Recipe APIs. For a runnable introduction, see
+:ref:`job_recipe`.
 
 How Recipe Jobs Fit Together
 ----------------------------
@@ -28,7 +30,7 @@ Start With A Concrete Recipe
 ----------------------------
 
 Start recipe scripts by creating a concrete recipe class. Examples include
-``FedAvgRecipe``, ``CyclicRecipe``, ``FedOptRecipe``, ``FedStatsRecipe``, and
+``FedAvgRecipe``, ``FedProxRecipe``, ``CyclicRecipe``, ``FedOptRecipe``, ``FedStatsRecipe``, and
 the XGBoost recipes listed by ``nvflare recipe list``.
 
 Constructor parameters are public when they are documented in the recipe guide
@@ -38,9 +40,17 @@ or returned by:
 
    nvflare recipe show <recipe-name> --format json
 
-The base ``Recipe`` type defines behavior shared by concrete recipes. Most
-scripts do not instantiate the base type directly. The public constructor
-surface is the documented constructor of each concrete recipe.
+The base ``Recipe`` type is an implementation base shared by concrete recipes;
+it is not a user-facing job constructor. Application entrypoints should import
+and instantiate a named concrete recipe rather than importing ``Recipe`` from
+``nvflare.recipe.spec`` or passing around its generated job. The public
+constructor surface is the documented constructor of each concrete recipe.
+
+Recipe documentation and the lower-level :ref:`fed_job_api` documentation are
+intentionally separate. Use recipes for supported high-level workflows. Use
+``FedJob`` when implementing an advanced workflow that requires arbitrary
+component placement or custom job construction, and keep that assembly behind
+a dedicated recipe when exposing a reusable high-level entrypoint.
 
 Recipe Execution
 ----------------
@@ -50,20 +60,33 @@ All concrete recipes support the common execution surface:
 ``recipe.export(job_dir, server_exec_params=None, client_exec_params=None, env=None)``
    Export the current recipe definition as a deployable NVFlare job directory.
    If ``env`` is supplied, the recipe can apply environment-specific processing
-   before export.
+   before export. Execution parameter dictionaries become part of the job
+   definition and must not contain secret values; see :ref:`recipe_secrets`.
 
 ``recipe.execute(env, server_exec_params=None, client_exec_params=None)``
    Execute the current recipe definition through an execution environment and
-   return a ``Run`` handle. When the Python process receives the Recipe export
-   flags, ``execute`` exports instead of submitting:
+   return a ``Run`` handle. Execution parameter dictionaries must not contain
+   secret values. When the Python process receives the Recipe export flags,
+   ``execute`` exports instead of submitting:
 
    .. code-block:: shell
 
       python job.py --export --export-dir /tmp/nvflare/job
 
+   Recipe scripts reserve ``--export`` and ``--export-dir``. NVFlare consumes
+   these arguments during module import, before the script's argument parser
+   runs, and emits a warning identifying them as system-level arguments. Recipe
+   scripts should not redeclare these options or add aliases such as
+   ``--export_config`` or ``--export_dir``. For ordinary Recipe scripts, call
+   ``execute`` for both paths and let the system-level arguments select export
+   instead of execution. Keep an explicit export path only when constructing
+   the execution environment requires deployment artifacts that job export
+   itself does not need.
+
 ``recipe.run(env, server_exec_params=None, client_exec_params=None)``
    Submit directly through the environment and return a ``Run`` handle. Most
    user examples should use ``execute`` so export flags continue to work.
+   Execution parameter dictionaries must not contain secret values.
 
 Recipe helpers mutate the recipe object. Call helpers before ``export()`` or
 ``execute()`` for the job you are about to create. After a job has been
@@ -80,10 +103,12 @@ Config helpers:
 
 ``recipe.add_client_config(config, clients=None)``
    Add top-level generated client app configuration parameters. If ``clients``
-   is omitted, the config applies to all generated client apps.
+   is omitted, the config applies to all generated client apps. The dictionary
+   is stored in clear text and must not contain secret values.
 
 ``recipe.add_server_config(config)``
-   Add top-level generated server app configuration parameters.
+   Add top-level generated server app configuration parameters. The dictionary
+   is stored in clear text and must not contain secret values.
 
 These config helpers are for documented top-level configuration knobs such as
 timeouts and streaming chunk sizes. They are not a component-placement API; do
@@ -98,17 +123,47 @@ File packaging helpers:
 ``recipe.add_server_file(file_path)``
    Bundle a file or directory into the generated server app package.
 
+For Python files, job export performs best-effort discovery of locally
+resolvable imports and includes discovered modules in the same target app.
+
+For a registered Python entry script, discovery follows the module names used
+by its imports:
+
+* An **unqualified absolute import**, such as ``import helper`` or
+  ``from helper import Helper``, names the top-level module ``helper``. For a
+  top-level script or a script in a flat directory without ``__init__.py``, the
+  exporter searches the script's directory before the project source root and
+  recursively scans local modules it finds.
+* A **package-qualified absolute import**, such as ``import pkg.helper`` or
+  ``from pkg.helper import Helper``, explicitly names ``pkg/helper.py``. Use
+  this form for a package sibling when the entry script is registered with a
+  package-qualified path such as ``pkg/client.py``.
+* An **explicit relative import**, such as ``from .helper import Helper``,
+  requires package execution context and may not work when an entry script is
+  executed by file path.
+
+Discovery is not a dependency declaration mechanism: it may not resolve every
+import, and a module discovered for a client app is not propagated to the
+server app.
+
+Add shared modules to every app that imports them or deserializes types defined
+in them. Keep the source package layout consistent with the fully qualified
+module name. For example, for ``custom_enum.CustomEnum``::
+
+   recipe.add_client_file("custom_enum.py")
+   recipe.add_server_file("custom_enum.py")
+
+Add imported dependencies the same way when they are also required by both app
+types.
+
 Helpers that accept ``clients`` target specific generated client apps. This
-requires per-site client apps: construct the recipe with the
-``per_site_config`` constructor argument on recipes that support it, and each
-name in ``clients`` must match an existing per-site client app. With the
-default all-clients topology, targeted calls raise an error rather than
-silently dropping the change from the generated job, and unknown site names
-raise an error rather than deploying a bare app to that site. Calling
-``set_per_site_config`` after construction records the configuration for
-``configured_sites()`` but does not yet rebuild an existing all-clients app
-into per-site apps; recipes will interpret helper-provided per-site config as
-follow-up work.
+requires per-site client apps: call ``set_per_site_config`` immediately after
+constructing a recipe that supports it. The recipe prepares those apps before
+applying the first client-targeted helper, and each name in ``clients`` must
+match a configured per-site client app. With the default all-clients topology,
+targeted calls raise an error rather than silently dropping the change from the
+generated job, and unknown site names raise an error rather than deploying a
+bare app to that site.
 
 Filter helpers:
 
@@ -133,17 +188,33 @@ Shared helpers:
    Add the default Recipe log-streaming components. If no file names are given,
    the recipe streams ``log.json``.
 
+``recipe.enable_tensor_streaming(format="pytorch", tasks=None, tensor_send_timeout=30.0, wait_send_task_data_all_clients_timeout=300.0)``
+   Add matching tensor-streaming components to the server and all generated
+   client apps. The format must match the recipe's ``server_expected_format``.
+
 Utility helpers:
 
 ``add_experiment_tracking(recipe, tracking_type, tracking_config=None, client_side=False, server_side=True, clients=None)``
    Add supported experiment tracking receivers such as TensorBoard, MLflow, or
    Weights & Biases. With ``client_side=True``, ``clients`` limits which sites
    receive the client-side receiver; call once per site with different
-   ``tracking_config`` values for per-site tracking destinations.
+   ``tracking_config`` values for per-site tracking destinations. For MLflow,
+   omitting ``tracking_config`` uses local storage and defaults the experiment
+   name to ``<recipe-name>-experiment``. The run-name suffix defaults to
+   ``<recipe-name>-Server`` for server-side tracking and
+   ``<recipe-name>-Client`` for client-side tracking. Keep tracking credentials
+   in the executing site's environment or mounted secret files; never put them
+   in ``tracking_config``.
 
 ``add_cross_site_evaluation(recipe, submit_model_timeout=600, validation_timeout=6000, participating_clients=None)``
    Add cross-site evaluation to a training recipe when the recipe/framework
    supports it.
+
+``add_final_global_evaluation(recipe, participating_clients=None, validation_timeout=6000)``
+   Add a final evaluation of a PyTorch recipe's persisted global model without
+   asking clients to submit their local models.
+
+.. _recipe_per_site_and_metadata:
 
 Per-Site And Metadata Helpers
 -----------------------------
@@ -151,14 +222,36 @@ Per-Site And Metadata Helpers
 For NVFlare 2.9, the public Recipe configuration surface also includes:
 
 ``set_per_site_config(recipe, config)``
-   Provide site-keyed, recipe-specific configuration. Each concrete recipe
-   interprets the site dictionaries for its own workflow.
+   Provide non-empty, site-keyed, recipe-specific configuration. Call it once,
+   immediately after recipe construction and before client customizations. Each
+   concrete recipe interprets the site dictionaries for its own workflow.
+   Built-in FedAvg, FedEval, and XGBoost recipes require at least ``min_clients``
+   entries, and reserved targets such as ``server`` and ``@ALL`` are not site
+   names. The helper validates and stores the mapping; the recipe creates its
+   client apps once, immediately before the first client customization or before
+   export or execution. Built-in FedAvg recipes and ``FedEvalRecipe`` create one
+   app per configured site; without per-site configuration, they create the
+   default ``@ALL`` client app at that preparation point. Nested values become
+   part of the job definition and must not contain secret values.
+
+   FedAvg recipes accept ``train_script``, ``train_args``,
+   ``launch_external_process``, ``command``, ``framework``,
+   ``server_expected_format``, ``params_transfer_type``, ``launch_once``, and
+   ``shutdown_timeout`` in each site's dictionary. ``FedEvalRecipe`` accepts the
+   corresponding ``eval_script`` and ``eval_args`` fields plus its launch,
+   command, and exchange-format overrides. XGBoost recipes require a
+   ``data_loader`` for every site; bagging also accepts ``lr_scale``. They add
+   their required data loader and executor components directly to each
+   configured site.
+
+   Where present, the deprecated ``per_site_config=...`` constructor argument
+   delegates to this helper and emits ``FutureWarning``. New code should call
+   ``set_per_site_config``.
 
 ``recipe.configured_sites()``
-   Return top-level site names from helper-provided per-site config when
-   present. For backward compatibility, recipes may return site names from
-   legacy constructor ``per_site_config`` when available. This method does not
-   indicate that sites are connected or replace the execution environment.
+   Return top-level site names from applied per-site config. This method does
+   not infer sites from metadata, indicate that sites are connected, validate
+   production enrollment, or replace the execution environment.
 
 ``set_recipe_meta(recipe, key, value)``
    Set selected generated job metadata by ``JobMetaKey``. The accepted keys are
@@ -167,8 +260,24 @@ For NVFlare 2.9, the public Recipe configuration surface also includes:
    through this helper: runtime/submission metadata managed by NVFlare
    internals, keys with dedicated constructor fields (``min_clients``,
    ``mandatory_clients``), and ``study``, which the server assigns from the
-   admin session at submission. See the Recipe Metadata section of the Recipe
-   guide for per-key value shapes and examples.
+   admin session at submission. Set constructor fields through a concrete
+   recipe constructor that exposes them, and select the study through ``PocEnv``
+   or ``ProdEnv``. Metadata is stored in clear text and must not contain secret
+   values. Raw strings and other ``JobMetaKey`` values are rejected.
+
+   Accepted key and value shapes are:
+
+   * ``JobMetaKey.RESOURCE_SPEC``: a dict of per-site resource requirements,
+     keyed by site name with dict values.
+   * ``JobMetaKey.JOB_LAUNCHER_SPEC``: a dict of per-site launcher
+     requirements, keyed by site name with dict values.
+   * ``JobMetaKey.SCOPE``: a string job-scope name.
+   * ``JobMetaKey.CUSTOM_PROPS``: a dict of nested custom metadata.
+
+   Dict values and nested dictionary or list contents must be JSON-serializable.
+   Dictionary keys are coerced to strings as they appear in ``meta.json``, and
+   non-finite floating-point values such as ``NaN`` and ``Infinity`` are
+   rejected.
 
 Repeated metadata calls for the same key replace that key's previous helper
 value. Different metadata keys accumulate. Keys that overlap a dedicated
@@ -179,11 +288,195 @@ specs on the generated job, a warning is emitted for specs already registered
 when the helper is called, but specs added afterwards are overridden without
 one.
 
+Metadata helpers do not validate runtime resource availability, production
+enrollment, or whether named sites are present for a run. Deployment through
+the execution environment determines which sites are present.
+
+.. _recipe_secrets:
+
+Keeping Secrets Out Of Recipe Parameters
+----------------------------------------
+
+Recipe parameters are part of the job definition, not a secret transport.
+Values supplied through recipe constructors and mutating helpers can be
+serialized in clear text into generated configuration files. This includes
+``train_args``, ``task_args``, ``eval_args``, ``per_site_config``, task data and
+metadata, server/client config override dictionaries, execution parameters,
+recipe metadata, tracking configuration, and dictionaries passed to
+``add_client_config`` / ``add_server_config``. These values must **never**
+contain actual passwords, API keys, access tokens, private keys, or other
+credentials.
+
+This contract applies to nested strings too, not just top-level parameter
+values. A secret's environment-variable name, a reference placeholder, or the
+path to a mounted secret file is configuration and can be supplied. The secret
+value itself must remain at the executing site.
+
+To catch mistakes, recipes scan their current parameters before export or run
+with heuristics (well-known token formats, password-like flag and key names,
+high-entropy strings) and emit a
+``nvflare.recipe.secrets.PotentialSecretWarning`` when a value looks like an
+actual secret. ``recipe.export()`` additionally scans the generated config
+files of the exported job. The scan is best-effort: it neither finds
+every possible credential nor makes a supplied value safe. Absence of a
+warning does not prove that a parameter is safe. Investigate each warning and
+keep any actual secret at the site, using a reference only at a supported
+runtime boundary; use the standard
+``warnings.filterwarnings`` machinery only after establishing that a finding
+is a false positive. NVFlare emits detector warnings from a synthetic source
+location so Python's warning formatter cannot echo a user source line that
+contains the flagged value. A valid reference in a known unsupported parameter
+emits ``UnsupportedSecretRefWarning`` instead of being silently accepted.
+
+There are two supported ways to make a secret available at runtime:
+
+* **Read it from the site environment (preferred).** Set an environment
+  variable or mount a secret file (for example, a Kubernetes Secret volume) on each site,
+  and read it inside your training script with ``os.environ`` or by opening
+  the mounted file. Nothing secret ever enters the job definition. Passing a
+  *path* to a mounted secret file in a recipe parameter is fine -- the path
+  is not the secret.
+
+* **Use a secret reference at a supported runtime boundary.** Put a placeholder
+  in a supported recipe value instead of the actual secret. Use ``secret_ref``
+  for an environment variable and ``secret_file_ref`` for a file containing
+  the secret:
+
+  .. code-block:: python
+
+     from nvflare.recipe.secrets import secret_file_ref, secret_ref
+
+     recipe = FedAvgRecipe(
+         ...,
+         train_args=f"--epochs 5 --api-key {secret_ref('MY_API_KEY')}",
+     )
+     recipe.add_client_config(
+         {"service_password": secret_file_ref("/var/run/secrets/service/password")}
+     )
+
+     # In site-side component code:
+     from nvflare.utils.configs import get_client_config_value
+
+     service_password = get_client_config_value(fl_ctx, "service_password")
+
+  The exported job contains only ``${secret:MY_API_KEY}`` and
+  ``${secret:file:/var/run/secrets/service/password}``. References resolve only
+  at these explicit runtime boundaries:
+
+  * Command arguments consumed by NVFlare's task script runner or subprocess
+    launcher. This includes recipe ``train_args``, ``task_args``, ``eval_args``,
+    and ``script_args`` when those arguments use these runners. NVFlare expands
+    ordinary configuration variables first, tokenizes the command, and then
+    resolves each reference immediately before the script or process starts.
+    Resolving after tokenization keeps a secret containing spaces in one
+    argument. The subprocess launcher rejects references in command strings for
+    directly invoked or leading-``env``-wrapped ``sh``/``bash`` and PowerShell.
+    This is a targeted safeguard, not a general code-interpreter detector. Never
+    put a reference in any argument another program will parse as code, including
+    another shell, a shell hidden behind a different wrapper, or ``python -c``.
+    Pass the secret through the child environment or read it from a mounted file
+    inside the invoked command instead.
+
+  * Values explicitly read from a runtime job JSON file with
+    ``get_job_config_value``, ``get_client_config_value``, or
+    ``get_server_config_value``. Typically, a recipe adds a top-level value with
+    ``add_client_config`` or ``add_server_config`` and site-side code reads it
+    through the matching specialized getter. References in nested string values
+    resolve recursively when the value is read; dictionary keys are not resolved.
+    These raw-file helpers do not expand ordinary placeholders such as
+    ``{SITE_NAME}``, so do not combine those placeholders in a value consumed
+    this way. Internal client-launcher timeout/count overrides are copied into a
+    subprocess runtime config and therefore reject secret references instead of
+    resolving them. Use references for values that site component code reads
+    directly through these getters.
+
+  Arbitrary component constructor arguments, job metadata, packaged custom
+  files, and other job artifacts keep references as placeholders and are not
+  secret delivery mechanisms. Read the site environment or mounted file inside
+  user code for those cases. In particular, Flower ``extra_env`` and
+  ``run_config`` values do not support secret references.
+
+  If an environment variable or file is unavailable, the config getter or
+  script/process launch fails with an error that identifies the missing
+  reference but never includes a secret value. Resolved values exist only in
+  runtime memory and are not written back to generated job configuration.
+
+Environment variables must be set in the environment of the server or client
+job process that uses the reference. For native-process POC and production
+deployments, this can be the environment inherited by that process. Docker and
+Kubernetes job containers do not automatically inherit arbitrary host shell
+variables or host mounts: configure the launcher/container spec to inject the
+variable or mount the file into the actual job container. A referenced file
+must exist at the same whitespace- and brace-free path inside the consuming process or
+container and should be readable only by that identity.
+
+For Kubernetes, project a Secret key into the job container as an environment
+variable or mounted file, then use the corresponding reference helper. The
+Recipe API does not query a Kubernetes Secret directly by Secret name and key.
+
+Note that with external-process execution, command-line arguments (including
+resolved secret references) are visible to local process listings on the
+executing site, as with any command-line tool. Reading the secret from the
+environment or mounted file inside the training script avoids this too. Code
+and configured components must also avoid printing resolved values: reference
+resolution keeps values out of the exported job but cannot sanitize output
+produced by user code.
+
+Threaded simulation runs in-process client scripts concurrently and shares the
+process-global ``sys.argv`` and environment. Use external-process execution for
+secret-bearing command arguments in the simulator, or preferably read a
+site-local secret directly inside code, rather than relying on in-process
+per-client argument isolation.
+
+.. _recipe_execution_environments:
+
 Execution Environments
 ----------------------
 
 Most scripts pass an environment to ``recipe.execute(env)``. Built-in
 environments include ``SimEnv``, ``PocEnv``, and ``ProdEnv``.
+
+Their public constructor signatures are:
+
+.. code-block:: python
+
+   SimEnv(
+       *, num_clients=0, clients=None, num_threads=None, gpu_config=None,
+       log_config=None, workspace_root="/tmp/nvflare/simulation", extra=None
+   )
+   PocEnv(
+       *, num_clients=2, clients=None, gpu_ids=None, use_he=False,
+       docker_image=None, project_conf_path="", username="admin@nvidia.com",
+       study="default", extra=None
+   )
+   ProdEnv(
+       startup_kit_location, login_timeout=5.0,
+       username="admin@nvidia.com", study="default", extra=None
+   )
+
+``SimEnv`` requires either a positive ``num_clients`` or a non-empty ``clients``
+list; if both are supplied, their sizes must match. ``num_threads`` controls
+simulated client worker-process concurrency. ``gpu_config`` assigns GPU IDs,
+``log_config`` selects logging configuration, and ``workspace_root`` selects
+the simulation artifact root.
+
+``NVFLARE_SIMULATOR_WORKSPACE_ROOT`` is a process-level orchestration override.
+When set, it takes precedence over ``workspace_root`` (including an explicitly
+supplied value), and ``SimEnv`` emits ``RuntimeWarning`` if it changes the
+configured path. Normal Recipe applications should leave the variable unset
+and configure ``workspace_root`` directly.
+
+``PocEnv`` runs server and clients as separate local processes. ``clients``
+selects explicit site names; ``gpu_ids`` assigns client GPUs; ``use_he`` enables
+homomorphic encryption; and ``docker_image`` selects the SP/CP image for Docker
+POC mode. Jobs in Docker POC mode specify their SJ/CJ image in recipe launcher
+metadata. When ``project_conf_path`` is supplied, its project definition takes
+precedence over client-count and Docker preparation options.
+
+``ProdEnv`` submits through an admin startup kit. ``login_timeout`` must be
+positive, and ``username`` selects the admin identity. ``PocEnv`` and
+``ProdEnv`` use ``study`` to select the submission context; see
+:ref:`multi_study_guide` for named-study configuration.
 
 Most recipe scripts do not call environment methods directly. They are listed
 here for anyone implementing an execution environment.

@@ -21,25 +21,55 @@ import pytest
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, JobConstants, RunProcessKey
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, JobConstants, RunProcessKey
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobReturnCode
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobReturnCode
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey
-from nvflare.private.fed.client.client_executor import REPORTABLE_JOB_FAILURES, JobExecutor
+from nvflare.private.fed.client.client_engine import ClientEngine
+from nvflare.private.fed.client.client_executor import REPORTABLE_JOB_FAILURES, JobExecutor, _PendingJobHandle
+from nvflare.private.fed.client.client_status import ClientStatus
+from nvflare.private.fed.client.communicator import Communicator
 
 EXPECTED_REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: "exception",
     ProcessExitCode.UNSAFE_COMPONENT: "unsafe component",
     ProcessExitCode.CONFIG_ERROR: "config error",
+    ProcessExitCode.INFRASTRUCTURE_ERROR: "infrastructure error",
     JobReturnCode.ABORTED: "aborted",
 }
 
 
 def test_reportable_job_failures_has_expected_codes():
     assert REPORTABLE_JOB_FAILURES == EXPECTED_REPORTABLE_JOB_FAILURES
+
+
+def test_abort_app_terminates_starting_job_without_worker_command():
+    client = MagicMock()
+    job_executor = JobExecutor(client=client, startup="startup")
+    job_handle = MagicMock()
+    job_executor.run_processes["job-1"] = {
+        RunProcessKey.JOB_HANDLE: job_handle,
+        RunProcessKey.STATUS: ClientStatus.STARTING,
+    }
+
+    ClientEngine.abort_app(SimpleNamespace(client_executor=job_executor), "job-1")
+
+    job_handle.terminate.assert_called_once_with()
+    client.cell.fire_and_forget.assert_not_called()
+
+
+def test_heartbeat_cleanup_propagates_non_user_abort_intent():
+    job_executor = MagicMock()
+    job_executor.get_status.return_value = ClientStatus.STARTED
+    engine = SimpleNamespace(client_executor=job_executor)
+    engine.abort_app = ClientEngine.abort_app.__get__(engine)
+
+    Communicator(client_config={"client_name": "site-1"})._clean_up_runs(engine, ["job-1"])
+
+    job_executor.abort_app.assert_called_once_with("job-1", heartbeat_cleanup=True)
 
 
 def _write_deployed_meta(tmp_path, job_id, deployed_meta):
@@ -50,6 +80,191 @@ def _write_deployed_meta(tmp_path, job_id, deployed_meta):
     with open(workspace.get_job_meta_path(job_id), "w") as f:
         json.dump(deployed_meta, f)
     return workspace
+
+
+def _make_start_app_inputs(tmp_path, job_id="job-1"):
+    job_meta = {JobConstants.JOB_ID: job_id}
+    workspace = _write_deployed_meta(tmp_path, job_id, job_meta)
+    client = MagicMock()
+    client.client_name = "site-1"
+    client.cell.get_internal_listener_url.return_value = "tcp://parent:8002"
+    client.cell.get_internal_listener_params.return_value = {}
+    fl_ctx = MagicMock()
+    fl_ctx.get_prop.side_effect = lambda key, *args, **kwargs: {
+        FLContextKey.WORKSPACE_OBJECT: workspace,
+        FLContextKey.SERVER_CONFIG: [{"service": {"scheme": "grpc", "target": "parent:8002"}}],
+    }.get(key)
+    return job_meta, workspace, client, fl_ctx
+
+
+def test_start_app_pending_handle_operations_before_launcher_returns(tmp_path):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+    launcher = MagicMock()
+
+    def launch_job(*_args):
+        pending_handle = executor.run_processes[job_id][RunProcessKey.JOB_HANDLE]
+        assert pending_handle.poll() is None
+        with pytest.raises(RuntimeError, match="before it is attached"):
+            pending_handle.wait()
+        return MagicMock()
+
+    launcher.launch_job.side_effect = launch_job
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch.object(threading.Thread, "start", lambda self: None),
+    ):
+        executor.start_app(
+            client,
+            job_id,
+            job_meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            None,
+            None,
+            None,
+            fl_ctx,
+        )
+
+
+@pytest.mark.parametrize("heartbeat_cleanup", [False, True], ids=["user_abort", "heartbeat_cleanup"])
+def test_start_app_preserves_abort_intent_while_launcher_is_running(tmp_path, heartbeat_cleanup):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+    job_handle = MagicMock()
+    job_handle.poll.return_value = JobReturnCode.ABORTED
+    launcher = MagicMock()
+
+    def launch_job(*_args):
+        assert executor.get_status(job_id) == ClientStatus.STARTING
+        ClientEngine.abort_app(SimpleNamespace(client_executor=executor), job_id, heartbeat_cleanup=heartbeat_cleanup)
+        return job_handle
+
+    launcher.launch_job.side_effect = launch_job
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch.object(threading.Thread, "start", lambda self: None),
+    ):
+        executor.start_app(
+            client,
+            job_id,
+            job_meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            None,
+            None,
+            None,
+            fl_ctx,
+        )
+
+    pending_handle = executor.run_processes[job_id][RunProcessKey.JOB_HANDLE]
+    if heartbeat_cleanup:
+        job_handle._terminate_for_heartbeat_cleanup.assert_called_once_with()
+        job_handle.terminate.assert_not_called()
+    else:
+        job_handle.terminate.assert_called_once_with()
+        job_handle._terminate_for_heartbeat_cleanup.assert_not_called()
+    client.cell.fire_and_forget.assert_not_called()
+    assert pending_handle.poll() == JobReturnCode.ABORTED
+    pending_handle.wait()
+    job_handle.wait.assert_called_once_with()
+
+
+def test_start_app_removes_pending_handle_when_launch_fails(tmp_path):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+    launcher = MagicMock()
+
+    def launch_job(*_args):
+        executor.abort_app(job_id)
+        raise RuntimeError("launch failed")
+
+    launcher.launch_job.side_effect = launch_job
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        pytest.raises(RuntimeError, match="launch failed"),
+    ):
+        executor.start_app(
+            client,
+            job_id,
+            job_meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            None,
+            None,
+            None,
+            fl_ctx,
+        )
+
+    assert job_id not in executor.run_processes
+
+
+def test_start_app_removes_pending_handle_when_launcher_returns_no_handle(tmp_path):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+    launcher = MagicMock()
+    launcher.launch_job.return_value = None
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        pytest.raises(RuntimeError, match="returned no job handle"),
+    ):
+        executor.start_app(
+            client,
+            job_id,
+            job_meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            None,
+            None,
+            None,
+            fl_ctx,
+        )
+
+    assert job_id not in executor.run_processes
+
+
+def test_pending_handle_heartbeat_cleanup_falls_back_to_terminate():
+    job_handle = MagicMock(spec=JobHandleSpec)
+    pending_handle = _PendingJobHandle()
+    pending_handle.attach(job_handle)
+
+    pending_handle.terminate(heartbeat_cleanup=True)
+
+    job_handle.terminate.assert_called_once_with()
+
+
+def test_start_app_does_not_replace_existing_launch_registration(tmp_path):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+    existing_handle = MagicMock()
+    executor.run_processes[job_id] = {
+        RunProcessKey.JOB_HANDLE: existing_handle,
+        RunProcessKey.STATUS: ClientStatus.STARTING,
+    }
+    launcher = MagicMock()
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        pytest.raises(RuntimeError, match="still registered"),
+    ):
+        executor.start_app(
+            client,
+            job_id,
+            job_meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            None,
+            None,
+            None,
+            fl_ctx,
+        )
+
+    assert executor.run_processes[job_id][RunProcessKey.JOB_HANDLE] is existing_handle
+    launcher.launch_job.assert_not_called()
 
 
 def test_start_app_allows_scheduler_metadata(tmp_path):
@@ -285,6 +500,34 @@ def test_wait_child_process_reports_failure_return_code_to_server(return_code, r
     fl_ctx.set_prop.assert_any_call(FLContextKey.CURRENT_JOB_ID, "job-1", private=True, sticky=False)
     fl_ctx.set_prop.assert_any_call(FLContextKey.CLIENT_NAME, "site-1", private=True, sticky=False)
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
+
+
+def test_wait_child_process_preserves_launcher_infrastructure_error_over_rc_file(tmp_path):
+    client = MagicMock()
+    client.client_name = "site-1"
+    job_executor = JobExecutor(client=client, startup="startup")
+    job_handle = MagicMock()
+    job_handle.poll.return_value = ProcessExitCode.INFRASTRUCTURE_ERROR
+    job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
+    run_dir = tmp_path / "job-1"
+    run_dir.mkdir()
+    rc_file = run_dir / FLMetaKey.PROCESS_RC_FILE
+    rc_file.write_text("0\n", encoding="utf-8")
+    fl_ctx = MagicMock()
+
+    job_executor._wait_child_process_finish(
+        client=client,
+        job_id="job-1",
+        allocated_resource=None,
+        token=None,
+        resource_manager=MagicMock(),
+        workspace=str(tmp_path),
+        fl_ctx=fl_ctx,
+    )
+
+    payload = client.cell.fire_and_forget.call_args.kwargs["message"].payload
+    assert payload[JobFailureMsgKey.CODE] == ProcessExitCode.INFRASTRUCTURE_ERROR
+    assert not rc_file.exists()
 
 
 @pytest.mark.parametrize("return_code", [JobReturnCode.SUCCESS, JobReturnCode.UNKNOWN, JobReturnCode.EXECUTION_ERROR])

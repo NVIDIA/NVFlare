@@ -17,8 +17,10 @@
 import logging
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
 from nvflare.fuel.f3.endpoint import Endpoint
+from nvflare.fuel.f3.message import Message
 
 
 class _FakeAgent:
@@ -61,6 +63,73 @@ def test_pipe_cell_reaches_peer_through_server_root():
 
     assert ep is not None
     assert ep.name == "server"
+
+
+def test_cp_routes_to_root_connected_pipe_cell_through_server_root():
+    # A VIA_ROOT pipe cell is named under the site but connects only to the
+    # server root, so its FQCN parent (the CP) has no direct agent for it.
+    # The CP must fall through to the server root instead of dropping the
+    # message with "no connection to child". The connected CJ is not on the
+    # target's FQCN path and must not be picked.
+    cell = _routing_cell("site-1", ["server", "site-1.job-123"])
+
+    ep = cell._try_find_ep("site-1.cellpipe~plain~job-123~active", None)
+
+    assert ep is not None
+    assert ep.name == "server"
+
+
+def test_cp_routes_to_root_connected_pipe_cell_with_dotted_token_through_server_root():
+    # Dots are supported in VIA_ROOT tokens. They split the CellPipe name into
+    # multiple FQCN segments, but the first descendant segment still carries
+    # the explicit CellPipe marker and must receive the same root fall-through.
+    cell = _routing_cell("site-1", ["server", "site-1.job-123"])
+
+    ep = cell._try_find_ep("site-1.cellpipe~plain~agent.v2~active", None)
+
+    assert ep is not None
+    assert ep.name == "server"
+
+
+def test_cj_routes_to_root_connected_pipe_cell_via_cp():
+    # First leg of the same path: the CJ ships the message to its connected
+    # FQCN parent (the CP); the CP then hops to the server root.
+    cell = _routing_cell("site-1.job-123", ["site-1", "server"])
+
+    ep = cell._try_find_ep("site-1.cellpipe~plain~job-123~active", None)
+
+    assert ep is not None
+    assert ep.name == "site-1"
+
+
+def test_cj_routes_to_root_connected_pipe_cell_with_dotted_token_via_cp():
+    cell = _routing_cell("site-1.job-123", ["site-1", "server"])
+
+    ep = cell._try_find_ep("site-1.cellpipe~plain~agent.v2~active", None)
+
+    assert ep is not None
+    assert ep.name == "site-1"
+
+
+def test_ancestor_path_miss_for_regular_cell_does_not_fall_back_to_server_root():
+    # A deeper ordinary descendant also keeps the original behavior when no
+    # cell on its path is connected. The VIA_ROOT exception is only for a
+    # descendant whose first segment carries the explicit CellPipe marker.
+    cell = _routing_cell("site-1", ["server"])
+
+    ep = cell._try_find_ep("site-1.job-dead.worker", None)
+
+    assert ep is None
+
+
+def test_regular_child_without_connection_does_not_fall_back_to_server_root():
+    # Ordinary direct children still fail at their FQCN parent. Only a plain
+    # CellPipe child may intentionally connect through the server root.
+    cell = _routing_cell("site-1", ["server"])
+
+    ep = cell._try_find_ep("site-1.job-dead", None)
+
+    assert ep is None
 
 
 def test_relay_alias_pipe_cell_reaches_peer_through_connected_relay():
@@ -122,3 +191,30 @@ def test_pipe_cell_with_no_connection_is_unreachable():
     cell = _routing_cell("site-1.cellpipe~plain~job-123~active", [])
 
     assert cell._try_find_ep("site-1.cellpipe~plain~job-123~passive", None) is None
+
+
+def test_find_endpoint_refuses_next_leg_already_on_route():
+    # Loop guard: resolution is deterministic, so forwarding to a cell that
+    # already handled this message would bounce it forever (e.g. CP -> server
+    # -> CP for a disconnected pipe cell). The hop is refused and the message
+    # fails cleanly with TARGET_UNREACHABLE.
+    cell = _routing_cell("server", ["site-1"])
+    msg = Message(headers={MessageHeaderKey.ROUTE: [("site-1", 0.0)]})
+
+    rc, ep = cell._find_endpoint("site-1.cellpipe~plain~job-dead~active", msg)
+
+    assert ep is None
+    assert rc == ReturnCode.TARGET_UNREACHABLE
+
+
+def test_find_endpoint_allows_final_destination_on_route():
+    # Delivery to the final destination is never refused, even when that cell
+    # is on the route - a reply legitimately goes back to its origin.
+    cell = _routing_cell("site-1", ["server"])
+    msg = Message(headers={MessageHeaderKey.ROUTE: [("server", 0.0)]})
+
+    rc, ep = cell._find_endpoint("server", msg)
+
+    assert rc == ""
+    assert ep is not None
+    assert ep.name == "server"

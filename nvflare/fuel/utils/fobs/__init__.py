@@ -62,6 +62,9 @@ class FOBSContextKey:
     # forwarding node (the CJ) and is the foundation of the B1 pass-through
     # architecture.
     PASS_THROUGH = "pass_through"
+    # When True, streamed PyTorch tensors are downloaded into temporary files
+    # and recomposed as disk-backed lazy tensor references.
+    TENSOR_DISK_OFFLOAD = "enable_tensor_disk_offload"
     # Optional callable set by FlareAgent before serialising a result message
     # when reverse PASS_THROUGH is active (subprocess → CJ → server).  Signature:
     #   cb(tx_id: str, status: str, base_objs: list) -> None

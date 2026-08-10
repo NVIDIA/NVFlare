@@ -35,7 +35,10 @@ def _patch_job_runner_sleep(side_effect):
     calling ``time.sleep`` would run the side effect and trip the loop's stop
     condition early (FLARE-3034).
     """
-    return patch("nvflare.private.fed.server.job_runner.time", **{"sleep.side_effect": side_effect})
+    return patch(
+        "nvflare.private.fed.server.job_runner.time",
+        **{"sleep.side_effect": side_effect, "monotonic.return_value": 0.0},
+    )
 
 
 def _make_runner_inputs(num_clients=1):
@@ -62,6 +65,28 @@ def _make_runner_inputs(num_clients=1):
 
     client_sites = {"site-1": MagicMock()}
     return runner, fl_ctx, engine, job, client_sites
+
+
+def _make_workspace_save_inputs(run_dir, result_root, log_root, audit_root):
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_debug = MagicMock()
+    runner.log_warning = MagicMock()
+
+    workspace = MagicMock()
+    workspace.get_run_dir.return_value = run_dir
+    workspace.get_result_root.return_value = result_root
+    workspace.get_log_root.return_value = log_root
+    workspace.get_audit_root.return_value = audit_root
+
+    job_manager = MagicMock()
+    engine = MagicMock()
+    engine.get_component.return_value = job_manager
+
+    fl_ctx = MagicMock()
+    fl_ctx.get_prop.return_value = "job-1"
+    fl_ctx.get_workspace.return_value = workspace
+    fl_ctx.get_engine.return_value = engine
+    return runner, fl_ctx, job_manager
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +260,69 @@ def test_start_run_sets_job_clients_meta_before_start_client_job(mock_get_bool, 
     assert seen_job_clients_meta["value"] == [{"name": "site-1"}, {"name": "site-2"}]
 
 
+def test_save_workspace_skips_duplicate_missing_sources(tmp_path):
+    missing = str(tmp_path / "missing")
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(missing, missing, missing, missing)
+
+    runner._save_workspace(fl_ctx)
+
+    job_manager.save_workspace.assert_not_called()
+    assert runner.log_warning.call_args_list == [
+        call(fl_ctx, f"Skipping unavailable workspace archive source for job job-1: {missing}"),
+        call(fl_ctx, "No workspace archive sources are available for finished job job-1"),
+    ]
+
+
+def test_save_workspace_archives_only_existing_deduplicated_sources(tmp_path):
+    run_dir = tmp_path / "run"
+    result_root = tmp_path / "result"
+    missing = str(tmp_path / "missing")
+    run_dir.mkdir()
+    result_root.mkdir()
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(result_root), missing)
+    job_manager.save_workspace.return_value = "/store/job-1/workspace"
+
+    runner._save_workspace(fl_ctx)
+
+    job_manager.save_workspace.assert_called_once_with("job-1", [str(run_dir), str(result_root)], fl_ctx)
+    runner.log_warning.assert_called_once_with(
+        fl_ctx, f"Skipping unavailable workspace archive source for job job-1: {missing}"
+    )
+    assert not run_dir.exists()
+    assert not result_root.exists()
+
+
+def test_save_workspace_tolerates_source_disappearing_during_cleanup(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(*([str(run_dir)] * 4))
+
+    def _archive_then_remove_source(*_args):
+        run_dir.rmdir()
+        return "/store/job-1/workspace"
+
+    job_manager.save_workspace.side_effect = _archive_then_remove_source
+
+    runner._save_workspace(fl_ctx)
+
+    job_manager.save_workspace.assert_called_once_with("job-1", [str(run_dir)], fl_ctx)
+    runner.log_warning.assert_called_once_with(
+        fl_ctx, f"Workspace archive source disappeared before cleanup for job job-1: {run_dir}"
+    )
+
+
+def test_save_workspace_propagates_cleanup_errors_for_retry(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(*([str(run_dir)] * 4))
+
+    with patch("nvflare.private.fed.server.job_runner.shutil.rmtree", side_effect=PermissionError("denied")):
+        with pytest.raises(PermissionError, match="denied"):
+            runner._save_workspace(fl_ctx)
+
+    job_manager.save_workspace.assert_called_once_with("job-1", [str(run_dir)], fl_ctx)
+
+
 def test_job_complete_process_saves_workspace_before_publishing_aborted_status():
     runner = JobRunner(workspace_root="/tmp")
     runner.fire_event = MagicMock()
@@ -306,10 +394,15 @@ def test_get_finished_job_status_maps_aborted_launcher_return_code_to_finished_a
 
 
 @pytest.mark.parametrize(
-    "failure_code",
-    [ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION, JobReturnCode.EXECUTION_ERROR],
+    "failure_code, expected_status",
+    [
+        (ProcessExitCode.CONFIG_ERROR, RunStatus.FINISHED_EXECUTION_EXCEPTION),
+        (ProcessExitCode.EXCEPTION, RunStatus.FINISHED_EXECUTION_EXCEPTION),
+        (JobReturnCode.EXECUTION_ERROR, RunStatus.FINISHED_EXECUTION_EXCEPTION),
+        (ProcessExitCode.INFRASTRUCTURE_ERROR, RunStatus.FINISHED_ABNORMAL),
+    ],
 )
-def test_get_finished_job_status_maps_exception_return_code_to_finished_execution_exception(failure_code):
+def test_get_finished_job_status_maps_failure_return_code(failure_code, expected_status):
     runner = JobRunner(workspace_root="/tmp")
     runner.log_info = MagicMock()
     runner.abort_client_run = MagicMock()
@@ -330,14 +423,19 @@ def test_get_finished_job_status_maps_exception_return_code_to_finished_executio
 
     status = runner._get_finished_job_status(engine, job, fl_ctx)
 
-    assert status == RunStatus.FINISHED_EXECUTION_EXCEPTION
+    assert status == expected_status
     job_manager.set_status.assert_not_called()
     runner.abort_client_run.assert_called_once_with("job-1", [], fl_ctx)
 
 
 @pytest.mark.parametrize(
     "failure_code",
-    [ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION, JobReturnCode.EXECUTION_ERROR],
+    [
+        ProcessExitCode.CONFIG_ERROR,
+        ProcessExitCode.EXCEPTION,
+        ProcessExitCode.UNSAFE_COMPONENT,
+        JobReturnCode.EXECUTION_ERROR,
+    ],
 )
 def test_get_finished_job_status_exception_return_code_overrides_clean_sj_finish(failure_code):
     """fail_run sets PROCESS_RETURN_CODE=EXCEPTION before _stop_run aborts the SJ.
@@ -424,6 +522,34 @@ def test_fail_run_preserves_existing_exception_process_entry_under_engine_lock()
     assert live_run_process.get(RunProcessKey.PROCESS_RETURN_CODE) is None
 
 
+@pytest.mark.parametrize(
+    "first_code, second_code",
+    [
+        (ProcessExitCode.INFRASTRUCTURE_ERROR, ProcessExitCode.EXCEPTION),
+        (ProcessExitCode.EXCEPTION, ProcessExitCode.INFRASTRUCTURE_ERROR),
+    ],
+)
+def test_fail_run_gives_infrastructure_error_precedence(first_code, second_code):
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_info = MagicMock()
+    runner._stop_run = MagicMock()
+
+    run_process = {
+        RunProcessKey.PARTICIPANTS: {},
+        RunProcessKey.PROCESS_RETURN_CODE: first_code,
+    }
+    engine = MagicMock()
+    engine.lock = MagicMock()
+    engine.exception_run_processes = {"job-1": run_process}
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = engine
+    runner.running_jobs = {"job-1": MagicMock()}
+
+    assert runner.fail_run("job-1", second_code, fl_ctx) == ""
+
+    assert run_process[RunProcessKey.PROCESS_RETURN_CODE] == ProcessExitCode.INFRASTRUCTURE_ERROR
+
+
 def test_stop_run_does_not_publish_terminal_status_before_completion():
     runner = JobRunner(workspace_root="/tmp")
     runner.log_info = MagicMock()
@@ -443,6 +569,57 @@ def test_stop_run_does_not_publish_terminal_status_before_completion():
     assert job.run_aborted is True
     fl_ctx.get_engine.assert_not_called()
     runner.fire_event.assert_not_called()
+
+
+def test_stop_all_runs_logs_info_for_untracked_run_process():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_info = MagicMock()
+    runner._stop_run = MagicMock()
+
+    engine = MagicMock()
+    engine.run_processes = {"job-1": {}}
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = engine
+    runner.running_jobs = {}
+
+    runner.stop_all_runs(fl_ctx)
+
+    runner._stop_run.assert_called_once_with("job-1", fl_ctx)
+    assert runner.log_info.call_args_list == [
+        call(fl_ctx, "Job job-1 is not running. It can not be stopped."),
+        call(fl_ctx, "Stop all the running jobs."),
+    ]
+    assert runner.ask_to_stop is True
+
+
+def test_mark_run_aborted_logs_info_when_job_not_running():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_info = MagicMock()
+    fl_ctx = MagicMock()
+    runner.running_jobs = {}
+
+    msg = runner.mark_run_aborted("job-1", fl_ctx)
+
+    assert msg == "Job job-1 is not running."
+    runner.log_info.assert_called_once_with(fl_ctx, "Job job-1 is not running. It can not be stopped.")
+
+
+def test_fail_run_logs_info_when_job_not_running():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_info = MagicMock()
+    runner._stop_run = MagicMock()
+
+    engine = MagicMock()
+    engine.lock = MagicMock()
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = engine
+    runner.running_jobs = {}
+
+    msg = runner.fail_run("job-1", ProcessExitCode.EXCEPTION, fl_ctx)
+
+    assert msg == "Job job-1 is not running."
+    runner.log_info.assert_called_once_with(fl_ctx, "Job job-1 is not running. It can not be failed.")
+    runner._stop_run.assert_called_once_with("job-1", fl_ctx)
 
 
 def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code():
@@ -587,6 +764,64 @@ def test_job_complete_process_retries_save_without_recomputing_finished_status()
         call(EventType.JOB_ABORTED, second_ctx),
         call(EventType.JOB_COMPLETED, second_ctx),
     ]
+    engine.remove_exception_process.assert_called_once_with("job-1")
+    assert "job-1" not in runner.running_jobs
+    assert "job-1" not in runner._finished_job_states
+
+
+def test_job_complete_process_publishes_terminal_status_after_workspace_save_grace_time():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.fire_event = MagicMock()
+    runner.log_debug = MagicMock()
+    runner.log_error = MagicMock()
+    runner.log_exception = MagicMock()
+    runner.log_info = MagicMock()
+    runner.abort_client_run = MagicMock()
+    runner._save_workspace = MagicMock(side_effect=RuntimeError("storage unavailable"))
+    runner.ask_to_stop = False
+
+    engine = MagicMock()
+    engine.run_processes = {}
+    engine.client_manager.clients = {}
+    engine.exception_run_processes = {
+        "job-1": {
+            RunProcessKey.PARTICIPANTS: {},
+            RunProcessKey.PROCESS_RETURN_CODE: ProcessExitCode.EXCEPTION,
+        }
+    }
+
+    job_manager = MagicMock()
+    engine.get_component.return_value = job_manager
+
+    first_ctx = MagicMock()
+    second_ctx = MagicMock()
+    engine.new_context.side_effect = [nullcontext(first_ctx), nullcontext(second_ctx)]
+
+    job = MagicMock()
+    job.job_id = "job-1"
+    job.run_aborted = False
+    runner.running_jobs = {"job-1": job}
+
+    sleep_count = 0
+
+    def _stop_after_second_pass(_):
+        nonlocal sleep_count
+        sleep_count += 1
+        if sleep_count == 2:
+            runner.ask_to_stop = True
+
+    with patch(
+        "nvflare.private.fed.server.job_runner.time",
+        **{"sleep.side_effect": _stop_after_second_pass, "monotonic.side_effect": [0.0, 60.0]},
+    ):
+        runner._job_complete_process(engine)
+
+    assert runner._save_workspace.call_args_list == [call(first_ctx), call(second_ctx)]
+    runner.abort_client_run.assert_called_once_with("job-1", [], first_ctx)
+    runner.log_exception.assert_called_once()
+    runner.log_error.assert_called_once()
+    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_EXECUTION_EXCEPTION, second_ctx)
+    runner.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, second_ctx)
     engine.remove_exception_process.assert_called_once_with("job-1")
     assert "job-1" not in runner.running_jobs
     assert "job-1" not in runner._finished_job_states

@@ -194,5 +194,5 @@ class TokenVerifier:
             verify_content(content=client_name + token, signature=signature, public_key=self.public_key)
             return True
         except Exception as ex:
-            self.logger.error(f"exception verifying token: {client_name=} {token=}: {secure_format_exception(ex)}")
+            self.logger.error(f"exception verifying token: {client_name=}: {secure_format_exception(ex)}")
             return False

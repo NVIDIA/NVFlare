@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
+from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, ResultState, TaskState, Topic
 from nvflare.client.ipc import defs as ipc_defs
 
 
@@ -27,21 +27,23 @@ class TestDefs:
     def test_expected_topics_present(self):
         expected = {
             "HELLO",
-            "HELLO_CHALLENGE",
-            "HELLO_PROOF",
             "HELLO_ACCEPTED",
             "HELLO_REJECTED",
+            "SESSION_OPEN",
+            "SESSION_ACCEPTED",
+            "SESSION_REJECTED",
             "TASK_READY",
             "TASK_ACCEPTED",
             "TASK_FAILED",
+            "TASK_STATUS",
             "RESULT_READY",
             "RESULT_ACCEPTED",
             "RESULT_REJECTED",
+            "RESULT_STATUS",
             "LOG",
             "HEARTBEAT",
             "ABORT",
             "SHUTDOWN",
-            "BYE",
             "ERROR",
         }
         assert expected == set(_public_str_values(Topic).keys())
@@ -71,21 +73,23 @@ class TestDefs:
         # exact frozen wire strings for every topic; a value rename must fail CI
         expected = {
             "HELLO": "client_api.hello",
-            "HELLO_CHALLENGE": "client_api.hello_challenge",
-            "HELLO_PROOF": "client_api.hello_proof",
             "HELLO_ACCEPTED": "client_api.hello_accepted",
             "HELLO_REJECTED": "client_api.hello_rejected",
+            "SESSION_OPEN": "client_api.session_open",
+            "SESSION_ACCEPTED": "client_api.session_accepted",
+            "SESSION_REJECTED": "client_api.session_rejected",
             "TASK_READY": "client_api.task_ready",
             "TASK_ACCEPTED": "client_api.task_accepted",
             "TASK_FAILED": "client_api.task_failed",
+            "TASK_STATUS": "client_api.task_status",
             "RESULT_READY": "client_api.result_ready",
             "RESULT_ACCEPTED": "client_api.result_accepted",
             "RESULT_REJECTED": "client_api.result_rejected",
+            "RESULT_STATUS": "client_api.result_status",
             "LOG": "client_api.log",
             "HEARTBEAT": "client_api.heartbeat",
             "ABORT": "client_api.abort",
             "SHUTDOWN": "client_api.shutdown",
-            "BYE": "client_api.bye",
             "ERROR": "client_api.error",
         }
         assert _public_str_values(Topic) == expected
@@ -96,28 +100,53 @@ class TestDefs:
         # exact frozen wire strings for every message key; a value rename must fail CI
         expected = {
             "SESSION_ID": "session_id",
-            "ATTACH_ID": "attach_id",
             "JOB_ID": "job_id",
             "SITE_NAME": "site_name",
             "TRAINER_FQCN": "trainer_fqcn",
-            "TARGET_FQCN": "target_fqcn",
             "RANK": "rank",
-            "RANK_POLICY": "rank_policy",
             "PROTOCOL_VERSION": "protocol_version",
-            "NONCE": "nonce",
             "PROOF": "proof",
             "REASON": "reason",
+            "ATTACH_ID": "attach_id",
+            "CONNECT_URL": "connect_url",
+            "CONNECTION_SECURITY": "connection_security",
+            "SECURE_MODE": "secure_mode",
+            "AUTH_TOKEN": "auth_token",
+            "AUTH_TOKEN_SIGNATURE": "auth_token_signature",
             "TASK_ID": "task_id",
+            "TASK_SEQ": "task_seq",
+            "ATTEMPT_ID": "attempt_id",
             "TASK_NAME": "task_name",
+            "TASK_STATE": "task_state",
             "MODEL": "model",
-            "PARAMS": "params",
+            "RESULT": "result",
             "RESULT_ID": "result_id",
-            "TRANSFER_ID": "transfer_id",
-            "MANIFEST": "manifest",
+            "RESULT_STATE": "result_state",
+            "ACCEPTED_ATTEMPT_ID": "accepted_attempt_id",
+            "RESULT_SOURCE_LIVE": "result_source_live",
+            "HEARTBEAT_INTERVAL": "heartbeat_interval",
+            "HEARTBEAT_TIMEOUT": "heartbeat_timeout",
+            "TASK_EXCHANGE": "task_exchange",
+            "MEMORY_GC_ROUNDS": "memory_gc_rounds",
+            "CUDA_EMPTY_CACHE": "cuda_empty_cache",
+            "REPLY_TOPIC": "reply_topic",
         }
         assert _public_str_values(MsgKey) == expected
 
+    def test_status_wire_values(self):
+        assert _public_str_values(TaskState) == {
+            "UNKNOWN": "UNKNOWN",
+            "QUEUED": "QUEUED",
+            "DELIVERED": "DELIVERED",
+            "RESULT_PUBLISHING": "RESULT_PUBLISHING",
+            "COMPLETE": "COMPLETE",
+        }
+        assert _public_str_values(ResultState) == {
+            "UNKNOWN": "UNKNOWN",
+            "ACCEPTED": "ACCEPTED",
+            "REJECTED": "REJECTED",
+        }
+
     def test_msg_key_names_present(self):
-        # the protocol/Appendix B wire keys must exist by name
-        for name in ("TASK_NAME", "MANIFEST", "RANK_POLICY", "MODEL", "PARAMS", "NONCE", "PROOF"):
+        for name in ("TASK_NAME", "MODEL", "PROOF"):
             assert hasattr(MsgKey, name)

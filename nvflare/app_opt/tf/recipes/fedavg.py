@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -24,6 +24,10 @@ from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 
 class FedAvgRecipe(UnifiedFedAvgRecipe):
     """A recipe for implementing Federated Averaging (FedAvg) for TensorFlow.
+
+    Recipe parameters, including ``train_args`` and nested ``per_site_config`` values,
+    must never contain actual secrets. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
 
     FedAvg is a fundamental federated learning algorithm that aggregates model updates
     from multiple clients by computing a weighted average based on the amount of local
@@ -61,10 +65,12 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             calculation for full-model client results. A client's FLModel.params_type remains authoritative.
             Defaults to TransferType.FULL.
         model_persistor: Custom model persistor. If None, TFModelPersistor will be used.
-        per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
-            site names to configuration dicts. Each config dict can contain optional overrides:
+        per_site_config: Deprecated constructor form. New code should call
+            ``set_per_site_config(recipe, config)`` immediately after construction. Each config dict can
+            contain optional overrides:
             train_script, train_args, launch_external_process, command, framework,
             server_expected_format, params_transfer_type, launch_once, shutdown_timeout.
+            Nested values become part of the generated job definition and must not contain secrets.
             If not provided, the same configuration will be used for all clients.
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
@@ -73,6 +79,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
             key_metric selects the metric used for global model selection by the IntimeModelSelector.
             Defaults to "accuracy".
+        key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better,
+            such as for loss, and "max" when higher values are better. Defaults to "max".
         best_model_filename: Filename for saving the best model. Accepted for API compatibility.
             The default TensorFlow persistor does not currently create a separate best-model artifact.
         save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.
@@ -122,6 +130,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
+        key_metric_mode: Literal["min", "max"] = "max",
         best_model_filename: Optional[str] = None,
         save_filename: Optional[str] = None,
         server_memory_gc_rounds: int = 0,
@@ -148,6 +157,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
+            key_metric_mode=key_metric_mode,
             best_model_filename=best_model_filename,
             save_filename=save_filename,
             server_memory_gc_rounds=server_memory_gc_rounds,

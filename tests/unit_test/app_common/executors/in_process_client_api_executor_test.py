@@ -14,10 +14,14 @@
 
 """Tests for InProcessClientAPIExecutor memory management parameters."""
 
+from unittest.mock import Mock
+
 import pytest
 
+from nvflare.apis.shareable import Shareable
+from nvflare.apis.signal import Signal
 from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
-from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
 
 
 class TestInProcessClientAPIExecutorMemory:
@@ -88,3 +92,40 @@ class TestInProcessClientAPIExecutorMemory:
         assert executor._task_wait_time == 30.0
         assert executor._result_pull_interval == 1.0
         assert executor._train_with_evaluation is True
+
+
+def test_execute_delegates_conversion_to_client_api():
+    executor = InProcessClientAPIExecutor(task_script_path="train.py")
+    executor._from_nvflare_converter = Mock()
+    executor._to_nvflare_converter = Mock()
+    executor._client_api = Mock()
+    executor._event_manager = Mock()
+    expected_result = Shareable()
+    expected_result["result"] = True
+    executor.local_result = expected_result
+    fl_ctx = Mock()
+    fl_ctx.get_job_id.return_value = "job-1"
+    fl_ctx.get_identity_name.return_value = "site-1"
+    fl_ctx.get_prop.return_value = None
+    fl_ctx.get_peer_context.return_value = None
+
+    result = executor.execute("train", Shareable(), fl_ctx, Signal())
+
+    assert result is expected_result
+    executor._client_api.set_meta.assert_called_once()
+    args = executor._client_api.set_meta.call_args.args
+    assert args[0]["TASK_NAME"] == "train"
+    assert args[1] is fl_ctx
+    executor._from_nvflare_converter.process.assert_not_called()
+    executor._to_nvflare_converter.process.assert_not_called()
+
+
+def test_prepare_task_meta_preserves_server_expected_format():
+    executor = InProcessClientAPIExecutor(task_script_path="train.py", server_expected_format=ExchangeFormat.PYTORCH)
+    fl_ctx = Mock()
+    fl_ctx.get_job_id.return_value = "job-1"
+    fl_ctx.get_identity_name.return_value = "site-1"
+
+    meta = executor._prepare_task_meta(fl_ctx, "train")
+
+    assert meta[ConfigKey.TASK_EXCHANGE][ConfigKey.SERVER_EXPECTED_FORMAT] == ExchangeFormat.PYTORCH

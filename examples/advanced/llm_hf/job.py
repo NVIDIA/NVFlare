@@ -24,7 +24,7 @@ from nvflare.app_opt.pt.quantization.dequantizer import ModelDequantizer
 from nvflare.app_opt.pt.quantization.quantizer import ModelQuantizer
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.private.fed.utils.fed_utils import split_gpus
-from nvflare.recipe import ProdEnv, SimEnv, add_experiment_tracking
+from nvflare.recipe import ProdEnv, SimEnv, add_experiment_tracking, set_per_site_config
 
 
 def define_parser():
@@ -42,12 +42,6 @@ def define_parser():
         type=str,
         default="/tmp/nvflare/jobs/llm_hf/workdir",
         help="Work directory for simulator runs",
-    )
-    parser.add_argument(
-        "--job_dir",
-        type=str,
-        default="/tmp/nvflare/jobs/llm_hf/jobdir",
-        help="Directory for job export",
     )
     parser.add_argument("--model_name_or_path", type=str, default="EleutherAI/gpt-neo-1.3B", help="Model name or path")
     parser.add_argument("--data_path", type=str, default="", help="Root directory for training and validation data")
@@ -74,7 +68,6 @@ def define_parser():
         "--wandb_run_name", type=str, default="nvflare_llm", help="WandB run name (default: nvflare_llm)"
     )
     parser.add_argument("--use_tracking", action="store_true", help="Enable TensorBoard tracking")
-    parser.add_argument("--export_config", action="store_true", help="Export job config only")
     return parser.parse_args()
 
 
@@ -176,9 +169,9 @@ def main():
         train_script="client.py",
         server_expected_format=server_expected_format,
         launch_external_process=True,  # Always use external process for LLM training
-        per_site_config=per_site_config,
         key_metric="neg_eval_loss",
     )
+    set_per_site_config(recipe, per_site_config)
 
     # Add client params to reduce timeout failures for longer LLM runs
     recipe.add_client_config({"get_task_timeout": 300, "submit_task_result_timeout": 300})
@@ -203,15 +196,6 @@ def main():
     # Add experiment tracking if requested
     if args.use_tracking:
         add_experiment_tracking(recipe, tracking_type="tensorboard")
-
-    # Export job configuration
-    print("Exporting job to", args.job_dir)
-    recipe.export(args.job_dir)
-    print("Job config exported to", args.job_dir)
-
-    # If export-only mode, stop here
-    if args.export_config:
-        return
 
     # Run recipe
     if args.startup_kit_location:

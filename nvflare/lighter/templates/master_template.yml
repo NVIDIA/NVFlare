@@ -66,6 +66,7 @@ readme_fs: |
 local_client_resources: |
   {
     "format_version": 2,
+    "class_list_enforcement_mode": "enforce",
     "class_allow_list": {~~class_allow_list~~},
     "allow_log_streaming": {~~allow_log_streaming~~},
     "client": {
@@ -104,7 +105,7 @@ local_client_resources: |
 
 fed_client: |
   {
-    "format_version": 2,
+    "format_version": 2{~~require_signed_jobs_config~~},
     "servers": [
       {
         "name": "{~~name~~}",
@@ -186,6 +187,7 @@ sample_privacy: |
 local_server_resources: |
   {
       "format_version": 2,
+      "class_list_enforcement_mode": "enforce",
       "class_allow_list": {~~class_allow_list~~},
       "servers": [
           {
@@ -258,7 +260,7 @@ comm_config: |
 
 fed_server: |
   {
-    "format_version": 2,
+    "format_version": 2{~~require_signed_jobs_config~~},
     "servers": [
         {
             "name": "{~~name~~}",

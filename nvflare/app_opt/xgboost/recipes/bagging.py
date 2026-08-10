@@ -24,6 +24,7 @@ from nvflare.app_opt.xgboost.tree_based.model_persistor import XGBModelPersistor
 from nvflare.app_opt.xgboost.tree_based.shareable_generator import XGBModelShareableGenerator
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import Recipe
+from nvflare.recipe.utils import _apply_legacy_constructor_config, _validate_per_site_targets
 
 
 # Internal — not part of the public API
@@ -74,6 +75,10 @@ class _XGBBaggingValidator(BaseModel):
 class XGBBaggingRecipe(Recipe):
     """XGBoost Tree-Based Recipe for federated learning (supports Bagging and Cyclic modes).
 
+    Recipe parameters, including ``xgb_params`` and nested ``per_site_config`` values,
+    must never contain actual secrets. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
+
     This recipe implements tree-based federated XGBoost with two training modes:
     - **Bagging**: Each client trains a local sub-forest, aggregated on server (federated Random Forest)
     - **Cyclic**: Clients train sequentially in rounds, each contributing to the global model
@@ -96,17 +101,15 @@ class XGBBaggingRecipe(Recipe):
         lr_mode (str, optional): Learning rate mode ("uniform" or "scaled"). Default is "uniform".
         save_name (str, optional): Model save name. Default is "xgboost_model.json".
         data_loader_id (str, optional): ID of the data loader component. Default is "dataloader".
-        per_site_config (dict, optional): Per-site configuration mapping site names to config dicts.
-            Each config dict must contain 'data_loader' key with XGBDataLoader instance.
-            Can optionally include 'lr_scale' for scaled learning rate mode.
-            Example: {"site-1": {"data_loader": CSVDataLoader(...), "lr_scale": 0.5}, "site-2": {...}}
+        per_site_config (dict, optional): Deprecated constructor form of per-site configuration.
+            New code should call ``set_per_site_config(recipe, config)`` immediately after construction.
 
     Example:
         .. code-block:: python
 
             from nvflare.app_opt.xgboost.recipes import XGBBaggingRecipe
             from nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader import CSVDataLoader
-            from nvflare.recipe import SimEnv
+            from nvflare.recipe import SimEnv, set_per_site_config
 
             # Bagging mode (federated Random Forest) with uniform learning rate
             recipe = XGBBaggingRecipe(
@@ -116,7 +119,10 @@ class XGBBaggingRecipe(Recipe):
                 num_rounds=1,
                 num_local_parallel_tree=5,
                 local_subsample=0.5,
-                per_site_config={
+            )
+            set_per_site_config(
+                recipe,
+                {
                     "site-1": {"data_loader": CSVDataLoader(folder="/tmp/data")},
                     "site-2": {"data_loader": CSVDataLoader(folder="/tmp/data")},
                     "site-3": {"data_loader": CSVDataLoader(folder="/tmp/data")},
@@ -129,7 +135,10 @@ class XGBBaggingRecipe(Recipe):
                 min_clients=3,
                 training_mode="bagging",
                 lr_mode="scaled",
-                per_site_config={
+            )
+            set_per_site_config(
+                recipe,
+                {
                     "site-1": {"data_loader": CSVDataLoader(folder="/tmp/data"), "lr_scale": 0.5},
                     "site-2": {"data_loader": CSVDataLoader(folder="/tmp/data"), "lr_scale": 0.3},
                     "site-3": {"data_loader": CSVDataLoader(folder="/tmp/data"), "lr_scale": 0.2},
@@ -139,6 +148,8 @@ class XGBBaggingRecipe(Recipe):
             env = SimEnv(num_clients=3)
             run = recipe.execute(env)
     """
+
+    _UNSUPPORTED_SECRET_REF_ATTRS = Recipe._UNSUPPORTED_SECRET_REF_ATTRS | {"per_site_config"}
 
     def __init__(
         self,
@@ -203,21 +214,19 @@ class XGBBaggingRecipe(Recipe):
         self.lr_mode = v.lr_mode
         self.save_name = v.save_name
         self.data_loader_id = v.data_loader_id
-        self.per_site_config = per_site_config
+        legacy_per_site_config = per_site_config
+        self.per_site_config = None
 
         if self.training_mode == "cyclic" and self.min_clients < 2:
             raise ValueError("Cyclic training requires at least 2 clients (min_clients >= 2).")
 
-        # Validate per_site_config is provided
-        if per_site_config is None:
-            raise ValueError(
-                "per_site_config is required for XGBBaggingRecipe. "
-                "Each site must specify a 'data_loader' in the config dictionary."
-            )
+        # Configure site-independent job components first. Site apps are added
+        # once per-site configuration is known.
+        job = self.configure()
+        Recipe.__init__(self, job)
 
-        # Configure the job
-        self.job = self.configure()
-        Recipe.__init__(self, self.job)
+        if legacy_per_site_config is not None:
+            _apply_legacy_constructor_config(self, legacy_per_site_config)
 
     def configure(self):
         """Configure the federated job for XGBoost tree-based training."""
@@ -263,38 +272,45 @@ class XGBBaggingRecipe(Recipe):
             aggregator = XGBBaggingAggregator()
             job.to_server(aggregator, id="aggregator")
 
-        # Add executors and data loaders per site
+        return job
+
+    def _add_client_components(self, job: FedJob, site_name: str, site_config: dict) -> None:
         from nvflare.app_opt.xgboost.tree_based.executor import FedXGBTreeExecutor
 
-        # Site-specific executors and data loaders
+        executor = FedXGBTreeExecutor(
+            data_loader_id=self.data_loader_id,
+            training_mode=self.training_mode,
+            num_client_bagging=self.num_client_bagging,
+            num_local_parallel_tree=self.num_local_parallel_tree,
+            local_subsample=self.local_subsample,
+            local_model_path="model.json",
+            global_model_path="model_global.json",
+            learning_rate=self.learning_rate,
+            objective=self.objective,
+            max_depth=self.max_depth,
+            eval_metric=self.eval_metric,
+            tree_method=self.tree_method,
+            use_gpus=self.use_gpus,
+            nthread=self.nthread,
+            lr_scale=site_config.get("lr_scale", 1.0),
+            lr_mode=self.lr_mode,
+        )
+        job.to(executor, site_name, id="xgb_tree_executor")
+        job.to(site_config["data_loader"], site_name, id=self.data_loader_id)
+
+    def _apply_per_site_config(self, config: dict[str, dict]) -> None:
+        _validate_per_site_targets(config, self.min_clients)
+        for site_name, site_config in config.items():
+            if site_config.get("data_loader") is None:
+                raise ValueError(f"per_site_config for {site_name!r} must include 'data_loader' key")
+
+        self.per_site_config = config
+
+    def _prepare_client_apps(self) -> None:
+        self._validate_before_use()
         for site_name, site_config in self.per_site_config.items():
-            data_loader = site_config.get("data_loader")
-            if data_loader is None:
-                raise ValueError(f"per_site_config for '{site_name}' must include 'data_loader' key")
+            self._add_client_components(self._job, site_name, site_config)
 
-            # Get lr_scale from config, default to 1.0
-            lr_scale = site_config.get("lr_scale", 1.0)
-
-            # Create executor for this site
-            executor = FedXGBTreeExecutor(
-                data_loader_id=self.data_loader_id,
-                training_mode=self.training_mode,
-                num_client_bagging=self.num_client_bagging,
-                num_local_parallel_tree=self.num_local_parallel_tree,
-                local_subsample=self.local_subsample,
-                local_model_path="model.json",
-                global_model_path="model_global.json",
-                learning_rate=self.learning_rate,
-                objective=self.objective,
-                max_depth=self.max_depth,
-                eval_metric=self.eval_metric,
-                tree_method=self.tree_method,
-                use_gpus=self.use_gpus,
-                nthread=self.nthread,
-                lr_scale=lr_scale,
-                lr_mode=self.lr_mode,
-            )
-            job.to(executor, site_name, id="xgb_tree_executor")
-            job.to(data_loader, site_name, id=self.data_loader_id)
-
-        return job
+    def _validate_before_use(self) -> None:
+        if not self.configured_sites():
+            raise RuntimeError("XGBBaggingRecipe requires set_per_site_config() before export or execution")

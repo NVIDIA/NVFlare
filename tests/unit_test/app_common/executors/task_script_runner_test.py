@@ -12,15 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import builtins
 import os
 import shutil
 import sys
+import tempfile
+import threading
 import unittest
+from unittest.mock import patch
 
 import pytest
 
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.client.in_process.api import TOPIC_ABORT, TOPIC_STOP
+from nvflare.fuel.utils.secret_utils import secret_file_ref
 
 
 class TestTaskScriptRunner(unittest.TestCase):
@@ -56,6 +61,118 @@ class TestTaskScriptRunner(unittest.TestCase):
 
         self.assertTrue(wrapper.script_full_path.endswith(script_path))
         self._assert_argv_path(wrapper, os.path.join(self.nvflare_root, "nvflare", "cli.py"), ["--batch_size", "4"])
+
+    def test_secret_ref_args_resolved_from_env(self):
+        script_path = "nvflare/cli.py"
+        script_args = "--api_key ${secret:TEST_SECRET_REF_VAR}"
+        wrapper = TaskScriptRunner(custom_dir=self.nvflare_root, script_path=script_path, script_args=script_args)
+
+        with patch.dict(os.environ, {"TEST_SECRET_REF_VAR": "resolved secret"}):
+            argv = wrapper.get_sys_argv()
+
+        # the value from the site env is injected as a single argument, even with whitespace
+        assert argv[1:] == ["--api_key", "resolved secret"]
+        # the configured args (what job configs carry) still hold only the placeholder
+        assert "${secret:TEST_SECRET_REF_VAR}" in wrapper.script_args
+        assert "resolved secret" not in wrapper.script_args
+
+    def test_secret_ref_in_quoted_composite_argument(self):
+        wrapper = TaskScriptRunner(
+            custom_dir=self.nvflare_root,
+            script_path="nvflare/cli.py",
+            script_args='--authorization "Bearer ${secret:TEST_SECRET_REF_VAR}"',
+        )
+
+        with patch.dict(os.environ, {"TEST_SECRET_REF_VAR": "resolved secret"}):
+            argv = wrapper.get_sys_argv()
+
+        assert argv[1:] == ["--authorization", "Bearer resolved secret"]
+
+    def test_secret_ref_does_not_change_unrelated_backslashes_or_quotes(self):
+        wrapper = TaskScriptRunner(
+            custom_dir=self.nvflare_root,
+            script_path="nvflare/cli.py",
+            script_args=(
+                r'--regex \d+ --path C:\data\x --legacy "two words" '
+                r'--authorization "Bearer ${secret:TEST_SECRET_REF_VAR}"'
+            ),
+        )
+
+        with patch.dict(os.environ, {"TEST_SECRET_REF_VAR": "resolved"}):
+            argv = wrapper.get_sys_argv()
+
+        assert argv[1:] == [
+            "--regex",
+            r"\d+",
+            "--path",
+            r"C:\data\x",
+            "--legacy",
+            '"two',
+            'words"',
+            "--authorization",
+            "Bearer resolved",
+        ]
+
+    def test_secret_file_ref_content_is_one_argument(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            secret_path = os.path.join(temp_dir, "api-key")
+            with open(secret_path, "w", encoding="utf-8") as secret_file:
+                secret_file.write("resolved secret --not-option")
+
+            placeholder = secret_file_ref(secret_path)
+            wrapper = TaskScriptRunner(
+                custom_dir=self.nvflare_root,
+                script_path="nvflare/cli.py",
+                script_args=f"--api_key {placeholder}",
+            )
+
+            argv = wrapper.get_sys_argv()
+
+        assert argv[1:] == ["--api_key", "resolved secret --not-option"]
+        assert placeholder in wrapper.script_args
+        assert "resolved secret" not in wrapper.script_args
+
+    def test_secret_ref_args_missing_env_var_raises(self):
+        script_path = "nvflare/cli.py"
+        script_args = "--api_key ${secret:TEST_UNSET_SECRET_VAR}"
+        wrapper = TaskScriptRunner(custom_dir=self.nvflare_root, script_path=script_path, script_args=script_args)
+
+        os.environ.pop("TEST_UNSET_SECRET_VAR", None)
+        with pytest.raises(ValueError, match="TEST_UNSET_SECRET_VAR"):
+            wrapper.get_sys_argv()
+
+    def test_run_restores_sys_argv_when_script_fails(self):
+        wrapper = TaskScriptRunner(
+            custom_dir=self.nvflare_root,
+            script_path="nvflare/cli.py",
+            script_args="--api_key ${secret:TEST_SECRET_REF_VAR}",
+            redirect_print_to_log=False,
+        )
+        original_argv = sys.argv
+
+        with patch.dict(os.environ, {"TEST_SECRET_REF_VAR": "resolved secret"}):
+            with patch(
+                "nvflare.app_common.executors.task_script_runner.runpy.run_path", side_effect=RuntimeError("boom")
+            ):
+                with pytest.raises(RuntimeError, match="boom"):
+                    wrapper.run()
+
+        assert sys.argv is original_argv
+
+    def test_run_skips_script_when_runtime_was_already_released(self):
+        wrapper = TaskScriptRunner(
+            custom_dir=self.nvflare_root,
+            script_path="nvflare/cli.py",
+            script_args="--api_key ${secret:TEST_UNSET_SECRET_VAR}",
+            redirect_print_to_log=False,
+        )
+        wrapper.release_runtime()
+        os.environ.pop("TEST_UNSET_SECRET_VAR", None)
+
+        with patch("nvflare.app_common.executors.task_script_runner.runpy.run_path") as mock_run_path:
+            wrapper.run()
+
+        mock_run_path.assert_not_called()
 
     def test_app_scripts_with_sub_dirs1(self):
         # curr_dir = os.getcwd()
@@ -127,6 +244,32 @@ class TestTaskScriptRunner(unittest.TestCase):
             wrapper.run()
         finally:
             sys.path = old_sys_path
+
+    def test_run_redirects_print_from_imported_module(self):
+        old_sys_path = sys.path.copy()
+        original_print = builtins.print
+        helper_module = "task_script_runner_print_helper"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            helper_path = os.path.join(temp_dir, f"{helper_module}.py")
+            script_path = os.path.join(temp_dir, "train.py")
+            with open(helper_path, "w", encoding="utf-8") as helper_file:
+                helper_file.write('print("helper output")\n')
+            with open(script_path, "w", encoding="utf-8") as script_file:
+                script_file.write(f'import {helper_module}\nprint("script output")\n')
+
+            sys.path.insert(0, temp_dir)
+            try:
+                wrapper = TaskScriptRunner(custom_dir=temp_dir, script_path="train.py")
+                with patch.object(wrapper.logger, "info") as mock_log:
+                    wrapper.run()
+
+                mock_log.assert_any_call("helper output")
+                mock_log.assert_any_call("script output")
+                assert builtins.print is original_print
+            finally:
+                sys.modules.pop(helper_module, None)
+                sys.path[:] = old_sys_path
 
     def test_run_scripts_with_sub_dirs2(self):
         old_sys_path = sys.path
@@ -267,3 +410,32 @@ class TestTaskScriptRunner(unittest.TestCase):
         with pytest.raises(Exception):
             script_args = "--batch_size 4"
             wrapper = TaskScriptRunner(custom_dir=self.nvflare_root, script_path="", script_args=script_args)
+
+
+def test_print_redirection_is_scoped_to_runner_thread(tmp_path, capsys):
+    (tmp_path / "train.py").write_text("")
+    runner = TaskScriptRunner(custom_dir=str(tmp_path), script_path="train.py")
+    trainer_started = threading.Event()
+    release_trainer = threading.Event()
+
+    def run_path(*args, **kwargs):
+        print("trainer output")
+        trainer_started.set()
+        release_trainer.wait(timeout=5.0)
+
+    with (
+        patch("nvflare.app_common.executors.task_script_runner.runpy.run_path", side_effect=run_path),
+        patch.object(TaskScriptRunner.logger, "info") as log_info,
+    ):
+        trainer_thread = threading.Thread(target=runner.run)
+        trainer_thread.start()
+        try:
+            assert trainer_started.wait(timeout=2.0)
+            print("main-thread output")
+            assert capsys.readouterr().out == "main-thread output\n"
+            log_info.assert_any_call("trainer output")
+        finally:
+            release_trainer.set()
+            trainer_thread.join(timeout=2.0)
+
+    assert not trainer_thread.is_alive()
