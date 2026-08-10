@@ -183,6 +183,26 @@ Common variables for `start_openshift_cluster.sh`:
 | `CREATE_PROJECT`                          | Create or select the project named by `NAMESPACE`. Default: `true`.                                                                                               |
 | `NAMESPACE`                               | Project used by the scripted FLARE deployment. Default: `nvflare-e2e`.                                                                                            |
 
+### Resize an Existing CRC Cluster
+
+The deployment scripts use smaller parent pod requests by default so the
+example fits the default CRC size. If the parent pods need the generated `2`
+CPU and `8Gi` memory requests, or the workload needs more capacity, stop the
+cluster and increase its configured resources before restarting it:
+
+``` bash
+crc stop
+crc config set cpus 14
+crc config set memory 65536
+bash examples/devops/openshift/scripts/start_openshift_cluster.sh
+bash examples/devops/openshift/scripts/k8s_e2e.sh
+```
+
+This `14` vCPU / `65536` MiB configuration is a verified workaround. After the
+restart, rerunning `k8s_e2e.sh` completed the workflow and the submitted job
+reached `FINISHED:COMPLETED`. Make sure the host has enough CPU and memory for
+these CRC settings.
+
 ## Build an OpenShift-Compatible Image
 
 The maintained NVFlare Dockerfiles are in the repository `docker/` directory. Use the parent image for long-running server/client parent pods and the temporary admin pod. Use a job image for the submitted `hello-numpy` job pods:

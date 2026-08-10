@@ -44,6 +44,23 @@ configuration, the generated Helm chart requests `2` CPU and `8Gi` memory per
 parent pod, which does not fit this three-parent example on the default CRC
 size after OpenShift overhead.
 
+As a verified alternative for parent pods that need the generated `2` CPU and
+`8Gi` memory requests, or for heavier workloads, resize an existing CRC cluster
+before restarting it:
+
+```bash
+crc stop
+crc config set cpus 14
+crc config set memory 65536
+bash examples/devops/openshift/scripts/start_openshift_cluster.sh
+bash examples/devops/openshift/scripts/k8s_e2e.sh
+```
+
+This `14` vCPU / `65536` MiB configuration was verified with the complete
+example: after the restart, rerunning `k8s_e2e.sh` allowed the submitted job to
+reach `FINISHED:COMPLETED`. Make sure the host has enough capacity before using
+these settings.
+
 Use `scripts/create_openshift_cluster.sh` for first-time local CRC setup. It
 validates that `crc` exists, requires `PULL_SECRET_FILE` when the cluster will
 be started, writes CRC settings such as resource sizing and shared-directory
