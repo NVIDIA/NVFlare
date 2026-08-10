@@ -118,8 +118,10 @@ init_k8s_env() {
   PARENT_PORT="${PARENT_PORT:-8102}"
   WORKSPACE_MOUNT_PATH="${WORKSPACE_MOUNT_PATH:-/var/tmp/nvflare/workspace}"
   PARENT_PYTHON_PATH="${PARENT_PYTHON_PATH:-python}"
-  PARENT_CPU="${PARENT_CPU:-}"
-  PARENT_MEMORY="${PARENT_MEMORY:-}"
+  # Keep the CRC quickstart schedulable. Without explicit resources,
+  # `nvflare deploy prepare` requests 2 CPU and 8Gi for every parent pod.
+  PARENT_CPU="${PARENT_CPU:-500m}"
+  PARENT_MEMORY="${PARENT_MEMORY:-1Gi}"
   ADMIN_PYTHON_PATH="${ADMIN_PYTHON_PATH:-${PARENT_PYTHON_PATH}}"
   JOB_PYTHON_PATH="${JOB_PYTHON_PATH:-/usr/local/bin/python3}"
   JOB_PENDING_TIMEOUT="${JOB_PENDING_TIMEOUT:-300}"
