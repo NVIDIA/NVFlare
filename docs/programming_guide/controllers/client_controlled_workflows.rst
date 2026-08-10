@@ -925,7 +925,7 @@ Server-Side Parameters
 
 **CrossSiteEvalServerController (if enabled):**
 
-- ``eval_task_timeout``: Timeout for evaluation tasks. **Default: 300 (CONFIG_TASK_TIMEOUT)**. **Suggested: 1200** for large models.
+- ``eval_task_timeout``: Timeout for evaluation tasks. **Default: 30**. **Suggested: 1200** for large models.
 
 Optional NVFlare Global Config
 ------------------------------
