@@ -125,7 +125,9 @@ class FedBPTRecipe(Recipe):
             client_args.extend(shlex.split(train_args))
         if extra_train_args:
             client_args.extend(extra_train_args)
-        quoted_client_args = _quote_args(client_args)
+        # Retain the exact launcher arguments so Recipe's pre-use secret scan covers
+        # both train_args and extra_train_args after they have been combined.
+        self.train_args = _quote_args(client_args)
 
         with _temporary_sys_path(SRC_DIR):
             from decomposer_widget import RegisterDecomposer
@@ -148,7 +150,7 @@ class FedBPTRecipe(Recipe):
         job.to_server(RegisterDecomposer(), id="register_decomposer")
 
         launcher = SubprocessLauncher(
-            script=f"python3 -u custom/fedbpt_train.py {quoted_client_args}",
+            script=f"python3 -u custom/fedbpt_train.py {self.train_args}",
             launch_once=True,
             shutdown_timeout=10.0,
         )

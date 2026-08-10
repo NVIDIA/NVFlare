@@ -18,17 +18,43 @@ import json
 import os
 import sys
 from types import ModuleType
+from unittest.mock import MagicMock
 
 import pytest
 
+from nvflare.recipe import PotentialSecretWarning
+
 HAS_FEDBPT_EXPORT_DEPS = importlib.util.find_spec("cma") is not None and importlib.util.find_spec("torch") is not None
 HAS_CMA = importlib.util.find_spec("cma") is not None
+
+# Fake credential for testing the detector -- not a real token.
+FAKE_GITHUB_TOKEN = "ghp_" + "Ab1" * 12
 
 
 def _load_fedbpt_job_module():
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
     job_path = os.path.join(repo_root, "research", "fed-bpt", "job.py")
     spec = importlib.util.spec_from_file_location("fedbpt_job", job_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_fedbpt_recipe_module(monkeypatch):
+    class FakeComponent:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    fake_global_es_module = ModuleType("global_es")
+    fake_global_es_module.GlobalES = FakeComponent
+    fake_decomposer_module = ModuleType("decomposer_widget")
+    fake_decomposer_module.RegisterDecomposer = FakeComponent
+    monkeypatch.setitem(sys.modules, "global_es", fake_global_es_module)
+    monkeypatch.setitem(sys.modules, "decomposer_widget", fake_decomposer_module)
+
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    recipe_path = os.path.join(repo_root, "research", "fed-bpt", "fedbpt_recipe.py")
+    spec = importlib.util.spec_from_file_location("fedbpt_recipe_for_test", recipe_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -66,6 +92,27 @@ def test_fedbpt_main_parses_export_flags_before_importing_recipe(monkeypatch, tm
     job_module.main()
 
     assert exported == [(str(tmp_path), "fedbpt")]
+
+
+@pytest.mark.parametrize(
+    "secret_args",
+    [
+        {"train_args": f"--api_key {FAKE_GITHUB_TOKEN}"},
+        {"extra_train_args": ["--api_key", FAKE_GITHUB_TOKEN]},
+    ],
+    ids=["train_args", "extra_train_args"],
+)
+def test_fedbpt_run_warns_for_secret_in_combined_train_args(monkeypatch, secret_args):
+    recipe_module = _load_fedbpt_recipe_module(monkeypatch)
+    recipe = recipe_module.FedBPTRecipe(num_clients=1, **secret_args)
+    env = MagicMock()
+    env.deploy.return_value = "job-id"
+
+    with pytest.warns(PotentialSecretWarning, match="train_args") as record:
+        recipe.run(env)
+
+    assert all(FAKE_GITHUB_TOKEN not in str(warning.message) for warning in record)
+    env.deploy.assert_called_once()
 
 
 @pytest.mark.skipif(not HAS_FEDBPT_EXPORT_DEPS, reason="FedBPT job export dependencies are not installed")
