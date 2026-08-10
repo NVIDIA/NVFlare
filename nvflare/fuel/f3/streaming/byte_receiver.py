@@ -138,6 +138,7 @@ class RxTask:
         self.error_msg = None
         self.error_type = None
         self.error_notified = False  # protected by ack_lock, like the ack state
+        self.preflight_done = False
         self.stop_lock = threading.RLock()
         self.cleanup_timer = None
 
@@ -206,7 +207,7 @@ class RxTask:
 
             count += 1
 
-    def process_chunk(self, message: Message) -> bool:
+    def process_chunk(self, message: Message, preflight_cb: Optional[Callable] = None) -> bool:
         """Returns True if a new stream is created"""
 
         with self.stop_lock:
@@ -231,7 +232,26 @@ class RxTask:
         duplicate_start = False
         with self.lock:
             seq = message.get_header(StreamHeaderKey.SEQUENCE)
-            if seq == 0:
+            if preflight_cb and not self.preflight_done:
+                try:
+                    rejection = preflight_cb(message.headers)
+                except Exception as ex:
+                    log.error(f"{self} stream preflight callback failed: {_abbrev(ex)}")
+                    rejection = StreamError("stream rejected by receiver preflight")
+                self.preflight_done = True
+                if rejection is not None:
+                    if not isinstance(rejection, StreamError):
+                        rejection = StreamError(str(rejection))
+                    stop_error = rejection
+
+                    # A rejected stream still exposes a terminal receive future
+                    # for diagnostics, even when sequence 0 is delayed.
+                    if not self.stream_future:
+                        self._handle_new_stream(message)
+
+            if stop_error:
+                pass
+            elif seq == 0:
                 if self.stream_future:
                     log.warning(f"{self} Received duplicate chunk 0, ignored")
                     if self.reliable:
@@ -246,7 +266,7 @@ class RxTask:
                 # raised before admitting later chunks.
                 self._update_sender_flow_control(message)
 
-            if not duplicate_start:
+            if not duplicate_start and not stop_error:
                 should_stop, ack_to_send, stop_error = self._handle_incoming_data(seq, message)
 
         if ack_to_send:
@@ -257,7 +277,7 @@ class RxTask:
         elif should_stop:
             self.stop()
 
-        return new_stream
+        return new_stream and not stop_error
 
     def _handle_new_stream(self, message: Message):
         self.channel = message.get_header(StreamHeaderKey.CHANNEL)
@@ -698,11 +718,21 @@ class ByteReceiver:
         self.cell.register_request_cb(channel=STREAM_CHANNEL, topic=STREAM_DATA_TOPIC, cb=self._data_handler)
         self.registry = Registry()
 
-    def register_callback(self, channel: str, topic: str, stream_cb: Callable, *args, **kwargs):
+    def register_callback(
+        self,
+        channel: str,
+        topic: str,
+        stream_cb: Callable,
+        *args,
+        preflight_cb: Optional[Callable] = None,
+        **kwargs,
+    ):
         if not callable(stream_cb):
             raise StreamError(f"specified stream_cb {type(stream_cb)} is not callable")
+        if preflight_cb is not None and not callable(preflight_cb):
+            raise StreamError(f"specified preflight_cb {type(preflight_cb)} is not callable")
 
-        self.registry.set(channel, topic, Callback(stream_cb, args, kwargs))
+        self.registry.set(channel, topic, Callback(stream_cb, args, kwargs, preflight_cb=preflight_cb))
 
     def _data_handler(self, message: Message):
 
@@ -710,10 +740,13 @@ class ByteReceiver:
         if not task:
             return
 
-        new_stream = task.process_chunk(message)
+        callback = self.registry.find(
+            message.get_header(StreamHeaderKey.CHANNEL),
+            message.get_header(StreamHeaderKey.TOPIC),
+        )
+        new_stream = task.process_chunk(message, preflight_cb=callback.preflight_cb if callback else None)
         if new_stream:
             # Invoke callback
-            callback = self.registry.find(task.channel, task.topic)
             if not callback:
                 task.stop(StreamError(f"{task} No callback is registered for {task.channel}/{task.topic}"))
                 return

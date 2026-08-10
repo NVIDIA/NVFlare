@@ -185,7 +185,13 @@ class Adapter:
         self.logger.debug(f"sending: {stream_req_id=}: {response.headers=}, target={origin}")
         try:
             reply_future = self.cell.send_blob(
-                CellChannel.RETURN_ONLY, f"{channel}:{topic}", origin, response, secure, optional
+                CellChannel.RETURN_ONLY,
+                f"{channel}:{topic}",
+                origin,
+                response,
+                secure,
+                optional,
+                reliable=True,
             )
         except BlobSizeError as ex:
             if _is_server_job_cell(self.my_info):

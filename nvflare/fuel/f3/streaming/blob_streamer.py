@@ -110,6 +110,12 @@ class BlobHandler:
         self.chunk_size = config.get_streaming_chunk_size(STREAM_CHUNK_SIZE)
         self.max_blob_size = config.get_streaming_max_blob_size()
 
+    def validate_size(self, headers: dict) -> Optional[BlobSizeError]:
+        size = (headers or {}).get(StreamHeaderKey.SIZE, 0)
+        if self.max_blob_size > 0 and isinstance(size, int) and size > self.max_blob_size:
+            return _make_blob_size_error(size, self.max_blob_size)
+        return None
+
     @staticmethod
     def _fail(stream: Stream, future: StreamFuture, error: StreamError):
         if hasattr(stream, "task"):
@@ -297,4 +303,11 @@ class BlobStreamer:
 
     def register_blob_callback(self, channel, topic, blob_cb: Callable, *args, **kwargs):
         handler = BlobHandler(blob_cb)
-        self.byte_receiver.register_callback(channel, topic, handler.handle_blob_cb, *args, **kwargs)
+        self.byte_receiver.register_callback(
+            channel,
+            topic,
+            handler.handle_blob_cb,
+            *args,
+            preflight_cb=handler.validate_size,
+            **kwargs,
+        )
