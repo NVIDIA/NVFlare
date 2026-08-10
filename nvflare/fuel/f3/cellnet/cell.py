@@ -255,8 +255,21 @@ class Cell(StreamCell):
         results = dict()
         future_to_target = {}
 
-        # encode the request now so each target thread won't need to do it again.
-        self._encode_message(request, abort_signal, num_receivers=len(targets), receiver_ids=targets)
+        # Encode the request now so each target thread won't need to do it again.
+        # For a direct broadcast, the routing targets are also the tensor download
+        # consumers, so the transaction can track their exact identities. With
+        # PASS_THROUGH, each target may forward the refs to another Cell (for
+        # example, an external trainer), and only the final consumer count is known.
+        # Pinning the transaction to the first-hop identities would prevent it from
+        # completing after those downstream consumers finish downloading.
+        pass_through = bool(request.get_header(MessageHeaderKey.PASS_THROUGH, False))
+        receiver_ids = None if pass_through else targets
+        self._encode_message(
+            request,
+            abort_signal,
+            num_receivers=len(targets),
+            receiver_ids=receiver_ids,
+        )
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
             self.logger.debug(f"broadcast to {targets=}")
