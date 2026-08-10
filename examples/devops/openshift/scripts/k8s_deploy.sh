@@ -25,8 +25,8 @@ Common optional environment:
   WORKSPACE_STORAGE=2Gi
   WORKSPACE_STAGING_MODE=pvc  # pvc or configmap-secret
   COPY_IMAGE=busybox:1.36  # pvc mode only; must contain sh, sleep, and tar for oc cp
-  PARENT_CPU=<optional parent pod CPU request, for example 500m>
-  PARENT_MEMORY=<optional parent pod memory request, for example 1Gi>
+  PARENT_CPU=500m  # parent pod CPU request
+  PARENT_MEMORY=1Gi  # parent pod memory request
   PARENT_IMAGE_PULL_SECRETS="registry-secret another-secret"
   JOB_IMAGE_PULL_SECRETS="registry-secret another-secret"
 
