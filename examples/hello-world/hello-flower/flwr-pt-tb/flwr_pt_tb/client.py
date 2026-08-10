@@ -19,7 +19,7 @@ from flwr.client import ClientApp, NumPyClient
 from flwr.common import Context
 from flwr.common.record import MetricRecord, RecordDict
 
-from nvflare.client import tracking
+import nvflare.client.tracking as flare
 from nvflare.client.tracking import SummaryWriter
 
 from .task import DEVICE, Net, get_weights, load_data, set_weights, test, train
@@ -112,10 +112,10 @@ app = ClientApp(
 
 @app.lifespan()
 def lifespan(ctxt: Context) -> None:
-    tracking.init()
+    flare.init()
     print("ClientApp entering. FLARE tracking initialized.")
 
     yield
 
-    tracking.shutdown()
+    flare.shutdown()
     print("ClientApp exiting. FLARE tracking shutdown.")

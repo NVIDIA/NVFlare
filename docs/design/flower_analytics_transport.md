@@ -33,10 +33,10 @@ The same relay exports its three Cell fields in the legacy external Client API
 configuration, allowing `flare.log()` to use `MetricsSender` without a metrics
 Pipe while the remaining task-exchange stack awaits removal.
 
-The maintained Flower example changes only its lifecycle from
-`flare.init()`/`flare.shutdown()` to the explicit
-`tracking.init()`/`tracking.shutdown()` API. Existing `SummaryWriter` calls are
-unchanged.
+The maintained Flower example aliases the explicit tracking module as `flare`:
+`import nvflare.client.tracking as flare`. This preserves the familiar
+`flare.init()`/`flare.shutdown()` lifecycle spelling without initializing the
+task/model Client API. Existing `SummaryWriter` calls are unchanged.
 
 ## Trust and lifecycle
 
