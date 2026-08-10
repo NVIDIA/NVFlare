@@ -71,11 +71,13 @@ def _is_server_job_cell(my_info) -> bool:
 
 
 class SimpleWaiter:
-    def __init__(self, req_id, result):
+    def __init__(self, req_id, target, result):
         super().__init__()
         self.req_id = req_id
+        self.target = target
         self.result = result
         self.receiving_future = None
+        self.stream_error = None
         self.in_receiving = threading.Event()
 
 
@@ -179,6 +181,7 @@ class Cell(StreamCell):
         super().__init__(self.core_cell)
         self.requests_dict = dict()
         self.logger = get_obj_logger(self)
+        self.byte_streamer.register_error_callback(self._process_stream_error)
         self.register_blob_cb(CellChannel.RETURN_ONLY, "*", self._process_reply)  # this should be one-time registration
         self.core_cell.update_fobs_context({FOBSContextKey.CELL: self})
         self.decode_pass_through_channels: set = set()  # per-channel opt-in for receiver-side PASS_THROUGH
@@ -448,7 +451,7 @@ class Cell(StreamCell):
         # this future can be used to check sending progress, but not for checking return blob
         self.logger.debug(f"{req_id=}, {channel=}, {topic=}, {target=}, {timeout=}: send_request about to send_blob")
 
-        waiter = SimpleWaiter(req_id=req_id, result=make_reply(ReturnCode.TIMEOUT))
+        waiter = SimpleWaiter(req_id=req_id, target=target, result=make_reply(ReturnCode.TIMEOUT))
         self.requests_dict[req_id] = waiter
 
         try:
@@ -463,7 +466,14 @@ class Cell(StreamCell):
             self.logger.debug(f"{req_id=}: entering sending wait {timeout=}")
             sending_complete = self._future_wait(future, timeout, abort_signal)
             if not sending_complete:
-                self.logger.debug(f"{req_id=}: sending timeout {timeout=}")
+                stream_error = vars(waiter).get("stream_error")
+                if future.error and not stream_error:
+                    waiter.result = make_reply(ReturnCode.COMM_ERROR, error=str(future.error))
+                    self.logger.debug(f"{req_id=}: sending failed with stream error: {future.error}")
+                elif stream_error:
+                    self.logger.debug(f"{req_id=}: receiver rejected stream: {stream_error}")
+                else:
+                    self.logger.debug(f"{req_id=}: sending timeout {timeout=}")
                 return self._get_result(req_id)
 
             self.logger.debug(f"{req_id=}: sending complete")
@@ -492,6 +502,10 @@ class Cell(StreamCell):
                 self.logger.debug(f"{req_id=}: remote processing timeout {timeout=} {waiter_rc=}")
                 return self._get_result(req_id)
             self.logger.debug(f"{req_id=}: in receiving")
+
+            if vars(waiter).get("stream_error"):
+                self.logger.debug(f"{req_id=}: returning stream error reply")
+                return self._get_result(req_id)
 
             # receiving with progress timeout
             r_future = waiter.receiving_future
@@ -554,6 +568,28 @@ class Cell(StreamCell):
             self.logger.warning(f"Receiving unknown {req_id=}, discarded: {e}")
             return
         waiter.receiving_future = future
+        waiter.in_receiving.set()
+
+    def _process_stream_error(self, message: Message):
+        req_id = message.get_header(StreamHeaderKey.STREAM_REQ_ID)
+        if not req_id:
+            return
+
+        waiter = self.requests_dict.get(req_id)
+        if not waiter:
+            self.logger.debug(f"stream error for completed or unknown {req_id=}")
+            return
+
+        origin = message.get_header(MessageHeaderKey.ORIGIN)
+        if origin != waiter.target:
+            self.logger.warning(
+                f"ignored stream error for {req_id=} from unexpected receiver {origin}; expected {waiter.target}"
+            )
+            return
+
+        error = message.get_header(StreamHeaderKey.ERROR_MSG, "stream rejected by receiver")
+        waiter.stream_error = error
+        waiter.result = make_reply(ReturnCode.COMM_ERROR, error=error)
         waiter.in_receiving.set()
 
     def _register_request_cb(self, channel: str, topic: str, cb, *args, **kwargs):

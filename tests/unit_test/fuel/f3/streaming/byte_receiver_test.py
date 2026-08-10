@@ -31,7 +31,13 @@ from nvflare.fuel.f3.streaming.byte_receiver import (
     required_out_seq_chunks,
 )
 from nvflare.fuel.f3.streaming.byte_streamer import TxTask
-from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_TOPIC, STREAM_CHANNEL, StreamDataType, StreamHeaderKey
+from nvflare.fuel.f3.streaming.stream_const import (
+    STREAM_ACK_TOPIC,
+    STREAM_CHANNEL,
+    STREAM_ERROR_TOPIC,
+    StreamDataType,
+    StreamHeaderKey,
+)
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError
 
 MB = 1024**2
@@ -96,6 +102,59 @@ def _make_chunk(
         headers.update(streaming_parameters)
     message.add_headers(headers)
     return message
+
+
+def test_first_chunk_preflight_rejects_before_payload_is_buffered():
+    cell = MagicMock()
+    cell.fire_and_forget.return_value = {}
+    message = _make_chunk("sender", 42, 0, StreamDataType.FINAL, payload=b"must-not-be-buffered", reliable=False)
+    message.set_header(StreamHeaderKey.STREAM_REQ_ID, "request-42")
+    task = RxTask.find_or_create_task(message, cell)
+
+    new_stream = task.process_chunk(message, preflight_cb=lambda _headers: StreamError("rejected"))
+
+    assert new_stream is False
+    assert not task.chunks
+    assert task.stream_future is None
+    assert cell.fire_and_forget.call_args.args[:3] == (STREAM_CHANNEL, STREAM_ERROR_TOPIC, "sender")
+    error_message = cell.fire_and_forget.call_args.args[3]
+    assert error_message.get_header(StreamHeaderKey.STREAM_ID) == 42
+    assert error_message.get_header(StreamHeaderKey.CHANNEL) == "ch"
+    assert error_message.get_header(StreamHeaderKey.TOPIC) == "tp"
+    assert error_message.get_header(StreamHeaderKey.STREAM_REQ_ID) == "request-42"
+
+
+def test_preflight_rejects_out_of_order_frame_before_reassembly_buffering():
+    cell = MagicMock()
+    cell.fire_and_forget.return_value = {}
+    message = _make_chunk("sender", 43, 17, StreamDataType.CHUNK, payload=b"must-not-be-buffered", reliable=False)
+    task = RxTask.find_or_create_task(message, cell)
+
+    new_stream = task.process_chunk(message, preflight_cb=lambda _headers: StreamError("rejected"))
+
+    assert new_stream is False
+    assert not task.out_seq_chunks
+    assert cell.fire_and_forget.call_args.args[:3] == (STREAM_CHANNEL, STREAM_ERROR_TOPIC, "sender")
+
+
+def test_preflight_header_updates_survive_sequence_zero_arriving_late():
+    cell = MagicMock()
+    cell.fire_and_forget.return_value = {}
+    preflight = MagicMock(return_value=None)
+
+    def authorize(headers):
+        headers["authenticated_caller"] = "site-1"
+
+    preflight.side_effect = authorize
+    later = _make_chunk("sender", 44, 1, StreamDataType.FINAL, payload=b"later", reliable=False)
+    task = RxTask.find_or_create_task(later, cell)
+    assert task.process_chunk(later, preflight_cb=preflight) is False
+
+    first = _make_chunk("sender", 44, 0, StreamDataType.CHUNK, payload=b"first", reliable=False)
+    assert task.process_chunk(first, preflight_cb=preflight) is True
+
+    preflight.assert_called_once()
+    assert task.stream_future.headers["authenticated_caller"] == "site-1"
 
 
 class _DeadlockDetectingLock:

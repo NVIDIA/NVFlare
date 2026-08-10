@@ -276,6 +276,10 @@ class BlobStreamer:
             reliable=reliable,
         )
 
-    def register_blob_callback(self, channel, topic, blob_cb: Callable, *args, **kwargs):
+    def register_blob_callback(
+        self, channel, topic, blob_cb: Callable, *args, preflight_cb: Optional[Callable] = None, **kwargs
+    ):
         handler = BlobHandler(blob_cb)
-        self.byte_receiver.register_callback(channel, topic, handler.handle_blob_cb, *args, **kwargs)
+        self.byte_receiver.register_callback(
+            channel, topic, handler.handle_blob_cb, *args, preflight_cb=preflight_cb, **kwargs
+        )

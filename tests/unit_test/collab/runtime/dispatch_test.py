@@ -14,17 +14,34 @@
 
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import ANY, MagicMock, patch
+
+import pytest
 
 from nvflare.collab.api.app import ClientApp
 from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.decorators import publish
-from nvflare.collab.runtime.defs import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
-from nvflare.collab.runtime.dispatch import _call_app_method, _submit_app_method, prepare_for_remote_call
+from nvflare.collab.runtime.defs import (
+    CALL_PROTOCOL_VERSION,
+    MSG_CHANNEL,
+    MSG_TOPIC,
+    CallHeaderKey,
+    CallReplyKey,
+    ObjectCallKey,
+)
+from nvflare.collab.runtime.dispatch import (
+    CollabCallAuthorizer,
+    _call_app_method,
+    _submit_app_method,
+    make_participant_map,
+    prepare_for_remote_call,
+)
 from nvflare.fuel.f3.cellnet.cell import Adapter
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
+from nvflare.fuel.f3.streaming.stream_types import StreamError
 
 
 class _FailingClient:
@@ -61,6 +78,14 @@ class _ContextCapturingClient:
         return context.caller, context.callee
 
 
+def _trusted_headers(target_name: str, method_name: str, caller: str = "server"):
+    return {
+        CallHeaderKey.AUTHENTICATED_CALLER: caller,
+        CallHeaderKey.TARGET_NAME: target_name,
+        CallHeaderKey.METHOD_NAME: method_name,
+    }
+
+
 def test_prepare_for_remote_call_registers_blob_callback():
     cell = MagicMock()
     app = MagicMock()
@@ -68,14 +93,16 @@ def test_prepare_for_remote_call_registers_blob_callback():
     executor = MagicMock()
     callback = MagicMock()
     adapter = MagicMock(call=callback)
+    cell.get_fqcn.return_value = "site-1.job"
 
     with patch("nvflare.collab.runtime.dispatch.Adapter", return_value=adapter):
-        prepare_for_remote_call(cell, app, logger, executor)
+        prepare_for_remote_call(cell, app, logger, executor, {"server.job": "server"})
 
     cell.register_blob_cb.assert_called_once_with(
         channel=MSG_CHANNEL,
         topic=MSG_TOPIC,
         blob_cb=callback,
+        preflight_cb=ANY,
         app=app,
         logger=logger,
         executor=executor,
@@ -86,7 +113,7 @@ def test_remote_call_returns_secure_exception_detail():
     app = ClientApp(_FailingClient())
     app.name = "site-1"
     request = new_cell_message(
-        {},
+        _trusted_headers("site-1.client", "fail"),
         {
             ObjectCallKey.CALLER: "server",
             ObjectCallKey.TARGET_NAME: "site-1.client",
@@ -124,7 +151,7 @@ def test_remote_call_restores_previous_context_after_success():
     app = ClientApp(_SuccessfulClient())
     app.name = "site-1"
     request = new_cell_message(
-        {},
+        _trusted_headers("site-1.client", "succeed"),
         {
             ObjectCallKey.CALLER: "server",
             ObjectCallKey.TARGET_NAME: "site-1.client",
@@ -149,10 +176,10 @@ def test_named_object_call_context_uses_fully_qualified_callee():
     app.name = "site-1"
     app.add_collab_object("trainer", _ContextCapturingClient())
     request = new_cell_message(
-        {},
+        _trusted_headers("site-1.trainer", "identify"),
         {
             ObjectCallKey.CALLER: "server",
-            ObjectCallKey.TARGET_NAME: "other-site.trainer",
+            ObjectCallKey.TARGET_NAME: "site-1.trainer",
             ObjectCallKey.METHOD_NAME: "identify",
         },
     )
@@ -167,7 +194,7 @@ def test_remote_call_restores_positional_only_arguments_for_invocation():
     app = ClientApp(_SignatureClient())
     app.name = "site-1"
     request = new_cell_message(
-        {},
+        _trusted_headers("site-1.client", "scale"),
         {
             ObjectCallKey.CALLER: "server",
             ObjectCallKey.TARGET_NAME: "site-1.client",
@@ -186,7 +213,7 @@ def test_remote_call_rejects_unnormalized_positional_args():
     app = ClientApp(_FailingClient())
     app.name = "site-1"
     request = new_cell_message(
-        {},
+        _trusted_headers("site-1", "fail"),
         {
             ObjectCallKey.CALLER: "server",
             ObjectCallKey.TARGET_NAME: "site-1",
@@ -206,7 +233,7 @@ def test_remote_user_function_is_submitted_to_collab_executor():
     app = ClientApp(client)
     app.name = "site-1"
     request = new_cell_message(
-        {},
+        _trusted_headers("site-1.client", "run"),
         {
             ObjectCallKey.CALLER: "server",
             ObjectCallKey.TARGET_NAME: "site-1.client",
@@ -262,3 +289,144 @@ def test_stream_adapter_sends_future_response_asynchronously():
 
     cell.send_blob.assert_called_once()
     assert cell.send_blob.call_args.args[0] == CellChannel.RETURN_ONLY
+
+
+@pytest.mark.parametrize("secure", [False, True])
+def test_authorizer_derives_caller_and_overwrites_sender_value(secure):
+    app = ClientApp(_SuccessfulClient())
+    app.name = "site-1"
+    authorizer = CollabCallAuthorizer(
+        app=app,
+        local_fqcn="site-1.job-1",
+        participants={"server.job-1": "server"},
+        logger=MagicMock(),
+    )
+    headers = {
+        MessageHeaderKey.ORIGIN: "server.job-1",
+        MessageHeaderKey.DESTINATION: "site-1.job-1",
+        CallHeaderKey.PROTOCOL_VERSION: CALL_PROTOCOL_VERSION,
+        CallHeaderKey.TARGET_NAME: "site-1.client",
+        CallHeaderKey.METHOD_NAME: "succeed",
+        CallHeaderKey.AUTHENTICATED_CALLER: "spoofed-site",
+        MessageHeaderKey.SECURE: secure,
+    }
+
+    assert authorizer.authorize(headers) is None
+    assert headers[CallHeaderKey.AUTHENTICATED_CALLER] == "server"
+
+
+def test_authorizer_rejects_origin_from_another_job():
+    app = ClientApp(_SuccessfulClient())
+    app.name = "site-1"
+    authorizer = CollabCallAuthorizer(
+        app=app,
+        local_fqcn="site-1.job-1",
+        participants={"server.job-1": "server"},
+        logger=MagicMock(),
+    )
+    headers = {
+        MessageHeaderKey.ORIGIN: "server.job-2",
+        MessageHeaderKey.DESTINATION: "site-1.job-1",
+        CallHeaderKey.PROTOCOL_VERSION: CALL_PROTOCOL_VERSION,
+        CallHeaderKey.TARGET_NAME: "site-1.client",
+        CallHeaderKey.METHOD_NAME: "succeed",
+    }
+
+    response = authorizer.authorize(headers)
+
+    assert isinstance(response, StreamError)
+    assert str(response) == "Collab call rejected"
+    assert CallHeaderKey.AUTHENTICATED_CALLER not in headers
+
+
+def test_authorizer_rejects_wrong_target_before_dispatch():
+    app = ClientApp(_SuccessfulClient())
+    app.name = "site-1"
+    authorizer = CollabCallAuthorizer(
+        app=app,
+        local_fqcn="site-1.job-1",
+        participants={"server.job-1": "server"},
+        logger=MagicMock(),
+    )
+    headers = {
+        MessageHeaderKey.ORIGIN: "server.job-1",
+        MessageHeaderKey.DESTINATION: "site-1.job-1",
+        CallHeaderKey.PROTOCOL_VERSION: CALL_PROTOCOL_VERSION,
+        CallHeaderKey.TARGET_NAME: "site-2.client.extra",
+        CallHeaderKey.METHOD_NAME: "succeed",
+    }
+
+    response = authorizer.authorize(headers)
+
+    assert isinstance(response, StreamError)
+
+
+@pytest.mark.parametrize(
+    "header,value",
+    [
+        (MessageHeaderKey.DESTINATION, "site-1.job-2"),
+        (CallHeaderKey.PROTOCOL_VERSION, CALL_PROTOCOL_VERSION + 1),
+        (CallHeaderKey.TARGET_NAME, "site-1.client.extra"),
+        (CallHeaderKey.METHOD_NAME, ""),
+    ],
+)
+def test_authorizer_rejects_malformed_envelope(header, value):
+    app = ClientApp(_SuccessfulClient())
+    app.name = "site-1"
+    authorizer = CollabCallAuthorizer(
+        app=app,
+        local_fqcn="site-1.job-1",
+        participants={"server.job-1": "server"},
+        logger=MagicMock(),
+    )
+    headers = {
+        MessageHeaderKey.ORIGIN: "server.job-1",
+        MessageHeaderKey.DESTINATION: "site-1.job-1",
+        CallHeaderKey.PROTOCOL_VERSION: CALL_PROTOCOL_VERSION,
+        CallHeaderKey.TARGET_NAME: "site-1.client",
+        CallHeaderKey.METHOD_NAME: "succeed",
+    }
+    headers[header] = value
+
+    response = authorizer.authorize(headers)
+
+    assert isinstance(response, StreamError)
+
+
+def test_dispatch_rejects_payload_caller_spoofing():
+    app = ClientApp(_SuccessfulClient())
+    app.name = "site-1"
+    request = new_cell_message(
+        _trusted_headers("site-1.client", "succeed", caller="site-2"),
+        {
+            ObjectCallKey.CALLER: "server",
+            ObjectCallKey.TARGET_NAME: "site-1.client",
+            ObjectCallKey.METHOD_NAME: "succeed",
+        },
+    )
+
+    reply = _call_app_method(request, app, MagicMock())
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.PROCESS_EXCEPTION
+    assert reply.payload[CallReplyKey.ERROR] == "payload caller does not match authenticated origin"
+
+
+def test_make_participant_map_uses_exact_fqcns_and_actual_local_cell():
+    clients = [
+        SimpleNamespace(name="site-1", get_fqcn=lambda: "relay.site-1"),
+        SimpleNamespace(name="site-2", get_fqcn=lambda: "relay.site-2"),
+    ]
+
+    participants = make_participant_map(
+        server_fqcn="server.job-1",
+        job_id="job-1",
+        clients=clients,
+        local_name="site-1",
+        local_fqcn="relay.site-1.actual-job-cell",
+    )
+
+    assert participants == {
+        "server.job-1": "server",
+        "relay.site-1.actual-job-cell": "site-1",
+        "relay.site-2.job-1": "site-2",
+    }

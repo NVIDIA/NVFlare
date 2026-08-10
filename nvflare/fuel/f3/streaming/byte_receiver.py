@@ -30,6 +30,7 @@ from nvflare.fuel.f3.streaming.stream_const import (
     STREAM_CHANNEL,
     STREAM_CHUNK_SIZE,
     STREAM_DATA_TOPIC,
+    STREAM_ERROR_TOPIC,
     STREAM_WINDOW_SIZE,
     StreamDataType,
     StreamHeaderKey,
@@ -137,6 +138,8 @@ class RxTask:
         self.error = None
         self.error_msg = None
         self.error_notified = False  # protected by ack_lock, like the ack state
+        self.preflight_done = False
+        self.preflight_header_updates = {}
         self.stop_lock = threading.RLock()
         self.cleanup_timer = None
 
@@ -205,7 +208,7 @@ class RxTask:
 
             count += 1
 
-    def process_chunk(self, message: Message) -> bool:
+    def process_chunk(self, message: Message, preflight_cb: Optional[Callable] = None) -> bool:
         """Returns True if a new stream is created"""
 
         with self.stop_lock:
@@ -230,7 +233,30 @@ class RxTask:
         duplicate_start = False
         with self.lock:
             seq = message.get_header(StreamHeaderKey.SEQUENCE)
-            if seq == 0:
+            if preflight_cb and not self.preflight_done:
+                self.channel = message.get_header(StreamHeaderKey.CHANNEL)
+                self.topic = message.get_header(StreamHeaderKey.TOPIC)
+                self.headers = message.headers
+                original_headers = dict(message.headers or {})
+                try:
+                    rejection = preflight_cb(message.headers)
+                except Exception as ex:
+                    log.error(f"{self} stream preflight callback failed: {_abbrev(ex)}")
+                    rejection = StreamError("stream rejected by receiver preflight")
+                self.preflight_header_updates = {
+                    key: value
+                    for key, value in (message.headers or {}).items()
+                    if key not in original_headers or original_headers[key] != value
+                }
+                self.preflight_done = True
+                if rejection is not None:
+                    if not isinstance(rejection, StreamError):
+                        rejection = StreamError(str(rejection))
+                    stop_error = rejection
+
+            if stop_error:
+                pass
+            elif seq == 0:
                 if self.stream_future:
                     log.warning(f"{self} Received duplicate chunk 0, ignored")
                     if self.reliable:
@@ -245,7 +271,7 @@ class RxTask:
                 # raised before admitting later chunks.
                 self._update_sender_flow_control(message)
 
-            if not duplicate_start:
+            if not duplicate_start and not stop_error:
                 should_stop, ack_to_send, stop_error = self._handle_incoming_data(seq, message)
 
         if ack_to_send:
@@ -262,6 +288,7 @@ class RxTask:
         self.channel = message.get_header(StreamHeaderKey.CHANNEL)
         self.topic = message.get_header(StreamHeaderKey.TOPIC)
         self.headers = message.headers
+        self.headers.update(self.preflight_header_updates)
         self.size = message.get_header(StreamHeaderKey.SIZE, 0)
         self._update_sender_flow_control(message)
 
@@ -494,16 +521,20 @@ class RxTask:
         log_func = log.debug if already_notified else log.error
         message = Message()
 
-        message.add_headers(
-            {
-                StreamHeaderKey.STREAM_ID: self.sid,
-                StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
-                StreamHeaderKey.ERROR_MSG: error_msg,
-            }
-        )
+        error_headers = {
+            StreamHeaderKey.STREAM_ID: self.sid,
+            StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
+            StreamHeaderKey.ERROR_MSG: error_msg,
+            StreamHeaderKey.CHANNEL: self.channel,
+            StreamHeaderKey.TOPIC: self.topic,
+        }
+        req_id = (self.headers or {}).get(StreamHeaderKey.STREAM_REQ_ID)
+        if req_id:
+            error_headers[StreamHeaderKey.STREAM_REQ_ID] = req_id
+        message.add_headers(error_headers)
         try:
             errors = self.cell.fire_and_forget(
-                STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message, optional=already_notified
+                STREAM_CHANNEL, STREAM_ERROR_TOPIC, self.origin, message, optional=already_notified
             )
         except Exception as ex:
             log_func(f"{self} failed to send error to {self.origin}: {ex}")
@@ -695,11 +726,16 @@ class ByteReceiver:
         self.cell.register_request_cb(channel=STREAM_CHANNEL, topic=STREAM_DATA_TOPIC, cb=self._data_handler)
         self.registry = Registry()
 
-    def register_callback(self, channel: str, topic: str, stream_cb: Callable, *args, **kwargs):
+    def register_callback(
+        self, channel: str, topic: str, stream_cb: Callable, *args, preflight_cb: Optional[Callable] = None, **kwargs
+    ):
         if not callable(stream_cb):
             raise StreamError(f"specified stream_cb {type(stream_cb)} is not callable")
 
-        self.registry.set(channel, topic, Callback(stream_cb, args, kwargs))
+        if preflight_cb is not None and not callable(preflight_cb):
+            raise StreamError(f"specified preflight_cb {type(preflight_cb)} is not callable")
+
+        self.registry.set(channel, topic, Callback(stream_cb, args, kwargs, preflight_cb=preflight_cb))
 
     def _data_handler(self, message: Message):
 
@@ -707,14 +743,16 @@ class ByteReceiver:
         if not task:
             return
 
-        new_stream = task.process_chunk(message)
+        channel = message.get_header(StreamHeaderKey.CHANNEL)
+        topic = message.get_header(StreamHeaderKey.TOPIC)
+        callback = self.registry.find(channel, topic)
+        if not callback:
+            task.stop(StreamError(f"{task} No callback is registered for {channel}/{topic}"))
+            return
+
+        new_stream = task.process_chunk(message, preflight_cb=callback.preflight_cb)
         if new_stream:
             # Invoke callback
-            callback = self.registry.find(task.channel, task.topic)
-            if not callback:
-                task.stop(StreamError(f"{task} No callback is registered for {task.channel}/{task.topic}"))
-                return
-
             fqcn = self.cell.my_info.fqcn
             ByteReceiver.received_stream_counter_pool.increment(
                 category=stream_stats_category(fqcn, task.channel, task.topic, "stream"),

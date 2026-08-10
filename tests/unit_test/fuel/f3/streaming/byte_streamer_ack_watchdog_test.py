@@ -22,7 +22,7 @@ import nvflare.fuel.f3.streaming.byte_streamer as byte_streamer_module
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.streaming.byte_streamer import TxTask
+from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer, TxTask
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamDataType, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError
 
@@ -103,6 +103,63 @@ class TestByteStreamerAckWatchdog:
             optional=False,
         )
         return task, cell
+
+    def test_receiver_error_fails_active_stream(self):
+        cell = MagicMock()
+        cell.my_info.fqcn = "sender"
+        streamer = ByteStreamer(cell)
+        error_callback = MagicMock()
+        streamer.register_error_callback(error_callback)
+        task = TxTask(
+            cell=cell,
+            chunk_size=1,
+            channel="ch",
+            topic="tp",
+            target="receiver",
+            headers={},
+            stream=DummyStream([b"x"]),
+            reliable=False,
+            secure=False,
+            optional=False,
+        )
+        with ByteStreamer.map_lock:
+            ByteStreamer.tx_task_map[task.sid] = task
+        message = Message(
+            {
+                MessageHeaderKey.ORIGIN: "receiver",
+                StreamHeaderKey.STREAM_ID: task.sid,
+                StreamHeaderKey.CHANNEL: "ch",
+                StreamHeaderKey.TOPIC: "tp",
+                StreamHeaderKey.ERROR_MSG: "rejected",
+            }
+        )
+
+        streamer._error_handler(message)
+
+        assert "sender=sender receiver=receiver" in str(task.stream_future.exception(timeout=0.1))
+        error_callback.assert_called_once_with(message)
+
+    def test_late_receiver_error_is_logged_with_stream_identity(self, caplog):
+        cell = MagicMock()
+        cell.my_info.fqcn = "sender"
+        streamer = ByteStreamer(cell)
+        error_callback = MagicMock()
+        streamer.register_error_callback(error_callback)
+        message = Message(
+            {
+                MessageHeaderKey.ORIGIN: "receiver",
+                StreamHeaderKey.STREAM_ID: 99,
+                StreamHeaderKey.CHANNEL: "ch",
+                StreamHeaderKey.TOPIC: "tp",
+                StreamHeaderKey.ERROR_MSG: "rejected",
+            }
+        )
+
+        with caplog.at_level("ERROR"):
+            streamer._error_handler(message)
+
+        assert "stream_id=99 channel=ch topic=tp sender=sender receiver=receiver" in caplog.text
+        error_callback.assert_called_once_with(message)
 
     def test_ack_progress_check_interval_is_clamped_to_prevent_busy_spin(self, monkeypatch):
         task, _ = self._make_task(

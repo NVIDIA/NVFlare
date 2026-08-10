@@ -13,12 +13,13 @@
 # limitations under the License.
 
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
 from nvflare.fuel.f3.cellnet.defs import Encoding
 from nvflare.fuel.f3.comm_config import CommConfigurator
-from nvflare.fuel.f3.streaming.blob_streamer import BlobHandler, BlobTask
+from nvflare.fuel.f3.streaming.blob_streamer import BlobHandler, BlobStreamer, BlobTask
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
 
@@ -188,6 +189,21 @@ def test_handle_blob_cb_stops_task_on_declared_size_above_limit(monkeypatch):
     assert isinstance(error, StreamError)
     assert "exceeds configured limit" in str(error)
     assert stopped["error"] is error
+
+
+def test_register_blob_callback_delegates_preflight_to_byte_receiver():
+    byte_receiver = MagicMock()
+    streamer = BlobStreamer(MagicMock(), byte_receiver)
+    blob_cb = MagicMock()
+    preflight_cb = MagicMock()
+
+    streamer.register_blob_callback("channel", "topic", blob_cb, preflight_cb=preflight_cb, app="app")
+
+    byte_receiver.register_callback.assert_called_once()
+    args = byte_receiver.register_callback.call_args.args
+    assert args[:2] == ("channel", "topic")
+    assert callable(args[2])
+    assert byte_receiver.register_callback.call_args.kwargs == {"preflight_cb": preflight_cb, "app": "app"}
 
 
 def test_handle_blob_cb_stops_task_on_memory_error(monkeypatch):

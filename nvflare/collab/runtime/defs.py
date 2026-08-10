@@ -16,6 +16,7 @@ SETUP_TASK_NAME = "setup"
 
 MSG_CHANNEL = "collab"
 MSG_TOPIC = "call"
+CALL_PROTOCOL_VERSION = 1
 
 
 class SyncKey:
@@ -32,6 +33,15 @@ class ObjectCallKey:
     KWARGS = "kwargs"
     TIMEOUT = "timeout"
     BLOCKING = "blocking"
+
+
+class CallHeaderKey:
+    PROTOCOL_VERSION = "collab__protocol_version"
+    TARGET_NAME = "collab__target_name"
+    METHOD_NAME = "collab__method_name"
+    # This header is overwritten by the receiver preflight and is never sent
+    # as an assertion of identity by CellDispatcher.
+    AUTHENTICATED_CALLER = "collab__authenticated_caller"
 
 
 class CallReplyKey:
