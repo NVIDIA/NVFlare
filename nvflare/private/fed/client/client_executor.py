@@ -616,7 +616,7 @@ class JobExecutor(ClientExecutor):
 
             self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
 
-            failure_reason = REPORTABLE_JOB_FAILURES.get(return_code, f"client job exited with code {return_code}")
+            failure_reason = REPORTABLE_JOB_FAILURES.get(return_code)
             try:
                 request = new_cell_message(
                     headers={},
