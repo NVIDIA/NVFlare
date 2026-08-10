@@ -565,7 +565,7 @@ def test_wait_child_process_reports_non_failure_return_code(return_code):
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
 
 
-def test_wait_child_process_bounds_terminal_outcome_retries():
+def test_wait_child_process_cleans_up_when_terminal_outcome_report_fails():
     client = MagicMock()
     client.client_name = "site-1"
     client.cell.send_request.side_effect = RuntimeError("network unavailable")
@@ -578,10 +578,7 @@ def test_wait_child_process_bounds_terminal_outcome_retries():
     fl_ctx = MagicMock()
     fl_ctx.get_engine.return_value = engine
 
-    with (
-        patch("nvflare.private.fed.client.client_executor.get_return_code", return_value=JobReturnCode.SUCCESS),
-        patch("nvflare.private.fed.client.client_executor.time.sleep") as sleep,
-    ):
+    with patch("nvflare.private.fed.client.client_executor.get_return_code", return_value=JobReturnCode.SUCCESS):
         job_executor._wait_child_process_finish(
             client=client,
             job_id="job-1",
@@ -592,7 +589,6 @@ def test_wait_child_process_bounds_terminal_outcome_retries():
             fl_ctx=fl_ctx,
         )
 
-    assert client.cell.send_request.call_count == 3
-    assert sleep.call_count == 2
+    client.cell.send_request.assert_called_once()
     assert "job-1" not in job_executor.run_processes
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)

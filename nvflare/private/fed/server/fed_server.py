@@ -852,7 +852,7 @@ class FederatedServer(BaseServer):
         job_runner = self.engine.job_runner
         if not job_runner.is_client_outcome_pending(job_id, client_name):
             self.logger.warning(f"Dropped terminal outcome for untracked job/client {job_id}/{client_name}")
-            return make_cellnet_reply(F3ReturnCode.INVALID_REQUEST, "", None)
+            return make_cellnet_reply(F3ReturnCode.OK, "", None)
 
         if code in (
             ProcessExitCode.CONFIG_ERROR,

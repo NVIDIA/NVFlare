@@ -544,6 +544,9 @@ class TestFederatedServer:
 
             server.engine.job_runner.fail_run.assert_not_called()
             server.engine.job_runner.stop_run.assert_not_called()
+            server.engine.job_runner.is_client_outcome_pending.return_value = False
+            result = server.process_job_failure(request)
+            assert result.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
             server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job-1", "site-1")
 
     def test_notify_dead_client_fails_barrier_only_job(self):
