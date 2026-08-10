@@ -12,314 +12,106 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import threading
-import time
+import json
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from unittest.mock import MagicMock, patch
 
-from nvflare.apis.dxo import DXO
-from nvflare.apis.event_type import EventType
+from nvflare.apis.analytix import AnalyticsDataType
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.utils.analytix_utils import create_analytic_dxo
+from nvflare.app_common.metrics_exchange.metrics_sender import (
+    ANALYTICS_BOOTSTRAP_FILE,
+    CHANNEL,
+    TOPIC_LOG,
+    read_bootstrap,
+)
 from nvflare.app_common.widgets.metric_relay import MetricRelay
-from nvflare.fuel.utils.constants import Mode
-from nvflare.fuel.utils.pipe.pipe import Message, Pipe, Topic
+from nvflare.client.config import ConfigKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
+from nvflare.fuel.f3.cellnet.utils import new_cell_message
 
 
-class _FakePipe(Pipe):
-    """Minimal no-op Pipe stub that passes isinstance checks."""
-
+class _Cell:
     def __init__(self):
-        super().__init__(mode=Mode.ACTIVE)
+        self.callbacks = {}
+        self.site_credentials = {"auth_token": "server-bearer", "auth_token_signature": "server-signature"}
 
-    def open(self, name):
+    def make_internal_listener(self):
         pass
 
-    def close(self):
-        pass
+    def get_internal_listener_url(self):
+        return "shared-file://0/tmp/metrics"
 
-    def send(self, msg, timeout=None):
-        return True
+    def get_fqcn(self):
+        return "site-1.job"
 
-    def receive(self, timeout=None):
-        return None
-
-    def get_last_peer_active_time(self):
-        return 0.0
-
-    def clear(self):
-        pass
-
-    def can_resend(self):
-        return False
+    def register_request_cb(self, channel, topic, callback):
+        self.callbacks[(channel, topic)] = callback
 
 
-def _make_fl_ctx(pipe):
+def _start_relay(tmp_path):
+    cell = _Cell()
     engine = MagicMock()
-    engine.get_component.return_value = pipe
-    fl_ctx = MagicMock()
+    engine.get_cell.return_value = cell
+    engine.get_workspace.return_value.get_app_config_dir.return_value = str(tmp_path)
+    engine.new_context.return_value = nullcontext(MagicMock(spec=FLContext))
+    fl_ctx = MagicMock(spec=FLContext)
     fl_ctx.get_engine.return_value = engine
-    fl_ctx.get_peer_context.return_value = None  # prevent FLContext type-check in logging path
-    return fl_ctx
-
-
-def _start_run(relay, pipe=None):
-    """Fire ABOUT_TO_START_RUN so the relay has an open pipe."""
-    if pipe is None:
-        pipe = _FakePipe()
-    fl_ctx = _make_fl_ctx(pipe)
-    relay.handle_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
-    return fl_ctx
-
-
-class TestMetricRelayHandlerLifecycle:
-    """Handler recreation and close_pipe=False fixes."""
-
-    def test_before_task_execution_creates_fresh_handler_each_round(self):
-        """Each BEFORE_TASK_EXECUTION must produce a new PipeHandler, not reuse a stopped one."""
-        relay = MetricRelay(pipe_id="pipe")
-        fl_ctx = _start_run(relay)
-
-        h1 = MagicMock()
-        h2 = MagicMock()
-        with patch("nvflare.app_common.widgets.metric_relay.PipeHandler", side_effect=[h1, h2]):
-            relay.handle_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
-            first_handler = relay.pipe_handler
-
-            relay.handle_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
-            second_handler = relay.pipe_handler
-
-        assert first_handler is not second_handler
-        assert first_handler is h1
-        assert second_handler is h2
-
-    def test_before_task_execution_starts_handler(self):
-        """BEFORE_TASK_EXECUTION must call start() on the new handler."""
-        relay = MetricRelay(pipe_id="pipe")
-        fl_ctx = _start_run(relay)
-
-        mock_handler = MagicMock()
-        with patch("nvflare.app_common.widgets.metric_relay.PipeHandler", return_value=mock_handler):
-            relay.handle_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
-
-        mock_handler.start.assert_called_once()
-
-    def test_second_before_task_execution_stops_old_handler_without_closing_pipe(self):
-        """On the second BEFORE_TASK_EXECUTION, the old handler is stopped with close_pipe=False."""
-        relay = MetricRelay(pipe_id="pipe")
-        fl_ctx = _start_run(relay)
-
-        h1 = MagicMock()
-        h2 = MagicMock()
-        with patch("nvflare.app_common.widgets.metric_relay.PipeHandler", side_effect=[h1, h2]):
-            relay.handle_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
-            relay.handle_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
-
-        h1.stop.assert_called_once_with(close_pipe=False)
-
-    def test_pipe_never_closed_on_end_run(self):
-        """ABOUT_TO_END_RUN must NOT close the pipe: MetricRelay does not own the
-        shared root and closing it would wipe the task pipe's directories."""
-        relay = MetricRelay(pipe_id="pipe")
-        pipe = MagicMock(spec=_FakePipe)
-        pipe.open = MagicMock()
-        fl_ctx = _make_fl_ctx(pipe)
-        relay.handle_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
-
-        mock_handler = MagicMock()
-        with patch("nvflare.app_common.widgets.metric_relay.PipeHandler", return_value=mock_handler):
-            relay.handle_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
-
-        relay.handle_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
-
-        pipe.close.assert_not_called()
-
-    def test_pipe_never_closed_on_end_run_when_no_task_ever_executed(self):
-        """ABOUT_TO_END_RUN must NOT close the pipe even if no task was ever executed."""
-        relay = MetricRelay(pipe_id="pipe")
-        pipe = MagicMock(spec=_FakePipe)
-        pipe.open = MagicMock()
-        fl_ctx = _make_fl_ctx(pipe)
-        relay.handle_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
-
-        assert relay.pipe_handler is None
-
-        relay.handle_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
-
-        pipe.close.assert_not_called()
-
-
-class TestMetricRelayStatusCallback:
-    """Bound-closure status callback correctness."""
-
-    def _get_status_cb(self, relay, fl_ctx):
-        """Fire BEFORE_TASK_EXECUTION and return the registered status callback."""
-        mock_handler = MagicMock()
-        with patch("nvflare.app_common.widgets.metric_relay.PipeHandler", return_value=mock_handler):
-            relay.handle_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
-        return mock_handler, mock_handler.set_status_cb.call_args[0][0]
-
-    def test_status_cb_stops_handler_with_close_pipe_false(self):
-        """Status callback must call stop(close_pipe=False), never close the pipe."""
-        relay = MetricRelay(pipe_id="pipe")
-        fl_ctx = _start_run(relay)
-        mock_handler, status_cb = self._get_status_cb(relay, fl_ctx)
-
-        msg = Message.new_request(Topic.PEER_GONE, "heartbeat timeout")
-        status_cb(msg)
-
-        mock_handler.stop.assert_called_once_with(close_pipe=False)
-
-    def test_stale_status_cb_does_not_stop_new_handler(self):
-        """A status callback from a previous handler must be ignored after handler replacement."""
-        relay = MetricRelay(pipe_id="pipe")
-        fl_ctx = _start_run(relay)
-
-        h1 = MagicMock()
-        h2 = MagicMock()
-        with patch("nvflare.app_common.widgets.metric_relay.PipeHandler", side_effect=[h1, h2]):
-            relay.handle_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
-            stale_cb = h1.set_status_cb.call_args[0][0]
-
-            # Replace handler — h2 is now current
-            relay.handle_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
-
-        # Fire the stale callback from h1
-        msg = Message.new_request(Topic.PEER_GONE, "late arrival")
-        stale_cb(msg)
-
-        h2.stop.assert_not_called()
-
-    def test_current_status_cb_does_stop_current_handler(self):
-        """Status callback from the current handler must stop it."""
-        relay = MetricRelay(pipe_id="pipe")
-        fl_ctx = _start_run(relay)
-        mock_handler, status_cb = self._get_status_cb(relay, fl_ctx)
-
-        msg = Message.new_request(Topic.PEER_GONE, "heartbeat timeout")
-        status_cb(msg)
-
-        mock_handler.stop.assert_called_once_with(close_pipe=False)
-
-
-class TestMetricRelayMessageCallback:
-    """Bad payload drop fix."""
-
-    def test_bad_payload_dropped_send_not_called(self):
-        """_pipe_msg_cb must drop non-DXO data without calling send_analytic_dxo."""
-        relay = MetricRelay(pipe_id="pipe")
-        relay._fl_ctx = MagicMock()
-
-        msg = Message.new_request("metric", data="not_a_dxo")
-        with patch("nvflare.app_common.widgets.metric_relay.send_analytic_dxo") as mock_send:
-            relay._pipe_msg_cb(msg)
-
-        mock_send.assert_not_called()
-
-    def test_bad_payload_does_not_raise(self):
-        """_pipe_msg_cb must not propagate an exception on bad payload."""
-        relay = MetricRelay(pipe_id="pipe")
-        relay._fl_ctx = MagicMock()
-
-        msg = Message.new_request("metric", data={"not": "a dxo"})
-        with patch("nvflare.app_common.widgets.metric_relay.send_analytic_dxo"):
-            relay._pipe_msg_cb(msg)  # must not raise
-
-    def test_valid_dxo_payload_forwarded(self):
-        """_pipe_msg_cb must forward a valid DXO to send_analytic_dxo."""
-        relay = MetricRelay(pipe_id="pipe")
-        relay._fl_ctx = MagicMock()
-
-        dxo = MagicMock(spec=DXO)
-        msg = Message.new_request("metric", data=dxo)
-        with patch("nvflare.app_common.widgets.metric_relay.send_analytic_dxo") as mock_send:
-            relay._pipe_msg_cb(msg)
-
-        mock_send.assert_called_once_with(relay, dxo, relay._fl_ctx, relay._event_type, fire_fed_event=relay._fed_event)
-
-
-# ---------------------------------------------------------------------------
-# Thread-level tests — real PipeHandler (no mock) to prove lifecycle and
-# message-callback behaviour end-to-end within a single process.
-# ---------------------------------------------------------------------------
-
-_THREAD_TIMEOUT = 2.0  # seconds to wait for a background thread to change state
-
-
-def _wait_for(condition, timeout=_THREAD_TIMEOUT, poll=0.02):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if condition():
-            return True
-        time.sleep(poll)
-    return False
-
-
-class _IdlePipe(_FakePipe):
-    """Pipe whose receive() blocks briefly then returns None — keeps the reader alive."""
-
-    def receive(self, timeout=None):
-        time.sleep(0.01)
-        return None
-
-
-class _SingleMessagePipe(_FakePipe):
-    """Pipe that delivers one caller-supplied message then idles."""
-
-    def __init__(self, message):
-        super().__init__()
-        self._message = message
-        self._delivered = False
-        self.delivered_event = threading.Event()
-
-    def receive(self, timeout=None):
-        if not self._delivered:
-            self._delivered = True
-            self.delivered_event.set()
-            return self._message
-        time.sleep(0.01)
-        return None
-
-
-class TestMetricRelayWithRealHandler:
-    def test_second_round_handler_has_live_threads(self):
-        """After H1 is stopped (simulating heartbeat timeout), BEFORE_TASK_EXECUTION
-        must create H2 with a live reader thread — not a start() no-op on nulled threads."""
-        relay = MetricRelay(pipe_id="pipe", heartbeat_timeout=0)
-        fl_ctx = _start_run(relay, _IdlePipe())
-
-        # Round 1
-        relay.handle_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
-        h1 = relay.pipe_handler
-        assert h1.reader is not None and h1.reader.is_alive()
-
-        # Simulate heartbeat timeout
-        h1.stop(close_pipe=False)
-        assert _wait_for(lambda: h1.reader is None), "H1 reader must exit after stop()"
-
-        # Round 2
-        relay.handle_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
-        h2 = relay.pipe_handler
-
-        assert h2 is not h1
-        assert h2.reader is not None and h2.reader.is_alive()
-
-        h2.stop(close_pipe=False)
-
-    def test_non_dxo_message_does_not_kill_reader_thread(self):
-        """A non-DXO message must be dropped by _pipe_msg_cb without raising —
-        the real reader thread must remain alive afterwards."""
-        bad_msg = Message.new_request("metric", data="not_a_dxo")
-        pipe = _SingleMessagePipe(bad_msg)
-
-        relay = MetricRelay(pipe_id="pipe", heartbeat_timeout=0)
-        fl_ctx = _start_run(relay, pipe)
-        relay._fl_ctx = MagicMock()
-
-        with patch("nvflare.app_common.widgets.metric_relay.send_analytic_dxo"):
-            relay.handle_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
-            handler = relay.pipe_handler
-
-            assert pipe.delivered_event.wait(timeout=_THREAD_TIMEOUT), "message never delivered"
-            time.sleep(0.05)  # one more reader cycle to process it
-
-            assert handler.reader is not None and handler.reader.is_alive()
-
-            handler.stop(close_pipe=False)
+    fl_ctx.get_job_id.return_value = "job"
+    relay = MetricRelay()
+    relay._start(fl_ctx)
+    config = read_bootstrap(str(tmp_path / ANALYTICS_BOOTSTRAP_FILE))[1]
+    return relay, cell, fl_ctx, config
+
+
+def _request(config, origin=None, payload=None):
+    headers = {MessageHeaderKey.ORIGIN: origin or config["client_fqcn"]}
+    if payload is None:
+        payload = create_analytic_dxo("loss", 0.25, AnalyticsDataType.SCALAR, global_step=3).to_dict()
+    return new_cell_message(headers, payload)
+
+
+def test_relay_exports_the_direct_cell_config(tmp_path):
+    relay, _, fl_ctx, config = _start_relay(tmp_path)
+    try:
+        assert relay.export("peer") == (ConfigKey.METRICS_EXCHANGE, config)
+    finally:
+        relay._stop(fl_ctx)
+
+
+def test_relay_accepts_only_the_launched_cell_origin(tmp_path):
+    relay, cell, fl_ctx, config = _start_relay(tmp_path)
+    try:
+        reply = cell.callbacks[(CHANNEL, TOPIC_LOG)](_request(config, origin="attacker"))
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.INVALID_REQUEST
+    finally:
+        relay._stop(fl_ctx)
+
+
+def test_relay_rejects_invalid_log_payload(tmp_path):
+    relay, cell, fl_ctx, config = _start_relay(tmp_path)
+    try:
+        reply = cell.callbacks[(CHANNEL, TOPIC_LOG)](_request(config, payload="invalid"))
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.INVALID_REQUEST
+    finally:
+        relay._stop(fl_ctx)
+
+
+def test_relay_forwards_concurrent_logs_and_cleans_up_without_bearer_leak(tmp_path):
+    relay, cell, fl_ctx, config = _start_relay(tmp_path)
+    serialized = json.dumps(config)
+    assert "server-bearer" in json.dumps(cell.site_credentials)
+    assert "server-bearer" not in serialized and "server-signature" not in serialized
+    try:
+        with patch("nvflare.app_common.widgets.metric_relay.send_analytic_dxo") as send:
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                replies = list(pool.map(lambda _: cell.callbacks[(CHANNEL, TOPIC_LOG)](_request(config)), range(24)))
+        assert all(r.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.OK for r in replies)
+        assert send.call_count == 24
+        assert send.call_args.kwargs["fire_fed_event"] is True
+    finally:
+        relay._stop(fl_ctx)
+    assert not (tmp_path / ANALYTICS_BOOTSTRAP_FILE).exists()
+    assert relay._config is None and relay._bootstrap_path is None

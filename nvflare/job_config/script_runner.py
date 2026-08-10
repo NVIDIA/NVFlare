@@ -106,7 +106,6 @@ class BaseScriptRunner:
         task_pipe: Optional[Pipe] = None,
         launcher: Optional[Launcher] = None,
         metric_relay: Optional[MetricRelay] = None,
-        metric_pipe: Optional[Pipe] = None,
         pipe_connect_type: str = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
@@ -156,10 +155,6 @@ class BaseScriptRunner:
                 An optional MetricRelay instance that can be used to relay metrics to the server.
                 Defaults to `None`.
 
-            metric_pipe (Optional[Pipe], optional):
-                An optional Pipe instance for passing metric data between components. This allows
-                for real-time metric handling during execution. Defaults to `None`.
-
             pipe_connect_type: how pipe peers are to be connected:
                 Via Root: peers are both connected to the root of the cellnet
                 Via Relay: peers are both connected to the relay if a relay is used; otherwise via root.
@@ -180,7 +175,7 @@ class BaseScriptRunner:
                 at receive/send without constructing ParamsConverters. ``params_transfer_type``
                 is applied by the Client API model state. The
                 legacy stack args (`executor`, `task_pipe`, `launcher`, `metric_relay`,
-                `metric_pipe`, `pipe_connect_type`) must not be set. If
+                `pipe_connect_type`) must not be set. If
                 ``launch_external_process=True``, the mode must be ``external_process``.
                 Defaults to None (legacy BaseScriptRunner behavior).
         """
@@ -214,7 +209,6 @@ class BaseScriptRunner:
                 "task_pipe": task_pipe,
                 "launcher": launcher,
                 "metric_relay": metric_relay,
-                "metric_pipe": metric_pipe,
                 "pipe_connect_type": pipe_connect_type,
             }
             set_conflicts = [name for name, value in conflicts.items() if value is not None]
@@ -259,8 +253,6 @@ class BaseScriptRunner:
             raise ValueError(f"Framework {self._framework} unsupported")
 
         if launch_external_process:
-            if metric_pipe is not None:
-                validate_object_for_job("metric_pipe", metric_pipe, Pipe)
             if metric_relay is not None:
                 validate_object_for_job("metric_relay", metric_relay, MetricRelay)
             if task_pipe is not None:
@@ -278,7 +270,6 @@ class BaseScriptRunner:
             if pipe_connect_type not in valid_connect_types:
                 raise ValueError(f"invalid pipe_connect_type '{pipe_connect_type}': must be {valid_connect_types}")
 
-        self._metric_pipe = metric_pipe
         self._metric_relay = metric_relay
         self._task_pipe = task_pipe
         self._executor = executor
@@ -389,19 +380,7 @@ class BaseScriptRunner:
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
 
-            metric_pipe = self._metric_pipe if self._metric_pipe else self._create_cell_pipe()
-            metric_pipe_id = job.add_component("metrics_pipe", metric_pipe, ctx)
-            comp_ids["metric_pipe_id"] = metric_pipe_id
-
-            component = (
-                self._metric_relay
-                if self._metric_relay
-                else MetricRelay(
-                    pipe_id=metric_pipe_id,
-                    event_type="fed.analytix_log_stats",
-                    heartbeat_timeout=0,
-                )
-            )
+            component = self._metric_relay if self._metric_relay else MetricRelay()
             metric_relay_id = job.add_component("metric_relay", component, ctx)
             comp_ids["metric_relay_id"] = metric_relay_id
 
