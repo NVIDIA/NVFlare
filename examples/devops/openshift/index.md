@@ -205,17 +205,20 @@ these CRC settings.
 
 ## Build an OpenShift-Compatible Image
 
-The maintained NVFlare Dockerfiles are in the repository `docker/` directory. Use the parent image for long-running server/client parent pods and the temporary admin pod. Use a job image for the submitted `hello-numpy` job pods:
+The maintained NVFlare Dockerfiles are in the repository `docker/` directory and can be built with Podman or Docker. Podman is typically available by default on RHEL OpenShift hosts and does not require a Docker daemon. The commands below use Podman; set `CONTAINER_TOOL=docker` to use Docker instead. On systems where `docker` is an alias for Podman, either command name works.
+
+Use the parent image for long-running server/client parent pods and the temporary admin pod. Use a job image for the submitted `hello-numpy` job pods:
 
 ``` bash
 export PARENT_IMAGE=registry.example.com/nvflare-parent:dev
 export WORKLOAD_IMAGE=registry.example.com/nvflare-job:dev
+export CONTAINER_TOOL="${CONTAINER_TOOL:-podman}"
 
-docker build -t "$PARENT_IMAGE" -f docker/Dockerfile.parent .
-docker build -t "$WORKLOAD_IMAGE" -f docker/Dockerfile.job .
+"$CONTAINER_TOOL" build -t "$PARENT_IMAGE" -f docker/Dockerfile.parent .
+"$CONTAINER_TOOL" build -t "$WORKLOAD_IMAGE" -f docker/Dockerfile.job .
 
-docker push "$PARENT_IMAGE"
-docker push "$WORKLOAD_IMAGE"
+"$CONTAINER_TOOL" push "$PARENT_IMAGE"
+"$CONTAINER_TOOL" push "$WORKLOAD_IMAGE"
 ```
 
 Set the OpenShift workflow image variables from those pushed images:
