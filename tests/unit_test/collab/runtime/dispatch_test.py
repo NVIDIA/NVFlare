@@ -393,6 +393,29 @@ def test_authorizer_rejects_malformed_envelope(header, value):
     assert isinstance(response, StreamError)
 
 
+def test_authorizer_diagnoses_missing_legacy_envelope():
+    app = ClientApp(_SuccessfulClient())
+    app.name = "site-1"
+    logger = MagicMock()
+    authorizer = CollabCallAuthorizer(
+        app=app,
+        local_fqcn="site-1.job-1",
+        participants={"server.job-1": "server"},
+        logger=logger,
+    )
+    headers = {
+        MessageHeaderKey.ORIGIN: "server.job-1",
+        MessageHeaderKey.DESTINATION: "site-1.job-1",
+    }
+
+    response = authorizer.authorize(headers)
+
+    assert isinstance(response, StreamError)
+    assert str(response) == "Collab call rejected"
+    logger.warning.assert_called_once()
+    assert "older NVFlare" in logger.warning.call_args.args[0]
+
+
 def test_dispatch_rejects_payload_caller_spoofing():
     app = ClientApp(_SuccessfulClient())
     app.name = "site-1"
@@ -411,7 +434,7 @@ def test_dispatch_rejects_payload_caller_spoofing():
     assert reply.payload[CallReplyKey.ERROR] == "payload caller does not match authenticated origin"
 
 
-def test_make_participant_map_uses_exact_fqcns_and_actual_local_cell():
+def test_make_participant_map_uses_standard_job_cell_fqcns():
     clients = [
         SimpleNamespace(name="site-1", get_fqcn=lambda: "relay.site-1"),
         SimpleNamespace(name="site-2", get_fqcn=lambda: "relay.site-2"),
@@ -421,12 +444,10 @@ def test_make_participant_map_uses_exact_fqcns_and_actual_local_cell():
         server_fqcn="server.job-1",
         job_id="job-1",
         clients=clients,
-        local_name="site-1",
-        local_fqcn="relay.site-1.actual-job-cell",
     )
 
     assert participants == {
         "server.job-1": "server",
-        "relay.site-1.actual-job-cell": "site-1",
+        "relay.site-1.job-1": "site-1",
         "relay.site-2.job-1": "site-2",
     }

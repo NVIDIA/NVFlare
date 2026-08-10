@@ -53,6 +53,7 @@ MAX_PEER_DERIVED_OUT_SEQ_CHUNKS = 1024
 ACK_INTERVAL = 4 * ONE_MB
 READ_TIMEOUT = 300
 COMPLETED_TASK_TTL = 60.0
+FAILED_NON_RELIABLE_TASK_TTL = 5.0
 RETRY_WAIT = 5.0
 # Hard cap on the peer-requested retry window: the sender's RETRY_TIMEOUT and
 # RETRY_WAIT headers are hints, and an unbounded value would let a peer pin
@@ -470,7 +471,7 @@ class RxTask:
             return
 
         schedule_remove = False
-        remove_now = False
+        cleanup_ttl = None
         with self.stop_lock:
             if self.completed or self.failed:
                 return
@@ -483,7 +484,10 @@ class RxTask:
             if self.reliable:
                 schedule_remove = True
             else:
-                remove_now = True
+                # Retain a short-lived tombstone so chunks already in flight do
+                # not recreate the task, rerun preflight, and amplify errors.
+                schedule_remove = True
+                cleanup_ttl = FAILED_NON_RELIABLE_TASK_TTL
 
         if self.headers:
             optional = self.headers.get(StreamHeaderKey.OPTIONAL, False)
@@ -506,9 +510,7 @@ class RxTask:
             self._send_error(str(error))
 
         if schedule_remove:
-            self._schedule_remove_task()
-        elif remove_now:
-            self._remove_task()
+            self._schedule_remove_task(cleanup_ttl)
 
     def _send_error(self, error_msg: str):
         # Only a re-notification of an error that was already delivered is optional: the
@@ -532,22 +534,29 @@ class RxTask:
         if req_id:
             error_headers[StreamHeaderKey.STREAM_REQ_ID] = req_id
         message.add_headers(error_headers)
-        try:
-            errors = self.cell.fire_and_forget(
-                STREAM_CHANNEL, STREAM_ERROR_TOPIC, self.origin, message, optional=already_notified
-            )
-        except Exception as ex:
-            log_func(f"{self} failed to send error to {self.origin}: {ex}")
-            return
-        else:
+        delivered = True
+        # Keep the ACK-topic copy for pre-2.9 senders, which only consume
+        # receiver errors in TxTask.handle_ack. New senders consume the
+        # dedicated ERROR topic for request/reply correlation.
+        for topic in (STREAM_ERROR_TOPIC, STREAM_ACK_TOPIC):
+            try:
+                errors = self.cell.fire_and_forget(
+                    STREAM_CHANNEL, topic, self.origin, message, optional=already_notified
+                )
+            except Exception as ex:
+                delivered = False
+                log_func(f"{self} failed to send error on {topic} to {self.origin}: {ex}")
+                continue
+
             errors = errors or {}
             error = errors.get(self.origin)
             if error:
-                log_func(f"{self} failed to send error to {self.origin}: {error}")
-                return
+                delivered = False
+                log_func(f"{self} failed to send error on {topic} to {self.origin}: {error}")
 
-        with self.ack_lock:
-            self.error_notified = True
+        if delivered:
+            with self.ack_lock:
+                self.error_notified = True
 
     def _remove_task(self):
         with self.stop_lock:
@@ -560,12 +569,15 @@ class RxTask:
             if task is self:
                 RxTask.rx_task_map.pop((self.origin, self.sid), None)
 
-    def _schedule_remove_task(self):
+    def _schedule_remove_task(self, ttl: float = None):
         with self.stop_lock:
             if self.cleanup_timer:
                 return
 
-            self.cleanup_timer = threading.Timer(self.completed_task_ttl, self._remove_task)
+            self.cleanup_timer = threading.Timer(
+                self.completed_task_ttl if ttl is None else ttl,
+                self._remove_task,
+            )
             self.cleanup_timer.daemon = True
             self.cleanup_timer.start()
 

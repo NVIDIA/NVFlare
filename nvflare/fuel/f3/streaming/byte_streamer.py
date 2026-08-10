@@ -766,7 +766,8 @@ class ByteStreamer:
                 tx_task = None
 
         if not tx_task:
-            log.error(
+            log_func = log.warning if message.get_header(StreamHeaderKey.STREAM_REQ_ID) else log.error
+            log_func(
                 f"Late stream error: stream_id={sid} channel={channel} topic={topic} "
                 f"sender={sender} receiver={origin}: {error}"
             )

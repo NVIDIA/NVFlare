@@ -161,6 +161,28 @@ class TestByteStreamerAckWatchdog:
         assert "stream_id=99 channel=ch topic=tp sender=sender receiver=receiver" in caplog.text
         error_callback.assert_called_once_with(message)
 
+    def test_late_correlated_receiver_error_is_warning(self, caplog):
+        cell = MagicMock()
+        cell.my_info.fqcn = "sender"
+        streamer = ByteStreamer(cell)
+        message = Message(
+            {
+                MessageHeaderKey.ORIGIN: "receiver",
+                StreamHeaderKey.STREAM_ID: 100,
+                StreamHeaderKey.STREAM_REQ_ID: "request-100",
+                StreamHeaderKey.CHANNEL: "ch",
+                StreamHeaderKey.TOPIC: "tp",
+                StreamHeaderKey.ERROR_MSG: "rejected",
+            }
+        )
+
+        with caplog.at_level("WARNING"):
+            streamer._error_handler(message)
+
+        records = [record for record in caplog.records if "stream_id=100" in record.message]
+        assert len(records) == 1
+        assert records[0].levelname == "WARNING"
+
     def test_ack_progress_check_interval_is_clamped_to_prevent_busy_spin(self, monkeypatch):
         task, _ = self._make_task(
             monkeypatch,

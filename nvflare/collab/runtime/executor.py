@@ -213,7 +213,6 @@ class CollabExecutor(Executor, CollabAdaptor):
 
         engine = fl_ctx.get_engine()
         cell = engine.get_cell()
-        client_name = fl_ctx.get_identity_name()
         job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
         job_clients = job_meta.get(JobMetaKey.JOB_CLIENTS)
         all_clients = [from_dict(d) for d in job_clients]
@@ -223,8 +222,6 @@ class CollabExecutor(Executor, CollabAdaptor):
             server_fqcn=server_fqcn,
             job_id=job_id,
             clients=all_clients,
-            local_name=client_name,
-            local_fqcn=cell.get_fqcn(),
         )
 
         prepare_for_remote_call(

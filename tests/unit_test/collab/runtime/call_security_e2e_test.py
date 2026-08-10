@@ -102,7 +102,7 @@ def test_raw_cross_job_cell_request_is_rejected_before_published_method_runs():
 
         assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.COMM_ERROR
         assert reply.get_header(MessageHeaderKey.ERROR) == "Collab call rejected"
-        assert elapsed < 5.0
+        assert elapsed < 4.0
         assert victim.call_count == 0
     finally:
         attacker_cell.core_cell.stop()

@@ -28,7 +28,12 @@ from .defs import CALL_PROTOCOL_VERSION, MSG_CHANNEL, MSG_TOPIC, CallHeaderKey, 
 
 
 class CollabCallAuthorizer:
-    """Authorizes a Collab stream before its serialized body is received."""
+    """Authorizes a Collab stream before its serialized body is received.
+
+    The participant lookup relies on CellNet's authenticated ORIGIN. Secure
+    deployments bind that identity to connection credentials; insecure CellNet
+    deployments do not provide the same identity guarantee.
+    """
 
     def __init__(self, app: App, local_fqcn: str, participants: dict[str, str], logger):
         self.app = app
@@ -49,6 +54,14 @@ class CollabCallAuthorizer:
         destination = headers.get(MessageHeaderKey.DESTINATION)
         if destination != self.local_fqcn:
             return self._reject(origin, "destination does not match this job cell")
+
+        envelope_headers = (
+            CallHeaderKey.PROTOCOL_VERSION,
+            CallHeaderKey.TARGET_NAME,
+            CallHeaderKey.METHOD_NAME,
+        )
+        if all(headers.get(key) is None for key in envelope_headers):
+            return self._reject(origin, "missing Collab call envelope; peer may be running an older NVFlare version")
 
         version = headers.get(CallHeaderKey.PROTOCOL_VERSION)
         if version != CALL_PROTOCOL_VERSION:
@@ -76,8 +89,6 @@ def make_participant_map(
     server_fqcn: str,
     job_id: str,
     clients,
-    local_name: str = None,
-    local_fqcn: str = None,
 ) -> dict[str, str]:
     """Build an exact job-cell FQCN to logical Collab name mapping."""
     if not isinstance(server_fqcn, str) or not server_fqcn:
@@ -86,10 +97,7 @@ def make_participant_map(
         raise ValueError("job ID must be a non-empty string")
     participants = {server_fqcn: "server"}
     for client in clients:
-        if client.name == local_name:
-            client_job_fqcn = local_fqcn
-        else:
-            client_job_fqcn = FQCN.join([client.get_fqcn(), job_id])
+        client_job_fqcn = FQCN.join([client.get_fqcn(), job_id])
         if not isinstance(client_job_fqcn, str) or not client_job_fqcn:
             raise ValueError(f"missing job-cell FQCN for client {client.name}")
         existing = participants.get(client_job_fqcn)

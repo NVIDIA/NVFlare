@@ -23,6 +23,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import (
+    FAILED_NON_RELIABLE_TASK_TTL,
     MAX_COMPLETED_TASK_TTL,
     MAX_PEER_DERIVED_OUT_SEQ_CHUNKS,
     MIN_OUT_SEQ_CHUNKS,
@@ -116,8 +117,11 @@ def test_first_chunk_preflight_rejects_before_payload_is_buffered():
     assert new_stream is False
     assert not task.chunks
     assert task.stream_future is None
-    assert cell.fire_and_forget.call_args.args[:3] == (STREAM_CHANNEL, STREAM_ERROR_TOPIC, "sender")
-    error_message = cell.fire_and_forget.call_args.args[3]
+    assert [call.args[1] for call in cell.fire_and_forget.call_args_list] == [
+        STREAM_ERROR_TOPIC,
+        STREAM_ACK_TOPIC,
+    ]
+    error_message = cell.fire_and_forget.call_args_list[0].args[3]
     assert error_message.get_header(StreamHeaderKey.STREAM_ID) == 42
     assert error_message.get_header(StreamHeaderKey.CHANNEL) == "ch"
     assert error_message.get_header(StreamHeaderKey.TOPIC) == "tp"
@@ -134,7 +138,30 @@ def test_preflight_rejects_out_of_order_frame_before_reassembly_buffering():
 
     assert new_stream is False
     assert not task.out_seq_chunks
-    assert cell.fire_and_forget.call_args.args[:3] == (STREAM_CHANNEL, STREAM_ERROR_TOPIC, "sender")
+    assert [call.args[1] for call in cell.fire_and_forget.call_args_list] == [
+        STREAM_ERROR_TOPIC,
+        STREAM_ACK_TOPIC,
+    ]
+
+
+def test_non_reliable_preflight_rejection_retains_tombstone_for_in_flight_chunks():
+    cell = MagicMock()
+    cell.fire_and_forget.return_value = {}
+    preflight = MagicMock(return_value=StreamError("rejected"))
+    first = _make_chunk("sender", 45, 0, StreamDataType.CHUNK, reliable=False)
+    task = RxTask.find_or_create_task(first, cell)
+
+    assert task.process_chunk(first, preflight_cb=preflight) is False
+    cleanup_timer = task.cleanup_timer
+    assert cleanup_timer is not None
+    assert cleanup_timer.interval == FAILED_NON_RELIABLE_TASK_TTL
+
+    later = _make_chunk("sender", 45, 1, StreamDataType.CHUNK, reliable=False)
+    assert RxTask.find_or_create_task(later, cell) is task
+    assert task.process_chunk(later, preflight_cb=preflight) is False
+
+    preflight.assert_called_once()
+    assert cell.fire_and_forget.call_count == 2
 
 
 def test_preflight_header_updates_survive_sequence_zero_arriving_late():
@@ -155,77 +182,6 @@ def test_preflight_header_updates_survive_sequence_zero_arriving_late():
 
     preflight.assert_called_once()
     assert task.stream_future.headers["authenticated_caller"] == "site-1"
-
-
-class _DeadlockDetectingLock:
-    """Lock that raises on same-thread re-acquire to model Lock self-deadlock."""
-
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._owner = None
-
-    def __enter__(self):
-        acquired = self.acquire()
-        if not acquired:
-            raise RuntimeError("failed to acquire lock")
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.release()
-        return False
-
-    def acquire(self, blocking=True, timeout=-1):
-        tid = threading.get_ident()
-        if self._owner == tid:
-            raise RuntimeError("self-deadlock: same thread re-acquiring map_lock")
-        acquired = self._lock.acquire(blocking, timeout)
-        if acquired:
-            self._owner = tid
-        return acquired
-
-    def release(self):
-        self._owner = None
-        self._lock.release()
-
-    def locked(self):
-        return self._lock.locked()
-
-
-def _pre_fix_find_or_create_task(message: Message, cell):
-    """Original buggy logic: calls stop() while map_lock is still held."""
-
-    sid = message.get_header(StreamHeaderKey.STREAM_ID)
-    origin = message.get_header(MessageHeaderKey.ORIGIN)
-    error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
-
-    with RxTask.map_lock:
-        task = RxTask.rx_task_map.get(sid, None)
-        if not task:
-            if error:
-                return None
-            task = RxTask(sid, origin, cell)
-            RxTask.rx_task_map[sid] = task
-        else:
-            if error:
-                task.stop(StreamError(f"{task} Received error from {origin}: {error}"), notify=False)
-                return None
-    return task
-
-
-def test_pre_fix_find_or_create_task_would_deadlock(monkeypatch):
-    monkeypatch.setattr(RxTask, "map_lock", _DeadlockDetectingLock())
-
-    origin = "site-1"
-    sid = 99
-    fake_cell = SimpleNamespace()
-
-    create_message = _make_message(origin=origin, sid=sid)
-    task = _pre_fix_find_or_create_task(create_message, fake_cell)
-    assert task is not None
-
-    error_message = _make_message(origin=origin, sid=sid, error="stream failed")
-    with pytest.raises(RuntimeError, match="self-deadlock"):
-        _pre_fix_find_or_create_task(error_message, fake_cell)
 
 
 def test_find_or_create_task_stops_outside_map_lock(monkeypatch):
@@ -253,7 +209,7 @@ def test_find_or_create_task_stops_outside_map_lock(monkeypatch):
     assert stop_invocation["lock_held"] is False
 
 
-def test_stop_ignores_missing_stream_future():
+def test_stop_without_stream_future_retains_non_reliable_failure_tombstone():
     """stop() before the first chunk (stream_future=None) must not raise AttributeError."""
     origin = "site-1"
     sid = 321
@@ -267,8 +223,11 @@ def test_stop_ignores_missing_stream_future():
     task.stop(StreamError("stream failed"), notify=True)
 
     with RxTask.map_lock:
-        assert (origin, sid) not in RxTask.rx_task_map
-    assert len(fire_and_forget_calls) > 0
+        assert RxTask.rx_task_map[(origin, sid)] is task
+    assert task.cleanup_timer is not None
+    assert task.cleanup_timer.interval == FAILED_NON_RELIABLE_TASK_TTL
+    assert len(fire_and_forget_calls) == 2
+    assert [call[1] for call in fire_and_forget_calls] == [STREAM_ERROR_TOPIC, STREAM_ACK_TOPIC]
 
 
 def test_rxstream_close_ignores_missing_stream_future():
@@ -774,12 +733,12 @@ def test_reliable_failed_task_rejects_retried_initial_chunk():
         assert RxTask.rx_task_map[("site-1", 516)] is task
     assert task.stream_future is None
     assert task.cleanup_timer is not None
-    assert cell.fire_and_forget.call_count == 1
+    assert cell.fire_and_forget.call_count == 2
 
     assert task.process_chunk(message) is False
 
     assert task.stream_future is None
-    assert cell.fire_and_forget.call_count == 2
+    assert cell.fire_and_forget.call_count == 4
     error_msg = cell.fire_and_forget.call_args.args[3]
     assert error_msg.get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.ERROR
     assert "failed before callback" in error_msg.get_header(StreamHeaderKey.ERROR_MSG)

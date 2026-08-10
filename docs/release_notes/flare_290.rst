@@ -7,6 +7,12 @@ What's New in FLARE v2.9.0
 Compatibility and Migration Notes
 =================================
 
+- Collab calls now carry a versioned authorization envelope and are accepted
+  only from authenticated participants in the same job. All sites that run a
+  Collab job must use NVFlare 2.9 or newer; a 2.8 or older Collab sender lacks
+  this envelope and its calls are rejected with ``COMM_ERROR``. The receiving
+  site logs that the peer may be running an older NVFlare version to make this
+  mixed-version failure diagnosable.
 - F3 retains its 16 MiB streaming-window and 4 MiB ACK-interval defaults for
   compatibility and bounded per-stream memory. High-bandwidth deployments may
   opt into larger values on all endpoints; ``dev_tools/f3/comm_config.yml``

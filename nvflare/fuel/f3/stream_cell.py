@@ -165,6 +165,6 @@ class StreamCell:
             blob_cb: The callback to handle the stream
             preflight_cb: Optional callback invoked with stream headers before
                 receiving or allocating the blob. Returning a non-None response
-                rejects the body and passes that response to the blob callback.
+                rejects the body without invoking the blob callback.
         """
         self.blob_streamer.register_blob_callback(channel, topic, blob_cb, *args, preflight_cb=preflight_cb, **kwargs)
