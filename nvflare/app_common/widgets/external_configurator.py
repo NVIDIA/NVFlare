@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.utils.export_utils import update_export_props
 from nvflare.client.config import write_config_to_file
 from nvflare.client.constants import CLIENT_API_CONFIG
-from nvflare.fuel.utils.attributes_exportable import ExportMode, export_components
+from nvflare.fuel.utils.attributes_exportable import ExportMode
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.widgets.widget import Widget
 
@@ -35,13 +35,13 @@ class ExternalConfigurator(Widget):
         """Prepares any external configuration files.
 
         Args:
-            component_ids: A list of components that are `AttributesExportable`
+            component_ids: A list of components that provide `export()` or `get_external_config()`.
             config_file_name: The file name of the external config.
         """
         super().__init__()
         check_object_type("component_ids", component_ids, list)
 
-        # the components that needs to export attributes
+        # Components that contribute sections to the external configuration.
         self._component_ids = component_ids
         self._config_file_name = config_file_name
 
@@ -63,7 +63,6 @@ class ExternalConfigurator(Widget):
         """Exports all components."""
         engine = fl_ctx.get_engine()
         all_components = engine.get_all_components()
-        components = {i: all_components.get(i) for i in self._component_ids}
         reserved_keys = [
             FLMetaKey.SITE_NAME,
             FLMetaKey.JOB_ID,
@@ -71,4 +70,20 @@ class ExternalConfigurator(Widget):
             ConnPropKey.ROOT_CONN_PROPS,
             ConnPropKey.RELAY_CONN_PROPS,
         ]
-        return export_components(components=components, reserved_keys=reserved_keys, export_mode=ExportMode.PEER)
+        components_data = {}
+        for component_id in self._component_ids:
+            component = all_components.get(component_id)
+            get_config = getattr(component, "get_external_config", None)
+            if callable(get_config):
+                export_id, export_args = get_config()
+            else:
+                export = getattr(component, "export", None)
+                if not callable(export):
+                    raise TypeError(f"component {component_id} does not provide external configuration")
+                export_id, export_args = export(ExportMode.PEER)
+            if export_id in components_data:
+                raise RuntimeError(f"export_id {export_id} from {component_id} is duplicated, please change.")
+            if export_id in reserved_keys:
+                raise RuntimeError(f"export_id {export_id} from {component_id} is a reserved key, please change.")
+            components_data[export_id] = export_args
+        return components_data

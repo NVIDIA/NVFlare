@@ -33,12 +33,11 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply
-from nvflare.fuel.utils.attributes_exportable import AttributesExportable
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.widget import Widget
 
 
-class MetricRelay(Widget, AttributesExportable):
+class MetricRelay(Widget):
     """Receive metrics on the existing CJ Cell and relay them as analytic events."""
 
     def __init__(
@@ -120,7 +119,8 @@ class MetricRelay(Widget, AttributesExportable):
             except OSError as e:
                 self.log_warning(fl_ctx, f"failed to remove analytics bootstrap: {secure_format_exception(e)}")
 
-    def export(self, export_mode: str) -> Tuple[str, dict]:
+    def get_external_config(self) -> Tuple[str, dict]:
+        """Return the direct Cell config for the temporary legacy Client API bridge."""
         with self._lock:
             if not self._config:
                 raise RuntimeError("MetricRelay has not started")
