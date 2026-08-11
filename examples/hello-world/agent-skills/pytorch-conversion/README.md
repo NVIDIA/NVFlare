@@ -14,7 +14,7 @@ Agent Skills package from an NVFLARE checkout:
 ```bash
 python -m pip install 'nvflare~=2.9.0'
 python -m pip install -r source/requirements.txt
-npx skills add ../../../../skills -a codex -a claude-code
+npx skills add ../../../../skills --skill '*' -a codex -a claude-code -y
 ```
 
 ## Code Structure

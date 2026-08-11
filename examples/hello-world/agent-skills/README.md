@@ -12,7 +12,7 @@ From the NVFLARE repository root, install the complete skill set for the
 coding agents you use:
 
 ```bash
-npx skills add ./skills -a codex -a claude-code
+npx skills add ./skills --skill '*' -a codex -a claude-code -y
 ```
 
 The generated jobs require NVFLARE 2.9.0 or later. Install it in the Python

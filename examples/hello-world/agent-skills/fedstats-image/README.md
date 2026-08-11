@@ -11,7 +11,7 @@ For complete setup instructions, see [Installation](https://nvflare.readthedocs.
 ```bash
 python -m pip install 'nvflare~=2.9.0'
 python -m pip install -r requirements.txt
-npx skills add ../../../../skills -a codex -a claude-code
+npx skills add ../../../../skills --skill '*' -a codex -a claude-code -y
 ```
 
 ## Code Structure

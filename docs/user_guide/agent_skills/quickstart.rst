@@ -12,7 +12,7 @@ Install all skills from an NVFLARE checkout:
 
 .. code-block:: shell
 
-   npx skills add ./skills -a codex -a claude-code
+   npx skills add ./skills --skill '*' -a codex -a claude-code -y
 
 The generated jobs also require NVFLARE 2.9.0 or later in the Python
 environment used by the coding agent. Install the package from PyPI or use an
