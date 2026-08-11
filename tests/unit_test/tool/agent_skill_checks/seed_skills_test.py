@@ -271,6 +271,26 @@ def test_pytorch_model_exchange_owns_plain_pytorch_send_pattern():
     assert "pytorch-model-exchange.md" in client_reference_text
 
 
+def test_conversion_skills_keep_preprocessing_statistics_local_by_default():
+    repo_root = Path(__file__).resolve().parents[4]
+    common_text = repo_root.joinpath("skills/nvflare-shared/references/conversion-common.md").read_text(
+        encoding="utf-8"
+    )
+    model_exchange_text = repo_root.joinpath("skills/nvflare-shared/references/pytorch-model-exchange.md").read_text(
+        encoding="utf-8"
+    )
+    normalized_common = " ".join(common_text.split())
+    normalized_model_exchange = " ".join(model_exchange_text.split())
+
+    assert "## Preprocessing Data Locality" in common_text
+    assert "Fit it using each site's local training partition by default" in normalized_common
+    assert "Do not pool raw records or implicitly derive a shared artifact from multiple sites" in normalized_common
+    assert "user explicitly authorizes the cross-site statistics workflow" in normalized_common
+    assert "Do not silently introduce a federated-statistics, secure-aggregation" in normalized_common
+    assert '"Preprocessing Data Locality"' in normalized_model_exchange
+    assert "Never create it by pooling site records implicitly" in normalized_model_exchange
+
+
 def test_pytorch_family_construction_policy_is_canonical_and_capability_based():
     repo_root = Path(__file__).resolve().parents[4]
     pytorch_root = repo_root / "skills" / "nvflare-convert-pytorch"
