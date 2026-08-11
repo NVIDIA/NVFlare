@@ -4,53 +4,56 @@
 What's New in FLARE v2.9.0
 **************************
 
-NVIDIA FLARE 2.9.0 expands the platform for research-oriented federated
-workflows, AI-agent-assisted development, and large-scale training in HPC
-environments. The release introduces the Collaboration API and Agent Skills,
-adds Slurm-native job execution, and strengthens the client, recipe, streaming,
-security, and operational foundations used for large-model workloads.
+NVIDIA FLARE 2.9.0 focuses on four major capabilities: agent-assisted
+federated development, research-oriented collaborative workflows,
+Slurm-managed HPC execution, and reliable large-model training. The release
+also includes operational, security, framework, and Recipe API improvements.
 
-Release Highlights
-==================
+Main Features
+=============
 
-- **Collaboration API**: define collaborative workflows as ordinary Python
-  functions or classes and package them with ``CollabRecipe``. The API removes
-  much of the controller, executor, and payload boilerplate required by custom
-  workflows while preserving explicit server/client behavior. New examples
-  cover synchronous FedAvg, asynchronous PyTorch training, and split learning.
 - **Agent Skills**: installable NVFLARE-owned skills give coding agents guided,
   reviewable workflows for converting PyTorch, PyTorch Lightning, and Hugging
   Face Trainer projects to federated jobs; producing federated statistics; and
   diagnosing generated jobs. The skills include source inspection, validation,
   and data-locality guardrails.
-- **Security and credential handling**: job-process bootstrap credentials are
-  delivered through the process environment, including per-job Kubernetes
-  Secrets, instead of process command lines. CLI and runtime diagnostics more
-  consistently redact sensitive values, and Recipe APIs provide safeguards for
-  declaring and handling secrets.
-- **Slurm support for HPC**: run NVFLARE client and server job processes as
+- **Collaboration API**: define collaborative workflows as ordinary Python
+  functions or classes and package them with ``CollabRecipe``. The API removes
+  much of the controller, executor, and payload boilerplate required by custom
+  workflows while preserving explicit server/client behavior. New examples
+  cover synchronous FedAvg, asynchronous PyTorch training, and split learning.
+- **Slurm enhancement for HPC**: run NVFLARE client and server job processes as
   Slurm allocations, with scheduler-managed submission, monitoring, and
   cancellation. Sites can use Apptainer, Pyxis/Enroot, or trusted bare-Python
   execution, and can use the shared-file worker channel where compute nodes
   cannot connect directly to the parent.
+- **Large-model support**: reliable F3 streaming adds chunk retries,
+  receiver-confirmed completion, progress-aware liveness, and negotiated
+  flow-control settings for long-running model transfers. Tensor disk offload
+  is available for PyTorch Swarm aggregation as well as FedAvg, and FedAvg has
+  been validated for federated LLM training up to 72 billion parameters with
+  suitable infrastructure and configuration.
+
+Additional Platform Improvements
+================================
+
 - **Kubernetes and OpenShift deployment**: stage prepared kit configuration as
   Kubernetes ConfigMaps and Secrets, then mount those resources through the
   generated Helm chart while preserving the workspace PVC for writable runtime
   state. The same flow is available to Kubernetes, OpenShift, and multicloud
   deployment examples.
-- **Large-model reliability and memory efficiency**: improve streamed model
-  transfer handling, retry behavior, and bounded memory use. Tensor disk
-  offload is available for PyTorch Swarm aggregation as well as FedAvg, and
-  large blob transport has stronger failure handling and higher default limits.
-  FedAvg has been validated for federated LLM training up to 72 billion
-  parameters with suitable infrastructure and configuration.
+- **Security and credential handling**: job-process bootstrap credentials are
+  delivered through the process environment, including per-job Kubernetes
+  Secrets, instead of process command lines. CLI and runtime diagnostics more
+  consistently redact sensitive values, and Recipe APIs provide safeguards for
+  declaring and handling secrets.
 - **Framework and Recipe APIs**: federate Hugging Face ``Trainer`` and TRL
   ``SFTTrainer`` scripts through the Hugging Face Client API; keep a long-lived
   external trainer connected through Client API Attach mode; and use the new
   concrete PyTorch FedBPT recipe entry point.
 
-Research and Developer Productivity
-===================================
+Main Feature Details
+====================
 
 Collaboration API
 -----------------
@@ -112,18 +115,42 @@ clusters where compute nodes cannot open a direct connection to the parent.
 Follow the :ref:`slurm_job_launcher` deployment guide for prerequisites,
 backend setup, site configuration, and validation steps.
 
-Large-Model Transport and Memory
---------------------------------
+Large-Model Transport, Reliability, and Memory
+----------------------------------------------
 
-Streaming and tensor-transfer improvements make large-model workloads more
-robust under slow links, retries, and delayed worker responses. PyTorch Swarm
-can use tensor disk offload during aggregation, reducing peak memory pressure
-by materializing incoming tensors through temporary disk storage. Operators
-should continue to size timeouts, storage, and network connectivity for their
-model size and deployment topology. With the corresponding infrastructure and
-configuration, FedAvg has been validated for federated LLM training at scales
-up to 72 billion parameters. See :ref:`notes_on_large_models` for deployment
-sizing and large-model operational guidance.
+FLARE 2.9.0 strengthens the F3 transport for long-running model transfers.
+When reliable streaming is enabled, unacknowledged chunks are retried within
+bounded retry budgets. Receiver-confirmed completion lets the sender retain a
+payload until the intended receiver has consumed it. A progress-aware liveness
+policy keeps task downloads and result uploads alive while bytes continue to
+advance, instead of failing or resending solely because a fixed wall-clock
+timeout elapsed; transfers that stop making progress still fail after the
+configured idle limit. External trainer task materialization no longer trips a
+heartbeat expiry while a ``TASK_READY`` exchange is pending; an optional task
+wait timeout continues to provide an absolute bound.
+
+The transport now communicates the sender's effective chunk, window, ACK, and
+retry-pending limits to the receiver for each stream, preventing incompatible
+endpoint settings from stalling flow control. Receiver reassembly capacity is
+derived from the negotiated stream window rather than a fixed chunk count, so
+scheduler-induced chunk reordering does not abort healthy transfers under load.
+Pipelined tensor downloads, prefetching, and ``TCP_NODELAY`` improve transfer
+throughput. Oversized blobs fail before transmission with an actionable error,
+and task-result delivery retries a failed streamed send rather than silently
+dropping the result. Active administrative result downloads also refresh their
+bound HCI session as bytes advance, preventing a healthy long download from
+expiring as idle.
+
+PyTorch Swarm can use tensor disk offload during aggregation, reducing peak
+memory pressure by materializing incoming tensors through temporary disk
+storage. Pass-through tensor broadcasts now release their source transactions
+after downstream consumers complete, preventing model-sized retained objects
+from accumulating across aggregation rounds. The default maximum streamed blob
+size is 4 GiB, while remaining finite and configurable. With suitable
+infrastructure and configuration, FedAvg has been validated for federated LLM
+training at scales up to 72 billion parameters. See
+:ref:`notes_on_large_models` for deployment sizing and large-model operational
+guidance.
 
 Kubernetes and OpenShift Deployment
 -----------------------------------
