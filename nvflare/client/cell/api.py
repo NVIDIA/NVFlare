@@ -364,12 +364,12 @@ class CellClientAPI(APISpec):
     # ------------------------------------------------------------------ receive
 
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
-        model = self.__receive(timeout)
+        model = self._receive_internal(timeout)
         if model is not None:
             self._receive_called = True
         return model
 
-    def __receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
+    def _receive_internal(self, timeout: Optional[float] = None) -> Optional[FLModel]:
         if not self._is_control_rank or self._closed:
             return None
         if self._abort:
@@ -672,7 +672,7 @@ class CellClientAPI(APISpec):
             self.shutdown()
             return False
         try:
-            return self.__receive() is not None
+            return self._receive_internal() is not None
         except TrainerSessionError:
             self.shutdown()
             return False
