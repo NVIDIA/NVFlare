@@ -10,4 +10,5 @@ through the coding agent rather than by invoking its private scripts directly.
 .. toctree::
    :maxdepth: 1
 
+   quickstart
    autofl_skill
