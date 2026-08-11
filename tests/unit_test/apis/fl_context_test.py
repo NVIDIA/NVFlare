@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
+
 from nvflare.apis.fl_context import FLContext, FLContextManager
 
 
@@ -66,6 +68,32 @@ class TestFLContext:
         assert fl_ctx.set_prop("y", 20, private=False)
         assert fl_ctx.get_prop("y") == 20
         assert not fl_ctx.set_prop("y", 4, private=True)
+
+    def test_local_attribute_conflict_warning_reports_call_site(self, caplog):
+        fl_ctx = FLContext()
+        fl_ctx.set_prop("x", 1, private=True, sticky=True)
+
+        call_line = inspect.currentframe().f_lineno + 1
+        assert not fl_ctx.set_prop("x", 2, private=True, sticky=False)
+
+        warning = caplog.records[-1]
+        assert warning.pathname == __file__
+        assert warning.lineno == call_line
+        assert warning.message.endswith(f"called from {__file__}:{call_line}")
+
+    def test_sticky_attribute_conflict_warning_reports_call_site(self, caplog):
+        mgr = FLContextManager()
+        ctx1 = mgr.new_context()
+        ctx2 = mgr.new_context()
+        ctx1.set_prop("x", 1, private=True, sticky=True)
+
+        call_line = inspect.currentframe().f_lineno + 1
+        assert not ctx2.set_prop("x", 2, private=False, sticky=True)
+
+        warning = caplog.records[-1]
+        assert warning.pathname == __file__
+        assert warning.lineno == call_line
+        assert warning.message.endswith(f"called from {__file__}:{call_line}")
 
     def test_remove_prop(self):
         fl_ctx = FLContext()

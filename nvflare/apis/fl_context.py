@@ -13,6 +13,7 @@
 # limitations under the License.
 import copy
 import threading
+import traceback
 from typing import Any
 
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -78,6 +79,15 @@ class FLContext:
         self.props = {}
         self.logger = get_obj_logger(self)
 
+    def _warn_prop_attribute_change(self, key: str, existing_mask: int, new_mask: int):
+        call_site = traceback.extract_stack(limit=3)[0]
+        self.logger.warning(
+            f"property '{key}' already exists with attributes "
+            f"{to_string(existing_mask)}, cannot change to {to_string(new_mask)}; "
+            f"called from {call_site.filename}:{call_site.lineno}",
+            stacklevel=3,
+        )
+
     def get_prop_keys(self) -> list[str]:
         return list(self.props.keys())
 
@@ -142,10 +152,7 @@ class FLContext:
             if key in self.props:
                 existing_mask = self.props[key][M]
                 if mask != existing_mask:
-                    self.logger.warning(
-                        f"property '{key}' already exists with attributes "
-                        f"{to_string(existing_mask)}, cannot change to {to_string(mask)}"
-                    )
+                    self._warn_prop_attribute_change(key, existing_mask, mask)
                     return False
 
             # if the prop is sticky, also check with ctx manager to make sure it is consistent with existing mask
@@ -156,10 +163,7 @@ class FLContext:
                     assert isinstance(ctx_manager, FLContextManager)
                     exists, _, existing_mask = ctx_manager.check_sticker(key)
                     if exists and mask != existing_mask:
-                        self.logger.warning(
-                            f"property '{key}' already exists with attributes "
-                            f"{to_string(existing_mask)}, cannot change to {to_string(mask)}"
-                        )
+                        self._warn_prop_attribute_change(key, existing_mask, mask)
                         return False
                     ctx_manager.update_sticker(key, value, mask)
 
