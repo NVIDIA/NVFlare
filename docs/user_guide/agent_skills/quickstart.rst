@@ -3,7 +3,7 @@ Agent Skills Quickstart
 ######################
 
 The :github_nvflare_link:`Agent Skills runnable examples
-<examples/agent-skills>` provide five small, standalone projects for trying
+<examples/hello-world/agent-skills>` provide five small, standalone projects for trying
 NVFLARE Agent Skills with Codex or Claude Code. Each one includes the starting
 source or synthetic data, an exact prompt naming the appropriate skill, the
 expected generated artifacts, and a local validation path.
