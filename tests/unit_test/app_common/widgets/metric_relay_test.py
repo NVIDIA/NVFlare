@@ -18,6 +18,7 @@ from contextlib import nullcontext
 from unittest.mock import MagicMock, patch
 
 from nvflare.apis.analytix import AnalyticsDataType
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.metrics_exchange.metrics_sender import (
@@ -70,6 +71,43 @@ def _request(config, origin=None, payload=None):
     if payload is None:
         payload = create_analytic_dxo("loss", 0.25, AnalyticsDataType.SCALAR, global_step=3).to_dict()
     return new_cell_message(headers, payload)
+
+
+def test_relay_panics_when_internal_listener_is_unavailable():
+    cell = _Cell()
+    cell.get_internal_listener_url = MagicMock(return_value=None)
+    engine = MagicMock()
+    engine.get_cell.return_value = cell
+    fl_ctx = MagicMock(spec=FLContext)
+    fl_ctx.get_engine.return_value = engine
+    relay = MetricRelay()
+
+    with patch.object(relay, "system_panic") as panic:
+        relay.handle_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
+
+    panic.assert_called_once()
+    assert "no internal listener" in panic.call_args.args[0]
+    assert panic.call_args.args[1] is fl_ctx
+
+
+def test_relay_panics_and_cleans_up_when_bootstrap_write_fails(tmp_path):
+    cell = _Cell()
+    engine = MagicMock()
+    engine.get_cell.return_value = cell
+    engine.get_workspace.return_value.get_app_config_dir.return_value = str(tmp_path)
+    fl_ctx = MagicMock(spec=FLContext)
+    fl_ctx.get_engine.return_value = engine
+    fl_ctx.get_job_id.return_value = "job"
+    relay = MetricRelay()
+
+    with patch("nvflare.app_common.widgets.metric_relay.write_bootstrap", side_effect=OSError("disk full")):
+        with patch.object(relay, "system_panic") as panic:
+            relay.handle_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
+
+    panic.assert_called_once()
+    assert "disk full" in panic.call_args.args[0]
+    assert panic.call_args.args[1] is fl_ctx
+    assert relay._engine is None and relay._config is None and relay._bootstrap_path is None
 
 
 def test_relay_accepts_only_the_launched_cell_origin(tmp_path):

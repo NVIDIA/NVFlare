@@ -55,7 +55,10 @@ class MetricRelay(Widget):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.ABOUT_TO_START_RUN:
-            self._start(fl_ctx)
+            try:
+                self._start(fl_ctx)
+            except Exception as e:
+                self.system_panic(f"failed to start MetricRelay: {secure_format_exception(e)}", fl_ctx)
         elif event_type == EventType.ABOUT_TO_END_RUN:
             self._stop(fl_ctx)
 
