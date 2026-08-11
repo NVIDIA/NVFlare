@@ -16,8 +16,21 @@ client code builds the payload itself:
 ```python
 params = {k: v.detach().cpu() for k, v in model.state_dict().items()}
 assert all(isinstance(v, torch.Tensor) for v in params.values())
-flare.send(flare.FLModel(params=params, metrics=metrics, meta=meta))
+flare.send(
+    flare.FLModel(
+        params=params,
+        metrics=metrics,
+        meta={**meta, MetaKey.NUM_STEPS_CURRENT_ROUND: round_num_steps},
+    )
+)
 ```
+
+`round_num_steps` is the positive number of optimizer steps completed during
+the current round. For a manually generated plain-PyTorch client, count it in
+the source-backed training loop and never omit it: FedAvg uses
+`NUM_STEPS_CURRENT_ROUND` as its aggregation weight. The patched Lightning and
+Hugging Face integrations populate this metadata themselves; do not add a
+second manual payload there.
 
 For PyTorch Lightning and Hugging Face Trainer, the patched trainer builds and
 sends the payload, so do not write this snippet in patched client code. The

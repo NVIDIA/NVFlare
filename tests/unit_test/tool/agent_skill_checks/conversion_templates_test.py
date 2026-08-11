@@ -142,6 +142,72 @@ def test_pytorch_eval_template_initializes_flare_before_training_setup():
     assert init_line < setup_line < loop_line
 
 
+def test_pytorch_eval_template_sends_completed_round_steps_for_fedavg(monkeypatch):
+    module = _load_module(PT_TEMPLATES / "client_with_eval.py")
+    sent_models = []
+
+    class _Tensor:
+        def detach(self):
+            return self
+
+        def cpu(self):
+            return self
+
+    class _Model:
+        def to(self, device):
+            return self
+
+        def load_state_dict(self, params):
+            assert params == {"weight": "global"}
+
+        def state_dict(self):
+            return {"weight": _Tensor()}
+
+    running = iter((True, False))
+    monkeypatch.setattr(module.flare, "init", lambda: None)
+    monkeypatch.setattr(module.flare, "is_running", lambda: next(running))
+    monkeypatch.setattr(module.flare, "receive", lambda: types.SimpleNamespace(params={"weight": "global"}))
+    monkeypatch.setattr(module.flare, "is_evaluate", lambda: False)
+    monkeypatch.setattr(module.flare, "send", sent_models.append)
+    monkeypatch.setattr(module, "evaluate", lambda *args, **kwargs: 0.75)
+
+    module.main(
+        model_factory=_Model,
+        train_setup_factory=lambda model, device: object(),
+        train_one_round=lambda model, train_state: 7,
+        val_loader=(),
+    )
+
+    assert len(sent_models) == 1
+    assert sent_models[0].meta[module.MetaKey.NUM_STEPS_CURRENT_ROUND] == 7
+
+
+@pytest.mark.parametrize("invalid_steps", [None, 0, -1, float("inf"), True, "not-a-number"])
+def test_pytorch_eval_template_rejects_missing_or_invalid_round_steps(monkeypatch, invalid_steps):
+    module = _load_module(PT_TEMPLATES / "client_with_eval.py")
+
+    class _Model:
+        def to(self, device):
+            return self
+
+        def load_state_dict(self, params):
+            pass
+
+    monkeypatch.setattr(module.flare, "init", lambda: None)
+    monkeypatch.setattr(module.flare, "is_running", lambda: True)
+    monkeypatch.setattr(module.flare, "receive", lambda: types.SimpleNamespace(params={}))
+    monkeypatch.setattr(module.flare, "is_evaluate", lambda: False)
+    monkeypatch.setattr(module, "evaluate", lambda *args, **kwargs: 0.75)
+
+    with pytest.raises(RuntimeError, match="completed optimizer steps"):
+        module.main(
+            model_factory=_Model,
+            train_setup_factory=lambda model, device: object(),
+            train_one_round=lambda model, train_state: invalid_steps,
+            val_loader=(),
+        )
+
+
 @pytest.mark.parametrize(
     "evaluate_before_train, expected_events",
     [

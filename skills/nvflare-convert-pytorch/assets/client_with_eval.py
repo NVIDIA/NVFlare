@@ -15,9 +15,12 @@ initializes FLARE, then builds model and training state once before FLARE
 rounds; each round only loads received weights into that persistent state.
 """
 
+import math
+
 import torch
 
 import nvflare.client as flare
+from nvflare.app_common.abstract.fl_model import MetaKey
 
 
 def evaluate(model, val_loader, device="cpu"):
@@ -48,6 +51,19 @@ def evaluate(model, val_loader, device="cpu"):
     return correct / total
 
 
+def _validate_round_num_steps(value):
+    """Return a valid positive FedAvg weight from completed local optimizer steps."""
+    if isinstance(value, bool):
+        raise RuntimeError("train_one_round() must return a positive number of completed optimizer steps")
+    try:
+        num_steps = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise RuntimeError("train_one_round() must return a positive number of completed optimizer steps") from exc
+    if not math.isfinite(num_steps) or num_steps <= 0:
+        raise RuntimeError("train_one_round() must return a positive number of completed optimizer steps")
+    return num_steps
+
+
 def main(model_factory, train_setup_factory, train_one_round, val_loader, device="cpu", metric_name="accuracy"):
     """Client API round loop with global-model evaluation before local training.
 
@@ -55,7 +71,10 @@ def main(model_factory, train_setup_factory, train_one_round, val_loader, device
     recipe uses. ``train_setup_factory`` constructs stateful training objects
     such as the optimizer, loss, scheduler, and training data loader once for
     the persistent model, after Client API context is available.
-    ``train_one_round`` runs the source training loop using that prebuilt state.
+    ``train_one_round`` runs the source training loop using that prebuilt state
+    and returns the positive number of completed optimizer steps. This value is
+    sent as ``NUM_STEPS_CURRENT_ROUND`` so FedAvg weights each site by its
+    actual per-round training work.
     """
     # Build all persistent objects before the FLARE round loop. Each round
     # should only load received weights into this state, evaluate, train, and
@@ -76,7 +95,13 @@ def main(model_factory, train_setup_factory, train_one_round, val_loader, device
             flare.send(flare.FLModel(metrics={metric_name: global_metric}))
             continue
 
-        train_one_round(model, train_state)
+        round_num_steps = _validate_round_num_steps(train_one_round(model, train_state))
 
         params = {k: v.detach().cpu() for k, v in model.state_dict().items()}
-        flare.send(flare.FLModel(params=params, metrics={metric_name: global_metric}))
+        flare.send(
+            flare.FLModel(
+                params=params,
+                metrics={metric_name: global_metric},
+                meta={MetaKey.NUM_STEPS_CURRENT_ROUND: round_num_steps},
+            )
+        )
