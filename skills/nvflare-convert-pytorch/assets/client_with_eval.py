@@ -59,7 +59,7 @@ def _validate_round_num_steps(value):
         num_steps = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
         raise RuntimeError("train_one_round() must return a positive number of completed optimizer steps") from exc
-    if not math.isfinite(num_steps) or num_steps <= 0:
+    if not math.isfinite(num_steps) or num_steps <= 0 or not num_steps.is_integer():
         raise RuntimeError("train_one_round() must return a positive number of completed optimizer steps")
     return num_steps
 

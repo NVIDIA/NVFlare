@@ -182,7 +182,7 @@ def test_pytorch_eval_template_sends_completed_round_steps_for_fedavg(monkeypatc
     assert sent_models[0].meta[module.MetaKey.NUM_STEPS_CURRENT_ROUND] == 7
 
 
-@pytest.mark.parametrize("invalid_steps", [None, 0, -1, float("inf"), True, "not-a-number"])
+@pytest.mark.parametrize("invalid_steps", [None, 0, -1, 1.5, float("inf"), True, "not-a-number"])
 def test_pytorch_eval_template_rejects_missing_or_invalid_round_steps(monkeypatch, invalid_steps):
     module = _load_module(PT_TEMPLATES / "client_with_eval.py")
 
