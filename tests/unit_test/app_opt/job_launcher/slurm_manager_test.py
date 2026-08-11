@@ -534,6 +534,18 @@ def test_infrastructure_terminal_state_is_an_infrastructure_error(tmp_path):
     assert handle.poll() == ProcessExitCode.INFRASTRUCTURE_ERROR
 
 
+def test_reportable_derived_step_exit_code_is_preserved(tmp_path):
+    adapter = Adapter()
+    adapter.live = _query(LookupStatus.NOT_FOUND)
+    adapter.accounting_id = _query(
+        LookupStatus.FOUND,
+        _record(state="FAILED", exit_status=15, derived_exit_status=ProcessExitCode.EXCEPTION),
+    )
+    handle = _manager(tmp_path, adapter).launch(_plan(tmp_path))
+
+    assert handle.poll() == ProcessExitCode.EXCEPTION
+
+
 def test_terminal_cleanup_restores_access_to_pyxis_mount_directories(tmp_path):
     adapter = Adapter()
     adapter.live = _query(LookupStatus.NOT_FOUND)
