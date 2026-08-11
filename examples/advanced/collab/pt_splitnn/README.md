@@ -65,6 +65,13 @@ python cifar10_split_data_vertical.py \
     --overlap 10000
 ```
 
+### Run private set intersection
+
+We are using NVFlare's FL simulator to run the following experiments.
+
+In order to find the overlapping data indices between the different clients participating in split learning,
+we randomly select an subset of the training indices.
+
 From the same runtime copy, run the counterpart's PSI preparation step:
 
 ```bash
@@ -86,6 +93,11 @@ simulator = SimulatorRunner(
 simulator.run()
 PY
 ```
+
+The result will be saved on each client's working directory in `intersection.txt`.
+
+We can check the correctness of the result by comparing it to the generated ground truth overlap, saved in
+`overlap.npy`.
 
 The Collab job reads the resulting site-specific artifacts directly:
 
