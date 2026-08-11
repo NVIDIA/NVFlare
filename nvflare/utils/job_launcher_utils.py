@@ -15,6 +15,7 @@ import copy
 import importlib
 import logging
 import os
+import re
 import sys
 
 from nvflare.apis.fl_constant import FLContextKey, SystemVarName
@@ -127,6 +128,16 @@ def generate_server_command(fl_ctx) -> str:
 
 _LAUNCHER_MODE_KEYS = {"process", "docker", "k8s", "slurm"}
 
+PORTABLE_RESOURCE_DEFAULT_KEY = "@default"
+PORTABLE_RESOURCE_KEYS = ("num_of_gpus", "num_of_cpus", "memory")
+_PORTABLE_MEMORY_PATTERN = re.compile(r"^([1-9][0-9]*)(Mi|Gi|Ti)$")
+_MEMORY_UNIT_TO_MIB = {"Mi": 1, "Gi": 1024, "Ti": 1024 * 1024}
+_PORTABLE_NATIVE_RESOURCE_KEYS = {
+    "docker": {"num_of_cpus": {"nano_cpus"}, "memory": {"mem_limit"}},
+    "k8s": {"num_of_cpus": {"cpu", "cpu_request"}, "memory": {"memory", "memory_request"}},
+    "slurm": {"num_of_cpus": {"cpus_per_node"}, "memory": {"mem_per_node"}},
+}
+
 
 def get_site_launcher_spec(site_spec, mode):
     """Extract the launcher-mode portion of a single site's resource spec.
@@ -145,6 +156,113 @@ def get_launcher_resource_spec(job_meta, site_name, mode):
     """Extract the launcher-mode resource spec for a site from full job meta."""
     resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
     return get_site_launcher_spec(resource_spec.get(site_name), mode)
+
+
+def _validate_portable_values(resource_spec: dict, label: str) -> None:
+    num_gpus = resource_spec.get("num_of_gpus")
+    if num_gpus is not None and (isinstance(num_gpus, bool) or not isinstance(num_gpus, int) or num_gpus < 0):
+        raise ValueError(f"{label}.num_of_gpus must be an integer greater than or equal to 0")
+
+    num_cpus = resource_spec.get("num_of_cpus")
+    if num_cpus is not None and (isinstance(num_cpus, bool) or not isinstance(num_cpus, int) or num_cpus < 1):
+        raise ValueError(f"{label}.num_of_cpus must be an integer greater than or equal to 1")
+
+    memory = resource_spec.get("memory")
+    if memory is not None and (not isinstance(memory, str) or not _PORTABLE_MEMORY_PATTERN.fullmatch(memory)):
+        raise ValueError(f"{label}.memory must be a positive integer followed by Mi, Gi, or Ti")
+
+
+def validate_portable_resource_spec(resource_spec: dict) -> None:
+    """Validate portable resource fields without restricting site-specific custom resources."""
+    if not resource_spec:
+        return
+
+    default_spec = resource_spec.get(PORTABLE_RESOURCE_DEFAULT_KEY)
+    if default_spec is not None:
+        unknown = set(default_spec) - set(PORTABLE_RESOURCE_KEYS)
+        if unknown:
+            raise ValueError(
+                f"resource_spec['{PORTABLE_RESOURCE_DEFAULT_KEY}'] contains unsupported field(s): {sorted(unknown)}"
+            )
+        _validate_portable_values(default_spec, f"resource_spec['{PORTABLE_RESOURCE_DEFAULT_KEY}']")
+
+    has_default = default_spec is not None
+    for site_name, site_spec in resource_spec.items():
+        if site_name == PORTABLE_RESOURCE_DEFAULT_KEY:
+            continue
+        effective_site_spec = get_site_launcher_spec(site_spec, "process") if has_default else site_spec
+        if not has_default and any(key in site_spec for key in _LAUNCHER_MODE_KEYS):
+            # Preserve legacy nested resource_spec behavior unless @default opts in
+            # to the new portable resolution contract.
+            continue
+        _validate_portable_values(effective_site_spec, f"resource_spec['{site_name}']")
+
+
+def resolve_site_resource_spec(job_meta: dict, site_name: str) -> dict:
+    """Resolve scheduler-facing resources for a site without mutating job metadata."""
+    resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
+    default_spec = resource_spec.get(PORTABLE_RESOURCE_DEFAULT_KEY) or {}
+    site_spec = get_site_launcher_spec(resource_spec.get(site_name), "process")
+    return {**default_spec, **site_spec}
+
+
+def get_portable_resource_spec(job_meta: dict, site_name: str) -> dict:
+    """Return the portable fields that launchers must enforce for a site."""
+    resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
+    site_spec = resource_spec.get(site_name) or {}
+    if PORTABLE_RESOURCE_DEFAULT_KEY in resource_spec:
+        resolved = resolve_site_resource_spec(job_meta, site_name)
+    elif any(key in site_spec for key in _LAUNCHER_MODE_KEYS):
+        # Legacy nested specs are launcher-specific, not portable.
+        resolved = {}
+    else:
+        resolved = site_spec
+    portable = {key: resolved[key] for key in PORTABLE_RESOURCE_KEYS if key in resolved}
+    _validate_portable_values(portable, f"resource_spec for site '{site_name}'")
+    return portable
+
+
+def portable_memory_to_mib(memory: str) -> int:
+    """Convert a validated portable memory value to an exact MiB count."""
+    match = _PORTABLE_MEMORY_PATTERN.fullmatch(memory) if isinstance(memory, str) else None
+    if not match:
+        raise ValueError("memory must be a positive integer followed by Mi, Gi, or Ti")
+    value, unit = match.groups()
+    return int(value) * _MEMORY_UNIT_TO_MIB[unit]
+
+
+def portable_memory_to_bytes(memory: str) -> int:
+    return portable_memory_to_mib(memory) * 1024 * 1024
+
+
+def validate_portable_resource_conflicts(job_meta: dict) -> None:
+    """Reject simultaneous portable and equivalent launcher-native CPU or memory fields."""
+    resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
+    launcher_spec = job_meta.get(JobMetaKey.JOB_LAUNCHER_SPEC.value, {}) or {}
+    site_names = (set(resource_spec) - {PORTABLE_RESOURCE_DEFAULT_KEY}) | (set(launcher_spec) - {"default"})
+    for site_name in site_names:
+        portable = get_portable_resource_spec(job_meta, site_name)
+        for mode, portable_to_native in _PORTABLE_NATIVE_RESOURCE_KEYS.items():
+            native = get_job_launcher_spec(job_meta, site_name, mode)
+            for portable_key, native_keys in portable_to_native.items():
+                conflicts = sorted(native_keys & set(native)) if portable_key in portable else []
+                if conflicts:
+                    raise ValueError(
+                        f"portable resource '{portable_key}' conflicts with launcher_spec {mode} field(s) "
+                        f"{conflicts} for site '{site_name}'"
+                    )
+
+    default_portable = resource_spec.get(PORTABLE_RESOURCE_DEFAULT_KEY) or {}
+    default_launcher = launcher_spec.get("default") or {}
+    for mode, portable_to_native in _PORTABLE_NATIVE_RESOURCE_KEYS.items():
+        native = default_launcher.get(mode) or {}
+        for portable_key, native_keys in portable_to_native.items():
+            conflicts = sorted(native_keys & set(native)) if portable_key in default_portable else []
+            if conflicts:
+                raise ValueError(
+                    f"portable resource '{portable_key}' conflicts with launcher_spec {mode} field(s) "
+                    f"{conflicts} in the default blocks"
+                )
 
 
 _LAUNCHER_SPEC_DEFAULT_KEY = "default"

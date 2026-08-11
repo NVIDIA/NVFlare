@@ -15,6 +15,7 @@
 import importlib.util
 import logging
 import sys
+from copy import deepcopy
 
 import pytest
 
@@ -27,7 +28,13 @@ from nvflare.utils.job_launcher_utils import (
     generate_server_command,
     get_credential_env,
     get_job_launcher_spec,
+    get_portable_resource_spec,
+    portable_memory_to_bytes,
+    portable_memory_to_mib,
     refresh_custom_dir_import_path,
+    resolve_site_resource_spec,
+    validate_portable_resource_conflicts,
+    validate_portable_resource_spec,
 )
 
 _CREDENTIAL_JOB_ARGS = {
@@ -131,6 +138,83 @@ class TestGetJobLauncherSpec:
     def test_slurm_falls_back_to_resource_spec(self):
         meta = {"resource_spec": {"site-1": {"slurm": {"nodes": 2}}}}
         assert get_job_launcher_spec(meta, "site-1", "slurm") == {"nodes": 2}
+
+
+class TestPortableResourceSpec:
+    def test_resolves_default_and_site_override_without_mutation(self):
+        meta = {
+            "resource_spec": {
+                "@default": {"num_of_gpus": 1, "num_of_cpus": 4, "memory": "8Gi"},
+                "site-1": {"num_of_gpus": 2, "custom": 3},
+            }
+        }
+        original = deepcopy(meta)
+
+        assert resolve_site_resource_spec(meta, "site-1") == {
+            "num_of_gpus": 2,
+            "num_of_cpus": 4,
+            "memory": "8Gi",
+            "custom": 3,
+        }
+        assert get_portable_resource_spec(meta, "site-1") == {
+            "num_of_gpus": 2,
+            "num_of_cpus": 4,
+            "memory": "8Gi",
+        }
+        assert meta == original
+
+    def test_default_is_a_normal_site_name(self):
+        meta = {"resource_spec": {"@default": {"num_of_cpus": 2}, "default": {"num_of_cpus": 8}}}
+        assert get_portable_resource_spec(meta, "default") == {"num_of_cpus": 8}
+        assert get_portable_resource_spec(meta, "site-1") == {"num_of_cpus": 2}
+        assert get_portable_resource_spec(meta, "server") == {"num_of_cpus": 2}
+
+    def test_legacy_nested_spec_is_not_reinterpreted_without_default(self):
+        meta = {"resource_spec": {"site-1": {"process": {"num_of_cpus": 4}, "docker": {"image": "x"}}}}
+        assert resolve_site_resource_spec(meta, "site-1") == {"num_of_cpus": 4}
+        assert get_portable_resource_spec(meta, "site-1") == {}
+
+    @pytest.mark.parametrize(
+        "spec",
+        [
+            {"num_of_gpus": -1},
+            {"num_of_gpus": True},
+            {"num_of_cpus": 0},
+            {"num_of_cpus": 1.5},
+            {"memory": "8G"},
+            {"memory": "1.5Gi"},
+            {"memory": "0Gi"},
+        ],
+    )
+    def test_rejects_invalid_portable_value(self, spec):
+        with pytest.raises(ValueError):
+            validate_portable_resource_spec({"@default": spec})
+
+    def test_rejects_unknown_default_field(self):
+        with pytest.raises(ValueError, match="unsupported field"):
+            validate_portable_resource_spec({"@default": {"gpu_memory": "8Gi"}})
+
+    def test_converts_memory_exactly(self):
+        validate_portable_resource_spec({"@default": {"num_of_gpus": 0, "num_of_cpus": 1, "memory": "1Mi"}})
+        assert portable_memory_to_mib("2Gi") == 2048
+        assert portable_memory_to_mib("1Ti") == 1024 * 1024
+        assert portable_memory_to_bytes("3Mi") == 3 * 1024 * 1024
+
+    @pytest.mark.parametrize(
+        ("mode", "native"),
+        [
+            ("docker", {"nano_cpus": 2_000_000_000}),
+            ("k8s", {"cpu": "2"}),
+            ("slurm", {"cpus_per_node": 2}),
+        ],
+    )
+    def test_rejects_portable_native_conflict(self, mode, native):
+        meta = {
+            "resource_spec": {"@default": {"num_of_cpus": 2}},
+            "launcher_spec": {"default": {mode: native}},
+        }
+        with pytest.raises(ValueError, match="conflicts"):
+            validate_portable_resource_conflicts(meta)
 
 
 class TestValidateLauncherSpec:

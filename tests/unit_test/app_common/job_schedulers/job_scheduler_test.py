@@ -440,6 +440,53 @@ class TestDefaultJobScheduler:
         assert job == expected_job
         assert dispatch_info == expected_dispatch_info
 
+    def test_portable_default_is_resolved_for_check_and_dispatch(self):
+        sites = [
+            Site(name="site1", resources={"num_of_cpus": 8}),
+            Site(name="site2", resources={"num_of_cpus": 8}),
+        ]
+        candidate = create_job(
+            job_id="portable",
+            resource_spec={
+                "@default": {"num_of_cpus": 2, "memory": "4Gi"},
+                "site1": {"num_of_cpus": 4},
+            },
+            deploy_map={"app": [ALL_SITES]},
+            min_sites=2,
+        )
+        scheduler = DefaultJobScheduler(max_jobs=1, min_schedule_interval=0)
+        job_manager = Mock(spec=JobDefManagerSpec)
+
+        with create_servers(1, sites)[0].new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(job_manager, [candidate], fl_ctx)
+
+        assert job == candidate
+        assert dispatch_info["site1"].resource_requirements == {"num_of_cpus": 4, "memory": "4Gi"}
+        assert dispatch_info["site2"].resource_requirements == {"num_of_cpus": 2, "memory": "4Gi"}
+
+    def test_cancellation_uses_resolved_portable_requirements(self):
+        sites = [
+            Site(name="site1", resources={"num_of_cpus": 8}),
+            Site(name="site2", resources={"num_of_cpus": 1}),
+        ]
+        candidate = create_job(
+            job_id="portable-cancel",
+            resource_spec={"@default": {"num_of_cpus": 2}, "site1": {"num_of_cpus": 4}},
+            deploy_map={"app": [ALL_SITES]},
+            min_sites=2,
+        )
+        scheduler = DefaultJobScheduler(max_jobs=1, min_schedule_interval=0)
+        scheduler._cancel_resources = Mock()
+
+        with create_servers(1, sites)[0].new_context() as fl_ctx:
+            job, _ = scheduler.schedule_job(Mock(spec=JobDefManagerSpec), [candidate], fl_ctx)
+
+        assert job is None
+        assert scheduler._cancel_resources.call_args.kwargs["resource_reqs"] == {
+            "site1": {"num_of_cpus": 4},
+            "site2": {"num_of_cpus": 2},
+        }
+
     @pytest.mark.parametrize("add_first_job", [True, False])
     def test_a_list_of_jobs(self, add_first_job):
         num_sites = 8
@@ -534,7 +581,7 @@ class TestDefaultJobScheduler:
 
         candidate = create_job(
             job_id="study_job",
-            resource_spec={},
+            resource_spec={"@default": {"num_of_cpus": 2}},
             deploy_map={"app5": [ALL_SITES]},
             min_sites=2,
         )
@@ -547,6 +594,8 @@ class TestDefaultJobScheduler:
 
         assert job == candidate
         assert set(dispatch_info) == {"server", "site0", "site2"}
+        assert dispatch_info["site0"].resource_requirements == {"num_of_cpus": 2}
+        assert dispatch_info["site2"].resource_requirements == {"num_of_cpus": 2}
 
     def test_required_out_of_study_site_blocks_job(self, monkeypatch, setup_and_teardown):
         servers, scheduler, num_sites, job_manager = setup_and_teardown
