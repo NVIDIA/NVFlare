@@ -51,9 +51,12 @@ def test_bootstrap_is_atomic_owner_only_and_detects_env_conflicts(tmp_path, monk
     if os.name == "posix":
         assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
-    monkeypatch.setenv(ANALYTICS_BOOTSTRAP_ENV, str(tmp_path / "other.json"))
-    with pytest.raises(ValueError, match="conflict"):
+    env_path = tmp_path / "other.json"
+    monkeypatch.setenv(ANALYTICS_BOOTSTRAP_ENV, str(env_path))
+    with pytest.raises(ValueError, match="conflict") as exc_info:
         resolve_bootstrap(str(path))
+    assert repr(os.path.abspath(path)) in str(exc_info.value)
+    assert repr(os.path.abspath(env_path)) in str(exc_info.value)
 
 
 @pytest.mark.parametrize("field,value", [("connect_url", ""), ("client_fqcn", "other.client")])

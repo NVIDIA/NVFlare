@@ -45,12 +45,17 @@ REQUIRED_BOOTSTRAP_KEYS = (
 
 def resolve_bootstrap(config_file: str = None) -> str:
     env_file = os.environ.get(ANALYTICS_BOOTSTRAP_ENV)
-    if config_file and env_file and os.path.abspath(config_file) != os.path.abspath(env_file):
-        raise ValueError(f"analytics bootstrap conflict: config_file differs from {ANALYTICS_BOOTSTRAP_ENV}")
-    path = config_file or env_file
+    config_path = os.path.abspath(config_file) if config_file else None
+    env_path = os.path.abspath(env_file) if env_file else None
+    if config_path and env_path and config_path != env_path:
+        raise ValueError(
+            f"analytics bootstrap conflict: config_file={config_path!r} differs from "
+            f"{ANALYTICS_BOOTSTRAP_ENV}={env_path!r}"
+        )
+    path = config_path or env_path
     if not path:
         raise RuntimeError(f"analytics bootstrap is not configured; set {ANALYTICS_BOOTSTRAP_ENV}")
-    return os.path.abspath(path)
+    return path
 
 
 def validate_bootstrap(config: dict, path: str = "<analytics bootstrap>") -> None:
