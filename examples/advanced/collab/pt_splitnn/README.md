@@ -22,12 +22,11 @@ For complete installation instructions, see the
 The parent [Advanced Collab API README](../README.md) describes the NVFlare
 setup expected by these examples.
 
-From `examples/advanced/collab/pt_splitnn`, install this example and the
-reused SplitNN/PSI workflow dependencies:
+From `examples/advanced/collab/pt_splitnn`, install this example's training
+dependencies:
 
 ```bash
 python -m pip install -r requirements.txt
-python -m pip install -r ../../vertical_federated_learning/cifar10-splitnn/requirements.txt
 ```
 
 ## Code Structure
@@ -48,25 +47,25 @@ pt_splitnn/
 
 ## Data
 
-This example consumes the data and private-set-intersection artifacts produced
-by the existing
-[CIFAR-10 SplitNN example](../../vertical_federated_learning/cifar10-splitnn/README.md).
-It does not define a separate Collab-specific preparation format.
-
-From the repository root, run the existing vertical splitter:
+For an apples-to-apples setup, this example follows the same data-preparation
+steps as the regular
+[CIFAR-10 SplitNN counterpart](../../vertical_federated_learning/cifar10-splitnn/README.md).
+From the repository root, make a runtime working copy under this example, then
+run the counterpart's preparation code from that copy:
 
 ```bash
-cd examples/advanced/vertical_federated_learning/cifar10-splitnn
-export PYTHONPATH=${PWD}/src:${PWD}/../../cifar10:${PWD}/../../cifar10/pt/src
+cd examples/advanced/collab/pt_splitnn
+cp -R ../../vertical_federated_learning/cifar10-splitnn ./regular_splitnn
+cd regular_splitnn
+
+python -m pip install -r requirements.txt
+export PYTHONPATH=${PWD}/src:${PWD}/../../../cifar10:${PWD}/../../../cifar10/pt/src
 python cifar10_split_data_vertical.py \
     --split_dir /tmp/cifar10_vert_splits \
     --overlap 10000
 ```
 
-This downloads CIFAR-10 under `/tmp/cifar10` and creates the same per-site
-vertical splits used by the existing example. From the same directory, authorize
-its custom PSI adapter in the local simulator workspace and run the existing PSI
-job:
+From the same runtime copy, run the counterpart's PSI preparation step:
 
 ```bash
 mkdir -p /tmp/nvflare/cifar10_psi/local
@@ -96,9 +95,8 @@ The Collab job reads the resulting site-specific artifacts directly:
 └── site-2/simulate_job/site-2/psi/intersection.txt
 ```
 
-The existing SplitNN
-[notebook](../../vertical_federated_learning/cifar10-splitnn/cifar10_split_learning.ipynb)
-explains the vertical split and PSI stages in detail.
+The runtime `regular_splitnn` directory is only a preparation workspace and is
+not part of this example's source.
 
 ## Model
 
@@ -288,14 +286,13 @@ and float16 cut-layer exchange constant.
 | torchvision | 0.21.0+cu126 |
 | NVFlare | Source checkout based on revision `c467e40d`, plus this example |
 
-After preparing the data and configuring the intersection as shown in the
-[existing SplitNN notebook](../../vertical_federated_learning/cifar10-splitnn/cifar10_split_learning.ipynb),
-the existing implementation was launched with the same local simulator
-authorization for its custom components:
+After preparing the data with the runtime copy above, the regular implementation
+was launched from that copy with the same local simulator authorization for its
+custom components:
 
 ```bash
-cd examples/advanced/vertical_federated_learning/cifar10-splitnn
-export PYTHONPATH=${PWD}/src:${PWD}/../../cifar10:${PWD}/../../cifar10/pt/src
+cd examples/advanced/collab/pt_splitnn/regular_splitnn
+export PYTHONPATH=${PWD}/src:${PWD}/../../../cifar10:${PWD}/../../../cifar10/pt/src
 mkdir -p /tmp/nvflare/cifar10_splitnn/local
 printf '%s\n' \
     '{"class_allow_list": ["nvflare.", "splitnn.", "pt.src.model.ModerateCNN"]}' \
