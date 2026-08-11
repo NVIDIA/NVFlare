@@ -26,9 +26,11 @@ _tracking_context = None
 
 
 def init(rank=None, config_file: Optional[str] = None) -> MetricsSender:
-    """Initialize the direct Cell metrics sender.
+    """Initialize standalone analytics transport for a process without a Client API context.
 
-    This does not initialize Client API task or model exchange.
+    This does not initialize Client API task or model exchange. Client API
+    applications should call ``nvflare.client.init()`` only; tracking writers
+    automatically use that context, so they must not call both initializers.
     """
     with _tracking_context_lock:
         global _tracking_context
@@ -40,7 +42,7 @@ def init(rank=None, config_file: Optional[str] = None) -> MetricsSender:
 
 
 def shutdown(ctx=None) -> None:
-    """Shut down a dedicated analytics context, or the default tracking context."""
+    """Shut down a standalone analytics context, or delegate an explicit Client API context."""
     with _tracking_context_lock:
         global _tracking_context
         context = ctx or _tracking_context
@@ -79,7 +81,9 @@ class SummaryWriter(_BaseWriter):
 
     Users can replace the import of Tensorboard's SummaryWriter with FLARE's SummaryWriter.
     They would then use SummaryWriter the same as before.
-    SummaryWriter will send log records to the FLARE system.
+    SummaryWriter will send log records to the FLARE system. Before creating a
+    writer, initialize either the full Client API with ``nvflare.client.init()``
+    or standalone analytics with ``nvflare.client.tracking.init()``, never both.
 
     For TensorBoard-style time-series plots, pass ``global_step`` explicitly.
     If it is omitted, the receiver writes records at TensorBoard's default step ``0``

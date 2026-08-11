@@ -29,10 +29,13 @@ creates `MetricsSender`; rank zero starts a credential-free child Cell and sends
 each analytic DXO directly to the relay. `FlowerExecutor` has no analytics
 responsibilities.
 
-The maintained Flower example aliases the explicit tracking module as `flare`:
-`import nvflare.client.tracking as flare`. This preserves the familiar
-`flare.init()`/`flare.shutdown()` lifecycle spelling without initializing the
-task/model Client API. Existing `SummaryWriter` calls are unchanged.
+The maintained Flower example imports the explicit tracking module with
+`from nvflare.client import tracking` and owns `tracking.init()`/
+`tracking.shutdown()` in its ClientApp lifespan. This is a standalone analytics
+API: it does not initialize task/model exchange. A normal Client API process
+continues to call only `nvflare.client.init()`; its tracking writers reuse that
+Client API context. A process never calls both initializers. Existing
+`SummaryWriter` calls are unchanged.
 
 ## Trust and lifecycle
 
