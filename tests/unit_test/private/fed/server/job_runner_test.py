@@ -686,6 +686,47 @@ def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code
     assert "job-1" not in runner.running_jobs
 
 
+@patch("nvflare.private.fed.server.job_runner.ConfigService.get_float_var", return_value=2.0)
+def test_job_complete_process_finalizes_server_outcome_after_client_outcome_grace(mock_get_float):
+    runner = JobRunner(workspace_root="/tmp")
+    runner.fire_event = MagicMock()
+    runner.logger = MagicMock()
+    runner.log_debug = MagicMock()
+    runner._save_workspace = MagicMock()
+    runner.ask_to_stop = False
+
+    engine = MagicMock()
+    engine.run_processes = {}
+    engine.exception_run_processes = {}
+    job_manager = MagicMock()
+    engine.get_component.return_value = job_manager
+    completion_ctx = MagicMock()
+    engine.new_context.return_value = nullcontext(completion_ctx)
+
+    job = MagicMock(job_id="job-1", run_aborted=False)
+    runner.running_jobs = {"job-1": job}
+    runner._pending_client_outcomes = {"job-1": {"site-1"}}
+
+    sleep_count = 0
+
+    def _stop_after_second_pass(_):
+        nonlocal sleep_count
+        sleep_count += 1
+        if sleep_count == 2:
+            runner.ask_to_stop = True
+
+    with patch(
+        "nvflare.private.fed.server.job_runner.time",
+        **{"sleep.side_effect": _stop_after_second_pass, "monotonic.side_effect": [0.0, 2.0]},
+    ):
+        runner._job_complete_process(engine)
+
+    mock_get_float.assert_called_once()
+    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_COMPLETED, completion_ctx)
+    assert "site-1" in runner.logger.warning.call_args[0][0]
+    assert "job-1" not in runner._client_outcome_deadlines
+
+
 def test_job_complete_process_keeps_processing_jobs_when_save_workspace_fails():
     runner = JobRunner(workspace_root="/tmp")
     runner.fire_event = MagicMock()

@@ -103,6 +103,10 @@ class JobRunner(FLComponent):
         self.running_jobs = {}
         self._finished_job_states = {}
         self._pending_client_outcomes = {}
+        self._client_outcome_deadlines = {}
+        self.client_outcome_wait_timeout = ConfigService.get_float_var(
+            name=ConfigVarName.CLIENT_OUTCOME_WAIT_TIMEOUT, conf=SystemConfigs.APPLICATION_CONF, default=900.0
+        )
         self.lock = threading.Lock()
 
     def is_client_outcome_pending(self, job_id: str, client_name: str) -> bool:
@@ -432,8 +436,23 @@ class JobRunner(FLComponent):
                     job = self.running_jobs.get(job_id)
                     if job:
                         with self.lock:
-                            if self._pending_client_outcomes.get(job_id) and not job.run_aborted:
-                                continue
+                            pending = self._pending_client_outcomes.get(job_id)
+                            if pending and not job.run_aborted:
+                                now = time.monotonic()
+                                deadline = self._client_outcome_deadlines.setdefault(
+                                    job_id, now + self.client_outcome_wait_timeout
+                                )
+                                if now < deadline:
+                                    continue
+                                unresolved = sorted(pending)
+                                pending.clear()
+                            else:
+                                unresolved = None
+                        if unresolved:
+                            self.logger.warning(
+                                f"Timed out after {self.client_outcome_wait_timeout} seconds waiting for client outcomes "
+                                f"for job ({job_id}): {unresolved}. Finalizing from the server outcome."
+                            )
                         with engine.new_context() as completion_ctx:
                             completion_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
                             finished_state = self._finished_job_states.get(job.job_id)
@@ -479,6 +498,7 @@ class JobRunner(FLComponent):
                                 del self.running_jobs[job_id]
                                 self._finished_job_states.pop(job_id, None)
                                 self._pending_client_outcomes.pop(job_id, None)
+                                self._client_outcome_deadlines.pop(job_id, None)
                             if status == RunStatus.FINISHED_ABORTED:
                                 self.fire_event(EventType.JOB_ABORTED, completion_ctx)
                             self.fire_event(EventType.JOB_COMPLETED, completion_ctx)
@@ -785,4 +805,5 @@ class JobRunner(FLComponent):
             if job_id in self.running_jobs:
                 del self.running_jobs[job_id]
             self._pending_client_outcomes.pop(job_id, None)
+            self._client_outcome_deadlines.pop(job_id, None)
         self.scheduler.remove_scheduled_job(job_id)
