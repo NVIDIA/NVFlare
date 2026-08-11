@@ -201,20 +201,31 @@ class TestPortableResourceSpec:
         assert portable_memory_to_bytes("3Mi") == 3 * 1024 * 1024
 
     @pytest.mark.parametrize(
-        ("mode", "native"),
+        ("portable", "mode", "native"),
         [
-            ("docker", {"nano_cpus": 2_000_000_000}),
-            ("k8s", {"cpu": "2"}),
-            ("slurm", {"cpus_per_node": 2}),
+            ({"num_of_gpus": 1}, "docker", {"num_of_gpus": 2}),
+            ({"num_of_gpus": 1}, "docker", {"device_requests": [{"Count": 2}]}),
+            ({"num_of_gpus": 1}, "k8s", {"num_of_gpus": 2}),
+            ({"num_of_cpus": 2}, "docker", {"nano_cpus": 2_000_000_000}),
+            ({"num_of_cpus": 2}, "k8s", {"cpu": "2"}),
+            ({"num_of_cpus": 2}, "slurm", {"cpus_per_node": 2}),
         ],
     )
-    def test_rejects_portable_native_conflict(self, mode, native):
+    def test_rejects_portable_native_default_conflict(self, portable, mode, native):
         meta = {
-            "resource_spec": {"@default": {"num_of_cpus": 2}},
+            "resource_spec": {"@default": portable},
             "launcher_spec": {"default": {mode: native}},
         }
         with pytest.raises(ValueError, match="conflicts"):
             validate_portable_resource_conflicts(meta)
+
+    def test_allows_slurm_topology_matching_portable_gpu_total(self):
+        meta = {
+            "resource_spec": {"@default": {"num_of_gpus": 8}},
+            "launcher_spec": {"default": {"slurm": {"nodes": 2, "gpus_per_node": 4}}},
+        }
+
+        validate_portable_resource_conflicts(meta)
 
 
 class TestValidateLauncherSpec:

@@ -133,8 +133,16 @@ PORTABLE_RESOURCE_KEYS = ("num_of_gpus", "num_of_cpus", "memory")
 _PORTABLE_MEMORY_PATTERN = re.compile(r"^([1-9][0-9]*)(Mi|Gi|Ti)$")
 _MEMORY_UNIT_TO_MIB = {"Mi": 1, "Gi": 1024, "Ti": 1024 * 1024}
 _PORTABLE_NATIVE_RESOURCE_KEYS = {
-    "docker": {"num_of_cpus": {"nano_cpus"}, "memory": {"mem_limit"}},
-    "k8s": {"num_of_cpus": {"cpu", "cpu_request"}, "memory": {"memory", "memory_request"}},
+    "docker": {
+        "num_of_gpus": {"device_requests", "num_of_gpus"},
+        "num_of_cpus": {"nano_cpus"},
+        "memory": {"mem_limit"},
+    },
+    "k8s": {
+        "num_of_gpus": {"num_of_gpus"},
+        "num_of_cpus": {"cpu", "cpu_request"},
+        "memory": {"memory", "memory_request"},
+    },
     "slurm": {"num_of_cpus": {"cpus_per_node"}, "memory": {"mem_per_node"}},
 }
 
@@ -236,7 +244,7 @@ def portable_memory_to_bytes(memory: str) -> int:
 
 
 def validate_portable_resource_conflicts(job_meta: dict) -> None:
-    """Reject simultaneous portable and equivalent launcher-native CPU or memory fields."""
+    """Reject simultaneous portable and equivalent launcher-native resource fields."""
     resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
     launcher_spec = job_meta.get(JobMetaKey.JOB_LAUNCHER_SPEC.value, {}) or {}
     site_names = (set(resource_spec) - {PORTABLE_RESOURCE_DEFAULT_KEY}) | (set(launcher_spec) - {"default"})
