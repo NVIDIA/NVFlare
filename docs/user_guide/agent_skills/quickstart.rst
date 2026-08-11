@@ -1,6 +1,6 @@
-######################
+#######################
 Agent Skills Quickstart
-######################
+#######################
 
 The :github_nvflare_link:`Agent Skills runnable examples
 <examples/hello-world/agent-skills>` provide five small, standalone projects for trying
