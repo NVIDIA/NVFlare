@@ -48,7 +48,7 @@ pt_splitnn/
 ## Data
 
 For an apples-to-apples setup, this example follows the same data-preparation
-steps as the regular
+steps as the existing
 [CIFAR-10 SplitNN counterpart](../../vertical_federated_learning/cifar10-splitnn/README.md).
 From the repository root, run the counterpart's preparation code directly:
 
@@ -57,7 +57,7 @@ cd examples/advanced/vertical_federated_learning/cifar10-splitnn
 python -m pip install -r requirements.txt
 ```
 
-Set `PYTHONPATH` to include the custom files of the regular SplitNN example and
+Same as the existing example, set `PYTHONPATH` to include the custom files of the existing SplitNN example and also
 the reused files from the [CIFAR-10 examples](../../cifar10/README.md). The
 `cifar10/pt/src` entry exposes the shared data package used by the standalone
 splitter:
@@ -73,10 +73,10 @@ python cifar10_split_data_vertical.py \
 
 We are using NVFlare's FL simulator to run the following experiments.
 
-In order to find the overlapping data indices between the different clients participating in split learning,
+Same as the existing example, in order to find the overlapping data indices between the different clients participating in split learning,
 we randomly select an subset of the training indices.
 
-From the same directory, run the counterpart's PSI preparation step:
+From the same directory, run the PSI preparation step:
 
 ```bash
 mkdir -p /tmp/nvflare/cifar10_psi/local
