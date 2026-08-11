@@ -28,9 +28,6 @@ pytorch-conversion/
     └── requirements.txt    # source-project dependencies
 ```
 
-After conversion, `source/client.py` and `source/job.py` are added by the
-coding agent.
-
 ## Data
 
 The standalone source creates deterministic synthetic feature and label
@@ -48,14 +45,11 @@ with cross-entropy loss.
 Open this directory in Codex or Claude Code and use this prompt:
 
 ```text
-Convert ./source into a two-site NVFLARE FedAvg job. Preserve the model,
-cross-entropy evaluation, and one local training epoch. Generate deterministic,
-site-local synthetic data for simulation; do not pool records across sites.
-Create client.py and job.py in ./source, validate the exported job with a local
-simulation, and summarize the changed files and validation result.
+I have an existing PyTorch training project in ./source. Convert it to
+federated learning and validate it locally.
 ```
 
-## Run Job
+## Run the Starting Project
 
 First, the original standalone program can be run with:
 
@@ -63,17 +57,7 @@ First, the original standalone program can be run with:
 python source/train.py
 ```
 
-After reviewing the generated `source/client.py` and `source/job.py`, run the
-generated job from its directory:
-
-```bash
-cd source
-python job.py
-```
-
 ## Output Summary
 
-The coding agent reports the simulation result and artifact paths. A successful
-conversion preserves the evaluation metric and sends the actual completed
-local optimizer-step count for FedAvg weighting. Review the generated files
-before using the pattern with real data.
+The coding agent reports the simulation result and artifact paths. Review its
+changes and results before using the pattern with real data.

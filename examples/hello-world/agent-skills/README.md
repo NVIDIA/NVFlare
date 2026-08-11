@@ -1,10 +1,9 @@
 # NVFLARE Agent Skills: Runnable Examples
 
 These examples are starting projects for a coding agent, not pre-built
-NVFLARE jobs. Each directory contains an intentionally standalone workload,
-an exact prompt, and the expected artifacts after the coding agent completes
-the workflow. This makes the agent-assisted behavior reviewable before using
-it with a real project or data.
+NVFLARE jobs. Each directory contains an intentionally standalone workload
+and a simple, goal-oriented prompt. This makes the agent-assisted behavior
+easy to try before using it with a real project or data.
 
 ## One-time setup
 
@@ -35,7 +34,6 @@ intent and source material; users do not need to know skill names.
 | [fedstats-tabular](fedstats-tabular) | Compute federated statistics | Per-site CSV files |
 | [fedstats-image](fedstats-image) | Compute image statistics | Per-site PNG files |
 
-All data in these directories is synthetic. The conversion skills create or
-update `client.py` and `job.py`; review the diff before accepting it. Do not
-use generated synthetic partitions, simulation settings, or privacy defaults
-as an approval to apply the same choices to production data.
+All data in these directories is synthetic. Review the agent's proposed changes
+before accepting them. Do not use generated simulation settings or privacy
+defaults as an approval to apply the same choices to production data.

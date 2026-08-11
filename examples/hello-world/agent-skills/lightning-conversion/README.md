@@ -26,9 +26,6 @@ lightning-conversion/
     └── requirements.txt    # source-project dependencies
 ```
 
-The coding agent adds `source/client.py` and `source/job.py` during the
-conversion.
-
 ## Data
 
 The example creates deterministic synthetic tensors for its train and
@@ -44,14 +41,11 @@ training step, and validation accuracy metric.
 Open this directory in Codex or Claude Code and use this prompt:
 
 ```text
-Convert ./source into a two-site NVFLARE FedAvg job. Preserve the
-LightningModule, validation metric, and one-epoch local training budget. Use
-deterministic site-local synthetic data for simulation, create client.py and
-job.py in ./source, validate the exported job locally, and summarize the
-result.
+I have an existing PyTorch Lightning training project in ./source. Convert it
+to federated learning and validate it locally.
 ```
 
-## Run Job
+## Run the Starting Project
 
 Run the starting standalone project with:
 
@@ -59,15 +53,7 @@ Run the starting standalone project with:
 python source/train.py
 ```
 
-After reviewing the agent-generated files, run the federated simulation:
-
-```bash
-cd source
-python job.py
-```
-
 ## Output Summary
 
-A successful conversion retains the application-owned `LightningModule` and
-uses the Lightning Client API patch for federated exchange. The coding agent
-reports the generated files, validation result, and artifact paths.
+The coding agent reports the validation result and artifact paths. Review its
+changes before using the pattern with real data.

@@ -26,9 +26,6 @@ huggingface-conversion/
     └── requirements.txt    # source-project dependencies
 ```
 
-The coding agent adds `source/client.py` and `source/job.py` during the
-conversion.
-
 ## Data
 
 The JSONL files contain synthetic text classification records. The tiny public
@@ -46,14 +43,11 @@ and a one-epoch local training budget.
 Open this directory in Codex or Claude Code and use this prompt:
 
 ```text
-Convert ./source into a two-site NVFLARE FedAvg job. Preserve the Trainer
-evaluation metric and one-epoch local training budget. Keep all text records
-site-local when partitioning the supplied JSONL data. Create client.py and
-job.py in ./source, validate the exported job with a local simulation, and
-summarize the changed files and validation result.
+I have an existing Hugging Face Trainer project in ./source. Convert it to
+federated learning and validate it locally.
 ```
 
-## Run Job
+## Run the Starting Project
 
 Run the standalone source project with:
 
@@ -62,14 +56,7 @@ cd source
 python train.py
 ```
 
-After reviewing the generated client and job, run the federated simulation:
-
-```bash
-python job.py
-```
-
 ## Output Summary
 
-A successful conversion retains the application-owned `Trainer` setup and
-uses `flare.patch(trainer)` for federated exchange. The coding agent reports
-the validation result and generated-job artifact paths.
+The coding agent reports the validation result and artifact paths. Review its
+changes before using the pattern with real data.
