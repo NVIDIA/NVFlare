@@ -112,6 +112,8 @@ silently dropped or approximated.
    partitions unless shared data is explicitly requested.
 6. Run `nvflare recipe show fedstats --format json`; for preflights/`job.py` use:
    `from nvflare.recipe import SimEnv`; `from nvflare.recipe.fedstats import FedStatsRecipe` (never package root).
+   Load only ``SimEnv Execution`` from
+   `../nvflare-shared/references/conversion-common.md` before writing or validating the runner.
    Use `statistic_configs` and one site list: `FedStatsRecipe(..., sites=sites, ...)`; `SimEnv(clients=sites, ...)`.
    The recipe already assigns those clients; never use
    `SimEnv(num_clients=...)` or both forms. Let `SimEnv` derive thread

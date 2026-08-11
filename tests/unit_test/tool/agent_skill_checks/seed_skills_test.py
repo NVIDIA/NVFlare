@@ -633,6 +633,9 @@ def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
 def test_fedstats_reuses_named_sites_for_recipe_and_simulation():
     repo_root = Path(__file__).resolve().parents[4]
     skill_text = repo_root.joinpath("skills/nvflare-fed-stats/SKILL.md").read_text(encoding="utf-8")
+    shared_common_text = repo_root.joinpath("skills/nvflare-shared/references/conversion-common.md").read_text(
+        encoding="utf-8"
+    )
     validation_text = repo_root.joinpath("skills/nvflare-fed-stats/references/stats-job-validation.md").read_text(
         encoding="utf-8"
     )
@@ -644,6 +647,7 @@ def test_fedstats_reuses_named_sites_for_recipe_and_simulation():
     prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
     normalized_skill = " ".join(skill_text.split())
     normalized_validation = " ".join(validation_text.split())
+    normalized_shared_common = " ".join(shared_common_text.split())
 
     assert "one site list" in normalized_skill
     assert "`from nvflare.recipe import SimEnv`" in normalized_skill
@@ -652,6 +656,9 @@ def test_fedstats_reuses_named_sites_for_recipe_and_simulation():
     assert "sites=sites, ...)" in skill_text
     assert "SimEnv(clients=sites, ...)" in skill_text
     assert "never use `SimEnv(num_clients=...)`" in normalized_skill
+    assert "SimEnv Execution" in skill_text
+    assert "not a context manager" in normalized_shared_common
+    assert "Never write ``with SimEnv(...):``" in normalized_shared_common
     assert "`from nvflare.recipe import SimEnv`" in normalized_validation
     assert "`from nvflare.recipe.fedstats import FedStatsRecipe`" in normalized_validation
     assert "never import `FedStatsRecipe` from `nvflare.recipe`" in normalized_validation
