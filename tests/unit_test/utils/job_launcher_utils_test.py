@@ -224,6 +224,9 @@ class TestPortableResourceSpec:
             ({"num_of_cpus": 2}, "docker", {"nano_cpus": 2_000_000_000}),
             ({"num_of_cpus": 2}, "k8s", {"cpu": "2"}),
             ({"num_of_cpus": 2}, "slurm", {"cpus_per_node": 2}),
+            ({"memory": "8Gi"}, "docker", {"mem_limit": 8 * 1024**3}),
+            ({"memory": "8Gi"}, "k8s", {"memory": "8Gi", "memory_request": "4Gi"}),
+            ({"memory": "8Gi"}, "slurm", {"mem_per_node": 8192}),
         ],
     )
     def test_rejects_portable_native_default_conflict(self, portable, mode, native):
