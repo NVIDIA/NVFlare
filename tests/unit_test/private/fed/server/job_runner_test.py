@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from contextlib import nullcontext
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import ANY, MagicMock, call, patch
 
 import pytest
 
@@ -23,7 +23,7 @@ from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
-from nvflare.private.fed.server.job_runner import JobRunner
+from nvflare.private.fed.server.job_runner import JobRunner, _FinishedJobState
 from nvflare.private.fed.server.message_send import ClientReply
 
 
@@ -311,16 +311,80 @@ def test_save_workspace_tolerates_source_disappearing_during_cleanup(tmp_path):
     )
 
 
-def test_save_workspace_propagates_cleanup_errors_for_retry(tmp_path):
+def test_save_workspace_retries_cleanup_without_rewriting_archive(tmp_path):
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(*([str(run_dir)] * 4))
+    finished_state = _FinishedJobState(status=RunStatus.FINISHED_COMPLETED)
 
-    with patch("nvflare.private.fed.server.job_runner.shutil.rmtree", side_effect=PermissionError("denied")):
+    cleanup_attempts = 0
+
+    def _fail_cleanup_once(_path):
+        nonlocal cleanup_attempts
+        cleanup_attempts += 1
+        if cleanup_attempts == 1:
+            raise PermissionError("denied")
+        run_dir.rmdir()
+
+    with patch("nvflare.private.fed.server.job_runner.shutil.rmtree", side_effect=_fail_cleanup_once):
         with pytest.raises(PermissionError, match="denied"):
-            runner._save_workspace(fl_ctx)
+            runner._save_workspace(fl_ctx, finished_state)
+        runner._save_workspace(fl_ctx, finished_state)
 
     job_manager.save_workspace.assert_called_once_with("job-1", [str(run_dir)], fl_ctx)
+    assert finished_state.workspace_archive_written is True
+    assert finished_state.workspace_archive_sources == (str(run_dir),)
+    assert cleanup_attempts == 2
+    assert not run_dir.exists()
+
+
+def test_job_complete_process_retries_cleanup_without_resaving_workspace(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    runner, completion_ctx, job_manager = _make_workspace_save_inputs(*([str(run_dir)] * 4))
+    runner.fire_event = MagicMock()
+    runner.log_exception = MagicMock()
+    runner.ask_to_stop = False
+    job_manager.save_workspace.return_value = "/store/job-1/workspace"
+
+    engine = completion_ctx.get_engine.return_value
+    engine.run_processes = {}
+    engine.exception_run_processes = {}
+    engine.new_context.side_effect = [nullcontext(completion_ctx), nullcontext(completion_ctx)]
+
+    job = MagicMock()
+    job.job_id = "job-1"
+    job.run_aborted = True
+    runner.running_jobs = {"job-1": job}
+
+    cleanup_attempts = 0
+
+    def _fail_cleanup_once(_path):
+        nonlocal cleanup_attempts
+        cleanup_attempts += 1
+        if cleanup_attempts == 1:
+            raise PermissionError("denied")
+        run_dir.rmdir()
+
+    sleep_count = 0
+
+    def _stop_after_second_pass(_):
+        nonlocal sleep_count
+        sleep_count += 1
+        if sleep_count == 2:
+            runner.ask_to_stop = True
+
+    with (
+        patch("nvflare.private.fed.server.job_runner.shutil.rmtree", side_effect=_fail_cleanup_once),
+        _patch_job_runner_sleep(_stop_after_second_pass),
+    ):
+        runner._job_complete_process(engine)
+
+    job_manager.save_workspace.assert_called_once_with("job-1", [str(run_dir)], completion_ctx)
+    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_ABORTED, completion_ctx)
+    runner.log_exception.assert_called_once()
+    assert cleanup_attempts == 2
+    assert not run_dir.exists()
 
 
 def test_job_complete_process_saves_workspace_before_publishing_aborted_status():
@@ -358,7 +422,7 @@ def test_job_complete_process_saves_workspace_before_publishing_aborted_status()
 
     completion_ctx.set_prop.assert_called_once_with(FLContextKey.CURRENT_JOB_ID, "job-1")
     assert parent.mock_calls == [
-        call.save_workspace(completion_ctx),
+        call.save_workspace(completion_ctx, ANY),
         call.set_status("job-1", RunStatus.FINISHED_ABORTED, completion_ctx),
         call.fire_event(EventType.JOB_ABORTED, completion_ctx),
         call.fire_event(EventType.JOB_COMPLETED, completion_ctx),
@@ -658,7 +722,7 @@ def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code
     with _patch_job_runner_sleep(_stop_after_first_pass):
         runner._job_complete_process(engine)
 
-    runner._save_workspace.assert_called_once_with(completion_ctx)
+    runner._save_workspace.assert_called_once_with(completion_ctx, ANY)
     job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_ABORTED, completion_ctx)
     assert runner.fire_event.call_args_list == [
         call(EventType.JOB_ABORTED, completion_ctx),
@@ -701,7 +765,7 @@ def test_job_complete_process_keeps_processing_jobs_when_save_workspace_fails():
     with _patch_job_runner_sleep(_stop_after_first_pass):
         runner._job_complete_process(engine)
 
-    assert runner._save_workspace.call_args_list == [call(first_ctx), call(second_ctx)]
+    assert runner._save_workspace.call_args_list == [call(first_ctx, ANY), call(second_ctx, ANY)]
     runner.log_exception.assert_called_once()
     job_manager.set_status.assert_called_once_with("job-2", RunStatus.FINISHED_ABORTED, second_ctx)
     assert runner.fire_event.call_args_list == [
@@ -756,7 +820,7 @@ def test_job_complete_process_retries_save_without_recomputing_finished_status()
     with _patch_job_runner_sleep(_stop_after_second_pass):
         runner._job_complete_process(engine)
 
-    assert runner._save_workspace.call_args_list == [call(first_ctx), call(second_ctx)]
+    assert runner._save_workspace.call_args_list == [call(first_ctx, ANY), call(second_ctx, ANY)]
     runner.abort_client_run.assert_called_once_with("job-1", [], first_ctx)
     runner.log_exception.assert_called_once()
     job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_ABORTED, second_ctx)
@@ -816,7 +880,7 @@ def test_job_complete_process_publishes_terminal_status_after_workspace_save_gra
     ):
         runner._job_complete_process(engine)
 
-    assert runner._save_workspace.call_args_list == [call(first_ctx), call(second_ctx)]
+    assert runner._save_workspace.call_args_list == [call(first_ctx, ANY), call(second_ctx, ANY)]
     runner.abort_client_run.assert_called_once_with("job-1", [], first_ctx)
     runner.log_exception.assert_called_once()
     runner.log_error.assert_called_once()
@@ -863,7 +927,7 @@ def test_job_complete_process_retries_status_publish_without_resaving_workspace(
     with _patch_job_runner_sleep(_stop_after_second_pass):
         runner._job_complete_process(engine)
 
-    runner._save_workspace.assert_called_once_with(first_ctx)
+    runner._save_workspace.assert_called_once_with(first_ctx, ANY)
     assert job_manager.set_status.call_args_list == [
         call("job-1", RunStatus.FINISHED_ABORTED, first_ctx),
         call("job-1", RunStatus.FINISHED_ABORTED, second_ctx),
