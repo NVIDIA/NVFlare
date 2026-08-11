@@ -42,11 +42,11 @@ python generate_data.py
 Open this directory in Codex or Claude Code and use this prompt:
 
 ```text
-Use the installed nvflare-fed-stats skill to compute federated image count,
-failure count, and a 10-bin pixel-intensity histogram across ./data. Treat
-site-1 and site-2 as separate sites and do not move image files or pixels
-between sites. Create client.py and job.py in this directory, run the generated
-job in local simulation, and report aggregate results and the output JSON path.
+Compute federated image count, failure count, and a 10-bin pixel-intensity
+histogram across ./data. Treat site-1 and site-2 as separate sites and do not
+move image files or pixels between sites. Create client.py and job.py in this
+directory, run the generated job in local simulation, and report aggregate
+results and the output JSON path.
 ```
 
 ## Run Job

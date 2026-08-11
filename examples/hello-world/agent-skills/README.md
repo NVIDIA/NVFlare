@@ -2,9 +2,9 @@
 
 These examples are starting projects for a coding agent, not pre-built
 NVFLARE jobs. Each directory contains an intentionally standalone workload,
-an exact prompt, and the expected artifacts after the agent applies the named
-NVFLARE skill. This makes the skill behavior reviewable before using it with a
-real project or data.
+an exact prompt, and the expected artifacts after the coding agent completes
+the workflow. This makes the agent-assisted behavior reviewable before using
+it with a real project or data.
 
 ## One-time setup
 
@@ -24,17 +24,16 @@ python -m pip install 'nvflare~=2.9.0'
 ```
 
 Open one example directory in Codex or Claude Code, then paste the prompt in
-its README. The prompt names the intended skill explicitly so the example is
-repeatable. You may instead describe the same intent in your own words after
-you are familiar with the workflow.
+its README. The coding agent selects the appropriate NVFLARE skill from the
+intent and source material; users do not need to know skill names.
 
-| Example | Skill | Starting workload |
+| Example | Workflow | Starting workload |
 | --- | --- | --- |
-| [pytorch-conversion](pytorch-conversion) | `nvflare-convert-pytorch` | Plain PyTorch training loop |
-| [lightning-conversion](lightning-conversion) | `nvflare-convert-lightning` | PyTorch Lightning `Trainer` |
-| [huggingface-conversion](huggingface-conversion) | `nvflare-convert-huggingface` | Transformers `Trainer` |
-| [fedstats-tabular](fedstats-tabular) | `nvflare-fed-stats` | Per-site CSV files |
-| [fedstats-image](fedstats-image) | `nvflare-fed-stats` | Per-site PNG files |
+| [pytorch-conversion](pytorch-conversion) | Convert a plain PyTorch loop | Plain PyTorch training loop |
+| [lightning-conversion](lightning-conversion) | Convert a Lightning `Trainer` | PyTorch Lightning `Trainer` |
+| [huggingface-conversion](huggingface-conversion) | Convert a Transformers `Trainer` | Transformers `Trainer` |
+| [fedstats-tabular](fedstats-tabular) | Compute federated statistics | Per-site CSV files |
+| [fedstats-image](fedstats-image) | Compute image statistics | Per-site PNG files |
 
 All data in these directories is synthetic. The conversion skills create or
 update `client.py` and `job.py`; review the diff before accepting it. Do not

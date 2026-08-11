@@ -48,12 +48,11 @@ with cross-entropy loss.
 Open this directory in Codex or Claude Code and use this prompt:
 
 ```text
-Use the installed nvflare-convert-pytorch skill to convert ./source into a
-two-site NVFLARE FedAvg job. Preserve the model, cross-entropy evaluation, and
-one local training epoch. Generate deterministic, site-local synthetic data
-for simulation; do not pool records across sites. Create client.py and job.py
-in ./source, validate the exported job with a local simulation, and summarize
-the changed files and validation result.
+Convert ./source into a two-site NVFLARE FedAvg job. Preserve the model,
+cross-entropy evaluation, and one local training epoch. Generate deterministic,
+site-local synthetic data for simulation; do not pool records across sites.
+Create client.py and job.py in ./source, validate the exported job with a local
+simulation, and summarize the changed files and validation result.
 ```
 
 ## Run Job

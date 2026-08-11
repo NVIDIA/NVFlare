@@ -44,11 +44,11 @@ training step, and validation accuracy metric.
 Open this directory in Codex or Claude Code and use this prompt:
 
 ```text
-Use the installed nvflare-convert-lightning skill to convert ./source into a
-two-site NVFLARE FedAvg job. Preserve the LightningModule, validation metric,
-and one-epoch local training budget. Use deterministic site-local synthetic
-data for simulation, create client.py and job.py in ./source, validate the
-exported job locally, and summarize the result.
+Convert ./source into a two-site NVFLARE FedAvg job. Preserve the
+LightningModule, validation metric, and one-epoch local training budget. Use
+deterministic site-local synthetic data for simulation, create client.py and
+job.py in ./source, validate the exported job locally, and summarize the
+result.
 ```
 
 ## Run Job

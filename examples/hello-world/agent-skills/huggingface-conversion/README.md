@@ -46,12 +46,11 @@ and a one-epoch local training budget.
 Open this directory in Codex or Claude Code and use this prompt:
 
 ```text
-Use the installed nvflare-convert-huggingface skill to convert ./source into a
-two-site NVFLARE FedAvg job. Preserve the Trainer evaluation metric and
-one-epoch local training budget. Keep all text records site-local when
-partitioning the supplied JSONL data. Create client.py and job.py in ./source,
-validate the exported job with a local simulation, and summarize the changed
-files and validation result.
+Convert ./source into a two-site NVFLARE FedAvg job. Preserve the Trainer
+evaluation metric and one-epoch local training budget. Keep all text records
+site-local when partitioning the supplied JSONL data. Create client.py and
+job.py in ./source, validate the exported job with a local simulation, and
+summarize the changed files and validation result.
 ```
 
 ## Run Job

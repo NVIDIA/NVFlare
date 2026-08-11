@@ -40,11 +40,11 @@ python generate_data.py
 Open this directory in Codex or Claude Code and use this prompt:
 
 ```text
-Use the installed nvflare-fed-stats skill to compute federated count, mean,
-standard deviation, and a 10-bin histogram for every numeric feature in
-./data. Treat site-1 and site-2 as separate sites; do not combine raw rows.
-Create client.py and job.py in this directory, run the generated job in local
-simulation, and report only aggregate results and the output JSON path.
+Compute federated count, mean, standard deviation, and a 10-bin histogram for
+every numeric feature in ./data. Treat site-1 and site-2 as separate sites; do
+not combine raw rows. Create client.py and job.py in this directory, run the
+generated job in local simulation, and report only aggregate results and the
+output JSON path.
 ```
 
 ## Run Job

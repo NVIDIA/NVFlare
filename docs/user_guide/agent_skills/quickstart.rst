@@ -5,8 +5,8 @@ Agent Skills Quickstart
 The :github_nvflare_link:`Agent Skills runnable examples
 <examples/hello-world/agent-skills>` provide five small, standalone projects for trying
 NVFLARE Agent Skills with Codex or Claude Code. Each one includes the starting
-source or synthetic data, an exact prompt naming the appropriate skill, the
-expected generated artifacts, and a local validation path.
+source or synthetic data, an exact natural-language prompt, the expected
+generated artifacts, and a local validation path.
 
 Install all skills from an NVFLARE checkout:
 
@@ -19,7 +19,8 @@ environment used by the coding agent. Install the package from PyPI or use an
 editable NVFLARE checkout.
 
 Then open one example directory in your coding agent and paste its prompt. The
-examples cover plain PyTorch, PyTorch Lightning, Hugging Face Trainer, tabular
-federated statistics, and image federated statistics. Review the generated
-``client.py`` and ``job.py`` before running a simulation or applying a workflow
-to real data.
+agent chooses the relevant installed skill from the request and source files;
+you do not need to select or name a skill. The examples cover plain PyTorch,
+PyTorch Lightning, Hugging Face Trainer, tabular federated statistics, and
+image federated statistics. Review the generated ``client.py`` and ``job.py``
+before running a simulation or applying a workflow to real data.
