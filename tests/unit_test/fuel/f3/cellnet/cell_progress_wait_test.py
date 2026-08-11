@@ -17,9 +17,12 @@ from unittest.mock import MagicMock
 
 import nvflare.fuel.f3.cellnet.cell as cell_module
 from nvflare.apis.signal import Signal
-from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.cell import Cell, SimpleWaiter
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
+from nvflare.fuel.f3.streaming.stream_types import BlobSizeError
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
 from nvflare.fuel.utils.waiter_utils import WaiterRC
@@ -43,6 +46,65 @@ def _make_cell():
     cell.decode_pass_through_topics = set()
     cell.get_fobs_context = MagicMock(return_value={})
     return cell
+
+
+def test_stream_error_completes_matching_request_with_comm_error():
+    cell = _make_cell()
+    waiter = SimpleWaiter("request-1", "site-1", make_reply(ReturnCode.TIMEOUT))
+    cell.requests_dict[waiter.req_id] = waiter
+    message = Message(
+        {
+            MessageHeaderKey.ORIGIN: "site-1",
+            StreamHeaderKey.STREAM_REQ_ID: waiter.req_id,
+            StreamHeaderKey.ERROR_MSG: "receiver rejected request",
+        }
+    )
+
+    cell._process_stream_error(message)
+
+    assert waiter.stream_error == "receiver rejected request"
+    assert waiter.in_receiving.is_set()
+    assert waiter.result.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.COMM_ERROR
+    assert waiter.result.get_header(MessageHeaderKey.ERROR) == "receiver rejected request"
+
+
+def test_stream_error_from_unexpected_receiver_does_not_complete_request():
+    cell = _make_cell()
+    waiter = SimpleWaiter("request-1", "site-1", make_reply(ReturnCode.TIMEOUT))
+    cell.requests_dict[waiter.req_id] = waiter
+    message = Message(
+        {
+            MessageHeaderKey.ORIGIN: "site-2",
+            StreamHeaderKey.STREAM_REQ_ID: waiter.req_id,
+            StreamHeaderKey.ERROR_MSG: "forged error",
+        }
+    )
+
+    cell._process_stream_error(message)
+
+    assert waiter.stream_error is None
+    assert not waiter.in_receiving.is_set()
+    assert waiter.result.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.TIMEOUT
+
+
+def test_late_blob_size_error_fails_server_job_cell(monkeypatch):
+    cell = _make_cell()
+    cell.core_cell = MagicMock()
+    cell.core_cell.my_info.fqcn = "server.job-id"
+    exit_mock = MagicMock()
+    monkeypatch.setattr(cell_module.os, "_exit", exit_mock)
+    message = Message(
+        {
+            MessageHeaderKey.ORIGIN: "site-1",
+            StreamHeaderKey.STREAM_ID: 42,
+            StreamHeaderKey.ERROR_MSG: "response exceeds receiver limit",
+            StreamHeaderKey.ERROR_TYPE: BlobSizeError.__name__,
+        }
+    )
+
+    cell._process_stream_error(message)
+
+    exit_mock.assert_called_once_with(1)
 
 
 def test_unknown_reply_warning_does_not_log_headers(caplog):

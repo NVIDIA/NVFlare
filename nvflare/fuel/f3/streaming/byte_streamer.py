@@ -29,6 +29,7 @@ from nvflare.fuel.f3.streaming.stream_const import (
     STREAM_CHANNEL,
     STREAM_CHUNK_SIZE,
     STREAM_DATA_TOPIC,
+    STREAM_ERROR_TOPIC,
     STREAM_RETRY_MAX_PENDING_BYTES,
     STREAM_WINDOW_SIZE,
     StreamDataType,
@@ -672,8 +673,22 @@ class ByteStreamer:
 
     def __init__(self, cell: CoreCell):
         self.cell = cell
+        self.error_callbacks = []
         self.cell.register_request_cb(channel=STREAM_CHANNEL, topic=STREAM_ACK_TOPIC, cb=self._ack_handler)
+        self.cell.register_request_cb(channel=STREAM_CHANNEL, topic=STREAM_ERROR_TOPIC, cb=self._error_handler)
         self.chunk_size = CommConfigurator().get_streaming_chunk_size(STREAM_CHUNK_SIZE)
+
+    def register_error_callback(self, callback: Callable):
+        if not callable(callback):
+            raise StreamError(f"specified stream error callback {type(callback)} is not callable")
+        self.error_callbacks.append(callback)
+
+    def _notify_error_callbacks(self, message: Message):
+        for callback in self.error_callbacks:
+            try:
+                callback(message)
+            except Exception as ex:
+                log.error(f"stream error callback {callback} failed: {ex}")
 
     def get_chunk_size(self):
         return self.chunk_size
@@ -738,3 +753,42 @@ class ByteStreamer:
             return
 
         tx_task.handle_ack(message)
+
+    def _error_handler(self, message: Message):
+        sid = message.get_header(StreamHeaderKey.STREAM_ID)
+        origin = message.get_header(MessageHeaderKey.ORIGIN)
+        channel = message.get_header(StreamHeaderKey.CHANNEL)
+        topic = message.get_header(StreamHeaderKey.TOPIC)
+        error_msg = message.get_header(StreamHeaderKey.ERROR_MSG, "stream rejected by receiver")
+        error_type = message.get_header(StreamHeaderKey.ERROR_TYPE)
+        error_class = BlobSizeError if error_type == BlobSizeError.__name__ else StreamError
+        sender = self.cell.my_info.fqcn
+
+        with ByteStreamer.map_lock:
+            tx_task = ByteStreamer.tx_task_map.get(sid)
+            if tx_task and tx_task.cell is not self.cell:
+                tx_task = None
+
+        if not tx_task:
+            log.error(
+                f"Late stream error: stream_id={sid} channel={channel} topic={topic} "
+                f"sender={sender} receiver={origin}: {error_msg}"
+            )
+            self._notify_error_callbacks(message)
+            return
+
+        if origin != tx_task.target:
+            log.warning(
+                f"Ignored stream error from unexpected receiver: stream_id={sid} channel={tx_task.channel} "
+                f"topic={tx_task.topic} sender={sender} expected_receiver={tx_task.target} receiver={origin}"
+            )
+            return
+
+        self._notify_error_callbacks(message)
+        tx_task.stop(
+            error_class(
+                f"Stream rejected: stream_id={sid} channel={tx_task.channel} topic={tx_task.topic} "
+                f"sender={sender} receiver={origin}: {error_msg}"
+            ),
+            notify=False,
+        )

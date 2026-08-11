@@ -22,8 +22,14 @@ import nvflare.fuel.f3.streaming.byte_streamer as byte_streamer_module
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.streaming.byte_streamer import TxTask
-from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamDataType, StreamHeaderKey
+from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer, TxTask
+from nvflare.fuel.f3.streaming.stream_const import (
+    STREAM_CHANNEL,
+    STREAM_DATA_TOPIC,
+    STREAM_ERROR_TOPIC,
+    StreamDataType,
+    StreamHeaderKey,
+)
 from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, Stream, StreamError
 
 
@@ -124,6 +130,95 @@ class TestByteStreamerAckWatchdog:
         task.handle_ack(message)
 
         assert isinstance(task.stream_future.exception(timeout=0.1), BlobSizeError)
+
+    def test_generic_error_handler_fails_active_stream_and_notifies_callback(self, monkeypatch):
+        task, cell = self._make_task(
+            monkeypatch,
+            window_size=1,
+            ack_wait=0.5,
+            ack_progress_timeout=2.0,
+            ack_progress_check_interval=0.01,
+            chunks=[b"x"],
+        )
+        cell.my_info.fqcn = "sender"
+        streamer = ByteStreamer(cell)
+        callback = MagicMock()
+        streamer.register_error_callback(callback)
+        with ByteStreamer.map_lock:
+            ByteStreamer.tx_task_map[task.sid] = task
+        message = Message(
+            {
+                MessageHeaderKey.ORIGIN: "peer",
+                StreamHeaderKey.STREAM_ID: task.sid,
+                StreamHeaderKey.CHANNEL: "ch",
+                StreamHeaderKey.TOPIC: "tp",
+                StreamHeaderKey.ERROR_MSG: "blob too large",
+                StreamHeaderKey.ERROR_TYPE: BlobSizeError.__name__,
+            }
+        )
+
+        streamer._error_handler(message)
+
+        callback.assert_called_once_with(message)
+        assert isinstance(task.stream_future.exception(timeout=0.1), BlobSizeError)
+        cell.register_request_cb.assert_any_call(
+            channel=STREAM_CHANNEL, topic=STREAM_ERROR_TOPIC, cb=streamer._error_handler
+        )
+
+    def test_generic_error_handler_notifies_callback_for_late_error(self, monkeypatch, caplog):
+        monkeypatch.setattr(CommConfigurator, "get_streaming_chunk_size", lambda self, default: default)
+        cell = MagicMock()
+        cell.my_info.fqcn = "sender"
+        streamer = ByteStreamer(cell)
+        callback = MagicMock()
+        streamer.register_error_callback(callback)
+        message = Message(
+            {
+                MessageHeaderKey.ORIGIN: "peer",
+                StreamHeaderKey.STREAM_ID: 12345,
+                StreamHeaderKey.CHANNEL: "ch",
+                StreamHeaderKey.TOPIC: "tp",
+                StreamHeaderKey.ERROR_MSG: "consumer failed",
+            }
+        )
+
+        with caplog.at_level("ERROR"):
+            streamer._error_handler(message)
+
+        callback.assert_called_once_with(message)
+        assert "stream_id=12345" in caplog.text
+        assert "sender=sender receiver=peer" in caplog.text
+
+    def test_generic_error_handler_ignores_unexpected_receiver(self, monkeypatch):
+        task, cell = self._make_task(
+            monkeypatch,
+            window_size=1,
+            ack_wait=0.5,
+            ack_progress_timeout=2.0,
+            ack_progress_check_interval=0.01,
+            chunks=[b"x"],
+        )
+        cell.my_info.fqcn = "sender"
+        streamer = ByteStreamer(cell)
+        callback = MagicMock()
+        streamer.register_error_callback(callback)
+        with ByteStreamer.map_lock:
+            ByteStreamer.tx_task_map[task.sid] = task
+        message = Message(
+            {
+                MessageHeaderKey.ORIGIN: "other-peer",
+                StreamHeaderKey.STREAM_ID: task.sid,
+                StreamHeaderKey.ERROR_MSG: "forged failure",
+            }
+        )
+
+        try:
+            streamer._error_handler(message)
+
+            callback.assert_not_called()
+            assert not task.stream_future.done()
+        finally:
+            task.remove_task()
 
     def test_ack_progress_check_interval_is_clamped_to_prevent_busy_spin(self, monkeypatch):
         task, _ = self._make_task(
