@@ -56,6 +56,19 @@ site data into the job. Report split policy, seed, site count, and shared-data
 requests. For generated Pandas partitions, load the "Site Data Partitioning"
 section of `conversion-workflow.md`.
 
+## Preprocessing Data Locality
+
+Treat every preprocessing fit or learned artifact—normalization statistics,
+imputation values, feature encoders, vocabularies/tokenizers, label mappings,
+and similar—as data-derived information. Fit it using each site's local training
+partition by default. Do not pool raw records or implicitly derive a shared
+artifact from multiple sites.
+
+A shared artifact is allowed only when it is public or pre-provided, or when the
+user explicitly authorizes the cross-site statistics workflow and its disclosure
+model. Do not silently introduce a federated-statistics, secure-aggregation, or
+other cross-site workflow as a substitute.
+
 ## Custom Aggregation
 
 Custom aggregation must use the recipe `aggregator=` hook with a
