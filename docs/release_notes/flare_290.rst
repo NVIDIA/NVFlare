@@ -28,9 +28,11 @@ Release Highlights
   cancellation. Sites can use Apptainer, Pyxis/Enroot, or trusted bare-Python
   execution, and can use the shared-file worker channel where compute nodes
   cannot connect directly to the parent.
-- **Kubernetes and OpenShift enhancements**: improve child-job failure
-  propagation, pod-event visibility, OpenShift scheduling, container build
-  guidance, and Docker/Podman compatibility for production deployments.
+- **Kubernetes and OpenShift deployment**: stage prepared kit configuration as
+  Kubernetes ConfigMaps and Secrets, then mount those resources through the
+  generated Helm chart while preserving the workspace PVC for writable runtime
+  state. The same flow is available to Kubernetes, OpenShift, and multicloud
+  deployment examples.
 - **Large-model reliability and memory efficiency**: improve streamed model
   transfer handling, retry behavior, and bounded memory use. Tensor disk
   offload is available for PyTorch Swarm aggregation as well as FedAvg, and
@@ -108,23 +110,24 @@ configuration, FedAvg supports federated LLM training at scales up to 72
 billion parameters. See :ref:`notes_on_large_models` for deployment sizing and
 large-model operational guidance.
 
-Kubernetes and OpenShift Operations
------------------------------------
+Kubernetes and OpenShift Deployment
+------------------------------------
 
-Kubernetes and OpenShift deployments receive improved job-failure propagation,
-pod-event access for diagnosis, and parent-pod scheduling behavior. Updated
-container guidance covers Podman-based image builds alongside Docker, while
-runtime compatibility updates improve Docker-in-Docker and development-tag
-handling. Generated Helm Roles now include read-only Kubernetes Event access;
-sites that maintain custom RBAC should add the equivalent Event read
-permissions.
+Use ``nvflare deploy k8s stage`` after ``nvflare deploy prepare`` to create a
+ConfigMap from the prepared ``local/`` directory and a Secret from
+``startup/``. The command patches the generated ``helm_chart/values.yaml`` so
+the parent pod mounts both resources at the expected workspace paths. The
+workspace PVC remains mounted for writable runtime state, including jobs,
+snapshots, logs, and server transfer storage; it no longer needs to transport
+the startup-kit files.
 
-The OpenShift quickstart now requests ``500m`` CPU and ``1Gi`` memory per
-parent pod by default, which fits the documented CRC configuration. Override
-these values with ``PARENT_CPU`` and ``PARENT_MEMORY`` when preparing a larger
-deployment. See :ref:`helm_chart` for the Kubernetes deployment workflow and
-the :github_nvflare_link:`OpenShift example <examples/devops/openshift>` for
-the OpenShift configuration and sizing guidance.
+Set ``--namespace``, ``--local-configmap``, and ``--startup-secret`` when the
+default staged-resource names or target namespace do not match site policy. Use
+``--kubectl oc`` when staging into OpenShift with ``oc``. After Helm uninstall,
+run ``nvflare deploy k8s unstage`` to remove the staged resources and clear the
+chart references. See :ref:`helm_chart`, the
+:github_nvflare_link:`OpenShift example <examples/devops/openshift>`, and the
+:github_nvflare_link:`multicloud Kubernetes example <examples/devops/multicloud>`.
 
 Framework Integrations and Recipes
 ==================================
