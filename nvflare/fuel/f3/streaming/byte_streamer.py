@@ -35,7 +35,7 @@ from nvflare.fuel.f3.streaming.stream_const import (
     StreamDataType,
     StreamHeaderKey,
 )
-from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture, StreamTaskSpec
+from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, Stream, StreamError, StreamFuture, StreamTaskSpec
 from nvflare.fuel.f3.streaming.stream_utils import (
     ONE_MB,
     CheckedExecutor,
@@ -518,7 +518,9 @@ class TxTask(StreamTaskSpec):
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
 
         if error:
-            self.stop(StreamError(f"{self} Received error from {origin}: {error}"), notify=False)
+            error_type = message.get_header(StreamHeaderKey.ERROR_TYPE)
+            error_class = BlobSizeError if error_type == BlobSizeError.__name__ else StreamError
+            self.stop(error_class(f"{self} Received error from {origin}: {error}"), notify=False)
             return
 
         if self.reliable and ack_seq is None:
@@ -758,6 +760,8 @@ class ByteStreamer:
         channel = message.get_header(StreamHeaderKey.CHANNEL)
         topic = message.get_header(StreamHeaderKey.TOPIC)
         error = message.get_header(StreamHeaderKey.ERROR_MSG, "stream rejected by receiver")
+        error_type = message.get_header(StreamHeaderKey.ERROR_TYPE)
+        error_class = BlobSizeError if error_type == BlobSizeError.__name__ else StreamError
         sender = self.cell.my_info.fqcn
 
         with ByteStreamer.map_lock:
@@ -783,7 +787,7 @@ class ByteStreamer:
 
         self._notify_error_callbacks(message)
         tx_task.stop(
-            StreamError(
+            error_class(
                 f"Stream rejected: stream_id={sid} channel={tx_task.channel} topic={tx_task.topic} "
                 f"sender={sender} receiver={origin}: {error}"
             ),

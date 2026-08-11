@@ -39,7 +39,7 @@ from nvflare.fuel.f3.streaming.stream_const import (
     StreamDataType,
     StreamHeaderKey,
 )
-from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError
+from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, Stream, StreamError
 
 MB = 1024**2
 
@@ -141,7 +141,7 @@ def test_stop_without_stream_future_retains_non_reliable_failure_tombstone():
     with RxTask.map_lock:
         RxTask.rx_task_map[(origin, sid)] = task
 
-    task.stop(StreamError("stream failed"), notify=True)
+    task.stop(BlobSizeError("stream failed"), notify=True)
 
     with RxTask.map_lock:
         assert RxTask.rx_task_map[(origin, sid)] is task
@@ -149,6 +149,8 @@ def test_stop_without_stream_future_retains_non_reliable_failure_tombstone():
     assert task.cleanup_timer.interval == FAILED_NON_RELIABLE_TASK_TTL
     assert len(fire_and_forget_calls) == 2
     assert [call[1] for call in fire_and_forget_calls] == [STREAM_ERROR_TOPIC, STREAM_ACK_TOPIC]
+    error_message = fire_and_forget_calls[0][3]
+    assert error_message.get_header(StreamHeaderKey.ERROR_TYPE) == BlobSizeError.__name__
 
 
 def test_rxstream_close_ignores_missing_stream_future():
