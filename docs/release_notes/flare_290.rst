@@ -8,7 +8,7 @@ NVIDIA FLARE 2.9.0 expands the platform for research-oriented federated
 workflows, AI-agent-assisted development, and large-scale training in HPC
 environments. The release introduces the Collaboration API and Agent Skills,
 adds Slurm-native job execution, and strengthens the client, recipe, streaming,
-and operational foundations used for large-model workloads.
+security, and operational foundations used for large-model workloads.
 
 Release Highlights
 ==================
@@ -22,7 +22,12 @@ Release Highlights
   reviewable workflows for converting PyTorch, PyTorch Lightning, and Hugging
   Face Trainer projects to federated jobs; producing federated statistics; and
   diagnosing generated jobs. The skills include source inspection, validation,
-  packaging, and data-locality guardrails.
+  and data-locality guardrails.
+- **Security and credential handling**: job-process bootstrap credentials are
+  delivered through the process environment, including per-job Kubernetes
+  Secrets, instead of process command lines. CLI and runtime diagnostics more
+  consistently redact sensitive values, and Recipe APIs provide safeguards for
+  declaring and handling secrets.
 - **Slurm support for HPC**: run NVFLARE client and server job processes as
   Slurm allocations, with scheduler-managed submission, monitoring, and
   cancellation. Sites can use Apptainer, Pyxis/Enroot, or trusted bare-Python
@@ -37,8 +42,8 @@ Release Highlights
   transfer handling, retry behavior, and bounded memory use. Tensor disk
   offload is available for PyTorch Swarm aggregation as well as FedAvg, and
   large blob transport has stronger failure handling and higher default limits.
-  FedAvg now supports federated training of LLMs with up to 72 billion
-  parameters when the deployment is sized and configured appropriately.
+  FedAvg has been validated for federated LLM training up to 72 billion
+  parameters with suitable infrastructure and configuration.
 - **Framework and Recipe APIs**: federate Hugging Face ``Trainer`` and TRL
   ``SFTTrainer`` scripts through the Hugging Face Client API; keep a long-lived
   external trainer connected through Client API Attach mode; and use the new
@@ -82,6 +87,16 @@ guess when framework ownership, source semantics, required data handling, or
 runtime configuration is ambiguous. Auto-FL's initial importer similarly
 supports statically recognizable NVFLARE Recipe and ``*Job`` patterns.
 
+Security and Credential Handling
+--------------------------------
+
+Job-process bootstrap credentials are no longer passed on process command
+lines. Launchers deliver them through the child-process environment, and
+Kubernetes uses a per-job Secret. CLI and runtime diagnostics more consistently
+redact authentication tokens and other sensitive values. Recipe APIs also
+provide safeguards for declaring and handling secrets; see :ref:`recipe_secrets`
+for the Recipe secret contract.
+
 HPC and Large-Model Training
 ============================
 
@@ -106,12 +121,12 @@ can use tensor disk offload during aggregation, reducing peak memory pressure
 by materializing incoming tensors through temporary disk storage. Operators
 should continue to size timeouts, storage, and network connectivity for their
 model size and deployment topology. With the corresponding infrastructure and
-configuration, FedAvg supports federated LLM training at scales up to 72
-billion parameters. See :ref:`notes_on_large_models` for deployment sizing and
-large-model operational guidance.
+configuration, FedAvg has been validated for federated LLM training at scales
+up to 72 billion parameters. See :ref:`notes_on_large_models` for deployment
+sizing and large-model operational guidance.
 
 Kubernetes and OpenShift Deployment
-------------------------------------
+-----------------------------------
 
 Use ``nvflare deploy k8s stage`` after ``nvflare deploy prepare`` to create a
 ConfigMap from the prepared ``local/`` directory and a Secret from
