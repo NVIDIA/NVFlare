@@ -209,7 +209,7 @@ for a server-controlled workflow. For detailed job metadata and resource configu
    schedules :ref:`tasks <tasks>`, client runners pull assigned tasks, :ref:`Executors <executor>` perform the work,
    and results are returned to the Controller for processing. See :ref:`task_pull_pattern` for the request and result
    sequence.
-6. **Finish the job**: After the Controllers finish, ``ServerRunner`` finalizes the workflow and tells the participating
+6. **Finish the job**: After the Controller finishes, ``ServerRunner`` finalizes the workflow and tells the participating
    clients to end the run. The SJ and CJs perform their end-run events and terminate. The server archives the job
    workspace and records the terminal job status.
 

@@ -20,7 +20,6 @@ System Architecture
    :hidden:
 
    programming_guide/system_architecture
-   system_architecture/system_architecture
    flare_system_architecture
    system_architecture/cellnet_architecture
 
