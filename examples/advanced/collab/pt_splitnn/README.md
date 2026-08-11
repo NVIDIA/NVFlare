@@ -50,16 +50,20 @@ pt_splitnn/
 For an apples-to-apples setup, this example follows the same data-preparation
 steps as the regular
 [CIFAR-10 SplitNN counterpart](../../vertical_federated_learning/cifar10-splitnn/README.md).
-From the repository root, make a runtime working copy under this example, then
-run the counterpart's preparation code from that copy:
+From the repository root, run the counterpart's preparation code directly:
 
 ```bash
-cd examples/advanced/collab/pt_splitnn
-cp -R ../../vertical_federated_learning/cifar10-splitnn ./regular_splitnn
-cd regular_splitnn
-
+cd examples/advanced/vertical_federated_learning/cifar10-splitnn
 python -m pip install -r requirements.txt
-export PYTHONPATH=${PWD}/src:${PWD}/../../../cifar10:${PWD}/../../../cifar10/pt/src
+```
+
+Set `PYTHONPATH` to include the custom files of the regular SplitNN example and
+the reused files from the [CIFAR-10 examples](../../cifar10/README.md). The
+`cifar10/pt/src` entry exposes the shared data package used by the standalone
+splitter:
+
+```bash
+export PYTHONPATH=${PWD}/src:${PWD}/../../cifar10:${PWD}/../../cifar10/pt/src
 python cifar10_split_data_vertical.py \
     --split_dir /tmp/cifar10_vert_splits \
     --overlap 10000
@@ -72,7 +76,7 @@ We are using NVFlare's FL simulator to run the following experiments.
 In order to find the overlapping data indices between the different clients participating in split learning,
 we randomly select an subset of the training indices.
 
-From the same runtime copy, run the counterpart's PSI preparation step:
+From the same directory, run the counterpart's PSI preparation step:
 
 ```bash
 mkdir -p /tmp/nvflare/cifar10_psi/local
@@ -106,9 +110,6 @@ The Collab job reads the resulting site-specific artifacts directly:
 ├── site-1/simulate_job/site-1/psi/intersection.txt
 └── site-2/simulate_job/site-2/psi/intersection.txt
 ```
-
-The runtime `regular_splitnn` directory is only a preparation workspace and is
-not part of this example's source.
 
 ## Model
 
@@ -298,13 +299,13 @@ and float16 cut-layer exchange constant.
 | torchvision | 0.21.0+cu126 |
 | NVFlare | Source checkout based on revision `c467e40d`, plus this example |
 
-After preparing the data with the runtime copy above, the regular implementation
-was launched from that copy with the same local simulator authorization for its
-custom components:
+After preparing the data above, the regular implementation was launched from
+its existing example directory with the same local simulator authorization for
+its custom components:
 
 ```bash
-cd examples/advanced/collab/pt_splitnn/regular_splitnn
-export PYTHONPATH=${PWD}/src:${PWD}/../../../cifar10:${PWD}/../../../cifar10/pt/src
+cd examples/advanced/vertical_federated_learning/cifar10-splitnn
+export PYTHONPATH=${PWD}/src:${PWD}/../../cifar10:${PWD}/../../cifar10/pt/src
 mkdir -p /tmp/nvflare/cifar10_splitnn/local
 printf '%s\n' \
     '{"class_allow_list": ["nvflare.", "splitnn.", "pt.src.model.ModerateCNN"]}' \
