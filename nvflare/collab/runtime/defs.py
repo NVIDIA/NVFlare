@@ -39,8 +39,8 @@ class CallHeaderKey:
     PROTOCOL_VERSION = "collab__protocol_version"
     TARGET_NAME = "collab__target_name"
     METHOD_NAME = "collab__method_name"
-    # This header is overwritten by the receiver preflight and is never sent
-    # as an assertion of identity by CellDispatcher.
+    # This header is overwritten by the receiver-side authorizer and is never
+    # sent as an assertion of identity by CellDispatcher.
     AUTHENTICATED_CALLER = "collab__authenticated_caller"
 
 

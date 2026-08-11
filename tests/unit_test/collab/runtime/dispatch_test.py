@@ -15,7 +15,7 @@
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from types import SimpleNamespace
-from unittest.mock import ANY, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -98,15 +98,15 @@ def test_prepare_for_remote_call_registers_blob_callback():
     with patch("nvflare.collab.runtime.dispatch.Adapter", return_value=adapter):
         prepare_for_remote_call(cell, app, logger, executor, {"server.job": "server"})
 
-    cell.register_blob_cb.assert_called_once_with(
-        channel=MSG_CHANNEL,
-        topic=MSG_TOPIC,
-        blob_cb=callback,
-        preflight_cb=ANY,
-        app=app,
-        logger=logger,
-        executor=executor,
-    )
+    cell.register_blob_cb.assert_called_once()
+    registration = cell.register_blob_cb.call_args.kwargs
+    assert registration["channel"] == MSG_CHANNEL
+    assert registration["topic"] == MSG_TOPIC
+    assert callable(registration["blob_cb"])
+    assert registration["app"] is app
+    assert registration["logger"] is logger
+    assert registration["executor"] is executor
+    assert "preflight_cb" not in registration
 
 
 def test_remote_call_returns_secure_exception_detail():

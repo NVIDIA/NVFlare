@@ -144,7 +144,7 @@ class StreamCell:
 
         return self.blob_streamer.send(channel, topic, target, message, secure, optional, reliable)
 
-    def register_blob_cb(self, channel: str, topic: str, blob_cb, *args, preflight_cb=None, **kwargs):
+    def register_blob_cb(self, channel: str, topic: str, blob_cb, *args, **kwargs):
         """Registers a callback for receiving the blob.
 
         This callback is invoked when the whole blob is received.
@@ -163,8 +163,5 @@ class StreamCell:
             channel: the channel of the request
             topic: topic of the request
             blob_cb: The callback to handle the stream
-            preflight_cb: Optional callback invoked with stream headers before
-                receiving or allocating the blob. Returning a non-None response
-                rejects the body without invoking the blob callback.
         """
-        self.blob_streamer.register_blob_callback(channel, topic, blob_cb, *args, preflight_cb=preflight_cb, **kwargs)
+        self.blob_streamer.register_blob_callback(channel, topic, blob_cb, *args, **kwargs)

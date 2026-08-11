@@ -105,85 +105,6 @@ def _make_chunk(
     return message
 
 
-def test_first_chunk_preflight_rejects_before_payload_is_buffered():
-    cell = MagicMock()
-    cell.fire_and_forget.return_value = {}
-    message = _make_chunk("sender", 42, 0, StreamDataType.FINAL, payload=b"must-not-be-buffered", reliable=False)
-    message.set_header(StreamHeaderKey.STREAM_REQ_ID, "request-42")
-    task = RxTask.find_or_create_task(message, cell)
-
-    new_stream = task.process_chunk(message, preflight_cb=lambda _headers: StreamError("rejected"))
-
-    assert new_stream is False
-    assert not task.chunks
-    assert task.stream_future is None
-    assert [call.args[1] for call in cell.fire_and_forget.call_args_list] == [
-        STREAM_ERROR_TOPIC,
-        STREAM_ACK_TOPIC,
-    ]
-    error_message = cell.fire_and_forget.call_args_list[0].args[3]
-    assert error_message.get_header(StreamHeaderKey.STREAM_ID) == 42
-    assert error_message.get_header(StreamHeaderKey.CHANNEL) == "ch"
-    assert error_message.get_header(StreamHeaderKey.TOPIC) == "tp"
-    assert error_message.get_header(StreamHeaderKey.STREAM_REQ_ID) == "request-42"
-
-
-def test_preflight_rejects_out_of_order_frame_before_reassembly_buffering():
-    cell = MagicMock()
-    cell.fire_and_forget.return_value = {}
-    message = _make_chunk("sender", 43, 17, StreamDataType.CHUNK, payload=b"must-not-be-buffered", reliable=False)
-    task = RxTask.find_or_create_task(message, cell)
-
-    new_stream = task.process_chunk(message, preflight_cb=lambda _headers: StreamError("rejected"))
-
-    assert new_stream is False
-    assert not task.out_seq_chunks
-    assert [call.args[1] for call in cell.fire_and_forget.call_args_list] == [
-        STREAM_ERROR_TOPIC,
-        STREAM_ACK_TOPIC,
-    ]
-
-
-def test_non_reliable_preflight_rejection_retains_tombstone_for_in_flight_chunks():
-    cell = MagicMock()
-    cell.fire_and_forget.return_value = {}
-    preflight = MagicMock(return_value=StreamError("rejected"))
-    first = _make_chunk("sender", 45, 0, StreamDataType.CHUNK, reliable=False)
-    task = RxTask.find_or_create_task(first, cell)
-
-    assert task.process_chunk(first, preflight_cb=preflight) is False
-    cleanup_timer = task.cleanup_timer
-    assert cleanup_timer is not None
-    assert cleanup_timer.interval == FAILED_NON_RELIABLE_TASK_TTL
-
-    later = _make_chunk("sender", 45, 1, StreamDataType.CHUNK, reliable=False)
-    assert RxTask.find_or_create_task(later, cell) is task
-    assert task.process_chunk(later, preflight_cb=preflight) is False
-
-    preflight.assert_called_once()
-    assert cell.fire_and_forget.call_count == 2
-
-
-def test_preflight_header_updates_survive_sequence_zero_arriving_late():
-    cell = MagicMock()
-    cell.fire_and_forget.return_value = {}
-    preflight = MagicMock(return_value=None)
-
-    def authorize(headers):
-        headers["authenticated_caller"] = "site-1"
-
-    preflight.side_effect = authorize
-    later = _make_chunk("sender", 44, 1, StreamDataType.FINAL, payload=b"later", reliable=False)
-    task = RxTask.find_or_create_task(later, cell)
-    assert task.process_chunk(later, preflight_cb=preflight) is False
-
-    first = _make_chunk("sender", 44, 0, StreamDataType.CHUNK, payload=b"first", reliable=False)
-    assert task.process_chunk(first, preflight_cb=preflight) is True
-
-    preflight.assert_called_once()
-    assert task.stream_future.headers["authenticated_caller"] == "site-1"
-
-
 def test_find_or_create_task_stops_outside_map_lock(monkeypatch):
     origin = "site-1"
     sid = 123
@@ -701,7 +622,7 @@ def test_reliable_success_stop_is_idempotent():
     assert task.cleanup_timer is cleanup_timer
 
 
-def test_reliable_late_error_after_completion_keeps_reack_window():
+def test_reliable_consumer_error_after_receive_completion_is_reported():
     cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
     message = _make_chunk("site-1", sid=513, seq=0, data_type=StreamDataType.FINAL, payload=b"", reliable=True)
     task = RxTask.find_or_create_task(message, cell)
@@ -712,14 +633,16 @@ def test_reliable_late_error_after_completion_keeps_reack_window():
     task.stop(StreamError("late failure"), notify=False)
 
     assert task.completed is True
-    assert task.failed is False
+    assert task.failed is True
+    assert isinstance(task.stream_future.error, StreamError)
     assert cell.fire_and_forget.call_count == 1
 
     assert task.process_chunk(message) is False
 
-    assert cell.fire_and_forget.call_count == 2
-    ack = cell.fire_and_forget.call_args.args[3]
-    assert ack.get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.ACK
+    assert cell.fire_and_forget.call_count == 3
+    error_msg = cell.fire_and_forget.call_args.args[3]
+    assert error_msg.get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.ERROR
+    assert "late failure" in error_msg.get_header(StreamHeaderKey.ERROR_MSG)
 
 
 def test_reliable_failed_task_rejects_retried_initial_chunk():
@@ -1163,7 +1086,7 @@ def test_error_renotification_exception_is_debug_only(caplog):
     assert "connection closed" in caplog.text
 
 
-def test_stop_error_after_completion_is_noop_for_non_reliable():
+def test_consumer_error_after_receive_completion_is_reported_for_non_reliable():
     cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
     message = _make_chunk("site-1", sid=542, seq=0, data_type=StreamDataType.FINAL, payload=b"abc", reliable=False)
     task = RxTask.find_or_create_task(message, cell)
@@ -1174,5 +1097,22 @@ def test_stop_error_after_completion_is_noop_for_non_reliable():
 
     task.stop(StreamError("late failure"), notify=True)
 
-    assert task.failed is False
-    assert cell.fire_and_forget.call_count == calls
+    assert task.failed is True
+    assert isinstance(task.stream_future.error, StreamError)
+    assert cell.fire_and_forget.call_count == calls + 2
+
+
+def test_error_after_consumer_future_completion_is_reported():
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
+    message = _make_chunk("site-1", sid=543, seq=0, data_type=StreamDataType.FINAL, payload=b"abc", reliable=False)
+    task = RxTask.find_or_create_task(message, cell)
+
+    assert task.process_chunk(message) is True
+    task.stream_future.set_result("accepted")
+    calls = cell.fire_and_forget.call_count
+
+    task.stop(StreamError("too late"), notify=True)
+
+    assert task.failed is True
+    assert task.stream_future.result() == "accepted"
+    assert cell.fire_and_forget.call_count == calls + 2

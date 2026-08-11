@@ -28,7 +28,7 @@ from .defs import CALL_PROTOCOL_VERSION, MSG_CHANNEL, MSG_TOPIC, CallHeaderKey, 
 
 
 class CollabCallAuthorizer:
-    """Authorizes a Collab stream before its serialized body is received.
+    """Authorizes a Collab call before deserialization and application dispatch.
 
     The participant lookup relies on CellNet's authenticated ORIGIN. Secure
     deployments bind that identity to connection credentials; insecure CellNet
@@ -80,9 +80,27 @@ class CollabCallAuthorizer:
             return self._reject(origin, "missing or invalid method name")
 
         # Always overwrite a value supplied by the sender. Only this local
-        # preflight result is trusted by the application dispatch path.
+        # authorization result is trusted by the application dispatch path.
         headers[CallHeaderKey.AUTHENTICATED_CALLER] = caller
         return None
+
+
+class _AuthorizedCallHandler:
+    """Apply Collab authorization at the application boundary.
+
+    Raising the rejection lets BlobHandler report it through ByteStreamer's
+    generic stream-error path, including request/reply correlation.
+    """
+
+    def __init__(self, authorizer: CollabCallAuthorizer, adapter: Adapter):
+        self.authorizer = authorizer
+        self.adapter = adapter
+
+    def __call__(self, future, *args, **kwargs):
+        rejection = self.authorizer.authorize(future.headers)
+        if rejection:
+            raise rejection
+        return self.adapter.call(future, *args, **kwargs)
 
 
 def make_participant_map(
@@ -111,11 +129,11 @@ def prepare_for_remote_call(cell, app, logger, executor, participants: dict[str,
     logger.info(f"register cb for cell {cell.get_fqcn()}: {type(cell)}")
     authorizer = CollabCallAuthorizer(app, cell.get_fqcn(), participants, logger)
     adapter = Adapter(_submit_app_method, cell.core_cell.my_info, cell)
+    handler = _AuthorizedCallHandler(authorizer, adapter)
     cell.register_blob_cb(
         channel=MSG_CHANNEL,
         topic=MSG_TOPIC,
-        blob_cb=adapter.call,
-        preflight_cb=authorizer.authorize,
+        blob_cb=handler,
         app=app,
         logger=logger,
         executor=executor,

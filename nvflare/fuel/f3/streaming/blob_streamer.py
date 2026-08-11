@@ -197,7 +197,10 @@ class BlobHandler:
             else:
                 log.error(f"blob_cb threw: {ex}\n{secure_format_traceback()}")
                 if hasattr(stream, "task"):
-                    stream.task.stop(StreamError(f"blob_cb threw {type(ex).__name__}: {ex}"))
+                    error = (
+                        ex if isinstance(ex, StreamError) else StreamError(f"blob_cb threw {type(ex).__name__}: {ex}")
+                    )
+                    stream.task.stop(error)
 
     def _read_stream(self, blob_task: BlobTask):
 
@@ -276,10 +279,6 @@ class BlobStreamer:
             reliable=reliable,
         )
 
-    def register_blob_callback(
-        self, channel, topic, blob_cb: Callable, *args, preflight_cb: Optional[Callable] = None, **kwargs
-    ):
+    def register_blob_callback(self, channel, topic, blob_cb: Callable, *args, **kwargs):
         handler = BlobHandler(blob_cb)
-        self.byte_receiver.register_callback(
-            channel, topic, handler.handle_blob_cb, *args, preflight_cb=preflight_cb, **kwargs
-        )
+        self.byte_receiver.register_callback(channel, topic, handler.handle_blob_cb, *args, **kwargs)
