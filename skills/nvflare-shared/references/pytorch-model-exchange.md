@@ -66,6 +66,11 @@ site. FedAvg averages embedding rows by position, so a per-site token-to-ID
 mapping built independently from local data would silently blend unrelated
 tokens even when `vocab_size` matches.
 
+That shared vocabulary/tokenizer must be public or pre-provided, or come from
+an explicitly user-authorized cross-site statistics workflow under
+`conversion-common.md` ("Preprocessing Data Locality"). Never create it by
+pooling site records implicitly.
+
 Pin only architecture or state-dict compatibility values this way. Do not treat
 training-policy values or label/data-derived loss statistics as model
 constructor values that must be globally pinned for exchange compatibility.
