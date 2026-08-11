@@ -71,14 +71,14 @@ installing skills individually can leave those references dangling.
 From a local checkout (pre-publish):
 
 ```bash
-npx skills add ./skills -a claude-code -a codex
+npx skills add ./skills --skill '*' -a claude-code -a codex -y
 ```
 
 From the published repository (no manual `git clone` needed — `npx skills add`
 fetches the repo itself; append `#<branch>` to install from a specific branch):
 
 ```bash
-npx skills add NVIDIA/<skills-repo> -a claude-code -a codex
+npx skills add NVIDIA/<skills-repo> --skill '*' -a claude-code -a codex -y
 ```
 
 Installation is git-based and does not depend on `pip install nvflare`; the
