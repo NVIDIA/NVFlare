@@ -19,6 +19,7 @@ Get the example code from github:
 then navigate to the hello-lr directory:
 
 ```
+  cd NVFlare
   git switch <release branch>
   cd examples/hello-world/hello-lr
 ```

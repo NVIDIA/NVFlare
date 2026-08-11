@@ -15,6 +15,7 @@ Get the example code from github:
 then navigate to the hello-flower directory:
 
 ```
+  cd NVFlare
   git switch <release branch>
   cd examples/hello-world/hello-flower
 ```
