@@ -29,6 +29,7 @@ from nvflare.utils.job_launcher_utils import (
     get_credential_env,
     get_job_launcher_spec,
     get_portable_resource_spec,
+    get_resource_manager_spec,
     portable_memory_to_bytes,
     portable_memory_to_mib,
     refresh_custom_dir_import_path,
@@ -169,10 +170,24 @@ class TestPortableResourceSpec:
         assert get_portable_resource_spec(meta, "site-1") == {"num_of_cpus": 2}
         assert get_portable_resource_spec(meta, "server") == {"num_of_cpus": 2}
 
+    def test_resource_manager_gets_positive_gpu_and_custom_resources(self):
+        meta = {
+            "resource_spec": {
+                "@default": {"num_of_gpus": 1, "num_of_cpus": 4, "memory": "8Gi"},
+                "site-1": {"license": 2},
+            }
+        }
+        assert get_resource_manager_spec(meta, "site-1") == {"num_of_gpus": 1, "license": 2}
+
+    def test_resource_manager_ignores_zero_gpu(self):
+        meta = {"resource_spec": {"@default": {"num_of_gpus": 0, "num_of_cpus": 4, "memory": "8Gi"}}}
+        assert get_resource_manager_spec(meta, "site-1") == {}
+
     def test_legacy_nested_spec_is_not_reinterpreted_without_default(self):
         meta = {"resource_spec": {"site-1": {"process": {"num_of_cpus": 4}, "docker": {"image": "x"}}}}
         assert resolve_site_resource_spec(meta, "site-1") == {"num_of_cpus": 4}
         assert get_portable_resource_spec(meta, "site-1") == {}
+        assert get_resource_manager_spec(meta, "site-1") == {"num_of_cpus": 4}
 
     @pytest.mark.parametrize(
         "spec",

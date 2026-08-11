@@ -26,6 +26,7 @@ from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.app_common.job_schedulers.job_scheduler import DefaultJobScheduler
+from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 from nvflare.app_common.resource_managers.list_resource_manager import ListResourceManager
 
 
@@ -440,10 +441,18 @@ class TestDefaultJobScheduler:
         assert job == expected_job
         assert dispatch_info == expected_dispatch_info
 
-    def test_portable_default_is_resolved_for_check_and_dispatch(self):
+    def test_portable_cpu_and_memory_bypass_gpu_resource_manager(self):
         sites = [
-            Site(name="site1", resources={"num_of_cpus": 8}),
-            Site(name="site2", resources={"num_of_cpus": 8}),
+            Site(
+                name="site1",
+                resources={},
+                resource_manager=GPUResourceManager(num_of_gpus=0, mem_per_gpu_in_GiB=0, ignore_host=True),
+            ),
+            Site(
+                name="site2",
+                resources={},
+                resource_manager=GPUResourceManager(num_of_gpus=0, mem_per_gpu_in_GiB=0, ignore_host=True),
+            ),
         ]
         candidate = create_job(
             job_id="portable",
@@ -461,17 +470,21 @@ class TestDefaultJobScheduler:
             job, dispatch_info = scheduler.schedule_job(job_manager, [candidate], fl_ctx)
 
         assert job == candidate
-        assert dispatch_info["site1"].resource_requirements == {"num_of_cpus": 4, "memory": "4Gi"}
-        assert dispatch_info["site2"].resource_requirements == {"num_of_cpus": 2, "memory": "4Gi"}
+        assert dispatch_info["site1"].resource_requirements == {}
+        assert dispatch_info["site2"].resource_requirements == {}
 
-    def test_cancellation_uses_resolved_portable_requirements(self):
+    def test_cancellation_uses_resource_manager_requirements(self):
         sites = [
-            Site(name="site1", resources={"num_of_cpus": 8}),
-            Site(name="site2", resources={"num_of_cpus": 1}),
+            Site(name="site1", resources={"license": 8}),
+            Site(name="site2", resources={"license": 1}),
         ]
         candidate = create_job(
             job_id="portable-cancel",
-            resource_spec={"@default": {"num_of_cpus": 2}, "site1": {"num_of_cpus": 4}},
+            resource_spec={
+                "@default": {"num_of_cpus": 2},
+                "site1": {"license": 4},
+                "site2": {"license": 2},
+            },
             deploy_map={"app": [ALL_SITES]},
             min_sites=2,
         )
@@ -483,8 +496,8 @@ class TestDefaultJobScheduler:
 
         assert job is None
         assert scheduler._cancel_resources.call_args.kwargs["resource_reqs"] == {
-            "site1": {"num_of_cpus": 4},
-            "site2": {"num_of_cpus": 2},
+            "site1": {"license": 4},
+            "site2": {"license": 2},
         }
 
     @pytest.mark.parametrize("add_first_job", [True, False])
@@ -594,8 +607,8 @@ class TestDefaultJobScheduler:
 
         assert job == candidate
         assert set(dispatch_info) == {"server", "site0", "site2"}
-        assert dispatch_info["site0"].resource_requirements == {"num_of_cpus": 2}
-        assert dispatch_info["site2"].resource_requirements == {"num_of_cpus": 2}
+        assert dispatch_info["site0"].resource_requirements == {}
+        assert dispatch_info["site2"].resource_requirements == {}
 
     def test_required_out_of_study_site_blocks_job(self, monkeypatch, setup_and_teardown):
         servers, scheduler, num_sites, job_manager = setup_and_teardown

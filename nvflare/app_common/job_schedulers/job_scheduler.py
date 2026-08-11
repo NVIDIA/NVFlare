@@ -27,7 +27,7 @@ from nvflare.apis.job_scheduler_spec import DispatchInfo, JobSchedulerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.study_registry import StudyRegistryService
-from nvflare.utils.job_launcher_utils import resolve_site_resource_spec
+from nvflare.utils.job_launcher_utils import get_resource_manager_spec
 
 SCHEDULE_RESULT_OK = 0  # the job is scheduled
 SCHEDULE_RESULT_NO_RESOURCE = 1  # job is not scheduled due to lack of resources
@@ -162,7 +162,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         # we are assuming server resource is sufficient
         resource_meta = {**job.meta, JobMetaKey.RESOURCE_SPEC.value: job.resource_spec}
         resource_reqs = {
-            site_name: resolve_site_resource_spec(resource_meta, site_name) for site_name in applicable_sites
+            site_name: get_resource_manager_spec(resource_meta, site_name) for site_name in applicable_sites
         }
 
         job_participants = [fl_ctx.get_identity_name(default=SERVER_SITE_NAME)]

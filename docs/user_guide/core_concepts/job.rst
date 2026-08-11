@@ -107,6 +107,10 @@ defines only three portable fields: ``num_of_gpus`` (integer >= 0), ``num_of_cpu
 (a positive integer followed by ``Mi``, ``Gi``, or ``Ti``). ``num_of_cpus`` means whole schedulable CPU units, not
 physical cores, and ``memory`` means host memory per job worker.
 
+These three names are reserved portable fields in flat site specifications and must use the documented types.
+CPU and memory are enforced by the selected job launcher rather than reserved by the site's NVIDIA FLARE resource
+manager. Positive GPU requests and additional site-specific fields continue through resource-manager admission.
+
 ``resource_spec["@default"]`` applies to every targeted site. A site block is shallow-merged over it. For example:
 
 .. code-block:: json
@@ -184,7 +188,7 @@ launcher modes without choosing which mode a site uses.
 
 Use ``launcher_spec["default"][mode]`` for shared settings and
 ``launcher_spec[site][mode]`` for site-specific overrides. Keep
-``resource_spec`` for portable scheduler-facing GPU, CPU, and memory requirements.
+``resource_spec`` for portable GPU, CPU, and memory requirements enforced by the selected job launcher.
 Use ``launcher_spec`` for backend-specific topology and policy.
 
 The Slurm job block accepts ``image``, ``nodes``, ``gpus_per_node``,

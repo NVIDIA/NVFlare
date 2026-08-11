@@ -207,11 +207,24 @@ def validate_portable_resource_spec(resource_spec: dict) -> None:
 
 
 def resolve_site_resource_spec(job_meta: dict, site_name: str) -> dict:
-    """Resolve scheduler-facing resources for a site without mutating job metadata."""
+    """Resolve default and site-specific resources without mutating job metadata."""
     resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
     default_spec = resource_spec.get(PORTABLE_RESOURCE_DEFAULT_KEY) or {}
     site_spec = get_site_launcher_spec(resource_spec.get(site_name), "process")
     return {**default_spec, **site_spec}
+
+
+def get_resource_manager_spec(job_meta: dict, site_name: str) -> dict:
+    """Return resources enforced by the site's NVIDIA FLARE resource manager."""
+    resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
+    site_spec = resource_spec.get(site_name) or {}
+    if PORTABLE_RESOURCE_DEFAULT_KEY not in resource_spec and any(key in site_spec for key in _LAUNCHER_MODE_KEYS):
+        return get_site_launcher_spec(site_spec, "process")
+    resolved = resolve_site_resource_spec(job_meta, site_name)
+    result = {key: value for key, value in resolved.items() if key not in ("num_of_cpus", "memory")}
+    if result.get("num_of_gpus") == 0:
+        result.pop("num_of_gpus")
+    return result
 
 
 def get_portable_resource_spec(job_meta: dict, site_name: str) -> dict:
