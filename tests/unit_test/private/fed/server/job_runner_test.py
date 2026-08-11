@@ -338,6 +338,48 @@ def test_save_workspace_retries_cleanup_without_rewriting_archive(tmp_path):
     assert not run_dir.exists()
 
 
+def test_save_workspace_retries_remaining_cleanup_after_earlier_source_was_removed(tmp_path):
+    run_dir = tmp_path / "run"
+    result_root = tmp_path / "result"
+    run_dir.mkdir()
+    result_root.mkdir()
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(
+        str(run_dir), str(run_dir), str(result_root), str(result_root)
+    )
+    finished_state = _FinishedJobState(status=RunStatus.FINISHED_COMPLETED)
+
+    cleanup_calls = []
+    result_cleanup_attempts = 0
+
+    def _fail_second_source_once(path):
+        nonlocal result_cleanup_attempts
+        cleanup_calls.append(path)
+        if path == str(run_dir):
+            if not run_dir.exists():
+                raise FileNotFoundError(path)
+            run_dir.rmdir()
+            return
+
+        result_cleanup_attempts += 1
+        if result_cleanup_attempts == 1:
+            raise PermissionError("denied")
+        result_root.rmdir()
+
+    with patch("nvflare.private.fed.server.job_runner.shutil.rmtree", side_effect=_fail_second_source_once):
+        with pytest.raises(PermissionError, match="denied"):
+            runner._save_workspace(fl_ctx, finished_state)
+        runner._save_workspace(fl_ctx, finished_state)
+
+    job_manager.save_workspace.assert_called_once_with("job-1", [str(run_dir), str(result_root)], fl_ctx)
+    assert finished_state.workspace_archive_sources == (str(run_dir), str(result_root))
+    assert cleanup_calls == [str(run_dir), str(result_root), str(run_dir), str(result_root)]
+    runner.log_warning.assert_called_once_with(
+        fl_ctx, f"Workspace archive source disappeared before cleanup for job job-1: {run_dir}"
+    )
+    assert not run_dir.exists()
+    assert not result_root.exists()
+
+
 def test_job_complete_process_retries_cleanup_without_resaving_workspace(tmp_path):
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -385,6 +427,61 @@ def test_job_complete_process_retries_cleanup_without_resaving_workspace(tmp_pat
     runner.log_exception.assert_called_once()
     assert cleanup_attempts == 2
     assert not run_dir.exists()
+
+
+def test_job_complete_process_publishes_status_after_persistent_cleanup_failure(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    runner, completion_ctx, job_manager = _make_workspace_save_inputs(*([str(run_dir)] * 4))
+    runner.fire_event = MagicMock()
+    runner.log_error = MagicMock()
+    runner.log_exception = MagicMock()
+    runner.ask_to_stop = False
+    job_manager.save_workspace.return_value = "/store/job-1/workspace"
+
+    engine = completion_ctx.get_engine.return_value
+    engine.run_processes = {}
+    engine.exception_run_processes = {}
+    engine.new_context.side_effect = [nullcontext(completion_ctx), nullcontext(completion_ctx)]
+
+    job = MagicMock()
+    job.job_id = "job-1"
+    job.run_aborted = True
+    runner.running_jobs = {"job-1": job}
+
+    sleep_count = 0
+
+    def _stop_after_second_pass(_):
+        nonlocal sleep_count
+        sleep_count += 1
+        if sleep_count == 2:
+            runner.ask_to_stop = True
+
+    with (
+        patch("nvflare.private.fed.server.job_runner.shutil.rmtree", side_effect=PermissionError("denied")) as rmtree,
+        patch(
+            "nvflare.private.fed.server.job_runner.time",
+            **{"sleep.side_effect": _stop_after_second_pass, "monotonic.side_effect": [0.0, 60.0]},
+        ),
+    ):
+        runner._job_complete_process(engine)
+
+    job_manager.save_workspace.assert_called_once_with("job-1", [str(run_dir)], completion_ctx)
+    assert rmtree.call_args_list == [call(str(run_dir)), call(str(run_dir))]
+    runner.log_exception.assert_called_once()
+    runner.log_error.assert_called_once_with(
+        completion_ctx,
+        "Workspace cleanup for finished job (job-1) kept failing for 60 seconds; publishing terminal status with "
+        "archived artifacts: PermissionError: denied",
+    )
+    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_ABORTED, completion_ctx)
+    assert runner.fire_event.call_args_list == [
+        call(EventType.JOB_ABORTED, completion_ctx),
+        call(EventType.JOB_COMPLETED, completion_ctx),
+    ]
+    assert "job-1" not in runner.running_jobs
+    assert "job-1" not in runner._finished_job_states
+    assert run_dir.exists()
 
 
 def test_job_complete_process_saves_workspace_before_publishing_aborted_status():
