@@ -52,6 +52,7 @@ class StreamHeaderKey:
     SEQUENCE = STREAM_PREFIX + "sq"
     OFFSET = STREAM_PREFIX + "os"
     ERROR_MSG = STREAM_PREFIX + "em"
+    ERROR_TYPE = STREAM_PREFIX + "et"
     CHANNEL = STREAM_PREFIX + "ch"
     FILE_NAME = STREAM_PREFIX + "fn"
     TOPIC = STREAM_PREFIX + "tp"

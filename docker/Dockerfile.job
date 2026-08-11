@@ -21,9 +21,9 @@ RUN --mount=type=bind,source=.,target=/opt/NVFlare,rw \
     && mkdir -p /usr/local/bin \
     && ln -sf /usr/bin/python /usr/local/bin/python \
     && ln -sf /usr/bin/python /usr/local/bin/python3 \
-    && python -m pip install --ignore-installed "PyYAML>=6.0" \
+    && python -m pip install --ignore-installed "PyYAML>=6.0" "packaging<=25.0" \
     && NVFL_RELEASE=1 python -m pip install "." \
-    && python -c "import importlib.metadata as m; import nvflare; import torch; import torchvision; assert nvflare.__version__ == m.version('nvflare') != '0+unknown'"
+    && python -c "import importlib.metadata as m; from packaging.version import Version; import nvflare; import torch; import torchvision; metadata_version = m.version('nvflare'); assert metadata_version != '0+unknown' and Version(nvflare.__version__) == Version(metadata_version)"
 
 WORKDIR /app
 

@@ -654,6 +654,31 @@ def test_prepare_k8s_server_exposes_admin_port_only_when_distinct(tmp_path, caps
     assert ".Values.adminPort" in tcp_services
 
 
+@pytest.mark.parametrize(
+    "make_kit",
+    [
+        _make_server_kit,
+        _make_client_kit,
+    ],
+)
+def test_prepare_k8s_parent_role_allows_reading_events(tmp_path, capsys, make_kit):
+    kit = make_kit(tmp_path)
+    output = tmp_path / "parent-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    role = (output / "helm_chart" / "templates" / "role.yaml").read_text()
+    assert '- apiGroups: [""]\n  resources: ["events"]\n  verbs: ["get", "list", "watch"]' in role
+
+
 def test_prepare_k8s_server_uses_configured_service_name(tmp_path, capsys):
     kit = _make_server_kit(tmp_path, fed_learn_port=8002, admin_port=8003)
     output = tmp_path / "server-k8s"

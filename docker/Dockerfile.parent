@@ -25,6 +25,7 @@ WORKDIR /opt/NVFlare
 RUN --mount=type=bind,source=.,target=/opt/NVFlare,rw \
     git ls-files --deleted -z | git update-index --skip-worktree -z --stdin \
     && python -c "import versioneer; v = versioneer.get_versions(); assert not v['error'], v['error']" \
+    && python -m pip install --prefix=/opt/nvflare --ignore-installed "packaging<=25.0" \
     && NVFL_RELEASE=1 python -m pip install --prefix=/opt/nvflare ".[K8S]" \
     && PYTHONPATH="/opt/nvflare/lib/python${PYTHON_MINOR}/site-packages" python -m pip check \
     && mkdir -p "/usr/local/lib/python${PYTHON_MINOR}/site-packages" \
@@ -45,7 +46,7 @@ COPY --from=builder /opt/nvflare /opt/nvflare
 COPY --from=builder /usr/local/lib/python${PYTHON_MINOR}/site-packages/nvflare-prefix.pth /usr/local/lib/python${PYTHON_MINOR}/site-packages/nvflare-prefix.pth
 COPY --from=builder /usr/bin/zip /usr/bin/zip
 
-RUN ["python", "-c", "import importlib.metadata as m; import kubernetes; import nvflare; assert nvflare.__version__ == m.version('nvflare') != '0+unknown'"]
+RUN ["python", "-c", "import importlib.metadata as m; from packaging.version import Version; import kubernetes; import nvflare; metadata_version = m.version('nvflare'); assert metadata_version != '0+unknown' and Version(nvflare.__version__) == Version(metadata_version)"]
 RUN ["/usr/bin/zip", "--version"]
 
 CMD ["python"]
