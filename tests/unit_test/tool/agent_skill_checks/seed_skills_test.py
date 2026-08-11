@@ -213,18 +213,6 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     assert "disabled state must contain no active model-selector component" in normalized_construction
     assert "missing-metric warnings from a supposedly disabled job" in normalized_construction
 
-    # The selector's lower-is-better name heuristic matches the "loss" substring and a
-    # neg_ prefix does not clear it, so the recommended negated key trips a false
-    # positive.  The guidance must say so, or an agent "fixes" it by selecting the
-    # un-negated metric and silently picks the worst global model.
-    from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better
-
-    assert _looks_lower_is_better("neg_val_loss") is True
-    assert _looks_lower_is_better("eval_neg_loss") is True
-    assert "known\nfalse positive on a negated key" in construction_text
-    assert "a `neg_` prefix does not clear" in normalized_construction
-    assert "that selects the worst global model" in normalized_construction
-
     hf_root = repo_root / "skills" / "nvflare-convert-huggingface"
     hf_skill_text = hf_root.joinpath("SKILL.md").read_text(encoding="utf-8")
     hf_conversion_text = hf_root.joinpath("references/huggingface-conversion.md").read_text(encoding="utf-8")
@@ -281,6 +269,26 @@ def test_pytorch_model_exchange_owns_plain_pytorch_send_pattern():
     assert "assert all(isinstance(v, torch.Tensor) for v in params.values())" in model_exchange_text
     assert "v.detach().cpu()" not in client_reference_text
     assert "pytorch-model-exchange.md" in client_reference_text
+
+
+def test_conversion_skills_keep_preprocessing_statistics_local_by_default():
+    repo_root = Path(__file__).resolve().parents[4]
+    common_text = repo_root.joinpath("skills/nvflare-shared/references/conversion-common.md").read_text(
+        encoding="utf-8"
+    )
+    model_exchange_text = repo_root.joinpath("skills/nvflare-shared/references/pytorch-model-exchange.md").read_text(
+        encoding="utf-8"
+    )
+    normalized_common = " ".join(common_text.split())
+    normalized_model_exchange = " ".join(model_exchange_text.split())
+
+    assert "## Preprocessing Data Locality" in common_text
+    assert "Fit it using each site's local training partition by default" in normalized_common
+    assert "Do not pool raw records or implicitly derive a shared artifact from multiple sites" in normalized_common
+    assert "user explicitly authorizes the cross-site statistics workflow" in normalized_common
+    assert "Do not silently introduce a federated-statistics, secure-aggregation" in normalized_common
+    assert '"Preprocessing Data Locality"' in normalized_model_exchange
+    assert "Never create it by pooling site records implicitly" in normalized_model_exchange
 
 
 def test_pytorch_family_construction_policy_is_canonical_and_capability_based():

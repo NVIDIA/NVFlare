@@ -28,7 +28,7 @@ from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, make_r
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import StreamFuture
+from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, StreamFuture
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.waiter_utils import WaiterRC, conditional_wait
@@ -100,16 +100,11 @@ class Adapter:
         channel = request.get_header(StreamHeaderKey.CHANNEL)
         topic = request.get_header(StreamHeaderKey.TOPIC)
         passthrough = bool(request.get_header(MessageHeaderKey.PASS_THROUGH, False))
-        relay_passthrough = False
         if channel in self.cell.decode_pass_through_channels:
             passthrough = True
         if (channel, topic) in self.cell.decode_pass_through_topics:
             passthrough = True
-        if passthrough and (channel, topic) in self.cell.decode_pass_through_relay_topics:
-            relay_passthrough = True
-        decode_ctx = self.cell.get_fobs_context(
-            props={FOBSContextKey.PASS_THROUGH: passthrough, FOBSContextKey.RELAY_PASS_THROUGH: relay_passthrough}
-        )
+        decode_ctx = self.cell.get_fobs_context(props={FOBSContextKey.PASS_THROUGH: passthrough})
         try:
             decode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=decode_ctx)
         except Exception as ex:
@@ -151,6 +146,22 @@ class Adapter:
             response = make_reply(ReturnCode.PROCESS_EXCEPTION)
         self._send_response(response, *reply_args)
 
+    def _handle_reply_stream_done(self, reply_future):
+        error = reply_future.exception()
+        if not error:
+            return
+
+        if isinstance(error, BlobSizeError) and _is_server_job_cell(self.my_info):
+            self.logger.critical(
+                f"streamed response from server job cell {self.my_info.fqcn} was rejected as too large; "
+                f"exiting job process to fail the job: {secure_format_exception(error)}"
+            )
+            os._exit(1)
+
+        self.logger.error(
+            f"streamed response from {self.my_info.fqcn} failed asynchronously: {secure_format_exception(error)}"
+        )
+
     def _send_response(self, response, stream_req_id, req_id, channel, topic, origin, secure, optional):
         self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
         if not stream_req_id:
@@ -172,9 +183,25 @@ class Adapter:
 
         encode_payload(response, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=self.cell.get_fobs_context())
         self.logger.debug(f"sending: {stream_req_id=}: {response.headers=}, target={origin}")
-        reply_future = self.cell.send_blob(
-            CellChannel.RETURN_ONLY, f"{channel}:{topic}", origin, response, secure, optional
-        )
+        try:
+            reply_future = self.cell.send_blob(
+                CellChannel.RETURN_ONLY,
+                f"{channel}:{topic}",
+                origin,
+                response,
+                secure,
+                optional,
+                reliable=True,
+            )
+        except BlobSizeError as ex:
+            if _is_server_job_cell(self.my_info):
+                self.logger.critical(
+                    f"streamed response from server job cell {self.my_info.fqcn} is too large; "
+                    f"exiting job process to fail the job: {secure_format_exception(ex)}"
+                )
+                os._exit(1)
+            raise
+        reply_future.add_done_callback(self._handle_reply_stream_done, reply_future)
         self.logger.debug(f"Done sending: {stream_req_id=}: {reply_future=}")
 
 
@@ -188,7 +215,6 @@ class Cell(StreamCell):
         self.core_cell.update_fobs_context({FOBSContextKey.CELL: self})
         self.decode_pass_through_channels: set = set()  # per-channel opt-in for receiver-side PASS_THROUGH
         self.decode_pass_through_topics: set = set()  # exact (channel, topic) receiver-side opt-in
-        self.decode_pass_through_relay_topics: set = set()  # exact routes that relay lazy refs through this cell
 
     def update_fobs_context(self, props: dict):
         self.core_cell.update_fobs_context(props)
@@ -261,8 +287,21 @@ class Cell(StreamCell):
         results = dict()
         future_to_target = {}
 
-        # encode the request now so each target thread won't need to do it again.
-        self._encode_message(request, abort_signal, num_receivers=len(targets), receiver_ids=targets)
+        # Encode the request now so each target thread won't need to do it again.
+        # For a direct broadcast, the routing targets are also the tensor download
+        # consumers, so the transaction can track their exact identities. With
+        # PASS_THROUGH, each target may forward the refs to another Cell (for
+        # example, an external trainer), and only the final consumer count is known.
+        # Pinning the transaction to the first-hop identities would prevent it from
+        # completing after those downstream consumers finish downloading.
+        pass_through = bool(request.get_header(MessageHeaderKey.PASS_THROUGH, False))
+        receiver_ids = None if pass_through else targets
+        self._encode_message(
+            request,
+            abort_signal,
+            num_receivers=len(targets),
+            receiver_ids=receiver_ids,
+        )
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
             self.logger.debug(f"broadcast to {targets=}")
@@ -529,13 +568,10 @@ class Cell(StreamCell):
             self.logger.debug(f"{req_id=}: receiving complete")
             waiter.result = Message(r_future.headers, r_future.result())
             pt = bool(waiter.result.get_header(MessageHeaderKey.PASS_THROUGH, False))
-            relay_pt = False
             if channel in self.decode_pass_through_channels:
                 pt = True
             if (channel, topic) in self.decode_pass_through_topics:
                 pt = True
-            if pt and (channel, topic) in self.decode_pass_through_relay_topics:
-                relay_pt = True
             decode_payload(
                 waiter.result,
                 encoding_key=StreamHeaderKey.PAYLOAD_ENCODING,
@@ -543,7 +579,6 @@ class Cell(StreamCell):
                     props={
                         FOBSContextKey.ABORT_SIGNAL: abort_signal,
                         FOBSContextKey.PASS_THROUGH: pt,
-                        FOBSContextKey.RELAY_PASS_THROUGH: relay_pt,
                     }
                 ),
             )

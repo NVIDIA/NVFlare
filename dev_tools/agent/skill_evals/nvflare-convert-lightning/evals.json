@@ -657,6 +657,27 @@
       }
     },
     {
+      "id": "lightning-factory-owner-routing",
+      "prompt": "Convert this Lightning Trainer factory into a two-site NVFLARE FedAvg job.",
+      "expected_output": "Inspection resolves the same-module factory to a clear Lightning owner and the Lightning conversion preserves the patched Trainer fit lifecycle.",
+      "files": [
+        "files/factory-lightning/train.py"
+      ],
+      "assertions": [
+        "The agent runs nvflare agent inspect source first, confirms clear Lightning ownership, and selects nvflare-convert-lightning.",
+        "The conversion preserves the Trainer factory, LightningModule, and DataLoader behavior through flare.patch(trainer)."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-lightning",
+        "mandatory_behavior": [
+          {
+            "id": "factory-lightning-owner",
+            "description": "routes a recognized Trainer factory to Lightning conversion and preserves the patched fit lifecycle"
+          }
+        ]
+      }
+    },
+    {
       "id": "lightning-negative-plain-pytorch",
       "prompt": "Convert my plain PyTorch nn.Module and manual training loop to an NVFLARE job. There is no Lightning here.",
       "expected_output": "The Lightning conversion skill should not be the lead; route to nvflare-convert-pytorch for plain PyTorch manual loops.",

@@ -34,7 +34,7 @@ from nvflare.fuel.f3.streaming.stream_const import (
     StreamDataType,
     StreamHeaderKey,
 )
-from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture, StreamTaskSpec
+from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, Stream, StreamError, StreamFuture, StreamTaskSpec
 from nvflare.fuel.f3.streaming.stream_utils import (
     ONE_MB,
     CheckedExecutor,
@@ -517,7 +517,9 @@ class TxTask(StreamTaskSpec):
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
 
         if error:
-            self.stop(StreamError(f"{self} Received error from {origin}: {error}"), notify=False)
+            error_type = message.get_header(StreamHeaderKey.ERROR_TYPE)
+            error_class = BlobSizeError if error_type == BlobSizeError.__name__ else StreamError
+            self.stop(error_class(f"{self} Received error from {origin}: {error}"), notify=False)
             return
 
         if self.reliable and ack_seq is None:
