@@ -48,12 +48,12 @@ from nvflare.fuel.f3.cellnet.core_cell import Message
 from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
-from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
-from nvflare.fuel.sec.authn import add_authentication_headers
+from nvflare.fuel.sec.authn import add_authentication_headers, is_cross_client_family
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import (
@@ -424,9 +424,8 @@ class FederatedServer(BaseServer):
         destination = message.get_header(MessageHeaderKey.DESTINATION)
         if not origin or not destination:
             return
-        origin_info = FqcnInfo(origin)
-        destination_info = FqcnInfo(destination)
-        if origin_info.is_on_server or destination_info.is_on_server or origin_info.root == destination_info.root:
+        client_name = message.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+        if not is_cross_client_family(origin, destination, client_name):
             return
 
         # Cross-client requests and replies authenticate at the server boundary,

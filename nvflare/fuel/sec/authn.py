@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Optional
+
 from nvflare.apis.fl_constant import CellMessageAuthHeaderKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
@@ -23,7 +25,44 @@ def _is_server_fqcn(fqcn: str) -> bool:
     return bool(fqcn) and FqcnInfo(fqcn).is_on_server
 
 
-def _is_cross_site_reply_via_local_parent(origin: str, destination: str, to_cell: str) -> bool:
+def _get_client_family_fqcn(origin: str, client_name: Optional[str]) -> Optional[str]:
+    if not origin or not client_name:
+        return None
+    origin_path = FQCN.split(origin)
+    try:
+        client_index = origin_path.index(client_name)
+    except ValueError:
+        return None
+    else:
+        return FQCN.join(origin_path[: client_index + 1])
+
+
+def _is_client_family_member(fqcn: str, family_fqcn: Optional[str]) -> bool:
+    if not fqcn:
+        return False
+    if family_fqcn and (fqcn == family_fqcn or FQCN.is_ancestor(family_fqcn, fqcn)):
+        return True
+    return False
+
+
+def is_cross_client_family(origin: str, destination: str, client_name: Optional[str] = None) -> bool:
+    if not origin or not destination:
+        return False
+    origin_info = FqcnInfo(origin)
+    destination_info = FqcnInfo(destination)
+    if origin_info.is_on_server or destination_info.is_on_server:
+        return False
+
+    family_fqcn = _get_client_family_fqcn(origin, client_name)
+    if family_fqcn:
+        return not _is_client_family_member(destination, family_fqcn)
+
+    # Preserve routing for callers whose authentication identity cannot be
+    # mapped to an FQCN segment (for example custom identity mappings).
+    return origin_info.root != destination_info.root
+
+
+def _is_cross_site_reply_via_local_parent(origin: str, destination: str, to_cell: str, client_name: str) -> bool:
     """Return whether a peer reply first travels upward through its local client family.
 
     A job cell can connect directly to the server or connect to its client parent first
@@ -33,24 +72,7 @@ def _is_cross_site_reply_via_local_parent(origin: str, destination: str, to_cell
     """
     if not origin or not destination or not to_cell:
         return False
-    origin_info = FqcnInfo(origin)
-    destination_info = FqcnInfo(destination)
-    return (
-        not origin_info.is_on_server
-        and not destination_info.is_on_server
-        and origin_info.root != destination_info.root
-        and FQCN.is_ancestor(to_cell, origin)
-    )
-
-
-def _is_cross_client_family(origin: str, destination: str) -> bool:
-    if not origin or not destination:
-        return False
-    origin_info = FqcnInfo(origin)
-    destination_info = FqcnInfo(destination)
-    return (
-        not origin_info.is_on_server and not destination_info.is_on_server and origin_info.root != destination_info.root
-    )
+    return is_cross_client_family(origin, destination, client_name) and FQCN.is_ancestor(to_cell, origin)
 
 
 def add_authentication_headers(msg: Message, client_name: str, auth_token, token_signature, ssid=None):
@@ -74,7 +96,9 @@ def add_authentication_headers(msg: Message, client_name: str, auth_token, token
 
     msg.set_header(CellMessageAuthHeaderKey.TOKEN, auth_token if auth_token else "NA")
     msg.set_header(CellMessageAuthHeaderKey.TOKEN_SIGNATURE, token_signature if token_signature else "NA")
-    if _is_cross_client_family(msg.get_header(MessageHeaderKey.ORIGIN), msg.get_header(MessageHeaderKey.DESTINATION)):
+    if is_cross_client_family(
+        msg.get_header(MessageHeaderKey.ORIGIN), msg.get_header(MessageHeaderKey.DESTINATION), client_name
+    ):
         msg.set_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, True)
 
 
@@ -93,7 +117,7 @@ def add_server_path_reply_authentication_headers(
         _is_server_fqcn(origin)
         or _is_server_fqcn(destination)
         or _is_server_fqcn(to_cell)
-        or _is_cross_site_reply_via_local_parent(origin, destination, to_cell)
+        or _is_cross_site_reply_via_local_parent(origin, destination, to_cell, client_name)
     ):
         add_authentication_headers(msg, client_name, auth_token, token_signature, ssid)
 

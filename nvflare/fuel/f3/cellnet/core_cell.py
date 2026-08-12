@@ -1182,13 +1182,26 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             and for_msg.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, False)
             and not self.my_info.is_on_server
         ):
-            next_fqcn = FQCN.ROOT_SERVER if self.my_info.is_root else FQCN.get_parent(self.my_info.fqcn)
-            if next_fqcn in self.ALL_CELLS:
-                return Endpoint(next_fqcn)
-            agent = self.agents.get(next_fqcn)
-            if agent:
-                return agent.endpoint
-            self.log_warning(msg=for_msg, log_text=f"no server-transit path through {next_fqcn}")
+            # Prefer the closest connected local ancestor so a client-job
+            # message follows its configured client/relay hierarchy. Some
+            # supported descendants connect directly to the server root, so do
+            # not fail merely because their FQCN parent is not connected.
+            ancestor_path = self.my_info.path[:-1]
+            while ancestor_path:
+                ancestor_fqcn = FQCN.join(ancestor_path)
+                if ancestor_fqcn in self.ALL_CELLS:
+                    return Endpoint(ancestor_fqcn)
+                agent = self.agents.get(ancestor_fqcn)
+                if agent:
+                    return agent.endpoint
+                ancestor_path = ancestor_path[:-1]
+
+            if FQCN.ROOT_SERVER in self.ALL_CELLS:
+                return Endpoint(FQCN.ROOT_SERVER)
+            root_agent = self.agents.get(FQCN.ROOT_SERVER)
+            if root_agent:
+                return root_agent.endpoint
+            self.log_warning(msg=for_msg, log_text="no server-transit path through a local ancestor or server")
             return None
 
         # is there a direct path to the target?

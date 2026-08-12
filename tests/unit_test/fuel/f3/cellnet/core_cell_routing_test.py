@@ -207,6 +207,16 @@ def test_server_transit_required_job_cell_uses_local_parent():
     assert endpoint.name == "site-1"
 
 
+def test_server_transit_required_job_cell_falls_back_to_server_root():
+    cell = _routing_cell("site-1.job-1", ["server", "site-2.job-2"])
+    message = Message(headers={MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True})
+
+    endpoint = cell._try_find_ep("site-2.job-2", message)
+
+    assert endpoint is not None
+    assert endpoint.name == "server"
+
+
 def test_pipe_cell_with_no_connection_is_unreachable():
     cell = _routing_cell("site-1.cellpipe~plain~job-123~active", [])
 

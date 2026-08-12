@@ -25,7 +25,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCo
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
-from nvflare.fuel.sec.authn import set_add_auth_headers_filters
+from nvflare.fuel.sec.authn import is_cross_client_family, set_add_auth_headers_filters
 from nvflare.private.fed.server.fed_server import FederatedServer
 
 AUTH_HEADERS = [
@@ -75,11 +75,11 @@ class _Cert:
         return None
 
 
-def _make_server_auth_filter(monkeypatch):
+def _make_server_auth_filter(monkeypatch, client_fqcn_resolver=None):
     server_auth = FederatedServer.__new__(FederatedServer)
     server_auth.logger = logging.getLogger(__name__)
     server_auth._get_id_asserter = lambda: SimpleNamespace(cert=_Cert())
-    server_auth._resolve_client_fqcn_for_auth = lambda client_name, _token: client_name
+    server_auth._resolve_client_fqcn_for_auth = client_fqcn_resolver or (lambda client_name, _token: client_name)
     monkeypatch.setattr("nvflare.private.fed.server.fed_server.TokenVerifier", lambda _cert: _TokenVerifier())
     return server_auth._validate_auth_headers
 
@@ -156,6 +156,50 @@ def test_cross_client_auth_forces_server_transit_and_strips_credentials_from_pee
     assert reply.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED) is None
 
 
+def test_cross_client_auth_under_same_relay_transits_server_and_strips_credentials(monkeypatch):
+    relay_name = _unique_fqcn("relay")
+    site_a_name = _unique_fqcn("site_a")
+    site_b_name = _unique_fqcn("site_b")
+    server = _make_running_cell("server")
+    _make_running_cell(relay_name)
+    _make_running_cell(f"{relay_name}.{site_a_name}")
+    _make_running_cell(f"{relay_name}.{site_b_name}")
+    site_a_job = _make_running_cell(f"{relay_name}.{site_a_name}.job")
+    site_b_job = _make_running_cell(f"{relay_name}.{site_b_name}.job")
+    server.core_cell.add_incoming_filter(
+        channel="*",
+        topic="*",
+        cb=_make_server_auth_filter(
+            monkeypatch,
+            client_fqcn_resolver=lambda client_name, _token: f"{relay_name}.{client_name}",
+        ),
+    )
+    set_add_auth_headers_filters(site_a_job, site_a_name, "tok-a", "sig-a")
+    set_add_auth_headers_filters(site_b_job, site_b_name, "tok-b", "sig-b")
+    site_b_job.core_cell.register_request_cb(
+        "peer",
+        "ping",
+        lambda request: Message(
+            payload={
+                "auth": _auth_header_values(request),
+                "transit_required": request.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED),
+                "from_cell": request.get_header(MessageHeaderKey.FROM_CELL),
+            }
+        ),
+    )
+
+    reply = site_a_job.send_request("peer", "ping", site_b_job.get_fqcn(), Message(payload="hello"), timeout=1.0)
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+    assert reply.payload == {
+        "auth": {key: None for key in AUTH_HEADERS},
+        "transit_required": None,
+        "from_cell": "server",
+    }
+    assert _auth_header_values(reply) == {key: None for key in AUTH_HEADERS}
+    assert reply.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED) is None
+
+
 def test_client_job_reply_routed_via_local_parents_authenticates_at_server(monkeypatch):
     site_a_name = _unique_fqcn("site_a")
     site_b_name = _unique_fqcn("site_b")
@@ -210,6 +254,31 @@ def test_server_auth_filter_strips_validated_client_request_transit_auth(monkeyp
     auth_filter = _make_server_auth_filter(monkeypatch)
     request_msg = _make_routed_message("site-b", MessageType.REQ, with_auth=True)
     request_msg.set_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, True)
+
+    assert auth_filter(request_msg) is None
+    assert _auth_header_values(request_msg) == {key: None for key in AUTH_HEADERS}
+    assert request_msg.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED) is None
+
+
+def test_server_auth_filter_strips_transit_auth_between_sites_under_same_relay(monkeypatch):
+    relay = _unique_fqcn("relay")
+    site_a = _unique_fqcn("site_a")
+    site_b = _unique_fqcn("site_b")
+    origin = f"{relay}.{site_a}.job"
+    destination = f"{relay}.{site_b}.job"
+    auth_filter = _make_server_auth_filter(
+        monkeypatch,
+        client_fqcn_resolver=lambda client_name, _token: f"{relay}.{client_name}",
+    )
+    request_msg = _make_routed_message(destination, MessageType.REQ, origin=origin)
+    request_msg.add_headers(
+        {
+            CellMessageAuthHeaderKey.CLIENT_NAME: site_a,
+            CellMessageAuthHeaderKey.TOKEN: "token-site-a",
+            CellMessageAuthHeaderKey.TOKEN_SIGNATURE: "sig-site-a",
+            MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True,
+        }
+    )
 
     assert auth_filter(request_msg) is None
     assert _auth_header_values(request_msg) == {key: None for key in AUTH_HEADERS}
@@ -333,6 +402,32 @@ def test_auth_filter_keeps_cross_site_reply_auth_when_routed_via_local_parent():
     }
 
 
+def test_auth_filter_keeps_cross_site_reply_auth_under_same_relay():
+    relay = _unique_fqcn("relay")
+    origin = f"{relay}.site-a.job"
+    victim = _make_running_cell(origin)
+    set_add_auth_headers_filters(victim, "site-a", "tok-a", "sig-a", "ssid-a")
+    reply = Message(
+        headers={
+            MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
+            MessageHeaderKey.ORIGIN: origin,
+            MessageHeaderKey.DESTINATION: f"{relay}.site-b.job",
+            MessageHeaderKey.TO_CELL: f"{relay}.site-a",
+        }
+    )
+
+    for callback in victim.core_cell.out_reply_filter_reg.find("peer", "reply"):
+        callback.cb(reply, *callback.args, **callback.kwargs)
+
+    assert _auth_header_values(reply) == {
+        CellMessageAuthHeaderKey.CLIENT_NAME: "site-a",
+        CellMessageAuthHeaderKey.TOKEN: "tok-a",
+        CellMessageAuthHeaderKey.TOKEN_SIGNATURE: "sig-a",
+        CellMessageAuthHeaderKey.SSID: "ssid-a",
+    }
+    assert reply.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED) is True
+
+
 def test_auth_filter_does_not_add_auth_to_same_site_reply_via_parent():
     origin = f"site-a.{_unique_fqcn('job')}"
     victim = _make_running_cell(origin)
@@ -350,3 +445,14 @@ def test_auth_filter_does_not_add_auth_to_same_site_reply_via_parent():
         callback.cb(reply, *callback.args, **callback.kwargs)
 
     assert _auth_header_values(reply) == {key: None for key in AUTH_HEADERS}
+
+
+@pytest.mark.parametrize(
+    ("origin", "destination", "client_name", "expected"),
+    [
+        ("relay-1.site-a.job-1", "relay-1.site-b.job-2", "site-a", True),
+        ("relay-1.site-a.job-1", "relay-1.site-a.job-2", "site-a", False),
+    ],
+)
+def test_cross_client_family_uses_authenticated_site_identity(origin, destination, client_name, expected):
+    assert is_cross_client_family(origin, destination, client_name) is expected
