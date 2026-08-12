@@ -278,30 +278,29 @@ the trainer remains alive until its complete result-publication barrier settles:
 terminal outcome. It then closes its Cell synchronously, and the CJ reaps that natural process exit
 asynchronously. An orderly job SHUTDOWN cancels an incoming task materialization but not an already
 accepted result publication. If teardown finds such a publication still active, it asks the trainer
-to stop and starts the natural-exit reaper. This also covers inline results, whose acceptance reply
-can race END_RUN even though they create no download transaction. Teardown cannot safely return
-with a daemon reaper because ClientRunner tears down streaming and the CJ Cell immediately after
-END_RUN. A result transfer retains its own `DownloadService` idle/receiver policy, but that longer
-data-transfer budget does not govern CJ process ownership. END_RUN gives a still-live result source
-one acknowledged SHUTDOWN interval, then force-stops every remaining owned process group. Other
-failure/teardown paths use the bounded SHUTDOWN/TERM/KILL sequence immediately.
+to stop, starts the natural-exit reaper, and holds END_RUN until that truthful terminal exit. This
+also covers inline results, whose acceptance reply can race END_RUN even though they create no
+download transaction. Teardown cannot safely return with a daemon reaper because ClientRunner
+tears down streaming and the CJ Cell immediately after END_RUN. The lower `DownloadService`
+idle/receiver policy normally bounds a stalled transfer. END_RUN also applies a final total wait
+backstop just beyond the default streaming-idle budget; if a still-connected trainer remains wedged
+past that bound, the backend force-stops its owned process group rather than hanging job teardown.
+Other failure/teardown paths use the bounded SHUTDOWN/TERM/KILL sequence immediately.
 
 Startup waits at most `launch_timeout` for the trainer to complete its HELLO handshake. The
 default is 300 seconds; callers may explicitly use `None` when an unbounded wait is required. For
 ordinary shutdown, a `shutdown_timeout` of zero is kept as zero and starts process-group termination
 immediately after the orderly SHUTDOWN notification. An accepted result whose publication is
-still live receives the short acknowledgement interval described above before process cleanup.
+different: its truthful terminal barrier takes precedence over ordinary process-shutdown timing,
+so historical `ScriptRunner` defaults cannot erase the source-lifetime contract.
 
 The backend starts the command in an owned process group on POSIX, monitors process-group exit and
 the authenticated heartbeat lease, and rejects messages from stale sessions or unexpected Cell
-origins. Its owner-only bootstrap also records the launching CJ process ID. After HELLO, an external
-trainer watches that owner and terminates its isolated process group if the CJ disappears before
-normal finalization can reap it. Attach mode never receives or watches a CJ process ID because the
-attached process is externally owned. With a positive orderly-shutdown bound, shutdown sends a
-bounded Cell request and charges its acknowledgement time against that bound; a zero bound keeps the
-immediate fire-and-forget notification for ordinary teardown. A live accepted-result publication
-always uses a short, acknowledged SHUTDOWN request because the trainer cannot be force-stopped
-before its send barrier settles; the source reaper retries transient control-path failures. Its acknowledgement also
+origins. With a positive orderly-shutdown bound, shutdown sends a bounded Cell request and charges
+its acknowledgement time against that bound; a zero bound keeps the immediate fire-and-forget
+notification for ordinary teardown. A live accepted-result publication always uses a short,
+acknowledged SHUTDOWN request because the trainer cannot be force-stopped before its send barrier
+settles; the source reaper retries transient control-path failures. Its acknowledgement also
 reports whether `send()` still owns that barrier. This state transition is serialized with
 SHUTDOWN: either `send()` sees the stop and closes after terminal settlement, or the backend learns
 that settlement already happened and can stop the persistent process. A standard trainer loop also releases its Cell

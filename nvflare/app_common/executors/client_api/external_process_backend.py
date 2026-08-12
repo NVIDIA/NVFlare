@@ -53,6 +53,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.streaming.download_service import DownloadService
+from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
 from nvflare.security.logging import secure_format_traceback
@@ -352,7 +353,6 @@ class ExternalProcessBackend(CellBackendBase):
                     BootstrapKey.EXECUTION_MODE: EXTERNAL_PROCESS_EXECUTION_MODE,
                     BootstrapKey.CONNECT_URL: self._connect_url,
                     BootstrapKey.CJ_FQCN: self._cj_fqcn,
-                    BootstrapKey.CJ_PID: os.getpid(),
                     BootstrapKey.TRAINER_FQCN: trainer_fqcn,
                     BootstrapKey.LAUNCH_TOKEN: token,
                     BootstrapKey.JOB_ID: self._job_id,
@@ -438,12 +438,7 @@ class ExternalProcessBackend(CellBackendBase):
             if deadline is not None and time.monotonic() >= deadline:
                 raise RuntimeError(f"trainer did not complete the HELLO handshake within launch_timeout={timeout}s")
 
-    def _stop_trainer(
-        self,
-        trainer: _TrainerSession,
-        natural_exit_wait: float,
-        termination_grace: Optional[float] = None,
-    ) -> None:
+    def _stop_trainer(self, trainer: _TrainerSession, natural_exit_wait: float) -> None:
         """Stop a trainer gracefully, then terminate its process/group; idempotent and non-raising."""
         with trainer._stop_lock:
             if trainer._cleaned:
@@ -473,8 +468,7 @@ class ExternalProcessBackend(CellBackendBase):
             except Exception:
                 self.logger.error(secure_format_traceback())
             try:
-                grace = self._termination_grace() if termination_grace is None else max(0.0, termination_grace)
-                self._terminate_process_tree(trainer, grace=grace)
+                self._terminate_process_tree(trainer, grace=self._termination_grace())
             except Exception:
                 self.logger.error(secure_format_traceback())
             self._cleanup_trainer(trainer)
@@ -574,9 +568,7 @@ class ExternalProcessBackend(CellBackendBase):
                 "forcing trainer cleanup"
             )
         for trainer in wedged:
-            # The result-source grace has already elapsed. Do not start a second,
-            # independently long process grace that can outlive the CJ teardown.
-            self._stop_trainer(trainer, natural_exit_wait=0.0, termination_grace=0.0)
+            self._stop_trainer(trainer, natural_exit_wait=0.0)
         for trainer in wedged:
             reaper = trainer.reaper_thread
             if reaper is not None:
@@ -742,16 +734,13 @@ class ExternalProcessBackend(CellBackendBase):
         return shutdown_bound if shutdown_bound > 0 else _DEFAULT_SHUTDOWN_TIMEOUT
 
     def _result_reaper_wait_bound(self) -> float:
-        """Bound live result sources to one END_RUN acknowledgement interval.
-
-        A source transaction has its own streaming idle timeout, but END_RUN cannot
-        wait for that independently long timeout: the outer job process may tear down
-        the CJ first and orphan an owned per-task trainer. Give an admitted send one
-        SHUTDOWN acknowledgement interval, then force-clean every still-owned launch.
-        The separately configured natural-exit grace is for sources already known to
-        be settled, not for an unconsumed result at END_RUN.
-        """
-        return _LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT
+        """Return the END_RUN backstop after transfer and disconnect budgets."""
+        disconnect_grace = (
+            self._context.heartbeat_timeout
+            if self._context.heartbeat_timeout > 0
+            else self._result_source_disconnect_grace()
+        )
+        return DEFAULT_STREAMING_IDLE_TIMEOUT + disconnect_grace + _LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT
 
     def _unwind(self) -> None:
         """Releases partial setup after a failed initialize(). Best-effort per step."""

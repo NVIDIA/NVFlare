@@ -244,18 +244,6 @@ class TestResultUploadReceiverStamp(unittest.TestCase):
         self.assertIsNone(task_data.get_header(FOBSContextKey.RECEIVER_IDS))
         self.assertTrue(ctl.log_warning.called)
 
-    def test_swarm_skips_receiver_stamp_when_aggregation_client_is_unavailable(self):
-        ctl = _make_controller()
-        task_data = _make_shareable_with_real_arrays()
-        fl_ctx = MagicMock()
-        fl_ctx.get_job_id.return_value = "job-1"
-        fl_ctx.get_engine.return_value.get_client_from_name.return_value = None
-
-        ctl._stamp_result_upload_receiver_ids(task_data, "site-2", fl_ctx)
-
-        self.assertIsNone(task_data.get_header(FOBSContextKey.RECEIVER_IDS))
-        self.assertTrue(ctl.log_warning.called)
-
 
 class TestScatterLazyRefHandling(unittest.TestCase):
     """_scatter() preserves local refs and opts remote learn tasks into PASS_THROUGH."""

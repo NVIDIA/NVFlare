@@ -346,7 +346,7 @@ class TestInitializeAndFinalize:
             assert CellChannel.SERVER_COMMAND not in env.cell.decode_pass_through_channels
             for topic in PROTOCOL_TOPICS:
                 assert topic in env.cell.cbs, f"backend must register a handler for {topic}"
-            # LOG analytics go out federation-scoped.
+            # LOG analytics go out federation-scoped (MetricRelay ex-process parity)
             executor.set_analytics_fire_fed_event.assert_called_once_with(True)
             # process launched in its own group with the bootstrap path in its env
             process = env.harness.processes[0]
@@ -678,6 +678,7 @@ class TestInitializeAndFinalize:
         assert backend._active_launch is None
 
     def test_finalize_bounds_connected_wedged_result_source(self, env, monkeypatch, caplog):
+        monkeypatch.setattr(ebp, "DEFAULT_STREAMING_IDLE_TIMEOUT", 0.02)
         monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.01)
         monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
         backend, _ = _initialized_backend(
@@ -2168,8 +2169,6 @@ class TestLaunchPerTask:
 
             config_1, config_2 = env.harness.bootstrap_configs
             assert config_1[BootstrapKey.LAUNCH_TOKEN] != config_2[BootstrapKey.LAUNCH_TOKEN]
-            assert config_1[BootstrapKey.CJ_PID] == os.getpid()
-            assert config_2[BootstrapKey.CJ_PID] == os.getpid()
             assert config_1[BootstrapKey.TRAINER_FQCN].endswith("_1")
             assert config_2[BootstrapKey.TRAINER_FQCN].endswith("_2")
             assert config_1[BootstrapKey.TASK_EXCHANGE][ConfigKey.LAUNCH_ONCE] is False
@@ -2279,38 +2278,6 @@ class TestLaunchPerTask:
         finally:
             env.cell.disconnected.update((retired_trainer.trainer_fqcn, current_trainer.trainer_fqcn))
             finalize_thread.join(timeout=1.0)
-
-    def test_finalize_force_stops_connected_late_result_sources_within_end_run_budget(self, env, monkeypatch, caplog):
-        """Late results that nobody consumes must not outlive their owning CJ."""
-        monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.02)
-        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
-        backend, fl_ctx = _initialized_backend(
-            env,
-            launch_once=False,
-            stop_grace_period=30.0,
-        )
-        _install_auto_result(env, lazy_result=True)
-
-        first = backend.execute("train", Shareable(), fl_ctx, Signal())
-        retired_trainer = backend._active_launch
-        second = backend.execute("train", Shareable(), fl_ctx, Signal())
-        current_trainer = backend._active_launch
-
-        assert first.get_return_code() == ReturnCode.OK
-        assert second.get_return_code() == ReturnCode.OK
-        assert retired_trainer is not current_trainer
-        assert all(process.returncode is None for process in env.harness.processes)
-        assert all(trainer.result_source_live.is_set() for trainer in (retired_trainer, current_trainer))
-
-        start = time.monotonic()
-        backend.finalize(FLContext())
-        elapsed = time.monotonic() - start
-
-        assert elapsed < 0.5
-        assert all(process.returncode is not None for process in env.harness.processes)
-        assert backend._result_reapers == set()
-        assert backend._active_launch is None
-        assert "forcing trainer cleanup" in caplog.text
 
     def test_abort_during_per_task_launch_returns_task_aborted(self, env):
         """Abort is the only bound when launch_timeout is unset and HELLO never arrives."""

@@ -111,16 +111,6 @@ class TestBootstrapConfig:
         assert get_bootstrap_client_api_type(CONFIG, "bootstrap.json") == CELL_API_TYPE
         assert get_bootstrap_client_api_type(ATTACH_CONFIG, "attach.json") == CELL_API_TYPE
 
-    @pytest.mark.parametrize("value", [0, -1, True, "123"])
-    def test_external_profile_rejects_invalid_cj_pid(self, value):
-        config = {**CONFIG, BootstrapKey.CJ_PID: value}
-        with pytest.raises(ValueError, match="cj_pid.*positive int"):
-            get_bootstrap_client_api_type(config, "bootstrap.json")
-
-    def test_attach_profile_rejects_cj_pid(self):
-        with pytest.raises(ValueError, match="attach must not configure.*cj_pid"):
-            get_bootstrap_client_api_type({**ATTACH_CONFIG, BootstrapKey.CJ_PID: 123}, "attach.json")
-
     @pytest.mark.parametrize("field", [BootstrapKey.ATTACH_ID, BootstrapKey.SITE_NAME])
     def test_attach_profile_requires_rendezvous_fields(self, field):
         config = dict(ATTACH_CONFIG)
