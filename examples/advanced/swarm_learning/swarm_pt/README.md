@@ -30,6 +30,7 @@ git clone https://github.com/NVIDIA/NVFlare.git
 Then navigate to the example directory:
 
 ```bash
+cd NVFlare
 git switch <release branch>
 cd examples/advanced/swarm_learning/swarm_pt
 ```

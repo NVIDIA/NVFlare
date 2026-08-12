@@ -91,9 +91,10 @@ distribution; handle conversion later as a separate request.
    alone does not prove delivery. Ask or fail closed when validation semantics
    are missing. Partition site data per the "Site Data Partitioning" rule in
    `../nvflare-shared/references/conversion-common.md`.
-7. Add or update `job.py` with explicit model config
-   `{"class_path": ..., "args": ...}` (never a live `LightningModule`),
-   requested `aggregator=` wiring, and the metric, tensor-transport, server
+7. Add or update `job.py` under the shared "Recipe Model Config" policy. A
+   direct instance, when allowed by that policy, must be the complete
+   `LightningModule`, not its inner network. Add the requested `aggregator=`
+   wiring and the metric, tensor-transport, server
    offload, and execution settings derived from the shared PyTorch-family
    construction profile.
 8. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`:
@@ -126,9 +127,10 @@ distribution; handle conversion later as a separate request.
 - Must audit model constructor arguments before writing `job.py` by reading the
   `LightningModule.__init__` signature and the selected recipe's `model`
   parameter from `nvflare recipe show <recipe-name> --format json`, not by
-  reading NVFLARE library source. Emit explicit recipe model config with
-  `class_path` and `args` only when the values are statically clear from literal
-  source, configuration, or supplied metadata; otherwise ask one semantic
+  reading NVFLARE library source. The shared "Recipe Model Config" policy
+  governs whether to emit `class_path`/`args` config or a direct
+  `LightningModule`; required values must be statically clear from literal
+  source, configuration, or supplied metadata. Otherwise ask one semantic
   question when an answer channel exists or fail closed on that missing value.
 - Must use the PyTorch recipe family; must not invent a Lightning-only recipe.
 - Must apply

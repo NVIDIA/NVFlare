@@ -76,11 +76,12 @@ distribution; handle conversion later as a separate request.
 5. Convert training and evaluation as a pair using
    `references/pytorch-client-api-conversion.md`: initialize FLARE, receive an
    `FLModel`, load `params`, evaluate the received global model, train, and
-   send an `FLModel` with updated `params` and `metrics`. Adapt the user's
+   send an `FLModel` with updated `params`, `metrics`, and the actual completed
+   local optimizer-step count in `NUM_STEPS_CURRENT_ROUND`. Adapt the user's
    evaluation code into the packaged evaluation template; if evaluation is
    required but missing, ask or fail closed. Partition site data per the "Site
    Data Partitioning" rule in `../nvflare-shared/references/conversion-common.md`.
-6. Add or update `job.py` with explicit model config (never a live model),
+6. Add or update `job.py` under the shared "Recipe Model Config" policy,
    requested `aggregator=` wiring, and the metric, tensor-transport, server
    offload, and execution settings derived from the shared PyTorch-family
    construction profile.
@@ -101,10 +102,11 @@ distribution; handle conversion later as a separate request.
 - Must audit model constructor arguments before writing `job.py` by reading the
   model module's `__init__` and the selected recipe's `model` parameter from
   `nvflare recipe show <recipe-name> --format json`, not by reading NVFLARE
-  library source. Emit explicit recipe model config with `class_path` and
-  `args` only when the values are statically clear from literal source,
-  configuration, or supplied metadata; otherwise ask one semantic question when
-  an answer channel exists or fail closed on that missing value.
+  library source. The shared "Recipe Model Config" policy governs whether to
+  emit `class_path`/`args` config or a direct `torch.nn.Module`; required
+  values must be statically clear from literal source, configuration, or
+  supplied metadata. Otherwise ask one semantic question when an answer channel
+  exists or fail closed on that missing value.
 - Must follow `../nvflare-shared/references/pytorch-model-exchange.md` and
   `references/pytorch-client-api-conversion.md` for the canonical plain-PyTorch
   payload and round-loop pattern.
@@ -117,6 +119,10 @@ distribution; handle conversion later as a separate request.
 - Must convert source evaluation alongside training and return metrics through
   `FLModel.metrics`; must not synthesize metric semantics without source
   evidence.
+- Must count completed local optimizer steps in each generated training round
+  and send that positive value as `MetaKey.NUM_STEPS_CURRENT_ROUND`. This is the
+  FedAvg aggregation weight; do not omit it, reuse a cumulative count, or
+  invent a value when the source loop cannot establish it.
 - Must load checkpoints with `torch.load(..., weights_only=True)`; a
   checkpoint that needs full unpickling is ask/fail, per
   `references/pytorch-client-api-conversion.md`.
