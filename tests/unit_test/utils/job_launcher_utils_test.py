@@ -170,14 +170,14 @@ class TestPortableResourceSpec:
         assert get_portable_resource_spec(meta, "site-1") == {"num_of_cpus": 2}
         assert get_portable_resource_spec(meta, "server") == {"num_of_cpus": 2}
 
-    def test_resource_manager_gets_positive_gpu_and_custom_resources(self):
+    def test_resource_manager_gets_positive_gpu_and_gpu_memory(self):
         meta = {
             "resource_spec": {
                 "@default": {"num_of_gpus": 1, "num_of_cpus": 4, "memory": "8Gi"},
-                "site-1": {"license": 2},
+                "site-1": {"mem_per_gpu_in_GiB": 16},
             }
         }
-        assert get_resource_manager_spec(meta, "site-1") == {"num_of_gpus": 1, "license": 2}
+        assert get_resource_manager_spec(meta, "site-1") == {"num_of_gpus": 1, "mem_per_gpu_in_GiB": 16}
 
     def test_resource_manager_ignores_zero_gpu(self):
         meta = {"resource_spec": {"@default": {"num_of_gpus": 0, "num_of_cpus": 4, "memory": "8Gi"}}}
@@ -194,16 +194,24 @@ class TestPortableResourceSpec:
         [
             {"num_of_gpus": -1},
             {"num_of_gpus": True},
+            {"num_of_gpus": None},
             {"num_of_cpus": 0},
             {"num_of_cpus": 1.5},
+            {"num_of_cpus": None},
             {"memory": "8G"},
             {"memory": "1.5Gi"},
             {"memory": "0Gi"},
+            {"memory": None},
         ],
     )
     def test_rejects_invalid_portable_value(self, spec):
         with pytest.raises(ValueError):
             validate_portable_resource_spec({"@default": spec})
+
+    @pytest.mark.parametrize("key", ["num_of_gpus", "num_of_cpus", "memory"])
+    def test_rejects_null_site_override(self, key):
+        with pytest.raises(ValueError):
+            validate_portable_resource_spec({"@default": {}, "site-1": {key: None}})
 
     def test_rejects_unknown_default_field(self):
         with pytest.raises(ValueError, match="unsupported field"):

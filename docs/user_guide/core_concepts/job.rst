@@ -124,15 +124,18 @@ manager. Positive GPU requests and additional site-specific fields continue thro
             },
             "site-2": {
                 "num_of_gpus": 8,
-                "num_of_cpus": 16
+                "num_of_cpus": 16,
+                "mem_per_gpu_in_GiB": 16
             }
         }
     }
 
 Docker enforces these as GPU device requests, CPU quota, and a memory limit. Kubernetes sets equal requests and limits
-for GPUs, CPU, and memory. Slurm maps them to ``--gres``, ``--cpus-per-task``, and ``--mem``. GPU memory is not portable;
-MIG, device-plugin sharing, and typed GRES remain site-specific. Site-specific resource managers may continue to use
-additional fields in per-site blocks, but ``@default`` accepts only the three portable fields.
+for GPUs, CPU, and memory. Slurm maps them to ``--gres``, ``--cpus-per-task``, and ``--mem``. The portable ``memory``
+field is host memory. The existing ``mem_per_gpu_in_GiB`` field is a per-site GPU-memory requirement used only when that
+site configures ``GPUResourceManager``; it is not portable and is not allowed under ``@default``. MIG, device-plugin
+sharing, and typed GRES also remain site-specific. Site-specific resource managers may continue to use additional
+fields in per-site blocks, but ``@default`` accepts only the three portable fields.
 
 .. _launcher_spec:
 

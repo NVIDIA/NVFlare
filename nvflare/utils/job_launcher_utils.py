@@ -168,15 +168,21 @@ def get_launcher_resource_spec(job_meta, site_name, mode):
 
 def _validate_portable_values(resource_spec: dict, label: str) -> None:
     num_gpus = resource_spec.get("num_of_gpus")
-    if num_gpus is not None and (isinstance(num_gpus, bool) or not isinstance(num_gpus, int) or num_gpus < 0):
+    if "num_of_gpus" in resource_spec and (
+        isinstance(num_gpus, bool) or not isinstance(num_gpus, int) or num_gpus < 0
+    ):
         raise ValueError(f"{label}.num_of_gpus must be an integer greater than or equal to 0")
 
     num_cpus = resource_spec.get("num_of_cpus")
-    if num_cpus is not None and (isinstance(num_cpus, bool) or not isinstance(num_cpus, int) or num_cpus < 1):
+    if "num_of_cpus" in resource_spec and (
+        isinstance(num_cpus, bool) or not isinstance(num_cpus, int) or num_cpus < 1
+    ):
         raise ValueError(f"{label}.num_of_cpus must be an integer greater than or equal to 1")
 
     memory = resource_spec.get("memory")
-    if memory is not None and (not isinstance(memory, str) or not _PORTABLE_MEMORY_PATTERN.fullmatch(memory)):
+    if "memory" in resource_spec and (
+        not isinstance(memory, str) or not _PORTABLE_MEMORY_PATTERN.fullmatch(memory)
+    ):
         raise ValueError(f"{label}.memory must be a positive integer followed by Mi, Gi, or Ti")
 
 
