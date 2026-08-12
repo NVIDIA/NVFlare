@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -238,6 +238,8 @@ class TestScriptRunner:
 
         launcher = job._deploy_map["site-1"].app_config.components["launcher"]
         assert isinstance(launcher, SubprocessLauncher)
+        assert "metric_relay" not in job._deploy_map["site-1"].app_config.components
+        assert "config_preparer" not in job._deploy_map["site-1"].app_config.components
         assert launcher._script == [
             "python3",
             "-u",
