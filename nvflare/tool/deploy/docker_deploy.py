@@ -129,7 +129,8 @@ def _patch_comm_config_for_docker(kit_dir: Path) -> None:
     internal["scheme"] = "tcp"
     resources = _internal_resources(comm_config)
     resources["host"] = "0.0.0.0"
-    resources.setdefault("connection_security", "clear")
+    resources["listen_host"] = "0.0.0.0"
+    resources["connection_security"] = "mtls"
     _write_json(comm_config_path, comm_config)
 
 

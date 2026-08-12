@@ -21,6 +21,14 @@ Compatibility and Migration Notes
   and must use the documented portable types. Custom resource managers that previously interpreted these names
   differently must migrate to the portable types or rename their custom fields. Legacy nested resource specifications
   without ``@default`` remain unchanged.
+- Internal CellNet listeners now bind to loopback for local process launches.
+  Docker, Kubernetes, and Slurm deployments use mTLS for internal parent/job
+  hops that must cross a network namespace. Non-loopback internal listeners
+  without mutual TLS are rejected. Administrative CP and server-job
+  command receivers also validate their parent route, pre-authentication server
+  replies no longer carry reusable bearer headers, and ``configure_job_log``
+  accepts only log levels or built-in log modes instead of arbitrary Python
+  ``dictConfig`` payloads.
 - F3 retains its 16 MiB streaming-window and 4 MiB ACK-interval defaults for
   compatibility and bounded per-stream memory. High-bandwidth deployments may
   opt into larger values on all endpoints; ``dev_tools/f3/comm_config.yml``

@@ -211,8 +211,9 @@ def _patch_comm_config(kit_dir: Path, port: int) -> None:
     resources.update(
         {
             "host": "0.0.0.0",
+            "listen_host": "0.0.0.0",
             "port": port,
-            "connection_security": "clear",
+            "connection_security": "mtls",
         }
     )
     _write_json(comm_config_path, comm_config)
