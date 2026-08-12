@@ -28,7 +28,11 @@ from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.logging import secure_format_exception
-from nvflare.utils.job_launcher_utils import DOCKER_JOB_LAUNCHER_KEYS
+from nvflare.utils.job_launcher_utils import (
+    DOCKER_JOB_LAUNCHER_KEYS,
+    validate_portable_resource_conflicts,
+    validate_portable_resource_spec,
+)
 
 CONFIG_FOLDER = "/config/"
 CUSTOM_FOLDER = "/custom/"
@@ -50,6 +54,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
         self._validate_min_clients(job_name, meta, clients)
         self._validate_resource(job_name, meta)
         self._validate_launcher_spec(job_name, meta)
+        validate_portable_resource_conflicts(meta)
         self._validate_mandatory_clients(job_name, meta, clients)
         return meta
 
@@ -276,6 +281,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
                     JobMetaValidator._validate_docker_launcher_spec(
                         job_name, f"resource_spec['{k}']['docker']", docker_spec
                     )
+            validate_portable_resource_spec(resource_spec)
 
     _VALID_LAUNCHER_MODES = {"process", "docker", "k8s", "slurm"}
 

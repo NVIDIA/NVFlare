@@ -22,6 +22,7 @@ from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.metrics_exchange.metrics_sender import ANALYTICS_BOOTSTRAP_ENV, ANALYTICS_BOOTSTRAP_FILE
 from nvflare.app_common.tie.applet import Applet
 from nvflare.app_common.tie.cli_applet import CLIApplet
 from nvflare.app_common.tie.defs import Constant as TieConstant
@@ -212,14 +213,15 @@ class FlowerClientApplet(CLIApplet):
         if node_config_str:
             cmd += node_config_str
 
-        # use app_dir as the cwd for flower's client app.
-        # this is necessary for client_api to be used with the flower client app for metrics logging
-        # client_api expects config info from the "config" folder in the cwd!
+        env = self.extra_env.copy()
+        env[ANALYTICS_BOOTSTRAP_ENV] = os.path.join(ws.get_app_config_dir(job_id), ANALYTICS_BOOTSTRAP_FILE)
+
+        # Use app_dir as the cwd for Flower's client app and its project files.
         self.logger.info(f"starting flower client app: {cmd}")
         return CommandDescriptor(
             cmd=cmd,
             cwd=app_dir,
-            env=self.extra_env,
+            env=env,
             log_file_name="client_app_log.txt",
             stdout_msg_prefix="FLWR-CA",
             stop_method=StopMethod.TERMINATE,

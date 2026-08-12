@@ -208,6 +208,38 @@ class TestJobMetaValidator:
         with pytest.raises(ValueError, match="unknown launcher mode"):
             JobMetaValidator._validate_launcher_spec("unit_test", {"launcher_spec": {"site-1": {"slurm_typo": {}}}})
 
+    def test_job_validation_rejects_portable_k8s_gpu_conflict(self):
+        meta = {
+            "name": "sag",
+            "deploy_map": {"sag": ["server", "site-1", "site-2"]},
+            "resource_spec": {"site-1": {"num_of_gpus": 1}},
+            "launcher_spec": {"site-1": {"k8s": {"num_of_gpus": 8}}},
+        }
+        data = _zip_job_with_meta("valid_job", json.dumps(meta))
+
+        valid, error, _ = self.validator.validate("valid_job", data)
+
+        assert not valid
+        assert "portable resource 'num_of_gpus' conflicts with launcher_spec k8s" in error
+
+    def test_job_validation_rejects_legacy_nested_gpu_mismatch(self):
+        meta = {
+            "name": "sag",
+            "deploy_map": {"sag": ["server", "site-1", "site-2"]},
+            "resource_spec": {
+                "site-1": {
+                    "process": {"num_of_gpus": 1},
+                    "docker": {"num_of_gpus": 8},
+                }
+            },
+        }
+        data = _zip_job_with_meta("valid_job", json.dumps(meta))
+
+        valid, error, _ = self.validator.validate("valid_job", data)
+
+        assert not valid
+        assert "legacy process num_of_gpus" in error
+
     @pytest.mark.parametrize("job_name", VALID_JOBS)
     def test_validate_valid_jobs(self, job_name):
         self._assert_valid(job_name)

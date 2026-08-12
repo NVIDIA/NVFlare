@@ -24,6 +24,7 @@ then navigate to the hello-lr directory:
 
 .. code-block:: text
 
+    cd NVFlare
     git switch <release branch>
     cd examples/hello-world/hello-lr
 

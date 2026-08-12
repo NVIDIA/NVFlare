@@ -1089,6 +1089,25 @@ class TestDockerJobLauncherLaunchJob:
         call_kwargs = dc.containers.run.call_args[1]
         assert call_kwargs.get("device_requests") == [{"Count": 2, "Capabilities": [["gpu"]]}]
 
+    def test_launch_portable_cpu_and_memory(self):
+        launcher = _make_launcher(default_job_container_kwargs={"nano_cpus": 1, "mem_limit": 1})
+        dc = launcher._docker_client
+        container = MagicMock(id="abc123")
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = _make_job_meta(site_name="site-1")
+        job_meta[JobMetaKey.RESOURCE_SPEC.value] = {
+            "@default": {"num_of_cpus": 4, "memory": "8Gi"},
+            "site-1": {"num_of_cpus": 6},
+        }
+
+        launcher.launch_job(job_meta, fl_ctx)
+
+        call_kwargs = dc.containers.run.call_args[1]
+        assert call_kwargs["nano_cpus"] == 6_000_000_000
+        assert call_kwargs["mem_limit"] == 8 * 1024**3
+
     def test_launch_image_from_launcher_spec_default(self):
         """launcher_spec 'default' key applies to all sites that have no explicit entry."""
         launcher = _make_launcher()

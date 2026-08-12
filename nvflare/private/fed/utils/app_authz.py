@@ -49,7 +49,10 @@ class AppAuthzService(object):
         for mode in ("docker", "k8s", "slurm"):
             spec = get_job_launcher_spec(job_meta, site_name, mode)
             byoc_keys = DOCKER_JOB_BYOC_KEYS if mode == "docker" else {"image", "python_path"}
-            if byoc_keys.intersection(spec):
+            is_byoc = bool(byoc_keys.intersection(spec))
+            if mode == "slurm" and spec.get("additional_node_command") is not None:
+                is_byoc = True
+            if is_byoc:
                 app_info = copy.deepcopy(app_info)
                 app_info[AppValidationKey.BYOC] = True
                 break
