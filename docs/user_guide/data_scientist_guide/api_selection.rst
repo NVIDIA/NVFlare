@@ -46,16 +46,20 @@ SCAFFOLD, or Swarm.
 The Client API defines the client-side training lifecycle: receive a global
 model, run local training or evaluation on site-local data, and send the
 resulting ``FLModel`` and metrics. The Job Recipe defines the corresponding
-server-side lifecycle, including round orchestration, aggregation, validation,
-and model selection for the chosen supported workflow. This separation lets the
-training script remain focused on framework code while the job definition owns
-the FL behavior.
+Recipe-managed workflow, including round orchestration, aggregation,
+validation, and model selection for the chosen supported workflow. In
+centralized recipes, aggregation runs on the server. In Swarm, a participating
+aggregation client performs the round orchestration and aggregation. This
+separation lets the training script remain focused on framework code while the
+job definition owns the FL behavior.
 
-For supported PyTorch Recipe workflows, server-side tensor disk offload can
-materialize incoming update tensors through temporary disk storage during
-aggregation, reducing peak server memory pressure for large models. The
-availability and configuration of such resource controls depend on the selected
-Recipe and exchange format.
+For supported PyTorch Recipe workflows, tensor disk offload can materialize
+incoming update tensors through temporary disk storage during aggregation,
+reducing peak memory pressure for large models. Provision the disk and memory
+on the aggregation location: the server for centralized recipes, or each site
+that can be selected as the aggregation client for Swarm. The availability and
+configuration of these resource controls depend on the selected Recipe and
+exchange format.
 
 This is the recommended path when you need a repeatable job definition,
 supported algorithm behavior, local simulation and validation, job export and
