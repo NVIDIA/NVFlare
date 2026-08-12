@@ -224,6 +224,8 @@ def get_resource_manager_spec(job_meta: dict, site_name: str) -> dict:
     result = {key: value for key, value in resolved.items() if key not in ("num_of_cpus", "memory")}
     if result.get("num_of_gpus") == 0:
         result.pop("num_of_gpus")
+        if result.get("mem_per_gpu_in_GiB") == 0:
+            result.pop("mem_per_gpu_in_GiB")
     return result
 
 

@@ -183,6 +183,19 @@ class TestPortableResourceSpec:
         meta = {"resource_spec": {"@default": {"num_of_gpus": 0, "num_of_cpus": 4, "memory": "8Gi"}}}
         assert get_resource_manager_spec(meta, "site-1") == {}
 
+    def test_resource_manager_normalizes_zero_gpu_pair_and_preserves_custom_resources(self):
+        meta = {
+            "resource_spec": {
+                "site-1": {
+                    "num_of_gpus": 0,
+                    "mem_per_gpu_in_GiB": 0,
+                    "license": 2,
+                }
+            }
+        }
+
+        assert get_resource_manager_spec(meta, "site-1") == {"license": 2}
+
     def test_legacy_nested_spec_is_not_reinterpreted_without_default(self):
         meta = {"resource_spec": {"site-1": {"process": {"num_of_cpus": 4}, "docker": {"image": "x"}}}}
         validate_portable_resource_spec(meta["resource_spec"])

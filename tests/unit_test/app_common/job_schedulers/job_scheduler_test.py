@@ -473,6 +473,28 @@ class TestDefaultJobScheduler:
         assert dispatch_info["site1"].resource_requirements == {}
         assert dispatch_info["site2"].resource_requirements == {}
 
+    def test_legacy_zero_gpu_pair_bypasses_gpu_resource_manager(self):
+        sites = [
+            Site(
+                name="site1",
+                resources={},
+                resource_manager=GPUResourceManager(num_of_gpus=0, mem_per_gpu_in_GiB=0, ignore_host=True),
+            )
+        ]
+        candidate = create_job(
+            job_id="cpu-only",
+            resource_spec={"site1": {"num_of_gpus": 0, "mem_per_gpu_in_GiB": 0}},
+            deploy_map={"app": [ALL_SITES]},
+            min_sites=1,
+        )
+        scheduler = DefaultJobScheduler(max_jobs=1, min_schedule_interval=0)
+
+        with create_servers(1, sites)[0].new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(Mock(spec=JobDefManagerSpec), [candidate], fl_ctx)
+
+        assert job == candidate
+        assert dispatch_info["site1"].resource_requirements == {}
+
     def test_cancellation_uses_resource_manager_requirements(self):
         sites = [
             Site(name="site1", resources={"license": 8}),
