@@ -139,7 +139,7 @@ class TestByteStreamerAckWatchdog:
         assert "sender=sender receiver=receiver" in str(task.stream_future.exception(timeout=0.1))
         error_callback.assert_called_once_with(message)
 
-    def test_late_receiver_error_is_logged_with_stream_identity(self, caplog):
+    def test_uncorrelated_receiver_error_is_ignored(self, caplog):
         cell = MagicMock()
         cell.my_info.fqcn = "sender"
         streamer = ByteStreamer(cell)
@@ -155,16 +155,32 @@ class TestByteStreamerAckWatchdog:
             }
         )
 
-        with caplog.at_level("ERROR"):
+        with caplog.at_level("WARNING"):
             streamer._error_handler(message)
 
-        assert "stream_id=99 channel=ch topic=tp sender=sender receiver=receiver" in caplog.text
-        error_callback.assert_called_once_with(message)
+        assert "Ignored uncorrelated stream error: stream_id=99" in caplog.text
+        error_callback.assert_not_called()
 
     def test_late_correlated_receiver_error_is_warning(self, caplog):
         cell = MagicMock()
         cell.my_info.fqcn = "sender"
         streamer = ByteStreamer(cell)
+        error_callback = MagicMock()
+        streamer.register_error_callback(error_callback)
+        task = TxTask(
+            cell=cell,
+            chunk_size=1,
+            channel="ch",
+            topic="tp",
+            target="receiver",
+            headers={StreamHeaderKey.STREAM_REQ_ID: "request-100"},
+            stream=DummyStream([b"x"]),
+            reliable=False,
+            secure=False,
+            optional=False,
+        )
+        task.sid = 100
+        task.remove_task()
         message = Message(
             {
                 MessageHeaderKey.ORIGIN: "receiver",
@@ -182,6 +198,51 @@ class TestByteStreamerAckWatchdog:
         records = [record for record in caplog.records if "stream_id=100" in record.message]
         assert len(records) == 1
         assert records[0].levelname == "WARNING"
+        assert "Late stream error" in records[0].message
+        error_callback.assert_called_once_with(message)
+
+    @pytest.mark.parametrize(
+        "changed_header,changed_value",
+        [
+            (MessageHeaderKey.ORIGIN, "attacker"),
+            (StreamHeaderKey.CHANNEL, "other-channel"),
+            (StreamHeaderKey.TOPIC, "other-topic"),
+            (StreamHeaderKey.STREAM_REQ_ID, "other-request"),
+        ],
+    )
+    def test_late_error_with_mismatched_context_is_ignored(self, changed_header, changed_value):
+        cell = MagicMock()
+        cell.my_info.fqcn = "sender"
+        streamer = ByteStreamer(cell)
+        error_callback = MagicMock()
+        streamer.register_error_callback(error_callback)
+        task = TxTask(
+            cell=cell,
+            chunk_size=1,
+            channel="ch",
+            topic="tp",
+            target="receiver",
+            headers={StreamHeaderKey.STREAM_REQ_ID: "request-101"},
+            stream=DummyStream([b"x"]),
+            reliable=False,
+            secure=False,
+            optional=False,
+        )
+        task.sid = 101
+        task.remove_task()
+        headers = {
+            MessageHeaderKey.ORIGIN: "receiver",
+            StreamHeaderKey.STREAM_ID: 101,
+            StreamHeaderKey.STREAM_REQ_ID: "request-101",
+            StreamHeaderKey.CHANNEL: "ch",
+            StreamHeaderKey.TOPIC: "tp",
+            StreamHeaderKey.ERROR_MSG: "rejected",
+            changed_header: changed_value,
+        }
+
+        streamer._error_handler(Message(headers))
+
+        error_callback.assert_not_called()
 
     def test_receiver_blob_size_error_preserves_error_type(self, monkeypatch):
         task, _ = self._make_task(

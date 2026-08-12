@@ -94,6 +94,34 @@ def test_async_stream_error_does_not_exit_non_server_job(monkeypatch):
     assert exit_calls == []
 
 
+def test_uncorrelated_blob_size_stream_error_does_not_exit_server_job(monkeypatch):
+    sender_cell = MagicMock()
+    sender_cell.my_info.fqcn = "server.job-id"
+    byte_streamer = ByteStreamer(sender_cell)
+    server = Cell.__new__(Cell)
+    server.core_cell = sender_cell
+    server.requests_dict = {}
+    server.logger = MagicMock()
+    byte_streamer.register_error_callback(server._process_stream_error)
+    exit_calls = []
+    monkeypatch.setattr(cell_module.os, "_exit", exit_calls.append)
+
+    byte_streamer._error_handler(
+        Message(
+            {
+                MessageHeaderKey.ORIGIN: "client",
+                StreamHeaderKey.STREAM_ID: 999,
+                StreamHeaderKey.CHANNEL: "channel",
+                StreamHeaderKey.TOPIC: "topic",
+                StreamHeaderKey.ERROR_MSG: "forged oversized blob",
+                StreamHeaderKey.ERROR_TYPE: BlobSizeError.__name__,
+            }
+        )
+    )
+
+    assert exit_calls == []
+
+
 def test_single_frame_receiver_rejection_reports_generic_error_after_receive_completion(monkeypatch):
     import nvflare.fuel.f3.streaming.blob_streamer as blob_streamer_module
     import nvflare.fuel.f3.streaming.byte_receiver as byte_receiver_module
@@ -111,6 +139,16 @@ def test_single_frame_receiver_rejection_reports_generic_error_after_receive_com
     sender_cell = MagicMock()
     sender_cell.my_info.fqcn = "server.job-id"
     byte_streamer = ByteStreamer(sender_cell)
+    completed_send = SimpleNamespace(
+        sid=101,
+        cell=sender_cell,
+        target="client",
+        channel=CellChannel.RETURN_ONLY,
+        topic="channel:topic",
+        headers={StreamHeaderKey.STREAM_REQ_ID: "request-id"},
+    )
+    with ByteStreamer.map_lock:
+        ByteStreamer._retain_error_context(completed_send)
     server = Cell.__new__(Cell)
     server.core_cell = sender_cell
     server.requests_dict = {}
@@ -175,6 +213,8 @@ def test_single_frame_receiver_rejection_reports_generic_error_after_receive_com
         assert len(error_messages) == 1
         assert error_messages[0].get_header(StreamHeaderKey.ERROR_TYPE) == BlobSizeError.__name__
     finally:
+        with ByteStreamer.map_lock:
+            ByteStreamer.error_context_map.pop(101, None)
         with RxTask.map_lock:
             rx_task = RxTask.rx_task_map.pop(("server.job-id", 101), None)
         if rx_task and rx_task.cleanup_timer:

@@ -27,6 +27,7 @@ from nvflare.fuel.f3.streaming.byte_receiver import (
     MAX_COMPLETED_TASK_TTL,
     MAX_PEER_DERIVED_OUT_SEQ_CHUNKS,
     MIN_OUT_SEQ_CHUNKS,
+    ByteReceiver,
     RxStream,
     RxTask,
     required_out_seq_chunks,
@@ -151,6 +152,33 @@ def test_stop_without_stream_future_retains_non_reliable_failure_tombstone():
     assert [call[1] for call in fire_and_forget_calls] == [STREAM_ERROR_TOPIC, STREAM_ACK_TOPIC]
     error_message = fire_and_forget_calls[0][3]
     assert error_message.get_header(StreamHeaderKey.ERROR_TYPE) == BlobSizeError.__name__
+
+
+def test_reject_reports_error_without_creating_receive_task():
+    cell = MagicMock()
+    cell.fire_and_forget.return_value = {}
+    receiver = ByteReceiver(cell)
+    message = Message(
+        {
+            MessageHeaderKey.ORIGIN: "site-1.job-2",
+            StreamHeaderKey.STREAM_ID: 322,
+            StreamHeaderKey.STREAM_REQ_ID: "request-322",
+            StreamHeaderKey.CHANNEL: "collab",
+            StreamHeaderKey.TOPIC: "call",
+        }
+    )
+
+    receiver.reject(message, StreamError("Collab call rejected"))
+
+    assert ("site-1.job-2", 322) not in RxTask.rx_task_map
+    calls = cell.fire_and_forget.call_args_list
+    assert [call.args[1] for call in calls] == [STREAM_ERROR_TOPIC, STREAM_ACK_TOPIC]
+    for call in calls:
+        assert call.args[2] == "site-1.job-2"
+        error_message = call.args[3]
+        assert error_message.get_header(StreamHeaderKey.STREAM_ID) == 322
+        assert error_message.get_header(StreamHeaderKey.STREAM_REQ_ID) == "request-322"
+        assert error_message.get_header(StreamHeaderKey.ERROR_MSG) == "Collab call rejected"
 
 
 def test_rxstream_close_ignores_missing_stream_future():

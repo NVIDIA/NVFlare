@@ -21,6 +21,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamError
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
@@ -85,22 +86,28 @@ class CollabCallAuthorizer:
         return None
 
 
-class _AuthorizedCallHandler:
-    """Apply Collab authorization at the application boundary.
+class _CollabStreamFilter:
+    """Authorize Collab frames before ByteReceiver allocates stream state."""
 
-    Raising the rejection lets BlobHandler report it through ByteStreamer's
-    generic stream-error path, including request/reply correlation.
-    """
-
-    def __init__(self, authorizer: CollabCallAuthorizer, adapter: Adapter):
+    def __init__(self, authorizer: CollabCallAuthorizer, byte_receiver):
         self.authorizer = authorizer
-        self.adapter = adapter
+        self.byte_receiver = byte_receiver
 
-    def __call__(self, future, *args, **kwargs):
-        rejection = self.authorizer.authorize(future.headers)
+    def filter(self, message: Message):
+        if (
+            message.get_header(StreamHeaderKey.CHANNEL) != MSG_CHANNEL
+            or message.get_header(StreamHeaderKey.TOPIC) != MSG_TOPIC
+        ):
+            return None
+
+        rejection = self.authorizer.authorize(message.headers)
         if rejection:
-            raise rejection
-        return self.adapter.call(future, *args, **kwargs)
+            self.byte_receiver.reject(message, rejection)
+            # Incoming filters stop delivery when they return a Message. The
+            # stream rejection itself is reported on ByteStreamer's generic
+            # error topics, so this outer fire-and-forget reply is discarded.
+            return Message()
+        return None
 
 
 def make_participant_map(
@@ -129,11 +136,12 @@ def prepare_for_remote_call(cell, app, logger, executor, participants: dict[str,
     logger.info(f"register cb for cell {cell.get_fqcn()}: {type(cell)}")
     authorizer = CollabCallAuthorizer(app, cell.get_fqcn(), participants, logger)
     adapter = Adapter(_submit_app_method, cell.core_cell.my_info, cell)
-    handler = _AuthorizedCallHandler(authorizer, adapter)
+    stream_filter = _CollabStreamFilter(authorizer, cell.byte_receiver)
+    cell.core_cell.add_incoming_filter(STREAM_CHANNEL, STREAM_DATA_TOPIC, stream_filter.filter)
     cell.register_blob_cb(
         channel=MSG_CHANNEL,
         topic=MSG_TOPIC,
-        blob_cb=handler,
+        blob_cb=adapter.call,
         app=app,
         logger=logger,
         executor=executor,

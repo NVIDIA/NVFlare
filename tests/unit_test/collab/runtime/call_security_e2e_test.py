@@ -63,7 +63,9 @@ def _make_request(caller: str):
 
 
 @pytest.mark.timeout(30)
-def test_raw_cross_job_cell_request_is_rejected_before_published_method_runs():
+def test_raw_cross_job_cell_request_is_rejected_before_blob_allocation(monkeypatch):
+    import nvflare.fuel.f3.streaming.blob_streamer as blob_streamer_module
+
     port = get_open_ports(1)[0]
     suffix = uuid.uuid4().hex[:8]
     victim_fqcn = f"victim-job-{suffix}"
@@ -88,6 +90,11 @@ def test_raw_cross_job_cell_request_is_rejected_before_published_method_runs():
     time.sleep(1.0)
 
     request = _make_request("server")
+
+    def fail_blob_allocation(*_args, **_kwargs):
+        pytest.fail("unauthorized stream reached BlobTask allocation")
+
+    monkeypatch.setattr(blob_streamer_module, "BlobTask", fail_blob_allocation)
 
     try:
         started = time.monotonic()

@@ -33,6 +33,7 @@ from nvflare.collab.runtime.defs import (
 from nvflare.collab.runtime.dispatch import (
     CollabCallAuthorizer,
     _call_app_method,
+    _CollabStreamFilter,
     _submit_app_method,
     make_participant_map,
     prepare_for_remote_call,
@@ -40,7 +41,8 @@ from nvflare.collab.runtime.dispatch import (
 from nvflare.fuel.f3.cellnet.cell import Adapter
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
-from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
+from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamError
 
 
@@ -102,11 +104,53 @@ def test_prepare_for_remote_call_registers_blob_callback():
     registration = cell.register_blob_cb.call_args.kwargs
     assert registration["channel"] == MSG_CHANNEL
     assert registration["topic"] == MSG_TOPIC
-    assert callable(registration["blob_cb"])
+    assert registration["blob_cb"] is callback
     assert registration["app"] is app
     assert registration["logger"] is logger
     assert registration["executor"] is executor
     assert "preflight_cb" not in registration
+    cell.core_cell.add_incoming_filter.assert_called_once()
+    filter_registration = cell.core_cell.add_incoming_filter.call_args.args
+    assert filter_registration[:2] == (STREAM_CHANNEL, STREAM_DATA_TOPIC)
+    assert callable(filter_registration[2])
+
+
+def test_collab_stream_filter_rejects_before_receive_state_is_created():
+    authorizer = MagicMock()
+    rejection = StreamError("Collab call rejected")
+    authorizer.authorize.return_value = rejection
+    byte_receiver = MagicMock()
+    stream_filter = _CollabStreamFilter(authorizer, byte_receiver)
+    message = Message(
+        {
+            MessageHeaderKey.ORIGIN: "server.other-job",
+            StreamHeaderKey.STREAM_ID: 123,
+            StreamHeaderKey.CHANNEL: MSG_CHANNEL,
+            StreamHeaderKey.TOPIC: MSG_TOPIC,
+        }
+    )
+
+    response = stream_filter.filter(message)
+
+    assert isinstance(response, Message)
+    authorizer.authorize.assert_called_once_with(message.headers)
+    byte_receiver.reject.assert_called_once_with(message, rejection)
+
+
+def test_collab_stream_filter_ignores_other_streams():
+    authorizer = MagicMock()
+    byte_receiver = MagicMock()
+    stream_filter = _CollabStreamFilter(authorizer, byte_receiver)
+    message = Message(
+        {
+            StreamHeaderKey.CHANNEL: "other-channel",
+            StreamHeaderKey.TOPIC: "other-topic",
+        }
+    )
+
+    assert stream_filter.filter(message) is None
+    authorizer.authorize.assert_not_called()
+    byte_receiver.reject.assert_not_called()
 
 
 def test_remote_call_returns_secure_exception_detail():

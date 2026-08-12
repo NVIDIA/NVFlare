@@ -15,6 +15,7 @@ import logging
 import threading
 import time
 from concurrent.futures import TimeoutError, as_completed
+from dataclasses import dataclass
 from typing import Callable, Optional
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
@@ -50,6 +51,8 @@ STREAM_RETRY_WAIT = 5.0
 STREAM_RETRY_TIMEOUT = 60.0
 STREAM_RETRY_WORKERS = 32
 STREAM_RETRY_RESULT_TIMEOUT = 1.0
+STREAM_ERROR_CONTEXT_TTL = STREAM_ACK_WAIT
+MAX_STREAM_ERROR_CONTEXTS = 10000
 
 STREAM_TYPE_BYTE = "byte"
 STREAM_TYPE_BLOB = "blob"
@@ -58,6 +61,16 @@ STREAM_TYPE_FILE = "file"
 COUNTER_NAME_SENT = "sent"
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _TxTaskContext:
+    cell: CoreCell
+    target: str
+    channel: str
+    topic: str
+    req_id: object
+    expires_at: float
 
 
 def _payload_size(payload) -> int:
@@ -655,12 +668,14 @@ class TxTask(StreamTaskSpec):
     def remove_task(self):
         with ByteStreamer.map_lock:
             ByteStreamer.tx_task_map.pop(self.sid, None)
+            ByteStreamer._retain_error_context(self)
             log.debug(f"{self} is removed")
 
 
 class ByteStreamer:
 
     tx_task_map = {}
+    error_context_map = {}
     map_lock = threading.Lock()
 
     sent_stream_counter_pool = StatsPoolManager.add_counter_pool(
@@ -690,6 +705,36 @@ class ByteStreamer:
             except Exception as ex:
                 log.error(f"stream error callback {callback} failed: {ex}")
 
+    @classmethod
+    def _retain_error_context(cls, task: TxTask):
+        now = time.monotonic()
+        cls._purge_error_contexts(now)
+        cls.error_context_map[task.sid] = _TxTaskContext(
+            cell=task.cell,
+            target=task.target,
+            channel=task.channel,
+            topic=task.topic,
+            req_id=(task.headers or {}).get(StreamHeaderKey.STREAM_REQ_ID),
+            expires_at=now + STREAM_ERROR_CONTEXT_TTL,
+        )
+        while len(cls.error_context_map) > MAX_STREAM_ERROR_CONTEXTS:
+            cls.error_context_map.pop(next(iter(cls.error_context_map)))
+
+    @classmethod
+    def _purge_error_contexts(cls, now: float):
+        expired = [sid for sid, context in cls.error_context_map.items() if context.expires_at <= now]
+        for sid in expired:
+            cls.error_context_map.pop(sid, None)
+
+    @staticmethod
+    def _matches_error_context(message: Message, context: _TxTaskContext) -> bool:
+        return (
+            message.get_header(MessageHeaderKey.ORIGIN) == context.target
+            and message.get_header(StreamHeaderKey.CHANNEL) == context.channel
+            and message.get_header(StreamHeaderKey.TOPIC) == context.topic
+            and message.get_header(StreamHeaderKey.STREAM_REQ_ID) == context.req_id
+        )
+
     def get_chunk_size(self):
         return self.chunk_size
 
@@ -709,6 +754,7 @@ class ByteStreamer:
             self.cell, self.chunk_size, channel, topic, target, headers, stream, reliable, secure, optional
         )
         with ByteStreamer.map_lock:
+            ByteStreamer.error_context_map.pop(tx_task.sid, None)
             ByteStreamer.tx_task_map[tx_task.sid] = tx_task
 
         tx_task.start_task_thread(self._transmit_task)
@@ -768,20 +814,38 @@ class ByteStreamer:
             tx_task = ByteStreamer.tx_task_map.get(sid)
             if tx_task and tx_task.cell is not self.cell:
                 tx_task = None
+            ByteStreamer._purge_error_contexts(time.monotonic())
+            context = ByteStreamer.error_context_map.get(sid)
+            if context and context.cell is not self.cell:
+                context = None
 
         if not tx_task:
-            log_func = log.warning if message.get_header(StreamHeaderKey.STREAM_REQ_ID) else log.error
-            log_func(
+            if not context or not self._matches_error_context(message, context):
+                log.warning(
+                    f"Ignored uncorrelated stream error: stream_id={sid} channel={channel} topic={topic} "
+                    f"sender={sender} receiver={origin}: {error}"
+                )
+                return
+
+            log.warning(
                 f"Late stream error: stream_id={sid} channel={channel} topic={topic} "
                 f"sender={sender} receiver={origin}: {error}"
             )
             self._notify_error_callbacks(message)
             return
 
-        if origin != tx_task.target:
+        active_context = _TxTaskContext(
+            cell=tx_task.cell,
+            target=tx_task.target,
+            channel=tx_task.channel,
+            topic=tx_task.topic,
+            req_id=(tx_task.headers or {}).get(StreamHeaderKey.STREAM_REQ_ID),
+            expires_at=0,
+        )
+        if not self._matches_error_context(message, active_context):
             log.warning(
-                f"Ignored stream error from unexpected receiver: stream_id={sid} channel={tx_task.channel} "
-                f"topic={tx_task.topic} sender={sender} expected_receiver={tx_task.target} receiver={origin}"
+                f"Ignored stream error with unexpected context: stream_id={sid} channel={channel} topic={topic} "
+                f"sender={sender} expected_receiver={tx_task.target} receiver={origin}"
             )
             return
 

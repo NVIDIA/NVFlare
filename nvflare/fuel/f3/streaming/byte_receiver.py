@@ -176,6 +176,12 @@ class RxTask:
                     return None
 
                 task = RxTask(sid, origin, cell, reliable)
+                # Routing and correlation headers are repeated on every frame.
+                # Preserve them immediately so errors raised before sequence 0
+                # can still be correlated by the sender.
+                task.channel = message.get_header(StreamHeaderKey.CHANNEL)
+                task.topic = message.get_header(StreamHeaderKey.TOPIC)
+                task.headers = message.headers
                 cls.rx_task_map[(origin, sid)] = task
             else:
                 if error:
@@ -729,6 +735,34 @@ class ByteReceiver:
             raise StreamError(f"specified stream_cb {type(stream_cb)} is not callable")
 
         self.registry.set(channel, topic, Callback(stream_cb, args, kwargs))
+
+    def reject(self, message: Message, error: StreamError):
+        """Reject an incoming stream before allocating receive-side state."""
+        origin = message.get_header(MessageHeaderKey.ORIGIN)
+        headers = {
+            StreamHeaderKey.STREAM_ID: message.get_header(StreamHeaderKey.STREAM_ID),
+            StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
+            StreamHeaderKey.ERROR_MSG: str(error),
+            StreamHeaderKey.ERROR_TYPE: type(error).__name__,
+            StreamHeaderKey.CHANNEL: message.get_header(StreamHeaderKey.CHANNEL),
+            StreamHeaderKey.TOPIC: message.get_header(StreamHeaderKey.TOPIC),
+        }
+        req_id = message.get_header(StreamHeaderKey.STREAM_REQ_ID)
+        if req_id:
+            headers[StreamHeaderKey.STREAM_REQ_ID] = req_id
+
+        for topic in (STREAM_ERROR_TOPIC, STREAM_ACK_TOPIC):
+            try:
+                errors = self.cell.fire_and_forget(
+                    STREAM_CHANNEL, topic, origin, Message(dict(headers)), optional=False
+                )
+            except Exception as ex:
+                log.error(f"failed to reject stream on {topic} to {origin}: {ex}")
+                continue
+            errors = errors or {}
+            send_error = errors.get(origin)
+            if send_error:
+                log.error(f"failed to reject stream on {topic} to {origin}: {send_error}")
 
     def _data_handler(self, message: Message):
 
