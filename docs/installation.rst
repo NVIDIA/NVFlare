@@ -189,40 +189,44 @@ You can build wheel packages for NVFlare using the following steps:
 
 .. code-block:: shell
 
-  $ pip install build wheel
+  $ python -m pip install build
 
-2. Build the wheel:
-
-.. code-block:: shell
-
-  $ python -m build
-
-This will create wheel files in the `dist/` directory. The wheel files can be installed using pip:
+2. Build the wheel using the default distribution name:
 
 .. code-block:: shell
 
-  $ pip install dist/nvflare-*.whl
+  $ python -m build --wheel
+
+This creates ``dist/nvflare_nightly-<version>-py3-none-any.whl``. To use the
+``nvflare`` distribution name instead, set ``NVFL_RELEASE=1``. This changes the
+distribution name, not the version derived from the checkout:
+
+.. code-block:: shell
+
+  $ NVFL_RELEASE=1 python -m build --wheel
+
+This creates ``dist/nvflare-<version>-py3-none-any.whl``. Install the wheel you
+built with pip, for example:
+
+.. code-block:: shell
+
+  $ python -m pip install dist/nvflare_nightly-*.whl  # Default name
+  $ python -m pip install dist/nvflare-*.whl          # With NVFL_RELEASE=1
+
+Running the Build with a Specific Python Version
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Run the build module with the desired Python interpreter:
+
+.. code-block:: shell
+
+  $ python3.14 -m pip install build
+  $ python3.14 -m build --wheel
 
 .. note::
-   Building wheels requires all build dependencies to be installed. If you encounter any issues,
-   make sure you have the latest version of pip, setuptools, and wheel installed.
-
-Building for Specific Platforms
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-To build wheels for specific platforms or Python versions, you can use the following environment variables:
-
-.. code-block:: shell
-
-  # For a specific Python version
-  $ PYTHON=python3.14 python -m build
-
-  # For a specific platform
-  $ PLATFORM=linux_x86_64 python -m build
-
-.. note::
-   The platform-specific builds are useful when you need to distribute wheels to systems
-   with different architectures or Python versions.
+   With the default build configuration, the wheel is tagged ``py3-none-any``.
+   The build does not use ``PYTHON`` or ``PLATFORM`` environment variables to
+   select the interpreter or platform tag.
 
 Next Steps
 ==========
