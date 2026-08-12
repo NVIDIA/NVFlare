@@ -155,7 +155,7 @@ scheduler-facing resource requests, such as ``num_of_gpus``, in
 continue to use their configured launcher, usually process mode.
 
 
-Mounting Local CSV Data into Job Containers
+Mounting Site Data into Job Containers
 -------------------------------------------
 
 The parent container and job container have different responsibilities. The
