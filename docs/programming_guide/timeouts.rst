@@ -1765,10 +1765,10 @@ TensorBoard receiver (tb_receiver.py) does not have explicit timeout parameters.
 Events are written directly to disk without buffering.
 
 
-Metrics Relay and Sender
-------------------------
+Direct Cell Metrics Transport
+-----------------------------
 
-Metrics exchange timeouts for experiment tracking (metric_relay.py, metrics_sender.py):
+The direct analytics transport has two sender-side timeout constants:
 
 .. list-table::
    :header-rows: 1
@@ -1777,27 +1777,15 @@ Metrics exchange timeouts for experiment tracking (metric_relay.py, metrics_send
    * - Parameter
      - Default
      - Purpose
-   * - heartbeat_timeout
-     - 30.0-60.0
-     - Timeout for peer heartbeat (MetricRelay: 60s, MetricsSender: 30s)
-   * - heartbeat_interval
-     - 5.0
-     - Interval between heartbeats
-   * - read_interval
-     - 0.1
-     - Interval for reading from pipe
+   * - CONNECT_TIMEOUT
+     - 30.0
+     - Maximum time for ``MetricsSender`` to connect its child Cell to the local client-job Cell
+   * - REQUEST_TIMEOUT
+     - 10.0
+     - Maximum time for one metric request and acknowledgement
 
-**Example**:
-
-.. code-block:: python
-
-   from nvflare.app_common.widgets.metric_relay import MetricRelay
-
-   metric_relay = MetricRelay(
-       heartbeat_interval=5.0,
-       heartbeat_timeout=60.0,
-       read_interval=0.1,
-   )
+Cell provides connection liveness. ``MetricRelay`` does not add a separate
+heartbeat, polling interval, or Pipe lifecycle.
 
 
 Timeout Relationships and Dependencies
