@@ -35,10 +35,10 @@ from nvflare.private.json_configer import ConfigContext
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
 
 
-def _make_workspace(root_dir: str) -> Workspace:
+def _make_workspace(root_dir: str, site_name: str = "site-1") -> Workspace:
     os.makedirs(os.path.join(root_dir, "startup"), exist_ok=True)
     os.makedirs(os.path.join(root_dir, "local"), exist_ok=True)
-    return Workspace(root_dir, site_name="site-1")
+    return Workspace(root_dir, site_name=site_name)
 
 
 def _make_app_zip(include_custom=False) -> bytes:
@@ -58,13 +58,13 @@ def _job_meta(submitter_role: str):
     }
 
 
-def _launcher_meta(mode: str, source: str, values: dict) -> dict:
+def _launcher_meta(mode: str, source: str, values: dict, site_name: str = "site-1") -> dict:
     if source == "default":
         return {JobMetaKey.JOB_LAUNCHER_SPEC.value: {"default": {mode: values}}}
     if source == "site":
-        return {JobMetaKey.JOB_LAUNCHER_SPEC.value: {"site-1": {mode: values}}}
+        return {JobMetaKey.JOB_LAUNCHER_SPEC.value: {site_name: {mode: values}}}
     if source == "legacy":
-        return {JobMetaKey.RESOURCE_SPEC.value: {"site-1": {mode: values}}}
+        return {JobMetaKey.RESOURCE_SPEC.value: {site_name: {mode: values}}}
     raise ValueError(f"unsupported launcher metadata source: {source}")
 
 
@@ -206,6 +206,29 @@ def test_deploy_requires_byoc_for_job_selected_launcher_content(tmp_path, monkey
     job_meta = _job_meta("lead")
     job_meta[AppValidationKey.BYOC] = False
     job_meta.update(_launcher_meta(mode, source, {field: "attacker.example/value"}))
+
+    with patch("nvflare.private.fed.utils.app_deployer.PrivacyService.is_scope_allowed", return_value=True):
+        err = AppDeployer().deploy(workspace, "job-1", job_meta, "app", _make_app_zip(), None)
+
+    assert err == "BYOC not permitted"
+    assert not os.path.exists(workspace.get_run_dir("job-1"))
+
+
+@pytest.mark.parametrize("site_name", ["site-1", SiteType.SERVER])
+@pytest.mark.parametrize("source", ["default", "site", "legacy"])
+def test_deploy_requires_byoc_for_additional_node_command(tmp_path, monkeypatch, site_name, source):
+    workspace = _make_workspace(str(tmp_path / "workspace"), site_name)
+    monkeypatch.setattr(AppAuthzService, "app_validator", None)
+    monkeypatch.setattr(AuthorizationService, "the_authorizer", _byoc_none_authorizer())
+    job_meta = _job_meta("lead")
+    job_meta.update(
+        _launcher_meta(
+            "slurm",
+            source,
+            {"nodes": 2, "additional_node_command": "python train.py"},
+            site_name,
+        )
+    )
 
     with patch("nvflare.private.fed.utils.app_deployer.PrivacyService.is_scope_allowed", return_value=True):
         err = AppDeployer().deploy(workspace, "job-1", job_meta, "app", _make_app_zip(), None)
