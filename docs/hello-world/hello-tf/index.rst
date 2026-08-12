@@ -37,6 +37,7 @@ Navigate to the hello-tf directory:
 
 .. code-block:: bash
 
+   cd NVFlare
    git switch <release branch>
    cd examples/hello-world/hello-tf
 

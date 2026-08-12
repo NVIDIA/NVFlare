@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 import nvflare.fuel.f3.cellnet.cell as cell_module
 from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.defs import ReturnCode
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
@@ -85,6 +85,39 @@ def test_encode_message_can_stamp_receiver_ids_for_multi_receiver_download_refs(
 
     assert captured[FOBSContextKey.NUM_RECEIVERS] == 2
     assert captured[FOBSContextKey.RECEIVER_IDS] == ["receiver-a", "receiver-b"]
+
+
+def _broadcast_and_capture_encode(pass_through: bool):
+    cell = _make_cell()
+    cell._encode_message = MagicMock()
+    cell._send_one_request = MagicMock(return_value=Message(headers={}, payload=None))
+    headers = {MessageHeaderKey.PASS_THROUGH: True} if pass_through else {}
+    request = Message(headers=headers, payload=None)
+    targets = ["site-1", "site-2"]
+
+    cell._broadcast_request(
+        channel="task",
+        topic="train",
+        targets=targets,
+        request=request,
+        abort_signal=Signal(),
+    )
+
+    return cell._encode_message.call_args.kwargs
+
+
+def test_broadcast_stamps_receiver_ids_for_direct_downloads():
+    encode_args = _broadcast_and_capture_encode(pass_through=False)
+
+    assert encode_args["num_receivers"] == 2
+    assert encode_args["receiver_ids"] == ["site-1", "site-2"]
+
+
+def test_broadcast_uses_count_based_completion_for_pass_through_downloads():
+    encode_args = _broadcast_and_capture_encode(pass_through=True)
+
+    assert encode_args["num_receivers"] == 2
+    assert encode_args["receiver_ids"] is None
 
 
 def test_encode_message_applies_call_scoped_fobs_props_without_mutating_them(monkeypatch):

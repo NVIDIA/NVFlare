@@ -48,11 +48,16 @@ from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import extract_participants, require_signed_jobs, set_message_security_data
 from nvflare.security.logging import secure_format_exception
 
+WORKSPACE_SAVE_RETRY_GRACE_TIME = 60
+
 
 @dataclass
 class _FinishedJobState:
     status: RunStatus
-    workspace_saved: bool = False
+    workspace_archival_complete: bool = False
+    workspace_save_started_at: float | None = None
+    workspace_archive_written: bool = False
+    workspace_archive_sources: Tuple[str, ...] = ()
 
 
 def _send_to_clients(admin_server, client_sites: List[str], engine, message, timeout=None, optional=False):
@@ -421,17 +426,35 @@ class JobRunner(FLComponent):
                                 self._finished_job_states[job.job_id] = finished_state
                             status = finished_state.status
                             # Publish terminal status only after artifacts are ready for download.
-                            if not finished_state.workspace_saved:
+                            if not finished_state.workspace_archival_complete:
                                 try:
-                                    self._save_workspace(completion_ctx)
-                                    with self.lock:
-                                        finished_state.workspace_saved = True
+                                    self._save_workspace(completion_ctx, finished_state)
                                 except Exception as e:
-                                    self.log_exception(
-                                        completion_ctx,
-                                        f"Failed to save workspace for finished job ({job.job_id}): {secure_format_exception(e)}",
-                                    )
-                                    continue
+                                    now = time.monotonic()
+                                    if finished_state.workspace_save_started_at is None:
+                                        finished_state.workspace_save_started_at = now
+                                    if now - finished_state.workspace_save_started_at < WORKSPACE_SAVE_RETRY_GRACE_TIME:
+                                        self.log_exception(
+                                            completion_ctx,
+                                            f"Failed to save workspace for finished job ({job.job_id}): "
+                                            f"{secure_format_exception(e)}",
+                                        )
+                                        continue
+                                    if finished_state.workspace_archive_written:
+                                        self.log_error(
+                                            completion_ctx,
+                                            f"Workspace cleanup for finished job ({job.job_id}) kept failing for "
+                                            f"{WORKSPACE_SAVE_RETRY_GRACE_TIME} seconds; publishing terminal status with "
+                                            f"archived artifacts: {secure_format_exception(e)}",
+                                        )
+                                    else:
+                                        self.log_error(
+                                            completion_ctx,
+                                            f"Workspace archival for finished job ({job.job_id}) kept failing for "
+                                            f"{WORKSPACE_SAVE_RETRY_GRACE_TIME} seconds; publishing terminal status without "
+                                            f"archived artifacts: {secure_format_exception(e)}",
+                                        )
+                                finished_state.workspace_archival_complete = True
                             try:
                                 job_manager.set_status(job.job_id, status, completion_ctx)
                             except Exception as e:
@@ -496,32 +519,48 @@ class JobRunner(FLComponent):
             status = RunStatus.FINISHED_COMPLETED
         return status
 
-    def _save_workspace(self, fl_ctx: FLContext):
+    def _save_workspace(self, fl_ctx: FLContext, finished_state: _FinishedJobState | None = None):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
-        workspace = fl_ctx.get_workspace()
-        run_dir = workspace.get_run_dir(job_id)
-        engine = fl_ctx.get_engine()
-        job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
-        ws_dirs = [run_dir]
+        if finished_state and finished_state.workspace_archive_written:
+            ws_dirs = list(finished_state.workspace_archive_sources)
+        else:
+            workspace = fl_ctx.get_workspace()
+            run_dir = workspace.get_run_dir(job_id)
+            result_root = workspace.get_result_root(job_id)
+            log_root = workspace.get_log_root(job_id)
+            audit_root = workspace.get_audit_root(job_id)
 
-        result_root = workspace.get_result_root(job_id)
-        if result_root not in ws_dirs:
-            ws_dirs.append(result_root)
+            ws_dirs = []
+            seen_paths = set()
+            for path in (run_dir, result_root, log_root, audit_root):
+                if path in seen_paths:
+                    continue
+                seen_paths.add(path)
+                if not os.path.isdir(path):
+                    self.log_warning(fl_ctx, f"Skipping unavailable workspace archive source for job {job_id}: {path}")
+                    continue
+                ws_dirs.append(path)
 
-        log_root = workspace.get_log_root(job_id)
-        if log_root not in ws_dirs:
-            ws_dirs.append(log_root)
+            if not ws_dirs:
+                self.log_warning(fl_ctx, f"No workspace archive sources are available for finished job {job_id}")
+                return
 
-        audit_root = workspace.get_audit_root(job_id)
-        if audit_root not in ws_dirs:
-            ws_dirs.append(audit_root)
+            engine = fl_ctx.get_engine()
+            job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
+            location = job_manager.save_workspace(job_id, ws_dirs, fl_ctx)
+            if finished_state:
+                # save_workspace moves source contents. Record that irreversible step before cleanup so a cleanup retry
+                # cannot replace the complete archive with one built from the now-empty sources.
+                finished_state.workspace_archive_written = True
+                finished_state.workspace_archive_sources = tuple(ws_dirs)
+            self.log_debug(fl_ctx, f"Workspace {ws_dirs} saved to {location}")
 
-        location = job_manager.save_workspace(job_id, ws_dirs, fl_ctx)
-        self.log_debug(fl_ctx, f"Workspace {ws_dirs} saved to {location}")
-
-        # remove all ws dirs
+        # Only remove sources after the complete set has been archived successfully.
         for d in ws_dirs:
-            shutil.rmtree(d)
+            try:
+                shutil.rmtree(d)
+            except FileNotFoundError:
+                self.log_warning(fl_ctx, f"Workspace archive source disappeared before cleanup for job {job_id}: {d}")
 
     def run(self, fl_ctx: FLContext):
         """Starts job runner."""
