@@ -12,10 +12,45 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.f3.drivers.net_utils import encode_url, parse_url
+from nvflare.fuel.f3.drivers.net_utils import encode_url, enhance_credential_info, get_tcp_urls, parse_url
 
 
 class TestNetUtils:
+    def test_internal_mtls_reuses_role_certificate_for_both_directions(self, tmp_path):
+        ca = tmp_path / "rootCA.pem"
+        cert = tmp_path / "client.crt"
+        key = tmp_path / "client.key"
+        for path in (ca, cert, key):
+            path.write_text("test")
+        params = {
+            DriverParams.CA_CERT.value: str(ca),
+            DriverParams.CLIENT_CERT.value: str(cert),
+            DriverParams.CLIENT_KEY.value: str(key),
+        }
+
+        enhance_credential_info(params)
+
+        assert params[DriverParams.SERVER_CERT.value] == str(cert)
+        assert params[DriverParams.SERVER_KEY.value] == str(key)
+
+    def test_tcp_listener_defaults_to_connect_host(self, monkeypatch):
+        monkeypatch.setattr("nvflare.fuel.f3.drivers.net_utils.get_open_tcp_port", lambda _resources: 9000)
+
+        connect_url, listen_url = get_tcp_urls("tcp", {"host": "localhost"})
+
+        assert connect_url == "tcp://localhost:9000"
+        assert listen_url == "tcp://localhost:9000"
+
+    def test_tcp_listener_requires_explicit_wildcard_host(self, monkeypatch):
+        monkeypatch.setattr("nvflare.fuel.f3.drivers.net_utils.get_open_tcp_port", lambda _resources: 9000)
+
+        connect_url, listen_url = get_tcp_urls(
+            "tcp", {"host": "parent-service", DriverParams.LISTEN_HOST.value: "0.0.0.0"}
+        )
+
+        assert connect_url == "tcp://parent-service:9000"
+        assert listen_url == "tcp://0.0.0.0:9000"
+
     def test_encode_url(self):
 
         params = {

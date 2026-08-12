@@ -411,6 +411,12 @@ class FederatedServer(BaseServer):
         dest = message.get_header(MessageHeaderKey.DESTINATION)
         channel = message.get_header(MessageHeaderKey.CHANNEL)
         topic = message.get_header(MessageHeaderKey.TOPIC)
+        if channel == CellChannel.SERVER_MAIN and topic in (CellChannelTopic.Challenge, CellChannelTopic.Register):
+            # These endpoints are intentionally reachable before client
+            # authentication. Do not disclose the server's reusable bearer
+            # token and signature on their replies.
+            self.logger.debug(f"not adding auth headers to pre-authentication reply: {topic=}")
+            return
         if not self.my_own_token_signature:
             self.my_own_token_signature = self.sign_auth_token(self.my_own_auth_client_name, self.my_own_token)
 

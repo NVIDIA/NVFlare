@@ -79,6 +79,7 @@ def test_prepare_slurm_preserves_file_transport_comm_config(tmp_path, capsys):
     assert comm_config["internal"]["scheme"] == "shared-file"
     assert resources["root_dir"] == "/lustre/proj/cellnet"
     assert resources["connection_security"] == "clear"
+    assert "listen_host" not in resources
     assert "host" not in resources and "port" not in resources
 
 
@@ -177,7 +178,12 @@ def test_prepare_slurm_generates_runtime_artifacts(tmp_path, capsys):
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"] == {
         "scheme": "tcp",
-        "resources": {"host": "0.0.0.0", "port": 9210, "connection_security": "clear"},
+        "resources": {
+            "host": "0.0.0.0",
+            "listen_host": "0.0.0.0",
+            "port": 9210,
+            "connection_security": "mtls",
+        },
     }
     assert (output / "startup" / "sub_start.sh").exists()
     start_script = output / "startup" / "start_slurm.sh"

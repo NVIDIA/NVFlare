@@ -858,7 +858,8 @@ def test_prepare_docker_creates_comm_config_when_missing(tmp_path, capsys):
     assert comm_config["internal"]["scheme"] == "tcp"
     assert comm_config["internal"]["resources"] == {
         "host": "0.0.0.0",
-        "connection_security": "clear",
+        "listen_host": "0.0.0.0",
+        "connection_security": "mtls",
     }
 
 
@@ -989,8 +990,9 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"]["resources"] == {
         "host": "site-1",
+        "listen_host": "0.0.0.0",
         "port": 9102,
-        "connection_security": "clear",
+        "connection_security": "mtls",
     }
 
     values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
@@ -2002,8 +2004,9 @@ def test_prepare_k8s_creates_comm_config_when_missing(tmp_path, capsys):
     assert comm_config["internal"]["scheme"] == "tcp"
     assert comm_config["internal"]["resources"] == {
         "host": "site-1",
+        "listen_host": "0.0.0.0",
         "port": 8102,
-        "connection_security": "clear",
+        "connection_security": "mtls",
     }
 
 
