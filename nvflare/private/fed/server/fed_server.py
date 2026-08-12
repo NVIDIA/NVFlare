@@ -411,11 +411,19 @@ class FederatedServer(BaseServer):
         dest = message.get_header(MessageHeaderKey.DESTINATION)
         channel = message.get_header(MessageHeaderKey.CHANNEL)
         topic = message.get_header(MessageHeaderKey.TOPIC)
-        if channel == CellChannel.SERVER_MAIN and topic in (CellChannelTopic.Challenge, CellChannelTopic.Register):
-            # These endpoints are intentionally reachable before client
-            # authentication. Do not disclose the server's reusable bearer
-            # token and signature on their replies.
-            self.logger.debug(f"not adding auth headers to pre-authentication reply: {topic=}")
+        # Endpoints that are intentionally reachable before client authentication
+        # (see authenticator.validate_auth_headers, which exempts these same
+        # channel/topic pairs from the incoming auth check). Their replies must
+        # NOT disclose the server's reusable bearer token and signature, or an
+        # uncredentialed peer could elicit a reply, harvest the headers, and
+        # replay them to authenticate as the server. This must stay in sync with
+        # the incoming exemptions: Challenge/Register on SERVER_MAIN and the
+        # direct-neighbor CELLNET/Bye teardown ack.
+        pre_auth_reply = (
+            channel == CellChannel.SERVER_MAIN and topic in (CellChannelTopic.Challenge, CellChannelTopic.Register)
+        ) or (channel == CellChannel.CELLNET and topic == CellChannelTopic.Bye)
+        if pre_auth_reply:
+            self.logger.debug(f"not adding auth headers to pre-authentication reply: {channel=} {topic=}")
             return
         if not self.my_own_token_signature:
             self.my_own_token_signature = self.sign_auth_token(self.my_own_auth_client_name, self.my_own_token)
