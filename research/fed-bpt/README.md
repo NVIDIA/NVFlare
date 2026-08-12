@@ -21,7 +21,10 @@ pip install -e ../..
 ```
 
 ## 2. Run a federated learning experiment
-The example uses `job.py` to create and run the NVFlare job without registering global job templates.
+The example uses `job.py` to configure and run the concrete `FedBPTRecipe`
+defined in `fedbpt_recipe.py`, without registering global job templates. The
+entrypoint exposes FedBPT parameters while the dedicated recipe encapsulates
+the lower-level NVFlare job components.
 We utilize the [SST-2 dataset](https://huggingface.co/datasets/stanfordnlp/sst2) and the RoBERTa-Large model for training.
 ```commandline
 N_CLIENTS=10

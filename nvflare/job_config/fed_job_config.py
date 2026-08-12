@@ -112,6 +112,7 @@ class FedJobConfig:
         self.deploy_map[site_name] = app_name
 
     def add_resource_spec(self, site_name: str, resource_spec: Dict):
+        """Add resource requirements for one site or the portable ``@default`` block."""
         if site_name in self.resource_specs.keys():
             raise RuntimeError(f"{site_name} resource specs already exist.")
         if not isinstance(resource_spec, dict):

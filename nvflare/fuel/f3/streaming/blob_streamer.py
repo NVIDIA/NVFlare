@@ -22,12 +22,20 @@ from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver
 from nvflare.fuel.f3.streaming.byte_streamer import STREAM_CHUNK_SIZE, STREAM_TYPE_BLOB, ByteStreamer
 from nvflare.fuel.f3.streaming.stream_const import EOS, StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
+from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, Stream, StreamError, StreamFuture
 from nvflare.fuel.f3.streaming.stream_utils import FastBuffer, callback_thread_pool, stream_thread_pool, wrap_view
 from nvflare.fuel.utils.buffer_list import BufferList, ConsumableBufferList
 from nvflare.security.logging import secure_format_traceback
 
 log = logging.getLogger(__name__)
+
+
+def _make_blob_size_error(size: int, limit: int) -> BlobSizeError:
+    return BlobSizeError(
+        f"Blob size {size} exceeds configured limit {limit} (streaming_max_blob_size). "
+        "Increase NVFLARE_STREAMING_MAX_BLOB_SIZE (or streaming_max_blob_size), "
+        "shard the object, or use the object downloader."
+    )
 
 
 class BlobStream(Stream):
@@ -80,7 +88,7 @@ class BlobTask:
             raise StreamError(f"Declared blob size cannot be negative: {self.size}")
 
         if self.max_size > 0 and self.size > self.max_size:
-            raise StreamError(f"Declared blob size {self.size} exceeds configured limit {self.max_size}")
+            raise _make_blob_size_error(self.size, self.max_size)
 
         self.pre_allocated = self.size > 0 and not self.preserve_chunks
 
@@ -102,12 +110,29 @@ class BlobHandler:
         self.chunk_size = config.get_streaming_chunk_size(STREAM_CHUNK_SIZE)
         self.max_blob_size = config.get_streaming_max_blob_size()
 
+    def validate_size(self, headers: dict) -> Optional[BlobSizeError]:
+        size = (headers or {}).get(StreamHeaderKey.SIZE, 0)
+        if self.max_blob_size > 0 and isinstance(size, int) and size > self.max_blob_size:
+            return _make_blob_size_error(size, self.max_blob_size)
+        return None
+
     @staticmethod
     def _fail(stream: Stream, future: StreamFuture, error: StreamError):
         if hasattr(stream, "task"):
             stream.task.stop(error)
         else:
             future.set_exception(error)
+
+    def _fail_and_notify(
+        self,
+        stream: Stream,
+        future: StreamFuture,
+        error: StreamError,
+        args: tuple,
+        kwargs: dict,
+    ):
+        self._fail(stream, future, error)
+        callback_thread_pool.submit(self._run_blob_cb, future, stream, args, kwargs)
 
     def _store_chunk(self, blob_task: BlobTask, buf: BytesAlike, buf_size: int, thread_id: int) -> bool:
         length = len(buf)
@@ -167,12 +192,12 @@ class BlobHandler:
             else:
                 blob_task = BlobTask(future, stream, self.max_blob_size)
         except StreamError as ex:
-            self._fail(stream, future, ex)
+            self._fail_and_notify(stream, future, ex, args, kwargs)
             return 0
         except MemoryError as ex:
             error = StreamError(f"Unable to allocate buffer for declared blob size {stream.get_size()}")
             error.__cause__ = ex
-            self._fail(stream, future, error)
+            self._fail_and_notify(stream, future, error, args, kwargs)
             return 0
 
         stream_thread_pool.submit(self._read_stream, blob_task)
@@ -278,4 +303,11 @@ class BlobStreamer:
 
     def register_blob_callback(self, channel, topic, blob_cb: Callable, *args, **kwargs):
         handler = BlobHandler(blob_cb)
-        self.byte_receiver.register_callback(channel, topic, handler.handle_blob_cb, *args, **kwargs)
+        self.byte_receiver.register_callback(
+            channel,
+            topic,
+            handler.handle_blob_cb,
+            *args,
+            preflight_cb=handler.validate_size,
+            **kwargs,
+        )
