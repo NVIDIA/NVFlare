@@ -25,6 +25,7 @@ then navigate to the hello-tabular-stats directory:
 
 .. code-block:: text
 
+    cd NVFlare
     git switch <release branch>
     cd examples/hello-world/hello-tabular-stats
 
