@@ -112,6 +112,53 @@ def test_challenge_reply_does_not_disclose_server_bearer_headers():
     server.sign_auth_token.assert_not_called()
 
 
+def test_cellnet_bye_reply_does_not_disclose_server_bearer_headers():
+    # CELLNET/Bye is exempt from incoming auth (a direct-neighbor teardown ack),
+    # so its reply must not leak the server's reusable bearer material either;
+    # otherwise an uncredentialed peer can elicit it and replay to authenticate
+    # as the server.
+    server = FederatedServer.__new__(FederatedServer)
+    server.logger = MagicMock()
+    server.my_own_token_signature = ""
+    server.my_own_auth_client_name = "server"
+    server.my_own_token = "secret-token"
+    server.sign_auth_token = MagicMock(return_value="secret-signature")
+    reply = CellMessage(
+        {
+            MessageHeaderKey.CHANNEL: CellChannel.CELLNET,
+            MessageHeaderKey.TOPIC: CellChannelTopic.Bye,
+        }
+    )
+
+    server._add_auth_headers(reply)
+
+    assert reply.get_header(CellMessageHeaderKeys.TOKEN) is None
+    assert reply.get_header(CellMessageHeaderKeys.TOKEN_SIGNATURE) is None
+    server.sign_auth_token.assert_not_called()
+
+
+def test_authenticated_reply_still_receives_bearer_headers():
+    # Guard against over-suppression: a normal (non-pre-auth) reply must still
+    # carry the server's auth headers.
+    server = FederatedServer.__new__(FederatedServer)
+    server.logger = MagicMock()
+    server.my_own_token_signature = "secret-signature"
+    server.my_own_auth_client_name = "server"
+    server.my_own_token = "secret-token"
+    server.sign_auth_token = MagicMock(return_value="secret-signature")
+    reply = CellMessage(
+        {
+            MessageHeaderKey.CHANNEL: CellChannel.SERVER_COMMAND,
+            MessageHeaderKey.TOPIC: "some_topic",
+        }
+    )
+
+    server._add_auth_headers(reply)
+
+    assert reply.get_header(CellMessageHeaderKeys.TOKEN) == "secret-token"
+    assert reply.get_header(CellMessageHeaderKeys.TOKEN_SIGNATURE) == "secret-signature"
+
+
 def _log_command_context():
     workspace = MagicMock()
     workspace.get_run_dir.return_value = "/tmp/run"
