@@ -20,8 +20,7 @@ For complete installation instructions, see the
 The parent [Advanced Collab API README](../README.md) describes the NVFlare
 setup expected by these examples.
 
-From `examples/advanced/collab/pt_splitnn`, install this example's training
-dependencies:
+From `examples/advanced/collab/pt_splitnn`, install this example's dependencies:
 
 ```bash
 python -m pip install -r requirements.txt
@@ -39,6 +38,8 @@ pt_splitnn/
 ├── model.py           # bottom and top PyTorch model definitions
 ├── job.py             # CollabRecipe and simulator configuration
 ├── data.py            # role-specific views of prepared CIFAR-10 data
+├── prepare_data.py    # CIFAR-10 vertical split and PSI preparation
+├── local_psi.py       # site-local PSI input adapter
 ├── requirements.txt   # additional Python dependencies
 └── figs/              # benchmark figures
 ```
@@ -47,59 +48,21 @@ pt_splitnn/
 
 To simulate a vertical split dataset, first download CIFAR-10 and distribute it
 between the two clients, assuming an overlap of 10,000 samples between their
-datasets. From the repository root, run:
+datasets. Then run private set intersection (PSI) to determine those common
+sample IDs without either site revealing its full set. From the repository
+root, run:
 
 ```bash
-cd examples/advanced/vertical_federated_learning/cifar10-splitnn
-python -m pip install -r requirements.txt
+cd examples/advanced/collab/pt_splitnn
+python prepare_data.py
 ```
 
-Set `PYTHONPATH` to include the custom SplitNN files and reused files from the
-[CIFAR-10 examples](../../cifar10/README.md). The `cifar10/pt/src` entry exposes
-the shared data package used by the standalone splitter:
+`prepare_data.py` downloads CIFAR-10 to `/tmp/cifar10`, writes the per-site
+sample IDs to `/tmp/cifar10_vert_splits`, and uses NVFlare's `DhPSIRecipe` to
+produce the aligned intersection files. The generated `overlap.npy` records the
+ground-truth overlap for checking the PSI result.
 
-```bash
-export PYTHONPATH=${PWD}/src:${PWD}/../../cifar10:${PWD}/../../cifar10/pt/src
-python cifar10_split_data_vertical.py \
-    --split_dir /tmp/cifar10_vert_splits \
-    --overlap 10000
-```
-
-### Run private set intersection
-
-We are using NVFlare's FL simulator to run the following experiments.
-
-In order to find the overlapping data indices between the different clients participating in split learning,
-we randomly select an subset of the training indices.
-
-From the same directory, run the PSI preparation step:
-
-```bash
-mkdir -p /tmp/nvflare/cifar10_psi/local
-printf '%s\n' \
-    '{"class_allow_list": ["nvflare.", "psi.cifar10_local_psi.Cifar10LocalPSI"]}' \
-    > /tmp/nvflare/cifar10_psi/local/resources.json
-
-python - <<'PY'
-from nvflare import SimulatorRunner
-
-simulator = SimulatorRunner(
-    job_folder="jobs/cifar10_psi",
-    workspace="/tmp/nvflare/cifar10_psi",
-    n_clients=2,
-    threads=2,
-    log_config="ERROR",
-)
-simulator.run()
-PY
-```
-
-The result will be saved on each client's working directory in `intersection.txt`.
-
-We can check the correctness of the result by comparing it to the generated ground truth overlap, saved in
-`overlap.npy`.
-
-The Collab job reads the resulting site-specific artifacts directly:
+The training job reads the resulting site-specific artifacts directly:
 
 ```text
 /tmp/nvflare/cifar10_psi/

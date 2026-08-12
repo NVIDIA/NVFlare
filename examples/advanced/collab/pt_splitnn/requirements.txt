@@ -1,4 +1,5 @@
 numpy
+openmined-psi>=2.0.5
 tensorboard
 torch
 torchvision

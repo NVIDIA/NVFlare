@@ -35,12 +35,12 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dataset-root",
         default=DEFAULT_DATASET_ROOT,
-        help="CIFAR-10 root populated by the existing vertical data splitter",
+        help="CIFAR-10 root populated by prepare_data.py",
     )
     parser.add_argument(
         "--psi-workspace",
         default=DEFAULT_PSI_WORKSPACE,
-        help="Workspace produced by the existing cifar10_psi job",
+        help="Workspace produced by prepare_data.py",
     )
     parser.add_argument("--workspace-root", default="/tmp/nvflare/collab")
     return parser
@@ -51,15 +51,12 @@ def _intersection_file(psi_workspace: str, site_name: str) -> str:
         Path(psi_workspace).expanduser().resolve() / site_name / "simulate_job" / site_name / "psi" / "intersection.txt"
     )
     if not path.is_file():
-        raise FileNotFoundError(
-            f"PSI intersection file not found at {path}. "
-            "Run the existing CIFAR-10 vertical split and cifar10_psi workflow first."
-        )
+        raise FileNotFoundError(f"PSI intersection file not found at {path}. Run `python prepare_data.py` first.")
     return str(path)
 
 
 def make_recipe(dataset_root: str, psi_workspace: str) -> CollabRecipe:
-    """Connect the server, shared client code, and existing PSI artifacts."""
+    """Connect the server, shared client code, and prepared PSI artifacts."""
     dataset_root = str(Path(dataset_root).expanduser().resolve())
     intersection_files = {site_name: _intersection_file(psi_workspace, site_name) for site_name in ("site-1", "site-2")}
 
@@ -89,7 +86,7 @@ def make_recipe(dataset_root: str, psi_workspace: str) -> CollabRecipe:
 
 
 def main():
-    """Build the recipe from existing SplitNN data artifacts and simulate it."""
+    """Build the recipe from prepared SplitNN data artifacts and simulate it."""
     args = define_parser().parse_args()
     simple_logging(logging.INFO)
     recipe = make_recipe(args.dataset_root, args.psi_workspace)
