@@ -80,7 +80,9 @@ also cover federated statistics, Auto-FL research assistance, and job
 diagnostics, with explicit safeguards for site-local data and preprocessing.
 Install and invoke the skills through a coding agent as described in
 :doc:`/user_guide/agent_skills/index`; see :ref:`autofl_skill` for the
-Auto-FL workflow.
+Auto-FL workflow. To try the conversion and federated-statistics workflows,
+start with the :github_nvflare_link:`runnable Agent Skills examples
+<examples/hello-world/agent-skills>`.
 
 Agent Skills are developer tooling, not a runtime FL API or a substitute for
 code review and job validation. The conversion skills currently target standard
