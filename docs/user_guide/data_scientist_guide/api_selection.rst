@@ -1,3 +1,5 @@
+.. _api_evolution:
+
 .. _api_selection:
 
 ##########################
@@ -21,9 +23,11 @@ The Collaboration API is the right starting point when the primary goal is to
 quickly test algorithmic ideas. It gives the researcher broad control over what
 is exchanged and how sites are coordinated. That flexibility also means the
 researcher must define, review, and validate the algorithm's data handling,
-failure behavior, and operational assumptions. It is not the recommended
-starting point for a production application that needs established conventions
-for data isolation, security controls, and managed job lifecycle behavior.
+failure behavior, and operational assumptions. ``CollabRecipe`` still creates
+a normal FLARE job, so it uses the standard runtime, site isolation, and
+deployment security controls configured for that environment. Collaboration API
+does not prescribe a model-training lifecycle, aggregation strategy, or
+recipe-specific resource policy; the researcher owns those choices.
 
 Start with the :github_nvflare_link:`Hello Collab example
 <examples/hello-world/hello-collab>` or the :github_nvflare_link:`advanced
@@ -39,6 +43,20 @@ framework while FLARE handles the federated training exchange. The Job Recipe
 selects and configures a supported FL workflow, such as FedAvg, FedProx,
 SCAFFOLD, or Swarm.
 
+The Client API defines the client-side training lifecycle: receive a global
+model, run local training or evaluation on site-local data, and send the
+resulting ``FLModel`` and metrics. The Job Recipe defines the corresponding
+server-side lifecycle, including round orchestration, aggregation, validation,
+and model selection for the chosen supported workflow. This separation lets the
+training script remain focused on framework code while the job definition owns
+the FL behavior.
+
+For supported PyTorch Recipe workflows, server-side tensor disk offload can
+materialize incoming update tensors through temporary disk storage during
+aggregation, reducing peak server memory pressure for large models. The
+availability and configuration of such resource controls depend on the selected
+Recipe and exchange format.
+
 This is the recommended path when you need a repeatable job definition,
 supported algorithm behavior, local simulation and validation, job export and
 submission, and a clear separation between training code and FL job
@@ -49,6 +67,17 @@ must still be enabled and operated for the target environment.
 
 Start with :ref:`client_api_usage`, :ref:`job_recipe`, and
 :ref:`available_recipes`.
+
+Shared Platform Capabilities
+============================
+
+Both high-level paths create normal FLARE jobs and can use the same simulation,
+POC, or provisioned deployment environments. Secure provisioning,
+authentication, authorization, site isolation, and operational lifecycle
+controls are platform and deployment capabilities, not benefits exclusive to
+one API. The choice is between a research-oriented programming model with
+researcher-defined workflow behavior and a production-oriented path with a
+supported Client API training contract and Job Recipe workflow.
 
 At a Glance
 ===========
@@ -67,7 +96,9 @@ At a Glance
    * - Federate an existing training application for production use
      - **Client API + Job Recipe**
      - A supported FL workflow, a repeatable job definition, and separation of
-       training code from job configuration.
+       training code from job configuration. The Client API manages the local
+       training exchange; the Recipe manages server orchestration and can offer
+       workflow-specific resource controls.
    * - Move a research prototype toward a production deployment
      - **Client API + Job Recipe**
      - A supported workflow and a deployment-oriented job contract; retain and
