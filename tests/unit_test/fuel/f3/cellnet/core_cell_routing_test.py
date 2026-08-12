@@ -187,6 +187,26 @@ def test_same_family_routing_still_prefers_fqcn_parent():
     assert ep.name == "site-1"
 
 
+def test_server_transit_required_bypasses_direct_cross_site_endpoint():
+    cell = _routing_cell("site-1", ["server", "site-2"])
+    message = Message(headers={MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True})
+
+    endpoint = cell._try_find_ep("site-2", message)
+
+    assert endpoint is not None
+    assert endpoint.name == "server"
+
+
+def test_server_transit_required_job_cell_uses_local_parent():
+    cell = _routing_cell("site-1.job-1", ["site-1", "site-2.job-2"])
+    message = Message(headers={MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True})
+
+    endpoint = cell._try_find_ep("site-2.job-2", message)
+
+    assert endpoint is not None
+    assert endpoint.name == "site-1"
+
+
 def test_pipe_cell_with_no_connection_is_unreachable():
     cell = _routing_cell("site-1.cellpipe~plain~job-123~active", [])
 

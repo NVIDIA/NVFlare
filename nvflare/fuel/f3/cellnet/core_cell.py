@@ -1174,6 +1174,23 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         target_info = FqcnInfo(target_fqcn)
 
+        # Authenticated messages between different client families must cross
+        # the server trust boundary. Do not let a direct or ad-hoc peer route
+        # bypass server validation merely because that endpoint is cached.
+        if (
+            for_msg
+            and for_msg.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, False)
+            and not self.my_info.is_on_server
+        ):
+            next_fqcn = FQCN.ROOT_SERVER if self.my_info.is_root else FQCN.get_parent(self.my_info.fqcn)
+            if next_fqcn in self.ALL_CELLS:
+                return Endpoint(next_fqcn)
+            agent = self.agents.get(next_fqcn)
+            if agent:
+                return agent.endpoint
+            self.log_warning(msg=for_msg, log_text=f"no server-transit path through {next_fqcn}")
+            return None
+
         # is there a direct path to the target?
         if target_fqcn in self.ALL_CELLS:
             return Endpoint(target_fqcn)
@@ -1356,6 +1373,17 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 if send_errs.get(t):
                     # process next target
                     continue
+
+            # The authentication filter can require server transit after the
+            # preliminary endpoint lookup above. Resolve again with the fully
+            # populated request so a cached/ad-hoc peer endpoint is not used.
+            if req.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, False):
+                err, ep = self._find_endpoint(t, req)
+                if not ep:
+                    self.log_error(f"cannot send server-transit message to '{t}': {err}", req)
+                    send_errs[t] = err
+                    continue
+                req.set_header(MessageHeaderKey.TO_CELL, ep.name)
 
             # is this a direct path?
             ti = FqcnInfo(t)
@@ -2147,6 +2175,14 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             self._process_reply(origin, message, msg_type)
 
     def _send_reply(self, reply: Message, endpoint: Endpoint):
+        if reply.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, False):
+            destination = reply.get_header(MessageHeaderKey.DESTINATION)
+            err, transit_ep = self._find_endpoint(destination, reply)
+            if not transit_ep:
+                self.log_error(f"cannot send server-transit reply to '{destination}': {err}", reply)
+                return
+            endpoint = transit_ep
+            reply.add_headers({MessageHeaderKey.FROM_CELL: self.my_info.fqcn, MessageHeaderKey.TO_CELL: endpoint.name})
         self.logger.debug(f"{self.my_info.fqcn}: sending reply back to {endpoint.name}")
         self.logger.debug(f"Reply message: {reply.headers}")
         err = self._send_to_endpoint(endpoint, reply)
