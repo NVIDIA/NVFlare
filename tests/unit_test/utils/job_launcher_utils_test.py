@@ -185,6 +185,7 @@ class TestPortableResourceSpec:
 
     def test_legacy_nested_spec_is_not_reinterpreted_without_default(self):
         meta = {"resource_spec": {"site-1": {"process": {"num_of_cpus": 4}, "docker": {"image": "x"}}}}
+        validate_portable_resource_spec(meta["resource_spec"])
         assert resolve_site_resource_spec(meta, "site-1") == {"num_of_cpus": 4}
         assert get_portable_resource_spec(meta, "site-1") == {}
         assert get_resource_manager_spec(meta, "site-1") == {"num_of_cpus": 4}
@@ -222,6 +223,8 @@ class TestPortableResourceSpec:
         assert portable_memory_to_mib("2Gi") == 2048
         assert portable_memory_to_mib("1Ti") == 1024 * 1024
         assert portable_memory_to_bytes("3Mi") == 3 * 1024 * 1024
+        with pytest.raises(ValueError, match="positive integer"):
+            portable_memory_to_mib("8G")
 
     @pytest.mark.parametrize(
         ("portable", "mode", "native"),
@@ -252,6 +255,76 @@ class TestPortableResourceSpec:
         }
 
         validate_portable_resource_conflicts(meta)
+
+    @pytest.mark.parametrize(
+        ("mode", "launcher_spec"),
+        [
+            ("docker", {"num_of_gpus": 8}),
+            ("k8s", {"num_of_gpus": 8}),
+            ("slurm", {"nodes": 2, "gpus_per_node": 4}),
+        ],
+    )
+    def test_rejects_legacy_nested_gpu_count_mismatch(self, mode, launcher_spec):
+        meta = {
+            "resource_spec": {
+                "site-1": {
+                    "process": {"num_of_gpus": 1},
+                    mode: launcher_spec,
+                }
+            }
+        }
+
+        with pytest.raises(ValueError, match="legacy process num_of_gpus"):
+            validate_portable_resource_conflicts(meta)
+
+    @pytest.mark.parametrize(
+        ("mode", "launcher_spec"),
+        [
+            ("docker", {"num_of_gpus": 2}),
+            ("k8s", {"num_of_gpus": 2}),
+            ("slurm", {"nodes": 2, "gpus_per_node": 1}),
+        ],
+    )
+    def test_allows_matching_legacy_nested_gpu_count(self, mode, launcher_spec):
+        meta = {
+            "resource_spec": {
+                "site-1": {
+                    "process": {"num_of_gpus": 2},
+                    mode: launcher_spec,
+                }
+            }
+        }
+
+        validate_portable_resource_conflicts(meta)
+
+    def test_rejects_legacy_process_gpu_with_docker_device_requests(self):
+        meta = {
+            "resource_spec": {
+                "site-1": {
+                    "process": {"num_of_gpus": 1},
+                    "docker": {"device_requests": [{"Count": 1}]},
+                }
+            }
+        }
+
+        with pytest.raises(ValueError, match="device_requests"):
+            validate_portable_resource_conflicts(meta)
+
+    def test_rejects_legacy_process_gpu_mismatch_from_launcher_spec(self):
+        meta = {
+            "resource_spec": {"site-1": {"process": {"num_of_gpus": 1}}},
+            "launcher_spec": {"site-1": {"docker": {"num_of_gpus": 8}}},
+        }
+
+        with pytest.raises(ValueError, match="legacy process num_of_gpus"):
+            validate_portable_resource_conflicts(meta)
+
+    def test_legacy_launcher_only_gpu_and_flat_sibling_remain_unchanged(self):
+        launcher_only = {"resource_spec": {"site-1": {"docker": {"num_of_gpus": 8}}}}
+        ignored_flat_sibling = {"resource_spec": {"site-1": {"num_of_gpus": 1, "docker": {"num_of_gpus": 8}}}}
+
+        validate_portable_resource_conflicts(launcher_only)
+        validate_portable_resource_conflicts(ignored_flat_sibling)
 
 
 class TestValidateLauncherSpec:

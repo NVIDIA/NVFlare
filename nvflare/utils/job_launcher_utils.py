@@ -168,21 +168,15 @@ def get_launcher_resource_spec(job_meta, site_name, mode):
 
 def _validate_portable_values(resource_spec: dict, label: str) -> None:
     num_gpus = resource_spec.get("num_of_gpus")
-    if "num_of_gpus" in resource_spec and (
-        isinstance(num_gpus, bool) or not isinstance(num_gpus, int) or num_gpus < 0
-    ):
+    if "num_of_gpus" in resource_spec and (isinstance(num_gpus, bool) or not isinstance(num_gpus, int) or num_gpus < 0):
         raise ValueError(f"{label}.num_of_gpus must be an integer greater than or equal to 0")
 
     num_cpus = resource_spec.get("num_of_cpus")
-    if "num_of_cpus" in resource_spec and (
-        isinstance(num_cpus, bool) or not isinstance(num_cpus, int) or num_cpus < 1
-    ):
+    if "num_of_cpus" in resource_spec and (isinstance(num_cpus, bool) or not isinstance(num_cpus, int) or num_cpus < 1):
         raise ValueError(f"{label}.num_of_cpus must be an integer greater than or equal to 1")
 
     memory = resource_spec.get("memory")
-    if "memory" in resource_spec and (
-        not isinstance(memory, str) or not _PORTABLE_MEMORY_PATTERN.fullmatch(memory)
-    ):
+    if "memory" in resource_spec and (not isinstance(memory, str) or not _PORTABLE_MEMORY_PATTERN.fullmatch(memory)):
         raise ValueError(f"{label}.memory must be a positive integer followed by Mi, Gi, or Ti")
 
 
@@ -262,12 +256,52 @@ def portable_memory_to_bytes(memory: str) -> int:
     return portable_memory_to_mib(memory) * 1024 * 1024
 
 
+def _validate_legacy_nested_gpu_consistency(job_meta: dict, site_name: str, resource_spec: dict) -> None:
+    """Keep legacy process GPU admission consistent with the effective launcher request."""
+    site_spec = resource_spec.get(site_name) or {}
+    if PORTABLE_RESOURCE_DEFAULT_KEY in resource_spec or not any(key in site_spec for key in _LAUNCHER_MODE_KEYS):
+        return
+
+    process_spec = get_site_launcher_spec(site_spec, "process")
+    if "num_of_gpus" not in process_spec:
+        return
+    reserved_gpus = process_spec["num_of_gpus"]
+
+    launcher_specs = {mode: get_job_launcher_spec(job_meta, site_name, mode) for mode in ("docker", "k8s", "slurm")}
+    docker_spec = launcher_specs["docker"]
+    if "device_requests" in docker_spec:
+        raise ValueError(
+            f"legacy process num_of_gpus conflicts with launcher_spec docker field 'device_requests' "
+            f"for site '{site_name}'"
+        )
+
+    for mode in ("docker", "k8s"):
+        launcher_spec = launcher_specs[mode]
+        if "num_of_gpus" in launcher_spec and launcher_spec["num_of_gpus"] != reserved_gpus:
+            raise ValueError(
+                f"legacy process num_of_gpus ({reserved_gpus}) must match launcher_spec {mode} "
+                f"num_of_gpus ({launcher_spec['num_of_gpus']}) for site '{site_name}'"
+            )
+
+    slurm_spec = launcher_specs["slurm"]
+    nodes = slurm_spec.get("nodes", 1)
+    gpus_per_node = slurm_spec.get("gpus_per_node")
+    if all(isinstance(value, int) and not isinstance(value, bool) for value in (reserved_gpus, nodes, gpus_per_node)):
+        launched_gpus = nodes * gpus_per_node
+        if launched_gpus != reserved_gpus:
+            raise ValueError(
+                f"legacy process num_of_gpus ({reserved_gpus}) must match launcher_spec slurm total GPUs "
+                f"({launched_gpus}) for site '{site_name}'"
+            )
+
+
 def validate_portable_resource_conflicts(job_meta: dict) -> None:
     """Reject simultaneous portable and equivalent launcher-native resource fields."""
     resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
     launcher_spec = job_meta.get(JobMetaKey.JOB_LAUNCHER_SPEC.value, {}) or {}
     site_names = (set(resource_spec) - {PORTABLE_RESOURCE_DEFAULT_KEY}) | (set(launcher_spec) - {"default"})
     for site_name in site_names:
+        _validate_legacy_nested_gpu_consistency(job_meta, site_name, resource_spec)
         portable = get_portable_resource_spec(job_meta, site_name)
         for mode, portable_to_native in _PORTABLE_NATIVE_RESOURCE_KEYS.items():
             native = get_job_launcher_spec(job_meta, site_name, mode)
