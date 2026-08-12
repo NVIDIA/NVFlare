@@ -16,6 +16,7 @@ import random
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import thread as futures_thread
 
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.mpm import MainProcessMonitor
@@ -62,7 +63,18 @@ class CheckedExecutor(ThreadPoolExecutor):
             if self.stopped:
                 log.debug(f"Call {fn} is ignored after streaming shutting down")
                 return None
-            return super().submit(fn, *args, **kwargs)
+            try:
+                return super().submit(fn, *args, **kwargs)
+            except RuntimeError:
+                # Keep the wrapper fail-closed even if a caller reached the base
+                # executor's shutdown path directly, or CPython interpreter
+                # teardown set the module-global executor shutdown state without
+                # entering this override.
+                if self._shutdown or futures_thread._shutdown:
+                    self.stopped = True
+                    log.debug(f"Call {fn} is ignored after the executor shut down")
+                    return None
+                raise
 
 
 stream_thread_pool = CheckedExecutor(STREAM_THREAD_POOL_SIZE, "stm")

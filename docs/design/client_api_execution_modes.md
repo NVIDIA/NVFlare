@@ -317,7 +317,8 @@ synchronously when `receive()` or `is_running()` observes the shutdown (or abort
 scripts do not need an explicit `flare.shutdown()` at loop exit. The backend then terminates any
 surviving owned POSIX process group with a bounded soft/hard stop sequence. Because a directly launched trainer does not run under
 `MainProcessMonitor`, its Cell Client API shutdown also retires process-global DownloadService
-state, the reliable retry scheduler, and the shared streaming executors; otherwise their non-daemon
+state, cancels active outgoing byte streams, drains the reliable retry scheduler and shared streaming
+executors, and only then stops Cell transport; otherwise their non-daemon
 pools can keep a completed one-shot or distributed worker process alive. That irreversible runtime
 shutdown is specific to the dedicated Cell trainer process. In-process Client API contexts do not
 retire those process-global services; a stopped context is evicted so a later job/session in the

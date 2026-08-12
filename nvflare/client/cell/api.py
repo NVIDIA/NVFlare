@@ -54,7 +54,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
-from nvflare.fuel.f3.streaming.byte_streamer import reliable_retry_scheduler
+from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer, reliable_retry_scheduler
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.f3.streaming.stream_utils import stream_shutdown
 from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT, TransferProgressState
@@ -86,6 +86,7 @@ def _shutdown_f3_streaming() -> None:
     errors = []
     for name, shutdown in (
         ("download service", DownloadService.shutdown),
+        ("active byte streams", ByteStreamer.shutdown),
         ("reliable retry scheduler", reliable_retry_scheduler.shutdown),
         ("stream executors", stream_shutdown),
     ):
@@ -732,13 +733,17 @@ class CellClientAPI(APISpec):
                 self._result_abort_signal.trigger("client api shutdown")
                 self._stop_owner_watchdog()
                 self._stop_heartbeat()
-                self._stop_cell()
             if self._owns_f3_runtime:
                 try:
+                    # Keep the Cell alive until DownloadService and all retry/stream
+                    # work have drained. An admitted reliable retry can otherwise
+                    # enter Cell after its transport executors are shut down.
                     # Retry partial process-global cleanup; each operation is idempotent.
                     _shutdown_f3_streaming()
                 except Exception as e:
                     self.logger.warning(f"failed to stop trainer streaming services: {e}")
+            if close_resources:
+                self._stop_cell()
 
     # ------------------------------------------------------------------ control handlers
 

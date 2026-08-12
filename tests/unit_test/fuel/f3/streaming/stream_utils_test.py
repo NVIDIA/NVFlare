@@ -15,6 +15,7 @@
 import multiprocessing as mp
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import thread as futures_thread
 
 from nvflare.fuel.f3.streaming.stream_utils import CheckedExecutor, gen_stream_id
 
@@ -114,3 +115,19 @@ class TestStreamUtils:
         shutdown_thread.join(timeout=2.0)
         assert submit_errors == []
         assert executor.submit(lambda: None) is None
+
+    def test_checked_executor_ignores_base_executor_already_shut_down(self):
+        """A base-level shutdown cannot leak RuntimeError into F3 teardown workers."""
+        executor = CheckedExecutor(max_workers=1, thread_name_prefix="checked_base_stop")
+
+        ThreadPoolExecutor.shutdown(executor, wait=True)
+
+        assert executor.submit(lambda: None) is None
+        assert executor.stopped is True
+
+    def test_checked_executor_ignores_interpreter_executor_shutdown(self, monkeypatch):
+        executor = CheckedExecutor(max_workers=1, thread_name_prefix="checked_interpreter_stop")
+        monkeypatch.setattr(futures_thread, "_shutdown", True)
+
+        assert executor.submit(lambda: None) is None
+        assert executor.stopped is True

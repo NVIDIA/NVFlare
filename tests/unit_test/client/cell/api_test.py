@@ -1041,13 +1041,14 @@ class TestAttachMode:
 def test_shutdown_f3_streaming_is_ordered_and_safe_to_repeat(monkeypatch):
     calls = []
     monkeypatch.setattr(cell_api.DownloadService, "shutdown", lambda: calls.append("download"))
+    monkeypatch.setattr(cell_api.ByteStreamer, "shutdown", lambda: calls.append("byte"))
     monkeypatch.setattr(cell_api.reliable_retry_scheduler, "shutdown", lambda: calls.append("retry"))
     monkeypatch.setattr(cell_api, "stream_shutdown", lambda: calls.append("stream"))
 
     cell_api._shutdown_f3_streaming()
     cell_api._shutdown_f3_streaming()
 
-    assert calls == ["download", "retry", "stream", "download", "retry", "stream"]
+    assert calls == ["download", "byte", "retry", "stream", "download", "byte", "retry", "stream"]
 
 
 def test_shutdown_f3_streaming_attempts_every_stage_and_can_retry(monkeypatch):
@@ -1062,15 +1063,16 @@ def test_shutdown_f3_streaming_attempts_every_stage_and_can_retry(monkeypatch):
             raise RuntimeError("download failed")
 
     monkeypatch.setattr(cell_api.DownloadService, "shutdown", shutdown_download)
+    monkeypatch.setattr(cell_api.ByteStreamer, "shutdown", lambda: calls.append("byte"))
     monkeypatch.setattr(cell_api.reliable_retry_scheduler, "shutdown", lambda: calls.append("retry"))
     monkeypatch.setattr(cell_api, "stream_shutdown", lambda: calls.append("stream"))
 
     with pytest.raises(RuntimeError, match="download service"):
         cell_api._shutdown_f3_streaming()
-    assert calls == ["download", "retry", "stream"]
+    assert calls == ["download", "byte", "retry", "stream"]
 
     cell_api._shutdown_f3_streaming()
-    assert calls == ["download", "retry", "stream", "download", "retry", "stream"]
+    assert calls == ["download", "byte", "retry", "stream", "download", "byte", "retry", "stream"]
 
 
 def test_trainer_session_error_is_runtime_error():
@@ -1980,6 +1982,16 @@ class TestReceiveSend:
 
 
 class TestSessionEnd:
+    def test_external_shutdown_drains_f3_before_stopping_cell(self, bootstrap_path, env, monkeypatch):
+        calls = []
+        env.stop = lambda: calls.append("cell")
+        monkeypatch.setattr(cell_api, "_shutdown_f3_streaming", lambda: calls.append("f3"))
+        api = _init_api(bootstrap_path, env)
+
+        api.shutdown()
+
+        assert calls == ["f3", "cell"]
+
     def test_shutdown_ends_the_loop_cleanly(self, bootstrap_path, env):
         api = _init_api(bootstrap_path, env)
         try:

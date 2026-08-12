@@ -299,7 +299,22 @@ class TestByteStreamerAckWatchdog:
 
 
 class TestReliableByteStreamer:
-    def test_retry_scheduler_shutdown_does_not_wait_for_pool(self):
+    def test_shutdown_cancels_active_stream_without_transport_notification(self):
+        task = MagicMock()
+        original_tasks = byte_streamer_module.ByteStreamer.tx_task_map
+        try:
+            byte_streamer_module.ByteStreamer.tx_task_map = {42: task}
+
+            byte_streamer_module.ByteStreamer.shutdown()
+
+            error = task.stop.call_args.args[0]
+            assert isinstance(error, StreamError)
+            assert str(error) == "streaming shutdown"
+            assert task.stop.call_args.kwargs == {"notify": False}
+        finally:
+            byte_streamer_module.ByteStreamer.tx_task_map = original_tasks
+
+    def test_retry_scheduler_shutdown_waits_for_pool(self):
         scheduler = byte_streamer_module.ReliableRetryScheduler()
         original_pool = scheduler.retry_task_pool
         retry_task_pool = MagicMock()
@@ -309,9 +324,31 @@ class TestReliableByteStreamer:
 
             scheduler.shutdown()
 
-            retry_task_pool.shutdown.assert_called_once_with(wait=False)
+            retry_task_pool.shutdown.assert_called_once_with(wait=True)
         finally:
             original_pool.shutdown(wait=False)
+
+    def test_retry_scheduler_shutdown_drains_admitted_retry(self):
+        scheduler = byte_streamer_module.ReliableRetryScheduler()
+        retry_started = threading.Event()
+        release_retry = threading.Event()
+        shutdown_done = threading.Event()
+
+        def retry():
+            retry_started.set()
+            assert release_retry.wait(2.0)
+
+        scheduler.retry_task_pool.submit(retry)
+        assert retry_started.wait(2.0)
+        shutdown_thread = threading.Thread(target=lambda: (scheduler.shutdown(), shutdown_done.set()))
+        shutdown_thread.start()
+        try:
+            assert not shutdown_done.wait(0.05)
+            release_retry.set()
+            assert shutdown_done.wait(2.0)
+        finally:
+            release_retry.set()
+            shutdown_thread.join(timeout=2.0)
 
     @pytest.fixture
     def retry_scheduler(self, monkeypatch):

@@ -127,7 +127,10 @@ class ReliableRetryScheduler:
         thread = self.thread
         if thread and thread.is_alive() and thread is not threading.current_thread():
             thread.join(timeout=1.0)
-        self.retry_task_pool.shutdown(wait=False)
+        # Cell transport must remain alive until every already-admitted retry
+        # finishes. Standalone trainer teardown stops the Cell immediately after
+        # this scheduler and the shared streaming executors have drained.
+        self.retry_task_pool.shutdown(wait=True)
 
     def _finish_inflight(self, task):
         with self.cv:
@@ -677,6 +680,14 @@ class ByteStreamer:
 
     def get_chunk_size(self):
         return self.chunk_size
+
+    @classmethod
+    def shutdown(cls):
+        """Cancel every process-owned outgoing stream before F3 executors stop."""
+        with cls.map_lock:
+            tasks = tuple(cls.tx_task_map.values())
+        for task in tasks:
+            task.stop(StreamError("streaming shutdown"), notify=False)
 
     def send(
         self,
