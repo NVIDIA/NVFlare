@@ -68,7 +68,6 @@ class Adapter:
         self.live = _query(LookupStatus.NOT_FOUND)
         self.accounting_id = _query(LookupStatus.NOT_FOUND)
         self.cancel_result = _query(LookupStatus.FOUND)
-        self.version_result = _command(stdout="slurm 23.02.0\n")
         self.probes = [_command(stdout="")]
         self.calls = []
 
@@ -100,10 +99,6 @@ class Adapter:
     def accounting_probe(self, timeout):
         self.calls.append(("probe", timeout))
         return self._take(self.probes)
-
-    def version_probe(self, timeout):
-        self.calls.append(("version", timeout))
-        return self.version_result
 
 
 def _record(job_id="42", state="RUNNING", **kwargs):
@@ -193,7 +188,6 @@ def _runtime_config(workspace, executables):
 
 def _bootstrap_adapter(monkeypatch):
     adapter = MagicMock()
-    adapter.version_probe.return_value = _command(stdout="slurm 23.02.5\n")
     adapter.accounting_probe.return_value = _command(stdout="")
     factory = MagicMock(return_value=adapter)
     monkeypatch.setattr(manager_module, "_SlurmCliAdapter", factory)
@@ -540,6 +534,18 @@ def test_infrastructure_terminal_state_is_an_infrastructure_error(tmp_path):
     assert handle.poll() == ProcessExitCode.INFRASTRUCTURE_ERROR
 
 
+def test_reportable_derived_step_exit_code_is_preserved(tmp_path):
+    adapter = Adapter()
+    adapter.live = _query(LookupStatus.NOT_FOUND)
+    adapter.accounting_id = _query(
+        LookupStatus.FOUND,
+        _record(state="FAILED", exit_status=15, derived_exit_status=ProcessExitCode.EXCEPTION),
+    )
+    handle = _manager(tmp_path, adapter).launch(_plan(tmp_path))
+
+    assert handle.poll() == ProcessExitCode.EXCEPTION
+
+
 def test_terminal_cleanup_restores_access_to_pyxis_mount_directories(tmp_path):
     adapter = Adapter()
     adapter.live = _query(LookupStatus.NOT_FOUND)
@@ -786,20 +792,3 @@ def test_accounting_probe_is_required_and_briefly_retried(tmp_path, monkeypatch,
     else:
         with pytest.raises(UnsafeComponentError, match="slurmdbd"):
             manager._require_accounting()
-
-
-@pytest.mark.parametrize("version", ["slurm 23.02.0\n", "slurm 26.05.1\n"])
-def test_supported_slurm_version_passes_bootstrap_check(tmp_path, version):
-    adapter = Adapter()
-    adapter.version_result = _command(stdout=version)
-
-    _manager(tmp_path, adapter)._require_slurm_version()
-
-
-@pytest.mark.parametrize("result", [_command(stdout="slurm 22.05.9\n"), _command(stdout="unexpected\n"), _command(1)])
-def test_unsupported_or_unreadable_slurm_version_fails_bootstrap(tmp_path, result):
-    adapter = Adapter()
-    adapter.version_result = result
-
-    with pytest.raises(UnsafeComponentError, match="23.02 or later"):
-        _manager(tmp_path, adapter)._require_slurm_version()

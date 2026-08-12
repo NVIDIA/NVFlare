@@ -24,7 +24,7 @@ from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_streamer import TxTask
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamDataType, StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError
+from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, Stream, StreamError
 
 
 class DummyStream(Stream):
@@ -103,6 +103,27 @@ class TestByteStreamerAckWatchdog:
             optional=False,
         )
         return task, cell
+
+    def test_receiver_blob_size_error_preserves_error_type(self, monkeypatch):
+        task, _ = self._make_task(
+            monkeypatch,
+            window_size=1,
+            ack_wait=0.5,
+            ack_progress_timeout=2.0,
+            ack_progress_check_interval=0.01,
+            chunks=[b"x"],
+        )
+        message = Message(
+            {
+                MessageHeaderKey.ORIGIN: "peer",
+                StreamHeaderKey.ERROR_MSG: "blob too large",
+                StreamHeaderKey.ERROR_TYPE: BlobSizeError.__name__,
+            }
+        )
+
+        task.handle_ack(message)
+
+        assert isinstance(task.stream_future.exception(timeout=0.1), BlobSizeError)
 
     def test_ack_progress_check_interval_is_clamped_to_prevent_busy_spin(self, monkeypatch):
         task, _ = self._make_task(
