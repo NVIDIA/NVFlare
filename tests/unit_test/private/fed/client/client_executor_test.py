@@ -533,15 +533,28 @@ def test_wait_child_process_preserves_launcher_infrastructure_error_over_rc_file
     assert not rc_file.exists()
 
 
-@pytest.mark.parametrize("return_code", [JobReturnCode.SUCCESS, JobReturnCode.UNKNOWN, JobReturnCode.EXECUTION_ERROR])
-def test_wait_child_process_reports_non_failure_return_code(return_code):
+@pytest.mark.parametrize(
+    ("return_code", "process_status", "expected_code"),
+    [
+        (JobReturnCode.SUCCESS, ClientStatus.STARTING, JobReturnCode.SUCCESS),
+        (JobReturnCode.UNKNOWN, ClientStatus.STARTING, JobReturnCode.UNKNOWN),
+        (JobReturnCode.EXECUTION_ERROR, ClientStatus.STARTED, JobReturnCode.EXECUTION_ERROR),
+        (JobReturnCode.EXECUTION_ERROR, ClientStatus.STARTING, ProcessExitCode.INFRASTRUCTURE_ERROR),
+    ],
+)
+def test_wait_child_process_reports_terminal_return_code(return_code, process_status, expected_code):
     client = MagicMock()
     client.client_name = "site-1"
     client.cell.send_request.return_value.get_header.return_value = ReturnCode.OK
     job_executor = JobExecutor(client=client, startup="startup")
 
     job_handle = MagicMock()
-    job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
+    job_executor.run_processes = {
+        "job-1": {
+            RunProcessKey.JOB_HANDLE: job_handle,
+            RunProcessKey.STATUS: process_status,
+        }
+    }
 
     engine = MagicMock()
     fl_ctx = MagicMock()
@@ -560,7 +573,7 @@ def test_wait_child_process_reports_non_failure_return_code(return_code):
 
     client.cell.send_request.assert_called_once()
     payload = client.cell.send_request.call_args.kwargs["request"].payload
-    assert payload[JobFailureMsgKey.CODE] == return_code
+    assert payload[JobFailureMsgKey.CODE] == expected_code
     assert "job-1" not in job_executor.run_processes
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
 

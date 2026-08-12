@@ -19,6 +19,7 @@ Clone the example code from GitHub:
 Navigate to the hello-numpy directory:
 
 ```bash
+    cd NVFlare
     git switch <release branch>
     cd examples/hello-world/hello-numpy
 ```

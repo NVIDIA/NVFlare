@@ -614,6 +614,10 @@ class JobExecutor(ClientExecutor):
 
             return_code = get_return_code(job_handle, job_id, workspace, self.logger)
 
+            process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS)
+            if return_code == JobReturnCode.EXECUTION_ERROR and process_status == ClientStatus.STARTING:
+                return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
+
             self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
 
             failure_reason = REPORTABLE_JOB_FAILURES.get(return_code)
