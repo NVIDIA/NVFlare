@@ -34,6 +34,33 @@ _KEY_HOST = "host"
 _KEY_PORTS = "ports"
 
 
+def _is_loopback_host(host) -> bool:
+    if not isinstance(host, str):
+        return False
+
+    host = host.strip()
+    if host.rstrip(".").lower() == "localhost":
+        return True
+
+    # Accept the bracketed form commonly used for IPv6 URL hosts as well as
+    # bare address literals used by listener resources.
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+
+    if address.is_loopback:
+        return True
+
+    # On older supported Python versions, IPv4-mapped IPv6 addresses do not
+    # inherit the mapped IPv4 address's is_loopback value.
+    mapped_address = getattr(address, "ipv4_mapped", None)
+    return mapped_address is not None and mapped_address.is_loopback
+
+
 class _Defaults:
 
     ALLOW_ADHOC_CONNECTIONS = False
@@ -105,13 +132,8 @@ class ConnectorManager:
     def _validate_internal_listener_security(self):
         conn_sec = self.int_resources.get(DriverParams.CONNECTION_SECURITY, ConnectionSecurity.CLEAR)
         host = self.int_resources.get(DriverParams.LISTEN_HOST, self.int_resources.get(_KEY_HOST, "localhost"))
-        if host == "localhost":
+        if _is_loopback_host(host):
             return
-        try:
-            if ipaddress.ip_address(host).is_loopback:
-                return
-        except ValueError:
-            pass
         if conn_sec == ConnectionSecurity.MTLS:
             return
         raise ConfigError(
