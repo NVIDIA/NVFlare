@@ -210,9 +210,6 @@
     "SubprocessLauncher": [
         "nvflare.app_common.launchers.subprocess_launcher"
     ],
-    "MetricsSender": [
-        "nvflare.app_common.metrics_exchange.metrics_sender"
-    ],
     "ListModelLocator": [
         "nvflare.app_common.model_locator.list_model_locator"
     ],
