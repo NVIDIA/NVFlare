@@ -634,6 +634,10 @@ class ExternalProcessBackend(CellBackendBase):
         with trainer._cleanup_lock:
             if trainer._cleaned:
                 return
+            # A reaped owned process group cannot remain a result source. Keep
+            # this launch-scoped truth consistent even when its final SHUTDOWN
+            # acknowledgement was lost during Cell/F3 teardown.
+            trainer.result_source_live.clear()
             trainer._cleaned = True
         try:
             log_thread = trainer.log_thread

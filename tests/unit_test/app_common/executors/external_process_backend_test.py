@@ -579,6 +579,7 @@ class TestInitializeAndFinalize:
         finalize_thread.join(timeout=1.0)
         assert finalize_done.is_set()
         assert backend._active_launch is None
+        assert not trainer.result_source_live.is_set()
         assert trainer.token == ""
 
     def test_finalize_reaps_sigkilled_accepted_result_source_without_more_signals(self, env):
@@ -594,6 +595,7 @@ class TestInitializeAndFinalize:
         assert env.harness.signals_sent() == []
         assert backend._result_reapers == set()
         assert backend._active_launch is None
+        assert not trainer.result_source_live.is_set()
         assert trainer.token == ""
 
     def test_finalize_stops_source_when_shutdown_ack_says_send_already_settled(self, env):

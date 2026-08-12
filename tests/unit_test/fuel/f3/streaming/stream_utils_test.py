@@ -13,8 +13,10 @@
 # limitations under the License.
 
 import multiprocessing as mp
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
-from nvflare.fuel.f3.streaming.stream_utils import gen_stream_id
+from nvflare.fuel.f3.streaming.stream_utils import CheckedExecutor, gen_stream_id
 
 
 def generate_stream_ids(num_ids: int, result_queue: mp.Queue) -> None:
@@ -59,3 +61,56 @@ class TestStreamUtils:
         assert id2 > id1, "Second ID should be greater than first"
         assert id3 > id2, "Third ID should be greater than second"
         assert id3 - id2 == id2 - id1 == 1, "IDs should increment by 1"
+
+    def test_checked_executor_serializes_submit_with_shutdown(self, monkeypatch):
+        """A submission admitted before shutdown must not race the base executor's stop."""
+        executor = CheckedExecutor(max_workers=1, thread_name_prefix="checked_race")
+        submit_entered = threading.Event()
+        release_submit = threading.Event()
+        submit_done = threading.Event()
+        shutdown_started = threading.Event()
+        shutdown_done = threading.Event()
+        submit_errors = []
+        real_submit = ThreadPoolExecutor.submit
+
+        def paused_submit(pool, fn, *args, **kwargs):
+            if pool is executor:
+                submit_entered.set()
+                assert release_submit.wait(2.0)
+            return real_submit(pool, fn, *args, **kwargs)
+
+        monkeypatch.setattr(ThreadPoolExecutor, "submit", paused_submit)
+
+        def submit_work():
+            try:
+                future = executor.submit(lambda: "done")
+                assert future.result(timeout=2.0) == "done"
+            except BaseException as ex:
+                submit_errors.append(ex)
+            finally:
+                submit_done.set()
+
+        submit_thread = threading.Thread(target=submit_work)
+
+        def shutdown_executor():
+            shutdown_started.set()
+            executor.shutdown(wait=True)
+            shutdown_done.set()
+
+        shutdown_thread = threading.Thread(target=shutdown_executor)
+        submit_thread.start()
+        assert submit_entered.wait(2.0)
+        shutdown_thread.start()
+        assert shutdown_started.wait(2.0)
+
+        # Shutdown must wait until the already-admitted submit has crossed the
+        # base executor boundary; the previous check-then-submit race did not.
+        assert not shutdown_done.wait(0.05)
+        release_submit.set()
+
+        assert submit_done.wait(2.0)
+        assert shutdown_done.wait(2.0)
+        submit_thread.join(timeout=2.0)
+        shutdown_thread.join(timeout=2.0)
+        assert submit_errors == []
+        assert executor.submit(lambda: None) is None
