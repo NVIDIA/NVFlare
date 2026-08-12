@@ -31,6 +31,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.streaming import download_service as ds_module
@@ -43,6 +44,7 @@ from nvflare.fuel.f3.streaming.download_service import (
     download_object,
 )
 from tests.unit_test.fuel.f3.streaming.download_test_utils import MockDownloadable
+from tests.unit_test.fuel.f3.streaming.download_test_utils import cancel_request as _cancel_request
 from tests.unit_test.fuel.f3.streaming.download_test_utils import confirm_request as _confirm_request
 from tests.unit_test.fuel.f3.streaming.download_test_utils import make_service_no_monitor as _make_service
 from tests.unit_test.fuel.f3.streaming.download_test_utils import pull_request as _pull_request
@@ -129,6 +131,115 @@ class TestProducerSide:
         assert tx_id not in service._tx_table
         assert rid not in service._ref_table
         assert rid in service._finished_refs
+        assert obj.released
+
+    def test_acquired_receiver_cancellation_fails_and_finishes_source(self):
+        service = _make_service()
+        tx_id, rid, obj = _new_tx(service, chunks=2)
+        waiter = service.get_transfer_waiter(tx_id)
+
+        first_reply = service._handle_download(_pull_request(rid, "r1"))
+        cancel_reply = service._handle_download(_cancel_request(rid, "r1"))
+        duplicate_reply = service._handle_download(_cancel_request(rid, "r1"))
+
+        assert first_reply.payload.get(_PropKey.CANCEL_CAPABLE) is True
+        assert cancel_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        assert duplicate_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        outcome = _await_outcome(waiter)
+        assert not outcome.completed
+        assert obj.downloaded_to_one_calls == [("r1", DownloadStatus.FAILED)]
+        assert obj.released
+        assert tx_id not in service._tx_table
+        assert rid not in service._ref_table
+
+    def test_receiver_cancellation_finalizes_untouched_sibling_refs(self):
+        service = _make_service()
+        tx_id = service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=1)
+        first = MockDownloadable([b"first"] * 2)
+        second = MockDownloadable([b"second"] * 2)
+        first_rid = service.add_object(tx_id, first)
+        second_rid = service.add_object(tx_id, second)
+        waiter = service.get_transfer_waiter(tx_id)
+
+        service._handle_download(_pull_request(first_rid, "r1"))
+        service._handle_download(_cancel_request(first_rid, "r1"))
+
+        outcome = _await_outcome(waiter)
+        assert not outcome.completed
+        assert first.downloaded_to_one_calls == [("r1", DownloadStatus.FAILED)]
+        assert second.downloaded_to_one_calls == [("r1", DownloadStatus.FAILED)]
+        assert first.released and second.released
+        assert first_rid not in service._ref_table
+        assert second_rid not in service._ref_table
+
+    def test_unacquired_receiver_cancellation_cannot_finish_count_only_source(self):
+        service = _make_service()
+        tx_id, rid, obj = _new_tx(service)
+
+        reply = service._handle_download(_cancel_request(rid, "stranger"))
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        assert _ref(service, rid).snapshot_receiver_statuses() == {}
+        assert tx_id in service._tx_table
+        assert obj.downloaded_to_one_calls == []
+        service.delete_transaction(tx_id)
+
+    def test_one_receiver_cancellation_does_not_finish_multi_receiver_source(self):
+        service = _make_service()
+        tx_id, rid, obj = _new_tx(service, num_receivers=2, chunks=2)
+        waiter = service.get_transfer_waiter(tx_id)
+
+        service._handle_download(_pull_request(rid, "r1"))
+        service._handle_download(_cancel_request(rid, "r1"))
+
+        assert not waiter.done()
+        assert tx_id in service._tx_table
+        assert not obj.released
+
+        _pull_to_terminal(service, rid, "r2", confirm_capable=False)
+        run_monitor_once(service, now=time.time())
+
+        outcome = _await_outcome(waiter)
+        assert not outcome.completed
+        assert obj.downloaded_to_one_calls == [
+            ("r1", DownloadStatus.FAILED),
+            ("r2", DownloadStatus.SUCCESS),
+        ]
+        assert obj.released
+
+    def test_cancellation_racing_an_inflight_serve_drains_before_source_release(self):
+        service = _make_service()
+        produce_started = threading.Event()
+        release_produce = threading.Event()
+
+        class BlockingDownloadable(MockDownloadable):
+            def produce(self, state, requester):
+                produce_started.set()
+                assert release_produce.wait(2.0)
+                return super().produce(state, requester)
+
+        tx_id = service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=1)
+        obj = BlockingDownloadable([b"chunk"] * 2)
+        rid = service.add_object(tx_id, obj)
+        waiter = service.get_transfer_waiter(tx_id)
+        pull_replies = []
+
+        pull_thread = threading.Thread(
+            target=lambda: pull_replies.append(service._handle_download(_pull_request(rid, "r1")))
+        )
+        pull_thread.start()
+        assert produce_started.wait(2.0)
+
+        service._handle_download(_cancel_request(rid, "r1"))
+
+        assert not obj.released
+        release_produce.set()
+        pull_thread.join(timeout=2.0)
+        assert not pull_thread.is_alive()
+        assert pull_replies[0].payload.get(_PropKey.STATUS) == ProduceRC.OK
+        outcome = _await_outcome(waiter)
+        assert not outcome.completed
+        assert obj.downloaded_to_one_calls == [("r1", DownloadStatus.FAILED)]
         assert obj.released
 
     def test_confirmation_retires_inline_but_settles_off_request_thread(self):
@@ -605,10 +716,12 @@ def _ok_reply(body):
     return make_reply(ReturnCode.OK, body=body)
 
 
-def _chunk_reply(confirm_expected=True):
+def _chunk_reply(confirm_expected=True, cancel_capable=False):
     body = {_PropKey.STATUS: ProduceRC.OK, _PropKey.STATE: {"seq": 1}, _PropKey.DATA: b"chunk"}
     if confirm_expected:
         body[_PropKey.CONFIRM_EXPECTED] = True
+    if cancel_capable:
+        body[_PropKey.CANCEL_CAPABLE] = True
     return _ok_reply(body)
 
 
@@ -660,6 +773,192 @@ class TestReceiverSide:
         # the producer never advertised CONFIRM_EXPECTED: a new receiver must send nothing extra
         cell = _ScriptedCell(
             [_chunk_reply(confirm_expected=False), _terminal_reply(ProduceRC.EOF, confirm_expected=False)]
+        )
+        consumer = _RecordingConsumer()
+
+        download_object(from_fqcn="site-1", ref_id="R1", per_request_timeout=5.0, cell=cell, consumer=consumer)
+
+        assert consumer.completed
+        assert cell.confirms == []
+
+    def test_abort_notifies_cancel_capable_producer(self):
+        abort_signal = Signal()
+        cell = _ScriptedCell([_chunk_reply(cancel_capable=True)])
+
+        class AbortAfterChunk(_RecordingConsumer):
+            def consume(self, ref_id, state, data):
+                new_state = super().consume(ref_id, state, data)
+                abort_signal.trigger("job aborted")
+                return new_state
+
+        consumer = AbortAfterChunk()
+
+        download_object(
+            from_fqcn="site-1",
+            ref_id="R1",
+            per_request_timeout=5.0,
+            cell=cell,
+            consumer=consumer,
+            abort_signal=abort_signal,
+            secure=True,
+        )
+
+        assert consumer.failed_reason == "download aborted"
+        assert cell.confirms == [{_PropKey.REF_ID: "R1", _PropKey.CANCEL: True}]
+        assert cell.confirm_kwargs == [{"secure": True, "optional": False}]
+
+    def test_abort_observed_as_first_reply_returns_still_notifies_producer(self):
+        abort_signal = Signal()
+
+        class AbortWithReplyCell(_ScriptedCell):
+            def send_request(self, *args, **kwargs):
+                reply = super().send_request(*args, **kwargs)
+                abort_signal.trigger("job aborted")
+                return reply
+
+        cell = AbortWithReplyCell([_chunk_reply(cancel_capable=True)])
+        consumer = _RecordingConsumer()
+
+        download_object(
+            from_fqcn="site-1",
+            ref_id="R1",
+            per_request_timeout=5.0,
+            cell=cell,
+            consumer=consumer,
+            abort_signal=abort_signal,
+        )
+
+        assert consumer.consumed == []
+        assert consumer.failed_reason.startswith("download aborted after")
+        assert cell.confirms == [{_PropKey.REF_ID: "R1", _PropKey.CANCEL: True}]
+
+    def test_abort_does_not_send_cancel_to_legacy_producer(self):
+        abort_signal = Signal()
+        cell = _ScriptedCell([_chunk_reply(cancel_capable=False)])
+
+        class AbortAfterChunk(_RecordingConsumer):
+            def consume(self, ref_id, state, data):
+                new_state = super().consume(ref_id, state, data)
+                abort_signal.trigger("job aborted")
+                return new_state
+
+        consumer = AbortAfterChunk()
+
+        download_object(
+            from_fqcn="site-1",
+            ref_id="R1",
+            per_request_timeout=5.0,
+            cell=cell,
+            consumer=consumer,
+            abort_signal=abort_signal,
+        )
+
+        assert consumer.failed_reason == "download aborted"
+        assert cell.confirms == []
+
+    def test_pipelined_abort_cancels_pending_request_and_notifies_producer(self):
+        abort_signal = Signal()
+        cell = _ScriptedCell([_chunk_reply(cancel_capable=True)])
+
+        class PendingRequest:
+            def __init__(self):
+                self.cancelled = False
+
+            def cancel(self):
+                self.cancelled = True
+
+        class RecordingExecutor:
+            def __init__(self):
+                self.pending = PendingRequest()
+                self.submissions = []
+
+            def submit(self, fn, *args):
+                self.submissions.append((fn, args))
+                return self.pending
+
+        class PipelinedAbortAfterChunk(_RecordingConsumer):
+            supports_pipelining = True
+
+            def consume(self, ref_id, state, data):
+                new_state = super().consume(ref_id, state, data)
+                abort_signal.trigger("job aborted")
+                return new_state
+
+        executor = RecordingExecutor()
+        consumer = PipelinedAbortAfterChunk()
+
+        with patch.object(ds_module, "download_request_thread_pool", executor):
+            download_object(
+                from_fqcn="site-1",
+                ref_id="R1",
+                per_request_timeout=5.0,
+                cell=cell,
+                consumer=consumer,
+                abort_signal=abort_signal,
+            )
+
+        assert len(executor.submissions) == 1
+        assert executor.pending.cancelled
+        assert consumer.failed_reason == "download aborted"
+        assert cell.confirms == [{_PropKey.REF_ID: "R1", _PropKey.CANCEL: True}]
+
+    def test_source_connection_failure_after_data_notifies_producer_and_fails_consumer(self):
+        cell = _ScriptedCell([_chunk_reply(cancel_capable=True), make_reply(ReturnCode.COMM_ERROR)])
+        consumer = _RecordingConsumer()
+
+        download_object(from_fqcn="site-1", ref_id="R1", per_request_timeout=5.0, cell=cell, consumer=consumer)
+
+        assert consumer.consumed == [b"chunk"]
+        assert "error requesting data" in consumer.failed_reason
+        assert cell.confirms == [{_PropKey.REF_ID: "R1", _PropKey.CANCEL: True}]
+
+    def test_consumer_io_failure_notifies_producer(self):
+        cell = _ScriptedCell([_chunk_reply(cancel_capable=True)])
+
+        class FailingConsumer(_RecordingConsumer):
+            def consume(self, ref_id, state, data):
+                raise OSError("ENOSPC")
+
+        consumer = FailingConsumer()
+
+        download_object(from_fqcn="site-1", ref_id="R1", per_request_timeout=5.0, cell=cell, consumer=consumer)
+
+        assert "ENOSPC" in consumer.failed_reason
+        assert cell.confirms == [{_PropKey.REF_ID: "R1", _PropKey.CANCEL: True}]
+
+    def test_cancel_delivery_failure_does_not_mask_receiver_cleanup(self):
+        abort_signal = Signal()
+
+        class FailingCancelCell(_ScriptedCell):
+            def fire_and_forget(self, *args, **kwargs):
+                raise RuntimeError("source disappeared")
+
+        class AbortAfterChunk(_RecordingConsumer):
+            def consume(self, ref_id, state, data):
+                new_state = super().consume(ref_id, state, data)
+                abort_signal.trigger("job aborted")
+                return new_state
+
+        cell = FailingCancelCell([_chunk_reply(cancel_capable=True)])
+        consumer = AbortAfterChunk()
+
+        download_object(
+            from_fqcn="site-1",
+            ref_id="R1",
+            per_request_timeout=5.0,
+            cell=cell,
+            consumer=consumer,
+            abort_signal=abort_signal,
+        )
+
+        assert consumer.failed_reason == "download aborted"
+
+    def test_normal_completion_never_sends_cancellation(self):
+        cell = _ScriptedCell(
+            [
+                _chunk_reply(confirm_expected=False, cancel_capable=True),
+                _terminal_reply(ProduceRC.EOF, confirm_expected=False),
+            ]
         )
         consumer = _RecordingConsumer()
 

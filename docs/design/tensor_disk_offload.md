@@ -161,11 +161,18 @@ Custom aggregators are responsible for:
   finalization. Explicit terminal downloads inherit the run abort signal. At job
   `END_RUN`, Swarm cancels active disk consumers under its root, gives the
   controller-owned learning and aggregation threads a bounded drain window, then
-  removes the root and its remaining contents.
+  removes the root and its remaining contents. A receiver that abandons an active
+  download also sends a capability-negotiated cancellation to the producer. The
+  producer records that receiver as failed across every ref in the transaction and
+  can release an accepted external-process result source without waiting for its
+  normal transfer timeout. Older producers keep the existing bounded timeout path.
 
 ## Failure Behavior
 
 - Download failures trigger `DiskTensorConsumer.download_failed(...)`, which removes the temp dir.
+- Mid-transfer receiver cancellation is best effort. If the producer advertised support, it
+  promptly settles the abandoned receiver as failed; otherwise the transaction's existing
+  receiver/transaction timeout remains the cleanup backstop.
 - Invalid safetensors payload/header parsing fails fast and bubbles up as a download-consume error.
 - Existing in-memory download path remains unchanged when offload is disabled.
 

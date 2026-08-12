@@ -581,6 +581,21 @@ class TestInitializeAndFinalize:
         assert backend._active_launch is None
         assert trainer.token == ""
 
+    def test_finalize_reaps_sigkilled_accepted_result_source_without_more_signals(self, env):
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
+        process = env.harness.processes[0]
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+        process.exit(-signal.SIGKILL)
+
+        backend.finalize(FLContext())
+
+        assert process.returncode == -signal.SIGKILL
+        assert env.harness.signals_sent() == []
+        assert backend._result_reapers == set()
+        assert backend._active_launch is None
+        assert trainer.token == ""
+
     def test_finalize_stops_source_when_shutdown_ack_says_send_already_settled(self, env):
         backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
         process = env.harness.processes[0]

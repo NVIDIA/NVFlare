@@ -125,6 +125,14 @@ def confirm_request(rid, requester, status, nonce=None):
     return new_cell_message(headers={MessageHeaderKey.ORIGIN: requester}, payload=payload)
 
 
+def cancel_request(rid, requester):
+    """Builds one mid-stream receiver-cancellation message as it appears on the wire."""
+    return new_cell_message(
+        headers={MessageHeaderKey.ORIGIN: requester},
+        payload={_PropKey.REF_ID: rid, _PropKey.CANCEL: True},
+    )
+
+
 def serve_nonce(terminal_reply):
     """The per-serve nonce a confirmation must echo (from the producer's terminal reply)."""
     return terminal_reply.payload.get(_PropKey.CONFIRM_NONCE)

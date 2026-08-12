@@ -239,7 +239,10 @@ Result direction for `external_process`:
    waiter does not depend on the periodic expiration monitor noticing it. A receiver that does
    not provide terminal confirmation has no acknowledgement after its terminal serve, so that
    path remains monitor-settled: this preserves a post-reply interval before a one-shot producer
-   can observe completion and tear down its Cell.
+   can observe completion and tear down its Cell. If a receiver abandons a transfer after learning
+   that the producer supports cancellation, it reports terminal failure back to the producer.
+   That failure is applied to every ref for the same receiver in the transaction, allowing an
+   accepted result source to settle promptly even if its enclosing CJ task has already returned.
 
 Pass-through always preserves the trainer's original FQCN and reference ID. The CJ may still be a
 physical Cell routing hop for the result envelope and subsequent download messages, depending on
@@ -285,7 +288,10 @@ longer data-transfer budget does not govern CJ process ownership. END_RUN gives 
 source one acknowledged SHUTDOWN interval, then force-stops every remaining owned process group.
 An `ABORT_TASK` latches aborted teardown even when `execute()` already returned the lazy result,
 sends ABORT immediately, and bypasses the normal result-source drain interval. Other
-failure/teardown paths use the bounded SHUTDOWN/TERM/KILL sequence immediately.
+failure/teardown paths use the bounded SHUTDOWN/TERM/KILL sequence immediately. The result
+download's receiver-cancellation handshake is independent of that task latch: it covers the case
+where the nested workflow task was already cleared before graceful job teardown began. Normal
+completion sends no cancellation and retains the accepted-result drain behavior.
 
 Startup waits at most `launch_timeout` for the trainer to complete its HELLO handshake. The
 default is 300 seconds; callers may explicitly use `None` when an unbounded wait is required. For
