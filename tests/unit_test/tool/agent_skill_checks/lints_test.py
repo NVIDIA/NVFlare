@@ -336,7 +336,7 @@ def test_run_v1_lints_accepts_directory_fixture_with_files(tmp_path):
     evals = _default_evals("nvflare-fixture-skill")
     evals["evals"][0]["files"] = ["files/images/site-1"]
     _write_skill(tmp_path / "skills", "nvflare-fixture-skill", evals=evals, write_fixture=False)
-    files_dir = tmp_path / "dev_tools" / "agent" / "skill_evals" / "nvflare-fixture-skill" / "files"
+    files_dir = tmp_path / "skills" / "nvflare-fixture-skill" / "evals" / "files"
     site_dir = files_dir / "images" / "site-1"
     site_dir.mkdir(parents=True)
     site_dir.joinpath("img_0001.png").write_bytes(b"\x89PNG fake")
@@ -351,7 +351,7 @@ def test_run_v1_lints_rejects_empty_directory_fixture(tmp_path):
     evals = _default_evals("nvflare-fixture-skill")
     evals["evals"][0]["files"] = ["files/images/site-1"]
     _write_skill(tmp_path / "skills", "nvflare-fixture-skill", evals=evals, write_fixture=False)
-    files_dir = tmp_path / "dev_tools" / "agent" / "skill_evals" / "nvflare-fixture-skill" / "files"
+    files_dir = tmp_path / "skills" / "nvflare-fixture-skill" / "evals" / "files"
     (files_dir / "images" / "site-1").mkdir(parents=True)
     files_dir.joinpath("README.md").write_text("# Fixtures\n", encoding="utf-8")
 
@@ -365,7 +365,7 @@ def test_run_v1_lints_fixture_file_check_ignores_symlink_loop(tmp_path):
     evals = _default_evals("nvflare-fixture-skill")
     evals["evals"][0]["files"] = ["files/input.py"]
     _write_skill(tmp_path / "skills", "nvflare-fixture-skill", evals=evals, write_fixture=False)
-    files_dir = tmp_path / "dev_tools" / "agent" / "skill_evals" / "nvflare-fixture-skill" / "files"
+    files_dir = tmp_path / "skills" / "nvflare-fixture-skill" / "evals" / "files"
     files_dir.mkdir()
     files_dir.joinpath("input.py").write_text("print('hello')\n", encoding="utf-8")
     _symlink_dir_or_skip(files_dir, files_dir / "loop")
@@ -573,17 +573,14 @@ def test_run_v1_lints_does_not_flag_legitimate_runtime_words(tmp_path, safe_line
     assert result["findings"] == []
 
 
-def test_run_v1_lints_flags_eval_dir_inside_skill(tmp_path):
-    # A stray evals/ suite inside a shipped skill dir must be flagged; eval
-    # suites belong in the repo-only eval root.
-    skill_dir = _write_skill(tmp_path / "skills", "nvflare-valid-skill")
-    stray_evals = skill_dir / "evals"
-    stray_evals.mkdir()
-    stray_evals.joinpath("evals.json").write_text("{}\n", encoding="utf-8")
+def test_run_v1_lints_allows_top_level_eval_dir_inside_skill(tmp_path):
+    # Agent Skills Specification evals live at <skill>/evals. Packaging strips
+    # that top-level directory, so it is not runtime content.
+    _write_skill(tmp_path / "skills", "nvflare-valid-skill")
 
     result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
 
-    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-eval-dir-in-skill")
+    assert result["findings"] == []
 
 
 def test_run_v1_lints_flags_nested_eval_dir_inside_skill(tmp_path):
@@ -851,9 +848,8 @@ def _write_skill(
         f"{body}",
         encoding="utf-8",
     )
-    # Eval suites live outside the skill tree, one dir per skill name under the
-    # default eval root beside the skills root (dev_tools/agent/skill_evals/).
-    evals_dir = root.parent / "dev_tools" / "agent" / "skill_evals" / name
+    # Eval suites are co-located at <skill>/evals and excluded from packages.
+    evals_dir = root / name / "evals"
     evals_dir.mkdir(parents=True)
     if write_fixture:
         files_dir = evals_dir / "files"

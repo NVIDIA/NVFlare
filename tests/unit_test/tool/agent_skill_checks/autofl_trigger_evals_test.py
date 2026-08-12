@@ -22,7 +22,7 @@ sys.path.insert(0, str(CHECKS_PARENT))
 from checks.lints import _eval_mentions_file_editing, _is_positive_eval  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-AUTOFL_EVALS_PATH = REPO_ROOT / "dev_tools" / "agent" / "skill_evals" / "nvflare-autofl" / "evals.json"
+AUTOFL_EVALS_PATH = REPO_ROOT / "skills" / "nvflare-autofl" / "evals" / "evals.json"
 NATURAL_PHRASING_EVAL_ID = "autofl-natural-phrasing-low-accuracy"
 
 

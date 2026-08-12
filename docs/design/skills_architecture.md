@@ -125,7 +125,7 @@ flowchart TB
 
 | Layer | When | Implemented pieces | Purpose |
 | --- | --- | --- | --- |
-| Authoring source | Dev-time | `skills/`, `SKILL.md`, `references/` (runtime); `dev_tools/agent/skill_evals/<skill>/` (repo-only eval suites) | Human-readable skill instructions and supporting evidence; eval suites live outside the shipped skill tree. |
+| Authoring source | Dev-time | `skills/`, `SKILL.md`, `references/` (runtime); `skills/<skill>/evals/` (repo-only eval suites) | Human-readable skill instructions and supporting evidence; eval suites are co-located with their skill but excluded from installed packages. |
 | Engineering lint tool | Dev-time / CI | `dev_tools/agent/skills/checks`, `python dev_tools/agent/skills/checks/cli.py`, pytest coverage | Deterministic admission checks for frontmatter, triggers, command drift, policy coverage, fixtures, and process metrics. This is a repo-local tool validated by pytest; it is not shipped in the wheel. |
 | Skill install | Install-time bridge | `npx skills add ./skills -a claude-code -a codex` (local) or `npx skills add NVIDIA/<skills-repo> -a claude-code -a codex` (published) | Standard [agentskills.io](https://agentskills.io) installer that copies the `skills/` tree into the Codex and Claude skill directories. Install the whole set together so cross-skill references (`nvflare-shared/`) resolve. NVFLARE ships no custom installer command. |
 | Runtime agent surface | Runtime | Codex/Claude skill loading, `nvflare agent inspect source|data`, recipe/job CLI | The agent reads skill instructions and uses NVFLARE commands to inspect, convert, validate, or diagnose. Source and data inspection are separate static capabilities. |
@@ -135,20 +135,20 @@ flowchart TB
 
 The engineering lint tool (`dev_tools/agent/skills/checks/lints.py`) is
 **independent of `docs/design/` and offline catalog docs**. Its intentional
-inputs are the runtime `skills/` tree and the repo-only eval suites under
-`dev_tools/agent/skill_evals/<skill>/` (via `evals_root` / `--evals-root`). This
-is a deliberate invariant, not an accident of the current code:
+inputs are the `skills/` tree and each skill's repo-only eval suite at
+`skills/<skill>/evals/`. This is a deliberate invariant, not an accident of the
+current code:
 
 - The lint engine MUST NOT read `docs/design/*.md`. Those are human planning
   docs; there is no `docs_root` parameter and no `--docs-root` flag. It MAY read
-  the repo-only eval suites under `evals_root` — those are dev/QA tooling input,
+  the repo-only co-located eval suites — those are dev/QA tooling input,
   explicitly distinct from the forbidden `docs_root`.
 - Separate the two input surfaces by check type: **runtime-boundary checks**
   validate shippable artifacts only (`skills/`, `SKILL.md`, `references/`,
-  `assets/`, and the internal `skills/nvflare-shared/` skill) and reject embedded
-  `evals/` directories, while
+  `assets/`, and the internal `skills/nvflare-shared/` skill), excluding the
+  top-level `evals/` suite from installed runtime content, while
   **trigger, coverage, process-metric, and fixture checks** deliberately consume
-  the repo-only eval suites under `evals_root` to verify positive/negative
+  the repo-only eval suites under `skills/<skill>/evals/` to verify positive/negative
   trigger coverage, global-negative coverage, policy coverage behavior IDs, and
   fixtures. Eval suites are never shipped in the wheel.
 - `SKILL.md` is a **runtime artifact** loaded by the agent. Frontmatter fields

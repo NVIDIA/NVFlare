@@ -15,13 +15,13 @@
 """Deterministic v1 admission lints for NVFLARE-owned agent skills.
 
 DESIGN INVARIANT -- lint engine independence (do not revert):
-This engine reads only the ``skills/`` runtime tree and the repo-local eval
-suites under ``evals_root`` (``dev_tools/agent/skill_evals/``, one dir per skill
-name). It must NOT read ``docs/design/*.md`` or rely on offline-only catalog
-metadata. ``SKILL.md`` is a runtime artifact loaded by the agent; fields
-validated here must be runtime or public skill metadata, not private lint
-scratch data. ``evals_root`` is dev/QA tooling input, distinct from the
-forbidden ``docs_root``.
+This engine reads only the ``skills/`` tree, including each skill's repo-local
+``evals/`` directory. It must NOT read ``docs/design/*.md`` or rely on
+offline-only catalog metadata. ``SKILL.md`` is a runtime artifact loaded by the
+agent; fields validated here must be runtime or public skill metadata, not
+private lint scratch data. Eval suites are dev/QA tooling input and are
+excluded from installed skill packages, distinct from the forbidden
+``docs_root``.
 
 Concretely:
 - Group skills for ``skill-trigger-overlap-lint`` by deterministic skill-name
@@ -205,8 +205,8 @@ class SkillRecord:
     text: str
     body: str
     evals: list[dict[str, Any]]
-    # Eval content lives outside the shipped skill tree (repo-only QA data).
-    # evals_dir is the skill's eval suite root; evals_path is its evals.json.
+    # Eval content is co-located under skill_dir/evals as repo-only QA data.
+    # Packaging excludes it; evals_dir is the suite root and evals_path its JSON.
     evals_dir: Path
     evals_path: Path
     evals_error: Optional[str]
@@ -231,7 +231,7 @@ class SkillRecord:
 @dataclass
 class LintContext:
     skills_root: Path
-    evals_root: Path
+    evals_root: Path | None
     max_skill_md_lines: int
     records: list[SkillRecord]
     findings: list[LintFinding]
@@ -255,12 +255,6 @@ def run_v1_lints(
     return result
 
 
-def _default_evals_root(skills_root: Path) -> Path:
-    # Eval suites live in a repo-local dev-tools tree, one directory per skill
-    # name, alongside the skills source root (not shipped in installed skills).
-    return skills_root.resolve().parent / "dev_tools" / "agent" / "skill_evals"
-
-
 def _run_v1_lints_with_records(
     skills_root: Path | str = "skills",
     *,
@@ -274,7 +268,10 @@ def _run_v1_lints_with_records(
         raise ValueError(f"unknown agent skill lint check(s): {', '.join(unknown)}")
 
     root = Path(skills_root)
-    evals_root_path = Path(evals_root) if evals_root is not None else _default_evals_root(root)
+    # By default, each suite is co-located at skills/<skill>/evals/. An explicit
+    # evals_root remains supported for isolated tooling tests and alternate QA
+    # inputs, where suites use <evals_root>/<skill>/evals.json.
+    evals_root_path = Path(evals_root) if evals_root is not None else None
     findings: list[LintFinding] = []
     records = _load_skill_records(root, evals_root_path, findings)
     context = LintContext(
@@ -350,7 +347,7 @@ def _finding_matches_requested_skill(finding: dict[str, Any], skill_name: str) -
     return finding_skill == skill_name or (finding_skill is None and finding.get("global") is True)
 
 
-def _load_skill_records(skills_root: Path, evals_root: Path, findings: list[LintFinding]) -> list[SkillRecord]:
+def _load_skill_records(skills_root: Path, evals_root: Path | None, findings: list[LintFinding]) -> list[SkillRecord]:
     if not skills_root.exists():
         findings.append(
             _finding(
@@ -387,16 +384,13 @@ def _load_skill_records(skills_root: Path, evals_root: Path, findings: list[Lint
         metadata = _try_parse_frontmatter(skill_file) if text is not None else {}
         text = text or ""
         skill_name = str(metadata.get("name") or child.name)
-        # Eval suites live outside the shipped skill tree, one dir per skill name.
-        # The frontmatter name is attacker-controlled; an absolute or traversal
-        # value ("/tmp/evil", "../../escape") would make evals_root / name escape
-        # the eval tree (pathlib discards the left operand on an absolute right
-        # operand) and load evals from outside BEFORE any lint runs. Only trust
-        # the name for path building when it matches SKILL_NAME_RE; otherwise use
-        # the real filesystem child.name (a contained subdir). The invalid
-        # frontmatter name is still reported separately by the frontmatter lint.
+        # By default, evals are co-located at <skill>/evals. An explicit external
+        # eval root is supported for isolated tooling and uses one dir per skill.
+        # The frontmatter name is attacker-controlled; only trust it for the
+        # external-root path when it matches SKILL_NAME_RE. The invalid name is
+        # still reported separately by the frontmatter lint.
         eval_dir_name = skill_name if SKILL_NAME_RE.match(skill_name) else child.name
-        evals_dir = evals_root / eval_dir_name
+        evals_dir = child / "evals" if evals_root is None else evals_root / eval_dir_name
         evals_path = evals_dir / "evals.json"
         evals, evals_error = _load_evals(evals_path)
         records.append(
@@ -526,9 +520,8 @@ def _lint_trigger(context: LintContext) -> None:
             context,
             LINT_SKILL_TRIGGER,
             record,
-            "evals.json (under dev_tools/agent/skill_evals/<skill>/) is required for public skill trigger checks",
-            "Add a guide-compatible evals.json under the eval root "
-            "(dev_tools/agent/skill_evals/<skill>/) with positive and adjacent negative trigger evals.",
+            "evals/evals.json is required for public skill trigger checks",
+            "Add a guide-compatible evals/evals.json with positive and adjacent negative trigger evals.",
         ):
             continue
         if not any(_is_positive_eval(item, record.name) for item in record.evals):
@@ -619,7 +612,7 @@ def _lint_global_negative(context: LintContext) -> None:
             context,
             LINT_SKILL_GLOBAL_NEGATIVE,
             record,
-            "evals.json (under dev_tools/agent/skill_evals/<skill>/) is required for global negative coverage",
+            "evals/evals.json is required for global negative coverage",
             "Add at least one eval representing an unrelated prompt that should trigger no FLARE skill.",
         ):
             continue
@@ -654,8 +647,7 @@ def _lint_policy_coverage(context: LintContext) -> None:
                             FINDING_ERROR,
                             file_path,
                             "normative rule has no measurable behavior ID, helper test, or checklist coverage",
-                            "Map required/prohibited behavior to eval-root "
-                            "(dev_tools/agent/skill_evals/<skill>/evals.json) nvflare behavior IDs or tests.",
+                            "Map required/prohibited behavior to evals/evals.json nvflare behavior IDs or tests.",
                             code="skill-policy-coverage-missing",
                             skill=record.name,
                             line=line_no,
@@ -673,7 +665,7 @@ def _lint_process_metrics(context: LintContext) -> None:
             context,
             LINT_SKILL_PROCESS_METRIC,
             record,
-            "evals.json (under dev_tools/agent/skill_evals/<skill>/) is required for process-metric coverage",
+            "evals/evals.json is required for process-metric coverage",
             "Add process metric contracts under nvflare.process_metrics.",
         ):
             continue
@@ -850,8 +842,7 @@ def _lint_fixtures(context: LintContext) -> None:
                         FINDING_ERROR,
                         record.evals_path,
                         f"eval '{item.get('id', '<missing>')}' describes file editing without input fixtures",
-                        "Add deterministic input files under the eval root "
-                        "(dev_tools/agent/skill_evals/<skill>/files/) and reference them from the eval.",
+                        "Add deterministic input files under evals/files/ and reference them from the eval.",
                         code="skill-fixture-input-missing",
                         skill=record.name,
                     )
@@ -883,9 +874,8 @@ def _lint_fixtures(context: LintContext) -> None:
                             FINDING_ERROR,
                             record.evals_path,
                             f"eval fixture does not exist: {rel_path}",
-                            "Place deterministic fixtures under the eval root "
-                            "(dev_tools/agent/skill_evals/<skill>/files/) and reference existing "
-                            "files or non-empty dataset directories.",
+                            "Place deterministic fixtures under evals/files/ and reference existing files or "
+                            "non-empty dataset directories.",
                             code="skill-fixture-file-missing",
                             skill=record.name,
                         )
@@ -923,13 +913,11 @@ _EVALUATOR_HOOK_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
-# Names stripped from a shipped skill: byte-code globs plus directories that are
-# not shipped as runtime guidance (evals suites, __pycache__). This is the source
-# of truth for what packaging removes; the runtime-boundary lint mirrors the
-# directory-name subset so it never scans content packaging strips. Kept here so
-# the lint engine stays self-contained over skills/ without importing product
-# code (no dependency on nvflare product modules that are not shipped in this
-# engine).
+# Names stripped from a shipped skill: byte-code globs plus repo-only eval suites
+# and __pycache__. This is the source of truth for what packaging removes; the
+# runtime-boundary lint mirrors the directory-name subset so it never scans
+# content packaging strips. Kept here so the lint engine stays self-contained
+# over skills/ without importing product code.
 SKILL_PACKAGING_EXCLUDE_NAMES = frozenset({"__pycache__", "*.pyc", "*.pyo", "evals"})
 # Directory-name subset of SKILL_PACKAGING_EXCLUDE_NAMES (byte-code file globs are
 # not directory names). The runtime-boundary lint uses this to prune what it scans.
@@ -956,24 +944,25 @@ _RUNTIME_TEXT_SUFFIXES = {
 def _lint_runtime_boundary(context: LintContext) -> None:
     """Packaged runtime skill content must stay inside the runtime boundary.
 
-    Runtime content is everything a skill ships. It must not contain an
-    ``evals/`` suite (grading-oracle data belongs in the repo-only eval root,
-    not inside a shipped skill), must not reference ``docs/design/`` documents
-    as operational guidance, and must not contain evaluator hooks or
-    benchmark-harness-only instructions. The scan covers what packaging ships,
-    so it iterates every skill record (public and non-public) and every shared
-    reference directory, not only ``SKILL.md`` and ``.md`` references.
+    Runtime content is everything a skill ships. A top-level ``evals/`` suite is
+    allowed as co-located repo-only QA data and is excluded from packages. Nested
+    ``evals/`` directories are invalid because packaging would silently omit
+    them. Runtime guidance must not reference ``docs/design/`` documents or
+    contain evaluator hooks or benchmark-harness-only instructions. The scan
+    covers what packaging ships, so it iterates every skill record (public and
+    non-public) and every shared reference directory, not only ``SKILL.md`` and
+    ``.md`` references.
     """
     for record in context.records:
-        for eval_dir in _iter_eval_dirs(record.skill_dir):
+        for eval_dir in _iter_misplaced_eval_dirs(record.skill_dir):
             context.findings.append(
                 _finding(
                     LINT_SKILL_RUNTIME_BOUNDARY,
                     FINDING_ERROR,
                     eval_dir,
-                    "eval suite must not live inside a shipped skill directory",
-                    "Move the eval suite to the eval root (dev_tools/agent/skill_evals/<skill>/); "
-                    "grading-oracle data must not ship in installed skills.",
+                    "eval suite must be the top-level evals/ directory of its skill",
+                    "Move the eval suite to skills/<skill>/evals/; packaging excludes that directory "
+                    "from installed skills.",
                     code="skill-runtime-eval-dir-in-skill",
                     skill=record.name,
                 )
@@ -1002,21 +991,21 @@ V1_LINT_IDS = tuple(lint_id for lint_id, _ in _LINT_REGISTRY)
 _LINT_FUNCTIONS = dict(_LINT_REGISTRY)
 
 
-def _iter_eval_dirs(skill_dir: Path) -> Iterable[Path]:
-    """Yield ``evals`` directories at any depth inside a skill.
+def _iter_misplaced_eval_dirs(skill_dir: Path) -> Iterable[Path]:
+    """Yield nested ``evals`` directories, excluding the allowed top-level suite.
 
-    Packaging strips directories named ``evals`` at any depth, so nested eval
-    content (e.g. ``references/evals/``) is silently omitted from bundles. The
-    boundary lint must match that depth so authors are told to relocate it
-    instead of shipping nothing. Once an excluded runtime directory is reported,
-    its subtree is also outside the shipped boundary and does not need traversal.
+    Packaging strips directories named ``evals`` at any depth. The top-level
+    ``<skill>/evals`` location is the Agent Skills Specification location and is
+    intentionally excluded from installed packages. A nested directory such as
+    ``references/evals`` would be silently omitted and is therefore invalid.
     """
     if not skill_dir.is_dir():
         return
     excluded = _RUNTIME_BOUNDARY_EXCLUDED_DIRS - {"evals"}
     for current_dir, dir_names, _file_names in _walk_no_follow(skill_dir, excluded):
         if "evals" in dir_names:
-            yield current_dir / "evals"
+            if current_dir != skill_dir:
+                yield current_dir / "evals"
             dir_names.remove("evals")
 
 
@@ -1062,8 +1051,8 @@ def _scan_runtime_boundary(context: LintContext, file_path: Path, text: str, *, 
                     FINDING_ERROR,
                     file_path,
                     "packaged runtime skill content contains evaluator or benchmark-harness instructions",
-                    "Keep evaluator hooks and benchmark instructions in repo-only evals/ content, "
-                    "not in SKILL.md, references/, scripts/, or shared references.",
+                    "Keep evaluator hooks and benchmark instructions in the co-located repo-only "
+                    "evals/ content, not in SKILL.md, references/, scripts/, or shared references.",
                     code="skill-runtime-evaluator-hook",
                     skill=skill,
                     line=line_no,
