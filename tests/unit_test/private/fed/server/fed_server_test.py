@@ -416,8 +416,7 @@ class TestFederatedServer:
             assert "disabled" in result.get_header(MessageHeaderKey.ERROR)
             assert "token" not in server.client_manager.clients
 
-    @pytest.mark.parametrize("failure_code", [JobReturnCode.ABORTED, ProcessExitCode.UNSAFE_COMPONENT])
-    def test_process_job_failure_stops_run_for_reported_abort_client_failures(self, failure_code):
+    def test_process_job_failure_stops_run_for_reported_unsafe_client_failure(self):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
             server = FederatedServer(
                 project_name="project_name",
@@ -446,7 +445,7 @@ class TestFederatedServer:
                 },
                 {
                     JobFailureMsgKey.JOB_ID: "job-1",
-                    JobFailureMsgKey.CODE: failure_code,
+                    JobFailureMsgKey.CODE: ProcessExitCode.UNSAFE_COMPONENT,
                     JobFailureMsgKey.REASON: "fatal client failure",
                 },
             )
@@ -463,6 +462,7 @@ class TestFederatedServer:
             (ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION),
             (ProcessExitCode.EXCEPTION, ProcessExitCode.EXCEPTION),
             (ProcessExitCode.INFRASTRUCTURE_ERROR, ProcessExitCode.INFRASTRUCTURE_ERROR),
+            (JobReturnCode.ABORTED, JobReturnCode.ABORTED),
         ],
     )
     def test_process_job_failure_fails_run_for_reported_client_failures(self, failure_code, expected_code):

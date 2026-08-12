@@ -858,12 +858,13 @@ class FederatedServer(BaseServer):
             ProcessExitCode.CONFIG_ERROR,
             ProcessExitCode.EXCEPTION,
             ProcessExitCode.INFRASTRUCTURE_ERROR,
+            JobReturnCode.ABORTED,
         ):
             with self.engine.new_context() as fl_ctx:
                 self.logger.info(f"Failing job {job_id} due to reported failure from {client}: {reason}")
-                failure_code = code if code == ProcessExitCode.INFRASTRUCTURE_ERROR else ProcessExitCode.EXCEPTION
+                failure_code = ProcessExitCode.EXCEPTION if code == ProcessExitCode.CONFIG_ERROR else code
                 job_runner.fail_run(job_id, failure_code, fl_ctx)
-        elif code in (ProcessExitCode.UNSAFE_COMPONENT, JobReturnCode.ABORTED):
+        elif code == ProcessExitCode.UNSAFE_COMPONENT:
             with self.engine.new_context() as fl_ctx:
                 self.logger.info(f"Aborting job {job_id} due to reported failure from {client}: {reason}")
                 job_runner.stop_run(job_id, fl_ctx)

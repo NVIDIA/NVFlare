@@ -523,13 +523,15 @@ def test_fail_run_preserves_existing_exception_process_entry_under_engine_lock()
 
 
 @pytest.mark.parametrize(
-    "first_code, second_code",
+    "first_code, second_code, expected_code",
     [
-        (ProcessExitCode.INFRASTRUCTURE_ERROR, ProcessExitCode.EXCEPTION),
-        (ProcessExitCode.EXCEPTION, ProcessExitCode.INFRASTRUCTURE_ERROR),
+        (ProcessExitCode.INFRASTRUCTURE_ERROR, ProcessExitCode.EXCEPTION, ProcessExitCode.INFRASTRUCTURE_ERROR),
+        (ProcessExitCode.EXCEPTION, ProcessExitCode.INFRASTRUCTURE_ERROR, ProcessExitCode.INFRASTRUCTURE_ERROR),
+        (ProcessExitCode.EXCEPTION, JobReturnCode.ABORTED, ProcessExitCode.EXCEPTION),
+        (JobReturnCode.ABORTED, ProcessExitCode.EXCEPTION, ProcessExitCode.EXCEPTION),
     ],
 )
-def test_fail_run_gives_infrastructure_error_precedence(first_code, second_code):
+def test_fail_run_preserves_failure_precedence(first_code, second_code, expected_code):
     runner = JobRunner(workspace_root="/tmp")
     runner.log_info = MagicMock()
     runner._stop_run = MagicMock()
@@ -547,7 +549,7 @@ def test_fail_run_gives_infrastructure_error_precedence(first_code, second_code)
 
     assert runner.fail_run("job-1", second_code, fl_ctx) == ""
 
-    assert run_process[RunProcessKey.PROCESS_RETURN_CODE] == ProcessExitCode.INFRASTRUCTURE_ERROR
+    assert run_process[RunProcessKey.PROCESS_RETURN_CODE] == expected_code
 
 
 def test_client_outcome_tracking_api():

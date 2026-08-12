@@ -777,7 +777,10 @@ class JobRunner(FLComponent):
                 run_process = engine.run_processes.get(job_id)
             if run_process is None:
                 run_process = {RunProcessKey.PARTICIPANTS: {}}
-            if run_process.get(RunProcessKey.PROCESS_RETURN_CODE) != ProcessExitCode.INFRASTRUCTURE_ERROR:
+            existing_code = run_process.get(RunProcessKey.PROCESS_RETURN_CODE)
+            if existing_code != ProcessExitCode.INFRASTRUCTURE_ERROR and (
+                existing_code is None or process_return_code != JobReturnCode.ABORTED
+            ):
                 run_process[RunProcessKey.PROCESS_RETURN_CODE] = process_return_code
             engine.exception_run_processes[job_id] = run_process
         self._stop_run(job_id, fl_ctx)
