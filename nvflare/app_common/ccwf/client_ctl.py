@@ -198,7 +198,7 @@ class ClientSideController(Executor, TaskController):
             self._add_status_report(report, fl_ctx)
             self.last_status_report_time = report.timestamp
 
-        elif event_type in [EventType.ABORT_TASK, EventType.END_RUN]:
+        elif event_type in [EventType.ABORT_TASK, EventType.ABOUT_TO_END_RUN, EventType.END_RUN]:
             if not self.asked_to_stop and not self.workflow_done:
                 self.asked_to_stop = True
                 self._abort_current_task(fl_ctx)

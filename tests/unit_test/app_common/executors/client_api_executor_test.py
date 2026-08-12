@@ -126,6 +126,9 @@ class _StubBackend(ClientAPIBackendSpec):
         self.receiver_ids_during_execute = shareable.get_header(FOBSContextKey.RECEIVER_IDS)
         return self.result
 
+    def abort(self, fl_ctx):
+        self.calls.append("abort")
+
     def finalize(self, fl_ctx):
         self.calls.append("finalize")
 
@@ -657,6 +660,13 @@ class TestBackendPlumbing:
         executor.handle_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
 
         backend.handle_event.assert_not_called()
+
+    def test_abort_task_notifies_backend(self):
+        executor, backend, fl_ctx, _ = self._make_started_executor()
+
+        executor.handle_event(EventType.ABORT_TASK, fl_ctx)
+
+        assert "abort" in backend.calls
 
     def test_end_run_finalizes_and_clears_backend(self):
         executor, backend, fl_ctx, _ = self._make_started_executor()

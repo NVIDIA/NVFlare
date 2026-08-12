@@ -158,9 +158,10 @@ Custom aggregators are responsible for:
 - FedAvg-style workflows restore the prior FOBS context and remove their
   job-scoped root when the workflow exits.
 - Swarm keeps its job-scoped root and tensor-forwarding route through workflow
-  finalization. At job `END_RUN`, it gives the controller-owned learning and
-  aggregation threads a bounded drain window, then removes the root and its
-  remaining contents.
+  finalization. Explicit terminal downloads inherit the run abort signal. At job
+  `END_RUN`, Swarm cancels active disk consumers under its root, gives the
+  controller-owned learning and aggregation threads a bounded drain window, then
+  removes the root and its remaining contents.
 
 ## Failure Behavior
 

@@ -164,6 +164,14 @@ class ClientAPIBackendSpec(ABC):
             The result Shareable (an error reply on failure/abort - never None).
         """
 
+    def abort(self, fl_ctx: FLContext) -> None:
+        """Notifies the backend that the run's active task is being aborted.
+
+        Most backends observe the task's ``abort_signal`` directly and need no
+        additional action. Backends that retain resources after ``execute()``
+        returns can override this hook to make their later cleanup abort-aware.
+        """
+
     @abstractmethod
     def finalize(self, fl_ctx: FLContext) -> None:
         """Releases backend resources. Called when the executor handles END_RUN.

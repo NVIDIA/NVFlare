@@ -275,14 +275,16 @@ lifecycle bit is included in the bootstrap config. After the CJ accepts a per-ta
 the trainer remains alive until its complete result-publication barrier settles: the
 `RESULT_ACCEPTED` reply reaches `send()` and every actual receiver download, when present, reaches a
 terminal outcome. It then closes its Cell synchronously, and the CJ reaps that natural process exit
-asynchronously. An orderly job SHUTDOWN cancels an incoming task materialization but not an already
-accepted result publication. If teardown finds such a publication still active, it asks the trainer
-to stop and starts the natural-exit reaper. This also covers inline results, whose acceptance reply
-can race END_RUN even though they create no download transaction. Teardown cannot safely return
-with a daemon reaper because ClientRunner tears down streaming and the CJ Cell immediately after
-END_RUN. A result transfer retains its own `DownloadService` idle/receiver policy, but that longer
-data-transfer budget does not govern CJ process ownership. END_RUN gives a still-live result source
-one acknowledged SHUTDOWN interval, then force-stops every remaining owned process group. Other
+asynchronously. Normal job SHUTDOWN cancels an incoming task materialization but not an already
+accepted result publication. If normal teardown finds such a publication still active, it asks the
+trainer to stop and starts the natural-exit reaper. This also covers inline results, whose acceptance
+reply can race END_RUN even though they create no download transaction. Teardown cannot safely
+return with a daemon reaper because ClientRunner tears down streaming and the CJ Cell immediately
+after END_RUN. A result transfer retains its own `DownloadService` idle/receiver policy, but that
+longer data-transfer budget does not govern CJ process ownership. END_RUN gives a still-live result
+source one acknowledged SHUTDOWN interval, then force-stops every remaining owned process group.
+An `ABORT_TASK` latches aborted teardown even when `execute()` already returned the lazy result,
+sends ABORT immediately, and bypasses the normal result-source drain interval. Other
 failure/teardown paths use the bounded SHUTDOWN/TERM/KILL sequence immediately.
 
 Startup waits at most `launch_timeout` for the trainer to complete its HELLO handshake. The

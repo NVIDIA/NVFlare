@@ -110,6 +110,33 @@ def test_do_learn_records_failure_when_abort_races_exception_logging():
     assert ctl.current_status.error == ReturnCode.EXECUTION_EXCEPTION
 
 
+def test_about_to_end_run_aborts_active_background_learn_before_readiness_checks():
+    ctl = _FailingClientSideController()
+    ctl.learn_task = _LearnTask("train", Shareable(), FLContext())
+    ctl.fire_event = MagicMock()
+    ctl.finalize = MagicMock()
+    fl_ctx = FLContext()
+
+    ctl.handle_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
+
+    assert ctl.asked_to_stop is True
+    assert ctl.learn_task.abort_signal.triggered
+    ctl.fire_event.assert_called_once_with(EventType.ABORT_TASK, fl_ctx)
+    ctl.finalize.assert_called_once_with(fl_ctx)
+
+
+def test_about_to_end_run_preserves_completed_workflow():
+    ctl = _FailingClientSideController()
+    ctl.workflow_done = True
+    ctl._abort_current_task = MagicMock()
+    ctl.finalize = MagicMock()
+
+    ctl.handle_event(EventType.ABOUT_TO_END_RUN, FLContext())
+
+    ctl._abort_current_task.assert_not_called()
+    ctl.finalize.assert_not_called()
+
+
 def test_no_report_after_workflow_done():
     # Once the workflow has ended, the client stops reporting status - the
     # server no longer reliably consumes reports, and a recorded error may be

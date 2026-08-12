@@ -478,14 +478,24 @@ class SwarmClientController(ClientSideController):
     def _cleanup_tensor_disk_offload(self, fl_ctx: FLContext):
         root_dir = self._tensor_disk_offload_root_dir
         self._tensor_disk_offload_root_dir = None
+        if not root_dir:
+            return
+
         try:
-            if root_dir:
-                try:
-                    self._drain_tensor_disk_offload_threads(root_dir, fl_ctx)
-                finally:
-                    shutil.rmtree(root_dir, ignore_errors=True)
+            try:
+                from nvflare.app_opt.pt.tensor_downloader import cleanup_active_disk_tensor_downloads
+
+                cleanup_active_disk_tensor_downloads(
+                    reason="Swarm workflow ended before tensor download completed",
+                    root_dir=root_dir,
+                )
+            except Exception:
+                self.log_warning(fl_ctx, f"failed to cancel tensor disk offload: {secure_format_traceback()}")
+            self._drain_tensor_disk_offload_threads(root_dir, fl_ctx)
         except Exception:
             self.log_warning(fl_ctx, f"failed to clean up tensor disk offload: {secure_format_traceback()}")
+        finally:
+            shutil.rmtree(root_dir, ignore_errors=True)
 
     def _drain_tensor_disk_offload_threads(self, root_dir: str, fl_ctx: FLContext):
         deadline = time.monotonic() + self.learn_task_abort_timeout
@@ -869,6 +879,9 @@ class SwarmClientController(ClientSideController):
         decode_props = {
             fobs.FOBSContextKey.PASS_THROUGH: False,
             fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: enable_tensor_disk_offload,
+            # This explicit FOBS round-trip happens outside Cell.decode_payload(),
+            # so propagate cancellation that Cell would normally add for us.
+            fobs.FOBSContextKey.ABORT_SIGNAL: fl_ctx.get_run_abort_signal(),
         }
         if root_dir:
             # The terminal aggregation download may use a different Cell

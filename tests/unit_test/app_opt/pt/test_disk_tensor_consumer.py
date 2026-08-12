@@ -15,6 +15,7 @@
 import os
 import shutil
 import tempfile
+import threading
 
 import pytest
 import torch
@@ -145,6 +146,54 @@ class TestDiskTensorConsumer:
         assert not os.path.exists(temp_dir)
         assert consumer.error == "timeout"
 
+    def test_consume_rejects_writes_after_cleanup(self, temp_dir):
+        consumer = DiskTensorConsumer(temp_dir)
+        consumer.cleanup()
+
+        with pytest.raises(RuntimeError, match="cleaned up"):
+            consumer.consume_items([save_tensors({"x": torch.randn(2)})], None)
+
+        assert not os.path.exists(temp_dir)
+
+    def test_cleanup_waits_for_inflight_write_and_removes_completed_chunk(self, temp_dir, monkeypatch):
+        consumer = DiskTensorConsumer(temp_dir)
+        item = save_tensors({"x": torch.randn(2)})
+        write_entered = threading.Event()
+        release_write = threading.Event()
+        consume_errors = []
+        original_extract = tensor_downloader._extract_safetensors_keys
+
+        def blocking_extract(data):
+            write_entered.set()
+            if not release_write.wait(timeout=1.0):
+                raise RuntimeError("test did not release in-flight tensor write")
+            return original_extract(data)
+
+        def consume():
+            try:
+                consumer.consume_items([item], None)
+            except Exception as e:
+                consume_errors.append(e)
+
+        monkeypatch.setattr(tensor_downloader, "_extract_safetensors_keys", blocking_extract)
+        consume_thread = threading.Thread(target=consume)
+        consume_thread.start()
+        assert write_entered.wait(timeout=1.0)
+
+        cleanup_thread = threading.Thread(target=consumer.cleanup)
+        cleanup_thread.start()
+        cleanup_thread.join(timeout=0.02)
+        assert cleanup_thread.is_alive(), "cleanup must serialize with the active chunk writer"
+
+        release_write.set()
+        consume_thread.join(timeout=1.0)
+        cleanup_thread.join(timeout=1.0)
+
+        assert not consume_thread.is_alive()
+        assert not cleanup_thread.is_alive()
+        assert consume_errors == []
+        assert not os.path.exists(temp_dir)
+
     def test_result_builds_lazy_tensor_dict(self, temp_dir):
         """Verify DiskTensorConsumer result can be used to create a LazyTensorDict."""
         consumer = DiskTensorConsumer(temp_dir)
@@ -203,6 +252,25 @@ def test_download_tensors_to_disk_cleans_temp_dir_on_exception(monkeypatch, tmp_
         )
 
     assert not temp_dir.exists()
+
+
+def test_cleanup_active_disk_tensor_downloads_is_scoped_to_root(tmp_path):
+    root_a = tmp_path / "root_a"
+    root_b = tmp_path / "root_b"
+    temp_a = root_a / "nvflare_tensors_a"
+    temp_b = root_b / "nvflare_tensors_b"
+    temp_a.mkdir(parents=True)
+    temp_b.mkdir(parents=True)
+    consumer_a = DiskTensorConsumer(str(temp_a))
+    consumer_b = DiskTensorConsumer(str(temp_b))
+
+    tensor_downloader.cleanup_active_disk_tensor_downloads(reason="job aborted", root_dir=str(root_a))
+
+    assert consumer_a.error == "job aborted"
+    assert not temp_a.exists()
+    assert consumer_b.error is None
+    assert temp_b.exists()
+    consumer_b.cleanup()
 
 
 def test_download_tensors_to_disk_logs_cleanup_warning(monkeypatch, tmp_path, caplog):

@@ -328,6 +328,14 @@ class ClientAPIExecutor(Executor):
                     f"'{self._execution_mode}' failed to initialize: {secure_format_exception(e)}",
                     fl_ctx,
                 )
+        elif event_type == EventType.ABORT_TASK:
+            backend = self._backend
+            if backend is not None:
+                try:
+                    backend.abort(fl_ctx)
+                except Exception:
+                    self.log_error(fl_ctx, secure_format_traceback(), fire_event=False)
+            super().handle_event(event_type, fl_ctx)
         elif event_type == EventType.END_RUN:
             backend = self._backend
             self._backend = None

@@ -228,6 +228,19 @@ class ExternalProcessBackend(CellBackendBase):
         finally:
             self._execute_gate.release()
 
+    def abort(self, fl_ctx: FLContext) -> None:
+        """Latch run abort even when the trainer already returned a lazy result.
+
+        An accepted lazy result can outlive ``execute()`` while another client
+        downloads it. The task signal is no longer observed by the backend in
+        that state, so ABORT_TASK must explicitly distinguish aborted teardown
+        from normal END_RUN result-draining.
+        """
+        self._latch_abort("ABORT_TASK event received")
+        with self._launch_lock:
+            trainer = self._active_launch
+        self._send_abort(trainer, "run aborted")
+
     def _execute_admitted_task(
         self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
     ) -> Shareable:
@@ -315,7 +328,7 @@ class ExternalProcessBackend(CellBackendBase):
             with self._launch_lock:
                 trainer = self._active_launch
             if trainer is not None:
-                if trainer.result_source_live.is_set():
+                if trainer.result_source_live.is_set() and not self._abort:
                     # END_RUN must preserve CJ/F3 until the trainer's send barrier settles.
                     self._request_trainer_shutdown(trainer, wait_timeout=_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT)
                     self._reap_trainer_after_result(trainer)

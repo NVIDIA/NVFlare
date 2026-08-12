@@ -150,8 +150,13 @@ def test_cleanup_waits_for_controller_owned_threads_before_removing_root(tmp_pat
     controller.learn_thread = _FakeThread("learn", stop_on_join=True, on_join=record_root_state)
     controller._aggr_thread = _FakeThread("aggregate", stop_on_join=True, on_join=record_root_state)
 
-    controller._cleanup_tensor_disk_offload(MagicMock())
+    with patch("nvflare.app_opt.pt.tensor_downloader.cleanup_active_disk_tensor_downloads") as cleanup_active:
+        controller._cleanup_tensor_disk_offload(MagicMock())
 
+    cleanup_active.assert_called_once_with(
+        reason="Swarm workflow ended before tensor download completed",
+        root_dir=str(root_dir),
+    )
     assert len(controller.learn_thread.join_calls) == 1
     assert len(controller._aggr_thread.join_calls) == 1
     assert 0.0 < controller.learn_thread.join_calls[0] <= 1.0
@@ -182,3 +187,24 @@ def test_cleanup_uses_shared_deadline_then_removes_root_after_timeout(tmp_path):
     assert "learn" in warning
     assert "aggregate" in warning
     assert str(root_dir) in warning
+
+
+def test_cleanup_drains_threads_when_active_download_cancellation_fails(tmp_path):
+    root_dir = tmp_path / "offload"
+    root_dir.mkdir()
+    controller = SwarmClientController(enable_tensor_disk_offload=True, learn_task_abort_timeout=1.0)
+    controller._tensor_disk_offload_root_dir = str(root_dir)
+    controller.log_warning = MagicMock()
+    controller.learn_thread = _FakeThread("learn", stop_on_join=True)
+    controller._aggr_thread = _FakeThread("aggregate", stop_on_join=True)
+
+    with patch(
+        "nvflare.app_opt.pt.tensor_downloader.cleanup_active_disk_tensor_downloads",
+        side_effect=RuntimeError("cancel failed"),
+    ):
+        controller._cleanup_tensor_disk_offload(MagicMock())
+
+    assert len(controller.learn_thread.join_calls) == 1
+    assert len(controller._aggr_thread.join_calls) == 1
+    assert not root_dir.exists()
+    assert "failed to cancel tensor disk offload" in controller.log_warning.call_args.args[1]

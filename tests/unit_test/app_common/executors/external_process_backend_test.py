@@ -532,6 +532,21 @@ class TestInitializeAndFinalize:
         assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
         execute_gate.release.assert_called_once_with()
 
+    def test_abort_does_not_preserve_accepted_lazy_result_source(self, env):
+        backend, _ = _initialized_backend(env, shutdown_timeout=30.0)
+        process = env.harness.processes[0]
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+
+        backend.abort(FLContext())
+        backend.finalize(FLContext())
+
+        assert backend._abort is True
+        assert process.wait_timeouts == []
+        assert process.returncode is not None
+        assert backend._result_reapers == set()
+        assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
+
     def test_finalize_does_not_kill_an_accepted_lazy_result_source(self, env):
         backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
         process = env.harness.processes[0]
