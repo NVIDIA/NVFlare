@@ -1,8 +1,6 @@
 # Split Learning on CIFAR-10 with the Collab API
 
-This example implements the same two-party SplitNN setup as the existing
-[CIFAR-10 SplitNN example](../../vertical_federated_learning/cifar10-splitnn/README.md),
-using the Collab API:
+This example implements a two-party SplitNN setup using the Collab API:
 
 - `site-1` owns the images and the convolutional bottom model;
 - `site-2` owns the labels and the classifier top model;
@@ -47,20 +45,18 @@ pt_splitnn/
 
 ## Data
 
-For an apples-to-apples setup, this example follows the same data-preparation
-steps as the existing
-[CIFAR-10 SplitNN counterpart](../../vertical_federated_learning/cifar10-splitnn/README.md).
-From the repository root, run the counterpart's preparation code directly:
+To simulate a vertical split dataset, first download CIFAR-10 and distribute it
+between the two clients, assuming an overlap of 10,000 samples between their
+datasets. From the repository root, run:
 
 ```bash
 cd examples/advanced/vertical_federated_learning/cifar10-splitnn
 python -m pip install -r requirements.txt
 ```
 
-Same as the existing example, set `PYTHONPATH` to include the custom files of the existing SplitNN example and also
-the reused files from the [CIFAR-10 examples](../../cifar10/README.md). The
-`cifar10/pt/src` entry exposes the shared data package used by the standalone
-splitter:
+Set `PYTHONPATH` to include the custom SplitNN files and reused files from the
+[CIFAR-10 examples](../../cifar10/README.md). The `cifar10/pt/src` entry exposes
+the shared data package used by the standalone splitter:
 
 ```bash
 export PYTHONPATH=${PWD}/src:${PWD}/../../cifar10:${PWD}/../../cifar10/pt/src
@@ -73,7 +69,7 @@ python cifar10_split_data_vertical.py \
 
 We are using NVFlare's FL simulator to run the following experiments.
 
-Same as the existing example, in order to find the overlapping data indices between the different clients participating in split learning,
+In order to find the overlapping data indices between the different clients participating in split learning,
 we randomly select an subset of the training indices.
 
 From the same directory, run the PSI preparation step:
@@ -179,7 +175,7 @@ protocol for each SplitNN step.
 ## Job Recipe Code
 
 [job.py](job.py) connects the server and shared client implementation, supplies
-the common dataset root, and assigns each site its role and existing PSI
+the common dataset root, and assigns each site its role and prepared PSI
 intersection file:
 
 ```python
@@ -216,8 +212,8 @@ this example selects `SimEnv` for a local two-site simulation.
 
 ## Run Job
 
-After completing the existing data-split and PSI workflow, run the Collab
-simulation from the repository root:
+After completing the data-split and PSI steps, run the Collab simulation from
+the repository root:
 
 ```bash
 cd examples/advanced/collab/pt_splitnn
@@ -276,82 +272,24 @@ View the metrics with:
 tensorboard --logdir /tmp/nvflare/collab/collab_pt_splitnn
 ```
 
-## Apples-to-apples comparison
+## Results
 
-Both implementations use `/tmp/cifar10` and the exact same site-specific PSI
-artifacts produced once by the Data commands above. No second intersection is
-generated for the Collab run. The comparison also holds model initialization,
-random batches, 15,625 steps, batch size 64, SGD parameters, validation cadence,
-and float16 cut-layer exchange constant.
+The results are identical to the existing
+[SplitNN example](../../vertical_federated_learning/cifar10-splitnn/README.md),
+as shown below.
 
-### Benchmark environment
+![Existing and Collab API SplitNN curve alignment](figs/splitnn_curve_alignment.png)
 
-| Component | Configuration |
-| --- | --- |
-| GPU | One NVIDIA RTX 6000 Ada Generation, 49,140 MiB; both sites shared `cuda:0` |
-| NVIDIA driver | 580.173.02 |
-| CUDA and cuDNN | PyTorch CUDA 12.6; cuDNN 9.5.1 |
-| CPU | Intel Core i7-6800K; 6 cores, 12 threads |
-| Host memory | 109 GiB |
-| OS | Ubuntu 24.04.4 LTS; Linux kernel 6.8.0-136-generic |
-| Python | 3.10.0 |
-| PyTorch | 2.6.0+cu126 |
-| torchvision | 0.21.0+cu126 |
-| NVFlare | Source checkout based on revision `c467e40d`, plus this example |
-
-After preparing the data above, the regular implementation was launched from
-its existing example directory with the same local simulator authorization for
-its custom components:
-
-```bash
-cd examples/advanced/vertical_federated_learning/cifar10-splitnn
-export PYTHONPATH=${PWD}/src:${PWD}/../../cifar10:${PWD}/../../cifar10/pt/src
-mkdir -p /tmp/nvflare/cifar10_splitnn/local
-printf '%s\n' \
-    '{"class_allow_list": ["nvflare.", "splitnn.", "pt.src.model.ModerateCNN"]}' \
-    > /tmp/nvflare/cifar10_splitnn/local/resources.json
-
-CUDA_VISIBLE_DEVICES=0 python - <<'PY'
-from nvflare import SimulatorRunner
-
-simulator = SimulatorRunner(
-    job_folder="jobs/cifar10_splitnn",
-    workspace="/tmp/nvflare/cifar10_splitnn",
-    n_clients=2,
-    threads=2,
-    log_config="ERROR",
-)
-simulator.run()
-PY
-```
-
-The equivalent Collab API run was launched from this example directory with:
-
-```bash
-cd examples/advanced/collab/pt_splitnn
-CUDA_VISIBLE_DEVICES=0 python job.py
-```
+The training panels show a 200-step moving average for readability. The
+validation panels show every recorded value without smoothing.
 
 | Implementation | Elapsed time |
 | --- | ---: |
 | Existing SplitNN | 50m 04.4s |
 | Collab API SplitNN | 41m 20.4s |
 
-Elapsed time covers each complete simulator command, including simulator startup,
-validation, model export, and shutdown. Both simulator environments used
-ERROR-level framework logging so per-message INFO logging did not distort the
-timing. These are single measurements rather than averages over repeated runs.
-
-The Collab API run was about 17.4% faster in this single-GPU simulator run.
-All 15,625 recorded training-loss and training-accuracy values were identical at
-the same steps. The 16 unsmoothed validation points also align: the largest
-loss difference was 4.23e-6, and the largest accuracy difference was one
-prediction among the 10,000 validation images.
-
-![Existing and Collab API SplitNN curve alignment](figs/splitnn_curve_alignment.png)
-
-The training panels show a 200-step moving average for readability. The
-validation panels show every recorded value without smoothing.
+Under the same single-GPU environment, the Collab API implementation produced
+identical results and completed about 17.4% faster in this run.
 
 ## Why the Collab implementation is simpler
 

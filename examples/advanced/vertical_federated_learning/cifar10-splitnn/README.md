@@ -6,6 +6,8 @@ CIFAR-10 dataset and the [FL simulator](https://nvflare.readthedocs.io/en/latest
 We assume one client holds the images, and the other client holds the labels to compute losses and accuracy metrics. 
 Activations and corresponding gradients are being exchanged between the clients using NVFlare.
 
+A new [Collab API implementation of this example](../../collab/pt_splitnn/README.md) is also available.
+
 <img src="./figs/split_learning.svg" alt="Split learning setup" width="300"/>
 
 For instructions of how to run CIFAR-10 in real-world deployment settings, 
