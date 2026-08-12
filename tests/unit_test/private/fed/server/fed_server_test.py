@@ -32,6 +32,10 @@ from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, HotState, ServerState
 
 
+def assert_client_outcome_unresolved(job_runner):
+    job_runner.resolve_client_outcome.assert_not_called()
+
+
 class TestFederatedServer:
     @staticmethod
     def _create_job_cell_with_command_agent(server_state):
@@ -366,6 +370,18 @@ class TestFederatedServer:
             server._sync_client_jobs(other_request, token)
             assert "job1" not in server._job_reported_clients
 
+            # A client that no longer has a barrier-only job cannot report again.
+            server.client_manager.clients = {token: client}
+            server.engine.job_runner.get_client_outcome_jobs.return_value = {"job1"}
+            server.engine.job_runner.is_client_outcome_pending.return_value = True
+            fl_ctx = MagicMock()
+            server.engine.new_context.return_value = nullcontext(fl_ctx)
+            server._sync_client_jobs(other_request, token)
+            server.engine.job_runner.fail_run.assert_called_once_with(
+                "job1", ProcessExitCode.INFRASTRUCTURE_ERROR, fl_ctx
+            )
+            server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job1", "C1")
+
     def test_disabled_client_heartbeat_is_rejected(self, tmp_path):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
             args = MagicMock()
@@ -400,8 +416,7 @@ class TestFederatedServer:
             assert "disabled" in result.get_header(MessageHeaderKey.ERROR)
             assert "token" not in server.client_manager.clients
 
-    @pytest.mark.parametrize("failure_code", [JobReturnCode.ABORTED, ProcessExitCode.UNSAFE_COMPONENT])
-    def test_process_job_failure_stops_run_for_reported_abort_client_failures(self, failure_code):
+    def test_process_job_failure_stops_run_for_reported_unsafe_client_failure(self):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
             server = FederatedServer(
                 project_name="project_name",
@@ -415,6 +430,9 @@ class TestFederatedServer:
             )
 
             server.client_manager.is_from_authorized_client = MagicMock(return_value=True)
+            server.client_manager.clients = {"token-1": MagicMock(name="site-1")}
+            server.client_manager.clients["token-1"].name = "site-1"
+            server.engine.job_runner.is_client_outcome_pending.return_value = True
             fl_ctx = MagicMock()
             server.engine.new_context.return_value = nullcontext(fl_ctx)
             server.engine.job_runner.stop_run = MagicMock()
@@ -427,7 +445,7 @@ class TestFederatedServer:
                 },
                 {
                     JobFailureMsgKey.JOB_ID: "job-1",
-                    JobFailureMsgKey.CODE: failure_code,
+                    JobFailureMsgKey.CODE: ProcessExitCode.UNSAFE_COMPONENT,
                     JobFailureMsgKey.REASON: "fatal client failure",
                 },
             )
@@ -436,6 +454,7 @@ class TestFederatedServer:
 
             server.engine.job_runner.stop_run.assert_called_once_with("job-1", fl_ctx)
             server.engine.job_runner.fail_run.assert_not_called()
+            server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job-1", "site-1")
 
     @pytest.mark.parametrize(
         "failure_code, expected_code",
@@ -443,6 +462,7 @@ class TestFederatedServer:
             (ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION),
             (ProcessExitCode.EXCEPTION, ProcessExitCode.EXCEPTION),
             (ProcessExitCode.INFRASTRUCTURE_ERROR, ProcessExitCode.INFRASTRUCTURE_ERROR),
+            (JobReturnCode.ABORTED, JobReturnCode.ABORTED),
         ],
     )
     def test_process_job_failure_fails_run_for_reported_client_failures(self, failure_code, expected_code):
@@ -459,10 +479,16 @@ class TestFederatedServer:
             )
 
             server.client_manager.is_from_authorized_client = MagicMock(return_value=True)
+            server.client_manager.clients = {"token-1": MagicMock(name="site-1")}
+            server.client_manager.clients["token-1"].name = "site-1"
+            server.engine.job_runner.is_client_outcome_pending.return_value = True
             fl_ctx = MagicMock()
             server.engine.new_context.return_value = nullcontext(fl_ctx)
             server.engine.job_runner.stop_run = MagicMock()
             server.engine.job_runner.fail_run = MagicMock()
+            server.engine.job_runner.fail_run.side_effect = lambda *_: assert_client_outcome_unresolved(
+                server.engine.job_runner
+            )
 
             request = new_cell_message(
                 {
@@ -480,6 +506,7 @@ class TestFederatedServer:
 
             server.engine.job_runner.fail_run.assert_called_once_with("job-1", expected_code, fl_ctx)
             server.engine.job_runner.stop_run.assert_not_called()
+            server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job-1", "site-1")
 
     def test_process_job_failure_ignores_generic_launcher_execution_error(self):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
@@ -495,6 +522,9 @@ class TestFederatedServer:
             )
 
             server.client_manager.is_from_authorized_client = MagicMock(return_value=True)
+            server.client_manager.clients = {"token-1": MagicMock(name="site-1")}
+            server.client_manager.clients["token-1"].name = "site-1"
+            server.engine.job_runner.is_client_outcome_pending.return_value = True
             server.engine.job_runner.stop_run = MagicMock()
             server.engine.job_runner.fail_run = MagicMock()
 
@@ -514,6 +544,27 @@ class TestFederatedServer:
 
             server.engine.job_runner.fail_run.assert_not_called()
             server.engine.job_runner.stop_run.assert_not_called()
+            server.engine.job_runner.is_client_outcome_pending.return_value = False
+            result = server.process_job_failure(request)
+            assert result.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
+            server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job-1", "site-1")
+
+    def test_notify_dead_client_fails_barrier_only_job(self):
+        server = object.__new__(FederatedServer)
+        server.logger = MagicMock()
+        server.engine = MagicMock()
+        server.engine.run_processes = {}
+        server.engine.job_runner.get_client_outcome_jobs.return_value = {"job-1"}
+        server.engine.job_runner.is_client_outcome_pending.return_value = True
+        fl_ctx = MagicMock()
+        server.engine.new_context.return_value = nullcontext(fl_ctx)
+        client = MagicMock()
+        client.name = "site-1"
+
+        server.notify_dead_client(client)
+
+        server.engine.job_runner.fail_run.assert_called_once_with("job-1", ProcessExitCode.INFRASTRUCTURE_ERROR, fl_ctx)
+        server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job-1", "site-1")
 
 
 class TestGetValidatedSiteConfig:
