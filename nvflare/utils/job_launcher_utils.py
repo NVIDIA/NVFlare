@@ -127,6 +127,14 @@ def generate_server_command(fl_ctx) -> str:
 
 _LAUNCHER_MODE_KEYS = {"process", "docker", "k8s", "slurm"}
 
+# Docker options that a job may supply. Keep this list explicit: Docker SDK
+# containers.run() accepts many host-isolation and privilege controls that must
+# remain site-owned. ``entrypoint`` is allowed only after local BYOC
+# authorization; DockerJobLauncher enforces the locally derived BYOC marker.
+DOCKER_JOB_BYOC_KEYS = frozenset({"image", "python_path", "entrypoint"})
+DOCKER_JOB_CONTAINER_KWARGS = frozenset({"entrypoint", "shm_size"})
+DOCKER_JOB_LAUNCHER_KEYS = DOCKER_JOB_BYOC_KEYS | DOCKER_JOB_CONTAINER_KWARGS | {"num_of_gpus"}
+
 
 def get_site_launcher_spec(site_spec, mode):
     """Extract the launcher-mode portion of a single site's resource spec.

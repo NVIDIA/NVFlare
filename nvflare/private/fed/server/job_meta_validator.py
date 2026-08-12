@@ -28,6 +28,7 @@ from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.logging import secure_format_exception
+from nvflare.utils.job_launcher_utils import DOCKER_JOB_LAUNCHER_KEYS
 
 CONFIG_FOLDER = "/config/"
 CUSTOM_FOLDER = "/custom/"
@@ -270,6 +271,11 @@ class JobMetaValidator(JobMetaValidatorSpec):
             for k in resource_spec:
                 if not isinstance(resource_spec[k], dict):
                     raise ValueError(f"value for key {k} in resource spec is expecting a dictionary")
+                docker_spec = resource_spec[k].get("docker")
+                if docker_spec is not None:
+                    JobMetaValidator._validate_docker_launcher_spec(
+                        job_name, f"resource_spec['{k}']['docker']", docker_spec
+                    )
 
     _VALID_LAUNCHER_MODES = {"process", "docker", "k8s", "slurm"}
 
@@ -293,6 +299,21 @@ class JobMetaValidator(JobMetaValidatorSpec):
                     )
                 if not isinstance(mode_val, dict):
                     raise ValueError(f"launcher_spec['{site}']['{mode}'] for job {job_name} must be a dict")
+                if mode == "docker":
+                    JobMetaValidator._validate_docker_launcher_spec(
+                        job_name, f"launcher_spec['{site}']['docker']", mode_val
+                    )
+
+    @staticmethod
+    def _validate_docker_launcher_spec(job_name: str, path: str, docker_spec: dict) -> None:
+        if not isinstance(docker_spec, dict):
+            raise ValueError(f"{path} for job {job_name} must be a dict")
+        unsupported = sorted(set(docker_spec) - DOCKER_JOB_LAUNCHER_KEYS, key=str)
+        if unsupported:
+            raise ValueError(
+                f"{path} for job {job_name} contains unsupported job-controlled Docker option(s) {unsupported}; "
+                f"allowed options: {sorted(DOCKER_JOB_LAUNCHER_KEYS)}"
+            )
 
     @staticmethod
     def _get_all_clients(site_list: Optional[list]) -> Set[str]:

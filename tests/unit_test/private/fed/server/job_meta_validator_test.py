@@ -158,6 +158,52 @@ class TestJobMetaValidator:
     def test_slurm_launcher_spec_is_accepted(self):
         JobMetaValidator._validate_launcher_spec("unit_test", {"launcher_spec": {"site-1": {"slurm": {"nodes": 2}}}})
 
+    @pytest.mark.parametrize("site", ["default", "site-1"])
+    def test_docker_launcher_spec_allowlist_is_accepted(self, site):
+        JobMetaValidator._validate_launcher_spec(
+            "unit_test",
+            {
+                "launcher_spec": {
+                    site: {
+                        "docker": {
+                            "image": "trusted/image:1",
+                            "python_path": "/usr/bin/python",
+                            "entrypoint": "/bin/sh",
+                            "num_of_gpus": 1,
+                            "shm_size": "8g",
+                        }
+                    }
+                }
+            },
+        )
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "privileged",
+            "pid_mode",
+            "ipc_mode",
+            "devices",
+            "device_requests",
+            "cap_add",
+            "security_opt",
+            "network_mode",
+            "volumes",
+        ],
+    )
+    @pytest.mark.parametrize("site", ["default", "site-1"])
+    def test_isolation_sensitive_docker_launcher_options_are_rejected(self, site, field):
+        with pytest.raises(ValueError, match="unsupported job-controlled Docker option"):
+            JobMetaValidator._validate_launcher_spec(
+                "unit_test", {"launcher_spec": {site: {"docker": {field: "attacker-controlled"}}}}
+            )
+
+    def test_legacy_docker_resource_spec_uses_same_allowlist(self):
+        with pytest.raises(ValueError, match="unsupported job-controlled Docker option"):
+            JobMetaValidator._validate_resource(
+                "unit_test", {"resource_spec": {"site-1": {"docker": {"privileged": True}}}}
+            )
+
     def test_unknown_launcher_mode_is_rejected(self):
         with pytest.raises(ValueError, match="unknown launcher mode"):
             JobMetaValidator._validate_launcher_spec("unit_test", {"launcher_spec": {"site-1": {"slurm_typo": {}}}})

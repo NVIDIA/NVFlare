@@ -29,6 +29,7 @@ try:
 except ImportError:
     _DOCKER_AVAILABLE = False
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
@@ -50,6 +51,8 @@ from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.fuel.f3.drivers.file_driver import parse_file_url
 from nvflare.utils.job_launcher_utils import (
+    DOCKER_JOB_CONTAINER_KWARGS,
+    DOCKER_JOB_LAUNCHER_KEYS,
     get_client_job_args,
     get_credential_env,
     get_job_launcher_spec,
@@ -74,18 +77,6 @@ _WORKSPACE_TMPFS_MODE = 0o1777
 _RESERVED_WORKSPACE_CHILD_NAMES = {
     WorkspaceConstants.STARTUP_FOLDER_NAME,
     WorkspaceConstants.SITE_FOLDER_NAME,
-}
-_RESERVED_CONTAINER_KWARGS = {
-    "volumes",
-    "mounts",
-    "network",
-    "environment",
-    "command",
-    "name",
-    "detach",
-    "auto_remove",
-    "user",
-    "working_dir",
 }
 # Site-level defaults and study docker_kwargs additionally reserve "image": jobs select
 # their image through docker_spec["image"], so it must not trip the job-spec warning.
@@ -406,7 +397,7 @@ class DockerJobLauncher(JobLauncherSpec):
             timeout: max seconds to wait for container to reach RUNNING state (default 30).
             default_job_container_kwargs: site-level default docker run kwargs applied to every job
                                           container launched by this site. Job-level resource_spec[site][docker]
-                                          takes precedence on conflict. Keys use Docker SDK naming
+                                          takes precedence for explicitly allowlisted job options. Keys use Docker SDK naming
                                           (underscores, not hyphens).
                                           Example: {"shm_size": "8g", "ipc_mode": "host"}
                                           Note: "volumes", "mounts", "network", "environment", "command",
@@ -521,6 +512,14 @@ class DockerJobLauncher(JobLauncherSpec):
 
         site_name = fl_ctx.get_identity_name()
         docker_spec = get_job_launcher_spec(job_meta, site_name, "docker")
+        unsupported = sorted(set(docker_spec) - DOCKER_JOB_LAUNCHER_KEYS, key=str)
+        if unsupported:
+            raise RuntimeError(
+                f"job Docker spec for site '{site_name}' contains unsupported job-controlled Docker option(s) "
+                f"{unsupported}; allowed options: {sorted(DOCKER_JOB_LAUNCHER_KEYS)}"
+            )
+        if "entrypoint" in docker_spec and not job_meta.get(AppValidationKey.BYOC, False):
+            raise RuntimeError(f"launcher_spec['{site_name}']['docker']['entrypoint'] requires locally authorized BYOC")
         job_image = docker_spec.get("image")
         container_name = _sanitize_container_name(f"{site_name}-{job_id}")
         if job_image is not None and not isinstance(job_image, str):
@@ -628,7 +627,7 @@ class DockerJobLauncher(JobLauncherSpec):
             if python_paths:
                 environment["PYTHONPATH"] = os.pathsep.join(python_paths)
 
-        # Docker launcher spec: per-job Docker settings (image, shm_size, ipc_mode, ...) live in
+        # Docker launcher spec: allowlisted per-job Docker settings (image, shm_size, ...) live in
         # launcher_spec[site][docker]. Falls back to nested resource_spec[site][docker] for
         # backward compatibility. num_of_gpus falls back to flat resource_spec[site] (Option 4).
         # Site-level defaults (default_job_container_kwargs) are merged in; job-level takes precedence on conflict.
@@ -636,32 +635,22 @@ class DockerJobLauncher(JobLauncherSpec):
         _flat_rs = {} if any(k in _site_rs for k in ("process", "docker", "k8s")) else _site_rs
         num_gpus = docker_spec["num_of_gpus"] if "num_of_gpus" in docker_spec else _flat_rs.get("num_of_gpus", 0)
         job_gpus_specified = "num_of_gpus" in docker_spec or "num_of_gpus" in _flat_rs
-        _NON_CONTAINER_KEYS = {"num_of_gpus", "image", "python_path"} | _RESERVED_CONTAINER_KWARGS
-        reserved_in_spec = _RESERVED_CONTAINER_KWARGS & set(docker_spec.keys())
-        if reserved_in_spec:
-            self.logger.warning(
-                f"job {job_id}: launcher_spec['{site_name}']['docker'] contains reserved keys "
-                f"{sorted(reserved_in_spec)} — ignored (controlled by the launcher)"
-            )
-        job_container_kwargs = {k: v for k, v in docker_spec.items() if k not in _NON_CONTAINER_KEYS}
+        job_container_kwargs = {k: docker_spec[k] for k in DOCKER_JOB_CONTAINER_KWARGS if k in docker_spec}
         study_docker_kwargs = study_runtime.docker_kwargs if study_runtime is not None else {}
         merged_container_kwargs = {**self.default_job_container_kwargs, **study_docker_kwargs, **job_container_kwargs}
 
         # GPU precedence:
-        # 1. explicit job-level device_requests in docker_spec
-        # 2. job-level num_of_gpus translated to device_requests; an explicit 0 declines
+        # 1. job-level num_of_gpus translated to device_requests; an explicit 0 declines
         #    GPUs and drops any study/site-inherited device_requests
-        # 3. study-level device_requests from docker_kwargs in study_runtime.yaml
-        # 4. site-level default device_requests from default_job_container_kwargs
+        # 2. study-level device_requests from docker_kwargs in study_runtime.yaml
+        # 3. site-level default device_requests from default_job_container_kwargs
         #
         # This preserves the documented rule that job-level resource_spec takes precedence
-        # over study and site-level defaults, while still allowing fine-grained
-        # device_requests overrides.
-        if "device_requests" not in job_container_kwargs:
-            if num_gpus:
-                merged_container_kwargs["device_requests"] = [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
-            elif job_gpus_specified:
-                merged_container_kwargs.pop("device_requests", None)
+        # over study and site-level defaults. Fine-grained device_requests remain site-owned.
+        if num_gpus:
+            merged_container_kwargs["device_requests"] = [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
+        elif job_gpus_specified:
+            merged_container_kwargs.pop("device_requests", None)
 
         # Give the job an isolated workspace view. The root tmpfs must be writable by the non-root
         # container user because server job startup may create ephemeral storage dirs such as
