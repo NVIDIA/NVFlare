@@ -19,11 +19,10 @@ Supports both SFT (Supervised Fine-Tuning) and PEFT (Parameter-Efficient Fine-Tu
 Launch with:
     - Single GPU: python client.py [args]
     - Multi GPU: python -m torch.distributed.run --nnodes=1 --nproc_per_node=N --master_port=7777 client.py [args]
-    - Multi-node: via client_wrapper.sh
+    - Multi-node: python -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=N client.py [args]
 """
 
 import argparse
-import copy
 import math
 import os
 
@@ -35,20 +34,21 @@ import datasets
 import numpy as np
 import torch
 import torch.distributed as dist
-from peft import LoraConfig, PeftModel, get_peft_model_state_dict, set_peft_model_state_dict, utils
-from transformers import AutoModelForCausalLM, TrainerCallback, trainer_utils
+from peft import LoraConfig, PeftModel
+from transformers import AutoModelForCausalLM, TrainerCallback
 from trl import SFTConfig, SFTTrainer
 
-# (1) import nvflare client API
-import nvflare.client as flare
+# Import the Hugging Face Client API, which patches Trainer task handling and
+# coordinates rank-0 Client API operations across distributed workers.
+import nvflare.client.hf as flare
 
 
-# Add callback to stop at each epoch
-class StopCallback(TrainerCallback):
-    """Callback to stop training after each epoch for federated learning."""
+class ModelScoreCallback(TrainerCallback):
+    """Expose a higher-is-better metric for server-side model selection."""
 
-    def on_epoch_end(self, args, state, control, logs=None, **kwargs):
-        control.should_training_stop = True
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        if metrics and "eval_loss" in metrics:
+            metrics["model_score"] = -float(metrics["eval_loss"])
 
 
 # set deterministic seed for reproducibility
@@ -117,12 +117,6 @@ def main():
         default="constant",
         help="learning rate scheduler type, default to 'constant'",
     )
-    parser.add_argument(
-        "--message_mode",
-        type=str,
-        default="numpy",
-        help="message mode, numpy or tensor, default to numpy",
-    )
     parser.add_argument("--local_epoch", type=int, default=1)
     parser.add_argument("--num_rounds", type=int, default=3)
     parser.add_argument(
@@ -159,11 +153,6 @@ def main():
             print(f"Rank 0: WandB enabled - project: {args.wandb_project}, run: {args.wandb_run_name}")
     elif rank == 0:
         print("Rank 0: WandB disabled (WANDB_API_KEY not set), using TensorBoard for logging")
-
-    # (2) Initialize NVFlare client API
-    # IMPORTANT: Only global rank 0 should interact with NVFlare
-    # In multi-node training, rank 0 is on the master node where the FL client runs
-    flare.init(rank=rank)
 
     # If output path exists, remove it (only on main process)
     if rank == 0:
@@ -243,8 +232,8 @@ def main():
     # Training arguments
     train_args = SFTConfig(
         output_dir=args.output_path,
-        # Using callback, stop at each epoch, so specify num_train_epochs
-        # the same as the total epoch in one-call training
+        # Keep the planned scheduler horizon aligned with the full FL run. The
+        # patched API stops each round at the explicit local_epochs budget.
         num_train_epochs=args.local_epoch * args.num_rounds,
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=gra_accu_steps,
@@ -286,8 +275,7 @@ def main():
         peft_config=peft_config,
         formatting_func=format_instruction,
         args=train_args,
-        # Add a callback to stop training after one epoch
-        callbacks=[StopCallback()],
+        callbacks=[ModelScoreCallback()],
     )
 
     # Verify PEFT wrapping in PEFT mode
@@ -297,133 +285,20 @@ def main():
             "SFTTrainer may have failed to wrap the model with PEFT."
         )
 
-    # (3) Train federated rounds
-    # Start with global model at the beginning of each round
+    # The Hugging Face Client API owns task receive/send, distributed state and
+    # parameter broadcasts, local-round stopping, and checkpoint restoration.
+    # Both server model wrappers use the `model.` prefix. The PEFT wrapper
+    # exposes only adapter parameters, matching params_scope="auto" here.
+    flare.patch(
+        trainer,
+        params_scope="auto",
+        server_key_prefix="model.",
+        local_epochs=args.local_epoch,
+    )
+
     while flare.is_running():
-        # (4) Receive global model from NVFlare (only on rank 0)
-        if rank == 0:
-            print("Rank 0: Waiting to receive model from FL server...")
-            input_model = flare.receive(timeout=600)
-            if input_model is None:
-                print("Rank 0: Received None from FL server, stopping training")
-                if dist.is_initialized():
-                    stop_signal = [False]
-                    dist.broadcast_object_list(stop_signal, src=0)
-                break
-            curr_round = input_model.current_round
-            print(f"Rank 0: Received model for round {curr_round}, Site={flare.get_site_name()}")
-            # Update the key name received from global model if using model def file
-            global_model = copy.deepcopy(input_model.params)
-            for key in list(global_model.keys()):
-                global_model[key.replace("model.", "", 1)] = global_model.pop(key)
-        else:
-            curr_round = None
-            global_model = None
-
-        # Broadcast current round and global_model to all processes
-        if dist.is_initialized():
-            curr_round_list = [curr_round]
-            global_model_list = [global_model]
-            dist.broadcast_object_list(curr_round_list, src=0)
-            dist.broadcast_object_list(global_model_list, src=0)
-            curr_round = curr_round_list[0]
-            global_model = global_model_list[0]
-
-        # Sync all processes before loading model
-        if dist.is_initialized():
-            dist.barrier()
-
-        # (5) Load global model state dict
-        if train_mode:
-            set_peft_model_state_dict(trainer.model, global_model)
-        else:
-            trainer.model.load_state_dict(global_model)
-
-        # Wait for all processes to finish model loading
-        if dist.is_initialized():
-            dist.barrier()
-
-        # (6) Evaluate the global model for server-side model selection
-        eval_loss = trainer.evaluate()
-        eval_loss = float(eval_loss["eval_loss"])
-        if rank == 0:
-            print(f"Rank 0: Global model eval_loss: {eval_loss}")
-
-        # (7) Train locally
-        if curr_round == 0:
-            # First round, start from pretrained model
-            for epoch in range(args.local_epoch):
-                if rank == 0:
-                    print(f"Rank 0: Training local epoch {epoch + 1}/{args.local_epoch}")
-                # train for one epoch
-                if epoch == 0:
-                    trainer.train()
-                else:
-                    # continue training
-                    trainer.train(resume_from_checkpoint=True)
-        else:
-            # Replace local resume weights with global weights (only on global rank 0)
-            # Use rank (not local_rank) since all nodes share the same filesystem
-            if rank == 0:
-                resume_from_checkpoint_folder = trainer_utils.get_last_checkpoint(trainer.args.output_dir)
-                if train_mode:
-                    # PEFT model small, directly save via torch.save
-                    resume_model_file_path = os.path.join(resume_from_checkpoint_folder, utils.WEIGHTS_NAME)
-                    torch.save(global_model, resume_model_file_path)
-                else:
-                    # SFT model can be large, save via HF API
-                    # Disable safetensor for now
-                    trainer.model.save_pretrained(
-                        resume_from_checkpoint_folder, state_dict=global_model, safe_serialization=False
-                    )
-
-            # Wait for main process to finish saving before continuing
-            if dist.is_initialized():
-                dist.barrier()
-
-            # Continue training from checkpoint
-            # As we used callback, no need to increment num_train_epochs
-            for epoch in range(args.local_epoch):
-                if rank == 0:
-                    print(f"Rank 0: Training local epoch {epoch + 1}/{args.local_epoch}")
-                trainer.train(resume_from_checkpoint=True)
-
-        # Wait for all processes to finish training before continuing
-        if dist.is_initialized():
-            dist.barrier()
-
-        # (8) Compose output model to send back to server (only on rank 0)
-        if rank == 0:
-            if train_mode:
-                # PEFT, load PEFT part from trainer model
-                out_param = get_peft_model_state_dict(trainer.model)
-            else:
-                # SFT, load whole model state_dict
-                out_param = trainer.model.state_dict()
-
-            # Update the key name sent to global model
-            if not train_mode:
-                for key in list(out_param.keys()):
-                    out_param["model." + key] = out_param.pop(key).cpu()
-
-            if args.message_mode.lower() == "numpy":
-                # Cast out_param to float32 preparing for communication with numpy
-                out_param = {k: v.to(torch.float32) for k, v in out_param.items()}
-
-            # Print the dict size
-            print(f"Rank 0: Sending {len(out_param.keys())} params to server.")
-
-            # (9) Construct trained FL model
-            output_model = flare.FLModel(
-                params=out_param,
-                metrics={
-                    "eval_loss": eval_loss,
-                    "neg_eval_loss": -eval_loss,
-                },
-                meta={"NUM_STEPS_CURRENT_ROUND": trainer.train_dataset.num_rows},
-            )
-            # (10) Send model back to NVFlare
-            flare.send(output_model)
+        trainer.evaluate()
+        trainer.train()
 
     # Cleanup distributed training environment
     if dist.is_initialized():
