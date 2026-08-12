@@ -182,6 +182,7 @@ After running ``nvflare deploy prepare``, edit:
 Keep a copy of this site-specific configuration outside the prepared output.
 Running ``nvflare deploy prepare`` again with the same output path replaces the
 entire prepared workspace, including edits to ``study_runtime.yaml``.
+After preparing again, restore the saved configuration to the new prepared workspace.
 
 Configure the dataset as follows:
 
