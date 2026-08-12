@@ -1,32 +1,37 @@
 .. _api_evolution:
 
-########################
+#######################
 Evolution of FLARE APIs
-########################
+#######################
 
 Which APIs Should I Use?
 ========================
 
+For a user-facing decision between the two high-level paths, start with
+:ref:`api_selection`. The comparison below also includes the lower-level APIs
+used for platform integration.
+
 .. list-table::
    :header-rows: 1
-   :widths: 30 25 25 20
+   :widths: 30 30 40
 
-   * - Role
-     - Client-side
-     - Server-side
-     - Job Wiring
-   * - **Data Scientists** — applying FL to ML workflows
-     - Client API
-     - Built-in algorithms (FedAvg, FedProx, etc.)
-     - Job Recipe
-   * - **FL Researchers** — developing new FL algorithms
-     - Collab API, Client API
-     - Collab API
-     - Job Recipe
-   * - **System Integrators** — building platforms or custom integrations
-     - Collab API, Executor API
-     - Collab API, Controller API
-     - Job Recipe
+   * - Primary goal
+     - Recommended starting path
+     - Why
+   * - **Data Scientists** — apply FL to an existing application for
+       production use
+     - Client API + Job Recipe
+     - Preserves local training code while using supported FL workflows and a
+       repeatable, deployment-oriented job definition.
+   * - **FL Researchers** — develop and evaluate new FL algorithms
+     - Collaboration API (Collab annotations + ``CollabRecipe``)
+     - Lets researchers write site calls and server coordination as ordinary
+       Python, with flexibility to define and validate their own behavior.
+   * - **System Integrators** — build a platform or a non-standard runtime
+       integration
+     - Controller/Executor APIs and related lower-level integration APIs
+     - Provides the control needed to integrate custom system behavior beyond
+       the high-level application paths.
 
 .. tip::
 
@@ -202,8 +207,6 @@ A Job Recipe in NVIDIA FLARE defines the runtime logic and workflow for a federa
 **Runtime Environment**
 
 The Runtime Environment describes the execution context for a FLARE job. It includes system-level settings, software dependencies, Python packages, hardware requirements, and communication protocols needed to run the job on clients and servers. By defining a runtime environment, FLARE ensures consistency and reproducibility across heterogeneous devices and platforms.
-
-
 
 
 

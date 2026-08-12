@@ -28,6 +28,7 @@ NVIDIA FLARE
    :hidden:
    :caption: User Guide
 
+   Choose an API Path <user_guide/data_scientist_guide/api_selection>
    user_guide/data_scientist_guide/client_api_usage
    HuggingFace Client API <user_guide/data_scientist_guide/hf_client_api>
    user_guide/data_scientist_guide/job_recipe
