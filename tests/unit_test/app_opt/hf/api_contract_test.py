@@ -98,17 +98,17 @@ def test_patch_rejects_both_explicit_local_budget_styles(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize(
-    "arg_name,arg_value,match",
+    "arg_name,arg_value,backend",
     [
-        ("deepspeed", "ds_config.json", "DeepSpeed|deepspeed|currently supported"),
-        ("fsdp", "full_shard", "FSDP|fsdp|currently supported"),
+        ("deepspeed", "ds_config.json", "DeepSpeed"),
+        ("fsdp", "full_shard", "FSDP"),
     ],
 )
-def test_patch_rejects_currently_unsupported_sharded_backends(monkeypatch, tmp_path, arg_name, arg_value, match):
+def test_patch_rejects_currently_unsupported_sharded_backends(monkeypatch, tmp_path, arg_name, arg_value, backend):
     hf_api, trainer_cls, _ = _fresh_api(monkeypatch)
     trainer = _make_trainer(trainer_cls, tmp_path, **{arg_name: arg_value})
 
-    with pytest.raises((RuntimeError, ValueError), match=match):
+    with pytest.raises(ValueError, match=rf"^{backend} is not currently supported by the HuggingFace Client API$"):
         hf_api.patch(trainer, restore_state=False)
 
 
