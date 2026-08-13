@@ -13,11 +13,11 @@
 # limitations under the License.
 
 import shutil
-import tempfile
 from dataclasses import dataclass
 from typing import Any, Optional
 
 from nvflare.fuel.utils.fobs import FOBSContextKey
+from nvflare.utils.tensor_disk_offload import create_tensor_disk_offload_root
 
 _ENABLE_TENSOR_DISK_OFFLOAD = FOBSContextKey.TENSOR_DISK_OFFLOAD
 _TENSOR_DISK_OFFLOAD_ROOT_DIR = "tensor_disk_offload_root_dir"
@@ -62,7 +62,7 @@ def setup_tensor_disk_offload(engine, enabled: bool, job_id: str = "job") -> Ten
     fobs_ctx = cell.get_fobs_context()
     previous_value = fobs_ctx.get(_ENABLE_TENSOR_DISK_OFFLOAD, False)
     previous_root_dir = fobs_ctx.get(_TENSOR_DISK_OFFLOAD_ROOT_DIR)
-    root_dir = tempfile.mkdtemp(prefix=f"nvflare_tensor_offload_{job_id}_")
+    root_dir = create_tensor_disk_offload_root(job_id)
     try:
         cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: True, _TENSOR_DISK_OFFLOAD_ROOT_DIR: root_dir})
     except Exception:

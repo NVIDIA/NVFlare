@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+import os
 import random
 import shutil
-import tempfile
 import threading
 import time
 from typing import Optional
@@ -44,6 +44,14 @@ from nvflare.fuel.utils.validation_utils import (
     check_positive_number,
 )
 from nvflare.security.logging import secure_format_traceback
+from nvflare.utils.tensor_disk_offload import create_tensor_disk_offload_root
+
+
+def _cleanup_active_disk_tensor_downloads(reason: str, root_dir: str):
+    # Keep PyTorch optional until disk-backed tensor cleanup is actually needed.
+    from nvflare.app_opt.pt.tensor_downloader import cleanup_active_disk_tensor_downloads
+
+    cleanup_active_disk_tensor_downloads(reason=reason, root_dir=root_dir)
 
 
 class _TrainerStatus:
@@ -442,7 +450,8 @@ class SwarmClientController(ClientSideController):
             cell = get_cell() if callable(get_cell) else None
             if cell:
                 job_id = fl_ctx.get_job_id("job")
-                self._tensor_disk_offload_root_dir = tempfile.mkdtemp(prefix=f"nvflare_tensor_offload_{job_id}_")
+                self._tensor_disk_offload_root_dir = create_tensor_disk_offload_root(job_id)
+                self.log_info(fl_ctx, f"created tensor disk-offload root {self._tensor_disk_offload_root_dir}")
             else:
                 self.log_warning(
                     fl_ctx,
@@ -483,9 +492,7 @@ class SwarmClientController(ClientSideController):
 
         try:
             try:
-                from nvflare.app_opt.pt.tensor_downloader import cleanup_active_disk_tensor_downloads
-
-                cleanup_active_disk_tensor_downloads(
+                _cleanup_active_disk_tensor_downloads(
                     reason="Swarm workflow ended before tensor download completed",
                     root_dir=root_dir,
                 )
@@ -496,6 +503,10 @@ class SwarmClientController(ClientSideController):
             self.log_warning(fl_ctx, f"failed to clean up tensor disk offload: {secure_format_traceback()}")
         finally:
             shutil.rmtree(root_dir, ignore_errors=True)
+            if os.path.exists(root_dir):
+                self.log_warning(fl_ctx, f"tensor disk-offload root still exists after cleanup: {root_dir}")
+            else:
+                self.log_info(fl_ctx, f"removed tensor disk-offload root {root_dir}")
 
     def _drain_tensor_disk_offload_threads(self, root_dir: str, fl_ctx: FLContext):
         deadline = time.monotonic() + self.learn_task_abort_timeout

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import os
 import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -32,6 +33,7 @@ from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_executor import REPORTABLE_JOB_FAILURES, JobExecutor, _PendingJobHandle
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.communicator import Communicator
+from nvflare.utils.tensor_disk_offload import TensorDiskOffloadCleanupResult
 
 EXPECTED_REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: "exception",
@@ -557,3 +559,61 @@ def test_wait_child_process_does_not_report_non_failure_return_code(return_code)
     client.cell.fire_and_forget.assert_not_called()
     assert "job-1" not in job_executor.run_processes
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
+
+
+def test_wait_child_process_reclaims_roots_owned_by_dead_worker_parent():
+    client = MagicMock()
+    client.client_name = "site-1"
+    job_executor = JobExecutor(client=client, startup="startup")
+    job_executor.logger = MagicMock()
+    job_handle = MagicMock()
+    job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
+    fl_ctx = MagicMock()
+    cleanup = TensorDiskOffloadCleanupResult(removed=["/tmp/nvflare_tensor_offload_job-1_owned"])
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_return_code", return_value=JobReturnCode.SUCCESS),
+        patch(
+            "nvflare.private.fed.client.client_executor.cleanup_owned_tensor_disk_offload_roots",
+            return_value=cleanup,
+        ) as cleanup_roots,
+    ):
+        job_executor._wait_child_process_finish(
+            client=client,
+            job_id="job-1",
+            allocated_resource=None,
+            token=None,
+            resource_manager=MagicMock(),
+            workspace="/tmp/workspace",
+            fl_ctx=fl_ctx,
+        )
+
+    cleanup_roots.assert_called_once_with(job_id="job-1", owner_parent_pid=os.getpid())
+    assert "removed tensor disk-offload root" in job_executor.logger.info.call_args_list[-1].args[0]
+
+
+def test_wait_child_process_reclaims_roots_when_wait_raises():
+    client = MagicMock()
+    job_executor = JobExecutor(client=client, startup="startup")
+    job_handle = MagicMock()
+    job_handle.wait.side_effect = RuntimeError("wait failed")
+    job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
+
+    with (
+        patch(
+            "nvflare.private.fed.client.client_executor.cleanup_owned_tensor_disk_offload_roots",
+            return_value=TensorDiskOffloadCleanupResult(),
+        ) as cleanup_roots,
+        pytest.raises(RuntimeError, match="wait failed"),
+    ):
+        job_executor._wait_child_process_finish(
+            client=client,
+            job_id="job-1",
+            allocated_resource=None,
+            token=None,
+            resource_manager=MagicMock(),
+            workspace="/tmp/workspace",
+            fl_ctx=MagicMock(),
+        )
+
+    cleanup_roots.assert_called_once_with(job_id="job-1", owner_parent_pid=os.getpid())

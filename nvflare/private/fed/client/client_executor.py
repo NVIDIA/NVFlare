@@ -35,6 +35,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
+from nvflare.utils.tensor_disk_offload import cleanup_owned_tensor_disk_offload_roots
 
 from .client_status import ClientStatus, get_status_message
 
@@ -609,31 +610,34 @@ class JobExecutor(ClientExecutor):
     ):
         self.logger.info(f"run ({job_id}): waiting for child worker process to finish.")
         job_handle = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE)
-        if job_handle:
-            job_handle.wait()
+        try:
+            if job_handle:
+                job_handle.wait()
 
-            return_code = get_return_code(job_handle, job_id, workspace, self.logger)
+                return_code = get_return_code(job_handle, job_id, workspace, self.logger)
 
-            self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
+                self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
 
-            failure_reason = REPORTABLE_JOB_FAILURES.get(return_code)
-            if failure_reason:
-                request = new_cell_message(
-                    headers={},
-                    payload={
-                        JobFailureMsgKey.JOB_ID: job_id,
-                        JobFailureMsgKey.CODE: return_code,
-                        JobFailureMsgKey.REASON: failure_reason,
-                    },
-                )
-                self.client.cell.fire_and_forget(
-                    targets=[FQCN.ROOT_SERVER],
-                    channel=CellChannel.SERVER_MAIN,
-                    topic=CellChannelTopic.REPORT_JOB_FAILURE,
-                    message=request,
-                    optional=True,
-                )
-                self.logger.info(f"reported failure of job {job_id} to server!")
+                failure_reason = REPORTABLE_JOB_FAILURES.get(return_code)
+                if failure_reason:
+                    request = new_cell_message(
+                        headers={},
+                        payload={
+                            JobFailureMsgKey.JOB_ID: job_id,
+                            JobFailureMsgKey.CODE: return_code,
+                            JobFailureMsgKey.REASON: failure_reason,
+                        },
+                    )
+                    self.client.cell.fire_and_forget(
+                        targets=[FQCN.ROOT_SERVER],
+                        channel=CellChannel.SERVER_MAIN,
+                        topic=CellChannelTopic.REPORT_JOB_FAILURE,
+                        message=request,
+                        optional=True,
+                    )
+                    self.logger.info(f"reported failure of job {job_id} to server!")
+        finally:
+            self._cleanup_tensor_disk_offload_roots(job_id)
 
         if allocated_resource:
             resource_manager.free_resources(
@@ -648,6 +652,18 @@ class JobExecutor(ClientExecutor):
         fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client.client_name, private=True, sticky=False)
         engine.fire_event(EventType.JOB_COMPLETED, fl_ctx)
         self.logger.debug(f"Fired event JOB_COMPLETED {EventType.JOB_COMPLETED}")
+
+    def _cleanup_tensor_disk_offload_roots(self, job_id: str) -> None:
+        try:
+            cleanup = cleanup_owned_tensor_disk_offload_roots(job_id=job_id, owner_parent_pid=os.getpid())
+            for root_dir in cleanup.removed:
+                self.logger.info(f"run ({job_id}): removed tensor disk-offload root {root_dir}")
+            for root_dir, reason in cleanup.failures.items():
+                self.logger.warning(f"run ({job_id}): failed to remove tensor disk-offload root {root_dir}: {reason}")
+        except Exception as e:
+            self.logger.warning(
+                f"run ({job_id}): failed to inspect owned tensor disk-offload roots: {secure_format_exception(e)}"
+            )
 
     def get_status(self, job_id):
         process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.STOPPED)

@@ -18,7 +18,6 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-import nvflare.app_common.utils.tensor_disk_offload_context as tensor_disk_offload_context_module
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.fl_constant import FLMetaKey, ReservedKey
@@ -990,11 +989,11 @@ class TestFedAvgDownloadToDiskContext:
         cell = _MockCell(enable_tensor_disk_offload=False)
         root_dir = tmp_path / "nvflare_tensor_offload_root"
 
-        def fake_mkdtemp(prefix):
+        def fake_mkdtemp(prefix, dir=None):
             root_dir.mkdir()
             return str(root_dir)
 
-        monkeypatch.setattr(tensor_disk_offload_context_module.tempfile, "mkdtemp", fake_mkdtemp)
+        monkeypatch.setattr("nvflare.utils.tensor_disk_offload.tempfile.mkdtemp", fake_mkdtemp)
 
         context = setup_tensor_disk_offload(engine=_MockEngine(cell), enabled=True, job_id="job")
         assert context.applied is True
@@ -1036,7 +1035,7 @@ class TestFedAvgDownloadToDiskContext:
         controller.sample_clients = lambda _: ["site-1"]
         root_dir = tmp_path / "nvflare_tensor_offload_root"
 
-        def fake_mkdtemp(prefix):
+        def fake_mkdtemp(prefix, dir=None):
             root_dir.mkdir()
             return str(root_dir)
 
@@ -1046,7 +1045,7 @@ class TestFedAvgDownloadToDiskContext:
             retained_dir.mkdir()
             (retained_dir / "chunk_0.safetensors").write_bytes(b"retained")
 
-        monkeypatch.setattr(tensor_disk_offload_context_module.tempfile, "mkdtemp", fake_mkdtemp)
+        monkeypatch.setattr("nvflare.utils.tensor_disk_offload.tempfile.mkdtemp", fake_mkdtemp)
         controller.send_model = fake_send_model
         controller.get_num_standing_tasks = lambda: 0
         controller._get_aggregated_result = lambda: FLModel(params={"w": 1.0})
@@ -1070,7 +1069,7 @@ class TestScatterAndGatherDownloadToDiskContext:
         root_dir = tmp_path / "nvflare_tensor_offload_root"
         observed = {}
 
-        def fake_mkdtemp(prefix):
+        def fake_mkdtemp(prefix, dir=None):
             root_dir.mkdir()
             return str(root_dir)
 
@@ -1079,7 +1078,7 @@ class TestScatterAndGatherDownloadToDiskContext:
             observed["root_dir"] = cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR]
             return True
 
-        monkeypatch.setattr(tensor_disk_offload_context_module.tempfile, "mkdtemp", fake_mkdtemp)
+        monkeypatch.setattr("nvflare.utils.tensor_disk_offload.tempfile.mkdtemp", fake_mkdtemp)
         monkeypatch.setattr(controller, "_check_abort_signal", fake_check_abort_signal)
         monkeypatch.setattr(controller, "fire_event", lambda *args, **kwargs: None)
 
@@ -1107,7 +1106,7 @@ class TestScaffoldDownloadToDiskContext:
         root_dir = tmp_path / "nvflare_tensor_offload_root"
         observed = {}
 
-        def fake_mkdtemp(prefix):
+        def fake_mkdtemp(prefix, dir=None):
             root_dir.mkdir()
             return str(root_dir)
 
@@ -1116,7 +1115,7 @@ class TestScaffoldDownloadToDiskContext:
             observed["root_dir"] = cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR]
             return []
 
-        monkeypatch.setattr(tensor_disk_offload_context_module.tempfile, "mkdtemp", fake_mkdtemp)
+        monkeypatch.setattr("nvflare.utils.tensor_disk_offload.tempfile.mkdtemp", fake_mkdtemp)
         controller.send_model_and_wait = fake_send_model_and_wait
         controller.aggregate = lambda results, aggregate_fn=None: FLModel(
             params={"w": 1.0},
