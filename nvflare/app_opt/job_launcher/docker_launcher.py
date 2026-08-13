@@ -398,8 +398,8 @@ class DockerJobLauncher(JobLauncherSpec):
             python_path: Deprecated alias for default_python_path.
             timeout: max seconds to wait for container to reach RUNNING state (default 30).
             default_job_container_kwargs: site-level default docker run kwargs applied to every job
-                                          container launched by this site. Job-level resource_spec[site][docker]
-                                          takes precedence for explicitly allowlisted job options. Keys use Docker SDK naming
+                                          container launched by this site. Explicitly allowlisted job options from
+                                          launcher_spec[site][docker] take precedence. Keys use Docker SDK naming
                                           (underscores, not hyphens).
                                           Example: {"shm_size": "8g", "ipc_mode": "host"}
                                           Note: "volumes", "mounts", "network", "environment", "command",
