@@ -110,7 +110,7 @@ def test_auth_filter_does_not_add_client_credentials_to_peer_replies():
     victim_name = _unique_fqcn("victim")
     victim = _make_running_cell(victim_name)
     peer = _make_running_cell(f"{victim_name}.peer")
-    set_add_auth_headers_filters(victim, "victim", "tok-victim", "sig-victim", "ssid-victim")
+    set_add_auth_headers_filters(victim, victim_name, "tok-victim", "sig-victim", "ssid-victim")
 
     victim.core_cell.register_request_cb("probe", "ping", lambda _request: Message(payload="pong"))
 
@@ -149,11 +149,11 @@ def test_cross_client_auth_forces_server_transit_and_strips_credentials_from_pee
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
     assert reply.payload == {
         "auth": {key: None for key in AUTH_HEADERS},
-        "transit_required": None,
+        "transit_required": True,
         "from_cell": "server",
     }
     assert _auth_header_values(reply) == {key: None for key in AUTH_HEADERS}
-    assert reply.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED) is None
+    assert reply.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED) is True
 
 
 def test_cross_client_auth_under_same_relay_transits_server_and_strips_credentials(monkeypatch):
@@ -193,11 +193,11 @@ def test_cross_client_auth_under_same_relay_transits_server_and_strips_credentia
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
     assert reply.payload == {
         "auth": {key: None for key in AUTH_HEADERS},
-        "transit_required": None,
+        "transit_required": True,
         "from_cell": "server",
     }
     assert _auth_header_values(reply) == {key: None for key in AUTH_HEADERS}
-    assert reply.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED) is None
+    assert reply.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED) is True
 
 
 def test_client_job_reply_routed_via_local_parents_authenticates_at_server(monkeypatch):
@@ -240,6 +240,7 @@ def test_client_job_reply_routed_via_local_parents_authenticates_at_server(monke
 def test_server_auth_filter_strips_validated_client_reply_transit_auth(monkeypatch):
     auth_filter = _make_server_auth_filter(monkeypatch)
     reply_msg = _make_routed_message("site-a", MessageType.REPLY, origin="site-b", with_auth=True)
+    reply_msg.set_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, True)
 
     assert auth_filter(reply_msg) is None
     assert _auth_header_values(reply_msg) == {
@@ -257,7 +258,7 @@ def test_server_auth_filter_strips_validated_client_request_transit_auth(monkeyp
 
     assert auth_filter(request_msg) is None
     assert _auth_header_values(request_msg) == {key: None for key in AUTH_HEADERS}
-    assert request_msg.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED) is None
+    assert request_msg.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED) is True
 
 
 def test_server_auth_filter_strips_transit_auth_between_sites_under_same_relay(monkeypatch):
@@ -282,7 +283,22 @@ def test_server_auth_filter_strips_transit_auth_between_sites_under_same_relay(m
 
     assert auth_filter(request_msg) is None
     assert _auth_header_values(request_msg) == {key: None for key in AUTH_HEADERS}
-    assert request_msg.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED) is None
+    assert request_msg.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED) is True
+
+
+def test_server_auth_filter_strips_ad_hoc_url_but_keeps_transit_marker(monkeypatch):
+    auth_filter = _make_server_auth_filter(monkeypatch)
+    request_msg = _make_routed_message("site-b", MessageType.REQ, with_auth=True)
+    request_msg.add_headers(
+        {
+            MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True,
+            MessageHeaderKey.CONN_URL: "tcp://site-a:9000",
+        }
+    )
+
+    assert auth_filter(request_msg) is None
+    assert request_msg.get_header(MessageHeaderKey.CONN_URL) is None
+    assert request_msg.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED) is True
 
 
 def test_server_auth_filter_rejects_untracked_unauthenticated_client_reply_transit(monkeypatch):
@@ -326,13 +342,13 @@ def test_auth_filter_keeps_auth_on_outgoing_requests():
     victim_name = _unique_fqcn("victim")
     victim = _make_running_cell(victim_name)
     peer = _make_running_cell(f"{victim_name}.peer")
-    set_add_auth_headers_filters(victim, "victim", "tok-victim", "sig-victim", "ssid-victim")
+    set_add_auth_headers_filters(victim, victim_name, "tok-victim", "sig-victim", "ssid-victim")
     peer.core_cell.register_request_cb("probe", "echo", lambda request: Message(payload=_auth_header_values(request)))
 
     reply = victim.send_request("probe", "echo", peer.get_fqcn(), Message(payload="hello"), timeout=1.0)
 
     assert reply.payload == {
-        CellMessageAuthHeaderKey.CLIENT_NAME: "victim",
+        CellMessageAuthHeaderKey.CLIENT_NAME: victim_name,
         CellMessageAuthHeaderKey.TOKEN: "tok-victim",
         CellMessageAuthHeaderKey.TOKEN_SIGNATURE: "sig-victim",
         CellMessageAuthHeaderKey.SSID: "ssid-victim",
@@ -400,6 +416,32 @@ def test_auth_filter_keeps_cross_site_reply_auth_when_routed_via_local_parent():
         CellMessageAuthHeaderKey.TOKEN_SIGNATURE: "sig-a",
         CellMessageAuthHeaderKey.SSID: "ssid-a",
     }
+    assert reply.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED) is True
+
+
+def test_auth_filter_marks_cross_site_reply_from_direct_peer_path():
+    origin = "site-a.job-1"
+    victim = _make_running_cell(origin)
+    set_add_auth_headers_filters(victim, "site-a", "tok-a", "sig-a", "ssid-a")
+    reply = Message(
+        headers={
+            MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
+            MessageHeaderKey.ORIGIN: origin,
+            MessageHeaderKey.DESTINATION: "site-b.job-1",
+            MessageHeaderKey.TO_CELL: "site-b.job-1",
+        }
+    )
+
+    for callback in victim.core_cell.out_reply_filter_reg.find("peer", "reply"):
+        callback.cb(reply, *callback.args, **callback.kwargs)
+
+    assert _auth_header_values(reply) == {
+        CellMessageAuthHeaderKey.CLIENT_NAME: "site-a",
+        CellMessageAuthHeaderKey.TOKEN: "tok-a",
+        CellMessageAuthHeaderKey.TOKEN_SIGNATURE: "sig-a",
+        CellMessageAuthHeaderKey.SSID: "ssid-a",
+    }
+    assert reply.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED) is True
 
 
 def test_auth_filter_keeps_cross_site_reply_auth_under_same_relay():
@@ -452,6 +494,9 @@ def test_auth_filter_does_not_add_auth_to_same_site_reply_via_parent():
     [
         ("relay-1.site-a.job-1", "relay-1.site-b.job-2", "site-a", True),
         ("relay-1.site-a.job-1", "relay-1.site-a.job-2", "site-a", False),
+        ("relay-1.site-a.job-1", "relay-1.site-b.job-2", "custom-site-cn", True),
+        ("relay-1.site-a.job-1", "relay-1.site-a.job-2", "custom-site-cn", True),
+        ("relay-1.site-a.job-1", "relay-1.site-a.job-1", "custom-site-cn", False),
     ],
 )
 def test_cross_client_family_uses_authenticated_site_identity(origin, destination, client_name, expected):
