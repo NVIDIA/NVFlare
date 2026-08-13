@@ -50,6 +50,12 @@ Swarm/CCWF:
 
 If no active Cell is available, the offload context is not enabled and the runtime falls back to in-memory download.
 
+Each offload root contains a job/creator/parent/device/inode ownership marker. The
+job worker removes its root during normal workflow finalization. After the worker
+exits, the surviving client or server parent makes a second, marker-validated
+cleanup pass. This closes teardown races with an in-flight disk consumer and
+reclaims roots when a worker dies before its own cleanup can complete.
+
 ## Data Flow
 
 ```

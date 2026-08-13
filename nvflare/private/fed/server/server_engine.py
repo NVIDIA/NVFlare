@@ -73,6 +73,7 @@ from nvflare.private.fed.utils.fed_utils import (
 )
 from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.security.logging import secure_format_exception
+from nvflare.utils.tensor_disk_offload import cleanup_owned_tensor_disk_offload_roots
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
 
@@ -199,37 +200,52 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
                 self.exception_run_processes.pop(job_id)
 
     def wait_for_complete(self, workspace, job_id, process):
-        process.wait()
-        run_process_info = self.run_processes.get(job_id)
-        if run_process_info:
-            # Wait for the job process to finish UPDATE_RUN_STATUS process
-            start_time = time.time()
-            max_wait = 2.0
-            while True:
-                process_finished = run_process_info.get(RunProcessKey.PROCESS_FINISHED, False)
-                if process_finished:
-                    break
-                if time.time() - start_time >= max_wait:
-                    self.logger.debug(f"Job:{job_id} UPDATE_RUN_STATUS didn't finish fast enough.")
-                    break
-                time.sleep(0.1)
-            with self.lock:
-                return_code = get_return_code(process, job_id, workspace, self.logger)
-                # if process exit but with Execution exception
-                if return_code and return_code != 0:
-                    self.logger.info(f"Job: {job_id} child process exit with return code {return_code}")
-                    if job_id in self.exception_run_processes:
-                        # An external path (e.g. fail_run from a client failure
-                        # report) has already recorded an authoritative return
-                        # code for this run. Don't let the SJ's secondary exit
-                        # code (e.g. ABORTED from the abort signal we sent)
-                        # overwrite that signal.
-                        pass
-                    else:
-                        run_process_info[RunProcessKey.PROCESS_RETURN_CODE] = return_code
-                        self.exception_run_processes[job_id] = run_process_info
-                self.run_processes.pop(job_id, None)
-        self.engine_info.status = MachineStatus.STOPPED
+        try:
+            process.wait()
+            run_process_info = self.run_processes.get(job_id)
+            if run_process_info:
+                # Wait for the job process to finish UPDATE_RUN_STATUS process
+                start_time = time.time()
+                max_wait = 2.0
+                while True:
+                    process_finished = run_process_info.get(RunProcessKey.PROCESS_FINISHED, False)
+                    if process_finished:
+                        break
+                    if time.time() - start_time >= max_wait:
+                        self.logger.debug(f"Job:{job_id} UPDATE_RUN_STATUS didn't finish fast enough.")
+                        break
+                    time.sleep(0.1)
+                with self.lock:
+                    return_code = get_return_code(process, job_id, workspace, self.logger)
+                    # if process exit but with Execution exception
+                    if return_code and return_code != 0:
+                        self.logger.info(f"Job: {job_id} child process exit with return code {return_code}")
+                        if job_id in self.exception_run_processes:
+                            # An external path (e.g. fail_run from a client failure
+                            # report) has already recorded an authoritative return
+                            # code for this run. Don't let the SJ's secondary exit
+                            # code (e.g. ABORTED from the abort signal we sent)
+                            # overwrite that signal.
+                            pass
+                        else:
+                            run_process_info[RunProcessKey.PROCESS_RETURN_CODE] = return_code
+                            self.exception_run_processes[job_id] = run_process_info
+                    self.run_processes.pop(job_id, None)
+        finally:
+            self._cleanup_tensor_disk_offload_roots(job_id)
+            self.engine_info.status = MachineStatus.STOPPED
+
+    def _cleanup_tensor_disk_offload_roots(self, job_id: str) -> None:
+        try:
+            cleanup = cleanup_owned_tensor_disk_offload_roots(job_id=job_id, owner_parent_pid=os.getpid())
+            for root_dir in cleanup.removed:
+                self.logger.info(f"Job: {job_id} removed tensor disk-offload root {root_dir}")
+            for root_dir, reason in cleanup.failures.items():
+                self.logger.warning(f"Job: {job_id} failed to remove tensor disk-offload root {root_dir}: {reason}")
+        except Exception as e:
+            self.logger.warning(
+                f"Job: {job_id} failed to inspect owned tensor disk-offload roots: {secure_format_exception(e)}"
+            )
 
     def _start_runner_process(self, job, job_clients, snapshot, fl_ctx: FLContext):
         job_launcher: JobLauncherSpec = get_job_launcher(job.meta, fl_ctx)
