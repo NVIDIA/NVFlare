@@ -927,7 +927,11 @@ class FederatedServer(BaseServer):
 
         client_jobs = set(client_jobs)
         outcome_jobs = self.engine.job_runner.get_client_outcome_jobs()
-        server_jobs = set(self.engine.run_processes.keys()).union(outcome_jobs)
+        # Keep normally completed jobs alive until clients report their outcomes, but do not
+        # protect client jobs after the server job has already failed.
+        server_jobs = set(self.engine.run_processes.keys()).union(
+            {job_id for job_id in outcome_jobs if job_id not in self.engine.exception_run_processes}
+        )
         jobs_need_abort = list(client_jobs.difference(server_jobs))
 
         require_previous_report = ConfigService.get_bool_var(
@@ -957,7 +961,7 @@ class FederatedServer(BaseServer):
                 self._job_reported_clients.setdefault(job_id, set()).add(client_token)
 
             # Also check jobs that are running on server but not on the client.
-            jobs_on_server_but_not_on_client = list(server_jobs.difference(client_jobs))
+            jobs_on_server_but_not_on_client = list(server_jobs.union(outcome_jobs).difference(client_jobs))
             dead_job_notifications = []
             missing_outcome_notifications = []
             if jobs_on_server_but_not_on_client:
@@ -1001,7 +1005,7 @@ class FederatedServer(BaseServer):
         job_runner = self.engine.job_runner
         if not job_runner.is_client_outcome_pending(job_id, client.name):
             return
-        if job_id not in self.engine.run_processes:
+        if job_id not in self.engine.run_processes and job_id not in self.engine.exception_run_processes:
             with self.engine.new_context() as fl_ctx:
                 self.logger.warning(f"Failing job {job_id}: terminal outcome unavailable from {client.name}: {reason}")
                 job_runner.fail_run(job_id, ProcessExitCode.INFRASTRUCTURE_ERROR, fl_ctx)

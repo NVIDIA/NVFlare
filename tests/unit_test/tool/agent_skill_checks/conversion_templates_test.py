@@ -23,6 +23,7 @@ import ast
 import importlib.util
 import inspect
 import json
+import shutil
 import sys
 import types
 from dataclasses import dataclass
@@ -258,6 +259,77 @@ def test_huggingface_client_template_requires_and_forwards_global_rank(monkeypat
     for rank in (0, 1):
         module.main(lambda: object(), rank=rank)
     assert observed == [0, 1]
+
+
+def test_huggingface_job_template_uses_private_persistent_implicit_simulation_workspace(tmp_path):
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    implicit_workspace = module._simulation_workspace(None)
+    assert implicit_workspace.is_dir()
+
+    # The template prints a result path under this directory after the simulation
+    # finishes, so the default workspace must survive long enough to inspect it.
+    assert implicit_workspace.exists()
+    shutil.rmtree(implicit_workspace)
+
+    explicit_workspace = tmp_path / "workspace"
+    explicit_workspace.mkdir()
+    assert module._simulation_workspace(explicit_workspace) == explicit_workspace
+
+    assert explicit_workspace.is_dir()
+
+
+def test_huggingface_job_template_advertises_simulation_workspace(monkeypatch, tmp_path, capsys):
+    module = _load_module(HF_TEMPLATES / "job.py")
+    executed_workspaces = []
+    status_workspaces = []
+    result_workspaces = []
+
+    class _Run:
+        def __init__(self, workspace_root):
+            self.workspace_root = workspace_root
+
+        def get_status(self):
+            status_workspaces.append(self.workspace_root)
+            return "FINISHED"
+
+        def get_result(self):
+            result_workspaces.append(self.workspace_root)
+            return str(self.workspace_root / "result")
+
+    class _Recipe:
+        def execute(self, sim_env):
+            workspace_root = Path(sim_env.workspace_root)
+            assert workspace_root.is_dir()
+            executed_workspaces.append(workspace_root)
+            return _Run(workspace_root)
+
+    monkeypatch.setattr(module, "build_recipe", lambda **kwargs: _Recipe())
+    monkeypatch.setattr(module, "SimEnv", lambda **kwargs: types.SimpleNamespace(**kwargs))
+
+    required_args = ["job.py", "--model_name_or_path", "model", "--data_root", "data"]
+    monkeypatch.setattr(sys, "argv", required_args)
+    module.main()
+    implicit_output = capsys.readouterr().out
+
+    assert "Job Status is: FINISHED" in implicit_output
+    assert f"Result can be found in: {executed_workspaces[-1] / 'result'}" in implicit_output
+    assert status_workspaces == [executed_workspaces[-1]]
+    assert result_workspaces == [executed_workspaces[-1]]
+    assert executed_workspaces[-1].exists()
+    shutil.rmtree(executed_workspaces[-1])
+
+    explicit_workspace = tmp_path / "workspace"
+    explicit_workspace.mkdir()
+    monkeypatch.setattr(sys, "argv", [*required_args, "--workspace_root", str(explicit_workspace)])
+    module.main()
+    explicit_output = capsys.readouterr().out
+
+    assert "Job Status is: FINISHED" in explicit_output
+    assert f"Result can be found in: {explicit_workspace / 'result'}" in explicit_output
+    assert status_workspaces == [executed_workspaces[0], explicit_workspace]
+    assert result_workspaces == [executed_workspaces[0], explicit_workspace]
+    assert explicit_workspace.is_dir()
 
 
 def test_huggingface_client_template_has_one_patch_and_no_manual_exchange():

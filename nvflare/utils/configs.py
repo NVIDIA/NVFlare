@@ -104,13 +104,7 @@ def get_client_config_value(fl_ctx: FLContext, key: str, default: Any = None, *,
             be read.
 
     Example:
-        ```python
-        from nvflare.utils.configs import get_client_config_value
-        from nvflare.client.constants import EXTERNAL_PRE_INIT_TIMEOUT
-
-        # In your executor's initialize method:
-        timeout = get_client_config_value(fl_ctx, EXTERNAL_PRE_INIT_TIMEOUT, default=300.0)
-        ```
+        ``get_client_config_value(fl_ctx, "my_setting", default=300.0)``
     """
     return get_job_config_value(
         fl_ctx,

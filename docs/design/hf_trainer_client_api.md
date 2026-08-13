@@ -76,8 +76,8 @@ that design to HF, with HF-specific handling where the two trainers differ.
 
 - No new server-side workflow or controller. Existing FedAvg/recipes work unchanged.
 - No change to FL algorithms.
-- DeepSpeed ZeRO-3 and FSDP full support is phased (see Phasing); Phase 1 targets
-  single-GPU and DDP.
+- DeepSpeed and FSDP are currently unsupported. They require dedicated
+  coordinated sharded import/export and checkpoint implementations.
 - `Trainer`-free HF training loops (raw `accelerate` loops) — those users keep the
   raw Client API.
 
@@ -327,9 +327,9 @@ Two modes:
   — it can only trust what was verified; a config/env override exists for users
   who have validated a newer version themselves). If the optional `packaging`
   dependency needed for version parsing is unavailable, the same conservative
-  fallback is used. The fallback is also expected to become the preferred path
-  under ZeRO-3/FSDP in Phase 2, since it rides HF's own sharded-checkpoint load
-  machinery. The Phase 0 spike pins the supported version range; current
+  fallback is used. Neither this fallback nor the in-memory path supports
+  DeepSpeed or FSDP: sharded training needs its own coordinated import/export
+  and checkpoint implementation. The Phase 0 spike pins the supported version range; current
   `transformers` restores optimizer/scheduler in `_inner_training_loop` before
   firing `on_train_begin`. When the injection fallback is active, the implementation
   loads the received params into the in-memory model, saves that model through
@@ -425,8 +425,9 @@ per-round-bump fallback.
    - PEFT: `peft.get_peft_model_state_dict(unwrapped)` (adapter-only — tiny
      payload, the main reason LLM users want this API).
    - Full: `trainer.accelerator.get_state_dict(unwrapped)` rather than raw
-     `state_dict()` — this is the seam that later makes ZeRO-3/FSDP gathering work
-     without API changes; for single-GPU/DDP it degenerates to a plain state dict.
+     `state_dict()`. This is the supported single-GPU/DDP extraction path. It
+     does not by itself implement the all-rank collectives, sharded import, or
+     checkpoint protocol required for DeepSpeed or FSDP.
 2. Tensors moved to CPU. If the configured exchange format is numpy, cast
    bf16/fp16 → fp32 automatically (numpy has no bf16); in tensor mode, send native
    dtype (halves payload for bf16 models). `TensorDecomposer` registered via
@@ -565,11 +566,10 @@ owns this sequence; per loop iteration it is exactly:
 5. If checkpoint injection is selected, rank 0 broadcasts success/failure before
    the post-injection barrier so non-zero ranks fail instead of hanging.
 6. Training/eval collectives — owned entirely by HF/torch, outside the session.
-7. No session collective after `send()` — rank 0 sends to the pipe alone.
-   (Phase 2 forward note: under ZeRO-3/FSDP, `accelerator.get_state_dict()` is
-   itself a collective gather that *all* ranks must enter, so the sequence gains a
-   gather step between training and send — this section will be amended then;
-   items 1–6 are unchanged.)
+7. No session collective after `send()` — rank 0 sends to the pipe alone. This
+   sequence applies only to the supported replicated single-GPU/DDP path.
+   Sharded backends require a separate all-rank export/import sequence before
+   this rank-0 send.
 
 User code must not introduce rank-conditional wrapped calls (e.g. calling
 `trainer.evaluate()` only on rank 0): the wrappers run their collectives on all
@@ -628,14 +628,13 @@ Properties worth stating:
 |---|---|---|
 | Single GPU / CPU | 1 | trivial |
 | DDP (`torchrun`, multi-node) | 1 | rank via the resolution order in `patch()` step 1 (never `LOCAL_RANK`); rank-0 pipe + object broadcast, as in `llm_hf` today |
-| DeepSpeed ZeRO-1/2 | 2 | extraction already correct via `accelerator.get_state_dict`; needs testing |
-| DeepSpeed ZeRO-3 | 2 | `get_state_dict` gathers full params on rank 0 — peak-memory risk for large models; document, consider shared-FS exchange (below) |
-| FSDP | 2 | full-state-dict gathering via accelerator; same memory caveat |
+| DeepSpeed ZeRO-1/2/3 | Unsupported | Requires a separate ZeRO-aware collective import/export and coordinated checkpoint implementation; planned only after FSDP design and validation. |
+| FSDP | Unsupported | Requires a separate FSDP collective full-state import/export and coordinated checkpoint implementation. |
 
 Phase 1 **rejects** unsupported backends explicitly rather than leaving them
 "untested but maybe works": `patch()` raises at patch time when the trainer is
-configured with DeepSpeed (`args.deepspeed`) or FSDP (`args.fsdp`), with a
-message naming Phase 2. A backend that would fail subtly mid-round (collective
+configured with DeepSpeed (`args.deepspeed`) or FSDP (`args.fsdp`). A backend
+that would fail subtly mid-round (collective
 mismatch, sharded-load corruption) must fail loudly at setup instead.
 
 For multi-node SFT of large models, `broadcast_object_list` of a full state dict
@@ -672,8 +671,8 @@ The Phase 1 contract for the file exchange:
 
 No new components required:
 
-- Subprocess mode: existing `ScriptRunner` / `PTClientAPILauncherExecutor` +
-  `CellPipe`, unchanged.
+- External-process mode: `ScriptRunner` / `ClientAPIExecutor` with the direct
+  Cell backend.
 - In-process mode: existing in-process client API executor, unchanged.
 - Server: `FedAvgRecipe` (+ `PTModel` or an initial-model persistor). For large
   models enable `enable_tensor_disk_offload=True` in the recipe.
@@ -701,9 +700,8 @@ No new components required:
   hello-world example uses this single PEFT path; full-model and multi-node
   variants remain in the advanced `llm_hf` example.
 - The `server_key_prefix` option removes the example's hand-rolled `"model."`
-  renames; sites that prefer executor-side conversion can keep using a
-  `ParamsConverter` instead — the two mechanisms are alternatives, and the doc for
-  the API must say "pick one".
+  renames. Sites that need other custom transformations apply them in trainer code
+  after `flare.receive()` and before `flare.send()`.
 
 ## Example
 
@@ -765,13 +763,10 @@ root and `client.py` selects `<data_root>/<site_name>/`.
   primary, checkpoint-injection as automatic fallback — see Round-Loop Semantics.)
 - **Phase 1:** `patch()` + `FLCallback`; SFT + PEFT; single-GPU + DDP; train /
   evaluate / submit_model; unit tests; add the clean `hello-huggingface` example.
-- **Phase 2 (HF-specific; primarily validation):** exercise the Phase 1 code paths
-  under DeepSpeed (ZeRO-1/2/3) and FSDP — `accelerator.get_state_dict()` extraction
-  and the resume/override path are designed to be backend-agnostic, so the bulk of
-  this phase is verifying that claim, not new code. Known concrete deltas it will
-  trigger: (a) backend-based selection of the weight-override strategy
-  (checkpoint-injection under ZeRO-3/FSDP — in-memory `load_state_dict` into a
-  sharded model does not work naively); (b) FSDP full-state-dict-type context
-  handling if the accelerator seam proves insufficient; (c) `Seq2SeqTrainer`
-  predict/generate-based eval metrics capture (small real implementation — those
-  metrics flow through different hooks than `eval_loss`).
+- **Follow-on sharded-training delivery:** FSDP and DeepSpeed remain unsupported
+  until their separate implementation work lands. FSDP-first collective
+  import/export, coordinated checkpoint/resume, a compatibility matrix, memory
+  policy, and real multi-rank integration tests are required before enabling it.
+  DeepSpeed ZeRO follows as a separate capability, not validation of Phase 1
+  code paths. `Seq2SeqTrainer` predict/generate-based evaluation metrics capture
+  is independent follow-on work.

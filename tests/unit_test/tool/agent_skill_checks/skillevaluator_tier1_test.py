@@ -23,16 +23,17 @@ import pytest
 
 COMMAND_TIMEOUT = 120
 REPO_ROOT = Path(__file__).resolve().parents[4]
+TIER1_SELECTION_SCRIPT = REPO_ROOT / "ci" / "should_run_skill_tier1.sh"
 SKILL_DIRS = tuple(sorted(path.parent for path in (REPO_ROOT / "skills").glob("*/SKILL.md")))
 # Fail closed: pytest silently skips a test parametrized over an empty sequence and still
 # exits 0, so a moved or renamed skills layout would turn this gate green without ever
 # scanning a skill.
 assert SKILL_DIRS, f"no bundled skills discovered under {REPO_ROOT / 'skills'}"
 
-# The keyless deterministic check set. The full Tier 1 security scan additionally needs
-# the `security` extra plus external Semgrep, SkillSpector, and Gitleaks binaries, and
-# LLM-backed checks need a provider key, so neither belongs in the unit-test lane.
-TIER1_VALIDATE_CHECKS = "schema,pii,license,unicode,quality,lint"
+# The deterministic Tier 1 gate. ``security`` invokes SkillSpector, and
+# ``code-integrity`` invokes Bandit, Semgrep, and Gitleaks. LLM-backed checks
+# remain disabled so this suite never requires a provider key.
+TIER1_VALIDATE_CHECKS = "schema,security,pii,license,code-integrity,unicode,quality,lint"
 
 # Standalone Tier 1 commands that are deterministic without a provider key: pii-scan only
 # consults an LLM under --llm-verify, and the other two expose no LLM flags at all.
@@ -90,6 +91,10 @@ def test_skillevaluator_tier1_validate_of_bundled_skill(skill_dir, tmp_path):
 
     assert report["overall_passed"] is True, _failure_message(command, completed)
     assert report["total_errors"] == 0, _failure_message(command, completed)
+    assert not report.get("incomplete_scans"), (
+        f"{skill_dir.name} Tier 1 scan was incomplete: {report['incomplete_scans']}\n"
+        f"{_failure_message(command, completed)}"
+    )
     assert skill_dir.name in scanned, f"{skill_dir.name} missing from the report: {sorted(scanned)}"
     assert scanned[skill_dir.name]["passed"] is True, _failure_message(command, completed)
     # Advisory MEDIUM/LOW quality findings are expected and do not gate the lane;
@@ -128,6 +133,11 @@ def test_skillevaluator_tier1_standalone_command_of_bundled_skill(command_name, 
 
 
 def _require_skillevaluator():
+    # CI sets this from the changed-path selector. Developers can opt in on any
+    # supported platform by setting NVFLARE_RUN_SKILL_TIER1=true.
+    if os.environ.get("NVFLARE_RUN_SKILL_TIER1") != "true":
+        pytest.skip("Tier 1 skill security scan was not selected for this change")
+
     if sys.version_info[:2] not in {(3, 12), (3, 13)}:
         pytest.skip("skillevaluator supports Python 3.12 and 3.13")
 
@@ -138,8 +148,36 @@ def _require_skillevaluator():
     # allowed to fail.
     skillevaluator = shutil.which("skillevaluator")
     if not skillevaluator:
+        if os.environ.get("NVFLARE_SKILL_TIER1_REQUIRED") == "true":
+            pytest.fail("skillevaluator CLI is required for the selected Tier 1 skill security scan")
         pytest.skip("skillevaluator CLI not on PATH; install .[skill_eval] in a separate environment to run this check")
     return skillevaluator
+
+
+@pytest.mark.parametrize(
+    ("changed_paths", "expected"),
+    [
+        (["skills/nvflare-fed-stats/SKILL.md"], "true"),
+        (["tests/unit_test/tool/agent_skill_checks/skillevaluator_tier1_test.py"], "true"),
+        (["dev_tools/agent/skills/checks/lints.py"], "true"),
+        ([".github/workflows/premerge.yml"], "true"),
+        (["ci/should_run_skill_tier1.sh"], "true"),
+        (["setup.cfg"], "true"),
+        (["nvflare/apis/fl_context.py", "docs/user_guide/index.rst"], "false"),
+    ],
+)
+def test_tier1_selector(changed_paths, expected):
+    completed = subprocess.run(
+        ["bash", str(TIER1_SELECTION_SCRIPT)],
+        cwd=REPO_ROOT,
+        input="\n".join(changed_paths),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == expected
 
 
 def _run(command):

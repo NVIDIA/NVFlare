@@ -352,11 +352,7 @@ LLM/Foundation Model Training
 These recipe settings configure site task exchange and the shared streaming
 download service. For ``ClientAPIExecutor`` out-of-process modes, configure
 ``launch_timeout``, ``task_wait_timeout``, ``result_wait_timeout``, and the
-heartbeat settings on the executor itself when those bounds are needed. The
-legacy Pipe/FlareAgent settings ``submit_result_timeout``,
-``download_complete_timeout``, ``PEER_READ_TIMEOUT``, and ``max_resends`` are
-used only by ``BaseScriptRunner`` / ``ClientAPILauncherExecutor`` and have no
-effect on ``ClientAPIExecutor``.
+heartbeat settings on the executor itself when those bounds are needed.
 
 
 High-Latency Networks

@@ -12,47 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, MutableMapping, Optional, Tuple
+from typing import Any, Callable, MutableMapping, Optional
 
-from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.client.config import ExchangeFormat, normalize_exchange_format
 from nvflare.fuel.utils.import_utils import optional_import
 
-
-class _ConverterContext:
-    """Minimal state context for ParamsConverters running in a trainer process."""
-
-    def __init__(self, props: Optional[MutableMapping[str, Any]] = None):
-        self._props = props if props is not None else {}
-
-    def get_prop(self, key: str, default=None):
-        return self._props.get(key, default)
-
-    def set_prop(self, key: str, value: Any, private: Optional[bool] = None, sticky: Optional[bool] = None):
-        _ = private
-        _ = sticky
-        self._props[key] = value
-
-
-_CONVERTER_SPECS = {
+_ADAPTER_SPECS = {
     (ExchangeFormat.NUMPY, ExchangeFormat.PYTORCH): (
-        "nvflare.app_opt.pt.numpy_params_converter",
-        "NumpyToPTParamsConverter",
+        "_numpy_to_pytorch",
         ExchangeFormat.PYTORCH,
     ),
     (ExchangeFormat.PYTORCH, ExchangeFormat.NUMPY): (
-        "nvflare.app_opt.pt.numpy_params_converter",
-        "PTToNumpyParamsConverter",
+        "_pytorch_to_numpy",
         ExchangeFormat.PYTORCH,
     ),
     (ExchangeFormat.NUMPY, ExchangeFormat.KERAS_LAYER_WEIGHTS): (
-        "nvflare.app_opt.tf.params_converter",
-        "NumpyToKerasModelParamsConverter",
+        "_numpy_to_keras_layer_weights",
         ExchangeFormat.KERAS_LAYER_WEIGHTS,
     ),
     (ExchangeFormat.KERAS_LAYER_WEIGHTS, ExchangeFormat.NUMPY): (
-        "nvflare.app_opt.tf.params_converter",
-        "KerasModelToNumpyParamsConverter",
+        "_keras_layer_weights_to_numpy",
         ExchangeFormat.KERAS_LAYER_WEIGHTS,
     ),
 }
@@ -65,22 +44,79 @@ def validate_format_pair(source_format, target_format) -> None:
     target = normalize_exchange_format(target_format, "target_format")
     if source == target or ExchangeFormat.RAW in (source, target):
         return
-    if (source, target) not in _CONVERTER_SPECS or (target, source) not in _CONVERTER_SPECS:
+    if (source, target) not in _ADAPTER_SPECS or (target, source) not in _ADAPTER_SPECS:
         raise ValueError(f"unsupported parameter format conversion: {source.value} <-> {target.value}")
 
 
-def _load_converter(module: str, name: str, format_name: str):
-    converter_cls, ok = optional_import(module=module, name=name)
+def _load_dependency(module: str, name: str, format_name: str):
+    dependency, ok = optional_import(module=module, name=name)
     if not ok:
         raise RuntimeError(f"Can't import {name} for {format_name} exchange format")
-    return converter_cls
+    return dependency
 
 
-def _create_converter(source_format, target_format, supported_tasks=None) -> ParamsConverter:
-    spec = _CONVERTER_SPECS[(source_format, target_format)]
-    module, name, format_name = spec
-    converter_cls = _load_converter(module=module, name=name, format_name=format_name)
-    return converter_cls(supported_tasks)
+def _numpy_to_pytorch(params, state: MutableMapping[str, Any], logger=None):
+    np = _load_dependency("numpy", "", ExchangeFormat.PYTORCH)
+    torch = _load_dependency("torch", "", ExchangeFormat.PYTORCH)
+    tensor_shapes = state.get("tensor_shapes")
+    exclude_vars = state.get("exclude_vars")
+
+    if tensor_shapes:
+        result = {
+            key: (
+                torch.as_tensor(np.reshape(value, tensor_shapes[key]))
+                if key in tensor_shapes
+                else torch.as_tensor(value)
+            )
+            for key, value in params.items()
+        }
+    else:
+        result = {key: torch.as_tensor(value) for key, value in params.items()}
+    if exclude_vars:
+        result.update(exclude_vars)
+    return result
+
+
+def _pytorch_to_numpy(params, state: MutableMapping[str, Any], logger=None):
+    torch = _load_dependency("torch", "", ExchangeFormat.PYTORCH)
+    result = {}
+    tensor_shapes = {}
+    exclude_vars = {}
+    for key, value in params.items():
+        if isinstance(value, torch.Tensor):
+            try:
+                result[key] = value.detach().cpu().numpy()
+            except Exception as e:
+                raise ValueError(
+                    "failed to convert a PyTorch tensor to NumPy; use a NumPy-supported dtype "
+                    f"or declare a native PyTorch server exchange format: {e}"
+                ) from e
+            tensor_shapes[key] = value.shape
+        else:
+            exclude_vars[key] = value
+
+    state["tensor_shapes"] = tensor_shapes
+    state["exclude_vars"] = exclude_vars
+    if exclude_vars and logger is not None:
+        logger.warning(f"{len(exclude_vars)} vars excluded as they were non-tensor type: {list(exclude_vars.keys())}")
+    return result
+
+
+def _numpy_to_keras_layer_weights(params, state: MutableMapping[str, Any], logger=None):
+    from nvflare.app_opt.tf.utils import unflat_layer_weights_dict
+
+    return unflat_layer_weights_dict(params)
+
+
+def _keras_layer_weights_to_numpy(params, state: MutableMapping[str, Any], logger=None):
+    from nvflare.app_opt.tf.utils import flat_layer_weights_dict
+
+    return flat_layer_weights_dict(params)
+
+
+def _get_adapter(source_format, target_format) -> Callable:
+    adapter_name, _ = _ADAPTER_SPECS[(source_format, target_format)]
+    return globals()[adapter_name]
 
 
 def convert_params(
@@ -105,29 +141,4 @@ def convert_params(
     if ExchangeFormat.KERAS_LAYER_WEIGHTS in (source, target) and not isinstance(params, dict):
         raise TypeError(f"Keras layer-weight conversion expects a parameter dict, got {type(params)}")
 
-    converter = _create_converter(source, target)
-    if logger is not None:
-        converter.logger = logger
-    return converter.convert(params, _ConverterContext(state))
-
-
-def create_default_params_converters(
-    server_expected_format: str,
-    params_exchange_format: str,
-    train_task_name: str,
-    eval_task_name: str,
-    submit_model_task_name: str,
-) -> Tuple[Optional[ParamsConverter], Optional[ParamsConverter]]:
-    """Create default from/to NVFlare converters for common Client API formats."""
-    # Older client_api_config files can leave exchange_format empty.
-    if server_expected_format != ExchangeFormat.NUMPY:
-        return None, None
-    if params_exchange_format not in (ExchangeFormat.PYTORCH, ExchangeFormat.KERAS_LAYER_WEIGHTS):
-        return None, None
-    server_format = ExchangeFormat.NUMPY
-    client_format = ExchangeFormat(params_exchange_format)
-    validate_format_pair(server_format, client_format)
-    return (
-        _create_converter(server_format, client_format, [train_task_name, eval_task_name]),
-        _create_converter(client_format, server_format, [train_task_name, submit_model_task_name]),
-    )
+    return _get_adapter(source, target)(params, state, logger)
