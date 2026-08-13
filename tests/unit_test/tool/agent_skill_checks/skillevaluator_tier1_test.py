@@ -161,6 +161,7 @@ def _require_skillevaluator():
         (["tests/unit_test/tool/agent_skill_checks/skillevaluator_tier1_test.py"], "true"),
         (["dev_tools/agent/skills/checks/lints.py"], "true"),
         ([".github/workflows/premerge.yml"], "true"),
+        (["ci/should_run_skill_tier1.sh"], "true"),
         (["setup.cfg"], "true"),
         (["nvflare/apis/fl_context.py", "docs/user_guide/index.rst"], "false"),
     ],

@@ -20,7 +20,7 @@ set -euo pipefail
 
 while IFS= read -r changed_path || [ -n "$changed_path" ]; do
     case "$changed_path" in
-        skills/* | tests/unit_test/tool/agent_skill_checks/* | dev_tools/agent/skills/* | .github/workflows/premerge.yml | setup.cfg)
+        skills/* | tests/unit_test/tool/agent_skill_checks/* | dev_tools/agent/skills/* | .github/workflows/premerge.yml | ci/should_run_skill_tier1.sh | setup.cfg)
             echo true
             exit 0
             ;;
