@@ -18,12 +18,11 @@ import sys
 from contextlib import contextmanager
 from typing import Iterable, Optional
 
-from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.api import FedJob
-from nvflare.job_config.script_runner import BaseScriptRunner
+from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import ExecEnv, Recipe
 
 FEDBPT_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -149,18 +148,16 @@ class FedBPTRecipe(Recipe):
         job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]), id="receiver")
         job.to_server(RegisterDecomposer(), id="register_decomposer")
 
-        launcher = SubprocessLauncher(
-            script=f"python3 -u custom/fedbpt_train.py {self.train_args}",
-            launch_once=True,
-            shutdown_timeout=10.0,
-        )
-        runner = BaseScriptRunner(
+        runner = ScriptRunner(
             script=TRAIN_SCRIPT,
+            script_args=self.train_args,
             launch_external_process=True,
+            command="python3 -u",
             framework=FrameworkType.NUMPY,
             server_expected_format=ExchangeFormat.NUMPY,
             params_transfer_type=TransferType.FULL,
-            launcher=launcher,
+            launch_once=True,
+            shutdown_timeout=10.0,
         )
         job.to_clients(runner, tasks=["train"])
         job.to_clients(RegisterDecomposer(), id="register_decomposer")

@@ -11,7 +11,7 @@ git config core.hooksPath .githooks
 Runs the deterministic agent-skill lint
 (`python -m dev_tools.agent.skills.checks --skills-root skills`) and blocks the
 push if it finds anything, so the agent skills checked into GitHub stay clean.
-It covers `skills/` and the eval suites under `dev_tools/agent/skill_evals/`.
+It covers `skills/` and each skill's co-located `evals/` suite.
 
 Prerequisite: the `python3` on your `PATH` must have PyYAML installed (it is part
 of the nvflare dev environment; otherwise `pip install pyyaml`). The hook probes
