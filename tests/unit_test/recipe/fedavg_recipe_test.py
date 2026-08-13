@@ -312,6 +312,21 @@ class TestFedAvgRecipe:
 
         assert get_client_executor(recipe, "site-1")._task_script_args == "--epochs 1"
 
+    def test_per_site_launch_timeout_none_disables_timeout(self, mock_file_system, base_recipe_params, simple_model):
+        recipe = FedAvgRecipe(
+            name="test_per_site_launch_timeout",
+            model=simple_model,
+            launch_external_process=True,
+            launch_timeout=120.0,
+            **base_recipe_params,
+        )
+        set_per_site_config(recipe, {"site-1": {"launch_timeout": None}, "site-2": {}})
+
+        recipe._ensure_client_apps_prepared()
+
+        assert get_client_executor(recipe, "site-1")._launch_timeout is None
+        assert get_client_executor(recipe, "site-2")._launch_timeout == 120.0
+
     def test_legacy_constructor_config_delegates_to_helper(self, mock_file_system, base_recipe_params, simple_model):
         config = {"site-1": {"train_args": "--epochs 1"}, "site-2": {}}
 

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import shlex
 from typing import Optional, Union
 
@@ -154,7 +155,8 @@ class ScriptRunner:
 
     def _external_process_argv(self) -> list[str]:
         command = _to_external_process_argv(self._command, "command")
-        command.append(f"custom/{self._script}")
+        script = os.path.basename(self._script) if os.path.isabs(self._script) else self._script
+        command.append(f"custom/{script}")
         command.extend(_to_external_process_argv(self._script_args, "script_args"))
         return command
 

@@ -416,7 +416,7 @@ class FedAvgRecipe(Recipe):
             server_expected_format=self._site_value(site_config, "server_expected_format", self.server_expected_format),
             params_transfer_type=self._site_value(site_config, "params_transfer_type", self.params_transfer_type),
             launch_once=self._site_value(site_config, "launch_once", self.launch_once),
-            launch_timeout=self._site_value(site_config, "launch_timeout", self.launch_timeout),
+            launch_timeout=site_config.get("launch_timeout", self.launch_timeout),
             shutdown_timeout=self._site_value(site_config, "shutdown_timeout", self.shutdown_timeout),
             memory_gc_rounds=self.client_memory_gc_rounds,
             cuda_empty_cache=self.cuda_empty_cache,

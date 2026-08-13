@@ -158,6 +158,7 @@ class TestScriptRunner:
                 assert executor["path"].endswith(".ClientAPIExecutor")
                 executor_args = executor["args"]
                 assert executor_args["execution_mode"] == "external_process"
+                assert executor_args["command"][:3] == ["python3", "-u", f"custom/{os.path.basename(script_path)}"]
                 assert executor_args["launch_once"] is False
                 assert executor_args["shutdown_timeout"] == 25.0
         finally:
