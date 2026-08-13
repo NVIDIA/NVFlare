@@ -52,14 +52,9 @@ def test_default_internal_listener_uses_ipv4_loopback():
         "LOCALHOST.",
         "127.0.0.1",
         "127.255.255.254",
-        "::1",
-        "0:0:0:0:0:0:0:1",
-        "[::1]",
-        "::ffff:127.0.0.1",
-        "::ffff:7f00:1",
     ],
 )
-def test_equivalent_ipv4_and_ipv6_loopback_listeners_allow_clear_transport(listen_host):
+def test_equivalent_ipv4_loopback_listeners_allow_clear_transport(listen_host):
     manager = ConnectorManager(
         communicator=MagicMock(),
         secure=False,
@@ -73,6 +68,22 @@ def test_equivalent_ipv4_and_ipv6_loopback_listeners_allow_clear_transport(liste
     )
 
     assert manager.int_resources["listen_host"] == listen_host
+
+
+@pytest.mark.parametrize("listen_host", ["::1", "0:0:0:0:0:0:0:1", "[::1]", "::ffff:127.0.0.1"])
+def test_ipv6_loopback_listener_requires_mtls_until_tcp_drivers_support_ipv6(listen_host):
+    with pytest.raises(ConfigError, match="require connection_security='mtls'"):
+        ConnectorManager(
+            communicator=MagicMock(),
+            secure=False,
+            comm_configurator=_config(
+                {
+                    "host": listen_host,
+                    "listen_host": listen_host,
+                    "connection_security": "clear",
+                }
+            ),
+        )
 
 
 @pytest.mark.parametrize("listen_host", ["0.0.0.0", "::", "::ffff:192.0.2.1", "parent-service"])

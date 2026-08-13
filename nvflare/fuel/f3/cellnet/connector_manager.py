@@ -52,13 +52,10 @@ def _is_loopback_host(host) -> bool:
     except ValueError:
         return False
 
-    if address.is_loopback:
-        return True
-
-    # On older supported Python versions, IPv4-mapped IPv6 addresses do not
-    # inherit the mapped IPv4 address's is_loopback value.
-    mapped_address = getattr(address, "ipv4_mapped", None)
-    return mapped_address is not None and mapped_address.is_loopback
+    # Literal IPv6 listener hosts are not supported by all F3 TCP drivers yet.
+    # Do not classify them as safe loopback addresses: rendering an unbracketed
+    # IPv6 URL can otherwise degrade into a wildcard IPv4 bind.
+    return isinstance(address, ipaddress.IPv4Address) and address.is_loopback
 
 
 class _Defaults:

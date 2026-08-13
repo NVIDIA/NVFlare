@@ -18,6 +18,7 @@ from threading import Event
 
 import pytest
 
+from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.communicator import Communicator
 from nvflare.fuel.f3.connection import Connection
 from nvflare.fuel.f3.drivers.connector_info import Mode
@@ -85,6 +86,13 @@ def get_comm_b(comm_state):
 
 
 class TestCommunicator:
+    @pytest.mark.parametrize("host", ["::1", "0:0:0:0:0:0:0:1", "[::1]", "::ffff:127.0.0.1"])
+    def test_start_listener_rejects_ipv6_literal_before_binding(self, host):
+        comm = Communicator(Endpoint(NODE_A))
+
+        with pytest.raises(CommError, match="literal IPv6 hosts are not supported"):
+            comm.start_listener("tcp", {"host": host, "port": 23456})
+
     @pytest.mark.parametrize(
         "scheme, port_range",
         [

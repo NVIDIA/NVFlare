@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import ipaddress
 import logging
 import os
 import random
@@ -284,6 +285,16 @@ def get_tcp_urls(scheme: str, resources: dict) -> (str, str):
     if not host:
         host = "127.0.0.1"
 
+    listen_host = resources.get(DriverParams.LISTEN_HOST.value, host) if resources else host
+    for value in (host, listen_host):
+        address = value[1:-1] if value.startswith("[") and value.endswith("]") else value
+        try:
+            is_ipv6 = isinstance(ipaddress.ip_address(address), ipaddress.IPv6Address)
+        except ValueError:
+            is_ipv6 = False
+        if is_ipv6:
+            raise CommError(CommError.BAD_CONFIG, "literal IPv6 hosts are not supported by F3 TCP listeners")
+
     port = get_open_tcp_port(resources)
     if not port:
         raise CommError(CommError.BAD_CONFIG, "Can't find an open port in the specified range")
@@ -292,7 +303,6 @@ def get_tcp_urls(scheme: str, resources: dict) -> (str, str):
     # default loopback transport local to the host instead of silently
     # widening it to every interface. Distributed launchers must explicitly
     # request a wildcard listener and protect it with mTLS.
-    listen_host = resources.get(DriverParams.LISTEN_HOST.value, host) if resources else host
     listening_url = f"{scheme}://{listen_host}:{port}"
     connect_url = f"{scheme}://{host}:{port}"
 
