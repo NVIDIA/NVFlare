@@ -21,7 +21,6 @@ class DriverParams(str, Enum):
     URL = "url"
     SCHEME = "scheme"
     HOST = "host"
-    LISTEN_HOST = "listen_host"
     PORT = "port"
     PATH = "path"
     PARAMS = "params"
