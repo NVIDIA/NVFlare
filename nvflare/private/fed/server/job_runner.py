@@ -592,8 +592,8 @@ class JobRunner(FLComponent):
             job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
             location = job_manager.save_workspace(job_id, ws_dirs, fl_ctx)
             if finished_state:
-                # save_workspace moves source contents. Record that irreversible step before cleanup so a cleanup retry
-                # cannot replace the complete archive with one built from the now-empty sources.
+                # Latch the successful archive publication before cleanup so a cleanup retry cannot rewrite it from
+                # sources that an earlier cleanup attempt may have partially removed.
                 finished_state.workspace_archive_written = True
                 finished_state.workspace_archive_sources = tuple(ws_dirs)
             self.log_debug(fl_ctx, f"Workspace {ws_dirs} saved to {location}")

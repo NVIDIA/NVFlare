@@ -18,11 +18,13 @@ import random
 import tempfile
 from collections import defaultdict
 from pathlib import Path
+from unittest.mock import patch
+from zipfile import ZipFile
 
 import pytest
 
 from nvflare.apis.storage import StorageException
-from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
+from nvflare.app_common.storages.filesystem_storage import FilesystemStorage, _write
 
 
 def random_string(length):
@@ -45,6 +47,70 @@ def random_meta():
 
 
 ROOT_DIR = os.path.abspath(os.sep)
+
+
+def test_write_multi_preserves_sources_and_archive_layout(tmp_path):
+    source_file = tmp_path / "standalone.txt"
+    source_file.write_text("standalone")
+    source_dir = tmp_path / "workspace"
+    nested_dir = source_dir / "nested"
+    empty_dir = source_dir / "empty"
+    nested_dir.mkdir(parents=True)
+    empty_dir.mkdir()
+    (source_dir / "root.txt").write_text("root")
+    (nested_dir / "model.pt").write_text("model")
+    archive = tmp_path / "archive.zip"
+
+    _write(str(archive), [str(source_file), str(source_dir)])
+
+    assert source_file.read_text() == "standalone"
+    assert (source_dir / "root.txt").read_text() == "root"
+    assert (nested_dir / "model.pt").read_text() == "model"
+    assert empty_dir.is_dir()
+    with ZipFile(archive) as z:
+        assert set(z.namelist()) == {"standalone.txt", "root.txt", "nested/", "nested/model.pt", "empty/"}
+        assert z.read("standalone.txt") == b"standalone"
+        assert z.read("root.txt") == b"root"
+        assert z.read("nested/model.pt") == b"model"
+
+
+def test_write_multi_zip_failure_preserves_sources_for_complete_retry(tmp_path):
+    source_dir = tmp_path / "workspace"
+    source_dir.mkdir()
+    artifact = source_dir / "model.pt"
+    artifact.write_bytes(b"trained-model")
+    archive = tmp_path / "archive.zip"
+
+    with patch("nvflare.app_common.storages.filesystem_storage.ZipFile.write", side_effect=OSError("disk full")):
+        with pytest.raises(StorageException, match="disk full"):
+            _write(str(archive), [str(source_dir)])
+
+    assert artifact.read_bytes() == b"trained-model"
+    assert not archive.exists()
+    assert not list(tmp_path.glob("archive.zip_*"))
+
+    _write(str(archive), [str(source_dir)])
+
+    assert artifact.read_bytes() == b"trained-model"
+    with ZipFile(archive) as z:
+        assert z.read("model.pt") == b"trained-model"
+
+
+def test_write_multi_rename_failure_removes_temporary_archive_and_preserves_sources(tmp_path):
+    source_dir = tmp_path / "workspace"
+    source_dir.mkdir()
+    artifact = source_dir / "model.pt"
+    artifact.write_bytes(b"trained-model")
+    archive = tmp_path / "archive.zip"
+    archive.write_bytes(b"previous-archive")
+
+    with patch("nvflare.app_common.storages.filesystem_storage.os.rename", side_effect=OSError("read only")):
+        with pytest.raises(StorageException, match="read only"):
+            _write(str(archive), [str(source_dir)])
+
+    assert artifact.read_bytes() == b"trained-model"
+    assert archive.read_bytes() == b"previous-archive"
+    assert not list(tmp_path.glob("archive.zip_*"))
 
 
 # TODO:: Add S3Storage test
