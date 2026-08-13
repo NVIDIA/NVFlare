@@ -131,8 +131,10 @@ Available jobs:
   Every site configured with a Docker job launcher needs either a site-specific `docker`
   entry or a `launcher_spec.default.docker` entry that supplies the job image.
 - Site-level Docker defaults (e.g. `shm_size`, `ipc_mode`) can be set via
-  `default_job_container_kwargs` in `resources.json` — job-level
-  `launcher_spec[site][docker]` takes precedence on conflict.
+  `job_launcher.default_job_container_kwargs` in `docker.yaml`; `nvflare deploy prepare`
+  writes them to `resources.json`. This example configures `ipc_mode: host` there because
+  host-isolation options are site-owned and cannot be supplied by job metadata. Job-level
+  `launcher_spec[site][docker]` takes precedence for supported options.
 - Some multi-GPU Docker environments may need `NCCL_P2P_DISABLE=1` to avoid NCCL hangs.
   Set this site-wide with `default_job_env` in `resources.json`, for example:
   ```json
