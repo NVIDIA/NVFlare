@@ -21,6 +21,34 @@ on:
   workflow_dispatch:
 
 jobs:
+  skill-validation-selection:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      run-tier1-security: ${{ steps.select.outputs.run-tier1-security }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: select
+        name: Select Tier 1 skill security validation
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          # A manual dispatch deliberately runs the gate. For push and pull-request
+          # events, restrict the expensive scans to changes that can affect shipped
+          # skills or this gate's implementation and dependencies.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ -z "$BASE_SHA" ] || \
+            [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "run-tier1-security=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          selection="$(git diff --name-only "$BASE_SHA" "$GITHUB_SHA" | bash ci/should_run_skill_tier1.sh)"
+          echo "run-tier1-security=${selection}" >> "$GITHUB_OUTPUT"
+
   license-check:
     runs-on: ubuntu-24.04
     steps:
@@ -40,6 +68,7 @@ jobs:
         run: ./runtest.sh --torch-backend=cpu -s
 
   unit-tests:
+    needs: skill-validation-selection
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -67,7 +96,7 @@ jobs:
       # Keep every Tier 1 static scanner explicit: a missing scanner must fail the
       # test rather than silently reduce security coverage.
       - name: Install Tier 1 skill security scanners
-        if: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.13' }}
+        if: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.13' && needs.skill-validation-selection.outputs.run-tier1-security == 'true' }}
         run: |
           mkdir -p "$HOME/.local/bin"
           uv tool install --python 3.13 \
@@ -86,6 +115,9 @@ jobs:
           install -m 0755 gitleaks "$HOME/.local/bin/gitleaks"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Run unit test
+        env:
+          NVFLARE_RUN_SKILL_TIER1: ${{ needs.skill-validation-selection.outputs.run-tier1-security }}
+          NVFLARE_SKILL_TIER1_REQUIRED: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.13' && needs.skill-validation-selection.outputs.run-tier1-security == 'true' }}
         run: ./runtest.sh --skip-install --numprocesses=auto -u
 
   hf-client-api-tests:
