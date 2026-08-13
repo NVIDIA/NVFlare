@@ -18,6 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nvflare.fuel.f3.cellnet.connector_manager import ConnectorManager
 from nvflare.fuel.f3.cellnet.core_cell import (
     CellAgent,
     CertificateExchanger,
@@ -198,20 +199,19 @@ def test_listener_accessors_and_callbacks():
             setter(None)
 
 
-def test_internal_listener_host_overrides_configured_resources():
-    cell = CoreCell(
-        fqcn="server",
-        root_url="tcp://127.0.0.1:8002",
+def test_internal_listener_host_overrides_default_resources():
+    comm_configurator = MagicMock()
+    comm_configurator.get_config.return_value = None
+
+    manager = ConnectorManager(
+        communicator=MagicMock(),
         secure=False,
-        credentials={},
+        comm_configurator=comm_configurator,
         internal_listener_host="127.0.0.1",
     )
 
-    try:
-        assert cell.connector_manager.int_resources[DriverParams.HOST.value] == "127.0.0.1"
-        assert cell.connector_manager.int_resources[DriverParams.LISTEN_HOST.value] == "127.0.0.1"
-    finally:
-        CoreCell.ALL_CELLS.pop("server", None)
+    assert manager.int_resources[DriverParams.HOST.value] == "127.0.0.1"
+    assert manager.int_resources[DriverParams.LISTEN_HOST.value] == "127.0.0.1"
 
 
 def test_encrypt_and_decrypt_secure_payload():
