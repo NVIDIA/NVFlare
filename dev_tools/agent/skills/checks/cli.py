@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--evals-root",
         default=None,
-        help="path to the eval-suite root (default: dev_tools/agent/skill_evals beside the skills root)",
+        help="optional alternate eval-suite root (default: each skill's evals/ directory)",
     )
     parser.add_argument("--format", choices=["text", "json"], default="text", help="output format")
     parser.add_argument("--check", action="append", help="run one lint ID; may be repeated")
