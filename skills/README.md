@@ -16,9 +16,9 @@ skills/
 ```
 
 Evaluation suites are grading-oracle data, not runtime guidance. They are
-co-located with the owning skill to follow the Agent Skills Specification, but
-the skill packaging boundary excludes `evals/`, so they are not installed for
-Codex or Claude and do not change skill behavior.
+co-located with the owning skill to follow the Agent Skills Specification. They
+are not referenced as agent instructions, so their presence does not change a
+skill's triggering or workflow behavior.
 
 `nvflare-shared/` is an internal, non-triggered skill: it holds references and
 templates shared by the other skills and is installed alongside them, but it is

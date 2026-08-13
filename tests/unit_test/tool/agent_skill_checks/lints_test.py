@@ -574,8 +574,8 @@ def test_run_v1_lints_does_not_flag_legitimate_runtime_words(tmp_path, safe_line
 
 
 def test_run_v1_lints_allows_top_level_eval_dir_inside_skill(tmp_path):
-    # Agent Skills Specification evals live at <skill>/evals. Packaging strips
-    # that top-level directory, so it is not runtime content.
+    # Agent Skills Specification evals live at <skill>/evals. They are evaluation
+    # metadata, so the runtime-guidance lint does not scan that directory.
     _write_skill(tmp_path / "skills", "nvflare-valid-skill")
 
     result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
@@ -584,9 +584,8 @@ def test_run_v1_lints_allows_top_level_eval_dir_inside_skill(tmp_path):
 
 
 def test_run_v1_lints_flags_nested_eval_dir_inside_skill(tmp_path):
-    # Packaging strips directories named "evals" at any depth, so a nested
-    # references/evals/ suite is silently omitted from bundles. The lint must
-    # match that depth and flag it, not only the top-level evals/ dir.
+    # Only <skill>/evals is supported. A nested references/evals/ suite must be
+    # flagged rather than treated as the skill's evaluation metadata.
     skill_dir = _write_skill(tmp_path / "skills", "nvflare-nested-eval-skill")
     nested_evals = skill_dir / "references" / "evals"
     nested_evals.mkdir(parents=True)
@@ -848,7 +847,7 @@ def _write_skill(
         f"{body}",
         encoding="utf-8",
     )
-    # Eval suites are co-located at <skill>/evals and excluded from packages.
+    # Eval suites are co-located at <skill>/evals as evaluation metadata.
     evals_dir = root / name / "evals"
     evals_dir.mkdir(parents=True)
     if write_fixture:

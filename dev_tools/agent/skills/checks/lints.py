@@ -19,9 +19,8 @@ This engine reads only the ``skills/`` tree, including each skill's repo-local
 ``evals/`` directory. It must NOT read ``docs/design/*.md`` or rely on
 offline-only catalog metadata. ``SKILL.md`` is a runtime artifact loaded by the
 agent; fields validated here must be runtime or public skill metadata, not
-private lint scratch data. Eval suites are dev/QA tooling input and are
-excluded from installed skill packages, distinct from the forbidden
-``docs_root``.
+private lint scratch data. Eval suites are evaluation metadata, distinct from
+the forbidden ``docs_root`` and from runtime guidance scanned by this lint.
 
 Concretely:
 - Group skills for ``skill-trigger-overlap-lint`` by deterministic skill-name
@@ -205,8 +204,8 @@ class SkillRecord:
     text: str
     body: str
     evals: list[dict[str, Any]]
-    # Eval content is co-located under skill_dir/evals as repo-only QA data.
-    # Packaging excludes it; evals_dir is the suite root and evals_path its JSON.
+    # Eval content is co-located under skill_dir/evals as evaluation metadata,
+    # not runtime guidance. evals_dir is the suite root and evals_path its JSON.
     evals_dir: Path
     evals_path: Path
     evals_error: Optional[str]
@@ -913,15 +912,15 @@ _EVALUATOR_HOOK_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
-# Names stripped from a shipped skill: byte-code globs plus repo-only eval suites
-# and __pycache__. This is the source of truth for what packaging removes; the
-# runtime-boundary lint mirrors the directory-name subset so it never scans
-# content packaging strips. Kept here so the lint engine stays self-contained
-# over skills/ without importing product code.
-SKILL_PACKAGING_EXCLUDE_NAMES = frozenset({"__pycache__", "*.pyc", "*.pyo", "evals"})
-# Directory-name subset of SKILL_PACKAGING_EXCLUDE_NAMES (byte-code file globs are
-# not directory names). The runtime-boundary lint uses this to prune what it scans.
-_RUNTIME_BOUNDARY_EXCLUDED_DIRS = {name for name in SKILL_PACKAGING_EXCLUDE_NAMES if not name.startswith("*")}
+# Names excluded from runtime-guidance scanning. ``evals`` is co-located
+# evaluation metadata, and byte-code artifacts and ``__pycache__`` are not
+# meaningful skill guidance. This controls lint traversal only; it does not
+# configure the external skills installer.
+SKILL_RUNTIME_GUIDANCE_EXCLUDE_NAMES = frozenset({"__pycache__", "*.pyc", "*.pyo", "evals"})
+# Directory-name subset of SKILL_RUNTIME_GUIDANCE_EXCLUDE_NAMES (byte-code file
+# globs are not directory names). The runtime-boundary lint uses this to prune
+# its guidance scan.
+_RUNTIME_BOUNDARY_EXCLUDED_DIRS = {name for name in SKILL_RUNTIME_GUIDANCE_EXCLUDE_NAMES if not name.startswith("*")}
 _RUNTIME_TEXT_SUFFIXES = {
     ".md",
     ".txt",
@@ -944,14 +943,14 @@ _RUNTIME_TEXT_SUFFIXES = {
 def _lint_runtime_boundary(context: LintContext) -> None:
     """Packaged runtime skill content must stay inside the runtime boundary.
 
-    Runtime content is everything a skill ships. A top-level ``evals/`` suite is
-    allowed as co-located repo-only QA data and is excluded from packages. Nested
-    ``evals/`` directories are invalid because packaging would silently omit
-    them. Runtime guidance must not reference ``docs/design/`` documents or
-    contain evaluator hooks or benchmark-harness-only instructions. The scan
-    covers what packaging ships, so it iterates every skill record (public and
-    non-public) and every shared reference directory, not only ``SKILL.md`` and
-    ``.md`` references.
+    Runtime guidance is the skill content used to direct an agent. A top-level
+    ``evals/`` suite is allowed as co-located evaluation metadata and is omitted
+    from this guidance scan. Nested ``evals/`` directories are invalid because
+    the supported layout is ``<skill>/evals/``. Runtime guidance must not
+    reference ``docs/design/`` documents or contain evaluator hooks or
+    benchmark-harness-only instructions. The scan covers every skill record
+    (public and non-public) and every shared reference directory, not only
+    ``SKILL.md`` and ``.md`` references.
     """
     for record in context.records:
         for eval_dir in _iter_misplaced_eval_dirs(record.skill_dir):
@@ -961,8 +960,7 @@ def _lint_runtime_boundary(context: LintContext) -> None:
                     FINDING_ERROR,
                     eval_dir,
                     "eval suite must be the top-level evals/ directory of its skill",
-                    "Move the eval suite to skills/<skill>/evals/; packaging excludes that directory "
-                    "from installed skills.",
+                    "Move the eval suite to skills/<skill>/evals/, the supported co-located eval location.",
                     code="skill-runtime-eval-dir-in-skill",
                     skill=record.name,
                 )
@@ -994,10 +992,9 @@ _LINT_FUNCTIONS = dict(_LINT_REGISTRY)
 def _iter_misplaced_eval_dirs(skill_dir: Path) -> Iterable[Path]:
     """Yield nested ``evals`` directories, excluding the allowed top-level suite.
 
-    Packaging strips directories named ``evals`` at any depth. The top-level
-    ``<skill>/evals`` location is the Agent Skills Specification location and is
-    intentionally excluded from installed packages. A nested directory such as
-    ``references/evals`` would be silently omitted and is therefore invalid.
+    The top-level ``<skill>/evals`` location is the Agent Skills Specification
+    location and is omitted from the runtime-guidance scan. A nested directory
+    such as ``references/evals`` is outside the supported layout and is invalid.
     """
     if not skill_dir.is_dir():
         return
