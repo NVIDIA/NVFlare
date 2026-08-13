@@ -930,7 +930,7 @@ class FederatedServer(BaseServer):
         # Keep normally completed jobs alive until clients report their outcomes, but do not
         # protect client jobs after the server job has already failed.
         server_jobs = set(self.engine.run_processes.keys()).union(
-            outcome_jobs.difference(self.engine.exception_run_processes)
+            {job_id for job_id in outcome_jobs if job_id not in self.engine.exception_run_processes}
         )
         jobs_need_abort = list(client_jobs.difference(server_jobs))
 
