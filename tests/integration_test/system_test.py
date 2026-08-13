@@ -14,6 +14,8 @@
 
 import importlib
 import os
+import signal
+import subprocess
 import sys
 import tempfile
 import time
@@ -76,6 +78,44 @@ def _resolve_test_config_path(config_dir: str, path: str) -> str:
     if os.path.isabs(path):
         return path
     return os.path.abspath(os.path.join(config_dir, path))
+
+
+def _wait_for_background_processes(processes, timeout: float = 30.0):
+    """Require test-owned background processes to exit cleanly after the job."""
+
+    deadline = time.monotonic() + timeout
+    for command, process in processes:
+        remaining = max(0.0, deadline - time.monotonic())
+        try:
+            return_code = process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired as ex:
+            raise NVFTestError(f"Background process did not exit after the job: {command}") from ex
+        if return_code != 0:
+            raise NVFTestError(f"Background process exited with code {return_code}: {command}")
+
+
+def _stop_background_processes(processes):
+    """Best-effort cleanup for commands launched in their own process groups."""
+
+    running = []
+    for _, process in processes:
+        if process.poll() is None:
+            running.append(process)
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+    deadline = time.monotonic() + 10.0
+    for process in running:
+        try:
+            process.wait(timeout=max(0.0, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            process.wait(timeout=5.0)
 
 
 framework = os.environ.get("NVFLARE_TEST_FRAMEWORK")
@@ -142,6 +182,7 @@ def setup_and_teardown_system(request):
                     x["test_name"],
                     x.get("validators"),
                     x.get("setup", []),
+                    x.get("background_processes", []),
                     x.get("teardown", []),
                     x.get("event_sequence", []),
                     x.get("reset_job_info", True),
@@ -192,51 +233,63 @@ class TestSystem:
 
         test_validate_results = []
         for test_data in test_cases:
-            test_name, validators, setup, teardown, event_sequence, reset_job_info = test_data
+            test_name, validators, setup, background_commands, teardown, event_sequence, reset_job_info = test_data
             print(f"Running test {test_name} in {test_yaml_path}")
 
             start_time = time.time()
-            for command in setup:
-                print(f"Running setup command: {command}")
-                process = run_command_in_subprocess(command)
-                process.wait()
+            background_processes = []
+            try:
+                for command in setup:
+                    print(f"Running setup command: {command}")
+                    process = run_command_in_subprocess(command)
+                    process.wait()
 
-            test_driver.run_event_sequence(event_sequence)
+                for command in background_commands:
+                    print(f"Starting background process: {command}")
+                    background_processes.append((command, run_command_in_subprocess(command)))
 
-            # Get the job validator
-            if validators:
-                job_result = None
-                if test_driver.job_id is not None:
-                    job_result = test_driver.get_job_result(test_driver.job_id)
+                test_driver.run_event_sequence(event_sequence)
+                _wait_for_background_processes(background_processes)
 
-                validate_result = True
-                for validator in validators:
-                    validator_module = validator["path"]
-                    validator_args = validator.get("args", {})
-                    # Create validator instance
-                    module_name, class_name = get_module_class_from_full_path(validator_module)
-                    job_validator_cls = getattr(importlib.import_module(module_name), class_name)
-                    job_validator = job_validator_cls(**validator_args)
+                # Get the job validator
+                if validators:
+                    job_result = None
+                    if test_driver.job_id is not None:
+                        job_result = test_driver.get_job_result(test_driver.job_id)
 
-                    job_validate_res = job_validator.validate_results(
-                        job_result=job_result,
-                        client_props=list(site_launcher.client_properties.values()),
-                    )
-                    print(f"Test {test_name}, Validator {job_validator.__class__.__name__}, Result: {job_validate_res}")
-                    if not job_validate_res:
-                        validate_result = False
-                        break
-            else:
-                print("No validators provided so results set to No Validators.")
-                validate_result = "No Validators"
-            test_validate_results.append((test_name, validate_result))
+                    validate_result = True
+                    for validator in validators:
+                        validator_module = validator["path"]
+                        validator_args = validator.get("args", {})
+                        # Create validator instance
+                        module_name, class_name = get_module_class_from_full_path(validator_module)
+                        job_validator_cls = getattr(importlib.import_module(module_name), class_name)
+                        job_validator = job_validator_cls(**validator_args)
+
+                        job_validate_res = job_validator.validate_results(
+                            job_result=job_result,
+                            client_props=list(site_launcher.client_properties.values()),
+                        )
+                        print(
+                            f"Test {test_name}, Validator {job_validator.__class__.__name__}, "
+                            f"Result: {job_validate_res}"
+                        )
+                        if not job_validate_res:
+                            validate_result = False
+                            break
+                else:
+                    print("No validators provided so results set to No Validators.")
+                    validate_result = "No Validators"
+                test_validate_results.append((test_name, validate_result))
+            finally:
+                _stop_background_processes(background_processes)
+                for command in teardown:
+                    print(f"Running teardown command: {command}")
+                    process = run_command_in_subprocess(command)
+                    process.wait()
+                test_driver.reset_test_info(reset_job_info=reset_job_info)
 
             print(f"Finished running test {test_name!r} in {time.time() - start_time} seconds.")
-            for command in teardown:
-                print(f"Running teardown command: {command}")
-                process = run_command_in_subprocess(command)
-                process.wait()
-            test_driver.reset_test_info(reset_job_info=reset_job_info)
             _print_newlines()
 
         _print_test_report(yaml_path=test_yaml_path, validate_result=test_validate_results)

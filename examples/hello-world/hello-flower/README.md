@@ -84,16 +84,20 @@ There is no need to define a customized server code for this example as Flower p
 
 Job Recipe contains the Flower app configuration and deployes it within NVFlare.
 ```
+    from nvflare.app_opt.flower.recipe import FlowerRecipe
+    from nvflare.recipe import SimEnv, add_experiment_tracking
+
     recipe = FlowerRecipe(
         name="hello-flower",
         min_clients=n_clients,
-        num_rounds=num_rounds,
-        content_dir=content_dir,
-        stream_metrics=stream_metrics,
+        flower_content=content_dir,
         run_config=run_config,
     )
 
-    env = SimEnv(num_clients=n_clients, num_threads=n_clients)
+    if stream_metrics:
+        add_experiment_tracking(recipe, tracking_type="tensorboard")
+
+    env = SimEnv(num_clients=n_clients)
     recipe.execute(env=env)
 ```
 

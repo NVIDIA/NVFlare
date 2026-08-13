@@ -107,13 +107,16 @@ The Job Recipe contains the Flower app configuration and deploys it within NVFla
 
 .. code-block:: python
 
+    from nvflare.app_opt.flower.recipe import FlowerRecipe
+    from nvflare.recipe import SimEnv, add_experiment_tracking
+
     recipe = FlowerRecipe(
         name="hello-flower",
         min_clients=n_clients,
-        num_rounds=num_rounds,
         flower_content="./flwr-pt",  # Local directory path
-        stream_metrics=stream_metrics,
     )
+    if stream_metrics:
+        add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     env = SimEnv(num_clients=n_clients, num_threads=n_clients)
     recipe.execute(env=env)
@@ -122,13 +125,16 @@ The Job Recipe contains the Flower app configuration and deploys it within NVFla
 
 .. code-block:: python
 
+    from nvflare.app_opt.flower.recipe import FlowerRecipe
+    from nvflare.recipe import SimEnv, add_experiment_tracking
+
     recipe = FlowerRecipe(
         name="hello-flower",
         min_clients=n_clients,
-        num_rounds=num_rounds,
         flower_app_path="local/custom/flwr-pt", # local/custom is the mandatory location for flower apps.
-        stream_metrics=stream_metrics,
     )
+    if stream_metrics:
+        add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     env = SimEnv(num_clients=n_clients, num_threads=n_clients)
     recipe.execute(env=env)

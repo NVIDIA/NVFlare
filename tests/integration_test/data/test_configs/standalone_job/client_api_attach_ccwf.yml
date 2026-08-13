@@ -1,0 +1,37 @@
+project_yaml: ./data/projects/client_api_attach_ccwf.yml
+jobs_root_dir: ./data/jobs
+cleanup: true
+poll_period: 1
+event_sequence_timeout: 300
+
+tests:
+  - test_name: "run hello-ccwf with attached trainers"
+    background_processes:
+      - python -u data/jobs/hello-ccwf-attach/app/custom/trainer.py --config data/jobs/hello-ccwf-attach/attach_profile_site_1.json
+      - python -u data/jobs/hello-ccwf-attach/app/custom/trainer.py --config data/jobs/hello-ccwf-attach/attach_profile_site_2.json
+    event_sequence:
+      - trigger:
+          type: server_log
+          data: Server started
+        actions: ["submit_job hello-ccwf-attach"]
+        result:
+          type: job_submit_success
+      - trigger:
+          type: run_state
+          data: {run_finished: true}
+        actions: ["ensure_current_job_done"]
+        result:
+          type: run_state
+          data: {run_finished: true}
+    validators:
+      - path: tests.integration_test.src.validators.LogPatternValidator
+        args:
+          required_patterns:
+            - "attached trainer session established"
+            - "Round 2 started."
+            - "to do submit_model"
+            - "to do validate"
+          forbidden_patterns:
+            - "AUTHENTICATION_ERROR"
+            - "EXECUTION_EXCEPTION"
+            - "Traceback"

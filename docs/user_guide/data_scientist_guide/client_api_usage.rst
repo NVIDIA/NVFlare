@@ -196,6 +196,8 @@ For complete working examples across different frameworks:
 * PyTorch Lightning: :github_nvflare_link:`hello-lightning <examples/hello-world/hello-lightning>`
 * TensorFlow: :github_nvflare_link:`hello-tf <examples/hello-world/hello-tf>`
 * HuggingFace Trainer: :github_nvflare_link:`hello-huggingface <examples/hello-world/hello-huggingface>`
+* Multi-GPU/multi-node Slurm: :github_nvflare_link:`LLM-HF <examples/advanced/llm_hf/MULTINODE.md>`
+* Independently managed trainer: :github_nvflare_link:`Client API Attach <examples/advanced/client-api-attach>`
 
 Each example shows both the Client API training script (``client.py``) and Job Recipe definition (``job.py``).
 
@@ -205,5 +207,6 @@ Learn More
 * :ref:`job_recipe` - How to define and run FL jobs with your training script
 * :ref:`client_api` - Programming Guide with detailed examples and technical details
 * :ref:`hf_client_api` - HuggingFace Trainer integration guide
+* :ref:`client_api_attach` - Connect a trainer owned by an external system
 * :mod:`nvflare.client.api` - Complete API reference documentation
 * :mod:`nvflare.app_opt.lightning.api` - PyTorch Lightning integration

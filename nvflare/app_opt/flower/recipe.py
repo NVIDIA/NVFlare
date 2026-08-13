@@ -67,7 +67,8 @@ class FlowerRecipe(Recipe):
     federated learning jobs. It wraps the FlowerJob and provides
     a recipe-based interface for easier job configuration and execution.
 
-    Enables analytics-only metric streaming by default.
+    Installs the analytics-only metric relay by default. Add experiment tracking
+    to persist the relayed metrics.
 
     Flower CLI compatibility:
         This recipe requires ``flwr>=1.26``. The integration uses Flower
@@ -76,12 +77,14 @@ class FlowerRecipe(Recipe):
 
     Example usage:
         ```python
+        from nvflare.recipe import add_experiment_tracking
+
         recipe = FlowerRecipe(
             name="my_flower_job",
             flower_content="/path/to/flower/content",
             min_clients=2,
-            stream_metrics=True
         )
+        add_experiment_tracking(recipe, tracking_type="tensorboard")
 
         # Pre-deployed mode (no BYOC needed):
         recipe = FlowerRecipe(

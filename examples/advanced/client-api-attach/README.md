@@ -11,9 +11,8 @@ trainer process, use `external_process`; if training runs in the Client Job, use
 for the mode decision, configuration responsibilities, and legacy migration
 mapping.
 
-Attach keeps the 2.8 `IPCExchanger`/`IPCAgent` trust boundary: the Client Job
-(CJ) materializes trainer results, and the trainer receives no site
-`AUTH_TOKEN` or signature.
+The Client Job (CJ) is the task/result materialization boundary, and the
+trainer receives no site `AUTH_TOKEN` or signature.
 
 ## Network Attach through the CP
 
@@ -50,8 +49,7 @@ Start from `attach_profile_network.json`:
 `connect_url` must be the provisioned CP internal listener, not a CJ URL. Keep
 `client.crt` and `client.key` beside `rootCA.pem`. `secure_mode=true` uses those
 site credentials for Cell authentication and end-to-end payload encryption even
-when the CP transport itself is `connection_security="clear"`, matching the old
-IPCAgent model.
+when the CP transport itself is `connection_security="clear"`.
 
 The trainer identity is stable:
 

@@ -121,7 +121,7 @@
           },
           {
             "id": "tensor-flmodel-params",
-            "description": "keeps outbound PyTorch model weights as torch.Tensor values in FLModel params when using PTInProcessClientAPIExecutor and the shared PyTorch-family model exchange, without calling model.cpu() and moving the persistent model off its training device"
+            "description": "keeps outbound PyTorch model weights as torch.Tensor values in FLModel params when using ClientAPIExecutor in-process mode and the shared PyTorch-family model exchange, without calling model.cpu() and moving the persistent model off its training device"
           },
           {
             "id": "standard-generated-layout",
