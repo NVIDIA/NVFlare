@@ -354,14 +354,15 @@ def dynamic_log_config(
         apply_log_config(config, dir_path)
     elif isinstance(config, str):
         # Handle pre-defined LogModes
-        if config == LogMode.RELOAD:
+        reload_requested = config == LogMode.RELOAD
+        if reload_requested:
             config = reload_path
         elif log_config := logmode_config_dict.get(config):
             apply_log_config(copy.deepcopy(log_config), dir_path)
             return
 
         # Read config file
-        if allow_file_config and os.path.isfile(config):
+        if (allow_file_config or reload_requested) and os.path.isfile(config):
             with open(config, "r") as f:
                 dict_config = json.load(f)
 
