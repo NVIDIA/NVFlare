@@ -36,15 +36,11 @@ def _source_directory():
         os.chdir(original_cwd)
 
 
-@contextmanager
 def _simulation_workspace(workspace_root):
-    """Yield an explicit workspace or a private temporary one for this run."""
+    """Return an explicit workspace or a private one that preserves run results."""
     if workspace_root is not None:
-        yield workspace_root
-        return
-
-    with tempfile.TemporaryDirectory(prefix="nvflare-hf-trainer-") as temporary_workspace:
-        yield Path(temporary_workspace)
+        return workspace_root
+    return Path(tempfile.mkdtemp(prefix="nvflare-hf-trainer-"))
 
 
 def _token(value, name: str) -> str:
@@ -197,7 +193,7 @@ def main():
         "--workspace_root",
         type=Path,
         default=None,
-        help="simulation workspace; defaults to a new private temporary directory",
+        help="simulation workspace; defaults to a new private temporary directory retained for result inspection",
     )
     args = parser.parse_args()
 
@@ -212,17 +208,16 @@ def main():
         preserve_source_budget=args.preserve_source_budget,
         key_metric=args.key_metric,
     )
-    with _simulation_workspace(args.workspace_root) as workspace_root:
-        run = recipe.execute(
-            SimEnv(
-                num_clients=args.num_clients,
-                num_threads=args.num_clients,
-                workspace_root=str(workspace_root),
-            )
+    workspace_root = _simulation_workspace(args.workspace_root)
+    run = recipe.execute(
+        SimEnv(
+            num_clients=args.num_clients,
+            num_threads=args.num_clients,
+            workspace_root=str(workspace_root),
         )
-        if args.workspace_root is not None:
-            print("Job Status is:", run.get_status())
-            print("Result can be found in:", run.get_result())
+    )
+    print("Job Status is:", run.get_status())
+    print("Result can be found in:", run.get_result())
 
 
 if __name__ == "__main__":
