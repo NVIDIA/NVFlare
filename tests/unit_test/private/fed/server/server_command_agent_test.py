@@ -21,6 +21,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 
+
 def test_server_job_rejects_internal_command_from_untrusted_endpoint():
     cell = MagicMock()
     cell.get_fqcn.return_value = "server.job-1"
