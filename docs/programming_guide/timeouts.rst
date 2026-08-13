@@ -284,9 +284,8 @@ trainer's typed Attach profile:
      - Trainer-profile bound for discovering a job and receiving
        ``SESSION_OPEN``.
 
-Attach requires either a positive ``heartbeat_timeout`` or a finite
-``result_wait_timeout`` because NVFLARE does not own the trainer process and
-cannot use process liveness as a fallback. See
+Attach requires a positive ``heartbeat_timeout`` because NVFLARE does not own
+the trainer process and cannot use process liveness as a fallback. See
 :ref:`client_api_attach` for the full lifecycle contract.
 
 
@@ -490,9 +489,8 @@ modes. Heartbeats apply only to the out-of-process modes.
      - Bound how long the CJ waits for an external trainer to attach.
 
 The trainer-side Attach profile separately provides ``job_wait_timeout`` to
-bound job discovery and ``SESSION_OPEN``. Attach requires either a positive
-``heartbeat_timeout`` or a finite ``result_wait_timeout`` because NVFLARE does
-not own the trainer process.
+bound job discovery and ``SESSION_OPEN``. Attach requires a positive
+``heartbeat_timeout`` because NVFLARE does not own the trainer process.
 
 
 P2P Executor
@@ -1871,7 +1869,7 @@ Hierarchical Relationships
    │  ├── attach_timeout (attach: None)                              │
    │  ├── heartbeat_interval (out-of-process: 5s)                    │
    │  ├── heartbeat_timeout (out-of-process: 30s)                    │
-   │  ├── task_wait_timeout (None)                                   │
+   │  ├── task_wait_timeout (external: None; attach: 600s if unset)   │
    │  └── result_wait_timeout (None)                                 │
    └─────────────────────────────────────────────────────────────────┘
 
