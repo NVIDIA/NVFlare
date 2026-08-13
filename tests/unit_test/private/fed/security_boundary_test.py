@@ -15,6 +15,8 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic, MessageHeaderKey, MessagePropKey, ReturnCode
 from nvflare.fuel.f3.message import Message as CellMessage
@@ -201,6 +203,21 @@ def test_execute_command_rejects_unauthorized_origin_without_dispatch():
     # the enrolled-peer command is rejected before any AdminCommand is dispatched
     get_command.assert_not_called()
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.AUTHENTICATION_ERROR
+
+
+@pytest.mark.parametrize("origin", ["server", "site-1"])
+def test_execute_command_still_dispatches_for_authorized_origin(origin):
+    # Guard against over-blocking: legitimate server-relayed and own-parent commands
+    # must still reach the AdminCommand handler.
+    agent = _make_command_agent("site-1.job-1")
+    agent.engine = MagicMock()
+    command = MagicMock()  # process() returns a non-None MagicMock -> RC OK path
+    with patch.object(AdminCommands, "get_command", return_value=command) as get_command:
+        reply = agent.execute_command(_client_command(origin, "site-1.job-1", topic=AdminCommandNames.ABORT))
+
+    get_command.assert_called_once_with(AdminCommandNames.ABORT)
+    command.process.assert_called_once()
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
 
 
 def _log_command_context():
