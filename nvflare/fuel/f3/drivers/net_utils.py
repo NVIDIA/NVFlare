@@ -288,8 +288,12 @@ def get_tcp_urls(scheme: str, resources: dict) -> (str, str):
     if not port:
         raise CommError(CommError.BAD_CONFIG, "Can't find an open port in the specified range")
 
-    # Always listen on all interfaces
-    listening_url = f"{scheme}://0:{port}"
+    # Internal listeners default to the requested connect host. This keeps the
+    # default "localhost" transport local to the host instead of silently
+    # widening it to every interface. Distributed launchers must explicitly
+    # request a wildcard listener and protect it with mTLS.
+    listen_host = resources.get(DriverParams.LISTEN_HOST.value, host) if resources else host
+    listening_url = f"{scheme}://{listen_host}:{port}"
     connect_url = f"{scheme}://{host}:{port}"
 
     return connect_url, listening_url
@@ -339,6 +343,9 @@ def enhance_credential_info(params: dict):
         server_cert_path = os.path.join(cred_folder, SSL_SERVER_CERT)
         if os.path.exists(server_cert_path):
             params[DriverParams.SERVER_CERT.value] = server_cert_path
+        elif client_cert_path:
+            # Internal CellNet peers can act as both connector and listener.
+            params[DriverParams.SERVER_CERT.value] = client_cert_path
 
     server_key_path = params.get(DriverParams.SERVER_KEY.value)
     if not server_key_path:
@@ -346,6 +353,13 @@ def enhance_credential_info(params: dict):
         server_key_path = os.path.join(cred_folder, SSL_SERVER_PRIVATE_KEY)
         if os.path.exists(server_key_path):
             params[DriverParams.SERVER_KEY.value] = server_key_path
+        elif client_key_path:
+            params[DriverParams.SERVER_KEY.value] = client_key_path
+
+    if not client_cert_path and server_cert_path:
+        params[DriverParams.CLIENT_CERT.value] = server_cert_path
+    if not client_key_path and server_key_path:
+        params[DriverParams.CLIENT_KEY.value] = server_key_path
 
     custom_ca_cert_path = params.get(DriverParams.CUSTOM_CA_CERT.value)
     if not custom_ca_cert_path:
