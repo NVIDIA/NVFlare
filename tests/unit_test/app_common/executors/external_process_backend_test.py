@@ -55,7 +55,7 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
 CJ_FQCN = "site-1.job-1"
 
-PROTOCOL_TOPICS = (Topic.HELLO, Topic.RESULT_READY, Topic.LOG, Topic.HEARTBEAT)
+PROTOCOL_TOPICS = (Topic.HELLO, Topic.RESULT_READY, Topic.RESULT_SOURCE_SETTLED, Topic.LOG, Topic.HEARTBEAT)
 
 
 def _task_accepted_reply():
@@ -598,11 +598,50 @@ class TestInitializeAndFinalize:
         assert not trainer.result_source_live.is_set()
         assert trainer.token == ""
 
+    def test_finalize_lets_registered_settled_result_reaper_own_natural_exit(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
+        process = env.harness.processes[0]
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+        trainer.result_accepted.set()
+        backend._reap_trainer_after_result(trainer)
+        trainer.result_source_live.clear()
+        threading.Timer(0.03, process.exit, args=[0]).start()
+
+        backend.finalize(FLContext())
+
+        assert process.returncode == 0
+        assert [request for request in env.cell.sent if request[0] == Topic.SHUTDOWN] == []
+        assert env.harness.signals_sent() == []
+        assert backend._result_reapers == set()
+        assert backend._active_launch is None
+
+    def test_abort_stops_registered_result_reaper_without_shutdown_ack_wait(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, shutdown_timeout=30.0)
+        process = env.harness.processes[0]
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+        trainer.result_accepted.set()
+        backend._reap_trainer_after_result(trainer)
+
+        backend._latch_abort("job aborted")
+        backend.finalize(FLContext())
+
+        assert [request for request in env.cell.sent if request[0] == Topic.SHUTDOWN] == []
+        assert process.wait_timeouts == []
+        assert process.returncode is not None
+        assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
+        assert backend._result_reapers == set()
+        assert backend._active_launch is None
+
     def test_finalize_stops_source_when_shutdown_ack_says_send_already_settled(self, env):
         backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
         process = env.harness.processes[0]
         trainer = backend._active_launch
         trainer.result_source_live.set()
+        trainer.result_source_task_id = "task-1"
 
         def settled_shutdown(topic, target, message):
             if topic == Topic.SHUTDOWN:
@@ -613,6 +652,7 @@ class TestInitializeAndFinalize:
         backend.finalize(FLContext())
 
         assert not trainer.result_source_live.is_set()
+        assert trainer.result_source_task_id is None
         assert process.returncode is not None
         assert backend._active_launch is None
         assert trainer.token == ""
@@ -627,7 +667,7 @@ class TestInitializeAndFinalize:
 
         def natural_wait(timeout=None):
             wait_entered.set()
-            assert ebp._DEFAULT_SHUTDOWN_TIMEOUT - 1.0 < timeout <= ebp._DEFAULT_SHUTDOWN_TIMEOUT
+            assert timeout == 0.1
             release_exit.wait()
             process.exit(0)
             return 0
@@ -2127,7 +2167,7 @@ class TestResultReadyHandler:
     def test_accepted_result_marks_the_trainer_send_as_pending(self, env):
         backend, _ = _initialized_backend(env)
         try:
-            self._task(backend)
+            task = self._task(backend)
             reply = env.cell.deliver(
                 Topic.RESULT_READY,
                 backend._active_launch.trainer_fqcn,
@@ -2136,9 +2176,42 @@ class TestResultReadyHandler:
 
             assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_ACCEPTED
             assert backend._active_launch.result_source_live.is_set()
+            assert backend._active_launch.result_accepted.is_set()
+            assert backend._active_launch.result_source_task_id == task.task_id
         finally:
             # This test does not model the trainer's send-completion acknowledgement.
             backend._active_launch.result_source_live.clear()
+            backend.finalize(FLContext())
+
+    def test_result_source_settlement_is_task_correlated(self, env):
+        backend, _ = _initialized_backend(env)
+        trainer = backend._active_launch
+        try:
+            task = self._task(backend)
+            accepted = env.cell.deliver(Topic.RESULT_READY, trainer.trainer_fqcn, self._payload(backend))
+            assert accepted.payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_ACCEPTED
+
+            stale = env.cell.deliver(
+                Topic.RESULT_SOURCE_SETTLED,
+                trainer.trainer_fqcn,
+                {MsgKey.SESSION_ID: trainer.session_id, MsgKey.TASK_ID: "previous-task"},
+            )
+            assert stale.payload[MsgKey.REPLY_TOPIC] == Topic.ERROR
+            assert trainer.result_source_live.is_set()
+
+            settled = env.cell.deliver(
+                Topic.RESULT_SOURCE_SETTLED,
+                trainer.trainer_fqcn,
+                {MsgKey.SESSION_ID: trainer.session_id, MsgKey.TASK_ID: task.task_id},
+            )
+            assert settled.payload == {
+                MsgKey.REPLY_TOPIC: Topic.RESULT_SOURCE_SETTLED,
+                MsgKey.TASK_ID: task.task_id,
+            }
+            assert not trainer.result_source_live.is_set()
+            assert trainer.result_accepted.is_set()
+            assert trainer.result_source_task_id is None
+        finally:
             backend.finalize(FLContext())
 
     @pytest.mark.parametrize(

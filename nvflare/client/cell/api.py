@@ -74,6 +74,7 @@ _RECEIVE_POLL_INTERVAL = 0.5
 _HEARTBEAT_JOIN_TIMEOUT = 1.0
 _OWNER_WATCHDOG_INTERVAL = 0.5
 _OWNER_TERM_GRACE = 5.0
+_RESULT_SOURCE_SETTLED_TIMEOUT = 1.0
 
 
 def _shutdown_f3_streaming() -> None:
@@ -550,14 +551,35 @@ class CellClientAPI(APISpec):
                 self._clear_result_transfer_waiters()
                 self._maybe_cleanup_memory()
             finally:
-                # Clear ownership under the lock read by SHUTDOWN. If SHUTDOWN won, this
-                # thread closes after settlement; otherwise SHUTDOWN observes no live source.
+                # Keep send ownership while publishing settlement. A concurrent SHUTDOWN
+                # must defer Cell teardown until the CJ has observed that this source is done.
+                if result_accepted:
+                    self._notify_result_source_settled(task.get(MsgKey.TASK_ID))
                 with self._lock:
                     self._result_send_active = False
                     should_shutdown = self._stopped or (result_accepted and not self._launch_once)
                 # One-shot sessions close only after acceptance and downstream settlement.
                 if should_shutdown:
                     self.shutdown()
+
+    def _notify_result_source_settled(self, task_id: str) -> None:
+        """Publish the send-barrier transition before a one-shot trainer closes its Cell."""
+        try:
+            reply = self._cell.send_request(
+                channel=CHANNEL,
+                topic=Topic.RESULT_SOURCE_SETTLED,
+                target=self._cj_fqcn,
+                request=new_cell_message({}, {MsgKey.SESSION_ID: self._session_id, MsgKey.TASK_ID: task_id}),
+                timeout=_RESULT_SOURCE_SETTLED_TIMEOUT,
+                optional=True,
+                secure=self._protocol_secure,
+            )
+            if reply is None or reply.get_header(MessageHeaderKey.RETURN_CODE) != CellReturnCode.OK:
+                self.logger.debug("result-source settlement was not acknowledged")
+        except Exception as e:
+            # Process exit remains the authoritative fallback. Notification failure
+            # must not replace the original result-transfer outcome.
+            self.logger.debug(f"result-source settlement notification failed: {e}")
 
     def _wait_for_result_transfers(self, result_waiters) -> None:
         """Wait for strict terminal success of every result DownloadService transaction."""

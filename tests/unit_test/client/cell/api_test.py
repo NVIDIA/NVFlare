@@ -1802,7 +1802,7 @@ class TestReceiveSend:
         env.on_request = on_request
         api = _init_api(bootstrap_path, env)
         try:
-            _deliver_task(
+            task_id, _ = _deliver_task(
                 env,
                 model=FLModel(params={"w": [1.0]}, optimizer_params={"momentum": [0.5]}, params_type=ParamsType.FULL),
                 result_receiver_ids=("server.job",),
@@ -1825,8 +1825,42 @@ class TestReceiveSend:
             assert api._receive_called is False
             assert api._current_task is None
             assert api._result_receiver_ids is None
+            settled = [payload for topic, _, payload in env.requests if topic == Topic.RESULT_SOURCE_SETTLED]
+            assert settled == [{MsgKey.SESSION_ID: SESSION_ID, MsgKey.TASK_ID: task_id}]
             with pytest.raises(RuntimeError, match='"receive" needs to be called'):
                 api.send(sent_model)
+        finally:
+            api.shutdown()
+
+    def test_one_shot_send_reports_source_settled_before_cell_stop(self, bootstrap_path, env):
+        _set_launch_once(bootstrap_path, False)
+        events = []
+        real_stop = env.stop
+
+        def on_request(topic, target, request):
+            events.append(topic)
+            if topic == Topic.HELLO:
+                return _hello_accepted_reply()
+            if topic == Topic.RESULT_READY:
+                return _result_accepted_reply()
+            return make_cell_reply(CellReturnCode.OK)
+
+        def stop():
+            events.append("cell.stop")
+            real_stop()
+
+        env.on_request = on_request
+        env.stop = stop
+        api = _init_api(bootstrap_path, env)
+        try:
+            _deliver_task(env)
+            api.receive()
+            events.clear()
+
+            api.send(FLModel(params={"w": [2.0]}))
+
+            assert events == [Topic.RESULT_READY, Topic.RESULT_SOURCE_SETTLED, "cell.stop"]
+            assert env.stopped is True
         finally:
             api.shutdown()
 

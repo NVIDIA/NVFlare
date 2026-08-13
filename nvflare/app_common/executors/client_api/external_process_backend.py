@@ -305,7 +305,7 @@ class ExternalProcessBackend(CellBackendBase):
                 # an abort. Stop it before execute() returns: abort teardown may destroy the
                 # CJ process without delivering END_RUN to this executor.
                 self._stop_trainer(trainer, natural_exit_wait=self._stop_wait_bound())
-            elif trainer.result_source_live.is_set():
+            elif trainer.result_accepted.is_set():
                 self._reap_trainer_after_result(trainer)
             else:
                 self._stop_trainer(trainer, natural_exit_wait=self._stop_wait_bound())
@@ -328,7 +328,14 @@ class ExternalProcessBackend(CellBackendBase):
             with self._launch_lock:
                 trainer = self._active_launch
             if trainer is not None:
-                if trainer.result_source_live.is_set() and not self._abort:
+                with self._result_reapers_lock:
+                    reaper_owns_exit = trainer in self._result_reapers
+                if reaper_owns_exit and not self._abort:
+                    # A per-task trainer with an accepted result is already owned by
+                    # its natural-exit reaper. Do not race that exit with another
+                    # synchronous SHUTDOWN request during END_RUN.
+                    pass
+                elif trainer.result_source_live.is_set() and not self._abort:
                     # END_RUN must preserve CJ/F3 until the trainer's send barrier settles.
                     self._request_trainer_shutdown(trainer, wait_timeout=_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT)
                     self._reap_trainer_after_result(trainer)
@@ -525,6 +532,7 @@ class ExternalProcessBackend(CellBackendBase):
                             trainer.result_source_live.set()
                         elif source_live is False:
                             trainer.result_source_live.clear()
+                            trainer.result_source_task_id = None
                 else:
                     send_errors = self._cell.fire_and_forget(
                         channel=CHANNEL,
@@ -614,8 +622,18 @@ class ExternalProcessBackend(CellBackendBase):
                     self._stop_trainer(trainer, natural_exit_wait=0.0)
                     return
                 if self._closed:
+                    if self._abort:
+                        # Abort teardown must never enter the normal accepted-source
+                        # SHUTDOWN acknowledgement wait. The receiver cancellation
+                        # may already have settled the source while its notification
+                        # is still crossing the Cell.
+                        self._stop_trainer(trainer, natural_exit_wait=0.0)
+                        return
                     if not trainer.result_source_live.is_set():
-                        self._stop_trainer(trainer, natural_exit_wait=self._result_source_disconnect_grace())
+                        if self._await_group_exit(trainer, self._result_source_disconnect_grace()):
+                            self._cleanup_trainer(trainer)
+                        else:
+                            self._stop_trainer(trainer, natural_exit_wait=0.0)
                         return
                     # SHUTDOWN cannot preempt an accepted result source still inside send().
                     self._request_trainer_shutdown(trainer, wait_timeout=_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT)
@@ -638,6 +656,8 @@ class ExternalProcessBackend(CellBackendBase):
             # this launch-scoped truth consistent even when its final SHUTDOWN
             # acknowledgement was lost during Cell/F3 teardown.
             trainer.result_source_live.clear()
+            trainer.result_accepted.clear()
+            trainer.result_source_task_id = None
             trainer._cleaned = True
         try:
             log_thread = trainer.log_thread

@@ -243,6 +243,9 @@ Result direction for `external_process`:
    that the producer supports cancellation, it reports terminal failure back to the producer.
    That failure is applied to every ref for the same receiver in the transaction, allowing an
    accepted result source to settle promptly even if its enclosing CJ task has already returned.
+   Before a one-task trainer closes its Cell, it sends a task-correlated source-settled
+   acknowledgement to the CJ. This clears the conservative accepted-source latch without a stale
+   message from an earlier task being able to clear a newer source.
 
 Pass-through always preserves the trainer's original FQCN and reference ID. The CJ may still be a
 physical Cell routing hop for the result envelope and subsequent download messages, depending on
@@ -292,6 +295,8 @@ failure/teardown paths use the bounded SHUTDOWN/TERM/KILL sequence immediately. 
 download's receiver-cancellation handshake is independent of that task latch: it covers the case
 where the nested workflow task was already cleared before graceful job teardown began. Normal
 completion sends no cancellation and retains the accepted-result drain behavior.
+For a per-task trainer whose accepted result already has a registered natural-exit reaper,
+`END_RUN` joins that owner instead of racing it with another synchronous SHUTDOWN request.
 
 Startup waits at most `launch_timeout` for the trainer to complete its HELLO handshake. The
 default is 300 seconds; callers may explicitly use `None` when an unbounded wait is required. For
