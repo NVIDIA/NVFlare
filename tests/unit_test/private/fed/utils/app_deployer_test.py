@@ -192,6 +192,7 @@ def test_deploy_detects_custom_dir_as_local_byoc_for_allow_list(tmp_path):
     [
         ("docker", "image"),
         ("docker", "python_path"),
+        ("docker", "entrypoint"),
         ("k8s", "image"),
         ("k8s", "python_path"),
         ("slurm", "image"),
@@ -205,6 +206,7 @@ def test_deploy_requires_byoc_for_job_selected_launcher_content(tmp_path, monkey
     monkeypatch.setattr(AuthorizationService, "the_authorizer", _byoc_authorizer("none"))
     job_meta = _job_meta("lead")
     job_meta[AppValidationKey.BYOC] = False
+    job_meta[JobMetaKey.STUDY.value] = "site-configured-study"
     job_meta.update(_launcher_meta(mode, source, {field: "attacker.example/value"}))
 
     with patch("nvflare.private.fed.utils.app_deployer.PrivacyService.is_scope_allowed", return_value=True):
@@ -212,6 +214,38 @@ def test_deploy_requires_byoc_for_job_selected_launcher_content(tmp_path, monkey
 
     assert err == "BYOC not permitted"
     assert not os.path.exists(workspace.get_run_dir("job-1"))
+
+
+@pytest.mark.parametrize("source", ["default", "site"])
+def test_deploy_allows_entrypoint_after_local_byoc_authorization(tmp_path, monkeypatch, source):
+    workspace = _make_workspace(str(tmp_path / "workspace"))
+    monkeypatch.setattr(AppAuthzService, "app_validator", DefaultAppValidator(site_type=SiteType.CLIENT))
+    monkeypatch.setattr(AuthorizationService, "the_authorizer", _byoc_authorizer("any"))
+    job_meta = _job_meta("lead")
+    job_meta[JobMetaKey.STUDY.value] = "site-configured-study"
+    job_meta.update(_launcher_meta("docker", source, {"entrypoint": "/bin/sh"}))
+
+    with patch("nvflare.private.fed.utils.app_deployer.PrivacyService.is_scope_allowed", return_value=True):
+        err = AppDeployer().deploy(workspace, "job-1", job_meta, "app", _make_app_zip(), None)
+
+    assert err is None
+    with open(workspace.get_job_meta_path("job-1")) as f:
+        local_meta = json.load(f)
+    assert local_meta[AppValidationKey.BYOC] is True
+
+
+def test_deploy_requires_byoc_for_entrypoint_even_if_study_image_lacks_the_executable(tmp_path, monkeypatch):
+    workspace = _make_workspace(str(tmp_path / "workspace"))
+    monkeypatch.setattr(AppAuthzService, "app_validator", DefaultAppValidator(site_type=SiteType.CLIENT))
+    monkeypatch.setattr(AuthorizationService, "the_authorizer", _byoc_authorizer("none"))
+    job_meta = _job_meta("lead")
+    job_meta[JobMetaKey.STUDY.value] = "minimal-site-image"
+    job_meta.update(_launcher_meta("docker", "default", {"entrypoint": "/executable/not/present"}))
+
+    with patch("nvflare.private.fed.utils.app_deployer.PrivacyService.is_scope_allowed", return_value=True):
+        err = AppDeployer().deploy(workspace, "job-1", job_meta, "app", _make_app_zip(), None)
+
+    assert err == "BYOC not permitted"
 
 
 @pytest.mark.parametrize("site_name", ["site-1", SiteType.SERVER])

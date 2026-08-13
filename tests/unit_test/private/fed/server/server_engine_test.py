@@ -11,22 +11,102 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import json
 import threading
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey, ServerCommandKey, ServerCommandNames, SiteType
+from nvflare.apis.fl_constant import (
+    AdminCommandNames,
+    FLContextKey,
+    RunProcessKey,
+    ServerCommandKey,
+    ServerCommandNames,
+    SiteType,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import ReturnCode, Shareable
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.private.aux_runner import AuxMsgTarget
 from nvflare.private.defs import CellChannel
 from nvflare.private.fed.server.server_engine import ServerEngine
+
+
+@pytest.mark.parametrize(
+    ("stored_byoc", "deployed_byoc", "expected_byoc"),
+    [(None, True, True), (True, False, False)],
+)
+def test_start_runner_process_uses_deployed_byoc_decision(tmp_path, stored_byoc, deployed_byoc, expected_byoc):
+    job_id = "job-1"
+    tmp_path.joinpath("startup").mkdir()
+    tmp_path.joinpath("local").mkdir()
+    workspace = Workspace(str(tmp_path), site_name=SiteType.SERVER)
+    run_dir = workspace.get_run_dir(job_id)
+    Path(run_dir).mkdir(parents=True)
+    with open(workspace.get_job_meta_path(job_id), "w") as f:
+        json.dump({AppValidationKey.BYOC: deployed_byoc}, f)
+
+    job_meta = {"launcher_spec": {"default": {"docker": {"entrypoint": "/bin/sh"}}}}
+    if stored_byoc is not None:
+        job_meta[AppValidationKey.BYOC] = stored_byoc
+    job = SimpleNamespace(job_id=job_id, meta=job_meta)
+
+    args = SimpleNamespace(set=[], workspace=str(tmp_path))
+    cell = MagicMock()
+    cell.get_internal_listener_url.return_value = "tcp://server:8002"
+    cell.get_root_url_for_child.return_value = "tcp://server:8003"
+    cell.get_internal_listener_params.return_value = {}
+    site = SimpleNamespace(
+        cell=cell,
+        server_state=SimpleNamespace(host="localhost", service_port=8002, ssid="ssid"),
+    )
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.SITE_OBJ, site, private=True, sticky=False)
+
+    engine = ServerEngine.__new__(ServerEngine)
+    engine.server = MagicMock()
+    engine.server.sign_auth_token.return_value = "signature"
+    engine.client_manager = SimpleNamespace(clients={})
+    engine.lock = threading.Lock()
+    engine.run_processes = {}
+    engine.logger = MagicMock()
+
+    launcher = MagicMock()
+    launcher.launch_job.return_value = MagicMock()
+    with (
+        patch("nvflare.private.fed.server.server_engine.get_job_launcher", return_value=launcher) as get_launcher,
+        patch("nvflare.private.fed.server.server_engine.threading.Thread") as thread_cls,
+    ):
+        engine._start_runner_process(job, {}, None, fl_ctx)
+
+    launch_meta = launcher.launch_job.call_args.args[0]
+    assert launch_meta.get(AppValidationKey.BYOC, False) is expected_byoc
+    assert get_launcher.call_args.args[0] == launch_meta
+    assert job.meta == job_meta
+    thread_cls.return_value.start.assert_called_once()
+
+
+def test_start_runner_process_requires_deployed_job_metadata(tmp_path):
+    tmp_path.joinpath("startup").mkdir()
+    tmp_path.joinpath("local").mkdir()
+    workspace = Workspace(str(tmp_path), site_name=SiteType.SERVER)
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True, sticky=False)
+    job = SimpleNamespace(job_id="job-1", meta={})
+
+    engine = ServerEngine.__new__(ServerEngine)
+    with pytest.raises(RuntimeError, match="missing deployed job metadata file for server job 'job-1'"):
+        engine._start_runner_process(job, {}, None, fl_ctx)
 
 
 class _FakeClientManager:
