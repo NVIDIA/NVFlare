@@ -209,7 +209,7 @@ def test_internal_listener_host_overrides_configured_resources():
 
     try:
         assert cell.connector_manager.int_resources[DriverParams.HOST.value] == "127.0.0.1"
-        assert cell.connector_manager.int_resources[DriverParams.LISTENING_HOST.value] == "127.0.0.1"
+        assert cell.connector_manager.int_resources[DriverParams.LISTEN_HOST.value] == "127.0.0.1"
     finally:
         CoreCell.ALL_CELLS.pop("server", None)
 

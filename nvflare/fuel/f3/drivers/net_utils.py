@@ -272,7 +272,7 @@ def get_tcp_urls(scheme: str, resources: dict) -> (str, str):
 
     Args:
         scheme: The transport scheme
-        resources: Resource restrictions. "host" is advertised; "listening_host" limits the bind address.
+        resources: Resource restrictions. "host" is advertised; "listen_host" limits the bind address.
 
     Returns:
         a tuple with connecting and listening URL
@@ -284,7 +284,7 @@ def get_tcp_urls(scheme: str, resources: dict) -> (str, str):
     if not host:
         host = "localhost"
 
-    listening_host = resources.get(DriverParams.LISTENING_HOST.value) if resources else None
+    listening_host = resources.get(DriverParams.LISTEN_HOST.value) if resources else None
     if not listening_host:
         listening_host = "0"
 

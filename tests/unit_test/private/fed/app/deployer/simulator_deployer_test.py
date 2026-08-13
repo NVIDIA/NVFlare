@@ -29,7 +29,6 @@ from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeploye
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.server.run_manager import RunManager
-from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.simulator.simulator_server import SimulatorServer
 
 # from nvflare.private.fed.simulator.simulator_server import SimulatorServer
@@ -80,16 +79,17 @@ class TestSimulatorDeploy(unittest.TestCase):
 
         assert isinstance(server, SimulatorServer)
         assert isinstance(server.engine.run_manager, RunManager)
-        listen_ip = ipaddress.ip_address(SimulatorConstants.LISTENING_HOST)
+        listening_host = "127.0.0.1"
+        listen_ip = ipaddress.ip_address(listening_host)
         assert listen_ip.version == 4 and listen_ip.is_loopback
         fl_port = server_config["service"]["target"].rsplit(":", 1)[1]
         admin_port = server_config["admin_port"]
         cell_args = mock_cell.call_args.kwargs
         assert cell_args["root_url"] == [
-            f"tcp://{SimulatorConstants.LISTENING_HOST}:{fl_port}",
-            f"tcp://{SimulatorConstants.LISTENING_HOST}:{admin_port}?admin_listener=true",
+            f"tcp://{listening_host}:{fl_port}",
+            f"tcp://{listening_host}:{admin_port}?admin_listener=true",
         ]
-        assert cell_args["internal_listener_host"] == SimulatorConstants.LISTENING_HOST
+        assert cell_args["internal_listener_host"] == listening_host
 
         server.cell.stop()
         server.close()

@@ -15,7 +15,6 @@
 
 class SimulatorConstants:
 
-    LISTENING_HOST = "127.0.0.1"
     JOB_NAME = "simulate_job"
     CLIENT = "client"
     CLIENT_CONFIG = "client_config"

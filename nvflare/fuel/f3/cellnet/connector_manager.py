@@ -98,7 +98,7 @@ class ConnectorManager:
 
         if internal_listener_host:
             self.int_resources[DriverParams.HOST.value] = internal_listener_host
-            self.int_resources[DriverParams.LISTENING_HOST.value] = internal_listener_host
+            self.int_resources[DriverParams.LISTEN_HOST.value] = internal_listener_host
 
         # default conn sec
         conn_sec = self.int_resources.get(DriverParams.CONNECTION_SECURITY)

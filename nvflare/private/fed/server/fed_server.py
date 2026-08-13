@@ -83,8 +83,6 @@ from .server_status import ServerStatus
 
 
 class BaseServer(ABC):
-    _LISTENING_HOST = None
-
     def __init__(
         self,
         project_name=None,
@@ -174,12 +172,12 @@ class BaseServer(ABC):
         if len(parts) != 2:
             raise RuntimeError(f"bad service target: {target}")
 
+        listening_host = "127.0.0.1" if parts[0].rstrip(".").lower() == "localhost" else None
         fl_port = int(parts[1])
 
         # get admin port
         admin_port = int(grpc_args.get("admin_port", fl_port))
 
-        listening_host = self._LISTENING_HOST
         url_host = listening_host or "0"
         admin_url = f"{scheme}://{url_host}:{admin_port}?{ADMIN_LISTENER_KEY}=true"
         root_url = [admin_url if admin_port == fl_port else f"{scheme}://{url_host}:{fl_port}"]
