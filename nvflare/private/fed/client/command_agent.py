@@ -18,6 +18,7 @@ from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.f3.cellnet.core_cell import Message as CellMessage
 from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, new_cell_message
 
@@ -54,11 +55,36 @@ class CommandAgent(object):
             cb=self.aux_communication,
         )
 
+    def _is_authorized_command_sender(self, request: CellMessage) -> bool:
+        """Only this job cell's own control plane may drive CLIENT_COMMAND job control.
+
+        Legitimate CLIENT_COMMAND traffic to a client-job cell originates either from
+        the server (relayed down through the client parent) or from the job cell's own
+        parent CP self-managing the job. Both cases are identified by the framework-
+        stamped ORIGIN (see core_cell send path, which overwrites any caller-supplied
+        ORIGIN with the sender's real FQCN), so an ordinary enrolled peer site -- whose
+        message reaches this cell via the same parent hop -- carries its own site FQCN
+        as ORIGIN and is rejected. ORIGIN is used rather than the physical peer endpoint
+        because the parent topology differs (CJ -> CP -> server in production, CJ ->
+        server directly in the simulator), whereas ORIGIN is topology-independent.
+        """
+        origin = request.get_header(MessageHeaderKey.ORIGIN)
+        destination = request.get_header(MessageHeaderKey.DESTINATION)
+        local_fqcn = self.federated_client.cell.get_fqcn()
+        expected_parent = FQCN.get_parent(local_fqcn) or FQCN.ROOT_SERVER
+        return destination == local_fqcn and origin in (FQCN.ROOT_SERVER, expected_parent)
+
     def execute_command(self, request: CellMessage) -> CellMessage:
 
         assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
 
         command_name = request.get_header(MessageHeaderKey.TOPIC)
+
+        if not self._is_authorized_command_sender(request):
+            origin = request.get_header(MessageHeaderKey.ORIGIN)
+            self.logger.warning(f"rejected client command '{command_name}' from unauthorized origin {origin}")
+            return make_cellnet_reply(ReturnCode.AUTHENTICATION_ERROR, "unauthenticated client command", None)
+
         data = request.payload
 
         command = AdminCommands.get_command(command_name)

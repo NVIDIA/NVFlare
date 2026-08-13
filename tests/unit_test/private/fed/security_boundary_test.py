@@ -21,7 +21,9 @@ from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import CellMessageHeaderKeys, RequestHeader
 from nvflare.private.fed.client.admin import FedAdminAgent
+from nvflare.private.fed.client.admin_commands import AdminCommands
 from nvflare.private.fed.client.admin_commands import ConfigureJobLogCommand as ClientConfigureJobLogCommand
+from nvflare.private.fed.client.command_agent import CommandAgent
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_commands import ConfigureJobLogCommand as ServerConfigureJobLogCommand
@@ -157,6 +159,48 @@ def test_authenticated_reply_still_receives_bearer_headers():
 
     assert reply.get_header(CellMessageHeaderKeys.TOKEN) == "secret-token"
     assert reply.get_header(CellMessageHeaderKeys.TOKEN_SIGNATURE) == "secret-signature"
+
+
+def _make_command_agent(local_fqcn):
+    fed_client = MagicMock()
+    fed_client.cell.get_fqcn.return_value = local_fqcn
+    return CommandAgent(fed_client)
+
+
+def _client_command(origin, destination, topic=AdminCommandNames.ABORT):
+    return CellMessage(
+        {
+            MessageHeaderKey.ORIGIN: origin,
+            MessageHeaderKey.DESTINATION: destination,
+            MessageHeaderKey.TOPIC: topic,
+        }
+    )
+
+
+def test_client_command_accepts_server_and_own_parent_origin():
+    # Server-originated (relayed) and the job cell's own parent CP (self-management)
+    # are the only legitimate CLIENT_COMMAND sources.
+    agent = _make_command_agent("site-1.job-1")
+    assert agent._is_authorized_command_sender(_client_command("server", "site-1.job-1")) is True
+    assert agent._is_authorized_command_sender(_client_command("site-1", "site-1.job-1")) is True
+
+
+def test_client_command_rejects_enrolled_peer_and_misrouted_origin():
+    agent = _make_command_agent("site-1.job-1")
+    # a different enrolled site addressing this job cell
+    assert agent._is_authorized_command_sender(_client_command("site-2", "site-1.job-1")) is False
+    # a message not actually addressed to this cell
+    assert agent._is_authorized_command_sender(_client_command("server", "site-2.job-1")) is False
+
+
+def test_execute_command_rejects_unauthorized_origin_without_dispatch():
+    agent = _make_command_agent("site-1.job-1")
+    with patch.object(AdminCommands, "get_command") as get_command:
+        reply = agent.execute_command(_client_command("site-2", "site-1.job-1", topic=AdminCommandNames.ABORT))
+
+    # the enrolled-peer command is rejected before any AdminCommand is dispatched
+    get_command.assert_not_called()
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.AUTHENTICATION_ERROR
 
 
 def _log_command_context():
