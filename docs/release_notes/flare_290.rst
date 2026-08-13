@@ -7,6 +7,16 @@ What's New in FLARE v2.9.0
 Compatibility and Migration Notes
 =================================
 
+- Docker jobs may now control only ``image``, ``python_path``, ``entrypoint``,
+  ``num_of_gpus``, and ``shm_size`` through their launcher metadata. Selecting
+  ``image``, ``python_path``, or ``entrypoint`` requires BYOC authorization at
+  each receiving site. Previously job-controlled Docker SDK options such as
+  ``ipc_mode`` and ``device_requests`` are now site-owned and can be configured
+  through ``default_job_container_kwargs`` or a study's ``docker_kwargs``;
+  launcher-owned options such as mounts and networks remain fixed. New jobs
+  containing unsupported options are rejected at submission; jobs stored before
+  an upgrade are checked again and can fail at launch until their metadata is
+  migrated.
 - The flat ``resource_spec`` names ``num_of_gpus``, ``num_of_cpus``, and ``memory`` are now reserved portable fields
   and must use the documented portable types. Custom resource managers that previously interpreted these names
   differently must migrate to the portable types or rename their custom fields. Legacy nested resource specifications
