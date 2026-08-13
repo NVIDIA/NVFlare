@@ -36,6 +36,17 @@ def _source_directory():
         os.chdir(original_cwd)
 
 
+@contextmanager
+def _simulation_workspace(workspace_root):
+    """Yield an explicit workspace or a private temporary one for this run."""
+    if workspace_root is not None:
+        yield workspace_root
+        return
+
+    with tempfile.TemporaryDirectory(prefix="nvflare-hf-trainer-") as temporary_workspace:
+        yield Path(temporary_workspace)
+
+
 def _token(value, name: str) -> str:
     text = str(value)
     if not text or any(char.isspace() for char in text):
@@ -201,16 +212,16 @@ def main():
         preserve_source_budget=args.preserve_source_budget,
         key_metric=args.key_metric,
     )
-    workspace_root = args.workspace_root or Path(tempfile.mkdtemp(prefix="nvflare-hf-trainer-"))
-    run = recipe.execute(
-        SimEnv(
-            num_clients=args.num_clients,
-            num_threads=args.num_clients,
-            workspace_root=str(workspace_root),
+    with _simulation_workspace(args.workspace_root) as workspace_root:
+        run = recipe.execute(
+            SimEnv(
+                num_clients=args.num_clients,
+                num_threads=args.num_clients,
+                workspace_root=str(workspace_root),
+            )
         )
-    )
-    print("Job Status is:", run.get_status())
-    print("Result can be found in:", run.get_result())
+        print("Job Status is:", run.get_status())
+        print("Result can be found in:", run.get_result())
 
 
 if __name__ == "__main__":

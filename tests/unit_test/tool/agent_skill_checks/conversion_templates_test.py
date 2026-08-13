@@ -260,6 +260,23 @@ def test_huggingface_client_template_requires_and_forwards_global_rank(monkeypat
     assert observed == [0, 1]
 
 
+def test_huggingface_job_template_cleans_only_implicit_simulation_workspaces(tmp_path):
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    with module._simulation_workspace(None) as workspace_root:
+        implicit_workspace = workspace_root
+        assert implicit_workspace.is_dir()
+
+    assert not implicit_workspace.exists()
+
+    explicit_workspace = tmp_path / "workspace"
+    explicit_workspace.mkdir()
+    with module._simulation_workspace(explicit_workspace) as workspace_root:
+        assert workspace_root == explicit_workspace
+
+    assert explicit_workspace.is_dir()
+
+
 def test_huggingface_client_template_has_one_patch_and_no_manual_exchange():
     source = (HF_TEMPLATES / "client_with_eval.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
