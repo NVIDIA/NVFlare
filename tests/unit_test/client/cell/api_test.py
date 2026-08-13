@@ -618,6 +618,8 @@ class TestAttachMode:
             "ca_cert": str(ca_cert),
             "client_cert": str(client_cert),
             "client_key": str(client_key),
+            "server_cert": str(client_cert),
+            "server_key": str(client_key),
         }
         assert kwargs["parent_resources"] == {"connection_security": "mtls"}
         api.shutdown()
@@ -644,6 +646,8 @@ class TestAttachMode:
             "ca_cert": str(ca_cert),
             "client_cert": str(client_cert),
             "client_key": str(client_key),
+            "server_cert": str(client_cert),
+            "server_key": str(client_key),
         }
         assert kwargs["parent_resources"] == {"connection_security": "clear"}
         assert kwargs["auth_identity_map"] == {"site-1": "custom-site-cn"}

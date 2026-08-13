@@ -20,8 +20,8 @@ import pytest
 from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic, MessageHeaderKey, MessagePropKey, ReturnCode
 from nvflare.fuel.f3.message import Message as CellMessage
-from nvflare.private.admin_defs import Message
-from nvflare.private.defs import CellMessageHeaderKeys, RequestHeader
+from nvflare.private.admin_defs import Message, ok_reply
+from nvflare.private.defs import CellMessageHeaderKeys, RequestHeader, TrainingTopic
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_commands import AdminCommands
 from nvflare.private.fed.client.admin_commands import ConfigureJobLogCommand as ClientConfigureJobLogCommand
@@ -74,6 +74,61 @@ def test_cp_admin_dispatch_requires_server_created_envelope():
     reply = agent._dispatch_request(request)
 
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
+
+
+def _cp_job_status_agent():
+    agent = FedAdminAgent.__new__(FedAdminAgent)
+    agent.cell = MagicMock()
+    agent.cell.get_fqcn.return_value = "site-1"
+    agent.auditor = None
+    agent.app_ctx = MagicMock()
+    processor = MagicMock()
+    processor.process.return_value = ok_reply()
+    agent.processors = {TrainingTopic.NOTIFY_JOB_STATUS: processor}
+    return agent, processor
+
+
+def _job_status_request(origin="site-1.job-1", destination="site-1", endpoint="site-1.job-1", job_id="job-1"):
+    inner = Message(TrainingTopic.NOTIFY_JOB_STATUS, "")
+    inner.set_header(RequestHeader.JOB_ID, job_id)
+    inner.set_header(RequestHeader.JOB_STATUS, "started")
+    request = CellMessage(
+        {
+            MessageHeaderKey.ORIGIN: origin,
+            MessageHeaderKey.DESTINATION: destination,
+            MessageHeaderKey.TOPIC: TrainingTopic.NOTIFY_JOB_STATUS,
+        },
+        inner,
+    )
+    request.set_prop(MessagePropKey.ENDPOINT, SimpleNamespace(name=endpoint))
+    return request
+
+
+def test_cp_dispatch_accepts_status_from_direct_child_job():
+    agent, processor = _cp_job_status_agent()
+    request = _job_status_request()
+
+    agent._dispatch_request(request)
+
+    processor.process.assert_called_once_with(request.payload, agent.app_ctx)
+
+
+@pytest.mark.parametrize(
+    "origin,destination,endpoint,job_id",
+    [
+        ("site-1.job-1", "site-1", "attacker", "job-1"),
+        ("site-1.job-1", "site-1", "site-1.job-1", "job-2"),
+        ("site-2.job-1", "site-1", "site-2.job-1", "job-1"),
+        ("site-1.job-1", "site-2", "site-1.job-1", "job-1"),
+    ],
+)
+def test_cp_dispatch_rejects_spoofed_job_status(origin, destination, endpoint, job_id):
+    agent, processor = _cp_job_status_agent()
+
+    reply = agent._dispatch_request(_job_status_request(origin, destination, endpoint, job_id))
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
+    processor.process.assert_not_called()
 
 
 def test_server_job_rejects_parent_command_from_untrusted_connection():

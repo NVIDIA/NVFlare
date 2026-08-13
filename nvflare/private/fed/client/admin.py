@@ -25,7 +25,7 @@ from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
-from nvflare.private.defs import CellChannel, RequestHeader, new_cell_message
+from nvflare.private.defs import CellChannel, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.server.site_security import SiteSecurity
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
@@ -109,21 +109,6 @@ class FedAdminAgent(object):
         destination = request.get_header(MessageHeaderKey.DESTINATION)
         local_fqcn = self.cell.get_fqcn()
         peer_endpoint = request.get_prop(MessagePropKey.ENDPOINT)
-        expected_parent = FQCN.get_parent(local_fqcn) or FQCN.ROOT_SERVER
-        if (
-            origin != FQCN.ROOT_SERVER
-            or destination != local_fqcn
-            or not peer_endpoint
-            or peer_endpoint.name != expected_parent
-        ):
-            self.cell.logger.warning(
-                f"rejected administrative request from {origin} via "
-                f"{getattr(peer_endpoint, 'name', '<unknown>')} to {destination}"
-            )
-            return new_cell_message(
-                {MessageHeaderKey.RETURN_CODE: ReturnCode.UNAUTHENTICATED},
-                error_reply("unauthenticated administrative request"),
-            )
         req = request.payload
 
         assert isinstance(req, Message), "request payload must be Message but got {}".format(type(req))
@@ -131,7 +116,39 @@ class FedAdminAgent(object):
         outer_topic = request.get_header(MessageHeaderKey.TOPIC)
         cmd = req.get_header(RequestHeader.ADMIN_COMMAND)
         authz_flag = req.get_header(RequestHeader.REQUIRE_AUTHZ)
-        if outer_topic != topic or not cmd or authz_flag not in ("true", "false"):
+        is_job_status = outer_topic == topic == TrainingTopic.NOTIFY_JOB_STATUS
+        if is_job_status:
+            job_id = req.get_header(RequestHeader.JOB_ID)
+            trusted_route = (
+                destination == local_fqcn
+                and isinstance(origin, str)
+                and FQCN.is_parent(local_fqcn, origin)
+                and peer_endpoint
+                and peer_endpoint.name == origin
+                and job_id
+                and FQCN.split(origin)[-1] == str(job_id)
+            )
+        else:
+            expected_parent = FQCN.get_parent(local_fqcn) or FQCN.ROOT_SERVER
+            trusted_route = (
+                origin == FQCN.ROOT_SERVER
+                and destination == local_fqcn
+                and peer_endpoint
+                and peer_endpoint.name == expected_parent
+            )
+
+        if not trusted_route:
+            request_type = "job status notification" if is_job_status else "administrative request"
+            self.cell.logger.warning(
+                f"rejected {request_type} from {origin} via "
+                f"{getattr(peer_endpoint, 'name', '<unknown>')} to {destination}"
+            )
+            return new_cell_message(
+                {MessageHeaderKey.RETURN_CODE: ReturnCode.UNAUTHENTICATED},
+                error_reply(f"unauthenticated {request_type}"),
+            )
+
+        if not is_job_status and (outer_topic != topic or not cmd or authz_flag not in ("true", "false")):
             return new_cell_message(
                 {MessageHeaderKey.RETURN_CODE: ReturnCode.INVALID_REQUEST},
                 error_reply("invalid administrative request envelope"),
