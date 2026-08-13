@@ -927,7 +927,11 @@ class FederatedServer(BaseServer):
 
         client_jobs = set(client_jobs)
         outcome_jobs = self.engine.job_runner.get_client_outcome_jobs()
-        server_jobs = set(self.engine.run_processes.keys()).union(outcome_jobs)
+        # Keep normally completed jobs alive until clients report their outcomes, but do not
+        # protect client jobs after the server job has already failed.
+        server_jobs = set(self.engine.run_processes.keys()).union(
+            outcome_jobs.difference(self.engine.exception_run_processes)
+        )
         jobs_need_abort = list(client_jobs.difference(server_jobs))
 
         require_previous_report = ConfigService.get_bool_var(

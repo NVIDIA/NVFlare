@@ -190,6 +190,39 @@ class TestFederatedServer:
             result = server.client_heartbeat(request)
             assert result.get_header(CellMessageHeaderKeys.ABORT_JOBS, []) == expected
 
+    @pytest.mark.parametrize(
+        "run_processes, exception_run_processes, expected",
+        [
+            ({"job1": {}}, {}, []),
+            ({}, {}, []),
+            ({}, {"job1": {}}, ["job1"]),
+        ],
+        ids=["server-running", "awaiting-client-outcome", "server-failed"],
+    )
+    def test_sync_client_jobs_keeps_outcome_barrier_only_without_terminal_server_failure(
+        self, run_processes, exception_run_processes, expected
+    ):
+        with (
+            patch("nvflare.private.fed.server.fed_server.ServerEngine"),
+            patch("nvflare.private.fed.server.fed_server.ConfigService.get_bool_var", return_value=True),
+        ):
+            server = FederatedServer(
+                project_name="project_name",
+                min_num_clients=1,
+                max_num_clients=10,
+                cmd_modules=None,
+                heart_beat_timeout=600,
+                args=MagicMock(),
+                secure_train=False,
+                snapshot_persistor=MagicMock(),
+            )
+            server.engine.run_processes = run_processes
+            server.engine.exception_run_processes = exception_run_processes
+            server.engine.job_runner.get_client_outcome_jobs.return_value = {"job1"}
+            request = new_cell_message({CellMessageHeaderKeys.JOB_IDS: ["job1"]}, Shareable())
+
+            assert server._sync_client_jobs(request, "token-1") == expected
+
     def test_set_job_aborted_marks_runner_without_publishing_status(self):
         server = object.__new__(FederatedServer)
         server.logger = MagicMock()
