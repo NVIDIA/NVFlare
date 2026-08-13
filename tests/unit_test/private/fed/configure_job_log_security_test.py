@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.fuel.utils.log_utils import LogMode
+from nvflare.fuel.utils.log_utils import LogMode, validate_site_log_config
 from nvflare.private.fed.client.admin_commands import ConfigureJobLogCommand as ClientConfigureJobLogCommand
 from nvflare.private.fed.server.server_commands import ConfigureJobLogCommand as ServerConfigureJobLogCommand
 
@@ -93,3 +93,14 @@ def test_remote_job_log_rejects_dict_config_factory_before_execution(tmp_path, c
 
     assert "only supports log levels and built-in log modes" in error
     assert factory_calls == []
+
+
+@pytest.mark.parametrize("config", ["DEBUG", "20", LogMode.FULL, LogMode.RELOAD])
+def test_remote_site_log_accepts_safe_controls(config):
+    assert validate_site_log_config(config) == config
+
+
+@pytest.mark.parametrize("config", ['{"version": 1}', {"version": 1}, "/tmp/remote-log-config.json"])
+def test_remote_site_log_rejects_dict_config_and_paths(config):
+    with pytest.raises(ValueError, match="configure_site_log only supports log levels and built-in log modes"):
+        validate_site_log_config(config)
