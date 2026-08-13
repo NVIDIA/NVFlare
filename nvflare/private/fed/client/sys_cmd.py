@@ -97,7 +97,10 @@ class ConfigureSiteLogProcessor(RequestProcessor):
         try:
             config = validate_site_log_config(req.body)
             dynamic_log_config(
-                config=config, dir_path=workspace.get_root_dir(), reload_path=workspace.get_log_config_file_path()
+                config=config,
+                dir_path=workspace.get_root_dir(),
+                reload_path=workspace.get_log_config_file_path(),
+                allow_file_config=False,
             )
         except Exception as e:
             return error_reply(secure_format_exception(e))
