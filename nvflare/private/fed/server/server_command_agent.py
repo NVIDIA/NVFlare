@@ -16,7 +16,9 @@ from nvflare.apis.fl_constant import ServerCommandKey
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, ReturnCode, make_reply
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey, ReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
@@ -68,6 +70,21 @@ class ServerCommandAgent(object):
 
         command = ServerCommands.get_command(command_name)
         if command:
+            if command_name not in ServerCommands.client_request_commands_names:
+                origin = request.get_header(MessageHeaderKey.ORIGIN)
+                destination = request.get_header(MessageHeaderKey.DESTINATION)
+                peer_endpoint = request.get_prop(MessagePropKey.ENDPOINT)
+                if (
+                    origin != FQCN.ROOT_SERVER
+                    or destination != self.cell.get_fqcn()
+                    or not peer_endpoint
+                    or peer_endpoint.name != FQCN.ROOT_SERVER
+                ):
+                    self.logger.warning(
+                        f"rejected parent command {command_name} from {origin} via "
+                        f"{getattr(peer_endpoint, 'name', '<unknown>')} to {destination}"
+                    )
+                    return make_reply(ReturnCode.AUTHENTICATION_ERROR, "unauthenticated parent command")
             if command_name in ServerCommands.client_request_commands_names:
                 if not client:
                     return make_reply(
