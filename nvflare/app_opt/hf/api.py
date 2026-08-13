@@ -144,9 +144,9 @@ def patch(
     if args is None:
         raise ValueError("trainer.args is required")
     if getattr(args, "deepspeed", None):
-        raise ValueError("DeepSpeed is not supported by the HuggingFace Client API in design Phase 1")
+        raise ValueError("DeepSpeed is not currently supported by the HuggingFace Client API")
     if getattr(args, "fsdp", None):
-        raise ValueError("FSDP is not supported by the HuggingFace Client API in design Phase 1")
+        raise ValueError("FSDP is not currently supported by the HuggingFace Client API")
     if restore_state and bool(getattr(args, "save_only_model", False)):
         raise ValueError("save_only_model=True is incompatible with restore_state=True")
     if bool(getattr(args, "load_best_model_at_end", False)):
