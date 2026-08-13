@@ -75,6 +75,14 @@ class TestNetUtils:
         assert connect_url == "tcp://localhost:9000"
         assert listen_url == "tcp://localhost:9000"
 
+    def test_tcp_listener_defaults_to_ipv4_loopback_without_host(self, monkeypatch):
+        monkeypatch.setattr("nvflare.fuel.f3.drivers.net_utils.get_open_tcp_port", lambda _resources: 9000)
+
+        connect_url, listen_url = get_tcp_urls("tcp", {})
+
+        assert connect_url == "tcp://127.0.0.1:9000"
+        assert listen_url == "tcp://127.0.0.1:9000"
+
     def test_tcp_listener_requires_explicit_wildcard_host(self, monkeypatch):
         monkeypatch.setattr("nvflare.fuel.f3.drivers.net_utils.get_open_tcp_port", lambda _resources: 9000)
 

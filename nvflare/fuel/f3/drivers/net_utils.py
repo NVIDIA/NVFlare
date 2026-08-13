@@ -282,14 +282,14 @@ def get_tcp_urls(scheme: str, resources: dict) -> (str, str):
 
     host = resources.get("host") if resources else None
     if not host:
-        host = "localhost"
+        host = "127.0.0.1"
 
     port = get_open_tcp_port(resources)
     if not port:
         raise CommError(CommError.BAD_CONFIG, "Can't find an open port in the specified range")
 
     # Internal listeners default to the requested connect host. This keeps the
-    # default "localhost" transport local to the host instead of silently
+    # default loopback transport local to the host instead of silently
     # widening it to every interface. Distributed launchers must explicitly
     # request a wildcard listener and protect it with mTLS.
     listen_host = resources.get(DriverParams.LISTEN_HOST.value, host) if resources else host

@@ -32,6 +32,19 @@ def _config(resources):
     return config
 
 
+def test_default_internal_listener_uses_ipv4_loopback():
+    config = MagicMock()
+    config.get_backbone_connection_generation.return_value = 2
+    config.get_internal_connection_scheme.return_value = "tcp"
+    config.allow_adhoc_connections.return_value = False
+    config.get_adhoc_connection_scheme.return_value = "tcp"
+    config.get_config.return_value = None
+
+    manager = ConnectorManager(communicator=MagicMock(), secure=False, comm_configurator=config)
+
+    assert manager.int_resources["host"] == "127.0.0.1"
+
+
 @pytest.mark.parametrize(
     "listen_host",
     [

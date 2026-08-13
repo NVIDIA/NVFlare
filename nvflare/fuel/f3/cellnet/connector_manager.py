@@ -99,7 +99,7 @@ class ConnectorManager:
         # set up default drivers
         self.int_scheme = comm_configurator.get_internal_connection_scheme(_Defaults.SCHEME_FOR_INTERNAL_CONNECTIONS)
         self.int_resources = {
-            _KEY_HOST: "localhost",
+            _KEY_HOST: "127.0.0.1",
         }
         self.adhoc_allowed = comm_configurator.allow_adhoc_connections(_Defaults.ALLOW_ADHOC_CONNECTIONS)
         self.adhoc_scheme = comm_configurator.get_adhoc_connection_scheme(_Defaults.SCHEME_FOR_ADHOC_CONNECTIONS)
@@ -131,7 +131,7 @@ class ConnectorManager:
 
     def _validate_internal_listener_security(self):
         conn_sec = self.int_resources.get(DriverParams.CONNECTION_SECURITY, ConnectionSecurity.CLEAR)
-        host = self.int_resources.get(DriverParams.LISTEN_HOST, self.int_resources.get(_KEY_HOST, "localhost"))
+        host = self.int_resources.get(DriverParams.LISTEN_HOST, self.int_resources.get(_KEY_HOST, "127.0.0.1"))
         if _is_loopback_host(host):
             return
         if conn_sec == ConnectionSecurity.MTLS:
