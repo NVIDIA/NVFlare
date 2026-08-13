@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import ipaddress
 import os
 import time
 from typing import Union
@@ -96,28 +95,9 @@ class ConnectorManager:
         if not conn_sec:
             self.int_resources[DriverParams.CONNECTION_SECURITY] = ConnectionSecurity.CLEAR
 
-        self._validate_internal_listener_security()
-
         self.logger.debug(f"internal scheme={self.int_scheme}, resources={self.int_resources}")
         self.logger.debug(f"adhoc scheme={self.adhoc_scheme}, resources={self.adhoc_resources}")
         self.comm_config = comm_config
-
-    def _validate_internal_listener_security(self):
-        conn_sec = self.int_resources.get(DriverParams.CONNECTION_SECURITY, ConnectionSecurity.CLEAR)
-        host = self.int_resources.get(DriverParams.LISTEN_HOST, self.int_resources.get(_KEY_HOST, "localhost"))
-        if host == "localhost":
-            return
-        try:
-            if ipaddress.ip_address(host).is_loopback:
-                return
-        except ValueError:
-            pass
-        if conn_sec == ConnectionSecurity.MTLS:
-            return
-        raise ConfigError(
-            "internal CellNet listeners outside loopback require connection_security='mtls' "
-            "to authenticate remote peers"
-        )
 
     def get_config_info(self):
         return {
