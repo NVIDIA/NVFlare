@@ -37,6 +37,7 @@ class DriverParams(str, Enum):
     CUSTOM_CA_CERT = "custom_ca_cert"
     SECURE = "secure"
     PORTS = "ports"
+    LISTEN_HOST = "listen_host"
     SOCKET = "socket"
     LOCAL_ADDR = "local_addr"
     PEER_ADDR = "peer_addr"

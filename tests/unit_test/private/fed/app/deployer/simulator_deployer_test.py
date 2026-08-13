@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import ipaddress
 import os
 import shutil
 import tempfile
@@ -83,9 +84,14 @@ class TestSimulatorDeploy(unittest.TestCase):
         assert len(self.deployer.open_ports) == 1
         assert "admin_host" not in server_config
         assert "admin_port" not in server_config
-        root_urls = mock_cell.call_args.kwargs["root_url"]
-        assert root_urls == [f"tcp://0:{self.deployer.open_ports[0]}"]
-        assert all(ADMIN_LISTENER_KEY not in url for url in root_urls)
+        listening_host = "127.0.0.1"
+        listen_ip = ipaddress.ip_address(listening_host)
+        assert listen_ip.version == 4 and listen_ip.is_loopback
+        fl_port = server_config["service"]["target"].rsplit(":", 1)[1]
+        cell_args = mock_cell.call_args.kwargs
+        assert cell_args["root_url"] == [f"tcp://{listening_host}:{fl_port}"]
+        assert all(ADMIN_LISTENER_KEY not in url for url in cell_args["root_url"])
+        assert cell_args["internal_listener_host"] == listening_host
         assert server.admin_server.enable_hci is False
         assert server.admin_server.cmd_reg is None
         assert server.admin_server.sess_mgr is None

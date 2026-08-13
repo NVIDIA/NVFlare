@@ -18,6 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nvflare.fuel.f3.cellnet.connector_manager import ConnectorManager
 from nvflare.fuel.f3.cellnet.core_cell import (
     CellAgent,
     CertificateExchanger,
@@ -28,6 +29,7 @@ from nvflare.fuel.f3.cellnet.core_cell import (
 )
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
 
@@ -195,6 +197,21 @@ def test_listener_accessors_and_callbacks():
     for setter in (cell.set_cell_connected_cb, cell.set_cell_disconnected_cb, cell.set_message_interceptor):
         with pytest.raises(ValueError, match="not callable"):
             setter(None)
+
+
+def test_internal_listener_host_overrides_default_resources():
+    comm_configurator = MagicMock()
+    comm_configurator.get_config.return_value = None
+
+    manager = ConnectorManager(
+        communicator=MagicMock(),
+        secure=False,
+        comm_configurator=comm_configurator,
+        internal_listener_host="127.0.0.1",
+    )
+
+    assert manager.int_resources[DriverParams.HOST.value] == "127.0.0.1"
+    assert manager.int_resources[DriverParams.LISTEN_HOST.value] == "127.0.0.1"
 
 
 def test_encrypt_and_decrypt_secure_payload():

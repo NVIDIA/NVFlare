@@ -307,6 +307,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         max_bulk_size=100,
         auth_identity: str = None,
         auth_identity_map: dict = None,
+        internal_listener_host: str = None,
     ):
         """
 
@@ -321,6 +322,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             parent_resources: extra resources for making connection to parent
             auth_identity: authenticated identity of this cell's local certificate
             auth_identity_map: FQCN prefix to expected certificate identity map for mTLS peers
+            internal_listener_host: host for the internal listener to advertise and bind to
 
         FQCN is the names of all ancestor, concatenated with dots.
 
@@ -442,7 +444,10 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         self.endpoint = ep
         self.connector_manager = ConnectorManager(
-            communicator=self.communicator, secure=secure, comm_configurator=comm_configurator
+            communicator=self.communicator,
+            secure=secure,
+            comm_configurator=comm_configurator,
+            internal_listener_host=internal_listener_host,
         )
 
         self.communicator.register_message_receiver(app_id=self.APP_ID, receiver=self)

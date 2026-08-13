@@ -45,9 +45,9 @@ class _TestServer(BaseServer):
 @pytest.mark.parametrize(
     "enable_admin_listener, admin_port, expected_root_urls",
     [
-        (True, 8003, ["tcp://0:8002", f"tcp://0:8003?{ADMIN_LISTENER_KEY}=true"]),
-        (True, None, [f"tcp://0:8002?{ADMIN_LISTENER_KEY}=true"]),
-        (False, 8003, ["tcp://0:8002"]),
+        (True, 8003, ["tcp://127.0.0.1:8002", f"tcp://127.0.0.1:8003?{ADMIN_LISTENER_KEY}=true"]),
+        (True, None, [f"tcp://127.0.0.1:8002?{ADMIN_LISTENER_KEY}=true"]),
+        (False, 8003, ["tcp://127.0.0.1:8002"]),
     ],
 )
 def test_base_server_deploy_admin_listener(enable_admin_listener, admin_port, expected_root_urls):
@@ -67,10 +67,33 @@ def test_base_server_deploy_admin_listener(enable_admin_listener, admin_port, ex
             enable_admin_listener=enable_admin_listener,
         )
 
-    assert cell_cls.call_args.kwargs["root_url"] == expected_root_urls
+    cell_args = cell_cls.call_args.kwargs
+    assert cell_args["root_url"] == expected_root_urls
+    assert cell_args["internal_listener_host"] == "127.0.0.1"
 
 
 class TestFederatedServer:
+    def test_production_listener_bindings_remain_wildcard_by_default(self):
+        server = object.__new__(FederatedServer)
+
+        with (
+            patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+            patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+            patch("nvflare.private.fed.server.fed_server.threading.Thread"),
+        ):
+            BaseServer.deploy(
+                server,
+                args=MagicMock(),
+                grpc_args={
+                    "service": {"target": "server.example:8002", "scheme": "tcp"},
+                    "admin_port": 8003,
+                },
+            )
+
+        cell_args = cell_cls.call_args.kwargs
+        assert cell_args["root_url"] == ["tcp://0:8002", "tcp://0:8003?admin_listener=true"]
+        assert cell_args["internal_listener_host"] is None
+
     @staticmethod
     def _create_job_cell_with_command_agent(server_state):
         server = object.__new__(FederatedServer)
