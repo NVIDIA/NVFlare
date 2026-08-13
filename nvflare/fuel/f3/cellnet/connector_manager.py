@@ -32,6 +32,7 @@ _KEY_ADHOC = "adhoc"
 _KEY_SCHEME = "scheme"
 _KEY_HOST = "host"
 _KEY_PORTS = "ports"
+_SHARED_FILE_SCHEME = "shared-file"
 
 
 def _is_loopback_host(host) -> bool:
@@ -115,10 +116,17 @@ class ConnectorManager:
                 self.adhoc_scheme = adhoc_conf.get(_KEY_SCHEME)
                 self.adhoc_resources = adhoc_conf.get(_KEY_RESOURCES)
 
-        # default conn sec
+        # Job cells attach to this listener.  In secure mode, network transports
+        # must authenticate the attaching process even when the listener is only
+        # reachable over loopback: another local process must not be able to claim
+        # the parent cell's FQCN during the F3 handshake.
         conn_sec = self.int_resources.get(DriverParams.CONNECTION_SECURITY)
         if not conn_sec:
-            self.int_resources[DriverParams.CONNECTION_SECURITY] = ConnectionSecurity.CLEAR
+            self.int_resources[DriverParams.CONNECTION_SECURITY] = (
+                ConnectionSecurity.MTLS
+                if self.secure and self.int_scheme != _SHARED_FILE_SCHEME
+                else ConnectionSecurity.CLEAR
+            )
 
         self._validate_internal_listener_security()
 
@@ -128,6 +136,10 @@ class ConnectorManager:
 
     def _validate_internal_listener_security(self):
         conn_sec = self.int_resources.get(DriverParams.CONNECTION_SECURITY, ConnectionSecurity.CLEAR)
+        if self.int_scheme == _SHARED_FILE_SCHEME:
+            return
+        if self.secure and conn_sec != ConnectionSecurity.MTLS:
+            raise ConfigError("secure-mode internal CellNet listeners require connection_security='mtls'")
         host = self.int_resources.get(DriverParams.LISTEN_HOST, self.int_resources.get(_KEY_HOST, "127.0.0.1"))
         if _is_loopback_host(host):
             return

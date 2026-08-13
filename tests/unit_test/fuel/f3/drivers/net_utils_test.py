@@ -67,13 +67,31 @@ class TestNetUtils:
         assert DriverParams.CLIENT_KEY.value not in params
         assert DriverParams.SERVER_CERT.value not in params
 
-    def test_tcp_listener_defaults_to_connect_host(self, monkeypatch):
+    def test_tcp_listener_normalizes_localhost_to_ipv4_loopback(self, monkeypatch):
         monkeypatch.setattr("nvflare.fuel.f3.drivers.net_utils.get_open_tcp_port", lambda _resources: 9000)
 
         connect_url, listen_url = get_tcp_urls("tcp", {"host": "localhost"})
 
-        assert connect_url == "tcp://localhost:9000"
-        assert listen_url == "tcp://localhost:9000"
+        assert connect_url == "tcp://127.0.0.1:9000"
+        assert listen_url == "tcp://127.0.0.1:9000"
+
+    def test_tcp_listener_does_not_widen_loopback_host_to_wildcard(self, monkeypatch):
+        monkeypatch.setattr("nvflare.fuel.f3.drivers.net_utils.get_open_tcp_port", lambda _resources: 9000)
+
+        connect_url, listen_url = get_tcp_urls("tcp", {"host": "LOCALHOST.", DriverParams.LISTEN_HOST.value: "0.0.0.0"})
+
+        assert connect_url == "tcp://127.0.0.1:9000"
+        assert listen_url == "tcp://127.0.0.1:9000"
+
+    def test_tcp_listener_normalizes_equivalent_ipv4_loopback_address(self, monkeypatch):
+        monkeypatch.setattr("nvflare.fuel.f3.drivers.net_utils.get_open_tcp_port", lambda _resources: 9000)
+
+        connect_url, listen_url = get_tcp_urls(
+            "tcp", {"host": "127.255.255.254", DriverParams.LISTEN_HOST.value: "0.0.0.0"}
+        )
+
+        assert connect_url == "tcp://127.0.0.1:9000"
+        assert listen_url == "tcp://127.0.0.1:9000"
 
     def test_tcp_listener_defaults_to_ipv4_loopback_without_host(self, monkeypatch):
         monkeypatch.setattr("nvflare.fuel.f3.drivers.net_utils.get_open_tcp_port", lambda _resources: 9000)

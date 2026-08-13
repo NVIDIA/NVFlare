@@ -16,7 +16,9 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from nvflare.apis.fl_constant import AdminCommandNames
+from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic, MessageHeaderKey, MessagePropKey, ReturnCode
+from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import CellMessageHeaderKeys, RequestHeader
@@ -157,6 +159,49 @@ def test_authenticated_reply_still_receives_bearer_headers():
 
     assert reply.get_header(CellMessageHeaderKeys.TOKEN) == "secret-token"
     assert reply.get_header(CellMessageHeaderKeys.TOKEN_SIGNATURE) == "secret-signature"
+
+
+def test_harvested_server_bearer_cannot_reach_server_job_command_processor():
+    root = FederatedServer.__new__(FederatedServer)
+    root.logger = MagicMock()
+    root.my_own_auth_client_name = "server"
+    root.my_own_token = "secret-token"
+    root.cell = MagicMock()
+    root.cell.get_fqcn.return_value = "server"
+    root._get_id_asserter = MagicMock(return_value=MagicMock(cert=MagicMock()))
+
+    replay = CellMessage(
+        {
+            MessageHeaderKey.ORIGIN: "server",
+            MessageHeaderKey.DESTINATION: "server.job-1",
+            MessageHeaderKey.TOPIC: AdminCommandNames.ABORT,
+            CellMessageHeaderKeys.CLIENT_NAME: "server",
+            CellMessageHeaderKeys.TOKEN: "secret-token",
+            CellMessageHeaderKeys.TOKEN_SIGNATURE: "harvested-signature",
+        },
+        Shareable(),
+    )
+    replay.set_prop(MessagePropKey.ENDPOINT, Endpoint("site-1"))
+
+    command = MagicMock()
+    command.process.return_value = Shareable()
+    job_cell = MagicMock()
+    job_cell.get_fqcn.return_value = "server.job-1"
+    job_agent = ServerCommandAgent(MagicMock(), job_cell)
+
+    with (
+        patch("nvflare.private.fed.server.fed_server.validate_auth_headers", return_value=None),
+        patch("nvflare.private.fed.server.server_command_agent.ServerCommands.get_command", return_value=command),
+    ):
+        root_reply = root._validate_auth_headers(replay)
+        if root_reply is None:
+            # Model the root's forwarding hop.  This is the condition that made
+            # the vulnerable server-job check trust the replayed logical origin.
+            replay.set_prop(MessagePropKey.ENDPOINT, Endpoint("server"))
+            job_agent.execute_command(replay)
+
+    assert root_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
+    command.process.assert_not_called()
 
 
 def _log_command_context():

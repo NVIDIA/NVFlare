@@ -192,6 +192,17 @@ def parse_url(url: str) -> dict:
 
     params = {DriverParams.URL.value: url}
     parsed_url = urlparse(url)
+    try:
+        host = parsed_url.hostname
+    except ValueError as e:
+        raise CommError(CommError.BAD_CONFIG, f"malformed network URL: {url!r}") from e
+    if host:
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            address = None
+        if isinstance(address, ipaddress.IPv6Address):
+            raise CommError(CommError.BAD_CONFIG, "literal IPv6 hosts are not supported by F3 network transports")
     params[DriverParams.SCHEME.value] = parsed_url.scheme
     parts = parsed_url.netloc.split(":")
     if len(parts) >= 1:
@@ -268,6 +279,18 @@ def short_url(params: dict) -> str:
     return encode_url(subset)
 
 
+def _normalize_ipv4_loopback(host: str) -> str:
+    if host.rstrip(".").lower() == "localhost":
+        return "127.0.0.1"
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return host
+    if isinstance(address, ipaddress.IPv4Address) and address.is_loopback:
+        return "127.0.0.1"
+    return host
+
+
 def get_tcp_urls(scheme: str, resources: dict) -> (str, str):
     """Generate URL pairs for connecting and listening for TCP-based protocols
 
@@ -285,7 +308,15 @@ def get_tcp_urls(scheme: str, resources: dict) -> (str, str):
     if not host:
         host = "127.0.0.1"
 
-    listen_host = resources.get(DriverParams.LISTEN_HOST.value, host) if resources else host
+    host = _normalize_ipv4_loopback(host)
+    if host == "127.0.0.1":
+        # A loopback connect address is a same-host transport.  Never widen its
+        # listener to a wildcard address, even if a stale deployment override
+        # still supplies listen_host=0.0.0.0.
+        listen_host = host
+    else:
+        listen_host = resources.get(DriverParams.LISTEN_HOST.value, host) if resources else host
+        listen_host = _normalize_ipv4_loopback(listen_host)
     for value in (host, listen_host):
         address = value[1:-1] if value.startswith("[") and value.endswith("]") else value
         try:

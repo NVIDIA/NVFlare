@@ -86,6 +86,13 @@ def get_comm_b(comm_state):
 
 
 class TestCommunicator:
+    @pytest.mark.parametrize("scheme", ["tcp", "stcp"])
+    def test_add_tcp_connector_rejects_ipv6_literal_before_connector_setup(self, scheme):
+        comm = Communicator(Endpoint(NODE_A))
+
+        with pytest.raises(CommError, match="literal IPv6 hosts are not supported"):
+            comm.add_connector(f"{scheme}://[2001:db8::2]:23456", Mode.ACTIVE)
+
     @pytest.mark.parametrize("host", ["::1", "0:0:0:0:0:0:0:1", "[::1]", "::ffff:127.0.0.1"])
     def test_start_listener_rejects_ipv6_literal_before_binding(self, host):
         comm = Communicator(Endpoint(NODE_A))

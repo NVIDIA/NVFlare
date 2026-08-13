@@ -22,8 +22,9 @@ from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.common.exit_codes import ProcessExitCode
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
+from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, ClientRegMsgKey, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
 from nvflare.private.fed.server.fed_server import FederatedServer
@@ -37,6 +38,54 @@ def assert_client_outcome_unresolved(job_runner):
 
 
 class TestFederatedServer:
+    @staticmethod
+    def _server_credential_message(origin, peer):
+        message = new_cell_message(
+            {
+                MessageHeaderKey.ORIGIN: origin,
+                MessageHeaderKey.DESTINATION: "server.job-1",
+                CellMessageHeaderKeys.CLIENT_NAME: "server",
+                CellMessageHeaderKeys.TOKEN: "server",
+            },
+            Shareable(),
+        )
+        message.set_prop(MessagePropKey.ENDPOINT, Endpoint(peer))
+        return message
+
+    @staticmethod
+    def _server_for_auth_validation():
+        server = object.__new__(FederatedServer)
+        server.my_own_auth_client_name = "server"
+        server.my_own_token = "server"
+        server.logger = MagicMock()
+        server.cell = MagicMock()
+        server.cell.get_fqcn.return_value = "server"
+        server._get_id_asserter = MagicMock(return_value=MagicMock(cert=MagicMock()))
+        return server
+
+    @pytest.mark.parametrize(
+        "origin,peer",
+        [("server", "site-1"), ("server.job-1", "site-1.job-1"), ("server", "server.job-1")],
+    )
+    def test_server_credentials_cannot_be_replayed_from_client_family(self, origin, peer):
+        server = self._server_for_auth_validation()
+        message = self._server_credential_message(origin, peer)
+
+        with patch("nvflare.private.fed.server.fed_server.validate_auth_headers", return_value=None):
+            reply = server._validate_auth_headers(message)
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+
+    @pytest.mark.parametrize("origin,peer", [("server", "server"), ("server.job-1", "server.job-1")])
+    def test_server_credentials_are_accepted_from_server_family(self, origin, peer):
+        server = self._server_for_auth_validation()
+        message = self._server_credential_message(origin, peer)
+
+        with patch("nvflare.private.fed.server.fed_server.validate_auth_headers", return_value=None):
+            reply = server._validate_auth_headers(message)
+
+        assert reply is None
+
     @staticmethod
     def _create_job_cell_with_command_agent(server_state):
         server = object.__new__(FederatedServer)

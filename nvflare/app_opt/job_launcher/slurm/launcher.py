@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import shlex
 from abc import abstractmethod
@@ -221,15 +222,21 @@ def _rewrite_parent_url(job_args: dict, parent_host: Optional[str], internal_por
         host = parsed.hostname
     except ValueError as e:
         raise SlurmLauncherError("malformed parent URL in JOB_PROCESS_ARGS") from e
-    if parsed.scheme != "tcp" or port != internal_port or not host:
+    if parsed.scheme not in ("tcp", "stcp") or port != internal_port or not host:
         raise SlurmLauncherError(
-            f"parent URL must use {SHARED_FILE_SCHEME} or tcp with configured internal_port "
+            f"parent URL must use {SHARED_FILE_SCHEME}, tcp, or stcp with configured internal_port "
             f"{internal_port}, got {raw_url!r}"
         )
     host = _resolve_parent_host(parent_host)
-    rendered_host = host if host.startswith("[") and host.endswith("]") else f"[{host}]" if ":" in host else host
-    netloc = f"{rendered_host}:{internal_port}"
-    rewritten = urlunsplit(("tcp", netloc, parsed.path, parsed.query, parsed.fragment))
+    unbracketed_host = host[1:-1] if host.startswith("[") and host.endswith("]") else host
+    try:
+        address = ipaddress.ip_address(unbracketed_host)
+    except ValueError:
+        address = None
+    if isinstance(address, ipaddress.IPv6Address) or ":" in host:
+        raise SlurmLauncherError("IPv6 parent_host is not supported by the F3 TCP transport")
+    netloc = f"{host}:{internal_port}"
+    rewritten = urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
     copied[JobProcessArgs.PARENT_URL] = (flag, rewritten)
     return copied
 
@@ -462,6 +469,14 @@ class SlurmJobLauncher(JobLauncherSpec):
             parent_host=self.config.parent_host,
             internal_port=self.config.internal_port,
         )
+        parent_scheme = urlsplit(str(job_args[JobProcessArgs.PARENT_URL][1])).scheme
+        if parent_scheme != SHARED_FILE_SCHEME:
+            expected_scheme = "stcp" if process_connection_security == "mtls" else "tcp"
+            if parent_scheme != expected_scheme:
+                raise SlurmLauncherError(
+                    f"parent URL scheme '{parent_scheme}' does not match "
+                    f"parent connection security '{process_connection_security}' (expected '{expected_scheme}')"
+                )
 
         study = job_meta.get(JobMetaKey.STUDY.value)
         if study is not None:

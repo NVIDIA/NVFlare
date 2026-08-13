@@ -50,13 +50,14 @@ def _workspace(tmp_path):
 
 
 def _launcher(tmp_path, workspace, sandbox="none", image=None, launcher_class=ClientSlurmJobLauncher, **kwargs):
+    parent_host = kwargs.pop("parent_host", "compute.example")
     return launcher_class(
         workspace_path=str(workspace),
         sandbox=sandbox,
         image=image,
         python_path="/usr/bin/python3",
         executables={name: "/usr/bin/true" for name in ("sbatch", "squeue", "sacct", "scancel")},
-        parent_host="compute.example",
+        parent_host=parent_host,
         **kwargs,
     )
 
@@ -184,12 +185,27 @@ def test_parent_url_rewrite_is_shallow_and_preserves_other_entries():
     assert args[JobProcessArgs.PARENT_URL][1] == "tcp://old:8102"
 
 
-def test_parent_url_rewrite_formats_ipv6_host():
+def test_parent_url_rewrite_rejects_ipv6_host_until_f3_tcp_supports_it():
     args = {JobProcessArgs.PARENT_URL: ("-p", "tcp://[2001:db8::1]:8102")}
 
-    rewritten = _rewrite_parent_url(args, "2001:db8::2", 8102)
+    with pytest.raises(SlurmLauncherError, match="IPv6 parent_host is not supported"):
+        _rewrite_parent_url(args, "2001:db8::2", 8102)
 
-    assert rewritten[JobProcessArgs.PARENT_URL][1] == "tcp://[2001:db8::2]:8102"
+
+def test_launch_plan_rejects_ipv6_parent_before_worker_connector_setup(tmp_path):
+    workspace = _workspace(tmp_path)
+    launcher = _launcher(tmp_path, workspace, parent_host="2001:db8::2")
+
+    with pytest.raises(SlurmLauncherError, match="IPv6 parent_host is not supported"):
+        launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _fl_ctx(workspace))
+
+
+def test_parent_url_rewrite_preserves_secure_tcp_scheme():
+    args = {JobProcessArgs.PARENT_URL: ("-p", "stcp://old:8102")}
+
+    rewritten = _rewrite_parent_url(args, "new-host", 8102)
+
+    assert rewritten[JobProcessArgs.PARENT_URL][1] == "stcp://new-host:8102"
 
 
 def test_shared_file_parent_url_is_preserved_without_parent_host():
@@ -207,7 +223,7 @@ def test_shared_file_parent_url_is_preserved_without_parent_host():
     [
         (None, "missing or malformed"),
         (("-p", "tcp://old:not-a-port"), "malformed parent URL"),
-        (("-p", "http://old:8102"), "must use shared-file or tcp"),
+        (("-p", "http://old:8102"), "must use shared-file, tcp, or stcp"),
         (("-p", "tcp://old:9000"), "configured internal_port"),
         (("-p", "shared-file://host/not-placeholder"), "malformed shared-file"),
         (("-p", "shared-file://0"), "malformed shared-file"),
@@ -576,11 +592,30 @@ def test_launch_plan_accepts_and_propagates_mtls_parent_connection(tmp_path):
     launcher = _launcher(tmp_path, workspace)
     context = _fl_ctx(workspace)
     context.get_prop(FLContextKey.JOB_PROCESS_ARGS)[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", "mtls")
+    context.get_prop(FLContextKey.JOB_PROCESS_ARGS)[JobProcessArgs.PARENT_URL] = ("-p", "stcp://old:8102")
 
     plan = launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, context)
 
     connection_security_index = plan.module_args.index("--parent_conn_sec") + 1
     assert plan.module_args[connection_security_index] == "mtls"
+    parent_url_index = plan.module_args.index("-p") + 1
+    assert plan.module_args[parent_url_index] == "stcp://compute.example:8102"
+
+
+@pytest.mark.parametrize(
+    "parent_url,connection_security",
+    [("tcp://old:8102", "mtls"), ("stcp://old:8102", "clear")],
+)
+def test_launch_plan_rejects_parent_scheme_security_mismatch(tmp_path, parent_url, connection_security):
+    workspace = _workspace(tmp_path)
+    launcher = _launcher(tmp_path, workspace)
+    context = _fl_ctx(workspace)
+    args = context.get_prop(FLContextKey.JOB_PROCESS_ARGS)
+    args[JobProcessArgs.PARENT_URL] = ("-p", parent_url)
+    args[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", connection_security)
+
+    with pytest.raises(SlurmLauncherError, match="does not match parent connection security"):
+        launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, context)
 
 
 def test_tls_internal_connection_is_rejected(tmp_path):

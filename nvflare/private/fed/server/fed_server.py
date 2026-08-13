@@ -46,7 +46,7 @@ from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import Message
 from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
-from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
@@ -473,9 +473,35 @@ class FederatedServer(BaseServer):
             client_fqcn_resolver=self._resolve_client_fqcn_for_auth,
             local_cell_fqcn=self.cell.get_fqcn() if getattr(self, "cell", None) else None,
         )
+        if not reply and self._uses_server_credentials(message):
+            origin = message.get_header(MessageHeaderKey.ORIGIN)
+            endpoint = message.get_prop(MessagePropKey.ENDPOINT)
+            peer_fqcn = getattr(endpoint, "name", None)
+            if not self._is_server_origin_for_peer(origin, peer_fqcn):
+                self.logger.error(
+                    f"rejected server credentials from physical peer {peer_fqcn!r} with logical origin {origin!r}"
+                )
+                reply = make_cellnet_reply(
+                    F3ReturnCode.UNAUTHENTICATED,
+                    error="server credentials may only arrive from the server cell family",
+                )
         if not reply:
             self._strip_peer_transit_auth_headers(message)
         return reply
+
+    def _uses_server_credentials(self, message: Message) -> bool:
+        return (
+            message.get_header(CellMessageHeaderKeys.CLIENT_NAME) == self.my_own_auth_client_name
+            and message.get_header(CellMessageHeaderKeys.TOKEN) == self.my_own_token
+        )
+
+    @staticmethod
+    def _is_server_origin_for_peer(origin: str, peer_fqcn: str) -> bool:
+        if not origin or not peer_fqcn:
+            return False
+        if FQCN.get_root(origin) != FQCN.ROOT_SERVER or FQCN.get_root(peer_fqcn) != FQCN.ROOT_SERVER:
+            return False
+        return origin == peer_fqcn or origin.startswith(peer_fqcn + FQCN.SEPARATOR)
 
     def _resolve_client_fqcn_for_auth(self, client_name: str, token: str):
         client = self.client_manager.clients.get(token)
