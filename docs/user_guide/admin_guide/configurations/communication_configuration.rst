@@ -331,6 +331,7 @@ are intentionally omitted.
     "streaming_window_size": 67108864,
     "streaming_ack_interval": 16777216,
     "streaming_ack_wait": 300,
+    "streaming_ack_progress_timeout": 60.0,
     "streaming_reliable": false,
     "streaming_retry_wait": 5.0,
     "streaming_retry_timeout": 60.0,
@@ -452,10 +453,20 @@ with an older sender that does not include these headers, the receiver uses its 
 streaming_ack_wait
 ------------------
 
-The number of seconds that the sender waits for the next ACK.
+The maximum number of seconds that the sender may remain blocked by its flow-control window.
 The default value is 300 seconds.
 
-This timeout is used to detect dead receivers. On a very slow network, this value may need to be increased.
+This limit applies to one blocked-window wait and does not reset merely because a partial ACK advances within that window.
+The sender also enforces ``streaming_ack_progress_timeout``, so a stalled stream stops when either timeout expires.
+
+streaming_ack_progress_timeout
+------------------------------
+
+The sender records the time of the most recent ACK progress. While blocked by its flow-control window, it stops the stream
+if no ACK progress has occurred for this number of seconds. The default value is 60.0 seconds. An increase in the
+acknowledged byte offset, or the acknowledged sequence number for reliable streaming, counts as progress and resets the
+timestamp. With the defaults, a stalled stream normally stops after 60 seconds without ACK progress, before the
+300-second ``streaming_ack_wait`` expires.
 
 streaming_reliable
 ------------------
