@@ -115,7 +115,10 @@ def _stop_background_processes(processes):
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
             except (ProcessLookupError, PermissionError):
                 pass
-            process.wait(timeout=5.0)
+            try:
+                process.wait(timeout=5.0)
+            except subprocess.TimeoutExpired:
+                pass
 
 
 framework = os.environ.get("NVFLARE_TEST_FRAMEWORK")
