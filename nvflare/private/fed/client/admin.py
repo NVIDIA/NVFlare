@@ -17,9 +17,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey, ReturnCode
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.fuel.f3.cellnet.core_cell import Message as CellMessage
 from nvflare.fuel.hci.proto import ReplyKeyword
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.sec.audit import Auditor, AuditService
@@ -105,37 +103,10 @@ class FedAdminAgent(object):
         # *args, **kwargs
     ) -> CellMessage:
         assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
-        origin = request.get_header(MessageHeaderKey.ORIGIN)
-        destination = request.get_header(MessageHeaderKey.DESTINATION)
-        local_fqcn = self.cell.get_fqcn()
-        peer_endpoint = request.get_prop(MessagePropKey.ENDPOINT)
-        expected_parent = FQCN.get_parent(local_fqcn) or FQCN.ROOT_SERVER
-        if (
-            origin != FQCN.ROOT_SERVER
-            or destination != local_fqcn
-            or not peer_endpoint
-            or peer_endpoint.name != expected_parent
-        ):
-            self.cell.logger.warning(
-                f"rejected administrative request from {origin} via "
-                f"{getattr(peer_endpoint, 'name', '<unknown>')} to {destination}"
-            )
-            return new_cell_message(
-                {MessageHeaderKey.RETURN_CODE: ReturnCode.UNAUTHENTICATED},
-                error_reply("unauthenticated administrative request"),
-            )
         req = request.payload
 
         assert isinstance(req, Message), "request payload must be Message but got {}".format(type(req))
         topic = req.topic
-        outer_topic = request.get_header(MessageHeaderKey.TOPIC)
-        cmd = req.get_header(RequestHeader.ADMIN_COMMAND)
-        authz_flag = req.get_header(RequestHeader.REQUIRE_AUTHZ)
-        if outer_topic != topic or not cmd or authz_flag not in ("true", "false"):
-            return new_cell_message(
-                {MessageHeaderKey.RETURN_CODE: ReturnCode.INVALID_REQUEST},
-                error_reply("invalid administrative request envelope"),
-            )
 
         # create audit record
         if self.auditor:
@@ -155,6 +126,7 @@ class FedAdminAgent(object):
                 try:
                     reply = None
 
+                    cmd = req.get_header(RequestHeader.ADMIN_COMMAND, None)
                     if cmd:
                         site_security = SiteSecurity()
                         self._set_security_data(req, fl_ctx)
@@ -164,6 +136,7 @@ class FedAdminAgent(object):
 
                     if not reply:
                         # see whether pre-authorization is needed
+                        authz_flag = req.get_header(RequestHeader.REQUIRE_AUTHZ)
                         require_authz = authz_flag == "true"
                         if require_authz:
                             # authorize this command!
