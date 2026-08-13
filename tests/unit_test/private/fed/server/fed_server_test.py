@@ -222,6 +222,16 @@ class TestFederatedServer:
             request = new_cell_message({CellMessageHeaderKeys.JOB_IDS: ["job1"]}, Shareable())
 
             assert server._sync_client_jobs(request, "token-1") == expected
+            if exception_run_processes:
+                client = MagicMock()
+                client.name = "C1"
+                server.client_manager.clients = {"token-1": client}
+                server.engine.job_runner.is_client_outcome_pending.return_value = True
+                request = new_cell_message({CellMessageHeaderKeys.JOB_IDS: []}, Shareable())
+
+                assert server._sync_client_jobs(request, "token-1") == []
+                server.engine.job_runner.fail_run.assert_not_called()
+                server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job1", "C1")
 
     def test_set_job_aborted_marks_runner_without_publishing_status(self):
         server = object.__new__(FederatedServer)
