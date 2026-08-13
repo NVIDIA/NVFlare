@@ -26,7 +26,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, ClientRegMsgKey, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
-from nvflare.private.fed.server.fed_server import FederatedServer
+from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, HotState, ServerState
@@ -37,6 +37,27 @@ def assert_client_outcome_unresolved(job_runner):
 
 
 class TestFederatedServer:
+    def test_production_listener_bindings_remain_wildcard_by_default(self):
+        server = object.__new__(FederatedServer)
+
+        with (
+            patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+            patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+            patch("nvflare.private.fed.server.fed_server.threading.Thread"),
+        ):
+            BaseServer.deploy(
+                server,
+                args=MagicMock(),
+                grpc_args={
+                    "service": {"target": "server.example:8002", "scheme": "tcp"},
+                    "admin_port": 8003,
+                },
+            )
+
+        cell_args = cell_cls.call_args.kwargs
+        assert cell_args["root_url"] == ["tcp://0:8002", "tcp://0:8003?admin_listener=true"]
+        assert cell_args["internal_listener_host"] is None
+
     @staticmethod
     def _create_job_cell_with_command_agent(server_state):
         server = object.__new__(FederatedServer)
