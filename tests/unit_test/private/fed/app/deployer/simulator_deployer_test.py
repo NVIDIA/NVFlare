@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import ipaddress
 import os
 import shutil
 import tempfile
@@ -28,6 +29,7 @@ from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeploye
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.server.run_manager import RunManager
+from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.simulator.simulator_server import SimulatorServer
 
 # from nvflare.private.fed.simulator.simulator_server import SimulatorServer
@@ -67,17 +69,27 @@ class TestSimulatorDeploy(unittest.TestCase):
     @patch("nvflare.private.fed.server.admin.FedAdminServer.start")
     @patch("nvflare.private.fed.simulator.simulator_server.SimulatorServer._register_cellnet_cbs")
     @patch("nvflare.private.fed.server.fed_server.Cell")
-    def test_create_server(self, mock_admin, mock_simulator_server, mock_cell):
+    def test_create_server(self, mock_cell, mock_register_cbs, mock_admin_start):
         workspace = tempfile.mkdtemp()
         os.mkdir(os.path.join(workspace, "local"))
         os.mkdir(os.path.join(workspace, "startup"))
         parser = self._create_parser()
         args = parser.parse_args(["job_folder", "-w" + workspace, "-n 2", "-t 1"])
         args.config_folder = "config"
-        _, server = self.deployer.create_fl_server(args)
+        server_config, server = self.deployer.create_fl_server(args)
 
         assert isinstance(server, SimulatorServer)
         assert isinstance(server.engine.run_manager, RunManager)
+        listen_ip = ipaddress.ip_address(SimulatorConstants.LISTENING_HOST)
+        assert listen_ip.version == 4 and listen_ip.is_loopback
+        fl_port = server_config["service"]["target"].rsplit(":", 1)[1]
+        admin_port = server_config["admin_port"]
+        cell_args = mock_cell.call_args.kwargs
+        assert cell_args["root_url"] == [
+            f"tcp://{SimulatorConstants.LISTENING_HOST}:{fl_port}",
+            f"tcp://{SimulatorConstants.LISTENING_HOST}:{admin_port}?admin_listener=true",
+        ]
+        assert cell_args["internal_listener_host"] == SimulatorConstants.LISTENING_HOST
 
         server.cell.stop()
         server.close()

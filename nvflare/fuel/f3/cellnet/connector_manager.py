@@ -59,7 +59,13 @@ class ConnectorManager:
     Manages creation of connectors
     """
 
-    def __init__(self, communicator: Communicator, secure: bool, comm_configurator: CommConfigurator):
+    def __init__(
+        self,
+        communicator: Communicator,
+        secure: bool,
+        comm_configurator: CommConfigurator,
+        internal_listener_host: str = None,
+    ):
         self._name = self.__class__.__name__
         self.logger = get_obj_logger(self)
 
@@ -89,6 +95,10 @@ class ConnectorManager:
             if adhoc_conf:
                 self.adhoc_scheme = adhoc_conf.get(_KEY_SCHEME)
                 self.adhoc_resources = adhoc_conf.get(_KEY_RESOURCES)
+
+        if internal_listener_host:
+            self.int_resources[DriverParams.HOST.value] = internal_listener_host
+            self.int_resources[DriverParams.LISTENING_HOST.value] = internal_listener_host
 
         # default conn sec
         conn_sec = self.int_resources.get(DriverParams.CONNECTION_SECURITY)

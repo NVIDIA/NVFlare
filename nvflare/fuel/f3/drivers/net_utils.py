@@ -272,7 +272,7 @@ def get_tcp_urls(scheme: str, resources: dict) -> (str, str):
 
     Args:
         scheme: The transport scheme
-        resources: The resource restrictions like port ranges
+        resources: Resource restrictions. "host" is advertised; "listening_host" limits the bind address.
 
     Returns:
         a tuple with connecting and listening URL
@@ -284,12 +284,15 @@ def get_tcp_urls(scheme: str, resources: dict) -> (str, str):
     if not host:
         host = "localhost"
 
+    listening_host = resources.get(DriverParams.LISTENING_HOST.value) if resources else None
+    if not listening_host:
+        listening_host = "0"
+
     port = get_open_tcp_port(resources)
     if not port:
         raise CommError(CommError.BAD_CONFIG, "Can't find an open port in the specified range")
 
-    # Always listen on all interfaces
-    listening_url = f"{scheme}://0:{port}"
+    listening_url = f"{scheme}://{listening_host}:{port}"
     connect_url = f"{scheme}://{host}:{port}"
 
     return connect_url, listening_url

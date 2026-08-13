@@ -26,6 +26,7 @@ from nvflare.private.fed.server.server_state import HotState
 from ..server.fed_server import FederatedServer
 from ..server.server_engine import ServerEngine
 from ..utils.identity_utils import IdentityAsserter
+from .simulator_const import SimulatorConstants
 
 
 class SimulatorServerEngine(ServerEngine):
@@ -94,6 +95,8 @@ class SimulatorIdentityAsserter(IdentityAsserter):
 
 
 class SimulatorServer(FederatedServer):
+    _LISTENING_HOST = SimulatorConstants.LISTENING_HOST
+
     def __init__(
         self,
         project_name=None,

@@ -28,6 +28,7 @@ from nvflare.fuel.f3.cellnet.core_cell import (
 )
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
 
@@ -195,6 +196,22 @@ def test_listener_accessors_and_callbacks():
     for setter in (cell.set_cell_connected_cb, cell.set_cell_disconnected_cb, cell.set_message_interceptor):
         with pytest.raises(ValueError, match="not callable"):
             setter(None)
+
+
+def test_internal_listener_host_overrides_configured_resources():
+    cell = CoreCell(
+        fqcn="server",
+        root_url="tcp://127.0.0.1:8002",
+        secure=False,
+        credentials={},
+        internal_listener_host="127.0.0.1",
+    )
+
+    try:
+        assert cell.connector_manager.int_resources[DriverParams.HOST.value] == "127.0.0.1"
+        assert cell.connector_manager.int_resources[DriverParams.LISTENING_HOST.value] == "127.0.0.1"
+    finally:
+        CoreCell.ALL_CELLS.pop("server", None)
 
 
 def test_encrypt_and_decrypt_secure_payload():

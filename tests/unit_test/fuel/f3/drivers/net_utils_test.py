@@ -11,8 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from unittest.mock import patch
+
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.f3.drivers.net_utils import encode_url, parse_url
+from nvflare.fuel.f3.drivers.net_utils import encode_url, get_tcp_urls, parse_url
 
 
 class TestNetUtils:
@@ -37,3 +39,19 @@ class TestNetUtils:
         assert int(params.get(DriverParams.PORT)) == 8002
         assert params.get("a") == "123"
         assert params.get("b") == "test"
+
+    @patch("nvflare.fuel.f3.drivers.net_utils.get_open_tcp_port", return_value=1234)
+    def test_tcp_listener_uses_explicit_listening_host(self, _):
+        resources = {
+            DriverParams.HOST.value: "127.0.0.1",
+            DriverParams.LISTENING_HOST.value: "127.0.0.1",
+        }
+
+        assert get_tcp_urls("tcp", resources) == ("tcp://127.0.0.1:1234", "tcp://127.0.0.1:1234")
+
+    @patch("nvflare.fuel.f3.drivers.net_utils.get_open_tcp_port", return_value=1234)
+    def test_tcp_listener_default_remains_wildcard(self, _):
+        assert get_tcp_urls("tcp", {DriverParams.HOST.value: "server.example"}) == (
+            "tcp://server.example:1234",
+            "tcp://0:1234",
+        )

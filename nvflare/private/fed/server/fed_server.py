@@ -83,6 +83,8 @@ from .server_status import ServerStatus
 
 
 class BaseServer(ABC):
+    _LISTENING_HOST = None
+
     def __init__(
         self,
         project_name=None,
@@ -177,8 +179,10 @@ class BaseServer(ABC):
         # get admin port
         admin_port = int(grpc_args.get("admin_port", fl_port))
 
-        admin_url = f"{scheme}://0:{admin_port}?{ADMIN_LISTENER_KEY}=true"
-        root_url = [admin_url if admin_port == fl_port else f"{scheme}://0:{fl_port}"]
+        listening_host = self._LISTENING_HOST
+        url_host = listening_host or "0"
+        admin_url = f"{scheme}://{url_host}:{admin_port}?{ADMIN_LISTENER_KEY}=true"
+        root_url = [admin_url if admin_port == fl_port else f"{scheme}://{url_host}:{fl_port}"]
         if admin_port != fl_port:
             root_url.append(admin_url)
 
@@ -192,6 +196,7 @@ class BaseServer(ABC):
             credentials=credentials,
             create_internal_listener=True,
             parent_url=parent_url,
+            internal_listener_host=listening_host,
             auth_identity=auth_identity,
             auth_identity_map=auth_identity_map,
         )
