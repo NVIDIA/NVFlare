@@ -33,6 +33,40 @@ class TestNetUtils:
         assert params[DriverParams.SERVER_CERT.value] == str(cert)
         assert params[DriverParams.SERVER_KEY.value] == str(key)
 
+    def test_internal_mtls_reuses_server_pair_for_client_direction(self, tmp_path):
+        ca = tmp_path / "rootCA.pem"
+        cert = tmp_path / "server.crt"
+        key = tmp_path / "server.key"
+        for path in (ca, cert, key):
+            path.write_text("test")
+        params = {
+            DriverParams.CA_CERT.value: str(ca),
+            DriverParams.SERVER_CERT.value: str(cert),
+            DriverParams.SERVER_KEY.value: str(key),
+        }
+
+        enhance_credential_info(params)
+
+        assert params[DriverParams.CLIENT_CERT.value] == str(cert)
+        assert params[DriverParams.CLIENT_KEY.value] == str(key)
+
+    def test_internal_mtls_does_not_mix_incomplete_credential_pairs(self, tmp_path):
+        ca = tmp_path / "rootCA.pem"
+        client_cert = tmp_path / "client.crt"
+        server_key = tmp_path / "server.key"
+        for path in (ca, client_cert, server_key):
+            path.write_text("test")
+        params = {
+            DriverParams.CA_CERT.value: str(ca),
+            DriverParams.CLIENT_CERT.value: str(client_cert),
+            DriverParams.SERVER_KEY.value: str(server_key),
+        }
+
+        enhance_credential_info(params)
+
+        assert DriverParams.CLIENT_KEY.value not in params
+        assert DriverParams.SERVER_CERT.value not in params
+
     def test_tcp_listener_defaults_to_connect_host(self, monkeypatch):
         monkeypatch.setattr("nvflare.fuel.f3.drivers.net_utils.get_open_tcp_port", lambda _resources: 9000)
 

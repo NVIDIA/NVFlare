@@ -571,13 +571,25 @@ def test_launch_plan_rejects_different_context_workspace(tmp_path):
         launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _fl_ctx(context_workspace))
 
 
-def test_non_clear_internal_connection_is_rejected(tmp_path):
+def test_launch_plan_accepts_and_propagates_mtls_parent_connection(tmp_path):
+    workspace = _workspace(tmp_path)
+    launcher = _launcher(tmp_path, workspace)
+    context = _fl_ctx(workspace)
+    context.get_prop(FLContextKey.JOB_PROCESS_ARGS)[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", "mtls")
+
+    plan = launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, context)
+
+    connection_security_index = plan.module_args.index("--parent_conn_sec") + 1
+    assert plan.module_args[connection_security_index] == "mtls"
+
+
+def test_tls_internal_connection_is_rejected(tmp_path):
     workspace = _workspace(tmp_path)
     launcher = _launcher(tmp_path, workspace)
     context = _fl_ctx(workspace)
     context.get_prop(FLContextKey.JOB_PROCESS_ARGS)[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", "tls")
 
-    with pytest.raises(SlurmLauncherError, match="requires clear"):
+    with pytest.raises(SlurmLauncherError, match="requires clear or mTLS"):
         launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, context)
 
 

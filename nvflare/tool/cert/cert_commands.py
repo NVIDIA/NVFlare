@@ -1202,12 +1202,12 @@ def _build_signed_cert(
             encipher_only=False,
             decipher_only=False,
         )
+        # A participant's CellNet identity can act as both a listener and a
+        # connector on internal mTLS hops. Issue the role certificate for both
+        # TLS purposes instead of reusing a purpose-limited certificate.
         eku_oids = [
-            (
-                x509.oid.ExtendedKeyUsageOID.SERVER_AUTH
-                if cert_type == "server"
-                else x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH
-            )
+            x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH,
+            x509.oid.ExtendedKeyUsageOID.SERVER_AUTH,
         ]
 
     # Rebuild subject from safe OIDs only; do NOT copy CSR subject verbatim.

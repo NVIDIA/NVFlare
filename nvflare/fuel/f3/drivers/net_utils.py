@@ -326,39 +326,43 @@ def enhance_credential_info(params: dict):
     client_cert_path = params.get(DriverParams.CLIENT_CERT.value)
     if not client_cert_path:
         # see whether the client cert file exists
-        client_cert_path = os.path.join(cred_folder, SSL_CLIENT_CERT)
-        if os.path.exists(client_cert_path):
-            params[DriverParams.CLIENT_CERT.value] = client_cert_path
+        candidate = os.path.join(cred_folder, SSL_CLIENT_CERT)
+        if os.path.exists(candidate):
+            client_cert_path = candidate
+            params[DriverParams.CLIENT_CERT.value] = candidate
 
     client_key_path = params.get(DriverParams.CLIENT_KEY.value)
     if not client_key_path:
         # see whether the client key file exists
-        client_key_path = os.path.join(cred_folder, SSL_CLIENT_PRIVATE_KEY)
-        if os.path.exists(client_key_path):
-            params[DriverParams.CLIENT_KEY.value] = client_key_path
+        candidate = os.path.join(cred_folder, SSL_CLIENT_PRIVATE_KEY)
+        if os.path.exists(candidate):
+            client_key_path = candidate
+            params[DriverParams.CLIENT_KEY.value] = candidate
 
     server_cert_path = params.get(DriverParams.SERVER_CERT.value)
     if not server_cert_path:
         # see whether the server cert file exists
-        server_cert_path = os.path.join(cred_folder, SSL_SERVER_CERT)
-        if os.path.exists(server_cert_path):
-            params[DriverParams.SERVER_CERT.value] = server_cert_path
-        elif client_cert_path:
-            # Internal CellNet peers can act as both connector and listener.
-            params[DriverParams.SERVER_CERT.value] = client_cert_path
+        candidate = os.path.join(cred_folder, SSL_SERVER_CERT)
+        if os.path.exists(candidate):
+            server_cert_path = candidate
+            params[DriverParams.SERVER_CERT.value] = candidate
 
     server_key_path = params.get(DriverParams.SERVER_KEY.value)
     if not server_key_path:
         # see whether the server key file exists
-        server_key_path = os.path.join(cred_folder, SSL_SERVER_PRIVATE_KEY)
-        if os.path.exists(server_key_path):
-            params[DriverParams.SERVER_KEY.value] = server_key_path
-        elif client_key_path:
-            params[DriverParams.SERVER_KEY.value] = client_key_path
+        candidate = os.path.join(cred_folder, SSL_SERVER_PRIVATE_KEY)
+        if os.path.exists(candidate):
+            server_key_path = candidate
+            params[DriverParams.SERVER_KEY.value] = candidate
 
-    if not client_cert_path and server_cert_path:
+    # Internal CellNet peers act as both connector and listener. Participant
+    # certificates are issued for both TLS purposes, so a complete role pair
+    # can safely fill the other role. Never combine halves of different pairs.
+    if not server_cert_path and not server_key_path and client_cert_path and client_key_path:
+        params[DriverParams.SERVER_CERT.value] = client_cert_path
+        params[DriverParams.SERVER_KEY.value] = client_key_path
+    elif not client_cert_path and not client_key_path and server_cert_path and server_key_path:
         params[DriverParams.CLIENT_CERT.value] = server_cert_path
-    if not client_key_path and server_key_path:
         params[DriverParams.CLIENT_KEY.value] = server_key_path
 
     custom_ca_cert_path = params.get(DriverParams.CUSTOM_CA_CERT.value)

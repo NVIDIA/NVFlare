@@ -455,8 +455,8 @@ class SlurmJobLauncher(JobLauncherSpec):
         if not isinstance(connection_entry, (tuple, list)) or len(connection_entry) != 2:
             raise SlurmLauncherError(f"malformed {JobProcessArgs.PARENT_CONN_SEC} in JOB_PROCESS_ARGS")
         process_connection_security = _require_string(connection_entry[1], f"{JobProcessArgs.PARENT_CONN_SEC} value")
-        if process_connection_security != "clear":
-            raise SlurmLauncherError("Slurm job launch requires clear parent connection security")
+        if process_connection_security not in ("clear", "mtls"):
+            raise SlurmLauncherError("Slurm job launch requires clear or mTLS parent connection security")
         job_args = _rewrite_parent_url(
             raw_job_args,
             parent_host=self.config.parent_host,
