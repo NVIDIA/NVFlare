@@ -29,10 +29,10 @@ SKILL_DIRS = tuple(sorted(path.parent for path in (REPO_ROOT / "skills").glob("*
 # scanning a skill.
 assert SKILL_DIRS, f"no bundled skills discovered under {REPO_ROOT / 'skills'}"
 
-# The keyless deterministic check set. The full Tier 1 security scan additionally needs
-# the `security` extra plus external Semgrep, SkillSpector, and Gitleaks binaries, and
-# LLM-backed checks need a provider key, so neither belongs in the unit-test lane.
-TIER1_VALIDATE_CHECKS = "schema,pii,license,unicode,quality,lint"
+# The deterministic Tier 1 gate. ``security`` invokes SkillSpector, and
+# ``code-integrity`` invokes Bandit, Semgrep, and Gitleaks. LLM-backed checks
+# remain disabled so this suite never requires a provider key.
+TIER1_VALIDATE_CHECKS = "schema,security,pii,license,code-integrity,unicode,quality,lint"
 
 # Standalone Tier 1 commands that are deterministic without a provider key: pii-scan only
 # consults an LLM under --llm-verify, and the other two expose no LLM flags at all.
@@ -90,6 +90,10 @@ def test_skillevaluator_tier1_validate_of_bundled_skill(skill_dir, tmp_path):
 
     assert report["overall_passed"] is True, _failure_message(command, completed)
     assert report["total_errors"] == 0, _failure_message(command, completed)
+    assert not report.get("incomplete_scans"), (
+        f"{skill_dir.name} Tier 1 scan was incomplete: {report['incomplete_scans']}\n"
+        f"{_failure_message(command, completed)}"
+    )
     assert skill_dir.name in scanned, f"{skill_dir.name} missing from the report: {sorted(scanned)}"
     assert scanned[skill_dir.name]["passed"] is True, _failure_message(command, completed)
     # Advisory MEDIUM/LOW quality findings are expected and do not gate the lane;
