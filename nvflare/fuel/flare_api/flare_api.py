@@ -1484,7 +1484,7 @@ class Session(SessionSpec):
 
         Args:
             job_id (str): ID of the job (must be RUNNING)
-            config: str (level or LogMode), dict (dictConfig), or file path
+            config: str log level or built-in LogMode
             target (str): "all", "server", or a client site name. Any value
                 other than "all" or "server" is sent through the client-targeted
                 admin command path.
