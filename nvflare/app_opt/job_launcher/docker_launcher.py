@@ -53,7 +53,9 @@ from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
     get_credential_env,
     get_job_launcher_spec,
+    get_portable_resource_spec,
     get_server_job_args,
+    portable_memory_to_bytes,
 )
 
 
@@ -521,6 +523,7 @@ class DockerJobLauncher(JobLauncherSpec):
 
         site_name = fl_ctx.get_identity_name()
         docker_spec = get_job_launcher_spec(job_meta, site_name, "docker")
+        portable_spec = get_portable_resource_spec(job_meta, site_name)
         job_image = docker_spec.get("image")
         container_name = _sanitize_container_name(f"{site_name}-{job_id}")
         if job_image is not None and not isinstance(job_image, str):
@@ -630,12 +633,10 @@ class DockerJobLauncher(JobLauncherSpec):
 
         # Docker launcher spec: per-job Docker settings (image, shm_size, ipc_mode, ...) live in
         # launcher_spec[site][docker]. Falls back to nested resource_spec[site][docker] for
-        # backward compatibility. num_of_gpus falls back to flat resource_spec[site] (Option 4).
+        # backward compatibility. Portable resources come from the resolved resource_spec.
         # Site-level defaults (default_job_container_kwargs) are merged in; job-level takes precedence on conflict.
-        _site_rs = (job_meta.get(JobMetaKey.RESOURCE_SPEC.value) or {}).get(site_name) or {}
-        _flat_rs = {} if any(k in _site_rs for k in ("process", "docker", "k8s")) else _site_rs
-        num_gpus = docker_spec["num_of_gpus"] if "num_of_gpus" in docker_spec else _flat_rs.get("num_of_gpus", 0)
-        job_gpus_specified = "num_of_gpus" in docker_spec or "num_of_gpus" in _flat_rs
+        num_gpus = docker_spec.get("num_of_gpus", portable_spec.get("num_of_gpus", 0))
+        job_gpus_specified = "num_of_gpus" in portable_spec or "num_of_gpus" in docker_spec
         _NON_CONTAINER_KEYS = {"num_of_gpus", "image", "python_path"} | _RESERVED_CONTAINER_KWARGS
         reserved_in_spec = _RESERVED_CONTAINER_KWARGS & set(docker_spec.keys())
         if reserved_in_spec:
@@ -662,6 +663,10 @@ class DockerJobLauncher(JobLauncherSpec):
                 merged_container_kwargs["device_requests"] = [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
             elif job_gpus_specified:
                 merged_container_kwargs.pop("device_requests", None)
+        if "num_of_cpus" in portable_spec:
+            merged_container_kwargs["nano_cpus"] = portable_spec["num_of_cpus"] * 1_000_000_000
+        if "memory" in portable_spec:
+            merged_container_kwargs["mem_limit"] = portable_memory_to_bytes(portable_spec["memory"])
 
         # Give the job an isolated workspace view. The root tmpfs must be writable by the non-root
         # container user because server job startup may create ephemeral storage dirs such as
