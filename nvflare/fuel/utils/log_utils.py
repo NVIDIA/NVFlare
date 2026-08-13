@@ -369,6 +369,42 @@ def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str
         )
 
 
+def _validate_remote_log_config(config, command_name: str) -> str:
+    """Validate a remotely supplied log control value."""
+    error = f"{command_name} only supports log levels and built-in log modes"
+    if not isinstance(config, str):
+        raise ValueError(error)
+
+    config = config.strip()
+    if not config:
+        raise ValueError(error)
+
+    if config == LogMode.RELOAD or config in logmode_config_dict:
+        return config
+
+    level = int(config) if config.isdigit() else getattr(logging, config.upper(), None)
+    if level is None or not (0 <= level <= 50):
+        raise ValueError(error)
+
+    return config
+
+
+def validate_site_log_config(config) -> str:
+    """Validate site-wide log configuration input.
+
+    Site-wide log reconfiguration is intentionally narrower than general
+    dictConfig support: only simple log levels and built-in log modes are
+    allowed on this admin command path.
+    """
+
+    return _validate_remote_log_config(config, "configure_site_log")
+
+
+def validate_job_log_config(config) -> str:
+    """Validate job log input without accepting executable dictConfig data."""
+    return _validate_remote_log_config(config, "configure_job_log")
+
+
 def add_log_file_handler(log_file_name):
     root_logger = logging.getLogger()
     main_handler = root_logger.handlers[0]
