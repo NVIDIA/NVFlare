@@ -145,8 +145,8 @@ class BaseServer(ABC):
         self.logger.info("server off")
         return 0
 
-    def deploy(self, args, grpc_args=None, secure_train=False):
-        """Start a grpc server and listening the designated port."""
+    def deploy(self, args, grpc_args=None, secure_train=False, enable_admin_listener=True):
+        """Start the server and listen on the configured ports."""
         target = grpc_args["service"].get("target", "0.0.0.0:6007")
         scheme = grpc_args["service"].get("scheme", "grpc")
 
@@ -174,13 +174,14 @@ class BaseServer(ABC):
 
         fl_port = int(parts[1])
 
-        # get admin port
-        admin_port = int(grpc_args.get("admin_port", fl_port))
-
-        admin_url = f"{scheme}://0:{admin_port}?{ADMIN_LISTENER_KEY}=true"
-        root_url = [admin_url if admin_port == fl_port else f"{scheme}://0:{fl_port}"]
-        if admin_port != fl_port:
-            root_url.append(admin_url)
+        root_url = [f"{scheme}://0:{fl_port}"]
+        if enable_admin_listener:
+            admin_port = int(grpc_args.get("admin_port", fl_port))
+            admin_url = f"{scheme}://0:{admin_port}?{ADMIN_LISTENER_KEY}=true"
+            if admin_port == fl_port:
+                root_url = [admin_url]
+            else:
+                root_url.append(admin_url)
 
         my_fqcn = FQCN.ROOT_SERVER
         auth_identity = grpc_args.get(ConnPropKey.AUTH_IDENTITY)
@@ -1131,8 +1132,8 @@ class FederatedServer(BaseServer):
         # mpm.stop()
         pass
 
-    def deploy(self, args, grpc_args=None, secure_train=False):
-        super().deploy(args, grpc_args, secure_train)
+    def deploy(self, args, grpc_args=None, secure_train=False, enable_admin_listener=True):
+        super().deploy(args, grpc_args, secure_train, enable_admin_listener=enable_admin_listener)
 
         target = grpc_args["service"].get("target", "0.0.0.0:6007")
         with self.lock:

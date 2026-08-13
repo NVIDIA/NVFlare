@@ -35,7 +35,7 @@ from .server_deployer import ServerDeployer
 class SimulatorDeployer(ServerDeployer):
     def __init__(self):
         super().__init__()
-        self.open_ports = get_open_ports(2)
+        self.open_ports = get_open_ports(1)
         self.admin_storage = tempfile.mkdtemp()
 
     def create_fl_server(self, args, secure_train=False):
@@ -115,8 +115,6 @@ class SimulatorDeployer(ServerDeployer):
                 "target": "localhost:" + str(self.open_ports[0]),
                 "scheme": "tcp",
             },
-            "admin_host": "localhost",
-            "admin_port": self.open_ports[1],
             "max_num_clients": max_clients,
             "heart_beat_timeout": 600,
             "num_server_workers": 4,

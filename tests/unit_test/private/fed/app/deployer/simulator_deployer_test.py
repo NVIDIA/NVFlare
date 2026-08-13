@@ -23,6 +23,7 @@ import pytest
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.fuel.f3.cellnet.defs import CellChannel
+from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
@@ -75,10 +76,16 @@ class TestSimulatorDeploy(unittest.TestCase):
         parser = self._create_parser()
         args = parser.parse_args(["job_folder", "-w" + workspace, "-n 2", "-t 1"])
         args.config_folder = "config"
-        _, server = self.deployer.create_fl_server(args)
+        server_config, server = self.deployer.create_fl_server(args)
 
         assert isinstance(server, SimulatorServer)
         assert isinstance(server.engine.run_manager, RunManager)
+        assert len(self.deployer.open_ports) == 1
+        assert "admin_host" not in server_config
+        assert "admin_port" not in server_config
+        root_urls = mock_cell.call_args.kwargs["root_url"]
+        assert root_urls == [f"tcp://0:{self.deployer.open_ports[0]}"]
+        assert all(ADMIN_LISTENER_KEY not in url for url in root_urls)
         assert server.admin_server.enable_hci is False
         assert server.admin_server.cmd_reg is None
         assert server.admin_server.sess_mgr is None
