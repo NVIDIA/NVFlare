@@ -76,9 +76,8 @@ that design to HF, with HF-specific handling where the two trainers differ.
 
 - No new server-side workflow or controller. Existing FedAvg/recipes work unchanged.
 - No change to FL algorithms.
-- DeepSpeed and FSDP are currently unsupported. Their sharded state-dict and
-  coordinated checkpoint requirements are specified separately in
-  [HuggingFace Client API Sharded Training Proposal](hf_client_api_sharded_training_proposal.md).
+- DeepSpeed and FSDP are currently unsupported. They require dedicated
+  coordinated sharded import/export and checkpoint implementations.
 - `Trainer`-free HF training loops (raw `accelerate` loops) — those users keep the
   raw Client API.
 
@@ -570,7 +569,7 @@ owns this sequence; per loop iteration it is exactly:
 7. No session collective after `send()` — rank 0 sends to the pipe alone. This
    sequence applies only to the supported replicated single-GPU/DDP path.
    Sharded backends require a separate all-rank export/import sequence before
-   this rank-0 send; see the sharded-training proposal.
+   this rank-0 send.
 
 User code must not introduce rank-conditional wrapped calls (e.g. calling
 `trainer.evaluate()` only on rank 0): the wrappers run their collectives on all
@@ -766,10 +765,9 @@ root and `client.py` selects `<data_root>/<site_name>/`.
 - **Phase 1:** `patch()` + `FLCallback`; SFT + PEFT; single-GPU + DDP; train /
   evaluate / submit_model; unit tests; add the clean `hello-huggingface` example.
 - **Follow-on sharded-training delivery:** FSDP and DeepSpeed remain unsupported
-  until their separate implementation work lands. The required FSDP-first
-  collective import/export, coordinated checkpoint/resume, compatibility matrix,
-  memory policy, and integration tests are defined in the
-  [HuggingFace Client API Sharded Training Proposal](hf_client_api_sharded_training_proposal.md).
+  until their separate implementation work lands. FSDP-first collective
+  import/export, coordinated checkpoint/resume, a compatibility matrix, memory
+  policy, and real multi-rank integration tests are required before enabling it.
   DeepSpeed ZeRO follows as a separate capability, not validation of Phase 1
   code paths. `Seq2SeqTrainer` predict/generate-based evaluation metrics capture
   is independent follow-on work.
