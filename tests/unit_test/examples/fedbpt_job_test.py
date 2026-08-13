@@ -115,6 +115,16 @@ def test_fedbpt_run_warns_for_secret_in_combined_train_args(monkeypatch, secret_
     env.deploy.assert_called_once()
 
 
+def test_fedbpt_runner_uses_exported_train_script_name(monkeypatch):
+    recipe_module = _load_fedbpt_recipe_module(monkeypatch)
+    recipe = recipe_module.FedBPTRecipe(num_clients=1)
+
+    client_app = recipe._job._deploy_map["@ALL"]
+    executor = client_app.app_config.executors[0].executor
+
+    assert executor._command[:3] == ["python3", "-u", "custom/fedbpt_train.py"]
+
+
 @pytest.mark.skipif(not HAS_FEDBPT_EXPORT_DEPS, reason="FedBPT job export dependencies are not installed")
 def test_fedbpt_job_exports_recipe_config(tmp_path):
     job_module = _load_fedbpt_job_module()
@@ -164,7 +174,11 @@ def test_fedbpt_job_exports_recipe_config(tmp_path):
     assert server["workflows"][0]["args"]["num_rounds"] == 1
     assert any(c["path"] == "decomposer_widget.RegisterDecomposer" for c in server["components"])
     assert any(c["path"] == "decomposer_widget.RegisterDecomposer" for c in client["components"])
-    assert any("custom/fedbpt_train.py" in c["args"].get("script", "") for c in client["components"])
+    assert client["executors"][0]["executor"]["args"]["command"][:3] == [
+        "python3",
+        "-u",
+        "custom/fedbpt_train.py",
+    ]
     assert sys.path.count(src_dir) == src_path_count
 
 

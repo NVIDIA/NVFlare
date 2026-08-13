@@ -284,9 +284,8 @@ trainer's typed Attach profile:
      - Trainer-profile bound for discovering a job and receiving
        ``SESSION_OPEN``.
 
-Attach requires either a positive ``heartbeat_timeout`` or a finite
-``result_wait_timeout`` because NVFLARE does not own the trainer process and
-cannot use process liveness as a fallback. See
+Attach requires a positive ``heartbeat_timeout`` because NVFLARE does not own
+the trainer process and cannot use process liveness as a fallback. See
 :ref:`client_api_attach` for the full lifecycle contract.
 
 
@@ -490,37 +489,8 @@ modes. Heartbeats apply only to the out-of-process modes.
      - Bound how long the CJ waits for an external trainer to attach.
 
 The trainer-side Attach profile separately provides ``job_wait_timeout`` to
-bound job discovery and ``SESSION_OPEN``. Attach requires either a positive
-``heartbeat_timeout`` or a finite ``result_wait_timeout`` because NVFLARE does
-not own the trainer process.
-
-
-Pipe Handler
-------------
-
-Inter-process communication pipe timeouts for Client API (pipe_handler.py):
-
-.. list-table::
-   :header-rows: 1
-   :widths: 28 12 60
-
-   * - Parameter
-     - Default
-     - Purpose
-   * - heartbeat_interval
-     - 5.0
-     - Interval for sending heartbeats
-   * - heartbeat_timeout
-     - 30.0
-     - Max time without heartbeat before peer is dead
-   * - default_request_timeout
-     - 5.0
-     - Default timeout for requests
-   * - resend_interval
-     - 2.0
-     - Interval between message resends
-
-**Important**: ``heartbeat_interval`` must be less than ``heartbeat_timeout``.
+bound job discovery and ``SESSION_OPEN``. Attach requires a positive
+``heartbeat_timeout`` because NVFLARE does not own the trainer process.
 
 
 P2P Executor
@@ -1367,8 +1337,8 @@ Framework-level settings for large payload transfers (fl_constant.py:553, comm_c
      - Chunk size for PyTorch tensor downloads (bytes)
 
 For ``ClientAPIExecutor``, large-payload transfer uses the shared streaming
-download service rather than the legacy Pipe/FlareAgent retry path. Keep the
-download idle budget aligned with the streaming request budget:
+download service. Keep the download idle budget aligned with the streaming
+request budget:
 
 - ``tensor_min_download_timeout`` / ``np_min_download_timeout`` should be at
   least ``tensor_streaming_per_request_timeout`` /
@@ -1379,11 +1349,6 @@ download idle budget aligned with the streaming request budget:
   download and trainer acceptance. Size it for the complete delivery path.
 - ``result_wait_timeout`` bounds waiting for result publication; subsequent
   payload streaming uses the shared transfer idle policy.
-
-The settings ``PEER_READ_TIMEOUT``, ``submit_result_timeout``,
-``download_complete_timeout``, and ``max_resends`` apply only to the legacy
-``BaseScriptRunner`` / ``ClientAPILauncherExecutor`` Pipe path. They are not
-consumed by ``ClientAPIExecutor``.
 
 Swarm Learning Large Model Setup
 --------------------------------
@@ -1409,8 +1374,7 @@ Recommended timeouts for large models in Swarm Learning:
        "streaming_per_request_timeout": 600,
    })
 
-   # Client-side streaming idle budget. Swarm's ordinary external-process path
-   # uses ClientAPIExecutor, so legacy Pipe/FlareAgent retry settings do not apply.
+   # Client-side streaming idle budget
    recipe.add_client_config({
        "tensor_min_download_timeout": 600,
    })
@@ -1699,10 +1663,11 @@ Android SDK includes job operation timeout (mobile_android.rst:43-58):
    )
 
 
-SubprocessLauncher Timeouts
+Client API Process Shutdown
 ===========================
 
-Subprocess launcher timeout (subprocess_launcher.py):
+``ClientAPIExecutor(execution_mode="external_process")`` owns the launched
+process group and applies these shutdown bounds:
 
 .. list-table::
    :header-rows: 1
@@ -1712,8 +1677,13 @@ Subprocess launcher timeout (subprocess_launcher.py):
      - Default
      - Purpose
    * - shutdown_timeout
-     - 0.0
-     - Time to wait before forcefully stopping subprocess
+     - backend default
+     - Time for orderly trainer exit before forced termination begins
+   * - stop_grace_period
+     - 30.0
+     - Time between soft and hard process-group termination
+
+Attach mode never terminates the externally owned trainer process.
 
 
 Experiment Tracking Timeouts
@@ -1899,7 +1869,7 @@ Hierarchical Relationships
    │  ├── attach_timeout (attach: None)                              │
    │  ├── heartbeat_interval (out-of-process: 5s)                    │
    │  ├── heartbeat_timeout (out-of-process: 30s)                    │
-   │  ├── task_wait_timeout (None)                                   │
+   │  ├── task_wait_timeout (external: None; attach: 600s if unset)   │
    │  └── result_wait_timeout (None)                                 │
    └─────────────────────────────────────────────────────────────────┘
 
@@ -1936,7 +1906,7 @@ Impact Analysis
      - Clients incorrectly marked dead, frequent reconnections
    * - task.timeout / train_timeout
      - Training interrupted before completion, lost work
-   * - external_pre_init_timeout
+   * - launch_timeout
      - Large model loading fails, external processes killed
    * - streaming_read_timeout
      - Large file transfers fail mid-stream
@@ -2011,10 +1981,10 @@ Fast iteration with quick feedback:
    heart_beat_timeout = 60        # Quick dead client detection
    admin_timeout = 5.0            # Fast admin commands
 
-   # Client parameters
+   # Client API executor parameters
    heartbeat_timeout = 30.0
    task_wait_timeout = 60.0
-   external_pre_init_timeout = 60.0
+   launch_timeout = 60.0
 
    # Flare API
    login_timeout = 5.0
@@ -2038,10 +2008,9 @@ Balanced settings for typical federated learning:
    subnet_heartbeat_interval = 5
    streaming_read_timeout = 300
 
-   # Executor
-   external_pre_init_timeout = 300.0
+   # Client API executor
+   launch_timeout = 300.0
    heartbeat_timeout = 300.0
-   last_result_transfer_timeout = 300.0
 
 
 Production - Large Models (100M+ parameters)
@@ -2054,9 +2023,9 @@ Extended timeouts for large model training:
    # Server
    heart_beat_timeout = 1200      # 20 min for large model operations
 
-   # Executor/Launcher
-   external_pre_init_timeout = 600.0   # 10 min for model loading
-   task_wait_timeout = 3600.0          # 1 hour for training
+   # Client API executor
+   launch_timeout = 600.0      # 10 min for process launch and model init
+   task_wait_timeout = 3600.0  # 1 hour for training
 
    # Streaming
    streaming_per_request_timeout = 900  # 15 min per chunk
@@ -2078,6 +2047,7 @@ For billion-parameter models (examples/advanced/llm_hf):
    recipe = FedAvgRecipe(
        name="llm_training",
        model=None,  # Use dict config for large models
+       launch_timeout=900.0,  # 15 min for external process launch and model init
        shutdown_timeout=120.0,
    )
 
@@ -2085,7 +2055,6 @@ For billion-parameter models (examples/advanced/llm_hf):
    recipe.add_client_config({
        "get_task_timeout": 600,            # 10 min to receive task
        "submit_task_result_timeout": 600,  # 10 min to submit results
-       "external_pre_init_timeout": 900,   # 15 min for model init
    })
 
 
@@ -2390,16 +2359,23 @@ Client API Configuration (config_fed_client.json)
 .. code-block:: json
 
    {
-     "TASK_EXCHANGE": {
-       "heartbeat_timeout": 60.0,
-       "heartbeat_interval": 5.0,
-       "resend_interval": 2.0,
-       "pipe": {
-         "ARG": {
-           "root_url": "tcp://localhost:8002"
+     "executors": [
+       {
+         "tasks": ["train"],
+         "executor": {
+           "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+           "args": {
+             "execution_mode": "external_process",
+             "command": ["python3", "-u", "custom/train.py"],
+             "launch_timeout": 300,
+             "heartbeat_interval": 5,
+             "heartbeat_timeout": 30,
+             "task_wait_timeout": null,
+             "result_wait_timeout": null
+           }
          }
        }
-     }
+     ]
    }
 
 
@@ -2720,9 +2696,9 @@ job to fail.
 
 *Executors:*
 
-- ``external_pre_init_timeout`` should cover model loading + library imports
+- ``launch_timeout`` should cover process launch, library imports, model loading, and ``flare.init()``
 - ``heartbeat_timeout`` should be 2-3x ``heartbeat_interval``
-- Set ``last_result_transfer_timeout`` based on result size
+- Size the shared streaming idle/per-request timeouts for the largest expected task and result payloads
 - For IPC: ``agent_connection_timeout`` > ``agent_heartbeat_interval`` * 3
 
 *Workflows:*
