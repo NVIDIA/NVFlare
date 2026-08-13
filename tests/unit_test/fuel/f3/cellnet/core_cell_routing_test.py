@@ -30,6 +30,7 @@ class _FakeAgent:
 
 def _routing_cell(fqcn, connected):
     cell = CoreCell.__new__(CoreCell)
+    cell.ALL_CELLS = {}
     cell.my_info = FqcnInfo(fqcn)
     cell.logger = logging.getLogger(__name__)
     cell.agents = {f: _FakeAgent(f) for f in connected}
