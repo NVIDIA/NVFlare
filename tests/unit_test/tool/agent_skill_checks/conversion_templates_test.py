@@ -280,15 +280,19 @@ def test_huggingface_job_template_cleans_only_implicit_simulation_workspaces(tmp
 def test_huggingface_job_template_advertises_only_explicit_workspace(monkeypatch, tmp_path, capsys):
     module = _load_module(HF_TEMPLATES / "job.py")
     executed_workspaces = []
+    status_workspaces = []
+    result_workspaces = []
 
     class _Run:
         def __init__(self, workspace_root):
             self.workspace_root = workspace_root
 
         def get_status(self):
+            status_workspaces.append(self.workspace_root)
             return "FINISHED"
 
         def get_result(self):
+            result_workspaces.append(self.workspace_root)
             return str(self.workspace_root / "result")
 
     class _Recipe:
@@ -306,8 +310,10 @@ def test_huggingface_job_template_advertises_only_explicit_workspace(monkeypatch
     module.main()
     implicit_output = capsys.readouterr().out
 
-    assert "Job Status is: FINISHED" in implicit_output
+    assert "Job Status is:" not in implicit_output
     assert "Result can be found in:" not in implicit_output
+    assert status_workspaces == []
+    assert result_workspaces == []
     assert not executed_workspaces[-1].exists()
 
     explicit_workspace = tmp_path / "workspace"
@@ -316,7 +322,10 @@ def test_huggingface_job_template_advertises_only_explicit_workspace(monkeypatch
     module.main()
     explicit_output = capsys.readouterr().out
 
+    assert "Job Status is: FINISHED" in explicit_output
     assert f"Result can be found in: {explicit_workspace / 'result'}" in explicit_output
+    assert status_workspaces == [explicit_workspace]
+    assert result_workspaces == [explicit_workspace]
     assert explicit_workspace.is_dir()
 
 

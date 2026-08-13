@@ -220,8 +220,8 @@ def main():
                 workspace_root=str(workspace_root),
             )
         )
-        print("Job Status is:", run.get_status())
         if args.workspace_root is not None:
+            print("Job Status is:", run.get_status())
             print("Result can be found in:", run.get_result())
 
 
