@@ -23,6 +23,7 @@ import ast
 import importlib.util
 import inspect
 import json
+import shutil
 import sys
 import types
 from dataclasses import dataclass
@@ -260,19 +261,20 @@ def test_huggingface_client_template_requires_and_forwards_global_rank(monkeypat
     assert observed == [0, 1]
 
 
-def test_huggingface_job_template_cleans_only_implicit_simulation_workspaces(tmp_path):
+def test_huggingface_job_template_uses_private_persistent_implicit_simulation_workspace(tmp_path):
     module = _load_module(HF_TEMPLATES / "job.py")
 
-    with module._simulation_workspace(None) as workspace_root:
-        implicit_workspace = workspace_root
-        assert implicit_workspace.is_dir()
+    implicit_workspace = module._simulation_workspace(None)
+    assert implicit_workspace.is_dir()
 
-    assert not implicit_workspace.exists()
+    # The template prints a result path under this directory after the simulation
+    # finishes, so the default workspace must survive long enough to inspect it.
+    assert implicit_workspace.exists()
+    shutil.rmtree(implicit_workspace)
 
     explicit_workspace = tmp_path / "workspace"
     explicit_workspace.mkdir()
-    with module._simulation_workspace(explicit_workspace) as workspace_root:
-        assert workspace_root == explicit_workspace
+    assert module._simulation_workspace(explicit_workspace) == explicit_workspace
 
     assert explicit_workspace.is_dir()
 
