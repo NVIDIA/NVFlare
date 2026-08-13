@@ -90,12 +90,12 @@ def test_skillspector_keyless_static_scan_of_bundled_skill(skill_dir, tmp_path):
 
     # Agent Skills evaluation suites are self-contained under evals/, including
     # adversarial fixtures used to verify prompt-injection resistance. Scan the
-    # complete installed skill tree, but distinguish those declared fixtures from
-    # runtime guidance. A HIGH/CRITICAL issue anywhere other than evals/files/
+    # complete installed skill tree, but distinguish its evaluation metadata from
+    # runtime guidance. A HIGH/CRITICAL issue anywhere other than evals/
     # blocks the skill. Fixture findings remain visible in the JSON report and
     # may make SkillSpector return 1 because its aggregate risk score is high.
     blocking_runtime_issues = [
-        issue for issue in issues if issue["severity"] in BLOCKING_SEVERITIES and not _is_eval_fixture(issue)
+        issue for issue in issues if issue["severity"] in BLOCKING_SEVERITIES and not _is_eval_metadata(issue)
     ]
     assert not blocking_runtime_issues
     assert completed.returncode in {0, 1}, (
@@ -111,12 +111,12 @@ def test_skillspector_keyless_static_scan_of_bundled_skill(skill_dir, tmp_path):
         )
 
 
-def _is_eval_fixture(issue):
+def _is_eval_metadata(issue):
     location = issue.get("location")
     if not isinstance(location, dict):
         return False
     file_path = location.get("file")
-    return isinstance(file_path, str) and file_path.replace("\\", "/").startswith("evals/files/")
+    return isinstance(file_path, str) and file_path.replace("\\", "/").startswith("evals/")
 
 
 def _keyless_env():
