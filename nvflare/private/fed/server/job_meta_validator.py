@@ -29,7 +29,7 @@ from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.logging import secure_format_exception
 from nvflare.utils.job_launcher_utils import (
-    DOCKER_JOB_LAUNCHER_KEYS,
+    validate_docker_job_launcher_spec,
     validate_portable_resource_conflicts,
     validate_portable_resource_spec,
 )
@@ -312,14 +312,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
     @staticmethod
     def _validate_docker_launcher_spec(job_name: str, path: str, docker_spec: dict) -> None:
-        if not isinstance(docker_spec, dict):
-            raise ValueError(f"{path} for job {job_name} must be a dict")
-        unsupported = sorted(set(docker_spec) - DOCKER_JOB_LAUNCHER_KEYS, key=str)
-        if unsupported:
-            raise ValueError(
-                f"{path} for job {job_name} contains unsupported job-controlled Docker option(s) {unsupported}; "
-                f"allowed options: {sorted(DOCKER_JOB_LAUNCHER_KEYS)}"
-            )
+        validate_docker_job_launcher_spec(docker_spec, f"{path} for job {job_name}")
 
     @staticmethod
     def _get_all_clients(site_list: Optional[list]) -> Set[str]:

@@ -1008,7 +1008,18 @@ class TestDockerJobLauncherLaunchJob:
         fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
         job_meta = _make_job_meta(site_name="site-1", docker_spec={"entrypoint": "/bin/sh"})
 
-        with pytest.raises(RuntimeError, match="requires locally authorized BYOC"):
+        with pytest.raises(RuntimeError, match="job Docker spec for site 'site-1'.*lacks locally authorized BYOC"):
+            launcher.launch_job(job_meta, fl_ctx)
+        dc.containers.run.assert_not_called()
+
+    @pytest.mark.parametrize("num_of_gpus", [True, False, "1", 1.5, -1, None])
+    def test_launch_rejects_invalid_num_of_gpus(self, num_of_gpus):
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = _make_job_meta(site_name="site-1", docker_spec={"num_of_gpus": num_of_gpus})
+
+        with pytest.raises(RuntimeError, match="num_of_gpus.*integer greater than or equal to 0"):
             launcher.launch_job(job_meta, fl_ctx)
         dc.containers.run.assert_not_called()
 

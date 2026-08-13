@@ -136,6 +136,26 @@ DOCKER_JOB_BYOC_KEYS = frozenset({"image", "python_path", "entrypoint"})
 DOCKER_JOB_CONTAINER_KWARGS = frozenset({"entrypoint", "shm_size"})
 DOCKER_JOB_LAUNCHER_KEYS = DOCKER_JOB_BYOC_KEYS | DOCKER_JOB_CONTAINER_KWARGS | {"num_of_gpus"}
 
+
+def validate_docker_job_launcher_spec(docker_spec: dict, label: str) -> None:
+    """Validate the Docker options that a job is allowed to control."""
+    if not isinstance(docker_spec, dict):
+        raise ValueError(f"{label} must be a dict")
+
+    unsupported = sorted(set(docker_spec) - DOCKER_JOB_LAUNCHER_KEYS, key=str)
+    if unsupported:
+        raise ValueError(
+            f"{label} contains unsupported job-controlled Docker option(s) {unsupported}; "
+            f"allowed options: {sorted(DOCKER_JOB_LAUNCHER_KEYS)}"
+        )
+
+    num_of_gpus = docker_spec.get("num_of_gpus")
+    if "num_of_gpus" in docker_spec and (
+        isinstance(num_of_gpus, bool) or not isinstance(num_of_gpus, int) or num_of_gpus < 0
+    ):
+        raise ValueError(f"{label} field 'num_of_gpus' must be an integer greater than or equal to 0")
+
+
 PORTABLE_RESOURCE_DEFAULT_KEY = "@default"
 PORTABLE_RESOURCE_KEYS = ("num_of_gpus", "num_of_cpus", "memory")
 _PORTABLE_MEMORY_PATTERN = re.compile(r"^([1-9][0-9]*)(Mi|Gi|Ti)$")

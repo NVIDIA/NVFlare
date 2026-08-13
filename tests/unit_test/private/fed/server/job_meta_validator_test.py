@@ -204,6 +204,19 @@ class TestJobMetaValidator:
                 "unit_test", {"resource_spec": {"site-1": {"docker": {"privileged": True}}}}
             )
 
+    @pytest.mark.parametrize("num_of_gpus", [True, False, "1", 1.5, -1, None])
+    @pytest.mark.parametrize("site", ["default", "site-1"])
+    def test_invalid_docker_num_of_gpus_is_rejected(self, site, num_of_gpus):
+        with pytest.raises(ValueError, match="num_of_gpus.*integer greater than or equal to 0"):
+            JobMetaValidator._validate_launcher_spec(
+                "unit_test", {"launcher_spec": {site: {"docker": {"num_of_gpus": num_of_gpus}}}}
+            )
+
+    @pytest.mark.parametrize("docker_spec", [[], "", 1, False])
+    def test_legacy_docker_resource_spec_requires_dict(self, docker_spec):
+        with pytest.raises(ValueError, match="must be a dict"):
+            JobMetaValidator._validate_resource("unit_test", {"resource_spec": {"site-1": {"docker": docker_spec}}})
+
     def test_unknown_launcher_mode_is_rejected(self):
         with pytest.raises(ValueError, match="unknown launcher mode"):
             JobMetaValidator._validate_launcher_spec("unit_test", {"launcher_spec": {"site-1": {"slurm_typo": {}}}})

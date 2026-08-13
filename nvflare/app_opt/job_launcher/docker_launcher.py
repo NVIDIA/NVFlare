@@ -52,13 +52,13 @@ from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.fuel.f3.drivers.file_driver import parse_file_url
 from nvflare.utils.job_launcher_utils import (
     DOCKER_JOB_CONTAINER_KWARGS,
-    DOCKER_JOB_LAUNCHER_KEYS,
     get_client_job_args,
     get_credential_env,
     get_job_launcher_spec,
     get_portable_resource_spec,
     get_server_job_args,
     portable_memory_to_bytes,
+    validate_docker_job_launcher_spec,
 )
 
 
@@ -514,14 +514,14 @@ class DockerJobLauncher(JobLauncherSpec):
 
         site_name = fl_ctx.get_identity_name()
         docker_spec = get_job_launcher_spec(job_meta, site_name, "docker")
-        unsupported = sorted(set(docker_spec) - DOCKER_JOB_LAUNCHER_KEYS, key=str)
-        if unsupported:
-            raise RuntimeError(
-                f"job Docker spec for site '{site_name}' contains unsupported job-controlled Docker option(s) "
-                f"{unsupported}; allowed options: {sorted(DOCKER_JOB_LAUNCHER_KEYS)}"
-            )
+        try:
+            validate_docker_job_launcher_spec(docker_spec, f"job Docker spec for site '{site_name}'")
+        except ValueError as e:
+            raise RuntimeError(str(e)) from e
         if "entrypoint" in docker_spec and not job_meta.get(AppValidationKey.BYOC, False):
-            raise RuntimeError(f"launcher_spec['{site_name}']['docker']['entrypoint'] requires locally authorized BYOC")
+            raise RuntimeError(
+                f"job Docker spec for site '{site_name}' contains entrypoint but lacks locally authorized BYOC"
+            )
         portable_spec = get_portable_resource_spec(job_meta, site_name)
         job_image = docker_spec.get("image")
         container_name = _sanitize_container_name(f"{site_name}-{job_id}")
