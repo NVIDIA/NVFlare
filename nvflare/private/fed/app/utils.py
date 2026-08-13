@@ -70,13 +70,14 @@ def kill_child_processes(parent_pid):
         process.kill()
 
 
-def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None):
+def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None, enable_hci: bool = True):
     """To create the admin server.
 
     Args:
         fl_server: fl_server
         server_conf: server config
         args: command args
+        enable_hci: whether to enable inbound admin commands and uploads
 
     Returns:
         A FedAdminServer.
@@ -89,6 +90,7 @@ def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None)
         file_download_dir=os.path.join(args.workspace, server_conf.get("admin_storage", "tmp")),
         download_job_url=server_conf.get("download_job_url", "http://"),
         timeout=server_conf.get("admin_timeout", 10.0),
+        enable_hci=enable_hci,
     )
     return admin_server
 

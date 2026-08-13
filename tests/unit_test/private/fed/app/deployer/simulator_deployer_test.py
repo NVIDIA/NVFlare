@@ -22,6 +22,7 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.apis.fl_constant import WorkspaceConstants
+from nvflare.fuel.f3.cellnet.defs import CellChannel
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
@@ -64,10 +65,10 @@ class TestSimulatorDeploy(unittest.TestCase):
         client.cell.stop()
         shutil.rmtree(workspace)
 
-    @patch("nvflare.private.fed.server.admin.FedAdminServer.start")
+    @patch("nvflare.fuel.hci.server.hci.FileStreamer.register_stream_processing")
     @patch("nvflare.private.fed.simulator.simulator_server.SimulatorServer._register_cellnet_cbs")
     @patch("nvflare.private.fed.server.fed_server.Cell")
-    def test_create_server(self, mock_admin, mock_simulator_server, mock_cell):
+    def test_create_server(self, mock_cell, mock_simulator_server, mock_register_stream):
         workspace = tempfile.mkdtemp()
         os.mkdir(os.path.join(workspace, "local"))
         os.mkdir(os.path.join(workspace, "startup"))
@@ -78,6 +79,16 @@ class TestSimulatorDeploy(unittest.TestCase):
 
         assert isinstance(server, SimulatorServer)
         assert isinstance(server.engine.run_manager, RunManager)
+        assert server.admin_server.enable_hci is False
+        assert server.admin_server.cmd_reg is None
+        assert server.admin_server.sess_mgr is None
+        assert server.admin_server.net_agent is None
+        assert server.admin_server.net_mgr is None
+        registered_channels = {call.kwargs["channel"] for call in server.cell.register_request_cb.call_args_list}
+        assert CellChannel.HCI not in registered_channels
+        assert "_net_manager" not in registered_channels
+        mock_register_stream.assert_not_called()
+        server.cell.core_cell.register_request_cb.assert_not_called()
 
         server.cell.stop()
         server.close()

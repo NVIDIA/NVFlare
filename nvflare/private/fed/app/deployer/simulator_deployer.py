@@ -54,10 +54,12 @@ class SimulatorDeployer(ServerDeployer):
         )
         services.deploy(args, grpc_args=simulator_server)
 
+        # Simulator uses only bookkeeping and outbound helpers; it does not support inbound administration.
         admin_server = create_admin_server(
             services,
             server_conf=simulator_server,
             args=args,
+            enable_hci=False,
         )
         admin_server.start()
         services.set_admin_server(admin_server)
