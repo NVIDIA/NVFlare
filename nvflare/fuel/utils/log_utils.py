@@ -342,7 +342,12 @@ def apply_log_config(dict_config, dir_path: str = "", file_prefix: str = ""):
     logging.captureWarnings(True)  # route Python warnings through logging so they reach file handlers
 
 
-def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str):
+def dynamic_log_config(
+    config: Union[dict, str],
+    dir_path: str,
+    reload_path: str,
+    allow_file_config: bool = True,
+):
     # Dynamically configure log given a config (dict, filepath, LogMode, or level), apply the config to the proper locations.
 
     if isinstance(config, dict):
@@ -356,7 +361,7 @@ def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str
             return
 
         # Read config file
-        if os.path.isfile(config):
+        if allow_file_config and os.path.isfile(config):
             with open(config, "r") as f:
                 dict_config = json.load(f)
 
