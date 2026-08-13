@@ -21,7 +21,7 @@ from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
-from nvflare.fuel.utils.log_utils import dynamic_log_config
+from nvflare.fuel.utils.log_utils import dynamic_log_config, validate_site_log_config
 from nvflare.private.admin_defs import MsgHeader, ReturnCode
 from nvflare.private.defs import SysCommandTopic
 from nvflare.private.fed.server.admin import new_message
@@ -148,6 +148,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
 
             workspace = engine.get_workspace()
             try:
+                config = validate_site_log_config(config)
                 dynamic_log_config(
                     config=config, dir_path=workspace.get_root_dir(), reload_path=workspace.get_log_config_file_path()
                 )

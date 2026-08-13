@@ -24,7 +24,7 @@ except ImportError:
 
 from nvflare.apis.fl_constant import FLContextKey, SystemComponents
 from nvflare.apis.fl_context import FLContext
-from nvflare.fuel.utils.log_utils import dynamic_log_config
+from nvflare.fuel.utils.log_utils import dynamic_log_config, validate_site_log_config
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
 from nvflare.private.defs import SysCommandTopic
 from nvflare.private.fed.client.admin import RequestProcessor
@@ -93,8 +93,9 @@ class ConfigureSiteLogProcessor(RequestProcessor):
         workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
 
         try:
+            config = validate_site_log_config(req.body)
             dynamic_log_config(
-                config=req.body, dir_path=workspace.get_root_dir(), reload_path=workspace.get_log_config_file_path()
+                config=config, dir_path=workspace.get_root_dir(), reload_path=workspace.get_log_config_file_path()
             )
         except Exception as e:
             return error_reply(secure_format_exception(e))
