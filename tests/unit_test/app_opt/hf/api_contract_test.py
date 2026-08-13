@@ -100,11 +100,11 @@ def test_patch_rejects_both_explicit_local_budget_styles(monkeypatch, tmp_path):
 @pytest.mark.parametrize(
     "arg_name,arg_value,match",
     [
-        ("deepspeed", "ds_config.json", "DeepSpeed|deepspeed|Phase 2"),
-        ("fsdp", "full_shard", "FSDP|fsdp|Phase 2"),
+        ("deepspeed", "ds_config.json", "DeepSpeed|deepspeed|currently supported"),
+        ("fsdp", "full_shard", "FSDP|fsdp|currently supported"),
     ],
 )
-def test_patch_rejects_design_phase_one_unsupported_backends(monkeypatch, tmp_path, arg_name, arg_value, match):
+def test_patch_rejects_currently_unsupported_sharded_backends(monkeypatch, tmp_path, arg_name, arg_value, match):
     hf_api, trainer_cls, _ = _fresh_api(monkeypatch)
     trainer = _make_trainer(trainer_cls, tmp_path, **{arg_name: arg_value})
 

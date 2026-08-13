@@ -76,8 +76,9 @@ that design to HF, with HF-specific handling where the two trainers differ.
 
 - No new server-side workflow or controller. Existing FedAvg/recipes work unchanged.
 - No change to FL algorithms.
-- DeepSpeed ZeRO-3 and FSDP full support is phased (see Phasing); Phase 1 targets
-  single-GPU and DDP.
+- DeepSpeed and FSDP are currently unsupported. Their sharded state-dict and
+  coordinated checkpoint requirements are specified separately in
+  [HuggingFace Client API Sharded Training Proposal](hf_client_api_sharded_training_proposal.md).
 - `Trainer`-free HF training loops (raw `accelerate` loops) — those users keep the
   raw Client API.
 
