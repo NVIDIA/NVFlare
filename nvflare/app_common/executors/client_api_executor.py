@@ -114,7 +114,7 @@ class ClientAPIExecutor(Executor):
             launch_timeout (Optional[float]): external_process only. Bound for the launched
                 trainer to complete its HELLO/session setup (this replaces the legacy
                 external_pre_init_timeout). Defaults to 300 seconds for compatibility with
-                ClientAPILauncherExecutor; an explicit None means no timeout.
+                prior releases; an explicit None means no timeout.
             shutdown_timeout (Optional[float]): external_process only. How long to wait for the
                 trainer to exit naturally after an orderly SHUTDOWN before starting forced
                 process-tree termination. None means the backend default.
@@ -129,7 +129,8 @@ class ClientAPIExecutor(Executor):
                 for external_process but is invalid for attach, whose external trainer requires
                 heartbeat liveness as the fallback for a lost terminal SHUTDOWN.
             task_wait_timeout (Optional[float]): Bound for the trainer to accept a delivered
-                task. None means no timeout.
+                task. None means no timeout for external_process; attach applies a 600-second
+                task-delivery budget when unset.
             result_wait_timeout (Optional[float]): Control-side bound for retrieving the task
                 result. Payload transfer completion is governed by the shared transfer layer,
                 not by this value. None means no timeout.

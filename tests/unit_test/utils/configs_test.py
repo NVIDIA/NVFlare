@@ -51,12 +51,12 @@ class TestConfigUtils:
 
             # Create a config file with test data
             config_file = os.path.join(config_dir, JobConstants.CLIENT_JOB_CONFIG)
-            test_config = {"EXTERNAL_PRE_INIT_TIMEOUT": 900.0}
+            test_config = {"MY_TIMEOUT": 900.0}
             with open(config_file, "w") as f:
                 json.dump(test_config, f)
 
             # Test reading existing key
-            assert get_client_config_value(fl_ctx, "EXTERNAL_PRE_INIT_TIMEOUT") == 900.0
+            assert get_client_config_value(fl_ctx, "MY_TIMEOUT") == 900.0
 
     def test_get_client_config_value_resolves_nested_env_secret_refs(self, mock_fl_ctx, monkeypatch):
         fl_ctx, workspace = mock_fl_ctx

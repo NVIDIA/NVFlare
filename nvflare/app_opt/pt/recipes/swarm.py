@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import os
 import warnings
 from typing import Any, Dict, Optional, Union
@@ -20,27 +19,21 @@ from typing import Any, Dict, Optional, Union
 from pydantic import BaseModel, field_validator
 
 from nvflare.apis.dxo import DataKind
-from nvflare.apis.fl_constant import SystemVarName
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.ccwf.ccwf_job import CCWFJob, CrossSiteEvalConfig, SwarmClientConfig, SwarmServerConfig
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.client.config import ExchangeFormat, normalize_exchange_format
-from nvflare.fuel.utils.constants import Mode
-from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from nvflare.fuel.utils.secret_utils import (
     warn_on_potential_secrets,
     warn_on_unsupported_secret_refs,
     warn_on_unsupported_secret_refs_outside_keys,
 )
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int, check_positive_number
-from nvflare.job_config.script_runner import BaseScriptRunner, ScriptRunner
+from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import merge_config_overrides, validate_aggregator_data_kind, validate_ckpt
 
-logger = logging.getLogger(__name__)
-
-_VALID_PIPE_TYPES = ("cell_pipe", "file_pipe")
 _RECIPE_MANAGED_SERVER_CONFIG_KEYS = frozenset({"min_clients"})
 _RECIPE_MANAGED_CLIENT_CONFIG_KEYS = frozenset(
     {"executor", "aggregator", "persistor", "shareable_generator", "min_responses_required"}
@@ -174,25 +167,6 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             ``min_responses_required``) cannot be replaced through this dictionary; use
             ``BaseSwarmLearningRecipe`` for custom components or quorum settings.
             This dictionary is stored in the job definition and must not contain secrets.
-        pipe_type: Transport used between the NVFlare client process and the external
-            training process when ``launch_external_process=True``. Accepted values:
-
-            - ``"cell_pipe"`` *(default)*: Direct Cell transport through
-              ``ClientAPIExecutor`` with zero-copy tensor forwarding. Despite the option
-              name, this mode does not create a ``CellPipe`` component.
-            - ``"file_pipe"``: ``FilePipe`` backed by a shared directory. The NVFlare
-              client process fully loads and re-serializes the model (~2× model size
-              in RAM). Use when cell networking is unavailable or for third-party
-              integrations that cannot resolve NVFlare cell addresses.
-
-            Ignored when ``launch_external_process=False``.
-        pipe_root_path: Base directory for ``FilePipe`` when ``pipe_type="file_pipe"``.
-            ``None`` (default) uses ``{WORKSPACE}/{JOB_ID}/{SITE_NAME}``, matching
-            the ``sag_cse_ccwf_pt`` reference template. If provided, the path must be
-            an absolute path (e.g. ``"/dev/shm/nvflare_pipes"`` for a RAM-backed tmpfs);
-            the directory is treated as a runtime path and does not need to exist on the
-            machine that builds or exports the job. ``{JOB_ID}/{SITE_NAME}`` is always
-            appended so concurrent jobs and sites remain isolated. Ignored for ``"cell_pipe"``.
         aggregation_format: Parameter representation used by the CCWF controllers and aggregator.
             Use ``ExchangeFormat.PYTORCH`` to keep tensors on the streaming path. Defaults to
             ``ExchangeFormat.NUMPY`` for backward compatibility.
@@ -255,8 +229,6 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         final_result_ack_timeout: Optional[float] = None,
         server_config_overrides: Optional[Dict[str, Any]] = None,
         client_config_overrides: Optional[Dict[str, Any]] = None,
-        pipe_type: str = "cell_pipe",
-        pipe_root_path: Optional[str] = None,
         aggregation_format: ExchangeFormat = ExchangeFormat.NUMPY,
         enable_tensor_disk_offload: bool = False,
     ):
@@ -313,43 +285,12 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 "Use named recipe parameters for quorum settings or BaseSwarmLearningRecipe for custom components."
             )
 
-        if pipe_type not in _VALID_PIPE_TYPES:
-            raise ValueError(f"pipe_type must be one of {_VALID_PIPE_TYPES}, got '{pipe_type}'")
-
-        if pipe_root_path and pipe_type != "file_pipe":
-            logger.warning(
-                f"pipe_root_path='{pipe_root_path}' is ignored when pipe_type='{pipe_type}' "
-                "(only applies to 'file_pipe')"
-            )
-
-        if pipe_root_path and pipe_type == "file_pipe":
-            if not os.path.isabs(pipe_root_path):
-                raise ValueError(f"pipe_root_path must be an absolute path, got '{pipe_root_path}'")
-
-        if pipe_type == "file_pipe" and not launch_external_process:
-            logger.warning(
-                "pipe_type='file_pipe' has no effect when launch_external_process=False "
-                "(in-process mode does not use pipes)"
-            )
-
         validate_aggregator_data_kind(
             data_kind=expected_data_kind,
             recipe_name=type(self).__name__,
             data_kind_arg="expected_data_kind",
             require_data_kind=True,
         )
-
-        task_pipe = None
-        if pipe_type == "file_pipe" and launch_external_process:
-            # Append {JOB_ID}/{SITE_NAME} so concurrent jobs and sites on the same
-            # machine use isolated pipe directories (resolved at runtime by NVFlare).
-            # Format matches the sag_cse_ccwf_pt reference template.
-            _job_site_suffix = "/{" + SystemVarName.JOB_ID + "}/{" + SystemVarName.SITE_NAME + "}"
-            if pipe_root_path:
-                root_path = pipe_root_path + _job_site_suffix
-            else:
-                root_path = "{" + SystemVarName.WORKSPACE + "}" + _job_site_suffix
-            task_pipe = FilePipe(mode=Mode.PASSIVE, root_path=root_path)
 
         # Handle dict-based model config (recipe accepts class_path; normalize for job API).
         # Pass the dict directly to PTFileModelPersistor so args are preserved in the exported config.
@@ -405,12 +346,8 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         )
         server_config = SwarmServerConfig(**server_config_args)
 
-        # FilePipe remains an explicit legacy compatibility option. Ordinary Swarm jobs use
-        # ScriptRunner's ClientAPIExecutor path; only the custom Pipe case opts into the old
-        # BaseScriptRunner/LauncherExecutor stack.
-        runner_cls = BaseScriptRunner if task_pipe is not None else ScriptRunner
         client_config_args = {
-            "executor": runner_cls(
+            "executor": ScriptRunner(
                 script=train_script,
                 launch_external_process=launch_external_process,
                 command=command,
@@ -418,7 +355,6 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 cuda_empty_cache=cuda_empty_cache,
                 server_expected_format=aggregation_format,
                 params_transfer_type=params_transfer_type,
-                task_pipe=task_pipe,
                 **train_args,
             ),
             "aggregator": aggregator,
