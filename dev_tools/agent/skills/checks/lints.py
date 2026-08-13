@@ -230,7 +230,6 @@ class SkillRecord:
 @dataclass
 class LintContext:
     skills_root: Path
-    evals_root: Path | None
     max_skill_md_lines: int
     records: list[SkillRecord]
     findings: list[LintFinding]
@@ -275,7 +274,6 @@ def _run_v1_lints_with_records(
     records = _load_skill_records(root, evals_root_path, findings)
     context = LintContext(
         skills_root=root,
-        evals_root=evals_root_path,
         max_skill_md_lines=max_skill_md_lines,
         records=records,
         findings=findings,
@@ -385,11 +383,14 @@ def _load_skill_records(skills_root: Path, evals_root: Path | None, findings: li
         skill_name = str(metadata.get("name") or child.name)
         # By default, evals are co-located at <skill>/evals. An explicit external
         # eval root is supported for isolated tooling and uses one dir per skill.
-        # The frontmatter name is attacker-controlled; only trust it for the
-        # external-root path when it matches SKILL_NAME_RE. The invalid name is
-        # still reported separately by the frontmatter lint.
-        eval_dir_name = skill_name if SKILL_NAME_RE.match(skill_name) else child.name
-        evals_dir = child / "evals" if evals_root is None else evals_root / eval_dir_name
+        if evals_root is None:
+            evals_dir = child / "evals"
+        else:
+            # The frontmatter name is attacker-controlled; only trust it for
+            # the external-root path when it matches SKILL_NAME_RE. The invalid
+            # name is still reported separately by the frontmatter lint.
+            eval_dir_name = skill_name if SKILL_NAME_RE.match(skill_name) else child.name
+            evals_dir = evals_root / eval_dir_name
         evals_path = evals_dir / "evals.json"
         evals, evals_error = _load_evals(evals_path)
         records.append(
@@ -913,9 +914,10 @@ _EVALUATOR_HOOK_RE = re.compile(
     re.IGNORECASE,
 )
 # Names excluded from runtime-guidance scanning. ``evals`` is co-located
-# evaluation metadata, and byte-code artifacts and ``__pycache__`` are not
-# meaningful skill guidance. This controls lint traversal only; it does not
-# configure the external skills installer.
+# evaluation metadata, which the standard installer copies with the complete
+# skill directory but which is not runtime guidance. Byte-code artifacts and
+# ``__pycache__`` are likewise not meaningful skill guidance. This controls
+# lint traversal only; it does not configure the external skills installer.
 SKILL_RUNTIME_GUIDANCE_EXCLUDE_NAMES = frozenset({"__pycache__", "*.pyc", "*.pyo", "evals"})
 # Directory-name subset of SKILL_RUNTIME_GUIDANCE_EXCLUDE_NAMES (byte-code file
 # globs are not directory names). The runtime-boundary lint uses this to prune

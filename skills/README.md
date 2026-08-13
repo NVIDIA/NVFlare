@@ -82,4 +82,8 @@ npx skills add NVIDIA/<skills-repo> --skill '*' -a claude-code -a codex -y
 Installation is git-based and does not depend on `pip install nvflare`; the
 skills are not shipped inside the Python wheel. Pass every agent you use with
 repeated `-a` flags. Omitting an agent skips installation for that agent; there
-is no NVFLARE-specific installer command.
+is no NVFLARE-specific installer command. The standard installer copies the
+complete skill directory, including each co-located `evals/` directory. Those
+files are evaluation metadata, not runtime guidance: `SKILL.md` remains the
+instruction entry point, and repository tooling treats `evals/` separately
+from the guidance it validates.

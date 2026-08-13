@@ -127,7 +127,7 @@ flowchart TB
 | --- | --- | --- | --- |
 | Authoring source | Dev-time | `skills/`, `SKILL.md`, `references/` (runtime); `skills/<skill>/evals/` (evaluation suites) | Human-readable skill instructions and supporting evidence; eval suites are co-located with their skill but are not runtime guidance. |
 | Engineering lint tool | Dev-time / CI | `dev_tools/agent/skills/checks`, `python dev_tools/agent/skills/checks/cli.py`, pytest coverage | Deterministic admission checks for frontmatter, triggers, command drift, policy coverage, fixtures, and process metrics. This is a repo-local tool validated by pytest; it is not shipped in the wheel. |
-| Skill install | Install-time bridge | `npx skills add ./skills -a claude-code -a codex` (local) or `npx skills add NVIDIA/<skills-repo> -a claude-code -a codex` (published) | Standard [agentskills.io](https://agentskills.io) installer that copies the `skills/` tree into the Codex and Claude skill directories. Install the whole set together so cross-skill references (`nvflare-shared/`) resolve. NVFLARE ships no custom installer command. |
+| Skill install | Install-time bridge | `npx skills add ./skills -a claude-code -a codex` (local) or `npx skills add NVIDIA/<skills-repo> -a claude-code -a codex` (published) | Standard [agentskills.io](https://agentskills.io) installer that copies the complete `skills/` tree, including each skill's co-located `evals/` evaluation metadata, into the Codex and Claude skill directories. `SKILL.md` remains the instruction entry point; `evals/` is not runtime guidance. Install the whole set together so cross-skill references (`nvflare-shared/`) resolve. NVFLARE ships no custom installer command. |
 | Runtime agent surface | Runtime | Codex/Claude skill loading, `nvflare agent inspect source|data`, recipe/job CLI | The agent reads skill instructions and uses NVFLARE commands to inspect, convert, validate, or diagnose. Source and data inspection are separate static capabilities. |
 | Benchmark harness | Separate | Follow-up work outside this PR | Separate architecture for measuring skill impact with Docker, SDK profiles, agent plugins, and reporting. |
 
@@ -145,12 +145,14 @@ current code:
   explicitly distinct from the forbidden `docs_root`.
 - Separate the two input surfaces by check type: **runtime-boundary checks**
   validate shippable artifacts only (`skills/`, `SKILL.md`, `references/`,
-  `assets/`, and the internal `skills/nvflare-shared/` skill), omitting the
-  top-level `evals/` suite from runtime-guidance scanning, while
+  `assets/`, and the internal `skills/nvflare-shared/` skill), omitting each
+  co-located `evals/` suite from runtime-guidance scanning, while
   **trigger, coverage, process-metric, and fixture checks** deliberately consume
   the co-located eval suites under `skills/<skill>/evals/` to verify positive/negative
   trigger coverage, global-negative coverage, policy coverage behavior IDs, and
-  fixtures. Eval suites are not part of the Python wheel.
+  fixtures. The standard skills installer includes these co-located suites as
+  evaluation metadata; they are not part of the Python wheel and are not
+  runtime guidance.
 - `SKILL.md` is a **runtime artifact** loaded by the agent. Frontmatter fields
   must be runtime or public skill metadata. Do not add offline-lint-only fields
   to its frontmatter.
