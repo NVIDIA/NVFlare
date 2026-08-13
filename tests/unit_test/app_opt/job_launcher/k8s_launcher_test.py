@@ -3112,6 +3112,25 @@ spec:
         finally:
             _exit_patches(patches)
 
+    def test_pod_manifest_portable_cpu_memory_request_and_limit(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.RESOURCE_SPEC.value] = {
+                "@default": {"num_of_cpus": 2, "memory": "8Gi"},
+                "site-1": {"num_of_cpus": 4},
+            }
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            resources = mock_api.create_namespaced_pod.call_args.kwargs["body"]["spec"]["containers"][0]["resources"]
+            assert resources["requests"]["cpu"] == "4"
+            assert resources["limits"]["cpu"] == "4"
+            assert resources["requests"]["memory"] == "8Gi"
+            assert resources["limits"]["memory"] == "8Gi"
+        finally:
+            _exit_patches(patches)
+
     def test_pod_manifest_gpu_and_cpu_combined(self):
         patches = _make_k8s_launcher_patches()
         launcher, mock_api = self._setup(patches)

@@ -49,6 +49,7 @@ from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
     get_credential_env,
     get_job_launcher_spec,
+    get_portable_resource_spec,
     get_server_job_args,
 )
 
@@ -1052,6 +1053,7 @@ class K8sJobLauncher(JobLauncherSpec):
         if args is None:
             raise RuntimeError(f"missing {FLContextKey.ARGS} in FLContext")
         k8s_spec = get_job_launcher_spec(job_meta, site_name, "k8s")
+        portable_spec = get_portable_resource_spec(job_meta, site_name)
         job_pending_timeout = k8s_spec["pending_timeout"] if "pending_timeout" in k8s_spec else self.pending_timeout
         try:
             job_pending_timeout = _normalize_pending_timeout(
@@ -1092,13 +1094,7 @@ class K8sJobLauncher(JobLauncherSpec):
                 data_mounts = resolve_study_dataset_mounts(
                     self.study_data_pvc_dict, study, self.study_data_pvc_file_path, logger=self.logger
                 )
-        site_resources = (job_meta.get(JobMetaKey.RESOURCE_SPEC.value) or {}).get(site_name) or {}
-        flat_gpu_count = (
-            0
-            if any(k in site_resources for k in ("process", "docker", "k8s"))
-            else site_resources.get("num_of_gpus", 0)
-        )
-        job_resource = k8s_spec["num_of_gpus"] if "num_of_gpus" in k8s_spec else flat_gpu_count
+        job_resource = k8s_spec.get("num_of_gpus", portable_spec.get("num_of_gpus", 0))
         job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
         if not job_args:
             raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
@@ -1210,6 +1206,13 @@ class K8sJobLauncher(JobLauncherSpec):
                     resources["limits"][key] = limit_val
                 if request_val:
                     resources["requests"][key] = request_val
+            if "num_of_cpus" in portable_spec:
+                cpu_quantity = str(portable_spec["num_of_cpus"])
+                resources["limits"]["cpu"] = cpu_quantity
+                resources["requests"]["cpu"] = cpu_quantity
+            if "memory" in portable_spec:
+                resources["limits"]["memory"] = portable_spec["memory"]
+                resources["requests"]["memory"] = portable_spec["memory"]
             if job_resource:
                 resources["limits"]["nvidia.com/gpu"] = job_resource
                 resources["requests"]["nvidia.com/gpu"] = job_resource

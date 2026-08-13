@@ -50,21 +50,15 @@ class TestAppAuthzService:
         [
             ("default", {"additional_node_command": "python train.py"}, True),
             ("site", {"additional_node_command": "python train.py"}, True),
-            ("legacy", {"additional_node_command": "python train.py"}, True),
             ("default", {"additional_node_command": None}, False),
             ("site", {"additional_node_command": None}, False),
-            ("legacy", {"additional_node_command": None}, False),
             ("default", {}, False),
             ("site", {}, False),
-            ("legacy", {}, False),
         ],
     )
     def test_derive_local_app_info_for_additional_node_command(self, site_name, source, slurm_spec, expected_byoc):
-        if source == "legacy":
-            job_meta = {JobMetaKey.RESOURCE_SPEC.value: {site_name: {"slurm": slurm_spec}}}
-        else:
-            launcher_key = "default" if source == "default" else site_name
-            job_meta = {JobMetaKey.JOB_LAUNCHER_SPEC.value: {launcher_key: {"slurm": slurm_spec}}}
+        launcher_key = "default" if source == "default" else site_name
+        job_meta = {JobMetaKey.JOB_LAUNCHER_SPEC.value: {launcher_key: {"slurm": slurm_spec}}}
 
         app_info = AppAuthzService.derive_local_app_info({}, job_meta, site_name)
 
