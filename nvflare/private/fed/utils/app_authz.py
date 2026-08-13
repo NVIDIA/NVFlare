@@ -17,7 +17,7 @@ import copy
 from nvflare.apis.app_validation import AppValidationKey, AppValidator
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
-from nvflare.utils.job_launcher_utils import get_job_launcher_spec
+from nvflare.utils.job_launcher_utils import DOCKER_JOB_BYOC_KEYS, get_job_launcher_spec
 
 _RIGHT_BYOC = "byoc"
 _RIGHT_FLOWER_PREDEPLOYED = "server-predeployed-flwr"
@@ -48,11 +48,11 @@ class AppAuthzService(object):
     def derive_local_app_info(app_info: dict, job_meta: dict, site_name: str) -> dict:
         for mode in ("docker", "k8s", "slurm"):
             spec = get_job_launcher_spec(job_meta, site_name, mode)
-            if (
-                "image" in spec
-                or "python_path" in spec
-                or (mode == "slurm" and spec.get("additional_node_command") is not None)
-            ):
+            byoc_keys = DOCKER_JOB_BYOC_KEYS if mode == "docker" else {"image", "python_path"}
+            is_byoc = bool(byoc_keys.intersection(spec))
+            if mode == "slurm" and spec.get("additional_node_command") is not None:
+                is_byoc = True
+            if is_byoc:
                 app_info = copy.deepcopy(app_info)
                 app_info[AppValidationKey.BYOC] = True
                 break
