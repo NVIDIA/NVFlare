@@ -2,25 +2,23 @@
 
 This directory contains NVFLARE-owned agent skills for supported coding agents.
 
-Each skill lives in its own directory with a `SKILL.md` file and its supporting
-references. This directory ships as runtime content only:
+Each skill lives in its own directory with a `SKILL.md` file, supporting
+references, and its co-located evaluation suite:
 
 ```text
 skills/
   nvflare-your-skill/
     SKILL.md
     references/
+    evals/
+      evals.json
+      files/
 ```
 
-Eval suites (grading-oracle data, not runtime guidance) live outside this tree,
-one directory per skill name, and are never packaged into installed skills:
-
-```text
-dev_tools/agent/skill_evals/
-  nvflare-your-skill/
-    evals.json
-    files/
-```
+Evaluation suites are grading-oracle data, not runtime guidance. They are
+co-located with the owning skill to follow the Agent Skills Specification. They
+are not referenced as agent instructions, so their presence does not change a
+skill's triggering or workflow behavior.
 
 `nvflare-shared/` is an internal, non-triggered skill: it holds references and
 templates shared by the other skills and is installed alongside them, but it is
@@ -84,4 +82,8 @@ npx skills add NVIDIA/<skills-repo> --skill '*' -a claude-code -a codex -y
 Installation is git-based and does not depend on `pip install nvflare`; the
 skills are not shipped inside the Python wheel. Pass every agent you use with
 repeated `-a` flags. Omitting an agent skips installation for that agent; there
-is no NVFLARE-specific installer command.
+is no NVFLARE-specific installer command. The standard installer copies the
+complete skill directory, including each co-located `evals/` directory. Those
+files are evaluation metadata, not runtime guidance: `SKILL.md` remains the
+instruction entry point, and repository tooling treats `evals/` separately
+from the guidance it validates.
