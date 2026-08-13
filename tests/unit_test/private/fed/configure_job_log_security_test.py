@@ -118,3 +118,14 @@ def test_remote_log_level_is_not_interpreted_as_file_config(tmp_path):
 
     is_file.assert_not_called()
     apply.assert_not_called()
+
+
+def test_remote_reload_uses_only_the_trusted_reload_path(tmp_path):
+    reload_path = tmp_path / "log_config.json"
+    reload_path.write_text('{"version": 1}', encoding="utf-8")
+
+    with patch("nvflare.fuel.utils.log_utils.apply_log_config") as apply:
+        dynamic_log_config(LogMode.RELOAD, str(tmp_path), str(reload_path), allow_file_config=False)
+
+    apply.assert_called_once()
+    assert apply.call_args.args == ({"version": 1}, str(tmp_path))
