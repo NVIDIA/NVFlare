@@ -76,9 +76,13 @@ jobs:
           uv tool install --python 3.13 \
             "skillspector @ git+https://github.com/NVIDIA/SkillSpector.git@fd25398d7aa99353d86237b9c260759351f0e644"
           GITLEAKS_VERSION=8.30.0
+          GITLEAKS_SHA256=79a3ab579b53f71efd634f3aaf7e04a0fa0cf206b7ed434638d1547a2470a66e
+          GITLEAKS_ARCHIVE="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           curl --fail --location --silent --show-error \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | tar --extract --gzip --file - gitleaks
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${GITLEAKS_ARCHIVE}" \
+            --output "${GITLEAKS_ARCHIVE}"
+          echo "${GITLEAKS_SHA256}  ${GITLEAKS_ARCHIVE}" | sha256sum --check -
+          tar --extract --gzip --file "${GITLEAKS_ARCHIVE}" gitleaks
           install -m 0755 gitleaks "$HOME/.local/bin/gitleaks"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Run unit test
