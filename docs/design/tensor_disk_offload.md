@@ -175,6 +175,12 @@ Custom aggregators are responsible for:
 ## Failure Behavior
 
 - Download failures trigger `DiskTensorConsumer.download_failed(...)`, which removes the temp dir.
+- If an owned external trainer dies after its lazy result envelope is accepted, its CJ sends a
+  bounded acknowledged failure notice for the exact source FQCN/reference IDs to the declared
+  terminal receiver. Matching active downloads are interrupted immediately; a bounded tombstone
+  also covers failure notices that arrive just before download startup. FedAvg and Swarm then use
+  their existing materialization/task-error paths instead of retrying the dead source for the
+  normal 600-second streaming timeout.
 - Mid-transfer receiver cancellation is best effort. If the producer advertised support, it
   promptly settles the abandoned receiver as failed; otherwise the transaction's existing
   receiver/transaction timeout remains the cleanup backstop.

@@ -51,6 +51,8 @@ from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.streaming.download_service import SOURCE_FAILURE_TOPIC
+from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
 CJ_FQCN = "site-1.job-1"
@@ -136,7 +138,6 @@ class FakeCell:
         return self.listener_url
 
     def register_request_cb(self, channel, topic, cb):
-        assert channel == CHANNEL
         self.cbs[topic] = cb
 
     def send_request(self, channel, topic, target, request, timeout=None, **kwargs):
@@ -2234,6 +2235,169 @@ class TestResultReadyHandler:
             assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_REJECTED
             assert expect in reply.payload[MsgKey.REASON]
             assert not task.result_ready.is_set()
+        finally:
+            backend.finalize(FLContext())
+
+
+class TestAcceptedResultSourceFailure:
+    @staticmethod
+    def _accept_lazy_result(backend, env, receiver_ids=("server.job-1",), source_fqcn=None):
+        task = ebp._TaskContext(task_id="task-1")
+        task.result_receiver_ids = receiver_ids
+        with backend._task_lock:
+            backend._current_task = task
+        trainer = backend._active_launch
+        result = _result_shareable()
+        result["nested"] = [{"tensor": LazyDownloadRef(source_fqcn or trainer.trainer_fqcn, "ref-1", "T0")}]
+        reply = env.cell.deliver(
+            Topic.RESULT_READY,
+            trainer.trainer_fqcn,
+            {
+                MsgKey.SESSION_ID: trainer.session_id,
+                MsgKey.TASK_ID: task.task_id,
+                MsgKey.RESULT: result,
+            },
+        )
+        assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_ACCEPTED
+        return task, trainer
+
+    @staticmethod
+    def _wait_for_source_failure(cell, timeout=1.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            failures = [message for message in cell.sent if message[0] == SOURCE_FAILURE_TOPIC]
+            if failures:
+                return failures
+            time.sleep(0.005)
+        return []
+
+    def test_launch_once_trainer_death_notifies_exact_result_receiver(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, launch_once=True)
+        try:
+            task, trainer = self._accept_lazy_result(backend, env)
+
+            trainer.process.exit(-signal.SIGKILL)
+            failures = self._wait_for_source_failure(env.cell)
+
+            assert len(failures) == 1
+            topic, target, payload, timeout = failures[0]
+            assert topic == SOURCE_FAILURE_TOPIC
+            assert target == "server.job-1"
+            assert timeout == 3.0
+            assert payload["source_fqcn"] == trainer.trainer_fqcn
+            assert payload["ref_ids"] == ("ref-1",)
+            assert "rc=-9" in payload["reason"]
+            assert trainer.result_failure_notified
+            assert not trainer.result_source_live.is_set()
+            assert trainer.result_source_task_id is None
+
+            backend._fail_accepted_result_source(trainer, task.task_id, "duplicate")
+            assert len([message for message in env.cell.sent if message[0] == SOURCE_FAILURE_TOPIC]) == 1
+        finally:
+            backend.finalize(FLContext())
+
+    def test_per_task_trainer_death_notifies_swarm_aggregation_receiver_once(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
+        backend, fl_ctx = _initialized_backend(env, launch_once=False)
+        try:
+            _install_auto_result(env, lazy_result=True)
+            task_data = Shareable()
+            task_data.set_header(FOBSContextKey.RECEIVER_IDS, ["site-4.job-1"])
+
+            result = backend.execute("train", task_data, fl_ctx, Signal())
+            trainer = backend._active_launch
+            trainer.process.exit(-signal.SIGKILL)
+            failures = self._wait_for_source_failure(env.cell)
+
+            assert result.get_return_code() == ReturnCode.OK
+            assert len(failures) == 1
+            assert failures[0][1] == "site-4.job-1"
+            assert failures[0][2]["source_fqcn"] == trainer.trainer_fqcn
+            assert failures[0][2]["ref_ids"] == ("result-ref",)
+        finally:
+            backend.finalize(FLContext())
+
+    def test_result_settlement_before_exit_suppresses_source_failure(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, launch_once=True)
+        try:
+            task, trainer = self._accept_lazy_result(backend, env)
+            settled = env.cell.deliver(
+                Topic.RESULT_SOURCE_SETTLED,
+                trainer.trainer_fqcn,
+                {MsgKey.SESSION_ID: trainer.session_id, MsgKey.TASK_ID: task.task_id},
+            )
+            assert settled.payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_SOURCE_SETTLED
+
+            trainer.process.exit(0)
+            deadline = time.monotonic() + 0.2
+            while trainer.source_monitor_thread.is_alive() and time.monotonic() < deadline:
+                time.sleep(0.005)
+
+            assert not [message for message in env.cell.sent if message[0] == SOURCE_FAILURE_TOPIC]
+        finally:
+            backend.finalize(FLContext())
+
+    def test_only_refs_owned_by_the_launched_trainer_are_reported(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, launch_once=True)
+        try:
+            _, trainer = self._accept_lazy_result(backend, env, source_fqcn="site-3.job-1.other-trainer")
+            trainer.process.exit(-signal.SIGKILL)
+            deadline = time.monotonic() + 0.2
+            while backend._active_launch is not None and time.monotonic() < deadline:
+                time.sleep(0.005)
+
+            assert not [message for message in env.cell.sent if message[0] == SOURCE_FAILURE_TOPIC]
+        finally:
+            backend.finalize(FLContext())
+
+    def test_live_group_with_dead_source_session_is_bounded(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, launch_once=True, heartbeat_timeout=0.0)
+        monkeypatch.setattr(backend, "_result_source_disconnect_grace", lambda: 0.01)
+        try:
+            _, trainer = self._accept_lazy_result(backend, env)
+            env.cell.disconnected.add(trainer.trainer_fqcn)
+
+            failures = self._wait_for_source_failure(env.cell)
+
+            assert len(failures) == 1
+            assert "disconnected" in failures[0][2]["reason"]
+            assert trainer.process.returncode == -signal.SIGTERM
+        finally:
+            backend.finalize(FLContext())
+
+    def test_source_heartbeat_timeout_is_bounded_while_process_group_survives(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, launch_once=True, heartbeat_timeout=0.01)
+        try:
+            _, trainer = self._accept_lazy_result(backend, env)
+            monkeypatch.setattr(trainer, "peer_silent_for", lambda: 1.0)
+
+            failures = self._wait_for_source_failure(env.cell)
+
+            assert len(failures) == 1
+            assert "heartbeat timed out" in failures[0][2]["reason"]
+            assert trainer.process.returncode == -signal.SIGTERM
+        finally:
+            backend.finalize(FLContext())
+
+    def test_fedavg_fallback_and_swarm_header_select_the_downstream_receiver(self, env):
+        backend, fl_ctx = _initialized_backend(env, launch_once=True)
+        try:
+            assert SOURCE_FAILURE_TOPIC in env.cell.cbs
+            assert backend._get_result_receiver_ids(Shareable(), fl_ctx) == ("server.job-1",)
+
+            swarm_task = Shareable()
+            swarm_task.set_header(FOBSContextKey.RECEIVER_IDS, ["site-1.job-1", "site-1.job-1"])
+            assert backend._get_result_receiver_ids(swarm_task, fl_ctx) == ("site-1.job-1",)
+
+            string_receiver_task = Shareable()
+            string_receiver_task.set_header(FOBSContextKey.RECEIVER_IDS, "site-3.job-1")
+            assert backend._get_result_receiver_ids(string_receiver_task, fl_ctx) == ("site-3.job-1",)
         finally:
             backend.finalize(FLContext())
 

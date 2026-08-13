@@ -20,8 +20,17 @@ import pytest
 import nvflare.fuel.f3.streaming.download_service as download_service
 from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.streaming.download_service import Consumer, ProduceRC, download_object
+from nvflare.fuel.f3.streaming.download_service import (
+    OBJ_DOWNLOADER_CHANNEL,
+    SOURCE_FAILURE_TOPIC,
+    Consumer,
+    DownloadService,
+    ProduceRC,
+    _SourceFailureKey,
+    download_object,
+)
 
 
 class MockConsumer(Consumer):
@@ -78,6 +87,9 @@ class TestDownloadObject:
     def _disable_sleep(self, monkeypatch):
         """Disable real sleep to keep unit tests fast."""
         monkeypatch.setattr(download_service.time, "sleep", lambda *_args, **_kwargs: None)
+        with DownloadService._source_failure_lock:
+            DownloadService._source_failures.clear()
+            DownloadService._active_source_downloads.clear()
 
     @pytest.fixture
     def cell(self):
@@ -441,3 +453,103 @@ class TestDownloadObject:
         """Test that negative max_retries raises ValueError."""
         with pytest.raises(ValueError, match="max_retries must be non-negative"):
             download_object("server.site-1", "ref-001", 10.0, cell, consumer, max_retries=-1)
+
+    @staticmethod
+    def _source_failure_request(source_fqcn="site-2.job-1.trainer", ref_ids=("ref-001",), reason="OOM"):
+        return new_cell_message(
+            headers={MessageHeaderKey.ORIGIN: "site-2.job-1"},
+            payload={
+                _SourceFailureKey.SOURCE_FQCN: source_fqcn,
+                _SourceFailureKey.REF_IDS: ref_ids,
+                _SourceFailureKey.REASON: reason,
+            },
+        )
+
+    def test_owned_source_failure_interrupts_active_request_without_retry(self, cell, consumer):
+        source_fqcn = "site-2.job-1.trainer"
+
+        def fail_while_request_is_active(**_kwargs):
+            reply = DownloadService._handle_source_failure(self._source_failure_request(source_fqcn=source_fqcn))
+            assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+            return _make_reply(ReturnCode.TIMEOUT)
+
+        cell.send_request.side_effect = fail_while_request_is_active
+
+        download_object(source_fqcn, "ref-001", 600.0, cell, consumer)
+
+        assert consumer.failed
+        assert consumer.failure_reason == "OOM"
+        assert cell.send_request.call_count == 1
+
+    def test_source_failure_tombstone_fails_before_first_request(self, cell, consumer):
+        source_fqcn = "site-2.job-1.trainer"
+        reply = DownloadService._handle_source_failure(
+            self._source_failure_request(source_fqcn=source_fqcn, reason="trainer exited rc=-9")
+        )
+
+        download_object(source_fqcn, "ref-001", 600.0, cell, consumer)
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        assert consumer.failure_reason == "trainer exited rc=-9"
+        cell.send_request.assert_not_called()
+
+    def test_source_failure_is_exact_to_source_and_ref(self, cell, consumer):
+        failed_source = "site-2.job-1.trainer"
+        DownloadService._handle_source_failure(self._source_failure_request(source_fqcn=failed_source))
+        cell.send_request.return_value = _make_reply(ReturnCode.OK, status=ProduceRC.EOF)
+
+        download_object(failed_source, "other-ref", 10.0, cell, consumer)
+
+        assert consumer.completed
+        assert not consumer.failed
+        assert cell.send_request.call_count == 1
+
+    def test_source_failure_rejects_non_owner_origin(self, cell, consumer):
+        request = self._source_failure_request()
+        request.set_header(MessageHeaderKey.ORIGIN, "site-3.job-1")
+
+        reply = DownloadService._handle_source_failure(request)
+        cell.send_request.return_value = _make_reply(ReturnCode.OK, status=ProduceRC.EOF)
+        download_object("site-2.job-1.trainer", "ref-001", 10.0, cell, consumer)
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
+        assert consumer.completed
+
+    def test_notify_source_failure_sends_exact_secure_optional_message(self, cell):
+        cell.send_request.return_value = _make_reply(ReturnCode.OK)
+
+        DownloadService.notify_source_failure(
+            cell=cell,
+            targets=["server.job-1", "server.job-1"],
+            source_fqcn="site-2.job-1.trainer",
+            ref_ids=["ref-1", "ref-1", "ref-2"],
+            reason="trainer OOM",
+            secure=True,
+        )
+
+        kwargs = cell.send_request.call_args.kwargs
+        assert kwargs["channel"] == OBJ_DOWNLOADER_CHANNEL
+        assert kwargs["topic"] == SOURCE_FAILURE_TOPIC
+        assert kwargs["target"] == "server.job-1"
+        assert kwargs["request"].payload == {
+            _SourceFailureKey.SOURCE_FQCN: "site-2.job-1.trainer",
+            _SourceFailureKey.REF_IDS: ("ref-1", "ref-2"),
+            _SourceFailureKey.REASON: "trainer OOM",
+        }
+        assert kwargs["secure"] is True
+        assert kwargs["optional"] is True
+
+    @pytest.mark.parametrize("transient_rc", [ReturnCode.TIMEOUT, ReturnCode.PROCESS_EXCEPTION])
+    def test_notify_source_failure_retries_one_transient_failure(self, cell, transient_rc):
+        cell.send_request.side_effect = [_make_reply(transient_rc), _make_reply(ReturnCode.OK)]
+
+        errors = DownloadService.notify_source_failure(
+            cell=cell,
+            targets=["server.job-1"],
+            source_fqcn="site-2.job-1.trainer",
+            ref_ids=["ref-1"],
+            reason="trainer OOM",
+        )
+
+        assert errors == {"server.job-1": None}
+        assert cell.send_request.call_count == 2

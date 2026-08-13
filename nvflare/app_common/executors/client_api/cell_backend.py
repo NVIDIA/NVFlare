@@ -74,6 +74,7 @@ class CellTask:
         self.result: Optional[Shareable] = None
         self.result_id: Optional[str] = None
         self.accepted_attempt_id: Optional[str] = None
+        self.result_receiver_ids = ()
 
 
 class CellBackendBase(ClientAPIBackendSpec):
@@ -254,6 +255,7 @@ class CellBackendBase(ClientAPIBackendSpec):
             session.result_source_live.set()
             session.result_accepted.set()
             session.result_source_task_id = task_id
+            self._on_result_accepted(session, task, result)
             task.result_ready.set()
 
         fields = {}
@@ -298,9 +300,16 @@ class CellBackendBase(ClientAPIBackendSpec):
                 )
             session.result_source_live.clear()
             session.result_source_task_id = None
+            self._on_result_source_settled(session, task_id)
             if self.result_attempts:
                 self._trim_result_authority()
         return self._protocol_reply(Topic.RESULT_SOURCE_SETTLED, **{MsgKey.TASK_ID: task_id})
+
+    def _on_result_accepted(self, session: CellSession, task: CellTask, result: Shareable) -> None:
+        """Hook for mode-specific ownership of an accepted result source."""
+
+    def _on_result_source_settled(self, session: CellSession, task_id: str) -> None:
+        """Hook for mode-specific retirement of accepted result-source state."""
 
     def _remember_result_authority(self, task_id: str, result_id: str, attempt_id: str) -> None:
         self._result_authority[task_id] = (result_id, attempt_id)

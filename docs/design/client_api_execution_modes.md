@@ -246,6 +246,13 @@ Result direction for `external_process`:
    Before a one-task trainer closes its Cell, it sends a task-correlated source-settled
    acknowledgement to the CJ. This clears the conservative accepted-source latch without a stale
    message from an earlier task being able to clear a newer source.
+6. The CJ monitors the owned trainer even after accepting a lazy result envelope. If that
+   process group dies before source settlement (including SIGKILL or OOM exit), the CJ sends
+   an acknowledged, task-scoped failure notice to the declared downstream receiver for the
+   trainer-owned reference IDs. The receiver interrupts matching active downloads and retains
+   a bounded tombstone for a notice that races download startup. Unrelated sources and refs keep
+   their normal timeout/retry behavior. FedAvg targets its server job cell; Swarm uses the
+   aggregation-client job cell stamped on the task.
 
 Pass-through always preserves the trainer's original FQCN and reference ID. The CJ may still be a
 physical Cell routing hop for the result envelope and subsequent download messages, depending on
@@ -328,6 +335,13 @@ pools can keep a completed one-shot or distributed worker process alive. That ir
 shutdown is specific to the dedicated Cell trainer process. In-process Client API contexts do not
 retire those process-global services; a stopped context is evicted so a later job/session in the
 same process can initialize a fresh one.
+
+Process death after `RESULT_ACCEPTED` is also a terminal source event, not a healthy streaming
+timeout. The CJ reports it over the download-service control route with bounded acknowledged
+delivery. A receiver validates that the reporting CJ is the direct parent of the failed trainer
+FQCN, then aborts only the matching `(source FQCN, ref ID)` downloads. This converts downstream
+materialization into the workflow's ordinary controlled task/error path instead of allowing each
+request to spend the 600-second data timeout retrying an unreachable trainer.
 
 `flare.init()` also binds its returned context to the calling thread. Client API calls without an
 explicit `ctx` prefer that binding; an old stopped binding is retained as a tombstone rather than

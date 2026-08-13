@@ -92,6 +92,9 @@ def make_isolated_download_service():
         _logger = Mock()
         _tx_lock = threading.Lock()
         _initialized_cells = weakref.WeakKeyDictionary()
+        _source_failure_lock = threading.Lock()
+        _source_failures = {}
+        _active_source_downloads = {}
 
     return IsolatedDownloadService
 

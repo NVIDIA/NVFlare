@@ -54,13 +54,14 @@ from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.utils.fobs import FOBSContextKey
-from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY, LazyDownloadRef
 from nvflare.security.logging import secure_format_traceback
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
 from nvflare.utils.process_utils import log_subprocess_output, prepare_subprocess_command
 
 # Poll cadence for process-death detection; events wake successful waits immediately.
 _RESULT_POLL_INTERVAL = 0.5
+_RESULT_SOURCE_FAILURE_DELIVERY_WAIT = 14.0
 _HELLO_POLL_INTERVAL = 0.1
 
 _DEFAULT_SHUTDOWN_TIMEOUT = 30.0
@@ -135,6 +136,13 @@ class _TrainerSession(CellSession):
         # trainer's send() acknowledgement/payload barrier. SHUTDOWN reply truth clears
         # it once the trainer has crossed that barrier.
         self.reaper_thread: Optional[threading.Thread] = None
+        self.source_monitor_thread: Optional[threading.Thread] = None
+        self._result_failure_lock = threading.Lock()
+        self.result_source_refs = ()
+        self.result_receiver_ids = ()
+        self.result_failure_notified = False
+        self.result_failure_delivery_done = threading.Event()
+        self.result_failure_delivery_done.set()
         self.shutdown_requested = threading.Event()
         self._shutdown_request_lock = threading.Lock()
         self._next_shutdown_retry = 0.0
@@ -182,6 +190,10 @@ class ExternalProcessBackend(CellBackendBase):
                 delegate_site_auth=True,
             )
             cell = self._cell
+            # A managed trainer may fail immediately after RESULT_READY is accepted,
+            # before this CJ starts consuming a peer's result refs. Register the
+            # source-failure route at job initialization so such a notice is not lost.
+            DownloadService.initialize(cell)
 
             workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
             if workspace is None:
@@ -638,6 +650,11 @@ class ExternalProcessBackend(CellBackendBase):
                     # SHUTDOWN cannot preempt an accepted result source still inside send().
                     self._request_trainer_shutdown(trainer, wait_timeout=_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT)
                 time.sleep(_NATURAL_EXIT_REAP_INTERVAL)
+            self._fail_accepted_result_source(
+                trainer,
+                trainer.result_source_task_id,
+                self._trainer_exit_reason(trainer),
+            )
             self._cleanup_trainer(trainer)
         except BaseException:
             self.logger.error(secure_format_traceback())
@@ -649,6 +666,14 @@ class ExternalProcessBackend(CellBackendBase):
 
     def _cleanup_trainer(self, trainer: _TrainerSession) -> None:
         """Release launch-scoped state after the process group is gone. Idempotent."""
+        if trainer.result_source_live.is_set() and not self._process_group_alive(trainer):
+            self._fail_accepted_result_source(
+                trainer,
+                trainer.result_source_task_id,
+                self._trainer_exit_reason(trainer),
+            )
+        if trainer.result_failure_notified and not trainer.result_failure_delivery_done.is_set():
+            trainer.result_failure_delivery_done.wait(_RESULT_SOURCE_FAILURE_DELIVERY_WAIT)
         with trainer._cleanup_lock:
             if trainer._cleaned:
                 return
@@ -707,6 +732,11 @@ class ExternalProcessBackend(CellBackendBase):
             if silent_for is not None and silent_for > heartbeat_timeout:
                 return f"trainer heartbeat timed out after {silent_for:.1f}s " f"(timeout={heartbeat_timeout}s)"
         return None
+
+    @staticmethod
+    def _trainer_exit_reason(trainer: _TrainerSession) -> str:
+        rc = trainer.process.poll() if trainer.process else None
+        return f"accepted external result source died before transfer completion (rc={rc})"
 
     def _await_group_exit(self, trainer: _TrainerSession, timeout: float) -> bool:
         """Waits (bounded) for the whole process group to exit; reaps the leader."""
@@ -812,6 +842,7 @@ class ExternalProcessBackend(CellBackendBase):
         launch_once = context.launch_once
 
         task = CellTask(task_id=uuid.uuid4().hex)
+        task.result_receiver_ids = self._get_result_receiver_ids(shareable, fl_ctx)
 
         shareable.set_header(FLMetaKey.JOB_ID, fl_ctx.get_job_id())
         shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())
@@ -900,6 +931,151 @@ class ExternalProcessBackend(CellBackendBase):
             with self._task_lock:
                 if self._current_task is task:
                     self._current_task = None
+
+    @staticmethod
+    def _get_result_receiver_ids(shareable: Shareable, fl_ctx: FLContext) -> tuple[str, ...]:
+        receiver_ids = shareable.get_header(FOBSContextKey.RECEIVER_IDS)
+        if isinstance(receiver_ids, str):
+            receiver_ids = (receiver_ids,)
+        if isinstance(receiver_ids, (list, tuple)):
+            valid = tuple(dict.fromkeys(r for r in receiver_ids if isinstance(r, str) and not FQCN.validate(r)))
+            if valid:
+                return valid
+        job_id = fl_ctx.get_job_id()
+        return (FQCN.join([FQCN.ROOT_SERVER, job_id]),) if isinstance(job_id, str) and job_id else ()
+
+    def _on_result_accepted(self, session: CellSession, task: CellTask, result: Shareable) -> None:
+        if not isinstance(session, _TrainerSession):
+            return
+        try:
+            refs = tuple(sorted(self._collect_result_source_refs(result, session.trainer_fqcn)))
+        except BaseException:
+            self.logger.error(secure_format_traceback())
+            return
+        if not refs or not task.result_receiver_ids:
+            return
+        with session._result_failure_lock:
+            session.result_source_refs = refs
+            session.result_receiver_ids = task.result_receiver_ids
+            session.result_failure_notified = False
+            session.result_failure_delivery_done.set()
+            task_id = task.task_id
+            monitor = threading.Thread(
+                target=self._monitor_accepted_result_source,
+                args=(session, task_id),
+                name=f"client_api_result_source_{session.trainer_fqcn.rsplit('.', 1)[-1]}",
+                daemon=True,
+            )
+            session.source_monitor_thread = monitor
+            try:
+                monitor.start()
+            except BaseException:
+                session.source_monitor_thread = None
+                self.logger.error(secure_format_traceback())
+
+    def _on_result_source_settled(self, session: CellSession, task_id: str) -> None:
+        if not isinstance(session, _TrainerSession):
+            return
+        with session._result_failure_lock:
+            session.result_source_refs = ()
+            session.result_receiver_ids = ()
+
+    @staticmethod
+    def _collect_result_source_refs(value, source_fqcn: str, visited=None) -> set[str]:
+        if isinstance(value, LazyDownloadRef):
+            return {value.ref_id} if value.fqcn == source_fqcn and value.ref_id else set()
+        if not isinstance(value, (dict, list, tuple, set)):
+            return set()
+        if visited is None:
+            visited = set()
+        value_id = id(value)
+        if value_id in visited:
+            return set()
+        visited.add(value_id)
+        items = (*value.keys(), *value.values()) if isinstance(value, dict) else value
+        refs = set()
+        for item in items:
+            refs.update(ExternalProcessBackend._collect_result_source_refs(item, source_fqcn, visited))
+        return refs
+
+    def _monitor_accepted_result_source(self, trainer: _TrainerSession, task_id: str) -> None:
+        disconnected_since = None
+        try:
+            while True:
+                with trainer._result_failure_lock:
+                    active = (
+                        not trainer._cleaned
+                        and trainer.result_source_live.is_set()
+                        and trainer.result_source_task_id == task_id
+                    )
+                if not active:
+                    return
+                if not self._process_group_alive(trainer):
+                    self._fail_accepted_result_source(trainer, task_id, self._trainer_exit_reason(trainer))
+                    self._cleanup_trainer(trainer)
+                    return
+                heartbeat_timeout = self._context.heartbeat_timeout
+                silent_for = trainer.peer_silent_for() if heartbeat_timeout > 0 else None
+                if silent_for is not None and silent_for > heartbeat_timeout:
+                    reason = (
+                        f"accepted external result source heartbeat timed out after {silent_for:.1f}s "
+                        f"(timeout={heartbeat_timeout}s)"
+                    )
+                    self._fail_accepted_result_source(trainer, task_id, reason)
+                    self._stop_trainer(trainer, natural_exit_wait=0.0)
+                    return
+                if self._cell.is_cell_connected(trainer.trainer_fqcn):
+                    disconnected_since = None
+                elif disconnected_since is None:
+                    disconnected_since = time.monotonic()
+                elif time.monotonic() - disconnected_since >= self._result_source_disconnect_grace():
+                    reason = "accepted external result source disconnected before transfer completion"
+                    self._fail_accepted_result_source(trainer, task_id, reason)
+                    self._stop_trainer(trainer, natural_exit_wait=0.0)
+                    return
+                time.sleep(_RESULT_POLL_INTERVAL)
+        except BaseException:
+            self.logger.error(secure_format_traceback())
+
+    def _fail_accepted_result_source(self, trainer: _TrainerSession, task_id: Optional[str], reason: str) -> None:
+        if not task_id:
+            return
+        with trainer._result_failure_lock:
+            if (
+                trainer.result_failure_notified
+                or not trainer.result_source_live.is_set()
+                or trainer.result_source_task_id != task_id
+            ):
+                return
+            refs = trainer.result_source_refs
+            receivers = trainer.result_receiver_ids
+            if not refs or not receivers:
+                return
+            trainer.result_failure_notified = True
+            trainer.result_failure_delivery_done.clear()
+            trainer.result_source_live.clear()
+            trainer.result_source_task_id = None
+        self.logger.warning(
+            f"notifying {len(receivers)} receiver(s) that accepted result source "
+            f"{trainer.trainer_fqcn} failed for task {task_id}: {reason}"
+        )
+        try:
+            errors = DownloadService.notify_source_failure(
+                cell=self._cell,
+                targets=receivers,
+                source_fqcn=trainer.trainer_fqcn,
+                ref_ids=refs,
+                reason=reason,
+                secure=self._secure_mode,
+            )
+            if isinstance(errors, dict):
+                for target, error in errors.items():
+                    if error:
+                        self.logger.warning(f"failed to notify result receiver {target}: {error}")
+        except Exception:
+            self.logger.error(secure_format_traceback())
+        finally:
+            trainer.result_failure_delivery_done.set()
 
     def _send_task_ready(self, trainer: _TrainerSession, task_message: dict, abort_signal: Signal) -> Tuple[str, Any]:
         """Send TASK_READY until reply, cancelling on abort, closure, process death, or deadline."""

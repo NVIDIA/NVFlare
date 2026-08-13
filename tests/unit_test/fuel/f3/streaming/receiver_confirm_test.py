@@ -679,6 +679,10 @@ class _ScriptedCell:
         self.requests = []
         self.confirms = []
         self.confirm_kwargs = []
+        self.callbacks = {}
+
+    def register_request_cb(self, channel, topic, cb):
+        self.callbacks[(channel, topic)] = cb
 
     def send_request(self, channel, target, topic, request, timeout, secure, optional, abort_signal):
         self.requests.append(request.payload)
