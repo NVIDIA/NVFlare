@@ -66,7 +66,7 @@ LISTENER_LEASE_FILE = "lease"
 OWNER_MARKER = ".nvf_file_transport"
 CLOSED_FILE = "closed"
 TMP_PREFIX = "."
-# Log files are named after the side that writes them, following the CellPipe convention
+# Log files are named after the side that writes them.
 ACTIVE_LOG = "active"  # written by the active (dialing) side
 PASSIVE_LOG = "passive"  # written by the passive (listener) side
 

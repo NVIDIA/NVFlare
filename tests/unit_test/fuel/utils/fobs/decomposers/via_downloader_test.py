@@ -32,8 +32,6 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     EncType,
     ResultUploadProgressContextKey,
     ViaDownloaderDecomposer,
-    clear_download_initiated,
-    get_download_transactions,
 )
 
 
@@ -297,7 +295,6 @@ class TestViaDownloaderTimeoutPolicy:
 
 class TestResultUploadProgressWiring:
     def setup_method(self):
-        clear_download_initiated()
         _FakeObjectDownloader.instances = []
 
     def _finalize(self, monkeypatch, fobs_ctx):
@@ -308,6 +305,7 @@ class TestResultUploadProgressWiring:
 
     def test_single_receiver_progress_installs_download_service_callback_and_captures_expected_pair(self, monkeypatch):
         events = []
+        created = []
         obj = _FakeDownloadable([])
 
         def fake_get_positive_float_var(var_name, default):
@@ -320,13 +318,14 @@ class TestResultUploadProgressWiring:
             fobs.FOBSContextKey.CELL: object(),
             fobs.FOBSContextKey.NUM_RECEIVERS: 1,
             fobs.FOBSContextKey.STREAM_PROGRESS_CB: lambda **kwargs: events.append(kwargs),
+            RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: lambda info: created.append(info),
             RESULT_UPLOAD_PROGRESS_CTX_KEY: {ResultUploadProgressContextKey.STREAMING_IDLE_TIMEOUT: 7.0},
             via_downloader_module._CtxKey.MSG_ROOT_TTL: 1800.0,
             via_downloader_module._CtxKey.OBJECTS: [("ref-1", obj)],
         }
 
         downloader = self._finalize(monkeypatch, fobs_ctx)
-        transactions = get_download_transactions()
+        transactions = created
 
         assert len(transactions) == 1
         assert transactions[0].tx_id == "tx-1"
@@ -378,7 +377,6 @@ class TestResultUploadProgressWiring:
 
         downloader = self._finalize(monkeypatch, fobs_ctx)
 
-        assert get_download_transactions()[0].expected_pairs == (("ref-1", "server"), ("ref-1", "peer"))
         assert created[0].tx_id == "tx-1"
         assert created[0].expected_pairs == (("ref-1", "server"), ("ref-1", "peer"))
         assert downloader.added == [("ref-1", obj)]
@@ -397,10 +395,12 @@ class TestResultUploadProgressWiring:
     def test_duplicate_receiver_ids_dedupe_expected_pairs_and_download_receiver_count(self, monkeypatch):
         obj = _FakeDownloadable([(ProduceRC.OK, b"abc", {})])
         events = []
+        created = []
         fobs_ctx = {
             fobs.FOBSContextKey.CELL: object(),
             fobs.FOBSContextKey.NUM_RECEIVERS: 2,
             fobs.FOBSContextKey.STREAM_PROGRESS_CB: lambda **kwargs: events.append(kwargs),
+            RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: lambda info: created.append(info),
             RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY: ["server", "server"],
             via_downloader_module._CtxKey.MSG_ROOT_TTL: 1800.0,
             via_downloader_module._CtxKey.OBJECTS: [("ref-1", obj)],
@@ -408,17 +408,19 @@ class TestResultUploadProgressWiring:
 
         downloader = self._finalize(monkeypatch, fobs_ctx)
 
-        assert get_download_transactions()[0].expected_pairs == (("ref-1", "server"),)
+        assert created[0].expected_pairs == (("ref-1", "server"),)
         assert downloader.kwargs["num_receivers"] == 1
         assert downloader.kwargs["progress_cb"] is not None
         assert downloader.added == [("ref-1", obj)]
 
     def test_unknown_multi_receiver_transaction_is_not_marked_progress_trackable(self, monkeypatch):
         obj = _FakeDownloadable([(ProduceRC.OK, b"abc", {})])
+        created = []
         fobs_ctx = {
             fobs.FOBSContextKey.CELL: object(),
             fobs.FOBSContextKey.NUM_RECEIVERS: 2,
             fobs.FOBSContextKey.STREAM_PROGRESS_CB: lambda **kwargs: None,
+            RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: lambda info: created.append(info),
             RESULT_UPLOAD_PROGRESS_CTX_KEY: {ResultUploadProgressContextKey.STREAMING_IDLE_TIMEOUT: 7.0},
             via_downloader_module._CtxKey.MSG_ROOT_TTL: 1800.0,
             via_downloader_module._CtxKey.OBJECTS: [("ref-1", obj)],
@@ -426,21 +428,22 @@ class TestResultUploadProgressWiring:
 
         downloader = self._finalize(monkeypatch, fobs_ctx)
 
-        assert get_download_transactions() == ()
+        assert created == []
         assert downloader.added[0][1] is obj
         assert downloader.kwargs["timeout"] == 1800.0
 
     def test_finalize_download_tx_without_cell_returns_without_dereferencing_downloader(self):
         obj = _FakeDownloadable([(ProduceRC.OK, b"abc", {})])
+        created = []
         fobs_ctx = {
+            RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: lambda info: created.append(info),
             via_downloader_module._CtxKey.OBJECTS: [("ref-1", obj)],
         }
 
         decomposer = _DummyViaDownloader()
         decomposer._finalize_download_tx(SimpleNamespace(fobs_ctx=fobs_ctx))
 
-        assert get_download_transactions() == ()
-        assert not getattr(via_downloader_module._tls, "download_initiated", False)
+        assert created == []
 
 
 class TestForwardProgressCallback:
