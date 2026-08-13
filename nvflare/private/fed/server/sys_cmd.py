@@ -161,6 +161,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
 
             workspace = engine.get_workspace()
             try:
+                config = validate_site_log_config(config)
                 dynamic_log_config(
                     config=config, dir_path=workspace.get_root_dir(), reload_path=workspace.get_log_config_file_path()
                 )
