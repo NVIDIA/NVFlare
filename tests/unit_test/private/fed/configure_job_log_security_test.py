@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.fuel.utils.log_utils import LogMode, validate_site_log_config
+from nvflare.fuel.utils.log_utils import LogMode, dynamic_log_config, validate_site_log_config
 from nvflare.private.fed.client.admin_commands import ConfigureJobLogCommand as ClientConfigureJobLogCommand
 from nvflare.private.fed.server.server_commands import ConfigureJobLogCommand as ServerConfigureJobLogCommand
 
@@ -50,6 +50,7 @@ def test_remote_job_log_accepts_safe_controls(tmp_path, command_class, dynamic_p
         config=config,
         dir_path=str(tmp_path / "run"),
         reload_path=str(tmp_path / "log_config.json"),
+        allow_file_config=False,
     )
 
 
@@ -104,3 +105,16 @@ def test_remote_site_log_accepts_safe_controls(config):
 def test_remote_site_log_rejects_dict_config_and_paths(config):
     with pytest.raises(ValueError, match="configure_site_log only supports log levels and built-in log modes"):
         validate_site_log_config(config)
+
+
+def test_remote_log_level_is_not_interpreted_as_file_config(tmp_path):
+    (tmp_path / "DEBUG").write_text('{"version": 1}', encoding="utf-8")
+
+    with (
+        patch("nvflare.fuel.utils.log_utils.os.path.isfile") as is_file,
+        patch("nvflare.fuel.utils.log_utils.apply_log_config") as apply,
+    ):
+        dynamic_log_config("DEBUG", str(tmp_path), str(tmp_path / "log_config.json"), allow_file_config=False)
+
+    is_file.assert_not_called()
+    apply.assert_not_called()
