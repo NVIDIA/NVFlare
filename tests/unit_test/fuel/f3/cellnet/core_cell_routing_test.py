@@ -30,6 +30,7 @@ class _FakeAgent:
 
 def _routing_cell(fqcn, connected):
     cell = CoreCell.__new__(CoreCell)
+    cell.ALL_CELLS = {}
     cell.my_info = FqcnInfo(fqcn)
     cell.logger = logging.getLogger(__name__)
     cell.agents = {f: _FakeAgent(f) for f in connected}
@@ -185,6 +186,36 @@ def test_same_family_routing_still_prefers_fqcn_parent():
 
     assert ep is not None
     assert ep.name == "site-1"
+
+
+def test_server_transit_required_bypasses_direct_cross_site_endpoint():
+    cell = _routing_cell("site-1", ["server", "site-2"])
+    message = Message(headers={MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True})
+
+    endpoint = cell._try_find_ep("site-2", message)
+
+    assert endpoint is not None
+    assert endpoint.name == "server"
+
+
+def test_server_transit_required_job_cell_uses_local_parent():
+    cell = _routing_cell("site-1.job-1", ["site-1", "site-2.job-2"])
+    message = Message(headers={MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True})
+
+    endpoint = cell._try_find_ep("site-2.job-2", message)
+
+    assert endpoint is not None
+    assert endpoint.name == "site-1"
+
+
+def test_server_transit_required_job_cell_falls_back_to_server_root():
+    cell = _routing_cell("site-1.job-1", ["server", "site-2.job-2"])
+    message = Message(headers={MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True})
+
+    endpoint = cell._try_find_ep("site-2.job-2", message)
+
+    assert endpoint is not None
+    assert endpoint.name == "server"
 
 
 def test_pipe_cell_with_no_connection_is_unreachable():
