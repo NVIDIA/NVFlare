@@ -66,10 +66,10 @@ def _write(path: str, content, mv_file=True):
         elif isinstance(content, list):
             _write_multi(tmp_path, content)
         else:
-            raise RuntimeError(f"content must be bytes or str but got {type(content)}")
+            raise RuntimeError(f"content must be bytes, str, or list but got {type(content)}")
 
         if os.path.exists(tmp_path):
-            os.rename(tmp_path, path)
+            os.replace(tmp_path, path)
     except Exception as e:
         if os.path.isfile(tmp_path):
             os.remove(tmp_path)
@@ -87,7 +87,7 @@ def _write_multi(output_zip_file_name: str, content: List[str]):
                 for full_path in get_all_file_paths(base):
                     z.write(full_path, arcname=full_path[len(base) + 1 :])
             else:
-                raise ValueError(f"items in content list must be file name or dir name but got {type(c)}")
+                raise ValueError(f"items in content list must be existing file or directory paths but got {c!r}")
 
 
 def _read(path: str) -> bytes:

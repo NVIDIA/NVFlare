@@ -96,7 +96,7 @@ def test_write_multi_zip_failure_preserves_sources_for_complete_retry(tmp_path):
         assert z.read("model.pt") == b"trained-model"
 
 
-def test_write_multi_rename_failure_removes_temporary_archive_and_preserves_sources(tmp_path):
+def test_write_multi_publish_failure_removes_temporary_archive_and_preserves_sources(tmp_path):
     source_dir = tmp_path / "workspace"
     source_dir.mkdir()
     artifact = source_dir / "model.pt"
@@ -104,13 +104,25 @@ def test_write_multi_rename_failure_removes_temporary_archive_and_preserves_sour
     archive = tmp_path / "archive.zip"
     archive.write_bytes(b"previous-archive")
 
-    with patch("nvflare.app_common.storages.filesystem_storage.os.rename", side_effect=OSError("read only")):
+    with patch("nvflare.app_common.storages.filesystem_storage.os.replace", side_effect=OSError("read only")):
         with pytest.raises(StorageException, match="read only"):
             _write(str(archive), [str(source_dir)])
 
     assert artifact.read_bytes() == b"trained-model"
     assert archive.read_bytes() == b"previous-archive"
     assert not list(tmp_path.glob("archive.zip_*"))
+
+
+def test_write_rejects_unsupported_content_with_complete_type_list(tmp_path):
+    with pytest.raises(StorageException, match="content must be bytes, str, or list"):
+        _write(str(tmp_path / "archive.zip"), object())
+
+
+def test_write_multi_invalid_source_reports_path(tmp_path):
+    missing_source = tmp_path / "missing-source"
+
+    with pytest.raises(StorageException, match="missing-source"):
+        _write(str(tmp_path / "archive.zip"), [str(missing_source)])
 
 
 # TODO:: Add S3Storage test
