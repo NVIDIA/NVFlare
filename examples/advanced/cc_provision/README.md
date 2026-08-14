@@ -137,19 +137,20 @@ cc_issuers:
   - id: gpu_authorizer
     path: nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer
     token_expiration: 100 # seconds, needs to be less than check_frequency
+    args:
+      nvat_command: /opt/attestation/bin/nvattest
+      verifier: remote
+      nras_url: https://nras.attestation.nvidia.com
 ```
 
-3. The NVFlare `GPUAuthorizer` uses NVIDIA's `nv_attestation_sdk`.
-   When building the NVFlare app docker image, make sure to include it in the requirements, for example:
+3. The NVFlare `GPUAuthorizer` uses NVIDIA's native NVAT `nvattest` CLI.
+   Install a pinned NVAT release and its runtime libraries in the NVFlare app image, then configure the executable path as shown above.
 
-```
-torch
-torchvision
-tensorboard
-tensorflow
-safetensors
-nv_attestation_sdk
-```
+Custom `policy_file` values must contain an NVAT Rego policy defining
+`nv_match`; the retired Python SDK's JSON policy format is not accepted.
+For authenticated remote NRAS, pass the `service_key` argument or provide it
+through the official `NV_ATTESTATION_SERVICE_KEY` environment variable. Keep
+that credential outside the image and startup kit.
 
 4. To get GPU working in CVM, you need to ensure:
        - No GPU driver installed on host, otherwise the passthrough will fail.
