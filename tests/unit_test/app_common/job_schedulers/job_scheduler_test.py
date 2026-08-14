@@ -473,7 +473,7 @@ class TestDefaultJobScheduler:
         assert dispatch_info["site1"].resource_requirements == {}
         assert dispatch_info["site2"].resource_requirements == {}
 
-    def test_legacy_zero_gpu_pair_bypasses_gpu_resource_manager(self):
+    def test_zero_gpu_with_gpu_memory_bypasses_gpu_resource_manager(self):
         sites = [
             Site(
                 name="site1",
@@ -483,7 +483,7 @@ class TestDefaultJobScheduler:
         ]
         candidate = create_job(
             job_id="cpu-only",
-            resource_spec={"site1": {"num_of_gpus": 0, "mem_per_gpu_in_GiB": 0}},
+            resource_spec={"site1": {"num_of_gpus": 0, "mem_per_gpu_in_GiB": 8}},
             deploy_map={"app": [ALL_SITES]},
             min_sites=1,
         )

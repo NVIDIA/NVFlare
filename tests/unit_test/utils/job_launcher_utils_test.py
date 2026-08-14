@@ -23,6 +23,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
+from nvflare.app_common.resource_managers.list_resource_manager import ListResourceManager
 from nvflare.utils.job_launcher_utils import (
     _validate_launcher_spec,
     generate_client_command,
@@ -195,19 +196,38 @@ class TestPortableResourceSpec:
             }
         }
 
-        assert get_resource_manager_spec(meta, "site-1") == {
-            "num_of_gpus": 0,
-            "mem_per_gpu_in_GiB": 0,
-            "license": 2,
-        }
-
-    def test_resource_manager_accepts_zero_gpu_with_nonzero_gpu_memory(self):
-        meta = {"resource_spec": {"site-1": {"num_of_gpus": 0, "mem_per_gpu_in_GiB": 8}}}
         resource_spec = get_resource_manager_spec(meta, "site-1")
-        resource_manager = GPUResourceManager(num_of_gpus=1, mem_per_gpu_in_GiB=16, ignore_host=True)
+        resource_manager = ListResourceManager(resources={"license": ["a", "b"]})
 
-        assert resource_spec == {"num_of_gpus": 0, "mem_per_gpu_in_GiB": 8}
-        assert resource_manager.check_resources(resource_spec, FLContext())[0]
+        assert resource_spec == {"license": 2}
+        enough, token = resource_manager.check_resources(resource_spec, FLContext())
+        assert enough
+        assert resource_manager.reserved_resources[token][0] == {"license": ["a", "b"]}
+        allocated = resource_manager.allocate_resources(resource_spec, token, FLContext())
+        assert allocated == {"license": ["a", "b"]}
+        resource_manager.free_resources(allocated, token, FLContext())
+        assert set(resource_manager.resources["license"]) == {"a", "b"}
+
+    @pytest.mark.parametrize(
+        "site_spec",
+        [
+            {"num_of_gpus": 0, "mem_per_gpu_in_GiB": 8},
+            {"process": {"num_of_gpus": 0, "mem_per_gpu_in_GiB": 8}, "docker": {"image": "x"}},
+        ],
+    )
+    def test_resource_manager_ignores_zero_gpu_with_nonzero_gpu_memory(self, site_spec):
+        meta = {"resource_spec": {"site-1": site_spec}}
+        original = deepcopy(meta)
+        resource_spec = get_resource_manager_spec(meta, "site-1")
+        resource_manager = GPUResourceManager(num_of_gpus=2, mem_per_gpu_in_GiB=16, ignore_host=True)
+
+        assert resource_spec == {}
+        enough, token = resource_manager.check_resources(resource_spec, FLContext())
+        assert enough
+        assert resource_manager.reserved_resources[token][0] == {}
+        assert all(resource.memory == 16 for resource in resource_manager.resources.values())
+        assert resource_manager.allocate_resources(resource_spec, token, FLContext()) == {}
+        assert meta == original
 
     def test_legacy_nested_spec_is_not_reinterpreted_without_default(self):
         meta = {"resource_spec": {"site-1": {"process": {"num_of_cpus": 4}, "docker": {"image": "x"}}}}
