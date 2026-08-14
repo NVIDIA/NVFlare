@@ -96,10 +96,18 @@ def _wait_for_process_groups(processes, timeout: float) -> list:
     """Wait for process groups to exit and return any that remain alive."""
 
     deadline = time.monotonic() + timeout
-    remaining = [item for item in processes if _is_process_group_alive(item[2])]
-    while remaining and time.monotonic() < deadline:
-        time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+    remaining = list(processes)
+    while remaining:
+        # Reap direct children before probing the group: a terminated leader
+        # remains a zombie until poll()/wait(), and would otherwise make killpg
+        # report the group as alive even when no descendants remain.
+        for _, process, _ in remaining:
+            process.poll()
+
         remaining = [item for item in remaining if _is_process_group_alive(item[2])]
+        if not remaining or time.monotonic() >= deadline:
+            break
+        time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
     return remaining
 
 
