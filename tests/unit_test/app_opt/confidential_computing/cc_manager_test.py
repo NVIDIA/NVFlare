@@ -316,6 +316,81 @@ class TestCCManager:
         assert result["client3"] is True
         assert len(invalid_list) == 0
 
+    def test_verify_participants_tokens_rejects_replayed_registration_token(self, cc_test_env):
+        """Registration challenges are attester-chosen, not verifier-issued: a
+        captured report+challenge pair remains cryptographically valid
+        forever, so CCManager must dedup it itself."""
+        cc_manager, _, tdx_authorizer = cc_test_env
+        tdx_authorizer.supports_challenge_binding.return_value = True
+        participants_tokens = {"client1": [_token_info(VALID_TOKEN)]}
+
+        result, invalid_list = cc_manager._verify_participants_tokens(participants_tokens, is_registration=True)
+        assert result["client1." + TDX_NAMESPACE] is True
+        assert invalid_list == []
+
+        result, invalid_list = cc_manager._verify_participants_tokens(participants_tokens, is_registration=True)
+        assert result == {}
+        assert invalid_list == [f"client1 namespace: {{{TDX_NAMESPACE}}}"]
+
+    def test_verify_participants_tokens_allows_repeat_non_registration_token(self, cc_test_env):
+        """Outside registration, an authorizer that binds the verifier
+        challenge does not need replay dedup: each request already carries a
+        distinct, verifier-issued challenge."""
+        cc_manager, _, tdx_authorizer = cc_test_env
+        tdx_authorizer.supports_challenge_binding.return_value = True
+        participants_tokens = {"client1": [_token_info(VALID_TOKEN)]}
+
+        for _ in range(2):
+            result, invalid_list = cc_manager._verify_participants_tokens(participants_tokens)
+            assert result["client1." + TDX_NAMESPACE] is True
+            assert invalid_list == []
+
+    def test_verify_participants_tokens_rejects_replay_for_non_challenge_binding_authorizer(self, cc_test_env):
+        """An authorizer that never binds the challenge into evidence (e.g.
+        TDX) offers no freshness guarantee at all, so CCManager must dedup
+        its tokens even outside registration."""
+        cc_manager, _, tdx_authorizer = cc_test_env
+        tdx_authorizer.supports_challenge_binding.return_value = False
+        participants_tokens = {"client1": [_token_info(VALID_TOKEN)]}
+
+        result, invalid_list = cc_manager._verify_participants_tokens(participants_tokens)
+        assert result["client1." + TDX_NAMESPACE] is True
+
+        result, invalid_list = cc_manager._verify_participants_tokens(participants_tokens)
+        assert result == {}
+        assert invalid_list == [f"client1 namespace: {{{TDX_NAMESPACE}}}"]
+
+    def test_collect_tokens_rejects_site_identity_spoofing(self, cc_test_env):
+        """A responding site controls `site_name` in its own payload. If
+        trusted verbatim, a compromised target could claim to be a different
+        site, letting the real expected site silently go unverified."""
+        cc_manager, fl_ctx, _ = cc_test_env
+        cc_manager.site_name = "server"
+        cell = Mock()
+        engine = Mock()
+        engine.get_cell.return_value = cell
+        fl_ctx.get_engine.return_value = engine
+        cc_manager._get_all_cc_enabled_sites = Mock(
+            return_value=[("server-fqcn", "server"), ("client1-fqcn", "client1"), ("client2-fqcn", "client2")]
+        )
+
+        def send_request(target, request, **_kwargs):
+            challenge = request.payload[CC_CHALLENGE]
+            response = Mock()
+            response.get_header.return_value = F3ReturnCode.OK
+            # client1 is compromised and claims to be client2 instead.
+            claimed_name = "client2" if target == "client1-fqcn" else "client2"
+            response.payload = {
+                "site_name": claimed_name,
+                "cc_info": [_token_info(VALID_TOKEN, challenge=challenge)],
+            }
+            return response
+
+        cell.send_request.side_effect = send_request
+
+        with pytest.raises(RuntimeError):
+            cc_manager._collect_all_site_tokens(fl_ctx)
+
     def test_validate_client_tokens(self, logger, cc_test_env):
         """Test validating client tokens from peer context."""
         logger.info("Testing client token validation")

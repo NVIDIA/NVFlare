@@ -342,3 +342,6 @@ class SNPAuthorizer(CCAuthorizer):
 
     def get_namespace(self) -> str:
         return SNP_NAMESPACE
+
+    def supports_challenge_binding(self) -> bool:
+        return True

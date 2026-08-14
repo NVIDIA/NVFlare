@@ -303,3 +303,6 @@ class GPUAuthorizer(CCAuthorizer):
 
     def get_namespace(self) -> str:
         return GPU_NAMESPACE
+
+    def supports_challenge_binding(self) -> bool:
+        return True

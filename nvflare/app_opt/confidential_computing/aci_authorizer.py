@@ -63,3 +63,7 @@ class ACIAuthorizer(CCAuthorizer):
 
     def get_namespace(self) -> str:
         return ACI_NAMESPACE
+
+    def supports_challenge_binding(self) -> bool:
+        # `generate`/`verify` do not bind `challenge` into the MAA token.
+        return False

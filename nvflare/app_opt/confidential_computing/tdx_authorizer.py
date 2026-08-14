@@ -101,6 +101,10 @@ class TDXAuthorizer(CCAuthorizer):
         self.token_options = tuple(token_options)
         self.seen_token_history = NonceHistory(max_nonce_history)
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.warning(
+            "TDXAuthorizer does not bind the verifier challenge into attested evidence; "
+            "freshness relies on the caller's own replay protection, not on the challenge."
+        )
 
     def _command(self, *arguments: str, use_sudo: bool = False) -> list[str]:
         command = [self.tdx_cli_command, *arguments]
@@ -190,3 +194,9 @@ class TDXAuthorizer(CCAuthorizer):
 
     def get_namespace(self) -> str:
         return TDX_NAMESPACE
+
+    def supports_challenge_binding(self) -> bool:
+        # The operator-supplied TDX CLI has no generalized way to bind
+        # caller-supplied data into the quote/token; see the warning in
+        # __init__. CCManager compensates with its own replay detection.
+        return False

@@ -54,6 +54,22 @@ class CCAuthorizer(ABC):
         """
         pass
 
+    def supports_challenge_binding(self) -> bool:
+        """Whether this authorizer cryptographically binds a verifier-supplied
+        ``challenge`` into the evidence returned by ``generate``/``verify``.
+
+        Authorizers that return ``False`` cannot prove that a given token was
+        produced for a specific request: a previously accepted token remains
+        valid evidence forever, regardless of the challenge passed in. Callers
+        relying on ``challenge`` for freshness (e.g. ``CCManager``) must not
+        treat such authorizers as offering verifier-bound freshness and should
+        compensate, for example with bounded replay detection.
+
+        Returns:
+            True if a passed-in ``challenge`` is bound into signed evidence.
+        """
+        return False
+
 
 class CCTokenGenerateError(Exception):
     """Raised when a CC token generation failed"""
