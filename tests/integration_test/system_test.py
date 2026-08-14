@@ -328,12 +328,19 @@ class TestSystem:
                     validate_result = "No Validators"
                 test_validate_results.append((test_name, validate_result))
             finally:
-                _stop_background_processes(background_processes)
-                for command in teardown:
-                    print(f"Running teardown command: {command}")
-                    process = run_command_in_subprocess(command)
-                    process.wait()
-                test_driver.reset_test_info(reset_job_info=reset_job_info)
+                # Always run the configured teardown and reset the driver, even
+                # when a process group survives forced cleanup and is reported
+                # as an error.
+                try:
+                    _stop_background_processes(background_processes)
+                finally:
+                    try:
+                        for command in teardown:
+                            print(f"Running teardown command: {command}")
+                            process = run_command_in_subprocess(command)
+                            process.wait()
+                    finally:
+                        test_driver.reset_test_info(reset_job_info=reset_job_info)
 
             print(f"Finished running test {test_name!r} in {time.time() - start_time} seconds.")
             _print_newlines()
