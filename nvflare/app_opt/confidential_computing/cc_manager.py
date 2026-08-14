@@ -57,6 +57,20 @@ TOKEN_EXPIRATION = "token_expiration"
 # cannot itself guarantee freshness: registration (the attester picks its
 # own challenge, so a captured request/response pair can be replayed
 # verbatim) and any authorizer whose evidence does not bind the challenge.
+#
+# LIMITATION: this cache is process-local and non-durable. It only rejects a
+# duplicate token within the current CCManager's lifetime (cleared on
+# restart) and up to MAX_SEEN_TOKENS more recent entries (older ones are
+# evicted). It does NOT provide verifier-bound freshness: the same captured
+# token can still be accepted as a first use by a different verifier
+# instance, or by this one after a restart or enough eviction. Callers must
+# not treat acceptance here as proof the underlying hardware state is
+# current -- that guarantee only holds for authorizers whose
+# `supports_challenge_binding()` is True *and* whose challenge was
+# verifier-issued (i.e. periodic cross-site validation, not registration).
+# Registration's actual identity/authorization guarantee comes from
+# NVFlare's separate mTLS-based client authentication
+# (`ClientManager.authenticate`), which this cache only supplements.
 MAX_SEEN_TOKENS = 4096
 
 CC_VERIFICATION_FAILED = "not meeting CC requirements"
@@ -247,6 +261,18 @@ class CCManager(FLComponent):
             self._shutdown_system(msg, fl_ctx)
             return
 
+        # The client has no independent, pre-registration channel to learn the
+        # server's asserted identity, so the strongest check available here is
+        # that the sole participant claimed is one this client actually has CC
+        # configuration for. This still closes the bypass where an unlisted
+        # (e.g. bogus) key would otherwise be auto-trusted without ever
+        # exercising a verifier.
+        if set(server_cc_info.keys()) - set(self.cc_enabled_sites):
+            msg = f"Server CC info claims unexpected participant identity: {server_cc_info.keys()=}"
+            self.logger.error(msg)
+            self._shutdown_system(msg, fl_ctx)
+            return
+
         self._validate_cc_infos(server_cc_info, fl_ctx, is_registration=True)
 
     def _validate_client_tokens(self, fl_ctx: FLContext):
@@ -260,6 +286,19 @@ class CCManager(FLComponent):
         peer_cc_info = peer_ctx.get_prop(CC_INFO)
         if not peer_cc_info:
             msg = "No peer CC info!"
+            self.logger.error(msg)
+            self._shutdown_system(msg, fl_ctx)
+            return
+
+        # The peer controls the CC_INFO dict's keys, but not the identity
+        # separately established for it in its own peer context. Requiring
+        # them to match closes a bypass where an authenticated client could
+        # submit CC_INFO under an unlisted/bogus name: `_verify_participants_tokens`
+        # auto-trusts keys outside `cc_enabled_sites`, so the real client's
+        # evidence would never be verified at all.
+        peer_identity = peer_ctx.get_identity_name()
+        if not peer_identity or set(peer_cc_info.keys()) != {peer_identity}:
+            msg = f"CC info participant identity does not match the authenticated peer {peer_identity!r}"
             self.logger.error(msg)
             self._shutdown_system(msg, fl_ctx)
             return
@@ -302,13 +341,15 @@ class CCManager(FLComponent):
         else:
             return ""
 
-    def _token_already_used(self, namespace: str, token: str) -> bool:
+    def _token_already_used(self, namespace: str, token: str | bytes) -> bool:
         """Bounded in-memory replay check for evidence without verifier-bound freshness.
 
         Returns:
             True if this (namespace, token) pair was already accepted.
         """
-        token_fingerprint = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        # Some authorizers (e.g. SNPAuthorizer) accept both str and bytes tokens.
+        token_bytes = token if isinstance(token, bytes) else str(token).encode("utf-8")
+        token_fingerprint = hashlib.sha256(token_bytes).hexdigest()
         key = (namespace, token_fingerprint)
         with self._seen_tokens_lock:
             if key in self._seen_tokens:

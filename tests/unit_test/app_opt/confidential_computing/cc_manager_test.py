@@ -405,6 +405,54 @@ class TestCCManager:
             # Should not call shutdown for valid token
             mock_shutdown.assert_not_called()
 
+    def test_validate_client_tokens_rejects_identity_mismatch(self, cc_test_env):
+        """A peer submitting CC_INFO under a name other than its own
+        authenticated identity must be rejected: otherwise it could pick an
+        unlisted/bogus key and dodge verification entirely, since
+        `_verify_participants_tokens` auto-trusts keys outside
+        `cc_enabled_sites`."""
+        cc_manager, _, _ = cc_test_env
+        peer_ctx = FLContext()
+        peer_ctx.set_prop(CC_INFO, {"bogus": [_token_info(VALID_TOKEN)]})
+        peer_ctx.set_prop(ReservedKey.IDENTITY_NAME, "client1")
+        mock_fl_ctx = Mock(spec=FLContext)
+        mock_fl_ctx.get_peer_context.return_value = peer_ctx
+
+        with patch.object(cc_manager, "_shutdown_system") as mock_shutdown:
+            cc_manager._validate_client_tokens(mock_fl_ctx)
+            mock_shutdown.assert_called_once()
+            assert "identity" in mock_shutdown.call_args[0][0].lower()
+
+    def test_validate_server_tokens(self, cc_test_env):
+        """Test validating the server's CC info during client registration."""
+        cc_manager, fl_ctx, _ = cc_test_env
+        fl_ctx.get_prop.return_value = {"server": [_token_info(VALID_TOKEN)]}
+
+        with patch.object(cc_manager, "_shutdown_system") as mock_shutdown:
+            cc_manager._validate_server_tokens(fl_ctx)
+            mock_shutdown.assert_not_called()
+
+    def test_validate_server_tokens_rejects_unlisted_identity(self, cc_test_env):
+        """The server's CC info must claim a participant identity this client
+        actually has CC configuration for; an unlisted/bogus key would
+        otherwise be auto-trusted without ever exercising a verifier."""
+        cc_manager, fl_ctx, _ = cc_test_env
+        fl_ctx.get_prop.return_value = {"bogus": [_token_info(VALID_TOKEN)]}
+
+        with patch.object(cc_manager, "_shutdown_system") as mock_shutdown:
+            cc_manager._validate_server_tokens(fl_ctx)
+            mock_shutdown.assert_called_once()
+
+    def test_token_already_used_normalizes_bytes(self, cc_test_env):
+        """SNPAuthorizer.verify() accepts both str and bytes tokens; the
+        replay cache must not crash on the bytes form, and must dedup it
+        consistently with the equivalent str form."""
+        cc_manager, _, _ = cc_test_env
+
+        assert cc_manager._token_already_used(TDX_NAMESPACE, b"some-token") is False
+        assert cc_manager._token_already_used(TDX_NAMESPACE, b"some-token") is True
+        assert cc_manager._token_already_used(TDX_NAMESPACE, "some-token") is True
+
     def test_validate_client_tokens_invalid(self, logger, cc_test_env):
         """Test validating invalid client tokens."""
         logger.info("Testing invalid client token validation")
