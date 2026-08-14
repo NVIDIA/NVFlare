@@ -48,6 +48,8 @@ def _is_client_family_member(fqcn: str, family_fqcn: Optional[str]) -> bool:
 def is_cross_client_family(origin: str, destination: str, client_name: Optional[str] = None) -> bool:
     if not origin or not destination:
         return False
+    if origin == destination:
+        return False
     origin_info = FqcnInfo(origin)
     destination_info = FqcnInfo(destination)
     if origin_info.is_on_server or destination_info.is_on_server:
@@ -57,22 +59,10 @@ def is_cross_client_family(origin: str, destination: str, client_name: Optional[
     if family_fqcn:
         return not _is_client_family_member(destination, family_fqcn)
 
-    # Preserve routing for callers whose authentication identity cannot be
-    # mapped to an FQCN segment (for example custom identity mappings).
-    return origin_info.root != destination_info.root
-
-
-def _is_cross_site_reply_via_local_parent(origin: str, destination: str, to_cell: str, client_name: str) -> bool:
-    """Return whether a peer reply first travels upward through its local client family.
-
-    A job cell can connect directly to the server or connect to its client parent first
-    (for example through the shared-file internal driver). In the latter topology,
-    ``TO_CELL`` is a local ancestor even though the reply must subsequently cross the
-    server trust boundary to reach a different client family.
-    """
-    if not origin or not destination or not to_cell:
-        return False
-    return is_cross_client_family(origin, destination, client_name) and FQCN.is_ancestor(to_cell, origin)
+    # An authentication identity that cannot be mapped to the origin's FQCN
+    # cannot prove that a non-server destination belongs to the same client.
+    # Fail closed and require the server trust boundary.
+    return True
 
 
 def add_authentication_headers(msg: Message, client_name: str, auth_token, token_signature, ssid=None):
@@ -108,16 +98,15 @@ def add_server_path_reply_authentication_headers(
     origin = msg.get_header(MessageHeaderKey.ORIGIN)
     destination = msg.get_header(MessageHeaderKey.DESTINATION)
     to_cell = msg.get_header(MessageHeaderKey.TO_CELL)
-    # Auth headers are for the server trust boundary, not for peer clients. A peer
-    # reply may reach that boundary directly or first travel through its local client
-    # parent. The server validates and strips these headers before forwarding to the
-    # peer. Server-owned job/transfer cells also keep auth on replies from or to server
-    # paths.
+    # Auth headers are for the server trust boundary, not for peer clients. All
+    # cross-client replies must be marked even when a cached direct peer endpoint
+    # supplied the initial return path. The transport reroutes the marked reply to
+    # the server, which validates and strips these headers before forwarding it.
     if (
         _is_server_fqcn(origin)
         or _is_server_fqcn(destination)
         or _is_server_fqcn(to_cell)
-        or _is_cross_site_reply_via_local_parent(origin, destination, to_cell, client_name)
+        or is_cross_client_family(origin, destination, client_name)
     ):
         add_authentication_headers(msg, client_name, auth_token, token_signature, ssid)
 

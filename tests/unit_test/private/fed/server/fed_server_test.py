@@ -24,9 +24,10 @@ from nvflare.apis.shareable import Shareable
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
+from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, ClientRegMsgKey, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
-from nvflare.private.fed.server.fed_server import FederatedServer
+from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, HotState, ServerState
@@ -36,7 +37,63 @@ def assert_client_outcome_unresolved(job_runner):
     job_runner.resolve_client_outcome.assert_not_called()
 
 
+class _TestServer(BaseServer):
+    def remove_client_data(self, token):
+        pass
+
+
+@pytest.mark.parametrize(
+    "enable_admin_listener, admin_port, expected_root_urls",
+    [
+        (True, 8003, ["tcp://127.0.0.1:8002", f"tcp://127.0.0.1:8003?{ADMIN_LISTENER_KEY}=true"]),
+        (True, None, [f"tcp://127.0.0.1:8002?{ADMIN_LISTENER_KEY}=true"]),
+        (False, 8003, ["tcp://127.0.0.1:8002"]),
+    ],
+)
+def test_base_server_deploy_admin_listener(enable_admin_listener, admin_port, expected_root_urls):
+    server = _TestServer()
+    server_config = {"service": {"target": "localhost:8002", "scheme": "tcp"}}
+    if admin_port is not None:
+        server_config["admin_port"] = admin_port
+
+    with (
+        patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+        patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+        patch("nvflare.private.fed.server.fed_server.threading.Thread"),
+    ):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args=server_config,
+            enable_admin_listener=enable_admin_listener,
+        )
+
+    cell_args = cell_cls.call_args.kwargs
+    assert cell_args["root_url"] == expected_root_urls
+    assert cell_args["internal_listener_host"] == "127.0.0.1"
+
+
 class TestFederatedServer:
+    def test_production_listener_bindings_remain_wildcard_by_default(self):
+        server = object.__new__(FederatedServer)
+
+        with (
+            patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+            patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+            patch("nvflare.private.fed.server.fed_server.threading.Thread"),
+        ):
+            BaseServer.deploy(
+                server,
+                args=MagicMock(),
+                grpc_args={
+                    "service": {"target": "server.example:8002", "scheme": "tcp"},
+                    "admin_port": 8003,
+                },
+            )
+
+        cell_args = cell_cls.call_args.kwargs
+        assert cell_args["root_url"] == ["tcp://0:8002", "tcp://0:8003?admin_listener=true"]
+        assert cell_args["internal_listener_host"] is None
+
     @staticmethod
     def _create_job_cell_with_command_agent(server_state):
         server = object.__new__(FederatedServer)
@@ -73,6 +130,26 @@ class TestFederatedServer:
         server.client_manager.clients = {"token-a": client}
 
         assert server._resolve_client_fqcn_for_auth("site-a", "token-a") == MISSING_CLIENT_FQCN
+
+    def test_non_secure_server_registers_transit_header_sanitizer(self):
+        server = object.__new__(FederatedServer)
+        server.lock = MagicMock()
+        server.cell = MagicMock()
+        server.engine = MagicMock()
+        server._register_cellnet_cbs = MagicMock()
+
+        with patch("nvflare.private.fed.server.fed_server.BaseServer.deploy"):
+            server.deploy(
+                args=MagicMock(),
+                grpc_args={"service": {"target": "localhost:8002"}},
+                secure_train=False,
+            )
+
+        server.cell.core_cell.add_incoming_filter.assert_called_once_with(
+            channel="*",
+            topic="*",
+            cb=server._strip_peer_transit_headers,
+        )
 
     def test_create_job_cell_allows_missing_server_config_for_non_secure_cell(self):
         server = object.__new__(FederatedServer)
