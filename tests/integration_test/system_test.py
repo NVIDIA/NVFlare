@@ -296,6 +296,11 @@ class TestSystem:
 
                 test_driver.run_event_sequence(event_sequence)
                 _wait_for_background_processes(background_processes)
+                # A successful wait reaped every leader and confirmed every
+                # process group is gone. Do not retain stale numeric PGIDs for
+                # the finally block, where they could be reused by another
+                # process group while validators are running.
+                background_processes.clear()
 
                 # Get the job validator
                 if validators:
