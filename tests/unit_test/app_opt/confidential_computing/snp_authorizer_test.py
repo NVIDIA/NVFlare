@@ -35,12 +35,16 @@ from nvflare.app_opt.confidential_computing.snp_authorizer import (
     SNPAuthorizer,
 )
 
+CHALLENGE = "ab" * 32
+OTHER_CHALLENGE = "cd" * 32
 
-def _report(nonce=b"n" * REPORT_DATA_SIZE):
+
+def _report(challenge=CHALLENGE, chip_id=b"c" * CHIP_ID_SIZE):
     report = bytearray(MIN_REPORT_SIZE)
-    report[REPORT_DATA_OFFSET : REPORT_DATA_OFFSET + REPORT_DATA_SIZE] = nonce
+    report_data = bytes.fromhex(challenge).ljust(REPORT_DATA_SIZE, b"\0")
+    report[REPORT_DATA_OFFSET : REPORT_DATA_OFFSET + REPORT_DATA_SIZE] = report_data
     report[REPORTED_TCB_OFFSET : REPORTED_TCB_OFFSET + REPORTED_TCB_SIZE] = b"t" * REPORTED_TCB_SIZE
-    report[CHIP_ID_OFFSET : CHIP_ID_OFFSET + CHIP_ID_SIZE] = b"c" * CHIP_ID_SIZE
+    report[CHIP_ID_OFFSET : CHIP_ID_OFFSET + CHIP_ID_SIZE] = chip_id
     return bytes(report)
 
 
@@ -50,15 +54,14 @@ def test_generate_uses_private_temporary_files_and_returns_text(tmp_path):
     def run(cmd, _action):
         assert cmd[:2] == ["snpguest", "report"]
         with open(cmd[3], "rb") as request_stream:
-            nonce = request_stream.read()
-        assert len(nonce) == REPORT_DATA_SIZE
+            report_data = request_stream.read()
+        assert report_data == bytes.fromhex(CHALLENGE).ljust(REPORT_DATA_SIZE, b"\0")
         with open(cmd[2], "wb") as report_stream:
-            report_stream.write(_report(nonce))
+            report_stream.write(_report())
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
     authorizer._run_with_retry = run
-    authorizer._run_once = run
-    token = authorizer.generate()
+    token = authorizer.generate(CHALLENGE)
 
     assert isinstance(token, str)
     assert base64.b64decode(token)[REPORT_DATA_OFFSET : REPORT_DATA_OFFSET + REPORT_DATA_SIZE]
@@ -71,7 +74,7 @@ def test_generate_raises_cc_error_when_snpguest_fails(tmp_path):
     authorizer._run_with_retry = Mock(side_effect=RuntimeError("device unavailable"))
 
     with pytest.raises(CCTokenGenerateError, match="device unavailable"):
-        authorizer.generate()
+        authorizer.generate(CHALLENGE)
 
 
 def test_generate_rejects_report_with_non_abi_size(tmp_path):
@@ -85,10 +88,10 @@ def test_generate_rejects_report_with_non_abi_size(tmp_path):
     authorizer._run_with_retry = run
 
     with pytest.raises(CCTokenGenerateError, match="invalid size"):
-        authorizer.generate()
+        authorizer.generate(CHALLENGE)
 
 
-def test_verify_checks_signature_then_rejects_replay(tmp_path):
+def test_verify_checks_certificate_chain_signature_and_challenge(tmp_path):
     (tmp_path / "ark.pem").write_text("ark")
     (tmp_path / "ask.pem").write_text("ask")
     authorizer = SNPAuthorizer(amd_certs_dir=str(tmp_path), max_retries=1, retry_interval=0)
@@ -105,40 +108,35 @@ def test_verify_checks_signature_then_rejects_replay(tmp_path):
     authorizer._run_once = run
     token = base64.b64encode(report).decode("ascii")
 
-    assert authorizer.verify(token) is True
-    assert authorizer.verify(token) is False
+    assert authorizer.verify(token, CHALLENGE) is True
     verify_calls = [cmd for cmd, action in calls if action == "verify_attestation"]
-    assert len(verify_calls) == 2
+    cert_calls = [cmd for cmd, action in calls if action == "verify_cert_chain"]
+    assert len(cert_calls) == 1
+    assert cert_calls[0] == ["snpguest", "verify", "certs", os.path.dirname(verify_calls[0][4])]
+    assert len(verify_calls) == 1
     assert verify_calls[0][0:3] == ["snpguest", "verify", "attestation"]
     assert os.path.dirname(verify_calls[0][4]) == verify_calls[0][3]
 
 
-def test_verify_rejects_replay_after_restart_and_history_eviction(tmp_path):
-    (tmp_path / "ark.pem").write_text("ark")
-    (tmp_path / "ask.pem").write_text("ask")
-    cache_key = f"{'63' * CHIP_ID_SIZE}-{'74' * REPORTED_TCB_SIZE}"
-    (tmp_path / f"vcek-{cache_key}.pem").write_text("vcek")
-    first = SNPAuthorizer(amd_certs_dir=str(tmp_path), max_nonce_history=1, max_retries=1, retry_interval=0)
-    restarted = SNPAuthorizer(amd_certs_dir=str(tmp_path), max_nonce_history=1, max_retries=1, retry_interval=0)
-    first._run_once = Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
-    restarted._run_once = Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
+def test_verify_rejects_mismatched_verifier_challenge_before_commands(tmp_path):
+    authorizer = SNPAuthorizer(amd_certs_dir=str(tmp_path), max_retries=1, retry_interval=0)
+    authorizer._run_with_retry = Mock()
+    authorizer._run_once = Mock()
     token = base64.b64encode(_report()).decode("ascii")
 
-    assert first.verify(token) is True
-    assert restarted.verify(token) is False
+    assert authorizer.verify(token, OTHER_CHALLENGE) is False
+    authorizer._run_with_retry.assert_not_called()
+    authorizer._run_once.assert_not_called()
 
 
-def test_verify_rejects_signed_report_without_nonce(tmp_path):
-    (tmp_path / "ark.pem").write_text("ark")
-    (tmp_path / "ask.pem").write_text("ask")
+def test_verify_rejects_missing_verifier_challenge(tmp_path):
     authorizer = SNPAuthorizer(amd_certs_dir=str(tmp_path), max_retries=1, retry_interval=0)
-    report = _report(b"\0" * REPORT_DATA_SIZE)
-    cache_key = f"{'63' * CHIP_ID_SIZE}-{'74' * REPORTED_TCB_SIZE}"
-    (tmp_path / f"vcek-{cache_key}.pem").write_text("vcek")
-    authorizer._run_with_retry = Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
-    authorizer._run_once = Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
+    authorizer._run_with_retry = Mock()
+    authorizer._run_once = Mock()
 
-    assert authorizer.verify(base64.b64encode(report).decode("ascii")) is False
+    assert authorizer.verify(base64.b64encode(_report()).decode("ascii")) is False
+    authorizer._run_with_retry.assert_not_called()
+    authorizer._run_once.assert_not_called()
 
 
 def test_verify_fetches_and_reuses_certificate_cache(tmp_path):
@@ -157,13 +155,14 @@ def test_verify_fetches_and_reuses_certificate_cache(tmp_path):
 
     authorizer._run_with_retry = run
     authorizer._run_once = run
-    first = base64.b64encode(_report(b"1" * REPORT_DATA_SIZE)).decode("ascii")
-    second = base64.b64encode(_report(b"2" * REPORT_DATA_SIZE)).decode("ascii")
+    first = base64.b64encode(_report(CHALLENGE)).decode("ascii")
+    second = base64.b64encode(_report(OTHER_CHALLENGE)).decode("ascii")
 
-    assert authorizer.verify(first) is True
-    assert authorizer.verify(second) is True
+    assert authorizer.verify(first, CHALLENGE) is True
+    assert authorizer.verify(second, OTHER_CHALLENGE) is True
     assert actions.count("fetch_ca_certs") == 1
     assert actions.count("fetch_vcek") == 1
+    assert actions.count("verify_cert_chain") == 2
     assert actions.count("verify_attestation") == 2
 
 
@@ -226,7 +225,7 @@ def test_verify_rejects_malformed_reports_without_running_commands(tmp_path, tok
     authorizer._run_with_retry = Mock()
     authorizer._run_once = Mock()
 
-    assert authorizer.verify(token) is False
+    assert authorizer.verify(token, CHALLENGE) is False
     authorizer._run_with_retry.assert_not_called()
     authorizer._run_once.assert_not_called()
 
@@ -241,13 +240,16 @@ def test_verify_does_not_retry_deterministic_signature_failure(tmp_path):
     with (
         patch(
             "subprocess.run",
-            return_value=subprocess.CompletedProcess([], 2, "", "signature verification failed"),
+            side_effect=[
+                subprocess.CompletedProcess([], 0, "", ""),
+                subprocess.CompletedProcess([], 2, "", "signature verification failed"),
+            ],
         ) as run,
         patch("nvflare.app_opt.confidential_computing.snp_authorizer.time.sleep") as sleep,
     ):
-        assert authorizer.verify(base64.b64encode(_report()).decode("ascii")) is False
+        assert authorizer.verify(base64.b64encode(_report()).decode("ascii"), CHALLENGE) is False
 
-    run.assert_called_once()
+    assert run.call_count == 2
     sleep.assert_not_called()
 
 
@@ -263,7 +265,7 @@ def test_vcek_fetch_is_not_retried_for_report_derived_failure(tmp_path):
         ) as run,
         patch("nvflare.app_opt.confidential_computing.snp_authorizer.time.sleep") as sleep,
     ):
-        assert authorizer.verify(base64.b64encode(_report()).decode("ascii")) is False
+        assert authorizer.verify(base64.b64encode(_report()).decode("ascii"), CHALLENGE) is False
 
     run.assert_called_once()
     sleep.assert_not_called()
@@ -278,3 +280,52 @@ def test_vcek_cache_limit_rejects_new_entries_without_fetch(tmp_path):
         authorizer._ensure_amd_vcek("new", str(tmp_path / "report.bin"))
 
     authorizer._run_once.assert_not_called()
+
+
+def test_verify_rejects_untrusted_vcek_chain_before_attestation(tmp_path):
+    (tmp_path / "ark.pem").write_text("ark")
+    (tmp_path / "ask.pem").write_text("ask")
+    cache_key = f"{'63' * CHIP_ID_SIZE}-{'74' * REPORTED_TCB_SIZE}"
+    (tmp_path / f"vcek-{cache_key}.pem").write_text("untrusted-vcek")
+    authorizer = SNPAuthorizer(amd_certs_dir=str(tmp_path), max_retries=1, retry_interval=0)
+    actions = []
+
+    def run(_cmd, action):
+        actions.append(action)
+        if action == "verify_cert_chain":
+            raise RuntimeError("certificate chain verification failed")
+        return subprocess.CompletedProcess([], 0, "", "")
+
+    authorizer._run_once = run
+
+    assert authorizer.verify(base64.b64encode(_report()).decode("ascii"), CHALLENGE) is False
+    assert actions == ["verify_cert_chain"]
+
+
+def test_consecutive_distinct_vcek_fetches_wait_instead_of_rejecting(tmp_path):
+    authorizer = SNPAuthorizer(
+        amd_certs_dir=str(tmp_path),
+        max_retries=1,
+        retry_interval=0,
+        vcek_fetch_interval=0.01,
+    )
+    actions = []
+
+    def run(cmd, action):
+        actions.append(action)
+        if action == "fetch_ca_certs":
+            (tmp_path / "ark.pem").write_text("ark")
+            (tmp_path / "ask.pem").write_text("ask")
+        elif action == "fetch_vcek":
+            with open(os.path.join(cmd[4], "vcek.pem"), "w") as vcek_stream:
+                vcek_stream.write("vcek")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    authorizer._run_with_retry = run
+    authorizer._run_once = run
+    first = base64.b64encode(_report(CHALLENGE, b"a" * CHIP_ID_SIZE)).decode("ascii")
+    second = base64.b64encode(_report(OTHER_CHALLENGE, b"b" * CHIP_ID_SIZE)).decode("ascii")
+
+    assert authorizer.verify(first, CHALLENGE) is True
+    assert authorizer.verify(second, OTHER_CHALLENGE) is True
+    assert actions.count("fetch_vcek") == 2

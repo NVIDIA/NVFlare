@@ -101,6 +101,20 @@ def test_generate_collects_nonce_bound_nvat_evidence(monkeypatch):
     assert authorizer._can_generate is True
 
 
+def test_generate_and_verify_bind_request_challenge(monkeypatch):
+    challenge = "a" * 64
+    runner = FakeRunner()
+    monkeypatch.setattr("subprocess.run", runner)
+    authorizer = GPUAuthorizer(nvat_command="nvattest")
+
+    token = authorizer.generate(challenge)
+
+    assert json.loads(token)["evidences"][0]["nonce"] == challenge
+    assert authorizer.verify(token, "b" * 64) is False
+    assert authorizer.verify(token, challenge) is True
+    assert len(runner.calls) == 2
+
+
 def test_explicit_service_key_precedes_environment(monkeypatch):
     runner = FakeRunner()
     monkeypatch.setattr("subprocess.run", runner)

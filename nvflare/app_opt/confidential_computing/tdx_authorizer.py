@@ -133,7 +133,7 @@ class TDXAuthorizer(CCAuthorizer):
         except OSError as e:
             raise RuntimeError(f"TDX {action} could not start: {e}") from e
 
-    def generate(self) -> str:
+    def generate(self, challenge: str | None = None) -> str:
         try:
             result = self._run(
                 self._command("-c", self.config_file, "token", *self.token_options, use_sudo=self.use_sudo),
@@ -146,7 +146,7 @@ class TDXAuthorizer(CCAuthorizer):
         except RuntimeError as e:
             raise CCTokenGenerateError(f"Failed to generate a TDX token: {e}") from e
 
-    def verify(self, token: str) -> bool:
+    def verify(self, token: str, challenge: str | None = None) -> bool:
         if (
             not isinstance(token, str)
             or not JWT_PATTERN.fullmatch(token.strip())

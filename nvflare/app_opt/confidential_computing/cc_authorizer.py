@@ -29,8 +29,11 @@ class CCAuthorizer(ABC):
         pass
 
     @abstractmethod
-    def generate(self) -> str:
+    def generate(self, challenge: str | None = None) -> str:
         """Generates and returns the active CCAuthorizer token.
+
+        Args:
+            challenge: Request-scoped verifier challenge, when supported.
 
         Returns:
             token string
@@ -39,11 +42,12 @@ class CCAuthorizer(ABC):
         pass
 
     @abstractmethod
-    def verify(self, token: str) -> bool:
+    def verify(self, token: str, challenge: str | None = None) -> bool:
         """Returns the token verification result.
 
         Args:
             token: str
+            challenge: Request-scoped verifier challenge, when supported.
 
         Returns:
             a boolean value indicating the token verification result

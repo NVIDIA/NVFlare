@@ -219,8 +219,11 @@ class GPUAuthorizer(CCAuthorizer):
             raise RuntimeError(f"NVAT {action} did not report success")
         return document
 
-    def generate(self) -> str:
-        nonce = secrets.token_hex(32)
+    def generate(self, challenge: str | None = None) -> str:
+        nonce = challenge or secrets.token_hex(32)
+        if not isinstance(nonce, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", nonce):
+            raise CCTokenGenerateError("GPU evidence challenge must be a 32-byte hexadecimal string")
+        nonce = nonce.lower()
         try:
             result = self._run(
                 ["collect-evidence", "--device", "gpu", "--nonce", nonce],
@@ -238,9 +241,14 @@ class GPUAuthorizer(CCAuthorizer):
             self._can_generate = False
             raise CCTokenGenerateError(f"Failed to generate NVAT GPU evidence: {e}") from e
 
-    def verify(self, token: str) -> bool:
+    def verify(self, token: str, challenge: str | None = None) -> bool:
         try:
             document, nonce = _parse_evidence_document(token, self.max_token_size)
+            if challenge is not None:
+                if not isinstance(challenge, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", challenge):
+                    return False
+                if not secrets.compare_digest(nonce, challenge.lower()):
+                    return False
             with tempfile.TemporaryDirectory(prefix="nvflare-nvat-verify-") as work_dir:
                 evidence_path = os.path.join(work_dir, "gpu-evidence.json")
                 policy_path = os.path.join(work_dir, "relying-party-policy.rego")

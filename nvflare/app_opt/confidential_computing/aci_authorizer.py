@@ -28,7 +28,7 @@ class ACIAuthorizer(CCAuthorizer):
         self.retry_count = retry_count
         self.retry_sleep = retry_sleep
 
-    def generate(self):
+    def generate(self, challenge: str | None = None):
         count = 0
         token = ""
         while True:
@@ -48,7 +48,7 @@ class ACIAuthorizer(CCAuthorizer):
                 time.sleep(self.retry_sleep)
         return token
 
-    def verify(self, token):
+    def verify(self, token, challenge: str | None = None):
         try:
             header = jwt.get_unverified_header(token)
             alg = header.get("alg")
