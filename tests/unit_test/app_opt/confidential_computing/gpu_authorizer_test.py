@@ -113,6 +113,19 @@ def test_explicit_service_key_precedes_environment(monkeypatch):
     assert kwargs["env"]["NV_ATTESTATION_SERVICE_KEY"] == "constructor-key"
 
 
+def test_service_key_is_validated_and_normalized(monkeypatch):
+    monkeypatch.setenv("NV_ATTESTATION_SERVICE_KEY", "  environment-key  ")
+    assert GPUAuthorizer(nvat_command="nvattest").service_key == "environment-key"
+
+    for service_key in ("", "   ", 123):
+        with pytest.raises(ValueError, match="service_key must be a non-empty string"):
+            GPUAuthorizer(nvat_command="nvattest", service_key=service_key)
+
+    monkeypatch.setenv("NV_ATTESTATION_SERVICE_KEY", "   ")
+    with pytest.raises(ValueError, match="service_key must be a non-empty string"):
+        GPUAuthorizer(nvat_command="nvattest")
+
+
 def test_generate_fails_closed_on_nvat_error(monkeypatch):
     runner = FakeRunner()
     runner.collect_result = subprocess.CompletedProcess([], 7, "{}")
@@ -239,7 +252,20 @@ def test_constructor_validates_configuration(tmp_path):
         GPUAuthorizer(policy_file=str(legacy_policy))
 
 
-def test_legacy_verifier_url_is_normalized():
-    authorizer = GPUAuthorizer("https://nras.attestation.nvidia.com/v4/attest/gpu")
+@pytest.mark.parametrize(
+    "verifier_url",
+    [
+        "https://nras.attestation.nvidia.com/v4/attest/gpu",
+        "https://nras.attestation.nvidia.com/v4/attest/gpu/",
+    ],
+)
+def test_legacy_verifier_url_is_normalized(verifier_url):
+    authorizer = GPUAuthorizer(verifier_url)
 
     assert authorizer.nras_url == "https://nras.attestation.nvidia.com"
+
+
+@pytest.mark.parametrize("verifier_url", ["", "   ", 123])
+def test_legacy_verifier_url_rejects_invalid_values(verifier_url):
+    with pytest.raises(ValueError, match="verifier_url must be a non-empty string"):
+        GPUAuthorizer(verifier_url)

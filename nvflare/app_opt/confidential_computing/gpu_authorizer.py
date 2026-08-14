@@ -150,8 +150,10 @@ class GPUAuthorizer(CCAuthorizer):
         if max_token_size <= 0:
             raise ValueError("max_token_size must be positive")
 
-        if verifier_url:
-            nras_url = verifier_url.removesuffix("/v4/attest/gpu")
+        if verifier_url is not None:
+            if not isinstance(verifier_url, str) or not verifier_url.strip():
+                raise ValueError("verifier_url must be a non-empty string")
+            nras_url = verifier_url.strip().rstrip("/").removesuffix("/v4/attest/gpu")
         if verifier == "remote" and (not isinstance(nras_url, str) or not nras_url.startswith("https://")):
             raise ValueError("nras_url must be an HTTPS URL for remote verification")
 
@@ -179,6 +181,10 @@ class GPUAuthorizer(CCAuthorizer):
 
         if service_key is None:
             service_key = os.environ.get(NVAT_SERVICE_KEY_ENV) or os.environ.get(LEGACY_SERVICE_KEY_ENV)
+        if service_key is not None:
+            if not isinstance(service_key, str) or not service_key.strip():
+                raise ValueError("service_key must be a non-empty string")
+            service_key = service_key.strip()
         self.service_key = service_key
 
     def _run(self, arguments: list[str], action: str) -> subprocess.CompletedProcess:
