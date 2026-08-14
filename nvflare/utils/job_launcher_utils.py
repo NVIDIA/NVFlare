@@ -134,7 +134,48 @@ _LAUNCHER_MODE_KEYS = {"process", "docker", "k8s", "slurm"}
 # authorization; DockerJobLauncher enforces the locally derived BYOC marker.
 DOCKER_JOB_BYOC_KEYS = frozenset({"image", "python_path", "entrypoint"})
 DOCKER_JOB_CONTAINER_KWARGS = frozenset({"entrypoint", "shm_size"})
-DOCKER_JOB_LAUNCHER_KEYS = DOCKER_JOB_BYOC_KEYS | DOCKER_JOB_CONTAINER_KWARGS | {"num_of_gpus"}
+
+_DOCKER_SHM_SIZE_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+)?(?:[bBkKmMgG](?:[bB])?)?$")
+
+
+def _is_non_negative_int(value) -> bool:
+    return not isinstance(value, bool) and isinstance(value, int) and value >= 0
+
+
+def _is_string_or_none(value) -> bool:
+    return value is None or isinstance(value, str)
+
+
+def _is_non_empty_string(value) -> bool:
+    return isinstance(value, str) and bool(value)
+
+
+def _is_valid_entrypoint(value) -> bool:
+    if isinstance(value, str):
+        return bool(value)
+    return isinstance(value, list) and bool(value) and all(isinstance(arg, str) and arg for arg in value)
+
+
+def _is_valid_shm_size(value) -> bool:
+    return _is_non_negative_int(value) or isinstance(value, str) and bool(_DOCKER_SHM_SIZE_PATTERN.fullmatch(value))
+
+
+# Keep the allowlist and its value checks coupled so a new job-controlled
+# option cannot be added without specifying how its value is validated.
+_DOCKER_JOB_LAUNCHER_OPTION_VALIDATORS = {
+    "image": (_is_string_or_none, "must be a string or null"),
+    "python_path": (_is_non_empty_string, "must be a non-empty string"),
+    "entrypoint": (
+        _is_valid_entrypoint,
+        "must be a non-empty string or a non-empty list of non-empty strings",
+    ),
+    "num_of_gpus": (_is_non_negative_int, "must be an integer greater than or equal to 0"),
+    "shm_size": (
+        _is_valid_shm_size,
+        "must be a non-negative integer or a byte-size string with an optional b, k, m, or g unit",
+    ),
+}
+DOCKER_JOB_LAUNCHER_KEYS = frozenset(_DOCKER_JOB_LAUNCHER_OPTION_VALIDATORS)
 
 
 def validate_docker_job_launcher_spec(docker_spec: dict, label: str) -> None:
@@ -149,11 +190,10 @@ def validate_docker_job_launcher_spec(docker_spec: dict, label: str) -> None:
             f"allowed options: {sorted(DOCKER_JOB_LAUNCHER_KEYS)}"
         )
 
-    num_of_gpus = docker_spec.get("num_of_gpus")
-    if "num_of_gpus" in docker_spec and (
-        isinstance(num_of_gpus, bool) or not isinstance(num_of_gpus, int) or num_of_gpus < 0
-    ):
-        raise ValueError(f"{label} field 'num_of_gpus' must be an integer greater than or equal to 0")
+    for field, value in docker_spec.items():
+        validator, error = _DOCKER_JOB_LAUNCHER_OPTION_VALIDATORS[field]
+        if not validator(value):
+            raise ValueError(f"{label} field '{field}' {error}")
 
 
 PORTABLE_RESOURCE_DEFAULT_KEY = "@default"

@@ -34,6 +34,7 @@ from nvflare.utils.job_launcher_utils import (
     portable_memory_to_mib,
     refresh_custom_dir_import_path,
     resolve_site_resource_spec,
+    validate_docker_job_launcher_spec,
     validate_portable_resource_conflicts,
     validate_portable_resource_spec,
 )
@@ -73,6 +74,44 @@ class TestCredentialEnv:
         command = generate(fl_ctx)
         assert "secret-" not in command
         assert "/ws" in command
+
+
+class TestValidateDockerJobLauncherSpec:
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("image", None),
+            ("shm_size", 0),
+            ("shm_size", 1024),
+            ("shm_size", "8g"),
+            ("entrypoint", "/usr/bin/env"),
+            ("entrypoint", ["/usr/bin/env"]),
+            ("entrypoint", ["/bin/sh", "-c"]),
+        ],
+    )
+    def test_accepts_valid_container_option_value(self, field, value):
+        validate_docker_job_launcher_spec({field: value}, "docker spec")
+
+    @pytest.mark.parametrize("shm_size", [{"unexpected": 1}, ["8g"], "abc", -1, True])
+    def test_rejects_invalid_shm_size(self, shm_size):
+        with pytest.raises(ValueError, match="field 'shm_size'"):
+            validate_docker_job_launcher_spec({"shm_size": shm_size}, "docker spec")
+
+    @pytest.mark.parametrize("entrypoint", [{"unexpected": 1}, 123, [["/usr/bin/env"]], ""])
+    def test_rejects_invalid_entrypoint(self, entrypoint):
+        with pytest.raises(ValueError, match="field 'entrypoint'"):
+            validate_docker_job_launcher_spec({"entrypoint": entrypoint}, "docker spec")
+
+    @pytest.mark.parametrize(
+        ("field", "value", "message"),
+        [
+            ("image", 123, "must be a string or null"),
+            ("python_path", "", "must be a non-empty string"),
+        ],
+    )
+    def test_rejects_invalid_launcher_value(self, field, value, message):
+        with pytest.raises(ValueError, match=message):
+            validate_docker_job_launcher_spec({field: value}, "docker spec")
 
 
 class TestGetJobLauncherSpec:
