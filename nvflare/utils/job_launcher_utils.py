@@ -250,10 +250,13 @@ def get_resource_manager_spec(job_meta: dict, site_name: str) -> dict:
         return get_site_launcher_spec(site_spec, "process")
     resolved = resolve_site_resource_spec(job_meta, site_name)
     result = {key: value for key, value in resolved.items() if key not in ("num_of_cpus", "memory")}
-    if result.get("num_of_gpus") == 0:
+    if (
+        result.get("num_of_gpus") == 0
+        and set(result).issubset({"num_of_gpus", "mem_per_gpu_in_GiB"})
+        and result.get("mem_per_gpu_in_GiB", 0) == 0
+    ):
         result.pop("num_of_gpus")
-        if result.get("mem_per_gpu_in_GiB") == 0:
-            result.pop("mem_per_gpu_in_GiB")
+        result.pop("mem_per_gpu_in_GiB", None)
     return result
 
 
@@ -289,7 +292,7 @@ def portable_memory_to_bytes(memory: str) -> int:
 def _validate_legacy_nested_gpu_consistency(job_meta: dict, site_name: str, resource_spec: dict) -> None:
     """Keep legacy process GPU admission consistent with the effective launcher request."""
     site_spec = resource_spec.get(site_name) or {}
-    if PORTABLE_RESOURCE_DEFAULT_KEY in resource_spec or not any(key in site_spec for key in _LAUNCHER_MODE_KEYS):
+    if not any(key in site_spec for key in _LAUNCHER_MODE_KEYS):
         return
 
     process_spec = get_site_launcher_spec(site_spec, "process")
@@ -332,11 +335,16 @@ def validate_portable_resource_conflicts(job_meta: dict) -> None:
     site_names = (set(resource_spec) - {PORTABLE_RESOURCE_DEFAULT_KEY}) | (set(launcher_spec) - {"default"})
     for site_name in site_names:
         _validate_legacy_nested_gpu_consistency(job_meta, site_name, resource_spec)
+        site_spec = resource_spec.get(site_name) or {}
+        process_spec = get_site_launcher_spec(site_spec, "process")
+        has_legacy_process_gpu = any(key in site_spec for key in _LAUNCHER_MODE_KEYS) and "num_of_gpus" in process_spec
         portable = get_portable_resource_spec(job_meta, site_name)
         for mode, portable_to_native in _PORTABLE_NATIVE_RESOURCE_KEYS.items():
             native = get_job_launcher_spec(job_meta, site_name, mode)
             for portable_key, native_keys in portable_to_native.items():
                 conflicts = sorted(native_keys & set(native)) if portable_key in portable else []
+                if portable_key == "num_of_gpus" and conflicts == ["num_of_gpus"] and has_legacy_process_gpu:
+                    continue
                 if conflicts:
                     raise ValueError(
                         f"portable resource '{portable_key}' conflicts with launcher_spec {mode} field(s) "

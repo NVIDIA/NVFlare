@@ -22,6 +22,7 @@ import pytest
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv
+from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 from nvflare.utils.job_launcher_utils import (
     _validate_launcher_spec,
     generate_client_command,
@@ -194,7 +195,19 @@ class TestPortableResourceSpec:
             }
         }
 
-        assert get_resource_manager_spec(meta, "site-1") == {"license": 2}
+        assert get_resource_manager_spec(meta, "site-1") == {
+            "num_of_gpus": 0,
+            "mem_per_gpu_in_GiB": 0,
+            "license": 2,
+        }
+
+    def test_resource_manager_accepts_zero_gpu_with_nonzero_gpu_memory(self):
+        meta = {"resource_spec": {"site-1": {"num_of_gpus": 0, "mem_per_gpu_in_GiB": 8}}}
+        resource_spec = get_resource_manager_spec(meta, "site-1")
+        resource_manager = GPUResourceManager(num_of_gpus=1, mem_per_gpu_in_GiB=16, ignore_host=True)
+
+        assert resource_spec == {"num_of_gpus": 0, "mem_per_gpu_in_GiB": 8}
+        assert resource_manager.check_resources(resource_spec, FLContext())[0]
 
     def test_legacy_nested_spec_is_not_reinterpreted_without_default(self):
         meta = {"resource_spec": {"site-1": {"process": {"num_of_cpus": 4}, "docker": {"image": "x"}}}}
@@ -277,13 +290,15 @@ class TestPortableResourceSpec:
             ("slurm", {"nodes": 2, "gpus_per_node": 4}),
         ],
     )
-    def test_rejects_legacy_nested_gpu_count_mismatch(self, mode, launcher_spec):
+    @pytest.mark.parametrize("default_spec", [{}, {"@default": {"num_of_cpus": 4}}])
+    def test_rejects_legacy_nested_gpu_count_mismatch(self, mode, launcher_spec, default_spec):
         meta = {
             "resource_spec": {
+                **default_spec,
                 "site-1": {
                     "process": {"num_of_gpus": 1},
                     mode: launcher_spec,
-                }
+                },
             }
         }
 
@@ -298,13 +313,15 @@ class TestPortableResourceSpec:
             ("slurm", {"nodes": 2, "gpus_per_node": 1}),
         ],
     )
-    def test_allows_matching_legacy_nested_gpu_count(self, mode, launcher_spec):
+    @pytest.mark.parametrize("default_spec", [{}, {"@default": {"num_of_cpus": 4}}])
+    def test_allows_matching_legacy_nested_gpu_count(self, mode, launcher_spec, default_spec):
         meta = {
             "resource_spec": {
+                **default_spec,
                 "site-1": {
                     "process": {"num_of_gpus": 2},
                     mode: launcher_spec,
-                }
+                },
             }
         }
 
