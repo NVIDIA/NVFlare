@@ -14,19 +14,19 @@
 
 import base64
 import binascii
+import hashlib
 import logging
 import os
 import re
 import secrets
 import shutil
+import sqlite3
 import subprocess
 import tempfile
 import time
 from contextlib import contextmanager
 
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer, CCTokenGenerateError
-
-from .utils import NonceHistory
 
 SNP_NAMESPACE = "x-snp"
 REPORT_PATH = "report.bin"
@@ -45,7 +45,14 @@ REPORTED_TCB_OFFSET = 384
 REPORTED_TCB_SIZE = 8
 CHIP_ID_OFFSET = 416
 CHIP_ID_SIZE = 64
-MIN_REPORT_SIZE = CHIP_ID_OFFSET + CHIP_ID_SIZE
+# AMD SEV-SNP attestation reports have a fixed ABI size. Reject anything else
+# before creating files or fetching certificates from attacker-controlled fields.
+REPORT_SIZE = 0x4A0
+BASE64_REPORT_SIZE = ((REPORT_SIZE + 2) // 3) * 4
+# Retain the old name for callers that imported it before exact-size validation.
+MIN_REPORT_SIZE = REPORT_SIZE
+REPLAY_DB = "snp-replay.db"
+VCEK_FETCH_MARKER = ".vcek-fetch"
 
 
 def parse_chip_id(report_text: str) -> str:
@@ -126,29 +133,44 @@ class SNPAuthorizer(CCAuthorizer):
         retry_interval=10,
         cmd_timeout=60,
         lock_timeout=60,
+        max_vcek_cache_entries=256,
+        vcek_fetch_interval=1.0,
+        replay_db_path=None,
     ):
         """Initialize the SNP authorizer.
 
         ``amd_certs_dir`` is a persistent cache for AMD ARK/ASK and per-chip
-        VCEK certificates. Request and report files are created in isolated
-        temporary directories and removed after each operation.
+        VCEK certificates. It also holds the durable replay database by
+        default. Request and report files are created in isolated temporary
+        directories and removed after each operation. ``max_nonce_history`` is
+        retained for configuration compatibility; verified SNP nonce hashes
+        are persisted without bounded-history eviction.
         """
         super().__init__()
+        if not isinstance(max_nonce_history, int) or max_nonce_history <= 0:
+            raise ValueError("max_nonce_history must be a positive integer")
         if max_retries < 1:
             raise ValueError("max_retries must be at least 1")
         if cmd_timeout <= 0 or lock_timeout <= 0:
             raise ValueError("cmd_timeout and lock_timeout must be positive")
+        if not isinstance(max_vcek_cache_entries, int) or max_vcek_cache_entries < 1:
+            raise ValueError("max_vcek_cache_entries must be a positive integer")
+        if vcek_fetch_interval < 0:
+            raise ValueError("vcek_fetch_interval must not be negative")
+        if replay_db_path is not None and (not isinstance(replay_db_path, str) or not replay_db_path.strip()):
+            raise ValueError("replay_db_path must be a non-empty string or None")
 
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.my_nonce_history = NonceHistory(max_nonce_history)
-        self.seen_nonce_history = NonceHistory(max_nonce_history)
         self.amd_certs_dir = os.path.abspath(amd_certs_dir)
+        self.replay_db_path = os.path.abspath(replay_db_path or os.path.join(self.amd_certs_dir, REPLAY_DB))
         self.snpguest_binary = snpguest_binary
         self.cpu_model = cpu_model
         self.max_retries = max_retries
         self.retry_interval = retry_interval
         self.cmd_timeout = cmd_timeout
         self.lock_timeout = lock_timeout
+        self.max_vcek_cache_entries = max_vcek_cache_entries
+        self.vcek_fetch_interval = vcek_fetch_interval
 
     def _run_with_retry(self, cmd: list[str], action_name: str) -> subprocess.CompletedProcess:
         last_error = "unknown error"
@@ -201,20 +223,25 @@ class SNPAuthorizer(CCAuthorizer):
                 self._run_with_retry([self.snpguest_binary, "report", report_path, request_path], "generate_report")
                 with open(report_path, "rb") as report_file:
                     report = report_file.read()
-                if len(report) < MIN_REPORT_SIZE:
-                    raise RuntimeError("snpguest generated an incomplete SNP report")
+                if len(report) != REPORT_SIZE:
+                    raise RuntimeError(f"snpguest generated an SNP report with invalid size {len(report)}")
         except (OSError, RuntimeError) as e:
             raise CCTokenGenerateError(f"Failed to generate an SNP attestation report: {e}") from e
 
-        self.my_nonce_history.add(nonce.hex())
         return base64.b64encode(report).decode("ascii")
 
     def verify(self, token: str) -> bool:
         try:
             if not isinstance(token, (str, bytes)) or not token:
                 return False
+            if len(token) != BASE64_REPORT_SIZE:
+                return False
             report = base64.b64decode(token, validate=True)
-            if len(report) < MIN_REPORT_SIZE:
+            if len(report) != REPORT_SIZE:
+                return False
+            report_data = _read_report_field(report, REPORT_DATA_OFFSET, REPORT_DATA_SIZE, "report data")
+            if not any(report_data):
+                self.logger.warning("Rejected an SNP attestation report without a freshness nonce")
                 return False
 
             os.makedirs(self.amd_certs_dir, mode=0o700, exist_ok=True)
@@ -232,25 +259,34 @@ class SNPAuthorizer(CCAuthorizer):
 
                 # Signature verification is local and deterministic. Retrying a
                 # bad report only amplifies an attacker's resource consumption;
-                # bounded retries are reserved for the AMD certificate fetches.
+                # bounded retries are reserved for the AMD CA certificate fetch.
                 self._run_once(
                     [self.snpguest_binary, "verify", "attestation", work_dir, report_path],
                     "verify_attestation",
                 )
 
-            report_data = _read_report_field(report, REPORT_DATA_OFFSET, REPORT_DATA_SIZE, "report data")
-            if not any(report_data):
-                self.logger.warning("Rejected an SNP attestation report without a freshness nonce")
-                return False
-            nonce = report_data.hex()
-            if not self.seen_nonce_history.add(nonce):
+            if not self._record_nonce_once(report_data):
                 self.logger.warning("Rejected a replayed SNP attestation report")
                 return False
             self.logger.info("SNP attestation and nonce checks passed")
             return True
-        except (binascii.Error, OSError, RuntimeError, TimeoutError, ValueError) as e:
+        except (binascii.Error, OSError, RuntimeError, sqlite3.Error, TimeoutError, ValueError) as e:
             self.logger.warning("SNP token verification failed: %s", e)
             return False
+
+    def _record_nonce_once(self, report_data: bytes) -> bool:
+        """Atomically persist a verified nonce so replays survive restarts and cache eviction."""
+        replay_dir = os.path.dirname(self.replay_db_path)
+        os.makedirs(replay_dir, mode=0o700, exist_ok=True)
+        descriptor = os.open(self.replay_db_path, os.O_CREAT | os.O_WRONLY, 0o600)
+        os.close(descriptor)
+        os.chmod(self.replay_db_path, 0o600)
+        nonce_id = hashlib.sha256(report_data).hexdigest()
+        with sqlite3.connect(self.replay_db_path, timeout=self.lock_timeout) as connection:
+            connection.execute("CREATE TABLE IF NOT EXISTS seen_nonces (nonce_id TEXT PRIMARY KEY)")
+            cursor = connection.execute("INSERT OR IGNORE INTO seen_nonces (nonce_id) VALUES (?)", (nonce_id,))
+            inserted = cursor.rowcount == 1
+        return inserted
 
     def _ensure_amd_ca_certs(self) -> None:
         """Fetch the AMD CA certificates once, with cross-process serialization."""
@@ -269,13 +305,30 @@ class SNPAuthorizer(CCAuthorizer):
                 raise RuntimeError("snpguest did not create the expected AMD ARK and ASK certificates")
 
     def _ensure_amd_vcek(self, vcek_cache_key: str, report_bin_file: str) -> str:
-        """Return a cached VCEK, fetching it safely when it is not present."""
+        """Return a cached VCEK with bounded, rate-limited one-shot fetching."""
         cache_path = os.path.join(self.amd_certs_dir, f"vcek-{vcek_cache_key}.pem")
         lock_path = os.path.join(self.amd_certs_dir, ".vcek.lock")
         with _file_lock(lock_path, self.lock_timeout):
             if not os.path.isfile(cache_path):
+                cache_entries = sum(
+                    entry.name.startswith("vcek-") and entry.name.endswith(".pem")
+                    for entry in os.scandir(self.amd_certs_dir)
+                )
+                if cache_entries >= self.max_vcek_cache_entries:
+                    raise RuntimeError("VCEK cache entry limit reached")
+
+                fetch_marker = os.path.join(self.amd_certs_dir, VCEK_FETCH_MARKER)
+                if os.path.exists(fetch_marker):
+                    elapsed = time.time() - os.path.getmtime(fetch_marker)
+                    if elapsed < self.vcek_fetch_interval:
+                        raise RuntimeError("VCEK fetch rate limit exceeded")
+                with open(fetch_marker, "a"):
+                    os.utime(fetch_marker, None)
+
                 with tempfile.TemporaryDirectory(prefix="nvflare-snp-vcek-") as cert_dir:
-                    self._run_with_retry(
+                    # Report-derived KDS requests can fail deterministically.
+                    # Do not amplify malformed evidence with automatic retries.
+                    self._run_once(
                         [self.snpguest_binary, "fetch", "vcek", "pem", cert_dir, report_bin_file],
                         "fetch_vcek",
                     )

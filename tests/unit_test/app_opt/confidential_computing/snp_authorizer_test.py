@@ -29,6 +29,7 @@ from nvflare.app_opt.confidential_computing.snp_authorizer import (
     MIN_REPORT_SIZE,
     REPORT_DATA_OFFSET,
     REPORT_DATA_SIZE,
+    REPORT_SIZE,
     REPORTED_TCB_OFFSET,
     REPORTED_TCB_SIZE,
     SNPAuthorizer,
@@ -73,6 +74,20 @@ def test_generate_raises_cc_error_when_snpguest_fails(tmp_path):
         authorizer.generate()
 
 
+def test_generate_rejects_report_with_non_abi_size(tmp_path):
+    authorizer = SNPAuthorizer(amd_certs_dir=str(tmp_path), max_retries=1, retry_interval=0)
+
+    def run(cmd, _action):
+        with open(cmd[2], "wb") as report_stream:
+            report_stream.write(b"x" * (REPORT_SIZE - 1))
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    authorizer._run_with_retry = run
+
+    with pytest.raises(CCTokenGenerateError, match="invalid size"):
+        authorizer.generate()
+
+
 def test_verify_checks_signature_then_rejects_replay(tmp_path):
     (tmp_path / "ark.pem").write_text("ark")
     (tmp_path / "ask.pem").write_text("ask")
@@ -96,6 +111,21 @@ def test_verify_checks_signature_then_rejects_replay(tmp_path):
     assert len(verify_calls) == 2
     assert verify_calls[0][0:3] == ["snpguest", "verify", "attestation"]
     assert os.path.dirname(verify_calls[0][4]) == verify_calls[0][3]
+
+
+def test_verify_rejects_replay_after_restart_and_history_eviction(tmp_path):
+    (tmp_path / "ark.pem").write_text("ark")
+    (tmp_path / "ask.pem").write_text("ask")
+    cache_key = f"{'63' * CHIP_ID_SIZE}-{'74' * REPORTED_TCB_SIZE}"
+    (tmp_path / f"vcek-{cache_key}.pem").write_text("vcek")
+    first = SNPAuthorizer(amd_certs_dir=str(tmp_path), max_nonce_history=1, max_retries=1, retry_interval=0)
+    restarted = SNPAuthorizer(amd_certs_dir=str(tmp_path), max_nonce_history=1, max_retries=1, retry_interval=0)
+    first._run_once = Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
+    restarted._run_once = Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
+    token = base64.b64encode(_report()).decode("ascii")
+
+    assert first.verify(token) is True
+    assert restarted.verify(token) is False
 
 
 def test_verify_rejects_signed_report_without_nonce(tmp_path):
@@ -180,7 +210,17 @@ def test_ca_certificate_fetch_is_serialized_across_concurrent_authorizers(tmp_pa
     assert max_active == 1
 
 
-@pytest.mark.parametrize("token", ["", "not-base64!", base64.b64encode(b"short").decode("ascii"), None])
+@pytest.mark.parametrize(
+    "token",
+    [
+        "",
+        "not-base64!",
+        base64.b64encode(b"short").decode("ascii"),
+        base64.b64encode(b"x" * (REPORT_SIZE + 1)).decode("ascii"),
+        base64.b64encode(b"x" * (REPORT_SIZE * 100)).decode("ascii"),
+        None,
+    ],
+)
 def test_verify_rejects_malformed_reports_without_running_commands(tmp_path, token):
     authorizer = SNPAuthorizer(amd_certs_dir=str(tmp_path), max_retries=1, retry_interval=0)
     authorizer._run_with_retry = Mock()
@@ -209,3 +249,32 @@ def test_verify_does_not_retry_deterministic_signature_failure(tmp_path):
 
     run.assert_called_once()
     sleep.assert_not_called()
+
+
+def test_vcek_fetch_is_not_retried_for_report_derived_failure(tmp_path):
+    (tmp_path / "ark.pem").write_text("ark")
+    (tmp_path / "ask.pem").write_text("ask")
+    authorizer = SNPAuthorizer(amd_certs_dir=str(tmp_path), max_retries=5, retry_interval=10, vcek_fetch_interval=0)
+
+    with (
+        patch(
+            "subprocess.run",
+            return_value=subprocess.CompletedProcess([], 2, "", "KDS rejected report fields"),
+        ) as run,
+        patch("nvflare.app_opt.confidential_computing.snp_authorizer.time.sleep") as sleep,
+    ):
+        assert authorizer.verify(base64.b64encode(_report()).decode("ascii")) is False
+
+    run.assert_called_once()
+    sleep.assert_not_called()
+
+
+def test_vcek_cache_limit_rejects_new_entries_without_fetch(tmp_path):
+    (tmp_path / "vcek-existing.pem").write_text("vcek")
+    authorizer = SNPAuthorizer(amd_certs_dir=str(tmp_path), max_vcek_cache_entries=1, max_retries=1, retry_interval=0)
+    authorizer._run_once = Mock()
+
+    with pytest.raises(RuntimeError, match="cache entry limit"):
+        authorizer._ensure_amd_vcek("new", str(tmp_path / "report.bin"))
+
+    authorizer._run_once.assert_not_called()

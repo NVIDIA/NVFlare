@@ -51,6 +51,7 @@ class TDXAuthorizer(CCAuthorizer):
         max_nonce_history: int = 1000,
         max_token_size: int = MAX_TOKEN_SIZE,
         token_options: list[str] | tuple[str, ...] | None = None,
+        verify_use_sudo: bool = False,
     ) -> None:
         """Initialize the TDX authorizer.
 
@@ -58,9 +59,10 @@ class TDXAuthorizer(CCAuthorizer):
             tdx_cli_command: Path to the TDX attestation CLI executable.
             config_dir: Directory containing the CLI's ``config.json``.
             cmd_timeout: Maximum seconds allowed for each CLI invocation.
-            use_sudo: Prefix the CLI with non-interactive ``sudo``. ``None``
-                selects sudo for a non-root process when it is available, while
-                root and minimal containers invoke the CLI directly.
+            use_sudo: Prefix token generation with non-interactive ``sudo``.
+                ``None`` selects sudo for a non-root process when it is
+                available, while root and minimal containers invoke the CLI
+                directly. This setting does not elevate token verification.
             max_nonce_history: Number of successfully verified token
                 fingerprints retained for replay rejection.
             max_token_size: Maximum accepted serialized JWT size in bytes.
@@ -68,6 +70,8 @@ class TDXAuthorizer(CCAuthorizer):
                 selector is supplied: the pinned Intel CLI selects TDX when no
                 selector is present, and this remains compatible with older
                 CLIs. Use this hook only for version-specific reviewed flags.
+            verify_use_sudo: Explicitly elevate token verification. Verification
+                is unprivileged by default, independently of ``use_sudo``.
         """
         super().__init__()
         if not isinstance(tdx_cli_command, str) or not tdx_cli_command.strip():
@@ -78,6 +82,8 @@ class TDXAuthorizer(CCAuthorizer):
             raise ValueError("max_token_size must be positive")
         if use_sudo is not None and not isinstance(use_sudo, bool):
             raise ValueError("use_sudo must be true, false, or None")
+        if not isinstance(verify_use_sudo, bool):
+            raise ValueError("verify_use_sudo must be true or false")
         if token_options is None:
             token_options = ()
         if not isinstance(token_options, (list, tuple)) or any(
@@ -90,14 +96,15 @@ class TDXAuthorizer(CCAuthorizer):
         self.config_file = os.path.join(self.config_dir, TDX_CLI_CONFIG)
         self.cmd_timeout = cmd_timeout
         self.use_sudo = os.geteuid() != 0 and shutil.which("sudo") is not None if use_sudo is None else use_sudo
+        self.verify_use_sudo = verify_use_sudo
         self.max_token_size = max_token_size
         self.token_options = tuple(token_options)
         self.seen_token_history = NonceHistory(max_nonce_history)
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def _command(self, *arguments: str) -> list[str]:
+    def _command(self, *arguments: str, use_sudo: bool = False) -> list[str]:
         command = [self.tdx_cli_command, *arguments]
-        return ["sudo", "-n", *command] if self.use_sudo else command
+        return ["sudo", "-n", *command] if use_sudo else command
 
     def _extract_token(self, output: str) -> str:
         candidates = [line.strip() for line in output.splitlines() if JWT_PATTERN.fullmatch(line.strip())]
@@ -129,7 +136,7 @@ class TDXAuthorizer(CCAuthorizer):
     def generate(self) -> str:
         try:
             result = self._run(
-                self._command("-c", self.config_file, "token", *self.token_options),
+                self._command("-c", self.config_file, "token", *self.token_options, use_sudo=self.use_sudo),
                 "token generation",
             )
             if result.returncode != 0:
@@ -147,7 +154,7 @@ class TDXAuthorizer(CCAuthorizer):
         ):
             return False
         token = token.strip()
-        command = self._command("verify", "--config", self.config_file, "--token", token)
+        command = self._command("verify", "--config", self.config_file, "--token", token, use_sudo=self.verify_use_sudo)
         for attempt in range(NOT_BEFORE_VERIFY_ATTEMPTS):
             try:
                 result = self._run(command, "token verification")

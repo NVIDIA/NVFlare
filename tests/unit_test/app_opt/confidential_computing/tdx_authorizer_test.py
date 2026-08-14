@@ -56,6 +56,20 @@ def test_generate_can_explicitly_use_sudo(config_dir):
     assert run.call_args.args[0][:3] == ["sudo", "-n", "tdx-cli"]
 
 
+def test_verify_remains_unprivileged_when_generation_uses_sudo(config_dir):
+    authorizer = TDXAuthorizer("tdx-cli", str(config_dir), use_sudo=True)
+    with patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, "verified", "")) as run:
+        assert authorizer.verify(TOKEN) is True
+    assert run.call_args.args[0][0] == "tdx-cli"
+
+
+def test_verify_can_use_separate_explicit_sudo_setting(config_dir):
+    authorizer = TDXAuthorizer("tdx-cli", str(config_dir), use_sudo=False, verify_use_sudo=True)
+    with patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, "verified", "")) as run:
+        assert authorizer.verify(TOKEN) is True
+    assert run.call_args.args[0][:3] == ["sudo", "-n", "tdx-cli"]
+
+
 def test_generate_auto_selects_noninteractive_sudo_for_non_root_host(config_dir):
     with patch("os.geteuid", return_value=1000), patch("shutil.which", return_value="/usr/bin/sudo"):
         authorizer = TDXAuthorizer("tdx-cli", str(config_dir))

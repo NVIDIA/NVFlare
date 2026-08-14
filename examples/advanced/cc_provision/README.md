@@ -137,17 +137,14 @@ cc_issuers:
   - id: gpu_authorizer
     path: nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer
     token_expiration: 100 # seconds, needs to be less than check_frequency
+    args:
+      nvat_command: /opt/attestation/bin/nvattest
+      verifier: remote
+      nras_url: https://nras.attestation.nvidia.com
 ```
 
 3. The NVFlare `GPUAuthorizer` uses NVIDIA's native NVAT `nvattest` CLI.
-   Install a pinned NVAT release and its runtime libraries in the NVFlare app image, then configure the executable path:
-
-```yaml
-args:
-  nvat_command: /opt/attestation/bin/nvattest
-  verifier: remote
-  nras_url: https://nras.attestation.nvidia.com
-```
+   Install a pinned NVAT release and its runtime libraries in the NVFlare app image, then configure the executable path as shown above.
 
 Custom `policy_file` values must contain an NVAT Rego policy defining
 `nv_match`; the retired Python SDK's JSON policy format is not accepted.
