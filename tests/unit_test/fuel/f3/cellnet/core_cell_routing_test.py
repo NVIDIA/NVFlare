@@ -17,7 +17,7 @@
 import logging
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
@@ -82,6 +82,16 @@ def test_server_transit_required_job_cell_uses_local_parent():
     assert endpoint.name == "site-1"
 
 
+def test_server_transit_required_job_cell_prefers_own_server_connection():
+    cell = _routing_cell("site-1.job-1", ["site-1", "server", "site-2.job-2"])
+    message = Message(headers={MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True})
+
+    endpoint = cell._try_find_ep("site-2.job-2", message)
+
+    assert endpoint is not None
+    assert endpoint.name == "server"
+
+
 def test_server_transit_required_job_cell_falls_back_to_server_root():
     cell = _routing_cell("site-1.job-1", ["server", "site-2.job-2"])
     message = Message(headers={MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True})
@@ -92,11 +102,128 @@ def test_server_transit_required_job_cell_falls_back_to_server_root():
     assert endpoint.name == "server"
 
 
+def test_server_transit_return_routes_down_from_configured_upstream():
+    cell = _routing_cell("relay-1", ["server", "relay-1.site-2"])
+    message = Message(
+        headers={
+            MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True,
+            MessageHeaderKey.ROUTE: [("site-1", 0.0), ("server", 1.0)],
+        }
+    )
+    message.set_prop(MessagePropKey.ENDPOINT, Endpoint("server"))
+
+    endpoint = cell._try_find_ep("relay-1.site-2", message)
+
+    assert endpoint is not None
+    assert endpoint.name == "relay-1.site-2"
+
+
+def test_server_transit_return_routes_down_from_direct_server_connection():
+    cell = _routing_cell("site-2.job", ["site-2", "server", "site-2.job.worker"])
+    message = Message(
+        headers={
+            MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True,
+            MessageHeaderKey.ROUTE: [("site-1", 0.0), ("server", 1.0)],
+        }
+    )
+    message.set_prop(MessagePropKey.ENDPOINT, Endpoint("server"))
+
+    endpoint = cell._try_find_ep("site-2.job.worker", message)
+
+    assert endpoint is not None
+    assert endpoint.name == "site-2.job.worker"
+
+
+def test_forged_server_route_from_child_still_routes_upstream():
+    cell = _routing_cell("relay-1", ["server", "relay-1.site-1", "relay-1.site-2"])
+    message = Message(
+        headers={
+            MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True,
+            MessageHeaderKey.ROUTE: [("server", 0.0)],
+        }
+    )
+    message.set_prop(MessagePropKey.ENDPOINT, Endpoint("relay-1.site-1"))
+
+    endpoint = cell._try_find_ep("relay-1.site-2", message)
+
+    assert endpoint is not None
+    assert endpoint.name == "server"
+
+
 def test_find_endpoint_refuses_next_leg_already_on_route():
     cell = _routing_cell("server", ["site-1"])
     message = Message(headers={MessageHeaderKey.ROUTE: [("site-1", 0.0)]})
 
     rc, endpoint = cell._find_endpoint("site-1.job-dead", message)
+
+    assert endpoint is None
+    assert rc == ReturnCode.TARGET_UNREACHABLE
+
+
+def test_server_transit_can_return_through_visited_shared_relay_once():
+    cell = _routing_cell("server", ["relay-1"])
+    message = Message(
+        headers={
+            MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True,
+            MessageHeaderKey.ROUTE: [("relay-1.site-1", 0.0), ("relay-1", 1.0)],
+        }
+    )
+
+    rc, endpoint = cell._find_endpoint("relay-1.site-2", message)
+
+    assert rc == ""
+    assert endpoint is not None
+    assert endpoint.name == "relay-1"
+
+
+def test_post_server_shared_relay_can_revisit_downstream_relay():
+    cell = _routing_cell("relay-1", ["server", "relay-1.relay-2"])
+    message = Message(
+        headers={
+            MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True,
+            MessageHeaderKey.ROUTE: [
+                ("relay-1.relay-2.site-1", 0.0),
+                ("relay-1.relay-2", 1.0),
+                ("relay-1", 2.0),
+                ("server", 3.0),
+            ],
+        }
+    )
+    message.set_prop(MessagePropKey.ENDPOINT, Endpoint("server"))
+
+    rc, endpoint = cell._find_endpoint("relay-1.relay-2.site-2", message)
+
+    assert rc == ""
+    assert endpoint is not None
+    assert endpoint.name == "relay-1.relay-2"
+
+
+def test_post_server_relay_cannot_revisit_upstream_server():
+    cell = _routing_cell("relay-1", ["server"])
+    message = Message(
+        headers={
+            MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True,
+            MessageHeaderKey.ROUTE: [("relay-1.site-1", 0.0), ("relay-1", 1.0), ("server", 2.0)],
+        }
+    )
+    message.set_prop(MessagePropKey.ENDPOINT, Endpoint("server"))
+
+    rc, endpoint = cell._find_endpoint("relay-2.site-2", message)
+
+    assert endpoint is None
+    assert rc == ReturnCode.TARGET_UNREACHABLE
+
+
+def test_server_transit_cannot_cross_server_boundary_twice():
+    cell = _routing_cell("server", ["relay-1"])
+    message = Message(
+        headers={
+            MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True,
+            MessageHeaderKey.ROUTE: [("relay-1", 0.0), ("server", 1.0)],
+        }
+    )
+
+    rc, endpoint = cell._find_endpoint("relay-1.site-2", message)
 
     assert endpoint is None
     assert rc == ReturnCode.TARGET_UNREACHABLE
