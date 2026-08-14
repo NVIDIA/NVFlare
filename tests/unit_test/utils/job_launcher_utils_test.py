@@ -85,6 +85,7 @@ class TestValidateDockerJobLauncherSpec:
             ("image", None),
             ("shm_size", 0),
             ("shm_size", 1024),
+            ("shm_size", (1 << 63) - 1),
             ("shm_size", "8g"),
             ("shm_size", "8gb"),
             ("shm_size", "8B"),
@@ -100,13 +101,29 @@ class TestValidateDockerJobLauncherSpec:
 
     @pytest.mark.parametrize(
         "shm_size",
-        [{"unexpected": 1}, ["8g"], "abc", "8.", ".5g", "8bb", "8BB", -1, True],
+        [
+            {"unexpected": 1},
+            ["8g"],
+            "abc",
+            "8.",
+            ".5g",
+            "8bb",
+            "8BB",
+            str(1 << 63),
+            "9" * 400,
+            -1,
+            1 << 63,
+            True,
+        ],
     )
     def test_rejects_invalid_shm_size(self, shm_size):
         with pytest.raises(ValueError, match="field 'shm_size'"):
             validate_docker_job_launcher_spec({"shm_size": shm_size}, "docker spec")
 
-    @pytest.mark.parametrize("entrypoint", [{"unexpected": 1}, 123, [["/usr/bin/env"]], ""])
+    @pytest.mark.parametrize(
+        "entrypoint",
+        [{"unexpected": 1}, 123, [["/usr/bin/env"]], "", "   ", ["/bin/sh", "   "]],
+    )
     def test_rejects_invalid_entrypoint(self, entrypoint):
         with pytest.raises(ValueError, match="field 'entrypoint'"):
             validate_docker_job_launcher_spec({"entrypoint": entrypoint}, "docker spec")
@@ -116,6 +133,7 @@ class TestValidateDockerJobLauncherSpec:
         [
             ("image", 123, "must be a string or null"),
             ("python_path", "", "must be a non-empty string"),
+            ("python_path", "   ", "must be a non-empty string"),
         ],
     )
     def test_rejects_invalid_launcher_value(self, field, value, message):

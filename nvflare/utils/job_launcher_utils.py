@@ -136,6 +136,8 @@ DOCKER_JOB_BYOC_KEYS = frozenset({"image", "python_path", "entrypoint"})
 DOCKER_JOB_CONTAINER_KWARGS = frozenset({"entrypoint", "shm_size"})
 
 _DOCKER_SHM_SIZE_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+)?(?:[bB]|[kKmMgG](?:[bB])?)?$")
+_DOCKER_SHM_SIZE_UNITS = {"b": 1, "k": 1 << 10, "m": 1 << 20, "g": 1 << 30}
+_DOCKER_MAX_SHM_SIZE = (1 << 63) - 1
 
 
 def _is_non_negative_int(value) -> bool:
@@ -147,17 +149,41 @@ def _is_string_or_none(value) -> bool:
 
 
 def _is_non_empty_string(value) -> bool:
-    return isinstance(value, str) and bool(value)
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _is_valid_entrypoint(value) -> bool:
     if isinstance(value, str):
-        return bool(value)
-    return isinstance(value, list) and bool(value) and all(isinstance(arg, str) and arg for arg in value)
+        return bool(value.strip())
+    return isinstance(value, list) and bool(value) and all(isinstance(arg, str) and arg.strip() for arg in value)
+
+
+def _docker_shm_size_to_bytes(value: str):
+    """Parse the canonical subset of Docker byte-size strings accepted from jobs."""
+    if not _DOCKER_SHM_SIZE_PATTERN.fullmatch(value):
+        return None
+
+    normalized = value.lower()
+    if normalized.endswith("b"):
+        normalized = normalized[:-1]
+    if normalized and normalized[-1] in "kmg":
+        unit = normalized[-1]
+        amount = normalized[:-1]
+    else:
+        unit = "b"
+        amount = normalized
+
+    try:
+        size = int(float(amount) * _DOCKER_SHM_SIZE_UNITS[unit])
+    except (OverflowError, ValueError):
+        return None
+    return size if size <= _DOCKER_MAX_SHM_SIZE else None
 
 
 def _is_valid_shm_size(value) -> bool:
-    return _is_non_negative_int(value) or isinstance(value, str) and bool(_DOCKER_SHM_SIZE_PATTERN.fullmatch(value))
+    if _is_non_negative_int(value):
+        return value <= _DOCKER_MAX_SHM_SIZE
+    return isinstance(value, str) and _docker_shm_size_to_bytes(value) is not None
 
 
 # Keep the allowlist and its value checks coupled so a new job-controlled
@@ -172,7 +198,7 @@ _DOCKER_JOB_LAUNCHER_OPTION_VALIDATORS = {
     "num_of_gpus": (_is_non_negative_int, "must be an integer greater than or equal to 0"),
     "shm_size": (
         _is_valid_shm_size,
-        "must be a non-negative integer or decimal byte-size string with an optional b, k, m, or g unit",
+        "must be a non-negative integer or decimal byte-size string within Docker's signed 64-bit limit",
     ),
 }
 DOCKER_JOB_LAUNCHER_KEYS = frozenset(_DOCKER_JOB_LAUNCHER_OPTION_VALIDATORS)

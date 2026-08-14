@@ -425,7 +425,7 @@ class DockerJobLauncher(JobLauncherSpec):
         self.default_python_path = default_python_path if default_python_path is not None else python_path
         if self.default_python_path is None:
             self.default_python_path = self.DEFAULT_PYTHON_PATH
-        if not isinstance(self.default_python_path, str) or not self.default_python_path:
+        if not isinstance(self.default_python_path, str) or not self.default_python_path.strip():
             raise ValueError("default_python_path must be a non-empty string")
         self.timeout = timeout
         default_job_container_kwargs = default_job_container_kwargs or {}
@@ -521,7 +521,7 @@ class DockerJobLauncher(JobLauncherSpec):
                 f"got {type(job_image).__name__}: {job_image!r}"
             )
         python_path = docker_spec.get("python_path", self.default_python_path)
-        if not isinstance(python_path, str) or not python_path:
+        if not isinstance(python_path, str) or not python_path.strip():
             raise RuntimeError(f"launcher_spec['{site_name}']['docker']['python_path'] must be a non-empty string")
         try:
             validate_docker_job_launcher_spec(docker_spec, f"job Docker spec for site '{site_name}'")
