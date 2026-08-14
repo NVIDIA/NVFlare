@@ -35,3 +35,11 @@ tests:
             - "AUTHENTICATION_ERROR"
             - "EXECUTION_EXCEPTION"
             - "Traceback"
+      - path: tests.integration_test.src.validators.json_stats_result_validator.JsonStatsResultValidator
+        args:
+          relative_path: cross_site_val/cross_val_results.json
+          required_paths:
+            - site-1.site-1.val_mean
+            - site-1.site-2.val_mean
+            - site-2.site-1.val_mean
+            - site-2.site-2.val_mean

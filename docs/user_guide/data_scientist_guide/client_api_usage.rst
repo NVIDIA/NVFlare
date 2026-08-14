@@ -199,7 +199,8 @@ For complete working examples across different frameworks:
 * Multi-GPU/multi-node Slurm: :github_nvflare_link:`LLM-HF <examples/advanced/llm_hf/MULTINODE.md>`
 * Independently managed trainer: :github_nvflare_link:`Client API Attach <examples/advanced/client-api-attach>`
 
-Each example shows both the Client API training script (``client.py``) and Job Recipe definition (``job.py``).
+Each example includes a training entry point (for example, ``client.py`` or an externally managed ``trainer.py``) and a
+Job Recipe definition (``job.py``).
 
 Learn More
 ==========

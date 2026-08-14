@@ -80,11 +80,34 @@ def _resolve_test_config_path(config_dir: str, path: str) -> str:
     return os.path.abspath(os.path.join(config_dir, path))
 
 
+def _is_process_group_alive(pgid: int) -> bool:
+    """Return whether a process group still has at least one member."""
+
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _wait_for_process_groups(processes, timeout: float) -> list:
+    """Wait for process groups to exit and return any that remain alive."""
+
+    deadline = time.monotonic() + timeout
+    remaining = [item for item in processes if _is_process_group_alive(item[2])]
+    while remaining and time.monotonic() < deadline:
+        time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+        remaining = [item for item in remaining if _is_process_group_alive(item[2])]
+    return remaining
+
+
 def _wait_for_background_processes(processes, timeout: float = 30.0):
     """Require test-owned background processes to exit cleanly after the job."""
 
     deadline = time.monotonic() + timeout
-    for command, process in processes:
+    for command, process, _ in processes:
         remaining = max(0.0, deadline - time.monotonic())
         try:
             return_code = process.wait(timeout=remaining)
@@ -93,32 +116,35 @@ def _wait_for_background_processes(processes, timeout: float = 30.0):
         if return_code != 0:
             raise NVFTestError(f"Background process exited with code {return_code}: {command}")
 
+    running_groups = _wait_for_process_groups(processes, timeout=max(0.0, deadline - time.monotonic()))
+    if running_groups:
+        commands = ", ".join(command for command, _, _ in running_groups)
+        raise NVFTestError(f"Background process group did not exit after the job: {commands}")
 
-def _stop_background_processes(processes):
+
+def _stop_background_processes(processes, graceful_timeout: float = 10.0, kill_timeout: float = 5.0):
     """Best-effort cleanup for commands launched in their own process groups."""
 
-    running = []
-    for _, process in processes:
-        if process.poll() is None:
-            running.append(process)
-            try:
-                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-            except (ProcessLookupError, PermissionError):
-                pass
-
-    deadline = time.monotonic() + 10.0
-    for process in running:
+    # Keep the PGID independently of Popen state: the group leader can exit while
+    # a descendant remains alive and still needs cleanup.
+    running_groups = [item for item in processes if _is_process_group_alive(item[2])]
+    for _, _, pgid in running_groups:
         try:
-            process.wait(timeout=max(0.0, deadline - time.monotonic()))
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
-            try:
-                process.wait(timeout=5.0)
-            except subprocess.TimeoutExpired:
-                pass
+            os.killpg(pgid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+    remaining_groups = _wait_for_process_groups(running_groups, graceful_timeout)
+    for _, _, pgid in remaining_groups:
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+    _wait_for_process_groups(remaining_groups, kill_timeout)
+
+    # Reap leaders when they are still children of the test process.
+    for _, process, _ in processes:
+        process.poll()
 
 
 framework = os.environ.get("NVFLARE_TEST_FRAMEWORK")
@@ -249,7 +275,10 @@ class TestSystem:
 
                 for command in background_commands:
                     print(f"Starting background process: {command}")
-                    background_processes.append((command, run_command_in_subprocess(command)))
+                    process = run_command_in_subprocess(command)
+                    # run_command_in_subprocess starts a new session, making its
+                    # PID the process-group ID even if the leader exits later.
+                    background_processes.append((command, process, process.pid))
 
                 test_driver.run_event_sequence(event_sequence)
                 _wait_for_background_processes(background_processes)
