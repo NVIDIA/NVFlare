@@ -1509,6 +1509,24 @@ class TestReceiveSend:
         finally:
             api.shutdown()
 
+    def test_is_running_does_not_satisfy_receive_before_send_guard(self, bootstrap_path, env):
+        api = _init_api(bootstrap_path, env)
+        try:
+            _deliver_task(env)
+
+            assert api.is_running() is True
+            assert api._receive_called is False
+            with pytest.raises(RuntimeError, match="receive.*before sending"):
+                api.send(FLModel(params={"w": [2.0]}))
+
+            received = api.receive()
+            assert received.params == {"w": [1.0]}
+            assert api._receive_called is True
+            api.send(FLModel(params={"w": [2.0]}))
+            assert len([request for request in env.requests if request[0] == Topic.RESULT_READY]) == 1
+        finally:
+            api.shutdown()
+
     def test_send_tracks_actual_via_downloader_transaction_while_request_is_pending(
         self, bootstrap_path, env, monkeypatch
     ):

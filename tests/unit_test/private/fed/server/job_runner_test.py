@@ -684,13 +684,15 @@ def test_fail_run_preserves_existing_exception_process_entry_under_engine_lock()
 
 
 @pytest.mark.parametrize(
-    "first_code, second_code",
+    "first_code, second_code, expected_code",
     [
-        (ProcessExitCode.INFRASTRUCTURE_ERROR, ProcessExitCode.EXCEPTION),
-        (ProcessExitCode.EXCEPTION, ProcessExitCode.INFRASTRUCTURE_ERROR),
+        (ProcessExitCode.INFRASTRUCTURE_ERROR, ProcessExitCode.EXCEPTION, ProcessExitCode.INFRASTRUCTURE_ERROR),
+        (ProcessExitCode.EXCEPTION, ProcessExitCode.INFRASTRUCTURE_ERROR, ProcessExitCode.INFRASTRUCTURE_ERROR),
+        (ProcessExitCode.EXCEPTION, JobReturnCode.ABORTED, ProcessExitCode.EXCEPTION),
+        (JobReturnCode.ABORTED, ProcessExitCode.EXCEPTION, ProcessExitCode.EXCEPTION),
     ],
 )
-def test_fail_run_gives_infrastructure_error_precedence(first_code, second_code):
+def test_fail_run_preserves_failure_precedence(first_code, second_code, expected_code):
     runner = JobRunner(workspace_root="/tmp")
     runner.log_info = MagicMock()
     runner._stop_run = MagicMock()
@@ -708,7 +710,18 @@ def test_fail_run_gives_infrastructure_error_precedence(first_code, second_code)
 
     assert runner.fail_run("job-1", second_code, fl_ctx) == ""
 
-    assert run_process[RunProcessKey.PROCESS_RETURN_CODE] == ProcessExitCode.INFRASTRUCTURE_ERROR
+    assert run_process[RunProcessKey.PROCESS_RETURN_CODE] == expected_code
+
+
+def test_client_outcome_tracking_api():
+    runner = JobRunner(workspace_root="/tmp")
+    runner._pending_client_outcomes = {"job-1": {"site-1", "site-2"}, "job-2": set()}
+
+    assert runner.get_client_outcome_jobs() == {"job-1", "job-2"}
+    assert runner.get_client_outcome_jobs("site-1") == {"job-1"}
+    assert runner.is_client_outcome_pending("job-1", "site-1")
+    runner.resolve_client_outcome("job-1", "site-1")
+    assert not runner.is_client_outcome_pending("job-1", "site-1")
 
 
 def test_stop_run_does_not_publish_terminal_status_before_completion():
@@ -812,10 +825,17 @@ def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code
     job.job_id = "job-1"
     job.run_aborted = False
     runner.running_jobs = {"job-1": job}
+    runner._pending_client_outcomes = {"job-1": {"site-1"}}
 
     def _stop_after_first_pass(_):
         runner.ask_to_stop = True
 
+    with _patch_job_runner_sleep(_stop_after_first_pass):
+        runner._job_complete_process(engine)
+
+    job_manager.set_status.assert_not_called()
+    runner.ask_to_stop = False
+    job.run_aborted = True
     with _patch_job_runner_sleep(_stop_after_first_pass):
         runner._job_complete_process(engine)
 
@@ -827,6 +847,47 @@ def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code
     ]
     engine.remove_exception_process.assert_called_once_with("job-1")
     assert "job-1" not in runner.running_jobs
+
+
+@patch("nvflare.private.fed.server.job_runner.ConfigService.get_float_var", return_value=2.0)
+def test_job_complete_process_finalizes_server_outcome_after_client_outcome_grace(mock_get_float):
+    runner = JobRunner(workspace_root="/tmp")
+    runner.fire_event = MagicMock()
+    runner.logger = MagicMock()
+    runner.log_debug = MagicMock()
+    runner._save_workspace = MagicMock()
+    runner.ask_to_stop = False
+
+    engine = MagicMock()
+    engine.run_processes = {}
+    engine.exception_run_processes = {}
+    job_manager = MagicMock()
+    engine.get_component.return_value = job_manager
+    completion_ctx = MagicMock()
+    engine.new_context.return_value = nullcontext(completion_ctx)
+
+    job = MagicMock(job_id="job-1", run_aborted=False)
+    runner.running_jobs = {"job-1": job}
+    runner._pending_client_outcomes = {"job-1": {"site-1"}}
+
+    sleep_count = 0
+
+    def _stop_after_second_pass(_):
+        nonlocal sleep_count
+        sleep_count += 1
+        if sleep_count == 2:
+            runner.ask_to_stop = True
+
+    with patch(
+        "nvflare.private.fed.server.job_runner.time",
+        **{"sleep.side_effect": _stop_after_second_pass, "monotonic.side_effect": [0.0, 2.0]},
+    ):
+        runner._job_complete_process(engine)
+
+    mock_get_float.assert_called_once()
+    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_COMPLETED, completion_ctx)
+    assert "site-1" in runner.logger.warning.call_args[0][0]
+    assert "job-1" not in runner._client_outcome_deadlines
 
 
 def test_job_complete_process_keeps_processing_jobs_when_save_workspace_fails():

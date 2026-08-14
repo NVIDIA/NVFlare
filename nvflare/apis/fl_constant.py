@@ -567,6 +567,9 @@ class ConfigVarName:
     # server: require prior positive job observation before reporting "missing job on client" as dead-job
     SYNC_CLIENT_JOBS_REQUIRE_PREVIOUS_REPORT = "sync_client_jobs_require_previous_report"
 
+    # server: max time to wait for client terminal outcomes after the server process exits
+    CLIENT_OUTCOME_WAIT_TIMEOUT = "client_outcome_wait_timeout"
+
     # customized nvflare decomposers module name
     DECOMPOSER_MODULE = "nvflare_decomposers"
 

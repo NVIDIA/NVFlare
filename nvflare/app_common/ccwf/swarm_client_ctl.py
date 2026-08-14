@@ -1131,7 +1131,7 @@ class SwarmClientController(ClientSideController):
                 # Avoid synchronous self-message path through CoreCell._send_direct_message.
                 self.log_info(fl_ctx, "submitting training result locally (aggregation client is self)")
                 # An external-process result arrives at CJ as LazyDownloadRef
-                # (subprocess-side CellPipe has pass_through_on_send=True), so
+                # (the trainer-side Client API marks lazy result payloads), so
                 # resolve it before local aggregation. An in-process result is
                 # already materialized in CJ memory and must not take a full
                 # FOBS serialization round-trip.

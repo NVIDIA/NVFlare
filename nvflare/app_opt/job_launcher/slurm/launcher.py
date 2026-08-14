@@ -67,7 +67,9 @@ from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
     get_credential_env,
     get_job_launcher_spec,
+    get_portable_resource_spec,
     get_server_job_args,
+    portable_memory_to_mib,
 )
 
 
@@ -108,9 +110,8 @@ def _resolve_resources(
         return None if value is None else _require_int(value, name)
 
     gpus_per_node = optional_int("gpus_per_node")
-    resources = _mapping_or_empty(job_meta.get(JobMetaKey.RESOURCE_SPEC.value), "resource_spec")
-    site = _mapping_or_empty(resources.get(site_name), f"resource_spec for site '{site_name}'")
-    portable_total = site.get("num_of_gpus")
+    portable = get_portable_resource_spec(job_meta, site_name)
+    portable_total = portable.get("num_of_gpus")
     if portable_total is not None:
         portable_total = _require_int(portable_total, "num_of_gpus", 0)
     if gpus_per_node is not None and portable_total is not None and portable_total != nodes * gpus_per_node:
@@ -122,6 +123,10 @@ def _resolve_resources(
 
     cpus_per_node = optional_int("cpus_per_node")
     mem_per_node = optional_int("mem_per_node")
+    if "num_of_cpus" in portable:
+        cpus_per_node = portable["num_of_cpus"]
+    if "memory" in portable:
+        mem_per_node = portable_memory_to_mib(portable["memory"])
     time_limit = spec.get("time")
     if time_limit is not None:
         time_limit = _require_string(time_limit, "time")

@@ -23,7 +23,6 @@ from typing import Mapping, Optional
 from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
 from nvflare.client import api as flare_api
 from nvflare.client.config import ConfigKey, ExchangeFormat
-from nvflare.client.flare_agent import AgentClosed
 from nvflare.fuel.utils import fobs
 
 from . import utils
@@ -144,9 +143,9 @@ def patch(
     if args is None:
         raise ValueError("trainer.args is required")
     if getattr(args, "deepspeed", None):
-        raise ValueError("DeepSpeed is not supported by the HuggingFace Client API in design Phase 1")
+        raise ValueError("DeepSpeed is not currently supported by the HuggingFace Client API")
     if getattr(args, "fsdp", None):
-        raise ValueError("FSDP is not supported by the HuggingFace Client API in design Phase 1")
+        raise ValueError("FSDP is not currently supported by the HuggingFace Client API")
     if restore_state and bool(getattr(args, "save_only_model", False)):
         raise ValueError("save_only_model=True is incompatible with restore_state=True")
     if bool(getattr(args, "load_best_model_at_end", False)):
@@ -462,7 +461,7 @@ def _reject_unsupported_launch_once_false(restore_state: bool):
     if not _as_bool(task_exchange.get(ConfigKey.LAUNCH_ONCE)):
         raise RuntimeError(
             "HuggingFace Client API restore_state=True requires a single trainer process lifecycle in Phase 1. "
-            "Set ClientAPILauncherExecutor launch_once=True, or use restore_state=False for per-task trainer launches."
+            "Set ClientAPIExecutor launch_once=True, or use restore_state=False for per-task trainer launches."
         )
 
 
@@ -847,9 +846,6 @@ class _HFTaskState:
                         "current_round": fl_model.current_round,
                         "total_rounds": fl_model.total_rounds,
                     }
-            except AgentClosed:
-                self.logger.info("Skipping trainer.%s() because NVFlare job has ended", call_name)
-                payload = {"task_kind": TASK_STOP, "call_name": call_name}
             except Exception as e:
                 if self.world_size <= 1:
                     raise

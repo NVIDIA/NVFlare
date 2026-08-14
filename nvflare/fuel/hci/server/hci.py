@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import logging
-from typing import Union
+from typing import Optional, Union
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.streaming import StreamContext
@@ -38,16 +38,18 @@ class AdminServer:
     def __init__(
         self,
         cell: Cell,
-        cmd_reg: ServerCommandRegister,
+        cmd_reg: Optional[ServerCommandRegister],
         engine,
         extra_conn_props=None,
+        enable_hci: bool = True,
     ):
         """Base class of FedAdminServer to create a server that can receive commands.
 
         Args:
             cell: the communication cell
-            cmd_reg: CommandRegister
+            cmd_reg: CommandRegister, or None when HCI is disabled
             extra_conn_props: a dict of extra conn props, if specified
+            enable_hci: whether to register inbound HCI command and upload handlers
         """
         if extra_conn_props is not None:
             assert isinstance(extra_conn_props, dict), "extra_conn_props must be dict but got {}".format(
@@ -59,8 +61,15 @@ class AdminServer:
         self.fl_ctx = None
         self.extra_conn_props = extra_conn_props
         self.cmd_reg = cmd_reg
-        self.cred_keeper = CredKeeper()
+        self.enable_hci = enable_hci
+        self.cred_keeper = CredKeeper() if enable_hci else None
         self.logger = get_obj_logger(self)
+
+        if not enable_hci:
+            return
+
+        if cmd_reg is None:
+            raise ValueError("cmd_reg is required when HCI is enabled")
 
         cmd_reg.finalize()
 
@@ -80,9 +89,13 @@ class AdminServer:
             )
 
     def get_id_asserter(self):
+        if self.cred_keeper is None:
+            return None
         return self.cred_keeper.get_id_asserter(self.fl_ctx)
 
     def get_id_verifier(self):
+        if self.cred_keeper is None:
+            return None
         return self.cred_keeper.get_id_verifier(self.fl_ctx)
 
     def _create_conn(self, conn_data: str, cmd_headers=None) -> (bool, str, Connection):
@@ -173,7 +186,8 @@ class AdminServer:
         return CellMessage(payload=payload)
 
     def stop(self):
-        self.cmd_reg.close()
+        if self.cmd_reg is not None:
+            self.cmd_reg.close()
         logger.info("Admin Server is stopped!")
 
     def set_command_registry(self, cmd_reg: ServerCommandRegister):
@@ -186,4 +200,7 @@ class AdminServer:
             self.cmd_reg = cmd_reg
 
     def start(self):
-        logger.info("Admin Server is started")
+        if self.enable_hci:
+            logger.info("Admin Server is started")
+        else:
+            logger.info("Admin Server HCI is disabled")

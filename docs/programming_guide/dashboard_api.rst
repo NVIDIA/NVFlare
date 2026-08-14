@@ -11,7 +11,7 @@ and to generate startup kits for users to download.
 
 For detailed information about provisioning, refer to :ref:`provisioning`. This section focuses on user interaction with the Dashboard and its backend APIs.
 
-.. include:: nvflare_cli/dashboard_command.rst
+.. include:: ../user_guide/nvflare_cli/dashboard_command.rst
 
 ***********************************
 NVIDIA FLARE Dashboard Backend APIs
@@ -30,10 +30,9 @@ Details
 APIs
 ----
 
-The following is the complete definition of the backend APIs, written in OpenAPI 3.0 syntax. Developers can implement these APIs in different programming languages or
-create custom UIs while maintaining compatibility with the same API endpoints.
+The following OpenAPI 3.0 document describes the Dashboard backend APIs.
 
-In NVIDIA FLARE 2.6, all API endpoints are prefixed with ``/nvflare-dashboard/api/v1/``. For example,
+All Dashboard API endpoints are prefixed with ``/nvflare-dashboard/api/v1/``. For example,
 the login endpoint is ``/nvflare-dashboard/api/v1/login``.
 
 .. literalinclude:: ../../nvflare/dashboard/dashboard.yaml
@@ -45,20 +44,21 @@ Authentication and Authorization
 Most backend APIs require user authentication to obtain a JWT for authorization. The JWT includes claims about the user's organization and role, and always
 contains the user's email address (which serves as the user ID for login).
 
-As shown in the previous section, only the following endpoints can be accessed without login credentials:
+The following operations do not require a bearer JWT:
 
+   - ``POST /login``
    - ``GET /project``
-   - ``GET /users``
    - ``GET /organizations``
+   - ``POST /users``
 
 Users with the project_admin role have full access to all resources.
 
 Project Freezing
 ----------------
 
-Since the project configuration contains information required by clients and users, modifying project information after clients and users are created
-can cause dependency issues. The project_admin must freeze the project after finalizing all project-related information to enable user sign-up.
-Once frozen, the project cannot be unfrozen through the Dashboard web interface.
+Making the project public enables the Sign Up flow in the Dashboard web interface. After finalizing the project and server configuration,
+the project_admin freezes the project to enable startup kit downloads and make the configuration immutable. Once frozen, the project cannot
+be unfrozen through the Dashboard web interface.
 
 Database Schema
 ---------------
