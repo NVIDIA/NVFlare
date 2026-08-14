@@ -135,7 +135,7 @@ _LAUNCHER_MODE_KEYS = {"process", "docker", "k8s", "slurm"}
 DOCKER_JOB_BYOC_KEYS = frozenset({"image", "python_path", "entrypoint"})
 DOCKER_JOB_CONTAINER_KWARGS = frozenset({"entrypoint", "shm_size"})
 
-_DOCKER_SHM_SIZE_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+)?(?:[bBkKmMgG](?:[bB])?)?$")
+_DOCKER_SHM_SIZE_PATTERN = re.compile(r"^[0-9]+(?:[bB]|[kKmMgG](?:[bB])?)?$")
 
 
 def _is_non_negative_int(value) -> bool:

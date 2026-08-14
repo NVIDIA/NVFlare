@@ -86,6 +86,8 @@ class TestValidateDockerJobLauncherSpec:
             ("shm_size", 0),
             ("shm_size", 1024),
             ("shm_size", "8g"),
+            ("shm_size", "8gb"),
+            ("shm_size", "8B"),
             ("entrypoint", "/usr/bin/env"),
             ("entrypoint", ["/usr/bin/env"]),
             ("entrypoint", ["/bin/sh", "-c"]),
@@ -94,7 +96,10 @@ class TestValidateDockerJobLauncherSpec:
     def test_accepts_valid_container_option_value(self, field, value):
         validate_docker_job_launcher_spec({field: value}, "docker spec")
 
-    @pytest.mark.parametrize("shm_size", [{"unexpected": 1}, ["8g"], "abc", -1, True])
+    @pytest.mark.parametrize(
+        "shm_size",
+        [{"unexpected": 1}, ["8g"], "abc", "8.5g", "8bb", "8BB", -1, True],
+    )
     def test_rejects_invalid_shm_size(self, shm_size):
         with pytest.raises(ValueError, match="field 'shm_size'"):
             validate_docker_job_launcher_spec({"shm_size": shm_size}, "docker spec")
