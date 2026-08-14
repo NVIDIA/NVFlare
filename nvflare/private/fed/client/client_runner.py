@@ -316,7 +316,15 @@ class ClientRunner(TBI):
         task_data = task.data
         try:
             filter_name = Scope.TASK_DATA_FILTERS_NAME
-            task_data = apply_filters(filter_name, task_data, fl_ctx, self.task_data_filters, task.name, FilterKey.IN)
+            task_data = apply_filters(
+                filter_name,
+                task_data,
+                fl_ctx,
+                self.task_data_filters,
+                task.name,
+                FilterKey.IN,
+                abort_signal=abort_signal,
+            )
         except UnsafeJobError:
             self.log_exception(fl_ctx, "UnsafeJobError from Task Data Filters")
             executor.unsafe = True
@@ -435,7 +443,15 @@ class ClientRunner(TBI):
 
         try:
             filter_name = Scope.TASK_RESULT_FILTERS_NAME
-            reply = apply_filters(filter_name, reply, fl_ctx, self.task_result_filters, task.name, FilterKey.OUT)
+            reply = apply_filters(
+                filter_name,
+                reply,
+                fl_ctx,
+                self.task_result_filters,
+                task.name,
+                FilterKey.OUT,
+                abort_signal=abort_signal,
+            )
         except UnsafeJobError:
             self.log_exception(fl_ctx, "UnsafeJobError from Task Result Filters")
             executor.unsafe = True

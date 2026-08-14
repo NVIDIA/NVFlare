@@ -105,6 +105,48 @@ class LazyDownloadRef:
         self.dot = dot
 
 
+def contains_lazy_download_ref(value, visited=None) -> bool:
+    """Return whether a nested value contains a pass-through download reference."""
+    if isinstance(value, LazyDownloadRef):
+        return True
+    if not isinstance(value, (dict, list, tuple, set)):
+        return False
+
+    if visited is None:
+        visited = set()
+    value_id = id(value)
+    if value_id in visited:
+        return False
+    visited.add(value_id)
+
+    if isinstance(value, dict):
+        items = (*value.keys(), *value.values())
+    else:
+        items = value
+    return any(contains_lazy_download_ref(item, visited) for item in items)
+
+
+def materialize_lazy_download_refs(value, cell: Cell, abort_signal=None):
+    """Resolve pass-through references for a consumer in the current process.
+
+    Serializing a :class:`LazyDownloadRef` re-emits its original source datum.
+    Decoding that datum with pass-through disabled downloads the concrete values
+    directly from the source without creating an intermediate download transaction.
+    """
+    if not contains_lazy_download_ref(value):
+        return value
+    if cell is None:
+        raise RuntimeError("cannot materialize LazyDownloadRef values: Cell is unavailable")
+
+    encode_ctx = cell.get_fobs_context(props={fobs.FOBSContextKey.PASS_THROUGH: False})
+    encoded = fobs.dumps(value, fobs_ctx=encode_ctx)
+    decode_props = {fobs.FOBSContextKey.PASS_THROUGH: False}
+    if abort_signal is not None:
+        decode_props[fobs.FOBSContextKey.ABORT_SIGNAL] = abort_signal
+    decode_ctx = cell.get_fobs_context(props=decode_props)
+    return fobs.loads(encoded, fobs_ctx=decode_ctx)
+
+
 class _LazyBatchInfo:
     """Sentinel stored in fobs_ctx[items_key] during PASS_THROUGH mode.
 
