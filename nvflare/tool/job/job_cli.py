@@ -23,6 +23,7 @@ import time
 import traceback
 from contextlib import contextmanager
 from functools import partial
+from pathlib import PurePath
 from tempfile import mkdtemp
 from typing import List, Optional, Tuple
 
@@ -129,6 +130,7 @@ _JOB_DOWNLOAD_GLOBAL_MODEL_NAMES = (
     "model_global.json",
     "model_global.joblib",
 )
+_JOB_DOWNLOAD_ARTIFACT_MANIFEST = "artifact_manifest.json"
 _JOB_DOWNLOAD_EXPECTED_ARTIFACTS = ("global_model", "metrics_summary", "client_logs")
 
 
@@ -1173,16 +1175,91 @@ def _site_name_from_log_path(download_path: str, log_path: str) -> Optional[str]
     return parent
 
 
+def _canonical_server_artifact_rank(download_path: str, artifact_path: str) -> Optional[int]:
+    """Rank known server-owned locations without treating client subtrees as authoritative."""
+    try:
+        rel_path = os.path.relpath(artifact_path, download_path)
+    except ValueError:
+        return None
+
+    rel_parts = rel_path.split(os.sep)
+    parent_parts = rel_parts[:-1]
+    if not parent_parts:
+        # Retain compatibility with callers that pass a server result directory
+        # directly instead of the outer job download directory.
+        return 1
+
+    if parent_parts[0].lower() == "workspace":
+        parent_parts = parent_parts[1:]
+        if not parent_parts:
+            return 0
+
+    first_parent = parent_parts[0].lower()
+    if first_parent == "app_server":
+        return 2
+    if first_parent == "server":
+        return 3
+    return None
+
+
+def _manifest_global_model(download_path: str, manifest_paths: List[Tuple[int, str]]) -> Tuple[bool, Optional[str]]:
+    if not manifest_paths:
+        return False, None
+
+    _, manifest_path = min(manifest_paths, key=lambda item: (item[0], os.path.relpath(item[1], download_path)))
+    try:
+        with open(manifest_path, encoding="utf-8") as file:
+            manifest = json.load(file)
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return True, None
+
+    manifest_version = manifest.get("schema_version") if isinstance(manifest, dict) else None
+    manifest_artifacts = manifest.get("artifacts") if isinstance(manifest, dict) else None
+    model_path = manifest_artifacts.get("global_model") if isinstance(manifest_artifacts, dict) else None
+    if manifest_version != "1" or not isinstance(model_path, str) or not model_path:
+        return True, None
+    if os.path.isabs(model_path) or ".." in PurePath(model_path).parts:
+        return True, None
+
+    candidate_path = os.path.normpath(os.path.join(os.path.dirname(manifest_path), model_path))
+    root_real_path = os.path.realpath(download_path)
+    if not _is_path_within(root_real_path, candidate_path) or not os.path.isfile(candidate_path):
+        return True, None
+    try:
+        if os.path.samefile(candidate_path, manifest_path):
+            return True, None
+    except OSError:
+        return True, None
+
+    # Reject a symlink at any level, matching the normal artifact traversal's
+    # containment guarantees.
+    rel_candidate = os.path.relpath(candidate_path, download_path)
+    current_path = download_path
+    for part in rel_candidate.split(os.sep):
+        current_path = os.path.join(current_path, part)
+        if os.path.islink(current_path):
+            return True, None
+    return True, candidate_path
+
+
 def _discover_job_download_artifacts(download_path: str) -> Tuple[dict, List[str]]:
     artifacts = {}
     client_logs = {}
+    global_model_candidates = []
+    manifest_paths = []
 
     for file_path in _iter_files_under(download_path):
         file_name = os.path.basename(file_path)
-        if file_name in _JOB_DOWNLOAD_GLOBAL_MODEL_NAMES and "global_model" not in artifacts:
-            artifacts["global_model"] = file_path
+        server_rank = _canonical_server_artifact_rank(download_path, file_path)
+        if file_name == _JOB_DOWNLOAD_ARTIFACT_MANIFEST and server_rank is not None:
+            manifest_paths.append((server_rank, file_path))
             continue
-        elif file_name == "metrics_summary.json" and "metrics_summary" not in artifacts:
+        if file_name in _JOB_DOWNLOAD_GLOBAL_MODEL_NAMES and server_rank is not None:
+            name_rank = _JOB_DOWNLOAD_GLOBAL_MODEL_NAMES.index(file_name)
+            rel_path = os.path.relpath(file_path, download_path)
+            global_model_candidates.append(((server_rank, name_rank, rel_path), file_path))
+            continue
+        if file_name == "metrics_summary.json" and "metrics_summary" not in artifacts:
             artifacts["metrics_summary"] = file_path
             continue
         elif file_name == "round_metrics.jsonl" and "round_metrics" not in artifacts:
@@ -1194,6 +1271,13 @@ def _discover_job_download_artifacts(download_path: str) -> Tuple[dict, List[str
         site_name = _site_name_from_log_path(download_path, file_path)
         if site_name and site_name not in client_logs:
             client_logs[site_name] = file_path
+
+    manifest_present, manifest_model = _manifest_global_model(download_path, manifest_paths)
+    if manifest_model:
+        artifacts["global_model"] = manifest_model
+    elif not manifest_present and global_model_candidates:
+        _, model_path = min(global_model_candidates, key=lambda item: item[0])
+        artifacts["global_model"] = model_path
     if client_logs:
         artifacts["client_logs"] = client_logs
 
@@ -1355,10 +1439,12 @@ def _format_job_meta_timestamp(value, include_zone=False):
             if text.endswith("Z"):
                 text = text[:-1] + "+00:00"
             dt = datetime.datetime.fromisoformat(text)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone()
         formatted = dt.strftime("%Y-%m-%d %H:%M:%S")
         if include_zone and dt.tzinfo:
             offset = dt.strftime("%z")
-            zone = {"-0700": "PDT", "-0800": "PST"}.get(offset, dt.tzname() or offset)
+            zone = dt.tzname() or offset
             if zone:
                 formatted = f"{formatted} {zone}"
         return formatted
@@ -2055,7 +2141,9 @@ def _truncate_log_bytes(text: str, max_bytes: int):
     encoded = text.encode("utf-8")
     if len(encoded) <= max_bytes:
         return text, False
-    return encoded[:max_bytes].decode("utf-8", errors="ignore"), True
+    if max_bytes == 0:
+        return "", True
+    return encoded[-max_bytes:].decode("utf-8", errors="ignore"), True
 
 
 def _line_count(text: str) -> int:
@@ -2372,19 +2460,21 @@ def _summarize_monitor_meta(meta: dict, job_meta_key_cls) -> dict:
 def _parse_monitor_start_ts(meta: dict, start_time_key: str, submit_time_iso_key: str) -> float:
     if not meta:
         return None
-    start_time = meta.get(start_time_key)
-    if start_time:
-        try:
-            return datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S.%f").timestamp()
-        except Exception:
-            pass
-    submit_time_iso = meta.get(submit_time_iso_key)
-    if submit_time_iso:
-        try:
-            return datetime.datetime.fromisoformat(submit_time_iso).timestamp()
-        except Exception:
-            pass
+    for key in (start_time_key, submit_time_iso_key):
+        value = meta.get(key)
+        if value:
+            try:
+                if isinstance(value, (int, float)):
+                    return float(value)
+                return datetime.datetime.fromisoformat(value).timestamp()
+            except (TypeError, ValueError):
+                pass
     return None
+
+
+def _calculate_monitor_elapsed(now: float, monitor_start: float, job_start: Optional[float]) -> float:
+    elapsed_base = job_start if job_start is not None else monitor_start
+    return round(max(0, now - elapsed_base), 1)
 
 
 def _parse_monitor_duration_seconds(value) -> float:
@@ -2489,8 +2579,7 @@ def _emit_monitor_progress(job_id: str, job_meta: dict, state: dict, now: float,
     status = job_meta.get("status", "UNKNOWN") if job_meta else "UNKNOWN"
     summary = _summarize_monitor_meta(job_meta, JobMetaKey)
     name = summary.get("job_name")
-    elapsed_base = start_ts if start_ts is not None else start
-    elapsed = round(now - elapsed_base, 1)
+    elapsed = _calculate_monitor_elapsed(now, start, start_ts)
     message_parts = []
     if state["last_status"] is None:
         message_parts.append(f"job_id: {job_id}")
@@ -2528,14 +2617,13 @@ def _build_monitor_progress_event(job_id: str, job_meta: dict, state: dict, now:
     from nvflare.apis.job_def import JobMetaKey
 
     raw_status = job_meta.get("status", "UNKNOWN") if job_meta else "UNKNOWN"
-    elapsed_base = start_ts if start_ts is not None else start
     event = {
         "event": "progress",
         "job_id": job_id,
         "status": _normalize_monitor_event_status(raw_status),
         "job_status": raw_status,
         "terminal": False,
-        "elapsed_s": round(now - elapsed_base, 1),
+        "elapsed_s": _calculate_monitor_elapsed(now, start, start_ts),
         "job_meta": _summarize_monitor_meta(job_meta, JobMetaKey),
     }
     metrics = state.get("last_stats") or {}
@@ -2574,14 +2662,13 @@ def _build_monitor_terminal_event(data: dict, event: str = "terminal", error_cod
 def _build_monitor_timeout_event(job_id: str, timeout: int, start: float, start_ts, cb_state: dict) -> dict:
     from nvflare.apis.job_def import JobMetaKey
 
-    elapsed_base = start_ts if start_ts is not None else start
     event = {
         "event": "terminal",
         "job_id": job_id,
         "status": "TIMEOUT",
         "terminal": True,
         "timeout_seconds": timeout,
-        "elapsed_s": round(time.time() - elapsed_base, 1),
+        "elapsed_s": _calculate_monitor_elapsed(time.time(), start, start_ts),
     }
     last_meta = cb_state.get("last_meta")
     if last_meta:
@@ -2638,10 +2725,8 @@ def _build_monitor_output_data(
     meta_duration_s = _parse_monitor_duration_seconds(meta.get("duration") if meta else None)
     if meta_duration_s is not None:
         duration = round(meta_duration_s, 1)
-    elif start_ts is not None:
-        duration = round(time.time() - start_ts, 1)
     else:
-        duration = round(time.time() - start, 1)
+        duration = _calculate_monitor_elapsed(time.time(), start, start_ts)
 
     data = {
         "job_id": job_id,

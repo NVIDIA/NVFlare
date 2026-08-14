@@ -26,6 +26,7 @@ from .class_loader import load_class
 from .class_utils import ModuleScanner, get_class_path_from_config, instantiate_class
 from .dict_utils import extract_first_level_primitive, merge_dict
 from .json_scanner import JsonObjectProcessor, JsonScanner, Node
+from .secret_utils import SECRET_REF_PATTERN
 
 
 class ConfigContext(object):
@@ -130,7 +131,11 @@ class _EnvUpdater(JsonObjectProcessor):
             # For example: "{ROOT_DIR}"
             # Such vars will be replaced with values defined in self.vars.
             try:
-                element = element.format(**self.vars)
+                # Shield runtime secret references from str.format while expanding ordinary
+                # NVFlare variables in the same string. Doubling the reference braces makes
+                # str.format preserve them literally for the site-local secret resolver.
+                format_value = SECRET_REF_PATTERN.sub(lambda match: "${{" + match.group(0)[2:-1] + "}}", element)
+                element = format_value.format(**self.vars)
             except:
                 # If the substitution fails, return the original value
                 element = original_value

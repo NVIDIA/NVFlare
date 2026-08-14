@@ -13,13 +13,35 @@
 # limitations under the License.
 import json
 import os
+from argparse import Namespace
 from unittest.mock import patch
 
-from nvflare.fuel.utils.log_utils import FL_LOG_LEVEL, configure_logging
+from nvflare.fuel.utils.log_utils import FL_LOG_LEVEL, LogMode, configure_logging
+from nvflare.private.fed.app.simulator.simulator import run_simulator
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 
 
 class TestSimulatorRunnerFlLogLevel:
+    def test_cli_uses_concise_mode_by_default(self):
+        args = Namespace(
+            job_folder="job",
+            workspace="workspace",
+            clients=None,
+            n_clients=2,
+            threads=2,
+            gpu=None,
+            log_config=None,
+            max_clients=100,
+            end_run_for_all=False,
+        )
+
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("nvflare.private.fed.app.simulator.simulator.SimulatorRunner") as mock_runner:
+                mock_runner.return_value.run.return_value = 0
+                assert run_simulator(args) == 0
+
+        assert mock_runner.call_args.kwargs["log_config"] == LogMode.CONCISE
+
     def test_env_var_used_when_no_param(self, tmp_path):
         job_folder = str(tmp_path / "job")
         os.makedirs(job_folder, exist_ok=True)

@@ -387,6 +387,39 @@ class TestVerifyFolderSignature:
             f.write(b"tampered content")
         assert verify_folder_signature(folder, root_ca_path, single_signer=False) is False
 
+    def test_verify_folder_signature_fails_when_subdirectory_replaced_by_symlink(self, tmp_path):
+        folder, root_ca_path, client_crt_path, client_pri_key, _ = self._setup_certs_and_folder(tmp_path)
+        sign_folders(folder, client_pri_key, crt_path=client_crt_path)
+
+        replacement = tmp_path / "replacement"
+        replacement.mkdir()
+        (replacement / "nested.txt").write_bytes(b"tampered content")
+        subdir = os.path.join(folder, "subdir")
+        shutil.rmtree(subdir)
+        os.symlink(replacement, subdir, target_is_directory=True)
+
+        assert verify_folder_signature(folder, root_ca_path, single_signer=False) is False
+
+    def test_sign_folders_rejects_symlinks(self, tmp_path):
+        folder, _root_ca_path, _client_crt_path, client_pri_key, _ = self._setup_certs_and_folder(tmp_path)
+        target = tmp_path / "target.txt"
+        target.write_bytes(b"content")
+        os.symlink(target, os.path.join(folder, "link.txt"))
+
+        with pytest.raises(ValueError, match="symbolic links are not allowed"):
+            sign_folders(folder, client_pri_key)
+
+    def test_sign_and_verify_reject_symlinked_root(self, tmp_path):
+        folder, root_ca_path, client_crt_path, client_pri_key, _ = self._setup_certs_and_folder(tmp_path)
+        sign_folders(folder, client_pri_key, crt_path=client_crt_path)
+        real_folder = tmp_path / "real_folder"
+        os.rename(folder, real_folder)
+        os.symlink(real_folder, folder, target_is_directory=True)
+
+        with pytest.raises(ValueError, match="signed folder must not be a symbolic link"):
+            sign_folders(folder, client_pri_key)
+        assert verify_folder_signature(folder, root_ca_path, single_signer=False) is False
+
     def test_verify_folder_signature_fails_when_signature_file_missing(self, tmp_path):
         """Verify returns False when a directory has no signature file."""
         folder, root_ca_path, client_crt_path, client_pri_key, _ = self._setup_certs_and_folder(tmp_path)
@@ -509,7 +542,7 @@ class TestVerifyFolderSignature:
 
         assert verify_folder_signature(str(folder), str(root_ca_path), single_signer=False) is False
 
-    def test_verify_folder_signature_rejects_submitter_cert_with_unknown_role(self, tmp_path):
+    def test_verify_folder_signature_accepts_submitter_cert_with_custom_role(self, tmp_path):
         root_pri_key, root_pub_key = lighter_utils.generate_keys()
         client_pri_key, client_pub_key = lighter_utils.generate_keys()
         root_cert = lighter_generate_cert(
@@ -520,7 +553,7 @@ class TestVerifyFolderSignature:
             ca=True,
         )
         client_cert = lighter_generate_cert(
-            subject=Identity("client", "nvidia", "admin"),
+            subject=Identity("client", "nvidia", "self_defined"),
             issuer=Identity("root", "nvidia"),
             signing_pri_key=root_pri_key,
             subject_pub_key=client_pub_key,
@@ -535,7 +568,10 @@ class TestVerifyFolderSignature:
 
         sign_folders(str(folder), client_pri_key, crt_path=str(client_crt_path))
 
-        assert verify_folder_signature(str(folder), str(root_ca_path), single_signer=False) is False
+        verified, signers = verify_folder_signature_and_get_signers(str(folder), str(root_ca_path), single_signer=False)
+
+        assert verified is True
+        assert signers == [("client", "nvidia", "self_defined")]
 
 
 @pytest.mark.xdist_group(name="lighter_utils_group")

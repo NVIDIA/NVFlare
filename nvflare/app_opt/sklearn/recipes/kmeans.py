@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, conint, field_validator
 
@@ -42,6 +42,10 @@ class _KMeansValidator(BaseModel):
 
 class KMeansFedAvgRecipe(FedAvgRecipe):
     """A recipe for Federated K-Means Clustering with Scikit-learn.
+
+    Recipe parameters, including ``train_args`` and nested ``per_site_config`` values,
+    must never contain actual secrets. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
 
     This recipe implements federated K-Means clustering using a mini-batch aggregation
     strategy. The aggregation follows the scheme defined in MiniBatchKMeans where each
@@ -75,12 +79,15 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
         launch_external_process: Whether to launch the script in external process. Defaults to False.
         command: If launch_external_process=True, command to run script (prepended to script).
             Defaults to "python3 -u".
-        per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
-            site names to configuration dicts. If not provided, the same configuration will be used
-            for all clients.
+        per_site_config: Deprecated constructor form of per-site configuration. New code should call
+            ``set_per_site_config(recipe, config)`` immediately after construction. Nested values become
+            part of the generated job definition and must not contain secrets.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are
-            a dict, key_metric selects the metric used for global model selection. Defaults to "metrics"
+            a dict, key_metric selects the metric used for global model selection. Higher values must
+            indicate a better model. Defaults to "metrics"
             (which corresponds to the homogeneity score sent by the K-Means client).
+        key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better
+            and "max" when higher values are better. Defaults to "max".
 
     Example:
         Basic usage with same config for all clients:
@@ -105,6 +112,7 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
 
         ```python
         from nvflare.app_opt.sklearn import KMeansFedAvgRecipe
+        from nvflare.recipe import set_per_site_config
 
         recipe = KMeansFedAvgRecipe(
             name="kmeans_iris",
@@ -112,7 +120,10 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
             num_rounds=5,
             n_clusters=3,
             train_script="src/kmeans_fl.py",
-            per_site_config={
+        )
+        set_per_site_config(
+            recipe,
+            {
                 "site-1": {"train_args": "--data_path /tmp/data/site1.csv --train_start 0 --train_end 50"},
                 "site-2": {"train_args": "--data_path /tmp/data/site2.csv --train_start 50 --train_end 100"},
                 "site-3": {"train_args": "--data_path /tmp/data/site3.csv --train_start 100 --train_end 150"},
@@ -140,6 +151,7 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
         command: str = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "metrics",  # Matches client's metric key
+        key_metric_mode: Literal["min", "max"] = "max",
     ):
         v = _KMeansValidator(n_clusters=n_clusters, model_path=model_path)
         self.n_clusters = v.n_clusters
@@ -174,5 +186,6 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
             model_persistor=persistor,
             per_site_config=per_site_config,
             key_metric=key_metric,
+            key_metric_mode=key_metric_mode,
         )
-        self.job.to_server(assembler, id=assembler_id)
+        self._job.to_server(assembler, id=assembler_id)

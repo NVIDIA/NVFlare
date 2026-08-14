@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import math
 import threading
 from collections import deque
 from typing import Callable, Deque, Dict, Optional, Tuple
@@ -27,7 +28,9 @@ from nvflare.fuel.f3.streaming.stream_const import (
     EOS,
     STREAM_ACK_TOPIC,
     STREAM_CHANNEL,
+    STREAM_CHUNK_SIZE,
     STREAM_DATA_TOPIC,
+    STREAM_WINDOW_SIZE,
     StreamDataType,
     StreamHeaderKey,
 )
@@ -36,18 +39,62 @@ from nvflare.fuel.f3.streaming.stream_utils import ONE_MB, stream_stats_category
 
 log = logging.getLogger(__name__)
 
-MAX_OUT_SEQ_CHUNKS = 16
-# 1/4 of the window size
-ACK_INTERVAL = 1024 * 1024 * 4
+MIN_OUT_SEQ_CHUNKS = 16
+# Upper bound on the out-of-sequence tolerance derived from a peer's
+# WINDOW_SIZE/CHUNK_SIZE headers. Those headers are hints, and an unbounded
+# ratio would let a peer size this receiver's reassembly buffer at will. A site
+# that legitimately needs more can raise streaming_max_out_seq_chunks in its own
+# config, which is not capped.
+MAX_PEER_DERIVED_OUT_SEQ_CHUNKS = 1024
+# Headerless legacy senders can use windows smaller than the new sender
+# default. Keep their receiver-side fallback at the historical 4 MiB so an
+# ACK is sent before those senders exhaust their flow-control window.
+ACK_INTERVAL = 4 * ONE_MB
 READ_TIMEOUT = 300
 COMPLETED_TASK_TTL = 60.0
 RETRY_WAIT = 5.0
+# Hard cap on the peer-requested retry window: the sender's RETRY_TIMEOUT and
+# RETRY_WAIT headers are hints, and an unbounded value would let a peer pin
+# completed tasks in memory indefinitely.
+MAX_COMPLETED_TASK_TTL = 3600.0
 COUNTER_NAME_RECEIVED = "received"
 
 # Read result status
 RESULT_DATA = 0
 RESULT_NO_DATA = 1
 RESULT_EOS = 2
+
+
+def _abbrev(value, limit: int = 64) -> str:
+    # for logging peer-controlled header values, which can be arbitrarily large
+    text = repr(value)
+    if len(text) > limit:
+        text = f"{text[:limit]}...({len(text)} chars)"
+    return text
+
+
+def required_out_seq_chunks(window_size: int, chunk_size: int) -> int:
+    """Return the out-of-sequence tolerance needed for a sender's flow-control window.
+
+    Inbound frames are dispatched to a thread pool (ConnManager.process_frame), so
+    chunks that arrive in order can still be *processed* out of order, with a depth
+    that grows under scheduling jitter. The depth is bounded by how many chunks the
+    sender may have unacked, which is what its flow-control window governs.
+    TxTask coalesces short reads so every non-final frame is chunk_size bytes and
+    pauses while ``window > window_size``. The EOS path may add one final frame,
+    while the missing expected frame is never stored in out_seq_chunks. Therefore
+    ``ceil(window_size / chunk_size) + 1`` slots cover both divisible and
+    non-divisible windows. Tolerating fewer aborts healthy streams under load --
+    the FLARE-3093 regression, where a 64 MiB default window put far more than 16
+    chunks in flight.
+
+    The result is capped at MAX_PEER_DERIVED_OUT_SEQ_CHUNKS because window_size and
+    chunk_size may be adopted from peer-supplied headers.
+    """
+    if chunk_size <= 0:
+        return MIN_OUT_SEQ_CHUNKS
+    window_chunks = (window_size + chunk_size - 1) // chunk_size
+    return max(MIN_OUT_SEQ_CHUNKS, min(window_chunks + 1, MAX_PEER_DERIVED_OUT_SEQ_CHUNKS))
 
 
 class RxTask:
@@ -74,6 +121,7 @@ class RxTask:
         # Out-of-sequence chunks to be assembled
         self.out_seq_chunks: Dict[int, Tuple[bool, BytesAlike]] = {}
         self.stream_future = None
+        self.sender_flow_control_received = False
         self.next_seq = 0
         self.offset = 0
         self.received_offset = 0
@@ -88,13 +136,21 @@ class RxTask:
         self.failed = False
         self.error = None
         self.error_msg = None
+        self.error_type = None
+        self.error_notified = False  # protected by ack_lock, like the ack state
+        self.preflight_done = False
         self.stop_lock = threading.RLock()
         self.cleanup_timer = None
 
         config = CommConfigurator()
         self.timeout = config.get_streaming_read_timeout(READ_TIMEOUT)
+        self.chunk_size = config.get_streaming_chunk_size(STREAM_CHUNK_SIZE)
+        self.window_size = config.get_streaming_window_size(STREAM_WINDOW_SIZE)
         self.ack_interval = config.get_streaming_ack_interval(ACK_INTERVAL)
-        self.max_out_seq = config.get_streaming_max_out_seq_chunks(MAX_OUT_SEQ_CHUNKS)
+        required_max_out_seq = required_out_seq_chunks(self.window_size, self.chunk_size)
+        configured_max_out_seq = config.get_streaming_max_out_seq_chunks(None)
+        self.max_out_seq_is_configured = configured_max_out_seq is not None
+        self.max_out_seq = configured_max_out_seq if self.max_out_seq_is_configured else required_max_out_seq
         self.completed_task_ttl = config.get_streaming_retry_timeout(
             COMPLETED_TASK_TTL
         ) + config.get_streaming_retry_wait(RETRY_WAIT)
@@ -151,7 +207,7 @@ class RxTask:
 
             count += 1
 
-    def process_chunk(self, message: Message) -> bool:
+    def process_chunk(self, message: Message, preflight_cb: Optional[Callable] = None) -> bool:
         """Returns True if a new stream is created"""
 
         with self.stop_lock:
@@ -160,7 +216,7 @@ class RxTask:
             completed = self.completed
         if failed:
             if self.reliable and error_msg:
-                self._send_error(error_msg)
+                self._send_error(error_msg, self.error_type)
             return False
 
         if completed:
@@ -176,7 +232,26 @@ class RxTask:
         duplicate_start = False
         with self.lock:
             seq = message.get_header(StreamHeaderKey.SEQUENCE)
-            if seq == 0:
+            if preflight_cb and not self.preflight_done:
+                try:
+                    rejection = preflight_cb(message.headers)
+                except Exception as ex:
+                    log.error(f"{self} stream preflight callback failed: {_abbrev(ex)}")
+                    rejection = StreamError("stream rejected by receiver preflight")
+                self.preflight_done = True
+                if rejection is not None:
+                    if not isinstance(rejection, StreamError):
+                        rejection = StreamError(str(rejection))
+                    stop_error = rejection
+
+                    # A rejected stream still exposes a terminal receive future
+                    # for diagnostics, even when sequence 0 is delayed.
+                    if not self.stream_future:
+                        self._handle_new_stream(message)
+
+            if stop_error:
+                pass
+            elif seq == 0:
                 if self.stream_future:
                     log.warning(f"{self} Received duplicate chunk 0, ignored")
                     if self.reliable:
@@ -185,8 +260,13 @@ class RxTask:
                 else:
                     self._handle_new_stream(message)
                     new_stream = True
+            elif not self.stream_future and not self.sender_flow_control_received:
+                # Sequence 0 can be delayed by ConnManager's frame-processing pool.
+                # New senders repeat these headers so the reassembly limit can be
+                # raised before admitting later chunks.
+                self._update_sender_flow_control(message)
 
-            if not duplicate_start:
+            if not duplicate_start and not stop_error:
                 should_stop, ack_to_send, stop_error = self._handle_incoming_data(seq, message)
 
         if ack_to_send:
@@ -197,20 +277,109 @@ class RxTask:
         elif should_stop:
             self.stop()
 
-        return new_stream
+        return new_stream and not stop_error
 
     def _handle_new_stream(self, message: Message):
         self.channel = message.get_header(StreamHeaderKey.CHANNEL)
         self.topic = message.get_header(StreamHeaderKey.TOPIC)
         self.headers = message.headers
         self.size = message.get_header(StreamHeaderKey.SIZE, 0)
+        self._update_sender_flow_control(message)
+
         retry_timeout = message.get_header(StreamHeaderKey.RETRY_TIMEOUT, None)
         retry_wait = message.get_header(StreamHeaderKey.RETRY_WAIT, None)
         if retry_timeout is not None and retry_wait is not None:
-            self.completed_task_ttl = max(self.completed_task_ttl, float(retry_timeout) + float(retry_wait))
+            # The sender's retry window is a peer-supplied hint: validate and
+            # clamp it so a bad value cannot crash the chunk handler or pin
+            # completed tasks in memory indefinitely.
+            try:
+                # int headers beyond the float range raise OverflowError;
+                # equivalent strings round-trip to inf and are non-finite
+                requested_ttl = float(retry_timeout) + float(retry_wait)
+            except (TypeError, ValueError, OverflowError):
+                requested_ttl = None
+            if requested_ttl is None or not math.isfinite(requested_ttl):
+                # NaN must not reach the max() below: max(a, nan) is
+                # order-dependent, so non-finite values are rejected outright
+                log.warning(
+                    f"{self} ignoring invalid retry window headers from {self.origin}: "
+                    f"{_abbrev(retry_timeout)}/{_abbrev(retry_wait)}"
+                )
+            else:
+                if requested_ttl > MAX_COMPLETED_TASK_TTL:
+                    if requested_ttl > self.completed_task_ttl:
+                        # warn only when the cap actually lowers the effective
+                        # window; otherwise the local config already governs
+                        log.warning(
+                            f"{self} retry window requested by {self.origin} ({requested_ttl}s) "
+                            f"exceeds the {MAX_COMPLETED_TASK_TTL}s cap; raise streaming_retry_timeout "
+                            f"on this site if a longer window is needed"
+                        )
+                    requested_ttl = MAX_COMPLETED_TASK_TTL
+                self.completed_task_ttl = max(self.completed_task_ttl, requested_ttl)
 
         self.stream_future = StreamFuture(self.sid, self.headers)
         self.stream_future.set_size(self.size)
+
+    def _update_sender_flow_control(self, message: Message):
+        has_flow_control_headers = all(
+            message.get_header(key, None) is not None
+            for key in (
+                StreamHeaderKey.CHUNK_SIZE,
+                StreamHeaderKey.WINDOW_SIZE,
+            )
+        )
+        self.chunk_size = self._get_sender_parameter(
+            message, StreamHeaderKey.CHUNK_SIZE, "streaming_chunk_size", self.chunk_size
+        )
+        self.window_size = self._get_sender_parameter(
+            message, StreamHeaderKey.WINDOW_SIZE, "streaming_window_size", self.window_size
+        )
+        self.ack_interval = self._get_sender_parameter(
+            message, StreamHeaderKey.ACK_INTERVAL, "streaming_ack_interval", self.ack_interval
+        )
+        if self.chunk_size > 0:
+            window_chunks = (self.window_size + self.chunk_size - 1) // self.chunk_size
+            if window_chunks + 1 > MAX_PEER_DERIVED_OUT_SEQ_CHUNKS:
+                log.warning(
+                    f"{self} streaming_window_size {self.window_size} from {self.origin} needs "
+                    f"{window_chunks + 1} out-of-sequence chunks, above the "
+                    f"{MAX_PEER_DERIVED_OUT_SEQ_CHUNKS} cap; raise streaming_max_out_seq_chunks on this "
+                    f"site if this peer's window is legitimate"
+                )
+        required_max_out_seq = required_out_seq_chunks(self.window_size, self.chunk_size)
+        if self.max_out_seq_is_configured:
+            if required_max_out_seq > self.max_out_seq:
+                log.warning(
+                    f"{self} sender flow-control window needs {required_max_out_seq} out-of-sequence chunks, "
+                    f"above configured streaming_max_out_seq_chunks {self.max_out_seq}; stream may fail under load"
+                )
+        else:
+            self.max_out_seq = max(self.max_out_seq, required_max_out_seq)
+        if self.ack_interval > self.window_size:
+            log.warning(
+                f"{self} streaming_ack_interval {self.ack_interval} from {self.origin} exceeds "
+                f"streaming_window_size {self.window_size}; using {self.window_size}"
+            )
+            self.ack_interval = self.window_size
+        self.sender_flow_control_received = has_flow_control_headers
+
+    def _get_sender_parameter(
+        self,
+        message: Message,
+        header_key: str,
+        parameter_name: str,
+        local_value: int,
+        allow_non_positive: bool = False,
+    ) -> int:
+        value = message.get_header(header_key, None)
+        if value is None:
+            return local_value
+
+        if isinstance(value, bool) or not isinstance(value, int) or (value <= 0 and not allow_non_positive):
+            log.warning(f"{self} ignoring invalid {parameter_name} header from {self.origin}: {_abbrev(value)}")
+            return local_value
+        return value
 
     def _handle_incoming_data(
         self, seq: int, message: Message
@@ -276,8 +445,12 @@ class RxTask:
                         needs_ack = ack_seq != self.seq_ack or ack_offset > self.offset_ack
                 if needs_ack:
                     ack_to_send = (ack_offset, ack_seq)
+                # completed also marks the trailing and post-completion
+                # flow-control ACKs of a non-reliable stream as advisory: the
+                # non-reliable sender finishes at send-completion and never
+                # waits for them (see _send_ack).
+                self.completed = True
                 if self.reliable:
-                    self.completed = True
                     schedule_remove = True
                 else:
                     remove_now = True
@@ -300,6 +473,7 @@ class RxTask:
             # expects error/error_msg to be populated once failed is observed
             self.error = error
             self.error_msg = str(error)
+            self.error_type = type(error).__name__
             self.failed = True
             if self.reliable:
                 schedule_remove = True
@@ -324,32 +498,48 @@ class RxTask:
             self.waiter.set()
 
         if notify:
-            self._send_error(str(error))
+            self._send_error(str(error), type(error).__name__)
 
         if schedule_remove:
             self._schedule_remove_task()
         elif remove_now:
             self._remove_task()
 
-    def _send_error(self, error_msg: str):
+    def _send_error(self, error_msg: str, error_type: str = None):
+        # Only a re-notification of an error that was already delivered is optional: the
+        # first error notification is required, and a failed first attempt keeps retries
+        # at ERROR (mirrors _send_ack). A retained failed task re-notifies on every
+        # retried chunk, and at job teardown those re-notifications race the sender's
+        # cells going away. As with ACKs, "delivered" means accepted by the first hop.
+        with self.ack_lock:
+            already_notified = self.error_notified
+        log_func = log.debug if already_notified else log.error
         message = Message()
 
-        message.add_headers(
-            {
-                StreamHeaderKey.STREAM_ID: self.sid,
-                StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
-                StreamHeaderKey.ERROR_MSG: error_msg,
-            }
-        )
+        headers = {
+            StreamHeaderKey.STREAM_ID: self.sid,
+            StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
+            StreamHeaderKey.ERROR_MSG: error_msg,
+        }
+        if error_type:
+            headers[StreamHeaderKey.ERROR_TYPE] = error_type
+        message.add_headers(headers)
         try:
-            errors = self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
+            errors = self.cell.fire_and_forget(
+                STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message, optional=already_notified
+            )
         except Exception as ex:
-            log.error(f"{self} failed to send error to {self.origin}: {ex}")
+            log_func(f"{self} failed to send error to {self.origin}: {ex}")
+            return
         else:
             errors = errors or {}
             error = errors.get(self.origin)
             if error:
-                log.error(f"{self} failed to send error to {self.origin}: {error}")
+                log_func(f"{self} failed to send error to {self.origin}: {error}")
+                return
+
+        with self.ack_lock:
+            self.error_notified = True
 
     def _remove_task(self):
         with self.stop_lock:
@@ -452,6 +642,17 @@ class RxTask:
         return self.received_offset if self.completed else self.offset
 
     def _send_ack(self, offset, seq):
+        # For a reliable stream, only a re-ACK at or behind state that was sent successfully
+        # is optional: the first final ACK is still required even though stop() has already
+        # marked the receive task completed, and a failed first attempt keeps retries at
+        # ERROR. For a non-reliable stream every ACK after completion is advisory - the
+        # sender finishes at send-completion and never waits for them. Note "already acked"
+        # means accepted by the first hop, not delivered end-to-end; a mid-route drop is
+        # still surfaced by the sender's own retry timeout.
+        with self.ack_lock:
+            already_acked = seq <= self.seq_ack and offset <= self.offset_ack
+        optional = self.completed and (already_acked or not self.reliable)
+        log_func = log.debug if optional else log.error
         message = Message()
         message.add_headers(
             {
@@ -462,15 +663,17 @@ class RxTask:
             }
         )
         try:
-            errors = self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
+            errors = self.cell.fire_and_forget(
+                STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message, optional=optional
+            )
         except Exception as ex:
-            log.error(f"{self} failed to ack seq {seq} to {self.origin}: {ex}")
+            log_func(f"{self} failed to ack seq {seq} to {self.origin}: {ex}")
             return False
         else:
             errors = errors or {}
             error = errors.get(self.origin)
             if error:
-                log.error(f"{self} failed to ack seq {seq} to {self.origin}: {error}")
+                log_func(f"{self} failed to ack seq {seq} to {self.origin}: {error}")
                 return False
 
         with self.ack_lock:
@@ -515,11 +718,21 @@ class ByteReceiver:
         self.cell.register_request_cb(channel=STREAM_CHANNEL, topic=STREAM_DATA_TOPIC, cb=self._data_handler)
         self.registry = Registry()
 
-    def register_callback(self, channel: str, topic: str, stream_cb: Callable, *args, **kwargs):
+    def register_callback(
+        self,
+        channel: str,
+        topic: str,
+        stream_cb: Callable,
+        *args,
+        preflight_cb: Optional[Callable] = None,
+        **kwargs,
+    ):
         if not callable(stream_cb):
             raise StreamError(f"specified stream_cb {type(stream_cb)} is not callable")
+        if preflight_cb is not None and not callable(preflight_cb):
+            raise StreamError(f"specified preflight_cb {type(preflight_cb)} is not callable")
 
-        self.registry.set(channel, topic, Callback(stream_cb, args, kwargs))
+        self.registry.set(channel, topic, Callback(stream_cb, args, kwargs, preflight_cb=preflight_cb))
 
     def _data_handler(self, message: Message):
 
@@ -527,10 +740,13 @@ class ByteReceiver:
         if not task:
             return
 
-        new_stream = task.process_chunk(message)
+        callback = self.registry.find(
+            message.get_header(StreamHeaderKey.CHANNEL),
+            message.get_header(StreamHeaderKey.TOPIC),
+        )
+        new_stream = task.process_chunk(message, preflight_cb=callback.preflight_cb if callback else None)
         if new_stream:
             # Invoke callback
-            callback = self.registry.find(task.channel, task.topic)
             if not callback:
                 task.stop(StreamError(f"{task} No callback is registered for {task.channel}/{task.topic}"))
                 return

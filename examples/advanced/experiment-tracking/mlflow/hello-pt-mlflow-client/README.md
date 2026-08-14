@@ -10,19 +10,19 @@ This example demonstrates **site-specific (decentralized) MLflow tracking** usin
 - Server handles MLflow authentication
 
 **Client-Side** (this example):
-- Each client has its own MLflow instance
+- Each client has its own local MLflow store
 - Site-specific metric tracking
-- Each site manages its own MLflow server
+- Each site can optionally point at its own MLflow server
 
 ## Overview
 
 This example shows how to configure per-client MLflow tracking:
 
 ```python
+from model import SimpleNetwork
+
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
-from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, add_experiment_tracking
 
 # Create recipe WITHOUT default server-side tracking
 recipe = FedAvgRecipe(
@@ -36,27 +36,34 @@ recipe = FedAvgRecipe(
     train_script="client.py",
 )
 
-# Add MLflow receiver to each client
-for i in range(2):
-    site_name = f"site-{i + 1}"
-    tracking_uri = f"file:///tmp/nvflare/jobs/workdir/{site_name}/mlruns"
-
-    receiver = MLflowReceiver(
-        tracking_uri=tracking_uri,
-        events=[ANALYTIC_EVENT_TYPE],  # Listen to LOCAL events (not federated)
-        kw_args={"experiment_name": f"site-{site_name}-experiment"}
-    )
-
-    recipe.job.to(receiver, site_name, id="mlflow_receiver")
+# Add an MLflow receiver to every client, but not to the server. With no
+# tracking_config, each receiver creates a local store and uses recipe-derived names.
+add_experiment_tracking(
+    recipe,
+    "mlflow",
+    client_side=True,
+    server_side=False,
+)
 
 env = SimEnv(num_clients=2)
 run = recipe.execute(env)
 ```
 
+Only the placement flags are needed here because this example intentionally
+tracks on clients. For default server-side MLflow tracking, the complete call is:
+
+```python
+add_experiment_tracking(recipe, "mlflow")
+```
+
 **Key points**:
-- By default, no server-side tracking is enabled (analytics_receiver defaults to None)
-- `events=[ANALYTIC_EVENT_TYPE]` - Listen to local events (not `fed.` events)
-- Each site gets its own `tracking_uri`
+- `client_side=True, server_side=False` keeps metric handling on the clients.
+- The helper configures receivers to listen to local events rather than federated `fed.` events.
+- Omitting `tracking_config` uses `tracking_uri=None`, which resolves to a separate MLflow store in each client's job workspace.
+- The default `experiment_name` and configured run-name suffix are
+  `fedavg_mlflow_client-experiment` and `fedavg_mlflow_client-Client`; the
+  receiver adds site and job identifiers to the final run name.
+- Sites can use explicit local paths or remote MLflow servers when their deployment requires them.
 
 ## Setup
 
@@ -87,16 +94,22 @@ python job.py
 
 Since each site has its own MLflow receiver, metrics are stored separately:
 
+With the example's `tracking_uri=None`, a SQLite store is created under each
+site's job-result directory as `<site-workspace>/<job-id>/mlflow.db`. Under the
+default simulation workspace, use `find` to locate the generated database:
+
 ### View Site-1 Metrics:
 ```bash
-mlflow ui --backend-store-uri /tmp/nvflare/jobs/workdir/site-1/mlruns
+find /tmp/nvflare/jobs/workdir/fedavg_mlflow_client/site-1 -type f -name mlflow.db
+mlflow ui --backend-store-uri sqlite:////absolute/path/to/site-1/mlflow.db
 ```
 
 Open browser to `http://localhost:5000`
 
 ### View Site-2 Metrics:
 ```bash
-mlflow ui --backend-store-uri /tmp/nvflare/jobs/workdir/site-2/mlruns --port 5001
+find /tmp/nvflare/jobs/workdir/fedavg_mlflow_client/site-2 -type f -name mlflow.db
+mlflow ui --backend-store-uri sqlite:////absolute/path/to/site-2/mlflow.db --port 5001
 ```
 
 Open browser to `http://localhost:5001`
@@ -166,28 +179,80 @@ To avoid confusion:
 ### Change Tracking Location
 
 ```python
-tracking_uri = f"file:///my/custom/path/{site_name}/mlruns"
+add_experiment_tracking(
+    recipe,
+    "mlflow",
+    tracking_config={"tracking_uri": "file:///my/custom/path/mlruns"},
+    client_side=True,
+    server_side=False,
+)
 ```
+
+In a distributed deployment, the same local path is resolved independently on
+each site. In simulation, all clients share the host filesystem, so use the
+default `tracking_uri=None` behavior or configure distinct paths if the stores
+must remain physically separate.
+
+For different configuration at each site, create per-site client apps before
+targeting each site explicitly:
+
+```python
+from nvflare.recipe import set_per_site_config
+
+sites = ["site-1", "site-2"]
+recipe = FedAvgRecipe(...)
+set_per_site_config(recipe, {site: {} for site in sites})
+
+for site in sites:
+    add_experiment_tracking(
+        recipe,
+        "mlflow",
+        tracking_config={
+            "tracking_uri": f"file:///my/custom/path/{site}/mlruns",
+            "kw_args": {"experiment_name": f"{site}-experiment"},
+        },
+        client_side=True,
+        server_side=False,
+        clients=[site],
+    )
+```
+
+Targeted `clients=[...]` placement requires per-site configuration when the recipe is
+constructed; it cannot split an existing `@ALL` client app after the fact.
 
 ### Add Experiment Tags
 
 ```python
-receiver = MLflowReceiver(
-    tracking_uri=tracking_uri,
-    events=[ANALYTIC_EVENT_TYPE],
-    kw_args={
-        "experiment_name": f"{site_name}-experiment",
-        "run_name": f"{site_name}-run-001",
-        "experiment_tags": {"site": site_name, "privacy": "local"},
-    }
+add_experiment_tracking(
+    recipe,
+    "mlflow",
+    tracking_config={
+        "tracking_uri": None,
+        "kw_args": {
+            "experiment_name": "local-client-experiment",
+            "run_name": "client-run-001",
+            "experiment_tags": {"privacy": "local"},
+        },
+    },
+    client_side=True,
+    server_side=False,
 )
 ```
 
 ### Remote MLflow Server
 
 ```python
-tracking_uri = "http://mlflow-server.site-1.local:5000"
+add_experiment_tracking(
+    recipe,
+    "mlflow",
+    tracking_config={"tracking_uri": "http://mlflow-server.local:5000"},
+    client_side=True,
+    server_side=False,
+)
 ```
+
+If each site uses a different server or credentials, use the per-site pattern
+above and pass the appropriate configuration with `clients=[site]`.
 
 ---
 

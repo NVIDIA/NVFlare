@@ -507,11 +507,14 @@ Use ``SwarmLearningRecipe`` for a streamlined swarm learning setup:
 .. code-block:: python
 
     from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+    from nvflare.client.config import ExchangeFormat
     from nvflare.recipe.sim_env import SimEnv
 
     # Create swarm learning recipe
     # Model can be class instance or dict config
-    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
+    # A relative checkpoint path is bundled and distributed to every client.
+    # An absolute path is not distributed and must be readable at the same path on every client.
+    # For pre-trained weights: initial_ckpt="path/to/pretrained.pt"
     recipe = SwarmLearningRecipe(
         name="swarm_learning",
         model=MyModel(),
@@ -519,12 +522,17 @@ Use ``SwarmLearningRecipe`` for a streamlined swarm learning setup:
         num_rounds=10,
         train_script="train.py",
         train_args={"batch_size": 32, "epochs": 5},
-        round_timeout=3600,   # P2P model-transfer ACK budget; increase for large models (7B+)
+        progress_timeout=7200,
+        learn_task_timeout=None,       # No per-task time limit
+        learn_task_ack_timeout=3600,   # P2P task-transfer ACK budget
+        final_result_ack_timeout=3600, # P2P final-result ACK budget
+        max_concurrent_submissions=1,
+        aggregation_format=ExchangeFormat.PYTORCH,
+        enable_tensor_disk_offload=True,
     )
 
-    # Configure large model parameters if needed (server-side only)
-    recipe.add_server_config({
-        "np_download_chunk_size": 2097152,
+    # Configure the client-to-client tensor streaming path.
+    recipe.add_client_config({
         "tensor_download_chunk_size": 2097152,
         "streaming_per_request_timeout": 600
     })
@@ -532,6 +540,25 @@ Use ``SwarmLearningRecipe`` for a streamlined swarm learning setup:
     # Run in simulation
     env = SimEnv(num_clients=3)
     recipe.execute(env)
+
+The named parameters are the preferred API. For less common
+``SwarmServerConfig`` or ``SwarmClientConfig`` fields, pass
+``server_config_overrides`` or ``client_config_overrides``. The dictionaries are
+shallow-merged last, so an overlapping dictionary value intentionally wins over
+the named parameter. ``round_timeout`` remains available as a compatibility
+shortcut for setting both acknowledgment timeouts when their explicit parameters
+are omitted. ``client_config_overrides`` cannot replace the recipe-managed
+executor, aggregator, persistor, shareable generator, or
+``min_responses_required``; use ``BaseSwarmLearningRecipe`` for custom components
+or quorum settings. Set ``min_clients`` only through the named parameter so the
+scheduler, server controller, and client aggregation quorums remain aligned.
+For large PyTorch models, use
+``aggregation_format=ExchangeFormat.PYTORCH`` together with
+``enable_tensor_disk_offload=True``. The first keeps CCWF payloads on the
+PyTorch tensor streaming path; the second writes incoming streamed tensors to
+disk on whichever client is selected as the aggregator. This is a receiving
+aggregation-side optimization: the trainer still keeps the model and outgoing
+training result tensors in memory while serving their transport ref.
 
 For advanced customization, use ``BaseSwarmLearningRecipe`` with explicit server and client configurations:
 
@@ -557,13 +584,17 @@ For advanced customization, use ``BaseSwarmLearningRecipe`` with explicit server
         name="custom_swarm",
         server_config=server_config,
         client_config=client_config,
+        min_clients=3,
     )
 
 .. note::
    When using ``BaseSwarmLearningRecipe`` with explicit ``SwarmClientConfig``, set
    ``learn_task_ack_timeout`` and ``final_result_ack_timeout`` manually for large
-   models.  With ``SwarmLearningRecipe``, set ``round_timeout`` instead — it wires
-   both values for you.
+   models. With ``SwarmLearningRecipe``, prefer the corresponding named parameters;
+   ``round_timeout`` can still set both values as a compatibility shortcut.
+   ``min_clients`` on the recipe controls job scheduling; configure workflow
+   quorum independently with ``SwarmServerConfig.min_clients`` and
+   ``SwarmClientConfig.min_responses_required``.
 
 Client Dropout Tolerance (min_clients)
 ---------------------------------------
@@ -818,6 +849,16 @@ The following SwarmClientController parameters are particularly important for la
 - ``max_concurrent_submissions``: Maximum concurrent submissions. **Default: 1**. **Suggested: 1** to reduce memory pressure.
 - ``min_responses_required``: Minimum client results required to begin aggregation. **Default: 1**. **Suggested: 2** for 3-client runs.
 - ``wait_time_after_min_resps_received``: Extra wait time after minimum responses. **Default: 10.0**. **Suggested: 120 to 300**.
+- ``enable_tensor_disk_offload``: Write incoming streamed PyTorch tensors to disk and materialize them lazily during aggregation. **Default: False**. **Suggested: True** for very large PyTorch models.
+
+.. warning::
+
+   Tensor disk offload requires PyTorch payloads. With ``SwarmLearningRecipe``,
+   set ``aggregation_format=ExchangeFormat.PYTORCH``; NumPy payloads still
+   stream, but they do not use tensor disk offload. Temporary data follows
+   Python's ``TMPDIR`` setting, so point ``TMPDIR`` to a disk-backed mount
+   rather than RAM-backed ``tmpfs`` on every client that can be selected as the
+   aggregator. This setting does not offload the trainer's source tensors.
 
 **Example client config for large models:**
 
@@ -838,6 +879,7 @@ The following SwarmClientController parameters are particularly important for la
             max_concurrent_submissions = 1
             min_responses_required = 2
             wait_time_after_min_resps_received = 120
+            enable_tensor_disk_offload = true
           }
         }
       }
@@ -847,6 +889,9 @@ The following SwarmClientController parameters are particularly important for la
 
 - ``np_download_chunk_size``: Chunk size for numpy array downloads. **Default: 2097152 (2MB)**. Value 0 disables streaming and uses native serialization which can spike memory.
 - ``tensor_download_chunk_size``: Chunk size for PyTorch tensor downloads. **Default: 2097152 (2MB)**. Value 0 disables streaming.
+- Tensor disk offload only applies when the aggregation controller receives the
+  ``tensor_download_chunk_size`` path. The sender remains memory-backed, and the
+  built-in weighted aggregator materializes one lazy tensor at a time.
 
 .. code-block::
 
@@ -880,7 +925,7 @@ Server-Side Parameters
 
 **CrossSiteEvalServerController (if enabled):**
 
-- ``eval_task_timeout``: Timeout for evaluation tasks. **Default: 300 (CONFIG_TASK_TIMEOUT)**. **Suggested: 1200** for large models.
+- ``eval_task_timeout``: Timeout for evaluation tasks. **Default: 30**. **Suggested: 1200** for large models.
 
 Optional NVFlare Global Config
 ------------------------------
@@ -903,6 +948,7 @@ If you only adjust a few parameters for large models, start with:
 3. ``request_to_submit_result_max_wait`` - Provides adequate aggregation window
 4. ``progress_timeout`` - Prevents premature workflow termination
 5. ``np_download_chunk_size`` and ``tensor_download_chunk_size`` - Enables memory-efficient streaming
+6. ``aggregation_format=ExchangeFormat.PYTORCH`` and ``enable_tensor_disk_offload=True`` - Keep PyTorch tensors streamed and offload aggregation inputs to disk
 
 .. _ccwf_cross_site_evaluation:
 
@@ -1035,7 +1081,9 @@ Use ``SwarmLearningRecipe`` for swarm learning with optional cross-site evaluati
 
     # Create swarm learning recipe with cross-site evaluation enabled
     # Model can be class instance or dict config
-    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
+    # A relative checkpoint path is bundled and distributed to every client.
+    # An absolute path is not distributed and must be readable at the same path on every client.
+    # For pre-trained weights: initial_ckpt="path/to/pretrained.pt"
     recipe = SwarmLearningRecipe(
         name="swarm_with_cse",
         model=MyModel(),

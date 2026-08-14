@@ -21,26 +21,74 @@ if [[ ${#packages[@]} -eq 0 ]]; then
     packages=(torch torchvision)
 fi
 
+allow_pypi_fallback="${NVFLARE_ALLOW_PYPI_TORCH_FALLBACK:-}"
+if [[ -z "${allow_pypi_fallback}" && "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    # GitHub-hosted runners have seen intermittent TLS handshake failures from
+    # download-r2.pytorch.org. Keep the CPU-only index as the first choice, but
+    # let pre-merge CI fall back to PyPI torch packages so an external mirror
+    # outage does not block unrelated validation.
+    allow_pypi_fallback=true
+fi
+used_pypi_fallback=false
+
+function uv_pip_install {
+    if [[ -z "${VIRTUAL_ENV:-}" ]]; then
+        uv pip install --system "$@"
+    else
+        uv pip install "$@"
+    fi
+}
+
+function install_from_pypi {
+    used_pypi_fallback=true
+    if command -v uv >/dev/null 2>&1; then
+        echo "Falling back to PyPI PyTorch packages with uv: ${packages[*]}"
+        uv_pip_install "${packages[@]}"
+    else
+        echo "Falling back to PyPI PyTorch packages with pip: ${packages[*]}"
+        python3 -m pip install "${packages[@]}"
+    fi
+}
+
 if command -v uv >/dev/null 2>&1; then
     echo "Downloading and installing CPU-only PyTorch packages with uv: ${packages[*]}"
-    uv_system_flag=()
-    if [[ -z "${VIRTUAL_ENV:-}" ]]; then
-        uv_system_flag=(--system)
+    if ! UV_TORCH_BACKEND=cpu uv_pip_install --torch-backend=cpu "${packages[@]}"; then
+        if [[ "${allow_pypi_fallback}" == "true" ]]; then
+            install_from_pypi
+        else
+            exit 1
+        fi
     fi
-    UV_TORCH_BACKEND=cpu uv pip install "${uv_system_flag[@]}" --torch-backend=cpu "${packages[@]}"
 else
     echo "Downloading and installing CPU-only PyTorch packages with pip: ${packages[*]}"
-    python3 -m pip install "${packages[@]}" --index-url https://download.pytorch.org/whl/cpu
+    if ! python3 -m pip install "${packages[@]}" --index-url https://download.pytorch.org/whl/cpu; then
+        if [[ "${allow_pypi_fallback}" == "true" ]]; then
+            install_from_pypi
+        else
+            exit 1
+        fi
+    fi
 fi
 
-python3 - <<'PY'
+NVFLARE_USED_PYPI_TORCH_FALLBACK="${used_pypi_fallback}" python3 - <<'PY'
 import importlib
+import os
 
 torch = importlib.import_module("torch")
-if torch.version.cuda is not None or "+cu" in torch.__version__:
+used_pypi_fallback = os.environ.get("NVFLARE_USED_PYPI_TORCH_FALLBACK") == "true"
+is_cpu_only = torch.version.cuda is None and "+cu" not in torch.__version__
+
+if not used_pypi_fallback and not is_cpu_only:
     raise SystemExit(f"Expected CPU-only PyTorch, got torch {torch.__version__} with CUDA {torch.version.cuda}")
 
-print(f"Installed CPU-only torch {torch.__version__}")
+if used_pypi_fallback:
+    print(
+        "Installed PyPI fallback torch "
+        f"{torch.__version__} with CUDA runtime metadata {torch.version.cuda}; "
+        "CI is running on CPU-only hosts."
+    )
+else:
+    print(f"Installed CPU-only torch {torch.__version__}")
 
 try:
     torchvision = importlib.import_module("torchvision")

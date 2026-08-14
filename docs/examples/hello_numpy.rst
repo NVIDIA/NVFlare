@@ -34,6 +34,7 @@ Navigate to the hello-numpy directory:
 
 .. code-block:: text
 
+    cd NVFlare
     git switch <release branch>
     cd examples/hello-world/hello-numpy
 

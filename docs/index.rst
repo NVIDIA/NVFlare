@@ -28,15 +28,18 @@ NVIDIA FLARE
    :hidden:
    :caption: User Guide
 
+   Choose an API Path <user_guide/data_scientist_guide/api_selection>
    user_guide/data_scientist_guide/client_api_usage
+   HuggingFace Client API <user_guide/data_scientist_guide/hf_client_api>
    user_guide/data_scientist_guide/job_recipe
+   user_guide/data_scientist_guide/recipe_api
    user_guide/data_scientist_guide/available_recipes
    user_guide/data_scientist_guide/flare_api
-   API Evolution & Recommendations <programming_guide/flare_api_evolution>
    user_guide/data_scientist_guide/flower_integration/flower_integration
    programming_guide/experiment_tracking
    Federated XGBoost <user_guide/data_scientist_guide/federated_xgboost/federated_xgboost>
    user_guide/data_scientist_guide/data_preparation
+   Agent Skills <user_guide/agent_skills/index>
    CLI Tools <user_guide/nvflare_cli/nvflare_cli>
 
 .. toctree::
@@ -84,6 +87,7 @@ NVIDIA FLARE
    Deploy Prepare <user_guide/nvflare_cli/deploy_command>
    Running FLARE in Docker <user_guide/admin_guide/deployment/containerized_deployment>
    Running FLARE in Kubernetes <user_guide/admin_guide/deployment/helm_chart>
+   Running FLARE on Slurm <user_guide/admin_guide/deployment/slurm_job_launcher>
    Deploying FLARE on OpenShift <user_guide/admin_guide/deployment/openshift>
    Brev Scripted Deployment Quickstart <user_guide/admin_guide/deployment/brev_scripted_deployment>
    Brev Kubernetes Helm Deployment <user_guide/admin_guide/deployment/brev_deployment>

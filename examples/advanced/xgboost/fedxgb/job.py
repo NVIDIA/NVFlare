@@ -17,7 +17,7 @@ import argparse
 from higgs_data_loader import HIGGSDataLoader
 
 from nvflare.app_opt.xgboost.recipes import XGBHorizontalRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, set_per_site_config
 
 
 def define_parser():
@@ -90,8 +90,8 @@ def main():
         early_stopping_rounds=args.early_stopping_rounds,
         use_gpus=args.use_gpus,
         xgb_params=xgb_params,
-        per_site_config=per_site_config,
     )
+    set_per_site_config(recipe, per_site_config)
 
     # Run simulation with explicit client list (required when using per_site_config).
     # num_threads must match number of clients so each client has a dedicated simulator

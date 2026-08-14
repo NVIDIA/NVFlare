@@ -37,7 +37,7 @@ import os
 import pytest
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, set_per_site_config
 from nvflare.recipe.utils import add_experiment_tracking
 
 INTEGRATION_TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -74,10 +74,22 @@ class TestExperimentTrackingRecipes:
     def model_path(self):
         return os.path.join(self.client_script_dir, "model.py")
 
-    def _add_model_to_apps(self, recipe):
-        recipe.job.add_file_to_server(self.model_path)
+    @property
+    def mlflow_client_script_path(self):
+        return os.path.join(
+            REPO_ROOT,
+            "examples/advanced/experiment-tracking/mlflow/hello-pt-mlflow-client/client.py",
+        )
+
+    @property
+    def mlflow_client_model_path(self):
+        return os.path.join(os.path.dirname(self.mlflow_client_script_path), "model.py")
+
+    def _add_model_to_apps(self, recipe, model_path=None):
+        model_path = model_path or self.model_path
+        recipe._job.add_file_to_server(model_path)
         for site_name in ("site-1", "site-2"):
-            recipe.job.add_file_to(self.model_path, site_name)
+            recipe._job.add_file_to(model_path, site_name)
 
     def _assert_exported_client_configs_have_executors(self, recipe, export_root: str):
         recipe.export(export_root)
@@ -110,8 +122,8 @@ class TestExperimentTrackingRecipes:
             num_rounds=1,
             model={"class_path": "model.SimpleNetwork", "args": {}},
             train_script=self.client_script_path,
-            per_site_config=self._per_site_config(str(tmp_path / "data"), str(tmp_path)),
         )
+        set_per_site_config(recipe, self._per_site_config(str(tmp_path / "data"), str(tmp_path)))
         self._add_model_to_apps(recipe)
 
         # Exercise the same mutation path as the runtime tests.
@@ -131,8 +143,8 @@ class TestExperimentTrackingRecipes:
                 num_rounds=1,
                 model={"class_path": "model.SimpleNetwork", "args": {}},
                 train_script=self.client_script_path,
-                per_site_config=self._per_site_config(cifar10_data_root, tmpdir),
             )
+            set_per_site_config(recipe, self._per_site_config(cifar10_data_root, tmpdir))
             self._add_model_to_apps(recipe)
 
             # Add TensorBoard tracking
@@ -155,23 +167,65 @@ class TestExperimentTrackingRecipes:
                 min_clients=2,
                 num_rounds=1,
                 model={"class_path": "model.SimpleNetwork", "args": {}},
-                train_script=self.client_script_path,
-                per_site_config=self._per_site_config(cifar10_data_root, tmpdir),
+                train_script=self.mlflow_client_script_path,
             )
-            self._add_model_to_apps(recipe)
+            set_per_site_config(recipe, self._per_site_config(cifar10_data_root, tmpdir))
+            self._add_model_to_apps(recipe, self.mlflow_client_model_path)
 
-            # Add MLflow tracking
-            mlflow_uri = os.path.join(mlflow_dir, "mlruns")
-            add_experiment_tracking(
-                recipe,
-                "mlflow",
-                tracking_config={
-                    "tracking_uri": f"file:///{mlflow_uri}",
-                    "kw_args": {"experiment_name": "test", "run_name": "test"},
-                },
-            )
+            # Exercise the zero-config MLflow path: local storage and names derived from the recipe.
+            add_experiment_tracking(recipe, "mlflow")
 
-            # Run and verify completion
+            # Run and verify completion plus the actual MLflow experiment and runs.
             run = recipe.execute(env)
             assert run.get_result() is not None
             assert os.path.exists(run.get_result())
+
+            mlflow_db = os.path.join(run.get_result(), "server", "simulate_job", "mlflow.db")
+            assert os.path.isfile(mlflow_db)
+
+            from mlflow.tracking import MlflowClient
+
+            client = MlflowClient(tracking_uri=f"sqlite:///{mlflow_db}")
+            experiment = client.get_experiment_by_name("test_mlflow-experiment")
+            assert experiment is not None
+
+            runs = client.search_runs([experiment.experiment_id])
+            assert len(runs) == 2
+            assert all(run.info.run_name.endswith("test_mlflow-Server") for run in runs)
+
+    def test_mlflow_client_tracking_defaults_integration(self, cifar10_data_root):
+        """Test zero-config client-side MLflow tracking creates one local store per site."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace_root = os.path.join(tmpdir, "test_mlflow_client")
+            env = SimEnv(clients=["site-1", "site-2"], workspace_root=workspace_root)
+            recipe = FedAvgRecipe(
+                name="test_mlflow_client",
+                min_clients=2,
+                num_rounds=1,
+                model={"class_path": "model.SimpleNetwork", "args": {}},
+                train_script=self.mlflow_client_script_path,
+            )
+            set_per_site_config(recipe, self._per_site_config(cifar10_data_root, tmpdir))
+            self._add_model_to_apps(recipe, self.mlflow_client_model_path)
+
+            add_experiment_tracking(recipe, "mlflow", client_side=True, server_side=False)
+
+            run = recipe.execute(env)
+            assert run.get_result() is not None
+            assert os.path.exists(run.get_result())
+
+            from mlflow.tracking import MlflowClient
+
+            for site_name in ("site-1", "site-2"):
+                mlflow_db = os.path.join(run.get_result(), site_name, "simulate_job", "mlflow.db")
+                assert os.path.isfile(mlflow_db)
+
+                client = MlflowClient(tracking_uri=f"sqlite:///{mlflow_db}")
+                experiment = client.get_experiment_by_name("test_mlflow_client-experiment")
+                assert experiment is not None
+
+                runs = client.search_runs([experiment.experiment_id])
+                assert len(runs) == 1
+                assert runs[0].info.run_name.endswith("test_mlflow_client-Client")

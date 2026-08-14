@@ -31,6 +31,7 @@ from nvflare.apis.client import Client as FLClient
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
     ConfigVarName,
+    FLContextKey,
     FLMetaKey,
     JobConstants,
     MachineStatus,
@@ -525,7 +526,7 @@ class SimulatorRunner(FLComponent):
                 # Abort the server after all clients finished run
                 self.server.abort_run()
                 server_thread.join()
-                run_status = 0
+                run_status = self._get_server_run_status()
             except Exception as e:
                 self.logger.error(f"Simulator run error: {secure_format_exception(e)}")
                 run_status = 2
@@ -535,6 +536,11 @@ class SimulatorRunner(FLComponent):
         else:
             run_status = 1
         return run_status
+
+    def _get_server_run_status(self):
+        with self.server.engine.new_context() as fl_ctx:
+            execution_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
+        return 2 if execution_error else 0
 
     def client_run(self, server_custom_folder, clients, gpu):
         client_runner = SimulatorClientRunner(

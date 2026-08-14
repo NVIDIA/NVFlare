@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Default component policy installed in provisioned and simulation workspaces.
+"""Default component policy for non-BYOC jobs.
 
-This policy is not an implicit fallback in ``ComponentPathAuthorizer``. A
-workspace must contain it (or an explicit replacement) for non-BYOC jobs.
+Installed in provisioned and simulation workspaces. ``ComponentPathAuthorizer``
+also uses it as the built-in default when a site does not configure
+``class_allow_list``, recording an audit event for the implicit policy decision.
 """
 
 DEFAULT_CLASS_ALLOW_LIST = (
@@ -62,6 +63,7 @@ DEFAULT_CLASS_ALLOW_LIST = (
     "nvflare.app_common.widgets.event_recorder.ClientEventRecorder",
     "nvflare.app_common.widgets.event_recorder.ServerEventRecorder",
     "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
+    "nvflare.app_common.widgets.metrics_artifact_writer.MetricsArtifactWriter",
     "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
     "nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval",
     "nvflare.app_common.workflows.cyclic_ctl.CyclicController",

@@ -29,6 +29,7 @@ Can be run from :github_nvflare_link:`hello_world notebook <examples/hello-world
 
   * :ref:`Hello PyTorch <hello_pt_job_api>` - Example image classifier using FedAvg and PyTorch as the deep learning training framework
   * :ref:`Hello TensorFlow <hello_tf_job_api>` - Example image classifier using FedAvg and TensorFlow as the deep learning training frameworks
+  * :ref:`Hello HuggingFace <hello_huggingface>` - Qwen SFT/PEFT with the HuggingFace Client API
 
 
 2. Tutorial Notebooks

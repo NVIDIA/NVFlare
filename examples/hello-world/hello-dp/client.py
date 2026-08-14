@@ -31,6 +31,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 # (1) import nvflare client API
 import nvflare.client as flare
+from nvflare.app_common.abstract.fl_model import ParamsType
 from nvflare.client.tracking import SummaryWriter
 
 
@@ -296,8 +297,16 @@ def main():
             clean_key = k.replace("_module.", "")
             clean_params[clean_key] = v
 
+        # FLModel.params_type is the client-result contract. Compute local minus global
+        # explicitly so the server can safely aggregate this response as a weight difference.
+        model_diff = {
+            name: local_param - torch.as_tensor(input_model.params[name], dtype=local_param.dtype)
+            for name, local_param in clean_params.items()
+        }
+
         output_model = flare.FLModel(
-            params=clean_params,
+            params=model_diff,
+            params_type=ParamsType.DIFF,
             metrics={
                 "accuracy": global_test_accuracy,  # Global model accuracy (for server model selection)
                 "f1_score": global_test_f1,

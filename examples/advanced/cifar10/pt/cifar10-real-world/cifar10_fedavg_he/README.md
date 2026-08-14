@@ -137,6 +137,7 @@ The `job.py` script uses `FedAvgRecipeWithHE` which automatically configures HE 
 
 ```python
 from nvflare.app_opt.pt.recipes.fedavg_he import FedAvgRecipeWithHE
+from nvflare.apis.dxo import DataKind
 
 recipe = FedAvgRecipeWithHE(
     name="cifar10_fedavg_he",
@@ -150,6 +151,9 @@ recipe = FedAvgRecipeWithHE(
     encrypt_layers=None  # None = encrypt all layers (default)
 )
 ```
+
+The client computes the local-minus-global update and returns it as
+`FLModel(params_type=ParamsType.DIFF)`, which is the authoritative description of the client result.
 
 **Selective Encryption:** By default, all model parameters are encrypted. You can optionally use the `encrypt_layers` parameter to encrypt only specific layers:
 - Pass a **list of layer names** for exact matches: `encrypt_layers=["fc3.weight", "fc3.bias"]`
@@ -300,4 +304,3 @@ This is expected! HE adds 2-3x overhead. For faster experiments without privacy 
 - [Secure Provisioning Guide](https://nvflare.readthedocs.io/en/main/programming_guide/provisioning_system.html)
 - [FedAvg Paper](https://arxiv.org/abs/1602.05629)
 - [TenSEAL Library](https://github.com/OpenMined/TenSEAL) - Used by NVFlare for HE
-

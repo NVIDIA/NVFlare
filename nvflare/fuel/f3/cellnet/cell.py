@@ -28,7 +28,7 @@ from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, make_r
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import StreamFuture
+from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, StreamFuture
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.waiter_utils import WaiterRC, conditional_wait
@@ -59,7 +59,7 @@ def _is_server_job_cell(my_info) -> bool:
     """Return True only for server cells owned by one job run.
 
     Parent server cell FQCN is "server"; server job cells start with
-    "server.<job_id>" and may have nested children like "server.<job_id>.cell_pipe".
+    "server.<job_id>" and may have nested child cells.
     The fail-fast path must only exit a job process, never the parent server.
     """
     fqcn = getattr(my_info, "fqcn", "")
@@ -94,15 +94,15 @@ class Adapter:
         self.logger.debug(f"{stream_req_id=}: {headers=}, incoming data={result}")
         request = Message(headers, result)
 
-        # PASS_THROUGH can be requested per-message (sender stamps
-        # MessageHeaderKey.PASS_THROUGH) or per-channel (receiver adds the
-        # channel name to cell.decode_pass_through_channels).  Either source
-        # activates LazyDownloadRef decode so tensors are not downloaded at
-        # this hop.
+        # PASS_THROUGH can be requested per-message, per-channel, or for one
+        # exact (channel, topic) route. Any source activates LazyDownloadRef
+        # decode so tensors are not downloaded at this hop.
         channel = request.get_header(StreamHeaderKey.CHANNEL)
         topic = request.get_header(StreamHeaderKey.TOPIC)
         passthrough = bool(request.get_header(MessageHeaderKey.PASS_THROUGH, False))
         if channel in self.cell.decode_pass_through_channels:
+            passthrough = True
+        if (channel, topic) in self.cell.decode_pass_through_topics:
             passthrough = True
         decode_ctx = self.cell.get_fobs_context(props={FOBSContextKey.PASS_THROUGH: passthrough})
         try:
@@ -128,12 +128,50 @@ class Adapter:
         optional = request.get_header(MessageHeaderKey.OPTIONAL, False)
         self.logger.debug(f"{stream_req_id=}: on {channel=}, {topic=}")
         response = self.cb(request, *args, **kwargs)
-        self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
+        if isinstance(response, concurrent.futures.Future):
+            response.add_done_callback(
+                lambda done: self._send_async_response(
+                    done, stream_req_id, req_id, channel, topic, origin, secure, optional
+                )
+            )
+            return
 
+        self._send_response(response, stream_req_id, req_id, channel, topic, origin, secure, optional)
+
+    def _send_async_response(self, response_future, *reply_args):
+        try:
+            response = response_future.result()
+        except Exception as ex:
+            self.logger.error(f"async request callback failed: {secure_format_exception(ex)}")
+            response = make_reply(ReturnCode.PROCESS_EXCEPTION)
+        self._send_response(response, *reply_args)
+
+    def _handle_reply_stream_done(self, reply_future):
+        error = reply_future.exception()
+        if not error:
+            return
+
+        if isinstance(error, BlobSizeError) and _is_server_job_cell(self.my_info):
+            self.logger.critical(
+                f"streamed response from server job cell {self.my_info.fqcn} was rejected as too large; "
+                f"exiting job process to fail the job: {secure_format_exception(error)}"
+            )
+            os._exit(1)
+
+        self.logger.error(
+            f"streamed response from {self.my_info.fqcn} failed asynchronously: {secure_format_exception(error)}"
+        )
+
+    def _send_response(self, response, stream_req_id, req_id, channel, topic, origin, secure, optional):
+        self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
         if not stream_req_id:
             # no need to reply!
             self.logger.debug("Do not send reply because there is no stream_req_id!")
             return
+
+        if not isinstance(response, Message):
+            self.logger.error(f"request callback must return Message but got {type(response)}")
+            response = make_reply(ReturnCode.PROCESS_EXCEPTION)
 
         response.add_headers(
             {
@@ -145,9 +183,25 @@ class Adapter:
 
         encode_payload(response, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=self.cell.get_fobs_context())
         self.logger.debug(f"sending: {stream_req_id=}: {response.headers=}, target={origin}")
-        reply_future = self.cell.send_blob(
-            CellChannel.RETURN_ONLY, f"{channel}:{topic}", origin, response, secure, optional
-        )
+        try:
+            reply_future = self.cell.send_blob(
+                CellChannel.RETURN_ONLY,
+                f"{channel}:{topic}",
+                origin,
+                response,
+                secure,
+                optional,
+                reliable=True,
+            )
+        except BlobSizeError as ex:
+            if _is_server_job_cell(self.my_info):
+                self.logger.critical(
+                    f"streamed response from server job cell {self.my_info.fqcn} is too large; "
+                    f"exiting job process to fail the job: {secure_format_exception(ex)}"
+                )
+                os._exit(1)
+            raise
+        reply_future.add_done_callback(self._handle_reply_stream_done, reply_future)
         self.logger.debug(f"Done sending: {stream_req_id=}: {reply_future=}")
 
 
@@ -160,6 +214,7 @@ class Cell(StreamCell):
         self.register_blob_cb(CellChannel.RETURN_ONLY, "*", self._process_reply)  # this should be one-time registration
         self.core_cell.update_fobs_context({FOBSContextKey.CELL: self})
         self.decode_pass_through_channels: set = set()  # per-channel opt-in for receiver-side PASS_THROUGH
+        self.decode_pass_through_topics: set = set()  # exact (channel, topic) receiver-side opt-in
 
     def update_fobs_context(self, props: dict):
         self.core_cell.update_fobs_context(props)
@@ -232,8 +287,21 @@ class Cell(StreamCell):
         results = dict()
         future_to_target = {}
 
-        # encode the request now so each target thread won't need to do it again.
-        self._encode_message(request, abort_signal, num_receivers=len(targets), receiver_ids=targets)
+        # Encode the request now so each target thread won't need to do it again.
+        # For a direct broadcast, the routing targets are also the tensor download
+        # consumers, so the transaction can track their exact identities. With
+        # PASS_THROUGH, each target may forward the refs to another Cell (for
+        # example, an external trainer), and only the final consumer count is known.
+        # Pinning the transaction to the first-hop identities would prevent it from
+        # completing after those downstream consumers finish downloading.
+        pass_through = bool(request.get_header(MessageHeaderKey.PASS_THROUGH, False))
+        receiver_ids = None if pass_through else targets
+        self._encode_message(
+            request,
+            abort_signal,
+            num_receivers=len(targets),
+            receiver_ids=receiver_ids,
+        )
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
             self.logger.debug(f"broadcast to {targets=}")
@@ -337,12 +405,26 @@ class Cell(StreamCell):
         else:
             return True
 
-    def _encode_message(self, msg: Message, abort_signal, num_receivers=1, receiver_ids=None) -> int:
+    def _encode_message(
+        self,
+        msg: Message,
+        abort_signal,
+        num_receivers=1,
+        receiver_ids=None,
+        fobs_ctx_props: dict = None,
+    ) -> int:
         try:
-            props = {
-                FOBSContextKey.ABORT_SIGNAL: abort_signal,
-                FOBSContextKey.NUM_RECEIVERS: num_receivers,
-            }
+            # Keep call-scoped FOBS behavior out of the Cell's shared context.  This is
+            # especially important when a trainer logs from one thread while another
+            # serializes a result: temporarily mutating the CoreCell context would let
+            # transaction-lifecycle callbacks leak into the log encode.
+            props = dict(fobs_ctx_props or {})
+            props.update(
+                {
+                    FOBSContextKey.ABORT_SIGNAL: abort_signal,
+                    FOBSContextKey.NUM_RECEIVERS: num_receivers,
+                }
+            )
             if receiver_ids is not None:
                 props[FOBSContextKey.RECEIVER_IDS] = receiver_ids
             return encode_payload(msg, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=self.get_fobs_context(props))
@@ -363,6 +445,7 @@ class Cell(StreamCell):
         progress_wait_cb=None,
         num_receivers=1,
         receiver_ids=None,
+        fobs_ctx_props: dict = None,
     ):
         """Stream one request to the target
 
@@ -375,11 +458,19 @@ class Cell(StreamCell):
             secure: is P2P security to be applied
             optional: is the message optional
             abort_signal: signal to abort the message
+            fobs_ctx_props: optional call-scoped FOBS context properties used only
+                while serializing this request
 
         Returns: reply data
 
         """
-        self._encode_message(request, abort_signal, num_receivers=num_receivers, receiver_ids=receiver_ids)
+        self._encode_message(
+            request,
+            abort_signal,
+            num_receivers=num_receivers,
+            receiver_ids=receiver_ids,
+            fobs_ctx_props=fobs_ctx_props,
+        )
         return self._send_one_request(
             channel, target, topic, request, timeout, secure, optional, abort_signal, progress_wait_cb
         )
@@ -479,11 +570,16 @@ class Cell(StreamCell):
             pt = bool(waiter.result.get_header(MessageHeaderKey.PASS_THROUGH, False))
             if channel in self.decode_pass_through_channels:
                 pt = True
+            if (channel, topic) in self.decode_pass_through_topics:
+                pt = True
             decode_payload(
                 waiter.result,
                 encoding_key=StreamHeaderKey.PAYLOAD_ENCODING,
                 fobs_ctx=self.get_fobs_context(
-                    props={FOBSContextKey.ABORT_SIGNAL: abort_signal, FOBSContextKey.PASS_THROUGH: pt}
+                    props={
+                        FOBSContextKey.ABORT_SIGNAL: abort_signal,
+                        FOBSContextKey.PASS_THROUGH: pt,
+                    }
                 ),
             )
             self.logger.debug(f"{req_id=}: return result {waiter.result=}")
@@ -500,7 +596,7 @@ class Cell(StreamCell):
         try:
             waiter = self.requests_dict[req_id]
         except KeyError as e:
-            self.logger.warning(f"Receiving unknown {req_id=}, discarded: {e} headers: {headers}")
+            self.logger.warning(f"Receiving unknown {req_id=}, discarded: {e}")
             return
         waiter.receiving_future = future
         waiter.in_receiving.set()

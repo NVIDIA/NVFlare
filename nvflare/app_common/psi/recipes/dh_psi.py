@@ -27,6 +27,9 @@ class DhPSIRecipe(Recipe):
     """Job recipe for running DH-PSI.
 
     This is a job composition helper (server workflow + client executors/components).
+    Recipe parameters become part of the generated job definition and must never
+    contain actual secret values. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
     """
 
     def __init__(

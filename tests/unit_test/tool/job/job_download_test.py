@@ -142,6 +142,217 @@ class TestJobDownload:
         assert envelope["data"]["artifacts"]["global_model"] == str(model_path)
         assert "global_model" not in envelope["data"]["missing_artifacts"]
 
+    def test_download_does_not_treat_client_checkpoint_as_global_model(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        client_dir = download_path / "site-1"
+        client_dir.mkdir(parents=True)
+        (client_dir / "FL_global_model.pt").write_text("client model")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_download_discovers_global_model_from_workspace_root(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        model_path = workspace_dir / "FL_global_model.pt"
+        model_path.write_text("server model")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert envelope["data"]["artifacts"]["global_model"] == str(model_path)
+
+    def test_download_prefers_canonical_root_model_over_client_checkpoint(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        client_dir = download_path / "site-1"
+        client_dir.mkdir(parents=True)
+        root_model = download_path / "global_model.pt"
+        root_model.write_text("server model")
+        (client_dir / "FL_global_model.pt").write_text("client model")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert envelope["data"]["artifacts"]["global_model"] == str(root_model)
+
+    def test_download_prefers_server_model_over_alphabetically_earlier_client_dir(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        client_dir = download_path / "app_client-1"
+        server_dir = download_path / "server"
+        client_dir.mkdir(parents=True)
+        server_dir.mkdir()
+        (client_dir / "FL_global_model.pt").write_text("client model")
+        server_model = server_dir / "global_model.pt"
+        server_model.write_text("server model")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert envelope["data"]["artifacts"]["global_model"] == str(server_model)
+
+    def test_download_manifest_resolves_custom_global_model_name(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        server_dir = workspace_dir / "app_server"
+        server_dir.mkdir(parents=True)
+        custom_model = server_dir / "production-checkpoint.bin"
+        custom_model.write_text("server model")
+        (workspace_dir / "artifact_manifest.json").write_text(
+            json.dumps({"schema_version": "1", "artifacts": {"global_model": "app_server/production-checkpoint.bin"}})
+        )
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert envelope["data"]["artifacts"]["global_model"] == str(custom_model)
+        assert "global_model" not in envelope["data"]["missing_artifacts"]
+
+    def test_download_does_not_fall_back_when_manifest_target_is_missing(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        (workspace_dir / "FL_global_model.pt").write_text("server model")
+        (workspace_dir / "artifact_manifest.json").write_text(
+            json.dumps({"schema_version": "1", "artifacts": {"global_model": "missing-model.pt"}})
+        )
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_download_does_not_fall_back_when_manifest_is_invalid_json(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        (workspace_dir / "FL_global_model.pt").write_text("server model")
+        (workspace_dir / "artifact_manifest.json").write_text("{invalid json")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_download_does_not_fall_back_when_manifest_schema_is_invalid(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        model_path = workspace_dir / "FL_global_model.pt"
+        model_path.write_text("server model")
+        (workspace_dir / "artifact_manifest.json").write_text(
+            json.dumps({"schema_version": "2", "artifacts": {"global_model": model_path.name}})
+        )
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_download_manifest_rejects_directory_target(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        model_dir = workspace_dir / "app_server"
+        model_dir.mkdir(parents=True)
+        (workspace_dir / "artifact_manifest.json").write_text(
+            json.dumps({"schema_version": "1", "artifacts": {"global_model": model_dir.name}})
+        )
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_manifest_global_model_rejects_alternate_case_self_target(self, tmp_path):
+        from nvflare.tool.job.job_cli import _manifest_global_model
+
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        manifest_path = workspace_dir / "artifact_manifest.json"
+        alternate_case_path = workspace_dir / "ARTIFACT_MANIFEST.JSON"
+        manifest_path.write_text(
+            json.dumps({"schema_version": "1", "artifacts": {"global_model": alternate_case_path.name}})
+        )
+        if not alternate_case_path.exists():
+            try:
+                os.link(manifest_path, alternate_case_path)
+            except OSError:
+                pytest.skip("filesystem does not support hard links")
+
+        assert os.path.samefile(manifest_path, alternate_case_path)
+        assert _manifest_global_model(str(download_path), [(0, str(manifest_path))]) == (True, None)
+
+    def test_manifest_global_model_rejects_samefile_error(self, tmp_path):
+        from nvflare.tool.job.job_cli import _manifest_global_model
+
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        model_path = workspace_dir / "custom-model.pt"
+        model_path.write_text("server model")
+        manifest_path = workspace_dir / "artifact_manifest.json"
+        manifest_path.write_text(json.dumps({"schema_version": "1", "artifacts": {"global_model": model_path.name}}))
+
+        with patch("nvflare.tool.job.job_cli.os.path.samefile", side_effect=OSError):
+            assert _manifest_global_model(str(download_path), [(0, str(manifest_path))]) == (True, None)
+
+    def test_download_manifest_rejects_parent_path(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        root_model = download_path / "custom-model.pt"
+        root_model.write_text("server model")
+        (workspace_dir / "artifact_manifest.json").write_text(
+            json.dumps({"schema_version": "1", "artifacts": {"global_model": f"../{root_model.name}"}})
+        )
+
+        # Simulate Windows accepting a forward-slash manifest path while os.sep is a backslash.
+        with patch("nvflare.tool.job.job_cli.os.sep", "\\"):
+            _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_download_manifest_rejects_symlink_target(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        model_path = workspace_dir / "custom-model.pt"
+        model_path.write_text("server model")
+        symlink_path = workspace_dir / "model-link.pt"
+        try:
+            symlink_path.symlink_to(model_path)
+        except OSError:
+            pytest.skip("filesystem does not support symlinks")
+        (workspace_dir / "artifact_manifest.json").write_text(
+            json.dumps({"schema_version": "1", "artifacts": {"global_model": symlink_path.name}})
+        )
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_download_ignores_client_artifact_manifest(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        client_dir = download_path / "site-1"
+        client_dir.mkdir(parents=True)
+        client_model = client_dir / "client-checkpoint.bin"
+        client_model.write_text("client model")
+        (client_dir / "artifact_manifest.json").write_text(
+            json.dumps({"schema_version": "1", "artifacts": {"global_model": client_model.name}})
+        )
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_canonical_server_artifact_rank_handles_relpath_error(self):
+        from nvflare.tool.job.job_cli import _canonical_server_artifact_rank
+
+        with patch("nvflare.tool.job.job_cli.os.path.relpath", side_effect=ValueError):
+            assert _canonical_server_artifact_rank("download", "artifact") is None
+
     def test_download_discovers_metrics_artifacts_and_client_logs(self, tmp_path, capsys):
         """metrics artifacts and client log.txt files are reported from the local download path."""
         download_path = tmp_path / "results"
@@ -184,8 +395,9 @@ class TestJobDownload:
         _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
 
         artifacts = envelope["data"]["artifacts"]
-        assert artifacts["global_model"] == str(model_path)
+        assert "global_model" not in artifacts
         assert artifacts["metrics_summary"] == str(metrics_path)
+        assert "global_model" in envelope["data"]["missing_artifacts"]
         assert "client_logs" not in artifacts
         assert "client_logs" in envelope["data"]["missing_artifacts"]
 

@@ -28,6 +28,7 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.streaming.cacheable import CacheableObject, ItemConsumer
 from nvflare.fuel.f3.streaming.download_service import download_object
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
+from nvflare.fuel.f3.streaming.stream_utils import stream_thread_pool
 
 from .lazy_tensor_dict import LazyTensorDict, _cleanup_temp_dir
 
@@ -50,6 +51,9 @@ class TensorDownloadable(CacheableObject):
     def __init__(self, tensors: dict[str, torch.Tensor], max_chunk_size: int):
         self.size = len(tensors)
         self.keys = list(tensors.keys())
+        self._prefetch_lock = threading.Lock()
+        self._prefetch_futures = {}
+        self._released = False
         super().__init__(tensors, max_chunk_size)
 
     def get_item_count(self) -> int:
@@ -57,8 +61,43 @@ class TensorDownloadable(CacheableObject):
 
     def produce_item(self, index: int) -> bytes:
         key = self.keys[index]
-        tensor_to_send = {key: self.base_obj[key]}
-        return save_tensors(tensor_to_send)
+        with self._prefetch_lock:
+            future = self._prefetch_futures.pop(index, None)
+        if future:
+            return future.result()
+        base_obj = self.base_obj
+        if base_obj is None:
+            raise RuntimeError(f"item {index} requested after tensors were released")
+        return save_tensors({key: base_obj[key]})
+
+    def prefetch_item(self, index: int):
+        with self._prefetch_lock:
+            if self._released or index in self._prefetch_futures:
+                return
+            base_obj = self.base_obj
+            if base_obj is None:
+                return
+            key = self.keys[index]
+            tensor = base_obj[key]
+            future = stream_thread_pool.submit(save_tensors, {key: tensor})
+            if future:
+                self._prefetch_futures[index] = future
+
+    def get_item_size(self, index: int) -> Optional[int]:
+        base_obj = self.base_obj
+        if base_obj is None:
+            return None
+        tensor = base_obj[self.keys[index]]
+        return tensor.numel() * tensor.element_size()
+
+    def release(self):
+        with self._prefetch_lock:
+            self._released = True
+            futures = list(self._prefetch_futures.values())
+            self._prefetch_futures.clear()
+        for future in futures:
+            future.cancel()
+        super().release()
 
 
 class TensorConsumer(ItemConsumer):
@@ -185,6 +224,7 @@ class DiskTensorConsumer(ItemConsumer):
         self._temp_dir = temp_dir
         self._cleaned = False
         self._file_counter = 0
+        self._io_lock = threading.Lock()
         with _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK:
             _ACTIVE_DISK_TENSOR_CONSUMERS.add(self)
 
@@ -194,13 +234,17 @@ class DiskTensorConsumer(ItemConsumer):
             self._cleaned = True
 
     def cleanup(self) -> None:
-        with _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK:
-            if self._cleaned:
-                return
-            self._cleaned = True
-            _ACTIVE_DISK_TENSOR_CONSUMERS.discard(self)
+        # Pipelined downloads can have a chunk write in progress while workflow
+        # finalization aborts active consumers. Wait for that write to finish so
+        # rmtree cannot race an open/create operation and leave a partial directory.
+        with self._io_lock:
+            with _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK:
+                if self._cleaned:
+                    return
+                self._cleaned = True
+                _ACTIVE_DISK_TENSOR_CONSUMERS.discard(self)
 
-        _cleanup_temp_dir(self._temp_dir)
+            _cleanup_temp_dir(self._temp_dir)
 
     def consume_items(self, items: List[Any], result: Any) -> Any:
         if not isinstance(items, list):
@@ -208,19 +252,20 @@ class DiskTensorConsumer(ItemConsumer):
         if result is None:
             result = {}
 
-        for item in items:
-            keys = _extract_safetensors_keys(item)
-            file_path = os.path.join(self._temp_dir, f"chunk_{self._file_counter}.safetensors")
-            self._file_counter += 1
-            with open(file_path, "wb") as f:
-                f.write(item)
-            for key in keys:
-                if key in result:
-                    raise ValueError(
-                        f"Duplicate tensor key '{key}' seen in multiple safetensors chunks; "
-                        "streaming data may be malformed."
-                    )
-                result[key] = (file_path, key)
+        with self._io_lock:
+            for item in items:
+                keys = _extract_safetensors_keys(item)
+                file_path = os.path.join(self._temp_dir, f"chunk_{self._file_counter}.safetensors")
+                self._file_counter += 1
+                with open(file_path, "wb") as f:
+                    f.write(item)
+                for key in keys:
+                    if key in result:
+                        raise ValueError(
+                            f"Duplicate tensor key '{key}' seen in multiple safetensors chunks; "
+                            "streaming data may be malformed."
+                        )
+                    result[key] = (file_path, key)
 
         return result
 
@@ -241,12 +286,18 @@ def download_tensors_to_disk(
     optional=False,
     abort_signal=None,
     progress_cb=None,
+    root_dir: Optional[str] = None,
 ) -> Tuple[str, Optional[LazyTensorDict]]:
     """Download tensors to disk instead of memory.
 
+    Args:
+        root_dir: optional call-scoped destination root. When omitted, use the
+            root configured on the Cell for backward compatibility.
+
     Returns: tuple of (error message if any, LazyTensorDict for lazy access).
     """
-    root_dir = cell.get_fobs_context().get(_TENSOR_DISK_OFFLOAD_ROOT_DIR)
+    if root_dir is None:
+        root_dir = cell.get_fobs_context().get(_TENSOR_DISK_OFFLOAD_ROOT_DIR)
     if not root_dir:
         raise RuntimeError(f"{_TENSOR_DISK_OFFLOAD_ROOT_DIR} is not set in FOBS context")
     temp_dir = tempfile.mkdtemp(prefix="nvflare_tensors_", dir=root_dir)

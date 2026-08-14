@@ -21,6 +21,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.np.np_model_locator import NPModelLocator
 from nvflare.app_common.np.np_validator import NPValidator
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+from nvflare.fuel.utils.secret_utils import warn_on_potential_secrets
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
@@ -58,6 +59,10 @@ class _CrossSiteEvalValidator(BaseModel):
 
 class NumpyCrossSiteEvalRecipe(Recipe):
     """Recipe for standalone cross-site evaluation with pre-trained NumPy models.
+
+    Recipe parameters become part of the generated job definition and must never
+    contain actual secret values. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
 
     Creates a cross-site evaluation workflow that loads pre-trained models and evaluates
     them across all client sites without performing any training.
@@ -139,6 +144,9 @@ class NumpyCrossSiteEvalRecipe(Recipe):
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
         )
+        if eval_args:
+            warn_on_potential_secrets(eval_args, context="recipe parameter 'eval_args'")
+        warn_on_potential_secrets(command, context="recipe parameter 'command'")
 
         job = FedJob(name=name, min_clients=min_clients)
 

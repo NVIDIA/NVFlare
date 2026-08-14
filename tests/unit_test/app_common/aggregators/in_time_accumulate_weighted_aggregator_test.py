@@ -14,6 +14,7 @@
 
 import random
 import re
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -23,6 +24,7 @@ from nvflare.apis.fl_constant import ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
+from nvflare.app_common.aggregators.weighted_aggregation_helper import AggregationStatsKey
 from nvflare.app_common.app_constant import AppConstants
 
 
@@ -242,6 +244,62 @@ class TestInTimeAccumulateWeightedAggregator:
 
         result = agg.aggregate(fl_ctx)
         np.testing.assert_allclose(result["DXO"]["data"]["var1"], expected["var1"])
+
+    def test_aggregate_publishes_aggregation_stats(self):
+        agg = InTimeAccumulateWeightedAggregator(exclude_vars="bias")
+        agg._initialize(agg.aggregation_weights, agg.exclude_vars, agg.expected_data_kind)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
+
+        contributions = {
+            "client1": {"var1": np.array([1.0]), "var2": np.array([2.0]), "bias": np.array([0.5])},
+            "client2": {"var1": np.array([3.0])},
+        }
+        for client_name, data in contributions.items():
+            dxo = DXO(DataKind.WEIGHT_DIFF, data=data, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1})
+            s = Shareable()
+            s.set_peer_props({ReservedKey.IDENTITY_NAME: client_name})
+            s.add_cookie(AppConstants.CONTRIBUTION_ROUND, 0)
+            assert agg.accept(dxo.update_shareable(s), fl_ctx)
+
+        agg.aggregate(fl_ctx)
+
+        stats = fl_ctx.get_prop(AppConstants.AGGREGATION_STATS)
+        assert stats is not None
+        assert stats[AggregationStatsKey.ROUND] == 0
+        assert stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == 2
+        assert stats[AggregationStatsKey.CONTRIBUTORS] == ["client1", "client2"]
+        assert stats[AggregationStatsKey.KEYS_AGGREGATED] == 2
+        assert stats[AggregationStatsKey.KEYS_SEEN] == 3
+        assert stats[AggregationStatsKey.FULLY_MATCHED_KEYS] == 1
+        assert stats[AggregationStatsKey.PARTIALLY_MATCHED_KEYS] == 1
+        assert stats[AggregationStatsKey.SKIPPED_KEYS] == 1
+
+    def test_collection_stats_count_disjoint_contributors(self):
+        def make_stats(contributor):
+            return {
+                AggregationStatsKey.ROUND: 0,
+                AggregationStatsKey.ACCEPTED_CONTRIBUTIONS: 1,
+                AggregationStatsKey.CONTRIBUTORS: [contributor],
+                AggregationStatsKey.KEYS_AGGREGATED: 1,
+                AggregationStatsKey.KEYS_SEEN: 1,
+                AggregationStatsKey.FULLY_MATCHED_KEYS: 1,
+                AggregationStatsKey.PARTIALLY_MATCHED_KEYS: 0,
+                AggregationStatsKey.SKIPPED_KEYS: 0,
+            }
+
+        agg = InTimeAccumulateWeightedAggregator()
+        agg.dxo_aggregators = {
+            "weights": SimpleNamespace(last_aggregation_stats=make_stats("site-1")),
+            "metrics": SimpleNamespace(last_aggregation_stats=make_stats("site-2")),
+        }
+        fl_ctx = FLContext()
+
+        agg._publish_aggregation_stats(fl_ctx)
+
+        stats = fl_ctx.get_prop(AppConstants.AGGREGATION_STATS)
+        assert stats[AggregationStatsKey.CONTRIBUTORS] == ["site-1", "site-2"]
+        assert stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == 2
 
     @pytest.mark.parametrize("shape", [4, (6, 6)])
     @pytest.mark.parametrize("n_clients", [10, 50, 100])

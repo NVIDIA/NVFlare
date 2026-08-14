@@ -16,9 +16,12 @@ from types import SimpleNamespace
 
 import pytest
 
+from nvflare.fuel.f3.cellnet.defs import Encoding
 from nvflare.fuel.f3.comm_config import CommConfigurator
-from nvflare.fuel.f3.streaming.blob_streamer import BlobHandler, BlobTask
-from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
+from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.streaming.blob_streamer import BlobHandler, BlobStreamer, BlobTask
+from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
+from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, Stream, StreamError, StreamFuture
 
 
 class _FakeStream(Stream):
@@ -85,6 +88,79 @@ def test_blob_task_allows_declared_size_at_exact_limit():
     assert len(blob_task.buffer) == 4
 
 
+def test_blob_task_can_preserve_chunks_without_preallocation():
+    future = StreamFuture(stream_id=15)
+    blob_task = BlobTask(
+        future=future,
+        stream=_FakeStream(declared_size=4, chunks=[b"ab", b"cd"]),
+        max_size=4,
+        preserve_chunks=True,
+    )
+    handler = BlobHandler(lambda future: None)
+
+    handler._read_stream(blob_task)
+
+    assert blob_task.pre_allocated is False
+    assert future.result(timeout=0.1) == [b"ab", b"cd"]
+
+
+def test_read_stream_preserve_chunks_enforces_limit():
+    handler = BlobHandler(lambda future: None)
+    future = StreamFuture(stream_id=17)
+    blob_task = BlobTask(
+        future=future,
+        stream=_FakeStream(declared_size=0, chunks=[b"abcd", b"ef"]),
+        max_size=4,
+        preserve_chunks=True,
+    )
+
+    handler._read_stream(blob_task)
+
+    error = future.exception(timeout=0.1)
+    assert isinstance(error, StreamError)
+    assert "configured limit 4" in str(error)
+
+
+def test_read_stream_preserve_chunks_enforces_declared_size():
+    handler = BlobHandler(lambda future: None)
+    future = StreamFuture(stream_id=18)
+    blob_task = BlobTask(
+        future=future,
+        stream=_FakeStream(declared_size=4, chunks=[b"abcd", b"ef"]),
+        max_size=8,
+        preserve_chunks=True,
+    )
+
+    handler._read_stream(blob_task)
+
+    error = future.exception(timeout=0.1)
+    assert isinstance(error, StreamError)
+    assert "declared size 4" in str(error)
+
+
+def test_fobs_streams_preserve_chunks(monkeypatch):
+    captured = {}
+
+    class CapturingBlobTask(BlobTask):
+        def __init__(self, future, stream, max_size=0, preserve_chunks=False):
+            captured["preserve_chunks"] = preserve_chunks
+            super().__init__(future, stream, max_size, preserve_chunks)
+
+    import nvflare.fuel.f3.streaming.blob_streamer as blob_streamer_module
+
+    monkeypatch.setattr(blob_streamer_module, "BlobTask", CapturingBlobTask)
+    monkeypatch.setattr(blob_streamer_module.stream_thread_pool, "submit", lambda fn, *args: fn(*args))
+    monkeypatch.setattr(blob_streamer_module.callback_thread_pool, "submit", lambda fn, *args: fn(*args))
+    future = StreamFuture(stream_id=16)
+    stream = _FakeStream(declared_size=4, chunks=[b"abcd"])
+    stream.headers = {StreamHeaderKey.PAYLOAD_ENCODING: Encoding.FOBS}
+    handler = BlobHandler(lambda future: future.result(timeout=0.1))
+
+    handler.handle_blob_cb(future, stream, False)
+
+    assert captured["preserve_chunks"] is True
+
+
 def test_blob_handler_uses_dedicated_streaming_blob_limit(monkeypatch):
     monkeypatch.setattr(CommConfigurator, "get_max_message_size", lambda self: 4)
     monkeypatch.setattr(CommConfigurator, "get_streaming_max_blob_size", lambda self: 8)
@@ -94,9 +170,37 @@ def test_blob_handler_uses_dedicated_streaming_blob_limit(monkeypatch):
     assert handler.max_blob_size == 8
 
 
-def test_handle_blob_cb_stops_task_on_declared_size_above_limit(monkeypatch):
+def test_blob_streamer_does_not_apply_receiver_limit_on_sender(monkeypatch):
     monkeypatch.setattr(CommConfigurator, "get_streaming_max_blob_size", lambda self: 4)
-    handler = BlobHandler(lambda future: None)
+    expected_future = StreamFuture(stream_id=18)
+    sent = []
+    byte_streamer = SimpleNamespace(send=lambda *args, **kwargs: sent.append((args, kwargs)) or expected_future)
+    streamer = BlobStreamer(byte_streamer, SimpleNamespace())
+
+    future = streamer.send("channel", "topic", "target", Message(payload=b"abcde"), False, False)
+
+    assert future is expected_future
+    assert len(sent) == 1
+
+
+def test_blob_streamer_allows_blob_at_exact_limit(monkeypatch):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_max_blob_size", lambda self: 4)
+    expected_future = StreamFuture(stream_id=17)
+    byte_streamer = SimpleNamespace(send=lambda *args, **kwargs: expected_future)
+    streamer = BlobStreamer(byte_streamer, SimpleNamespace())
+
+    future = streamer.send("channel", "topic", "target", Message(payload=b"abcd"), False, False)
+
+    assert future is expected_future
+
+
+def test_handle_blob_cb_stops_task_on_declared_size_above_limit(monkeypatch):
+    import nvflare.fuel.f3.streaming.blob_streamer as blob_streamer_module
+
+    monkeypatch.setattr(CommConfigurator, "get_streaming_max_blob_size", lambda self: 4)
+    monkeypatch.setattr(blob_streamer_module.callback_thread_pool, "submit", lambda fn, *args: fn(*args))
+    callback_errors = []
+    handler = BlobHandler(lambda callback_future: callback_errors.append(callback_future.exception(timeout=0.1)))
     future = StreamFuture(stream_id=7)
     stopped = {}
 
@@ -111,8 +215,10 @@ def test_handle_blob_cb_stops_task_on_declared_size_above_limit(monkeypatch):
 
     error = future.exception(timeout=0.1)
     assert isinstance(error, StreamError)
+    assert isinstance(error, BlobSizeError)
     assert "exceeds configured limit" in str(error)
     assert stopped["error"] is error
+    assert callback_errors == [error]
 
 
 def test_handle_blob_cb_stops_task_on_memory_error(monkeypatch):

@@ -1,0 +1,539 @@
+.. _slurm_job_launcher:
+
+##################
+Slurm Job Launcher
+##################
+
+In this guide, the *parent* is the long-running NVFlare client parent process
+(CP) or server parent process (SP). It launches a separate client job process
+(CJ) or server job process (SJ) for each federated job. The Slurm job launcher
+submits each CJ or SJ as a Slurm batch job. Slurm selects nodes and enforces the
+allocation; NVFlare submits, monitors, and cancels jobs owned by the current
+parent.
+
+The *prepare host* runs ``nvflare deploy prepare``. The optional *submission
+host* runs ``sbatch`` to place a client parent in Slurm. The *runtime parent
+host* runs the CP or SP, and the *compute nodes* run its CJ or SJ allocations.
+A login or service host is a runtime parent host outside a Slurm allocation.
+
+Choose an execution backend with ``job_launcher.sandbox``:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Value
+     - Execution
+     - Use
+   * - ``apptainer``
+     - Launcher-managed Apptainer container
+     - Isolation after validation on the target cluster
+   * - ``pyxis``
+     - Read-only Pyxis/Enroot container
+     - Trusted container packaging
+   * - ``none``
+     - Python directly in the allocation
+     - Site-trusted code; required for application-owned multi-node fan-out
+
+Prerequisites
+=============
+
+Before starting a parent, verify:
+
+- Slurm 23.02.3 or later provides working ``sbatch``, ``squeue``, ``sacct``, and
+  ``scancel`` commands on the runtime parent host. Parent bootstrap resolves
+  these commands; 23.02.3 is the minimum because the launcher uses
+  ``sbatch --export=NIL``. Production sites should run a Slurm
+  release that is still supported by SchedMD.
+- ``slurmdbd`` accounting is enabled and ``sacct`` responds. The default
+  ``AccountingStoreFlags`` is sufficient.
+- The cluster is not federated, and submission plugins do not redirect jobs to
+  another cluster.
+- The parent uses a dedicated site account with a consistent numeric UID and
+  compatible group access on the parent host, shared filesystem, and compute
+  nodes.
+- The runtime workspace, images, datasets, and secret-mount sources are visible
+  at the same absolute paths on all participating nodes. The shared filesystem
+  supports ``O_EXCL`` and atomic rename.
+- Compute nodes can reach ``parent_host:internal_port``, or the site uses the
+  shared-file worker channel instead (see :ref:`slurm_shared_file_channel`).
+  Multi-node jobs also require connectivity among their allocated nodes.
+- Slurm partition, association, QOS, reservation, cgroup, and device policies
+  enforce the site's resource limits.
+
+The prepare output is the runtime workspace. The parent and worker allocations
+must see it at the same absolute path. Every workspace must be private, owned
+by the runtime account, and dedicated to one NVFlare site or federation.
+
+For Apptainer, enable unprivileged user namespaces and install Apptainer on all
+eligible nodes. Validate its filesystem, process, cgroup, and GPU isolation on
+the production cluster. For Pyxis, install and configure Pyxis/Enroot on all
+eligible nodes and ensure ``srun`` is available after ``setup``.
+
+The environment selected by ``python_path`` must contain the same NVFlare
+version as the parent and the other federation participants, plus the job
+dependencies. NVFlare does not support cross-version operation; see
+:ref:`installation`. This requirement applies to the host environment in bare
+mode and to the image for Apptainer and Pyxis. A ``PYTHONPATH`` override used
+only to start the parent does not install NVFlare in the worker environment.
+
+The prepare, submission, and runtime parent hosts may differ. The prepare host
+does not need Slurm commands. The submission host that runs the generated
+``submit_command`` needs ``sbatch`` on ``PATH``. The runtime parent host needs
+all four parent commands after its service environment or
+``parent.environment_setup`` has run.
+
+Build a Container Worker Image
+==============================
+
+Apptainer and Pyxis run the NVFlare client or server job process, not the
+long-running parent. The image must contain the required ``python_path``, the
+matching NVFlare installation, and all job dependencies. It does not need the
+startup kit or an entrypoint: the launcher mounts the runtime workspace and
+invokes the NVFlare worker module with ``python_path``. Pyxis disables the image
+entrypoint and runs the image read-only.
+
+The maintained :github_nvflare_link:`job image guide
+<docker/README.md#job-image>` and :github_nvflare_link:`Dockerfile
+<docker/Dockerfile.job>` provide a reference worker image. From the NVFlare
+repository root, replace ``site-version`` with the federation's NVFlare version,
+extend the Dockerfile with application dependencies as needed, build the OCI
+image, and run the conversion command for the selected backend:
+
+.. code-block:: shell
+
+   docker build -t nvflare-job:site-version -f docker/Dockerfile.job .
+
+   # Pyxis/Enroot
+   enroot import --output /lustre/images/nvflare-job-site-version.sqsh \
+       dockerd://nvflare-job:site-version
+
+   # Apptainer
+   apptainer build /lustre/images/nvflare-job-site-version.sif \
+       docker-daemon:nvflare-job:site-version
+
+Enroot can also import from a registry, and Apptainer can build from registry
+and archive sources; see the upstream `Enroot import documentation
+<https://github.com/NVIDIA/enroot/blob/main/doc/cmd/import.md>`_ and `Apptainer
+Docker/OCI documentation
+<https://apptainer.org/docs/user/latest/docker_and_oci.html>`_. Those tools may
+accept registry references directly, but the NVFlare Slurm ``image`` setting
+does not. It requires an existing absolute regular file. ``.sqsh`` and ``.sif``
+are conventional suffixes; NVFlare validates the path rather than the suffix.
+
+Place the finished image at a versioned, immutable shared-filesystem path that
+is readable by the runtime account and visible at the same absolute path on the
+runtime parent and every eligible compute node. Before configuring the site,
+run the image with the configured interpreter and verify the NVFlare version
+and application imports. For example:
+
+.. code-block:: shell
+
+   apptainer exec /lustre/images/nvflare-job-site-version.sif \
+       /usr/local/bin/python -c \
+       'import nvflare; print(nvflare.__version__)'
+
+For Pyxis, perform the equivalent one-node ``srun`` check with
+``--container-image`` and the same ``python_path``. Backend installation,
+registry authentication, and cluster configuration remain site responsibilities.
+
+Configure the Site
+==================
+
+Create ``slurm.yaml`` beside the startup kit. This example runs the parent on a
+login or service host:
+
+.. code-block:: yaml
+
+   runtime: slurm
+   job_launcher:
+     sandbox: apptainer
+     image: /lustre/images/nvflare-prod.sif
+     python_path: /usr/bin/python3
+     parent_host: nvflare-site1.internal
+     sbatch_directives:
+       partition: fl-gpu
+       account: proj123
+       time: "12:00:00"
+     setup: |
+       source /etc/profile.d/modules.sh
+       module load apptainer
+     submit_timeout: 30
+     query_timeout: 10
+     cancel_timeout: 10
+     pending_timeout: 600
+
+Important keys are:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 72
+
+   * - Key
+     - Meaning
+   * - ``sandbox``
+     - Required: ``apptainer``, ``pyxis``, or ``none``.
+   * - ``image``
+     - Existing absolute image file required by Apptainer and Pyxis. Omit in
+       bare mode.
+   * - ``python_path``
+     - Required absolute worker interpreter path in the selected execution
+       environment, with the matching NVFlare installation.
+   * - ``parent_host``
+     - Compute-reachable parent host. Required when the parent is not in a Slurm
+       allocation.
+   * - ``sbatch_directives``
+     - Site defaults. Supported keys are ``partition``, ``account``, ``qos``,
+       ``time``, ``constraint``, and ``reservation``.
+   * - ``setup``
+     - Trusted host-side Bash run in the batch job before the worker starts.
+   * - ``forward_env``
+     - Environment names whose post-``setup`` values should reach the worker.
+   * - ``executables``
+     - Optional explicit paths for Slurm and backend commands. Parent-side
+       paths are preserved in the workspace, then resolved and validated on the
+       runtime parent host.
+   * - ``internal_port``
+     - Worker-to-parent port; default ``8102``.
+   * - ``poll_interval``
+     - Scheduler polling interval; default ``10`` seconds.
+   * - ``submit_timeout``
+     - Maximum time to wait for ``sbatch`` to return a job ID; default ``30``
+       seconds.
+   * - ``query_timeout``
+     - Maximum time for each ``squeue`` or ``sacct`` query; default ``10``
+       seconds.
+   * - ``cancel_timeout``
+     - Maximum time for each ``scancel`` request; default ``10`` seconds.
+   * - ``pending_timeout``
+     - Time limit starting at the first observed pending state; default ``600``
+       seconds. A job may lower it.
+   * - ``multi_node_port_range``
+     - Optional ``"START-END"`` port range for the multi-node rendezvous
+       endpoint (``NVFL_MASTER_PORT``); default ``29400-30399``. Must not
+       contain ``internal_port``. If the existing ``internal_port`` is in the
+       implicit default range, the launcher uses ``30400-31399`` instead.
+
+``setup`` starts with the minimal environment from ``sbatch --export=NIL``.
+Source module initialization explicitly. Put fixed values in study ``env``;
+use ``forward_env`` only for values created by setup.
+
+Prepare and Start
+=================
+
+Prepare directly into the shared runtime workspace:
+
+.. code-block:: shell
+
+   nvflare deploy prepare ./site-1 \
+       --config ./slurm.yaml \
+       --output /lustre/proj123/nvflare/site-1
+
+Run one parent per workspace. Re-running prepare with the same output replaces
+the complete workspace. Stop the parent and preserve required runs, snapshots,
+and server job storage before updating it.
+
+Start a parent on a login or service host:
+
+.. code-block:: shell
+
+   /lustre/proj123/nvflare/site-1/startup/start_slurm.sh
+
+To run a client parent in a Slurm allocation, add a client-only ``parent``
+block and omit ``job_launcher.parent_host``:
+
+.. code-block:: yaml
+
+   parent:
+     sbatch_directives:
+       partition: batch
+       account: proj123
+       time: "7-00:00:00"
+     environment_setup: |
+       source /lustre/proj123/venv/bin/activate
+
+Then run the ``submit_command`` printed by prepare on a submission host where
+``sbatch`` is on ``PATH``. It has this form:
+
+.. code-block:: shell
+
+   sbatch --parsable \
+       --output=/lustre/proj123/nvflare/site-1/parent-slurm-%j.out \
+       /lustre/proj123/nvflare/site-1/startup/parent.slurm
+
+The parent script runs ``parent.environment_setup`` before starting NVFlare.
+Parent bootstrap then resolves ``sbatch``, ``squeue``, ``sacct``, and
+``scancel`` once and keeps their canonical paths in memory for that process.
+An explicitly configured path may therefore point to a cluster-managed stable
+symlink such as ``.../slurm/current/bin/sbatch``; a restarted parent resolves a
+new target after a cluster upgrade without re-preparing the workspace.
+
+An explicit ``parent_host`` always wins. Otherwise an allocated parent uses
+``SLURMD_NODENAME``. A parent outside an allocation without ``parent_host``
+cannot launch jobs. NVFlare does not guess or resolve a host name.
+
+Server kits reject ``parent``. Run the server parent on a stable host with a
+stable external NVFlare federation endpoint.
+
+.. _slurm_shared_file_channel:
+
+Shared-File Worker Channel
+==========================
+
+When compute nodes cannot open a TCP connection to the parent host but share a
+POSIX-coherent filesystem such as Lustre with it, the worker-to-parent channel
+can run over shared files instead of TCP. Configure the client kit's
+``local/comm_config.json`` before running prepare:
+
+.. code-block:: json
+
+   {
+     "backbone": {"connect_generation": 1},
+     "internal": {
+       "scheme": "shared-file",
+       "resources": {
+         "root_dir": "/lustre/proj123/nvflare/site-1-cellnet",
+         "connection_security": "clear"
+       }
+     }
+   }
+
+``root_dir`` must be an absolute path visible at the same path on the parent
+host and all compute nodes. ``connect_generation: 1`` routes all job traffic
+through the parent, so workers need no network connectivity at all.
+``nvflare deploy prepare`` preserves a file-based comm config as-is and does
+not apply the TCP host and port patch; ``internal_port`` and ``parent_host``
+are then not used for the worker channel.
+
+At runtime the parent creates a listener directory under ``root_dir`` and
+passes its ``shared-file://0/...`` URL to each worker unchanged. Apptainer and Pyxis
+jobs bind-mount the listener directory read-write at the same path inside the
+container automatically; bare jobs use it directly. Directories are created
+with mode ``0o770`` and log files with ``0o660`` regardless of umask.
+Directory permissions are the only access control on this channel, so keep
+``root_dir`` owned by the dedicated site account with no wider group access
+than required.
+
+The same container rule applies to a site-local
+``client_api_attach.scheme: shared-file`` listener. The launcher bind-mounts its
+configured ``root_dir`` read-write at the same absolute path for containerized
+client jobs so an external trainer sees the CJ's listener and rendezvous claim.
+Create that root as a non-symlink directory outside the runtime workspace before
+launch. The Client API Attach permission and ownership checks remain
+authoritative; bare Slurm and network Attach do not add this mount.
+
+Polling intervals, lease timing, and fsync behavior are tunable through the
+``internal.resources`` map; see the ``FileDriver`` documentation in
+``nvflare.fuel.f3.drivers.file_driver`` for the parameters and their
+filesystem metadata cost. At the defaults an idle connection issues roughly
+1.4 client-side metadata syscalls per second; raising ``max_poll_interval``
+reduces idle load proportionally at the cost of first-message latency, and
+data transfers are unaffected by the poll settings.
+
+Study Settings
+==============
+
+Site-owned study settings belong in ``local/study_runtime.yaml`` and are
+re-read for every launch:
+
+.. code-block:: yaml
+
+   format_version: 2
+   studies:
+     pathology:
+       container:
+         image: /lustre/images/pathology.sif
+       datasets:
+         slides:
+           source: /lustre/data/pathology/slides
+           mode: ro
+       env:
+         MODEL_FAMILY: vit-large
+       secret_env:
+         DB_PASSWORD:
+           source: PATHOLOGY_DB_PASSWORD
+       slurm:
+         partition: fl-gpu-large
+         account: pathology-project
+
+Each dataset is mounted at ``/data/<study>/<dataset>`` inside the container;
+the example above mounts ``slides`` at ``/data/pathology/slides``.
+
+A study can override the site sandbox, setup, partition, account, and QOS. It
+can also provide an image, environment, dataset mounts, secret environment, and
+read-only secret mounts. A Slurm ``secret_env`` source names a variable in the
+parent environment; its value is passed through a temporary private file and is
+not written to the batch script or scheduler command.
+
+Mount sources must be absolute paths outside the runtime workspace and must
+exist on the compute nodes that can run the job. Bare mode
+rejects container, dataset, and secret-mount settings because it has no mount
+namespace. Migrate legacy
+``local/study_data.yaml`` files to ``study_runtime.yaml`` before using Slurm.
+
+Job Settings
+============
+
+Jobs put portable GPU totals in ``resource_spec`` and Slurm-only settings in
+``launcher_spec``. This is a valid single-node container request:
+
+.. code-block:: json
+
+   {
+     "resource_spec": {
+       "site-1": {"num_of_gpus": 1}
+     },
+     "launcher_spec": {
+       "site-1": {
+         "slurm": {
+           "image": "/shared/images/nvflare-job.sif",
+           "cpus_per_node": 8,
+           "mem_per_node": 32768,
+           "time": "02:00:00",
+           "pending_timeout": 300
+         }
+       }
+     }
+   }
+
+Supported job keys are ``image``, ``nodes``, ``gpus_per_node``,
+``cpus_per_node``, ``mem_per_node`` (MiB), ``time``, ``pending_timeout``, and
+``additional_node_command``.
+A job image requires normal BYOC authorization and takes
+precedence over the study and site images. Job and study images are rejected on
+any site whose effective sandbox is ``none``.
+
+A positive multi-node ``num_of_gpus`` requires ``gpus_per_node``;
+whenever both are supplied, ``num_of_gpus`` must equal
+``nodes * gpus_per_node``.
+
+For jobs built with an external-process ``ScriptRunner``, an explicit
+site block that directly sets ``nodes > 1`` does not need to repeat the
+training command. Export copies the fully assembled shell-free ``command``,
+script path, and script arguments into ``additional_node_command``. Generation
+requires ``launch_once=True``. For example, this Recipe needs no
+``additional_node_command``:
+
+.. code-block:: python
+
+   from nvflare.apis.job_def import JobMetaKey
+   from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+   from nvflare.recipe import set_recipe_meta
+
+   recipe = FedAvgRecipe(
+       name="multi-node",
+       model=MyModel(),
+       train_script="client.py",
+       min_clients=1,
+       num_rounds=10,
+       launch_external_process=True,
+       command="python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8",
+   )
+   set_recipe_meta(
+       recipe,
+       JobMetaKey.JOB_LAUNCHER_SPEC,
+       {
+           "site-1": {
+               "slurm": {
+                   "nodes": 2,
+                   "gpus_per_node": 8,
+               }
+           }
+       },
+   )
+
+Hand-authored jobs and custom launchers provide the full
+``additional_node_command`` in the Slurm launcher block:
+
+.. code-block:: json
+
+   {
+     "launcher_spec": {
+       "site-1": {
+         "slurm": {
+           "nodes": 2,
+           "gpus_per_node": 8,
+           "additional_node_command": "python3 -m nvflare.app_opt.pt.torchrun_node --nproc-per-node=8 custom/client.py"
+         }
+       }
+     }
+   }
+
+An explicit ``additional_node_command`` always wins. Set it to ``null`` to
+keep application-owned fan-out. Export does not infer commands for
+``launcher_spec["default"]`` or blocks that only inherit ``nodes`` from a
+default; provide the full command explicitly in those cases. Neither generated
+nor explicit additional-node commands support ``${secret:NAME}`` or
+``${secret:file:/path}`` references.
+
+The launcher starts one task per node. Rank 0 runs the normal client job
+process; every other rank runs ``additional_node_command`` in the deployed app
+directory.
+All ranks receive ``NVFL_NNODES``, ``NVFL_NODE_RANK``,
+``NVFL_MASTER_ADDR``, ``NVFL_MASTER_PORT``, and the per-allocation
+``NVFL_RUN_ID``. Under ``apptainer`` or ``pyxis``, all user code runs inside
+the configured container. Non-zero ranks use the Cell API bootstrap;
+legacy Client API multi-node execution is not supported.
+
+Non-zero ranks start before rank 0 has prepared Client API runtime files, so a
+hand-written command must join its framework rendezvous before reading that
+state. ``torchrun_node`` provides this ordering. Without
+``additional_node_command``, Slurm ``nodes > 1`` retains application-owned
+fan-out behavior and requires effective ``sandbox: none``.
+
+Security and Operations
+=======================
+
+The worker-to-parent internal channel is clear TCP, matching the Kubernetes
+launcher, or clear shared-file I/O when the file transport is configured (see
+:ref:`slurm_shared_file_channel`). Use it only on a trusted or isolated site
+network or filesystem. This does not change the configured security of the
+external NVFlare federation channel.
+
+Working accounting is mandatory. The parent refuses to start if ``sacct`` is
+unavailable. A later scheduler or accounting outage leaves affected jobs
+non-terminal and retries; it never assumes that a missing observation means a
+job has stopped.
+
+NVFlare stores transient launch artifacts under ``<prepare-output>/.nvflare_slurm``.
+The live parent removes a job's artifacts after launch failure or terminal
+completion. User abort and pending timeout verify ownership before ``scancel``;
+normal framework shutdown terminates running handles through the same path
+before the Slurm launcher closes launch admission.
+
+Slurm job names include the first 32 characters of the NVFlare site name and a
+short job hash, so operators can distinguish sites sharing one Slurm user. Job output is
+``<run-dir>/slurm-<slurm-job-id>.out``. Use ``squeue`` for live state and
+``sacct`` for completed jobs. Preserve the complete workspace and relevant
+scheduler records for investigation.
+
+After a parent crash, the launcher does not cancel surviving allocations or
+remove their job artifacts; this matches the Docker and Kubernetes launchers.
+A leftover job directory blocks relaunch of that job ID until an operator
+verifies that no old allocation uses it and removes the directory.
+
+An ``sbatch`` timeout fails the FL dispatch even if Slurm accepted the job.
+Artifact removal prevents a pending allocation from starting unless the same
+job ID is relaunched before it starts. Increase ``submit_timeout`` where slow
+scheduler responses make this risk unacceptable.
+
+To change the workspace, stop the parent and prepare to a new ``--output``.
+Preparing to an existing output replaces it, so copy any data that must survive
+before running prepare.
+
+After a server job starts, clients wait for its SJ to become available. The
+SJ's Slurm queue and startup time must fit within the client-side
+``max_runner_sync_timeout`` (60 seconds by default). Configure this value in
+the job's client ``config_fed_client.json`` when the site needs a longer bound;
+see :ref:`timeout_troubleshooting`.
+
+Before production use, test on the target cluster:
+
+#. Successful, failed, timed-out, pending-aborted, and running-aborted jobs.
+#. Parent restart with a live job and workspace replacement behavior.
+#. Compute-node connectivity to the parent and multi-node collectives when used.
+#. Slurm accounting, association, QOS, partition, cgroup, and GPU enforcement.
+#. The selected backend's filesystem view, environment, secret handling, exit
+   status, and CPU/GPU device visibility.
+
+Do not describe Apptainer as a production sandbox until those isolation checks
+pass on the deployment cluster.

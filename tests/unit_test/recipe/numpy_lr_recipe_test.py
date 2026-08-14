@@ -45,7 +45,7 @@ class TestFedAvgLrRecipe:
             num_features=13,
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_initial_ckpt_accepted(self, mock_file_system):
         """Test that initial_ckpt parameter is accepted."""
@@ -60,7 +60,7 @@ class TestFedAvgLrRecipe:
             initial_ckpt="/abs/path/to/lr_weights.npy",
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_relative_path_accepted_if_exists(self, mock_file_system):
         """Test that existing relative paths are accepted and bundled."""
@@ -90,7 +90,7 @@ class TestFedAvgLrRecipe:
             damping_factor=0.5,
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
         assert recipe.damping_factor == 0.5
 
     def test_with_train_args(self, mock_file_system):
@@ -106,7 +106,7 @@ class TestFedAvgLrRecipe:
             train_args="--data_root /tmp/data --batch_size 32",
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
         assert recipe.train_args == "--data_root /tmp/data --batch_size 32"
 
     def test_with_external_process(self, mock_file_system):
@@ -123,7 +123,7 @@ class TestFedAvgLrRecipe:
             command="python3 -u",
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
         assert recipe.launch_external_process is True
 
     def test_invalid_min_clients_rejected(self, mock_file_system):

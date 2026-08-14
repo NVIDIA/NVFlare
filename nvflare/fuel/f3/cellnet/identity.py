@@ -18,7 +18,7 @@ from cryptography import x509
 from cryptography.x509.oid import NameOID
 
 from nvflare.apis.fl_constant import ConnectionSecurity
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.fqcn import CLIENT_API_ATTACH_LEAF_PREFIX, FQCN
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import SECURE_SCHEMES
 from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
@@ -124,30 +124,6 @@ class CellIdentityResolver:
         parts = FQCN.split(child_suffix)
         return parts[0] if parts else None
 
-    @staticmethod
-    def _get_cell_pipe_alias_owner(segment: str) -> Optional[str]:
-        # CellPipe cells from older NVFlare versions use sibling names like
-        # "site-1_<runtime-id>_active" but authenticate with the owning site's
-        # certificate. Current versions name these cells <site>.<token>.<mode>,
-        # which resolves through the normal FQCN hierarchy; this parser is kept
-        # for backward compatibility with peers running older versions. Only the
-        # constrained form <owner>_<runtime_id>_(active|passive) with a non-empty
-        # runtime_id that contains no "." or "_" is treated as an alias: parsing
-        # from the right makes the interpretation unambiguous, so
-        # "site-a_x_<uuid>_active" can only belong to "site-a_x", never to
-        # "site-a" with a runtime id of "x_<uuid>".
-        head, sep, mode = segment.rpartition("_")
-        if not sep or mode not in ("active", "passive"):
-            return None
-
-        # rpartition splits on the last "_", so runtime_id can never contain "_";
-        # only the "." constraint needs an explicit check.
-        owner, sep, runtime_id = head.rpartition("_")
-        if not sep or not owner or not runtime_id or "." in runtime_id:
-            return None
-
-        return owner
-
     def resolve(self, fqcn: str) -> Optional[str]:
         if not fqcn:
             return None
@@ -158,6 +134,7 @@ class CellIdentityResolver:
             return identity
 
         parts = FQCN.split(fqcn)
+        leaf = parts[-1]
         for i in range(len(parts), 0, -1):
             prefix = FQCN.join(parts[:i])
             if self._is_local_descendant_with_ancestor_prefix(fqcn, prefix):
@@ -167,13 +144,11 @@ class CellIdentityResolver:
             if identity:
                 return identity
 
-        # This legacy-alias check intentionally precedes _resolve_local_child_identity:
-        # an old-format CellPipe alias cell may connect as a direct child of this
-        # local cell, but it authenticates with the owning site's certificate, not
-        # with a certificate named after the alias segment itself.
-        alias_owner = self._get_cell_pipe_alias_owner(parts[-1]) if parts else None
-        if alias_owner:
-            return self.resolve(alias_owner)
+        # Network Attach trainers are children of the stable site CP and use
+        # that site's provisioned certificate. The dynamic CJ is a sibling and
+        # remains the application-level task/result boundary.
+        if len(parts) > 1 and leaf.startswith(CLIENT_API_ATTACH_LEAF_PREFIX):
+            return self.resolve(FQCN.join(parts[:-1]))
 
         identity = self._resolve_local_child_identity(fqcn)
         if identity:

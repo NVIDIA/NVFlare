@@ -165,7 +165,7 @@ class TestEdgeFedBuffRecipe:
             device_manager_config=device_manager_config,
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_initial_ckpt_accepted(
         self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config
@@ -181,7 +181,7 @@ class TestEdgeFedBuffRecipe:
             initial_ckpt="/abs/path/to/model.pt",
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
         assert recipe.initial_ckpt == "/abs/path/to/model.pt"
 
     def test_dict_model_config_accepted(self, mock_file_system, model_manager_config, device_manager_config):
@@ -195,7 +195,7 @@ class TestEdgeFedBuffRecipe:
             device_manager_config=device_manager_config,
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_dict_model_config_with_evaluator(self, mock_file_system, model_manager_config, device_manager_config):
         """Test that dict model config works with evaluator_config.
@@ -216,7 +216,7 @@ class TestEdgeFedBuffRecipe:
             evaluator_config=evaluator_config,
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
         # Verify model is stored as dict
         assert isinstance(recipe.model, dict)
         assert recipe.model["path"] == "torch.nn.Linear"
@@ -290,7 +290,7 @@ class TestEdgeFedBuffRecipe:
             device_manager_config=device_manager_config,
         )
 
-        self._find_metrics_writer(recipe.job)
+        self._find_metrics_writer(recipe._job)
 
     def test_device_wait_timeout_default_is_none(
         self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config
@@ -306,7 +306,7 @@ class TestEdgeFedBuffRecipe:
         )
 
         assert recipe.device_wait_timeout is None
-        assessor = self._find_assessor(recipe.job)
+        assessor = self._find_assessor(recipe._job)
         assert assessor.device_wait_timeout is None
 
     def test_device_wait_timeout_explicit_value(
@@ -324,7 +324,7 @@ class TestEdgeFedBuffRecipe:
         )
 
         assert recipe.device_wait_timeout == 120.0
-        assessor = self._find_assessor(recipe.job)
+        assessor = self._find_assessor(recipe._job)
         assert assessor.device_wait_timeout == 120.0
 
     @pytest.mark.parametrize("bad_value", [0, -1, -100.0])
@@ -380,7 +380,7 @@ class TestETFedBuffRecipeSimBasic:
             model_manager_config=model_manager_config,
             device_manager_config=device_manager_config,
         )
-        assert recipe.job is not None
+        assert recipe._job is not None
 
 
 class TestETFedBuffRecipeWithoutExecutorch:

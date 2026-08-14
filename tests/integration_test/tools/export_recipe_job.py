@@ -26,6 +26,12 @@ Example:
         --recipe_dir ../../examples/advanced/cifar10/pt/cifar10-sim/cifar10_fedavg \
         --output_dir ./exported_jobs/cifar10_fedavg_test \
         --recipe_args "--n_clients 2 --num_rounds 2"
+
+    python tools/export_recipe_job.py \
+        --recipe_dir ../../examples/advanced/xgboost/fedxgb \
+        --job_file job_tree.py \
+        --output_dir ./data/jobs \
+        --recipe_args "--site_num 2 --training_algo bagging --round_num 1"
 """
 
 import argparse
@@ -34,6 +40,7 @@ import os
 import shlex
 import shutil
 import sys
+from pathlib import Path
 from typing import Optional
 from unittest.mock import patch
 
@@ -88,21 +95,31 @@ def add_paths_for_recipe(recipe_dir: str):
             sys.path.insert(0, src_parent)
 
 
-def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: Optional[list[str]] = None):
+def export_recipe_from_job_py(
+    recipe_dir: str,
+    output_dir: str,
+    recipe_args: Optional[list[str]] = None,
+    job_file: str = "job.py",
+):
     """
-    Import and run job.py, but patch recipe.execute() to export instead.
+    Import and run a recipe job file, but patch recipe.execute() to export instead.
 
     This ensures we test the exact same configuration as the example.
     """
-    recipe_abs_path = os.path.abspath(recipe_dir)
-    job_py_path = os.path.join(recipe_abs_path, "job.py")
+    recipe_path = Path(recipe_dir).resolve()
+    job_path = (recipe_path / job_file).resolve()
+    if not job_path.is_relative_to(recipe_path):
+        raise ValueError(f"job_file must resolve within recipe_dir: {job_file}")
+
+    recipe_abs_path = str(recipe_path)
+    job_py_path = str(job_path)
 
     # Convert output_dir to absolute path BEFORE changing directories
     # Otherwise, relative paths like "./data/jobs" would be resolved relative to the recipe dir
     output_abs_path = os.path.abspath(output_dir)
 
-    if not os.path.exists(job_py_path):
-        raise FileNotFoundError(f"job.py not found in {recipe_dir}")
+    if not os.path.isfile(job_py_path):
+        raise FileNotFoundError(f"{job_file} not found in {recipe_dir}")
 
     # Capture state to restore on exit (including on exception)
     original_path = list(sys.path)
@@ -118,24 +135,25 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: Opt
     # Change to recipe directory so relative imports work
     os.chdir(recipe_abs_path)
 
-    # Storage for captured recipe
-    captured_recipe = {"recipe": None}
+    # Storage for the captured execute call. The public Recipe.export API later
+    # applies these arguments with the same semantics as Recipe.execute.
+    captured_execute = {
+        "recipe": None,
+        "env": None,
+        "server_exec_params": None,
+        "client_exec_params": None,
+    }
 
     def patched_execute(self, env, server_exec_params=None, client_exec_params=None):
         """Capture the recipe instead of executing.
 
-        Applies server/client exec params exactly as the real Recipe.execute does
-        (including per-site topology preservation via _add_to_client_apps) so the
-        exported job matches what a real run would produce.
+        The original arguments are forwarded to Recipe.export after job.py has
+        finished loading so the exported job matches a real execution.
         """
-        if server_exec_params:
-            self.job.to_server(server_exec_params)
-        if client_exec_params:
-            self._add_to_client_apps(client_exec_params)
-        # Match real Recipe.execute behavior so export matches runtime configuration.
-        self.process_env(env)
-
-        captured_recipe["recipe"] = self
+        captured_execute["recipe"] = self
+        captured_execute["env"] = env
+        captured_execute["server_exec_params"] = server_exec_params
+        captured_execute["client_exec_params"] = client_exec_params
 
         class MockRun:
             """Mimics the real Run interface so post-execute code in job.py doesn't break."""
@@ -158,7 +176,7 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: Opt
         return MockRun(self.name if hasattr(self, "name") else "exported_job")
 
     try:
-        sys.argv = ["job.py"] + (recipe_args or [])
+        sys.argv = [job_file] + (recipe_args or [])
 
         with patch("nvflare.recipe.spec.Recipe.execute", patched_execute):
             spec = importlib.util.spec_from_file_location("__main__", job_py_path)
@@ -173,13 +191,18 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: Opt
                 if e.code not in (None, 0):
                     raise
 
-        recipe = captured_recipe["recipe"]
+        recipe = captured_execute["recipe"]
         if recipe is None:
             raise RuntimeError("Failed to capture recipe - job.py did not call recipe.execute()")
 
         # Export the recipe to job folder
         os.makedirs(output_abs_path, exist_ok=True)
-        recipe.export(job_dir=output_abs_path)
+        recipe.export(
+            job_dir=output_abs_path,
+            server_exec_params=captured_execute["server_exec_params"],
+            client_exec_params=captured_execute["client_exec_params"],
+            env=captured_execute["env"],
+        )
         print(f"Exported recipe to: {output_abs_path}")
 
         # Copy the src/ folder if it exists (for model imports).
@@ -189,7 +212,7 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: Opt
         if src_dir is not None:
             # Copy CONTENTS of src/ directly into app/custom/ (not as a subdirectory)
             # This way imports like "from data.xxx" work with just /local/custom in PYTHONPATH
-            job_name = recipe.job.name
+            job_name = recipe.name
             job_custom_dir = os.path.join(output_abs_path, job_name, "app", "custom")
             if os.path.exists(job_custom_dir):
                 for item in os.listdir(src_dir):
@@ -213,7 +236,10 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: Opt
 
 def main():
     parser = argparse.ArgumentParser(description="Export a recipe to a job folder for testing")
-    parser.add_argument("--recipe_dir", required=True, type=str, help="Path to recipe directory containing job.py")
+    parser.add_argument(
+        "--recipe_dir", required=True, type=str, help="Path to directory containing the recipe job file"
+    )
+    parser.add_argument("--job_file", default="job.py", type=str, help="Recipe job filename within recipe_dir")
     parser.add_argument("--output_dir", required=True, type=str, help="Output directory for exported job")
     parser.add_argument(
         "--recipe_args",
@@ -243,7 +269,7 @@ def main():
             shutil.rmtree(job_subfolder)
             print(f"Cleaned existing job folder: {job_subfolder}")
 
-    export_recipe_from_job_py(args.recipe_dir, args.output_dir, recipe_args)
+    export_recipe_from_job_py(args.recipe_dir, args.output_dir, recipe_args, job_file=args.job_file)
 
 
 if __name__ == "__main__":

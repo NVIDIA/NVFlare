@@ -23,7 +23,7 @@ from nvflare.recipe import SimEnv
 
 # BioNeMo requires heavy imports (PyTorch, NeMo, Megatron) which can take longer than
 # the default 300s timeout on systems with slow I/O or resource contention
-BIONEMO_EXTERNAL_PRE_INIT_TIMEOUT = 900.0  # 15 minutes
+BIONEMO_LAUNCH_TIMEOUT = 900.0  # 15 minutes
 
 # isort: off
 sys.path.append(os.path.join(os.getcwd(), ".."))  # include parent folder in path
@@ -73,6 +73,7 @@ def main(args):
         launch_external_process=True,
         command="python3",
         launch_once=False,
+        launch_timeout=BIONEMO_LAUNCH_TIMEOUT,
         shutdown_timeout=30,
         server_expected_format="pytorch",  # this will send pytorch tensors directly between clients and server, bypassing the need for numpy conversion
     )
@@ -80,9 +81,6 @@ def main(args):
     # Add custom components using recipe's filter API
     recipe.add_client_input_filter(BioNeMoParamsFilter(precision), tasks=["train", "validate"])
     recipe.add_client_output_filter(BioNeMoStateDictFilter(), tasks=["train", "validate"])
-
-    # Add BioNeMo-specific timeout configuration to client config to override its default timeout
-    recipe.add_client_config({"EXTERNAL_PRE_INIT_TIMEOUT": BIONEMO_EXTERNAL_PRE_INIT_TIMEOUT})
 
     # Run simulation
     env = SimEnv(

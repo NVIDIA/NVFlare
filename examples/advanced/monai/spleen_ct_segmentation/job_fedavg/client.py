@@ -20,6 +20,7 @@ from monai.fl.utils.exchange_object import ExchangeObject
 
 # (1) import nvflare client API
 import nvflare.client as flare
+from nvflare.app_common.abstract.fl_model import ParamsType
 from nvflare.app_opt.monai import decomposers
 from nvflare.client.tracking import SummaryWriter
 
@@ -91,9 +92,11 @@ def main():
                         tag=f"training/{key}", scalar=value, global_step=input_model.current_round
                     )
 
-        # Convert MONAI ExchangeObject back to NVFlare FLModel
+        # MonaiAlgo.get_weights() already computes local minus global weights when send_weight_diff=True.
+        # Mark the result as DIFF so NVFlare's Client API passes it through without subtracting a second time.
         output_model = flare.FLModel(
             params=updated_weights.weights,
+            params_type=ParamsType.DIFF if args.send_weight_diff else ParamsType.FULL,
             metrics=updated_weights.statistics if updated_weights.statistics else {},
             meta={
                 "weight_type": updated_weights.weight_type.value if updated_weights.weight_type else "WEIGHTS",

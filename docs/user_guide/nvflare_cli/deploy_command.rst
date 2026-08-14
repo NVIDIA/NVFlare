@@ -11,11 +11,12 @@ site deployment runtime. The first supported subcommand is
 ``deploy prepare`` does not create identities, certificates, startup kits, or
 Kubernetes clusters. Use ``nvflare provision`` or the distributed
 ``nvflare cert`` / ``nvflare package`` workflow first, then run
-``deploy prepare`` on each server or client kit that should run in Docker or
-Kubernetes.
+``deploy prepare`` on each server or client kit that should run in Docker,
+Kubernetes, or Slurm.
 
-For Kubernetes deployment workflow, see :ref:`helm_chart`. For job-level Docker
-and Kubernetes image settings, see :ref:`launcher_spec`.
+For Kubernetes deployment workflow, see :ref:`helm_chart`. For the Slurm
+deployment workflow and security checklist, see :ref:`slurm_job_launcher`. For
+job-level runtime settings, see :ref:`launcher_spec`.
 
 *****
 Usage
@@ -39,15 +40,25 @@ Default convention:
 
 Put the runtime config in the startup kit as ``config.yaml``, then run
 ``nvflare deploy prepare <startup-kit-dir>``. The command reads ``runtime`` from
-that config and writes the prepared copy to ``<startup-kit-dir>/prepared/docker``
-or ``<startup-kit-dir>/prepared/k8s``. Use ``--config`` to read a config file
-from another path, and use ``--output`` to write the prepared kit somewhere else.
+that config and writes the prepared copy to
+``<startup-kit-dir>/prepared/<runtime>`` (for example, ``docker``, ``k8s``, or
+``slurm``). Use ``--config`` to read a config file from another path, and use
+``--output`` to write the prepared kit somewhere else.
 
 Admin startup kits are not supported by ``deploy prepare`` because admin kits do
 not run parent server or client processes.
 
 The input kit is treated as read-only. Runtime-specific files are written to
 the prepared output directory.
+
+.. note::
+
+   Docker and Kubernetes preparation support only the TCP internal transport.
+   If the input kit's ``local/comm_config.json`` explicitly sets
+   ``internal.scheme`` to ``shared-file``, ``deploy prepare`` stops with an
+   ``INVALID_KIT`` error instead of rewriting the scheme to TCP. Run the
+   original kit in process mode or use the Slurm runtime for shared-file
+   transport (see :ref:`slurm_shared_file_channel`).
 
 *************
 Docker Config
@@ -92,7 +103,9 @@ Top-level keys:
 - ``default_job_container_kwargs``: Docker SDK container kwargs applied to
   every job container. Launcher-controlled keys such as ``volumes``,
   ``mounts``, ``network``, ``environment``, ``command``, ``name``, ``detach``,
-  ``user``, and ``working_dir`` are rejected.
+  ``auto_remove``, ``user``, ``working_dir``, and ``image`` are rejected. For a
+  site default job image, set ``studies.<study>.container.image`` in
+  ``local/study_runtime.yaml``.
 
 Prepare and start:
 
@@ -107,7 +120,7 @@ The command writes:
 - ``startup/start_docker.sh``
 - patched ``local/resources.json.default`` with ``DockerJobLauncher``
 - patched ``local/comm_config.json``
-- ``local/study_data.yaml`` template when missing
+- ``local/study_runtime.yaml`` template when missing (skipped for legacy kits that already have ``study_data.yaml``)
 
 **********
 K8s Config
@@ -188,15 +201,13 @@ Top-level keys:
   registry Secret names to ``meta.json``.
 - ``job_pod_security_context``: security context passed to dynamically
   launched job pods.
-- ``study_job_spec_file_path``: optional YAML mapping from study name to
-  Kubernetes Pod template file. Matching studies use the template with
-  launcher-owned fields overlaid. If this is set without a configured
-  ``study_data_pvc_file_path``, no study-data PVC mounts are added. If both are
-  configured and the job study has entries in both files, the template is used
-  and the study-data entries are added as extra volume mounts with a warning.
-  Template volumes or job-container mounts named ``workspace-job`` or
-  ``startup-kit`` are replaced by the launcher-generated workspace and startup
-  mounts.
+
+Study-specific Pod templates are not launcher arguments. Configure them per
+study in ``local/study_runtime.yaml`` (``studies.<study>.pod_template``, inline
+or as a path relative to ``local/``). Matching studies use the template with
+launcher-owned fields overlaid; template volumes or job-container mounts named
+``workspace-job`` or ``startup-kit`` are replaced by the launcher-generated
+workspace and startup mounts.
 
 Prepare the parent server or client kit first:
 
@@ -205,13 +216,14 @@ Prepare the parent server or client kit first:
    nvflare deploy prepare ./site-1 --config k8s.yaml --output ./site-1-k8s
 
 After ``deploy prepare`` and before staging or starting the parent pod, deployment
-owners may edit ``local/resources.json.default`` in the prepared kit to adjust
-study-specific launcher inputs. The generated K8s launcher config sets
+owners may edit the generated ``local/study_runtime.yaml`` to configure per-study
+datasets, env vars, secrets, and Pod templates in one auto-discovered file — no
+launcher arguments are needed. For legacy kits that still carry a v1
+``local/study_data.yaml``, the generated K8s launcher config instead sets
 ``study_data_pvc_file_path`` to ``<workspace_mount_path>/local/study_data.yaml``
-by default. You can change that path, remove it when no study-data PVC mounts
-should be added, and/or add ``study_job_spec_file_path`` to point to a study to
-Pod-template mapping file. Stage or copy any referenced files under
-``local/`` so the parent process can read them at the in-pod paths.
+so existing data mounts keep working; the two files must not coexist. Stage or
+copy any referenced files under ``local/`` so the parent process can read them
+at the in-pod paths.
 
 Then choose one of the following two staging methods before starting the parent
 pod with Helm.
@@ -255,7 +267,7 @@ The command writes:
 - ``helm_chart/`` for the parent server or client pod
 - patched ``local/resources.json.default`` with ``K8sJobLauncher``
 - patched ``local/comm_config.json``
-- ``local/study_data.yaml`` template when missing
+- ``local/study_runtime.yaml`` template when missing (skipped for legacy kits that already have ``study_data.yaml``)
 
 ************
 K8s Staging
@@ -277,6 +289,8 @@ OpenShift with ``oc``. It:
 - patches ``helm_chart/values.yaml`` so the parent pod mounts the ConfigMap at
   ``workspace_mount_path/local`` and the Secret at
   ``workspace_mount_path/startup``
+- records the resolved namespace and object names so they can be removed by
+  ``nvflare deploy k8s unstage``
 
 The resource names default to ``nvflare-local-<site>`` and
 ``nvflare-startup-<site>``. Override them with ``--local-configmap`` and
@@ -285,17 +299,84 @@ prepared kit's ``K8sJobLauncher`` config, or ``default`` when unavailable.
 
 After this staging command succeeds, run the printed ``helm_command`` or the
 equivalent ``helm upgrade --install`` command for the prepared chart to start
-the parent server or client pod.
+the parent server or client pod. The command also prints a ``cleanup_command``
+for use after Helm uninstall.
 
 The generated Helm chart still mounts the configured workspace PVC at the
 workspace root. The ConfigMap and Secret only replace the ``local/`` and
 ``startup/`` subdirectories.
 
+**************
+K8s Unstaging
+**************
+
+The ConfigMap and Secret created by ``nvflare deploy k8s stage`` are not part
+of the generated Helm release. After uninstalling the release, run
+``nvflare deploy k8s unstage`` so this staged participant identity Secret is
+not left in the cluster:
+
+.. code-block:: shell
+
+   helm uninstall site-1 --namespace nvflare
+   nvflare deploy k8s unstage ./site-1-k8s
+
+``unstage`` reads the exact namespace and resource names recorded by the most
+recent ``stage`` command, deletes the Secret and ConfigMap, and
+clears their references from ``helm_chart/values.yaml``. Deletion uses exact
+names and is safe when either object has already been removed.
+
+Run ``unstage`` before replacing the same prepared output with another
+``nvflare deploy prepare`` command. Prepare refuses to overwrite a chart that
+still records staged resources because doing so would lose their cleanup
+targets.
+
+For a kit staged by an older NVFlare version that did not record its namespace,
+pass the original namespace explicitly:
+
+.. code-block:: shell
+
+   nvflare deploy k8s unstage ./site-1-k8s --namespace nvflare
+
+You can also pass ``--local-configmap`` and ``--startup-secret`` to clean up
+legacy or partially staged resources whose names are not recorded. Use
+``--kubectl oc`` or ``KUBECTL=oc`` for OpenShift. Run ``unstage`` only after
+the Helm release has been uninstalled; an installed parent pod still depends
+on these volumes.
+
+************
+Slurm Config
+************
+
+The Slurm backend requires a stable shared workspace and a launcher policy. A
+minimal ``slurm.yaml`` is:
+
+.. code-block:: yaml
+
+   runtime: slurm
+   job_launcher:
+     sandbox: apptainer
+     image: /lustre/images/nvflare-prod.sif
+     python_path: /usr/bin/python3
+     parent_host: nvflare-site1.internal
+
+Prepare directly into the shared runtime workspace, then start the parent:
+
+.. code-block:: shell
+
+   nvflare deploy prepare ./site-1 --config slurm.yaml --output /lustre/proj123/nvflare/site-1
+   /lustre/proj123/nvflare/site-1/startup/start_slurm.sh
+
+The output is the live workspace and must be visible at the same absolute path
+on the parent and compute nodes. Preparing to the same output again replaces
+the complete workspace. A client kit can optionally generate
+``startup/parent.slurm``; prepare prints the direct ``sbatch`` command that runs
+it in an allocation. See :ref:`slurm_job_launcher` for the complete guide.
+
 **********
 Job Images
 **********
 
-Docker and Kubernetes jobs must specify a job image in ``meta.json``. The
+Docker, Kubernetes, and Slurm jobs can select a job image in ``meta.json``. The
 preferred form is ``launcher_spec``:
 
 .. code-block:: json
@@ -304,7 +385,8 @@ preferred form is ``launcher_spec``:
      "launcher_spec": {
        "default": {
          "docker": {"image": "registry.example.com/nvflare-job:2.8"},
-         "k8s": {"image": "registry.example.com/nvflare-job:2.8"}
+         "k8s": {"image": "registry.example.com/nvflare-job:2.8"},
+         "slurm": {"image": "/shared/images/nvflare-job.sif"}
        },
        "site-1": {
          "docker": {"shm_size": "8g"}
@@ -321,6 +403,12 @@ preferred form is ``launcher_spec``:
 ``launcher_spec[site][mode]`` overrides the default for one site. Keep resource
 requests such as ``num_of_gpus`` in ``resource_spec``.
 
+A job-supplied image is executable content and requires the site's normal BYOC
+authorization. Slurm resolves the effective image as job, then study
+``container.image``, then site ``job_launcher.image``. Unlike registry image
+names used by Docker/Kubernetes, a Slurm image must be an absolute,
+site-visible existing file; see :ref:`slurm_job_launcher`.
+
 ***********
 Exit Status
 ***********
@@ -334,3 +422,6 @@ causes include:
 - invalid ``resources.json.default``
 - reserved Docker launcher kwargs
 - ``--output`` pointing at or inside the input kit
+- a Slurm ``--output`` path that is not valid as a runtime workspace
+- a missing/non-executable Slurm parent CLI, invalid sandbox/image, or
+  unsupported Slurm ``connection_security`` or server ``parent`` configuration

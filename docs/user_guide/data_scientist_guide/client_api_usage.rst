@@ -154,6 +154,20 @@ Below is a table overview of key Client APIs.
      - Patches the PyTorch Lightning Trainer for usage with FLARE.
      - :func:`patch<nvflare.app_opt.lightning.api.patch>`
 
+.. list-table:: HuggingFace APIs
+   :widths: 25 25 50
+   :header-rows: 1
+
+   * - API
+     - Description
+     - API Doc Link
+   * - patch
+     - Patches a HuggingFace ``Trainer`` or TRL ``SFTTrainer`` for usage with FLARE.
+     - :func:`patch<nvflare.app_opt.hf.api.patch>`
+   * - is_running
+     - Coordinates the FL loop for a patched HuggingFace trainer.
+     - :func:`is_running<nvflare.client.hf.is_running>`
+
 .. list-table:: Metrics Logger
    :widths: 25 25 50
    :header-rows: 1
@@ -181,6 +195,7 @@ For complete working examples across different frameworks:
 * NumPy: :github_nvflare_link:`hello-numpy <examples/hello-world/hello-numpy>`
 * PyTorch Lightning: :github_nvflare_link:`hello-lightning <examples/hello-world/hello-lightning>`
 * TensorFlow: :github_nvflare_link:`hello-tf <examples/hello-world/hello-tf>`
+* HuggingFace Trainer: :github_nvflare_link:`hello-huggingface <examples/hello-world/hello-huggingface>`
 
 Each example shows both the Client API training script (``client.py``) and Job Recipe definition (``job.py``).
 
@@ -189,5 +204,6 @@ Learn More
 
 * :ref:`job_recipe` - How to define and run FL jobs with your training script
 * :ref:`client_api` - Programming Guide with detailed examples and technical details
+* :ref:`hf_client_api` - HuggingFace Trainer integration guide
 * :mod:`nvflare.client.api` - Complete API reference documentation
 * :mod:`nvflare.app_opt.lightning.api` - PyTorch Lightning integration

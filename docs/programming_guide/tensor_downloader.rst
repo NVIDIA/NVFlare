@@ -81,8 +81,7 @@ The Tensor Downloader is built into all PyTorch workflows in FLARE 2.7.2+. When 
 
 - ``PTFedAvg`` controller
 - ``PTFileModelPersistor``
-- ``PTClientAPILauncherExecutor``
-- ``PTInProcessClientAPIExecutor``
+- ``ClientAPIExecutor`` with ``params_exchange_format="pytorch"``
 - Any PyTorch-based Recipe (``FedAvgRecipe`` from ``nvflare.app_opt.pt.recipes``)
 
 The TensorDecomposer is automatically registered and handles tensor streaming transparently.
@@ -212,12 +211,18 @@ For very large models (multiple GB), you may want to tune chunk sizes for optima
 Larger chunks mean fewer network requests but higher per-chunk memory usage. Smaller chunks
 reduce memory but increase network overhead.
 
-When tensor streaming is used from subprocess-mode Client API jobs, also tune the
-subprocess timeout settings that govern task reads, result ACKs, and server-side
-download completion. In particular, keep ``PEER_READ_TIMEOUT``,
-``download_complete_timeout``, and ``tensor_min_download_timeout`` aligned with
-the configured streaming per-request timeout. See :ref:`timeout_troubleshooting`
-and :doc:`/programming_guide/timeouts`.
+When tensor streaming is used with ``ClientAPIExecutor``, keep
+``tensor_min_download_timeout`` (or ``np_min_download_timeout`` for NumPy)
+aligned with the configured streaming per-request timeout. In
+``external_process`` mode, an active task download extends the
+``task_wait_timeout`` wait while progress remains live. Attach instead applies
+an absolute ``task_wait_timeout`` deadline to task download and trainer
+acceptance, so configure it for the complete delivery path.
+``result_wait_timeout`` bounds result publication; subsequent payload streaming
+uses the shared transfer idle policy. The legacy Pipe/FlareAgent settings
+``PEER_READ_TIMEOUT`` and ``download_complete_timeout`` are not consumed by
+``ClientAPIExecutor``. See :ref:`timeout_troubleshooting` and
+:doc:`/programming_guide/timeouts`.
 
 **Example config_fed_server.conf with chunk size tuning:**
 

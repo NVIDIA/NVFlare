@@ -32,19 +32,7 @@ def load_local_versioneer():
     return module
 
 
-def load_local_module(module_name, module_path):
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Failed to load {module_name} from {module_path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 versioneer = load_local_versioneer()
-agent_skill_manifest = load_local_module(
-    "nvflare_agent_skill_manifest", os.path.join(ROOT_DIR, "nvflare", "tool", "agent", "skill_manifest.py")
-)
 
 # read the contents of your README file
 
@@ -96,72 +84,13 @@ def remove_dir(target_path):
         shutil.rmtree(target_path)
 
 
-def _package_agent_skills_enabled():
-    value = os.environ.get("NVFLARE_PACKAGE_AGENT_SKILLS", "1").strip().lower()
-    return value not in {"0", "false", "no", "off"}
-
-
-def _package_agent_skills_analysis_files():
-    return release != "1"
-
-
-def _no_skills_wheel_build_tag():
-    return os.environ.get("NVFLARE_NO_SKILLS_WHEEL_BUILD_TAG", "1no_skills").strip()
-
-
 extra_files = package_files(root="nvflare/dashboard/application", starting="static")
 tmp_job_template_folder = "./nvflare/tool/job/templates"
 copy_package(src_dir="job_templates", dst_dir=tmp_job_template_folder)
 job_templates = package_files(root="nvflare/tool/job", starting="templates")
 deploy_templates = package_files(root="nvflare/tool/deploy", starting="templates")
-agent_skill_package_data = ["manifest.json", "*", "*/*", "*/*/*", "*/*/*/*", "*/*/*/*/*"]
 
 cmdclass = versioneer.get_cmdclass()
-_base_build_py = cmdclass["build_py"]
-
-
-class AgentSkillsBuildPy(_base_build_py):
-    def run(self):
-        super().run()
-        bundle_root = os.path.join(self.build_lib, "nvflare", "tool", "agent", "bundled_skills")
-        if _package_agent_skills_enabled():
-            agent_skill_manifest.copy_released_skills_to_bundle(
-                os.path.join(ROOT_DIR, "skills"),
-                bundle_root,
-                nvflare_version=version,
-                include_analysis_files=_package_agent_skills_analysis_files(),
-            )
-        else:
-            agent_skill_manifest.write_empty_skill_bundle(
-                bundle_root,
-                nvflare_version=version,
-            )
-
-
-cmdclass["build_py"] = AgentSkillsBuildPy
-
-
-def _agent_skills_bdist_wheel_cmd():
-    try:
-        from setuptools.command.bdist_wheel import bdist_wheel
-    except ImportError:
-        try:
-            from wheel.bdist_wheel import bdist_wheel
-        except ImportError:
-            return None
-
-    class AgentSkillsBdistWheel(bdist_wheel):
-        def finalize_options(self):
-            if not _package_agent_skills_enabled() and not self.build_number:
-                self.build_number = _no_skills_wheel_build_tag()
-            super().finalize_options()
-
-    return AgentSkillsBdistWheel
-
-
-_bdist_wheel_cmd = _agent_skills_bdist_wheel_cmd()
-if _bdist_wheel_cmd is not None:
-    cmdclass["bdist_wheel"] = _bdist_wheel_cmd
 
 
 setup(
@@ -181,7 +110,6 @@ setup(
         "nvflare.dashboard.application": extra_files,
         "nvflare.tool.job": job_templates,
         "nvflare.tool.deploy": deploy_templates,
-        "nvflare.tool.agent.bundled_skills": agent_skill_package_data,
     },
     include_package_data=True,
 )

@@ -22,7 +22,7 @@ import os
 import re
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import SimEnv, add_experiment_tracking
+from nvflare.recipe import SimEnv, add_experiment_tracking, set_per_site_config
 
 
 def define_parser():
@@ -187,12 +187,12 @@ def main():
         num_rounds=args.num_rounds,
         model=model,
         train_script="client.py",
-        per_site_config=per_site_config,
         launch_external_process=True,
         server_expected_format="pytorch",
         # train_qwen.train() does not emit structured eval metrics for model selection in this example.
         key_metric="",
     )
+    set_per_site_config(recipe, per_site_config)
 
     # Configure timeouts for large model / tensor streaming.
     _configure_timeouts(recipe, client_names)

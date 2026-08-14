@@ -31,7 +31,7 @@ import argparse
 
 from nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader import CSVDataLoader
 from nvflare.app_opt.xgboost.recipes import XGBHorizontalRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, set_per_site_config
 
 
 def define_parser():
@@ -97,13 +97,15 @@ def main():
         secure=args.secure,
         client_ranks=client_ranks,
         xgb_params=xgb_params,
-        per_site_config=per_site_config,
     )
+    set_per_site_config(recipe, per_site_config)
 
-    # Export and run
-    env = SimEnv(num_clients=args.site_num)
-    run = recipe.execute(env)
-    run.export_job(f"/tmp/nvflare/workspace/fedxgb_secure/train_fl/jobs/{job_name}")
+    # Export the job and run it when no additional setup is required
+    env = SimEnv(
+        clients=recipe.configured_sites(),
+        workspace_root="/tmp/nvflare/workspace/fedxgb_secure/train_fl/works",
+    )
+    recipe.export("/tmp/nvflare/workspace/fedxgb_secure/train_fl/jobs", env=env)
 
     # Note: Secure horizontal training requires special tenseal context setup
     if args.secure:
@@ -114,7 +116,7 @@ def main():
         print("Please see README for next steps.")
         print("=" * 80 + "\n")
     else:
-        run.simulator_run(f"/tmp/nvflare/workspace/fedxgb_secure/train_fl/works/{job_name}")
+        recipe.execute(env)
         print("\n" + "=" * 80)
         print("Training Complete!")
         print("=" * 80 + "\n")

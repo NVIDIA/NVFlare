@@ -48,6 +48,11 @@ class _FedOptValidator(BaseModel):
 class FedOptRecipe(Recipe):
     """A recipe for implementing Federated Optimization (FedOpt) in NVFlare with TensorFlow.
 
+    Recipe parameters, including ``train_args``, ``optimizer_args``, and
+    ``lr_scheduler_args``, must never contain actual secret values. Read secrets from site
+    environment variables or mounted files; references are supported only where documented in
+    :mod:`nvflare.recipe.secrets`.
+
     FedOpt is a federated learning algorithm that uses server-side optimization with momentum
     to improve convergence. The algorithm is proposed in Reddi et al. "Adaptive Federated
     Optimization." arXiv preprint arXiv:2003.00295 (2020).

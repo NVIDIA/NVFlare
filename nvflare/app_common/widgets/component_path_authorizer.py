@@ -14,7 +14,9 @@
 
 import json
 import os
+import re
 import threading
+from enum import Enum
 from typing import Optional
 
 from nvflare.apis.app_validation import AppValidationKey
@@ -22,10 +24,24 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
+from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
+from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.widgets.widget import Widget
 
 CLASS_ALLOW_LIST = "class_allow_list"
+CLASS_LIST_ENFORCEMENT_MODE = "class_list_enforcement_mode"
+ALLOW_ALL = "*"
+
+_ALLOW_ALL_AUDIT_ACTION = "component_authorization.class_allow_list_disabled"
+_DEFAULT_ALLOW_LIST_AUDIT_ACTION = "component_authorization.default_class_allow_list_used"
+_WARN_MODE_AUDIT_ACTION = "component_authorization.unlisted_class_allowed"
+_COMPONENT_PATH_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$")
+
+
+class ClassListEnforcementMode(str, Enum):
+    ENFORCE = "enforce"
+    WARN = "warn"
 
 
 class ComponentPathAuthorizer(Widget):
@@ -34,6 +50,9 @@ class ComponentPathAuthorizer(Widget):
         super().__init__()
         self._allow_list_cache = {}
         self._allow_list_cache_lock = threading.Lock()
+        self._successful_audit_keys = set()
+        self._warning_keys = set()
+        self._audit_state_lock = threading.Lock()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type != EventType.BEFORE_BUILD_COMPONENT:
@@ -56,60 +75,227 @@ class ComponentPathAuthorizer(Widget):
         if component_path is None:
             return
 
-        allow_list = self._get_allow_list(fl_ctx=fl_ctx, workspace=workspace)
+        allow_list, enforcement_mode, policy_source = self._get_policy(fl_ctx=fl_ctx, workspace=workspace)
+        if ALLOW_ALL in allow_list:
+            self._audit_allow_all(fl_ctx=fl_ctx, workspace=workspace, policy_source=policy_source)
+            return
+
         if not any(self._path_matches_prefix(component_path, prefix) for prefix in allow_list):
             node_path = node.path() if node else ""
-            raise UnsafeComponentError(
-                f"Component '{component_path}' at config path '{node_path}' is not in allow_list"
-            )
+            message = f"Component {component_path!r} at config path {node_path!r} is not in allow_list"
+            if enforcement_mode == ClassListEnforcementMode.WARN:
+                message = (
+                    f"{message}; allowing it because {CLASS_LIST_ENFORCEMENT_MODE} is "
+                    f"'{ClassListEnforcementMode.WARN.value}'"
+                )
+                self._audit_warn_mode_allow(
+                    component_path=component_path,
+                    message=message,
+                    policy_source=policy_source,
+                    fl_ctx=fl_ctx,
+                    workspace=workspace,
+                )
+                self._log_warning(fl_ctx, message)
+                return
+            raise UnsafeComponentError(message)
 
-    def _get_allow_list(self, fl_ctx: Optional[FLContext] = None, workspace=None):
+    def _audit_allow_all(self, policy_source: str, fl_ctx: Optional[FLContext] = None, workspace=None):
+        audit_scope = self._get_audit_scope(fl_ctx=fl_ctx, workspace=workspace)
+        audit_key = (_ALLOW_ALL_AUDIT_ACTION, audit_scope, policy_source)
+        message = (
+            f"{CLASS_ALLOW_LIST} contains '{ALLOW_ALL}'; all component classes are allowed and "
+            f"the remaining allow-list entries are ignored; policy source: {policy_source}"
+        )
+        self._add_audit_event_once(audit_key=audit_key, action=_ALLOW_ALL_AUDIT_ACTION, message=message, fl_ctx=fl_ctx)
+        self._log_warning_once(audit_key, fl_ctx, message)
+
+    def _audit_warn_mode_allow(
+        self,
+        component_path: str,
+        message: str,
+        policy_source: str,
+        fl_ctx: Optional[FLContext] = None,
+        workspace=None,
+    ):
+        audit_scope = self._get_audit_scope(fl_ctx=fl_ctx, workspace=workspace)
+        audit_key = (_WARN_MODE_AUDIT_ACTION, audit_scope, policy_source, component_path)
+        audit_message = f"{message}; policy source: {policy_source}"
+        self._add_audit_event_once(
+            audit_key=audit_key,
+            action=_WARN_MODE_AUDIT_ACTION,
+            message=audit_message,
+            fl_ctx=fl_ctx,
+        )
+
+    def _add_audit_event_once(self, audit_key, action: str, message: str, fl_ctx: Optional[FLContext] = None):
+        with self._audit_state_lock:
+            if audit_key in self._successful_audit_keys:
+                return
+
+        job_id = self._get_job_id(fl_ctx)
+        event_id = AuditService.add_event(
+            user=fl_ctx.get_identity_name() if fl_ctx and fl_ctx.get_identity_name() else "system",
+            action=action,
+            ref=str(job_id) if job_id else "",
+            msg=message,
+        )
+        if event_id:
+            with self._audit_state_lock:
+                self._successful_audit_keys.add(audit_key)
+
+    def _log_warning_once(self, warning_key, fl_ctx: Optional[FLContext], message: str):
+        with self._audit_state_lock:
+            if warning_key in self._warning_keys:
+                return
+            self._warning_keys.add(warning_key)
+        self._log_warning(fl_ctx, message)
+
+    def _log_warning(self, fl_ctx: Optional[FLContext], message: str):
+        if fl_ctx:
+            self.log_warning(fl_ctx=fl_ctx, msg=message, fire_event=False)
+        else:
+            self.logger.warning(message)
+
+    def _get_policy(self, fl_ctx: Optional[FLContext] = None, workspace=None):
         resources_file = self._get_resources_file_path(fl_ctx=fl_ctx, workspace=workspace)
         if resources_file:
-            return self._get_allow_list_from_file(resources_file)
+            policy_source = os.path.abspath(resources_file)
+            allow_list, enforcement_mode, uses_default = self._get_policy_from_file(resources_file)
+        else:
+            policy_source = SystemConfigs.RESOURCES_CONF
+            resources = ConfigService.get_section(SystemConfigs.RESOURCES_CONF)
+            allow_list, enforcement_mode, uses_default = self._get_policy_from_resources(resources)
 
-        resources = ConfigService.get_section(SystemConfigs.RESOURCES_CONF)
-        return self._get_allow_list_from_resources(resources)
+        if uses_default:
+            self._report_default_allow_list(
+                policy_source=policy_source,
+                fl_ctx=fl_ctx,
+                workspace=workspace,
+            )
+        return allow_list, enforcement_mode, policy_source
 
-    def _get_allow_list_from_file(self, resources_file):
+    def _get_policy_from_file(self, resources_file):
         cache_key = os.path.abspath(resources_file)
 
+        # cache entries are (file_signature, allow_list, enforcement_mode, uses_default)
         with self._allow_list_cache_lock:
             stat_result = os.stat(cache_key)
             cache_signature = self._make_file_signature(stat_result)
             cached = self._allow_list_cache.get(cache_key)
             if cached and cached[0] == cache_signature:
-                return cached[1]
+                return cached[1], cached[2], cached[3]
 
             with open(cache_key, "rt") as f:
                 resources = json.load(f)
                 cache_signature = self._make_file_signature(os.fstat(f.fileno()))
-            allow_list = self._get_allow_list_from_resources(resources)
+            allow_list, enforcement_mode, uses_default = self._get_policy_from_resources(resources)
 
-            self._allow_list_cache[cache_key] = (cache_signature, allow_list)
+            self._allow_list_cache[cache_key] = (cache_signature, allow_list, enforcement_mode, uses_default)
 
-        return allow_list
+        return allow_list, enforcement_mode, uses_default
 
     @staticmethod
     def _make_file_signature(stat_result):
         return (stat_result.st_mtime_ns, stat_result.st_size, stat_result.st_ino, stat_result.st_dev)
 
-    @classmethod
-    def _get_allow_list_from_resources(cls, resources):
-        if not isinstance(resources, dict) or CLASS_ALLOW_LIST not in resources:
-            raise UnsafeComponentError(
-                f"{CLASS_ALLOW_LIST} is not configured in resources.json or resources.json.default. "
-                f"Non-BYOC jobs require a top-level {CLASS_ALLOW_LIST}; add allowed class path prefixes "
-                'such as "nvflare." to site resources, or enable BYOC for jobs that load custom code.'
-            )
+    def _get_policy_from_resources(self, resources):
+        if resources is None:
+            resources = {}
+        elif not isinstance(resources, dict):
+            raise UnsafeComponentError(f"resources must be dict but got {type(resources)}")
 
-        allow_list = resources.get(CLASS_ALLOW_LIST)
+        if CLASS_ALLOW_LIST in resources:
+            allow_list = resources.get(CLASS_ALLOW_LIST)
+            uses_default = False
+        else:
+            allow_list = list(DEFAULT_CLASS_ALLOW_LIST)
+            uses_default = True
         if not isinstance(allow_list, list):
             raise UnsafeComponentError(f"{CLASS_ALLOW_LIST} must be list but got {type(allow_list)}")
+
+        enforcement_mode = resources.get(CLASS_LIST_ENFORCEMENT_MODE, ClassListEnforcementMode.ENFORCE.value)
+        if not isinstance(enforcement_mode, str):
+            raise UnsafeComponentError(f"{CLASS_LIST_ENFORCEMENT_MODE} must be str but got {type(enforcement_mode)}")
         try:
-            return cls._normalize_allow_list(allow_list)
+            enforcement_mode = ClassListEnforcementMode(enforcement_mode)
+        except ValueError:
+            valid_modes = tuple(mode.value for mode in ClassListEnforcementMode)
+            raise UnsafeComponentError(
+                f"{CLASS_LIST_ENFORCEMENT_MODE} must be one of {valid_modes} but got '{enforcement_mode}'"
+            )
+        try:
+            return self._normalize_allow_list(allow_list), enforcement_mode, uses_default
         except (TypeError, ValueError) as ex:
             raise UnsafeComponentError(str(ex))
+
+    def _report_default_allow_list(self, policy_source: str, fl_ctx: Optional[FLContext] = None, workspace=None):
+        audit_scope = self._get_audit_scope(fl_ctx=fl_ctx, workspace=workspace)
+        audit_key = (_DEFAULT_ALLOW_LIST_AUDIT_ACTION, audit_scope, policy_source)
+        message = (
+            f"{CLASS_ALLOW_LIST} is not configured in resources.json or resources.json.default; "
+            f"using the built-in default list of {len(DEFAULT_CLASS_ALLOW_LIST)} NVFLARE component classes. "
+            f"Configure a top-level {CLASS_ALLOW_LIST} in site resources to replace the default; "
+            f"policy source: {policy_source}"
+        )
+        self._add_audit_event_once(
+            audit_key=audit_key,
+            action=_DEFAULT_ALLOW_LIST_AUDIT_ACTION,
+            message=message,
+            fl_ctx=fl_ctx,
+        )
+        self._log_warning_once(audit_key, fl_ctx, message)
+
+    def _get_audit_scope(self, fl_ctx: Optional[FLContext] = None, workspace=None):
+        job_id = self._get_job_id(fl_ctx)
+        job_path = self._get_job_path(fl_ctx=fl_ctx, workspace=workspace)
+        if job_id:
+            if job_path:
+                return ("job", str(job_id), job_path)
+            return ("job", str(job_id))
+        if job_path:
+            return ("job_path", job_path)
+
+        if fl_ctx:
+            engine = fl_ctx.get_engine()
+            if engine:
+                return ("engine", id(engine))
+            if workspace is None:
+                workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        if workspace:
+            return ("workspace", id(workspace))
+        if fl_ctx:
+            return ("context", id(fl_ctx))
+        return ("authorizer", id(self))
+
+    @staticmethod
+    def _get_job_path(fl_ctx: Optional[FLContext] = None, workspace=None):
+        if fl_ctx:
+            app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
+            if isinstance(app_root, (str, os.PathLike)) and app_root:
+                return ("app_root", os.path.abspath(os.fspath(app_root)))
+
+            workspace_root = fl_ctx.get_prop(FLContextKey.WORKSPACE_ROOT)
+            if isinstance(workspace_root, (str, os.PathLike)) and workspace_root:
+                return ("workspace_root", os.path.abspath(os.fspath(workspace_root)))
+
+            if workspace is None:
+                workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        if workspace and hasattr(workspace, "get_root_dir"):
+            workspace_root = workspace.get_root_dir()
+            if isinstance(workspace_root, (str, os.PathLike)) and workspace_root:
+                return ("workspace_root", os.path.abspath(os.fspath(workspace_root)))
+        return None
+
+    @staticmethod
+    def _get_job_id(fl_ctx: Optional[FLContext]):
+        if not fl_ctx:
+            return ""
+        return (
+            fl_ctx.get_job_id()
+            or fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
+            or fl_ctx.get_prop(FLContextKey.JOB_RUN_NUMBER)
+            or ""
+        )
 
     @staticmethod
     def _get_resources_file_path(fl_ctx: Optional[FLContext] = None, workspace=None):
@@ -134,6 +320,9 @@ class ComponentPathAuthorizer(Widget):
 
     @classmethod
     def _normalize_allow_list(cls, allow_list):
+        if ALLOW_ALL in allow_list:
+            return [ALLOW_ALL]
+
         result = []
         for prefix in allow_list:
             prefix = cls._validate_prefix(prefix)
@@ -196,5 +385,9 @@ class ComponentPathAuthorizer(Widget):
             raise UnsafeComponentError(f"Component {key} must be str but got {type(component_path)}")
         if not component_path:
             raise UnsafeComponentError(f"Component {key} must not be empty")
+        if not _COMPONENT_PATH_PATTERN.fullmatch(component_path):
+            raise UnsafeComponentError(
+                f"Component {key} must be a fully qualified dotted Python path but got {component_path!r}"
+            )
 
         return component_path

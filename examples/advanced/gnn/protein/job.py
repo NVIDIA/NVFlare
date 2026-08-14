@@ -17,7 +17,7 @@ import argparse
 from torch_geometric.nn import GraphSAGE
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import ProdEnv, SimEnv
+from nvflare.recipe import ProdEnv, SimEnv, set_per_site_config
 
 
 def main():
@@ -57,12 +57,6 @@ def main():
         type=str,
         default="/tmp/nvflare/gnn/protein_fl_workspace",
         help="Work directory for simulator runs (default: /tmp/nvflare/gnn/protein_fl_workspace)",
-    )
-    parser.add_argument(
-        "--job_dir",
-        type=str,
-        default="/tmp/nvflare/jobs/gnn_protein",
-        help="Directory for job export (default: /tmp/nvflare/jobs/gnn_protein)",
     )
     parser.add_argument(
         "--threads",
@@ -122,13 +116,9 @@ def main():
         min_clients=args.num_clients,
         num_rounds=args.num_rounds,
         train_script="client.py",
-        per_site_config=per_site_config,
         key_metric="validation_f1",
     )
-
-    # Export job
-    print(f"Exporting job to {args.job_dir}")
-    recipe.export(args.job_dir)
+    set_per_site_config(recipe, per_site_config)
 
     # Run recipe
     client_names = [f"site-{i}" for i in range(1, args.num_clients + 1)]

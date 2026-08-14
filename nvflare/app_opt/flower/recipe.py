@@ -19,8 +19,7 @@ from typing import Optional
 from packaging.version import InvalidVersion, Version
 
 from nvflare.app_common.tie.defs import Constant
-from nvflare.client.api import ClientAPIType
-from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
+from nvflare.fuel.utils.secret_utils import warn_on_potential_secrets, warn_on_unsupported_secret_refs
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.recipe.spec import Recipe
 
@@ -60,11 +59,15 @@ def _create_flower_job(**kwargs):
 class FlowerRecipe(Recipe):
     """Recipe class for Flower federated learning using NVFlare.
 
+    Recipe parameters become part of the generated job definition and must never
+    contain actual secret values. Read secrets from the site environment or mounted files in
+    Flower code; ``extra_env`` and ``run_config`` do not resolve secret references.
+
     This class provides a high-level interface for configuring Flower
     federated learning jobs. It wraps the FlowerJob and provides
     a recipe-based interface for easier job configuration and execution.
 
-    Enables metric streaming and use of client API by default.
+    Enables analytics-only metric streaming by default.
 
     Flower CLI compatibility:
         This recipe requires ``flwr>=1.26``. The integration uses Flower
@@ -138,17 +141,12 @@ class FlowerRecipe(Recipe):
         if extra_env is not None:
             check_object_type("extra_env", extra_env, dict)
 
-        # needs to init client api to stream metrics
-        # only external client api works with the current flower integration
-        env = extra_env.copy() if extra_env is not None else {}
-        if CLIENT_API_TYPE_KEY in env and env[CLIENT_API_TYPE_KEY] != ClientAPIType.EX_PROCESS_API.value:
-            raise ValueError(
-                f"'extra_env[{CLIENT_API_TYPE_KEY}]' must be "
-                f"{ClientAPIType.EX_PROCESS_API.value!r} for the Flower integration; "
-                f"got {env[CLIENT_API_TYPE_KEY]!r}."
-            )
-
-        env[CLIENT_API_TYPE_KEY] = ClientAPIType.EX_PROCESS_API.value
+        if extra_env:
+            warn_on_potential_secrets(extra_env, context="recipe parameter 'extra_env'")
+            warn_on_unsupported_secret_refs(extra_env, context="recipe parameter 'extra_env'")
+        if run_config:
+            warn_on_potential_secrets(run_config, context="recipe parameter 'run_config'")
+            warn_on_unsupported_secret_refs(run_config, context="recipe parameter 'run_config'")
 
         job = _create_flower_job(
             name=name,
@@ -165,7 +163,7 @@ class FlowerRecipe(Recipe):
             per_msg_timeout=per_msg_timeout,
             tx_timeout=tx_timeout,
             client_shutdown_timeout=client_shutdown_timeout,
-            extra_env=env,
+            extra_env=extra_env,
             run_config=run_config,
             allow_runtime_dependency_installation=allow_runtime_dependency_installation,
         )

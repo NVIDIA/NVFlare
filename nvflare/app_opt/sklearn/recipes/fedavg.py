@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import Literal, Optional
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -24,6 +24,10 @@ from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 
 class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
     """A recipe for implementing Federated Averaging (FedAvg) with Scikit-learn.
+
+    Recipe parameters, including ``train_args`` and nested ``per_site_config`` values,
+    must never contain actual secrets. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
 
     This recipe sets up a complete federated learning workflow with memory-efficient
     InTime aggregation, specifically designed for scikit-learn models.
@@ -47,17 +51,22 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         train_args: Command line arguments to pass to the training script.
         aggregator: Custom aggregator for combining client updates. If None,
             uses InTimeAccumulateWeightedAggregator with aggregator_data_kind.
-        aggregator_data_kind: Data kind to use for the aggregator. Defaults to DataKind.WEIGHTS.
+        aggregator_data_kind: Data kind expected from client results. Clients that return differences
+            must label the result with FLModel.params_type=ParamsType.DIFF. Defaults to DataKind.WEIGHTS.
         launch_external_process: Whether to launch the script in external process. Defaults to False.
         command: If launch_external_process=True, command to run script (prepended to script).
             Defaults to "python3 -u".
-        per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
-            site names to configuration dicts. If not provided, the same configuration will be used
-            for all clients.
+        per_site_config: Deprecated constructor form of per-site configuration. New code should call
+            ``set_per_site_config(recipe, config)`` immediately after construction. Nested values become
+            part of the generated job definition and must not contain secrets.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are
             a dict, key_metric selects the metric used for global model selection. Defaults to "accuracy".
+        key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better,
+            such as for loss, and "max" when higher values are better. Defaults to "max".
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
+        launch_timeout: Seconds to wait for an external process to launch and establish its
+            Client API session. ``None`` disables this timeout. Defaults to 300.0.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.
 
@@ -91,6 +100,7 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
 
         ```python
         from nvflare.app_opt.sklearn import SklearnFedAvgRecipe
+        from nvflare.recipe import set_per_site_config
 
         recipe = SklearnFedAvgRecipe(
             name="sklearn_linear",
@@ -98,7 +108,10 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             num_rounds=50,
             model_params={"n_classes": 2, "learning_rate": "constant", "eta0": 1e-4},
             train_script="client.py",
-            per_site_config={
+        )
+        set_per_site_config(
+            recipe,
+            {
                 "site-1": {"train_args": "--data_path /tmp/data/site1.csv"},
                 "site-2": {"train_args": "--data_path /tmp/data/site2.csv"},
                 "site-3": {"train_args": "--data_path /tmp/data/site3.csv"},
@@ -131,7 +144,9 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         command: str = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "accuracy",
+        key_metric_mode: Literal["min", "max"] = "max",
         launch_once: bool = True,
+        launch_timeout: Optional[float] = 300.0,
         shutdown_timeout: float = 0.0,
     ):
         validate_model_path(model_path)
@@ -159,6 +174,8 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             model_persistor=persistor,  # Pass sklearn-specific persistor
             per_site_config=per_site_config,
             key_metric=key_metric,
+            key_metric_mode=key_metric_mode,
             launch_once=launch_once,
+            launch_timeout=launch_timeout,
             shutdown_timeout=shutdown_timeout,
         )

@@ -15,7 +15,12 @@ from nvflare.fuel.common.fqn import FQN
 
 
 class FQCN(FQN):
-    pass
+    VALID_PATTERN = "^[A-Za-z0-9_.~-]*$"
+
+
+# A network Attach trainer connects beneath the stable site CP and authenticates
+# with that physical parent's provisioned identity.
+CLIENT_API_ATTACH_LEAF_PREFIX = "-client_api_"
 
 
 class FqcnInfo:

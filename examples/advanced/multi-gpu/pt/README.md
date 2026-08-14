@@ -42,7 +42,6 @@ pt/
 |----------|-------------|---------|
 | `--num_rounds` | Number of training rounds | 5 |
 | `--use_tracking` | Enable TensorBoard tracking | False |
-| `--export_config` | Export job config only | False |
 
 ## Examples
 
@@ -57,7 +56,7 @@ python job.py --num_rounds 10
 python job.py --use_tracking
 
 # Export config for deployment
-python job.py --export_config
+python job.py --export --export-dir /tmp/nvflare/jobs/job_config
 ```
 
 ## Requirements
@@ -84,17 +83,35 @@ Set `--nproc_per_node` to the number of GPUs you want to use:
 python3 -m torch.distributed.run --nproc_per_node=4 client.py
 ```
 
+The client script uses the global distributed rank for NVFlare Client API and
+the local rank for CUDA device placement:
+
+```python
+import os
+
+global_rank = dist.get_rank()
+local_rank = int(os.environ["LOCAL_RANK"])
+
+torch.cuda.set_device(local_rank)
+flare.init(rank=global_rank)
+```
+
+`torchrun` sets both `RANK` and `LOCAL_RANK`. `RANK` is unique across the whole
+distributed job, while `LOCAL_RANK` is only unique on the current node.
+
 ### Multiple Clients on Same Machine
 When running multiple clients on the same machine, use different master ports:
 ```python
-per_site_config={
+from nvflare.recipe import set_per_site_config
+
+set_per_site_config(recipe, {
     "site-1": {
         "command": "... --master_port=7777",
     },
     "site-2": {
         "command": "... --master_port=8888",
     },
-}
+})
 ```
 
 ## Troubleshooting
@@ -118,4 +135,3 @@ python -c "import torch; print(torch.cuda.device_count())"
 - [PyTorch DDP Tutorial](https://pytorch.org/tutorials/intermediate/ddp_tutorial.html)
 - [torch.distributed.run Documentation](https://pytorch.org/docs/stable/distributed.html#launch-utility)
 - [NVFlare Documentation](https://nvflare.readthedocs.io/)
-

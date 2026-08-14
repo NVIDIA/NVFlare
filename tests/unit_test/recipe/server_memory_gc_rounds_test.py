@@ -59,7 +59,7 @@ def base_recipe_params():
 
 def get_controller(recipe):
     """Extract controller from recipe's job."""
-    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
     # Controller is usually the workflow component
     for comp_id, comp in server_app.app_config.components.items():
         if hasattr(comp, "_memory_gc_rounds") or hasattr(comp, "memory_gc_rounds"):

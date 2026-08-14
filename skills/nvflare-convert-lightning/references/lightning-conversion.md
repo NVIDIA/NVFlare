@@ -1,0 +1,255 @@
+# Lightning Client API Conversion
+
+This reference covers converting a PyTorch Lightning `Trainer` workflow to the
+NVFLARE Lightning Client API. Load `../../nvflare-shared/references/pytorch-model-exchange.md` for
+PyTorch-family tensor/state-dict rules before changing model exchange code.
+
+The Lightning integration owns model load and send through callbacks installed
+by `flare.patch(trainer)`. Do not generate a manual `FLModel` send/receive path
+for normal Lightning training.
+
+## Canonical Path
+
+Use this path for Lightning conversion:
+
+1. Confirm Lightning routing with `nvflare agent inspect source`.
+2. Select a PyTorch-family recipe with `nvflare recipe list/show`.
+3. Generate `client.py` with `flare.patch(trainer)` as the model exchange path.
+4. Generate `job.py` that builds the selected recipe and calls
+   `recipe.execute(SimEnv(...))`.
+5. Validate with `python job.py`, inspect terminal evidence, then export.
+
+HE is not supported at steps 4–5: follow the HE-not-supported rule in
+`../../nvflare-shared/references/pytorch-family-recipe-selection.md`.
+
+Follow the Source Of Truth Boundary and the generated-entry rule in
+`../../nvflare-shared/references/conversion-workflow.md`: `client.py` is an
+FL-only Client API entry point, not a standalone/FL auto-detecting launcher.
+
+## Conversion Pattern
+
+- Import the Lightning client API: `import nvflare.client.lightning as flare`.
+- Build the `LightningModule`, `LightningDataModule`, and `Trainer` as the
+  source code already does.
+- Call `flare.patch(trainer)` once, after the trainer is constructed.
+- Loop while `flare.is_running()` and call `trainer.fit` / `trainer.validate` /
+  `trainer.test` as the workflow requires.
+
+```python
+import nvflare.client.lightning as flare
+
+flare.init()  # required before get_site_name(), get_config(), receive(), or other pre-patch context
+trainer = Trainer(...)
+flare.patch(trainer)
+
+while flare.is_running():
+    # Optional: call receive() only when round/site/task metadata is needed.
+    # The patched trainer loads the global model internally.
+    flare.receive()
+    validate_global_model(trainer, model, datamodule=datamodule)
+    trainer.fit(model, datamodule=datamodule)
+    trainer.test(ckpt_path="best", datamodule=datamodule)  # when test evidence is requested/available
+```
+
+Adapt `validate_global_model` from `../assets/lightning_client.py`; it keeps
+evaluation Lightning-native and preserves training-result metrics on the
+patched exchange.
+
+For evaluation-only / FedEval conversions, run `trainer.validate(...)` (the
+patched trainer sends the validation metrics) and **do not call
+`trainer.fit(...)`** — training was not requested, and fitting after the metrics
+are sent can train an unwanted round or block the task. The packaged
+`../assets/lightning_client.py` `main(..., evaluate_only=True)` skips `fit`.
+
+## Patch Ownership Rules
+
+- `flare.patch(trainer)` installs callbacks that receive the global model into
+  the Lightning model and send the updated model after fit. Let it own the
+  exchange.
+- Do not pass the received `input_model` into `Trainer` methods. The patched
+  trainer loads the global model internally.
+- Do not add a second manual `flare.send(FLModel(...))` for normal training; the
+  patched trainer already sends the trained model.
+- Use `flare.get_site_name()` or `flare.get_config()` only when the code needs
+  pre-patch context such as site-specific logging or data paths, and call
+  `flare.init()` before the first such Client API context access.
+- Use `flare.receive()` in the patched loop only for FL task progression,
+  round/site logging, or task metadata, never for manual model loading.
+- During export inspection, verify generated or project-local modules
+  referenced by server-side `class_path` config are packaged into the server app
+  with `recipe.add_server_file(...)` or an equivalent server-targeted API. The
+  `train_script` import closure packages client apps and is not enough for
+  per-site exports that create `app_server` separately. Installed NVFLARE,
+  framework, and third-party class paths stay runtime dependencies and are
+  validated through requirements installation plus import/preflight checks.
+
+## Lightning Evaluation Template
+
+Keep evaluation inside Lightning; do not reuse the raw PyTorch
+`model.eval()` / `torch.no_grad()` loop for normal Lightning conversion:
+
+- Require or preserve `validation_step()` / `test_step()` and a
+  validation/test dataloader or `LightningDataModule`.
+- Log validation metrics from the `LightningModule` with `self.log(...)` so
+  they are visible in the trainer callback metrics.
+- After `flare.patch(trainer)` and `flare.receive()`, call
+  `trainer.validate(model, datamodule=...)` before `trainer.fit(...)` when
+  server-side model selection or round metrics need validation; keep this
+  inside the `while flare.is_running()` loop.
+- Use `trainer.test(...)` only when the source workflow already has test
+  semantics or the user requests test reporting.
+- Rely on Lightning's validate/test loops to set evaluation mode and disable
+  gradients; generate a manual `model.eval()` loop only when the conversion
+  intentionally routes to plain PyTorch.
+- If the source project lacks validation/test steps or dataloaders, ask in
+  interactive mode or fail closed in unattended mode instead of inventing
+  metric semantics.
+
+### Training-result metric delivery
+
+For a training task, `trainer.validate(...)` and `self.log(...)` establish
+Lightning-local metrics but do not by themselves establish server delivery.
+The selected recipe can generate an executor whose
+`train_with_evaluation` setting is disabled or not exposed as a recipe
+capability. In that case the patched callback sends trained parameters without
+putting its captured validation result in `FLModel.metrics`.
+
+When the conversion requires server metrics, capture the return value from the
+pre-fit `trainer.validate(...)`, require finite scalar values, and preserve it
+on the patched module's supported metadata channel under
+`MetaKey.INITIAL_METRICS` before `trainer.fit(...)`. Use
+`../assets/lightning_client.py` as the copyable implementation. Preserve any
+other dictionary entries already present in `model.__fl_meta__`; fail closed if
+that attribute is not a dictionary. This metadata travels with the one patched
+model exchange and is not a reason to add a manual `flare.send(...)`.
+
+The metric names placed under `MetaKey.INITIAL_METRICS` must be the same names
+used for recipe `key_metric` and artifact reporting. They must describe the
+received global model evaluated before local training, not post-fit local
+metrics.
+
+`key_metric` selects on higher-is-better values only, so what the client
+delivers and the recipe selects must itself be a higher-is-better value. A
+source metric with the opposite direction — including a module that logs nothing
+but `val_loss` — must first be flipped into an explicitly negated companion.
+This is the Lightning implementation of the framework-neutral rule in
+`../../nvflare-shared/references/pytorch-family-recipe-construction.md`.
+
+Name those metrics with
+`validate_global_model(..., make_higher_is_better=("val_loss",))` in
+`../assets/lightning_client.py`, and thread the same argument through
+`main(...)` when adapting the round loop. The helper preserves the original
+metric and adds a higher-is-better `neg_val_loss` to the same
+`MetaKey.INITIAL_METRICS` dict; the recipe then selects
+`key_metric="neg_val_loss"`. Select the companion, never the original —
+`key_metric="val_loss"` would pick the worst global model. Only name keys whose
+direction the source establishes; do not invent a direction. A `val_loss`-only
+module is never a reason to fail closed or to skip best-model selection when
+that selection was requested.
+
+If a custom `ModelAggregator` is selected, it must also aggregate supported
+client `FLModel.metrics` values and return them in the aggregated
+`FLModel.metrics`. Follow the Custom Aggregation contract in
+`../../nvflare-shared/references/conversion-workflow.md` and adapt
+`../../nvflare-shared/assets/aggregator.py`; a parameters-only aggregate loses
+the server-level metric even when clients delivered it.
+
+This template is self-contained packaged guidance; do not depend on NVFLARE
+repository `examples/` being present in the user's environment. The runnable
+form ships at `../assets/lightning_client.py`; adapt it rather than inventing a
+new structure.
+
+## Preserve Lightning Behavior
+
+- Preserve user callbacks, loggers, and checkpoint callbacks unless the user
+  asks to change them.
+- Repo-shipped checkpoint files (`.ckpt` passed to `load_from_checkpoint`,
+  `Trainer.fit(ckpt_path=...)`, or resume logic) are untrusted executable input
+  per `../../nvflare-shared/references/conversion-workflow.md`: full-unpickle loading of a
+  repo-supplied checkpoint is ask/fail. Checkpoints produced by the current
+  validation run (for example `ckpt_path="best"` from this run's checkpoint
+  callback) may follow normal Lightning handling.
+- Keep the `LightningModule`/`LightningDataModule` architecture and data logic;
+  do not rewrite training_step/validation_step semantics.
+- Avoid repeated expensive setup (model build, dataset download) inside the FL
+  round loop; construct the model, datamodule, and trainer once before the loop
+  when the source code allows it.
+
+## Local Data And Loss Policy
+
+Follow the training-policy distinction in
+`../../nvflare-shared/references/pytorch-model-exchange.md` and the site split guidance in
+`../../nvflare-shared/references/conversion-workflow.md`. Lightning-specific implication:
+label/site-derived values that affect `training_step`, `LightningDataModule`
+sampling, or validation/test decision logic remain local to each site partition
+unless the user explicitly requests one global training policy. Do not move
+those values into recipe `model` args just because architecture args must be
+shared.
+
+Report the split policy, seed, and where local training-policy values are
+computed.
+
+For multi-site conversion from a single-node Lightning source, the generated
+client or `LightningDataModule` must filter the local training split by site.
+Do not let every simulated site train on the full source training set unless
+the user explicitly asks for shared training data or the source already provides
+site-specific data that resolves to that behavior. Validation/test splits may
+remain shared only when that matches the source's validation/test semantics.
+
+## Model Construction Consistency
+
+Follow the shared model-config and construction-consistency rule in
+`../../nvflare-shared/references/conversion-workflow.md` ("Recipe Model Config"):
+same class and constructor args on server and client, an allowed recipe model
+form, and derive-or-ask/fail-closed for required values.
+
+Lightning-specific delta: the exchanged unit is the whole `LightningModule`
+managed by the patched trainer, so construct the identical `LightningModule` on
+the server and on the client in `client.py`, not just the inner
+`torch.nn.Module`. For explicit config, express shared arguments as a
+`model_args` dict (prefer `class_path`; `path` is the normalized job-config
+key).
+
+## Source Layout
+
+Use the canonical FLARE source layout defined in
+`../../nvflare-shared/references/conversion-workflow.md` ("Generated Job Layout").
+Lightning-specific delta: `client.py` patches the trainer as the model-exchange
+path, and `model.py` holds the `LightningModule` (and `LightningDataModule`)
+definition when a new file is needed. Avoid ad hoc names such as `fl_train.py`
+unless the user requests them, and use
+`../../nvflare-shared/references/runtime-output-guidance.md` for runtime
+workspaces, exported job directories, and validation output locations.
+
+If the Lightning entry point imports a model module or source file — whatever
+its filename, for example `model.py`, `simple_model.py`, or a module loaded
+through explicit import machinery — or defines the
+`LightningModule`/`LightningDataModule` in `train.py`, preserve that source
+structure. Generate `client.py`, `job.py`, and optional `aggregators.py`; do not
+generate a new replacement model implementation that recreates the full
+Lightning/data stack. If the generated package needs the canonical `model.py`
+name, use a mechanical copy/rename or thin wrapper around the detected source
+module rather than re-authoring it.
+
+## Recipe Reuse
+
+Lightning reuses the PyTorch recipe family. Follow
+`../../nvflare-shared/references/pytorch-family-recipe-selection.md` for recipe
+discovery, the algorithm guide, catalog-based selection rules, and the
+HE-not-supported rule — the same catalog and rules apply to Lightning, including
+non-FedAvg workflows such as FedOpt, FedProx, SCAFFOLD, Cyclic, Swarm, and
+FedEval. Use FedAvg for standard horizontal training and FedEval for
+evaluation-only.
+
+The generated `job.py` should use the selected recipe's public parameters from
+`recipe show`, construct the model through explicit `class_path` (or `path`) plus
+`args` when constructor arguments are required, and call
+`recipe.execute(SimEnv(...))`. HE is not supported: homomorphic-encryption
+recipes reject `SimEnv` and require provisioned `PocEnv`/`ProdEnv` outside
+conversion scope — follow the HE-not-supported rule in
+`../../nvflare-shared/references/pytorch-family-recipe-selection.md` (report
+unsupported, route to provisioning/deployment, ask or fail closed; do not
+generate an HE job). Do not replace this with ad
+hoc SDK-internal APIs based on local source or docstring inspection. Follow
+`../../nvflare-shared/references/conversion-workflow.md` for export and
+command-line behavior.

@@ -251,14 +251,10 @@ Current state: users have been using interactive console shell commands (`cat`, 
 
 When client-side log streaming to the server is enabled, client logs are treated as server-side stored job logs. `nvflare job logs` does not connect to client sites directly and does not execute shell commands on client machines. It asks the server for the job log content that the server has locally for the requested site target.
 
-Client log streaming is enabled by the job, not by `nvflare job logs`. The portable job-level pattern is:
+Client log streaming is enabled by the job, not by `nvflare job logs`. For Recipe jobs, use:
 
 ```python
-from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
-from nvflare.app_common.logging.job_log_streamer import JobLogStreamer
-
-recipe.job.to_clients(JobLogStreamer())
-recipe.job.to_server(JobLogReceiver())
+recipe.enable_log_streaming("log.txt")
 ```
 
 `JobLogStreamer` runs in each client job process, tails the configured job log
@@ -1774,6 +1770,15 @@ succeeded. Agents must use `data.artifacts.*` as the source of truth for consuma
 files instead of inferring paths from server locations or assuming a fixed layout under
 `download_path`. Agents must treat `artifact_discovery: "skipped"` as "not inspected",
 not as proof that expected artifacts are absent.
+
+Global-model discovery is provenance-aware. Common model filenames are considered
+only at the downloaded result root or in canonical server-owned `workspace`,
+`server`, and `app_server` locations; files in client subtrees are not candidates.
+An `artifact_manifest.json` in a canonical server-owned location can identify a
+custom filename. Its schema-version-`1` `artifacts.global_model` value is relative
+to the manifest and must resolve inside the download tree without symlinks. A
+present manifest is authoritative, so invalid or absent targets do not fall back to
+filename matching.
 
 ### Add `nvflare study`
 

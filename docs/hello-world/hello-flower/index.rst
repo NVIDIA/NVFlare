@@ -25,6 +25,7 @@ Then navigate to the ``hello-flower`` directory:
 
 .. code-block:: bash
 
+   cd NVFlare
    git switch <release branch>
    cd examples/hello-world/hello-flower
 

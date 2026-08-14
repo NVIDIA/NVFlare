@@ -98,6 +98,9 @@ Algorithm values:
    * - ``fedavg_logistic_regression``
      - ``numpy``
      - ``nvflare recipe list --filter algorithm=fedavg_logistic_regression``
+   * - ``fedce``
+     - ``pytorch``
+     - ``nvflare recipe list --filter algorithm=fedce``
    * - ``fedeval``
      - ``pytorch``
      - ``nvflare recipe list --filter algorithm=fedeval``
@@ -105,7 +108,7 @@ Algorithm values:
      - ``pytorch``, ``tensorflow``
      - ``nvflare recipe list --filter algorithm=fedopt``
    * - ``fedprox``
-     - ``pytorch``, ``tensorflow``
+     - ``pytorch``
      - ``nvflare recipe list --filter algorithm=fedprox``
    * - ``fedstats``
      - ``core``
@@ -144,6 +147,9 @@ Aggregation values:
    * - ``cluster_centers``
      - ``sklearn``
      - ``nvflare recipe list --filter framework=sklearn --filter aggregation=cluster_centers``
+   * - ``contribution_weighted_average``
+     - ``pytorch``
+     - ``nvflare recipe list --filter framework=pytorch --filter aggregation=contribution_weighted_average``
    * - ``server_optimizer``
      - ``pytorch``, ``tensorflow``
      - ``nvflare recipe list --filter aggregation=server_optimizer``
@@ -233,6 +239,11 @@ Behavior notes:
 
 The CLI prints a human-readable table in text mode and also emits the machine-
 readable result envelope.
+
+The JSON that ``nvflare recipe list --format json`` prints has a stable,
+documented structure that scripts and tools can rely on. It is described by
+the
+:download:`recipe catalog JSON schema <../../schemas/recipe_catalog.schema.json>`.
 
 Example JSON response:
 
@@ -353,6 +364,10 @@ Use ``--schema`` for machine-readable command discovery:
 
    nvflare recipe list --schema
    nvflare recipe show --schema
+
+``--schema`` describes command arguments and command behavior. Use the recipe
+catalog JSON schema when validating the catalog output of
+``nvflare recipe list --format json``.
 
 The top-level CLI also supports JSON output mode:
 

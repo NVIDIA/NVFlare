@@ -53,7 +53,8 @@ class SAGMLFlowJob(BaseFedJob):
             mandatory_clients (List[str], optional): mandatory clients to run the job. Default None.
             key_metric (str, optional): Metric used to determine if the model is globally best.
                 if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
-                Defaults to "accuracy".
+                Higher values must indicate a better model; for lower-is-better metrics such as a loss,
+                report a negated value from the client (e.g., "neg_loss"). Defaults to "accuracy".
             kwargs: kwargs dict
         """
         super().__init__(initial_model, name, min_clients, mandatory_clients, key_metric)

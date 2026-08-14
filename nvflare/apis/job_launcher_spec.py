@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 from abc import ABC, abstractmethod
 
 from nvflare.apis.fl_component import FLComponent
@@ -40,6 +41,26 @@ class JobProcessArgs:
     STARTUP_CONFIG_FILE = "startup_config_file"
     RESTORE_SNAPSHOT = "restore_snapshot"
     OPTIONS = "options"
+
+
+class JobProcessEnv:
+    """Env var names for job-process bootstrap credentials; the CJ/SJ arg parsers consume
+    and remove them (a CLI-supplied value wins)."""
+
+    AUTH_TOKEN = "NVFLARE_JOB_AUTH_TOKEN"
+    TOKEN_SIGNATURE = "NVFLARE_JOB_TOKEN_SIGNATURE"
+    SSID = "NVFLARE_JOB_SSID"
+
+
+def pop_credential_env() -> dict:
+    """Remove every JobProcessEnv credential from the environment and return it.
+
+    Called at job-process arg parsing; removing all of them — parsed or not — keeps
+    job-spawned children from inheriting credentials. Empty values count as absent so
+    a blank env var fails parsing like a missing one.
+    """
+    names = (JobProcessEnv.AUTH_TOKEN, JobProcessEnv.TOKEN_SIGNATURE, JobProcessEnv.SSID)
+    return {name: os.environ.pop(name, None) or None for name in names}
 
 
 class JobReturnCode(ProcessExitCode):

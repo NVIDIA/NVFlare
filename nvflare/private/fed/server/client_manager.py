@@ -136,7 +136,7 @@ class ClientManager:
                 self.logger.error(f"failed to persist disabled-client state for {client_name}: {ex}")
                 raise
         removed_tokens = [token for token, _client in removed_clients]
-        self.logger.info(f"Client {client_name} disabled. Removed active tokens: {removed_tokens}")
+        self.logger.info(f"Client {client_name} disabled. Removed {len(removed_tokens)} active token(s).")
         return removed_tokens
 
     def enable_client(self, client_name: str) -> bool:
@@ -182,9 +182,10 @@ class ClientManager:
                 # do not update self.clients for non-regular clients
                 client_kind = client_type
 
+            # Never log the token value: it is a bearer credential (see #4858).
             self.logger.info(
-                "Client: New {} {} joined. Sent token: {}.  Total clients: {}".format(
-                    client_kind, client.name + "@" + client_ip, client.token, len(self.clients)
+                "Client: New {} {} joined. Sent token.  Total clients: {}".format(
+                    client_kind, client.name + "@" + client_ip, len(self.clients)
                 )
             )
         return client
@@ -202,11 +203,9 @@ class ClientManager:
             client = self.clients.pop(token, None)
             if client:
                 self.name_to_clients.pop(client.name, None)
-                self.logger.info(
-                    "Client Name:{} \tToken: {} left.  Total clients: {}".format(client.name, token, len(self.clients))
-                )
+                self.logger.info("Client Name:{} left.  Total clients: {}".format(client.name, len(self.clients)))
             else:
-                self.logger.warning("remove_client: unknown token %s", token)
+                self.logger.warning("remove_client: unknown token")
             return client
 
     def login_client(self, client_login, fl_ctx: FLContext, client_type):
@@ -395,7 +394,7 @@ class ClientManager:
             client = self.clients.get(token)
             if client:
                 client.last_connect_time = time.time()
-                self.logger.debug(f"Receive heartbeat from Client:{token}")
+                self.logger.debug(f"Receive heartbeat from Client:{client_name}")
                 return False
             else:
                 for _token, _client in self.clients.items():
@@ -406,8 +405,7 @@ class ClientManager:
                             sticky=False,
                         )
                         self.logger.info(
-                            f"Failed to re-activate the client:{client_name} with token: {token}. "
-                            f"Client already exist with token: {_token}."
+                            f"Failed to re-activate the client:{client_name}: already registered with another token."
                         )
                         return False
 
@@ -415,7 +413,7 @@ class ClientManager:
                 self._set_client_props(client, client_fqcn, fl_ctx)
                 self.clients.update({token: client})
                 self.name_to_clients[client.name] = client
-                self.logger.info(f"Re-activate the client: {client_name} at {client_fqcn} with token: {token}")
+                self.logger.info(f"Re-activate the client: {client_name} at {client_fqcn}")
                 return True
 
     @staticmethod

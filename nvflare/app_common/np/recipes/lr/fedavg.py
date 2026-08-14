@@ -52,6 +52,10 @@ class _FedAvgValidator(BaseModel):
 class FedAvgLrRecipe(Recipe):
     """A recipe for implementing Federated Averaging (FedAvg) for Logistic Regression with Newton Raphson.
 
+    Recipe parameters become part of the generated job definition and must never
+    contain actual secret values. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
+
     FedAvg is a fundamental federated learning algorithm that aggregates model updates
     from multiple clients by computing a weighted average based on the amount of local
     training data. This recipe sets up a complete federated learning workflow using

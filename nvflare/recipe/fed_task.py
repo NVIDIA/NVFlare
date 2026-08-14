@@ -67,6 +67,10 @@ class FedTaskRecipe(Recipe):
 
     Users are responsible for ensuring that ``task_script`` accepts the supplied
     ``task_args`` and any ``task_data`` or ``task_meta`` payloads it consumes.
+    These values become part of the generated job definition and must never
+    contain actual secret values. Secret references are supported in ``task_args``;
+    ``task_data`` and ``task_meta`` keep references literal, so read secrets from
+    the site environment or mounted files inside the task script instead.
 
     Args:
         name: Name of the federated job. Defaults to "fed_task".
@@ -76,9 +80,14 @@ class FedTaskRecipe(Recipe):
         min_responses: Minimum number of task results to wait for. If None, waits for all selected clients.
         timeout: Task timeout in seconds. Defaults to 0, meaning no timeout.
         task_data: Optional params dict sent to each client as ``FLModel.params``.
+            The dict is stored in the job definition and must not contain secret values or
+            secret references.
         task_meta: Optional metadata dict sent to each client as ``FLModel.meta``.
+            The dict is stored in the job definition and must not contain secret values or
+            secret references.
         task_script: Path to the client script.
-        task_args: Command line arguments passed to the client script.
+        task_args: Command line arguments passed to the client script. The string is
+            stored in the job definition and must not contain actual secret values.
         launch_external_process: Whether to launch the script in an external process.
         command: Command used when ``launch_external_process`` is True.
         framework: Framework used by ``ScriptRunner`` for parameter exchange. Defaults to RAW.

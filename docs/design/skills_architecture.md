@@ -11,28 +11,109 @@ components are the commands and files an end user's agent uses. The skill instal
 CLI is the bridge: it takes validated skill content from the repo or wheel bundle
 and installs it into an agent-specific skill directory.
 
+## What This Is (Core Model)
+
+An **agent skill** is a procedural playbook — a Markdown `SKILL.md` plus
+supporting `references/` — that guides a general coding agent (Codex, Claude,
+etc.) through an NVFLARE workflow such as converting training code into a
+federated job. Skills are guidance, not a runtime library.
+
+The design rests on one principle: **skills own the procedure; the NVFLARE
+product owns the truth.**
+
+- The **skill** tells the agent *how to operate*: what to inspect, which CLI
+  commands to run, what to extract, which files to edit, when to stop, and what
+  evidence to report.
+- The **product API** owns *what is true and executable*: recipe schema and
+  defaults, argument validation, job construction, simulation, and export. The
+  agent discovers this at runtime through commands like
+  `nvflare recipe show --format json` and lets recipe constructors validate.
+
+A skill must never re-encode product behavior in prose — no hand-authored recipe
+schemas, no reimplemented validation, no hidden fact-to-parameter tables. That
+"shadow API" would drift from the product and mislead the agent. When guidance
+would also be needed by a human writing the job by hand, it belongs in the
+product, not the skill.
+
+NVFLARE does **not** run its own agent runtime. It authors, lints, packages,
+installs, and measures skill files; the agent host (Codex/Claude) loads and
+executes them. The packaged skills today are:
+
+- `nvflare-orient` — read-only router that inspects a project and recommends the
+  next skill or workflow;
+- `nvflare-convert-pytorch`, `nvflare-convert-lightning`, and
+  `nvflare-convert-huggingface` — convert existing PyTorch, PyTorch Lightning,
+  or Hugging Face Trainer code into a federated NVFLARE job via the
+  Client API, with local validation and export;
+- `nvflare-diagnose-job` — read-only diagnosis of a failed job from bounded
+  evidence.
+
+The rest of this document details how those skills are authored, validated,
+packaged, installed, and consumed.
+
+## Responsibility Layers (LLM / Skill / Product API)
+
+The core architecture is a separation of responsibilities across three layers.
+This is *who owns what at runtime*, and is distinct from the delivery/lifecycle
+layers (dev-time, build-time, install, runtime) in [System Layers](#system-layers)
+below.
+
+```mermaid
+flowchart TB
+    subgraph LLM["LLM / Agent — interpretation"]
+        direction TB
+        L["Read request; statically inspect source; extract facts; edit code; invoke product commands; report evidence"]
+    end
+    subgraph Skill["Skill — procedure and constraints"]
+        direction TB
+        S["Envelope; fields to extract; commands to call; validation ladder; stop/approval conditions; reporting shape"]
+    end
+    subgraph Product["Product API — authoritative behavior"]
+        direction TB
+        P["Recipe catalog, schema, defaults; argument validation and invariants; job construction, simulation, export; CLI contracts"]
+    end
+
+    LLM -->|follows the procedure in| Skill
+    LLM -->|discovers, validates, executes via| Product
+    Product -->|schema, validation errors, results| LLM
+    Skill -.->|defers schema/validation to, never re-encodes| Product
+
+    style LLM fill:#f8fbff,stroke:#4f7fb8,stroke-width:2px
+    style Skill fill:#fafbfc,stroke:#334155,stroke-width:3px
+    style Product fill:#f4fbf8,stroke:#2f7d68,stroke-width:2px
+```
+
+| Layer | Owns | Must not |
+| --- | --- | --- |
+| LLM / Agent | Natural-language interpretation, source inspection, code edits, running product commands, reporting | Invent product capability that does not exist |
+| Skill | Procedure: envelope, fields to extract, commands to call, validation ladder, stop/approval conditions, reporting shape | Own schema, defaults, or validation; re-encode product behavior as a "shadow API" |
+| Product API | Recipe schema/defaults, validation and invariants, job construction, simulation, export, CLI contracts | — |
+
+The load-bearing rule is the arrow from Skill to Product: the skill *defers*
+schema and validation to the product and never re-encodes them. The engineering
+lints (below) enforce this boundary at admission time.
+
 ## High-Level System View
 
 ```mermaid
 flowchart TB
-    subgraph DevBuild["Dev-time / build-time"]
+    subgraph DevBuild["Dev-time"]
         direction TB
         Authoring["Skill authoring source: skills, references, eval contracts"] --> Lint["Engineering lint tool: repo-local CLI plus pytest checks"]
-        Lint --> Package["Packaging hook: setup.py and bundled_skills manifest"]
     end
 
     subgraph InstallBridge["Install-time bridge"]
         direction TB
-        Install["Skill install CLI: nvflare agent skills install/list"]
+        Install["Skill install: npx skills add ./skills -a claude-code -a codex"]
     end
 
     subgraph Runtime["Runtime"]
         direction TB
-        AgentRuntime["Agent runtime: Codex or Claude loads installed SKILL.md"] --> AgentCLI["Agent-facing NVFLARE CLI: info, inspect, doctor, skills"]
+        AgentRuntime["Agent runtime: Codex or Claude loads installed SKILL.md"] --> AgentCLI["Agent-facing NVFLARE CLI: info, inspect"]
         AgentRuntime --> NVFLAREWork["NVFLARE workflows: recipes, job.py, simulator, job CLI"]
     end
 
-    Package ==> Install
+    Authoring ==> Install
     Install ==> AgentRuntime
 
     style DevBuild fill:#f8fbff,stroke:#4f7fb8,stroke-width:2px
@@ -44,12 +125,54 @@ flowchart TB
 
 | Layer | When | Implemented pieces | Purpose |
 | --- | --- | --- | --- |
-| Authoring source | Dev-time | `skills/`, `SKILL.md`, `references/`, `evals/evals.json`, `BENCHMARK.md` | Human-readable skill instructions and supporting evidence. |
-| Engineering lint tool | Dev-time / CI | `dev_tools/agent/skills/checks`, `python dev_tools/agent/skills/checks/cli.py`, pytest coverage | Deterministic admission checks for frontmatter, triggers, command drift, policy coverage, fixtures, process metrics, and doc links. This is a repo-local tool validated by pytest; it is not shipped in the wheel. |
-| Python packaging hook | Build-time | `setup.py`, `nvflare.tool.agent.bundled_skills`, `manifest.json` | Wheel-build hook that copies released skills into the NVFLARE package, or writes an empty bundle for no-skill builds. |
-| Skill install CLI | Install-time bridge | `nvflare agent skills install/list`, `skill_manager.py` | Managed installer that copies skills into Codex or Claude target directories with content hashes, locks, backups, local-modification checks, and symlink checks. |
-| Runtime agent surface | Runtime | Codex/Claude skill loading, `nvflare agent inspect`, `nvflare agent doctor`, recipe/job CLI | The agent reads skill instructions and uses NVFLARE commands to inspect, convert, validate, or diagnose. |
+| Authoring source | Dev-time | `skills/`, `SKILL.md`, `references/` (runtime); `skills/<skill>/evals/` (evaluation suites) | Human-readable skill instructions and supporting evidence; eval suites are co-located with their skill but are not runtime guidance. |
+| Engineering lint tool | Dev-time / CI | `dev_tools/agent/skills/checks`, `python dev_tools/agent/skills/checks/cli.py`, pytest coverage | Deterministic admission checks for frontmatter, triggers, command drift, policy coverage, fixtures, and process metrics. This is a repo-local tool validated by pytest; it is not shipped in the wheel. |
+| Skill install | Install-time bridge | `npx skills add ./skills -a claude-code -a codex` (local) or `npx skills add NVIDIA/<skills-repo> -a claude-code -a codex` (published) | Standard [agentskills.io](https://agentskills.io) installer that copies the complete `skills/` tree, including each skill's co-located `evals/` evaluation metadata, into the Codex and Claude skill directories. `SKILL.md` remains the instruction entry point; `evals/` is not runtime guidance. Install the whole set together so cross-skill references (`nvflare-shared/`) resolve. NVFLARE ships no custom installer command. |
+| Runtime agent surface | Runtime | Codex/Claude skill loading, `nvflare agent inspect source|data`, recipe/job CLI | The agent reads skill instructions and uses NVFLARE commands to inspect, convert, validate, or diagnose. Source and data inspection are separate static capabilities. |
 | Benchmark harness | Separate | Follow-up work outside this PR | Separate architecture for measuring skill impact with Docker, SDK profiles, agent plugins, and reporting. |
+
+## Lint Engine Independence (Design Invariant)
+
+The engineering lint tool (`dev_tools/agent/skills/checks/lints.py`) is
+**independent of `docs/design/` and offline catalog docs**. Its intentional
+inputs are the `skills/` tree and each skill's co-located eval suite at
+`skills/<skill>/evals/`. This is a deliberate invariant, not an accident of the
+current code:
+
+- The lint engine MUST NOT read `docs/design/*.md`. Those are human planning
+  docs; there is no `docs_root` parameter and no `--docs-root` flag. It MAY read
+  the co-located eval suites — those are dev/QA tooling input,
+  explicitly distinct from the forbidden `docs_root`.
+- Separate the two input surfaces by check type: **runtime-boundary checks**
+  validate shippable artifacts only (`skills/`, `SKILL.md`, `references/`,
+  `assets/`, and the internal `skills/nvflare-shared/` skill), omitting each
+  co-located `evals/` suite from runtime-guidance scanning, while
+  **trigger, coverage, process-metric, and fixture checks** deliberately consume
+  the co-located eval suites under `skills/<skill>/evals/` to verify positive/negative
+  trigger coverage, global-negative coverage, policy coverage behavior IDs, and
+  fixtures. The standard skills installer includes these co-located suites as
+  evaluation metadata; they are not part of the Python wheel and are not
+  runtime guidance.
+- `SKILL.md` is a **runtime artifact** loaded by the agent. Frontmatter fields
+  must be runtime or public skill metadata. Do not add offline-lint-only fields
+  to its frontmatter.
+- `skill-trigger-overlap-lint` groups skills by deterministic skill-name
+  families, such as `nvflare-convert` or `nvflare-diagnose`
+  (`_trigger_overlap_group`), so the overlap guard runs purely over `skills/`
+  with no external source of truth.
+- Catalog/publication sync (is a skill listed in the human product catalog?) is
+  a **docs concern**, not a skill-admission concern. If wanted, it belongs in a
+  separate docs check that the skill engine does not import. Do not add
+  `skill-catalog-category-lint` or `agent-doc-crosslink-lint` back into this
+  engine.
+
+History: an earlier change coupled the engine to `agent_integration.md` for
+catalog synchronization and silently skipped checks in CI when the docs were
+absent. That coupling was reverted on purpose. `category` is now public
+frontmatter metadata for publishable skills, but the lint engine still must not
+use design docs or category values as its trigger-overlap source of truth. If
+the engine needs a grouping source, derive it from `skills/` deterministic
+skill-name families or an analysis-only file stripped from the release bundle.
 
 ## Implemented Architecture
 
@@ -57,8 +180,7 @@ flowchart TB
 flowchart TB
     subgraph SkillDelivery["Skill delivery"]
         direction TB
-        SkillSource["repo-root skills: editable checkout"] --> SkillOps["nvflare agent skills install/list"]
-        WheelBundle["wheel bundled_skills package"] --> SkillOps
+        SkillSource["repo-root skills/ (or published repo)"] --> SkillOps["npx skills add -a claude-code -a codex"]
     end
 
     subgraph AgentRuntime["Agent runtime"]
@@ -70,8 +192,7 @@ flowchart TB
     subgraph NVFLARESurface["NVFLARE command surface"]
         direction TB
         AgentCLI["nvflare agent runtime commands"] --> Info["info: command surface metadata"]
-        AgentCLI --> Inspect["inspect: static AST scan"]
-        AgentCLI --> Doctor["doctor: readiness check"]
+        AgentCLI --> Inspect["inspect source/data: bounded static evidence"]
         Recipes["recipes / job.py / simulator / job CLI"]
     end
 
@@ -79,8 +200,7 @@ flowchart TB
     Agent -->|skill-guided calls| AgentCLI
     Agent -->|normal NVFLARE work| Recipes
 
-    Inspect --> Project["Local training code / FLARE job artifacts"]
-    Doctor --> Env["Local NVFLARE install, startup kits, optional deps, POC workspace"]
+    Inspect --> Project["Local training source / FLARE artifacts / data directories"]
 
     style SkillDelivery fill:#f8fbff,stroke:#4f7fb8,stroke-width:2px
     style AgentRuntime fill:#fafbfc,stroke:#334155,stroke-width:3px
@@ -91,23 +211,15 @@ flowchart TB
 
 ```mermaid
 flowchart TD
-    SkillsRoot["repo-root skills/"] --> SkillDirs["nvflare-orient, nvflare-convert-pytorch, nvflare-diagnose-job, shared references"]
+    SkillsRoot["repo-root skills/ (or published NVIDIA/<skills-repo>)"] --> SkillDirs["nvflare-orient, nvflare-convert-pytorch, nvflare-convert-lightning, nvflare-convert-huggingface, nvflare-diagnose-job, nvflare-shared (internal)"]
 
-    SkillDirs --> ManifestBuild["build_skill_manifest: frontmatter validation and source hash"]
-    ManifestBuild --> Editable["Editable source manifest"]
+    SkillDirs --> Lint["Engineering lint tool: dev_tools/agent/skills/checks (frontmatter validation, admission checks)"]
 
-    SkillsRoot --> SetupPy["setup.py build_py"]
-    SetupPy --> Bundle["wheel bundled_skills + manifest.json"]
-    SetupPy --> EmptyBundle["empty bundled_skills manifest"]
+    SkillsRoot --> Install["npx skills add ./skills -a claude-code -a codex"]
+    Install --> Target["Agent skill dirs (.claude/skills, .agents/skills, ~/.claude/skills, ~/.codex/skills)"]
+    Target --> Discover["Codex/Claude load installed skills"]
 
-    Editable --> FindSource["find_skill_source"]
-    Bundle --> FindSource
-
-    FindSource --> Install["nvflare agent skills install"]
-    Install --> Target["Agent target skill dir"]
-    Target --> InstallManifest[".nvflare_skill_install.json with managed_by, source_hash, skill_version"]
-
-    Install --> Safety["symlink checks, lock dir, atomic staging, backup on replace, local modification detection"]
+    Install --> WholeSet["Install the whole set together so nvflare-shared relative refs resolve"]
 ```
 
 ## What The Skills Actually Do
@@ -115,16 +227,16 @@ flowchart TD
 ```mermaid
 flowchart LR
     Project["User project or NVFLARE artifacts"] --> Orient["nvflare-orient: read-only router"]
-    Project --> Convert["nvflare-convert-pytorch: conversion skill"]
+    Project --> Convert["nvflare-convert-pytorch / nvflare-convert-lightning / nvflare-convert-huggingface: conversion skills"]
     Project --> Diagnose["nvflare-diagnose-job: read-only diagnosis"]
 
     Orient --> OrientInspect["Inspect project shape and FLARE readiness"]
     Orient --> OrientDecision["Recommend the next concrete FLARE skill or workflow"]
 
-    Convert --> ConvertInspect["Inspect model, data loading, requirements, and metrics"]
+    Convert --> ConvertInspect["Statically inspect model, data loading, requirements, and metrics"]
     Convert --> RecipeList["Discover recipes with nvflare recipe list/show"]
-    Convert --> ClientAPI["Generate or update client.py, model.py, and job.py"]
-    Convert --> Lifecycle["Validate, export, and report metrics/artifact evidence"]
+    Convert --> ClientAPI["Generate or update client.py, model.py, job.py (+ aggregators.py)"]
+    Convert --> Validate["Validate locally, export, and report metric/artifact evidence"]
 
     Diagnose --> Evidence["Collect bounded logs, configs, and run artifacts"]
     Diagnose --> Patterns["Match packaged failure-pattern references"]
@@ -133,21 +245,27 @@ flowchart LR
 
 ## Key Implementation Points
 
-Dev-time / build-time:
+Dev-time:
 
 - Public skill source: `skills/`
 - Engineering lint tool and CI gate: `dev_tools/agent/skills/checks/`
-- Manifest builder: `nvflare/tool/agent/skill_manifest.py`
-- Packaging hook: `setup.py` (`AgentSkillsBuildPy`)
+
+Install-time:
+
+- Standard installer: `npx skills add ./skills -a claude-code -a codex` (local)
+  or `npx skills add NVIDIA/<skills-repo> -a claude-code -a codex` (published);
+  NVFLARE ships no custom install command.
 
 Runtime (installed on the user's machine):
 
-- Skill install/list logic: `nvflare/tool/agent/skill_manager.py`
 - Agent-facing CLI: `nvflare/tool/agent/agent_cli.py`
 - Command surface metadata: `nvflare/tool/agent/command_registry.py`
-- Static inspection: `nvflare/tool/agent/inspector.py`
-- Readiness checks: `nvflare/tool/agent/doctor.py`
-- Implemented skills: `nvflare-orient`, `nvflare-convert-pytorch`, and `nvflare-diagnose-job`
+- Static inspection facade: `nvflare/tool/agent/inspector.py`
+- Bounded source/data inspection core: `nvflare/tool/agent/inspection/` (one
+  source walk and fact pass, one forward authority graph, fixed owner tables,
+  pure routing, and the existing dataset adapter)
+- Implemented skills: `nvflare-orient`, `nvflare-convert-pytorch`, `nvflare-convert-lightning`,
+  `nvflare-convert-huggingface`, and `nvflare-diagnose-job`
 
 Separate:
 

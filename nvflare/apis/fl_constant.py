@@ -327,6 +327,7 @@ class ServerCommandKey:
 class FedEventHeader:
 
     TIMESTAMP = "_timestamp"
+    EVENT_ID = "_event_id"
     EVENT_TYPE = "_event_type"
     DIRECTION = "_direction"
     ORIGIN = "_origin"
@@ -453,6 +454,7 @@ class WorkspaceConstants:
     PRIVACY_CONFIG = "privacy.json"
     SAMPLE_PRIVACY_CONFIG = PRIVACY_CONFIG + ".sample"
     JOB_RESOURCES_CONFIG = "job_resources.json"
+    STUDY_REGISTRY_CONFIG = "study_registry.json"
 
     ADMIN_STARTUP_CONFIG = "fed_admin.json"
 
@@ -564,6 +566,9 @@ class ConfigVarName:
 
     # server: require prior positive job observation before reporting "missing job on client" as dead-job
     SYNC_CLIENT_JOBS_REQUIRE_PREVIOUS_REPORT = "sync_client_jobs_require_previous_report"
+
+    # server: max time to wait for client terminal outcomes after the server process exits
+    CLIENT_OUTCOME_WAIT_TIMEOUT = "client_outcome_wait_timeout"
 
     # customized nvflare decomposers module name
     DECOMPOSER_MODULE = "nvflare_decomposers"

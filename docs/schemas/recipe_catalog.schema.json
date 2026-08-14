@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nvflare.readthedocs.io/schemas/recipe_catalog.schema.json",
+  "title": "NVFlare Recipe Catalog JSON",
+  "description": "Successful response emitted by `nvflare recipe list --format json`.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "exit_code",
+    "data"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1"
+    },
+    "status": {
+      "type": "string",
+      "const": "ok"
+    },
+    "exit_code": {
+      "type": "integer",
+      "const": 0
+    },
+    "data": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/recipe_catalog_entry"
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "string_array": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "nullable_string": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "recipe_catalog_entry": {
+      "type": "object",
+      "required": [
+        "name",
+        "description",
+        "framework",
+        "module",
+        "class",
+        "algorithm",
+        "aggregation",
+        "state_exchange",
+        "privacy"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Stable recipe name accepted by `nvflare recipe show <name>`."
+        },
+        "description": {
+          "type": "string"
+        },
+        "framework": {
+          "type": "string",
+          "description": "Primary framework filter value for the recipe."
+        },
+        "module": {
+          "type": "string",
+          "description": "Python module that provides the recipe class."
+        },
+        "class": {
+          "type": "string",
+          "description": "Recipe class name."
+        },
+        "algorithm": {
+          "$ref": "#/$defs/nullable_string"
+        },
+        "aggregation": {
+          "$ref": "#/$defs/nullable_string"
+        },
+        "state_exchange": {
+          "$ref": "#/$defs/nullable_string"
+        },
+        "privacy": {
+          "$ref": "#/$defs/string_array",
+          "description": "Privacy features enabled by default for this catalog entry."
+        },
+        "framework_support": {
+          "$ref": "#/$defs/string_array"
+        },
+        "heterogeneity_support": {
+          "$ref": "#/$defs/string_array"
+        },
+        "privacy_compatible": {
+          "$ref": "#/$defs/string_array"
+        },
+        "optional_dependencies": {
+          "$ref": "#/$defs/string_array"
+        },
+        "template_references": {
+          "$ref": "#/$defs/string_array"
+        },
+        "notes": {
+          "$ref": "#/$defs/string_array"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

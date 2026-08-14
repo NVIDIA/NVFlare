@@ -659,6 +659,124 @@ class TestMetricsArtifactWriterAggregationEvents:
         assert _metrics_to_dict(rounds[0]["aggregated_metrics"]) == {"score": 0.9}
         assert rounds[0]["sites"] == []
 
+    def test_custom_aggregator_without_metrics_logs_warning(self, tmp_path):
+        writer = MetricsArtifactWriter()
+        writer.log_warning = Mock()
+        run_dir = tmp_path / "run"
+        fl_ctx = _make_fl_ctx(run_dir)
+        aggr_result = FLModel(
+            metrics=None,
+            current_round=1,
+            meta={
+                AppConstants.CURRENT_ROUND: 1,
+                _METRICS_AGGREGATION_INFO: {
+                    "metric_source": "custom_aggregator_flmodel_metrics",
+                    "use_contribution_sites": False,
+                },
+            },
+        )
+
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
+        writer.handle_event(AppEventType.AFTER_AGGREGATION, fl_ctx)
+        fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, None, private=True, sticky=False)
+        _finish_run(writer, fl_ctx)
+
+        writer.log_warning.assert_called_once()
+        warning = writer.log_warning.call_args.args[1]
+        assert writer.log_warning.call_args.kwargs == {"fire_event": False}
+        assert "custom aggregator round(s): [1]" in warning
+        assert "aggregator results did not include FLModel.metrics" in warning
+        _, summary_path, round_path = _artifact_paths(run_dir)
+        assert not summary_path.exists()
+        assert not round_path.exists()
+
+    def test_builtin_aggregator_without_metrics_does_not_log_custom_aggregator_warning(self, tmp_path):
+        writer = MetricsArtifactWriter()
+        writer.log_warning = Mock()
+        run_dir = tmp_path / "run"
+        fl_ctx = _make_fl_ctx(run_dir)
+
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        _record_round(writer, fl_ctx, 1, metrics=None, use_contribution_sites=False)
+        _finish_run(writer, fl_ctx)
+
+        writer.log_warning.assert_not_called()
+
+    def test_custom_aggregator_warning_bounds_long_round_list(self, tmp_path):
+        writer = MetricsArtifactWriter()
+        writer.log_warning = Mock()
+        run_dir = tmp_path / "run"
+        fl_ctx = _make_fl_ctx(run_dir)
+
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        for round_num in range(1, 13):
+            aggr_result = FLModel(
+                metrics=None,
+                current_round=round_num,
+                meta={
+                    AppConstants.CURRENT_ROUND: round_num,
+                    _METRICS_AGGREGATION_INFO: {
+                        "metric_source": "custom_aggregator_flmodel_metrics",
+                        "use_contribution_sites": False,
+                    },
+                },
+            )
+            fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
+            writer.handle_event(AppEventType.AFTER_AGGREGATION, fl_ctx)
+        fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, None, private=True, sticky=False)
+        _finish_run(writer, fl_ctx)
+
+        writer.log_warning.assert_called_once()
+        warning = writer.log_warning.call_args.args[1]
+        assert "12 rounds (first=1, last=12)" in warning
+        assert "[1, 2, 3" not in warning
+
+    def test_custom_aggregator_partial_missing_metrics_logs_warning(self, tmp_path):
+        writer = MetricsArtifactWriter()
+        writer.log_warning = Mock()
+        run_dir = tmp_path / "run"
+        fl_ctx = _make_fl_ctx(run_dir)
+        missing_metrics = FLModel(
+            metrics=None,
+            current_round=1,
+            meta={
+                AppConstants.CURRENT_ROUND: 1,
+                _METRICS_AGGREGATION_INFO: {
+                    "metric_source": "custom_aggregator_flmodel_metrics",
+                    "use_contribution_sites": False,
+                },
+            },
+        )
+        reported_metrics = FLModel(
+            metrics={"score": 0.9},
+            current_round=2,
+            meta={
+                AppConstants.CURRENT_ROUND: 2,
+                _METRICS_AGGREGATION_INFO: {
+                    "metric_source": "custom_aggregator_flmodel_metrics",
+                    "use_contribution_sites": False,
+                },
+            },
+        )
+
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        for aggr_result in (missing_metrics, reported_metrics):
+            fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
+            writer.handle_event(AppEventType.AFTER_AGGREGATION, fl_ctx)
+        fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, None, private=True, sticky=False)
+        _finish_run(writer, fl_ctx)
+
+        writer.log_warning.assert_called_once()
+        warning = writer.log_warning.call_args.args[1]
+        assert writer.log_warning.call_args.kwargs == {"fire_event": False}
+        assert "round(s): [1]" in warning
+        summary = _read_summary(run_dir)
+        rounds = _read_rounds(run_dir)
+        assert summary["final_round"] == 2
+        assert len(rounds) == 1
+        assert rounds[0]["round"] == 2
+
     def test_site_and_round_metric_limits_are_enforced(self, tmp_path):
         writer = MetricsArtifactWriter(limits={"max_sites_per_round": 1, "max_site_metric_records_per_round": 1})
         run_dir = tmp_path / "run"

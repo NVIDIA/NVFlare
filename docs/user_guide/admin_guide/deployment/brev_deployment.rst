@@ -469,7 +469,7 @@ Each participant folder has this structure:
 During this step, ``nvflare deploy prepare`` updates
 ``local/resources.json.default`` to use the Kubernetes launcher, removes any
 active ``local/resources.json`` override, updates runtime communication to use
-the generated Kubernetes Service, creates a ``local/study_data.yaml`` template
+the generated Kubernetes Service, creates a ``local/study_runtime.yaml`` template
 when needed, removes the legacy ``startup/start.sh``, ``startup/sub_start.sh``,
 and ``startup/stop_fl.sh`` scripts (the parent process is launched by the Helm
 chart instead), and generates ``helm_chart/``. For server kits, it also
@@ -793,24 +793,21 @@ Kubernetes Job Pods and nvfldata
 ================================
 
 ``nvflare deploy prepare`` writes the Kubernetes launcher into
-``local/resources.json.default`` before the participant folders are copied to
-Brev. The generated launcher config sets ``study_data_pvc_file_path`` to:
-
-.. code-block:: text
-
-   /var/tmp/nvflare/workspace/local/study_data.yaml
-
-When launched job pods need the ``nvfldata`` PVC, edit
-``local/study_data.yaml`` in the prepared server and client folders before
-copying those folders into ``nvflws``. This example maps the ``default`` study's
-``data`` dataset to ``nvfldata``:
+``local/resources.json.default`` and a ``local/study_runtime.yaml`` template
+before the participant folders are copied to Brev. When launched job pods need
+the ``nvfldata`` PVC, edit ``local/study_runtime.yaml`` in the prepared server
+and client folders before copying those folders into ``nvflws``. This example
+maps the ``default`` study's ``data`` dataset to ``nvfldata``:
 
 .. code-block:: yaml
 
-   default:
-     data:
-       source: nvfldata
-       mode: rw
+   format_version: 2
+   studies:
+     default:
+       datasets:
+         data:
+           source: nvfldata
+           mode: rw
 
 Job pod image, Python, CPU, memory, and ephemeral storage settings should be
 specified in the submitted job's ``meta.json`` under ``launcher_spec`` for the

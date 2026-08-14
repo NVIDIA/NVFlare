@@ -62,6 +62,14 @@ def _process_headers() -> dict:
     device_info_header = headers.get(HttpHeaderKey.DEVICE_INFO, None)
     if device_info_header:
         device_info.from_query_string(device_info_header)
+        header_device_id = device_info.get(EdgeProtoKey.DEVICE_ID)
+        if header_device_id and header_device_id != device_id:
+            raise ApiError(
+                400,
+                EdgeApiStatus.INVALID_REQUEST,
+                f"Device ID mismatch: {HttpHeaderKey.DEVICE_ID} does not match {HttpHeaderKey.DEVICE_INFO}",
+            )
+    device_info.device_id = device_id
     d[EdgeProtoKey.DEVICE_INFO] = device_info
 
     user_info_header = headers.get(HttpHeaderKey.USER_INFO, None)

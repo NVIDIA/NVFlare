@@ -84,6 +84,7 @@ class NumpyArrayDecomposer(ViaDownloaderDecomposer):
         optional=False,
         abort_signal=None,
         progress_cb=None,
+        fobs_ctx: dict = None,
     ) -> Tuple[str, dict]:
         return download_arrays(
             from_fqcn=from_fqcn,

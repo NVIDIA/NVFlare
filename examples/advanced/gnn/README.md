@@ -111,12 +111,15 @@ The recipe is configured in `job.py` with parameters such as:
 
 The recipe uses **per-site configuration** (`per_site_config`) to provide site-specific training arguments:
 ```python
+from nvflare.recipe import set_per_site_config
+
 per_site_config = {}
 for i in range(1, num_clients + 1):
     site_name = f"site-{i}"
     per_site_config[site_name] = {
         "train_args": f"--data_path {data_path} --epochs {epochs_per_round} ..."
     }
+set_per_site_config(recipe, per_site_config)
 ```
 
 This pattern allows each site to receive customized arguments, making it easy to:

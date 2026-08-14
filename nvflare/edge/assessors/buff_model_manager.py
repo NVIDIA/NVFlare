@@ -113,15 +113,15 @@ class BuffModelManager(ModelManager):
                 else:
                     weight = 1.0
                 aggr = ms.aggregator
-                # Add the dict to new_model by multiplying the weight and dividing by the count
+                # Add the dict to new_model by multiplying the weight
                 update_dict = aggr.dict
                 count = aggr.count
 
                 if count > 0:
                     # aggregate updates
                     for key, value in update_dict.items():
-                        # apply weight and divide by count
-                        value = weight * value / count
+                        # apply weight
+                        value = weight * value
                         # update the new model
                         if key not in new_model:
                             new_model[key] = value
@@ -131,6 +131,12 @@ class BuffModelManager(ModelManager):
                 # Reset aggr after counting its contribution
                 ms.aggregator.reset(fl_ctx)
                 num_updates += count
+
+            # Normalize the accumulated weighted sum by the total number of buffered
+            # device updates
+            if num_updates > 0:
+                for key in new_model:
+                    new_model[key] = new_model[key] / num_updates
 
             # Add the aggregated updates to the current global weights
             global_weights = self.current_model.data

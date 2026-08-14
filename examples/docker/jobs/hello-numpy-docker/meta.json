@@ -10,6 +10,9 @@
         },
         "site-1": {
             "docker": {"image": "nvflare-job:latest"}
+        },
+        "site-2": {
+            "docker": {"image": "nvflare-job:latest"}
         }
     },
     "resource_spec": {}

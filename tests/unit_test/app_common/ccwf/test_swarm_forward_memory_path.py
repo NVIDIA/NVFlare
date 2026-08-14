@@ -11,13 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Tests for receiver-side PASS_THROUGH: _has_lazy_refs detection on SwarmClientController.
+"""Tests for receiver-side PASS_THROUGH handling on SwarmClientController.
 
 Covers:
   1. _has_lazy_refs() correctly detects LazyDownloadRef in nested structures.
-  2. _scatter() resolves local copy when LazyDownloadRef is present.
-  3. _scatter() skips resolution when task_data has real tensors (sender-is-receiver case).
-  4. do_learn_task() GLOBAL_MODEL block: resolves when lazy refs, skips when real tensors.
+  2. Swarm resolves learner input according to the local executor and aggregation role.
+  3. _scatter() preserves its local copy and requests PASS_THROUGH for remote tasks.
 """
 import unittest
 from unittest.mock import MagicMock
@@ -25,7 +24,10 @@ from unittest.mock import MagicMock
 import numpy as np
 
 from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.shareable import ReservedHeaderKey
+from nvflare.app_common.ccwf.common import Constant
 from nvflare.app_common.ccwf.swarm_client_ctl import SwarmClientController
+from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor, ExecutionMode
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
@@ -57,6 +59,7 @@ def _make_controller():
     ctl.log_debug = MagicMock()
     ctl.log_warning = MagicMock()
     ctl.me = "site-1"
+    ctl.enable_tensor_disk_offload = False
     ctl.metric_comparator = None
     ctl.metric_comparator_id = None
     ctl.report_learn_result_task_name = "swarm_report_learn_result"
@@ -80,6 +83,7 @@ def _make_controller():
     ctl.memory_gc_rounds = 1
     ctl.cuda_empty_cache = False
     ctl._aggr_round_count = 0
+    ctl.learn_executor = MagicMock()
     ctl.shareable_generator = MagicMock()
     ctl.aggregator = MagicMock()
     ctl.update_status = MagicMock()
@@ -117,46 +121,102 @@ class TestHasLazyRefs(unittest.TestCase):
         self.assertFalse(SwarmClientController._has_lazy_refs(42))
 
 
-class TestDoLearnTaskGlobalModel(unittest.TestCase):
-    """GLOBAL_MODEL resolution is driven by _has_lazy_refs(), not a flag."""
+class TestPrepareLearnTaskData(unittest.TestCase):
+    """Swarm owns keep-versus-resolve policy at the learner boundary."""
 
-    def _run_global_model_block(self, task_data):
+    @staticmethod
+    def _prepare(task_data, learn_executor, aggr="site-2"):
         ctl = _make_controller()
+        ctl.learn_executor = learn_executor
+        task_data.set_header(Constant.AGGREGATOR, aggr)
 
         resolve_calls = []
         resolved_result = _make_shareable_with_real_arrays()
 
-        def fake_resolve(res, ctx):
-            resolve_calls.append(res)
+        def fake_resolve(res, ctx, **kwargs):
+            resolve_calls.append((res, kwargs))
             return resolved_result
 
         ctl._resolve_lazy_refs = fake_resolve
-        model_inputs = []
-        ctl.shareable_generator.shareable_to_learnable.side_effect = (
-            lambda s, ctx: model_inputs.append(s) or MagicMock()
-        )
         fl_ctx = MagicMock()
 
-        task_data_for_model = ctl._resolve_lazy_refs(task_data, fl_ctx) if ctl._has_lazy_refs(task_data) else task_data
-        ctl.shareable_generator.shareable_to_learnable(task_data_for_model, fl_ctx)
+        controller_data, learner_data = ctl._prepare_learn_task_data(task_data, fl_ctx)
+        return resolve_calls, resolved_result, controller_data, learner_data
 
-        return resolve_calls, model_inputs[0] if model_inputs else None
-
-    def test_resolves_when_lazy_refs_present(self):
+    def test_external_process_non_aggregator_leaves_refs_for_trainer_as_sole_consumer(self):
         task_data = _make_shareable_with_lazy_refs()
-        resolve_calls, model_input = self._run_global_model_block(task_data)
+        executor = ClientAPIExecutor(execution_mode=ExecutionMode.EXTERNAL_PROCESS, command="python train.py")
 
-        self.assertEqual(len(resolve_calls), 1)
-        self.assertIs(resolve_calls[0], task_data)
-        self.assertIsNot(model_input, task_data)
-
-    def test_skips_resolution_when_real_tensors(self):
-        """Sender-is-receiver case: local queue has real tensors, no resolution needed."""
-        task_data = _make_shareable_with_real_arrays()
-        resolve_calls, model_input = self._run_global_model_block(task_data)
-
+        resolve_calls, resolved, controller_data, learner_data = self._prepare(task_data, executor)
         self.assertEqual(resolve_calls, [])
-        self.assertIs(model_input, task_data)
+        self.assertIsNot(controller_data, resolved)
+        self.assertIs(controller_data, task_data)
+        self.assertIs(learner_data, task_data)
+
+    def test_external_process_aggregator_resolves_once_for_controller_and_trainer(self):
+        task_data = _make_shareable_with_lazy_refs()
+        executor = ClientAPIExecutor(execution_mode=ExecutionMode.EXTERNAL_PROCESS, command="python train.py")
+
+        resolve_calls, resolved, controller_data, learner_data = self._prepare(
+            task_data,
+            executor,
+            aggr="site-1",
+        )
+        self.assertEqual(len(resolve_calls), 1)
+        self.assertIs(resolve_calls[0][0], task_data)
+        self.assertFalse(resolve_calls[0][1]["enable_tensor_disk_offload"])
+        self.assertIs(controller_data, resolved)
+        self.assertIs(learner_data, resolved)
+
+    def test_in_process_resolves_refs_for_learner(self):
+        task_data = _make_shareable_with_lazy_refs()
+        executor = ClientAPIExecutor(execution_mode=ExecutionMode.IN_PROCESS, task_script_path="train.py")
+
+        _, resolved, controller_data, learner_data = self._prepare(task_data, executor)
+        self.assertIs(controller_data, resolved)
+        self.assertIs(learner_data, resolved)
+
+    def test_non_client_api_executor_is_treated_as_in_process(self):
+        task_data = _make_shareable_with_lazy_refs()
+
+        _, resolved, controller_data, learner_data = self._prepare(task_data, MagicMock())
+        self.assertIs(controller_data, resolved)
+        self.assertIs(learner_data, resolved)
+
+    def test_attach_non_aggregator_resolves_refs_at_cj_boundary(self):
+        task_data = _make_shareable_with_lazy_refs()
+        executor = ClientAPIExecutor(execution_mode=ExecutionMode.ATTACH, attach_id="test-attach")
+
+        resolve_calls, resolved, controller_data, learner_data = self._prepare(task_data, executor)
+        self.assertEqual(len(resolve_calls), 1)
+        self.assertIs(resolve_calls[0][0], task_data)
+        self.assertFalse(resolve_calls[0][1]["enable_tensor_disk_offload"])
+        self.assertIs(controller_data, resolved)
+        self.assertIs(learner_data, resolved)
+
+    def test_attach_aggregator_resolves_once_for_controller_and_trainer(self):
+        task_data = _make_shareable_with_lazy_refs()
+        executor = ClientAPIExecutor(execution_mode=ExecutionMode.ATTACH, attach_id="test-attach")
+
+        resolve_calls, resolved, controller_data, learner_data = self._prepare(
+            task_data,
+            executor,
+            aggr="site-1",
+        )
+        self.assertEqual(len(resolve_calls), 1)
+        self.assertIs(resolve_calls[0][0], task_data)
+        self.assertFalse(resolve_calls[0][1]["enable_tensor_disk_offload"])
+        self.assertIs(controller_data, resolved)
+        self.assertIs(learner_data, resolved)
+
+    def test_real_tensors_need_no_resolution_for_any_executor(self):
+        task_data = _make_shareable_with_real_arrays()
+        executor = ClientAPIExecutor(execution_mode=ExecutionMode.IN_PROCESS, task_script_path="train.py")
+
+        resolve_calls, _, controller_data, learner_data = self._prepare(task_data, executor)
+        self.assertEqual(resolve_calls, [])
+        self.assertIs(controller_data, task_data)
+        self.assertIs(learner_data, task_data)
 
 
 class TestResultUploadReceiverStamp(unittest.TestCase):
@@ -185,8 +245,8 @@ class TestResultUploadReceiverStamp(unittest.TestCase):
         self.assertTrue(ctl.log_warning.called)
 
 
-class TestScatterLazyRefResolution(unittest.TestCase):
-    """_scatter() resolves LazyDownloadRefs on local copy based on data content."""
+class TestScatterLazyRefHandling(unittest.TestCase):
+    """_scatter() preserves local refs and opts remote learn tasks into PASS_THROUGH."""
 
     def _make_real_scatter_ctl(self, me="site-1", trainers=None, aggrs=None):
         ctl = _make_controller()
@@ -214,30 +274,28 @@ class TestScatterLazyRefResolution(unittest.TestCase):
         ctl.get_config_prop = MagicMock(side_effect=cfg)
         return ctl
 
-    def test_resolve_called_when_lazy_refs_in_task_data(self):
-        """When task_data has LazyDownloadRef, _resolve_lazy_refs runs on local copy."""
+    def test_local_lazy_task_is_queued_for_mode_aware_preparation(self):
         ctl = self._make_real_scatter_ctl(me="site-1", trainers=["site-1", "site-2"])
 
         resolve_calls = []
-        real_data = _make_shareable_with_real_arrays()
-        ctl._resolve_lazy_refs = lambda res, ctx: resolve_calls.append(res) or real_data
+        ctl._resolve_lazy_refs = lambda res, ctx, **kwargs: resolve_calls.append((res, kwargs)) or res
         fl_ctx = MagicMock()
 
         lazy_task = _make_shareable_with_lazy_refs()
         ctl._scatter(lazy_task, for_round=0, fl_ctx=fl_ctx)
 
-        self.assertEqual(len(resolve_calls), 1)
+        self.assertEqual(resolve_calls, [])
         local_data = (
             ctl.set_learn_task.call_args.kwargs.get("task_data") or ctl.set_learn_task.call_args[1]["task_data"]
         )
-        self.assertIs(local_data, real_data)
+        self.assertTrue(ctl._has_lazy_refs(local_data))
 
     def test_resolve_skipped_when_real_tensors(self):
         """Sender-is-receiver: aggregator queues locally with real tensors, no resolution."""
         ctl = self._make_real_scatter_ctl(me="site-1", trainers=["site-1", "site-2"])
 
         resolve_calls = []
-        ctl._resolve_lazy_refs = lambda res, ctx: resolve_calls.append(res) or res
+        ctl._resolve_lazy_refs = lambda res, ctx, **kwargs: resolve_calls.append((res, kwargs)) or res
         fl_ctx = MagicMock()
 
         real_task = _make_shareable_with_real_arrays()
@@ -245,19 +303,31 @@ class TestScatterLazyRefResolution(unittest.TestCase):
 
         self.assertEqual(resolve_calls, [], "No resolution needed when task_data has real tensors")
 
-    def test_resolve_called_even_when_local_only(self):
-        """With lazy refs but no remote targets, resolution still fires (safety)."""
+    def test_local_only_lazy_task_is_not_resolved_in_scatter(self):
         ctl = self._make_real_scatter_ctl(me="site-1", trainers=["site-1"])
 
         resolve_calls = []
         real_data = _make_shareable_with_real_arrays()
-        ctl._resolve_lazy_refs = lambda res, ctx: resolve_calls.append(res) or real_data
+        ctl._resolve_lazy_refs = lambda res, ctx, **kwargs: resolve_calls.append((res, kwargs)) or real_data
         fl_ctx = MagicMock()
 
         lazy_task = _make_shareable_with_lazy_refs()
         ctl._scatter(lazy_task, for_round=0, fl_ctx=fl_ctx)
 
-        self.assertEqual(len(resolve_calls), 1, "Lazy refs must be resolved even without remote targets")
+        self.assertEqual(resolve_calls, [])
+
+    def test_offload_marks_only_remote_learn_task_for_pass_through(self):
+        ctl = self._make_real_scatter_ctl(me="site-1", trainers=["site-1", "site-2"])
+        ctl.enable_tensor_disk_offload = True
+        fl_ctx = MagicMock()
+
+        task_data = _make_shareable_with_real_arrays()
+        ctl._scatter(task_data, for_round=0, fl_ctx=fl_ctx)
+
+        remote_data = ctl.send_learn_task.call_args.kwargs["request"]
+        local_data = ctl.set_learn_task.call_args.kwargs["task_data"]
+        self.assertTrue(remote_data.get_header(ReservedHeaderKey.PASS_THROUGH))
+        self.assertIsNone(local_data.get_header(ReservedHeaderKey.PASS_THROUGH))
 
 
 if __name__ == "__main__":

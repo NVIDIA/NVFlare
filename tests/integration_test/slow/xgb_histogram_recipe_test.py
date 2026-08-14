@@ -42,7 +42,7 @@ import xgboost as xgb
 
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 from nvflare.app_opt.xgboost.recipes import XGBHorizontalRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, set_per_site_config
 
 
 class MockXGBDataLoader(XGBDataLoader):
@@ -99,8 +99,8 @@ class TestXGBHorizontalRecipe:
                     "objective": "binary:logistic",
                     "eval_metric": "auc",
                 },
-                per_site_config=per_site_config,
             )
+            set_per_site_config(recipe, per_site_config)
 
             # Run and verify completion
             run = recipe.execute(env)
@@ -127,8 +127,8 @@ class TestXGBHorizontalRecipe:
                 min_clients=2,
                 num_rounds=1,
                 xgb_params=custom_params,
-                per_site_config=per_site_config,
             )
+            set_per_site_config(recipe, per_site_config)
 
             # Verify params are stored
             assert recipe.xgb_params == custom_params
@@ -147,8 +147,8 @@ class TestXGBHorizontalRecipe:
                 name="test_multi_client",
                 min_clients=num_clients,
                 num_rounds=1,
-                per_site_config=per_site_config,
             )
+            set_per_site_config(recipe, per_site_config)
 
             run = recipe.execute(env)
             assert run.get_result() is not None

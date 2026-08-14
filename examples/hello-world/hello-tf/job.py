@@ -12,14 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
+
 from model import Net
 
 from nvflare.app_opt.tf.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_experiment_tracking
 
+
+def define_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--n_clients", type=int, default=2)
+    parser.add_argument("--num_rounds", type=int, default=3)
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    n_clients = 2
-    num_rounds = 3
+    args = define_parser()
+    n_clients = args.n_clients
+    num_rounds = args.num_rounds
     train_script = "client.py"
 
     recipe = FedAvgRecipe(

@@ -17,6 +17,7 @@ import pytest
 import torch
 
 from nvflare.app_common.aggregators.weighted_aggregation_helper import (
+    AggregationStatsKey,
     WeightedAggregationHelper,
     _is_aggregatable_metric_value,
     filter_aggregatable_metrics,
@@ -439,6 +440,95 @@ class TestWeightedAggregationHelper:
 
         result = helper.get_result()
         assert result["w"] == pytest.approx(3.0)
+
+
+class TestAggregationStats:
+    """Test per-round key-matching aggregation stats."""
+
+    def test_empty_helper_stats(self):
+        helper = WeightedAggregationHelper()
+
+        stats = helper.get_aggregation_stats()
+
+        assert stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == 0
+        assert stats[AggregationStatsKey.CONTRIBUTORS] == []
+        assert stats[AggregationStatsKey.KEYS_AGGREGATED] == 0
+        assert stats[AggregationStatsKey.KEYS_SEEN] == 0
+        assert stats[AggregationStatsKey.FULLY_MATCHED_KEYS] == 0
+        assert stats[AggregationStatsKey.PARTIALLY_MATCHED_KEYS] == 0
+        assert stats[AggregationStatsKey.SKIPPED_KEYS] == 0
+
+    def test_fully_and_partially_matched_keys(self):
+        helper = WeightedAggregationHelper()
+
+        data1 = {"w1": torch.tensor([1.0]), "w2": torch.tensor([2.0])}
+        helper.add(data1, weight=1.0, contributor_name="site-1", contribution_round=0)
+
+        data2 = {"w2": torch.tensor([3.0]), "w3": torch.tensor([4.0])}
+        helper.add(data2, weight=1.0, contributor_name="site-2", contribution_round=0)
+
+        stats = helper.get_aggregation_stats()
+
+        assert stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == 2
+        assert stats[AggregationStatsKey.CONTRIBUTORS] == ["site-1", "site-2"]
+        assert stats[AggregationStatsKey.KEYS_AGGREGATED] == 3
+        assert stats[AggregationStatsKey.KEYS_SEEN] == 3
+        # only w2 was contributed by both sites
+        assert stats[AggregationStatsKey.FULLY_MATCHED_KEYS] == 1
+        assert stats[AggregationStatsKey.PARTIALLY_MATCHED_KEYS] == 2
+        assert stats[AggregationStatsKey.SKIPPED_KEYS] == 0
+
+    def test_skipped_keys_via_exclude_vars(self):
+        helper = WeightedAggregationHelper(exclude_vars="bias")
+
+        data = {
+            "layer1.weight": torch.tensor([1.0]),
+            "layer1.bias": torch.tensor([2.0]),
+            "layer2.bias": torch.tensor([3.0]),
+        }
+        helper.add(data, weight=1.0, contributor_name="site-1", contribution_round=0)
+        helper.add(data, weight=1.0, contributor_name="site-2", contribution_round=0)
+
+        stats = helper.get_aggregation_stats()
+
+        assert stats[AggregationStatsKey.KEYS_AGGREGATED] == 1
+        assert stats[AggregationStatsKey.KEYS_SEEN] == 3
+        assert stats[AggregationStatsKey.FULLY_MATCHED_KEYS] == 1
+        assert stats[AggregationStatsKey.PARTIALLY_MATCHED_KEYS] == 0
+        assert stats[AggregationStatsKey.SKIPPED_KEYS] == 2
+
+    def test_get_result_snapshots_last_stats_and_resets(self):
+        helper = WeightedAggregationHelper()
+
+        data = {"w": torch.tensor([1.0])}
+        helper.add(data, weight=1.0, contributor_name="site-1", contribution_round=0)
+
+        helper.get_result()
+
+        assert helper.last_aggregation_stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == 1
+        assert helper.last_aggregation_stats[AggregationStatsKey.KEYS_AGGREGATED] == 1
+        # live stats are reset after get_result
+        stats = helper.get_aggregation_stats()
+        assert stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == 0
+        assert stats[AggregationStatsKey.KEYS_AGGREGATED] == 0
+
+    def test_stats_reset_between_rounds(self):
+        helper = WeightedAggregationHelper(exclude_vars="bias")
+
+        helper.add(
+            {"w": torch.tensor([1.0]), "bias": torch.tensor([1.0])},
+            weight=1.0,
+            contributor_name="site-1",
+            contribution_round=0,
+        )
+        helper.get_result()
+
+        # next round: skipped keys from the previous round must not linger
+        helper.add({"w": torch.tensor([2.0])}, weight=1.0, contributor_name="site-1", contribution_round=1)
+        stats = helper.get_aggregation_stats()
+
+        assert stats[AggregationStatsKey.KEYS_SEEN] == 1
+        assert stats[AggregationStatsKey.SKIPPED_KEYS] == 0
 
 
 if __name__ == "__main__":

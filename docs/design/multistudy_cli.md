@@ -55,6 +55,8 @@ The shipped multi-study design stores named-study state in `study_registry.json`
 
 The backend for all mutations is the same `study_registry.json` file the server loads at startup. The server applies mutations through a serialized validate-write-publish flow so the runtime registry and the persisted file remain aligned under normal operation and fail closed on validation/write errors.
 
+The persisted registry lives at the server workspace root (`<workspace>/study_registry.json`). A provisioned copy under `local/` acts as a first-start seed only: once a runtime mutation is persisted, the root copy is authoritative and shadows the seed. Writes never target `local/`, which may be a read-only mount (e.g. Kubernetes deployments that stage `local/` as a ConfigMap).
+
 ---
 
 ## Core Principles
