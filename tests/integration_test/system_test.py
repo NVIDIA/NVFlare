@@ -131,7 +131,7 @@ def _wait_for_background_processes(processes, timeout: float = 30.0):
 
 
 def _stop_background_processes(processes, graceful_timeout: float = 10.0, kill_timeout: float = 5.0):
-    """Best-effort cleanup for commands launched in their own process groups."""
+    """Stop commands launched in their own process groups or report survivors."""
 
     # Keep the PGID independently of Popen state: the group leader can exit while
     # a descendant remains alive and still needs cleanup.
@@ -148,11 +148,17 @@ def _stop_background_processes(processes, graceful_timeout: float = 10.0, kill_t
             os.killpg(pgid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass
-    _wait_for_process_groups(remaining_groups, kill_timeout)
+    surviving_groups = _wait_for_process_groups(remaining_groups, kill_timeout)
 
     # Reap leaders when they are still children of the test process.
     for _, process, _ in processes:
         process.poll()
+
+    if surviving_groups:
+        group_details = ", ".join(
+            f"{command} (pid={process.pid}, pgid={pgid})" for command, process, pgid in surviving_groups
+        )
+        raise NVFTestError(f"Background process group survived SIGKILL: {group_details}")
 
 
 framework = os.environ.get("NVFLARE_TEST_FRAMEWORK")
