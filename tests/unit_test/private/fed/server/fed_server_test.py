@@ -131,6 +131,26 @@ class TestFederatedServer:
 
         assert server._resolve_client_fqcn_for_auth("site-a", "token-a") == MISSING_CLIENT_FQCN
 
+    def test_non_secure_server_registers_transit_header_sanitizer(self):
+        server = object.__new__(FederatedServer)
+        server.lock = MagicMock()
+        server.cell = MagicMock()
+        server.engine = MagicMock()
+        server._register_cellnet_cbs = MagicMock()
+
+        with patch("nvflare.private.fed.server.fed_server.BaseServer.deploy"):
+            server.deploy(
+                args=MagicMock(),
+                grpc_args={"service": {"target": "localhost:8002"}},
+                secure_train=False,
+            )
+
+        server.cell.core_cell.add_incoming_filter.assert_called_once_with(
+            channel="*",
+            topic="*",
+            cb=server._strip_peer_transit_headers,
+        )
+
     def test_create_job_cell_allows_missing_server_config_for_non_secure_cell(self):
         server = object.__new__(FederatedServer)
         server.engine = MagicMock()

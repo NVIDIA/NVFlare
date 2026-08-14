@@ -29,6 +29,7 @@ from nvflare.fuel.f3.cellnet.core_cell import (
 )
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
+from nvflare.fuel.f3.cellnet.registry import Registry
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
@@ -212,6 +213,79 @@ def test_internal_listener_host_overrides_default_resources():
 
     assert manager.int_resources[DriverParams.HOST.value] == "127.0.0.1"
     assert manager.int_resources[DriverParams.LISTEN_HOST.value] == "127.0.0.1"
+
+
+def test_public_send_reply_applies_filters_before_server_transit_routing():
+    cell = _cell("site-2.job")
+    cell.out_reply_filter_reg = Registry()
+    cell.received_msg_counter_pool = MagicMock()
+    cell._stats_category = MagicMock(return_value="reply:test")
+    cell._send_to_endpoint = MagicMock(return_value="")
+    cell._find_endpoint = MagicMock(
+        side_effect=[
+            ("", Endpoint("site-1.job")),
+            ("", Endpoint("server")),
+        ]
+    )
+
+    def require_server_transit(message):
+        message.set_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, True)
+
+    cell.add_outgoing_reply_filter("*", "*", require_server_transit)
+
+    rc = cell.send_reply(Message(), "site-1.job", ["req-1"])
+
+    assert rc == ""
+    assert cell._find_endpoint.call_count == 2
+    assert cell._send_to_endpoint.call_args.args[0].name == "server"
+
+
+def test_send_reply_reports_comm_error_when_server_transit_path_is_unreachable():
+    cell = _cell("site-2.job")
+    cell.out_reply_filter_reg = Registry()
+    cell.received_msg_counter_pool = MagicMock()
+    cell._find_endpoint = MagicMock(return_value=(ReturnCode.TARGET_UNREACHABLE, None))
+    cell._send_to_endpoint = MagicMock()
+    reply = Message(
+        headers={
+            MessageHeaderKey.DESTINATION: "site-1.job",
+            MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True,
+        }
+    )
+
+    rc = cell._send_reply(reply, Endpoint("site-1.job"))
+
+    assert rc == ReturnCode.COMM_ERROR
+    cell._send_to_endpoint.assert_not_called()
+
+
+def test_server_transit_request_does_not_advertise_ad_hoc_connector():
+    cell = _cell("site-1")
+    cell.out_req_filter_reg = Registry()
+    cell.sent_msg_counter_pool = MagicMock()
+    cell.connector_manager = MagicMock()
+    cell.connector_manager.is_adhoc_allowed.return_value = True
+    cell._create_external_listener = MagicMock()
+    cell._send_to_endpoint = MagicMock(return_value="")
+    cell._find_endpoint = MagicMock(
+        side_effect=[
+            ("", Endpoint("site-2")),
+            ("", Endpoint("server")),
+        ]
+    )
+
+    def require_server_transit(message):
+        message.set_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, True)
+
+    cell.add_outgoing_request_filter("*", "*", require_server_transit)
+    target_message = TargetMessage("site-2", "peer", "ping", Message(payload="hello"))
+
+    result = cell._send_target_messages({"site-2": target_message})
+
+    assert result == {"site-2": ""}
+    cell._create_external_listener.assert_not_called()
+    sent_message = cell._send_to_endpoint.call_args.args[1]
+    assert sent_message.get_header(MessageHeaderKey.CONN_URL) is None
 
 
 def test_encrypt_and_decrypt_secure_payload():
