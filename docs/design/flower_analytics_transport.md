@@ -68,6 +68,5 @@ over Cell.
 5. Test normal completion and abort. Confirm no launched processes, bootstrap,
    internal endpoint, or TensorBoard handles remain.
 
-This PR must land before #5044. After rebasing, #5044 can remove
-`ExternalConfigurator`, the task-side legacy Client API stack, and the Pipe
-hierarchy without changing Flower analytics again.
+Flower analytics is independent of the task-side Client API execution mode and
+does not require the removed Pipe hierarchy.
