@@ -24,6 +24,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
+from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, ClientRegMsgKey, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
 from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
@@ -34,6 +35,41 @@ from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, 
 
 def assert_client_outcome_unresolved(job_runner):
     job_runner.resolve_client_outcome.assert_not_called()
+
+
+class _TestServer(BaseServer):
+    def remove_client_data(self, token):
+        pass
+
+
+@pytest.mark.parametrize(
+    "enable_admin_listener, admin_port, expected_root_urls",
+    [
+        (True, 8003, ["tcp://127.0.0.1:8002", f"tcp://127.0.0.1:8003?{ADMIN_LISTENER_KEY}=true"]),
+        (True, None, [f"tcp://127.0.0.1:8002?{ADMIN_LISTENER_KEY}=true"]),
+        (False, 8003, ["tcp://127.0.0.1:8002"]),
+    ],
+)
+def test_base_server_deploy_admin_listener(enable_admin_listener, admin_port, expected_root_urls):
+    server = _TestServer()
+    server_config = {"service": {"target": "localhost:8002", "scheme": "tcp"}}
+    if admin_port is not None:
+        server_config["admin_port"] = admin_port
+
+    with (
+        patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+        patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+        patch("nvflare.private.fed.server.fed_server.threading.Thread"),
+    ):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args=server_config,
+            enable_admin_listener=enable_admin_listener,
+        )
+
+    cell_args = cell_cls.call_args.kwargs
+    assert cell_args["root_url"] == expected_root_urls
+    assert cell_args["internal_listener_host"] == "127.0.0.1"
 
 
 class TestFederatedServer:
