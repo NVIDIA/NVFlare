@@ -28,7 +28,7 @@ Install the dependency
 
 > [!IMPORTANT]
 > This `main` branch example uses Flower 1.26+ and the newer Flower SuperLink configuration flow.
-> Use the NVFlare 2.8 release candidate line (`nvflare~=2.8.0rc`), or install NVFlare from this
+> Use the NVFlare 2.9 release candidate line (`nvflare~=2.9.0rc`), or install NVFlare from this
 > repository if that package is not available from PyPI yet.
 > If you are using released NVFlare 2.7.x, switch to the 2.7 branch or tag of this example and use `flwr>=1.16,<1.26`.
 > NVFlare 2.7.x still uses Flower's legacy `--federation-config` CLI option, which Flower 1.26+ ignores.
@@ -84,16 +84,20 @@ There is no need to define a customized server code for this example as Flower p
 
 Job Recipe contains the Flower app configuration and deployes it within NVFlare.
 ```
+    from nvflare.app_opt.flower.recipe import FlowerRecipe
+    from nvflare.recipe import SimEnv, add_experiment_tracking
+
     recipe = FlowerRecipe(
         name="hello-flower",
         min_clients=n_clients,
-        num_rounds=num_rounds,
-        content_dir=content_dir,
-        stream_metrics=stream_metrics,
+        flower_content=content_dir,
         run_config=run_config,
     )
 
-    env = SimEnv(num_clients=n_clients, num_threads=n_clients)
+    if stream_metrics:
+        add_experiment_tracking(recipe, tracking_type="tensorboard")
+
+    env = SimEnv(num_clients=n_clients)
     recipe.execute(env=env)
 ```
 
