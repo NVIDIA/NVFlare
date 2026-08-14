@@ -135,7 +135,7 @@ _LAUNCHER_MODE_KEYS = {"process", "docker", "k8s", "slurm"}
 DOCKER_JOB_BYOC_KEYS = frozenset({"image", "python_path", "entrypoint"})
 DOCKER_JOB_CONTAINER_KWARGS = frozenset({"entrypoint", "shm_size"})
 
-_DOCKER_SHM_SIZE_PATTERN = re.compile(r"^[0-9]+(?:[bB]|[kKmMgG](?:[bB])?)?$")
+_DOCKER_SHM_SIZE_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+)?(?:[bB]|[kKmMgG](?:[bB])?)?$")
 
 
 def _is_non_negative_int(value) -> bool:
@@ -172,7 +172,7 @@ _DOCKER_JOB_LAUNCHER_OPTION_VALIDATORS = {
     "num_of_gpus": (_is_non_negative_int, "must be an integer greater than or equal to 0"),
     "shm_size": (
         _is_valid_shm_size,
-        "must be a non-negative integer or a byte-size string with an optional b, k, m, or g unit",
+        "must be a non-negative integer or decimal byte-size string with an optional b, k, m, or g unit",
     ),
 }
 DOCKER_JOB_LAUNCHER_KEYS = frozenset(_DOCKER_JOB_LAUNCHER_OPTION_VALIDATORS)
