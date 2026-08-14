@@ -18,9 +18,7 @@ Unit tests for the PASS_THROUGH mechanism (Design 1: receiver-side opt-in).
 PASS_THROUGH activates LazyDownloadRef decode so tensors are not downloaded at
 an intermediate hop. It can be triggered by three independent sources:
 
-  1. Per-message header: MessageHeaderKey.PASS_THROUGH stamped by the sender
-     (e.g. the external trainer stamps RESULT_READY so CJ decodes it as a
-     LazyDownloadRef for the reverse trainer → CJ → server path).
+  1. Per-message header: MessageHeaderKey.PASS_THROUGH stamped by the sender.
 
   2. Per-channel receiver opt-in: the channel name is added to
      cell.decode_pass_through_channels by a receiver that intentionally opts an
@@ -47,13 +45,8 @@ Tests verify:
   Adapter.call() — channel IN decode_pass_through_channels (ext-process CJ):
   4. No header, channel registered        → decode_ctx[PASS_THROUGH] = True
 
-  CellPipe.send() (cell_pipe.py):
-  5. pass_through_on_send=True  → PASS_THROUGH header stamped on request
-  6. pass_through_on_send=False → PASS_THROUGH header NOT stamped
-  7. Heartbeat messages skip PASS_THROUGH even when pass_through_on_send=True
 """
 
-import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -61,12 +54,10 @@ import pytest
 
 from nvflare.apis.fl_constant import ServerCommandNames
 from nvflare.fuel.f3.cellnet.cell import Adapter, Cell
-from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.message import Message as F3Message
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.utils.fobs import FOBSContextKey
-from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
-from nvflare.fuel.utils.pipe.pipe import Message, Topic
 from nvflare.fuel.utils.waiter_utils import WaiterRC
 
 # ---------------------------------------------------------------------------
@@ -224,7 +215,7 @@ class TestAdapterPassThroughHeader:
         """Channel registered in decode_pass_through_channels → PASS_THROUGH=True even without a header.
 
         This is the receiver-side per-channel opt-in for ext-process CJ cells (Design 1).
-        ClientAPILauncherExecutor.initialize() adds the job's pipe channel to
+        A receiver can add the route's channel to
         decode_pass_through_channels so incoming server/aggregator task messages on
         that channel are decoded with PASS_THROUGH=True regardless of whether the
         sender stamped the header.
@@ -338,7 +329,7 @@ class TestAdapterPassThroughHeader:
         cell = adapter.cell
         cell.get_fobs_context.assert_called_once_with(props={FOBSContextKey.PASS_THROUGH: True})
 
-    @pytest.mark.parametrize("fqcn", ["server.job-1", "server.job-1.cell_pipe"])
+    @pytest.mark.parametrize("fqcn", ["server.job-1", "server.job-1.worker"])
     def test_submit_update_decode_failure_exits_server_job_process(self, fqcn):
         captured = {}
         cell = _make_mock_cell(captured)
@@ -398,260 +389,6 @@ class TestAdapterPassThroughHeader:
 
         mock_exit.assert_not_called()
         cb.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# Helpers for CellPipe tests
-# ---------------------------------------------------------------------------
-
-
-def _make_stub_cell_pipe(pass_through_on_send: bool = False):
-    """Return a CellPipe stub that bypasses __init__ network setup.
-
-    Only the attributes exercised by CellPipe.send() are initialised here.
-    The underlying cell is replaced by a MagicMock so no real network is needed.
-    """
-    pipe = object.__new__(CellPipe)  # bypass __init__
-    pipe.pass_through_on_send = pass_through_on_send
-    pipe.closed = False
-    pipe.hb_seq = 1
-    pipe.pipe_lock = threading.Lock()
-    pipe.channel = "cell_pipe.task_channel"
-    pipe.peer_fqcn = "site1_token_passive"
-    pipe.logger = MagicMock()
-
-    # Mock cell: send_request returns a reply with ReturnCode.OK
-    mock_reply = MagicMock()
-    mock_reply.get_header.return_value = ReturnCode.OK
-    mock_cell = MagicMock()
-    mock_cell.send_request.return_value = mock_reply
-    pipe.cell = mock_cell
-
-    return pipe
-
-
-def _make_reply_msg(topic="submit_model"):
-    """Return a valid pipe REPLY Message."""
-    return Message(msg_type=Message.REPLY, topic=topic, data=b"model_bytes", req_id="req-001")
-
-
-def _get_sent_request(pipe: CellPipe):
-    """Return the CellMessage that was passed to cell.send_request()."""
-    call_kwargs = pipe.cell.send_request.call_args[1]
-    return call_kwargs["request"]
-
-
-# ---------------------------------------------------------------------------
-# 4-6: CellPipe.send() — PASS_THROUGH header stamping
-# ---------------------------------------------------------------------------
-
-
-class TestCellPipePassThroughHeader:
-    """CellPipe.send() must stamp MessageHeaderKey.PASS_THROUGH when
-    pass_through_on_send=True, and must NOT stamp it otherwise."""
-
-    def test_pass_through_on_send_true_stamps_header(self):
-        """pass_through_on_send=True → PASS_THROUGH header present in the sent CellMessage."""
-        pipe = _make_stub_cell_pipe(pass_through_on_send=True)
-        msg = _make_reply_msg()
-
-        pipe.send(msg, timeout=30.0)
-
-        request = _get_sent_request(pipe)
-        header_value = request.get_header(MessageHeaderKey.PASS_THROUGH)
-        assert header_value is True, (
-            "CellPipe must stamp PASS_THROUGH=True on every outgoing message " "when pass_through_on_send=True"
-        )
-
-    def test_pass_through_on_send_false_does_not_stamp_header(self):
-        """pass_through_on_send=False (default) → PASS_THROUGH header absent from CellMessage."""
-        pipe = _make_stub_cell_pipe(pass_through_on_send=False)
-        msg = _make_reply_msg()
-
-        pipe.send(msg, timeout=30.0)
-
-        request = _get_sent_request(pipe)
-        # get_header returns None when absent (default sentinel)
-        header_value = request.get_header(MessageHeaderKey.PASS_THROUGH)
-        assert header_value is None, "CellPipe must NOT stamp PASS_THROUGH when pass_through_on_send=False"
-
-    def test_default_pass_through_on_send_is_false(self):
-        """The default value of pass_through_on_send must be False.
-
-        Only the subprocess-side CellPipe (subprocess result pipe, set in
-        ExProcessClientAPI.init()) should opt in.  CJ's own pipe must NOT
-        stamp the header on outgoing task messages.
-        """
-        # Create stub without overriding the attribute
-        pipe = object.__new__(CellPipe)
-        # Simulate the end of __init__ where pass_through_on_send is assigned
-        pipe.pass_through_on_send = False
-        assert pipe.pass_through_on_send is False
-
-    def test_request_message_stamped_with_header(self):
-        """PASS_THROUGH is stamped on REQUEST messages too, not only REPLY."""
-        pipe = _make_stub_cell_pipe(pass_through_on_send=True)
-        msg = Message(msg_type=Message.REQUEST, topic="get_model", data=b"")
-
-        pipe.send(msg, timeout=30.0)
-
-        request = _get_sent_request(pipe)
-        assert request.get_header(MessageHeaderKey.PASS_THROUGH) is True
-
-    def test_cached_cell_message_is_reused_across_retries(self):
-        """The CellMessage is cached on msg._cached_cell_msg so retries reuse it.
-
-        This prevents creating multiple ArrayDownloadable transactions for the same
-        message (which caused OOM with large models + many send retries).
-        """
-        pipe = _make_stub_cell_pipe(pass_through_on_send=True)
-        msg = _make_reply_msg()
-
-        pipe.send(msg, timeout=30.0)
-        first_request = _get_sent_request(pipe)
-
-        pipe.send(msg, timeout=30.0)
-        second_request = _get_sent_request(pipe)
-
-        assert first_request is second_request, (
-            "send() must reuse the cached CellMessage across calls to avoid "
-            "creating duplicate ArrayDownloadable transactions"
-        )
-
-    def test_heartbeat_does_not_stamp_pass_through(self):
-        """Heartbeat messages must never carry PASS_THROUGH, even when pass_through_on_send=True.
-
-        Heartbeats are sent via fire_and_forget (not send_request), so the PASS_THROUGH
-        stamping branch is never reached.  This test verifies that send_request is NOT
-        called for heartbeats and fire_and_forget IS called instead.
-        """
-        pipe = object.__new__(CellPipe)
-        pipe.pass_through_on_send = True
-        pipe.closed = False
-        pipe.hb_seq = 1
-        pipe.pipe_lock = threading.Lock()
-        pipe.channel = "cell_pipe.task_channel"
-        pipe.peer_fqcn = "site1_token_passive"
-        pipe.logger = MagicMock()
-        pipe.cell = MagicMock()
-
-        hb_msg = Message(msg_type=Message.REQUEST, topic=Topic.HEARTBEAT, data=b"")
-        pipe.send(hb_msg, timeout=None)
-
-        # Heartbeat → fire_and_forget, not send_request
-        pipe.cell.fire_and_forget.assert_called_once()
-        pipe.cell.send_request.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# 7-8: Combined directional contract (forward path vs reverse path)
-# ---------------------------------------------------------------------------
-
-
-class TestPassThroughDirectionContract:
-    """Documents the two-direction PASS_THROUGH contract (Design 1).
-
-    Forward path (server/aggregator → CJ → subprocess):
-      CJ cell has the job's pipe channel in decode_pass_through_channels
-      (registered by ClientAPILauncherExecutor.initialize()).
-      CJ Adapter.call() builds PASS_THROUGH=True for that channel regardless of sender header.
-      ViaDownloaderDecomposer creates LazyDownloadRef(fqcn=server) at CJ.
-      CJ re-encodes via LazyDownloadRefDecomposer (re-emits original datum).
-      Subprocess Adapter.call() (channel not registered) downloads tensors
-      directly from the server's DownloadService → real tensors at subprocess.
-
-      Subprocess cell has empty decode_pass_through_channels (never populated).
-      CJ pipe has pass_through_on_send=False → no PASS_THROUGH header on task msgs.
-      Subprocess Adapter.call() builds PASS_THROUGH=False → downloads normally.
-
-    Reverse path (subprocess → CJ → server):
-      Subprocess-side CellPipe has pass_through_on_send=True (ExProcessClientAPI).
-      PASS_THROUGH header is stamped on result messages.
-      CJ Adapter.call() builds PASS_THROUGH=True (from header OR channel registration).
-      ViaDownloaderDecomposer stores _LazyBatchInfo → recompose() returns
-      LazyDownloadRef → CJ forwards the reference to the server for direct download.
-    """
-
-    def test_forward_path_cj_pipe_sends_task_without_pass_through_header(self):
-        """Forward path step 1: CJ's pipe (default False) sends task → no header.
-
-        Combined test connecting CellPipe.send() to the absence of the header that
-        would otherwise trigger LazyDownloadRef creation at the subprocess.
-        """
-        cj_pipe = _make_stub_cell_pipe(pass_through_on_send=False)
-        task_msg = Message(msg_type=Message.REQUEST, topic="train", data=b"model")
-        cj_pipe.send(task_msg, timeout=30.0)
-
-        sent = _get_sent_request(cj_pipe)
-        header = sent.get_header(MessageHeaderKey.PASS_THROUGH)
-        assert header is None, (
-            "CJ's pipe (pass_through_on_send=False) must not stamp PASS_THROUGH.\n"
-            "Presence of this header on task messages would give the subprocess\n"
-            "PASS_THROUGH=True decode context → LazyDownloadRef → crash."
-        )
-
-    def test_forward_path_no_header_gives_subprocess_pass_through_false_decode_ctx(self):
-        """Forward path: subprocess (channel not registered) + no header → PASS_THROUGH=False.
-
-        The subprocess cell never has any channel in decode_pass_through_channels.
-        CJ's pipe has pass_through_on_send=False → no PASS_THROUGH header on task msgs.
-        Result: subprocess Adapter.call() builds PASS_THROUGH=False, so
-        ViaDownloaderDecomposer downloads tensors normally and torch.as_tensor() succeeds.
-        """
-        captured = {}
-        # Subprocess cell: empty decode_pass_through_channels (never populated)
-        adapter = _make_adapter(captured)
-        headers = _headers_without_pass_through()
-        future = _make_future(headers)
-
-        with patch("nvflare.fuel.f3.cellnet.cell.decode_payload"):
-            adapter.call(future)
-
-        assert captured.get(FOBSContextKey.PASS_THROUGH) is False, (
-            "No PASS_THROUGH header + empty decode_pass_through_channels → "
-            "subprocess decode ctx must have PASS_THROUGH=False.\n"
-            "ViaDownloaderDecomposer.process_datum() then downloads tensors normally;\n"
-            "torch.as_tensor() on the result works without error."
-        )
-
-    def test_reverse_path_subprocess_pipe_stamps_pass_through_on_result(self):
-        """Reverse path step 1: subprocess pipe (pass_through_on_send=True) stamps header.
-
-        Confirms the subprocess result pipe correctly stamps PASS_THROUGH so CJ
-        creates LazyDownloadRef and forwards the reference to the server.
-        """
-        subprocess_pipe = _make_stub_cell_pipe(pass_through_on_send=True)
-        result_msg = Message(msg_type=Message.REPLY, topic="submit_model", data=b"result")
-        subprocess_pipe.send(result_msg, timeout=30.0)
-
-        sent = _get_sent_request(subprocess_pipe)
-        assert sent.get_header(MessageHeaderKey.PASS_THROUGH) is True, (
-            "Subprocess pipe (pass_through_on_send=True) must stamp PASS_THROUGH=True "
-            "on result messages so CJ's decode context is PASS_THROUGH=True."
-        )
-
-    def test_reverse_path_pass_through_header_gives_cj_pass_through_true_decode_ctx(self):
-        """Reverse path step 2: header present → CJ Adapter builds PASS_THROUGH=True.
-
-        Confirms that when the subprocess pipe stamps the header (reverse path),
-        CJ's FOBS decode context has PASS_THROUGH=True, so ViaDownloaderDecomposer
-        stores _LazyBatchInfo and recompose() returns LazyDownloadRef — CJ then
-        forwards the reference to the server without materialising any tensor data.
-        """
-        captured = {}
-        adapter = _make_adapter(captured)
-        headers = _headers_without_pass_through()
-        headers[MessageHeaderKey.PASS_THROUGH] = True  # stamped by subprocess pipe
-        future = _make_future(headers)
-
-        with patch("nvflare.fuel.f3.cellnet.cell.decode_payload"):
-            adapter.call(future)
-
-        assert captured.get(FOBSContextKey.PASS_THROUGH) is True, (
-            "PASS_THROUGH=True header → CJ decode ctx must have PASS_THROUGH=True.\n"
-            "ViaDownloaderDecomposer.process_datum() then stores _LazyBatchInfo;\n"
-            "recompose() returns LazyDownloadRef that CJ forwards to the server."
-        )
 
 
 # ---------------------------------------------------------------------------

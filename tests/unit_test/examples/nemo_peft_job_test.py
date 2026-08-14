@@ -165,7 +165,6 @@ def test_nemo_peft_recipe_exports_modern_fedavg_config(tmp_path):
     assert command[command.index("--backend") + 1] == "mock"
     assert command[command.index("--train_file") + 1].endswith("split data/alpha10.0_site-1.jsonl")
     assert executor_args["launch_once"] is False
-    assert client_config["max_resends"] == 3
     assert (job_dir / "app_site-1" / "custom" / "automodel_peft_client.py").exists()
     assert (job_dir / "app_site-1" / "custom" / "adapter_checkpoint.py").exists()
     assert (job_dir / "app_site-1" / "custom" / "automodel_adapter_loader.py").exists()

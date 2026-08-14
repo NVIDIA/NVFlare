@@ -31,8 +31,3 @@ class FrameworkType(str, Enum):
 class Mode(str, Enum):
     ACTIVE = "ACTIVE"
     PASSIVE = "PASSIVE"
-
-
-class PipeChannelName:
-    TASK = "task"
-    METRIC = "metric"

@@ -76,6 +76,22 @@ timeouts above are configured consistently for very large models.
 Upcoming Main-Branch Changes
 ============================
 
+Legacy Client API Stack Removal
+-------------------------------
+
+The legacy converter, launcher, agent, exchanger, and pipe APIs have been
+removed. This includes ``BaseScriptRunner`` and ``ExternalConfigurator`` in
+addition to the legacy executor and pipe classes. Migrate client jobs to
+:class:`ClientAPIExecutor<nvflare.app_common.executors.client_api_executor.ClientAPIExecutor>`
+using ``in_process``, ``external_process``, or ``attach`` mode.
+
+Recipe-level ``pipe_type`` and ``pipe_root_path`` settings are no longer
+accepted. Select transport in site ``comm_config.json`` instead; the F3
+``FileDriver`` remains available as scheme ``shared-file``. For custom model
+representation logic, transform parameters explicitly around
+``flare.receive()`` and ``flare.send()`` or use helpers in
+:mod:`nvflare.client.converter_utils`.
+
 FLARE API Compatibility Note
 ----------------------------
 

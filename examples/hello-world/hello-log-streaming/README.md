@@ -15,6 +15,7 @@ Clone the repository and navigate to this directory:
 
 ```bash
 git clone https://github.com/NVIDIA/NVFlare.git
+cd NVFlare
 cd examples/hello-world/hello-log-streaming
 pip install -r requirements.txt
 ```

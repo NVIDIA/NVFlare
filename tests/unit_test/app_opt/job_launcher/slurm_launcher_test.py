@@ -111,6 +111,20 @@ def test_resource_resolution_uses_slurm_node_topology():
     assert resources.gpus_per_node == 8
 
 
+def test_resource_resolution_translates_portable_cpu_and_memory():
+    job_meta = {
+        JobMetaKey.RESOURCE_SPEC.value: {
+            "@default": {"num_of_cpus": 4, "memory": "8Gi"},
+            "site-1": {"num_of_cpus": 6},
+        }
+    }
+
+    resources = _resolve_resources(job_meta, "site-1", "none", 600, spec={})
+
+    assert resources.cpus_per_node == 6
+    assert resources.mem_per_node == 8192
+
+
 @pytest.mark.parametrize(
     "spec, message",
     [

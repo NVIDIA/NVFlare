@@ -22,6 +22,7 @@ git clone https://github.com/NVIDIA/NVFlare.git
 Then navigate to the hello-pt directory:
 
 ```
+cd NVFlare
 git switch <release branch>
 cd examples/hello-world/hello-pt
 ```

@@ -4,3 +4,5 @@ parent:
   network: nvflare-network
 job_launcher:
   default_python_path: /usr/local/bin/python
+  default_job_container_kwargs:
+    ipc_mode: host

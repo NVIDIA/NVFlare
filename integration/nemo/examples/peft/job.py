@@ -231,7 +231,6 @@ def create_recipe(args):
     set_per_site_config(recipe, per_site_config)
     recipe.add_client_file("automodel_financial_phrase_dataset.py", clients=client_names)
     recipe.add_client_file("automodel_adapter_loader.py", clients=client_names)
-    recipe.add_client_config({"max_resends": 3}, clients=client_names)
     _configure_timeouts(recipe, client_names)
     return recipe
 

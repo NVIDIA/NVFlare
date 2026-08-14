@@ -21,6 +21,34 @@ on:
   workflow_dispatch:
 
 jobs:
+  skill-validation-selection:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      run-tier1-security: ${{ steps.select.outputs.run-tier1-security }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: select
+        name: Select Tier 1 skill security validation
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          # A manual dispatch deliberately runs the gate. For push and pull-request
+          # events, restrict the expensive scans to changes that can affect shipped
+          # skills or this gate's implementation and dependencies.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ -z "$BASE_SHA" ] || \
+            [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "run-tier1-security=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          selection="$(git diff --name-only "$BASE_SHA" "$GITHUB_SHA" | bash ci/should_run_skill_tier1.sh)"
+          echo "run-tier1-security=${selection}" >> "$GITHUB_OUTPUT"
+
   license-check:
     runs-on: ubuntu-24.04
     steps:
@@ -40,6 +68,7 @@ jobs:
         run: ./runtest.sh --torch-backend=cpu -s
 
   unit-tests:
+    needs: skill-validation-selection
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -62,21 +91,33 @@ jobs:
         run: |
           ./runtest.sh --torch-backend=cpu -p
           uv pip install --system --no-deps "flwr>=1.16,<1.26"
-      # Installed into its own virtual environment rather than the development extras:
-      # SkillEvaluator requires click>=8.3.3 and NVFlare pins click==8.1.7 below 3.14,
-      # so only the CLI is shared, via PATH. SkillEvaluator supports 3.12 and 3.13,
-      # which is the lane SkillSpector cannot use.
-      - name: Install SkillEvaluator CLI
-        if: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.13' }}
+      # Installed outside NVFlare's development environment because SkillEvaluator
+      # requires click>=8.3.3 while NVFlare pins click==8.1.7 below Python 3.14.
+      # Keep every Tier 1 static scanner explicit: a missing scanner must fail the
+      # test rather than silently reduce security coverage.
+      - name: Install Tier 1 skill security scanners
+        if: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.13' && needs.skill-validation-selection.outputs.run-tier1-security == 'true' }}
         run: |
-          python3 -m venv "$RUNNER_TEMP/skillevaluator"
-          "$RUNNER_TEMP/skillevaluator/bin/python" -m pip install --upgrade pip
-          "$RUNNER_TEMP/skillevaluator/bin/python" -m pip install \
-            "skillevaluator @ git+https://github.com/NVIDIA/SkillEvaluator.git@4975c97d49e3623eeab739248e52d83c4aa8f582"
           mkdir -p "$HOME/.local/bin"
-          ln -sf "$RUNNER_TEMP/skillevaluator/bin/skillevaluator" "$HOME/.local/bin/skillevaluator"
+          uv tool install --python 3.13 \
+            "skillevaluator[security] @ git+https://github.com/NVIDIA/SkillEvaluator.git@4975c97d49e3623eeab739248e52d83c4aa8f582"
+          uv tool install --python 3.13 "semgrep>=1,<2"
+          uv tool install --python 3.13 \
+            "skillspector @ git+https://github.com/NVIDIA/SkillSpector.git@fd25398d7aa99353d86237b9c260759351f0e644"
+          GITLEAKS_VERSION=8.30.0
+          GITLEAKS_SHA256=79a3ab579b53f71efd634f3aaf7e04a0fa0cf206b7ed434638d1547a2470a66e
+          GITLEAKS_ARCHIVE="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${GITLEAKS_ARCHIVE}" \
+            --output "${GITLEAKS_ARCHIVE}"
+          echo "${GITLEAKS_SHA256}  ${GITLEAKS_ARCHIVE}" | sha256sum --check -
+          tar --extract --gzip --file "${GITLEAKS_ARCHIVE}" gitleaks
+          install -m 0755 gitleaks "$HOME/.local/bin/gitleaks"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Run unit test
+        env:
+          NVFLARE_RUN_SKILL_TIER1: ${{ needs.skill-validation-selection.outputs.run-tier1-security }}
+          NVFLARE_SKILL_TIER1_REQUIRED: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.13' && needs.skill-validation-selection.outputs.run-tier1-security == 'true' }}
         run: ./runtest.sh --skip-install --numprocesses=auto -u
 
   hf-client-api-tests:

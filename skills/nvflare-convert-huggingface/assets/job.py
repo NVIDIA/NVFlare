@@ -13,6 +13,7 @@ traversal paths.
 import argparse
 import math
 import os
+import tempfile
 from contextlib import contextmanager
 from numbers import Integral, Real
 from pathlib import Path
@@ -33,6 +34,13 @@ def _source_directory():
         yield
     finally:
         os.chdir(original_cwd)
+
+
+def _simulation_workspace(workspace_root):
+    """Return an explicit workspace or a private one that preserves run results."""
+    if workspace_root is not None:
+        return workspace_root
+    return Path(tempfile.mkdtemp(prefix="nvflare-hf-trainer-"))
 
 
 def _token(value, name: str) -> str:
@@ -181,7 +189,12 @@ def main():
         default="",
         help="exact higher-is-better server metric key; leave empty to disable best-model selection",
     )
-    parser.add_argument("--workspace_root", type=Path, default=Path("/tmp/nvflare/hf-trainer"))
+    parser.add_argument(
+        "--workspace_root",
+        type=Path,
+        default=None,
+        help="simulation workspace; defaults to a new private temporary directory retained for result inspection",
+    )
     args = parser.parse_args()
 
     recipe = build_recipe(
@@ -195,11 +208,12 @@ def main():
         preserve_source_budget=args.preserve_source_budget,
         key_metric=args.key_metric,
     )
+    workspace_root = _simulation_workspace(args.workspace_root)
     run = recipe.execute(
         SimEnv(
             num_clients=args.num_clients,
             num_threads=args.num_clients,
-            workspace_root=str(args.workspace_root),
+            workspace_root=str(workspace_root),
         )
     )
     print("Job Status is:", run.get_status())

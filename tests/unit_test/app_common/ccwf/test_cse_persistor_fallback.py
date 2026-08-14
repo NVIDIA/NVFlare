@@ -15,7 +15,7 @@
 """Unit tests for Bug 2 fix: _prepare_local_model() persistor-first path.
 
 Root cause: _prepare_local_model() called submit_model_executor.execute() which
-for ClientAPILauncherExecutor launches a fresh subprocess with no trained model
+for per-task Client API execution that launches a fresh subprocess with no trained model
 state.  The best model is already on disk (saved by PTFileModelPersistor during
 _process_final_result()).
 

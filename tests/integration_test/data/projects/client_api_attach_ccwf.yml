@@ -1,0 +1,38 @@
+api_version: 3
+name: client_api_attach_ccwf_test
+description: Secure two-site project for Client API Attach and CCWF acceptance
+
+participants:
+  - name: localhost
+    type: server
+    org: nvidia
+    fed_learn_port: 8102
+    admin_port: 8103
+  - name: site-1
+    type: client
+    org: nvidia
+    listening_host:
+      scheme: tcp
+      default_host: localhost
+      port: 8104
+      connection_security: clear
+  - name: site-2
+    type: client
+    org: nvidia
+    listening_host:
+      scheme: tcp
+      default_host: localhost
+      port: 8105
+      connection_security: clear
+  - name: super@test.org
+    type: admin
+    org: nvidia
+    role: project_admin
+
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+    args:
+      config_folder: config
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.impl.signature.SignatureBuilder

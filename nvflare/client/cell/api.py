@@ -374,6 +374,12 @@ class CellClientAPI(APISpec):
     # ------------------------------------------------------------------ receive
 
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
+        model = self._receive_internal(timeout)
+        if model is not None:
+            self._receive_called = True
+        return model
+
+    def _receive_internal(self, timeout: Optional[float] = None) -> Optional[FLModel]:
         if not self._is_control_rank or self._closed:
             return None
         if self._abort:
@@ -403,7 +409,6 @@ class CellClientAPI(APISpec):
             self._attach.mark_task_delivered(task.get(MsgKey.TASK_ID))
         self._result_receiver_ids = entry.get("result_receiver_ids")
         self._fl_model = entry["model"]
-        self._receive_called = True
         return self._fl_model
 
     def _await_task(self, timeout: Optional[float]) -> Optional[dict]:
@@ -698,7 +703,7 @@ class CellClientAPI(APISpec):
             self.shutdown()
             return False
         try:
-            return self.receive() is not None
+            return self._receive_internal() is not None
         except TrainerSessionError:
             self.shutdown()
             return False

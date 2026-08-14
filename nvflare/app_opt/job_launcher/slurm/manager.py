@@ -324,6 +324,8 @@ class SlurmJobManager:
             return ProcessExitCode.INFRASTRUCTURE_ERROR
         if record.exit_status in PROCESS_EXIT_REASON:
             return record.exit_status
+        if record.derived_exit_status in PROCESS_EXIT_REASON:
+            return record.derived_exit_status
         if record.exit_status or record.exit_signal:
             return JobReturnCode.EXECUTION_ERROR
         return JobReturnCode.SUCCESS if record.state == "COMPLETED" else JobReturnCode.EXECUTION_ERROR

@@ -61,8 +61,9 @@ ScriptRunner(
 )
 ```
 
-``execution_mode`` is also available as an explicit mode selector, including
-``execution_mode="attach"`` for an independently managed trainer.
+``execution_mode`` is also available on ``ScriptRunner`` as an explicit selector
+for ``in_process`` and ``external_process``. For an independently managed
+trainer, configure ``ClientAPIExecutor(execution_mode="attach", ...)`` directly.
 
 For `external_process`, the resulting path is:
 
@@ -177,7 +178,7 @@ state machine layered over these messages.
 
 The two Cell-based modes deliberately have different server-facing trust in 2.9:
 
-- `external_process` uses the 2.8 `CellPipe` mechanism. After the CJ authenticates the launch-token
+- `external_process` uses a direct Cell session. After the CJ authenticates the launch-token
   `HELLO`, `HELLO_ACCEPTED` carries the site's `AUTH_TOKEN` and `AUTH_TOKEN_SIGNATURE`. The trainer
   installs the normal outgoing site auth-header filters. Its FQCN remains a descendant of the
   registered site/CJ FQCN so the server's current origin binding accepts the delegated token.
@@ -360,7 +361,8 @@ calls rather than leaving the trainer waiting indefinitely.
 
 ## Parameter Representation and FULL/DIFF
 
-The execution-mode architecture does not use `ParamsConverter` or a ParamsConverter adapter.
+The execution-mode architecture uses function-based format adaptation and has no pluggable
+converter component or converter-object API.
 
 `ScriptRunner` maps its framework setting to an explicit `params_exchange_format` and carries
 that declaration, plus `server_expected_format`, through `ClientAPIExecutor` into
@@ -373,8 +375,7 @@ The trainer-side Client API honors the declaration at its API boundary:
 - send: framework-native `FLModel.params` -> server representation.
 
 The implementation is a small functional adapter with caller-owned state for PyTorch tensor
-shapes and non-tensor entries; it does not recreate the `ParamsConverter` component
-hierarchy. `RAW` explicitly means no representation adaptation. If either side of a declared pair
+shapes and non-tensor entries. `RAW` explicitly means no representation adaptation. If either side of a declared pair
 is `RAW`, conversion is a no-op and the payload passes unchanged; `RAW` is an adaptation off-switch,
 not a concrete representation guarantee.
 
@@ -396,6 +397,10 @@ compression, selection, and blocking filters, including which side is trusted, w
 each operation requires, and whether removing or blocking a lazy reference must explicitly abandon
 its source transaction. This execution-mode change does not add a partial ``supports_lazy_payload``
 filter contract.
+
+Applications that need custom parameter transformation perform it explicitly after
+``flare.receive()`` and before ``flare.send()``. Recipe and executor configuration deliberately
+does not provide a custom converter plugin surface.
 
 ## In-Process Mode
 
