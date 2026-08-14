@@ -12,10 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import hashlib
 import os
 import random
+import re
+import secrets
 import sys
 import threading
+from collections import OrderedDict
 from typing import Tuple
 
 from nvflare.apis.app_validation import AppValidationKey
@@ -41,10 +45,33 @@ CC_NAMESPACE = "_cc_namespace"
 CC_INFO = "_cc_info"
 CC_TOKEN_VALIDATED = "_cc_token_validated"
 CC_VERIFY_ERROR = "_cc_verify_error"
+CC_CHALLENGE = "_cc_challenge"
+CC_CHALLENGE_SIZE = 32
+CC_CHALLENGE_PATTERN = re.compile(rf"^[0-9a-fA-F]{{{CC_CHALLENGE_SIZE * 2}}}$")
 
 CC_ISSUER_ID = "issuer_id"
 TOKEN_GENERATION_TIME = "token_generation_time"
 TOKEN_EXPIRATION = "token_expiration"
+
+# Bound, in-memory dedup of accepted tokens. Used whenever a verifier
+# cannot itself guarantee freshness: registration (the attester picks its
+# own challenge, so a captured request/response pair can be replayed
+# verbatim) and any authorizer whose evidence does not bind the challenge.
+#
+# LIMITATION: this cache is process-local and non-durable. It only rejects a
+# duplicate token within the current CCManager's lifetime (cleared on
+# restart) and up to MAX_SEEN_TOKENS more recent entries (older ones are
+# evicted). It does NOT provide verifier-bound freshness: the same captured
+# token can still be accepted as a first use by a different verifier
+# instance, or by this one after a restart or enough eviction. Callers must
+# not treat acceptance here as proof the underlying hardware state is
+# current -- that guarantee only holds for authorizers whose
+# `supports_challenge_binding()` is True *and* whose challenge was
+# verifier-issued (i.e. periodic cross-site validation, not registration).
+# Registration's actual identity/authorization guarantee comes from
+# NVFlare's separate mTLS-based client authentication
+# (`ClientManager.authenticate`), which this cache only supplements.
+MAX_SEEN_TOKENS = 4096
 
 CC_VERIFICATION_FAILED = "not meeting CC requirements"
 
@@ -52,6 +79,14 @@ CC_VERIFICATION_FAILED = "not meeting CC requirements"
 CC_CHANNEL = "cc_validation"
 CC_TOPIC_REQUEST_TOKEN = "request_fresh_token"
 CC_TOPIC_GET_SITES = "get_sites"
+
+
+def _new_challenge() -> str:
+    return secrets.token_hex(CC_CHALLENGE_SIZE)
+
+
+def _is_valid_challenge(challenge) -> bool:
+    return isinstance(challenge, str) and CC_CHALLENGE_PATTERN.fullmatch(challenge) is not None
 
 
 class CCManager(FLComponent):
@@ -121,6 +156,10 @@ class CCManager(FLComponent):
         self.engine = None
 
         self.lock = threading.RLock()
+
+        # Bounded replay cache: see MAX_SEEN_TOKENS.
+        self._seen_tokens_lock = threading.Lock()
+        self._seen_tokens = OrderedDict()
 
         # Cross-site validation support
         self.cross_validation_run_once = False
@@ -209,7 +248,7 @@ class CCManager(FLComponent):
 
     def _generate_and_attach_tokens(self, fl_ctx: FLContext):
         """Generate and attach CC tokens for sending to peer."""
-        cc_infos = self._generate_fresh_tokens_for_validation()
+        cc_infos = self._generate_fresh_tokens_for_validation(_new_challenge())
         fl_ctx.set_prop(key=CC_INFO, value={fl_ctx.get_identity_name(): cc_infos}, sticky=False, private=False)
         self.logger.info("Prepared CC tokens for peer")
 
@@ -222,7 +261,19 @@ class CCManager(FLComponent):
             self._shutdown_system(msg, fl_ctx)
             return
 
-        self._validate_cc_infos(server_cc_info, fl_ctx)
+        # The client has no independent, pre-registration channel to learn the
+        # server's asserted identity, so the strongest check available here is
+        # that the sole participant claimed is one this client actually has CC
+        # configuration for. This still closes the bypass where an unlisted
+        # (e.g. bogus) key would otherwise be auto-trusted without ever
+        # exercising a verifier.
+        if set(server_cc_info.keys()) - set(self.cc_enabled_sites):
+            msg = f"Server CC info claims unexpected participant identity: {server_cc_info.keys()=}"
+            self.logger.error(msg)
+            self._shutdown_system(msg, fl_ctx)
+            return
+
+        self._validate_cc_infos(server_cc_info, fl_ctx, is_registration=True)
 
     def _validate_client_tokens(self, fl_ctx: FLContext):
         """Validate the client's CC info during registration."""
@@ -239,17 +290,36 @@ class CCManager(FLComponent):
             self._shutdown_system(msg, fl_ctx)
             return
 
-        self._validate_cc_infos(peer_cc_info, fl_ctx)
+        # The peer controls the CC_INFO dict's keys, but not the identity
+        # separately established for it in its own peer context. Requiring
+        # them to match closes a bypass where an authenticated client could
+        # submit CC_INFO under an unlisted/bogus name: `_verify_participants_tokens`
+        # auto-trusts keys outside `cc_enabled_sites`, so the real client's
+        # evidence would never be verified at all.
+        peer_identity = peer_ctx.get_identity_name()
+        if not peer_identity or set(peer_cc_info.keys()) != {peer_identity}:
+            msg = f"CC info participant identity does not match the authenticated peer {peer_identity!r}"
+            self.logger.error(msg)
+            self._shutdown_system(msg, fl_ctx)
+            return
 
-    def _validate_cc_infos(self, participants_cc_info: dict[str, list[dict[str, str]]], fl_ctx: FLContext):
+        self._validate_cc_infos(peer_cc_info, fl_ctx, is_registration=True)
+
+    def _validate_cc_infos(
+        self, participants_cc_info: dict[str, list[dict[str, str]]], fl_ctx: FLContext, is_registration: bool = False
+    ):
         """Shared validator for CC info (server or client).
 
         Args:
             participants_cc_info:
                 A dict of (participant_name, participant_cc_infos)
                 participant_cc_infos is a list of CC tokens.
+            is_registration:
+                True when validating registration-time evidence, where the
+                challenge is chosen by the attester rather than the
+                verifier. Enables replay-cache dedup for that evidence.
         """
-        err = self._validate_participants_tokens(participants_cc_info)
+        err = self._validate_participants_tokens(participants_cc_info, is_registration=is_registration)
         if err:
             msg = f"CC info validation failed: {err}"
             self.logger.error(msg)
@@ -258,22 +328,45 @@ class CCManager(FLComponent):
 
         self.logger.info(f"Validated CC info for: {participants_cc_info.keys()=}")
 
-    def _validate_participants_tokens(self, participants_tokens: dict[str, list[dict[str, str]]]) -> str:
+    def _validate_participants_tokens(
+        self, participants_tokens: dict[str, list[dict[str, str]]], is_registration: bool = False
+    ) -> str:
         self.logger.info(f"Validating participant tokens {participants_tokens.keys()=}")
-        _, invalid_participant_list = self._verify_participants_tokens(participants_tokens)
+        _, invalid_participant_list = self._verify_participants_tokens(
+            participants_tokens, is_registration=is_registration
+        )
         if invalid_participant_list:
             invalid_participant_string = ",".join(invalid_participant_list)
             return f"Participant {invalid_participant_string}" + CC_VERIFICATION_FAILED
         else:
             return ""
 
+    def _token_already_used(self, namespace: str, token: str | bytes) -> bool:
+        """Bounded in-memory replay check for evidence without verifier-bound freshness.
+
+        Returns:
+            True if this (namespace, token) pair was already accepted.
+        """
+        # Some authorizers (e.g. SNPAuthorizer) accept both str and bytes tokens.
+        token_bytes = token if isinstance(token, bytes) else str(token).encode("utf-8")
+        token_fingerprint = hashlib.sha256(token_bytes).hexdigest()
+        key = (namespace, token_fingerprint)
+        with self._seen_tokens_lock:
+            if key in self._seen_tokens:
+                return True
+            self._seen_tokens[key] = None
+            if len(self._seen_tokens) > MAX_SEEN_TOKENS:
+                self._seen_tokens.popitem(last=False)
+            return False
+
     def _verify_participants_tokens(
-        self, participants_tokens: dict[str, list[dict[str, str]]]
+        self, participants_tokens: dict[str, list[dict[str, str]]], is_registration: bool = False
     ) -> Tuple[dict[str, bool], list[str]]:
         """Verifies tokens for all participants.
 
         Args:
             participants_tokens: dict of participant name to list of tokens
+            is_registration: see `_validate_cc_infos`.
 
         Returns:
             tuple of (result, invalid_participant_list)
@@ -294,9 +387,22 @@ class CCManager(FLComponent):
             for v in cc_info:
                 token = v.get(CC_TOKEN, "")
                 namespace = v.get(CC_NAMESPACE, "")
+                challenge = v.get(CC_CHALLENGE, "")
                 verifier = self.cc_verifiers.get(namespace, None)
                 try:
-                    if verifier and verifier.verify(token):
+                    if verifier and _is_valid_challenge(challenge) and verifier.verify(token, challenge):
+                        # Registration challenges are attester-chosen, and some
+                        # authorizers never bind the challenge into evidence at
+                        # all; neither offers verifier-bound freshness, so a
+                        # bounded replay cache is the only defense against a
+                        # captured token being reused.
+                        if is_registration or not verifier.supports_challenge_binding():
+                            if self._token_already_used(namespace, token):
+                                self.logger.warning(
+                                    f"Rejected a replayed CC token for participant {k} namespace {namespace}"
+                                )
+                                invalid_participant_list.append(k + " namespace: {" + namespace + "}")
+                                continue
                         result[k + "." + namespace] = True
                     else:
                         invalid_participant_list.append(k + " namespace: {" + namespace + "}")
@@ -490,12 +596,16 @@ class CCManager(FLComponent):
             self.logger.error("Cell is not available, cannot collect tokens via CC channel")
             return {}
 
-        # Step 1: Generate this site's token first
-        all_tokens[self.site_name] = self._generate_fresh_tokens_for_validation()
+        # Step 1: Generate this site's token with a locally created verifier challenge.
+        local_challenge = _new_challenge()
+        all_tokens[self.site_name] = self._generate_fresh_tokens_for_validation(local_challenge)
         self.logger.info(f"Generated fresh token for this site: {self.site_name}")
 
         # Step 2: Get list of all sites (exclude self)
         all_sites = self._get_all_cc_enabled_sites(fl_ctx)
+        # Expected identity for each FQCN, from the server/discovery-provided
+        # mapping -- never from the responding peer itself.
+        expected_name_by_fqcn = {fqcn: name for fqcn, name in all_sites}
         # use FQCN
         other_sites = [site[0] for site in all_sites if site[1] != self.site_name]
 
@@ -507,11 +617,12 @@ class CCManager(FLComponent):
         failed_sites = []
         self.logger.info(f"Requesting fresh tokens from {len(other_sites)} other sites: {other_sites}")
 
-        # Send requests to all other sites
-        request_message = new_cell_message({}, {"requester": self.site_name})
-
         for target_site in other_sites:
             try:
+                # A distinct challenge binds each response to this request and
+                # prevents evidence from one participant being reused for another.
+                challenge = _new_challenge()
+                request_message = new_cell_message({}, {"requester": self.site_name, CC_CHALLENGE: challenge})
                 response = cell.send_request(
                     target=target_site,
                     channel=CC_CHANNEL,
@@ -528,8 +639,34 @@ class CCManager(FLComponent):
                         if isinstance(payload, dict):
                             site_name = payload.get("site_name")
                             cc_info = payload.get("cc_info")
-                            if site_name and cc_info:
-                                all_tokens[site_name] = cc_info
+                            expected_site_name = expected_name_by_fqcn.get(target_site)
+                            if site_name != expected_site_name:
+                                # The responding site controls `site_name` in its
+                                # payload. Trusting it verbatim would let a
+                                # compromised target masquerade as a different
+                                # (unreachable) site, whose absence would then go
+                                # unnoticed. Only accept the identity we expect
+                                # for this FQCN.
+                                self.logger.warning(
+                                    f"Identity mismatch from {target_site}: expected "
+                                    f"{expected_site_name!r}, got {site_name!r}"
+                                )
+                                failed_sites.append(target_site)
+                            elif site_name and isinstance(cc_info, list) and cc_info:
+                                # Never trust a peer-supplied expected challenge.
+                                # Bind verification to the locally generated value.
+                                bound_cc_info = []
+                                for token_info in cc_info:
+                                    if not isinstance(token_info, dict):
+                                        break
+                                    token_info = dict(token_info)
+                                    token_info[CC_CHALLENGE] = challenge
+                                    bound_cc_info.append(token_info)
+                                if len(bound_cc_info) != len(cc_info):
+                                    self.logger.warning(f"Invalid CC token data from {target_site}: {cc_info}")
+                                    failed_sites.append(target_site)
+                                    continue
+                                all_tokens[site_name] = bound_cc_info
                                 self.logger.info(f"Received fresh token from site {site_name}")
                             else:
                                 self.logger.warning(f"Invalid payload from {target_site}: {payload}")
@@ -551,6 +688,13 @@ class CCManager(FLComponent):
 
         if failed_sites:
             raise RuntimeError(f"Failed to collect tokens from sites: {failed_sites}")
+
+        expected_names = {self.site_name} | set(expected_name_by_fqcn.values())
+        if set(all_tokens.keys()) != expected_names:
+            raise RuntimeError(
+                f"Collected site identities {sorted(all_tokens.keys())} do not match "
+                f"requested enabled sites {sorted(expected_names)}"
+            )
 
         self.logger.info(f"Collected fresh tokens from {len(all_tokens)} sites: {list(all_tokens.keys())}")
         return all_tokens
@@ -576,7 +720,7 @@ class CCManager(FLComponent):
         else:
             self.logger.info(f"Registered client CC handlers on channel '{CC_CHANNEL}'")
 
-    def _generate_fresh_tokens_for_validation(self) -> list[dict[str, str]]:
+    def _generate_fresh_tokens_for_validation(self, challenge: str) -> list[dict[str, str]]:
         """Generate completely fresh tokens for validation request.
 
         This creates NEW tokens on-the-fly for each validation request.
@@ -585,19 +729,29 @@ class CCManager(FLComponent):
             List of fresh CC tokens ready for validation.
             Each token is a dict consists of CC_TOKEN, CC_NAMESPACE and CC_TOKEN_VALIDATED.
         """
+        if not _is_valid_challenge(challenge):
+            raise ValueError("challenge must be a 32-byte hexadecimal string")
+        challenge = challenge.lower()
         fresh_tokens = []
 
         for issuer, expiration in self.cc_issuers.items():
             try:
                 # Generate a brand new token for this specific request
-                new_token = issuer.generate()
+                new_token = issuer.generate(challenge)
                 namespace = issuer.get_namespace()
 
                 if not new_token:
                     self.logger.error(f"Failed to generate token for namespace {namespace}")
                     continue
 
-                fresh_tokens.append({CC_TOKEN: new_token, CC_NAMESPACE: namespace, CC_TOKEN_VALIDATED: False})
+                fresh_tokens.append(
+                    {
+                        CC_TOKEN: new_token,
+                        CC_NAMESPACE: namespace,
+                        CC_CHALLENGE: challenge,
+                        CC_TOKEN_VALIDATED: False,
+                    }
+                )
 
                 self.logger.info(f"Generated fresh token for validation: namespace={namespace}")
 
@@ -620,13 +774,16 @@ class CCManager(FLComponent):
             # Extract requester from payload
             payload = request.payload if hasattr(request, "payload") else {}
             requester = payload.get("requester", "unknown") if isinstance(payload, dict) else "unknown"
+            challenge = payload.get(CC_CHALLENGE) if isinstance(payload, dict) else None
+            if not _is_valid_challenge(challenge):
+                return make_reply(F3ReturnCode.INVALID_REQUEST, "Missing or invalid verifier challenge", None)
             self.logger.info(f"Received token refresh request from {requester}")
 
-            cc_info = self._generate_fresh_tokens_for_validation()
+            cc_info = self._generate_fresh_tokens_for_validation(challenge)
 
             if not cc_info:
                 self.logger.error("Failed to generate any tokens for validation request")
-                return make_reply(F3ReturnCode.ERROR, "Failed to generate tokens", None)
+                return make_reply(F3ReturnCode.PROCESS_EXCEPTION, "Failed to generate tokens", None)
 
             # Return fresh tokens
             payload = {"site_name": self.site_name, "cc_info": cc_info}
@@ -636,7 +793,7 @@ class CCManager(FLComponent):
 
         except Exception as e:
             self.logger.exception(f"Error handling token refresh request: {e}")
-            return make_reply(F3ReturnCode.ERROR, f"Failed to generate token: {str(e)}", None)
+            return make_reply(F3ReturnCode.PROCESS_EXCEPTION, f"Failed to generate token: {str(e)}", None)
 
     def _handle_get_sites_request(self, request):
         """Server side: Handle request for current list of participating sites."""
@@ -655,7 +812,7 @@ class CCManager(FLComponent):
 
         except Exception as e:
             self.logger.exception(f"Error handling get_sites request: {e}")
-            return make_reply(F3ReturnCode.ERROR, f"Failed to get sites: {str(e)}", None)
+            return make_reply(F3ReturnCode.PROCESS_EXCEPTION, f"Failed to get sites: {str(e)}", None)
 
     def _shutdown_system(self, reason: str, fl_ctx: FLContext):
         """Shuts down the entire NVFlare system due to CC validation failure."""
