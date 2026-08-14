@@ -41,6 +41,7 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     _CtxKey,
     _LazyBatchInfo,
     _RefKey,
+    contains_lazy_download_ref,
 )
 
 # ---------------------------------------------------------------------------
@@ -105,6 +106,12 @@ class TestLazyDownloadRef:
         # fqcn and ref_id are shared (same batch)
         assert a.fqcn == b.fqcn
         assert a.ref_id == b.ref_id
+
+
+def test_contains_lazy_download_ref_scans_dict_keys_and_values():
+    lazy = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0)
+    assert contains_lazy_download_ref({lazy: "value"})
+    assert contains_lazy_download_ref({"key": lazy})
 
 
 # ---------------------------------------------------------------------------

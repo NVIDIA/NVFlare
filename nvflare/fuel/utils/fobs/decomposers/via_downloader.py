@@ -120,10 +120,11 @@ def contains_lazy_download_ref(value, visited=None) -> bool:
     visited.add(value_id)
 
     if isinstance(value, dict):
-        items = (*value.keys(), *value.values())
-    else:
-        items = value
-    return any(contains_lazy_download_ref(item, visited) for item in items)
+        return any(
+            contains_lazy_download_ref(key, visited) or contains_lazy_download_ref(item, visited)
+            for key, item in value.items()
+        )
+    return any(contains_lazy_download_ref(item, visited) for item in value)
 
 
 def materialize_lazy_download_refs(value, cell: Cell, abort_signal=None):
