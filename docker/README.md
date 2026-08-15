@@ -84,43 +84,37 @@ containers include `/etc/pip/constraint.txt` to protect the tested package set.
 
 ## Confidential Containers Parent Image
 
-`Dockerfile.coco` is the purpose-built parent image for the workflow under
-`examples/devops/CoCo`. It installs the pinned SNP, TDX, and NVIDIA NVAT
-attestation clients needed by the NVFlare confidential-computing authorizers.
-It installs base NVFlare and pinned TensorBoard 2.20.0 for the workflow's
-standard `hello-numpy` check, without the `K8S` extra, and asserts at build time
-that the Kubernetes Python package is absent. That workflow uses
-`ProcessJobLauncher`, so job processes execute inside the existing
-confidential VM.
+`Dockerfile.coco` builds a generic parent image for NVFlare deployments using
+Confidential Containers. It adds the pinned AMD SEV-SNP, Intel TDX, and NVIDIA
+NVAT attestation clients needed by the confidential-computing authorizers to
+the standard parent runtime. It does not copy application code from `examples/`
+or install dependencies for a particular workload.
 
-Build it from the repository root with the pinned build arguments documented
-in `examples/devops/CoCo/config.env.example`, or run the workflow's Stage 40:
+Build it from the repository root:
 
 ```bash
-cd examples/devops/CoCo
-./40-nvflare-build-sign-images.sh
+docker build -f docker/Dockerfile.coco -t nvflare-coco:latest .
 ```
 
-The stage builds distinct server and client image digests from the same
-Dockerfile, checks their attestation tools and TensorBoard dependency, signs
-them, and publishes the verification policy. After Stage 50 deploys the
-parents, Stage 60 submits `hello-numpy` and requires successful completion. Do
-not add Kubernetes packages to `Dockerfile.coco`; Kubernetes remains a
-host/cluster administration dependency.
+Use it as the parent image in a Confidential Containers deployment, then
+provide workload code and dependencies through the selected job-launcher
+mechanism. Pin, sign, and authorize the resulting image digest according to the
+deployment's attestation policy.
 
 ## Choosing an Image
 
 - Use `Dockerfile.parent` for non-CoCo parent server/client processes.
 - Use `Dockerfile.parent` for the dashboard runtime; tag the same build as a
   dashboard image if you want a dashboard-specific image name.
-- Use `Dockerfile.coco` for the CoCo server/client parent processes deployed by
-  `examples/devops/CoCo`.
+- Use `Dockerfile.coco` for CoCo server/client parent processes that need the
+  bundled attestation clients.
 - Use `Dockerfile.job` for submitted job containers.
 - Do not rely on a shell being available in the parent image; it is absent by
   design.
 - Add user workload dependencies to the job image when using a container job
-  launcher. A `ProcessJobLauncher` deployment such as the CoCo workflow must
-  instead include every submitted job's dependency in its signed parent image.
+  launcher. With a process job launcher, extend and sign a deployment-specific
+  derivative of the parent image instead of adding workload code to the generic
+  Dockerfile.
 
 ## References
 
