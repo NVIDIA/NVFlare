@@ -90,6 +90,12 @@ NVAT attestation clients needed by the confidential-computing authorizers to
 the standard parent runtime. It does not copy application code from `examples/`
 or install dependencies for a particular workload.
 
+Unlike `Dockerfile.parent`, which currently uses Python 3.14,
+`Dockerfile.coco` intentionally stays on Python 3.12. Its
+`PYTHON_BUILD_BASE`, `PYTHON_RUNTIME_BASE`, and `PYTHON_MINOR` values must be
+updated together; do not automatically synchronize them to the parent image's
+Python version.
+
 Build it from the repository root:
 
 ```bash
