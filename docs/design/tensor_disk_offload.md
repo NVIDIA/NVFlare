@@ -159,8 +159,12 @@ Custom aggregators are responsible for:
 - Each root contains a private ownership record binding it to the creating job worker,
   its client parent, the job ID, and the root's device/inode identity. If the worker dies
   before `END_RUN`, the surviving client parent verifies that record after process exit
-  and removes only roots that it owns. This also distinguishes co-located POC sites that
-  share a system temp directory and job ID.
+  and atomically moves an approved root into a private quarantine before deleting it with
+  directory-relative operations. This prevents pathname replacement from redirecting
+  recursive cleanup. Platforms without the required secure directory-descriptor APIs are
+  explicitly rejected when disk offload is enabled rather than using unsafe best-effort
+  deletion. Ownership also distinguishes co-located POC sites that share a system temp
+  directory and job ID.
 - Temp dir selection follows Python `tempfile` behavior (`TMPDIR` / OS default, typically `/tmp`).
 - In containerized deployments, `/tmp` may be tmpfs (RAM-backed); set `TMPDIR` to a disk-backed mount to realize memory offload benefits.
 - `LazyTensorDict` owns a shared `_TempDirRef`; each lazy ref keeps this reference alive.

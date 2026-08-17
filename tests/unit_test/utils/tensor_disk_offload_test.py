@@ -17,13 +17,23 @@ import os
 import subprocess
 import sys
 
+import pytest
+
+import nvflare.utils.tensor_disk_offload as tensor_disk_offload
 from nvflare.utils.tensor_disk_offload import (
+    _CLEANUP_ROOT_PREFIX,
     _OWNER_FILE,
     cleanup_owned_tensor_disk_offload_roots,
     create_tensor_disk_offload_root,
 )
 
+requires_secure_cleanup = pytest.mark.skipif(
+    not tensor_disk_offload._SECURE_CLEANUP_SUPPORTED,
+    reason="platform does not support secure directory-fd cleanup",
+)
 
+
+@requires_secure_cleanup
 def test_surviving_parent_removes_only_exact_owned_job_roots(tmp_path):
     owned_a = create_tensor_disk_offload_root("job-a", temp_root=str(tmp_path))
     owned_b = create_tensor_disk_offload_root("job-a", temp_root=str(tmp_path))
@@ -40,8 +50,10 @@ def test_surviving_parent_removes_only_exact_owned_job_roots(tmp_path):
     assert not os.path.exists(owned_a)
     assert not os.path.exists(owned_b)
     assert os.path.isdir(other_job)
+    assert list(tmp_path.glob(f"{_CLEANUP_ROOT_PREFIX}*")) == []
 
 
+@requires_secure_cleanup
 def test_parent_reclaims_root_created_by_exited_child_process(tmp_path):
     child = subprocess.run(
         [
@@ -70,6 +82,7 @@ def test_parent_reclaims_root_created_by_exited_child_process(tmp_path):
     assert not os.path.exists(child_root)
 
 
+@requires_secure_cleanup
 def test_cleanup_rejects_wrong_parent_and_replaced_root_identity(tmp_path):
     wrong_parent = create_tensor_disk_offload_root("job-a", temp_root=str(tmp_path))
     replaced = create_tensor_disk_offload_root("job-a", temp_root=str(tmp_path))
@@ -92,6 +105,7 @@ def test_cleanup_rejects_wrong_parent_and_replaced_root_identity(tmp_path):
     assert os.path.isdir(replaced)
 
 
+@requires_secure_cleanup
 def test_cleanup_ignores_unowned_malformed_and_symlink_entries(tmp_path):
     unowned = tmp_path / "nvflare_tensor_offload_job-a_unowned"
     unowned.mkdir()
@@ -113,3 +127,46 @@ def test_cleanup_ignores_unowned_malformed_and_symlink_entries(tmp_path):
     assert malformed.is_dir()
     assert symlink.is_symlink()
     assert external.is_dir()
+
+
+@requires_secure_cleanup
+def test_cleanup_preserves_path_replacement_raced_before_recursive_delete(tmp_path, monkeypatch):
+    owned = create_tensor_disk_offload_root("job-a", temp_root=str(tmp_path))
+    original = tmp_path / "original-owned-root"
+    replacement_sentinel = "do-not-delete"
+    real_rename = os.rename
+
+    def replace_before_quarantine(src, dst, *args, **kwargs):
+        if src == owned:
+            real_rename(src, original)
+            os.mkdir(src)
+            with open(os.path.join(src, replacement_sentinel), "w", encoding="utf-8") as sentinel:
+                sentinel.write("replacement")
+        return real_rename(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(tensor_disk_offload.os, "rename", replace_before_quarantine)
+
+    cleanup = cleanup_owned_tensor_disk_offload_roots(
+        job_id="job-a", owner_parent_pid=os.getppid(), temp_root=str(tmp_path)
+    )
+
+    assert cleanup.removed == []
+    assert owned in cleanup.failures
+    assert "identity changed while quarantining" in cleanup.failures[owned]
+    assert original.is_dir()
+    cleanup_dirs = list(tmp_path.glob(f"{_CLEANUP_ROOT_PREFIX}*"))
+    assert len(cleanup_dirs) == 1
+    assert (cleanup_dirs[0] / os.path.basename(owned) / replacement_sentinel).read_text(
+        encoding="utf-8"
+    ) == "replacement"
+
+
+def test_tensor_offload_is_explicitly_gated_without_secure_cleanup(tmp_path, monkeypatch):
+    monkeypatch.setattr(tensor_disk_offload, "_SECURE_CLEANUP_SUPPORTED", False)
+
+    with pytest.raises(RuntimeError, match="secure directory-fd cleanup"):
+        create_tensor_disk_offload_root("job-a", temp_root=str(tmp_path))
+
+    cleanup = cleanup_owned_tensor_disk_offload_roots("job-a", temp_root=str(tmp_path))
+    assert cleanup.removed == []
+    assert cleanup.failures == {str(tmp_path): tensor_disk_offload._UNSUPPORTED_CLEANUP_ERROR}
