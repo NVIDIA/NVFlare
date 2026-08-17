@@ -104,6 +104,7 @@ class _MockConnection:
         self.successes = []
         self.dicts = []
         self.tables = []
+        self.meta = {}
 
     def get_prop(self, key, default=None):
         return self._props.get(key, default)
@@ -127,6 +128,9 @@ class _MockConnection:
         table = _MockTable(headers=headers, name=name)
         self.tables.append(table)
         return table
+
+    def update_meta(self, meta):
+        self.meta.update(meta)
 
 
 class _MockTable:
@@ -1664,7 +1668,7 @@ def test_configure_job_log_all_targets_server_and_clients(tmp_path, monkeypatch)
     engine.configure_job_log.assert_called_once_with("job-1", "DEBUG")
     assert processed == [client_replies]
     assert any("successfully configured server job job-1 log" in msg for msg, _meta in conn.strings)
-    assert not conn.errors
+    assert not conn.meta
 
 
 def test_configure_job_log_specific_client_target_is_honored(tmp_path, monkeypatch):
@@ -1702,7 +1706,7 @@ def test_configure_job_log_specific_client_target_is_honored(tmp_path, monkeypat
 
     engine.configure_job_log.assert_not_called()
     assert len(processed) == 1
-    assert not conn.errors
+    assert not conn.meta
 
 
 def _reply_with_return_code(return_code, body):
@@ -1712,38 +1716,69 @@ def _reply_with_return_code(return_code, body):
 
 
 @pytest.mark.parametrize(
-    ("target_clients", "client_replies"),
+    "reply, expected_info",
     [
-        (
-            {"token-a": "site-a"},
-            [ClientReply("token-a", "site-a", None, error_reply("log configuration refused"))],
-        ),
-        (
-            {"token-a": "site-a"},
-            [ClientReply("token-a", "site-a", None, _reply_with_return_code("timeout", "request timed out"))],
-        ),
-        ({"token-a": "site-a"}, [ClientReply("token-a", "site-a", None, None)]),
-        ({"token-a": "site-a"}, []),
-        (
-            {"token-a": "site-a", "token-b": "site-b"},
-            [ClientReply("token-a", "site-a", None, ok_reply())],
-        ),
+        (error_reply("log configuration refused"), "log configuration refused"),
+        (_reply_with_return_code("timeout", "request timed out"), "request timed out"),
+        (None, "no reply"),
     ],
-    ids=["rejected", "timeout", "empty-reply", "no-responses", "partial-responses"],
 )
-def test_configure_job_log_client_failure_sets_error_meta(tmp_path, monkeypatch, target_clients, client_replies):
+def test_configure_job_log_client_failure_sets_error_meta(tmp_path, monkeypatch, reply, expected_info):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
     workspace = _FakeWorkspace(tmp_path)
     engine = _FakeServerEngine(workspace)
     engine.job_def_manager.get_job.return_value = _FakeListedJob({JobMetaKey.STATUS.value: RunStatus.RUNNING.value})
-    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.TARGET_CLIENTS: target_clients})
+    conn = _MockConnection(app_ctx=engine)
     module = JobCommandModule()
-    monkeypatch.setattr(module, "send_request_to_clients", lambda conn, message: client_replies)
+    client_reply = ClientReply(client_token="token-a", client_name="site-a", req=None, reply=reply)
+    monkeypatch.setattr(module, "send_request_to_clients", lambda conn, message: [client_reply])
 
-    args = ["configure_job_log", "job-1", "client", *target_clients.values(), "DEBUG"]
-    module.configure_job_log(conn, args)
+    module.configure_job_log(conn, ["configure_job_log", "job-1", "client", "site-a", "DEBUG"])
 
-    assert conn.errors == [("one or more clients failed to configure job logging", None)]
+    assert conn.meta[MetaKey.STATUS] == MetaStatusValue.ERROR
+    assert "site-a" in conn.meta[MetaKey.INFO]
+    assert expected_info in conn.meta[MetaKey.INFO]
+
+
+def test_configure_job_log_no_client_responses_sets_error_meta(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    engine.job_def_manager.get_job.return_value = _FakeListedJob({JobMetaKey.STATUS.value: RunStatus.RUNNING.value})
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={JobCommandModule.TARGET_CLIENTS: {"token-a": "site-a"}},
+    )
+    module = JobCommandModule()
+    monkeypatch.setattr(module, "send_request_to_clients", lambda conn, message: [])
+
+    module.configure_job_log(conn, ["configure_job_log", "job-1", "client", "site-a", "DEBUG"])
+
+    assert conn.meta == {
+        MetaKey.STATUS: MetaStatusValue.ERROR,
+        MetaKey.INFO: "site-a: no reply",
+    }
+
+
+def test_configure_job_log_partial_client_responses_set_error_meta(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    engine.job_def_manager.get_job.return_value = _FakeListedJob({JobMetaKey.STATUS.value: RunStatus.RUNNING.value})
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={JobCommandModule.TARGET_CLIENTS: {"token-a": "site-a", "token-b": "site-b"}},
+    )
+    module = JobCommandModule()
+    client_reply = ClientReply(client_token="token-a", client_name="site-a", req=None, reply=ok_reply())
+    monkeypatch.setattr(module, "send_request_to_clients", lambda conn, message: [client_reply])
+
+    module.configure_job_log(conn, ["configure_job_log", "job-1", "client", "site-a", "site-b", "DEBUG"])
+
+    assert conn.meta == {
+        MetaKey.STATUS: MetaStatusValue.ERROR,
+        MetaKey.INFO: "site-b: no reply",
+    }
 
 
 def test_authorize_job_id_hides_jobs_from_other_studies(monkeypatch):
