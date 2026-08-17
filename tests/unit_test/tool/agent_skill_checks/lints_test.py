@@ -463,6 +463,62 @@ def test_dependency_install_safety_lint_accepts_reviewed_confirmed_install(tmp_p
     assert result["findings"] == []
 
 
+@pytest.mark.parametrize(
+    "safe_guidance",
+    [
+        (
+            "- Never ask the user to modify a selected recipe.\n"
+            "- Install packages only after displaying the plan and receiving confirmation.\n"
+        ),
+        (
+            "| Guidance |\n"
+            "| --- |\n"
+            "| Never ask the user to modify a selected recipe. |\n"
+            "| Install packages only after displaying the plan and receiving confirmation. |\n"
+        ),
+        (
+            "## Never ask the user to modify a selected recipe\n"
+            "Install packages only after displaying the plan and receiving confirmation.\n"
+        ),
+        (
+            "Never ask the user to modify a selected recipe.\n"
+            "```console\n"
+            "pip install packages-after-confirmation\n"
+            "```\n"
+        ),
+    ],
+)
+def test_dependency_install_safety_lint_preserves_markdown_block_boundaries(tmp_path, safe_guidance):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-safe-dependency-skill")
+    references = skill_dir / "references"
+    references.mkdir()
+    references.joinpath("dependency-install.md").write_text(safe_guidance, encoding="utf-8")
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_DEPENDENCY_INSTALL_SAFETY])
+
+    assert result["status"] == "ok"
+    assert result["findings"] == []
+
+
+def test_dependency_install_safety_lint_joins_wrapped_list_item(tmp_path):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-unsafe-dependency-skill")
+    references = skill_dir / "references"
+    references.mkdir()
+    references.joinpath("dependency-install.md").write_text(
+        "- Dependency installation is never preceded by\n" "  a skill-issued prompt or approval request.\n",
+        encoding="utf-8",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_DEPENDENCY_INSTALL_SAFETY])
+
+    assert _has_finding(
+        result,
+        LINT_SKILL_DEPENDENCY_INSTALL_SAFETY,
+        "dependency-install-confirmation-bypass",
+    )
+    _assert_structured_findings(result)
+
+
 def test_dependency_install_safety_lint_excludes_adversarial_eval_fixtures(tmp_path):
     skill_dir = _write_skill(tmp_path / "skills", "nvflare-eval-fixture-skill")
     fixture_dir = skill_dir / "evals" / "files"

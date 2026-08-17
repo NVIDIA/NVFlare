@@ -187,6 +187,11 @@ _DEPENDENCY_REVIEW_BYPASS_RES = (
         re.IGNORECASE,
     ),
 )
+_MARKDOWN_ATX_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}(?:\s+|$)")
+_MARKDOWN_FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
+_MARKDOWN_LIST_ITEM_RE = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s+")
+_MARKDOWN_STRUCTURAL_SEPARATOR_RE = re.compile(r"^\s{0,3}(?:=+|-{3,})\s*$")
+_MARKDOWN_TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
 
 
 @dataclass(frozen=True)
@@ -1007,7 +1012,7 @@ def _lint_dependency_install_safety(context: LintContext) -> None:
     """
     for record in context.records:
         for file_path, text in _iter_skill_text_files(record.skill_dir):
-            for line_number, paragraph in _iter_text_paragraphs(text):
+            for line_number, paragraph in _iter_markdown_policy_blocks(text):
                 if not _DEPENDENCY_INSTALL_TERMS_RE.search(paragraph):
                     continue
                 if _has_dependency_policy_bypass(paragraph, _DEPENDENCY_CONFIRMATION_BYPASS_RES):
@@ -1442,21 +1447,75 @@ def _iter_skill_text_files(skill_dir: Path, *, include_scripts: bool = False) ->
             yield path, path.read_text(encoding="utf-8", errors="replace")
 
 
-def _iter_text_paragraphs(text: str) -> Iterable[tuple[int, str]]:
-    """Yield normalized non-blank paragraphs and their first source line."""
-    paragraph_lines = []
-    paragraph_start = 1
+def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
+    """Yield policy text without combining separate Markdown blocks.
+
+    Wrapped prose and list-item continuations remain searchable as one unit,
+    while headings, list items, table rows, separators, and fenced blocks keep
+    their Markdown boundaries. Fenced content is still scanned because skill
+    instructions can be conveyed through examples and command snippets.
+    """
+    block_lines = []
+    block_start = 1
+    fenced_lines = []
+    fenced_start = 1
+    fence_marker = ""
     for line_number, line in enumerate(text.splitlines(), start=1):
-        if line.strip():
-            if not paragraph_lines:
-                paragraph_start = line_number
-            paragraph_lines.append(line.strip())
+        stripped = line.strip()
+
+        if fence_marker:
+            if len(stripped) >= len(fence_marker) and set(stripped) == {fence_marker[0]}:
+                if fenced_lines:
+                    yield fenced_start, " ".join(fenced_lines)
+                fenced_lines = []
+                fence_marker = ""
+            elif stripped:
+                if not fenced_lines:
+                    fenced_start = line_number
+                fenced_lines.append(stripped)
             continue
-        if paragraph_lines:
-            yield paragraph_start, " ".join(paragraph_lines)
-            paragraph_lines = []
-    if paragraph_lines:
-        yield paragraph_start, " ".join(paragraph_lines)
+
+        fence_match = _MARKDOWN_FENCE_RE.match(line)
+        if fence_match:
+            if block_lines:
+                yield block_start, " ".join(block_lines)
+                block_lines = []
+            fence_marker = fence_match.group(1)
+            fenced_start = line_number + 1
+            continue
+
+        if not stripped:
+            if block_lines:
+                yield block_start, " ".join(block_lines)
+                block_lines = []
+            continue
+
+        if _MARKDOWN_LIST_ITEM_RE.match(line):
+            if block_lines:
+                yield block_start, " ".join(block_lines)
+            block_lines = [stripped]
+            block_start = line_number
+            continue
+
+        if (
+            _MARKDOWN_ATX_HEADING_RE.match(line)
+            or _MARKDOWN_STRUCTURAL_SEPARATOR_RE.match(line)
+            or _MARKDOWN_TABLE_ROW_RE.match(line)
+        ):
+            if block_lines:
+                yield block_start, " ".join(block_lines)
+                block_lines = []
+            yield line_number, stripped
+            continue
+
+        if not block_lines:
+            block_start = line_number
+        block_lines.append(stripped)
+
+    if fence_marker and fenced_lines:
+        yield fenced_start, " ".join(fenced_lines)
+    if block_lines:
+        yield block_start, " ".join(block_lines)
 
 
 def _has_dependency_policy_bypass(text: str, patterns: Iterable[re.Pattern]) -> bool:
