@@ -188,6 +188,7 @@ _DEPENDENCY_REVIEW_BYPASS_RES = (
     ),
 )
 _MARKDOWN_ATX_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}(?:\s+|$)")
+_MARKDOWN_BLOCKQUOTE_RE = re.compile(r"^\s{0,3}>")
 _MARKDOWN_FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 _MARKDOWN_LIST_ITEM_RE = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s+")
 _MARKDOWN_STRUCTURAL_SEPARATOR_RE = re.compile(r"^\s{0,3}(?:=+|-{3,})\s*$")
@@ -1451,9 +1452,10 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
     """Yield policy text without combining separate Markdown blocks.
 
     Wrapped prose and list-item continuations remain searchable as one unit,
-    while headings, list items, table rows, separators, and fenced blocks keep
-    their Markdown boundaries. Fenced content is still scanned because skill
-    instructions can be conveyed through examples and command snippets.
+    while headings, blockquote statements, list items, table rows, separators,
+    and fenced blocks keep their Markdown boundaries. Fenced content is still
+    scanned because skill instructions can be conveyed through examples and
+    command snippets.
     """
     block_lines = []
     block_start = 1
@@ -1499,6 +1501,7 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
 
         if (
             _MARKDOWN_ATX_HEADING_RE.match(line)
+            or _MARKDOWN_BLOCKQUOTE_RE.match(line)
             or _MARKDOWN_STRUCTURAL_SEPARATOR_RE.match(line)
             or _MARKDOWN_TABLE_ROW_RE.match(line)
         ):
