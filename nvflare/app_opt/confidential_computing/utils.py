@@ -13,22 +13,15 @@
 # limitations under the License.
 
 from collections import deque
-from threading import Lock
 
 
 class NonceHistory:
+
     def __init__(self, size=100):
-        if not isinstance(size, int) or size <= 0:
-            raise ValueError("nonce history size must be a positive integer")
-        self.history = deque(maxlen=size)
-        self._lock = Lock()
+        self.history = deque(maxlen=2 * size)
 
     def add(self, nonce):
-        """Add a non-empty nonce, returning ``False`` for invalid or replayed values."""
-        if nonce is None or nonce == "" or nonce == b"":
+        if nonce in self.history:
             return False
-        with self._lock:
-            if nonce in self.history:
-                return False
-            self.history.append(nonce)
-            return True
+        self.history.append(nonce)
+        return True
