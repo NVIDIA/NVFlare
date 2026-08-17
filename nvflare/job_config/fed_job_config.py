@@ -56,10 +56,7 @@ class FedJobConfig:
         """
         super().__init__()
 
-        if meta_props:
-            check_object_type("meta_props", meta_props, dict)
-            if "name" in meta_props:
-                raise ValueError("meta_props must not override the reserved 'name' property")
+        self._validate_meta_props(meta_props)
 
         self.job_name = job_name
         self.min_clients = min_clients
@@ -74,6 +71,13 @@ class FedJobConfig:
         self.custom_modules = []
         self._copied_source_by_dest = {}
         self.logger = get_obj_logger(self)
+
+    @staticmethod
+    def _validate_meta_props(meta_props):
+        if meta_props:
+            check_object_type("meta_props", meta_props, dict)
+            if "name" in meta_props:
+                raise ValueError("meta_props must not override the reserved 'name' property")
 
     def set_app_packages(self, app_packages: List[str]):
         """Set app packages.
@@ -128,6 +132,7 @@ class FedJobConfig:
         Returns:
 
         """
+        self._validate_meta_props(self.meta_props)
         meta_json = {
             "name": self.job_name,
             "resource_spec": self.resource_specs,

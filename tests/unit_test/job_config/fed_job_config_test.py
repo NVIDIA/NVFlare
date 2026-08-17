@@ -25,6 +25,15 @@ class TestFedJobConfig:
         with pytest.raises(ValueError, match="reserved 'name'"):
             FedJobConfig(job_name="job", min_clients=1, meta_props={"name": "other-job"})
 
+    def test_generate_job_config_rejects_post_construction_job_name_override(self, tmp_path):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        job_config.meta_props = {"name": "other-job"}
+
+        with pytest.raises(ValueError, match="reserved 'name'"):
+            job_config.generate_job_config(tmp_path)
+
+        assert not (tmp_path / "job").exists()
+
     def test_generate_job_config_can_be_repeated_with_meta_props(self, tmp_path):
         job_config = FedJobConfig(job_name="job", min_clients=1, meta_props={"description": "test job"})
 
