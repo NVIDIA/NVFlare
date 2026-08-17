@@ -24,6 +24,7 @@ from typing import Any
 
 import yaml
 
+from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.tool.deploy.deploy_common import (
     COMM_CONFIG_JSON,
@@ -79,6 +80,7 @@ def validate_config(config: dict[str, Any]) -> None:
         parent,
         {
             "docker_image",
+            "internal_connection_security",
             "parent_port",
             "workspace_pvc",
             "workspace_mount_path",
@@ -101,6 +103,13 @@ def validate_config(config: dict[str, Any]) -> None:
         "job_launcher",
     )
     _required_str(parent, "docker_image", "parent")
+    connection_security = parent.get("internal_connection_security", ConnectionSecurity.MTLS)
+    if connection_security not in (ConnectionSecurity.CLEAR, ConnectionSecurity.MTLS):
+        _fail(
+            "INVALID_CONFIG",
+            "parent.internal_connection_security must be 'clear' or 'mtls'.",
+            "Set parent.internal_connection_security to 'clear' or 'mtls'.",
+        )
     if "namespace" in config:
         _validate_k8s_namespace(config, "namespace", "k8s config")
     if "server_service_name" in config:
@@ -124,6 +133,7 @@ def prepare(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) -> di
     parent = config.get("parent") or {}
     job_launcher = config.get("job_launcher") or {}
     parent_port = parent.get("parent_port", 8102)
+    connection_security = parent.get("internal_connection_security", ConnectionSecurity.MTLS)
     workspace_mount_path = parent.get("workspace_mount_path", WORKSPACE_MOUNT_PATH)
     server_service_name = config.get("server_service_name", DEFAULT_K8S_SERVER_SERVICE_NAME)
 
@@ -145,7 +155,14 @@ def prepare(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) -> di
         launcher_args["image_pull_secrets"] = job_launcher["image_pull_secrets"]
 
     _patch_resources(kit_info.kit_dir, "k8s_launcher", launcher_path, launcher_args)
-    _patch_comm_config_for_k8s(kit_info.kit_dir, kit_info.role, kit_info.name, parent_port, server_service_name)
+    _patch_comm_config_for_k8s(
+        kit_info.kit_dir,
+        kit_info.role,
+        kit_info.name,
+        parent_port,
+        server_service_name=server_service_name,
+        connection_security=connection_security,
+    )
     _ensure_study_runtime_template(kit_info.kit_dir)
     if kit_info.role == ROLE_SERVER:
         _relocate_server_storage_to_workspace(kit_info.kit_dir, workspace_mount_path)
@@ -172,6 +189,7 @@ def _patch_comm_config_for_k8s(
     site_name: str,
     parent_port: int,
     server_service_name: str = DEFAULT_K8S_SERVER_SERVICE_NAME,
+    connection_security: str = ConnectionSecurity.MTLS,
 ) -> None:
     comm_config_path = kit_dir / "local" / COMM_CONFIG_JSON
     comm_config = _load_or_default_comm_config(comm_config_path)
@@ -187,7 +205,7 @@ def _patch_comm_config_for_k8s(
         {
             "host": _k8s_parent_service_name(role, site_name, server_service_name),
             "port": parent_port,
-            "connection_security": "mtls",
+            "connection_security": connection_security,
         }
     )
     internal["scheme"] = "tcp"
