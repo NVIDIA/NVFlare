@@ -184,6 +184,14 @@ def test_parent_url_rewrite_is_shallow_and_preserves_other_entries():
     assert args[JobProcessArgs.PARENT_URL][1] == "tcp://old:8102"
 
 
+def test_secure_parent_url_rewrite_preserves_stcp_scheme():
+    args = {JobProcessArgs.PARENT_URL: ("-p", "stcp://old:8102/path?option=value")}
+
+    rewritten = _rewrite_parent_url(args, "new-host", 8102)
+
+    assert rewritten[JobProcessArgs.PARENT_URL][1] == "stcp://new-host:8102/path?option=value"
+
+
 def test_parent_url_rewrite_formats_ipv6_host():
     args = {JobProcessArgs.PARENT_URL: ("-p", "tcp://[2001:db8::1]:8102")}
 
@@ -207,7 +215,7 @@ def test_shared_file_parent_url_is_preserved_without_parent_host():
     [
         (None, "missing or malformed"),
         (("-p", "tcp://old:not-a-port"), "malformed parent URL"),
-        (("-p", "http://old:8102"), "must use shared-file or tcp"),
+        (("-p", "http://old:8102"), "must use shared-file, tcp, or stcp"),
         (("-p", "tcp://old:9000"), "configured internal_port"),
         (("-p", "shared-file://host/not-placeholder"), "malformed shared-file"),
         (("-p", "shared-file://0"), "malformed shared-file"),
@@ -571,13 +579,37 @@ def test_launch_plan_rejects_different_context_workspace(tmp_path):
         launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _fl_ctx(context_workspace))
 
 
-def test_non_clear_internal_connection_is_rejected(tmp_path):
+@pytest.mark.parametrize("launcher_class", [ClientSlurmJobLauncher, ServerSlurmJobLauncher])
+def test_launch_plan_preserves_mtls_parent_args(tmp_path, launcher_class):
+    workspace = _workspace(tmp_path)
+    launcher = _launcher(tmp_path, workspace, launcher_class=launcher_class)
+    context = _fl_ctx(workspace)
+    job_args = context.get_prop(FLContextKey.JOB_PROCESS_ARGS)
+    job_args[JobProcessArgs.PARENT_URL] = ("-p", "stcp://old-host:8102")
+    job_args[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", "mtls")
+
+    plan = launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, context)
+
+    assert plan.module_args[plan.module_args.index("-p") + 1] == "stcp://compute.example:8102"
+    assert plan.module_args[plan.module_args.index("--parent_conn_sec") + 1] == "mtls"
+
+
+@pytest.mark.parametrize(
+    ("parent_url", "connection_security", "message"),
+    [
+        ("stcp://old-host:8102", "clear", "does not match"),
+        ("tcp://old-host:8102", "tls", "requires clear or mTLS"),
+    ],
+)
+def test_launch_plan_rejects_invalid_parent_security(tmp_path, parent_url, connection_security, message):
     workspace = _workspace(tmp_path)
     launcher = _launcher(tmp_path, workspace)
     context = _fl_ctx(workspace)
-    context.get_prop(FLContextKey.JOB_PROCESS_ARGS)[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", "tls")
+    job_args = context.get_prop(FLContextKey.JOB_PROCESS_ARGS)
+    job_args[JobProcessArgs.PARENT_URL] = ("-p", parent_url)
+    job_args[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", connection_security)
 
-    with pytest.raises(SlurmLauncherError, match="requires clear"):
+    with pytest.raises(SlurmLauncherError, match=message):
         launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, context)
 
 

@@ -65,6 +65,9 @@ def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
         ca_path = params.get(DriverParams.CA_CERT.value)
         cert_path = params.get(DriverParams.SERVER_CERT.value)
         key_path = params.get(DriverParams.SERVER_KEY.value)
+        client_pair = (params.get(DriverParams.CLIENT_CERT.value), params.get(DriverParams.CLIENT_KEY.value))
+        if not any((cert_path, key_path)) and all(client_pair):
+            cert_path, key_path = client_pair
 
         if not cert_path or not key_path:
             raise RuntimeError(f"not cert or key for SSL server: {params=}")
@@ -94,6 +97,9 @@ def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
             ca_path = params.get(DriverParams.CA_CERT.value)
             cert_path = params.get(DriverParams.CLIENT_CERT.value)
             key_path = params.get(DriverParams.CLIENT_KEY.value)
+            server_pair = (params.get(DriverParams.SERVER_CERT.value), params.get(DriverParams.SERVER_KEY.value))
+            if not any((cert_path, key_path)) and all(server_pair):
+                cert_path, key_path = server_pair
             params[DriverParams.IMPLEMENTED_CONN_SEC] = "Client mTLS: Flare credentials used"
 
     if not ca_path:

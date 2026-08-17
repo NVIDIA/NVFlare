@@ -353,6 +353,7 @@ def test_pyxis_node_group_writes_node_script_and_mounts_job_artifacts(tmp_path):
     assert "python3 -m trainer" in node_script.read_text(encoding="utf-8")
     batch = Path(handle.job_dir, "batch.sh").read_text(encoding="utf-8")
     assert f"{handle.job_dir}:{handle.job_dir}:ro" in batch
+    assert f"{tmp_path / 'startup'}:{tmp_path / 'startup'}:ro" in batch
 
 
 def test_submission_uses_site_timeout(tmp_path):
@@ -562,7 +563,7 @@ def test_terminal_cleanup_restores_access_to_pyxis_mount_directories(tmp_path):
     assert not os.path.exists(handle.job_dir)
 
 
-def test_apptainer_resolver_mount_uses_compute_node_path(tmp_path, monkeypatch):
+def test_apptainer_startup_and_resolver_mounts_use_compute_node_paths(tmp_path, monkeypatch):
     parent_target = "/run/parent-specific/resolv.conf"
     realpath = os.path.realpath
 
@@ -575,6 +576,7 @@ def test_apptainer_resolver_mount_uses_compute_node_path(tmp_path, monkeypatch):
 
     manager.launch(_plan(tmp_path, sandbox="apptainer", image="/image.sif"))
 
+    assert f"{tmp_path / 'startup'}:{tmp_path / 'startup'}:ro" in adapter.submitted_batch
     assert f"{CONTAINER_RESOLV_CONF}:{CONTAINER_RESOLV_CONF}:ro" in adapter.submitted_batch
     assert parent_target not in adapter.submitted_batch
 

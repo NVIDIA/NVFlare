@@ -80,7 +80,10 @@ class CheckResourceProcessor(RequestProcessor):
                     is_resource_enough, token = resource_manager.check_resources(
                         resource_requirement=resource_spec, fl_ctx=fl_ctx
                     )
-            except Exception:
+            except Exception as e:
+                reason = f"resource check failed: {secure_format_exception(e)}"
+                engine.logger.error(f"Job {job_id}: {reason}")
+                token = reason
                 result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
 
         result.set_header(ShareableHeader.IS_RESOURCE_ENOUGH, is_resource_enough)
