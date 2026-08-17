@@ -189,8 +189,13 @@ _DEPENDENCY_REVIEW_BYPASS_RES = (
 )
 _MARKDOWN_ATX_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}(?:\s+|$)")
 _MARKDOWN_BLOCKQUOTE_RE = re.compile(r"^\s{0,3}>")
+_MARKDOWN_BLOCKQUOTE_CONTINUATION_END_RE = re.compile(
+    r"\b(?:a|an|and|as|at|before|by|for|from|if|in|into|of|on|or|that|the|to|with|without)" r"(?:[:,])?(?:[`*_]+)?\s*$",
+    re.IGNORECASE,
+)
 _MARKDOWN_FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 _MARKDOWN_LIST_ITEM_RE = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s+")
+_MARKDOWN_SENTENCE_END_RE = re.compile(r"[.!?;](?:[`*_]+)?\s*$")
 _MARKDOWN_STRUCTURAL_SEPARATOR_RE = re.compile(r"^\s{0,3}(?:=+|-{3,})\s*$")
 _MARKDOWN_TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
 
@@ -1451,14 +1456,15 @@ def _iter_skill_text_files(skill_dir: Path, *, include_scripts: bool = False) ->
 def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
     """Yield policy text without combining separate Markdown blocks.
 
-    Wrapped prose and list-item continuations remain searchable as one unit,
-    while headings, blockquote statements, list items, table rows, separators,
-    and fenced blocks keep their Markdown boundaries. Fenced content is still
-    scanned because skill instructions can be conveyed through examples and
-    command snippets.
+    Wrapped prose, blockquote fragments, and list-item continuations remain
+    searchable as one unit, while headings, new blockquote statements, list
+    items, table rows, separators, and fenced blocks keep their Markdown
+    boundaries. Fenced content is still scanned because skill instructions can
+    be conveyed through examples and command snippets.
     """
     block_lines = []
     block_start = 1
+    block_is_blockquote = False
     fenced_lines = []
     fenced_start = 1
     fence_marker = ""
@@ -1482,6 +1488,7 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
             if block_lines:
                 yield block_start, " ".join(block_lines)
                 block_lines = []
+                block_is_blockquote = False
             fence_marker = fence_match.group(1)
             fenced_start = line_number + 1
             continue
@@ -1490,6 +1497,26 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
             if block_lines:
                 yield block_start, " ".join(block_lines)
                 block_lines = []
+                block_is_blockquote = False
+            continue
+
+        blockquote_match = _MARKDOWN_BLOCKQUOTE_RE.match(line)
+        if blockquote_match:
+            content = line[blockquote_match.end() :].lstrip()
+            if not content:
+                if block_lines:
+                    yield block_start, " ".join(block_lines)
+                    block_lines = []
+                    block_is_blockquote = False
+                continue
+            if block_is_blockquote and _is_markdown_blockquote_continuation(block_lines[-1], content):
+                block_lines.append(content)
+                continue
+            if block_lines:
+                yield block_start, " ".join(block_lines)
+            block_lines = [content]
+            block_start = line_number
+            block_is_blockquote = True
             continue
 
         if _MARKDOWN_LIST_ITEM_RE.match(line):
@@ -1497,20 +1524,25 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
                 yield block_start, " ".join(block_lines)
             block_lines = [stripped]
             block_start = line_number
+            block_is_blockquote = False
             continue
 
         if (
             _MARKDOWN_ATX_HEADING_RE.match(line)
-            or _MARKDOWN_BLOCKQUOTE_RE.match(line)
             or _MARKDOWN_STRUCTURAL_SEPARATOR_RE.match(line)
             or _MARKDOWN_TABLE_ROW_RE.match(line)
         ):
             if block_lines:
                 yield block_start, " ".join(block_lines)
                 block_lines = []
+                block_is_blockquote = False
             yield line_number, stripped
             continue
 
+        if block_is_blockquote:
+            yield block_start, " ".join(block_lines)
+            block_lines = []
+            block_is_blockquote = False
         if not block_lines:
             block_start = line_number
         block_lines.append(stripped)
@@ -1519,6 +1551,16 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
         yield fenced_start, " ".join(fenced_lines)
     if block_lines:
         yield block_start, " ".join(block_lines)
+
+
+def _is_markdown_blockquote_continuation(previous: str, current: str) -> bool:
+    """Return whether a quoted source line continues the preceding statement."""
+    if _MARKDOWN_SENTENCE_END_RE.search(previous):
+        return False
+    first_alpha = re.search(r"[A-Za-z]", current)
+    return bool(
+        _MARKDOWN_BLOCKQUOTE_CONTINUATION_END_RE.search(previous) or (first_alpha and first_alpha.group(0).islower())
+    )
 
 
 def _has_dependency_policy_bypass(text: str, patterns: Iterable[re.Pattern]) -> bool:
