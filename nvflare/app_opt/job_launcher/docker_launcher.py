@@ -471,7 +471,7 @@ class DockerJobLauncher(JobLauncherSpec):
         self.default_python_path = default_python_path if default_python_path is not None else python_path
         if self.default_python_path is None:
             self.default_python_path = self.DEFAULT_PYTHON_PATH
-        if not isinstance(self.default_python_path, str) or not self.default_python_path:
+        if not isinstance(self.default_python_path, str) or not self.default_python_path.strip():
             raise ValueError("default_python_path must be a non-empty string")
         self.timeout = timeout
         default_job_container_kwargs = default_job_container_kwargs or {}
@@ -560,6 +560,15 @@ class DockerJobLauncher(JobLauncherSpec):
 
         site_name = fl_ctx.get_identity_name()
         docker_spec = get_job_launcher_spec(job_meta, site_name, "docker")
+        job_image = docker_spec.get("image")
+        if job_image is not None and not isinstance(job_image, str):
+            raise RuntimeError(
+                f"launcher_spec docker image for site '{site_name}' must be a string, "
+                f"got {type(job_image).__name__}: {job_image!r}"
+            )
+        python_path = docker_spec.get("python_path", self.default_python_path)
+        if not isinstance(python_path, str) or not python_path.strip():
+            raise RuntimeError(f"launcher_spec['{site_name}']['docker']['python_path'] must be a non-empty string")
         try:
             validate_docker_job_launcher_spec(docker_spec, f"job Docker spec for site '{site_name}'")
         except ValueError as e:
@@ -569,13 +578,7 @@ class DockerJobLauncher(JobLauncherSpec):
                 f"job Docker spec for site '{site_name}' contains entrypoint but lacks locally authorized BYOC"
             )
         portable_spec = get_portable_resource_spec(job_meta, site_name)
-        job_image = docker_spec.get("image")
         container_name = _sanitize_container_name(f"{site_name}-{job_id}")
-        if job_image is not None and not isinstance(job_image, str):
-            raise RuntimeError(
-                f"launcher_spec docker image for site '{site_name}' must be a string, "
-                f"got {type(job_image).__name__}: {job_image!r}"
-            )
         study = job_meta.get(JobMetaKey.STUDY.value)
         study_runtime = self._resolve_study_runtime(study)
         if not job_image and study_runtime is not None:
@@ -617,9 +620,6 @@ class DockerJobLauncher(JobLauncherSpec):
         if set_list:
             module_args_list.extend(["--set"] + set_list)
 
-        python_path = docker_spec.get("python_path", self.default_python_path)
-        if not isinstance(python_path, str) or not python_path:
-            raise RuntimeError(f"launcher_spec['{site_name}']['docker']['python_path'] must be a non-empty string")
         command = [python_path, "-u", "-m", exe_module] + module_args_list
 
         site_env = {}
