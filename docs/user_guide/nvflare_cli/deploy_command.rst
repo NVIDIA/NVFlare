@@ -135,6 +135,7 @@ Example ``k8s.yaml``:
 
    parent:
      docker_image: registry.example.com/nvflare-site:2.8
+     internal_connection_security: mtls
      image_pull_secrets:
        - registry-credentials
      parent_port: 8102
@@ -167,6 +168,10 @@ Top-level keys:
 ``parent`` keys:
 
 - ``docker_image``: required parent image used by the Helm chart.
+- ``internal_connection_security``: security mode for internal parent/job TCP
+  links (SP/SJ and CP/CJ). Accepts ``mtls`` or ``clear`` and defaults to
+  ``mtls``. Use ``clear`` only as an explicit insecure opt-out because it
+  removes certificate authentication from these links.
 - ``image_pull_secrets``: optional list of existing Kubernetes Secret names to
   render as ``imagePullSecrets`` on the parent server/client pod. Create these
   registry pull Secrets in the target namespace before installing the chart.
@@ -260,7 +265,11 @@ and ``startup/`` from the generated Secret.
 communication settings so dynamically launched job pods connect to the generated
 parent Kubernetes Service on ``parent_port``. If you customize the chart's
 Service name or port, keep that Service endpoint consistent with the prepared
-kit.
+kit. By default, these TCP links use mTLS and preserve ``stcp://`` through the
+job launcher and runtime arguments. Setting
+``parent.internal_connection_security: clear`` instead emits ``tcp://`` links
+without certificate authentication; receiver-side CellNet authorization still
+applies, but it does not replace peer authentication.
 
 The command writes:
 
