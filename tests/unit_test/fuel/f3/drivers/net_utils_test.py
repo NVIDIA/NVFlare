@@ -68,6 +68,16 @@ class TestNetUtils:
 
         assert get_tcp_urls("tcp", resources) == ("tcp://127.0.0.1:1234", "tcp://127.0.0.1:1234")
 
+    @pytest.mark.parametrize("host", [None, "localhost", "LOCALHOST."])
+    @patch("nvflare.fuel.f3.drivers.net_utils.get_open_tcp_port", return_value=1234)
+    def test_tcp_listener_defaults_localhost_to_ipv4_loopback(self, _, host):
+        resources = {} if host is None else {DriverParams.HOST.value: host}
+
+        assert get_tcp_urls("tcp", resources) == (
+            f"tcp://{host or 'localhost'}:1234",
+            "tcp://127.0.0.1:1234",
+        )
+
     @patch("nvflare.fuel.f3.drivers.net_utils.get_open_tcp_port", return_value=1234)
     def test_tcp_listener_default_remains_wildcard(self, _):
         assert get_tcp_urls("tcp", {DriverParams.HOST.value: "server.example"}) == (

@@ -292,7 +292,7 @@ def get_tcp_urls(scheme: str, resources: dict) -> (str, str):
 
     listening_host = resources.get(DriverParams.LISTEN_HOST.value) if resources else None
     if not listening_host:
-        listening_host = "0"
+        listening_host = "127.0.0.1" if host.rstrip(".").lower() == "localhost" else "0"
 
     port = get_open_tcp_port(resources)
     if not port:
