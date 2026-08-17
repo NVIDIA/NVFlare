@@ -178,7 +178,7 @@ state machine layered over these messages.
 
 The two Cell-based modes deliberately have different server-facing trust in 2.9:
 
-- `external_process` uses the 2.8 `CellPipe` mechanism. After the CJ authenticates the launch-token
+- `external_process` uses a direct Cell session. After the CJ authenticates the launch-token
   `HELLO`, `HELLO_ACCEPTED` carries the site's `AUTH_TOKEN` and `AUTH_TOKEN_SIGNATURE`. The trainer
   installs the normal outgoing site auth-header filters. Its FQCN remains a descendant of the
   registered site/CJ FQCN so the server's current origin binding accepts the delegated token.
