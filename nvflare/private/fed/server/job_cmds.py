@@ -68,6 +68,8 @@ from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.private.admin_defs import MsgHeader
+from nvflare.private.admin_defs import ReturnCode as AdminReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
@@ -396,6 +398,21 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             message.set_header(RequestHeader.JOB_ID, str(job_id))
             replies = self.send_request_to_clients(conn, message)
             self.process_replies_to_table(conn, replies)
+
+            client_errors = []
+            if not replies and target_type == self.TARGET_TYPE_CLIENT:
+                client_errors.append("no responses from clients")
+            else:
+                for client_reply in replies:
+                    client_name = client_reply.client_name or client_reply.client_token or "client"
+                    if not client_reply.reply:
+                        client_errors.append(f"{client_name}: no reply")
+                    elif client_reply.reply.get_header(MsgHeader.RETURN_CODE) == AdminReturnCode.ERROR:
+                        detail = client_reply.reply.body or "error reply"
+                        client_errors.append(f"{client_name}: {detail}")
+
+            if client_errors:
+                conn.update_meta(make_meta(MetaStatusValue.ERROR, info="\n".join(client_errors)))
 
         if target_type not in [self.TARGET_TYPE_ALL, self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_SERVER]:
             conn.append_error(

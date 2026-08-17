@@ -37,6 +37,7 @@ from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.lighter.tool_consts import NVFLARE_SUBMITTER_CRT_FILE
+from nvflare.private.admin_defs import error_reply, ok_reply
 from nvflare.private.fed.server import cmd_utils as cmd_utils_module
 from nvflare.private.fed.server import job_cmds as job_cmds_module
 from nvflare.private.fed.server.job_cmds import (
@@ -44,6 +45,7 @@ from nvflare.private.fed.server.job_cmds import (
     _create_get_job_log_cmd_parser,
     _create_list_job_cmd_parser,
 )
+from nvflare.private.fed.server.message_send import ClientReply
 
 TEST_CASES = [
     (
@@ -103,6 +105,7 @@ class _MockConnection:
         self.successes = []
         self.dicts = []
         self.tables = []
+        self.meta = {}
 
     def get_prop(self, key, default=None):
         return self._props.get(key, default)
@@ -126,6 +129,9 @@ class _MockConnection:
         table = _MockTable(headers=headers, name=name)
         self.tables.append(table)
         return table
+
+    def update_meta(self, meta):
+        self.meta.update(meta)
 
 
 class _MockTable:
@@ -1692,7 +1698,7 @@ def test_configure_job_log_all_targets_server_and_clients(tmp_path, monkeypatch)
     engine.job_def_manager.get_job.return_value = _FakeListedJob({JobMetaKey.STATUS.value: RunStatus.RUNNING.value})
     conn = _MockConnection(app_ctx=engine)
     module = JobCommandModule()
-    client_replies = [object()]
+    client_replies = [ClientReply(client_token="token-a", client_name="site-a", req=None, reply=ok_reply())]
     monkeypatch.setattr(module, "send_request_to_clients", lambda conn, message: client_replies)
     processed = []
     monkeypatch.setattr(module, "process_replies_to_table", lambda conn, replies: processed.append(replies))
@@ -1702,6 +1708,7 @@ def test_configure_job_log_all_targets_server_and_clients(tmp_path, monkeypatch)
     engine.configure_job_log.assert_called_once_with("job-1", "DEBUG")
     assert processed == [client_replies]
     assert any("successfully configured server job job-1 log" in msg for msg, _meta in conn.strings)
+    assert not conn.meta
 
 
 def test_configure_job_log_specific_client_target_is_honored(tmp_path, monkeypatch):
@@ -1729,7 +1736,7 @@ def test_configure_job_log_specific_client_target_is_honored(tmp_path, monkeypat
     def _send_request_to_clients(conn, message):
         assert conn.get_prop(JobCommandModule.TARGET_CLIENT_TOKENS) == ["token-a"]
         assert conn.get_prop(JobCommandModule.TARGET_CLIENT_NAMES) == ["site-a"]
-        return [object()]
+        return [ClientReply(client_token="token-a", client_name="site-a", req=None, reply=ok_reply())]
 
     processed = []
     monkeypatch.setattr(module, "send_request_to_clients", _send_request_to_clients)
@@ -1739,6 +1746,47 @@ def test_configure_job_log_specific_client_target_is_honored(tmp_path, monkeypat
 
     engine.configure_job_log.assert_not_called()
     assert len(processed) == 1
+
+
+@pytest.mark.parametrize(
+    "reply, expected_info",
+    [
+        (error_reply("log configuration refused"), "log configuration refused"),
+        (None, "no reply"),
+    ],
+)
+def test_configure_job_log_client_failure_sets_error_meta(tmp_path, monkeypatch, reply, expected_info):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    engine.job_def_manager.get_job.return_value = _FakeListedJob({JobMetaKey.STATUS.value: RunStatus.RUNNING.value})
+    conn = _MockConnection(app_ctx=engine)
+    module = JobCommandModule()
+    client_reply = ClientReply(client_token="token-a", client_name="site-a", req=None, reply=reply)
+    monkeypatch.setattr(module, "send_request_to_clients", lambda conn, message: [client_reply])
+
+    module.configure_job_log(conn, ["configure_job_log", "job-1", "client", "site-a", "DEBUG"])
+
+    assert conn.meta[MetaKey.STATUS] == MetaStatusValue.ERROR
+    assert "site-a" in conn.meta[MetaKey.INFO]
+    assert expected_info in conn.meta[MetaKey.INFO]
+
+
+def test_configure_job_log_no_client_responses_sets_error_meta(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    engine.job_def_manager.get_job.return_value = _FakeListedJob({JobMetaKey.STATUS.value: RunStatus.RUNNING.value})
+    conn = _MockConnection(app_ctx=engine)
+    module = JobCommandModule()
+    monkeypatch.setattr(module, "send_request_to_clients", lambda conn, message: [])
+
+    module.configure_job_log(conn, ["configure_job_log", "job-1", "client", "site-a", "DEBUG"])
+
+    assert conn.meta == {
+        MetaKey.STATUS: MetaStatusValue.ERROR,
+        MetaKey.INFO: "no responses from clients",
+    }
 
 
 def test_authorize_job_id_hides_jobs_from_other_studies(monkeypatch):
