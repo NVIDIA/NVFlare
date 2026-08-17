@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 import torch.nn as nn
 
@@ -34,6 +34,7 @@ class SAGMLFlowJob(BaseFedJob):
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
         key_metric: str = "accuracy",
+        key_metric_mode: Literal["min", "max"] = "max",
         tracking_uri=None,
         kwargs=None,
         artifact_location=None,
@@ -53,11 +54,14 @@ class SAGMLFlowJob(BaseFedJob):
             mandatory_clients (List[str], optional): mandatory clients to run the job. Default None.
             key_metric (str, optional): Metric used to determine if the model is globally best.
                 if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
-                Higher values must indicate a better model; for lower-is-better metrics such as a loss,
-                report a negated value from the client (e.g., "neg_loss"). Defaults to "accuracy".
+                Defaults to "accuracy".
+            key_metric_mode (str, optional): One of "min" or "max". Use "min" when lower key_metric values
+                are better, such as for loss, and "max" when higher values are better. Defaults to "max".
             kwargs: kwargs dict
         """
-        super().__init__(initial_model, name, min_clients, mandatory_clients, key_metric)
+        super().__init__(
+            initial_model, name, min_clients, mandatory_clients, key_metric, key_metric_mode=key_metric_mode
+        )
 
         shareable_generator = FullModelShareableGenerator()
         shareable_generator_id = self.to_server(shareable_generator, id="shareable_generator")
