@@ -154,10 +154,15 @@ class FedJobConfig:
         check_job_name("job_name", self.job_name)
         job_dir = os.path.join(job_root, self.job_name)
         if os.path.exists(job_dir):
-            if self._is_valid_job_folder(job_dir, self.job_name) or self._is_partial_export_folder(job_dir):
+            if self._is_valid_job_folder(job_dir, self.job_name):
                 shutil.rmtree(job_dir, ignore_errors=True)
             else:
                 raise RuntimeError(f"Job folder {job_dir} already exists and does not belong to job {self.job_name}.")
+
+        # Write the ownership marker before generating app files. If a later
+        # export step fails, a retry can safely identify and replace this folder.
+        os.makedirs(job_dir, exist_ok=True)
+        self._generate_meta(job_dir)
 
         for app_name, fed_app in self.fed_apps.items():
             self.custom_modules = []
@@ -172,8 +177,6 @@ class FedJobConfig:
 
             if fed_app.client_app:
                 self._get_client_app(config_dir, custom_dir, fed_app)
-
-        self._generate_meta(job_dir)
 
     def simulator_run(self, workspace, clients=None, n_clients=None, threads=None, gpu=None, log_config=None):
         with TemporaryDirectory() as job_root:
@@ -656,19 +659,7 @@ class FedJobConfig:
         meta_file = os.path.join(job_folder, META_JSON)
         try:
             with open(meta_file) as f:
-                return json.load(f).get("name") == job_name
+                metadata = json.load(f)
+                return isinstance(metadata, dict) and metadata.get("name") == job_name
         except (OSError, json.JSONDecodeError):
-            return False
-
-    def _is_partial_export_folder(self, job_folder: str) -> bool:
-        """True when a previous export created the directory but did not finish writing meta.json.
-
-        A partial export only contains app-named subdirectories (no foreign files), so it is
-        safe to delete and retry.  Any other content means the folder was not created by NVFlare.
-        """
-        try:
-            app_names = set(self.fed_apps.keys())
-            entries = os.listdir(job_folder)
-            return all(os.path.isdir(os.path.join(job_folder, e)) and e in app_names for e in entries)
-        except OSError:
             return False

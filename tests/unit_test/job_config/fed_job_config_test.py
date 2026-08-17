@@ -50,6 +50,32 @@ class TestFedJobConfig:
 
         assert marker.read_text(encoding="utf-8") == "keep me"
 
+    @pytest.mark.parametrize("metadata", ["[]", "null"])
+    def test_generate_job_config_preserves_non_object_metadata(self, tmp_path, metadata):
+        job_dir = tmp_path / "job"
+        job_dir.mkdir()
+        (job_dir / "meta.json").write_text(metadata, encoding="utf-8")
+        marker = job_dir / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+
+        with pytest.raises(RuntimeError, match="does not belong"):
+            job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+
+    def test_generate_job_config_preserves_unowned_partial_export_folder(self, tmp_path):
+        job_dir = tmp_path / "job"
+        job_dir.mkdir()
+        marker = job_dir / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+
+        with pytest.raises(RuntimeError, match="does not belong"):
+            job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+
     def test_locate_imports(self):
         job_config = FedJobConfig(job_name="job_name", min_clients=1)
         cwd = os.path.dirname(__file__)
