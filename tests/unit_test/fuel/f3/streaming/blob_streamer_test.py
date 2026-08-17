@@ -341,7 +341,10 @@ def test_run_blob_cb_stops_task_on_exception(exc):
 
     error = future.exception(timeout=0.1)
     assert isinstance(error, StreamError)
-    assert "blob_cb threw" in str(error)
+    if isinstance(exc, StreamError):
+        assert error is exc
+    else:
+        assert "blob_cb threw" in str(error)
     assert stopped["error"] is error
 
 

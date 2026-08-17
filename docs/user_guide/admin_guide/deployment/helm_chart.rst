@@ -107,6 +107,9 @@ communication settings to use the generated Service name and ``parent_port``.
 parent/job communication; it is not the federated learning port that remote
 clients use to reach the server. If you rename or replace the Service, keep the
 Service name, Service port, and prepared kit communication settings consistent.
+These internal TCP links use mTLS by default. The job pod receives the existing
+participant startup CA, certificate, and key, while CellNet binds the certificate
+identity to the participant's logical FQCN rather than the pod name or IP address.
 
 The runtime shape is:
 
@@ -230,6 +233,7 @@ Example ``k8s.yaml``:
    namespace: nvflare
    parent:
      docker_image: registry.example.com/nvflare:dev
+     internal_connection_security: mtls
      image_pull_secrets:
        - registry-credentials
      parent_port: 8102
@@ -263,6 +267,11 @@ The runtime config controls site-level Kubernetes settings:
   ``parent.workspace_mount_path`` is also written into the K8s launcher config
   so spawned SJ/CJ job pods mount their job workspace and startup kit at the
   same in-container path.
+  ``parent.internal_connection_security`` accepts ``mtls`` or ``clear`` and
+  defaults to ``mtls``. ``mtls`` preserves ``stcp://`` and authenticates both
+  ends of SP/SJ and CP/CJ links. ``clear`` is an explicit insecure opt-out that
+  emits ``tcp://`` links without certificate authentication; use it only on a
+  trusted, isolated network when compatibility requires clear transport.
 * ``job_launcher`` values are written into the participant's
   ``local/resources.json.default`` so the parent process can create job pods.
   ``config_file_path`` may be empty for in-cluster configuration, and
