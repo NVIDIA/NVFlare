@@ -71,7 +71,6 @@ def main():
             # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
             train_script="client.py",
             train_args=train_args,
-            key_metric="val_acc_epoch",
         )
     elif args.algorithm == "fedprox":
         recipe = FedProxRecipe(
@@ -82,7 +81,6 @@ def main():
             train_script="client.py",
             train_args=train_args,
             fedprox_mu=args.fedprox_mu,
-            key_metric="val_acc_epoch",
         )
     else:
         recipe = ScaffoldRecipe(
@@ -92,7 +90,6 @@ def main():
             model=LitNet(),
             train_script="client.py",
             train_args=train_args,
-            key_metric="val_acc_epoch",
         )
 
     env = SimEnv(num_clients=n_clients, num_threads=n_clients)

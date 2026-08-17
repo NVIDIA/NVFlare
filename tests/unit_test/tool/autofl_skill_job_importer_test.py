@@ -829,7 +829,7 @@ def test_import_selects_hello_lightning_algorithm_mode(algorithm, expected_recip
     assert config["import"]["support"]["status"] == "supported"
     assert config["job"]["recipe"] == expected_recipe
     assert config["job"]["train_script"] == "client.py"
-    assert config["objective"] == _objective("val_acc_epoch", source="literal")
+    assert config["objective"] == _objective("accuracy", source="default")
 
 
 def test_import_selects_hello_numpy_cross_val_training_mode():

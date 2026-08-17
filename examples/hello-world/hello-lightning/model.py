@@ -76,7 +76,8 @@ class LitNet(LightningModule):
 
         if stage:
             self.log(f"{stage}_loss", loss)
-            self.log(f"{stage}_acc", self.valid_acc, on_step=True, on_epoch=True)
+            # Keep the federated selection metric stable and framework-neutral.
+            self.log("accuracy", self.valid_acc, on_step=False, on_epoch=True)
         return outputs
 
     def validation_step(self, batch, batch_idx):

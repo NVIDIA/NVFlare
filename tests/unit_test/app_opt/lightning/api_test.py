@@ -64,8 +64,16 @@ class TinyLightningNet(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         inputs, labels = batch
-        loss = F.cross_entropy(self.fc(inputs), labels)
+        logits = self.fc(inputs)
+        loss = F.cross_entropy(logits, labels)
         self.log("val_loss", loss, on_epoch=True, batch_size=inputs.shape[0])
+        self.log(
+            "accuracy",
+            (logits.argmax(dim=1) == labels).float().mean(),
+            on_step=False,
+            on_epoch=True,
+            batch_size=inputs.shape[0],
+        )
         return loss
 
     def configure_optimizers(self):
@@ -1439,6 +1447,7 @@ def test_real_lightning_train_with_evaluation_reuses_scaffold_model_and_returns_
     output_model = send.call_args.args[0]
     assert receive.call_count == 1
     assert output_model.metrics["val_loss"] >= 0.0
+    assert 0.0 <= output_model.metrics["accuracy"] <= 1.0
     assert AlgorithmConstants.SCAFFOLD_CTRL_DIFF in output_model.meta
     assert callback._pending_train_model is None
 
