@@ -429,6 +429,25 @@ class TestDefaultJobScheduler:
             )
         assert job is None
 
+    def test_resource_manager_error_is_recorded_in_schedule_history(self):
+        resource_manager = Mock(spec=ResourceManagerSpec)
+        resource_manager.check_resources.return_value = (False, "resource check failed: unsupported license")
+        candidate = create_job(
+            job_id="job",
+            resource_spec={"site1": {"license": 2}},
+            deploy_map={"app": [ALL_SITES]},
+            min_sites=1,
+        )
+        scheduler = DefaultJobScheduler(max_jobs=1, min_schedule_interval=0)
+
+        with create_servers(1, [Site("site1", {}, resource_manager)])[0].new_context() as fl_ctx:
+            job, _ = scheduler.schedule_job(Mock(spec=JobDefManagerSpec), [candidate], fl_ctx)
+
+        assert job is None
+        assert (
+            "site1: resource check failed: unsupported license" in candidate.meta[JobMetaKey.SCHEDULE_HISTORY.value][0]
+        )
+
     @pytest.mark.parametrize("job_candidates,sites,expected_job,expected_dispatch_info", TEST_CASES)
     def test_normal_case(self, job_candidates, sites, expected_job, expected_dispatch_info):
         servers = create_servers(server_num=1, sites=sites)
