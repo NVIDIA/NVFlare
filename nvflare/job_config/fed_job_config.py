@@ -58,6 +58,8 @@ class FedJobConfig:
 
         if meta_props:
             check_object_type("meta_props", meta_props, dict)
+            if "name" in meta_props:
+                raise ValueError("meta_props must not override the reserved 'name' property")
 
         self.job_name = job_name
         self.min_clients = min_clients
@@ -126,7 +128,6 @@ class FedJobConfig:
         Returns:
 
         """
-        meta_file = os.path.join(job_dir, META_JSON)
         meta_json = {
             "name": self.job_name,
             "resource_spec": self.resource_specs,
@@ -139,9 +140,19 @@ class FedJobConfig:
         if self.meta_props:
             meta_json.update(self.meta_props)
 
-        with open(meta_file, "w") as outfile:
-            json_dump = json.dumps(meta_json, indent=4)
-            outfile.write(json_dump)
+        # Serialize before creating the ownership marker so failures cannot
+        # leave a truncated meta.json behind.
+        json_dump = json.dumps(meta_json, indent=4)
+        meta_file = os.path.join(job_dir, META_JSON)
+        temp_file = f"{meta_file}.tmp"
+        try:
+            with open(temp_file, "w") as outfile:
+                outfile.write(json_dump)
+            os.replace(temp_file, meta_file)
+        except OSError:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+            raise
 
     def generate_job_config(self, job_root):
         """generate the job config
@@ -162,7 +173,11 @@ class FedJobConfig:
         # Write the ownership marker before generating app files. If a later
         # export step fails, a retry can safely identify and replace this folder.
         os.makedirs(job_dir, exist_ok=True)
-        self._generate_meta(job_dir)
+        try:
+            self._generate_meta(job_dir)
+        except Exception:
+            shutil.rmtree(job_dir, ignore_errors=True)
+            raise
 
         for app_name, fed_app in self.fed_apps.items():
             self.custom_modules = []

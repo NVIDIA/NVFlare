@@ -21,6 +21,18 @@ from nvflare.job_config.fed_job_config import FedJobConfig
 
 
 class TestFedJobConfig:
+    def test_meta_props_cannot_override_job_name(self):
+        with pytest.raises(ValueError, match="reserved 'name'"):
+            FedJobConfig(job_name="job", min_clients=1, meta_props={"name": "other-job"})
+
+    def test_generate_job_config_can_be_repeated_with_meta_props(self, tmp_path):
+        job_config = FedJobConfig(job_name="job", min_clients=1, meta_props={"description": "test job"})
+
+        job_config.generate_job_config(tmp_path)
+        job_config.generate_job_config(tmp_path)
+
+        assert (tmp_path / "job" / "meta.json").is_file()
+
     @pytest.mark.parametrize("job_name", ["", ".", "..", "../job", "nested/job", "/tmp/job"])
     def test_generate_job_config_rejects_path_bearing_job_name(self, tmp_path, job_name):
         # A meta.json makes the export root look like a replaceable job folder.
@@ -75,6 +87,19 @@ class TestFedJobConfig:
             job_config.generate_job_config(tmp_path)
 
         assert marker.read_text(encoding="utf-8") == "keep me"
+
+    def test_generate_job_config_can_retry_after_meta_serialization_failure(self, tmp_path):
+        job_config = FedJobConfig(job_name="job", min_clients=1, meta_props={"invalid": object()})
+
+        with pytest.raises(TypeError):
+            job_config.generate_job_config(tmp_path)
+
+        assert not (tmp_path / "job").exists()
+
+        job_config.meta_props = None
+        job_config.generate_job_config(tmp_path)
+
+        assert (tmp_path / "job" / "meta.json").is_file()
 
     def test_locate_imports(self):
         job_config = FedJobConfig(job_name="job_name", min_clients=1)
