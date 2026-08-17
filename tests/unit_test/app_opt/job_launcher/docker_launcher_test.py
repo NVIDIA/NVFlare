@@ -431,6 +431,10 @@ class TestDockerJobHandleEnterStates:
 
 
 class TestDockerJobLauncherInit:
+    def test_rejects_whitespace_default_python_path(self):
+        with pytest.raises(ValueError, match="default_python_path must be a non-empty string"):
+            _make_launcher(default_python_path="   ")
+
     def test_raises_if_workspace_empty_and_no_env(self):
         """workspace is validated lazily in launch_job, not __init__."""
         with patch.dict("os.environ", {}, clear=True):
@@ -957,6 +961,16 @@ class TestDockerJobLauncherLaunchJob:
         call_kwargs = dc.containers.run.call_args[1]
         assert call_kwargs["command"][0] == "/opt/conda/bin/python"
         assert "python_path" not in call_kwargs
+
+    def test_launch_rejects_whitespace_python_path(self):
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = _make_job_meta(site_name="site-1", docker_spec={"python_path": "   "})
+
+        with pytest.raises(RuntimeError, match="python_path.*non-empty string"):
+            launcher.launch_job(job_meta, fl_ctx)
+        dc.containers.run.assert_not_called()
 
     def test_launch_gpu_via_resource_spec_num_of_gpus(self):
         """num_of_gpus in resource_spec.docker is translated to device_requests for the job container."""
