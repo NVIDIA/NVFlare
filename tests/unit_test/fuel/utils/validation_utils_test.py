@@ -143,7 +143,9 @@ class TestValidationUtils:
         with pytest.raises(Exception):
             check_non_empty_str(name, num)
 
-    @pytest.mark.parametrize("value", ["job", "job-name_1", "job name", "job.name", r"nested\job", "C:job", "CON"])
+    @pytest.mark.parametrize(
+        "value", ["job", "job-name_1", "job name", "job.name", r"nested\job", "C:job", "CON", "job.", "job "]
+    )
     def test_check_job_name(self, value):
         check_job_name("name", value)
 

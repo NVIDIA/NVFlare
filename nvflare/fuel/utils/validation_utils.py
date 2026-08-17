@@ -17,6 +17,7 @@ import random
 SYMBOL_ALL = "@all"
 SYMBOL_NONE = "@none"
 
+
 class DefaultValuePolicy:
     """
     Defines policy for how to determine default value
@@ -90,7 +91,11 @@ def check_non_empty_str(name, value):
 
 
 def check_job_name(name, value):
-    """Validate a job name that will be used as one directory component."""
+    """Validate a job name that will be used as one POSIX directory component.
+
+    NVFlare does not support Windows. Names are therefore evaluated with POSIX
+    path semantics and passed to the filesystem unchanged.
+    """
     check_non_empty_str(name, value)
     if value in (".", "..") or "/" in value:
         raise ValueError(f"{name} must be a single directory name without path components")
