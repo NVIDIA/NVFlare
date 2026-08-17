@@ -350,6 +350,14 @@ def enhance_credential_info(params: dict):
         if os.path.exists(server_key_path):
             params[DriverParams.SERVER_KEY.value] = server_key_path
 
+    # Reuse a complete participant pair for the opposite TLS role without mixing partial pairs.
+    client_pair = (params.get(DriverParams.CLIENT_CERT.value), params.get(DriverParams.CLIENT_KEY.value))
+    server_pair = (params.get(DriverParams.SERVER_CERT.value), params.get(DriverParams.SERVER_KEY.value))
+    if all(client_pair) and not any(server_pair):
+        params[DriverParams.SERVER_CERT.value], params[DriverParams.SERVER_KEY.value] = client_pair
+    elif all(server_pair) and not any(client_pair):
+        params[DriverParams.CLIENT_CERT.value], params[DriverParams.CLIENT_KEY.value] = server_pair
+
     custom_ca_cert_path = params.get(DriverParams.CUSTOM_CA_CERT.value)
     if not custom_ca_cert_path:
         # see whether the custom CA cert file exists

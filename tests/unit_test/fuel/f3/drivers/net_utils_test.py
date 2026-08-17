@@ -13,11 +13,41 @@
 # limitations under the License.
 from unittest.mock import patch
 
+import pytest
+
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.f3.drivers.net_utils import encode_url, get_tcp_urls, parse_url
+from nvflare.fuel.f3.drivers.net_utils import encode_url, enhance_credential_info, get_tcp_urls, parse_url
+from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
 
 
 class TestNetUtils:
+    @pytest.mark.parametrize(("source_role", "target_role"), [("client", "server"), ("server", "client")])
+    def test_complete_participant_pair_is_reused_for_opposite_tls_role(self, tmp_path, source_role, target_role):
+        cert = str(tmp_path / f"{source_role}.crt")
+        key = str(tmp_path / f"{source_role}.key")
+        params = {
+            DriverParams.CA_CERT.value: str(tmp_path / "rootCA.pem"),
+            f"{source_role}_cert": cert,
+            f"{source_role}_key": key,
+        }
+
+        enhance_credential_info(params)
+
+        assert params[f"{target_role}_cert"] == cert
+        assert params[f"{target_role}_key"] == key
+
+    def test_incomplete_role_pairs_are_not_mixed(self, tmp_path):
+        params = {
+            DriverParams.CA_CERT.value: str(tmp_path / "rootCA.pem"),
+            DriverParams.CLIENT_CERT.value: str(tmp_path / "client.crt"),
+            DriverParams.SERVER_KEY.value: str(tmp_path / "server.key"),
+        }
+
+        enhance_credential_info(params)
+
+        assert DriverParams.CLIENT_KEY.value not in params
+        assert DriverParams.SERVER_CERT.value not in params
+
     def test_encode_url(self):
 
         params = {
@@ -55,3 +85,12 @@ class TestNetUtils:
             "tcp://server.example:1234",
             "tcp://0:1234",
         )
+
+    @patch("nvflare.fuel.f3.drivers.net_utils.get_open_tcp_port", return_value=1234)
+    def test_mtls_tcp_listener_advertises_stcp_end_to_end(self, _):
+        resources = {
+            DriverParams.HOST.value: "site-1",
+            DriverParams.CONNECTION_SECURITY.value: "mtls",
+        }
+
+        assert TcpDriver.get_urls("tcp", resources) == ("stcp://site-1:1234", "stcp://0:1234")

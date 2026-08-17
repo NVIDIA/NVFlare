@@ -187,7 +187,7 @@ def _patch_comm_config_for_k8s(
         {
             "host": _k8s_parent_service_name(role, site_name, server_service_name),
             "port": parent_port,
-            "connection_security": "clear",
+            "connection_security": "mtls",
         }
     )
     internal["scheme"] = "tcp"

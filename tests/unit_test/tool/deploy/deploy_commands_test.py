@@ -702,6 +702,7 @@ def test_prepare_k8s_server_uses_configured_service_name(tmp_path, capsys):
 
     assert values["serviceName"] == "custom-nvflare-server"
     assert comm_config["internal"]["resources"]["host"] == "custom-nvflare-server"
+    assert comm_config["internal"]["resources"]["connection_security"] == "mtls"
     assert "name: {{ .Values.serviceName }}" in service
     assert "nvflare-server:%v" not in tcp_services
     assert ".Values.serviceName" in tcp_services
@@ -990,7 +991,7 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     assert comm_config["internal"]["resources"] == {
         "host": "site-1",
         "port": 9102,
-        "connection_security": "clear",
+        "connection_security": "mtls",
     }
 
     values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
@@ -2003,7 +2004,7 @@ def test_prepare_k8s_creates_comm_config_when_missing(tmp_path, capsys):
     assert comm_config["internal"]["resources"] == {
         "host": "site-1",
         "port": 8102,
-        "connection_security": "clear",
+        "connection_security": "mtls",
     }
 
 
