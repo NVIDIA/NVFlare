@@ -111,14 +111,15 @@ These three names are reserved portable fields in flat site specifications and m
 CPU and memory are enforced by the selected job launcher rather than reserved by the site's NVIDIA FLARE resource
 manager. Positive GPU requests and additional site-specific fields continue through resource-manager admission.
 
-``resource_spec["@default"]`` applies to every targeted site. A site block is shallow-merged over it. For example:
+``resource_spec["@default"]`` applies to every targeted site, including the server. A named client or ``server`` block
+can override individual fields; fields it omits continue to inherit the default. For example:
 
 .. code-block:: json
 
     {
         "resource_spec": {
             "@default": {
-                "num_of_gpus": 1,
+                "num_of_gpus": 0,
                 "num_of_cpus": 4,
                 "memory": "8Gi"
             },
@@ -126,9 +127,17 @@ manager. Positive GPU requests and additional site-specific fields continue thro
                 "num_of_gpus": 8,
                 "num_of_cpus": 16,
                 "mem_per_gpu_in_GiB": 16
+            },
+            "server": {
+                "num_of_cpus": 16,
+                "memory": "32Gi"
             }
         }
     }
+
+Here, other clients use the default values, ``site-2`` inherits the default memory while overriding its GPU and CPU
+requirements, and the server inherits zero GPUs while overriding its CPU and memory requirements. An inherited field
+can be replaced but not removed by a site block.
 
 Docker enforces these as GPU device requests, CPU quota, and a memory limit. Kubernetes sets equal requests and limits
 for GPUs, CPU, and memory. Slurm maps them to ``--gres``, ``--cpus-per-task``, and ``--mem``. The portable ``memory``
