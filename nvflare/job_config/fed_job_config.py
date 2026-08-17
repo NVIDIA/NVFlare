@@ -154,10 +154,10 @@ class FedJobConfig:
         check_job_name("job_name", self.job_name)
         job_dir = os.path.join(job_root, self.job_name)
         if os.path.exists(job_dir):
-            if self._is_valid_job_folder(job_dir) or self._is_partial_export_folder(job_dir):
+            if self._is_valid_job_folder(job_dir, self.job_name) or self._is_partial_export_folder(job_dir):
                 shutil.rmtree(job_dir, ignore_errors=True)
             else:
-                raise RuntimeError(f"Job folder {job_dir} already exists and is not a valid job folder.")
+                raise RuntimeError(f"Job folder {job_dir} already exists and does not belong to job {self.job_name}.")
 
         for app_name, fed_app in self.fed_apps.items():
             self.custom_modules = []
@@ -652,9 +652,13 @@ class FedJobConfig:
         return ",".join(strings)
 
     @staticmethod
-    def _is_valid_job_folder(job_folder: str) -> bool:
+    def _is_valid_job_folder(job_folder: str, job_name: str) -> bool:
         meta_file = os.path.join(job_folder, META_JSON)
-        return os.path.exists(meta_file)
+        try:
+            with open(meta_file) as f:
+                return json.load(f).get("name") == job_name
+        except (OSError, json.JSONDecodeError):
+            return False
 
     def _is_partial_export_folder(self, job_folder: str) -> bool:
         """True when a previous export created the directory but did not finish writing meta.json.
