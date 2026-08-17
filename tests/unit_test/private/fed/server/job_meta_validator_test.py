@@ -212,6 +212,21 @@ class TestJobMetaValidator:
                 "unit_test", {"launcher_spec": {site: {"docker": {"num_of_gpus": num_of_gpus}}}}
             )
 
+    @pytest.mark.parametrize("field", ["entrypoint", "shm_size"])
+    @pytest.mark.parametrize("site", ["default", "site-1"])
+    def test_invalid_docker_option_value_is_rejected_from_launcher_spec(self, site, field):
+        with pytest.raises(ValueError, match=rf"field '{field}'"):
+            JobMetaValidator._validate_launcher_spec(
+                "unit_test", {"launcher_spec": {site: {"docker": {field: {"unexpected": 1}}}}}
+            )
+
+    @pytest.mark.parametrize("field", ["entrypoint", "shm_size"])
+    def test_invalid_docker_option_value_is_rejected_from_legacy_resource_spec(self, field):
+        with pytest.raises(ValueError, match=rf"field '{field}'"):
+            JobMetaValidator._validate_resource(
+                "unit_test", {"resource_spec": {"site-1": {"docker": {field: {"unexpected": 1}}}}}
+            )
+
     @pytest.mark.parametrize("docker_spec", [[], "", 1, False])
     def test_legacy_docker_resource_spec_requires_dict(self, docker_spec):
         with pytest.raises(ValueError, match="must be a dict"):

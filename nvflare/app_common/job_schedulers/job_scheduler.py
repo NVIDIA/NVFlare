@@ -192,6 +192,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         num_sites_ok = 0
         sites_dispatch_info = {}
         no_resource_message = ""
+        resource_failure_details = []
         for site_name, check_result in resource_check_results.items():
             is_resource_enough, token = check_result
             if is_resource_enough:
@@ -206,17 +207,18 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             else:
                 if site_name in required_sites:
                     no_resource_message += site_name + ":" + token + ";"
+                if token:
+                    resource_failure_details.append(f"{site_name}: {token}")
 
         if num_sites_ok < job.min_sites:
             self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: not enough sites have enough resources.")
             self._cancel_resources(
                 resource_reqs=resource_reqs, resource_check_results=resource_check_results, fl_ctx=fl_ctx
             )
-            return (
-                SCHEDULE_RESULT_NO_RESOURCE,
-                None,
-                f"not enough sites have enough resources (ok sites {num_sites_ok} < min sites {job.min_sites})",
-            )
+            reason = f"not enough sites have enough resources (ok sites {num_sites_ok} < min sites {job.min_sites})"
+            if resource_failure_details:
+                reason += f". Details: {'; '.join(resource_failure_details)}"
+            return SCHEDULE_RESULT_NO_RESOURCE, None, reason
 
         if required_sites_not_enough_resource:
             self.log_debug(
