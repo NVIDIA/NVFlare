@@ -88,7 +88,9 @@ containers include `/etc/pip/constraint.txt` to protect the tested package set.
 Confidential Containers. It adds the pinned AMD SEV-SNP, Intel TDX, and NVIDIA
 NVAT attestation clients needed by the confidential-computing authorizers to
 the standard parent runtime. It does not copy application code from `examples/`
-or install dependencies for a particular workload.
+or install dependencies for a particular workload. The image supports only
+`linux/amd64` because the bundled attestation clients are amd64-specific;
+builds for other target architectures fail fast.
 
 Unlike `Dockerfile.parent`, which currently uses Python 3.14,
 `Dockerfile.coco` intentionally stays on Python 3.12. Its
