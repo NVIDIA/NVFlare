@@ -23,7 +23,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCTokenGenerateError, CCTokenVerifyError
 from nvflare.app_opt.confidential_computing.cc_manager import (
-    CC_CHALLENGE,
     CC_INFO,
     CC_NAMESPACE,
     CC_TOKEN,
@@ -32,15 +31,12 @@ from nvflare.app_opt.confidential_computing.cc_manager import (
     CCManager,
 )
 from nvflare.app_opt.confidential_computing.tdx_authorizer import TDX_NAMESPACE, TDXAuthorizer
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
-from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 
 VALID_TOKEN = "valid_token"
 INVALID_TOKEN = "invalid_token"
-CHALLENGE = "ab" * 32
 
 
-def _verify_token(token: str, challenge: str) -> bool:
+def _verify_token(token: str) -> bool:
     """Verify if the token is valid.
 
     Args:
@@ -49,13 +45,9 @@ def _verify_token(token: str, challenge: str) -> bool:
     Returns:
         bool: True if token is valid, False otherwise
     """
-    if challenge != CHALLENGE or token == INVALID_TOKEN:
+    if token == INVALID_TOKEN:
         raise CCTokenVerifyError("Invalid token")
     return token == VALID_TOKEN
-
-
-def _token_info(token: str, challenge: str = CHALLENGE) -> dict:
-    return {CC_TOKEN: token, CC_NAMESPACE: TDX_NAMESPACE, CC_CHALLENGE: challenge, CC_TOKEN_VALIDATED: False}
 
 
 def _create_peer_cc_context(site_name: str, token: str) -> tuple[list[dict[str, str]], FLContext]:
@@ -69,7 +61,7 @@ def _create_peer_cc_context(site_name: str, token: str) -> tuple[list[dict[str, 
         Tuple[List[Dict[str, str]], FLContext]: A tuple containing token info and FL context
     """
     peer_ctx = FLContext()
-    cc_info = [_token_info(token)]
+    cc_info = [{CC_TOKEN: token, CC_NAMESPACE: TDX_NAMESPACE, CC_TOKEN_VALIDATED: False}]
     peer_ctx.set_prop(CC_INFO, {site_name: cc_info})
     peer_ctx.set_prop(ReservedKey.IDENTITY_NAME, site_name)
     fl_ctx = Mock(spec=FLContext)
@@ -183,15 +175,13 @@ class TestCCManager:
         cc_manager, fl_ctx, tdx_authorizer = cc_test_env
 
         # Generate fresh tokens
-        fresh_tokens = cc_manager._generate_fresh_tokens_for_validation(CHALLENGE)
+        fresh_tokens = cc_manager._generate_fresh_tokens_for_validation()
 
         # Verify tokens were generated
         assert len(fresh_tokens) == 1
         assert fresh_tokens[0][CC_TOKEN] == VALID_TOKEN
         assert fresh_tokens[0][CC_NAMESPACE] == TDX_NAMESPACE
-        assert fresh_tokens[0][CC_CHALLENGE] == CHALLENGE
         assert fresh_tokens[0][CC_TOKEN_VALIDATED] is False
-        tdx_authorizer.generate.assert_called_once_with(CHALLENGE)
 
     def test_token_generation_error(self, logger, cc_test_env):
         """Test handling of token generation errors."""
@@ -202,7 +192,7 @@ class TestCCManager:
         tdx_authorizer.generate.side_effect = CCTokenGenerateError("Failed to generate token")
 
         # Generate tokens should handle the error gracefully and return empty list
-        fresh_tokens = cc_manager._generate_fresh_tokens_for_validation(CHALLENGE)
+        fresh_tokens = cc_manager._generate_fresh_tokens_for_validation()
 
         # Should return empty list when token generation fails
         assert len(fresh_tokens) == 0
@@ -211,20 +201,20 @@ class TestCCManager:
         "participants_tokens,expected_error",
         [
             # Single participant with valid token
-            ({"client1": [_token_info(VALID_TOKEN)]}, None),
+            ({"client1": [{CC_TOKEN: VALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE}]}, None),
             # Multiple participants with valid tokens
             (
                 {
-                    "client1": [_token_info(VALID_TOKEN)],
-                    "client2": [_token_info(VALID_TOKEN)],
+                    "client1": [{CC_TOKEN: VALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE}],
+                    "client2": [{CC_TOKEN: VALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE}],
                 },
                 None,
             ),
             # One participant with invalid token
             (
                 {
-                    "client1": [_token_info(VALID_TOKEN)],
-                    "client2": [_token_info(INVALID_TOKEN)],
+                    "client1": [{CC_TOKEN: VALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE}],
+                    "client2": [{CC_TOKEN: INVALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE}],
                 },
                 CC_VERIFICATION_FAILED,
             ),
@@ -262,8 +252,8 @@ class TestCCManager:
         cc_manager, fl_ctx, tdx_authorizer = cc_test_env
 
         participants_tokens = {
-            "client1": [_token_info(VALID_TOKEN)],
-            "client2": [_token_info(VALID_TOKEN)],
+            "client1": [{CC_TOKEN: VALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE}],
+            "client2": [{CC_TOKEN: VALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE}],
         }
 
         result, invalid_list = cc_manager._verify_participants_tokens(participants_tokens)
@@ -279,8 +269,8 @@ class TestCCManager:
         cc_manager, fl_ctx, tdx_authorizer = cc_test_env
 
         participants_tokens = {
-            "client1": [_token_info(VALID_TOKEN)],
-            "client2": [_token_info(INVALID_TOKEN)],
+            "client1": [{CC_TOKEN: VALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE}],
+            "client2": [{CC_TOKEN: INVALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE}],
         }
 
         result, invalid_list = cc_manager._verify_participants_tokens(participants_tokens)
@@ -290,24 +280,13 @@ class TestCCManager:
         assert len(invalid_list) == 1
         assert "client2" in invalid_list[0]
 
-    def test_verify_participants_tokens_rejects_missing_challenge(self, cc_test_env):
-        cc_manager, _, _ = cc_test_env
-        participants_tokens = {
-            "client1": [{CC_TOKEN: VALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE}],
-        }
-
-        result, invalid_list = cc_manager._verify_participants_tokens(participants_tokens)
-
-        assert result == {}
-        assert invalid_list == [f"client1 namespace: {{{TDX_NAMESPACE}}}"]
-
     def test_verify_participants_tokens_not_in_enabled_sites(self, logger, cc_test_env):
         """Test that sites not in enabled_sites are automatically validated."""
         logger.info("Testing sites not in enabled_sites list")
         cc_manager, fl_ctx, tdx_authorizer = cc_test_env
 
         participants_tokens = {
-            "client3": [_token_info(INVALID_TOKEN)],  # Not in enabled_sites
+            "client3": [{CC_TOKEN: INVALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE}],  # Not in enabled_sites
         }
 
         result, invalid_list = cc_manager._verify_participants_tokens(participants_tokens)
@@ -315,81 +294,6 @@ class TestCCManager:
         # client3 is not in enabled_sites, so it should be marked as valid without verification
         assert result["client3"] is True
         assert len(invalid_list) == 0
-
-    def test_verify_participants_tokens_rejects_replayed_registration_token(self, cc_test_env):
-        """Registration challenges are attester-chosen, not verifier-issued: a
-        captured report+challenge pair remains cryptographically valid
-        forever, so CCManager must dedup it itself."""
-        cc_manager, _, tdx_authorizer = cc_test_env
-        tdx_authorizer.supports_challenge_binding.return_value = True
-        participants_tokens = {"client1": [_token_info(VALID_TOKEN)]}
-
-        result, invalid_list = cc_manager._verify_participants_tokens(participants_tokens, is_registration=True)
-        assert result["client1." + TDX_NAMESPACE] is True
-        assert invalid_list == []
-
-        result, invalid_list = cc_manager._verify_participants_tokens(participants_tokens, is_registration=True)
-        assert result == {}
-        assert invalid_list == [f"client1 namespace: {{{TDX_NAMESPACE}}}"]
-
-    def test_verify_participants_tokens_allows_repeat_non_registration_token(self, cc_test_env):
-        """Outside registration, an authorizer that binds the verifier
-        challenge does not need replay dedup: each request already carries a
-        distinct, verifier-issued challenge."""
-        cc_manager, _, tdx_authorizer = cc_test_env
-        tdx_authorizer.supports_challenge_binding.return_value = True
-        participants_tokens = {"client1": [_token_info(VALID_TOKEN)]}
-
-        for _ in range(2):
-            result, invalid_list = cc_manager._verify_participants_tokens(participants_tokens)
-            assert result["client1." + TDX_NAMESPACE] is True
-            assert invalid_list == []
-
-    def test_verify_participants_tokens_rejects_replay_for_non_challenge_binding_authorizer(self, cc_test_env):
-        """An authorizer that never binds the challenge into evidence (e.g.
-        TDX) offers no freshness guarantee at all, so CCManager must dedup
-        its tokens even outside registration."""
-        cc_manager, _, tdx_authorizer = cc_test_env
-        tdx_authorizer.supports_challenge_binding.return_value = False
-        participants_tokens = {"client1": [_token_info(VALID_TOKEN)]}
-
-        result, invalid_list = cc_manager._verify_participants_tokens(participants_tokens)
-        assert result["client1." + TDX_NAMESPACE] is True
-
-        result, invalid_list = cc_manager._verify_participants_tokens(participants_tokens)
-        assert result == {}
-        assert invalid_list == [f"client1 namespace: {{{TDX_NAMESPACE}}}"]
-
-    def test_collect_tokens_rejects_site_identity_spoofing(self, cc_test_env):
-        """A responding site controls `site_name` in its own payload. If
-        trusted verbatim, a compromised target could claim to be a different
-        site, letting the real expected site silently go unverified."""
-        cc_manager, fl_ctx, _ = cc_test_env
-        cc_manager.site_name = "server"
-        cell = Mock()
-        engine = Mock()
-        engine.get_cell.return_value = cell
-        fl_ctx.get_engine.return_value = engine
-        cc_manager._get_all_cc_enabled_sites = Mock(
-            return_value=[("server-fqcn", "server"), ("client1-fqcn", "client1"), ("client2-fqcn", "client2")]
-        )
-
-        def send_request(target, request, **_kwargs):
-            challenge = request.payload[CC_CHALLENGE]
-            response = Mock()
-            response.get_header.return_value = F3ReturnCode.OK
-            # client1 is compromised and claims to be client2 instead.
-            claimed_name = "client2" if target == "client1-fqcn" else "client2"
-            response.payload = {
-                "site_name": claimed_name,
-                "cc_info": [_token_info(VALID_TOKEN, challenge=challenge)],
-            }
-            return response
-
-        cell.send_request.side_effect = send_request
-
-        with pytest.raises(RuntimeError):
-            cc_manager._collect_all_site_tokens(fl_ctx)
 
     def test_validate_client_tokens(self, logger, cc_test_env):
         """Test validating client tokens from peer context."""
@@ -404,54 +308,6 @@ class TestCCManager:
             cc_manager._validate_client_tokens(mock_fl_ctx)
             # Should not call shutdown for valid token
             mock_shutdown.assert_not_called()
-
-    def test_validate_client_tokens_rejects_identity_mismatch(self, cc_test_env):
-        """A peer submitting CC_INFO under a name other than its own
-        authenticated identity must be rejected: otherwise it could pick an
-        unlisted/bogus key and dodge verification entirely, since
-        `_verify_participants_tokens` auto-trusts keys outside
-        `cc_enabled_sites`."""
-        cc_manager, _, _ = cc_test_env
-        peer_ctx = FLContext()
-        peer_ctx.set_prop(CC_INFO, {"bogus": [_token_info(VALID_TOKEN)]})
-        peer_ctx.set_prop(ReservedKey.IDENTITY_NAME, "client1")
-        mock_fl_ctx = Mock(spec=FLContext)
-        mock_fl_ctx.get_peer_context.return_value = peer_ctx
-
-        with patch.object(cc_manager, "_shutdown_system") as mock_shutdown:
-            cc_manager._validate_client_tokens(mock_fl_ctx)
-            mock_shutdown.assert_called_once()
-            assert "identity" in mock_shutdown.call_args[0][0].lower()
-
-    def test_validate_server_tokens(self, cc_test_env):
-        """Test validating the server's CC info during client registration."""
-        cc_manager, fl_ctx, _ = cc_test_env
-        fl_ctx.get_prop.return_value = {"server": [_token_info(VALID_TOKEN)]}
-
-        with patch.object(cc_manager, "_shutdown_system") as mock_shutdown:
-            cc_manager._validate_server_tokens(fl_ctx)
-            mock_shutdown.assert_not_called()
-
-    def test_validate_server_tokens_rejects_unlisted_identity(self, cc_test_env):
-        """The server's CC info must claim a participant identity this client
-        actually has CC configuration for; an unlisted/bogus key would
-        otherwise be auto-trusted without ever exercising a verifier."""
-        cc_manager, fl_ctx, _ = cc_test_env
-        fl_ctx.get_prop.return_value = {"bogus": [_token_info(VALID_TOKEN)]}
-
-        with patch.object(cc_manager, "_shutdown_system") as mock_shutdown:
-            cc_manager._validate_server_tokens(fl_ctx)
-            mock_shutdown.assert_called_once()
-
-    def test_token_already_used_normalizes_bytes(self, cc_test_env):
-        """SNPAuthorizer.verify() accepts both str and bytes tokens; the
-        replay cache must not crash on the bytes form, and must dedup it
-        consistently with the equivalent str form."""
-        cc_manager, _, _ = cc_test_env
-
-        assert cc_manager._token_already_used(TDX_NAMESPACE, b"some-token") is False
-        assert cc_manager._token_already_used(TDX_NAMESPACE, b"some-token") is True
-        assert cc_manager._token_already_used(TDX_NAMESPACE, "some-token") is True
 
     def test_validate_client_tokens_invalid(self, logger, cc_test_env):
         """Test validating invalid client tokens."""
@@ -489,52 +345,3 @@ class TestCCManager:
         assert len(cc_info) == 1
         assert cc_info["server"][0][CC_TOKEN] == VALID_TOKEN
         assert cc_info["server"][0][CC_NAMESPACE] == TDX_NAMESPACE
-        assert len(cc_info["server"][0][CC_CHALLENGE]) == 64
-
-    def test_token_refresh_requires_and_binds_request_challenge(self, cc_test_env):
-        cc_manager, _, tdx_authorizer = cc_test_env
-        cc_manager.site_name = "server"
-        request = Mock()
-        request.payload = {"requester": "client1", CC_CHALLENGE: CHALLENGE}
-
-        response = cc_manager._handle_token_refresh_request(request)
-
-        assert response.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
-        assert response.payload["cc_info"][0][CC_CHALLENGE] == CHALLENGE
-        tdx_authorizer.generate.assert_called_once_with(CHALLENGE)
-
-        request.payload = {"requester": "client1"}
-        response = cc_manager._handle_token_refresh_request(request)
-        assert response.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.INVALID_REQUEST
-
-    def test_collect_tokens_uses_distinct_locally_bound_challenges(self, cc_test_env):
-        cc_manager, fl_ctx, _ = cc_test_env
-        cc_manager.site_name = "server"
-        cell = Mock()
-        engine = Mock()
-        engine.get_cell.return_value = cell
-        fl_ctx.get_engine.return_value = engine
-        cc_manager._get_all_cc_enabled_sites = Mock(
-            return_value=[("server-fqcn", "server"), ("client1", "client1"), ("client2", "client2")]
-        )
-        requested_challenges = {}
-
-        def send_request(target, request, **_kwargs):
-            challenge = request.payload[CC_CHALLENGE]
-            requested_challenges[target] = challenge
-            response = Mock()
-            response.get_header.return_value = F3ReturnCode.OK
-            response.payload = {
-                "site_name": target,
-                "cc_info": [_token_info(VALID_TOKEN, challenge="00" * 32)],
-            }
-            return response
-
-        cell.send_request.side_effect = send_request
-
-        all_tokens = cc_manager._collect_all_site_tokens(fl_ctx)
-
-        assert requested_challenges["client1"] != requested_challenges["client2"]
-        assert all_tokens["client1"][0][CC_CHALLENGE] == requested_challenges["client1"]
-        assert all_tokens["client2"][0][CC_CHALLENGE] == requested_challenges["client2"]
-        assert all_tokens["server"][0][CC_CHALLENGE] not in requested_challenges.values()

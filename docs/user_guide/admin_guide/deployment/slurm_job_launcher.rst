@@ -82,6 +82,11 @@ does not need Slurm commands. The submission host that runs the generated
 all four parent commands after its service environment or
 ``parent.environment_setup`` has run.
 
+Internal TCP links use mTLS by default. Each Slurm job receives the existing
+participant startup CA, certificate, and key, while CellNet binds the
+certificate identity to the participant's logical FQCN rather than the
+allocated Slurm hostname.
+
 Build a Container Worker Image
 ==============================
 
@@ -150,6 +155,7 @@ login or service host:
      image: /lustre/images/nvflare-prod.sif
      python_path: /usr/bin/python3
      parent_host: nvflare-site1.internal
+     internal_connection_security: mtls
      sbatch_directives:
        partition: fl-gpu
        account: proj123
@@ -194,6 +200,10 @@ Important keys are:
        runtime parent host.
    * - ``internal_port``
      - Worker-to-parent port; default ``8102``.
+   * - ``internal_connection_security``
+     - Security mode for internal parent/job TCP links (SP/SJ and CP/CJ).
+       Accepts ``mtls`` or ``clear`` and defaults to ``mtls``. Use ``clear``
+       only as an explicit insecure opt-out on a trusted, isolated network.
    * - ``poll_interval``
      - Scheduler polling interval; default ``10`` seconds.
    * - ``submit_timeout``
@@ -302,7 +312,9 @@ host and all compute nodes. ``connect_generation: 1`` routes all job traffic
 through the parent, so workers need no network connectivity at all.
 ``nvflare deploy prepare`` preserves a file-based comm config as-is and does
 not apply the TCP host and port patch; ``internal_port`` and ``parent_host``
-are then not used for the worker channel.
+are then not used for the worker channel. ``internal_connection_security``
+also applies only to TCP; shared-file transport remains ``clear`` and relies
+on filesystem permissions for access control.
 
 At runtime the parent creates a listener directory under ``root_dir`` and
 passes its ``shared-file://0/...`` URL to each worker unchanged. Apptainer and Pyxis
