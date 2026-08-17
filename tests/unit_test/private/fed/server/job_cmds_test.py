@@ -37,7 +37,7 @@ from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.lighter.tool_consts import NVFLARE_SUBMITTER_CRT_FILE
-from nvflare.private.admin_defs import error_reply, ok_reply
+from nvflare.private.admin_defs import MsgHeader, error_reply, ok_reply
 from nvflare.private.fed.server import cmd_utils as cmd_utils_module
 from nvflare.private.fed.server import job_cmds as job_cmds_module
 from nvflare.private.fed.server.job_cmds import (
@@ -1746,12 +1746,20 @@ def test_configure_job_log_specific_client_target_is_honored(tmp_path, monkeypat
 
     engine.configure_job_log.assert_not_called()
     assert len(processed) == 1
+    assert not conn.meta
+
+
+def _reply_with_return_code(return_code, body):
+    reply = ok_reply(body=body)
+    reply.set_header(MsgHeader.RETURN_CODE, return_code)
+    return reply
 
 
 @pytest.mark.parametrize(
     "reply, expected_info",
     [
         (error_reply("log configuration refused"), "log configuration refused"),
+        (_reply_with_return_code("timeout", "request timed out"), "request timed out"),
         (None, "no reply"),
     ],
 )
@@ -1777,7 +1785,10 @@ def test_configure_job_log_no_client_responses_sets_error_meta(tmp_path, monkeyp
     workspace = _FakeWorkspace(tmp_path)
     engine = _FakeServerEngine(workspace)
     engine.job_def_manager.get_job.return_value = _FakeListedJob({JobMetaKey.STATUS.value: RunStatus.RUNNING.value})
-    conn = _MockConnection(app_ctx=engine)
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={JobCommandModule.TARGET_CLIENTS: {"token-a": "site-a"}},
+    )
     module = JobCommandModule()
     monkeypatch.setattr(module, "send_request_to_clients", lambda conn, message: [])
 
@@ -1785,7 +1796,28 @@ def test_configure_job_log_no_client_responses_sets_error_meta(tmp_path, monkeyp
 
     assert conn.meta == {
         MetaKey.STATUS: MetaStatusValue.ERROR,
-        MetaKey.INFO: "no responses from clients",
+        MetaKey.INFO: "site-a: no reply",
+    }
+
+
+def test_configure_job_log_partial_client_responses_set_error_meta(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    engine.job_def_manager.get_job.return_value = _FakeListedJob({JobMetaKey.STATUS.value: RunStatus.RUNNING.value})
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={JobCommandModule.TARGET_CLIENTS: {"token-a": "site-a", "token-b": "site-b"}},
+    )
+    module = JobCommandModule()
+    client_reply = ClientReply(client_token="token-a", client_name="site-a", req=None, reply=ok_reply())
+    monkeypatch.setattr(module, "send_request_to_clients", lambda conn, message: [client_reply])
+
+    module.configure_job_log(conn, ["configure_job_log", "job-1", "client", "site-a", "site-b", "DEBUG"])
+
+    assert conn.meta == {
+        MetaKey.STATUS: MetaStatusValue.ERROR,
+        MetaKey.INFO: "site-b: no reply",
     }
 
 

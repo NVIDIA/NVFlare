@@ -400,16 +400,23 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             self.process_replies_to_table(conn, replies)
 
             client_errors = []
-            if not replies and target_type == self.TARGET_TYPE_CLIENT:
-                client_errors.append("no responses from clients")
-            else:
-                for client_reply in replies:
-                    client_name = client_reply.client_name or client_reply.client_token or "client"
-                    if not client_reply.reply:
-                        client_errors.append(f"{client_name}: no reply")
-                    elif client_reply.reply.get_header(MsgHeader.RETURN_CODE) == AdminReturnCode.ERROR:
-                        detail = client_reply.reply.body or "error reply"
-                        client_errors.append(f"{client_name}: {detail}")
+            client_replies = replies or []
+            received_tokens = {client_reply.client_token for client_reply in client_replies}
+            expected_clients = conn.get_prop(self.TARGET_CLIENTS, {}) or {}
+            for client_token, client_name in expected_clients.items():
+                if client_token not in received_tokens:
+                    client_errors.append(f"{client_name or client_token}: no reply")
+
+            for client_reply in client_replies:
+                client_name = client_reply.client_name or client_reply.client_token or "client"
+                if client_reply.reply is None:
+                    client_errors.append(f"{client_name}: no reply")
+                    continue
+
+                return_code = client_reply.reply.get_header(MsgHeader.RETURN_CODE, AdminReturnCode.OK)
+                if return_code != AdminReturnCode.OK:
+                    detail = client_reply.reply.body or f"return code {return_code}"
+                    client_errors.append(f"{client_name}: {detail}")
 
             if client_errors:
                 conn.update_meta(make_meta(MetaStatusValue.ERROR, info="\n".join(client_errors)))
