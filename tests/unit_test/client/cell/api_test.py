@@ -1613,6 +1613,43 @@ class TestReceiveSend:
         finally:
             api.shutdown()
 
+    def test_send_accepts_completed_result_that_arrives_after_poll_timeout(self, bootstrap_path, env, monkeypatch):
+        completed_outcome = SimpleNamespace(status=TransferProgressState.COMPLETED, reason="all_receivers_succeeded")
+        waiter = MagicMock()
+        waiter.transaction_id = "racing-result-tx"
+
+        def finish_after_wait_decides_to_time_out(timeout=None):
+            waiter.outcome = completed_outcome
+            return None
+
+        waiter.wait.side_effect = finish_after_wait_decides_to_time_out
+        waiter.done.return_value = True
+        monkeypatch.setattr(cell_api.DownloadService, "get_transfer_waiter", lambda _tx_id: waiter)
+
+        def on_request(topic, target, request):
+            if topic == Topic.HELLO:
+                return _hello_accepted_reply()
+            if topic == Topic.RESULT_READY:
+                kwargs = env.request_kwargs[-1]
+                kwargs["fobs_ctx_props"][cell_api.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](
+                    SimpleNamespace(tx_id="racing-result-tx")
+                )
+                return _result_accepted_reply()
+            return make_cell_reply(CellReturnCode.OK)
+
+        env.on_request = on_request
+        api = _init_api(bootstrap_path, env)
+        try:
+            _deliver_task(env)
+            api.receive()
+
+            api.send(FLModel(params={"w": [2.0]}))
+
+            waiter.wait.assert_called_once_with(timeout=cell_api._RECEIVE_POLL_INTERVAL)
+            waiter.done.assert_called_once_with()
+        finally:
+            api.shutdown()
+
     def test_per_task_send_stays_alive_after_cj_acceptance_until_downstream_download_finishes(
         self, bootstrap_path, env, monkeypatch
     ):

@@ -576,6 +576,13 @@ class CellClientAPI(APISpec):
                 if outcome is not None:
                     break
                 if waiter.done():
+                    # The timed wait may decide to return None just before the transfer
+                    # records its outcome and sets the event. Re-read the outcome after
+                    # observing done so a successful completion is not mistaken for a
+                    # terminal resolution without an outcome.
+                    outcome = waiter.outcome
+                    if outcome is not None:
+                        break
                     raise TrainerSessionError(f"result transfer {transaction_id} ended without a terminal outcome")
                 if self._abort:
                     raise TrainerSessionError(f"session aborted while serving result: {self._abort_reason}")
