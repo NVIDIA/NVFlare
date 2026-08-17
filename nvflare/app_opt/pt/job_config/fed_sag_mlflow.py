@@ -34,10 +34,10 @@ class SAGMLFlowJob(BaseFedJob):
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
         key_metric: str = "accuracy",
-        key_metric_mode: Literal["min", "max"] = "max",
         tracking_uri=None,
         kwargs=None,
         artifact_location=None,
+        key_metric_mode: Literal["min", "max"] = "max",
     ):
         """PyTorch ScatterAndGather with MLFlow Job.
 
@@ -55,9 +55,9 @@ class SAGMLFlowJob(BaseFedJob):
             key_metric (str, optional): Metric used to determine if the model is globally best.
                 if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
                 Defaults to "accuracy".
+            kwargs: kwargs dict
             key_metric_mode (str, optional): One of "min" or "max". Use "min" when lower key_metric values
                 are better, such as for loss, and "max" when higher values are better. Defaults to "max".
-            kwargs: kwargs dict
         """
         super().__init__(
             initial_model, name, min_clients, mandatory_clients, key_metric, key_metric_mode=key_metric_mode

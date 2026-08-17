@@ -47,9 +47,6 @@ class BaseFedJob(UnifiedBaseFedJob):
         key_metric (str, optional): Metric used to determine if the model is globally best.
             if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
             Defaults to "accuracy". Only used if model_selector is not provided.
-        key_metric_mode (str, optional): One of "min" or "max". Use "min" when lower key_metric values
-            are better, such as for loss, and "max" when higher values are better. Defaults to "max".
-            Only used if model_selector is not provided.
         validation_json_generator (ValidationJsonGenerator, optional): A component for generating validation results.
             if not provided, a ValidationJsonGenerator will be configured.
         model_selector: (FLComponent, optional): A component for selecting the best model during training.
@@ -62,6 +59,9 @@ class BaseFedJob(UnifiedBaseFedJob):
             If not provided, no analytics tracking will be enabled. For experiment tracking (e.g., TensorBoard),
             explicitly pass a TBAnalyticsReceiver instance.
         model_persistor (optional, ModelPersistor): how to persist the model.
+        key_metric_mode (str, optional): One of "min" or "max". Use "min" when lower key_metric values
+            are better, such as for loss, and "max" when higher values are better. Defaults to "max".
+            Only used if model_selector is not provided.
     """
 
     def __init__(
@@ -72,13 +72,13 @@ class BaseFedJob(UnifiedBaseFedJob):
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
         key_metric: str = "accuracy",
-        key_metric_mode: Literal["min", "max"] = "max",
         validation_json_generator: Optional[ValidationJsonGenerator] = None,
         model_selector: Optional[FLComponent] = None,
         convert_to_fed_event: Optional[ConvertToFedEvent] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
         metrics_artifact_writer: Optional[MetricsArtifactWriter] = None,
         model_persistor: Optional[ModelPersistor] = None,
+        key_metric_mode: Literal["min", "max"] = "max",
     ):
         # Call the unified BaseFedJob
         super().__init__(
