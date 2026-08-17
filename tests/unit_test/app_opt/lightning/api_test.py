@@ -22,6 +22,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from pytorch_lightning.trainer.states import TrainerFn
 from torch.utils.data import DataLoader, TensorDataset
 
 from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
@@ -208,7 +209,11 @@ def test_validation_end_sends_only_from_runtime_global_rank_zero(runtime_rank, e
     callback._is_evaluation = True
     callback._send_model = MagicMock()
     callback.reset_state = MagicMock()
-    trainer = SimpleNamespace(global_rank=runtime_rank, callback_metrics={"val_loss": torch.tensor(0.5)})
+    trainer = SimpleNamespace(
+        global_rank=runtime_rank,
+        callback_metrics={"val_loss": torch.tensor(0.5)},
+        state=SimpleNamespace(fn=TrainerFn.VALIDATING),
+    )
 
     callback.on_validation_end(trainer, SimpleNet())
 
@@ -1151,6 +1156,42 @@ def test_train_end_delivers_initial_metrics_when_train_with_evaluation_is_disabl
     assert server_model.metrics == metrics
 
 
+@pytest.mark.parametrize("train_with_evaluation", [False, True])
+def test_train_end_sends_captured_metrics_regardless_of_train_with_evaluation(train_with_evaluation):
+    callback = _make_callback()
+    callback.train_with_evaluation = train_with_evaluation
+    callback._is_training = True
+    callback._receive_and_update_model = MagicMock(return_value=FLModel())
+    callback._send_model = MagicMock()
+    callback.reset_state = MagicMock()
+    callback._round_start_global_step = 0
+    trainer = SimpleNamespace(
+        global_rank=0,
+        global_step=3,
+        callback_metrics={"accuracy": torch.tensor(0.75)},
+        state=SimpleNamespace(fn=TrainerFn.VALIDATING),
+    )
+
+    callback.on_validation_start(trainer, SimpleNet())
+    callback.on_validation_end(trainer, SimpleNet())
+    callback.on_train_end(trainer, SimpleNet())
+
+    outgoing_model = callback._send_model.call_args.args[0]
+    assert outgoing_model.metrics == {"accuracy": 0.75}
+    server_model = FLModelUtils.from_shareable(FLModelUtils.to_shareable(outgoing_model))
+    assert server_model.metrics == {"accuracy": 0.75}
+
+
+def test_train_end_requires_captured_metrics_when_train_with_evaluation_is_enabled():
+    callback = _make_callback()
+    callback.train_with_evaluation = True
+    callback._is_training = True
+    callback._round_start_global_step = 0
+
+    with pytest.raises(RuntimeError, match="train with evaluation requires validation metrics"):
+        callback.on_train_end(SimpleNamespace(global_rank=0, global_step=3), SimpleNet())
+
+
 def test_train_end_rejects_user_metadata_that_conflicts_with_automatic_algorithm_metadata():
     callback = _make_callback()
     callback._is_training = True
@@ -1189,7 +1230,7 @@ def test_validation_before_fit_reuses_pending_training_model():
     callback._algorithm_handler_manager.start_round = MagicMock()
     callback._is_training = True
     module = SimpleNet()
-    trainer = SimpleNamespace(global_step=0)
+    trainer = SimpleNamespace(global_step=0, state=SimpleNamespace(fn=TrainerFn.VALIDATING))
 
     callback.on_validation_start(trainer, module)
     callback._algorithm_handler_manager.start_round.assert_not_called()
@@ -1214,7 +1255,7 @@ def test_validation_before_fit_reapplies_pending_model_to_a_different_module():
     callback._is_training = True
     validation_module = SimpleNet()
     training_module = SimpleNet()
-    trainer = SimpleNamespace(global_step=0)
+    trainer = SimpleNamespace(global_step=0, state=SimpleNamespace(fn=TrainerFn.VALIDATING))
 
     callback.on_validation_start(trainer, validation_module)
     callback.on_train_start(trainer, training_module)
@@ -1233,7 +1274,7 @@ def test_validation_before_fit_reapplies_pending_model_to_same_module_after_muta
     input_model = FLModel(params=global_params)
     callback._receive_and_update_model = MagicMock(return_value=input_model)
     callback._is_training = True
-    trainer = SimpleNamespace(global_step=0)
+    trainer = SimpleNamespace(global_step=0, state=SimpleNamespace(fn=TrainerFn.VALIDATING))
 
     callback.on_validation_start(trainer, module)
     with torch.no_grad():
@@ -1245,17 +1286,35 @@ def test_validation_before_fit_reapplies_pending_model_to_same_module_after_muta
         assert torch.equal(value, global_params[key])
 
 
-def test_mid_fit_validation_collects_metrics_without_receiving_or_reloading_model():
+def test_mid_fit_validation_does_not_collect_global_model_metrics_or_reload_model():
     callback = _make_callback()
     callback._training_round_started = True
     callback._receive_and_update_model = MagicMock()
-    trainer = SimpleNamespace(callback_metrics={"val_loss": torch.tensor(0.5)})
+    trainer = SimpleNamespace(
+        callback_metrics={"val_loss": torch.tensor(0.5)}, state=SimpleNamespace(fn=TrainerFn.FITTING)
+    )
 
     callback.on_validation_start(trainer, SimpleNet())
     callback.on_validation_end(trainer, SimpleNet())
 
     callback._receive_and_update_model.assert_not_called()
-    assert callback.metrics == {"val_loss": 0.5}
+    assert callback.metrics is None
+
+
+def test_sanity_validation_does_not_collect_global_model_metrics_or_receive_model():
+    callback = _make_callback()
+    callback._receive_and_update_model = MagicMock()
+    trainer = SimpleNamespace(
+        sanity_checking=True,
+        callback_metrics={"val_loss": torch.tensor(0.5)},
+        state=SimpleNamespace(fn=TrainerFn.FITTING),
+    )
+
+    callback.on_validation_start(trainer, SimpleNet())
+    callback.on_validation_end(trainer, SimpleNet())
+
+    callback._receive_and_update_model.assert_not_called()
+    assert callback.metrics is None
 
 
 def test_real_lightning_fit_with_fedprox_and_gradient_accumulation():
@@ -1374,6 +1433,7 @@ def test_real_lightning_train_with_evaluation_reuses_scaffold_model_and_returns_
             enable_model_summary=False,
             num_sanity_val_steps=1,
         )
+        trainer.validate(module, dataloaders=loader)
         trainer.fit(module, train_dataloaders=loader, val_dataloaders=loader)
 
     output_model = send.call_args.args[0]
@@ -1416,7 +1476,7 @@ def test_real_lightning_fedavg_reports_per_round_steps_across_two_fits():
     assert [call.args[0].meta[MetaKey.NUM_STEPS_CURRENT_ROUND] for call in send.call_args_list] == [4, 4]
 
 
-def test_real_lightning_fit_only_reuses_one_received_model_per_round_with_mid_fit_validation():
+def test_real_lightning_fit_only_ignores_sanity_and_mid_fit_validation_metrics():
     module = TinyLightningNet()
     global_params = {key: torch.zeros_like(value) for key, value in module.state_dict().items()}
     input_models = [
@@ -1447,13 +1507,14 @@ def test_real_lightning_fit_only_reuses_one_received_model_per_round_with_mid_fi
             enable_checkpointing=False,
             enable_progress_bar=False,
             enable_model_summary=False,
-            num_sanity_val_steps=0,
+            num_sanity_val_steps=1,
         )
         trainer.fit(module, train_dataloaders=loader, val_dataloaders=loader)
         trainer.fit(module, train_dataloaders=loader, val_dataloaders=loader)
 
     assert receive.call_count == 2
     assert send.call_count == 2
+    assert [call.args[0].metrics for call in send.call_args_list] == [None, None]
     second_output = send.call_args_list[1].args[0]
     assert any(not torch.equal(second_output.params[key], global_params[key]) for key in global_params)
     assert set(second_output.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]) == set(dict(module.named_parameters()))
