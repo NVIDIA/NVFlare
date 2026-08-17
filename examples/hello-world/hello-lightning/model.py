@@ -76,8 +76,11 @@ class LitNet(LightningModule):
 
         if stage:
             self.log(f"{stage}_loss", loss)
-            # Keep the federated selection metric stable and framework-neutral.
-            self.log("accuracy", self.valid_acc, on_step=False, on_epoch=True)
+            if stage == "val":
+                # Match the recipes' default key_metric for federated model selection.
+                self.log("accuracy", self.valid_acc, on_step=False, on_epoch=True)
+            else:
+                self.log(f"{stage}_acc", self.valid_acc, on_step=True, on_epoch=True)
         return outputs
 
     def validation_step(self, batch, batch_idx):
