@@ -28,16 +28,17 @@ with `status: internal`, plus `references/` and `assets/`).
 `SKILL.md` frontmatter follows the [agentskills.io spec](https://agentskills.io/specification):
 only `name`, `description`, `license`, `compatibility`, `metadata`, and
 `allowed-tools` are allowed at the top level. NVFLARE's required fields
-(`min_flare_version`, `blast_radius`, and public-skill `category`) are nested
+(`min-flare-version`, `blast-radius`, and public-skill `category`) are nested
 under the `metadata:` map:
 
 ```yaml
 ---
 name: nvflare-your-skill
 description: Short trigger-oriented description.
+version: "0.1.0"
 metadata:
-  min_flare_version: "2.9.0"
-  blast_radius: read_only
+  min-flare-version: "2.9.0"
+  blast-radius: read_only
   category: Orientation
 ---
 ```
@@ -50,7 +51,10 @@ Public skills must include `category` under `metadata:` as product-facing
 runtime metadata. Draft, internal, and private skills (`metadata.status`) may
 omit it while they are not publishable.
 
-`blast_radius` must be one of:
+Bundled skills declare catalog `version` at the top level, following the
+NVIDIA skills catalog convention.
+
+`blast-radius` must be one of:
 
 - `read_only`
 - `edits_files`

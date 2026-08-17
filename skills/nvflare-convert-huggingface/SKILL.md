@@ -2,12 +2,12 @@
 name: nvflare-convert-huggingface
 description: "Convert existing Hugging Face Transformers Trainer or TRL SFTTrainer training code into an NVFLARE federated job using flare.patch(trainer), local validation, and job export; do not use for manual PyTorch loops, Lightning, inference-only pipelines, deployment, or experiment workflows."
 license: Apache-2.0
+version: "0.1.0"
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-  min_flare_version: "2.9.0"
-  blast_radius: runs_simulator
+  min-flare-version: "2.9.0"
+  blast-radius: runs_simulator
   category: Conversion
-  version: "0.1.0"
   tags: "nvflare, federated-learning, huggingface, transformers, trl, peft, conversion"
   languages: "python"
   frameworks: "huggingface, transformers, trl, pytorch, nvflare"

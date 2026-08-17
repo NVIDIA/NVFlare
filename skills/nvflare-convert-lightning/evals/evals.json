@@ -60,11 +60,11 @@
         "When the Lightning entrypoint imports an existing model source file or defines the LightningModule/DataModule in train.py, the agent derives that source file from static inspection rather than assuming it is named model.py, treats it as relevant source, reuses it by import, mechanical copy/rename, thin wrapper, or targeted edit, and does not synthesize a nested replacement model implementation or recreate the full Lightning/data stack.",
         "Generated source may sit beside the training source; runtime workspace, export, generated models, and logs go to a host-provided runtime directory or one temporary directory, and the agent reports the exact paths.",
         "The agent preserves local-only Lightning callbacks, loggers, and checkpoint behavior; network-connected or custom/unknown loggers remain disabled during validation unless the user explicitly requested them, without a skill-issued approval prompt.",
-        "The agent reads applicable requirements, installs missing dependencies into the host-provided environment before import-level preflight, then validates to completion; when validating an exported deployable job folder it runs that folder with the nvflare simulator CLI rather than Python simulator APIs, while letting the host permission system allow, deny, or prompt rather than gating on a skill-inferred mode.",
+        "The agent reads and audits applicable requirements, presents a redacted combined install plan, obtains explicit user confirmation before installing missing dependencies into the host-provided environment, and then runs import-level preflight and validation; an explicitly requested unattended run still logs the plan, and the host permission system remains an additional gate.",
         "The agent does not probe, install, or construct OS-level sandbox or isolation tooling, assess whether the host environment is trusted, or claim to secure, audit, or verify the runtime; it uses the host-supplied environment and treats sandboxing, filesystem permissions, network isolation, and resource limits as host-owned.",
-        "For this non-interactive conversion request the agent attempts eligible dependency install and validation automatically and does not emit a textual approval or trust prompt such as 'May I install these dependencies?', 'Is this repository trusted?', or 'May I run the simulation?'.",
-        "Missing torch, pytorch-lightning, or other imports that the requirements cover are not reported as a blocker before an install attempt; the agent installs them and proceeds.",
-        "The agent reports blocked only after a real host or tool denial, a failed install, an unavailable required resource, or a missing required conversion-semantics decision; a completed conversion request that ends not_started because the agent waited for approval that never came is a failure.",
+        "The agent statically inventories and audits dependency names, sources, indexes, credentials, and installer options, flags suspicious entries, shows and logs the exact redacted command plus complete declared package/source list, and requests confirmation before installation; it does not add a separate prompt merely to run validation the user already requested.",
+        "Missing torch, pytorch-lightning, or other imports that the requirements cover are not treated as missing declarations; the agent prepares the reviewed install plan and proceeds only after confirmation.",
+        "The agent preserves an unvalidated draft and reports the unresolved reason after declined or unavailable dependency-install confirmation, a suspicious or ambiguous dependency entry, a real host or tool denial, a failed install, an unavailable required resource, or a missing required conversion-semantics decision.",
         "The generated client constructs the model, datamodule/data loaders, and trainer once before the flare round loop rather than inside it; no separate client-side loss object is required when the source defines loss inside LightningModule methods.",
         "The agent preserves the source accelerator/devices selection and does not shortcut GPU training to CPU or add a hard GPU requirement, validating on CPU or a reduced device count only as a reported limitation.",
         "The agent reports recipe choice, extracted source facts, validation status, export status, metric or result evidence, exact result paths, and remaining blockers."
@@ -138,11 +138,11 @@
           },
           {
             "id": "local-validation",
-            "description": "reads applicable requirements, installs missing dependencies into the host-provided environment before any import-level preflight, recipe-construction probe, export, simulation, or python job.py, then runs validation to completion; when validating an exported deployable job folder uses the exported-job nvflare simulator CLI rather than Python simulator APIs; install and execution proceed by default under the host permission system and are never gated on a skill-inferred mode"
+            "description": "reads and audits applicable requirements, presents a redacted combined install plan, obtains explicit user confirmation before installing missing dependencies into the host-provided environment, and only then runs import-level preflight, recipe-construction probes, export, simulation, or python job.py; an explicitly requested unattended run still logs the plan and the host permission system remains an additional gate"
           },
           {
-            "id": "install-and-execute-without-skill-approval-prompt",
-            "description": "attempts eligible dependency install and validation automatically for a non-interactive request and never emits a skill-issued approval or trust prompt ('May I install these dependencies?', 'Is this repository trusted?', 'May I run the simulation?'); the host permission system is the only gate that allows, denies, or prompts"
+            "id": "dependency-install-preview-and-confirmation",
+            "description": "audits dependency names, sources, indexes, credentials, and installer options, flags suspicious entries, shows and logs the exact redacted command plus complete declared package/source list, and obtains explicit user confirmation before installation; explicitly requested unattended installation still records the plan in user-visible activity"
           },
           {
             "id": "setup-outside-round-loop",
@@ -211,8 +211,8 @@
             "description": "does not embed an absolute data path as a fixed non-configurable literal in generated client code (an absolute path used only as the default of a configurable train_args/per_site_config argument is allowed), and does not point at data inside the nvflare run workspace"
           },
           {
-            "id": "no-skill-issued-install-or-trust-prompt",
-            "description": "does not stop a non-interactive run at a skill-issued approval or trust prompt for dependency install or execution, does not report a requirements-covered missing import (torch, pytorch-lightning) as a blocker before an install attempt, and does not end a completed conversion request not_started because approval the skill should never have requested did not arrive; blocked is valid only after a real host/tool denial, install failure, unavailable resource, or missing-dependency declaration"
+            "id": "no-unreviewed-dependency-install",
+            "description": "does not install requirements or direct packages without static review, a redacted plan, and explicit confirmation unless unattended installation was explicitly requested; does not ignore suspicious names, direct or VCS URLs, editable or local paths, alternate indexes, embedded credentials, or unexpected installer options"
           },
           {
             "id": "no-conventional-field-assumption",

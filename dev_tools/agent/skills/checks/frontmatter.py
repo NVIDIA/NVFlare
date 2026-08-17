@@ -32,7 +32,7 @@ YAML_ANCHOR_OR_ALIAS_RE = re.compile(r"(^|[:\s\[{,])([&*])[A-Za-z0-9_-]+(?=\s|$|
 REQUIRED_FRONTMATTER_FIELDS = ("name", "description")
 # `author` (name plus NVIDIA email inside the spec `metadata` map) is required
 # by the company skills guideline (NVCARPS).
-REQUIRED_METADATA_FIELDS = ("author", "min_flare_version", "blast_radius")
+REQUIRED_METADATA_FIELDS = ("author", "min-flare-version", "blast-radius")
 # The NVIDIA skills catalog uses a team identity, never an individual: once
 # `npx skills add` copies the frontmatter out of the repo, `author` acts as the
 # support contact, and a personal inbox goes stale when people change teams.
@@ -92,7 +92,7 @@ class SkillFrontmatterError(ValueError):
 def skill_metadata(metadata: Mapping[str, Any]) -> dict:
     """Return the spec ``metadata`` sub-map where NVFLARE custom fields live.
 
-    Custom keys (min_flare_version, blast_radius, category, status, ...) are
+    Custom keys (min-flare-version, blast-radius, category, status, ...) are
     nested under the agentskills.io ``metadata`` map rather than at the top
     level. Returns an empty dict when absent or malformed.
     """
@@ -166,7 +166,7 @@ def validate_skill_dir(skill_dir: Path | str) -> SkillValidationResult:
         _validate_required_fields(sub, skill_file, issues, fields=REQUIRED_PUBLIC_METADATA_FIELDS, container="metadata")
     _validate_name_matches_directory(metadata.get("name"), path, skill_file, issues)
     _validate_author(sub.get("author"), skill_file, issues)
-    _validate_blast_radius(sub.get("blast_radius"), skill_file, issues)
+    _validate_blast_radius(sub.get("blast-radius"), skill_file, issues)
     _validate_spec_constraints(metadata, skill_file, issues)
     _validate_skill_md_length(skill_file, issues)
 
@@ -286,7 +286,7 @@ def _validate_blast_radius(radius: Any, skill_file: Path, issues: list[SkillVali
         issues.append(
             _issue(
                 "skill-blast-radius-invalid",
-                f"blast_radius must be one of: {', '.join(sorted(VALID_BLAST_RADIUS))}",
+                f"blast-radius must be one of: {', '.join(sorted(VALID_BLAST_RADIUS))}",
                 skill_file,
             )
         )

@@ -92,6 +92,7 @@ LINT_SKILL_COMMAND_DRIFT = "skill-command-drift-lint"
 LINT_SKILL_HELPER_SCRIPT = "skill-helper-script-lint"
 LINT_SKILL_FIXTURE = "skill-fixture-lint"
 LINT_SKILL_RUNTIME_BOUNDARY = "skill-runtime-boundary-lint"
+LINT_SKILL_DEPENDENCY_INSTALL_SAFETY = "skill-dependency-install-safety-lint"
 
 FINDING_ERROR = "error"
 FINDING_WARNING = "warning"
@@ -162,6 +163,30 @@ _KNOWN_AGENT_FLAGS = {
     "agent inspect data": {"--format", "--max-file-bytes", "--max-files", "--redact", "--schema"},
     "agent inspect source": {"--format", "--max-file-bytes", "--max-files", "--redact", "--schema"},
 }
+
+_DEPENDENCY_INSTALL_TERMS_RE = re.compile(r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b", re.IGNORECASE)
+_DEPENDENCY_CONFIRMATION_BYPASS_RES = (
+    re.compile(
+        r"\bnever\s+(?:be\s+)?preceded\s+by\b[^.\n]{0,120}\b(?:prompt|approval|confirmation)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:do\s+not|don't|never)\s+(?:preemptively\s+)?(?:ask|prompt)\b[^.\n]{0,160}"
+        r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b",
+        re.IGNORECASE,
+    ),
+)
+_DEPENDENCY_REVIEW_BYPASS_RES = (
+    re.compile(r"\bwithout\s+(?:auditing|reviewing|vetting|classifying)\b", re.IGNORECASE),
+    re.compile(
+        r"\bwithout\s+asking\b[^.\n]{0,80}\b(?:audit\w*|review\w*|vet\w*|classif\w*|flag\w*)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:does\s+not|do\s+not|don't|never)\s+" r"(?:audit\w*|review\w*|vet\w*|classif\w*|flag\w*)\b",
+        re.IGNORECASE,
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -971,6 +996,48 @@ def _lint_runtime_boundary(context: LintContext) -> None:
             _scan_runtime_boundary(context, file_path, text, skill=record.name)
 
 
+def _lint_dependency_install_safety(context: LintContext) -> None:
+    """Reject runtime guidance that suppresses dependency review or consent.
+
+    NVSkillsEvaluator's keyless Tier 1 security checks cover structural and
+    code-security concerns, but they do not interpret dependency-install
+    authorization policy. Keep this repository-owned check deterministic and
+    limited to runtime guidance (SKILL.md and references), excluding eval
+    prompts and fixtures that intentionally contain adversarial instructions.
+    """
+    for record in context.records:
+        for file_path, text in _iter_skill_text_files(record.skill_dir):
+            for line_number, paragraph in _iter_text_paragraphs(text):
+                if not _DEPENDENCY_INSTALL_TERMS_RE.search(paragraph):
+                    continue
+                if _has_dependency_policy_bypass(paragraph, _DEPENDENCY_CONFIRMATION_BYPASS_RES):
+                    context.findings.append(
+                        _finding(
+                            LINT_SKILL_DEPENDENCY_INSTALL_SAFETY,
+                            FINDING_ERROR,
+                            file_path,
+                            "dependency-install guidance suppresses user confirmation",
+                            "Show a redacted install plan and require confirmation unless the user explicitly requested unattended installation.",
+                            code="dependency-install-confirmation-bypass",
+                            skill=record.name,
+                            line=line_number,
+                        )
+                    )
+                if _has_dependency_policy_bypass(paragraph, _DEPENDENCY_REVIEW_BYPASS_RES):
+                    context.findings.append(
+                        _finding(
+                            LINT_SKILL_DEPENDENCY_INSTALL_SAFETY,
+                            FINDING_ERROR,
+                            file_path,
+                            "dependency-install guidance suppresses package or source review",
+                            "Require static review and flag suspicious package names, sources, credentials, indexes, and installer options.",
+                            code="dependency-install-review-bypass",
+                            skill=record.name,
+                            line=line_number,
+                        )
+                    )
+
+
 # Canonical lint registry: single source of truth for lint IDs, their run
 # order, and their implementations. V1_LINT_IDS and _LINT_FUNCTIONS derive
 # from it; do not maintain separate lists.
@@ -986,6 +1053,7 @@ _LINT_REGISTRY = (
     (LINT_SKILL_HELPER_SCRIPT, _lint_helper_scripts),
     (LINT_SKILL_FIXTURE, _lint_fixtures),
     (LINT_SKILL_RUNTIME_BOUNDARY, _lint_runtime_boundary),
+    (LINT_SKILL_DEPENDENCY_INSTALL_SAFETY, _lint_dependency_install_safety),
 )
 V1_LINT_IDS = tuple(lint_id for lint_id, _ in _LINT_REGISTRY)
 _LINT_FUNCTIONS = dict(_LINT_REGISTRY)
@@ -1374,6 +1442,33 @@ def _iter_skill_text_files(skill_dir: Path, *, include_scripts: bool = False) ->
             yield path, path.read_text(encoding="utf-8", errors="replace")
 
 
+def _iter_text_paragraphs(text: str) -> Iterable[tuple[int, str]]:
+    """Yield normalized non-blank paragraphs and their first source line."""
+    paragraph_lines = []
+    paragraph_start = 1
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if line.strip():
+            if not paragraph_lines:
+                paragraph_start = line_number
+            paragraph_lines.append(line.strip())
+            continue
+        if paragraph_lines:
+            yield paragraph_start, " ".join(paragraph_lines)
+            paragraph_lines = []
+    if paragraph_lines:
+        yield paragraph_start, " ".join(paragraph_lines)
+
+
+def _has_dependency_policy_bypass(text: str, patterns: Iterable[re.Pattern]) -> bool:
+    """Return whether a bypass phrase has nearby dependency-install context."""
+    for pattern in patterns:
+        for match in pattern.finditer(text):
+            nearby = text[max(0, match.start() - 240) : match.end() + 240]
+            if _DEPENDENCY_INSTALL_TERMS_RE.search(nearby):
+                return True
+    return False
+
+
 def _eval_mentions_file_editing(item: dict[str, Any]) -> bool:
     text = _eval_text(item).lower()
     patterns = (
@@ -1470,7 +1565,7 @@ def _line_for_frontmatter_issue(skill_file: Path, code: str, message: str) -> Op
         "skill-frontmatter-field-type",
         "skill-frontmatter-field-unsupported",
     }:
-        for field in ("name", "blast_radius", "description", "min_flare_version", "category"):
+        for field in ("name", "blast-radius", "description", "min-flare-version", "category"):
             if field in message:
                 return _line_for_field(skill_file, field)
     return 1 if skill_file.is_file() else None

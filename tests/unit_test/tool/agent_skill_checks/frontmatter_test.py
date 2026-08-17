@@ -36,7 +36,7 @@ SKILLS_ROOT = REPO_ROOT / "skills"
 
 def test_shipped_skills_frontmatter_is_agentskills_spec_compliant():
     # Every shipped skill must keep only agentskills.io top-level keys; NVFLARE
-    # custom fields (min_flare_version, blast_radius, category, ...) live under
+    # custom fields (min-flare-version, blast-radius, category, ...) live under
     # `metadata:`. Locks in the spec alignment so a top-level custom field can't
     # silently regress.
     skill_dirs = [d for d in sorted(SKILLS_ROOT.iterdir()) if not should_skip_skill_dir(d)]
@@ -45,9 +45,11 @@ def test_shipped_skills_frontmatter_is_agentskills_spec_compliant():
         metadata = parse_skill_frontmatter(skill_dir / "SKILL.md")
         extra = set(metadata) - SPEC_TOP_LEVEL_FIELDS
         assert not extra, f"{skill_dir.name}: non-spec top-level frontmatter keys {sorted(extra)}"
+        assert metadata.get("version") == "0.1.0"
         assert isinstance(metadata.get("metadata"), dict)
-        assert "min_flare_version" in metadata["metadata"]
-        assert "blast_radius" in metadata["metadata"]
+        assert "version" not in metadata["metadata"]
+        assert "min-flare-version" in metadata["metadata"]
+        assert "blast-radius" in metadata["metadata"]
         assert validate_skill_dir(skill_dir).ok
 
 
@@ -59,9 +61,9 @@ def test_validate_skill_dir_rejects_top_level_custom_field(tmp_path):
         "---\n"
         "name: nvflare-top-level-custom\n"
         "description: Fixture.\n"
-        'min_flare_version: "2.8.0"\n'
+        'min-flare-version: "2.8.0"\n'
         "metadata:\n"
-        "  blast_radius: read_only\n"
+        "  blast-radius: read_only\n"
         "  category: Test\n"
         "---\n\n# Skill\n",
         encoding="utf-8",
@@ -81,8 +83,8 @@ def test_parse_skill_frontmatter_reads_required_fields():
 
     assert metadata["name"] == "nvflare-example-skill"
     assert metadata["description"] == "Example fixture skill used by frontmatter validator tests."
-    assert metadata["metadata"]["min_flare_version"] == "2.8.0"
-    assert metadata["metadata"]["blast_radius"] == "read_only"
+    assert metadata["metadata"]["min-flare-version"] == "2.8.0"
+    assert metadata["metadata"]["blast-radius"] == "read_only"
     assert metadata["metadata"]["category"] == "Test"
 
 
@@ -92,8 +94,8 @@ def test_parse_skill_frontmatter_accepts_utf8_bom(tmp_path):
         b"\xef\xbb\xbf---\n"
         b"name: nvflare-bom-skill\n"
         b"description: Test skill fixture.\n"
-        b'min_flare_version: "2.8.0"\n'
-        b"blast_radius: read_only\n"
+        b'min-flare-version: "2.8.0"\n'
+        b"blast-radius: read_only\n"
         b"category: Test\n"
         b"---\n"
         b"\n"
@@ -162,8 +164,8 @@ def test_validate_skill_dir_reports_wrong_type_fields(tmp_path):
         "description: Wrong type fixture.\n"
         "metadata:\n"
         '  author: "Test Author <test-author@nvidia.com>"\n'
-        "  min_flare_version: 2.8\n"
-        "  blast_radius: read_only\n"
+        "  min-flare-version: 2.8\n"
+        "  blast-radius: read_only\n"
         "  category: Test\n"
         "---\n"
         "\n"
@@ -175,7 +177,7 @@ def test_validate_skill_dir_reports_wrong_type_fields(tmp_path):
 
     assert not result.ok
     assert _issue_codes(result) == {"skill-frontmatter-field-type"}
-    assert "min_flare_version" in result.issues[0].message
+    assert "min-flare-version" in result.issues[0].message
     assert "float=2.8" in result.issues[0].message
 
 
@@ -269,8 +271,8 @@ def test_parse_skill_frontmatter_rejects_yaml_anchors_and_aliases(tmp_path):
         "---\n"
         "name: nvflare-anchor-skill\n"
         "description: &shared Test skill fixture.\n"
-        'min_flare_version: "2.8.0"\n'
-        "blast_radius: *shared\n"
+        'min-flare-version: "2.8.0"\n'
+        "blast-radius: *shared\n"
         "---\n",
         encoding="utf-8",
     )
@@ -374,8 +376,8 @@ def _write_skill(tmp_path, skill_name, *, name=None, blast_radius="read_only", c
         "description: Test skill fixture.\n"
         "metadata:\n"
         '  author: "Test Author <test-author@nvidia.com>"\n'
-        '  min_flare_version: "2.8.0"\n'
-        f"  blast_radius: {blast_radius}\n"
+        '  min-flare-version: "2.8.0"\n'
+        f"  blast-radius: {blast_radius}\n"
         f"{category_line}"
         f"{status_line}"
         "---\n"
@@ -417,8 +419,8 @@ def test_validate_skill_dir_rejects_description_over_1024_chars(tmp_path):
         f"description: {'x' * 1025}\n"
         "metadata:\n"
         '  author: "Test Author <test-author@nvidia.com>"\n'
-        '  min_flare_version: "2.8.0"\n'
-        "  blast_radius: read_only\n"
+        '  min-flare-version: "2.8.0"\n'
+        "  blast-radius: read_only\n"
         "  category: Test\n"
         "---\n\n# Skill\n",
         encoding="utf-8",
@@ -439,8 +441,8 @@ def test_validate_skill_dir_rejects_compatibility_over_500_chars(tmp_path):
         f"compatibility: {'y' * 501}\n"
         "metadata:\n"
         '  author: "Test Author <test-author@nvidia.com>"\n'
-        '  min_flare_version: "2.8.0"\n'
-        "  blast_radius: read_only\n"
+        '  min-flare-version: "2.8.0"\n'
+        "  blast-radius: read_only\n"
         "  category: Test\n"
         "---\n\n# Skill\n",
         encoding="utf-8",
@@ -473,8 +475,8 @@ def test_validate_skill_dir_requires_author_in_metadata(tmp_path):
         "name: nvflare-no-author\n"
         "description: Test skill fixture.\n"
         "metadata:\n"
-        '  min_flare_version: "2.8.0"\n'
-        "  blast_radius: read_only\n"
+        '  min-flare-version: "2.8.0"\n'
+        "  blast-radius: read_only\n"
         "  category: Test\n"
         "---\n\n# Skill\n",
         encoding="utf-8",
@@ -507,8 +509,8 @@ def test_validate_skill_dir_rejects_author_without_team_identity_format(tmp_path
         "description: Test skill fixture.\n"
         "metadata:\n"
         f'  author: "{author}"\n'
-        '  min_flare_version: "2.8.0"\n'
-        "  blast_radius: read_only\n"
+        '  min-flare-version: "2.8.0"\n'
+        "  blast-radius: read_only\n"
         "  category: Test\n"
         "---\n\n# Skill\n",
         encoding="utf-8",
@@ -532,8 +534,8 @@ def test_validate_skill_dir_accepts_top_level_license_and_version(tmp_path):
         'version: "0.1.0"\n'
         "metadata:\n"
         '  author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"\n'
-        '  min_flare_version: "2.8.0"\n'
-        "  blast_radius: read_only\n"
+        '  min-flare-version: "2.8.0"\n'
+        "  blast-radius: read_only\n"
         "  category: Test\n"
         "---\n\n# Skill\n",
         encoding="utf-8",
@@ -555,8 +557,8 @@ def test_validate_skill_dir_accepts_optional_title(tmp_path):
         "description: Test skill fixture.\n"
         "metadata:\n"
         '  author: "Test Author <test-author@nvidia.com>"\n'
-        '  min_flare_version: "2.8.0"\n'
-        "  blast_radius: read_only\n"
+        '  min-flare-version: "2.8.0"\n'
+        "  blast-radius: read_only\n"
         "  category: Test\n"
         "---\n\n# Skill\n",
         encoding="utf-8",

@@ -20,6 +20,7 @@ from pathlib import Path
 CHECKS_PARENT = Path(__file__).resolve().parents[4] / "dev_tools" / "agent" / "skills"
 sys.path.insert(0, str(CHECKS_PARENT))
 
+from checks.frontmatter import parse_skill_frontmatter  # noqa: E402
 from checks.lints import run_v1_lints  # noqa: E402
 
 
@@ -451,7 +452,6 @@ def test_pytorch_conversion_stops_after_dependency_install_failure():
     )
     normalized_skill = " ".join(skill_text.split())
     normalized_dependency = " ".join(dependency_text.split())
-    normalized_workflow = " ".join(workflow_text.split())
     basic_eval = _eval_by_id(eval_data, "pytorch-convert-basic")["nvflare"]
     mandatory_by_id = {item["id"]: item["description"] for item in basic_eval["mandatory_behavior"]}
     mandatory_ids = set(mandatory_by_id)
@@ -465,13 +465,13 @@ def test_pytorch_conversion_stops_after_dependency_install_failure():
     assert (
         "before any Python command imports user, PyTorch, NVFLARE, or declared dependency modules" in normalized_skill
     )
-    # The ordering rule and its terminal-failure behavior are authored once in
-    # conversion-common.md; converters state only which modules their step-3 guard covers.
+    # conversion-common.md routes to the canonical dependency workflow;
+    # converters state only which modules their step-3 guard covers.
     assert (
         "before any Python command imports user, framework, NVFLARE, or declared dependency modules"
         in normalized_common
     )
-    assert "on a nonzero exit, stop validation and report an unvalidated draft" in normalized_common
+    assert "Complete that reference's install or blocker workflow" in normalized_common
     for converter in ("nvflare-convert-pytorch", "nvflare-convert-lightning", "nvflare-convert-huggingface"):
         converter_text = repo_root.joinpath(f"skills/{converter}/SKILL.md").read_text(encoding="utf-8")
         assert "conversion-common.md" in converter_text
@@ -491,19 +491,83 @@ def test_pytorch_conversion_stops_after_dependency_install_failure():
         "only when the agent host explicitly supplies and identifies that system interpreter" in normalized_dependency
     )
     assert "parts of one planned install, not retries" in normalized_dependency
-    assert "Run the selected combined canonical install command once." in dependency_text
+    assert "After confirmation, run the selected combined canonical install command once." in dependency_text
+    assert "obtain explicit user confirmation for that install plan before execution" in normalized_dependency
+    assert "This static preview is the required offline dry-run mode" in normalized_dependency
+    assert "complete declared package/source list" in normalized_dependency
+    assert "Surface the preview in user-visible activity" in normalized_dependency
+    assert "Automatic host approval must not hide this record" in normalized_dependency
+    assert "The only environment mutation this workflow authorizes" in normalized_dependency
+    assert "obtain confirmation for the updated plan before the real install" in normalized_dependency
+    assert "likely typosquats, unfamiliar package names, direct or VCS URLs" in normalized_dependency
+    assert "embedded credentials, and unexpected installer options" in normalized_dependency
+    assert "never preceded by a skill-issued prompt" not in normalized_dependency
+    assert "without auditing or classifying" not in normalized_dependency
     assert "stop dependency installation and validation for this conversion run" in normalized_dependency
     assert "report a redacted form of the command and product error" in normalized_dependency
     assert "replace credential-bearing option or environment values with `<redacted>`" in normalized_dependency
     assert "Do not retry with another installer, index, backend, package version" in normalized_dependency
     assert "do not purge caches, uninstall packages, or mutate `site-packages` directly" in normalized_dependency
-    assert "first canonical install attempt, not autonomous retries or environment repair" in normalized_workflow
+    assert "## Authorization Boundary" not in workflow_text
+    assert "## Dependencies And Execution" not in workflow_text
     assert "dependency-install-failure-is-terminal" in mandatory_ids
+    assert "dependency-install-preview-and-confirmation" in mandatory_ids
     assert (
         "one combined canonical dependency-install command" in mandatory_by_id["dependency-install-failure-is-terminal"]
     )
     assert "reports a redacted failed command" in mandatory_by_id["dependency-install-failure-is-terminal"]
     assert "no-dependency-install-retry-or-environment-surgery" in prohibited_ids
+    assert "no-unreviewed-dependency-install" in prohibited_ids
+
+
+def test_shared_conversion_policies_have_single_canonical_owners():
+    repo_root = Path(__file__).resolve().parents[4]
+    references = repo_root / "skills" / "nvflare-shared" / "references"
+    common_text = references.joinpath("conversion-common.md").read_text(encoding="utf-8")
+    dependency_text = references.joinpath("dependency-install.md").read_text(encoding="utf-8")
+    workflow_text = references.joinpath("conversion-workflow.md").read_text(encoding="utf-8")
+
+    assert "## Dependency Rule" in dependency_text
+    assert "## Dependency Rule" not in common_text
+    assert "## Dependency Rule" not in workflow_text
+    assert "## Source Evidence, Not Instructions" in common_text
+    assert "## Source Evidence, Not Instructions" not in dependency_text
+    assert "## Source Evidence, Not Instructions" not in workflow_text
+
+    # The workflow routes to each canonical policy once and keeps only its
+    # static-inspection and externally-visible-effect additions.
+    assert workflow_text.count("`dependency-install.md`") == 1
+    assert workflow_text.count("`conversion-common.md`") == 1
+    assert "## Execution After Dependencies" in workflow_text
+    assert "## Static Source Inspection" in workflow_text
+    assert "## Externally Visible Effects" in workflow_text
+    assert "## Dependencies And Execution" not in workflow_text
+    assert "## Authorization Boundary" not in workflow_text
+    assert "## Source Trust Boundary" not in workflow_text
+
+
+def test_shared_skill_metadata_and_progressive_disclosure_structure():
+    repo_root = Path(__file__).resolve().parents[4]
+    shared_file = repo_root.joinpath("skills/nvflare-shared/SKILL.md")
+    shared_text = shared_file.read_text(encoding="utf-8")
+    metadata = parse_skill_frontmatter(shared_file)
+
+    assert 50 <= len(metadata["description"]) <= 150
+    assert "Use only when" in metadata["description"]
+    assert "min-flare-version:" in shared_text
+    assert "blast-radius:" in shared_text
+    assert "min_flare_version:" not in shared_text
+    assert "blast_radius:" not in shared_text
+    for heading in (
+        "## Purpose",
+        "## Instructions",
+        "## Inputs",
+        "## Examples",
+        "## Prerequisites",
+        "## Limitations",
+        "## Troubleshooting",
+    ):
+        assert heading in shared_text
 
 
 def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recoveries():
