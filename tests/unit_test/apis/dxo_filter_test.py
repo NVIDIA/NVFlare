@@ -14,7 +14,7 @@
 
 import pytest
 
-from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
@@ -24,6 +24,21 @@ class _NoOpDXOFilter(DXOFilter):
     """Minimal concrete DXOFilter for testing."""
 
     def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext):
+        return dxo
+
+
+class _ModelInitializer(DXOFilter):
+    def __init__(self, return_new_dxo: bool):
+        super().__init__(supported_data_kinds=[DataKind.WEIGHTS], data_kinds_to_filter=[DataKind.WEIGHTS])
+        self.return_new_dxo = return_new_dxo
+        self.call_count = 0
+
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext):
+        self.call_count += 1
+        if self.return_new_dxo:
+            return DXO(data_kind=dxo.data_kind, data={"initialized": 1}, meta=dxo.meta)
+
+        dxo.data["initialized"] = 1
         return dxo
 
 
@@ -64,3 +79,28 @@ class TestDXOFilterInit:
         supported = [DataKind.WEIGHTS, DataKind.WEIGHT_DIFF]
         f = _NoOpDXOFilter(supported_data_kinds=supported, data_kinds_to_filter=None)
         assert f.data_kinds == supported
+
+
+class TestDXOFilterProcess:
+    @pytest.mark.parametrize("data", [None, {}])
+    @pytest.mark.parametrize("return_new_dxo", [False, True])
+    def test_filters_empty_dxo(self, data, return_new_dxo, monkeypatch):
+        monkeypatch.setattr("nvflare.apis.dxo_filter.add_job_audit_event", lambda **kwargs: None)
+        filter_ = _ModelInitializer(return_new_dxo=return_new_dxo)
+        shareable = DXO(data_kind=DataKind.WEIGHTS, data=data).to_shareable()
+
+        result = filter_.process(shareable, FLContext())
+        result_dxo = from_shareable(result)
+
+        assert filter_.call_count == 1
+        assert result_dxo.data == {"initialized": 1}
+        assert result_dxo.get_filter_history() == ["_ModelInitializer"]
+
+    def test_does_not_filter_unconfigured_data_kind(self):
+        filter_ = _ModelInitializer(return_new_dxo=False)
+        shareable = DXO(data_kind=DataKind.METRICS, data={}).to_shareable()
+
+        result = filter_.process(shareable, FLContext())
+
+        assert filter_.call_count == 0
+        assert from_shareable(result).data == {}

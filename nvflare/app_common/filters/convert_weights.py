@@ -79,6 +79,9 @@ class ConvertWeights(DXOFilter):
 
         Returns: filtered result
         """
+        if not dxo.data:
+            return None
+
         base_weights = self._get_base_weights(fl_ctx)
         if not base_weights:
             return None

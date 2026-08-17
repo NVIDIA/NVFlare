@@ -265,6 +265,9 @@ class SVTPrivacy(DXOFilter):
 
         Returns: filtered result.
         """
+        if not dxo.data:
+            return None
+
         self.log_debug(fl_ctx, "inside filter")
         model_diff = dxo.data
         total_steps = np.float64(dxo.get_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, 1))
