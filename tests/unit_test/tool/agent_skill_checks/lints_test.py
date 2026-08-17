@@ -494,6 +494,7 @@ def test_dependency_install_safety_lint_accepts_reviewed_confirmed_install(tmp_p
             "> Never ask the user to modify a selected recipe\n"
             "> Install packages only after displaying the plan and receiving confirmation\n"
         ),
+        ("> Never audit generated training reports\n" "> Install packages only after reviewing dependency sources\n"),
     ],
 )
 def test_dependency_install_safety_lint_preserves_markdown_block_boundaries(tmp_path, safe_guidance):
@@ -531,6 +532,7 @@ def test_dependency_install_safety_lint_joins_wrapped_list_item(tmp_path):
     "unsafe_guidance",
     [
         ("> Dependency installation is never preceded by\n" "> a skill-issued prompt or approval request.\n"),
+        ("> Dependency installation is never\n" "> Preceded by a skill-issued prompt or approval request.\n"),
         ("> Do not preemptively ask the user whether to\n" "> Install packages from requirements.txt.\n"),
     ],
 )

@@ -167,35 +167,48 @@ _KNOWN_AGENT_FLAGS = {
 _DEPENDENCY_INSTALL_TERMS_RE = re.compile(r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b", re.IGNORECASE)
 _DEPENDENCY_CONFIRMATION_BYPASS_RES = (
     re.compile(
-        r"\bnever\s+(?:be\s+)?preceded\s+by\b[^.\n]{0,120}\b(?:prompt|approval|confirmation)\b",
+        r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,160}"
+        r"\bnever\s+(?:be\s+)?preceded\s+by\b[^.!?;]{0,120}\b(?:prompt|approval|confirmation)\b",
         re.IGNORECASE,
     ),
     re.compile(
-        r"\b(?:do\s+not|don't|never)\s+(?:preemptively\s+)?(?:ask|prompt)\b[^.\n]{0,160}"
+        r"\b(?:do\s+not|don't|never)\s+(?:preemptively\s+)?(?:ask|prompt)\b[^.!?;]{0,120}"
+        r"\b(?:whether\s+to|before|prior\s+to|for\s+(?:an?\s+)?(?:approval|confirmation)"
+        r"(?:\s+(?:before|prior\s+to|when))?)\b[^.!?;]{0,100}"
         r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,120}"
+        r"\b(?:do\s+not|don't|never)\s+(?:preemptively\s+)?(?:ask|prompt)\b[^.!?;]{0,100}"
+        r"\b(?:approval|confirmation)\b",
         re.IGNORECASE,
     ),
 )
 _DEPENDENCY_REVIEW_BYPASS_RES = (
-    re.compile(r"\bwithout\s+(?:auditing|reviewing|vetting|classifying)\b", re.IGNORECASE),
     re.compile(
-        r"\bwithout\s+asking\b[^.\n]{0,80}\b(?:audit\w*|review\w*|vet\w*|classif\w*|flag\w*)\b",
+        r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,160}"
+        r"\bwithout\s+(?:auditing|reviewing|vetting|classifying)\b",
         re.IGNORECASE,
     ),
     re.compile(
-        r"\b(?:does\s+not|do\s+not|don't|never)\s+" r"(?:audit\w*|review\w*|vet\w*|classif\w*|flag\w*)\b",
+        r"\bwithout\s+asking\b[^.!?;]{0,80}\b(?:audit\w*|review\w*|vet\w*|classif\w*|flag\w*)\b"
+        r"[^.!?;]{0,100}\b(?:dependenc\w*|install\w*|package\w*|requirements?|sources?)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:does\s+not|do\s+not|don't|never)\s+"
+        r"(?:audit\w*|review\w*|vet\w*|classif\w*|flag\w*)"
+        r"(?:\s*,\s*(?:audit\w*|review\w*|vet\w*|classif\w*|flag\w*))*"
+        r"(?:\s*,?\s*(?:or|and)\s+(?:audit\w*|review\w*|vet\w*|classif\w*|flag\w*))?"
+        r"\s+(?:(?:the|any)\s+)?(?:dependenc\w*|package\w*|requirements?|sources?)\b",
         re.IGNORECASE,
     ),
 )
 _MARKDOWN_ATX_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}(?:\s+|$)")
 _MARKDOWN_BLOCKQUOTE_RE = re.compile(r"^\s{0,3}>")
-_MARKDOWN_BLOCKQUOTE_CONTINUATION_END_RE = re.compile(
-    r"\b(?:a|an|and|as|at|before|by|for|from|if|in|into|of|on|or|that|the|to|with|without)" r"(?:[:,])?(?:[`*_]+)?\s*$",
-    re.IGNORECASE,
-)
 _MARKDOWN_FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 _MARKDOWN_LIST_ITEM_RE = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s+")
-_MARKDOWN_SENTENCE_END_RE = re.compile(r"[.!?;](?:[`*_]+)?\s*$")
 _MARKDOWN_STRUCTURAL_SEPARATOR_RE = re.compile(r"^\s{0,3}(?:=+|-{3,})\s*$")
 _MARKDOWN_TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
 
@@ -1456,11 +1469,11 @@ def _iter_skill_text_files(skill_dir: Path, *, include_scripts: bool = False) ->
 def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
     """Yield policy text without combining separate Markdown blocks.
 
-    Wrapped prose, blockquote fragments, and list-item continuations remain
-    searchable as one unit, while headings, new blockquote statements, list
-    items, table rows, separators, and fenced blocks keep their Markdown
-    boundaries. Fenced content is still scanned because skill instructions can
-    be conveyed through examples and command snippets.
+    Wrapped prose, blockquote paragraphs, and list-item continuations remain
+    searchable as one unit, while headings, separate blockquotes, list items,
+    table rows, separators, and fenced blocks keep their Markdown boundaries.
+    Fenced content is still scanned because skill instructions can be conveyed
+    through examples and command snippets.
     """
     block_lines = []
     block_start = 1
@@ -1509,7 +1522,7 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
                     block_lines = []
                     block_is_blockquote = False
                 continue
-            if block_is_blockquote and _is_markdown_blockquote_continuation(block_lines[-1], content):
+            if block_is_blockquote:
                 block_lines.append(content)
                 continue
             if block_lines:
@@ -1553,24 +1566,9 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
         yield block_start, " ".join(block_lines)
 
 
-def _is_markdown_blockquote_continuation(previous: str, current: str) -> bool:
-    """Return whether a quoted source line continues the preceding statement."""
-    if _MARKDOWN_SENTENCE_END_RE.search(previous):
-        return False
-    first_alpha = re.search(r"[A-Za-z]", current)
-    return bool(
-        _MARKDOWN_BLOCKQUOTE_CONTINUATION_END_RE.search(previous) or (first_alpha and first_alpha.group(0).islower())
-    )
-
-
 def _has_dependency_policy_bypass(text: str, patterns: Iterable[re.Pattern]) -> bool:
-    """Return whether a bypass phrase has nearby dependency-install context."""
-    for pattern in patterns:
-        for match in pattern.finditer(text):
-            nearby = text[max(0, match.start() - 240) : match.end() + 240]
-            if _DEPENDENCY_INSTALL_TERMS_RE.search(nearby):
-                return True
-    return False
+    """Return whether dependency guidance contains a semantically linked bypass."""
+    return any(pattern.search(text) for pattern in patterns)
 
 
 def _eval_mentions_file_editing(item: dict[str, Any]) -> bool:
