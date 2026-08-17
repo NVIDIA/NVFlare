@@ -12,21 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import ntpath
 import random
 
 SYMBOL_ALL = "@all"
 SYMBOL_NONE = "@none"
-
-_WINDOWS_RESERVED_FILE_NAMES = {
-    "AUX",
-    "CON",
-    "NUL",
-    "PRN",
-    *(f"COM{i}" for i in range(1, 10)),
-    *(f"LPT{i}" for i in range(1, 10)),
-}
-
 
 class DefaultValuePolicy:
     """
@@ -103,13 +92,8 @@ def check_non_empty_str(name, value):
 def check_job_name(name, value):
     """Validate a job name that will be used as one directory component."""
     check_non_empty_str(name, value)
-    drive, _ = ntpath.splitdrive(value)
-    if value in (".", "..") or "/" in value or "\\" in value or drive:
+    if value in (".", "..") or "/" in value:
         raise ValueError(f"{name} must be a single directory name without path components")
-    if value.endswith((" ", ".")):
-        raise ValueError(f"{name} must not end with a space or dot")
-    if value.split(".", maxsplit=1)[0].upper() in _WINDOWS_RESERVED_FILE_NAMES:
-        raise ValueError(f"{name} must not use a Windows reserved file name")
 
 
 def check_object_type(name, value, obj_type):

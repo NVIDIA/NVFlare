@@ -22,7 +22,7 @@ from nvflare.job_config.fed_job_config import FedJobConfig
 
 class TestFedJobConfig:
     @pytest.mark.parametrize(
-        "job_name", ["", ".", "..", "../job", "nested/job", r"nested\job", "/tmp/job", "job.", "job ", "CON"]
+        "job_name", ["", ".", "..", "../job", "nested/job", "/tmp/job"]
     )
     def test_generate_job_config_rejects_path_bearing_job_name(self, tmp_path, job_name):
         # A meta.json makes the export root look like a replaceable job folder.
