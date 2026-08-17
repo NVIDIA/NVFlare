@@ -39,10 +39,10 @@ Prerequisites
 
 Before starting a parent, verify:
 
-- Slurm 23.02 or later provides working ``sbatch``, ``squeue``, ``sacct``, and
+- Slurm 23.02.3 or later provides working ``sbatch``, ``squeue``, ``sacct``, and
   ``scancel`` commands on the runtime parent host. Parent bootstrap resolves
-  these commands and verifies the version; 23.02 is the minimum because the
-  launcher uses ``sbatch --export=NIL``. Production sites should run a Slurm
+  these commands; 23.02.3 is the minimum because the launcher uses
+  ``sbatch --export=NIL``. Production sites should run a Slurm
   release that is still supported by SchedMD.
 - ``slurmdbd`` accounting is enabled and ``sacct`` responds. The default
   ``AccountingStoreFlags`` is sufficient.
@@ -81,6 +81,11 @@ does not need Slurm commands. The submission host that runs the generated
 ``submit_command`` needs ``sbatch`` on ``PATH``. The runtime parent host needs
 all four parent commands after its service environment or
 ``parent.environment_setup`` has run.
+
+Internal TCP links use mTLS by default. Each Slurm job receives the existing
+participant startup CA, certificate, and key, while CellNet binds the
+certificate identity to the participant's logical FQCN rather than the
+allocated Slurm hostname.
 
 Build a Container Worker Image
 ==============================
@@ -150,6 +155,7 @@ login or service host:
      image: /lustre/images/nvflare-prod.sif
      python_path: /usr/bin/python3
      parent_host: nvflare-site1.internal
+     internal_connection_security: mtls
      sbatch_directives:
        partition: fl-gpu
        account: proj123
@@ -194,6 +200,10 @@ Important keys are:
        runtime parent host.
    * - ``internal_port``
      - Worker-to-parent port; default ``8102``.
+   * - ``internal_connection_security``
+     - Security mode for internal parent/job TCP links (SP/SJ and CP/CJ).
+       Accepts ``mtls`` or ``clear`` and defaults to ``mtls``. Use ``clear``
+       only as an explicit insecure opt-out on a trusted, isolated network.
    * - ``poll_interval``
      - Scheduler polling interval; default ``10`` seconds.
    * - ``submit_timeout``
@@ -302,7 +312,9 @@ host and all compute nodes. ``connect_generation: 1`` routes all job traffic
 through the parent, so workers need no network connectivity at all.
 ``nvflare deploy prepare`` preserves a file-based comm config as-is and does
 not apply the TCP host and port patch; ``internal_port`` and ``parent_host``
-are then not used for the worker channel.
+are then not used for the worker channel. ``internal_connection_security``
+also applies only to TCP; shared-file transport remains ``clear`` and relies
+on filesystem permissions for access control.
 
 At runtime the parent creates a listener directory under ``root_dir`` and
 passes its ``shared-file://0/...`` URL to each worker unchanged. Apptainer and Pyxis
@@ -312,6 +324,14 @@ with mode ``0o770`` and log files with ``0o660`` regardless of umask.
 Directory permissions are the only access control on this channel, so keep
 ``root_dir`` owned by the dedicated site account with no wider group access
 than required.
+
+The same container rule applies to a site-local
+``client_api_attach.scheme: shared-file`` listener. The launcher bind-mounts its
+configured ``root_dir`` read-write at the same absolute path for containerized
+client jobs so an external trainer sees the CJ's listener and rendezvous claim.
+Create that root as a non-symlink directory outside the runtime workspace before
+launch. The Client API Attach permission and ownership checks remain
+authoritative; bare Slurm and network Attach do not add this mount.
 
 Polling intervals, lease timing, and fsync behavior are tunable through the
 ``internal.resources`` map; see the ``FileDriver`` documentation in

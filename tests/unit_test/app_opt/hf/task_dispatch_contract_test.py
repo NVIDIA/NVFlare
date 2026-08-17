@@ -736,15 +736,8 @@ def test_positional_user_resume_checkpoint_is_not_duplicated_as_keyword(monkeypa
     assert len(client_api_mock.sent_models) == 1
 
 
-def test_receive_agent_closed_maps_to_logged_stop_sentinel(monkeypatch, tmp_path, caplog):
+def test_receive_none_maps_to_logged_stop_sentinel(monkeypatch, tmp_path, caplog):
     hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch, incoming_model=None)
-
-    def receive_raises(timeout=None, ctx=None):
-        client_api_mock.receive_calls += 1
-        raise hf_api.AgentClosed("agent closed")
-
-    client_api_mock.receive = receive_raises
-    patch_client_api_aliases(monkeypatch, client_api_mock, hf_api)
     trainer = _make_trainer(trainer_cls, tmp_path)
 
     hf_api.patch(trainer, restore_state=False, local_steps=1)
@@ -757,14 +750,12 @@ def test_receive_agent_closed_maps_to_logged_stop_sentinel(monkeypatch, tmp_path
     assert "NVFlare job has ended" in caplog.text
 
 
-def test_receive_protocol_error_propagates_instead_of_stop_sentinel(monkeypatch, tmp_path):
-    from nvflare.client.flare_agent import CallStateError
-
+def test_receive_error_propagates_instead_of_stop_sentinel(monkeypatch, tmp_path):
     hf_api, trainer_cls, client_api_mock = _fresh_api(monkeypatch, incoming_model=None)
 
     def receive_raises(timeout=None, ctx=None):
         client_api_mock.receive_calls += 1
-        raise CallStateError("receive called out of order")
+        raise RuntimeError("receive called out of order")
 
     client_api_mock.receive = receive_raises
     patch_client_api_aliases(monkeypatch, client_api_mock, hf_api)
@@ -772,7 +763,7 @@ def test_receive_protocol_error_propagates_instead_of_stop_sentinel(monkeypatch,
 
     hf_api.patch(trainer, restore_state=False, local_steps=1)
 
-    with pytest.raises(CallStateError, match="out of order"):
+    with pytest.raises(RuntimeError, match="out of order"):
         trainer.evaluate()
     assert client_api_mock.sent_models == []
 

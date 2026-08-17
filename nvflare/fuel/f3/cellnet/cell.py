@@ -28,7 +28,7 @@ from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, make_r
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import StreamFuture
+from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, StreamFuture
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.waiter_utils import WaiterRC, conditional_wait
@@ -59,7 +59,7 @@ def _is_server_job_cell(my_info) -> bool:
     """Return True only for server cells owned by one job run.
 
     Parent server cell FQCN is "server"; server job cells start with
-    "server.<job_id>" and may have nested children like "server.<job_id>.cell_pipe".
+    "server.<job_id>" and may have nested child cells.
     The fail-fast path must only exit a job process, never the parent server.
     """
     fqcn = getattr(my_info, "fqcn", "")
@@ -71,11 +71,13 @@ def _is_server_job_cell(my_info) -> bool:
 
 
 class SimpleWaiter:
-    def __init__(self, req_id, result):
+    def __init__(self, req_id, target, result):
         super().__init__()
         self.req_id = req_id
+        self.target = target
         self.result = result
         self.receiving_future = None
+        self.stream_error = None
         self.in_receiving = threading.Event()
 
 
@@ -146,6 +148,22 @@ class Adapter:
             response = make_reply(ReturnCode.PROCESS_EXCEPTION)
         self._send_response(response, *reply_args)
 
+    def _handle_reply_stream_done(self, reply_future):
+        error = reply_future.exception()
+        if not error:
+            return
+
+        if isinstance(error, BlobSizeError) and _is_server_job_cell(self.my_info):
+            self.logger.critical(
+                f"streamed response from server job cell {self.my_info.fqcn} was rejected as too large; "
+                f"exiting job process to fail the job: {secure_format_exception(error)}"
+            )
+            os._exit(1)
+
+        self.logger.error(
+            f"streamed response from {self.my_info.fqcn} failed asynchronously: {secure_format_exception(error)}"
+        )
+
     def _send_response(self, response, stream_req_id, req_id, channel, topic, origin, secure, optional):
         self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
         if not stream_req_id:
@@ -167,9 +185,25 @@ class Adapter:
 
         encode_payload(response, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=self.cell.get_fobs_context())
         self.logger.debug(f"sending: {stream_req_id=}: {response.headers=}, target={origin}")
-        reply_future = self.cell.send_blob(
-            CellChannel.RETURN_ONLY, f"{channel}:{topic}", origin, response, secure, optional
-        )
+        try:
+            reply_future = self.cell.send_blob(
+                CellChannel.RETURN_ONLY,
+                f"{channel}:{topic}",
+                origin,
+                response,
+                secure,
+                optional,
+                reliable=True,
+            )
+        except BlobSizeError as ex:
+            if _is_server_job_cell(self.my_info):
+                self.logger.critical(
+                    f"streamed response from server job cell {self.my_info.fqcn} is too large; "
+                    f"exiting job process to fail the job: {secure_format_exception(ex)}"
+                )
+                os._exit(1)
+            raise
+        reply_future.add_done_callback(self._handle_reply_stream_done, reply_future)
         self.logger.debug(f"Done sending: {stream_req_id=}: {reply_future=}")
 
 
@@ -179,6 +213,7 @@ class Cell(StreamCell):
         super().__init__(self.core_cell)
         self.requests_dict = dict()
         self.logger = get_obj_logger(self)
+        self.byte_streamer.register_error_callback(self._process_stream_error)
         self.register_blob_cb(CellChannel.RETURN_ONLY, "*", self._process_reply)  # this should be one-time registration
         self.core_cell.update_fobs_context({FOBSContextKey.CELL: self})
         self.decode_pass_through_channels: set = set()  # per-channel opt-in for receiver-side PASS_THROUGH
@@ -255,8 +290,21 @@ class Cell(StreamCell):
         results = dict()
         future_to_target = {}
 
-        # encode the request now so each target thread won't need to do it again.
-        self._encode_message(request, abort_signal, num_receivers=len(targets), receiver_ids=targets)
+        # Encode the request now so each target thread won't need to do it again.
+        # For a direct broadcast, the routing targets are also the tensor download
+        # consumers, so the transaction can track their exact identities. With
+        # PASS_THROUGH, each target may forward the refs to another Cell (for
+        # example, an external trainer), and only the final consumer count is known.
+        # Pinning the transaction to the first-hop identities would prevent it from
+        # completing after those downstream consumers finish downloading.
+        pass_through = bool(request.get_header(MessageHeaderKey.PASS_THROUGH, False))
+        receiver_ids = None if pass_through else targets
+        self._encode_message(
+            request,
+            abort_signal,
+            num_receivers=len(targets),
+            receiver_ids=receiver_ids,
+        )
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
             self.logger.debug(f"broadcast to {targets=}")
@@ -448,7 +496,7 @@ class Cell(StreamCell):
         # this future can be used to check sending progress, but not for checking return blob
         self.logger.debug(f"{req_id=}, {channel=}, {topic=}, {target=}, {timeout=}: send_request about to send_blob")
 
-        waiter = SimpleWaiter(req_id=req_id, result=make_reply(ReturnCode.TIMEOUT))
+        waiter = SimpleWaiter(req_id=req_id, target=target, result=make_reply(ReturnCode.TIMEOUT))
         self.requests_dict[req_id] = waiter
 
         try:
@@ -463,7 +511,14 @@ class Cell(StreamCell):
             self.logger.debug(f"{req_id=}: entering sending wait {timeout=}")
             sending_complete = self._future_wait(future, timeout, abort_signal)
             if not sending_complete:
-                self.logger.debug(f"{req_id=}: sending timeout {timeout=}")
+                stream_error = waiter.stream_error
+                if future.error and not stream_error:
+                    waiter.result = make_reply(ReturnCode.COMM_ERROR, error=str(future.error))
+                    self.logger.debug(f"{req_id=}: sending failed with stream error: {future.error}")
+                elif stream_error:
+                    self.logger.debug(f"{req_id=}: receiver rejected stream: {stream_error}")
+                else:
+                    self.logger.debug(f"{req_id=}: sending timeout {timeout=}")
                 return self._get_result(req_id)
 
             self.logger.debug(f"{req_id=}: sending complete")
@@ -492,6 +547,10 @@ class Cell(StreamCell):
                 self.logger.debug(f"{req_id=}: remote processing timeout {timeout=} {waiter_rc=}")
                 return self._get_result(req_id)
             self.logger.debug(f"{req_id=}: in receiving")
+
+            if waiter.stream_error:
+                self.logger.debug(f"{req_id=}: returning stream error reply")
+                return self._get_result(req_id)
 
             # receiving with progress timeout
             r_future = waiter.receiving_future
@@ -555,6 +614,36 @@ class Cell(StreamCell):
             return
         waiter.receiving_future = future
         waiter.in_receiving.set()
+
+    def _process_stream_error(self, message: Message):
+        req_id = message.get_header(StreamHeaderKey.STREAM_REQ_ID)
+        error = message.get_header(StreamHeaderKey.ERROR_MSG, "stream rejected by receiver")
+        error_type = message.get_header(StreamHeaderKey.ERROR_TYPE)
+
+        if req_id:
+            waiter = self.requests_dict.get(req_id)
+            if waiter:
+                origin = message.get_header(MessageHeaderKey.ORIGIN)
+                if origin != waiter.target:
+                    self.logger.warning(
+                        f"ignored stream error for {req_id=} from unexpected receiver {origin}; "
+                        f"expected {waiter.target}"
+                    )
+                    return
+
+                waiter.stream_error = error
+                waiter.result = make_reply(ReturnCode.COMM_ERROR, error=error)
+                waiter.in_receiving.set()
+                return
+
+            self.logger.debug(f"stream error for completed or unknown {req_id=}")
+
+        if error_type == BlobSizeError.__name__ and _is_server_job_cell(self.core_cell.my_info):
+            self.logger.critical(
+                f"streamed message from server job cell {self.core_cell.my_info.fqcn} was rejected as too large; "
+                f"exiting job process to fail the job: {error}"
+            )
+            os._exit(1)
 
     def _register_request_cb(self, channel: str, topic: str, cb, *args, **kwargs):
         """

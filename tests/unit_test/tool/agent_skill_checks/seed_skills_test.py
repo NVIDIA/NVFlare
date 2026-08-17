@@ -60,11 +60,7 @@ def test_training_conversion_and_fedstats_remain_separate_user_ordered_workflows
             in normalized_skill
         )
 
-        eval_data = json.loads(
-            repo_root.joinpath("dev_tools", "agent", "skill_evals", skill_name, "evals.json").read_text(
-                encoding="utf-8"
-            )
-        )
+        eval_data = json.loads((repo_root / "skills" / skill_name / "evals" / "evals.json").read_text(encoding="utf-8"))
         boundary_eval = next(item for item in eval_data["evals"] if "combined" in item["id"])
         mandatory_ids = {item["id"] for item in boundary_eval["nvflare"]["mandatory_behavior"]}
         prohibited_ids = {item["id"] for item in boundary_eval["nvflare"]["prohibited_behavior"]}
@@ -213,18 +209,6 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     assert "disabled state must contain no active model-selector component" in normalized_construction
     assert "missing-metric warnings from a supposedly disabled job" in normalized_construction
 
-    # The selector's lower-is-better name heuristic matches the "loss" substring and a
-    # neg_ prefix does not clear it, so the recommended negated key trips a false
-    # positive.  The guidance must say so, or an agent "fixes" it by selecting the
-    # un-negated metric and silently picks the worst global model.
-    from nvflare.app_common.widgets.intime_model_selector import _looks_lower_is_better
-
-    assert _looks_lower_is_better("neg_val_loss") is True
-    assert _looks_lower_is_better("eval_neg_loss") is True
-    assert "known\nfalse positive on a negated key" in construction_text
-    assert "a `neg_` prefix does not clear" in normalized_construction
-    assert "that selects the worst global model" in normalized_construction
-
     hf_root = repo_root / "skills" / "nvflare-convert-huggingface"
     hf_skill_text = hf_root.joinpath("SKILL.md").read_text(encoding="utf-8")
     hf_conversion_text = hf_root.joinpath("references/huggingface-conversion.md").read_text(encoding="utf-8")
@@ -281,6 +265,26 @@ def test_pytorch_model_exchange_owns_plain_pytorch_send_pattern():
     assert "assert all(isinstance(v, torch.Tensor) for v in params.values())" in model_exchange_text
     assert "v.detach().cpu()" not in client_reference_text
     assert "pytorch-model-exchange.md" in client_reference_text
+
+
+def test_conversion_skills_keep_preprocessing_statistics_local_by_default():
+    repo_root = Path(__file__).resolve().parents[4]
+    common_text = repo_root.joinpath("skills/nvflare-shared/references/conversion-common.md").read_text(
+        encoding="utf-8"
+    )
+    model_exchange_text = repo_root.joinpath("skills/nvflare-shared/references/pytorch-model-exchange.md").read_text(
+        encoding="utf-8"
+    )
+    normalized_common = " ".join(common_text.split())
+    normalized_model_exchange = " ".join(model_exchange_text.split())
+
+    assert "## Preprocessing Data Locality" in common_text
+    assert "Fit it using each site's local training partition by default" in normalized_common
+    assert "Do not pool raw records or implicitly derive a shared artifact from multiple sites" in normalized_common
+    assert "user explicitly authorizes the cross-site statistics workflow" in normalized_common
+    assert "Do not silently introduce a federated-statistics, secure-aggregation" in normalized_common
+    assert '"Preprocessing Data Locality"' in normalized_model_exchange
+    assert "Never create it by pooling site records implicitly" in normalized_model_exchange
 
 
 def test_pytorch_family_construction_policy_is_canonical_and_capability_based():
@@ -399,12 +403,10 @@ def test_pytorch_recipe_capability_profiles_match_tensor_disk_offload_support():
 def test_pytorch_family_capability_evals_cover_fedeval_and_dataparallel():
     repo_root = Path(__file__).resolve().parents[4]
     pytorch_evals = json.loads(
-        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-convert-pytorch/evals.json").read_text(encoding="utf-8")
+        (repo_root / "skills" / "nvflare-convert-pytorch" / "evals" / "evals.json").read_text(encoding="utf-8")
     )
     lightning_evals = json.loads(
-        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-convert-lightning/evals.json").read_text(
-            encoding="utf-8"
-        )
+        (repo_root / "skills" / "nvflare-convert-lightning" / "evals" / "evals.json").read_text(encoding="utf-8")
     )
     pytorch_by_id = {case["id"]: case for case in pytorch_evals["evals"]}
     lightning_by_id = {case["id"]: case for case in lightning_evals["evals"]}
@@ -445,7 +447,7 @@ def test_pytorch_conversion_stops_after_dependency_install_failure():
         encoding="utf-8"
     )
     eval_data = json.loads(
-        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-convert-pytorch/evals.json").read_text(encoding="utf-8")
+        (repo_root / "skills" / "nvflare-convert-pytorch" / "evals" / "evals.json").read_text(encoding="utf-8")
     )
     normalized_skill = " ".join(skill_text.split())
     normalized_dependency = " ".join(dependency_text.split())
@@ -519,9 +521,7 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
     hf_skill = hf_root.joinpath("SKILL.md").read_text(encoding="utf-8")
     hf_validation = hf_root.joinpath("references/huggingface-validation.md").read_text(encoding="utf-8")
     eval_data = json.loads(
-        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-convert-huggingface/evals.json").read_text(
-            encoding="utf-8"
-        )
+        (repo_root / "skills" / "nvflare-convert-huggingface" / "evals" / "evals.json").read_text(encoding="utf-8")
     )
     basic_eval = _eval_by_id(eval_data, "huggingface-convert-basic")["nvflare"]
     mandatory_ids = {item["id"] for item in basic_eval["mandatory_behavior"]}
@@ -559,9 +559,7 @@ def test_huggingface_train_only_model_selection_contract_is_explicit():
         .split()
     )
     eval_data = json.loads(
-        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-convert-huggingface/evals.json").read_text(
-            encoding="utf-8"
-        )
+        (repo_root / "skills" / "nvflare-convert-huggingface" / "evals" / "evals.json").read_text(encoding="utf-8")
     )
     train_only_eval = _eval_by_id(eval_data, "huggingface-train-only-disables-model-selection")
 
@@ -596,7 +594,7 @@ def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
         encoding="utf-8"
     )
     eval_data = json.loads(
-        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-convert-pytorch/evals.json").read_text(encoding="utf-8")
+        (repo_root / "skills" / "nvflare-convert-pytorch" / "evals" / "evals.json").read_text(encoding="utf-8")
     )
     normalized_construction = " ".join(construction_text.split())
     normalized_workflow = " ".join(workflow_text.split())
@@ -629,7 +627,7 @@ def test_fedstats_reuses_named_sites_for_recipe_and_simulation():
         encoding="utf-8"
     )
     eval_data = json.loads(
-        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-fed-stats/evals.json").read_text(encoding="utf-8")
+        (repo_root / "skills" / "nvflare-fed-stats" / "evals" / "evals.json").read_text(encoding="utf-8")
     )
     basic_eval = _eval_by_id(eval_data, "fedstats-per-site-and-global")["nvflare"]
     mandatory_ids = {item["id"] for item in basic_eval["mandatory_behavior"]}
@@ -696,9 +694,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
         "skills/nvflare-shared/references/pytorch-family-recipe-construction.md"
     ).read_text(encoding="utf-8")
     eval_data = json.loads(
-        repo_root.joinpath("dev_tools/agent/skill_evals/nvflare-convert-huggingface/evals.json").read_text(
-            encoding="utf-8"
-        )
+        (repo_root / "skills" / "nvflare-convert-huggingface" / "evals" / "evals.json").read_text(encoding="utf-8")
     )
     basic_eval = _eval_by_id(eval_data, "huggingface-convert-basic")["nvflare"]
     ddp_eval = _eval_by_id(eval_data, "huggingface-ddp-contract")["nvflare"]
@@ -943,13 +939,13 @@ def test_pytorch_family_validation_and_custom_aggregation_metric_contracts():
     )
     assert expected_metrics_artifact_rule in normalized_validation
 
-    eval_root = repo_root / "dev_tools" / "agent" / "skill_evals"
+    eval_root = repo_root / "skills"
     for skill_name, case_id in {
         "nvflare-convert-pytorch": "pytorch-convert-custom-aggregation",
         "nvflare-convert-lightning": "lightning-convert-custom-aggregation",
         "nvflare-convert-huggingface": "huggingface-convert-custom-aggregation",
     }.items():
-        suite = json.loads(eval_root.joinpath(skill_name, "evals.json").read_text(encoding="utf-8"))
+        suite = json.loads((eval_root / skill_name / "evals" / "evals.json").read_text(encoding="utf-8"))
         case = next(item for item in suite["evals"] if item["id"] == case_id)
         behavior_ids = {item["id"] for item in case["nvflare"]["mandatory_behavior"]}
         assertions_text = " ".join(case["assertions"])

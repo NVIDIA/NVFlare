@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.app_common.metrics_exchange.metrics_sender import ANALYTICS_BOOTSTRAP_ENV
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.app_opt.flower.flower_job import FlowerJob
 
@@ -40,6 +41,30 @@ def _make_mock_component(target_type):
 
 
 class TestFlowerJob:
+    def test_direct_flower_job_installs_matching_analytics_transport(self, tmp_path):
+        job = FlowerJob(name="test_job", flower_app_path="local/custom/my_app", extra_env={"MY_VAR": "value"})
+        job.export_job(str(tmp_path))
+
+        config_path = tmp_path / "test_job" / "app" / "config" / "config_fed_client.json"
+        config = json.loads(config_path.read_text())
+        executor = config["executors"][0]["executor"]
+
+        assert executor["path"] == "nvflare.app_opt.flower.executor.FlowerExecutor"
+        assert executor["args"]["extra_env"] == {"MY_VAR": "value"}
+        serialized = config_path.read_text()
+        assert "nvflare.app_common.widgets.metric_relay.MetricRelay" in serialized
+        for legacy_name in ("ExternalConfigurator", "CellPipe", "AnalyticsReceiver"):
+            assert legacy_name not in serialized
+        assert "CLIENT_API_TYPE" not in serialized
+
+    def test_direct_flower_job_rejects_user_metrics_bootstrap_env(self):
+        with pytest.raises(ValueError, match=ANALYTICS_BOOTSTRAP_ENV):
+            FlowerJob(
+                name="test_job",
+                flower_app_path="local/custom/my_app",
+                extra_env={ANALYTICS_BOOTSTRAP_ENV: "/tmp/wrong.json"},
+            )
+
     def test_flower_job_with_byoc_content(self, tmp_flower_content_dir):
         job = FlowerJob(
             name="test_job",

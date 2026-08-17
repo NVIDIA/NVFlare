@@ -14,6 +14,7 @@
 
 import importlib.util
 import json
+import os
 import shlex
 import sys
 from pathlib import Path
@@ -117,7 +118,14 @@ def test_fedce_research_job_preserves_documented_defaults(job_module):
 def test_fedce_research_unet_preserves_spatial_shape(job_module):
     model = job_module.UNet(in_channels=1, out_channels=1, init_features=4)
 
-    output = model(torch.randn(2, 1, 32, 32))
+    # Codex's ARM sandbox advertises CPU features that its virtualized MKLDNN
+    # ConvTranspose kernel cannot execute. This assertion validates the model's
+    # shape contract, so use PyTorch's portable fallback in that sandbox only.
+    if os.environ.get("SANDBOX_VM_ID"):
+        with torch.backends.mkldnn.flags(enabled=False):
+            output = model(torch.randn(2, 1, 32, 32))
+    else:
+        output = model(torch.randn(2, 1, 32, 32))
 
     assert output.shape == (2, 1, 32, 32)
 

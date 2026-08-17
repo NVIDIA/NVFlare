@@ -46,6 +46,14 @@ context is read pre-patch; do not rely on the patch for pre-patch site-data or
 logging setup. The patch initializes the Client API on its own only when no
 earlier context access is needed.
 
+## SimEnv Execution
+
+`SimEnv` is a plain execution-environment object, not a context manager. Never
+write ``with SimEnv(...):``. Instantiate it, then pass it to the recipe:
+``env = SimEnv(...)`` followed by ``recipe.execute(env)`` (or the equivalent
+``recipe.execute(env=env)``). Do not infer cleanup or lifecycle APIs that the
+public Recipe surface does not provide.
+
 ## Site Data Partitioning
 
 Train each site on its local partition for multi-site single-node-source
@@ -55,6 +63,19 @@ when source-backed. Keep site data external and configurable; never copy private
 site data into the job. Report split policy, seed, site count, and shared-data
 requests. For generated Pandas partitions, load the "Site Data Partitioning"
 section of `conversion-workflow.md`.
+
+## Preprocessing Data Locality
+
+Treat every preprocessing fit or learned artifact—normalization statistics,
+imputation values, feature encoders, vocabularies/tokenizers, label mappings,
+and similar—as data-derived information. Fit it using each site's local training
+partition by default. Do not pool raw records or implicitly derive a shared
+artifact from multiple sites.
+
+A shared artifact is allowed only when it is public or pre-provided, or when the
+user explicitly authorizes the cross-site statistics workflow and its disclosure
+model. Do not silently introduce a federated-statistics, secure-aggregation, or
+other cross-site workflow as a substitute.
 
 ## Custom Aggregation
 

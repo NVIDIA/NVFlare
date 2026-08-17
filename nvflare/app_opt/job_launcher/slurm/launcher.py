@@ -56,15 +56,20 @@ from nvflare.app_opt.job_launcher.study_runtime import (
     resolve_study_runtime,
     study_runtime_file_path,
 )
+from nvflare.client.cell.attach_rendezvous import ATTACH_COMM_CONFIG
 from nvflare.fuel.f3.comm_error import CommError
+from nvflare.fuel.f3.drivers.file_driver import ROOT_DIR as SHARED_FILE_ROOT_DIR
 from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.fuel.f3.drivers.file_driver import parse_file_url
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.secret_utils import has_secret_refs
 from nvflare.utils.job_launcher_utils import (
     get_client_job_args,
     get_credential_env,
     get_job_launcher_spec,
+    get_portable_resource_spec,
     get_server_job_args,
+    portable_memory_to_mib,
 )
 
 
@@ -105,9 +110,8 @@ def _resolve_resources(
         return None if value is None else _require_int(value, name)
 
     gpus_per_node = optional_int("gpus_per_node")
-    resources = _mapping_or_empty(job_meta.get(JobMetaKey.RESOURCE_SPEC.value), "resource_spec")
-    site = _mapping_or_empty(resources.get(site_name), f"resource_spec for site '{site_name}'")
-    portable_total = site.get("num_of_gpus")
+    portable = get_portable_resource_spec(job_meta, site_name)
+    portable_total = portable.get("num_of_gpus")
     if portable_total is not None:
         portable_total = _require_int(portable_total, "num_of_gpus", 0)
     if gpus_per_node is not None and portable_total is not None and portable_total != nodes * gpus_per_node:
@@ -119,6 +123,10 @@ def _resolve_resources(
 
     cpus_per_node = optional_int("cpus_per_node")
     mem_per_node = optional_int("mem_per_node")
+    if "num_of_cpus" in portable:
+        cpus_per_node = portable["num_of_cpus"]
+    if "memory" in portable:
+        mem_per_node = portable_memory_to_mib(portable["memory"])
     time_limit = spec.get("time")
     if time_limit is not None:
         time_limit = _require_string(time_limit, "time")
@@ -213,15 +221,15 @@ def _rewrite_parent_url(job_args: dict, parent_host: Optional[str], internal_por
         host = parsed.hostname
     except ValueError as e:
         raise SlurmLauncherError("malformed parent URL in JOB_PROCESS_ARGS") from e
-    if parsed.scheme != "tcp" or port != internal_port or not host:
+    if parsed.scheme not in ("tcp", "stcp") or port != internal_port or not host:
         raise SlurmLauncherError(
-            f"parent URL must use {SHARED_FILE_SCHEME} or tcp with configured internal_port "
+            f"parent URL must use {SHARED_FILE_SCHEME}, tcp, or stcp with configured internal_port "
             f"{internal_port}, got {raw_url!r}"
         )
     host = _resolve_parent_host(parent_host)
     rendered_host = host if host.startswith("[") and host.endswith("]") else f"[{host}]" if ":" in host else host
     netloc = f"{rendered_host}:{internal_port}"
-    rewritten = urlunsplit(("tcp", netloc, parsed.path, parsed.query, parsed.fragment))
+    rewritten = urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
     copied[JobProcessArgs.PARENT_URL] = (flag, rewritten)
     return copied
 
@@ -238,11 +246,40 @@ def _file_parent_mount(parent_url: str, workspace_path: str) -> Optional[BindMou
     return BindMount(source, destination, "rw")
 
 
+def _file_attach_mount(workspace: Workspace, workspace_path: str) -> Optional[BindMount]:
+    """Bind mount for a site-configured shared-file Client API Attach root."""
+    try:
+        comm_config = ConfigService.load_config_dict(
+            "comm_config.json", [workspace.get_site_config_dir()], raise_exception=False
+        )
+    except Exception as e:
+        raise SlurmLauncherError("cannot load site-local comm_config.json for Client API Attach") from e
+    if not isinstance(comm_config, dict):
+        return None
+    attach_config = comm_config.get(ATTACH_COMM_CONFIG)
+    if not isinstance(attach_config, dict) or attach_config.get("scheme") != SHARED_FILE_SCHEME:
+        return None
+    resources = _mapping_or_empty(attach_config.get("resources"), f"{ATTACH_COMM_CONFIG}.resources in comm_config.json")
+    root_dir = _require_string(
+        resources.get(SHARED_FILE_ROOT_DIR), f"{ATTACH_COMM_CONFIG}.resources.{SHARED_FILE_ROOT_DIR}"
+    )
+    if ".." in root_dir.split("/"):
+        _validate_mount_destination(root_dir, "shared-file Client API Attach root")
+    destination = _validate_mount_destination(os.path.normpath(root_dir), "shared-file Client API Attach root")
+    if os.path.islink(destination) or not os.path.isdir(destination):
+        raise SlurmLauncherError(
+            f"shared-file Client API Attach root must be an existing non-symlink directory: {destination}"
+        )
+    source = _validate_mount_source(destination, workspace_path, "shared-file Client API Attach root")
+    return BindMount(source, destination, "rw")
+
+
 class SlurmJobLauncher(JobLauncherSpec):
     """Common lifecycle and launch-plan construction for client and server jobs."""
 
     EXE_MODULE: Optional[str] = None
     SUPPORTS_ADDITIONAL_NODE_COMMAND = False
+    SUPPORTS_CLIENT_API_ATTACH = False
 
     def __init__(
         self,
@@ -418,13 +455,16 @@ class SlurmJobLauncher(JobLauncherSpec):
         if not isinstance(connection_entry, (tuple, list)) or len(connection_entry) != 2:
             raise SlurmLauncherError(f"malformed {JobProcessArgs.PARENT_CONN_SEC} in JOB_PROCESS_ARGS")
         process_connection_security = _require_string(connection_entry[1], f"{JobProcessArgs.PARENT_CONN_SEC} value")
-        if process_connection_security != "clear":
-            raise SlurmLauncherError("Slurm job launch requires clear parent connection security")
+        if process_connection_security not in ("clear", "mtls"):
+            raise SlurmLauncherError("Slurm job launch requires clear or mTLS parent connection security")
         job_args = _rewrite_parent_url(
             raw_job_args,
             parent_host=self.config.parent_host,
             internal_port=self.config.internal_port,
         )
+        parent_scheme = urlsplit(str(job_args[JobProcessArgs.PARENT_URL][1])).scheme
+        if (parent_scheme == "stcp") != (process_connection_security == "mtls"):
+            raise SlurmLauncherError("parent URL scheme does not match parent connection security")
 
         study = job_meta.get(JobMetaKey.STUDY.value)
         if study is not None:
@@ -461,6 +501,13 @@ class SlurmJobLauncher(JobLauncherSpec):
                 if any(_paths_overlap(parent_mount.destination, mount.destination) for mount in mounts):
                     raise SlurmLauncherError("shared-file parent directory overlaps a study mount destination")
                 mounts.append(parent_mount)
+            attach_mount = (
+                _file_attach_mount(workspace, self.config.workspace_path) if self.SUPPORTS_CLIENT_API_ATTACH else None
+            )
+            if attach_mount and attach_mount != parent_mount:
+                if any(_paths_overlap(attach_mount.destination, mount.destination) for mount in mounts):
+                    raise SlurmLauncherError("shared-file Client API Attach root overlaps another mount destination")
+                mounts.append(attach_mount)
         return LaunchPlan(
             job_id=job_id,
             site_name=site_name,
@@ -502,6 +549,7 @@ class SlurmJobLauncher(JobLauncherSpec):
 class ClientSlurmJobLauncher(SlurmJobLauncher):
     EXE_MODULE = "nvflare.private.fed.app.client.worker_process"
     SUPPORTS_ADDITIONAL_NODE_COMMAND = True
+    SUPPORTS_CLIENT_API_ATTACH = True
 
     def get_module_args(self, job_args: dict) -> tuple:
         return _module_args(job_args, get_client_job_args(include_exe_module=False, include_set_options=True))

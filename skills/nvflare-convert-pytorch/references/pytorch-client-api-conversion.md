@@ -37,6 +37,9 @@ FL-only Client API entry point, not a standalone/FL auto-detecting launcher.
 - Call `flare.receive()` to get the incoming `FLModel`.
 - Load `input_model.params` into the PyTorch model with `load_state_dict`.
 - Train or evaluate using the user's existing data loader and optimizer.
+- Count only optimizer steps completed in the current round. The generated
+  `train_one_round` helper must return this positive count; do not use an
+  estimated, cumulative, or default value.
 - Send the trained weights with the canonical plain-PyTorch payload pattern in
   `../../nvflare-shared/references/pytorch-model-exchange.md`. Do not call
   `model.cpu()`, which moves the persistent model off the training device.
@@ -85,9 +88,8 @@ For generated Pandas partition code, follow "Site Data Partitioning" in
 
 Follow the shared model-config and construction-consistency rule in
 `../../nvflare-shared/references/conversion-workflow.md` ("Recipe Model Config"):
-same class and constructor args on server and client, explicit
-`{"class_path": ..., "args": ...}` config (no live `nn.Module` instance), and
-derive-or-ask/fail-closed for required values.
+same class and constructor args on server and client, an allowed recipe model
+form, and derive-or-ask/fail-closed for required values.
 
 PyTorch-specific delta: the client loads `input_model.params` into the model
 with `load_state_dict`, so the server-initial model and the client model must
@@ -129,8 +131,10 @@ The self-contained runnable template ships at
 `../assets/client_with_eval.py`; adapt it rather than duplicating its code here
 or depending on repository `examples/`. It initializes setup once, receives and
 loads the global model, evaluates that received model, handles evaluation-only
-tasks, trains, and sends the canonical model payload plus the source-backed
-metric.
+tasks, trains, and sends the canonical model payload, source-backed metric, and
+the actual completed optimizer-step count for FedAvg weighting. If the source
+loop cannot establish that count, ask in interactive mode or fail closed in
+unattended mode instead of silently using equal client weights.
 
 The round `FLModel.metrics` is this pre-training evaluation of the received
 global model, not a post-training metric — see

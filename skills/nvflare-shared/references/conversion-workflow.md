@@ -304,7 +304,10 @@ the framework references show the concrete placement.
 
 ## Recipe Model Config
 
-When a recipe needs a model, generate the explicit model config form:
+When a recipe needs a model, use a model form accepted by the selected recipe.
+The two supported forms are explicit model config and a directly constructed
+model instance. Prefer explicit config when it makes a reusable or
+parameterized definition clearer:
 
 ```python
 recipe = FedAvgRecipe(
@@ -316,10 +319,16 @@ recipe = FedAvgRecipe(
 )
 ```
 
-Do not generate a live model instance (`model=Net(...)`) as the recipe input,
-and do not instantiate the model in `job.py` only to pass it to the recipe.
-Prefer the `class_path` key at recipe construction time; `path` is the
-normalized job-config key.
+```python
+recipe = FedAvgRecipe(model=MyModel(num_classes=10), ...)
+```
+
+A direct instance is allowed only when the selected recipe accepts it and its
+construction is local, deterministic, and free of material side effects. Do
+not construct it through downloads, checkpoint loading, private or
+runtime-dependent data, external services, environment lookups, or unavailable
+runtime configuration. Prefer the `class_path` key over `path` for explicit
+config; `path` is the normalized job-config key.
 
 Treat model constructor args as statically clear only when the class path is an
 importable class or direct local class definition and the constructor values
@@ -333,22 +342,21 @@ The server-side initial model and the client-side model must be constructed with
 the same class and the same constructor arguments. Derive any required
 constructor values (input dimension, vocabulary size, number of classes, hidden
 size, dropout, and similar) from the source code, dataset metadata, checkpoint
-metadata, or CLI args, and make them explicit in both the recipe model config
-and the client model-construction path. If they are not statically clear, ask in
-interactive mode or fail closed in unattended mode. Framework references state
-only their compatibility delta (PyTorch state-dict shapes, Lightning whole
+metadata, or CLI args, and use the same values in the recipe and client
+construction paths. If they are not statically clear, ask in interactive mode
+or fail closed in unattended mode. Framework references state only their
+compatibility delta (PyTorch state-dict shapes, Lightning whole
 `LightningModule`).
 Factories, lambdas, partials, dynamic `**kwargs`, environment lookups, runtime
 config files unavailable during conversion, private site-local data,
 checkpoint-inferred architecture, and side-effectful code execution are not
 statically clear: ask in interactive mode or fail closed in unattended mode.
 
-A pretrained or initial model supplied as a checkpoint path still uses the
-explicit `{"class_path": ..., "args": ...}` model config, never a live,
-weight-loaded model instance. Pass the checkpoint path to the product surface
-that consumes it (for example the recipe's initial-model or `eval_ckpt` input),
-and load its weights through safe weight-only loading where the framework
-supports it.
+A pretrained or initial model supplied as a checkpoint path must not be loaded
+into a direct model instance during job construction. Pass the checkpoint path
+to the product surface that consumes it (for example the recipe's initial-model
+or `eval_ckpt` input), and load its weights through safe weight-only loading
+where the framework supports it.
 
 ## Conversion Defaults
 

@@ -154,9 +154,6 @@ class _SlurmCliAdapter:
             timeout,
         )
 
-    def version_probe(self, timeout: float) -> CommandResult:
-        return self._run([self.executables["sbatch"], "--version"], timeout)
-
     def _warn_stray_row(self, job_name: str, job_id: str) -> None:
         now = self._monotonic()
         with self._warning_lock:
@@ -219,17 +216,18 @@ class _SlurmCliAdapter:
         if not command.available:
             return QueryResult(LookupStatus.UNAVAILABLE)
         records = []
-        for raw_id, raw_name, raw_user, raw_state, raw_exit in self._rows(command, "sacct", 5):
+        for raw_id, raw_name, raw_user, raw_state, raw_exit, raw_derived_exit in self._rows(command, "sacct", 6):
             returned_id = raw_id.strip()
             try:
                 status, signal = (int(value) for value in raw_exit.strip().split(":", 1))
+                derived_status, derived_signal = (int(value) for value in raw_derived_exit.strip().split(":", 1))
             except ValueError as e:
                 raise SlurmProtocolError("malformed sacct numeric field") from e
             state = _parse_state(raw_state)
             if (
                 not returned_id.isdigit()
                 or not state
-                or min(status, signal) < 0
+                or min(status, signal, derived_status, derived_signal) < 0
                 or raw_user.strip() != self.user
                 or raw_name.strip() != job_name
             ):
@@ -240,6 +238,7 @@ class _SlurmCliAdapter:
                     state=state,
                     exit_status=status,
                     exit_signal=signal,
+                    derived_exit_status=derived_status,
                 )
             )
         if not records:

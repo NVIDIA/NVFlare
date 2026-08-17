@@ -27,6 +27,12 @@ class StreamError(Exception):
     pass
 
 
+class BlobSizeError(StreamError):
+    """A blob cannot be streamed because its declared size exceeds the configured limit."""
+
+    pass
+
+
 class StreamCancelled(StreamError):
     """Streaming is cancelled by sender"""
 

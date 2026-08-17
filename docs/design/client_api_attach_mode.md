@@ -241,6 +241,14 @@ The site-local `comm_config.json` needs `client_api_attach` only for shared-file
 }
 ```
 
+For a containerized Slurm client job, the launcher bind-mounts this configured
+`root_dir` read-write at the same absolute path in Apptainer and Pyxis. The root
+must already be an existing, non-symlink directory outside the NVFlare workspace
+and must not overlap another container mount. Bare Slurm does not add this mount.
+The launcher only establishes filesystem visibility; `AttachBackend` remains
+authoritative for the shared-file root, listener, owner-marker, and permission
+checks.
+
 A network driver under `client_api_attach` is rejected. Network trainers must
 use the CP listener so a dynamic CJ never becomes an independently provisioned
 network service.
@@ -280,6 +288,8 @@ Focused coverage must verify:
 - secure Cell credentials over the existing CP route;
 - custom/relayed CP identity mapping;
 - protected shared-file with trainer network access denied;
+- containerized Slurm mounts a site-configured shared-file Attach root at the
+  same path read-write for both Apptainer and Pyxis without changing bare Slurm;
 - two rounds with tensors above the `ViaDownloader` threshold;
 - trainer-to-CJ terminal accounting and CJ materialization;
 - a new CJ source only when the concrete result is serialized onward;

@@ -1040,7 +1040,7 @@ Decentralized federated learning without a central server.
         min_clients=3,
         num_rounds=5,
         train_script="client.py",
-        initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights
+        initial_ckpt="path/to/pretrained.pt",  # Optional: pre-trained weights
         progress_timeout=7200,
         learn_task_timeout=None,  # No training-task time limit
         learn_task_ack_timeout=3600,
@@ -1051,6 +1051,10 @@ Decentralized federated learning without a central server.
     )
     env = SimEnv(num_clients=3)
     run = recipe.execute(env)
+
+For ``initial_ckpt``, a relative path is bundled and distributed to every client.
+An absolute path is not distributed; it must be readable at the same path on every
+client because the Swarm model persistor runs client-side.
 
 .. note::
    For large models (>2 GB), tune the following parameters:
@@ -1067,12 +1071,11 @@ Decentralized federated learning without a central server.
      and streaming timeouts through ``recipe.add_client_config({...})``. This
      offloads the receiving aggregation path, not the trainer's in-memory model
      or outgoing result tensors.
-   - ``pipe_type`` (default ``"cell_pipe"``): set to ``"file_pipe"`` when cell networking
-     is unavailable or for third-party subprocess integrations.
-   - ``submit_result_timeout``, ``download_complete_timeout``,
-     ``tensor_min_download_timeout``, and ``PEER_READ_TIMEOUT``: set via
-     ``recipe.add_client_config({...})``. ``max_resends`` defaults to finite
-     value ``3`` and can be overridden the same way — see
+   - Client API transport is selected by the site's Cell driver configuration rather than
+     by the recipe. A site can use the F3 ``FileDriver`` for a launched external process or
+     an attached trainer when shared-filesystem transport is required.
+   - Download-layer settings such as ``tensor_min_download_timeout`` can be set
+     via ``recipe.add_client_config({...})``. See
      :ref:`timeout_troubleshooting`.
 
 For advanced controller settings, ``server_config_overrides`` and
