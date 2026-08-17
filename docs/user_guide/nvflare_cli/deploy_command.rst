@@ -367,6 +367,7 @@ minimal ``slurm.yaml`` is:
      image: /lustre/images/nvflare-prod.sif
      python_path: /usr/bin/python3
      parent_host: nvflare-site1.internal
+     internal_connection_security: mtls
 
 Prepare directly into the shared runtime workspace, then start the parent:
 
@@ -379,7 +380,13 @@ The output is the live workspace and must be visible at the same absolute path
 on the parent and compute nodes. Preparing to the same output again replaces
 the complete workspace. A client kit can optionally generate
 ``startup/parent.slurm``; prepare prints the direct ``sbatch`` command that runs
-it in an allocation. See :ref:`slurm_job_launcher` for the complete guide.
+it in an allocation. Internal TCP links use mTLS by default and preserve
+``stcp://`` while the launcher rewrites only the parent host and port. Set
+``job_launcher.internal_connection_security: clear`` only as an explicit
+insecure opt-out; it emits ``tcp://`` links without certificate authentication.
+Receiver-side CellNet authorization still applies, but it does not replace peer
+authentication. Shared-file transport is unchanged and remains clear. See
+:ref:`slurm_job_launcher` for the complete guide.
 
 **********
 Job Images
@@ -433,4 +440,4 @@ causes include:
 - ``--output`` pointing at or inside the input kit
 - a Slurm ``--output`` path that is not valid as a runtime workspace
 - a missing/non-executable Slurm parent CLI, invalid sandbox/image, or
-  unsupported Slurm ``connection_security`` or server ``parent`` configuration
+  invalid Slurm ``internal_connection_security`` or server ``parent`` configuration
