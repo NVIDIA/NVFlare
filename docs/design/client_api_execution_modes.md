@@ -342,7 +342,18 @@ timeout. The CJ reports it over the download-service control route with bounded 
 delivery. A receiver validates that the reporting CJ is the direct parent of the failed trainer
 FQCN, then aborts only the matching `(source FQCN, ref ID)` downloads. This converts downstream
 materialization into the workflow's ordinary controlled task/error path instead of allowing each
-request to spend the 600-second data timeout retrying an unreachable trainer.
+request to spend the 600-second data timeout retrying an unreachable trainer. Once that failure
+notification has settled, the CJ records the reportable external-process exception code and exits;
+its parent sends the authenticated terminal outcome before client logout, so the server finishes
+the job as `EXECUTION_EXCEPTION`. Explicit job abort and source failure use one serialized terminal
+decision: an abort that wins first remains `ABORTED`, while an already-claimed source failure cannot
+be reclassified by a later teardown signal.
+
+SJ and CJ process teardown closes command admission and drains DownloadService, active byte streams,
+the reliable-retry scheduler, and F3 callback executors while Cell transport and audit state are
+still available. It then stops the Cell, gives admitted command callbacks a bounded drain so blocked
+communication wakes, and only then closes security services. This prevents queued streamed callbacks
+from entering a completed workflow or writing a closed audit file.
 
 `flare.init()` also binds its returned context to the calling thread. Client API calls without an
 explicit `ctx` prefer that binding; an old stopped binding is retained as a tombstone rather than

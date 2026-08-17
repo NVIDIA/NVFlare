@@ -31,6 +31,7 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import configure_logging, get_script_logger
 from nvflare.private.defs import AUTH_CLIENT_NAME_FOR_SJ, AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
+from nvflare.private.fed.app.job_process_cleanup import shutdown_job_process_runtime
 from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.server.server_state import HotState
@@ -38,7 +39,6 @@ from nvflare.private.fed.utils.fed_utils import (
     create_stats_pool_files_for_job,
     fobs_initialize,
     register_ext_decomposers,
-    security_close,
     security_init_for_job,
     set_stats_pool_config_for_job,
 )
@@ -70,6 +70,8 @@ def main(args):
     refresh_custom_dir_import_path(workspace.get_app_custom_dir(args.job_id))
     set_stats_pool_config_for_job(workspace, args.job_id)
 
+    server = None
+    logger = None
     try:
         os.chdir(args.workspace)
         fobs_initialize(workspace=workspace, job_id=args.job_id)
@@ -128,10 +130,17 @@ def main(args):
                 workspace, args, args.app_root, args.job_id, snapshot, logger, args.set, event_handlers=event_handlers
             )
         finally:
+            command_agent = getattr(server, "command_agent", None)
+            cell = getattr(server, "cell", None)
+            shutdown_job_process_runtime(
+                stop_command_admission=command_agent.shutdown if command_agent else None,
+                wait_for_command_callbacks=command_agent.wait_for_callbacks if command_agent else None,
+                stop_cell=cell.stop if cell else None,
+                logger=logger,
+            )
             if deployer:
                 deployer.close()
             stop_event.set()
-            security_close()
             err = create_stats_pool_files_for_job(workspace, args.job_id)
             if err:
                 if logger:

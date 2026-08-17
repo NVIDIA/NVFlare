@@ -47,6 +47,7 @@ from nvflare.client.cell.bootstrap import (
     write_bootstrap_config,
 )
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
+from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -55,7 +56,7 @@ from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY, LazyDownloadRef
-from nvflare.security.logging import secure_format_traceback
+from nvflare.security.logging import secure_format_exception, secure_format_traceback
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
 from nvflare.utils.process_utils import log_subprocess_output, prepare_subprocess_command
 
@@ -89,6 +90,10 @@ _SEND_CLOSED = "closed"
 # Accepted lazy results keep their trainer source alive until flare.send() settles.
 _NATURAL_EXIT_REAP_INTERVAL = 0.1
 _SHUTDOWN_RETRY_INTERVAL = 1.0
+
+_TERMINAL_INTENT_ABORT = "abort"
+_TERMINAL_INTENT_FAILURE = "failure"
+_TERMINAL_INTENT_SHUTDOWN = "shutdown"
 
 
 class _TaskReadyCancelSignal(Signal):
@@ -161,6 +166,7 @@ class ExternalProcessBackend(CellBackendBase):
     def __init__(self):
         super().__init__()
         self._connect_url: Optional[str] = None
+        self._run_dir: Optional[str] = None
         self._app_dir: Optional[str] = None
         self._custom_dir: Optional[str] = None
         self._active_launch: Optional[_TrainerSession] = None
@@ -171,6 +177,9 @@ class ExternalProcessBackend(CellBackendBase):
         self._launch_seq = 0
         self._abort = False
         self._abort_reason: Optional[str] = None
+        self._run_abort_signal: Optional[Signal] = None
+        self._lifecycle_lock = threading.RLock()
+        self._terminal_intent: Optional[str] = None
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -179,6 +188,7 @@ class ExternalProcessBackend(CellBackendBase):
             raise ValueError("external_process mode requires a non-empty command")
 
         try:
+            self._run_abort_signal = fl_ctx.get_run_abort_signal()
             self._initialize_cell(
                 context,
                 fl_ctx,
@@ -198,6 +208,7 @@ class ExternalProcessBackend(CellBackendBase):
             workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
             if workspace is None:
                 raise RuntimeError("workspace/job id not available in fl_ctx")
+            self._run_dir = workspace.get_run_dir(self._job_id)
             self._app_dir = workspace.get_app_dir(self._job_id)
             self._custom_dir = workspace.get_app_custom_dir(self._job_id)
 
@@ -248,6 +259,7 @@ class ExternalProcessBackend(CellBackendBase):
         that state, so ABORT_TASK must explicitly distinguish aborted teardown
         from normal END_RUN result-draining.
         """
+        self._claim_abort_intent()
         self._latch_abort("ABORT_TASK event received")
         with self._launch_lock:
             trainer = self._active_launch
@@ -265,6 +277,7 @@ class ExternalProcessBackend(CellBackendBase):
                 trainer = self._active_launch
                 self._send_abort(trainer, f"'{task_name}' is aborted, abort_signal_triggered")
                 if trainer is not None:
+                    self._claim_abort_intent()
                     self._latch_abort(f"'{task_name}' aborted at entry, abort_signal_triggered")
                 self._finish_task_trainer(trainer, launch_once=True)
             return make_reply(ReturnCode.TASK_ABORTED)
@@ -328,9 +341,13 @@ class ExternalProcessBackend(CellBackendBase):
         if self._finalized:
             return
         self._finalized = True
-        # Serialize close with RESULT_READY's acceptance commit.
+        # Serialize close with RESULT_READY's acceptance commit and with the
+        # fatal-source/explicit-abort terminal decision.
         with self._task_lock:
-            self._closed = True
+            with self._lifecycle_lock:
+                if self._terminal_intent is None:
+                    self._terminal_intent = _TERMINAL_INTENT_SHUTDOWN
+                self._closed = True
         # The same gate orders END_RUN against the launch-install-to-Popen window. Keep
         # this ordering bound on abort: a process handle may not have been installed yet.
         admitted = self._execute_gate.acquire(timeout=self._shutdown_wait_bound())
@@ -617,6 +634,7 @@ class ExternalProcessBackend(CellBackendBase):
 
     def _wait_for_natural_exit_and_cleanup(self, trainer: _TrainerSession) -> None:
         disconnected_since = None
+        fail_client_job = False
         disconnect_grace = (
             self._context.heartbeat_timeout
             if self._context.heartbeat_timeout > 0
@@ -650,12 +668,14 @@ class ExternalProcessBackend(CellBackendBase):
                     # SHUTDOWN cannot preempt an accepted result source still inside send().
                     self._request_trainer_shutdown(trainer, wait_timeout=_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT)
                 time.sleep(_NATURAL_EXIT_REAP_INTERVAL)
-            self._fail_accepted_result_source(
+            fail_client_job = self._fail_accepted_result_source(
                 trainer,
                 trainer.result_source_task_id,
                 self._trainer_exit_reason(trainer),
             )
             self._cleanup_trainer(trainer)
+            if fail_client_job:
+                self._fail_job_for_lost_result_source(self._trainer_exit_reason(trainer))
         except BaseException:
             self.logger.error(secure_format_traceback())
         finally:
@@ -666,11 +686,14 @@ class ExternalProcessBackend(CellBackendBase):
 
     def _cleanup_trainer(self, trainer: _TrainerSession) -> None:
         """Release launch-scoped state after the process group is gone. Idempotent."""
+        fail_client_job = False
+        failure_reason = None
         if trainer.result_source_live.is_set() and not self._process_group_alive(trainer):
-            self._fail_accepted_result_source(
+            failure_reason = self._trainer_exit_reason(trainer)
+            fail_client_job = self._fail_accepted_result_source(
                 trainer,
                 trainer.result_source_task_id,
-                self._trainer_exit_reason(trainer),
+                failure_reason,
             )
         if trainer.result_failure_notified and not trainer.result_failure_delivery_done.is_set():
             trainer.result_failure_delivery_done.wait(_RESULT_SOURCE_FAILURE_DELIVERY_WAIT)
@@ -700,6 +723,8 @@ class ExternalProcessBackend(CellBackendBase):
         with self._launch_lock:
             if self._active_launch is trainer:
                 self._active_launch = None
+        if fail_client_job:
+            self._fail_job_for_lost_result_source(failure_reason)
 
     def _disable_task_pass_through(self) -> None:
         self._disable_pass_through()
@@ -822,7 +847,10 @@ class ExternalProcessBackend(CellBackendBase):
 
     def _unwind(self) -> None:
         """Releases partial setup after a failed initialize(). Best-effort per step."""
-        self._closed = True
+        with self._lifecycle_lock:
+            if self._terminal_intent is None:
+                self._terminal_intent = _TERMINAL_INTENT_SHUTDOWN
+            self._closed = True
         try:
             trainer = self._active_launch
             if trainer is not None:
@@ -860,6 +888,7 @@ class ExternalProcessBackend(CellBackendBase):
             send_status, reply = self._send_task_ready(trainer, task_message, abort_signal)
             if send_status == _SEND_ABORTED:
                 self._send_abort(trainer, f"'{task_name}' is aborted, abort_signal_triggered")
+                self._claim_abort_intent()
                 self._latch_abort(f"task '{task_name}' aborted during TASK_READY")
                 return make_reply(ReturnCode.TASK_ABORTED)
             if send_status == _SEND_PROCESS_DEAD:
@@ -887,6 +916,8 @@ class ExternalProcessBackend(CellBackendBase):
             while True:
                 if abort_signal.triggered or (launch_once and self._abort):
                     self._send_abort(trainer, f"'{task_name}' is aborted, abort_signal_triggered")
+                    if abort_signal.triggered:
+                        self._claim_abort_intent()
                     self._latch_abort(f"task '{task_name}' aborted")
                     return make_reply(ReturnCode.TASK_ABORTED)
 
@@ -1011,8 +1042,11 @@ class ExternalProcessBackend(CellBackendBase):
                 if not active:
                     return
                 if not self._process_group_alive(trainer):
-                    self._fail_accepted_result_source(trainer, task_id, self._trainer_exit_reason(trainer))
+                    reason = self._trainer_exit_reason(trainer)
+                    fail_client_job = self._fail_accepted_result_source(trainer, task_id, reason)
                     self._cleanup_trainer(trainer)
+                    if fail_client_job:
+                        self._fail_job_for_lost_result_source(reason)
                     return
                 heartbeat_timeout = self._context.heartbeat_timeout
                 silent_for = trainer.peer_silent_for() if heartbeat_timeout > 0 else None
@@ -1021,8 +1055,10 @@ class ExternalProcessBackend(CellBackendBase):
                         f"accepted external result source heartbeat timed out after {silent_for:.1f}s "
                         f"(timeout={heartbeat_timeout}s)"
                     )
-                    self._fail_accepted_result_source(trainer, task_id, reason)
+                    fail_client_job = self._fail_accepted_result_source(trainer, task_id, reason)
                     self._stop_trainer(trainer, natural_exit_wait=0.0)
+                    if fail_client_job:
+                        self._fail_job_for_lost_result_source(reason)
                     return
                 if self._cell.is_cell_connected(trainer.trainer_fqcn):
                     disconnected_since = None
@@ -1030,27 +1066,30 @@ class ExternalProcessBackend(CellBackendBase):
                     disconnected_since = time.monotonic()
                 elif time.monotonic() - disconnected_since >= self._result_source_disconnect_grace():
                     reason = "accepted external result source disconnected before transfer completion"
-                    self._fail_accepted_result_source(trainer, task_id, reason)
+                    fail_client_job = self._fail_accepted_result_source(trainer, task_id, reason)
                     self._stop_trainer(trainer, natural_exit_wait=0.0)
+                    if fail_client_job:
+                        self._fail_job_for_lost_result_source(reason)
                     return
                 time.sleep(_RESULT_POLL_INTERVAL)
         except BaseException:
             self.logger.error(secure_format_traceback())
 
-    def _fail_accepted_result_source(self, trainer: _TrainerSession, task_id: Optional[str], reason: str) -> None:
+    def _fail_accepted_result_source(self, trainer: _TrainerSession, task_id: Optional[str], reason: str) -> bool:
         if not task_id:
-            return
+            return False
         with trainer._result_failure_lock:
             if (
                 trainer.result_failure_notified
                 or not trainer.result_source_live.is_set()
                 or trainer.result_source_task_id != task_id
             ):
-                return
+                return False
             refs = trainer.result_source_refs
             receivers = trainer.result_receiver_ids
             if not refs or not receivers:
-                return
+                return False
+            fail_client_job = self._claim_result_source_failure()
             trainer.result_failure_notified = True
             trainer.result_failure_delivery_done.clear()
             trainer.result_source_live.clear()
@@ -1076,6 +1115,49 @@ class ExternalProcessBackend(CellBackendBase):
             self.logger.error(secure_format_traceback())
         finally:
             trainer.result_failure_delivery_done.set()
+        return fail_client_job
+
+    def _claim_abort_intent(self) -> bool:
+        """Atomically let explicit abort win over a not-yet-classified source failure."""
+        with self._lifecycle_lock:
+            if self._terminal_intent is None:
+                self._terminal_intent = _TERMINAL_INTENT_ABORT
+            return self._terminal_intent == _TERMINAL_INTENT_ABORT
+
+    def _claim_result_source_failure(self) -> bool:
+        """Atomically classify source loss as fatal unless abort/shutdown already won."""
+        with self._lifecycle_lock:
+            if self._terminal_intent is not None or self._closed:
+                return False
+            abort_signal = self._run_abort_signal
+            if abort_signal is not None and abort_signal.triggered:
+                self._terminal_intent = _TERMINAL_INTENT_ABORT
+                return False
+            self._terminal_intent = _TERMINAL_INTENT_FAILURE
+            return True
+
+    def _fail_job_for_lost_result_source(self, reason: str) -> None:
+        """Exit the CJ with a code its parent can report as an execution failure."""
+        with self._lifecycle_lock:
+            if self._terminal_intent != _TERMINAL_INTENT_FAILURE:
+                return
+        self._latch_abort(reason)
+        self.logger.critical(f"{reason}; exiting the client job process because the lazy result cannot be recovered")
+        self._write_process_exit_code(ProcessExitCode.EXCEPTION)
+        os._exit(ProcessExitCode.EXCEPTION)
+
+    def _write_process_exit_code(self, return_code: int) -> None:
+        """Preserve a reportable code across launchers that normalize nonzero child exits."""
+        run_dir = self._run_dir
+        if not run_dir:
+            self.logger.error("cannot record client job failure: run directory is unavailable")
+            return
+        rc_file = os.path.join(run_dir, FLMetaKey.PROCESS_RC_FILE)
+        try:
+            with open(rc_file, "w", encoding="utf-8") as f:
+                f.write(str(return_code))
+        except Exception as e:
+            self.logger.error(f"cannot record client job failure in {rc_file}: {secure_format_exception(e)}")
 
     def _send_task_ready(self, trainer: _TrainerSession, task_message: dict, abort_signal: Signal) -> Tuple[str, Any]:
         """Send TASK_READY until reply, cancelling on abort, closure, process death, or deadline."""
@@ -1249,6 +1331,7 @@ class ExternalProcessBackend(CellBackendBase):
         return self._protocol_reply(Topic.HELLO_REJECTED, **{MsgKey.REASON: reason})
 
     def _latch_abort(self, reason: str) -> None:
-        self._abort = True
-        if self._abort_reason is None:
-            self._abort_reason = reason
+        with self._lifecycle_lock:
+            self._abort = True
+            if self._abort_reason is None:
+                self._abort_reason = reason

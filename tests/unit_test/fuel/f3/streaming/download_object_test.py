@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -553,3 +554,24 @@ class TestDownloadObject:
 
         assert errors == {"server.job-1": None}
         assert cell.send_request.call_count == 2
+
+    def test_notify_source_failure_has_one_deadline_across_receivers(self, cell, monkeypatch):
+        monkeypatch.setattr(download_service, "_SOURCE_FAILURE_NOTIFY_TOTAL_TIMEOUT", 0.01)
+
+        def slow_timeout(**_kwargs):
+            threading.Event().wait(0.02)
+            return _make_reply(ReturnCode.TIMEOUT)
+
+        cell.send_request.side_effect = slow_timeout
+
+        errors = DownloadService.notify_source_failure(
+            cell=cell,
+            targets=["server.job-1", "site-3.job-1", "site-4.job-1"],
+            source_fqcn="site-2.job-1.trainer",
+            ref_ids=["ref-1"],
+            reason="trainer OOM",
+        )
+
+        assert cell.send_request.call_count == 1
+        assert errors.keys() == {"server.job-1", "site-3.job-1", "site-4.job-1"}
+        assert all(error for error in errors.values())

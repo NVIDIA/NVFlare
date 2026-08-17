@@ -54,9 +54,8 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
-from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer, reliable_retry_scheduler
 from nvflare.fuel.f3.streaming.download_service import DownloadService
-from nvflare.fuel.f3.streaming.stream_utils import stream_shutdown
+from nvflare.fuel.f3.streaming.shutdown import shutdown_f3_streaming
 from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT, TransferProgressState
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
 from nvflare.fuel.utils.fobs import FOBSContextKey
@@ -78,26 +77,8 @@ _RESULT_SOURCE_SETTLED_TIMEOUT = 1.0
 
 
 def _shutdown_f3_streaming() -> None:
-    """Stop process-global F3 services owned by the standalone trainer.
-
-    External trainers do not run under MainProcessMonitor. Keep this order aligned with
-    F3 cleanup: stop transaction ownership and retry dispatch before their executors.
-    Each operation is idempotent and every stage is attempted.
-    """
-    errors = []
-    for name, shutdown in (
-        ("download service", DownloadService.shutdown),
-        ("active byte streams", ByteStreamer.shutdown),
-        ("reliable retry scheduler", reliable_retry_scheduler.shutdown),
-        ("stream executors", stream_shutdown),
-    ):
-        try:
-            shutdown()
-        except Exception as e:
-            errors.append((name, e))
-    if errors:
-        names = ", ".join(name for name, _ in errors)
-        raise RuntimeError(f"failed to stop F3 streaming services: {names}") from errors[0][1]
+    """Stop process-global F3 services owned by the standalone trainer."""
+    shutdown_f3_streaming()
 
 
 def _to_python_scalar(v: Any) -> Any:

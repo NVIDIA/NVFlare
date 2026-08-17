@@ -52,6 +52,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.streaming import shutdown as streaming_shutdown
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
 from nvflare.fuel.utils.fobs import FOBSContextKey
@@ -1040,10 +1041,10 @@ class TestAttachMode:
 
 def test_shutdown_f3_streaming_is_ordered_and_safe_to_repeat(monkeypatch):
     calls = []
-    monkeypatch.setattr(cell_api.DownloadService, "shutdown", lambda: calls.append("download"))
-    monkeypatch.setattr(cell_api.ByteStreamer, "shutdown", lambda: calls.append("byte"))
-    monkeypatch.setattr(cell_api.reliable_retry_scheduler, "shutdown", lambda: calls.append("retry"))
-    monkeypatch.setattr(cell_api, "stream_shutdown", lambda: calls.append("stream"))
+    monkeypatch.setattr(streaming_shutdown.DownloadService, "shutdown", lambda: calls.append("download"))
+    monkeypatch.setattr(streaming_shutdown.ByteStreamer, "shutdown", lambda: calls.append("byte"))
+    monkeypatch.setattr(streaming_shutdown.reliable_retry_scheduler, "shutdown", lambda: calls.append("retry"))
+    monkeypatch.setattr(streaming_shutdown, "stream_shutdown", lambda: calls.append("stream"))
 
     cell_api._shutdown_f3_streaming()
     cell_api._shutdown_f3_streaming()
@@ -1062,10 +1063,10 @@ def test_shutdown_f3_streaming_attempts_every_stage_and_can_retry(monkeypatch):
             fail_download_once = False
             raise RuntimeError("download failed")
 
-    monkeypatch.setattr(cell_api.DownloadService, "shutdown", shutdown_download)
-    monkeypatch.setattr(cell_api.ByteStreamer, "shutdown", lambda: calls.append("byte"))
-    monkeypatch.setattr(cell_api.reliable_retry_scheduler, "shutdown", lambda: calls.append("retry"))
-    monkeypatch.setattr(cell_api, "stream_shutdown", lambda: calls.append("stream"))
+    monkeypatch.setattr(streaming_shutdown.DownloadService, "shutdown", shutdown_download)
+    monkeypatch.setattr(streaming_shutdown.ByteStreamer, "shutdown", lambda: calls.append("byte"))
+    monkeypatch.setattr(streaming_shutdown.reliable_retry_scheduler, "shutdown", lambda: calls.append("retry"))
+    monkeypatch.setattr(streaming_shutdown, "stream_shutdown", lambda: calls.append("stream"))
 
     with pytest.raises(RuntimeError, match="download service"):
         cell_api._shutdown_f3_streaming()

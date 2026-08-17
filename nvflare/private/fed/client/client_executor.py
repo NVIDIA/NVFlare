@@ -632,7 +632,7 @@ class JobExecutor(ClientExecutor):
                             JobFailureMsgKey.REASON: failure_reason,
                         },
                     )
-                    reply = self.client.cell.send_request(
+                    reply = self.client.send_request_before_shutdown(
                         target=FQCN.ROOT_SERVER,
                         channel=CellChannel.SERVER_MAIN,
                         topic=CellChannelTopic.REPORT_JOB_FAILURE,
@@ -640,7 +640,13 @@ class JobExecutor(ClientExecutor):
                         timeout=self.job_query_timeout,
                         optional=True,
                     )
-                    if reply.get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK:
+                    if reply is None:
+                        # Shutdown invalidates the site token. The server's client-quit/dead-client
+                        # path resolves any outcome still pending after communication stops.
+                        self.logger.info(
+                            f"not reporting terminal outcome of job {job_id}: client communication has stopped"
+                        )
+                    elif reply.get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK:
                         self.logger.error(f"could not report terminal outcome of job {job_id}")
                 except Exception as e:
                     self.logger.error(

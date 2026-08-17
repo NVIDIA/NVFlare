@@ -46,6 +46,7 @@ from nvflare.client.cell.bootstrap import (
 )
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
+from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.data_event.utils import set_scope_property
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
@@ -58,6 +59,14 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 CJ_FQCN = "site-1.job-1"
 
 PROTOCOL_TOPICS = (Topic.HELLO, Topic.RESULT_READY, Topic.RESULT_SOURCE_SETTLED, Topic.LOG, Topic.HEARTBEAT)
+
+
+@pytest.fixture(autouse=True)
+def client_job_exit(monkeypatch):
+    """Keep fatal-source tests from terminating the pytest worker."""
+    exit_process = MagicMock()
+    monkeypatch.setattr(ebp.os, "_exit", exit_process)
+    return exit_process
 
 
 def _task_accepted_reply():
@@ -252,6 +261,7 @@ def _make_fl_ctx(engine, app_dir, secure_mode=False):
     fl_ctx.put(key=ReservedKey.RUN_NUM, value="job-1", private=False, sticky=False)
     fl_ctx.put(key=ReservedKey.IDENTITY_NAME, value="site-1", private=False, sticky=False)
     workspace = Mock()
+    workspace.get_run_dir.return_value = app_dir
     workspace.get_app_dir.return_value = app_dir
     workspace.get_app_custom_dir.return_value = app_dir
     fl_ctx.put(key=FLContextKey.WORKSPACE_OBJECT, value=workspace, private=True, sticky=False)
@@ -2271,7 +2281,7 @@ class TestAcceptedResultSourceFailure:
             time.sleep(0.005)
         return []
 
-    def test_launch_once_trainer_death_notifies_exact_result_receiver(self, env, monkeypatch):
+    def test_launch_once_trainer_death_notifies_exact_result_receiver(self, env, monkeypatch, client_job_exit):
         monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
         backend, _ = _initialized_backend(env, launch_once=True)
         try:
@@ -2291,13 +2301,65 @@ class TestAcceptedResultSourceFailure:
             assert trainer.result_failure_notified
             assert not trainer.result_source_live.is_set()
             assert trainer.result_source_task_id is None
+            deadline = time.monotonic() + 1.0
+            while not client_job_exit.called and time.monotonic() < deadline:
+                time.sleep(0.005)
+            client_job_exit.assert_called_once_with(ProcessExitCode.EXCEPTION)
+            with open(os.path.join(env.app_dir, FLMetaKey.PROCESS_RC_FILE), encoding="utf-8") as f:
+                assert int(f.read()) == ProcessExitCode.EXCEPTION
 
             backend._fail_accepted_result_source(trainer, task.task_id, "duplicate")
             assert len([message for message in env.cell.sent if message[0] == SOURCE_FAILURE_TOPIC]) == 1
         finally:
             backend.finalize(FLContext())
 
-    def test_per_task_trainer_death_notifies_swarm_aggregation_receiver_once(self, env, monkeypatch):
+    def test_explicit_abort_wins_before_accepted_source_death(self, env, monkeypatch, client_job_exit):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, launch_once=True)
+        try:
+            _, trainer = self._accept_lazy_result(backend, env)
+
+            backend.abort(FLContext())
+            trainer.process.exit(-signal.SIGKILL)
+            trainer.source_monitor_thread.join(timeout=1.0)
+
+            assert not trainer.source_monitor_thread.is_alive()
+            client_job_exit.assert_not_called()
+            assert not os.path.exists(os.path.join(env.app_dir, FLMetaKey.PROCESS_RC_FILE))
+        finally:
+            backend.finalize(FLContext())
+
+    def test_accepted_source_failure_wins_before_late_abort(self, env, monkeypatch, client_job_exit):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, launch_once=True)
+        delivery_started = threading.Event()
+        release_delivery = threading.Event()
+
+        def blocked_source_failure(**_kwargs):
+            delivery_started.set()
+            assert release_delivery.wait(timeout=1.0)
+            return {}
+
+        monkeypatch.setattr(ebp.DownloadService, "notify_source_failure", blocked_source_failure)
+        try:
+            _, trainer = self._accept_lazy_result(backend, env)
+
+            trainer.process.exit(-signal.SIGKILL)
+            assert delivery_started.wait(timeout=1.0)
+            backend.abort(FLContext())
+            release_delivery.set()
+
+            deadline = time.monotonic() + 1.0
+            while not client_job_exit.called and time.monotonic() < deadline:
+                time.sleep(0.005)
+            client_job_exit.assert_called_once_with(ProcessExitCode.EXCEPTION)
+            with open(os.path.join(env.app_dir, FLMetaKey.PROCESS_RC_FILE), encoding="utf-8") as f:
+                assert int(f.read()) == ProcessExitCode.EXCEPTION
+        finally:
+            release_delivery.set()
+            backend.finalize(FLContext())
+
+    def test_per_task_trainer_death_notifies_swarm_aggregation_receiver_once(self, env, monkeypatch, client_job_exit):
         monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
         monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
         backend, fl_ctx = _initialized_backend(env, launch_once=False)
@@ -2316,6 +2378,10 @@ class TestAcceptedResultSourceFailure:
             assert failures[0][1] == "site-4.job-1"
             assert failures[0][2]["source_fqcn"] == trainer.trainer_fqcn
             assert failures[0][2]["ref_ids"] == ("result-ref",)
+            deadline = time.monotonic() + 1.0
+            while not client_job_exit.called and time.monotonic() < deadline:
+                time.sleep(0.005)
+            client_job_exit.assert_called_once_with(ProcessExitCode.EXCEPTION)
         finally:
             backend.finalize(FLContext())
 
@@ -2354,7 +2420,7 @@ class TestAcceptedResultSourceFailure:
         finally:
             backend.finalize(FLContext())
 
-    def test_live_group_with_dead_source_session_is_bounded(self, env, monkeypatch):
+    def test_live_group_with_dead_source_session_is_bounded(self, env, monkeypatch, client_job_exit):
         monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
         backend, _ = _initialized_backend(env, launch_once=True, heartbeat_timeout=0.0)
         monkeypatch.setattr(backend, "_result_source_disconnect_grace", lambda: 0.01)
@@ -2367,10 +2433,14 @@ class TestAcceptedResultSourceFailure:
             assert len(failures) == 1
             assert "disconnected" in failures[0][2]["reason"]
             assert trainer.process.returncode == -signal.SIGTERM
+            deadline = time.monotonic() + 1.0
+            while not client_job_exit.called and time.monotonic() < deadline:
+                time.sleep(0.005)
+            client_job_exit.assert_called_once_with(ProcessExitCode.EXCEPTION)
         finally:
             backend.finalize(FLContext())
 
-    def test_source_heartbeat_timeout_is_bounded_while_process_group_survives(self, env, monkeypatch):
+    def test_source_heartbeat_timeout_is_bounded_while_process_group_survives(self, env, monkeypatch, client_job_exit):
         monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
         backend, _ = _initialized_backend(env, launch_once=True, heartbeat_timeout=0.01)
         try:
@@ -2382,6 +2452,10 @@ class TestAcceptedResultSourceFailure:
             assert len(failures) == 1
             assert "heartbeat timed out" in failures[0][2]["reason"]
             assert trainer.process.returncode == -signal.SIGTERM
+            deadline = time.monotonic() + 1.0
+            while not client_job_exit.called and time.monotonic() < deadline:
+                time.sleep(0.005)
+            client_job_exit.assert_called_once_with(ProcessExitCode.EXCEPTION)
         finally:
             backend.finalize(FLContext())
 

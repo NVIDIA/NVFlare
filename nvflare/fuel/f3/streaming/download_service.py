@@ -52,6 +52,7 @@ _SOURCE_FAILURE_TTL = 1800.0
 _MAX_SOURCE_FAILURE_REFS = 256
 _MAX_SOURCE_FAILURE_TOMBSTONES = 4096
 _SOURCE_FAILURE_NOTIFY_TIMEOUT = 3.0
+_SOURCE_FAILURE_NOTIFY_TOTAL_TIMEOUT = 10.0
 _SOURCE_FAILURE_NOTIFY_ATTEMPTS = 4
 _SOURCE_FAILURE_NOTIFY_BACKOFF = 0.25
 
@@ -1187,9 +1188,14 @@ class DownloadService:
             _SourceFailureKey.REASON: str(reason),
         }
         errors = {}
+        deadline = time.monotonic() + _SOURCE_FAILURE_NOTIFY_TOTAL_TIMEOUT
         for target in targets:
             error = None
             for attempt in range(_SOURCE_FAILURE_NOTIFY_ATTEMPTS):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    error = "source failure notification deadline exceeded"
+                    break
                 retriable = True
                 try:
                     reply = cell.send_request(
@@ -1197,7 +1203,7 @@ class DownloadService:
                         topic=SOURCE_FAILURE_TOPIC,
                         target=target,
                         request=new_cell_message(headers={}, payload=payload),
-                        timeout=_SOURCE_FAILURE_NOTIFY_TIMEOUT,
+                        timeout=min(_SOURCE_FAILURE_NOTIFY_TIMEOUT, remaining),
                         secure=secure,
                         optional=True,
                     )
@@ -1212,7 +1218,11 @@ class DownloadService:
                     retriable = rc in (ReturnCode.TIMEOUT, ReturnCode.COMM_ERROR, ReturnCode.PROCESS_EXCEPTION)
                 if not retriable or attempt + 1 >= _SOURCE_FAILURE_NOTIFY_ATTEMPTS:
                     break
-                time.sleep(min(_SOURCE_FAILURE_NOTIFY_BACKOFF * (2**attempt), 1.0))
+                backoff = min(_SOURCE_FAILURE_NOTIFY_BACKOFF * (2**attempt), 1.0, deadline - time.monotonic())
+                if backoff <= 0:
+                    error = "source failure notification deadline exceeded"
+                    break
+                time.sleep(backoff)
             errors[target] = error
         return errors
 
