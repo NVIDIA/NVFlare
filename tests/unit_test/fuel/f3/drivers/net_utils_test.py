@@ -16,37 +16,26 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.f3.drivers.net_utils import encode_url, enhance_credential_info, get_tcp_urls, parse_url
+from nvflare.fuel.f3.drivers.net_utils import encode_url, get_ssl_context, get_tcp_urls, parse_url
 from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
 
 
 class TestNetUtils:
-    @pytest.mark.parametrize(("source_role", "target_role"), [("client", "server"), ("server", "client")])
-    def test_complete_participant_pair_is_reused_for_opposite_tls_role(self, tmp_path, source_role, target_role):
-        cert = str(tmp_path / f"{source_role}.crt")
-        key = str(tmp_path / f"{source_role}.key")
+    @pytest.mark.parametrize(("ssl_server", "source_role"), [(True, "client"), (False, "server")])
+    @patch("nvflare.fuel.f3.drivers.net_utils.ssl.create_default_context")
+    def test_mtls_context_reuses_complete_participant_pair(self, mock_context, ssl_server, source_role):
+        cert = f"{source_role}.crt"
+        key = f"{source_role}.key"
         params = {
-            DriverParams.CA_CERT.value: str(tmp_path / "rootCA.pem"),
+            DriverParams.SCHEME.value: "stcp",
+            DriverParams.CA_CERT.value: "rootCA.pem",
             f"{source_role}_cert": cert,
             f"{source_role}_key": key,
         }
 
-        enhance_credential_info(params)
+        get_ssl_context(params, ssl_server=ssl_server)
 
-        assert params[f"{target_role}_cert"] == cert
-        assert params[f"{target_role}_key"] == key
-
-    def test_incomplete_role_pairs_are_not_mixed(self, tmp_path):
-        params = {
-            DriverParams.CA_CERT.value: str(tmp_path / "rootCA.pem"),
-            DriverParams.CLIENT_CERT.value: str(tmp_path / "client.crt"),
-            DriverParams.SERVER_KEY.value: str(tmp_path / "server.key"),
-        }
-
-        enhance_credential_info(params)
-
-        assert DriverParams.CLIENT_KEY.value not in params
-        assert DriverParams.SERVER_CERT.value not in params
+        mock_context.return_value.load_cert_chain.assert_called_once_with(certfile=cert, keyfile=key)
 
     def test_encode_url(self):
 

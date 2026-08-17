@@ -65,6 +65,9 @@ def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
         ca_path = params.get(DriverParams.CA_CERT.value)
         cert_path = params.get(DriverParams.SERVER_CERT.value)
         key_path = params.get(DriverParams.SERVER_KEY.value)
+        client_pair = (params.get(DriverParams.CLIENT_CERT.value), params.get(DriverParams.CLIENT_KEY.value))
+        if not any((cert_path, key_path)) and all(client_pair):
+            cert_path, key_path = client_pair
 
         if not cert_path or not key_path:
             raise RuntimeError(f"not cert or key for SSL server: {params=}")
@@ -94,6 +97,9 @@ def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
             ca_path = params.get(DriverParams.CA_CERT.value)
             cert_path = params.get(DriverParams.CLIENT_CERT.value)
             key_path = params.get(DriverParams.CLIENT_KEY.value)
+            server_pair = (params.get(DriverParams.SERVER_CERT.value), params.get(DriverParams.SERVER_KEY.value))
+            if not any((cert_path, key_path)) and all(server_pair):
+                cert_path, key_path = server_pair
             params[DriverParams.IMPLEMENTED_CONN_SEC] = "Client mTLS: Flare credentials used"
 
     if not ca_path:
@@ -349,14 +355,6 @@ def enhance_credential_info(params: dict):
         server_key_path = os.path.join(cred_folder, SSL_SERVER_PRIVATE_KEY)
         if os.path.exists(server_key_path):
             params[DriverParams.SERVER_KEY.value] = server_key_path
-
-    # Reuse a complete participant pair for the opposite TLS role without mixing partial pairs.
-    client_pair = (params.get(DriverParams.CLIENT_CERT.value), params.get(DriverParams.CLIENT_KEY.value))
-    server_pair = (params.get(DriverParams.SERVER_CERT.value), params.get(DriverParams.SERVER_KEY.value))
-    if all(client_pair) and not any(server_pair):
-        params[DriverParams.SERVER_CERT.value], params[DriverParams.SERVER_KEY.value] = client_pair
-    elif all(server_pair) and not any(client_pair):
-        params[DriverParams.CLIENT_CERT.value], params[DriverParams.CLIENT_KEY.value] = server_pair
 
     custom_ca_cert_path = params.get(DriverParams.CUSTOM_CA_CERT.value)
     if not custom_ca_cert_path:
