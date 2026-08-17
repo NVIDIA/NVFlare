@@ -28,7 +28,7 @@ class ACIAuthorizer(CCAuthorizer):
         self.retry_count = retry_count
         self.retry_sleep = retry_sleep
 
-    def generate(self, challenge: str | None = None):
+    def generate(self):
         count = 0
         token = ""
         while True:
@@ -48,7 +48,7 @@ class ACIAuthorizer(CCAuthorizer):
                 time.sleep(self.retry_sleep)
         return token
 
-    def verify(self, token, challenge: str | None = None):
+    def verify(self, token):
         try:
             header = jwt.get_unverified_header(token)
             alg = header.get("alg")
@@ -63,7 +63,3 @@ class ACIAuthorizer(CCAuthorizer):
 
     def get_namespace(self) -> str:
         return ACI_NAMESPACE
-
-    def supports_challenge_binding(self) -> bool:
-        # `generate`/`verify` do not bind `challenge` into the MAA token.
-        return False

@@ -25,7 +25,7 @@ class AZCVMAuthorizer(CCAuthorizer):
         self.attester_binary = attester_binary
         self.maa_endpoint = maa_endpoint
 
-    def generate(self, challenge: str | None = None):
+    def generate(self):
         cmd = ["sudo", self.attester_binary, "-a", f"https://{self.maa_endpoint}/", "-o", "token"]
         result = subprocess.run(cmd, capture_output=True, check=False)
         if result.returncode != 0:
@@ -33,7 +33,7 @@ class AZCVMAuthorizer(CCAuthorizer):
         token = result.stdout.decode().strip()
         return token
 
-    def verify(self, token, challenge: str | None = None):
+    def verify(self, token):
         try:
             header = jwt.get_unverified_header(token)
             alg = header.get("alg")
@@ -48,7 +48,3 @@ class AZCVMAuthorizer(CCAuthorizer):
 
     def get_namespace(self) -> str:
         return AZ_CVM_NAMESPACE
-
-    def supports_challenge_binding(self) -> bool:
-        # `generate`/`verify` do not bind `challenge` into the MAA token.
-        return False
