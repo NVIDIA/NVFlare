@@ -1969,6 +1969,118 @@ def test_baseline_crash_is_not_counted_as_candidate_attempt():
     )
 
 
+def test_candidate_execution_fingerprint_uses_existing_comparison_provenance():
+    runner = _load_runner()
+    manifest = {
+        "base_source_sha256": "a" * 64,
+        "fixed_budget_sha256": "b" * 64,
+        "run_args": ["--lr", "0.1"],
+    }
+    fingerprint = runner.candidate_execution_fingerprint(manifest, "c" * 64)
+
+    assert runner.candidate_execution_fingerprint(deepcopy(manifest), "c" * 64) == fingerprint
+    for field, value in (
+        ("base_source_sha256", "d" * 64),
+        ("fixed_budget_sha256", "e" * 64),
+        ("run_args", ["--lr", "0.2"]),
+    ):
+        changed = deepcopy(manifest)
+        changed[field] = value
+        assert runner.candidate_execution_fingerprint(changed, "c" * 64) != fingerprint
+    assert runner.candidate_execution_fingerprint(manifest, "f" * 64) != fingerprint
+
+
+def test_identical_crashed_candidate_requires_specific_user_approval(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)
+    calls = []
+
+    def crash_run(run_def, **kwargs):
+        calls.append(run_def.name)
+        return runner.RunRecord(
+            "crash", run_def.name, None, 1.0, "none", run_def.description, "python job.py", "/tmp/crash"
+        )
+
+    monkeypatch.setattr(runner, "run_job", crash_run)
+    for candidate in ("first_crash", "same_after_crash"):
+        assert runner.main(["prepare", str(job), "--name", candidate, "--hypothesis", "same candidate"]) == 0
+        source = tmp_path / ".nvflare" / "autofl" / "candidates" / candidate / "source" / "client.py"
+        source.write_text("ALGORITHM = 'crashing_candidate'\n", encoding="utf-8")
+        if candidate == "first_crash":
+            assert runner.main(["evaluate", str(job)]) == 0
+
+    second_manifest_path = tmp_path / ".nvflare/autofl/candidates/same_after_crash/candidate_manifest.json"
+    assert runner.main(["evaluate", str(job), "--manifest", str(second_manifest_path)]) == 2
+    assert "already crashed" in capsys.readouterr().err
+    assert calls == ["first_crash"]
+    assert json.loads(second_manifest_path.read_text(encoding="utf-8"))["status"] == "prepared"
+
+    assert (
+        runner.main(
+            [
+                "evaluate",
+                str(job),
+                "--manifest",
+                str(second_manifest_path),
+                "--confirm-user-approved-crash-repeat",
+            ]
+        )
+        == 0
+    )
+    first_manifest = json.loads(
+        tmp_path.joinpath(".nvflare/autofl/candidates/first_crash/candidate_manifest.json").read_text(encoding="utf-8")
+    )
+    second_manifest = json.loads(second_manifest_path.read_text(encoding="utf-8"))
+    approval = second_manifest["crash_repeat_approval"]
+    assert second_manifest["execution_fingerprint"] == first_manifest["execution_fingerprint"]
+    assert approval["execution_fingerprint"] == first_manifest["execution_fingerprint"]
+    assert approval["prior_candidate"] == "first_crash"
+    assert approval["confirmed_at"]
+    assert calls == ["first_crash", "same_after_crash"]
+    records = runner.load_results(tmp_path / "results.tsv")
+    assert runner.candidate_attempts(records) == 2
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    assert state["accounting_instruction"] == runner.ACCOUNTING_INSTRUCTION
+
+
+def test_changed_candidate_after_crash_does_not_require_approval(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)
+
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "crash", run_def.name, None, 1.0, "none", run_def.description, "python job.py", "/tmp/crash"
+        ),
+    )
+    assert runner.main(["prepare", str(job), "--name", "crash", "--hypothesis", "first candidate"]) == 0
+    tmp_path.joinpath(".nvflare/autofl/candidates/crash/source/client.py").write_text(
+        "ALGORITHM = 'first'\n", encoding="utf-8"
+    )
+    assert runner.main(["evaluate", str(job)]) == 0
+
+    assert runner.main(["prepare", str(job), "--name", "changed", "--hypothesis", "changed candidate"]) == 0
+    tmp_path.joinpath(".nvflare/autofl/candidates/changed/source/client.py").write_text(
+        "ALGORITHM = 'second'\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "candidate", run_def.name, 0.9, 1.0, "none", run_def.description, "python job.py", "/tmp/success"
+        ),
+    )
+
+    assert runner.main(["evaluate", str(job)]) == 0
+    assert (
+        json.loads(
+            tmp_path.joinpath(".nvflare/autofl/candidates/changed/candidate_manifest.json").read_text(encoding="utf-8")
+        )["status"]
+        == "keep"
+    )
+
+
 def test_code_candidate_keeps_improvement_and_restores_discard_without_git(tmp_path, monkeypatch):
     runner = _load_runner()
     job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
@@ -2811,7 +2923,7 @@ def test_explicit_mutable_campaign_settings_persist_and_uncapped_removes_cap(tmp
     assert metadata["settings"]["max_candidates"] == 7
     assert metadata["settings"]["timeout"] == 123
 
-    assert runner.main(["status", str(job), "--uncapped"]) == 0
+    assert runner.main(["status", str(job), "--uncapped", "--confirm-user-approved-cap-change"]) == 0
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     assert metadata["settings"]["max_candidates"] is None
 
@@ -2826,14 +2938,72 @@ def test_effective_cap_changes_append_audit_records_to_campaign_metadata(tmp_pat
 
     assert runner.main(["status", str(job), "--max-candidates", "7"]) == 0
     assert runner.main(["status", str(job), "--max-candidates", "7"]) == 0
-    assert runner.main(["status", str(job), "--uncapped"]) == 0
+    assert runner.main(["status", str(job), "--uncapped", "--confirm-user-approved-cap-change"]) == 0
 
     cap_changes = json.loads(metadata_path.read_text(encoding="utf-8"))["cap_changes"]
-    assert [(entry["old"], entry["new"], entry["source"]) for entry in cap_changes] == [
-        (None, 7, "explicit"),
-        (7, None, "uncapped"),
+    assert [(entry["old"], entry["new"], entry["source"], entry["user_approved"]) for entry in cap_changes] == [
+        (None, 7, "explicit", False),
+        (7, None, "uncapped", True),
     ]
     assert all(entry["changed_at"] for entry in cap_changes)
+
+
+def test_cap_expansion_requires_specific_user_approval_and_is_write_free_when_rejected(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    metadata_path = tmp_path / ".nvflare/autofl/campaign.json"
+
+    assert runner.main(["status", str(job), "--max-candidates", "2"]) == 0
+    before = metadata_path.read_bytes()
+
+    assert runner.main(["status", str(job), "--max-candidates", "3"]) == 2
+    assert "requires explicit user approval" in capsys.readouterr().err
+    assert metadata_path.read_bytes() == before
+
+    assert runner.main(["status", str(job), "--uncapped"]) == 2
+    assert "requires explicit user approval" in capsys.readouterr().err
+    assert metadata_path.read_bytes() == before
+
+    assert (
+        runner.main(
+            [
+                "status",
+                str(job),
+                "--max-candidates",
+                "3",
+                "--confirm-user-approved-cap-change",
+            ]
+        )
+        == 0
+    )
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["settings"]["max_candidates"] == 3
+    assert [(entry["old"], entry["new"], entry["user_approved"]) for entry in metadata["cap_changes"]] == [
+        (None, 2, False),
+        (2, 3, True),
+    ]
+
+
+def test_cap_confirmation_is_rejected_when_no_expansion_requires_it(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+
+    assert runner.main(["status", str(job), "--max-candidates", "3"]) == 0
+    assert (
+        runner.main(
+            [
+                "status",
+                str(job),
+                "--max-candidates",
+                "2",
+                "--confirm-user-approved-cap-change",
+            ]
+        )
+        == 2
+    )
+    assert "only valid for a candidate-cap increase" in capsys.readouterr().err
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    assert metadata["settings"]["max_candidates"] == 3
 
 
 def test_raising_cap_reopens_exhausted_campaign_with_consistent_state(tmp_path, monkeypatch):
@@ -2853,7 +3023,17 @@ def test_raising_cap_reopens_exhausted_campaign_with_consistent_state(tmp_path, 
 
     assert (
         runner.main(
-            ["prepare", str(job), "--name", "reopened", "--hypothesis", "resume search", "--max-candidates", "2"]
+            [
+                "prepare",
+                str(job),
+                "--name",
+                "reopened",
+                "--hypothesis",
+                "resume search",
+                "--max-candidates",
+                "2",
+                "--confirm-user-approved-cap-change",
+            ]
         )
         == 0
     )

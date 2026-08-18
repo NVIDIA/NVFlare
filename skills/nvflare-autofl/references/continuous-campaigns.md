@@ -20,11 +20,23 @@ exists, `baseline_score` and `improvement` (best minus baseline; campaigns
 always maximize the metric, so positive always means better) report
 baseline-versus-best progress, and `abandoned_candidates` counts abandoned candidate manifests,
 which never count as candidate attempts. Changing the effective candidate cap
-between invocations appends `{changed_at, old, new, source}` to `cap_changes`
-in `.nvflare/autofl/campaign.json` so budget changes stay auditable. External
+between invocations appends `{changed_at, old, new, source, user_approved}` to
+`cap_changes` in `.nvflare/autofl/campaign.json` so budget changes stay
+auditable. Increasing a finite cap or making it uncapped requires specific user
+approval plus `--confirm-user-approved-cap-change`; initial caps and reductions
+do not. External
 judges should treat `cap_changes` as evidence for runner-mediated cap changes
 only: `campaign.json` carries no integrity hash, so direct metadata edits are
 not detectable.
+
+Every candidate training, parameter update, or metric-based screening or
+ranking execution must use the campaign runner and counts toward the cap,
+regardless of whether it is called a smoke test, dry run, replica, screen, or
+sweep. Only static parse, import, compile, schema, and interface validation is
+free. After a real crash, change the candidate source or run arguments; repeat
+the identical execution only after the user specifically approves that replay
+and pass `--confirm-user-approved-crash-repeat` so the approval is recorded in
+the candidate manifest.
 
 Only one lifecycle action may own a job workspace at a time. A concurrent
 command exits with code 2 and an in-use message; wait for the active action to

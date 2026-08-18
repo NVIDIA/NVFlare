@@ -166,14 +166,14 @@ whether to continue; continue unless the user explicitly interrupts or the code-
 not invent a replacement campaign or new objective after a recoverable failure; keep the campaign identity and
 artifacts coherent unless the human explicitly requests a new campaign.
 
-If the user provides an `N`-candidate budget, pass it only through the runner's explicit `--max-candidates` argument;
-the cap counts comparable evaluated candidate attempts (keep/discard/crash) after and excluding the baseline. Never
-infer a cap from an inherited environment variable. Do not count import, validation, smoke runs, plotting, reporting,
-baseline, or infrastructure-only retries; count a real candidate crash after execution starts. Runner state must
-report `candidate_cap_source=explicit` or `uncapped`, plus `remaining_candidates`, `baseline_status`,
-`baseline_score`, `improvement`, and `abandoned_candidates`; cap changes append to `cap_changes` in campaign metadata.
-A persisted cap change refreshes `campaign_state.json` before action gating, so raising `--max-candidates` reopens a
-cap-exhausted campaign.
+If the user provides an `N`-candidate budget, pass it only through `--max-candidates`; it counts evaluated candidates
+(keep/discard/crash) after baseline. Every candidate training, parameter update, or metric-based screen/rank must use
+the runner and counts, even when called a smoke, dry, replica, screen, or sweep. Only non-training parse, import,
+compile, schema, and interface checks are free; baseline and runner-classified infrastructure retries do not count.
+After a real crash, change the source or run arguments; repeat the identical execution only after specific user
+approval with `--confirm-user-approved-crash-repeat`. Increase a finite cap or make it uncapped only after user
+approval with `--confirm-user-approved-cap-change`. State reports the cap, remaining attempts, baseline, improvement,
+abandoned candidates, and accounting instruction; approved cap changes stay in campaign metadata.
 
 Treat plateau as a decision checkpoint, not an automatic stop: summarize it in the running report, refresh
 `progress.png`, run the runner's `status` action to refresh `.nvflare/autofl/campaign_state.json`, choose the returned
