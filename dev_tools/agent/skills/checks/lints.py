@@ -187,12 +187,15 @@ _READ_ONLY_DEPENDENCY_VERB_PATTERN = (
     r"|enumerate[sd]?|enumerating|prints?|print(?:ed|ing)|displays?|display(?:ed|ing)"
     r"|checks?|check(?:ed|ing))"
 )
-# A preposition followed by a gerund can attach a second action to an otherwise
-# read-only phrase: "dependencies must be inspected by fetching packages". The
-# gerund is intentionally open-ended because an unknown action must fail closed;
-# recognized dependency actions are already excluded separately below.
+# A preposition followed by optional adverbial modifiers and a gerund can attach
+# a second action to an otherwise read-only phrase: "dependencies must be
+# inspected by first fetching packages". Unknown gerunds fail closed; recognized
+# read-only gerunds remain safe when they genuinely describe another inspection.
 _ACTION_INTRODUCING_GERUND_RE = re.compile(
-    r"\b(?:by|via|through|with|for|during|upon|when)\s+[A-Za-z][A-Za-z0-9_'’-]*ing\b",
+    r"\b(?:by|via|through|with|for|during|upon|when)\s+"
+    r"(?:(?:first|then|next|initially|finally|subsequently|very|more|most|less|least|quite|rather)\s+"
+    r"|[A-Za-z][A-Za-z0-9_'’-]*ly\s+)*"
+    r"(?P<gerund>[A-Za-z][A-Za-z0-9_'’-]*ing)\b",
     re.IGNORECASE,
 )
 # An object word may not be a coordinator (which could attach a second action) or
@@ -218,20 +221,11 @@ _READ_ONLY_ACTION_PHRASE_RE = re.compile(
 # infinitive, or recognized mutating action.
 _READ_ONLY_PASSIVE_PHRASE_RE = re.compile(
     rf"(?:{_READ_ONLY_OBJECT_WORD_PATTERN}\s+)+"
-    r"(?:must|should|shall|can|could|may|might|is|are|was|were|will|would|to)\s+(?:(?:be|been)\s+)?"
+    r"(?:(?:must|should|shall|can|could|may|might|will|would)\s+(?:be|have\s+been)\s+"
+    r"|(?:is|are|was|were)\s+(?:being\s+)?|(?:has|have|had)\s+been\s+|to\s+be\s+)"
     r"(?P<verb>inspected|read|listed|viewed|shown|examined|audited|reviewed|queried"
     r"|enumerated|printed|displayed|checked)\b"
     rf"(?:\s+{_READ_ONLY_OBJECT_WORD_PATTERN})*",
-    re.IGNORECASE,
-)
-# A series item may open with the coordinator that attached it and with the
-# negation governing the whole series, as in "never download packages, and
-# install dependencies, or use packages". Strip both before asking whether the
-# item itself opens with an action.
-_LEADING_SERIES_PREFIX_RE = re.compile(
-    r"^\s*(?:(?:and|or|nor|then)\s+)?"
-    r"(?:(?:never|not|do\s+not|don't|must\s+not|should\s+not|cannot|can\s+not|won't|will\s+not|shall\s+not)\s+"
-    r"(?:(?:preemptively|ever|automatically|directly)\s+)?)?",
     re.IGNORECASE,
 )
 # A coordinated series shares one negation: in "never download, install, or
@@ -1939,10 +1933,7 @@ def _is_dependency_action_series_boundary(statement: str, separator: re.Match) -
     if not separator.group("coordinator"):
         return False
     preceding = statement[: separator.start()]
-    # A series item can open with the coordinator that attached it and with the
-    # negation governing the series, as in "never download packages, and install
-    # dependencies"; strip both before asking whether it opens with an action.
-    preceding_item = _LEADING_SERIES_PREFIX_RE.sub("", preceding.rsplit(",", 1)[-1].lstrip())
+    preceding_item = preceding.rsplit(",", 1)[-1]
     return bool(
         (_DEPENDENCY_ACTION_AT_END_RE.search(preceding) or _DEPENDENCY_ACTION_AT_START_RE.search(preceding_item))
         and _DEPENDENCY_ACTION_AT_START_RE.search(statement[separator.end() :])
@@ -2006,7 +1997,7 @@ def _is_read_only_phrase(phrase: str) -> bool:
     if not match:
         return False
     tail = phrase[match.end("verb") :]
-    return _CHECK_OUT_ACQUISITION_RE.match(phrase) is None and not _ACTION_INTRODUCING_GERUND_RE.search(tail)
+    return _CHECK_OUT_ACQUISITION_RE.match(phrase) is None and not _tail_introduces_action_gerund(tail)
 
 
 def _is_read_only_passive_phrase(phrase: str) -> bool:
@@ -2015,7 +2006,15 @@ def _is_read_only_passive_phrase(phrase: str) -> bool:
     if not match:
         return False
     tail = phrase[match.end("verb") :]
-    return _CHECK_OUT_ACQUISITION_RE.search(phrase) is None and not _ACTION_INTRODUCING_GERUND_RE.search(tail)
+    return _CHECK_OUT_ACQUISITION_RE.search(phrase) is None and not _tail_introduces_action_gerund(tail)
+
+
+def _tail_introduces_action_gerund(tail: str) -> bool:
+    """Return whether a read-only phrase tail introduces an unknown gerund action."""
+    for match in _ACTION_INTRODUCING_GERUND_RE.finditer(tail):
+        if not re.fullmatch(_READ_ONLY_DEPENDENCY_VERB_PATTERN, match.group("gerund"), re.IGNORECASE):
+            return True
+    return False
 
 
 def _is_negated_without_clause(statement: str, match: re.Match) -> bool:
@@ -2121,16 +2120,40 @@ def _has_actionable_dependency_context(statements: list[str], excluded_index: in
             clause = statement[start:end]
             if not _DEPENDENCY_INSTALL_TERMS_RE.search(clause):
                 continue
-            if (
-                _NEGATED_DEPENDENCY_ACTION_RE.search(clause)
-                or _PASSIVE_NEGATED_DEPENDENCY_ACTION_RE.search(clause)
-                or _PROHIBITED_DEPENDENCY_ACTION_RE.search(clause)
-            ):
-                continue
             if _is_read_only_clause(clause):
                 continue
-            return True
+            actions = list(_DEPENDENCY_ACTION_RE.finditer(clause))
+            if not actions or _has_uncovered_dependency_action(clause, actions):
+                return True
     return False
+
+
+def _has_uncovered_dependency_action(clause: str, actions: list[re.Match]) -> bool:
+    """Return whether any recognized action is not governed by a prohibition.
+
+    A negated or prohibited action covers only its own verb. A leading active or
+    passive negation may additionally govern a canonical coordinated verb list,
+    but not a new ``, and/or`` clause or a later subject-plus-predicate action.
+    """
+    covered_spans = set()
+    negated_matches = list(_NEGATED_DEPENDENCY_ACTION_RE.finditer(clause)) + list(
+        _PASSIVE_NEGATED_DEPENDENCY_ACTION_RE.finditer(clause)
+    )
+    for match in negated_matches:
+        covered_spans.add(match.span("action"))
+
+    for match in _PROHIBITED_DEPENDENCY_ACTION_RE.finditer(clause):
+        covered_spans.update(action.span() for action in actions if match.start() <= action.start() < match.end())
+
+    for match in negated_matches:
+        raw_tail = clause[match.end("action") :]
+        if re.match(r"^\s*,\s*(?:and|or)\b", raw_tail, re.IGNORECASE):
+            continue
+        tail = raw_tail.strip(" \t.!?;")
+        if tail and _DEPENDENCY_ACTION_SERIES_GAP_RE.fullmatch(tail):
+            covered_spans.update(action.span() for action in actions if action.start() > match.end("action"))
+
+    return any(action.span() not in covered_spans for action in actions)
 
 
 def _is_read_only_clause(clause: str) -> bool:
