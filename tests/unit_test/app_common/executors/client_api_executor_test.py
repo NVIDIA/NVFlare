@@ -20,7 +20,7 @@ ownership hook, and the surface-freeze contract on the frozen constructor parame
 """
 
 import inspect
-from unittest.mock import Mock, call, patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
@@ -554,34 +554,22 @@ class TestBackendPlumbing:
         engine.get_all_components.return_value = {"tensor_streamer": component}
         cell = engine.get_cell.return_value
         cell.get_fqcn.return_value = "site-1.job-1"
-        encode_ctx = {"cell": cell, "phase": "encode"}
-        decode_ctx = {"cell": cell, "phase": "decode"}
-        cell.get_fobs_context.side_effect = [encode_ctx, decode_ctx]
         fl_ctx = _make_fl_ctx(engine)
         fl_ctx.set_prop(FLContextKey.TASK_NAME, "train", private=True, sticky=False)
         task = Shareable()
         abort_signal = Signal()
         materialized = Shareable({"weight": "concrete"})
 
-        with (
-            patch("nvflare.fuel.utils.fobs.decomposers.via_downloader.fobs.dumps", return_value=b"encoded") as dumps,
-            patch("nvflare.fuel.utils.fobs.decomposers.via_downloader.fobs.loads", return_value=materialized) as loads,
-        ):
+        with patch(
+            "nvflare.app_common.executors.client_api_executor.materialize_lazy_download_refs",
+            return_value=materialized,
+        ) as resolve:
             reply = executor.execute("train", task, fl_ctx, abort_signal)
 
         assert reply is materialized
         assert task.get_header(FOBSContextKey.RECEIVER_IDS) == ["site-1.job-1"]
         assert backend.receiver_ids_during_execute == ["site-1.job-1"]
-        dumps.assert_called_once_with(backend.result, fobs_ctx=encode_ctx)
-        assert cell.get_fobs_context.call_args_list == [
-            call(
-                props={
-                    FOBSContextKey.PASS_THROUGH: False,
-                }
-            ),
-            call(props={FOBSContextKey.PASS_THROUGH: False, FOBSContextKey.ABORT_SIGNAL: abort_signal}),
-        ]
-        loads.assert_called_once_with(b"encoded", fobs_ctx=decode_ctx)
+        resolve.assert_called_once_with(backend.result, cell, abort_signal)
 
     def test_execute_materializes_result_for_configured_task_result_filter(self):
         backend = _StubBackend()

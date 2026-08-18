@@ -242,8 +242,13 @@ def test_llm_hf_combines_slurm_launcher_with_all_client_and_server_filters(monke
         "site-1": {"slurm": {"nodes": 2, "gpus_per_node": 8}},
         "site-2": {"slurm": {"nodes": 2, "gpus_per_node": 8}},
     }
+    from nvflare.app_opt.pt.quantization.dequantizer import ModelDequantizer
+    from nvflare.app_opt.pt.quantization.quantizer import ModelQuantizer
+
     quantizer = recipe.server_output_filters[0][0]
     dequantizer = recipe.server_input_filters[0][0]
+    assert isinstance(quantizer, ModelQuantizer)
+    assert isinstance(dequantizer, ModelDequantizer)
     assert quantizer.quantization_type == "float16"
     assert recipe.server_output_filters == [(quantizer, ["train"])]
     assert recipe.server_input_filters == [(dequantizer, ["train"])]

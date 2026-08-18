@@ -114,6 +114,56 @@ def test_contains_lazy_download_ref_scans_dict_keys_and_values():
     assert contains_lazy_download_ref({"key": lazy})
 
 
+def test_contains_lazy_download_ref_scans_object_attributes_and_slots():
+    class ObjectWrapper:
+        def __init__(self, value):
+            self.value = value
+
+    class SlottedWrapper:
+        __slots__ = ("value",)
+
+        def __init__(self, value):
+            self.value = value
+
+    lazy = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0)
+
+    assert contains_lazy_download_ref(ObjectWrapper(lazy))
+    assert contains_lazy_download_ref(SlottedWrapper(lazy))
+
+
+def test_contains_lazy_download_ref_after_nested_fobs_recompose():
+    import numpy as np
+
+    from nvflare.apis.dxo import DXO, DataKind
+    from nvflare.apis.shareable import Shareable
+    from nvflare.app_common.abstract.fl_model import FLModel
+    from nvflare.app_common.decomposers import common_decomposers, numpy_decomposers
+    from nvflare.fuel.utils import fobs
+    from nvflare.fuel.utils.fobs.decomposers.via_downloader import ViaDownloaderDecomposer
+
+    common_decomposers.register()
+    numpy_decomposers.register()
+    payload = Shareable(
+        {
+            "model": FLModel(
+                params={
+                    "wrapped": DXO(
+                        data_kind=DataKind.WEIGHTS,
+                        data={"weight": np.arange(512, dtype=np.float32)},
+                    )
+                }
+            )
+        }
+    )
+
+    with patch.object(ViaDownloaderDecomposer, "_finalize_download_tx", lambda _self, _manager: None):
+        encoded = fobs.dumps(payload, fobs_ctx={FOBSContextKey.CELL: _FakeCell()}, max_value_size=1024)
+    decoded = fobs.loads(encoded, fobs_ctx={FOBSContextKey.PASS_THROUGH: True})
+
+    assert isinstance(decoded["model"].params["wrapped"].data["weight"], LazyDownloadRef)
+    assert contains_lazy_download_ref(decoded)
+
+
 # ---------------------------------------------------------------------------
 # 2. _LazyBatchInfo
 # ---------------------------------------------------------------------------

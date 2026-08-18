@@ -30,8 +30,10 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY,
     EncKey,
     EncType,
+    LazyDownloadRef,
     ResultUploadProgressContextKey,
     ViaDownloaderDecomposer,
+    materialize_lazy_download_refs,
 )
 
 
@@ -659,3 +661,40 @@ def test_repeated_first_item_registers_post_callback_once():
         decomposer.decompose(shared_item, manager)
 
     assert len(manager.post_cbs) == 1
+
+
+def test_materialize_lazy_torch_ref_preserves_concrete_tensor(monkeypatch):
+    torch = pytest.importorskip("torch")
+    from nvflare.app_opt.pt import decomposers as pt_decomposers
+    from nvflare.app_opt.pt.decomposers import TensorDecomposer
+
+    fobs.register(TensorDecomposer)
+
+    class FakeCell:
+        def __init__(self):
+            self.context_props = []
+
+        def get_fobs_context(self, props=None):
+            self.context_props.append(props)
+            return {fobs.FOBSContextKey.CELL: self, **(props or {})}
+
+    cell = FakeCell()
+    expected = torch.tensor([1.0, 2.0, 3.0])
+    concrete = torch.tensor([9.0, 9.0, 9.0])
+    value = {
+        "lazy_weight": LazyDownloadRef(
+            fqcn="trainer",
+            ref_id="ref-1",
+            item_id="T0",
+            dot=TensorDecomposer().get_download_dot(),
+        ),
+        "concrete_metric": concrete,
+    }
+    monkeypatch.setattr(pt_decomposers, "download_tensors", lambda **_kwargs: (None, {"T0": expected}))
+
+    result = materialize_lazy_download_refs(value, cell)
+
+    assert result["lazy_weight"] is expected
+    assert result["concrete_metric"] is concrete
+    assert result["lazy_weight"] is not result["concrete_metric"]
+    assert cell.context_props[0][fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD] is False

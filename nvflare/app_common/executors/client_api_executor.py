@@ -42,6 +42,7 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     contains_lazy_download_ref,
     materialize_lazy_download_refs,
 )
+from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 
@@ -363,7 +364,7 @@ class ClientAPIExecutor(Executor):
             if materialize_result:
                 result_cell = self._route_result_to_cj(shareable, fl_ctx)
             result = backend.execute(task_name, shareable, fl_ctx, abort_signal)
-            if isinstance(result, Shareable) and materialize_result and self._contains_lazy_download_ref(result):
+            if isinstance(result, Shareable) and materialize_result and contains_lazy_download_ref(result):
                 result = self._materialize_result(result, result_cell, abort_signal)
         except UnsafeJobError:
             # ClientRunner has dedicated handling for UnsafeJobError (client_runner.py maps it
@@ -390,7 +391,7 @@ class ClientAPIExecutor(Executor):
         runner = fl_ctx.get_prop(FLContextKey.RUNNER)
         config_filters = getattr(runner, "task_result_filters", None)
         if isinstance(config_filters, dict) and get_filters(
-            "task_result_filters", fl_ctx, config_filters, task_name, FilterKey.OUT
+            Scope.TASK_RESULT_FILTERS_NAME, fl_ctx, config_filters, task_name, FilterKey.OUT
         ):
             return True
 
@@ -417,11 +418,6 @@ class ClientAPIExecutor(Executor):
             raise RuntimeError("cannot materialize Client API result: CJ Cell identity is unavailable")
         shareable.set_header(FOBSContextKey.RECEIVER_IDS, [cj_fqcn])
         return cell
-
-    @staticmethod
-    def _contains_lazy_download_ref(value, visited=None) -> bool:
-        """Return whether a Shareable graph contains a pass-through download reference."""
-        return contains_lazy_download_ref(value, visited)
 
     @staticmethod
     def _materialize_result(result: Shareable, cell, abort_signal: Signal) -> Shareable:

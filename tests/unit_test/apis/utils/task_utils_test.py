@@ -16,12 +16,14 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
+from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.utils.task_utils import apply_filters
+from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.decomposers import common_decomposers
 from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
 from nvflare.fuel.utils import fobs
@@ -90,8 +92,102 @@ def test_apply_filters_materializes_lazy_values_before_filter_process():
     processed = filter_component.process.call_args.args[0]
     np.testing.assert_array_equal(processed["weight"], expected)
     assert fl_ctx.get_prop(FLContextKey.FILTER_DIRECTION) == FilterKey.IN
-    assert cell.get_fobs_context.call_args_list[1].kwargs["props"] == {
+    assert cell.get_fobs_context.call_args.kwargs["props"] == {
         FOBSContextKey.PASS_THROUGH: False,
+        FOBSContextKey.TENSOR_DISK_OFFLOAD: False,
         FOBSContextKey.ABORT_SIGNAL: abort_signal,
     }
+    download.assert_called_once()
+
+
+def test_apply_filters_materializes_lazy_values_inside_fobs_objects():
+    common_decomposers.register()
+    fobs.register(NumpyArrayDecomposer)
+    cell = Mock()
+    cell.get_fobs_context.side_effect = lambda props: {FOBSContextKey.CELL: cell, **props}
+    fl_ctx = _make_fl_ctx(cell)
+    expected = np.asarray([1.0, 2.0, 3.0])
+    model = FLModel(
+        params={
+            "wrapped": DXO(
+                data_kind=DataKind.WEIGHTS,
+                data={
+                    "weight": LazyDownloadRef(
+                        fqcn="server",
+                        ref_id="ref-1",
+                        item_id="T0",
+                        dot=dots.NUMPY_DOWNLOAD,
+                    )
+                },
+            )
+        }
+    )
+    shareable = Shareable({"model": model})
+    filter_component = Mock()
+    filter_component.process.side_effect = lambda data, _fl_ctx: data
+
+    with patch(
+        "nvflare.app_common.decomposers.numpy_decomposers.download_arrays",
+        return_value=(None, {"T0": expected}),
+    ) as download:
+        result = apply_filters(
+            "task_data_filters",
+            shareable,
+            fl_ctx,
+            {"train/in": [filter_component]},
+            "train",
+            FilterKey.IN,
+        )
+
+    assert result is shareable
+    assert result["model"] is model
+    assert result["model"].params["wrapped"].data["weight"] is expected
+    assert filter_component.process.call_args.args[0]["model"].params["wrapped"].data["weight"] is expected
+    download.assert_called_once()
+
+
+def test_apply_filters_preserves_concrete_values_alongside_lazy_values():
+    fobs.register(NumpyArrayDecomposer)
+    cell = Mock()
+    cell.get_fobs_context.side_effect = lambda props: {FOBSContextKey.CELL: cell, **props}
+    fl_ctx = _make_fl_ctx(cell)
+    expected = np.asarray([1.0, 2.0, 3.0])
+    concrete = np.asarray([9.0, 9.0, 9.0])
+    shareable = Shareable(
+        {
+            "lazy_weight": LazyDownloadRef(
+                fqcn="server",
+                ref_id="ref-1",
+                item_id="T0",
+                dot=dots.NUMPY_DOWNLOAD,
+            ),
+            "concrete_metric": concrete,
+        }
+    )
+    filter_component = Mock()
+    filter_component.process.side_effect = lambda data, _fl_ctx: data
+
+    with (
+        patch(
+            "nvflare.app_common.decomposers.numpy_decomposers.download_arrays",
+            return_value=(None, {"T0": expected}),
+        ) as download,
+        patch(
+            "nvflare.fuel.utils.fobs.decomposers.via_downloader.fobs.dumps",
+            side_effect=AssertionError("materialization must not reserialize the payload"),
+        ),
+    ):
+        result = apply_filters(
+            "task_result_filters",
+            shareable,
+            fl_ctx,
+            {"train/out": [filter_component]},
+            "train",
+            FilterKey.OUT,
+        )
+
+    assert result["lazy_weight"] is expected
+    assert result["concrete_metric"] is concrete
+    assert result["lazy_weight"] is not result["concrete_metric"]
+    assert filter_component.process.call_args.args[0] is result
     download.assert_called_once()

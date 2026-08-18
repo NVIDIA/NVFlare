@@ -337,6 +337,13 @@ class ClientRunner(TBI):
                 msg=f"submit result: {ReturnCode.UNSAFE_JOB}",
             )
         except Exception as e:
+            if abort_signal.triggered:
+                return self._reply_and_audit(
+                    reply=make_reply(ReturnCode.TASK_ABORTED),
+                    ref=server_audit_event_id,
+                    fl_ctx=fl_ctx,
+                    msg=f"submit result: {ReturnCode.TASK_ABORTED}",
+                )
             self.log_exception(fl_ctx, f"Processing error from Task Data Filters : {secure_format_exception(e)}")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.TASK_DATA_FILTER_ERROR),
@@ -463,6 +470,13 @@ class ClientRunner(TBI):
                 msg=f"submit result: {ReturnCode.UNSAFE_JOB}",
             )
         except Exception as e:
+            if abort_signal.triggered:
+                return self._reply_and_audit(
+                    reply=make_reply(ReturnCode.TASK_ABORTED),
+                    ref=server_audit_event_id,
+                    fl_ctx=fl_ctx,
+                    msg=f"submit result: {ReturnCode.TASK_ABORTED}",
+                )
             self.log_exception(fl_ctx, f"Processing error in Task Result Filter : {secure_format_exception(e)}")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR),
