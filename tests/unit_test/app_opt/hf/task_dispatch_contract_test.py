@@ -271,7 +271,9 @@ def test_train_with_evaluation_fails_fast_when_pre_train_evaluate_was_not_called
 
     hf_api.patch(trainer, restore_state=False, local_steps=1)
 
-    with pytest.raises(RuntimeError, match="missing.*metrics|remember to call evaluate"):
+    with pytest.raises(
+        RuntimeError, match="train with evaluation requires evaluation metrics; call evaluate before train"
+    ):
         trainer.train()
 
 

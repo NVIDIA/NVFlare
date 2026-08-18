@@ -206,7 +206,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                     required_sites_not_enough_resource.remove(site_name)
             else:
                 if site_name in required_sites:
-                    no_resource_message += site_name + ":" + token + ";"
+                    no_resource_message += site_name + ":" + (token or "") + ";"
                 if token:
                     resource_failure_details.append(f"{site_name}: {token}")
 
