@@ -28,6 +28,7 @@ Tests verify:
 """
 
 import json
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -129,6 +130,25 @@ def test_contains_lazy_download_ref_scans_object_attributes_and_slots():
 
     assert contains_lazy_download_ref(ObjectWrapper(lazy))
     assert contains_lazy_download_ref(SlottedWrapper(lazy))
+
+
+def test_contains_lazy_download_ref_skips_excluded_dictionary_values():
+    lazy = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0)
+
+    assert not contains_lazy_download_ref(
+        {"payload": "value", "framework_context": lazy},
+        excluded_dict_keys={"framework_context"},
+    )
+
+
+def test_contains_lazy_download_ref_treats_logging_objects_as_leaves():
+    logger = logging.getLogger(__name__ + ".graph_leaf")
+    lazy = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0)
+    logger.graph_test_value = lazy
+    try:
+        assert not contains_lazy_download_ref(logger)
+    finally:
+        del logger.graph_test_value
 
 
 def test_contains_lazy_download_ref_after_nested_fobs_recompose():

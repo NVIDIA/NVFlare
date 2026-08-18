@@ -52,6 +52,83 @@ def test_apply_filters_does_not_materialize_without_active_filter():
     cell.get_fobs_context.assert_not_called()
 
 
+def test_apply_filters_does_not_scan_reserved_peer_context_header():
+    cell = Mock()
+    fl_ctx = _make_fl_ctx(cell)
+    shareable = Shareable({"metric": 1.0})
+    peer_ctx = FLContext()
+    peer_ctx.set_prop(
+        "transport_ref",
+        LazyDownloadRef("server", "peer-ref", "T0", dot=dots.NUMPY_DOWNLOAD),
+        private=False,
+        sticky=False,
+    )
+    shareable.set_peer_context(peer_ctx)
+    filter_component = Mock()
+    filter_component.process.side_effect = lambda data, _fl_ctx: data
+
+    with patch(
+        "nvflare.apis.utils.task_utils.materialize_lazy_download_refs",
+        side_effect=AssertionError("peer context must not trigger payload materialization"),
+    ) as materialize:
+        result = apply_filters(
+            "task_data_filters",
+            shareable,
+            fl_ctx,
+            {"train/in": [filter_component]},
+            "train",
+            FilterKey.IN,
+        )
+
+    assert result is shareable
+    assert result.get_peer_context() is peer_ctx
+    materialize.assert_not_called()
+    filter_component.process.assert_called_once_with(shareable, fl_ctx)
+
+
+def test_apply_filters_materializes_payload_without_mutating_peer_context():
+    fobs.register(NumpyArrayDecomposer)
+    cell = Mock()
+    cell.get_fobs_context.side_effect = lambda props: {FOBSContextKey.CELL: cell, **props}
+    fl_ctx = _make_fl_ctx(cell)
+    expected = np.asarray([1.0, 2.0, 3.0])
+    peer_ref = LazyDownloadRef("server", "peer-ref", "T0", dot=dots.NUMPY_DOWNLOAD)
+    peer_ctx = FLContext()
+    peer_ctx.set_prop("transport_ref", peer_ref, private=False, sticky=False)
+    shareable = Shareable(
+        {
+            "weight": LazyDownloadRef(
+                fqcn="server",
+                ref_id="payload-ref",
+                item_id="T0",
+                dot=dots.NUMPY_DOWNLOAD,
+            )
+        }
+    )
+    shareable.set_peer_context(peer_ctx)
+    filter_component = Mock()
+    filter_component.process.side_effect = lambda data, _fl_ctx: data
+
+    with patch(
+        "nvflare.app_common.decomposers.numpy_decomposers.download_arrays",
+        return_value=(None, {"T0": expected}),
+    ) as download:
+        result = apply_filters(
+            "task_data_filters",
+            shareable,
+            fl_ctx,
+            {"train/in": [filter_component]},
+            "train",
+            FilterKey.IN,
+        )
+
+    assert result["weight"] is expected
+    assert result.get_peer_context() is peer_ctx
+    assert peer_ctx.get_prop("transport_ref") is peer_ref
+    assert download.call_count == 1
+    assert download.call_args.kwargs["ref_id"] == "payload-ref"
+
+
 def test_apply_filters_materializes_lazy_values_before_filter_process():
     flare_decomposers.register()
     common_decomposers.register()

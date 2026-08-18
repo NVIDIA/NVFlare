@@ -13,10 +13,28 @@
 # limitations under the License.
 
 from nvflare.apis.fl_constant import FilterKey, FLContextKey
+from nvflare.apis.shareable import ReservedHeaderKey
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import contains_lazy_download_ref as _contains_lazy_download_ref
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
-    contains_lazy_download_ref,
-    materialize_lazy_download_refs,
+    materialize_lazy_download_refs as _materialize_lazy_download_refs,
 )
+
+_FILTER_GRAPH_EXCLUDED_DICT_KEYS = frozenset({ReservedHeaderKey.PEER_CTX})
+
+
+def contains_lazy_download_ref(value) -> bool:
+    """Return whether filter-visible payload data contains a pass-through reference."""
+    return _contains_lazy_download_ref(value, excluded_dict_keys=_FILTER_GRAPH_EXCLUDED_DICT_KEYS)
+
+
+def materialize_lazy_download_refs(value, cell, abort_signal=None):
+    """Materialize filter-visible payload data without traversing framework-only peer context."""
+    return _materialize_lazy_download_refs(
+        value,
+        cell,
+        abort_signal,
+        excluded_dict_keys=_FILTER_GRAPH_EXCLUDED_DICT_KEYS,
+    )
 
 
 def get_filters(filters_name, fl_ctx, config_filters, task_name, direction):

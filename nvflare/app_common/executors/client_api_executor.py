@@ -31,17 +31,13 @@ from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.analytix_utils import send_analytic_dxo
-from nvflare.apis.utils.task_utils import get_filters
+from nvflare.apis.utils.task_utils import contains_lazy_download_ref, get_filters, materialize_lazy_download_refs
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
 from nvflare.app_common.widgets.convert_to_fed_event import FED_EVENT_PREFIX
 from nvflare.client.config import ExchangeFormat, TransferType, normalize_exchange_format
 from nvflare.client.converter_utils import validate_format_pair
 from nvflare.fuel.utils.fobs import FOBSContextKey
-from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
-    contains_lazy_download_ref,
-    materialize_lazy_download_refs,
-)
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 

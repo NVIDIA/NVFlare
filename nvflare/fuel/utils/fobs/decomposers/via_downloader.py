@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
+import logging
 import threading
 import time
 import uuid
@@ -105,7 +106,24 @@ class LazyDownloadRef:
         self.dot = dot
 
 
-_GRAPH_LEAF_TYPES = (type(None), bool, int, float, complex, str, bytes, bytearray, memoryview)
+_GRAPH_LEAF_TYPES = (
+    type(None),
+    bool,
+    int,
+    float,
+    complex,
+    str,
+    bytes,
+    bytearray,
+    memoryview,
+    logging.Filterer,
+    logging.Filter,
+    logging.Formatter,
+    logging.LogRecord,
+    logging.LoggerAdapter,
+    logging.Manager,
+    logging.PlaceHolder,
+)
 
 
 def _iter_slot_names(value):
@@ -121,9 +139,11 @@ def _iter_slot_names(value):
             yield name
 
 
-def _iter_graph_children(value):
+def _iter_graph_children(value, excluded_dict_keys=None):
     if isinstance(value, dict):
         for key, item in value.items():
+            if excluded_dict_keys and key in excluded_dict_keys:
+                continue
             yield key
             yield item
     elif isinstance(value, (list, tuple, set, frozenset)):
@@ -140,7 +160,7 @@ def _iter_graph_children(value):
             pass
 
 
-def contains_lazy_download_ref(value, visited=None) -> bool:
+def contains_lazy_download_ref(value, visited=None, excluded_dict_keys=None) -> bool:
     """Return whether a supported FOBS object graph contains a pass-through download reference."""
     if isinstance(value, LazyDownloadRef):
         return True
@@ -154,10 +174,13 @@ def contains_lazy_download_ref(value, visited=None) -> bool:
         return False
     visited.add(value_id)
 
-    return any(contains_lazy_download_ref(item, visited) for item in _iter_graph_children(value))
+    return any(
+        contains_lazy_download_ref(item, visited, excluded_dict_keys)
+        for item in _iter_graph_children(value, excluded_dict_keys)
+    )
 
 
-def _collect_lazy_download_refs(value, refs: list, visited: set):
+def _collect_lazy_download_refs(value, refs: list, visited: set, excluded_dict_keys=None):
     if isinstance(value, LazyDownloadRef):
         refs.append(value)
         return
@@ -169,27 +192,29 @@ def _collect_lazy_download_refs(value, refs: list, visited: set):
         return
     visited.add(value_id)
 
-    for item in _iter_graph_children(value):
-        _collect_lazy_download_refs(item, refs, visited)
+    for item in _iter_graph_children(value, excluded_dict_keys):
+        _collect_lazy_download_refs(item, refs, visited, excluded_dict_keys)
 
 
-def _replace_object_attributes(value, replacements: dict, memo: dict):
+def _replace_object_attributes(value, replacements: dict, memo: dict, excluded_dict_keys=None):
     attributes = getattr(value, "__dict__", None)
     if isinstance(attributes, dict):
         for name, item in list(attributes.items()):
-            attributes[name] = _replace_lazy_download_refs(item, replacements, memo)
+            replaced = _replace_lazy_download_refs(item, replacements, memo, excluded_dict_keys)
+            if replaced is not item:
+                attributes[name] = replaced
 
     for name in _iter_slot_names(value):
         try:
             item = getattr(value, name)
         except AttributeError:
             continue
-        replaced = _replace_lazy_download_refs(item, replacements, memo)
+        replaced = _replace_lazy_download_refs(item, replacements, memo, excluded_dict_keys)
         if replaced is not item:
             object.__setattr__(value, name, replaced)
 
 
-def _replace_lazy_download_refs(value, replacements: dict, memo: dict):
+def _replace_lazy_download_refs(value, replacements: dict, memo: dict, excluded_dict_keys=None):
     replacement = replacements.get(id(value))
     if replacement is not None:
         return replacement
@@ -202,22 +227,29 @@ def _replace_lazy_download_refs(value, replacements: dict, memo: dict):
     memo[value_id] = value
 
     if isinstance(value, dict):
-        items = [
-            (
-                _replace_lazy_download_refs(key, replacements, memo),
-                _replace_lazy_download_refs(item, replacements, memo),
-            )
-            for key, item in list(value.items())
-        ]
-        dict(items)  # Validate replacement keys before mutating the source mapping.
-        value.clear()
-        value.update(items)
+        original_items = list(value.items())
+        items = []
+        changed = False
+        for key, item in original_items:
+            if excluded_dict_keys and key in excluded_dict_keys:
+                replaced_key, replaced_item = key, item
+            else:
+                replaced_key = _replace_lazy_download_refs(key, replacements, memo, excluded_dict_keys)
+                replaced_item = _replace_lazy_download_refs(item, replacements, memo, excluded_dict_keys)
+            changed = changed or replaced_key is not key or replaced_item is not item
+            items.append((replaced_key, replaced_item))
+        if changed:
+            dict(items)  # Validate replacement keys before mutating the source mapping.
+            value.clear()
+            value.update(items)
     elif isinstance(value, list):
         for index, item in enumerate(value):
-            value[index] = _replace_lazy_download_refs(item, replacements, memo)
+            value[index] = _replace_lazy_download_refs(item, replacements, memo, excluded_dict_keys)
     elif isinstance(value, tuple):
         original_items = tuple(value)
-        items = tuple(_replace_lazy_download_refs(item, replacements, memo) for item in original_items)
+        items = tuple(
+            _replace_lazy_download_refs(item, replacements, memo, excluded_dict_keys) for item in original_items
+        )
         if any(replaced is not original for original, replaced in zip(original_items, items)):
             if hasattr(value, "_fields"):
                 value = type(value)(*items)
@@ -227,28 +259,29 @@ def _replace_lazy_download_refs(value, replacements: dict, memo: dict):
                 value = type(value)(items)
             memo[value_id] = value
     elif isinstance(value, set):
-        items = {_replace_lazy_download_refs(item, replacements, memo) for item in value}
+        items = {_replace_lazy_download_refs(item, replacements, memo, excluded_dict_keys) for item in value}
         value.clear()
         value.update(items)
     elif isinstance(value, frozenset):
-        items = frozenset(_replace_lazy_download_refs(item, replacements, memo) for item in value)
+        items = frozenset(_replace_lazy_download_refs(item, replacements, memo, excluded_dict_keys) for item in value)
         if items != value:
             value = type(value)(items)
             memo[value_id] = value
 
-    _replace_object_attributes(value, replacements, memo)
+    _replace_object_attributes(value, replacements, memo, excluded_dict_keys)
     return value
 
 
-def materialize_lazy_download_refs(value, cell: Cell, abort_signal=None):
+def materialize_lazy_download_refs(value, cell: Cell, abort_signal=None, excluded_dict_keys=None):
     """Resolve pass-through references for a consumer in the current process.
 
     Each original source batch is downloaded once, and only its matching
     :class:`LazyDownloadRef` leaves are replaced. Concrete values already in the
     graph are not reserialized or copied through a new local download transaction.
     """
+    excluded_dict_keys = frozenset(excluded_dict_keys or ())
     refs = []
-    _collect_lazy_download_refs(value, refs, set())
+    _collect_lazy_download_refs(value, refs, set(), excluded_dict_keys)
     if not refs:
         return value
     if cell is None:
@@ -288,7 +321,7 @@ def materialize_lazy_download_refs(value, cell: Cell, abort_signal=None):
                 raise RuntimeError(f"downloaded data for dot={dot!r} has no value for item {ref.item_id}")
             replacements[id(ref)] = item
 
-    return _replace_lazy_download_refs(value, replacements, {})
+    return _replace_lazy_download_refs(value, replacements, {}, excluded_dict_keys)
 
 
 class _LazyBatchInfo:
