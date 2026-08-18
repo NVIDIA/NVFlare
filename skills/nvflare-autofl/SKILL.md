@@ -120,7 +120,8 @@ audit evidence and report scores as incomparable. After human approval, repair t
 containing no Auto-FL artifacts. Never run `initialize` in the scored workspace; it resumes old evidence.
 - If the environment provides `PYTHON`, `VIRTUAL_ENV`, or a venv on `PATH`, treat that prepared runtime as authoritative:
 verify it, then use it for import, validation, execution, metric extraction, plotting, and reporting. Do not search for
-alternate interpreters or install dependencies unless the user explicitly asks you to prepare the environment.
+alternate interpreters unless the user explicitly asks you to prepare the environment. If preparation requires
+installing dependencies, load `../nvflare-shared/references/dependency-install.md` first.
 - Treat generated `autofl.yaml`, task-local `mutation_schema.yaml`, and
 existing NVFLARE job/runtime configuration as authoritative; the default simulation flow needs no prose profiles,
 branch setup, or harness initialization before invoking the runner.

@@ -179,11 +179,6 @@ _DEPENDENCY_CONFIRMATION_BYPASS_RES = (
         re.IGNORECASE,
     ),
     re.compile(
-        r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,160}"
-        r"\bwithout\s+(?:explicit\s+)?(?:user\s+)?(?:approval|confirmation|consent)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
         r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,120}"
         r"\b(?:requires?|needs?)\s+no\s+(?:user\s+)?(?:approval|confirmation|consent)\b",
         re.IGNORECASE,
@@ -193,6 +188,21 @@ _DEPENDENCY_CONFIRMATION_BYPASS_RES = (
         r"[^.!?;]{0,120}\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b",
         re.IGNORECASE,
     ),
+)
+_DEPENDENCY_CONFIRMATION_WITHOUT_RE = re.compile(
+    r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,160}"
+    r"\bwithout\s+(?:explicit\s+)?(?:user\s+)?(?:approval|confirmation|consent)\b",
+    re.IGNORECASE,
+)
+_WITHOUT_CLAUSE_NEGATION_RE = re.compile(
+    r"\b(?:never|do\s+not|don't|must\s+not|should\s+not|cannot|can\s+not|won't|will\s+not|shall\s+not)\b",
+    re.IGNORECASE,
+)
+_WITHOUT_CLAUSE_PROHIBITION_TAIL_RE = re.compile(
+    r"\b(?:is\s+)?(?:strictly\s+)?(?:prohibited|forbidden|disallowed|banned)\b"
+    r"|\bis\s+not\s+(?:allowed|permitted)\b"
+    r"|\b(?:is\s+)?never\s+(?:allowed|permitted)\b",
+    re.IGNORECASE,
 )
 _DEPENDENCY_CONFIRMATION_REQUEST_SUPPRESSION_RE = re.compile(
     r"\b(?:do\s+not|don't|never)\s+(?:preemptively\s+)?(?:ask|prompt)\b[^.!?;]{0,120}"
@@ -223,12 +233,12 @@ _DEPENDENCY_POST_AUDIT_CONFIRMATION_RES = (
         re.IGNORECASE,
     ),
 )
+_DEPENDENCY_REVIEW_WITHOUT_RE = re.compile(
+    r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,160}"
+    r"\bwithout\s+(?:(?:an?|any|the)\s+)?(?:audit\w*|review\w*|vet\w*|classif\w*)\b",
+    re.IGNORECASE,
+)
 _DEPENDENCY_REVIEW_BYPASS_RES = (
-    re.compile(
-        r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,160}"
-        r"\bwithout\s+(?:(?:an?|any|the)\s+)?(?:audit\w*|review\w*|vet\w*|classif\w*)\b",
-        re.IGNORECASE,
-    ),
     re.compile(
         r"\bwithout\s+asking\b[^.!?;]{0,80}\b(?:audit\w*|review\w*|vet\w*|classif\w*|flag\w*)\b"
         r"[^.!?;]{0,100}\b(?:dependenc\w*|install\w*|package\w*|requirements?|sources?)\b",
@@ -1113,7 +1123,7 @@ def _lint_dependency_install_safety(context: LintContext) -> None:
                             line=line_number,
                         )
                     )
-                if _has_dependency_policy_bypass(paragraph, _DEPENDENCY_REVIEW_BYPASS_RES):
+                if _has_dependency_review_bypass(paragraph):
                     context.findings.append(
                         _finding(
                             LINT_SKILL_DEPENDENCY_INSTALL_SAFETY,
@@ -1538,10 +1548,11 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
 
     Wrapped prose, blockquote continuations, and list-item continuations remain
     searchable as one unit, while headings, separate blockquote statements,
-    list items, table rows, separators, and fenced blocks keep their Markdown
-    boundaries. Fenced content is scanned line by line because its line breaks
-    are literal and instructions can be conveyed through examples and command
-    snippets.
+    list items, table rows, and separators keep their Markdown boundaries.
+    Fenced content joins wrapped lines of the same statement (the same
+    continuation heuristic used for blockquotes) but still keeps distinct
+    literal lines apart, so unrelated example lines cannot satisfy one matcher
+    while a single instruction wrapped across lines still can.
     """
     lines = text.splitlines()
     table_row_numbers = _markdown_table_row_numbers(lines)
@@ -1551,14 +1562,29 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
     list_content_indent = 0
     list_blank_pending = False
     fence_marker = ""
+    fenced_lines = []
+    fenced_block_start = 1
     for line_number, line in enumerate(lines, start=1):
         stripped = line.strip()
 
         if fence_marker:
             if len(stripped) >= len(fence_marker) and set(stripped) == {fence_marker[0]}:
+                if fenced_lines:
+                    yield fenced_block_start, " ".join(fenced_lines)
+                    fenced_lines = []
                 fence_marker = ""
             elif stripped:
-                yield line_number, stripped
+                if fenced_lines and _is_markdown_blockquote_continuation(fenced_lines[-1], stripped):
+                    fenced_lines.append(stripped)
+                else:
+                    if fenced_lines:
+                        yield fenced_block_start, " ".join(fenced_lines)
+                    fenced_lines = [stripped]
+                    fenced_block_start = line_number
+            else:
+                if fenced_lines:
+                    yield fenced_block_start, " ".join(fenced_lines)
+                    fenced_lines = []
             continue
 
         fence_match = _MARKDOWN_FENCE_RE.match(line)
@@ -1641,13 +1667,13 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
             block_lines = []
             block_kind = ""
         elif block_kind == "list":
-            indentation = _markdown_leading_indent(line)
-            if indentation >= list_content_indent:
-                block_lines.append(stripped)
-                continue
-            yield block_start, " ".join(block_lines)
-            block_lines = []
-            block_kind = ""
+            # A non-blank line directly following a list item (no blank line in
+            # between) is a CommonMark "lazy continuation" of that item's paragraph
+            # regardless of indentation -- it has already been checked above and is
+            # not itself a new block (list item, blockquote, heading, separator, or
+            # table row), so it keeps searching alongside the item's text.
+            block_lines.append(stripped)
+            continue
         if not block_lines:
             block_start = line_number
             block_kind = "paragraph"
@@ -1655,6 +1681,8 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
 
     if block_lines:
         yield block_start, " ".join(block_lines)
+    if fenced_lines:
+        yield fenced_block_start, " ".join(fenced_lines)
 
 
 def _markdown_table_row_numbers(lines: list[str]) -> set[int]:
@@ -1715,22 +1743,62 @@ def _has_dependency_policy_bypass(text: str, patterns: Iterable[re.Pattern]) -> 
     return any(pattern.search(text) for pattern in patterns)
 
 
+def _is_negated_without_clause(statement: str) -> bool:
+    """Return whether a "without X" clause is itself negated into a safe mandate.
+
+    "Install packages without confirmation" is a bypass, but "Never install
+    packages without confirmation" and "Installing packages without confirmation
+    is prohibited" both require confirmation -- the surrounding negation or
+    trailing prohibition flips "without" from permission to skip a step into a
+    requirement for it.
+    """
+    return bool(_WITHOUT_CLAUSE_NEGATION_RE.search(statement) or _WITHOUT_CLAUSE_PROHIBITION_TAIL_RE.search(statement))
+
+
+def _has_dependency_confirmation_without_bypass(statements: list[str]) -> bool:
+    return any(
+        _DEPENDENCY_CONFIRMATION_WITHOUT_RE.search(statement) and not _is_negated_without_clause(statement)
+        for statement in statements
+    )
+
+
+def _has_dependency_review_bypass(text: str) -> bool:
+    """Distinguish a review bypass from a negated "without audit" mandate."""
+    if _has_dependency_policy_bypass(text, _DEPENDENCY_REVIEW_BYPASS_RES):
+        return True
+    statements = [statement.strip() for statement in re.split(r"(?<=[.!?;])\s+", text) if statement.strip()]
+    return any(
+        _DEPENDENCY_REVIEW_WITHOUT_RE.search(statement) and not _is_negated_without_clause(statement)
+        for statement in statements
+    )
+
+
 def _is_bare_confirmation_bypass(text: str) -> bool:
     return bool(_BARE_CONFIRMATION_BYPASS_RE.fullmatch(text) or _BARE_CONFIRMATION_DENIAL_RE.fullmatch(text))
 
 
 def _has_nearby_audit_then_confirm(statements: list[str], index: int) -> bool:
-    """Return whether the audit-first/post-audit-confirmation sequence sits next to ``index``.
+    """Return whether an audit-first/post-audit-confirmation pair covers ``index``.
 
-    The exemption must be tied to the statement it excuses, not to any audit-first or
-    post-audit-confirmation language elsewhere in the same policy block, otherwise an
-    unrelated audit-then-confirm sequence can mask a standalone confirmation bypass.
+    The flagged statement itself must be part of the audit-then-confirm sequence --
+    either alone, or paired with its immediate left or right neighbor -- not merely
+    within a wider window. A three-statement window would let an unrelated bypass
+    statement sit between a real audit-first statement and its real post-audit
+    confirmation and be exempted by proximity alone, even though it is not actually
+    part of that sequence.
     """
-    window_text = " ".join(statements[max(0, index - 1) : index + 2])
-    return bool(
-        _DEPENDENCY_AUDIT_FIRST_RE.search(window_text)
-        and _has_dependency_policy_bypass(window_text, _DEPENDENCY_POST_AUDIT_CONFIRMATION_RES)
-    )
+    candidate_spans = [(index, index)]
+    if index > 0:
+        candidate_spans.append((index - 1, index))
+    if index + 1 < len(statements):
+        candidate_spans.append((index, index + 1))
+    for start, end in candidate_spans:
+        window_text = " ".join(statements[start : end + 1])
+        if _DEPENDENCY_AUDIT_FIRST_RE.search(window_text) and _has_dependency_policy_bypass(
+            window_text, _DEPENDENCY_POST_AUDIT_CONFIRMATION_RES
+        ):
+            return True
+    return False
 
 
 def _has_dependency_confirmation_bypass(text: str) -> bool:
@@ -1738,6 +1806,8 @@ def _has_dependency_confirmation_bypass(text: str) -> bool:
     if _has_dependency_policy_bypass(text, _DEPENDENCY_CONFIRMATION_BYPASS_RES):
         return True
     statements = [statement.strip() for statement in re.split(r"(?<=[.!?;])\s+", text) if statement.strip()]
+    if _has_dependency_confirmation_without_bypass(statements):
+        return True
     if _DEPENDENCY_INSTALL_TERMS_RE.search(text) and any(
         _BARE_CONFIRMATION_DENIAL_RE.fullmatch(statement) for statement in statements
     ):
