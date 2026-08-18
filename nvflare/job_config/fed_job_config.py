@@ -165,9 +165,11 @@ class FedJobConfig:
         # Revalidate at the filesystem boundary in case this low-level object was
         # constructed directly or job_name was changed after construction.
         check_job_name("job_name", self.job_name)
-        json_dump = self._prepare_meta()
         os.makedirs(job_root, exist_ok=True)
         job_dir = os.path.join(job_root, self.job_name)
+        backup_job_dir = f"{job_dir}.previous"
+        self._recover_previous_export(job_dir, backup_job_dir)
+        json_dump = self._prepare_meta()
         replace_existing = False
         if os.path.exists(job_dir):
             if self._is_valid_job_folder(job_dir, self.job_name):
@@ -197,7 +199,6 @@ class FedJobConfig:
                     self._get_client_app(config_dir, custom_dir, fed_app)
 
             if replace_existing:
-                backup_job_dir = f"{temp_job_dir}.previous"
                 os.replace(job_dir, backup_job_dir)
                 try:
                     os.replace(temp_job_dir, job_dir)
@@ -210,6 +211,19 @@ class FedJobConfig:
         except BaseException:
             shutil.rmtree(temp_job_dir, ignore_errors=True)
             raise
+
+    def _recover_previous_export(self, job_dir, backup_job_dir):
+        """Restore an owned export stranded by an interrupted directory swap."""
+        if not os.path.exists(backup_job_dir):
+            return
+
+        if not self._is_valid_job_folder(backup_job_dir, self.job_name):
+            raise RuntimeError(f"Backup job folder {backup_job_dir} does not belong to job {self.job_name}.")
+
+        if os.path.exists(job_dir):
+            shutil.rmtree(backup_job_dir, ignore_errors=True)
+        else:
+            os.replace(backup_job_dir, job_dir)
 
     def simulator_run(self, workspace, clients=None, n_clients=None, threads=None, gpu=None, log_config=None):
         with TemporaryDirectory() as job_root:
