@@ -289,7 +289,9 @@ lifecycle bit is included in the bootstrap config. After the CJ accepts a per-ta
 the trainer remains alive until its complete result-publication barrier settles: the
 `RESULT_ACCEPTED` reply reaches `send()` and every actual receiver download, when present, reaches a
 terminal outcome. It then closes its Cell synchronously, and the CJ reaps that natural process exit
-asynchronously. Normal job SHUTDOWN cancels an incoming task materialization but not an already
+asynchronously. A retired per-task session remains addressable by its launch-scoped FQCN/session ID
+until that reaper finishes, so its heartbeat and `RESULT_SOURCE_SETTLED` acknowledgement remain
+valid after the next task installs a new active launch. Normal job SHUTDOWN cancels an incoming task materialization but not an already
 accepted result publication. If normal teardown finds such a publication still active, it asks the
 trainer to stop and starts the natural-exit reaper. This also covers inline results, whose acceptance
 reply can race END_RUN even though they create no download transaction. Teardown cannot safely
@@ -297,8 +299,12 @@ return with a daemon reaper because ClientRunner tears down streaming and the CJ
 after END_RUN. A result transfer retains its own `DownloadService` idle/receiver policy, but that
 longer data-transfer budget does not govern CJ process ownership. END_RUN gives a still-live result
 source one acknowledged SHUTDOWN interval, then force-stops every remaining owned process group.
-An `ABORT_TASK` latches aborted teardown even when `execute()` already returned the lazy result,
-sends ABORT immediately, and bypasses the normal result-source drain interval. Other
+A source already known to be settled instead receives its configured natural-exit budget and a
+small configured TERM grace, both inside a 30-second cleanup cap, so normal post-send checkpoint
+work is not cut off at the live-source acknowledgement deadline. A run-abort-marked `ABORT_TASK`
+latches aborted teardown even when `execute()` already returned the lazy result, sends ABORT
+immediately, and bypasses the normal result-source drain interval. Task/workflow-only cancellation
+sends ABORT without poisoning later tasks, and normal END_RUN carries no run-abort marker. Other
 failure/teardown paths use the bounded SHUTDOWN/TERM/KILL sequence immediately. The result
 download's receiver-cancellation handshake is independent of that task latch: it covers the case
 where the nested workflow task was already cleared before graceful job teardown began. Normal
@@ -339,11 +345,16 @@ same process can initialize a fresh one.
 
 Process death after `RESULT_ACCEPTED` is also a terminal source event, not a healthy streaming
 timeout. The CJ reports it over the download-service control route with bounded acknowledged
-delivery. A receiver validates that the reporting CJ is the direct parent of the failed trainer
+delivery. Every client job registers that receiver route before `START_RUN`, so a notice that
+precedes its first lazy download is retained as a tombstone regardless of the learner backend.
+A receiver validates that the reporting CJ is the direct parent of the failed trainer
 FQCN, then aborts only the matching `(source FQCN, ref ID)` downloads. This converts downstream
 materialization into the workflow's ordinary controlled task/error path instead of allowing each
 request to spend the 600-second data timeout retrying an unreachable trainer. Once that failure
 notification has settled, the CJ records the reportable external-process exception code and exits;
+the trainer retries its task-correlated settlement acknowledgement before a one-shot Cell closes,
+and a clean process-group exit is the final success fallback when that acknowledgement reply is
+lost after all trainer-side transfer waiters completed. A nonzero/SIGKILL/OOM exit remains fatal.
 its parent sends the authenticated terminal outcome before client logout, so the server finishes
 the job as `EXECUTION_EXCEPTION`. Explicit job abort and source failure use one serialized terminal
 decision: an abort that wins first remains `ABORTED`, while an already-claimed source failure cannot

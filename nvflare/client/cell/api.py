@@ -74,6 +74,8 @@ _HEARTBEAT_JOIN_TIMEOUT = 1.0
 _OWNER_WATCHDOG_INTERVAL = 0.5
 _OWNER_TERM_GRACE = 5.0
 _RESULT_SOURCE_SETTLED_TIMEOUT = 1.0
+_RESULT_SOURCE_SETTLED_ATTEMPTS = 3
+_RESULT_SOURCE_SETTLED_RETRY_BACKOFF = 0.1
 
 
 def _shutdown_f3_streaming() -> None:
@@ -550,22 +552,34 @@ class CellClientAPI(APISpec):
 
     def _notify_result_source_settled(self, task_id: str) -> None:
         """Publish the send-barrier transition before a one-shot trainer closes its Cell."""
-        try:
-            reply = self._cell.send_request(
-                channel=CHANNEL,
-                topic=Topic.RESULT_SOURCE_SETTLED,
-                target=self._cj_fqcn,
-                request=new_cell_message({}, {MsgKey.SESSION_ID: self._session_id, MsgKey.TASK_ID: task_id}),
-                timeout=_RESULT_SOURCE_SETTLED_TIMEOUT,
-                optional=True,
-                secure=self._protocol_secure,
-            )
-            if reply is None or reply.get_header(MessageHeaderKey.RETURN_CODE) != CellReturnCode.OK:
-                self.logger.debug("result-source settlement was not acknowledged")
-        except Exception as e:
-            # Process exit remains the authoritative fallback. Notification failure
-            # must not replace the original result-transfer outcome.
-            self.logger.debug(f"result-source settlement notification failed: {e}")
+        request = new_cell_message({}, {MsgKey.SESSION_ID: self._session_id, MsgKey.TASK_ID: task_id})
+        for attempt in range(_RESULT_SOURCE_SETTLED_ATTEMPTS):
+            try:
+                reply = self._cell.send_request(
+                    channel=CHANNEL,
+                    topic=Topic.RESULT_SOURCE_SETTLED,
+                    target=self._cj_fqcn,
+                    request=request,
+                    timeout=_RESULT_SOURCE_SETTLED_TIMEOUT,
+                    optional=True,
+                    secure=self._protocol_secure,
+                )
+                body = reply.payload if reply is not None else None
+                if (
+                    reply is not None
+                    and reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.OK
+                    and isinstance(body, dict)
+                    and body.get(MsgKey.REPLY_TOPIC) == Topic.RESULT_SOURCE_SETTLED
+                    and body.get(MsgKey.TASK_ID) == task_id
+                ):
+                    return
+            except Exception as e:
+                # Process exit remains the authoritative fallback. Notification failure
+                # must not replace the original result-transfer outcome.
+                self.logger.debug(f"result-source settlement notification failed: {e}")
+            if attempt + 1 < _RESULT_SOURCE_SETTLED_ATTEMPTS:
+                time.sleep(_RESULT_SOURCE_SETTLED_RETRY_BACKOFF)
+        self.logger.debug("result-source settlement was not acknowledged")
 
     def _wait_for_result_transfers(self, result_waiters) -> None:
         """Wait for strict terminal success of every result DownloadService transaction."""

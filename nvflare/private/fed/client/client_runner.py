@@ -151,6 +151,9 @@ class ClientRunner(TBI):
         self.job_id = job_id
         self.engine = engine
         self.run_abort_signal = Signal()
+        # Unlike run_abort_signal (also triggered by normal END_RUN), this bit
+        # identifies teardown initiated by an abort/fatal path.
+        self._run_abort_requested = False
         self.task_lock = threading.Lock()
         self.running_tasks = {}  # task_id => TaskAssignment
 
@@ -321,6 +324,7 @@ class ClientRunner(TBI):
             self.log_exception(fl_ctx, "UnsafeJobError from Task Data Filters")
             executor.unsafe = True
             fl_ctx.set_job_is_unsafe()
+            self._run_abort_requested = True
             self.run_abort_signal.trigger(True)
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.UNSAFE_JOB),
@@ -676,6 +680,15 @@ class ClientRunner(TBI):
         return target
 
     def init_run(self, app_root, args):
+        # Source-failure notices can arrive before this CJ performs its first lazy
+        # download (notably when a Swarm aggregator uses an in-process or Attach
+        # learner). Register the receiver route at the job lifecycle boundary so
+        # DownloadService can retain an early tombstone for the later materializer.
+        get_cell = getattr(self.engine, "get_cell", None)
+        cell = get_cell() if callable(get_cell) else None
+        if cell is not None:
+            DownloadService.initialize(cell)
+
         # set up syncing for children
         self.engine.register_aux_message_handler(
             topic=ReservedTopic.SYNC_RUNNER, message_handle_func=self._handle_sync_runner
@@ -772,7 +785,13 @@ class ClientRunner(TBI):
 
             with self.task_lock:
                 num_running_tasks = len(self.running_tasks)
-            if num_running_tasks > 0:
+            if num_running_tasks > 0 or self._run_abort_requested:
+                fl_ctx.set_prop(
+                    FLContextKey.RUN_ABORT_REQUESTED,
+                    self._run_abort_requested,
+                    private=True,
+                    sticky=False,
+                )
                 self.fire_event(EventType.ABORT_TASK, fl_ctx)
                 self.log_info(fl_ctx, "fired ABORT_TASK event to abort all running tasks")
 
@@ -797,6 +816,7 @@ class ClientRunner(TBI):
         # 3. when the job is ended normally at the end of the workflow
         if not msg:
             msg = "Client is stopping ..."
+        self._run_abort_requested = True
         with self.engine.new_context() as fl_ctx:
             self.log_info(fl_ctx, msg)
         self.run_abort_signal.trigger(True)
@@ -820,6 +840,7 @@ class ClientRunner(TBI):
             # This happens when a task calls system_panic().
             reason = fl_ctx.get_prop(key=FLContextKey.EVENT_DATA, default="")
             self.log_error(fl_ctx, "Stopped ClientRunner due to FATAL_SYSTEM_ERROR: {}".format(reason))
+            self._run_abort_requested = True
             self.run_abort_signal.trigger(True)
 
     def _handle_end_run(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:

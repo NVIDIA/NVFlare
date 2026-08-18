@@ -15,8 +15,7 @@ import logging
 import random
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import thread as futures_thread
+from concurrent.futures import BrokenExecutor, ThreadPoolExecutor
 
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.mpm import MainProcessMonitor
@@ -65,16 +64,17 @@ class CheckedExecutor(ThreadPoolExecutor):
                 return None
             try:
                 return super().submit(fn, *args, **kwargs)
-            except RuntimeError:
-                # Keep the wrapper fail-closed even if a caller reached the base
-                # executor's shutdown path directly, or CPython interpreter
-                # teardown set the module-global executor shutdown state without
-                # entering this override.
-                if self._shutdown or futures_thread._shutdown:
-                    self.stopped = True
-                    log.debug(f"Call {fn} is ignored after the executor shut down")
-                    return None
+            except BrokenExecutor:
+                # A genuinely broken pool is not a lifecycle stop and must remain
+                # visible to the caller.
                 raise
+            except RuntimeError:
+                # ThreadPoolExecutor.submit raises RuntimeError after either pool
+                # shutdown or interpreter shutdown. Keep the wrapper fail-closed
+                # without inspecting CPython-private executor/module attributes.
+                self.stopped = True
+                log.debug(f"Call {fn} is ignored after the executor shut down")
+                return None
 
 
 stream_thread_pool = CheckedExecutor(STREAM_THREAD_POOL_SIZE, "stm")

@@ -240,6 +240,10 @@ def env(tmp_path, monkeypatch):
     # late-bound so a test may swap harness.popen (e.g. multi-HELLO launch sequences)
     monkeypatch.setattr(ebp.subprocess, "Popen", lambda *args, **kwargs: harness.popen(*args, **kwargs))
     monkeypatch.setattr(ebp, "log_subprocess_output", lambda process, logger: None)
+    # Keep forced-cleanup tests fast while preserving the production ratio between
+    # settled natural-exit time and the reserved TERM grace.
+    monkeypatch.setattr(ebp, "_RESULT_REAPER_MAX_TOTAL_TIMEOUT", 0.5)
+    monkeypatch.setattr(ebp, "_RESULT_REAPER_FORCE_TERM_GRACE", 0.1)
     # start_new_session gives pgid == pid; route group signals to the fake process table
     monkeypatch.setattr(ebp.os, "killpg", harness.killpg, raising=False)
     return holder
@@ -558,6 +562,18 @@ class TestInitializeAndFinalize:
         assert backend._result_reapers == set()
         assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
 
+    def test_task_only_abort_does_not_poison_later_external_process_tasks(self, env):
+        backend, _ = _initialized_backend(env)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.RUN_ABORT_REQUESTED, False, private=True, sticky=False)
+
+        backend.abort(fl_ctx)
+
+        assert backend._abort is False
+        assert backend._terminal_intent is None
+        assert env.cell.fired[-1][0] == Topic.ABORT
+        backend.finalize(FLContext())
+
     def test_finalize_does_not_kill_an_accepted_lazy_result_source(self, env):
         backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
         process = env.harness.processes[0]
@@ -627,6 +643,24 @@ class TestInitializeAndFinalize:
         assert env.harness.signals_sent() == []
         assert backend._result_reapers == set()
         assert backend._active_launch is None
+
+    def test_settled_result_reaper_is_not_cut_off_by_live_source_deadline(self, env, monkeypatch):
+        monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.01)
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, shutdown_timeout=0.2, stop_grace_period=0.05)
+        process = env.harness.processes[0]
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
+        trainer.result_accepted.set()
+        backend._reap_trainer_after_result(trainer)
+        trainer.result_source_live.clear()
+        threading.Timer(0.05, process.exit, args=[0]).start()
+
+        backend.finalize(FLContext())
+
+        assert process.returncode == 0
+        assert env.harness.signals_sent() == []
+        assert backend._result_reapers == set()
 
     def test_abort_stops_registered_result_reaper_without_shutdown_ack_wait(self, env, monkeypatch):
         monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
@@ -2622,6 +2656,68 @@ class TestLaunchPerTask:
         finally:
             env.cell.disconnected.update((retired_trainer.trainer_fqcn, current_trainer.trainer_fqcn))
             finalize_thread.join(timeout=1.0)
+
+    def test_retired_result_source_can_heartbeat_and_settle_after_next_launch(self, env, client_job_exit):
+        backend, fl_ctx = _initialized_backend(env, launch_once=False, heartbeat_timeout=0.1)
+        _install_auto_result(env, lazy_result=True)
+
+        first = backend.execute("train", Shareable(), fl_ctx, Signal())
+        retired_trainer = backend._active_launch
+        second = backend.execute("train", Shareable(), fl_ctx, Signal())
+        current_trainer = backend._active_launch
+        assert first.get_return_code() == ReturnCode.OK
+        assert second.get_return_code() == ReturnCode.OK
+        assert retired_trainer is not current_trainer
+
+        heartbeat = env.cell.deliver(
+            Topic.HEARTBEAT,
+            retired_trainer.trainer_fqcn,
+            {MsgKey.SESSION_ID: retired_trainer.session_id, MsgKey.RESULT_SOURCE_LIVE: True},
+        )
+        assert heartbeat.payload == {
+            MsgKey.REPLY_TOPIC: Topic.HEARTBEAT,
+            MsgKey.SESSION_ID: retired_trainer.session_id,
+        }
+
+        retired_task_id = retired_trainer.result_source_task_id
+        settled = env.cell.deliver(
+            Topic.RESULT_SOURCE_SETTLED,
+            retired_trainer.trainer_fqcn,
+            {MsgKey.SESSION_ID: retired_trainer.session_id, MsgKey.TASK_ID: retired_task_id},
+        )
+        assert settled.payload == {MsgKey.REPLY_TOPIC: Topic.RESULT_SOURCE_SETTLED, MsgKey.TASK_ID: retired_task_id}
+        assert not retired_trainer.result_source_live.is_set()
+
+        retired_trainer.process.exit(0)
+        deadline = time.monotonic() + 1.0
+        while retired_trainer.trainer_fqcn in backend._protocol_sessions and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert retired_trainer.trainer_fqcn not in backend._protocol_sessions
+        client_job_exit.assert_not_called()
+
+        current_trainer.result_source_live.clear()
+        current_trainer.process.exit(0)
+        backend.finalize(FLContext())
+        assert backend._protocol_sessions == {}
+
+    def test_clean_result_source_exit_is_success_fallback_when_settle_ack_is_lost(
+        self, env, monkeypatch, client_job_exit
+    ):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        backend, fl_ctx = _initialized_backend(env, launch_once=False)
+        _install_auto_result(env, lazy_result=True)
+
+        result = backend.execute("train", Shareable(), fl_ctx, Signal())
+        trainer = backend._active_launch
+        trainer.process.exit(0)
+        trainer.reaper_thread.join(timeout=1.0)
+
+        assert result.get_return_code() == ReturnCode.OK
+        assert not trainer.reaper_thread.is_alive()
+        assert not trainer.result_source_live.is_set()
+        assert [message for message in env.cell.sent if message[0] == SOURCE_FAILURE_TOPIC] == []
+        client_job_exit.assert_not_called()
+        backend.finalize(FLContext())
 
     def test_finalize_force_stops_connected_late_result_sources_within_end_run_budget(self, env, monkeypatch, caplog):
         """Late results that nobody consumes must not outlive their owning CJ."""

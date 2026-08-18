@@ -133,7 +133,23 @@ class FakeCell:
         self.request_messages.append(request)
         self.request_kwargs.append(kwargs)
         if self.on_request is not None:
-            return self.on_request(topic, target, request)
+            reply = self.on_request(topic, target, request)
+            # Most test hooks predate the correlated settlement reply and return a
+            # generic OK for topics they do not customize. Model the current CJ
+            # handler for that default while preserving explicit ERROR replies.
+            if (
+                topic == Topic.RESULT_SOURCE_SETTLED
+                and reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.OK
+                and not isinstance(reply.payload, dict)
+            ):
+                return make_cell_reply(
+                    CellReturnCode.OK,
+                    body={
+                        MsgKey.REPLY_TOPIC: Topic.RESULT_SOURCE_SETTLED,
+                        MsgKey.TASK_ID: request.payload[MsgKey.TASK_ID],
+                    },
+                )
+            return reply
         if topic == Topic.HELLO:
             return _hello_accepted_reply(self.heartbeat_interval, self.heartbeat_timeout, self.secure_mode)
         if topic == Topic.HEARTBEAT:
@@ -143,6 +159,11 @@ class FakeCell:
             )
         if topic == Topic.RESULT_READY:
             return _result_accepted_reply()
+        if topic == Topic.RESULT_SOURCE_SETTLED:
+            return make_cell_reply(
+                CellReturnCode.OK,
+                body={MsgKey.REPLY_TOPIC: Topic.RESULT_SOURCE_SETTLED, MsgKey.TASK_ID: request.payload[MsgKey.TASK_ID]},
+            )
         return make_cell_reply(CellReturnCode.OK)
 
     def fire_and_forget(self, channel, topic, targets, message, **kwargs):
@@ -1917,6 +1938,44 @@ class TestReceiveSend:
 
             assert events == [Topic.RESULT_READY, Topic.RESULT_SOURCE_SETTLED, "cell.stop"]
             assert env.stopped is True
+        finally:
+            api.shutdown()
+
+    def test_result_source_settled_retries_until_task_correlated_ack(self, bootstrap_path, env, monkeypatch):
+        monkeypatch.setattr(cell_api, "_RESULT_SOURCE_SETTLED_RETRY_BACKOFF", 0.0)
+        attempts = 0
+
+        def on_request(topic, target, request):
+            nonlocal attempts
+            if topic == Topic.HELLO:
+                return _hello_accepted_reply()
+            if topic == Topic.RESULT_READY:
+                return _result_accepted_reply()
+            if topic == Topic.RESULT_SOURCE_SETTLED:
+                attempts += 1
+                if attempts == 1:
+                    return make_cell_reply(
+                        CellReturnCode.OK,
+                        body={MsgKey.REPLY_TOPIC: Topic.ERROR, MsgKey.REASON: "temporarily unavailable"},
+                    )
+                return make_cell_reply(
+                    CellReturnCode.OK,
+                    body={
+                        MsgKey.REPLY_TOPIC: Topic.RESULT_SOURCE_SETTLED,
+                        MsgKey.TASK_ID: request.payload[MsgKey.TASK_ID],
+                    },
+                )
+            return make_cell_reply(CellReturnCode.OK)
+
+        env.on_request = on_request
+        api = _init_api(bootstrap_path, env)
+        try:
+            _deliver_task(env)
+            api.receive()
+
+            api.send(FLModel(params={"w": [2.0]}))
+
+            assert attempts == 2
         finally:
             api.shutdown()
 

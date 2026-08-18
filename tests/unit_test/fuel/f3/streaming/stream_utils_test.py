@@ -15,7 +15,6 @@
 import multiprocessing as mp
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import thread as futures_thread
 
 from nvflare.fuel.f3.streaming.stream_utils import CheckedExecutor, gen_stream_id
 
@@ -127,7 +126,14 @@ class TestStreamUtils:
 
     def test_checked_executor_ignores_interpreter_executor_shutdown(self, monkeypatch):
         executor = CheckedExecutor(max_workers=1, thread_name_prefix="checked_interpreter_stop")
-        monkeypatch.setattr(futures_thread, "_shutdown", True)
+        real_submit = ThreadPoolExecutor.submit
+
+        def interpreter_stopped(pool, fn, *args, **kwargs):
+            if pool is executor:
+                raise RuntimeError("cannot schedule new futures after interpreter shutdown")
+            return real_submit(pool, fn, *args, **kwargs)
+
+        monkeypatch.setattr(ThreadPoolExecutor, "submit", interpreter_stopped)
 
         assert executor.submit(lambda: None) is None
         assert executor.stopped is True

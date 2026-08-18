@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import threading
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -47,6 +48,7 @@ def _runner():
     runner.job_id = "job-1"
     runner.engine = MagicMock()
     runner.run_abort_signal = Signal()
+    runner._run_abort_requested = False
     runner.task_lock = threading.Lock()
     runner.running_tasks = {}
     runner.task_check_timeout = 5.0
@@ -106,6 +108,24 @@ def test_client_runner_init_registers_aux_and_event_handlers(monkeypatch):
     assert topics == {ReservedTopic.END_RUN, ReservedTopic.DO_TASK}
     event_types = {call.args[0] for call in ClientRunner.register_event_handler.call_args_list}
     assert {EventType.TASK_ASSIGNMENT_SENT, EventType.TASK_RESULT_RECEIVED}.issubset(event_types)
+
+
+def test_init_run_registers_download_source_failure_receiver_before_start(monkeypatch):
+    runner = _runner()
+    cell = MagicMock()
+    runner.engine.get_cell.return_value = cell
+    runner.engine.send_aux_request.return_value = {"server": make_reply(ReturnCode.OK)}
+    runner.engine.new_context.return_value.__enter__.return_value = FLContext()
+    monkeypatch.setattr(runner, "get_positive_float_var", lambda var_name, default: default)
+    monkeypatch.setattr("nvflare.private.fed.client.client_runner.time.sleep", MagicMock())
+    monkeypatch.setattr("nvflare.private.fed.client.client_runner.ReliableMessage.enable", MagicMock())
+    initialize = MagicMock()
+    monkeypatch.setattr("nvflare.private.fed.client.client_runner.DownloadService.initialize", initialize)
+
+    runner.init_run("/app", SimpleNamespace())
+
+    initialize.assert_called_once_with(cell)
+    assert runner.fire_event.call_args_list[-1].args[0] == EventType.START_RUN
 
 
 def test_process_task_preserves_cookie_and_assignment_headers():
@@ -272,6 +292,20 @@ def test_task_check_and_control_handlers():
 
     assert runner._handle_end_run("topic", Shareable(), fl_ctx).get_return_code() == ReturnCode.OK
     assert runner.run_abort_signal.triggered
+
+
+def test_explicit_abort_fires_abort_task_without_a_running_task():
+    runner = _runner()
+    fl_ctx = FLContext()
+    runner.engine.new_context.return_value.__enter__.return_value = fl_ctx
+    runner.check_end_run_readiness = MagicMock()
+
+    runner.abort("abort job")
+    runner.end_run_events_sequence()
+
+    abort_calls = [call for call in runner.fire_event.call_args_list if call.args[0] == EventType.ABORT_TASK]
+    assert len(abort_calls) == 1
+    assert abort_calls[0].args[1].get_prop(FLContextKey.RUN_ABORT_REQUESTED) is True
 
 
 def test_handle_event_reports_running_tasks_and_aborts_on_fatal_error():

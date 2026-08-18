@@ -69,6 +69,8 @@ _DEFAULT_SHUTDOWN_TIMEOUT = 30.0
 
 # The result reaper retries SHUTDOWN when send() is still settling.
 _LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT = 5.0
+_RESULT_REAPER_MAX_TOTAL_TIMEOUT = 30.0
+_RESULT_REAPER_FORCE_TERM_GRACE = 5.0
 
 _LOG_THREAD_JOIN_TIMEOUT = 5.0
 
@@ -171,6 +173,10 @@ class ExternalProcessBackend(CellBackendBase):
         self._custom_dir: Optional[str] = None
         self._active_launch: Optional[_TrainerSession] = None
         self._launch_lock = threading.Lock()
+        # A per-task launch can keep serving an accepted lazy result after the next
+        # launch becomes active. Keep every owned protocol session addressable until
+        # its process/result source is fully retired.
+        self._protocol_sessions = {}
         # Completed per-task launches can keep serving lazy results and remain owned through END_RUN.
         self._result_reapers = set()
         self._result_reapers_lock = threading.Lock()
@@ -252,18 +258,20 @@ class ExternalProcessBackend(CellBackendBase):
             self._execute_gate.release()
 
     def abort(self, fl_ctx: FLContext) -> None:
-        """Latch run abort even when the trainer already returned a lazy result.
+        """Notify the trainer of task cancellation and latch abortive run teardown.
 
         An accepted lazy result can outlive ``execute()`` while another client
-        downloads it. The task signal is no longer observed by the backend in
-        that state, so ABORT_TASK must explicitly distinguish aborted teardown
-        from normal END_RUN result-draining.
+        downloads it. Explicit run abort therefore carries a context marker so
+        it remains distinguishable from normal END_RUN and CCWF task cancellation.
+        Callers predating the marker retain the original run-abort behavior.
         """
-        self._claim_abort_intent()
-        self._latch_abort("ABORT_TASK event received")
+        run_abort_requested = fl_ctx.get_prop(FLContextKey.RUN_ABORT_REQUESTED, True)
+        if run_abort_requested:
+            self._claim_abort_intent()
+            self._latch_abort("run abort requested")
         with self._launch_lock:
             trainer = self._active_launch
-        self._send_abort(trainer, "run aborted")
+        self._send_abort(trainer, "run aborted" if run_abort_requested else "task aborted")
 
     def _execute_admitted_task(
         self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
@@ -391,6 +399,7 @@ class ExternalProcessBackend(CellBackendBase):
             trainer_fqcn = FQCN.join([self._cj_fqcn, f"{_TRAINER_LEAF_PREFIX}_{seq}"])
             trainer = _TrainerSession(token, trainer_fqcn)
             self._active_launch = trainer
+            self._protocol_sessions[trainer_fqcn] = trainer
         try:
             bootstrap_path = os.path.join(self._app_dir, bootstrap_file_name(seq))
             trainer.bootstrap_path = bootstrap_path
@@ -600,37 +609,44 @@ class ExternalProcessBackend(CellBackendBase):
                     raise
 
     def _wait_for_result_reapers(self) -> None:
-        """Wait boundedly for accepted result sends, then force-clean wedged sources."""
-        wait_bound = self._result_reaper_wait_bound()
-        deadline = time.monotonic() + wait_bound
-        while True:
-            with self._result_reapers_lock:
-                trainers = tuple(self._result_reapers)
-            if not trainers:
-                return
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            for trainer in trainers:
-                reaper = trainer.reaper_thread
-                if reaper is not None:
-                    reaper.join(timeout=max(0.0, deadline - time.monotonic()))
-
+        """Wait boundedly for result sources without preempting a settled trainer's final work."""
+        started = time.monotonic()
+        live_deadline = started if self._abort else started + self._result_reaper_wait_bound()
+        settled_wait, settled_term_grace = self._settled_result_reaper_budget()
+        settled_deadline = started if self._abort else started + settled_wait
         with self._result_reapers_lock:
-            wedged = tuple(self._result_reapers)
-        if wedged:
-            self.logger.warning(
-                f"timed out waiting {wait_bound}s for {len(wedged)} accepted result source(s); "
-                "forcing trainer cleanup"
-            )
-        for trainer in wedged:
-            # The result-source grace has already elapsed. Do not start a second,
-            # independently long process grace that can outlive the CJ teardown.
-            self._stop_trainer(trainer, natural_exit_wait=0.0, termination_grace=0.0)
-        for trainer in wedged:
-            reaper = trainer.reaper_thread
-            if reaper is not None:
+            pending = set(self._result_reapers)
+
+        # No new reaper can be admitted after finalize owns _execute_gate. Track
+        # this fixed snapshot locally so an unexpectedly slow daemon cannot make
+        # END_RUN loop forever after its bounded forced cleanup.
+        while pending:
+            for trainer in tuple(pending):
+                reaper = trainer.reaper_thread
+                if reaper is None or not reaper.is_alive():
+                    pending.discard(trainer)
+                    continue
+
+                live = trainer.result_source_live.is_set()
+                deadline = live_deadline if live else settled_deadline
+                remaining = deadline - time.monotonic()
+                if remaining > 0:
+                    reaper.join(timeout=min(_NATURAL_EXIT_REAP_INTERVAL, remaining))
+                    continue
+
+                self.logger.warning(
+                    f"timed out waiting for accepted result source {trainer.trainer_fqcn} "
+                    f"(live={live}); forcing trainer cleanup"
+                )
+                # A live source gets only its short acknowledgement interval. A source
+                # already known to be settled receives the configured natural-exit budget
+                # plus a small TERM grace, all within the job-process cleanup hard cap.
+                grace = 0.0 if self._abort else min(settled_term_grace, self._remaining_result_reaper_budget(started))
+                self._stop_trainer(trainer, natural_exit_wait=0.0, termination_grace=grace)
                 reaper.join(timeout=_LOG_THREAD_JOIN_TIMEOUT)
+                if reaper.is_alive():
+                    self.logger.error(f"result-source reaper {reaper.name} did not stop after forced cleanup")
+                pending.discard(trainer)
 
     def _wait_for_natural_exit_and_cleanup(self, trainer: _TrainerSession) -> None:
         disconnected_since = None
@@ -668,14 +684,18 @@ class ExternalProcessBackend(CellBackendBase):
                     # SHUTDOWN cannot preempt an accepted result source still inside send().
                     self._request_trainer_shutdown(trainer, wait_timeout=_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT)
                 time.sleep(_NATURAL_EXIT_REAP_INTERVAL)
-            fail_client_job = self._fail_accepted_result_source(
-                trainer,
-                trainer.result_source_task_id,
-                self._trainer_exit_reason(trainer),
-            )
+            failure_reason = self._trainer_exit_reason(trainer)
+            if trainer.process is not None and trainer.process.poll() == 0:
+                self._retire_result_source_after_clean_exit(trainer, trainer.result_source_task_id)
+            else:
+                fail_client_job = self._fail_accepted_result_source(
+                    trainer,
+                    trainer.result_source_task_id,
+                    failure_reason,
+                )
             self._cleanup_trainer(trainer)
             if fail_client_job:
-                self._fail_job_for_lost_result_source(self._trainer_exit_reason(trainer))
+                self._fail_job_for_lost_result_source(failure_reason)
         except BaseException:
             self.logger.error(secure_format_traceback())
         finally:
@@ -690,11 +710,14 @@ class ExternalProcessBackend(CellBackendBase):
         failure_reason = None
         if trainer.result_source_live.is_set() and not self._process_group_alive(trainer):
             failure_reason = self._trainer_exit_reason(trainer)
-            fail_client_job = self._fail_accepted_result_source(
-                trainer,
-                trainer.result_source_task_id,
-                failure_reason,
-            )
+            if trainer.process is not None and trainer.process.poll() == 0:
+                self._retire_result_source_after_clean_exit(trainer, trainer.result_source_task_id)
+            else:
+                fail_client_job = self._fail_accepted_result_source(
+                    trainer,
+                    trainer.result_source_task_id,
+                    failure_reason,
+                )
         if trainer.result_failure_notified and not trainer.result_failure_delivery_done.is_set():
             trainer.result_failure_delivery_done.wait(_RESULT_SOURCE_FAILURE_DELIVERY_WAIT)
         with trainer._cleanup_lock:
@@ -721,6 +744,7 @@ class ExternalProcessBackend(CellBackendBase):
         except Exception as e:
             self.logger.debug(f"failed to remove {trainer.bootstrap_path}: {e}")
         with self._launch_lock:
+            self._protocol_sessions.pop(trainer.trainer_fqcn, None)
             if self._active_launch is trainer:
                 self._active_launch = None
         if fail_client_job:
@@ -844,6 +868,22 @@ class ExternalProcessBackend(CellBackendBase):
         be settled, not for an unconsumed result at END_RUN.
         """
         return _LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT
+
+    def _settled_result_reaper_budget(self) -> Tuple[float, float]:
+        """Return natural-exit and TERM budgets for a settled one-task trainer.
+
+        Reserve a small configured TERM grace inside a fixed total bound. This
+        prevents END_RUN from cutting off normal post-send work at the live-source
+        acknowledgement deadline while ensuring the CJ remains bounded.
+        """
+        term_grace = min(max(0.0, self._termination_grace()), _RESULT_REAPER_FORCE_TERM_GRACE)
+        natural_cap = max(0.0, _RESULT_REAPER_MAX_TOTAL_TIMEOUT - term_grace)
+        natural_wait = min(max(0.0, self._shutdown_wait_bound()), natural_cap)
+        return natural_wait, term_grace
+
+    @staticmethod
+    def _remaining_result_reaper_budget(started: float) -> float:
+        return max(0.0, _RESULT_REAPER_MAX_TOTAL_TIMEOUT - (time.monotonic() - started))
 
     def _unwind(self) -> None:
         """Releases partial setup after a failed initialize(). Best-effort per step."""
@@ -1043,7 +1083,11 @@ class ExternalProcessBackend(CellBackendBase):
                     return
                 if not self._process_group_alive(trainer):
                     reason = self._trainer_exit_reason(trainer)
-                    fail_client_job = self._fail_accepted_result_source(trainer, task_id, reason)
+                    if trainer.process is not None and trainer.process.poll() == 0:
+                        self._retire_result_source_after_clean_exit(trainer, task_id)
+                        fail_client_job = False
+                    else:
+                        fail_client_job = self._fail_accepted_result_source(trainer, task_id, reason)
                     self._cleanup_trainer(trainer)
                     if fail_client_job:
                         self._fail_job_for_lost_result_source(reason)
@@ -1116,6 +1160,20 @@ class ExternalProcessBackend(CellBackendBase):
         finally:
             trainer.result_failure_delivery_done.set()
         return fail_client_job
+
+    def _retire_result_source_after_clean_exit(self, trainer: _TrainerSession, task_id: Optional[str]) -> None:
+        """Treat rc=0 as the trainer-side send barrier's terminal-success fallback."""
+        with trainer._result_failure_lock:
+            if not task_id or trainer.result_source_task_id != task_id:
+                return
+            trainer.result_source_live.clear()
+            trainer.result_source_task_id = None
+            trainer.result_source_refs = ()
+            trainer.result_receiver_ids = ()
+        self.logger.info(
+            f"accepted result source {trainer.trainer_fqcn} exited cleanly after transfer settlement "
+            f"for task {task_id}"
+        )
 
     def _claim_abort_intent(self) -> bool:
         """Atomically let explicit abort win over a not-yet-classified source failure."""
@@ -1245,8 +1303,11 @@ class ExternalProcessBackend(CellBackendBase):
 
     # ------------------------------------------------------------------ control-plane handlers
 
-    def _get_protocol_session(self) -> Optional[_TrainerSession]:
-        return self._active_launch
+    def _get_protocol_session(self, origin: Optional[str] = None) -> Optional[_TrainerSession]:
+        with self._launch_lock:
+            if origin:
+                return self._protocol_sessions.get(origin)
+            return self._active_launch
 
     def _handle_hello(self, request):
         """Validates HELLO per the V1 trusted-host proof: plain launch-token match, plus

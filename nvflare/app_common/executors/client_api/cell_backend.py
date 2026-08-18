@@ -168,11 +168,16 @@ class CellBackendBase(ClientAPIBackendSpec):
         self._cell.register_request_cb(channel=CHANNEL, topic=Topic.LOG, cb=self._handle_log)
         self._cell.register_request_cb(channel=CHANNEL, topic=Topic.HEARTBEAT, cb=self._handle_heartbeat)
 
-    def _get_protocol_session(self) -> Optional[CellSession]:
+    def _get_protocol_session(self, origin: Optional[str] = None) -> Optional[CellSession]:
         raise NotImplementedError
 
     def _validate_session_msg(self, request, payload) -> Tuple[Optional[CellSession], Optional[str]]:
-        session = self._get_protocol_session()
+        origin = request.get_header(MessageHeaderKey.ORIGIN) or ""
+        session = self._get_protocol_session(origin)
+        if session is None:
+            active_session = self._get_protocol_session()
+            if active_session is not None:
+                return None, f"unexpected origin {origin!r}"
         if (
             session is None
             or not session.ready.is_set()
@@ -180,7 +185,6 @@ class CellBackendBase(ClientAPIBackendSpec):
             or getattr(session, "error", None)
         ):
             return None, "no active trainer session"
-        origin = request.get_header(MessageHeaderKey.ORIGIN) or ""
         if origin != session.trainer_fqcn:
             return None, f"unexpected origin {origin!r}"
         if payload.get(MsgKey.SESSION_ID) != session.session_id:
