@@ -333,6 +333,19 @@ def test_stream_adapter_sends_future_response_asynchronously():
 
     cell.send_blob.assert_called_once()
     assert cell.send_blob.call_args.args[0] == CellChannel.RETURN_ONLY
+    assert cell.send_blob.call_args.kwargs["optional"] is True
+
+
+def test_stream_adapter_logs_undeliverable_late_response_at_debug():
+    adapter = Adapter(MagicMock(), MagicMock(fqcn="site-1.job"), MagicMock())
+    adapter.logger = MagicMock()
+    reply_future = Future()
+    reply_future.set_exception(StreamError("requester is gone"))
+
+    adapter._handle_reply_stream_done(reply_future)
+
+    adapter.logger.debug.assert_called_once()
+    adapter.logger.error.assert_not_called()
 
 
 @pytest.mark.parametrize("secure", [False, True])

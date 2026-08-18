@@ -160,8 +160,10 @@ class Adapter:
             )
             os._exit(1)
 
-        self.logger.error(
-            f"streamed response from {self.my_info.fqcn} failed asynchronously: {secure_format_exception(error)}"
+        # A response can finish after the requester has timed out and removed its waiter or job cell. The
+        # requester already owns the request outcome, so an undeliverable late response is diagnostic only.
+        self.logger.debug(
+            f"streamed response from {self.my_info.fqcn} was not delivered: {secure_format_exception(error)}"
         )
 
     def _send_response(self, response, stream_req_id, req_id, channel, topic, origin, secure, optional):
@@ -186,13 +188,16 @@ class Adapter:
         encode_payload(response, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=self.cell.get_fobs_context())
         self.logger.debug(f"sending: {stream_req_id=}: {response.headers=}, target={origin}")
         try:
+            # Response production is asynchronous and can outlive the request timeout. Mark its transport frames
+            # optional so a stale destination is dropped without ERROR-level routing noise. Reliable delivery and
+            # receiver-side stream errors still settle reply_future and the original request waiter when present.
             reply_future = self.cell.send_blob(
                 CellChannel.RETURN_ONLY,
                 f"{channel}:{topic}",
                 origin,
                 response,
                 secure,
-                optional,
+                optional=True,
                 reliable=True,
             )
         except BlobSizeError as ex:
