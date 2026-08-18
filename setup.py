@@ -21,6 +21,9 @@ from setuptools import find_packages, setup
 
 ROOT_DIR = os.path.abspath(os.path.dirname(__file__)) if "__file__" in globals() else os.getcwd()
 
+# Bump this when main moves to a new release line. NVFL_BASE_VERSION overrides it for packaging jobs.
+DEFAULT_NVFL_BASE_VERSION = "2.9.0"
+
 
 def load_local_versioneer():
     versioneer_path = os.path.join(ROOT_DIR, "versioneer.py")
@@ -37,16 +40,10 @@ versioneer = load_local_versioneer()
 # read the contents of your README file
 
 versions = versioneer.get_versions()
-base_version = os.environ.get("NVFL_BASE_VERSION")
+base_version = os.environ.get("NVFL_BASE_VERSION") or DEFAULT_NVFL_BASE_VERSION
 if versions["error"]:
-    today = datetime.date.today().timetuple()
-    year = today[0] % 1000
-    month = today[1]
-    day = today[2]
-    if base_version:
-        version = f"{base_version}.dev{year:02d}{month:02d}{day:02d}"
-    else:
-        version = f"2.6.0.dev{year:02d}{month:02d}{day:02d}"
+    date_suffix = datetime.date.today().strftime("%y%m%d")
+    version = f"{base_version}.dev{date_suffix}"
 else:
     version = versions["version"]
 
