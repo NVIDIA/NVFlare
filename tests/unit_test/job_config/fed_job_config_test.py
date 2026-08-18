@@ -86,7 +86,8 @@ class TestFedJobConfig:
         job_config.generate_job_config(tmp_path)
         marker = tmp_path / "job" / "notes.txt"
         marker.write_text("keep me", encoding="utf-8")
-        backup_job_dir = tmp_path / "job.previous"
+        backup_job_dir = tmp_path / ".nvflare_job_backups" / "job"
+        backup_job_dir.parent.mkdir()
         os.replace(tmp_path / "job", backup_job_dir)
         job_config.meta_props = {"name": "other-job"}
 
@@ -95,6 +96,18 @@ class TestFedJobConfig:
 
         assert marker.read_text(encoding="utf-8") == "keep me"
         assert not backup_job_dir.exists()
+
+    def test_generate_job_config_does_not_conflict_with_previous_suffixed_job(self, tmp_path):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        previous_job_config = FedJobConfig(job_name="job.previous", min_clients=1)
+        previous_job_config.generate_job_config(tmp_path)
+        marker = tmp_path / "job.previous" / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+
+        job_config.generate_job_config(tmp_path)
+        job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
 
     def test_generate_job_config_can_be_repeated_with_meta_props(self, tmp_path):
         job_config = FedJobConfig(job_name="job", min_clients=1, meta_props={"description": "test job"})

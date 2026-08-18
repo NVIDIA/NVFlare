@@ -38,6 +38,7 @@ CUSTOM = "custom"
 FED_SERVER_JSON = "config_fed_server.json"
 FED_CLIENT_JSON = "config_fed_client.json"
 META_JSON = "meta.json"
+BACKUP_ROOT = ".nvflare_job_backups"
 
 
 class FedJobConfig:
@@ -165,9 +166,12 @@ class FedJobConfig:
         # Revalidate at the filesystem boundary in case this low-level object was
         # constructed directly or job_name was changed after construction.
         check_job_name("job_name", self.job_name)
+        if self.job_name == BACKUP_ROOT:
+            raise ValueError(f"job_name must not use the reserved name {BACKUP_ROOT}")
         os.makedirs(job_root, exist_ok=True)
         job_dir = os.path.join(job_root, self.job_name)
-        backup_job_dir = f"{job_dir}.previous"
+        backup_root = os.path.join(job_root, BACKUP_ROOT)
+        backup_job_dir = os.path.join(backup_root, self.job_name)
         self._recover_previous_export(job_dir, backup_job_dir)
         json_dump = self._prepare_meta()
         replace_existing = False
@@ -199,13 +203,14 @@ class FedJobConfig:
                     self._get_client_app(config_dir, custom_dir, fed_app)
 
             if replace_existing:
+                os.makedirs(backup_root, exist_ok=True)
                 os.replace(job_dir, backup_job_dir)
                 try:
                     os.replace(temp_job_dir, job_dir)
                 except BaseException:
                     os.replace(backup_job_dir, job_dir)
                     raise
-                shutil.rmtree(backup_job_dir, ignore_errors=True)
+                self._remove_backup_export(backup_job_dir)
             else:
                 os.replace(temp_job_dir, job_dir)
         except BaseException:
@@ -221,9 +226,17 @@ class FedJobConfig:
             raise RuntimeError(f"Backup job folder {backup_job_dir} does not belong to job {self.job_name}.")
 
         if os.path.exists(job_dir):
-            shutil.rmtree(backup_job_dir, ignore_errors=True)
+            self._remove_backup_export(backup_job_dir)
         else:
             os.replace(backup_job_dir, job_dir)
+
+    @staticmethod
+    def _remove_backup_export(backup_job_dir):
+        shutil.rmtree(backup_job_dir, ignore_errors=True)
+        try:
+            os.rmdir(os.path.dirname(backup_job_dir))
+        except OSError:
+            pass
 
     def simulator_run(self, workspace, clients=None, n_clients=None, threads=None, gpu=None, log_config=None):
         with TemporaryDirectory() as job_root:
