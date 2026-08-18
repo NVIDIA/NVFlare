@@ -333,7 +333,13 @@ class ServerRunner(TBI):
             try:
                 filter_name = Scope.TASK_DATA_FILTERS_NAME
                 task_data = apply_filters(
-                    filter_name, task_data, fl_ctx, self.config.task_data_filters, task_name, FilterKey.OUT
+                    filter_name,
+                    task_data,
+                    fl_ctx,
+                    self.config.task_data_filters,
+                    task_name,
+                    FilterKey.OUT,
+                    abort_signal=self.abort_signal,
                 )
             except Exception as e:
                 self.log_exception(
@@ -528,7 +534,13 @@ class ServerRunner(TBI):
                 try:
                     filter_name = Scope.TASK_RESULT_FILTERS_NAME
                     result = apply_filters(
-                        filter_name, result, fl_ctx, self.config.task_result_filters, task_name, FilterKey.IN
+                        filter_name,
+                        result,
+                        fl_ctx,
+                        self.config.task_result_filters,
+                        task_name,
+                        FilterKey.IN,
+                        abort_signal=self.abort_signal,
                     )
                 except Exception as e:
                     self.log_exception(

@@ -319,7 +319,15 @@ class ClientRunner(TBI):
         task_data = task.data
         try:
             filter_name = Scope.TASK_DATA_FILTERS_NAME
-            task_data = apply_filters(filter_name, task_data, fl_ctx, self.task_data_filters, task.name, FilterKey.IN)
+            task_data = apply_filters(
+                filter_name,
+                task_data,
+                fl_ctx,
+                self.task_data_filters,
+                task.name,
+                FilterKey.IN,
+                abort_signal=abort_signal,
+            )
         except UnsafeJobError:
             self.log_exception(fl_ctx, "UnsafeJobError from Task Data Filters")
             executor.unsafe = True
@@ -333,6 +341,13 @@ class ClientRunner(TBI):
                 msg=f"submit result: {ReturnCode.UNSAFE_JOB}",
             )
         except Exception as e:
+            if abort_signal.triggered:
+                return self._reply_and_audit(
+                    reply=make_reply(ReturnCode.TASK_ABORTED),
+                    ref=server_audit_event_id,
+                    fl_ctx=fl_ctx,
+                    msg=f"submit result: {ReturnCode.TASK_ABORTED}",
+                )
             self.log_exception(fl_ctx, f"Processing error from Task Data Filters : {secure_format_exception(e)}")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.TASK_DATA_FILTER_ERROR),
@@ -439,7 +454,15 @@ class ClientRunner(TBI):
 
         try:
             filter_name = Scope.TASK_RESULT_FILTERS_NAME
-            reply = apply_filters(filter_name, reply, fl_ctx, self.task_result_filters, task.name, FilterKey.OUT)
+            reply = apply_filters(
+                filter_name,
+                reply,
+                fl_ctx,
+                self.task_result_filters,
+                task.name,
+                FilterKey.OUT,
+                abort_signal=abort_signal,
+            )
         except UnsafeJobError:
             self.log_exception(fl_ctx, "UnsafeJobError from Task Result Filters")
             executor.unsafe = True
@@ -451,6 +474,13 @@ class ClientRunner(TBI):
                 msg=f"submit result: {ReturnCode.UNSAFE_JOB}",
             )
         except Exception as e:
+            if abort_signal.triggered:
+                return self._reply_and_audit(
+                    reply=make_reply(ReturnCode.TASK_ABORTED),
+                    ref=server_audit_event_id,
+                    fl_ctx=fl_ctx,
+                    msg=f"submit result: {ReturnCode.TASK_ABORTED}",
+                )
             self.log_exception(fl_ctx, f"Processing error in Task Result Filter : {secure_format_exception(e)}")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR),

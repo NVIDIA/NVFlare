@@ -411,19 +411,29 @@ not a concrete representation guarantee.
 trainer's task-exchange metadata, and is applied by the trainer-side Client API when preparing a
 result. A DIFF is computed in the trainer-native representation before outgoing conversion.
 
-CJ task-data/task-result filter ordering is unchanged. In external-process mode, filters receive
-the payload representation delivered by the transport, which can contain lazy references when
-pass-through is active. Filter presence alone does not imply CJ materialization; an explicit
-result-event consumer may require a concrete result. Attach always presents concrete task and
-result values at the CJ boundary, independent of event consumers or whether the executor call is
-part of the active `ClientRunner` task.
+CJ task-data/task-result filter ordering is unchanged. Site filters retain the existing contract
+that they receive concrete payloads rather than transport-level `LazyDownloadRef` objects. In
+external-process mode, an active filter chain therefore terminates pass-through and materializes
+the payload in CJ before applying the filters. For server-to-trainer task data, CJ downloads and
+filters the task before forwarding it to the trainer. For trainer-to-server task results, the
+trainer routes the result back through CJ, where CJ downloads and filters it before forwarding it
+to the server. With no active filters, both directions retain direct pass-through. Attach always
+presents concrete task and result values at the CJ boundary, independent of event consumers or
+whether the executor call is part of the active `ClientRunner` task.
+
+This materialization preserves filter correctness but gives up the CJ memory benefit of
+pass-through for the filtered direction. A quantization or compression filter can reduce the
+onward network payload, but CJ has already materialized the input and may temporarily hold both
+the input and filtered output. Jobs using site filters must size CJ memory accordingly. To preserve
+the external-process memory boundary, perform the transformation in the trainer after
+`flare.receive()` or before `flare.send()` instead of configuring a site filter.
 
 Relocating content transformations from CJ filters to explicit send/receive endpoints is deferred
 to a separate design and change. That work must first inventory the existing privacy, HE,
 compression, selection, and blocking filters, including which side is trusted, which representation
 each operation requires, and whether removing or blocking a lazy reference must explicitly abandon
-its source transaction. This execution-mode change does not add a partial ``supports_lazy_payload``
-filter contract.
+its source transaction. This execution-mode change does not add a partial `supports_lazy_payload`
+filter contract or streaming/per-tensor filter API.
 
 Applications that need custom parameter transformation perform it explicitly after
 ``flare.receive()`` and before ``flare.send()``. Recipe and executor configuration deliberately

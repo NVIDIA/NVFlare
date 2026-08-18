@@ -20,7 +20,7 @@ import pytest
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ReturnCode
+from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -186,7 +186,35 @@ def test_do_task_validates_assignment_context(task_data, peer_ctx, peer_job_id, 
     with patch("nvflare.private.fed.client.client_runner.add_job_audit_event", return_value="audit-id"):
         reply = runner._do_task(_task(data=task_data), fl_ctx, Signal())
 
-    assert reply.get_return_code() == expected
+        assert reply.get_return_code() == expected
+
+
+@pytest.mark.parametrize("filter_direction", [FilterKey.IN, FilterKey.OUT])
+def test_do_task_reports_abort_during_filter_materialization(filter_direction):
+    runner = _runner()
+    executor = MagicMock()
+    executor.execute.return_value = Shareable()
+    runner.task_router.add_executor(["train"], executor)
+    peer_ctx = FLContext()
+    peer_ctx.set_prop(ReservedKey.RUN_NUM, "job-1", private=False, sticky=False)
+    fl_ctx = FLContext()
+    fl_ctx.set_peer_context(peer_ctx)
+    abort_signal = Signal()
+
+    def apply_or_abort(_filter_name, filter_data, _fl_ctx, _filters, _task_name, direction, **_kwargs):
+        if direction == filter_direction:
+            abort_signal.trigger(True)
+            raise RuntimeError("download aborted")
+        return filter_data
+
+    with (
+        patch("nvflare.private.fed.client.client_runner.add_job_audit_event", return_value="audit-id"),
+        patch("nvflare.private.fed.client.client_runner.apply_filters", side_effect=apply_or_abort),
+    ):
+        reply = runner._do_task(_task(), fl_ctx, abort_signal)
+
+    assert reply.get_return_code() == ReturnCode.TASK_ABORTED
+    runner.log_exception.assert_not_called()
 
 
 @pytest.mark.parametrize(

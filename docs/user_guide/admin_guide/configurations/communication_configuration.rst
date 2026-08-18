@@ -292,8 +292,8 @@ certificate/key for Cell authentication and end-to-end message protection.
     "execution_mode": "attach",
     "attach_id": "trainer_a",
     "site_name": "site-1",
-    "connect_url": "tcp://site-1.example.com:8004",
-    "connection_security": "clear",
+    "connect_url": "stcp://site-1.example.com:8004",
+    "connection_security": "mtls",
     "secure_mode": true,
     "ca_cert": "/absolute/path/to/site/startup/rootCA.pem",
     "job_wait_timeout": null
@@ -304,6 +304,12 @@ certificate/key for Cell authentication and end-to-end message protection.
 trainer identity can start before the job and bind the dynamic CJ through
 authenticated ``SESSION_OPEN``; the trainer never receives the site's server
 bearer token.
+
+Prepared Docker, Kubernetes, and Slurm parents use ``stcp`` with mTLS by
+default. To opt out on a trusted, isolated network, set
+``parent.internal_connection_security: clear`` for Docker/Kubernetes or
+``job_launcher.internal_connection_security: clear`` for Slurm, then use
+``tcp`` with ``connection_security="clear"``.
 
 See :ref:`client_api_attach` for job and trainer configuration.
 
