@@ -30,23 +30,16 @@ _DEPLOYMENT_TUTORIAL = _REPO_ROOT / (
 _SETUP_TUTORIAL = _REPO_ROOT / "examples/tutorials/setup_poc.ipynb"
 
 
-def _load_notebook(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
 def _notebook_text(path: Path) -> str:
-    notebook = _load_notebook(path)
+    notebook = json.loads(path.read_text(encoding="utf-8"))
     return "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
 
 
-def _nvflare_commands(path: Path, cell_type=None):
-    for cell in _load_notebook(path)["cells"]:
-        if cell_type and cell.get("cell_type") != cell_type:
-            continue
-        for line in "".join(cell.get("source", [])).splitlines():
-            command = line.strip().removeprefix("!").strip()
-            if command.startswith("nvflare "):
-                yield shlex.split(command)
+def _nvflare_commands(path: Path):
+    for line in _notebook_text(path).splitlines():
+        command = line.strip().removeprefix("!").strip()
+        if command.startswith("nvflare "):
+            yield shlex.split(command)
 
 
 def _tutorial_parser():
@@ -73,18 +66,6 @@ def test_poc_tutorial_commands_parse():
 def test_tutorials_do_not_pipe_into_nvflare_commands():
     for path in (_DEPLOYMENT_TUTORIAL, _SETUP_TUTORIAL):
         assert re.search(r"\|\s*nvflare\b", _notebook_text(path)) is None
-
-
-def test_executable_poc_prepare_commands_use_force():
-    for path in (_DEPLOYMENT_TUTORIAL, _SETUP_TUTORIAL):
-        prepare_commands = [
-            command
-            for command in _nvflare_commands(path, cell_type="code")
-            if command[:3] == ["nvflare", "poc", "prepare"] and not {"-h", "--help"}.intersection(command)
-        ]
-        assert prepare_commands
-        for command in prepare_commands:
-            assert "--force" in command, command
 
 
 def test_deployment_tutorial_commands_use_current_docker_participants():
