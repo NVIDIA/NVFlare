@@ -788,7 +788,7 @@ class _HFTaskState:
         if self.task_kind != TASK_TRAIN or not self.pending:
             return
         if self.train_with_evaluation and self.pre_train_metrics is None:
-            raise RuntimeError("train with evaluation missing training metrics, please remember to call evaluate.")
+            raise RuntimeError("train with evaluation requires evaluation metrics; call evaluate before train.")
 
         end_global_step = int(getattr(hf_train_state, "global_step", 0) or 0)
         end_tokens = _optional_int(getattr(hf_train_state, "num_input_tokens_seen", None))
