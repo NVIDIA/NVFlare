@@ -38,18 +38,22 @@ Start from `attach_profile_network.json`:
   "execution_mode": "attach",
   "attach_id": "numpy_trainer",
   "site_name": "site-1",
-  "connect_url": "tcp://site-1.example.com:8004",
-  "connection_security": "clear",
+  "connect_url": "stcp://site-1.example.com:8004",
+  "connection_security": "mtls",
   "secure_mode": true,
   "ca_cert": "/absolute/path/to/site/startup/rootCA.pem",
   "job_wait_timeout": null
 }
 ```
 
-`connect_url` must be the provisioned CP internal listener, not a CJ URL. Keep
-`client.crt` and `client.key` beside `rootCA.pem`. `secure_mode=true` uses those
-site credentials for Cell authentication and end-to-end payload encryption even
-when the CP transport itself is `connection_security="clear"`.
+`connect_url` must be the provisioned CP internal listener, not a CJ URL. Prepared
+Docker, Kubernetes, and Slurm parents use `stcp` with mTLS by default. Keep
+`client.crt` and `client.key` beside `rootCA.pem`; they provide transport and Cell
+authentication, while `secure_mode=true` provides end-to-end payload encryption.
+To opt out on a trusted, isolated network, set
+`parent.internal_connection_security: clear` for Docker/Kubernetes or
+`job_launcher.internal_connection_security: clear` for Slurm, then use `tcp`
+with `connection_security="clear"`.
 
 The trainer identity is stable:
 
