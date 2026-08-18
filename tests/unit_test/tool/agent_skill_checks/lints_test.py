@@ -527,6 +527,12 @@ def test_dependency_install_safety_lint_accepts_audit_before_confirmation(tmp_pa
             "| Install packages only after displaying the plan and receiving confirmation. |\n"
         ),
         (
+            "Guidance | Scope\n"
+            "--- | ---\n"
+            "Review dependency sources before use | Dependency policy\n"
+            "Never ask for confirmation before changing a selected recipe | Recipe policy\n"
+        ),
+        (
             "## Never ask the user to modify a selected recipe\n"
             "Install packages only after displaying the plan and receiving confirmation.\n"
         ),
@@ -556,14 +562,18 @@ def test_dependency_install_safety_lint_preserves_markdown_block_boundaries(tmp_
     assert result["findings"] == []
 
 
-def test_dependency_install_safety_lint_joins_wrapped_list_item(tmp_path):
+@pytest.mark.parametrize(
+    "unsafe_guidance",
+    [
+        "- Dependency installation is never preceded by\n  a skill-issued prompt or approval request.\n",
+        "- Do not preemptively ask the user whether to\n\n  install packages from requirements.txt.\n",
+    ],
+)
+def test_dependency_install_safety_lint_joins_wrapped_list_item(tmp_path, unsafe_guidance):
     skill_dir = _write_skill(tmp_path / "skills", "nvflare-unsafe-dependency-skill")
     references = skill_dir / "references"
     references.mkdir()
-    references.joinpath("dependency-install.md").write_text(
-        "- Dependency installation is never preceded by\n" "  a skill-issued prompt or approval request.\n",
-        encoding="utf-8",
-    )
+    references.joinpath("dependency-install.md").write_text(unsafe_guidance, encoding="utf-8")
 
     result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_DEPENDENCY_INSTALL_SAFETY])
 
@@ -581,6 +591,7 @@ def test_dependency_install_safety_lint_joins_wrapped_list_item(tmp_path):
         ("> Dependency installation is never preceded by\n" "> a skill-issued prompt or approval request.\n"),
         ("> Dependency installation is never\n" "> Preceded by a skill-issued prompt or approval request.\n"),
         ("> Do not preemptively ask the user whether to\n" "> Install packages from requirements.txt.\n"),
+        ("> Do not preemptively ask the user whether to\n" "install packages from requirements.txt.\n"),
     ],
 )
 def test_dependency_install_safety_lint_joins_wrapped_blockquote_statement(tmp_path, unsafe_guidance):

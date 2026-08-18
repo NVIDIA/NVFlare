@@ -260,6 +260,7 @@ _MARKDOWN_FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 _MARKDOWN_LIST_ITEM_RE = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s+")
 _MARKDOWN_SENTENCE_END_RE = re.compile(r"[.!?;](?:[`*_]+)?\s*$")
 _MARKDOWN_STRUCTURAL_SEPARATOR_RE = re.compile(r"^\s{0,3}(?:=+|-{3,})\s*$")
+_MARKDOWN_TABLE_DELIMITER_CELL_RE = re.compile(r"^:?-{3,}:?$")
 _MARKDOWN_TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
 
 
@@ -1525,13 +1526,17 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
     boundaries. Fenced content is still scanned because skill instructions can
     be conveyed through examples and command snippets.
     """
+    lines = text.splitlines()
+    table_row_numbers = _markdown_table_row_numbers(lines)
     block_lines = []
     block_start = 1
-    block_is_blockquote = False
+    block_kind = ""
+    list_content_indent = 0
+    list_blank_pending = False
     fenced_lines = []
     fenced_start = 1
     fence_marker = ""
-    for line_number, line in enumerate(text.splitlines(), start=1):
+    for line_number, line in enumerate(lines, start=1):
         stripped = line.strip()
 
         if fence_marker:
@@ -1551,17 +1556,31 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
             if block_lines:
                 yield block_start, " ".join(block_lines)
                 block_lines = []
-                block_is_blockquote = False
+                block_kind = ""
+                list_blank_pending = False
             fence_marker = fence_match.group(1)
             fenced_start = line_number + 1
             continue
 
         if not stripped:
-            if block_lines:
+            if block_kind == "list":
+                list_blank_pending = True
+            elif block_lines:
                 yield block_start, " ".join(block_lines)
                 block_lines = []
-                block_is_blockquote = False
+                block_kind = ""
             continue
+
+        if list_blank_pending:
+            indentation = len(line) - len(line.lstrip(" \t"))
+            if indentation >= list_content_indent:
+                block_lines.append(stripped)
+                list_blank_pending = False
+                continue
+            yield block_start, " ".join(block_lines)
+            block_lines = []
+            block_kind = ""
+            list_blank_pending = False
 
         blockquote_match = _MARKDOWN_BLOCKQUOTE_RE.match(line)
         if blockquote_match:
@@ -1570,50 +1589,84 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
                 if block_lines:
                     yield block_start, " ".join(block_lines)
                     block_lines = []
-                    block_is_blockquote = False
+                    block_kind = ""
                 continue
-            if block_is_blockquote and _is_markdown_blockquote_continuation(block_lines[-1], content):
+            if block_kind == "blockquote" and _is_markdown_blockquote_continuation(block_lines[-1], content):
                 block_lines.append(content)
                 continue
             if block_lines:
                 yield block_start, " ".join(block_lines)
             block_lines = [content]
             block_start = line_number
-            block_is_blockquote = True
+            block_kind = "blockquote"
             continue
 
-        if _MARKDOWN_LIST_ITEM_RE.match(line):
+        list_item_match = _MARKDOWN_LIST_ITEM_RE.match(line)
+        if list_item_match:
             if block_lines:
                 yield block_start, " ".join(block_lines)
             block_lines = [stripped]
             block_start = line_number
-            block_is_blockquote = False
+            block_kind = "list"
+            list_content_indent = list_item_match.end()
             continue
 
         if (
             _MARKDOWN_ATX_HEADING_RE.match(line)
             or _MARKDOWN_STRUCTURAL_SEPARATOR_RE.match(line)
             or _MARKDOWN_TABLE_ROW_RE.match(line)
+            or line_number in table_row_numbers
         ):
             if block_lines:
                 yield block_start, " ".join(block_lines)
                 block_lines = []
-                block_is_blockquote = False
+                block_kind = ""
             yield line_number, stripped
             continue
 
-        if block_is_blockquote:
+        if block_kind == "blockquote":
+            if _is_markdown_blockquote_continuation(block_lines[-1], stripped):
+                block_lines.append(stripped)
+                continue
             yield block_start, " ".join(block_lines)
             block_lines = []
-            block_is_blockquote = False
+            block_kind = ""
+        elif block_kind == "list":
+            indentation = len(line) - len(line.lstrip(" \t"))
+            if indentation >= list_content_indent:
+                block_lines.append(stripped)
+                continue
+            yield block_start, " ".join(block_lines)
+            block_lines = []
+            block_kind = ""
         if not block_lines:
             block_start = line_number
+            block_kind = "paragraph"
         block_lines.append(stripped)
 
     if fence_marker and fenced_lines:
         yield fenced_start, " ".join(fenced_lines)
     if block_lines:
         yield block_start, " ".join(block_lines)
+
+
+def _markdown_table_row_numbers(lines: list[str]) -> set[int]:
+    """Return one-based row numbers for pipe tables, including unbordered tables."""
+    row_numbers = set()
+    for delimiter_index, line in enumerate(lines):
+        content = line.strip().removeprefix("|").removesuffix("|")
+        cells = [cell.strip() for cell in content.split("|")]
+        if len(cells) < 2 or not all(_MARKDOWN_TABLE_DELIMITER_CELL_RE.fullmatch(cell) for cell in cells):
+            continue
+        header_index = delimiter_index - 1
+        if header_index < 0 or "|" not in lines[header_index]:
+            continue
+        row_numbers.update({header_index + 1, delimiter_index + 1})
+        for body_index in range(delimiter_index + 1, len(lines)):
+            if not lines[body_index].strip() or "|" not in lines[body_index]:
+                break
+            row_numbers.add(body_index + 1)
+    return row_numbers
 
 
 def _is_markdown_blockquote_continuation(previous: str, current: str) -> bool:
