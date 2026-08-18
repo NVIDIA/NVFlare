@@ -34,11 +34,10 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 SKILLS_ROOT = REPO_ROOT / "skills"
 
 
-def test_shipped_skills_frontmatter_is_agentskills_spec_compliant():
-    # Every shipped skill must keep only agentskills.io top-level keys; NVFLARE
-    # custom fields (min-flare-version, blast-radius, category, ...) live under
-    # `metadata:`. Locks in the spec alignment so a top-level custom field can't
-    # silently regress.
+def test_shipped_skills_frontmatter_matches_nvidia_skill_profile():
+    # Every shipped skill keeps only the portable fields and intentional NVIDIA
+    # catalog extensions; NVFLARE custom fields (min-flare-version,
+    # blast-radius, category, ...) live under `metadata:`.
     skill_dirs = [d for d in sorted(SKILLS_ROOT.iterdir()) if not should_skip_skill_dir(d)]
     assert skill_dirs, "no shipped skills found"
     for skill_dir in skill_dirs:

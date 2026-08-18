@@ -231,7 +231,8 @@ def _validate_supported_top_level_fields(
                 _issue(
                     "skill-frontmatter-field-unsupported",
                     f"unsupported top-level frontmatter field '{key}'; nest custom fields under 'metadata:' "
-                    f"(agentskills.io allows only {', '.join(sorted(SPEC_TOP_LEVEL_FIELDS))} at the top level)",
+                    f"(the NVIDIA skill profile allows only "
+                    f"{', '.join(sorted(SPEC_TOP_LEVEL_FIELDS))} at the top level)",
                     skill_file,
                 )
             )

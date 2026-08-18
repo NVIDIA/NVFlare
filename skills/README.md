@@ -25,9 +25,9 @@ templates shared by the other skills and is installed alongside them, but it is
 not user-selectable. It still follows the skill structure (a valid `SKILL.md`
 with `status: internal`, plus `references/` and `assets/`).
 
-`SKILL.md` frontmatter follows the [agentskills.io spec](https://agentskills.io/specification):
-only `name`, `description`, `license`, `compatibility`, `metadata`, and
-`allowed-tools` are allowed at the top level. NVFLARE's required fields
+`SKILL.md` frontmatter uses the portable fields from the
+[agentskills.io spec](https://agentskills.io/specification) plus the NVIDIA
+catalog extensions documented below. NVFLARE's required fields
 (`min-flare-version`, `blast-radius`, and public-skill `category`) are nested
 under the `metadata:` map:
 
@@ -44,8 +44,9 @@ metadata:
 ```
 
 The skill name above is illustrative; actual skill directories use their
-published skill names. Do not place NVFLARE custom fields at the top level;
-the skill validator rejects them unless they are nested under `metadata:`.
+published skill names. Other than the NVIDIA catalog fields accepted by the
+validator, do not place NVFLARE custom fields at the top level; nest them under
+`metadata:`.
 
 Public skills must include `category` under `metadata:` as product-facing
 runtime metadata. Draft, internal, and private skills (`metadata.status`) may

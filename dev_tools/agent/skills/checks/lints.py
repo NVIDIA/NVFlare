@@ -172,23 +172,60 @@ _DEPENDENCY_CONFIRMATION_BYPASS_RES = (
         re.IGNORECASE,
     ),
     re.compile(
-        r"\b(?:do\s+not|don't|never)\s+(?:preemptively\s+)?(?:ask|prompt)\b[^.!?;]{0,120}"
-        r"\b(?:whether\s+to|before|prior\s+to|for\s+(?:an?\s+)?(?:approval|confirmation)"
-        r"(?:\s+(?:before|prior\s+to|when))?)\b[^.!?;]{0,100}"
-        r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b",
+        r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,120}"
+        r"\b(?:do\s+not|don't|never)\s+(?:preemptively\s+)?(?:ask|prompt)\b[^.!?;]{0,100}"
+        r"\b(?:approval|confirmation)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,160}"
+        r"\bwithout\s+(?:explicit\s+)?(?:user\s+)?(?:approval|confirmation|consent)\b",
         re.IGNORECASE,
     ),
     re.compile(
         r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,120}"
-        r"\b(?:do\s+not|don't|never)\s+(?:preemptively\s+)?(?:ask|prompt)\b[^.!?;]{0,100}"
-        r"\b(?:approval|confirmation)\b",
+        r"\b(?:requires?|needs?)\s+no\s+(?:user\s+)?(?:approval|confirmation|consent)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bno\s+(?:user\s+)?(?:approval|confirmation|consent)\s+(?:is\s+)?(?:required|needed)\b"
+        r"[^.!?;]{0,120}\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b",
+        re.IGNORECASE,
+    ),
+)
+_DEPENDENCY_CONFIRMATION_REQUEST_SUPPRESSION_RE = re.compile(
+    r"\b(?:do\s+not|don't|never)\s+(?:preemptively\s+)?(?:ask|prompt)\b[^.!?;]{0,120}"
+    r"\b(?:whether\s+to|before|prior\s+to|for\s+(?:an?\s+)?(?:approval|confirmation)"
+    r"(?:\s+(?:before|prior\s+to|when))?)\b[^.!?;]{0,100}"
+    r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b",
+    re.IGNORECASE,
+)
+_DEPENDENCY_AUDIT_FIRST_RE = re.compile(
+    r"\b(?:do\s+not|don't|never)\s+(?:preemptively\s+)?(?:ask|prompt)\b[^.!?;]{0,180}"
+    r"\b(?:before|prior\s+to)\b[^.!?;]{0,120}"
+    r"\b(?:audit\w*|review\w*|vet\w*|classif\w*|flag\w*)\b",
+    re.IGNORECASE,
+)
+_DEPENDENCY_POST_AUDIT_CONFIRMATION_RES = (
+    re.compile(
+        r"\b(?:after|following|once)\b[^.!?;]{0,80}"
+        r"\b(?:audit\w*|review\w*|vet\w*|classif\w*)\b[^.!?;]{0,160}"
+        r"\b(?:obtain|request|receive|require|wait\s+for)\b[^.!?;]{0,80}"
+        r"\b(?:explicit\s+)?(?:user\s+)?(?:approval|confirmation|consent)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:obtain|request|receive|require|wait\s+for)\b[^.!?;]{0,80}"
+        r"\b(?:explicit\s+)?(?:user\s+)?(?:approval|confirmation|consent)\b[^.!?;]{0,120}"
+        r"\b(?:after|following|once)\b[^.!?;]{0,80}"
+        r"\b(?:audit\w*|review\w*|vet\w*|classif\w*)\b",
         re.IGNORECASE,
     ),
 )
 _DEPENDENCY_REVIEW_BYPASS_RES = (
     re.compile(
         r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,160}"
-        r"\bwithout\s+(?:auditing|reviewing|vetting|classifying)\b",
+        r"\bwithout\s+(?:(?:an?|any|the)\s+)?(?:audit\w*|review\w*|vet\w*|classif\w*)\b",
         re.IGNORECASE,
     ),
     re.compile(
@@ -202,6 +239,12 @@ _DEPENDENCY_REVIEW_BYPASS_RES = (
         r"(?:\s*,\s*(?:audit\w*|review\w*|vet\w*|classif\w*|flag\w*))*"
         r"(?:\s*,?\s*(?:or|and)\s+(?:audit\w*|review\w*|vet\w*|classif\w*|flag\w*))?"
         r"\s+(?:(?:the|any)\s+)?(?:dependenc\w*|package\w*|requirements?|sources?)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?<!do not )(?<!don't )(?<!never )\b(?:skip|bypass|omit)\w*\b[^.!?;]{0,80}"
+        r"\b(?:audit\w*|review\w*|vet\w*|classif\w*|flag\w*)\b[^.!?;]{0,120}"
+        r"\b(?:dependenc\w*|install\w*|package\w*|requirements?|sources?)\b",
         re.IGNORECASE,
     ),
 )
@@ -1034,7 +1077,7 @@ def _lint_dependency_install_safety(context: LintContext) -> None:
             for line_number, paragraph in _iter_markdown_policy_blocks(text):
                 if not _DEPENDENCY_INSTALL_TERMS_RE.search(paragraph):
                     continue
-                if _has_dependency_policy_bypass(paragraph, _DEPENDENCY_CONFIRMATION_BYPASS_RES):
+                if _has_dependency_confirmation_bypass(paragraph):
                     context.findings.append(
                         _finding(
                             LINT_SKILL_DEPENDENCY_INSTALL_SAFETY,
@@ -1569,6 +1612,18 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
 def _has_dependency_policy_bypass(text: str, patterns: Iterable[re.Pattern]) -> bool:
     """Return whether dependency guidance contains a semantically linked bypass."""
     return any(pattern.search(text) for pattern in patterns)
+
+
+def _has_dependency_confirmation_bypass(text: str) -> bool:
+    """Distinguish a confirmation bypass from an explicit audit-then-confirm sequence."""
+    if _has_dependency_policy_bypass(text, _DEPENDENCY_CONFIRMATION_BYPASS_RES):
+        return True
+    if not _DEPENDENCY_CONFIRMATION_REQUEST_SUPPRESSION_RE.search(text):
+        return False
+    audit_then_confirm = _DEPENDENCY_AUDIT_FIRST_RE.search(text) and _has_dependency_policy_bypass(
+        text, _DEPENDENCY_POST_AUDIT_CONFIRMATION_RES
+    )
+    return not audit_then_confirm
 
 
 def _eval_mentions_file_editing(item: dict[str, Any]) -> bool:

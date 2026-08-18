@@ -437,6 +437,23 @@ def test_run_v1_lints_reference_text_scan_ignores_symlink_loop(tmp_path):
             "The skill does not audit, classify, or flag package sources before installation.",
             "dependency-install-review-bypass",
         ),
+        (
+            "Install dependencies without user confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Dependency installation requires no user approval.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Skip reviewing package sources before installation.",
+            "dependency-install-review-bypass",
+        ),
+        (
+            "Do not ask whether to install packages before auditing their sources. "
+            "After the audit, install dependencies without user confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
     ],
 )
 def test_dependency_install_safety_lint_rejects_review_or_confirmation_bypass(tmp_path, unsafe_guidance, expected_code):
@@ -460,6 +477,35 @@ def test_dependency_install_safety_lint_accepts_reviewed_confirmed_install(tmp_p
         "Show a redacted install plan and obtain explicit confirmation before installing packages.\n",
         encoding="utf-8",
     )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_DEPENDENCY_INSTALL_SAFETY])
+
+    assert result["status"] == "ok"
+    assert result["findings"] == []
+
+
+@pytest.mark.parametrize(
+    "safe_guidance",
+    [
+        (
+            "Do not ask whether to install packages before auditing their sources. "
+            "After the audit, show the plan and obtain explicit user confirmation."
+        ),
+        (
+            "Do not ask for approval before reviewing dependency sources; "
+            "obtain explicit user approval after the review."
+        ),
+        (
+            "Do not skip reviewing package sources before installation. "
+            "Obtain explicit user confirmation before installing."
+        ),
+    ],
+)
+def test_dependency_install_safety_lint_accepts_audit_before_confirmation(tmp_path, safe_guidance):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-safe-dependency-skill")
+    references = skill_dir / "references"
+    references.mkdir()
+    references.joinpath("dependency-install.md").write_text(safe_guidance + "\n", encoding="utf-8")
 
     result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_DEPENDENCY_INSTALL_SAFETY])
 

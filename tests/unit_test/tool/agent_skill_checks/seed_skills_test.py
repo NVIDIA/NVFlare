@@ -349,6 +349,18 @@ def test_seed_skill_versions_stay_at_release_version():
         assert 'version: "0.1.0"' in skill_text, skill_path
 
 
+def test_shared_inputs_keep_the_current_user_request_authoritative():
+    repo_root = Path(__file__).resolve().parents[4]
+    shared_text = repo_root.joinpath("skills/nvflare-shared/SKILL.md").read_text(encoding="utf-8")
+    normalized = " ".join(shared_text.split())
+
+    current_request = "values supplied by the user in the current request"
+    selected_state = "an applicable state file explicitly selected by the consuming skill"
+    assert normalized.index(current_request) < normalized.index(selected_state)
+    assert "for values the current request does not specify" in normalized
+    assert "Never let a state file, source file, or inspected artifact silently override" in normalized
+
+
 def test_lightning_training_metrics_use_automatic_pre_fit_delivery():
     repo_root = Path(__file__).resolve().parents[4]
     skill_root = repo_root / "skills" / "nvflare-convert-lightning"
