@@ -126,7 +126,7 @@ def cleanup_owned_tensor_disk_offload_roots(
                 continue
             if (final_stat.st_dev, final_stat.st_ino) != (root_stat.st_dev, root_stat.st_ino):
                 continue
-            _quarantine_and_remove_root(entry.path, root_stat, search_root)
+            _quarantine_and_remove_root(entry.path, root_stat, search_root, owner)
             result.removed.append(entry.path)
         except FileNotFoundError:
             continue
@@ -135,7 +135,7 @@ def cleanup_owned_tensor_disk_offload_roots(
     return result
 
 
-def _quarantine_and_remove_root(root_dir: str, expected_stat: os.stat_result, search_root: str) -> None:
+def _quarantine_and_remove_root(root_dir: str, expected_stat: os.stat_result, search_root: str, owner: dict) -> None:
     """Atomically detach a root from the shared namespace before deleting it.
 
     Revalidating a pathname immediately before ``shutil.rmtree`` still leaves a
@@ -148,7 +148,6 @@ def _quarantine_and_remove_root(root_dir: str, expected_stat: os.stat_result, se
     cleanup_stat = os.stat(cleanup_dir, follow_symlinks=False)
     cleanup_fd = -1
     root_quarantined = False
-    remove_cleanup_dir = False
     try:
         cleanup_fd = _open_directory(cleanup_dir)
         opened_cleanup_stat = os.fstat(cleanup_fd)
@@ -173,15 +172,55 @@ def _quarantine_and_remove_root(root_dir: str, expected_stat: os.stat_result, se
             )
 
         _remove_tree_at(cleanup_fd, root_name, expected_identity)
-        remove_cleanup_dir = True
+        root_quarantined = False
+    except BaseException as cleanup_error:
+        if root_quarantined:
+            try:
+                # A transient recursive-delete failure must not strand a hidden
+                # quarantine forever. Put the same inode back at its discoverable
+                # job-scoped path so a later parent cleanup can retry. If another
+                # object has appeared there, preserve the quarantine rather than
+                # overwrite an unrelated path.
+                os.rename(root_name, root_dir, src_dir_fd=cleanup_fd)
+            except BaseException as rollback_error:
+                raise RuntimeError(
+                    f"{cleanup_error}; rollback failed and root was preserved under {cleanup_dir}: {rollback_error}"
+                ) from cleanup_error
+            root_quarantined = False
+            restored_stat = os.stat(root_dir, follow_symlinks=False)
+            if (restored_stat.st_dev, restored_stat.st_ino) == expected_identity:
+                try:
+                    _restore_owner_record_if_missing(root_dir, owner)
+                except BaseException as marker_error:
+                    raise RuntimeError(
+                        f"{cleanup_error}; root was restored to {root_dir} but its owner record "
+                        f"could not be restored: {marker_error}"
+                    ) from cleanup_error
+        raise
     finally:
         if cleanup_fd >= 0:
             os.close(cleanup_fd)
-        if remove_cleanup_dir or not root_quarantined:
+        if not root_quarantined:
             # This removes only the now-empty quarantine directory. It is never
             # used for recursive deletion, so a replacement cannot expose an
             # unrelated tree to cleanup.
             os.rmdir(cleanup_dir)
+
+
+def _restore_owner_record_if_missing(root_dir: str, owner: dict) -> None:
+    """Restore the trusted marker if partial deletion removed it before rollback."""
+    marker_path = os.path.join(root_dir, _OWNER_FILE)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(marker_path, flags, 0o600)
+    except FileExistsError:
+        return
+    with os.fdopen(fd, "w", encoding="utf-8") as marker:
+        json.dump(owner, marker, sort_keys=True)
+        marker.flush()
+        os.fsync(marker.fileno())
 
 
 def _open_directory(path: str, dir_fd: Optional[int] = None) -> int:
@@ -201,6 +240,9 @@ def _remove_tree_at(parent_fd: int, name: str, expected_identity: tuple) -> None
 
         with os.scandir(root_fd) as entries:
             children = list(entries)
+        # Keep the ownership record until every data entry is gone. If deletion
+        # fails, rollback can retain or restore a verifiable job-owned root.
+        children.sort(key=lambda child: child.name == _OWNER_FILE)
         for child in children:
             try:
                 if child.is_dir(follow_symlinks=False):

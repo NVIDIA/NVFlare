@@ -1953,11 +1953,14 @@ class TestExecute:
             assert result.get_return_code() == ReturnCode.TASK_ABORTED
             assert elapsed < 10.0, "abort must not wait out the result bound"
             assert [f for f in env.cell.fired if f[0] == Topic.ABORT]
+            assert backend._abort is False
+            assert backend._terminal_intent is None
+            assert backend._active_launch is not None
         finally:
             backend.finalize(FLContext())
 
     @pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
-    def test_launch_once_abort_after_result_stops_owned_trainer_before_execute_returns(self, env):
+    def test_launch_once_task_abort_after_result_preserves_owned_trainer_for_later_tasks(self, env):
         backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
         abort_signal = Signal()
         task_count = 0
@@ -1967,13 +1970,15 @@ class TestExecute:
             task_count += 1
             if task_count == 1:
                 task_payload = request.payload
+                result = _result_shareable()
+                result["lazy"] = LazyDownloadRef(target, "round-0-ref", "T0")
                 env.cell.deliver(
                     Topic.RESULT_READY,
                     target,
                     {
                         MsgKey.SESSION_ID: task_payload[MsgKey.SESSION_ID],
                         MsgKey.TASK_ID: task_payload[MsgKey.TASK_ID],
-                        MsgKey.RESULT: _result_shareable(),
+                        MsgKey.RESULT: result,
                     },
                 )
             else:
@@ -1996,9 +2001,20 @@ class TestExecute:
 
             assert second.get_return_code() == ReturnCode.TASK_ABORTED
             assert len(env.harness.processes) == 1, "launch_once must reuse the round-0 trainer"
-            assert process.returncode == -signal.SIGTERM
-            assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
-            assert backend._active_launch is None
+            assert process.returncode is None
+            assert env.harness.signals_sent() == []
+            assert backend._active_launch is not None
+            assert backend._abort is False
+            assert backend._terminal_intent is None
+
+            # The task-only signal must not disarm fatal detection for the already
+            # accepted round-0 source.
+            process.exit(-signal.SIGKILL)
+            deadline = time.monotonic() + 1.0
+            while not backend._context.executor.system_panic.called and time.monotonic() < deadline:
+                time.sleep(0.005)
+            backend._context.executor.system_panic.assert_called_once()
+            assert backend._terminal_intent == ebp._TERMINAL_INTENT_FAILURE
         finally:
             backend.finalize(FLContext())
 
@@ -2012,8 +2028,10 @@ class TestExecute:
             assert result.get_return_code() == ReturnCode.TASK_ABORTED
             # the trainer was told the task is aborted
             assert [f for f in env.cell.fired if f[0] == Topic.ABORT]
-            assert backend._active_launch is None
-            assert env.harness.processes[0].returncode is not None
+            assert backend._active_launch is not None
+            assert env.harness.processes[0].returncode is None
+            assert backend._abort is False
+            assert backend._terminal_intent is None
         finally:
             backend.finalize(FLContext())
 
@@ -2315,9 +2333,18 @@ class TestAcceptedResultSourceFailure:
             time.sleep(0.005)
         return []
 
+    @staticmethod
+    def _wait_for_job_failure(backend, timeout=1.0):
+        executor = backend._context.executor
+        deadline = time.monotonic() + timeout
+        while not executor.system_panic.called and time.monotonic() < deadline:
+            time.sleep(0.005)
+        return executor
+
     def test_launch_once_trainer_death_notifies_exact_result_receiver(self, env, monkeypatch, client_job_exit):
         monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
         backend, _ = _initialized_backend(env, launch_once=True)
+        backend._run_abort_signal = Signal()
         try:
             task, trainer = self._accept_lazy_result(backend, env)
 
@@ -2335,15 +2362,17 @@ class TestAcceptedResultSourceFailure:
             assert trainer.result_failure_notified
             assert not trainer.result_source_live.is_set()
             assert trainer.result_source_task_id is None
-            deadline = time.monotonic() + 1.0
-            while not client_job_exit.called and time.monotonic() < deadline:
-                time.sleep(0.005)
-            client_job_exit.assert_called_once_with(ProcessExitCode.EXCEPTION)
+            executor = self._wait_for_job_failure(backend)
+            executor.system_panic.assert_called_once()
+            client_job_exit.assert_not_called()
+            assert backend._run_abort_signal.triggered
             with open(os.path.join(env.app_dir, FLMetaKey.PROCESS_RC_FILE), encoding="utf-8") as f:
                 assert int(f.read()) == ProcessExitCode.EXCEPTION
 
             backend._fail_accepted_result_source(trainer, task.task_id, "duplicate")
+            backend._fail_job_for_lost_result_source("duplicate")
             assert len([message for message in env.cell.sent if message[0] == SOURCE_FAILURE_TOPIC]) == 1
+            executor.system_panic.assert_called_once()
         finally:
             backend.finalize(FLContext())
 
@@ -2358,6 +2387,7 @@ class TestAcceptedResultSourceFailure:
             trainer.source_monitor_thread.join(timeout=1.0)
 
             assert not trainer.source_monitor_thread.is_alive()
+            backend._context.executor.system_panic.assert_not_called()
             client_job_exit.assert_not_called()
             assert not os.path.exists(os.path.join(env.app_dir, FLMetaKey.PROCESS_RC_FILE))
         finally:
@@ -2383,10 +2413,9 @@ class TestAcceptedResultSourceFailure:
             backend.abort(FLContext())
             release_delivery.set()
 
-            deadline = time.monotonic() + 1.0
-            while not client_job_exit.called and time.monotonic() < deadline:
-                time.sleep(0.005)
-            client_job_exit.assert_called_once_with(ProcessExitCode.EXCEPTION)
+            executor = self._wait_for_job_failure(backend)
+            executor.system_panic.assert_called_once()
+            client_job_exit.assert_not_called()
             with open(os.path.join(env.app_dir, FLMetaKey.PROCESS_RC_FILE), encoding="utf-8") as f:
                 assert int(f.read()) == ProcessExitCode.EXCEPTION
         finally:
@@ -2412,10 +2441,9 @@ class TestAcceptedResultSourceFailure:
             assert failures[0][1] == "site-4.job-1"
             assert failures[0][2]["source_fqcn"] == trainer.trainer_fqcn
             assert failures[0][2]["ref_ids"] == ("result-ref",)
-            deadline = time.monotonic() + 1.0
-            while not client_job_exit.called and time.monotonic() < deadline:
-                time.sleep(0.005)
-            client_job_exit.assert_called_once_with(ProcessExitCode.EXCEPTION)
+            executor = self._wait_for_job_failure(backend)
+            executor.system_panic.assert_called_once()
+            client_job_exit.assert_not_called()
         finally:
             backend.finalize(FLContext())
 
@@ -2437,6 +2465,29 @@ class TestAcceptedResultSourceFailure:
                 time.sleep(0.005)
 
             assert not [message for message in env.cell.sent if message[0] == SOURCE_FAILURE_TOPIC]
+        finally:
+            backend.finalize(FLContext())
+
+    @pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
+    def test_rc_zero_launcher_cannot_mask_unsettled_worker_group_death(self, env, monkeypatch, client_job_exit):
+        monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(env, launch_once=True)
+        try:
+            _, trainer = self._accept_lazy_result(backend, env)
+            trainer.process.exit(0)
+            trainer.process.extra_group_members = True
+
+            time.sleep(0.03)
+            assert backend._context.executor.system_panic.call_count == 0
+            assert not [message for message in env.cell.sent if message[0] == SOURCE_FAILURE_TOPIC]
+
+            trainer.process.extra_group_members = False
+            failures = self._wait_for_source_failure(env.cell)
+
+            assert len(failures) == 1
+            assert "rc=0" in failures[0][2]["reason"]
+            self._wait_for_job_failure(backend).system_panic.assert_called_once()
+            client_job_exit.assert_not_called()
         finally:
             backend.finalize(FLContext())
 
@@ -2467,10 +2518,9 @@ class TestAcceptedResultSourceFailure:
             assert len(failures) == 1
             assert "disconnected" in failures[0][2]["reason"]
             assert trainer.process.returncode == -signal.SIGTERM
-            deadline = time.monotonic() + 1.0
-            while not client_job_exit.called and time.monotonic() < deadline:
-                time.sleep(0.005)
-            client_job_exit.assert_called_once_with(ProcessExitCode.EXCEPTION)
+            executor = self._wait_for_job_failure(backend)
+            executor.system_panic.assert_called_once()
+            client_job_exit.assert_not_called()
         finally:
             backend.finalize(FLContext())
 
@@ -2486,10 +2536,9 @@ class TestAcceptedResultSourceFailure:
             assert len(failures) == 1
             assert "heartbeat timed out" in failures[0][2]["reason"]
             assert trainer.process.returncode == -signal.SIGTERM
-            deadline = time.monotonic() + 1.0
-            while not client_job_exit.called and time.monotonic() < deadline:
-                time.sleep(0.005)
-            client_job_exit.assert_called_once_with(ProcessExitCode.EXCEPTION)
+            executor = self._wait_for_job_failure(backend)
+            executor.system_panic.assert_called_once()
+            client_job_exit.assert_not_called()
         finally:
             backend.finalize(FLContext())
 
@@ -2700,9 +2749,7 @@ class TestLaunchPerTask:
         backend.finalize(FLContext())
         assert backend._protocol_sessions == {}
 
-    def test_clean_result_source_exit_is_success_fallback_when_settle_ack_is_lost(
-        self, env, monkeypatch, client_job_exit
-    ):
+    def test_clean_launcher_exit_without_settle_ack_fails_result_source(self, env, monkeypatch, client_job_exit):
         monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.005)
         backend, fl_ctx = _initialized_backend(env, launch_once=False)
         _install_auto_result(env, lazy_result=True)
@@ -2715,7 +2762,14 @@ class TestLaunchPerTask:
         assert result.get_return_code() == ReturnCode.OK
         assert not trainer.reaper_thread.is_alive()
         assert not trainer.result_source_live.is_set()
-        assert [message for message in env.cell.sent if message[0] == SOURCE_FAILURE_TOPIC] == []
+        failures = [message for message in env.cell.sent if message[0] == SOURCE_FAILURE_TOPIC]
+        assert len(failures) == 1
+        assert "rc=0" in failures[0][2]["reason"]
+        executor = backend._context.executor
+        deadline = time.monotonic() + 1.0
+        while not executor.system_panic.called and time.monotonic() < deadline:
+            time.sleep(0.005)
+        executor.system_panic.assert_called_once()
         client_job_exit.assert_not_called()
         backend.finalize(FLContext())
 
@@ -2786,6 +2840,8 @@ class TestLaunchPerTask:
         assert [request for request in env.cell.sent if request[0] == Topic.SHUTDOWN] == []
         assert len([message for message in env.cell.fired if message[0] == Topic.SHUTDOWN]) == 1
         assert env.harness.signals_sent() == [(process.pid, signal.SIGTERM)]
+        assert backend._abort is False
+        assert backend._terminal_intent is None
 
     def test_abort_finalize_waits_for_mid_popen_launch_cleanup(self, env):
         """Abort finalize must not return while Popen has created an unowned process."""

@@ -16,7 +16,7 @@ import threading
 from unittest.mock import MagicMock
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -123,6 +123,20 @@ def test_about_to_end_run_aborts_active_background_learn_before_readiness_checks
     assert ctl.learn_task.abort_signal.triggered
     ctl.fire_event.assert_called_once_with(EventType.ABORT_TASK, fl_ctx)
     ctl.finalize.assert_called_once_with(fl_ctx)
+
+
+def test_abort_current_task_never_clears_latched_run_abort():
+    ctl = _FailingClientSideController()
+    ctl.learn_task = _LearnTask("train", Shareable(), FLContext())
+    ctl.fire_event = MagicMock()
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(FLContextKey.RUN_ABORT_REQUESTED, True, private=True, sticky=False)
+
+    ctl._abort_current_task(fl_ctx)
+
+    assert fl_ctx.get_prop(FLContextKey.RUN_ABORT_REQUESTED) is True
+    assert ctl.learn_task.abort_signal.triggered
+    ctl.fire_event.assert_called_once_with(EventType.ABORT_TASK, fl_ctx)
 
 
 def test_about_to_end_run_preserves_completed_workflow():

@@ -574,8 +574,9 @@ class CellClientAPI(APISpec):
                 ):
                     return
             except Exception as e:
-                # Process exit remains the authoritative fallback. Notification failure
-                # must not replace the original result-transfer outcome.
+                # The CJ keeps the source live until it receives this explicit
+                # acknowledgement. A process exit without it is treated as source
+                # loss, even when a launcher masks a wrapped worker failure with rc=0.
                 self.logger.debug(f"result-source settlement notification failed: {e}")
             if attempt + 1 < _RESULT_SOURCE_SETTLED_ATTEMPTS:
                 time.sleep(_RESULT_SOURCE_SETTLED_RETRY_BACKOFF)

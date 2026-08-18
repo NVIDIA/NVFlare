@@ -422,8 +422,10 @@ class ClientSideController(Executor, TaskController):
         current_task.abort_signal.trigger(True)
         fl_ctx.set_prop(FLContextKey.TASK_NAME, current_task.task_name)
         # This is a task/workflow cancellation, not necessarily an abort of the
-        # enclosing run. External-process cleanup must not poison later tasks.
-        fl_ctx.set_prop(FLContextKey.RUN_ABORT_REQUESTED, False, private=True, sticky=False)
+        # enclosing run. Preserve a run-abort marker already latched by the runner;
+        # lifecycle intent is monotonic and must never move from True back to False.
+        if fl_ctx.get_prop(FLContextKey.RUN_ABORT_REQUESTED) is not True:
+            fl_ctx.set_prop(FLContextKey.RUN_ABORT_REQUESTED, False, private=True, sticky=False)
         self.fire_event(EventType.ABORT_TASK, fl_ctx)
 
     def set_learn_task(self, task_data: Shareable, fl_ctx: FLContext) -> bool:

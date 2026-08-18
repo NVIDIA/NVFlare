@@ -68,10 +68,14 @@ class CheckedExecutor(ThreadPoolExecutor):
                 # A genuinely broken pool is not a lifecycle stop and must remain
                 # visible to the caller.
                 raise
-            except RuntimeError:
+            except RuntimeError as e:
                 # ThreadPoolExecutor.submit raises RuntimeError after either pool
-                # shutdown or interpreter shutdown. Keep the wrapper fail-closed
-                # without inspecting CPython-private executor/module attributes.
+                # shutdown or interpreter shutdown. Other RuntimeErrors, notably
+                # Thread.start() failing under PID/thread pressure after submit has
+                # enqueued work, describe a live but resource-starved pool and must
+                # remain visible without permanently bricking future submissions.
+                if not str(e).startswith("cannot schedule new futures after"):
+                    raise
                 self.stopped = True
                 log.debug(f"Call {fn} is ignored after the executor shut down")
                 return None

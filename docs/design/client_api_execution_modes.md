@@ -253,7 +253,10 @@ Result direction for `external_process`:
    trainer-owned reference IDs. The receiver interrupts matching active downloads and retains
    a bounded tombstone for a notice that races download startup. Unrelated sources and refs keep
    their normal timeout/retry behavior. FedAvg targets its server job cell; Swarm uses the
-   aggregation-client job cell stamped on the task.
+   aggregation-client job cell stamped on the task. Once the envelope is accepted, source loss
+   is run-fatal even when a controller's `min_responses` threshold could otherwise tolerate one
+   missing client: downstream consumers may already hold references to that committed source,
+   so the result cannot be safely withdrawn and reclassified as an ordinary missing response.
 
 Pass-through always preserves the trainer's original FQCN and reference ID. The CJ may still be a
 physical Cell routing hop for the result envelope and subsequent download messages, depending on
@@ -351,20 +354,22 @@ A receiver validates that the reporting CJ is the direct parent of the failed tr
 FQCN, then aborts only the matching `(source FQCN, ref ID)` downloads. This converts downstream
 materialization into the workflow's ordinary controlled task/error path instead of allowing each
 request to spend the 600-second data timeout retrying an unreachable trainer. Once that failure
-notification has settled, the CJ records the reportable external-process exception code and exits;
-the trainer retries its task-correlated settlement acknowledgement before a one-shot Cell closes,
-and a clean process-group exit is the final success fallback when that acknowledgement reply is
-lost after all trainer-side transfer waiters completed. A nonzero/SIGKILL/OOM exit remains fatal.
-its parent sends the authenticated terminal outcome before client logout, so the server finishes
-the job as `EXECUTION_EXCEPTION`. Explicit job abort and source failure use one serialized terminal
+notification has settled, the CJ records the reportable external-process exception code and fails
+the run through normal teardown. The trainer retries its task-correlated settlement acknowledgement
+before a one-shot Cell closes; until the CJ receives that explicit acknowledgement, any process-group
+exit remains fatal, including a launcher reporting rc=0 after a wrapped worker died. The CJ parent
+sends the authenticated terminal outcome before client logout, so the server finishes the job as
+`EXECUTION_EXCEPTION`. Explicit job abort and source failure use one serialized terminal
 decision: an abort that wins first remains `ABORTED`, while an already-claimed source failure cannot
 be reclassified by a later teardown signal.
 
-SJ and CJ process teardown closes command admission and drains DownloadService, active byte streams,
-the reliable-retry scheduler, and F3 callback executors while Cell transport and audit state are
-still available. It then stops the Cell, gives admitted command callbacks a bounded drain so blocked
-communication wakes, and only then closes security services. This prevents queued streamed callbacks
-from entering a completed workflow or writing a closed audit file.
+SJ and CJ process teardown closes command admission, publishes workspace-transfer results while the
+process-global F3 pools and Cell are still available, and then drains DownloadService, active byte
+streams, the reliable-retry scheduler, and F3 callback executors. It next stops the Cell, gives
+admitted command callbacks a bounded drain so blocked communication wakes, and only then closes
+security services. This prevents queued streamed callbacks from entering a completed workflow or
+writing a closed audit file without making job-end workspace archival depend on already-stopped
+streaming pools.
 
 `flare.init()` also binds its returned context to the calling thread. Client API calls without an
 explicit `ctx` prefer that binding; an old stopped binding is retained as a tombstone rather than

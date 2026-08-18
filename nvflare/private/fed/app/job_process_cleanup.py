@@ -26,6 +26,7 @@ def shutdown_job_process_runtime(
     wait_for_command_callbacks: Optional[Callable[[float], bool]],
     stop_cell: Optional[Callable[[], None]],
     logger,
+    before_streaming_shutdown: Optional[Callable[[], None]] = None,
 ) -> None:
     """Drain job-process communication before closing process security state."""
 
@@ -38,20 +39,28 @@ def shutdown_job_process_runtime(
             if logger:
                 logger.warning(f"failed to stop {name}: {secure_format_exception(e)}")
 
-    # Reject new app commands, drain every callback admitted before that gate,
-    # then stop transport so any command blocked on Cell communication wakes.
-    # Audit/security state must outlive all four stages.
+    # Reject new app commands before any final workspace publication. The
+    # publication uses the process-global F3 pools, so it must complete before
+    # those pools are irreversibly stopped. Teardown still runs if publication
+    # raises, and the original publication error remains visible to the caller.
     _run_stage("command admission", stop_command_admission)
-    _run_stage("F3 streaming", shutdown_f3_streaming)
-    _run_stage("Cell", stop_cell)
-    if wait_for_command_callbacks:
-        try:
-            drained = wait_for_command_callbacks(_COMMAND_CALLBACK_DRAIN_TIMEOUT)
-            if not drained and logger:
-                logger.warning(
-                    f"timed out after {_COMMAND_CALLBACK_DRAIN_TIMEOUT} seconds waiting for command callbacks"
-                )
-        except Exception as e:
-            if logger:
-                logger.warning(f"failed to drain command callbacks: {secure_format_exception(e)}")
-    _run_stage("security services", security_close)
+    try:
+        if before_streaming_shutdown:
+            before_streaming_shutdown()
+    finally:
+        # Drain every callback admitted before the gate, then stop transport so
+        # any command blocked on Cell communication wakes. Audit/security state
+        # must outlive all teardown stages.
+        _run_stage("F3 streaming", shutdown_f3_streaming)
+        _run_stage("Cell", stop_cell)
+        if wait_for_command_callbacks:
+            try:
+                drained = wait_for_command_callbacks(_COMMAND_CALLBACK_DRAIN_TIMEOUT)
+                if not drained and logger:
+                    logger.warning(
+                        f"timed out after {_COMMAND_CALLBACK_DRAIN_TIMEOUT} seconds waiting for command callbacks"
+                    )
+            except Exception as e:
+                if logger:
+                    logger.warning(f"failed to drain command callbacks: {secure_format_exception(e)}")
+        _run_stage("security services", security_close)

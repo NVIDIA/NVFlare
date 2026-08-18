@@ -16,6 +16,8 @@ import multiprocessing as mp
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
+
 from nvflare.fuel.f3.streaming.stream_utils import CheckedExecutor, gen_stream_id
 
 
@@ -137,3 +139,29 @@ class TestStreamUtils:
 
         assert executor.submit(lambda: None) is None
         assert executor.stopped is True
+
+    def test_checked_executor_preserves_non_shutdown_runtime_error(self, monkeypatch):
+        executor = CheckedExecutor(max_workers=1, thread_name_prefix="checked_resource_pressure")
+        real_start = threading.Thread.start
+        failed_once = False
+        ran = []
+
+        def thread_start_failed(thread):
+            nonlocal failed_once
+            if thread.name.startswith("checked_resource_pressure") and not failed_once:
+                failed_once = True
+                raise RuntimeError("can't start new thread")
+            return real_start(thread)
+
+        monkeypatch.setattr(threading.Thread, "start", thread_start_failed)
+
+        with pytest.raises(RuntimeError, match="can't start new thread"):
+            executor.submit(lambda: ran.append("first queued item"))
+        assert executor.stopped is False
+
+        # CPython enqueues the first work item before Thread.start() raises. A
+        # later recovered submission must be allowed to start a worker and drain
+        # both items rather than finding the wrapper permanently stopped.
+        assert executor.submit(lambda: "second item").result(timeout=2.0) == "second item"
+        assert ran == ["first queued item"]
+        executor.shutdown(wait=True)

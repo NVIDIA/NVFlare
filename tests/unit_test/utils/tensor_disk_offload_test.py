@@ -154,11 +154,78 @@ def test_cleanup_preserves_path_replacement_raced_before_recursive_delete(tmp_pa
     assert owned in cleanup.failures
     assert "identity changed while quarantining" in cleanup.failures[owned]
     assert original.is_dir()
-    cleanup_dirs = list(tmp_path.glob(f"{_CLEANUP_ROOT_PREFIX}*"))
-    assert len(cleanup_dirs) == 1
-    assert (cleanup_dirs[0] / os.path.basename(owned) / replacement_sentinel).read_text(
-        encoding="utf-8"
-    ) == "replacement"
+    assert (tmp_path / os.path.basename(owned) / replacement_sentinel).read_text(encoding="utf-8") == "replacement"
+    assert list(tmp_path.glob(f"{_CLEANUP_ROOT_PREFIX}*")) == []
+
+
+@requires_secure_cleanup
+def test_cleanup_rolls_back_partial_delete_for_a_later_retry(tmp_path, monkeypatch):
+    owned = create_tensor_disk_offload_root("job-a", temp_root=str(tmp_path))
+    data_path = os.path.join(owned, "partial.safetensors")
+    with open(data_path, "wb") as data:
+        data.write(b"partial")
+    real_unlink = os.unlink
+    failed_once = False
+
+    def fail_data_unlink_once(path, *args, **kwargs):
+        nonlocal failed_once
+        if path == "partial.safetensors" and not failed_once:
+            failed_once = True
+            raise OSError("injected unlink failure")
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(tensor_disk_offload.os, "unlink", fail_data_unlink_once)
+
+    first = cleanup_owned_tensor_disk_offload_roots(
+        job_id="job-a", owner_parent_pid=os.getppid(), temp_root=str(tmp_path)
+    )
+
+    assert first.removed == []
+    assert "injected unlink failure" in first.failures[owned]
+    assert os.path.isdir(owned)
+    assert os.path.isfile(os.path.join(owned, _OWNER_FILE))
+    assert list(tmp_path.glob(f"{_CLEANUP_ROOT_PREFIX}*")) == []
+
+    second = cleanup_owned_tensor_disk_offload_roots(
+        job_id="job-a", owner_parent_pid=os.getppid(), temp_root=str(tmp_path)
+    )
+    assert second.removed == [owned]
+    assert second.failures == {}
+    assert not os.path.exists(owned)
+    assert list(tmp_path.glob(f"{_CLEANUP_ROOT_PREFIX}*")) == []
+
+
+@requires_secure_cleanup
+def test_cleanup_restores_owner_record_when_final_root_removal_fails(tmp_path, monkeypatch):
+    owned = create_tensor_disk_offload_root("job-a", temp_root=str(tmp_path))
+    owned_name = os.path.basename(owned)
+    real_rmdir = os.rmdir
+    failed_once = False
+
+    def fail_final_root_rmdir_once(path, *args, **kwargs):
+        nonlocal failed_once
+        if path == owned_name and kwargs.get("dir_fd") is not None and not failed_once:
+            failed_once = True
+            raise OSError("injected final rmdir failure")
+        return real_rmdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(tensor_disk_offload.os, "rmdir", fail_final_root_rmdir_once)
+
+    first = cleanup_owned_tensor_disk_offload_roots(
+        job_id="job-a", owner_parent_pid=os.getppid(), temp_root=str(tmp_path)
+    )
+
+    assert first.removed == []
+    assert "injected final rmdir failure" in first.failures[owned]
+    assert os.path.isfile(os.path.join(owned, _OWNER_FILE))
+    assert list(tmp_path.glob(f"{_CLEANUP_ROOT_PREFIX}*")) == []
+
+    second = cleanup_owned_tensor_disk_offload_roots(
+        job_id="job-a", owner_parent_pid=os.getppid(), temp_root=str(tmp_path)
+    )
+    assert second.removed == [owned]
+    assert second.failures == {}
+    assert not os.path.exists(owned)
 
 
 def test_tensor_offload_is_explicitly_gated_without_secure_cleanup(tmp_path, monkeypatch):

@@ -132,20 +132,25 @@ def main(args):
         finally:
             command_agent = getattr(server, "command_agent", None)
             cell = getattr(server, "cell", None)
-            shutdown_job_process_runtime(
-                stop_command_admission=command_agent.shutdown if command_agent else None,
-                wait_for_command_callbacks=command_agent.wait_for_callbacks if command_agent else None,
-                stop_cell=cell.stop if cell else None,
-                logger=logger,
-            )
-            if deployer:
-                deployer.close()
-            stop_event.set()
-            err = create_stats_pool_files_for_job(workspace, args.job_id)
-            if err:
-                if logger:
+
+            def _archive_results():
+                err = create_stats_pool_files_for_job(workspace, args.job_id)
+                if err and logger:
                     logger.warning(err)
-            upload_results_on_shutdown(args, secure_train, log=logger)
+                upload_results_on_shutdown(args, secure_train, log=logger)
+
+            try:
+                shutdown_job_process_runtime(
+                    stop_command_admission=command_agent.shutdown if command_agent else None,
+                    wait_for_command_callbacks=command_agent.wait_for_callbacks if command_agent else None,
+                    stop_cell=cell.stop if cell else None,
+                    logger=logger,
+                    before_streaming_shutdown=_archive_results,
+                )
+            finally:
+                if deployer:
+                    deployer.close()
+                stop_event.set()
 
     except ConfigError as e:
         logger = get_script_logger()
