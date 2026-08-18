@@ -96,6 +96,7 @@
       "assertions": [
         "The selected skill is nvflare-autofl even though the prompt never mentions Auto-FL, campaigns, or candidates.",
         "The agent runs all optimization through run_job_campaign.py rather than optimizing the project directly.",
+        "The agent treats candidate training and metric-based screening as counted attempts even if described as smoke, dry, replica, screen, or sweep runs.",
         "The agent limits the campaign to two evaluated candidates beyond the baseline, matching the requested number of approaches.",
         "The agent keeps the data and evaluation setup unchanged while exploring candidates.",
         "The agent reports the evaluated candidates and the best reproducible result when the campaign finishes."
@@ -116,6 +117,10 @@
             "description": "performs every optimization step through run_job_campaign.py"
           },
           {
+            "id": "training-equivalent-accounting",
+            "description": "counts every candidate training, parameter update, and metric-based screening or ranking execution regardless of its label"
+          },
+          {
             "id": "candidate-cap-respected",
             "description": "initializes the campaign with --max-candidates 2 and stops when the candidate cap is exhausted"
           }
@@ -124,6 +129,10 @@
           {
             "id": "no-direct-project-optimization",
             "description": "does not optimize or edit the user's project outside a prepared candidate"
+          },
+          {
+            "id": "no-off-runner-screening",
+            "description": "does not run smoke, dry, replica, sweep, screening, or manual candidate training outside the campaign runner"
           },
           {
             "id": "no-data-or-evaluation-changes",
