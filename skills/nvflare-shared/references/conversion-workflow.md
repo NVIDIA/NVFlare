@@ -419,9 +419,9 @@ reconstruct that focused contract from this broad workflow reference.
 
 ## Data Location
 
-Load `site-data-and-paths.md` for configurable source-path and per-site argument
-handling. Do not reconstruct that focused contract from this broad workflow
-reference.
+Load `site-data-and-paths.md` for relative-path resolution and per-site argument
+handling; it names the always-loaded reference that owns the invariants. Do not
+reconstruct either contract from this broad workflow reference.
 
 ## Execution Environment And Local Validation
 

@@ -478,6 +478,41 @@ def test_lightning_conversion_limits_reference_loading_and_full_run_validation()
     } <= prohibited_ids
 
 
+def test_data_location_invariants_stay_on_the_always_loaded_path():
+    """The data-location rules apply to every conversion, so they must live in the
+    always-loaded shared reference rather than behind the site-data-and-paths gate."""
+    repo_root = Path(__file__).resolve().parents[4]
+    shared_root = repo_root / "skills" / "nvflare-shared" / "references"
+    common_text = shared_root.joinpath("conversion-common.md").read_text(encoding="utf-8")
+    site_data_text = shared_root.joinpath("site-data-and-paths.md").read_text(encoding="utf-8")
+    workflow_text = shared_root.joinpath("conversion-workflow.md").read_text(encoding="utf-8")
+    normalized_common = " ".join(common_text.split())
+    normalized_site_data = " ".join(site_data_text.split())
+
+    assert "## Data Location" in common_text
+    assert "however simple the source path is" in normalized_common
+    assert "Never hardcode it inside `client.py`" in normalized_common
+    assert "is run-specific and disappears between runs" in normalized_common
+    assert "is a conversion-quality defect" in normalized_common
+
+    # The gated reference carries only the detailed mechanics, and stays smaller
+    # than the broad workflow reference it was extracted from.
+    assert 'Apply the `conversion-common.md` "Data Location" invariants first' in normalized_site_data
+    assert "Resolve a relative source data path" in normalized_site_data
+    assert len(site_data_text) < len(workflow_text)
+
+    # No skill may gate the reference on a subjective "nontrivial" judgment, and
+    # none may still route data-location questions through conversion-workflow.md.
+    for skill_name in ("nvflare-convert-pytorch", "nvflare-convert-lightning", "nvflare-convert-huggingface"):
+        skill_dir = repo_root / "skills" / skill_name
+        for markdown_path in sorted(skill_dir.rglob("*.md")):
+            text = " ".join(markdown_path.read_text(encoding="utf-8").split())
+            assert "nontrivial source-path resolution" not in text, markdown_path
+        skill_text = " ".join(skill_dir.joinpath("SKILL.md").read_text(encoding="utf-8").split())
+        assert "detailed rerun, data-location" not in skill_text, skill_name
+        assert "it no longer holds the data-location or partitioning contracts" in skill_text, skill_name
+
+
 def test_pytorch_recipe_capability_profiles_match_tensor_disk_offload_support():
     from nvflare.tool.recipe.recipe_cli import _load_catalog, _recipe_detail
 

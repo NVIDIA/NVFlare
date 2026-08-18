@@ -59,12 +59,14 @@ authorization and safety boundaries.
 
 - `references/conversion-common.md` — the framework-neutral rules every
   converter applies on its standard path: source-evidence handling, output
-  locations, dependency ordering, SimEnv execution, site partitioning, custom
-  aggregation, source-of-truth boundary, and user input/authorization.
+  locations, dependency ordering, SimEnv execution, site partitioning, data
+  location, custom aggregation, source-of-truth boundary, and user
+  input/authorization.
 - `references/conversion-workflow.md` — non-standard conversion, rerun,
   export, and authorization guidance.
-- `references/site-data-and-paths.md` — generated site partitions and source
-  data-path resolution, loaded only when those concerns apply.
+- `references/site-data-and-paths.md` — generated site partitions,
+  relative-path resolution, and per-site data locations, loaded only when those
+  concerns apply.
 - `references/validation-evidence.md` — the local validation ladder.
 - `references/dependency-install.md` — dependency ordering and host-permission
   guidance.

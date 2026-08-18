@@ -1,7 +1,9 @@
 # Site Data And Path Handling
 
-Load this reference only when a conversion must generate site partitions or
-resolve source data paths for generated clients.
+Load this reference when a conversion must generate site partitions, resolve a
+relative source data path, or give sites different data locations. The
+always-applicable data-location invariants live in the "Data Location" section
+of `conversion-common.md`; this reference adds the detailed mechanics.
 
 ## Site Data Partitioning
 
@@ -35,10 +37,11 @@ explicitly requests it.
 
 ## Data Location
 
-Pass the data location into the generated client as a configurable `train_args`
-value, or through `per_site_config` when sites need different paths. Never
-hardcode it inside `client.py`. Point at the original dataset rather than a copy
-inside the NVFLARE run workspace.
+Apply the `conversion-common.md` "Data Location" invariants first: a configurable
+`train_args` value or `per_site_config` entry, never a path hardcoded in
+`client.py`, and never a path into the run workspace. Keep it site-overridable so
+the conversion ports to real multi-site deployment, where each site's data lives
+at a different location.
 
 Resolve a relative source data path in `job.py` against the original
 source-project root before recipe construction. Pass the resolved value through
@@ -51,8 +54,3 @@ When `per_site_config` supplies `train_args`, each site value completely
 replaces recipe-level `train_args`; it is not a fragment to merge. Compose the
 shared options and site data path into every override, then apply the validation
 in `pytorch-family-recipe-construction.md` before a full simulation.
-
-An absolute path is acceptable only as the runtime-supplied value or the default
-of a configurable argument. Do not bake a fixed absolute path into generated
-client code. Report that real deployment requires every site to configure its
-own local data location.

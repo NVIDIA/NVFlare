@@ -59,9 +59,26 @@ conversion. Preserve existing site splits; otherwise use a deterministic seeded
 split, stratified when labels exist. Shared validation/test data is allowed only
 when source-backed. Keep site data external and configurable; never copy private
 site data into the job. Report split policy, seed, site count, and shared-data
-requests. Load `site-data-and-paths.md` only when generated partitions or
-nontrivial source-path resolution are needed; do not load the broad
-`conversion-workflow.md` for these standard concerns.
+requests. Load `site-data-and-paths.md` for generated partition code; do not
+load the broad `conversion-workflow.md` for these standard concerns.
+
+## Data Location
+
+These rules apply to every conversion whose generated client reads data, however
+simple the source path is. Pass the data location into the generated client as a
+configurable `train_args` value, or through `per_site_config` when sites need
+different paths. Never hardcode it inside `client.py`. Point at the original
+dataset rather than a copy inside the NVFLARE run workspace: that workspace path
+is run-specific and disappears between runs.
+
+An absolute path is acceptable only as the runtime-supplied value or the default
+of that configurable argument — in single-machine simulation every site may
+resolve to the same default. A fixed absolute path baked into generated code, or
+one pointing into the run workspace, is a conversion-quality defect. Report that
+real deployment requires every site to configure its own data location.
+
+Load `site-data-and-paths.md` for relative-path resolution, per-site overrides,
+and generated partition code.
 
 ## Preprocessing Data Locality
 

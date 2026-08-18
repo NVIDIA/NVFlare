@@ -53,10 +53,10 @@ distribution; handle conversion later as a separate request.
 1. Load `../nvflare-shared/references/conversion-common.md` and apply it for the
    whole conversion; this SKILL.md states only the framework-specific deltas.
    Load `../nvflare-shared/references/conversion-workflow.md` only for a non-standard
-   case that needs its detailed rerun, data-location, authorization, or
-   missing-semantics guidance. Standard site partitioning and path resolution
-   use `../nvflare-shared/references/site-data-and-paths.md`, not the broad
-   workflow reference.
+   rerun, authorization, or missing-semantics case; it no longer holds the
+   data-location or partitioning contracts, whose invariants `conversion-common.md`
+   owns. Load `../nvflare-shared/references/site-data-and-paths.md` for generated
+   partitions, relative paths, or per-site data locations.
 2. Inspect before editing with `nvflare agent inspect source <path> --format json`
    plus direct reading; fact extraction is static. Use
    `references/lightning-detection.md` to confirm Lightning versus plain
@@ -181,8 +181,8 @@ directories or preload validation, DDP/tracking, broad workflow, dependency,
 runtime-output, or reporting references. The standard explicit-FedAvg path
 loads, in order: `../nvflare-shared/references/conversion-common.md`,
 `references/lightning-detection.md`,
-`../nvflare-shared/references/site-data-and-paths.md` only when generated splits
-or nontrivial source-path resolution are needed,
+`../nvflare-shared/references/site-data-and-paths.md` only when generated splits,
+relative-path resolution, or per-site data locations are involved,
 `../nvflare-shared/references/pytorch-family-recipe-construction.md`,
 `references/lightning-conversion.md`,
 `../nvflare-shared/references/pytorch-model-exchange.md`, then only after files
