@@ -168,9 +168,10 @@ class FedJobConfig:
         json_dump = self._prepare_meta()
         os.makedirs(job_root, exist_ok=True)
         job_dir = os.path.join(job_root, self.job_name)
+        replace_existing = False
         if os.path.exists(job_dir):
             if self._is_valid_job_folder(job_dir, self.job_name):
-                shutil.rmtree(job_dir, ignore_errors=True)
+                replace_existing = True
             else:
                 raise RuntimeError(f"Job folder {job_dir} already exists and does not belong to job {self.job_name}.")
 
@@ -195,7 +196,17 @@ class FedJobConfig:
                 if fed_app.client_app:
                     self._get_client_app(config_dir, custom_dir, fed_app)
 
-            os.replace(temp_job_dir, job_dir)
+            if replace_existing:
+                backup_job_dir = f"{temp_job_dir}.previous"
+                os.replace(job_dir, backup_job_dir)
+                try:
+                    os.replace(temp_job_dir, job_dir)
+                except BaseException:
+                    os.replace(backup_job_dir, job_dir)
+                    raise
+                shutil.rmtree(backup_job_dir, ignore_errors=True)
+            else:
+                os.replace(temp_job_dir, job_dir)
         except BaseException:
             shutil.rmtree(temp_job_dir, ignore_errors=True)
             raise
