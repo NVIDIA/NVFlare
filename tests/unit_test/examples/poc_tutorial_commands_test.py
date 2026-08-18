@@ -14,10 +14,13 @@
 
 import argparse
 import json
+import re
 import shlex
 from pathlib import Path
 
-from nvflare.tool.poc.poc_commands import def_poc_parser
+from nvflare.cli import def_config_parser
+from nvflare.lighter.utils import load_yaml
+from nvflare.tool.poc.poc_commands import def_poc_parser, get_fl_server_name
 from nvflare.tool.system.system_cli import def_system_cli_parser
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -26,24 +29,33 @@ _DEPLOYMENT_TUTORIAL = _REPO_ROOT / (
     "chapter-3_federated_computing_platform/03.2_deployment_simulation/simulate_real_world_deployment.ipynb"
 )
 _SETUP_TUTORIAL = _REPO_ROOT / "examples/tutorials/setup_poc.ipynb"
+_CUSTOM_PROJECT = _REPO_ROOT / "examples/tutorials/custom_project.yml"
+
+
+def _load_notebook(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _notebook_text(path: Path) -> str:
-    notebook = json.loads(path.read_text(encoding="utf-8"))
+    notebook = _load_notebook(path)
     return "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
 
 
-def _nvflare_commands(path: Path):
-    for line in _notebook_text(path).splitlines():
-        command = line.strip().removeprefix("!").strip()
-        if command.startswith("nvflare "):
-            yield shlex.split(command)
+def _nvflare_commands(path: Path, cell_type=None):
+    for cell in _load_notebook(path)["cells"]:
+        if cell_type and cell.get("cell_type") != cell_type:
+            continue
+        for line in "".join(cell.get("source", [])).splitlines():
+            command = line.strip().removeprefix("!").strip()
+            if command.startswith("nvflare "):
+                yield shlex.split(command)
 
 
 def _tutorial_parser():
     parser = argparse.ArgumentParser(prog="nvflare")
     subcommands = parser.add_subparsers(dest="subcommand")
     def_poc_parser(subcommands)
+    def_config_parser(subcommands)
     system_parser = subcommands.add_parser("system")
     def_system_cli_parser(system_parser)
     return parser
@@ -55,9 +67,26 @@ def test_poc_tutorial_commands_parse():
     for path in (_DEPLOYMENT_TUTORIAL, _SETUP_TUTORIAL):
         for command in _nvflare_commands(path):
             is_usage_example = any("[" in token or token in {"-h", "--help"} for token in command)
-            if command[1] not in {"poc", "system"} or is_usage_example:
+            if is_usage_example:
                 continue
             parser.parse_args(command[1:])
+
+
+def test_tutorials_do_not_pipe_into_nvflare_commands():
+    for path in (_DEPLOYMENT_TUTORIAL, _SETUP_TUTORIAL):
+        assert re.search(r"\|\s*nvflare\b", _notebook_text(path)) is None
+
+
+def test_executable_poc_prepare_commands_use_force():
+    for path in (_DEPLOYMENT_TUTORIAL, _SETUP_TUTORIAL):
+        prepare_commands = [
+            command
+            for command in _nvflare_commands(path, cell_type="code")
+            if command[:3] == ["nvflare", "poc", "prepare"] and not {"-h", "--help"}.intersection(command)
+        ]
+        assert prepare_commands
+        for command in prepare_commands:
+            assert "--force" in command, command
 
 
 def test_deployment_tutorial_uses_system_status_command():
@@ -84,9 +113,14 @@ def test_poc_tutorial_commands_do_not_repeat_scalar_service_options():
 
 def test_setup_tutorial_describes_default_poc_services():
     text = _notebook_text(_SETUP_TUTORIAL)
+    server_name = get_fl_server_name(load_yaml(str(_CUSTOM_PROJECT)))
 
     assert "starts the server and all clients" in text
     assert "Admin consoles are optional and are not started unless explicitly selected" in text
     assert "as well as project admin console" not in text
     assert "nvflare poc start -p admin@nonprofit.org" in text
     assert "nvflare poc start -p admin@nvidia.com" not in text
+    assert server_name == "general-hospital-server"
+    assert f"* {server_name}, served as Server" in text
+    assert f'are "{server_name}", "us_hospital"' in text
+    assert "nonprofit-server" not in text
