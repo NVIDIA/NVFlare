@@ -205,11 +205,15 @@ _READ_ONLY_ACTION_PHRASE_RE = re.compile(
     re.IGNORECASE,
 )
 # The same read done in the passive voice: "package metadata must be inspected".
-# The active phrase pattern is anchored to a leading verb and cannot see these.
-_READ_ONLY_PASSIVE_RE = re.compile(
-    r"\b(?:must|should|shall|can|could|may|might|is|are|was|were|will|would|to)\s+(?:(?:be|been)\s+)?"
+# Reuse the active phrase's object-word rules on both sides of the passive verb
+# so the match must consume the whole clause and cannot absorb a coordinator,
+# infinitive, or recognized mutating action.
+_READ_ONLY_PASSIVE_PHRASE_RE = re.compile(
+    rf"(?:{_READ_ONLY_OBJECT_WORD_PATTERN}\s+)+"
+    r"(?:must|should|shall|can|could|may|might|is|are|was|were|will|would|to)\s+(?:(?:be|been)\s+)?"
     r"(?:inspected|read|listed|viewed|shown|examined|audited|reviewed|queried"
-    r"|enumerated|printed|displayed|checked)\b",
+    r"|enumerated|printed|displayed|checked)\b"
+    rf"(?:\s+{_READ_ONLY_OBJECT_WORD_PATTERN})*",
     re.IGNORECASE,
 )
 # A series item may open with the coordinator that attached it and with the
@@ -1995,6 +1999,13 @@ def _is_read_only_phrase(phrase: str) -> bool:
     return _CHECK_OUT_ACQUISITION_RE.match(phrase) is None
 
 
+def _is_read_only_passive_phrase(phrase: str) -> bool:
+    """Return whether ``phrase`` is a whole passive read-only action phrase."""
+    if not _READ_ONLY_PASSIVE_PHRASE_RE.fullmatch(phrase):
+        return False
+    return _CHECK_OUT_ACQUISITION_RE.search(phrase) is None
+
+
 def _is_negated_without_clause(statement: str, match: re.Match) -> bool:
     """Return whether the matched "without X" action is negated into a safe mandate.
 
@@ -2123,7 +2134,7 @@ def _is_read_only_clause(clause: str) -> bool:
         return True
     if _DEPENDENCY_ACTION_RE.search(text):
         return False
-    return bool(_READ_ONLY_PASSIVE_RE.search(text))
+    return _is_read_only_passive_phrase(text)
 
 
 def _has_nearby_audit_then_confirm(statements: list[str], index: int) -> bool:
