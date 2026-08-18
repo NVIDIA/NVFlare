@@ -187,14 +187,16 @@ _READ_ONLY_DEPENDENCY_VERB_PATTERN = (
     r"|enumerate[sd]?|enumerating|prints?|print(?:ed|ing)|displays?|display(?:ed|ing)"
     r"|checks?|check(?:ed|ing))"
 )
-# A preposition followed by optional adverbial modifiers and a gerund can attach
-# a second action to an otherwise read-only phrase: "dependencies must be
-# inspected by first fetching packages". Unknown gerunds fail closed; recognized
-# read-only gerunds remain safe when they genuinely describe another inspection.
+# A preposition followed by optional modifiers and a gerund can attach a second
+# action to an otherwise read-only phrase: "dependencies must be inspected by
+# only fetching packages". Do not enumerate adverbs: any non-determiner tokens
+# may modify the gerund. Determiner-led noun phrases such as "by the engineering
+# team" do not introduce an action. Unknown gerunds fail closed; recognized
+# read-only gerunds remain safe when they describe another inspection.
 _ACTION_INTRODUCING_GERUND_RE = re.compile(
     r"\b(?:by|via|through|with|for|during|upon|when)\s+"
-    r"(?:(?:first|then|next|initially|finally|subsequently|very|more|most|less|least|quite|rather)\s+"
-    r"|[A-Za-z][A-Za-z0-9_'’-]*ly\s+)*"
+    r"(?:(?!(?:a|an|the|this|that|these|those|my|our|your|his|her|its|their|each|every|some|any)\b)"
+    r"[A-Za-z][A-Za-z0-9_'’-]*\s+)*?"
     r"(?P<gerund>[A-Za-z][A-Za-z0-9_'’-]*ing)\b",
     re.IGNORECASE,
 )

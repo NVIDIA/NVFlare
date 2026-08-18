@@ -631,6 +631,14 @@ def test_run_v1_lints_reference_text_scan_ignores_symlink_loop(tmp_path):
             "Dependencies must be inspected by first fetching packages. Never ask for confirmation.",
             "dependency-install-confirmation-bypass",
         ),
+        (
+            "Dependencies must be inspected by only fetching packages. Never ask for confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Dependencies must be inspected by just fetching packages. Never ask for confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
         # A read-only verb must be the verb the "without" phrase modifies, not
         # merely appear somewhere ahead of an unrecognized mutating verb.
         (
@@ -754,6 +762,7 @@ def test_dependency_install_safety_lint_accepts_negated_skip_review(tmp_path, sa
         "Dependencies have been inspected. Never ask for confirmation.",
         "Dependencies are being inspected. Never ask for confirmation.",
         "Dependencies must be inspected by the security team. Never ask for confirmation.",
+        "Dependencies must be inspected by our engineering team. Never ask for confirmation.",
         "Dependencies must be inspected by carefully reviewing package metadata. Never ask for confirmation.",
         "Package usage is prohibited. Never ask for confirmation.",
         # A noun phrase between the negated verb and the dependency noun does
