@@ -1030,16 +1030,29 @@ def test_lightning_template_eval_only_mode_skips_training():
     assert "fit" not in calls
 
 
-def test_lightning_template_rejects_eval_only_cyclic():
+@pytest.mark.parametrize("recipe_algorithm", ["fedavg", "fedce", "fedopt", "fedprox", "scaffold", "swarm", "cyclic"])
+def test_lightning_template_rejects_eval_only_training_recipe(recipe_algorithm):
     module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
 
-    with pytest.raises(ValueError, match="not supported with Cyclic"):
+    with pytest.raises(ValueError, match="only with FedEval"):
         module.main(
             model=object(),
             datamodule=object(),
             trainer_factory=lambda: pytest.fail("trainer must not be created"),
-            recipe_algorithm="cyclic",
+            recipe_algorithm=recipe_algorithm,
             evaluate_only=True,
+        )
+
+
+def test_lightning_template_requires_eval_only_for_fedeval():
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+
+    with pytest.raises(ValueError, match="FedEval requires evaluate_only=True"):
+        module.main(
+            model=object(),
+            datamodule=object(),
+            trainer_factory=lambda: pytest.fail("trainer must not be created"),
+            recipe_algorithm="fedeval",
         )
 
 

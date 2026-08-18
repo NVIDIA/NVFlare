@@ -63,6 +63,9 @@ patched trainer sends the validation metrics) and **do not call
 `trainer.fit(...)`** — training was not requested, and fitting after the metrics
 are sent can train an unwanted round or block the task. The packaged
 `../assets/lightning_client.py` `main(..., evaluate_only=True)` skips `fit`.
+Pass `evaluate_only=True` only when the resolved recipe algorithm is FedEval.
+For every workflow that also trains, omit the argument so its default remains
+`False` and the received training task completes through `trainer.fit(...)`.
 
 ## Patch Ownership Rules
 

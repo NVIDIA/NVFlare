@@ -412,10 +412,14 @@ def test_lightning_training_metrics_use_automatic_pre_fit_delivery():
     # Every supported Lightning algorithm except Cyclic requires that call;
     # Cyclic intentionally persists only its final sequential model.
     assert '`evaluate_before_train = recipe_algorithm != "cyclic"`' in normalized_skill
+    assert "`evaluate_only=True` only for FedEval" in normalized_skill
+    assert "omit it for training recipes so its default stays `False`" in normalized_skill
     assert "Best-model selection therefore depends on the pre-fit call" in normalized_conversion
     assert "no best global model is persisted" in normalized_conversion
     assert "Do not expose an independent skip flag" in normalized_conversion
     assert 'return recipe_algorithm != "cyclic"' in client_template
+    assert 'if evaluate_only and recipe_algorithm != "fedeval"' in client_template
+    assert 'if recipe_algorithm == "fedeval" and not evaluate_only' in client_template
     assert "For every non-Cyclic training task" in validation_text
     assert "no best-model artifact is claimed or expected" in normalized_validation
     assert "## Training-result metric delivery" in conversion_text

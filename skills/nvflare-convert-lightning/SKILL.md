@@ -96,11 +96,11 @@ distribution; handle conversion later as a separate request.
    `Trainer`, call `flare.patch(trainer)`, and let the patched trainer own
    model exchange. Keep evaluation inside Lightning per
    `references/lightning-conversion.md` and use `self.log`. Derive
-   `evaluate_before_train = recipe_algorithm != "cyclic"` from the selected
-   catalog algorithm: Cyclic persists only its final sequential model; every
-   other supported algorithm uses explicit pre-fit validation for server metrics
-   and, for training, best-model selection. Verify the key in server evidence and
-   ask or fail closed when required validation semantics are missing.
+   `evaluate_only=True` only for FedEval; omit it for training recipes so its
+   default stays `False`. Derive `evaluate_before_train = recipe_algorithm !=
+   "cyclic"`: Cyclic persists only its final sequential model; every other
+   algorithm uses explicit validation for server metrics and, for training,
+   best-model selection. Verify the key in server evidence or fail closed.
 7. Add or update `job.py` under the shared "Recipe Model Config" policy. A
    direct instance, when allowed by that policy, must be the complete
    `LightningModule`, not its inner network. Add the requested `aggregator=`

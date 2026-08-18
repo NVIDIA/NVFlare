@@ -663,7 +663,7 @@
     {
       "id": "lightning-eval-only",
       "prompt": "I just want to evaluate this Lightning checkpoint across 3 sites and collect validation metrics, no training updates.",
-      "expected_output": "The agent treats this as evaluation-only and selects the PyTorch FedEval recipe, passing the repo-supplied checkpoint as the required eval_ckpt. It patches the trainer and runs a single trainer.validate(model) on the received global model (FedEval sends one validate task per site, not a training round loop, not trainer.fit, and not trainer.test), treats the supplied checkpoint as untrusted input requiring safe handling, and reports one-shot per-site validation metrics and result paths.",
+      "expected_output": "The agent treats this as evaluation-only and selects the PyTorch FedEval recipe, passing the repo-supplied checkpoint as the required eval_ckpt and evaluate_only=True to the client loop. It patches the trainer and runs a single trainer.validate(model) on the received global model (FedEval sends one validate task per site, not a training round loop, not trainer.fit, and not trainer.test), treats the supplied checkpoint as untrusted input requiring safe handling, and reports one-shot per-site validation metrics and result paths.",
       "files": [
         "files/hello-lightning/train.py",
         "files/hello-lightning/model.py"
@@ -671,7 +671,7 @@
       "assertions": [
         "The agent selects the PyTorch FedEval recipe for evaluation-only workflows and passes the repo-supplied checkpoint as the required eval_ckpt.",
         "The agent runs recipe show for fedeval-pt, sets server_expected_format=ExchangeFormat.PYTORCH and registers TensorDecomposer because tensor-native exchange is exposed, but omits enable_tensor_disk_offload because FedEval does not expose it.",
-        "The agent patches the trainer and runs a single trainer.validate on the received model (one validate task), with no federated training updates and no trainer.fit.",
+        "The agent passes evaluate_only=True only for FedEval, patches the trainer, and runs a single trainer.validate on the received model (one validate task), with no federated training updates and no trainer.fit.",
         "The agent does not rely on trainer.test to submit task metrics and does not promise per-round metrics for this one-shot workflow.",
         "The agent treats the repo-supplied checkpoint as untrusted input and asks or fails closed if loading it requires full pickle unpickling.",
         "The agent reports one-shot per-site validation metrics and result paths."
