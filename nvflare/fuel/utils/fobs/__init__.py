@@ -65,12 +65,12 @@ class FOBSContextKey:
     # When True, streamed PyTorch tensors are downloaded into temporary files
     # and recomposed as disk-backed lazy tensor references.
     TENSOR_DISK_OFFLOAD = "enable_tensor_disk_offload"
-    # Optional callable set by FlareAgent before serialising a result message
+    # Optional callable set by the trainer-side Client API before serialising a result message
     # when reverse PASS_THROUGH is active (subprocess → CJ → server).  Signature:
     #   cb(tx_id: str, status: str, base_objs: list) -> None
     # _create_downloader() chains this callback into the transaction_done_cb so
     # it fires when the server (or Swarm peer) finishes downloading from this
-    # subprocess's DownloadService.  FlareAgent waits on a threading.Event
+    # trainer's DownloadService. The Client API waits on a threading.Event
     # backed by this callback to gate subprocess exit on download completion.
     DOWNLOAD_COMPLETE_CB = "download_complete_cb"
     # Optional callable used by streamed materialization paths to report

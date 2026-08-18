@@ -11,15 +11,13 @@
         "site-1": {
             "docker": {
                 "image": "nvflare-job:latest",
-                "shm_size": "8g",
-                "ipc_mode": "host"
+                "shm_size": "8g"
             }
         },
         "site-2": {
             "docker": {
                 "image": "nvflare-job:latest",
-                "shm_size": "8g",
-                "ipc_mode": "host"
+                "shm_size": "8g"
             }
         }
     },

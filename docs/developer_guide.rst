@@ -12,7 +12,7 @@ System Architecture
 ===================
 
 - :doc:`System Architecture Overview <programming_guide/system_architecture>`
-- :doc:`FLARE System Architecture <flare_system_architecture>`
+- :doc:`Detailed FLARE Architecture and Job Workflow <system_architecture/system_architecture>`
 - :doc:`CellNet Architecture <system_architecture/cellnet_architecture>`
 
 .. toctree::

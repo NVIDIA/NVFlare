@@ -199,7 +199,7 @@ For an external-process `ScriptRunner`, export copies its fully assembled shell-
 `additional_node_command` when an explicit site launcher block directly declares `nodes > 1` and omits the field.
 An explicit value always wins; explicit `null` keeps application-owned fan-out. Generation requires
 `launch_once=True`. Neither generated nor explicit additional-node commands support secret references.
-Legacy `BaseScriptRunner`, default/inherited launcher blocks, and custom launchers are not inferred and must
+Custom job runners, default/inherited launcher blocks, and custom launchers are not inferred and must
 provide the full command explicitly. Omitting the field in those cases keeps the previous application-owned
 fan-out behavior. The export hook is launcher-mode-neutral so another launcher can adopt the same field later;
 Slurm is the only runtime consumer in this release.

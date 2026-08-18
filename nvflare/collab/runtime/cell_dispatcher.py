@@ -18,7 +18,14 @@ from nvflare.collab.api.call_opt import CallOption
 from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.exceptions import CollabCallError
 from nvflare.collab.api.group_call_context import GroupCallContext
-from nvflare.collab.runtime.defs import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
+from nvflare.collab.runtime.defs import (
+    CALL_PROTOCOL_VERSION,
+    MSG_CHANNEL,
+    MSG_TOPIC,
+    CallHeaderKey,
+    CallReplyKey,
+    ObjectCallKey,
+)
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
@@ -60,7 +67,14 @@ class CellDispatcher(_InvocationDispatcher):
             ObjectCallKey.ARGS: args,
             ObjectCallKey.KWARGS: kwargs,
         }
-        request = new_cell_message({}, payload)
+        request = new_cell_message(
+            {
+                CallHeaderKey.PROTOCOL_VERSION: CALL_PROTOCOL_VERSION,
+                CallHeaderKey.TARGET_NAME: target_name,
+                CallHeaderKey.METHOD_NAME: func_name,
+            },
+            payload,
+        )
 
         timeout = call_opt.timeout
         if call_opt.expect_result:
@@ -92,6 +106,7 @@ class CellDispatcher(_InvocationDispatcher):
                     error = reply.payload.get(CallReplyKey.ERROR)
                     error_type = reply.payload.get(CallReplyKey.ERROR_TYPE)
                     error_traceback = reply.payload.get(CallReplyKey.ERROR_TRACEBACK)
+                error = error or reply.get_header(MessageHeaderKey.ERROR)
                 cause = error or f"remote call returned {rc=}"
                 raise CollabCallError(
                     target_name,

@@ -219,9 +219,7 @@ aligned with the configured streaming per-request timeout. In
 an absolute ``task_wait_timeout`` deadline to task download and trainer
 acceptance, so configure it for the complete delivery path.
 ``result_wait_timeout`` bounds result publication; subsequent payload streaming
-uses the shared transfer idle policy. The legacy Pipe/FlareAgent settings
-``PEER_READ_TIMEOUT`` and ``download_complete_timeout`` are not consumed by
-``ClientAPIExecutor``. See :ref:`timeout_troubleshooting` and
+uses the shared transfer idle policy. See :ref:`timeout_troubleshooting` and
 :doc:`/programming_guide/timeouts`.
 
 **Example config_fed_server.conf with chunk size tuning:**

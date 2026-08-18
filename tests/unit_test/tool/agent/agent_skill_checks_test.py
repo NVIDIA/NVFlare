@@ -199,8 +199,8 @@ def _write_skill(root, name, evals):
         "Use when testing skill process metrics.\n",
         encoding="utf-8",
     )
-    # Eval suites live outside the skill tree; tests pass evals_root=<root>/_skill_evals
-    # (the leading underscore keeps it from being scanned as a skill dir).
+    # Explicit evals_root remains supported for isolated tooling tests. Production
+    # skills use the default co-located <skill>/evals directory.
     evals_dir = root / "_skill_evals" / name
     evals_dir.mkdir(parents=True)
     evals_dir.joinpath("evals.json").write_text(json.dumps(evals), encoding="utf-8")

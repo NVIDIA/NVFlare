@@ -44,6 +44,7 @@ then navigate to the hello-cyclic directory:
 
 ```bash
 
+    cd NVFlare
     git switch <release branch>
     cd examples/hello-world/hello-cyclic
     

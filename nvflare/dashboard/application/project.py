@@ -14,8 +14,9 @@
 
 
 from flask import current_app as app
-from flask import jsonify, make_response, request
+from flask import jsonify, make_response, redirect, request
 from flask_jwt_extended import create_access_token, get_jwt, jwt_required
+from werkzeug.exceptions import NotFound
 
 from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
 
@@ -31,7 +32,10 @@ def my_expired_token_callback(jwt_header, jwt_payload):
 
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/application-config")
 def application_config_html():
-    return app.send_static_file("nvflare-dashboard/application-config.html")
+    try:
+        return app.send_static_file("nvflare-dashboard/application-config.html")
+    except NotFound:
+        return redirect(FLARE_DASHBOARD_NAMESPACE + "/project-configuration")
 
 
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/downloads")

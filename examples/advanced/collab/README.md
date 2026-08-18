@@ -15,6 +15,7 @@ python -m collab.hello_fedavg.hello_fedavg
 python -m collab.simple_split_learning.simple_split_learning
 python -m collab.async_aggregation.async_aggregation
 python -m collab.swarm.swarm --num-clients 3
+# pt_async_cifar10, pt_splitnn, and pt_llm_sft have prepare-data steps; see their READMEs.
 ```
 
 ## Examples
@@ -27,6 +28,7 @@ python -m collab.swarm.swarm --num-clients 3
 | `swarm` | Decentralized swarm learning with client-to-client calls |
 | [`pt_async_cifar10`](pt_async_cifar10/README.md) | Asynchronous PyTorch CIFAR-10 training with prepared logical-client shards |
 | [`pt_splitnn`](pt_splitnn/README.md) | Two-party PyTorch SplitNN on CIFAR-10 with direct activation and gradient return values |
+| [`pt_llm_sft`](pt_llm_sft/README.md) | Full-parameter Hugging Face SFT with frequent direct PyTorch tensor exchange and server-side FedAvg |
 
 Every server object or module must define exactly one `@collab.main` entry
 point. A workflow with multiple stages should call them from that single entry
@@ -46,16 +48,16 @@ The NumPy examples run in a base installation; `hello_fedavg` needs PyTorch.
 `simple_split_learning` needs PyTorch and torchvision and downloads MNIST on
 its first run.
 `pt_async_cifar10` additionally needs TensorBoard; follow its
-[setup and prepared-data workflow](pt_async_cifar10/README.md) before running
-the Collab recipe.
-`pt_splitnn` uses PyTorch, torchvision, TensorBoard, and the existing
-CIFAR-10 vertical split/PSI artifacts; follow its
-[data and two-site workflow](pt_splitnn/README.md) before running the Collab recipe.
+[setup and prepared-data workflow](pt_async_cifar10/README.md).
+`pt_splitnn` uses PyTorch, torchvision, TensorBoard, and PSI; follow its
+[prepare-data-first workflow](pt_splitnn/README.md).
+`pt_llm_sft` has additional Hugging Face dependencies and a
+[prepare-data-first workflow](pt_llm_sft/README.md).
 
 The advanced Collab examples run against an NVFlare installation from this
-repository. The PyTorch example requirements files list only their additional
-framework dependencies; add NVFlare package pins once the Collab API is
-available in a released package.
+repository. Each example's `requirements.txt` lists only its additional
+framework or training dependencies; NVFlare itself is supplied by the
+repository installation.
 
 For the design behind the API see the
 [Collab API design](../../../docs/design/collab_api_design.md). For a step-by-step

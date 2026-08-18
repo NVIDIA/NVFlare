@@ -9,6 +9,7 @@ Data Scientist Guide
 .. toctree::
    :maxdepth: 2
 
+   api_selection
    client_api_usage
    hf_client_api
    job_recipe

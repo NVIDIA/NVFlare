@@ -364,6 +364,12 @@ class CellClientAPI(APISpec):
     # ------------------------------------------------------------------ receive
 
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
+        model = self._receive_internal(timeout)
+        if model is not None:
+            self._receive_called = True
+        return model
+
+    def _receive_internal(self, timeout: Optional[float] = None) -> Optional[FLModel]:
         if not self._is_control_rank or self._closed:
             return None
         if self._abort:
@@ -393,7 +399,6 @@ class CellClientAPI(APISpec):
             self._attach.mark_task_delivered(task.get(MsgKey.TASK_ID))
         self._result_receiver_ids = entry.get("result_receiver_ids")
         self._fl_model = entry["model"]
-        self._receive_called = True
         return self._fl_model
 
     def _await_task(self, timeout: Optional[float]) -> Optional[dict]:
@@ -559,6 +564,13 @@ class CellClientAPI(APISpec):
                 if outcome is not None:
                     break
                 if waiter.done():
+                    # The timed wait may decide to return None just before the transfer
+                    # records its outcome and sets the event. Re-read the outcome after
+                    # observing done so a successful completion is not mistaken for a
+                    # terminal resolution without an outcome.
+                    outcome = waiter.outcome
+                    if outcome is not None:
+                        break
                     raise TrainerSessionError(f"result transfer {transaction_id} ended without a terminal outcome")
                 if self._abort:
                     raise TrainerSessionError(f"session aborted while serving result: {self._abort_reason}")
@@ -667,7 +679,7 @@ class CellClientAPI(APISpec):
             self.shutdown()
             return False
         try:
-            return self.receive() is not None
+            return self._receive_internal() is not None
         except TrainerSessionError:
             self.shutdown()
             return False

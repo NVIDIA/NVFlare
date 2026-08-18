@@ -57,7 +57,7 @@ class TestDefs:
         assert len(values) == len(set(values))
 
     def test_no_collision_with_legacy_ipc_defs(self):
-        # the Client API control protocol must not collide with the legacy FlareAgent
+        # the Client API control protocol topics must remain unique
         # channel/topic values in nvflare/client/ipc/defs.py
         assert CHANNEL != ipc_defs.CHANNEL
         legacy_topics = {

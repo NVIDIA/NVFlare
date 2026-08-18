@@ -73,6 +73,7 @@ Example ``docker.yaml``:
    parent:
      docker_image: registry.example.com/nvflare-site:2.8
      network: nvflare-network
+     internal_connection_security: mtls
 
    job_launcher:
      default_python_path: /usr/local/bin/python
@@ -93,6 +94,11 @@ Top-level keys:
 - ``docker_image``: required parent image used by ``startup/start_docker.sh``.
 - ``network``: Docker network for parent and job containers. Defaults to
   ``nvflare-network``.
+- ``internal_connection_security``: security mode for internal parent/job TCP
+  links (SP/SJ and CP/CJ). Accepts ``mtls`` or ``clear`` and defaults to
+  ``mtls``. Use ``clear`` only as an explicit insecure opt-out because it
+  removes certificate authentication while the parent port remains reachable
+  from containers attached to the Docker network.
 
 ``job_launcher`` keys:
 
@@ -122,6 +128,10 @@ The command writes:
 - patched ``local/comm_config.json``
 - ``local/study_runtime.yaml`` template when missing (skipped for legacy kits that already have ``study_data.yaml``)
 
+The Docker launcher preserves ``stcp://`` while replacing the parent hostname
+with its Docker DNS name. It rejects URL and connection-security mismatches
+instead of silently downgrading an mTLS parent connection to clear TCP.
+
 **********
 K8s Config
 **********
@@ -135,6 +145,7 @@ Example ``k8s.yaml``:
 
    parent:
      docker_image: registry.example.com/nvflare-site:2.8
+     internal_connection_security: mtls
      image_pull_secrets:
        - registry-credentials
      parent_port: 8102
@@ -167,6 +178,10 @@ Top-level keys:
 ``parent`` keys:
 
 - ``docker_image``: required parent image used by the Helm chart.
+- ``internal_connection_security``: security mode for internal parent/job TCP
+  links (SP/SJ and CP/CJ). Accepts ``mtls`` or ``clear`` and defaults to
+  ``mtls``. Use ``clear`` only as an explicit insecure opt-out because it
+  removes certificate authentication from these links.
 - ``image_pull_secrets``: optional list of existing Kubernetes Secret names to
   render as ``imagePullSecrets`` on the parent server/client pod. Create these
   registry pull Secrets in the target namespace before installing the chart.
@@ -260,7 +275,11 @@ and ``startup/`` from the generated Secret.
 communication settings so dynamically launched job pods connect to the generated
 parent Kubernetes Service on ``parent_port``. If you customize the chart's
 Service name or port, keep that Service endpoint consistent with the prepared
-kit.
+kit. By default, these TCP links use mTLS and preserve ``stcp://`` through the
+job launcher and runtime arguments. Setting
+``parent.internal_connection_security: clear`` instead emits ``tcp://`` links
+without certificate authentication; receiver-side CellNet authorization still
+applies, but it does not replace peer authentication.
 
 The command writes:
 
@@ -358,6 +377,7 @@ minimal ``slurm.yaml`` is:
      image: /lustre/images/nvflare-prod.sif
      python_path: /usr/bin/python3
      parent_host: nvflare-site1.internal
+     internal_connection_security: mtls
 
 Prepare directly into the shared runtime workspace, then start the parent:
 
@@ -370,7 +390,13 @@ The output is the live workspace and must be visible at the same absolute path
 on the parent and compute nodes. Preparing to the same output again replaces
 the complete workspace. A client kit can optionally generate
 ``startup/parent.slurm``; prepare prints the direct ``sbatch`` command that runs
-it in an allocation. See :ref:`slurm_job_launcher` for the complete guide.
+it in an allocation. Internal TCP links use mTLS by default and preserve
+``stcp://`` while the launcher rewrites only the parent host and port. Set
+``job_launcher.internal_connection_security: clear`` only as an explicit
+insecure opt-out; it emits ``tcp://`` links without certificate authentication.
+Receiver-side CellNet authorization still applies, but it does not replace peer
+authentication. Shared-file transport is unchanged and remains clear. See
+:ref:`slurm_job_launcher` for the complete guide.
 
 **********
 Job Images
@@ -424,4 +450,4 @@ causes include:
 - ``--output`` pointing at or inside the input kit
 - a Slurm ``--output`` path that is not valid as a runtime workspace
 - a missing/non-executable Slurm parent CLI, invalid sandbox/image, or
-  unsupported Slurm ``connection_security`` or server ``parent`` configuration
+  invalid Slurm ``internal_connection_security`` or server ``parent`` configuration

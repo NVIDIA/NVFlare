@@ -34,6 +34,7 @@ git clone https://github.com/NVIDIA/NVFlare.git
 Then navigate to the hello-jax directory:
 
 ```bash
+cd NVFlare
 git switch <release branch>
 cd examples/hello-world/hello-jax
 ```

@@ -46,6 +46,14 @@ context is read pre-patch; do not rely on the patch for pre-patch site-data or
 logging setup. The patch initializes the Client API on its own only when no
 earlier context access is needed.
 
+## SimEnv Execution
+
+`SimEnv` is a plain execution-environment object, not a context manager. Never
+write ``with SimEnv(...):``. Instantiate it, then pass it to the recipe:
+``env = SimEnv(...)`` followed by ``recipe.execute(env)`` (or the equivalent
+``recipe.execute(env=env)``). Do not infer cleanup or lifecycle APIs that the
+public Recipe surface does not provide.
+
 ## Site Data Partitioning
 
 Train each site on its local partition for multi-site single-node-source

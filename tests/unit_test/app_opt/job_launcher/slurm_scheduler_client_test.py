@@ -148,7 +148,7 @@ def test_same_name_row_with_another_id_is_ignored(caplog):
 def test_id_accounting_rejects_a_different_allocation():
     runner = Runner()
     adapter = _adapter(runner)
-    runner.results.append(_result(f"43|job-name|{adapter.user}|COMPLETED|0:0\n"))
+    runner.results.append(_result(f"43|job-name|{adapter.user}|COMPLETED|0:0|0:0\n"))
 
     with pytest.raises(SlurmProtocolError, match="identity mismatch"):
         adapter.accounting_by_id("42", "job-name", 1)
@@ -160,7 +160,7 @@ def test_id_accounting_rejects_a_different_allocation():
 
 def test_id_accounting_parses_one_owned_allocation():
     adapter = _adapter()
-    adapter._runner = Runner(_result(f"\n42|job-name|{adapter.user}|COMPLETED|7:9\n"))
+    adapter._runner = Runner(_result(f"\n42|job-name|{adapter.user}|COMPLETED|7:9|101:0\n"))
 
     result = adapter.accounting_by_id("42", "job-name", 1)
 
@@ -169,6 +169,7 @@ def test_id_accounting_parses_one_owned_allocation():
     assert result.records[0].state == "COMPLETED"
     assert result.records[0].exit_status == 7
     assert result.records[0].exit_signal == 9
+    assert result.records[0].derived_exit_status == 101
 
 
 @pytest.mark.parametrize(
@@ -184,9 +185,10 @@ def test_id_accounting_distinguishes_unavailable_from_not_found(command, expecte
     assert result.status == expected
 
 
-def test_id_accounting_rejects_malformed_exit_code():
+@pytest.mark.parametrize(("exit_code", "derived_exit_code"), [("invalid", "0:0"), ("0:0", "invalid")])
+def test_id_accounting_rejects_malformed_exit_code(exit_code, derived_exit_code):
     adapter = _adapter()
-    adapter._runner = Runner(_result(f"42|job-name|{adapter.user}|FAILED|invalid\n"))
+    adapter._runner = Runner(_result(f"42|job-name|{adapter.user}|FAILED|{exit_code}|{derived_exit_code}\n"))
 
     with pytest.raises(SlurmProtocolError, match="numeric field"):
         adapter.accounting_by_id("42", "job-name", 1)
@@ -195,8 +197,8 @@ def test_id_accounting_rejects_malformed_exit_code():
 @pytest.mark.parametrize(
     "row",
     [
-        "42|wrong-name|{user}|COMPLETED|0:0\n",
-        "42|job-name|other-user|COMPLETED|0:0\n",
+        "42|wrong-name|{user}|COMPLETED|0:0|0:0\n",
+        "42|job-name|other-user|COMPLETED|0:0|0:0\n",
     ],
 )
 def test_id_accounting_rejects_reused_id_with_wrong_user_or_name(row):

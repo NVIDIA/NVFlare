@@ -25,8 +25,8 @@ selected or invoked on its own.
 
 - `references/conversion-common.md` — the framework-neutral rules every
   converter applies on its standard path: source-evidence handling, output
-  locations, dependency ordering, site partitioning, custom aggregation,
-  source-of-truth boundary, and user input/authorization.
+  locations, dependency ordering, SimEnv execution, site partitioning, custom
+  aggregation, source-of-truth boundary, and user input/authorization.
 - `references/conversion-workflow.md` — non-standard conversion, rerun,
   data-location, export, and authorization guidance.
 - `references/validation-evidence.md` — the local validation ladder.

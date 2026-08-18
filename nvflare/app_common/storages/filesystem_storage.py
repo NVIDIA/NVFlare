@@ -17,14 +17,14 @@ import json
 import logging
 import os
 import shutil
-import tempfile
 import uuid
 from pathlib import Path
 from typing import List, Tuple
+from zipfile import ZipFile
 
 from nvflare.apis.storage import DATA, META, StorageException, StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args
-from nvflare.fuel.utils.zip_utils import zip_directory_to_file
+from nvflare.fuel.utils.zip_utils import get_all_file_paths, normpath_for_zip
 from nvflare.security.logging import secure_format_exception
 
 log = logging.getLogger(__name__)
@@ -35,8 +35,8 @@ def _write(path: str, content, mv_file=True):
 
     Args:
         path: the path of the file to be created
-        content: content for the file to be created. It could be either bytes, or path (str) to the source file that
-            contains the content.
+        content: content for the file to be created. It could be bytes, a path (str) to the source file that contains
+            the content, or a list of source paths to package without modifying them.
         mv_file: whether the destination file should be created simply by moving the source file. This is applicable
             only when the 'content' is the path of the source file. If mv_file is False, the destination is created
             by copying from the source file, and the source file will remain intact; If mv_file is True, the
@@ -66,32 +66,28 @@ def _write(path: str, content, mv_file=True):
         elif isinstance(content, list):
             _write_multi(tmp_path, content)
         else:
-            raise RuntimeError(f"content must be bytes or str but got {type(content)}")
+            raise RuntimeError(f"content must be bytes, str, or list but got {type(content)}")
+
+        if os.path.exists(tmp_path):
+            os.replace(tmp_path, path)
     except Exception as e:
         if os.path.isfile(tmp_path):
             os.remove(tmp_path)
         raise StorageException(f"failed to write content: {secure_format_exception(e)}")
 
-    if os.path.exists(tmp_path):
-        os.rename(tmp_path, path)
-
 
 def _write_multi(output_zip_file_name: str, content: List[str]):
-    with tempfile.TemporaryDirectory() as td:
+    """Build an archive without modifying its sources so a failed write can be safely retried."""
+    with ZipFile(output_zip_file_name, "w") as z:
         for c in content:
             if os.path.isfile(c):
-                basename = os.path.basename(c)
-                shutil.move(c, os.path.join(td, basename))
+                z.write(c, arcname=os.path.basename(c))
             elif os.path.isdir(c):
-                # move/copy everything from the dir
-                file_names = os.listdir(c)
-                for file_name in file_names:
-                    shutil.move(os.path.join(c, file_name), os.path.join(td, file_name))
+                base = normpath_for_zip(c)
+                for full_path in get_all_file_paths(base):
+                    z.write(full_path, arcname=full_path[len(base) + 1 :])
             else:
-                raise ValueError(f"items in content list must be file name or dir name but got {type(c)}")
-
-        # zip everything
-        zip_directory_to_file(td, "", output_zip_file_name)
+                raise ValueError(f"items in content list must be existing file or directory paths but got {c!r}")
 
 
 def _read(path: str) -> bytes:
