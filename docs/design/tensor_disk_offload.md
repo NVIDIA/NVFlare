@@ -50,12 +50,6 @@ Swarm/CCWF:
 
 If no active Cell is available, the offload context is not enabled and the runtime falls back to in-memory download.
 
-Each offload root contains a job/creator/parent/device/inode ownership marker. The
-job worker removes its root during normal workflow finalization. After the worker
-exits, the surviving client or server parent makes a second, marker-validated
-cleanup pass. This closes teardown races with an in-flight disk consumer and
-reclaims roots when a worker dies before its own cleanup can complete.
-
 ## Data Flow
 
 ```
@@ -156,15 +150,6 @@ Custom aggregators are responsible for:
 
 - Each workflow creates a job-scoped offload root (`nvflare_tensor_offload_<job>_*`),
   with safetensors download directories beneath it.
-- Each root contains a private ownership record binding it to the creating job worker,
-  its client parent, the job ID, and the root's device/inode identity. If the worker dies
-  before `END_RUN`, the surviving client parent verifies that record after process exit
-  and atomically moves an approved root into a private quarantine before deleting it with
-  directory-relative operations. This prevents pathname replacement from redirecting
-  recursive cleanup. Platforms without the required secure directory-descriptor APIs are
-  explicitly rejected when disk offload is enabled rather than using unsafe best-effort
-  deletion. Ownership also distinguishes co-located POC sites that share a system temp
-  directory and job ID.
 - Temp dir selection follows Python `tempfile` behavior (`TMPDIR` / OS default, typically `/tmp`).
 - In containerized deployments, `/tmp` may be tmpfs (RAM-backed); set `TMPDIR` to a disk-backed mount to realize memory offload benefits.
 - `LazyTensorDict` owns a shared `_TempDirRef`; each lazy ref keeps this reference alive.
@@ -181,6 +166,10 @@ Custom aggregators are responsible for:
   producer records that receiver as failed across every ref in the transaction and
   can release an accepted external-process result source without waiting for its
   normal transfer timeout. Older producers keep the existing bounded timeout path.
+- These workflow-local cleanup paths require the server/client job process to reach
+  normal teardown. Reclaiming scratch after an abrupt server/client job process
+  death requires launcher-owned storage whose cleanup capability survives process
+  and container boundaries; that lifecycle is outside this workflow-level feature.
 
 ## Failure Behavior
 

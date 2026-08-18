@@ -55,7 +55,7 @@ def _patch_mkdtemp(monkeypatch, tmp_path):
         root_dir.mkdir()
         return str(root_dir)
 
-    monkeypatch.setattr("nvflare.utils.tensor_disk_offload.tempfile.mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr("nvflare.app_common.utils.tensor_disk_offload_context.tempfile.mkdtemp", fake_mkdtemp)
     return root_dir
 
 
@@ -89,7 +89,7 @@ def test_setup_enabled_without_cell_does_not_create_temp_dir(monkeypatch):
     def fail_mkdtemp(prefix, dir=None):
         raise AssertionError("mkdtemp should not be called without an active cell")
 
-    monkeypatch.setattr("nvflare.utils.tensor_disk_offload.tempfile.mkdtemp", fail_mkdtemp)
+    monkeypatch.setattr("nvflare.app_common.utils.tensor_disk_offload_context.tempfile.mkdtemp", fail_mkdtemp)
 
     for engine in (None, _MockEngine(cell=None)):
         context = setup_tensor_disk_offload(engine=engine, enabled=True)

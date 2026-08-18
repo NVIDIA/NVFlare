@@ -35,7 +35,6 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
-from nvflare.utils.tensor_disk_offload import cleanup_owned_tensor_disk_offload_roots
 
 from .client_status import ClientStatus, get_status_message
 
@@ -508,15 +507,12 @@ class JobExecutor(ClientExecutor):
                         break
                     if process_status == ClientStatus.STOPPED:
                         # STOPPED means the runner returned, not that the OS
-                        # process exited.  It can still be stuck in archival or
-                        # communication shutdown, so there is nothing left to
-                        # ask the runner to abort and no reason to wait another
-                        # ten seconds before reclaiming the owned process.
-                        if heartbeat_cleanup:
-                            job_handle.terminate(heartbeat_cleanup=True)
-                        else:
-                            job_handle.terminate()
-                        self.logger.info(f"run ({job_id}): stopped child worker process terminated")
+                        # process exited. Give archival and process-local teardown
+                        # the normal bounded grace period before reclaiming the
+                        # still-registered owned process.
+                        t = threading.Thread(target=self._terminate_job, args=[job_handle, job_id, heartbeat_cleanup])
+                        t.start()
+                        t.join()
                         break
                     request = new_cell_message({}, {})
                     self.client.cell.fire_and_forget(
@@ -587,12 +583,6 @@ class JobExecutor(ClientExecutor):
                 # already finished gracefully
                 return
 
-            # The runner has ended and only process teardown remains.  Do not
-            # spend the rest of the grace period waiting on teardown that may
-            # itself be wedged.
-            if process.get(RunProcessKey.STATUS) == ClientStatus.STOPPED:
-                break
-
             if time.time() - start > max_wait:
                 # waited enough
                 break
@@ -629,50 +619,45 @@ class JobExecutor(ClientExecutor):
     ):
         self.logger.info(f"run ({job_id}): waiting for child worker process to finish.")
         job_handle = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE)
-        try:
-            if job_handle:
-                job_handle.wait()
+        if job_handle:
+            job_handle.wait()
 
-                return_code = get_return_code(job_handle, job_id, workspace, self.logger)
+            return_code = get_return_code(job_handle, job_id, workspace, self.logger)
 
-                process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS)
-                if return_code == JobReturnCode.EXECUTION_ERROR and process_status == ClientStatus.STARTING:
-                    return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
+            process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS)
+            if return_code == JobReturnCode.EXECUTION_ERROR and process_status == ClientStatus.STARTING:
+                return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
 
-                self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
+            self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
 
-                failure_reason = REPORTABLE_JOB_FAILURES.get(return_code)
-                try:
-                    request = new_cell_message(
-                        headers={},
-                        payload={
-                            JobFailureMsgKey.JOB_ID: job_id,
-                            JobFailureMsgKey.CODE: return_code,
-                            JobFailureMsgKey.REASON: failure_reason,
-                        },
+            failure_reason = REPORTABLE_JOB_FAILURES.get(return_code)
+            try:
+                request = new_cell_message(
+                    headers={},
+                    payload={
+                        JobFailureMsgKey.JOB_ID: job_id,
+                        JobFailureMsgKey.CODE: return_code,
+                        JobFailureMsgKey.REASON: failure_reason,
+                    },
+                )
+                reply = self.client.send_request_before_shutdown(
+                    target=FQCN.ROOT_SERVER,
+                    channel=CellChannel.SERVER_MAIN,
+                    topic=CellChannelTopic.REPORT_JOB_FAILURE,
+                    request=request,
+                    timeout=self.job_query_timeout,
+                    optional=True,
+                )
+                if reply is None:
+                    # Shutdown invalidates the site token. The server's client-quit/dead-client
+                    # path resolves any outcome still pending after communication stops.
+                    self.logger.info(
+                        f"not reporting terminal outcome of job {job_id}: client communication has stopped"
                     )
-                    reply = self.client.send_request_before_shutdown(
-                        target=FQCN.ROOT_SERVER,
-                        channel=CellChannel.SERVER_MAIN,
-                        topic=CellChannelTopic.REPORT_JOB_FAILURE,
-                        request=request,
-                        timeout=self.job_query_timeout,
-                        optional=True,
-                    )
-                    if reply is None:
-                        # Shutdown invalidates the site token. The server's client-quit/dead-client
-                        # path resolves any outcome still pending after communication stops.
-                        self.logger.info(
-                            f"not reporting terminal outcome of job {job_id}: client communication has stopped"
-                        )
-                    elif reply.get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK:
-                        self.logger.error(f"could not report terminal outcome of job {job_id}")
-                except Exception as e:
-                    self.logger.error(
-                        f"could not report terminal outcome of job {job_id}: {secure_format_exception(e)}"
-                    )
-        finally:
-            self._cleanup_tensor_disk_offload_roots(job_id)
+                elif reply.get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK:
+                    self.logger.error(f"could not report terminal outcome of job {job_id}")
+            except Exception as e:
+                self.logger.error(f"could not report terminal outcome of job {job_id}: {secure_format_exception(e)}")
 
         if allocated_resource:
             resource_manager.free_resources(
@@ -687,18 +672,6 @@ class JobExecutor(ClientExecutor):
         fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client.client_name, private=True, sticky=False)
         engine.fire_event(EventType.JOB_COMPLETED, fl_ctx)
         self.logger.debug(f"Fired event JOB_COMPLETED {EventType.JOB_COMPLETED}")
-
-    def _cleanup_tensor_disk_offload_roots(self, job_id: str) -> None:
-        try:
-            cleanup = cleanup_owned_tensor_disk_offload_roots(job_id=job_id, owner_parent_pid=os.getpid())
-            for root_dir in cleanup.removed:
-                self.logger.info(f"run ({job_id}): removed tensor disk-offload root {root_dir}")
-            for root_dir, reason in cleanup.failures.items():
-                self.logger.warning(f"run ({job_id}): failed to remove tensor disk-offload root {root_dir}: {reason}")
-        except Exception as e:
-            self.logger.warning(
-                f"run ({job_id}): failed to inspect owned tensor disk-offload roots: {secure_format_exception(e)}"
-            )
 
     def get_status(self, job_id):
         process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.STOPPED)

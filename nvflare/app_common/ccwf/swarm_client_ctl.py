@@ -15,6 +15,7 @@ import copy
 import os
 import random
 import shutil
+import tempfile
 import threading
 import time
 from typing import Optional
@@ -44,7 +45,6 @@ from nvflare.fuel.utils.validation_utils import (
     check_positive_number,
 )
 from nvflare.security.logging import secure_format_traceback
-from nvflare.utils.tensor_disk_offload import create_tensor_disk_offload_root
 
 
 def _cleanup_active_disk_tensor_downloads(reason: str, root_dir: str):
@@ -450,7 +450,7 @@ class SwarmClientController(ClientSideController):
             cell = get_cell() if callable(get_cell) else None
             if cell:
                 job_id = fl_ctx.get_job_id("job")
-                self._tensor_disk_offload_root_dir = create_tensor_disk_offload_root(job_id)
+                self._tensor_disk_offload_root_dir = tempfile.mkdtemp(prefix=f"nvflare_tensor_offload_{job_id}_")
                 self.log_info(fl_ctx, f"created tensor disk-offload root {self._tensor_disk_offload_root_dir}")
             else:
                 self.log_warning(

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
-import os
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,7 +24,6 @@ from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import (
     AdminCommandNames,
     FLContextKey,
-    MachineStatus,
     RunProcessKey,
     ServerCommandKey,
     ServerCommandNames,
@@ -40,7 +38,6 @@ from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.private.aux_runner import AuxMsgTarget
 from nvflare.private.defs import CellChannel
 from nvflare.private.fed.server.server_engine import ServerEngine
-from nvflare.utils.tensor_disk_offload import TensorDiskOffloadCleanupResult
 
 
 @pytest.mark.parametrize(
@@ -266,43 +263,6 @@ def test_wait_for_complete_records_nonzero_return_code_for_first_failure():
     assert exception_run_processes["job-1"] is run_process_info
     assert run_process_info[RunProcessKey.PROCESS_RETURN_CODE] == ProcessExitCode.EXCEPTION
     assert "job-1" not in engine.run_processes
-
-
-def test_wait_for_complete_reclaims_roots_owned_by_server_parent():
-    run_process_info = {RunProcessKey.PARTICIPANTS: {}}
-    engine = _make_wait_engine(run_process_info, {})
-    process = MagicMock()
-    cleanup = TensorDiskOffloadCleanupResult(removed=["/tmp/nvflare_tensor_offload_job-1_owned"])
-
-    with (
-        patch("nvflare.private.fed.server.server_engine.get_return_code", return_value=JobReturnCode.SUCCESS),
-        patch(
-            "nvflare.private.fed.server.server_engine.cleanup_owned_tensor_disk_offload_roots",
-            return_value=cleanup,
-        ) as cleanup_roots,
-    ):
-        engine.wait_for_complete(workspace="/tmp", job_id="job-1", process=process)
-
-    cleanup_roots.assert_called_once_with(job_id="job-1", owner_parent_pid=os.getpid())
-    assert "removed tensor disk-offload root" in engine.logger.info.call_args_list[-1].args[0]
-
-
-def test_wait_for_complete_reclaims_roots_when_wait_raises():
-    engine = _make_wait_engine({RunProcessKey.PARTICIPANTS: {}}, {})
-    process = MagicMock()
-    process.wait.side_effect = RuntimeError("wait failed")
-
-    with (
-        patch(
-            "nvflare.private.fed.server.server_engine.cleanup_owned_tensor_disk_offload_roots",
-            return_value=TensorDiskOffloadCleanupResult(),
-        ) as cleanup_roots,
-        pytest.raises(RuntimeError, match="wait failed"),
-    ):
-        engine.wait_for_complete(workspace="/tmp", job_id="job-1", process=process)
-
-    cleanup_roots.assert_called_once_with(job_id="job-1", owner_parent_pid=os.getpid())
-    assert engine.engine_info.status == MachineStatus.STOPPED
 
 
 def _make_remove_engine(run_processes):

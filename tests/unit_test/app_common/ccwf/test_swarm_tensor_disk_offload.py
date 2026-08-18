@@ -13,14 +13,19 @@
 # limitations under the License.
 
 import os
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.signal import Signal
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
 from nvflare.app_common.ccwf.swarm_client_ctl import SwarmClientController
+from nvflare.private.fed.client.client_runner import ClientRunner
 
 
 class _MockCell:
@@ -139,6 +144,65 @@ def test_finalize_preserves_offload_root_until_end_run():
         controller.handle_event(EventType.END_RUN, fl_ctx)
         assert not os.path.exists(root_dir)
         assert controller._tensor_disk_offload_root_dir is None
+
+
+def test_source_loss_fatal_error_runs_end_run_and_removes_offload_root(tmp_path):
+    """A source-loss panic must retain normal END_RUN cleanup instead of hard-exiting."""
+    root_dir = tmp_path / "offload"
+    root_dir.mkdir()
+    (root_dir / "chunk_0.safetensors").write_bytes(b"partial")
+
+    controller = SwarmClientController(enable_tensor_disk_offload=True)
+    controller._tensor_disk_offload_root_dir = str(root_dir)
+    controller.learn_thread = None
+    controller._aggr_thread = None
+    controller.log_info = MagicMock()
+    controller.log_warning = MagicMock()
+
+    runner = ClientRunner.__new__(ClientRunner)
+    runner.engine = MagicMock()
+    runner.engine.new_context.return_value.__enter__.return_value = FLContext()
+    runner.run_abort_signal = Signal()
+    runner._run_abort_requested = False
+    runner.task_lock = threading.Lock()
+    runner.running_tasks = {}
+    runner.init_run = MagicMock()
+    runner.check_end_run_readiness = MagicMock()
+    runner.log_info = MagicMock()
+    runner.log_error = MagicMock()
+
+    def fire_event(event_type, fl_ctx):
+        if event_type == EventType.END_RUN:
+            controller.handle_event(event_type, fl_ctx)
+
+    runner.fire_event = MagicMock(side_effect=fire_event)
+
+    def fail_accepted_source():
+        fatal_ctx = FLContext()
+        fatal_ctx.set_prop(
+            FLContextKey.EVENT_DATA,
+            "accepted external result source exited during transfer",
+            private=True,
+            sticky=False,
+        )
+        runner.handle_event(EventType.FATAL_SYSTEM_ERROR, fatal_ctx)
+
+    runner._try_run = fail_accepted_source
+
+    with (
+        patch("nvflare.app_common.ccwf.swarm_client_ctl._cleanup_active_disk_tensor_downloads") as cleanup_active,
+        patch("nvflare.private.fed.client.client_runner.ReliableMessage.shutdown"),
+        patch("nvflare.private.fed.client.client_runner.DownloadService.shutdown"),
+    ):
+        runner.run("/app", MagicMock())
+
+    cleanup_active.assert_called_once_with(
+        reason="Swarm workflow ended before tensor download completed",
+        root_dir=str(root_dir),
+    )
+    assert not root_dir.exists()
+    assert controller._tensor_disk_offload_root_dir is None
+    assert any(call.args[0] == EventType.END_RUN for call in runner.fire_event.call_args_list)
 
 
 def test_cleanup_waits_for_controller_owned_threads_before_removing_root(tmp_path):

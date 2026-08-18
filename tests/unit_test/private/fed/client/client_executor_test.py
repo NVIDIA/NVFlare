@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import json
-import os
 import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -34,7 +33,6 @@ from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_executor import REPORTABLE_JOB_FAILURES, JobExecutor, _PendingJobHandle
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.communicator import Communicator
-from nvflare.utils.tensor_disk_offload import TensorDiskOffloadCleanupResult
 
 EXPECTED_REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: "exception",
@@ -74,12 +72,13 @@ def test_abort_app_terminates_registered_stopped_job_without_worker_command(hear
         RunProcessKey.STATUS: ClientStatus.STOPPED,
     }
 
-    ClientEngine.abort_app(SimpleNamespace(client_executor=job_executor), "job-1", heartbeat_cleanup=heartbeat_cleanup)
+    with patch.object(job_executor, "_terminate_job") as terminate_job:
+        ClientEngine.abort_app(
+            SimpleNamespace(client_executor=job_executor), "job-1", heartbeat_cleanup=heartbeat_cleanup
+        )
 
-    if heartbeat_cleanup:
-        job_handle.terminate.assert_called_once_with(heartbeat_cleanup=True)
-    else:
-        job_handle.terminate.assert_called_once_with()
+    terminate_job.assert_called_once_with(job_handle, "job-1", heartbeat_cleanup)
+    job_handle.terminate.assert_not_called()
     client.cell.fire_and_forget.assert_not_called()
 
 
@@ -94,7 +93,7 @@ def test_abort_app_does_not_terminate_unregistered_stopped_job():
     job_executor.abort_app.assert_not_called()
 
 
-def test_terminate_job_reclaims_worker_as_soon_as_runner_reports_stopped():
+def test_terminate_job_gives_stopped_worker_bounded_cleanup_grace():
     job_executor = JobExecutor(client=MagicMock(), startup="startup")
     job_handle = MagicMock()
     job_executor.run_processes["job-1"] = {
@@ -102,11 +101,32 @@ def test_terminate_job_reclaims_worker_as_soon_as_runner_reports_stopped():
         RunProcessKey.STATUS: ClientStatus.STOPPED,
     }
 
-    with patch("nvflare.private.fed.client.client_executor.time.sleep") as sleep:
+    with (
+        patch("nvflare.private.fed.client.client_executor.time.time", side_effect=[10.0, 10.0, 20.1]),
+        patch("nvflare.private.fed.client.client_executor.time.sleep") as sleep,
+    ):
         job_executor._terminate_job(job_handle, "job-1", heartbeat_cleanup=True)
 
-    sleep.assert_not_called()
+    sleep.assert_called_once_with(0.05)
     job_handle.terminate.assert_called_once_with(heartbeat_cleanup=True)
+
+
+def test_terminate_job_allows_stopped_worker_to_finish_during_cleanup_grace():
+    job_executor = JobExecutor(client=MagicMock(), startup="startup")
+    job_handle = MagicMock()
+    job_executor.run_processes["job-1"] = {
+        RunProcessKey.JOB_HANDLE: job_handle,
+        RunProcessKey.STATUS: ClientStatus.STOPPED,
+    }
+
+    def finish_worker(_):
+        job_executor.run_processes.pop("job-1")
+
+    with patch("nvflare.private.fed.client.client_executor.time.sleep", side_effect=finish_worker) as sleep:
+        job_executor._terminate_job(job_handle, "job-1", heartbeat_cleanup=True)
+
+    sleep.assert_called_once_with(0.05)
+    job_handle.terminate.assert_not_called()
 
 
 def test_terminate_job_does_not_signal_handle_after_worker_was_reaped():
@@ -689,61 +709,3 @@ def test_wait_child_process_skips_terminal_outcome_after_client_communication_st
     client.send_request_before_shutdown.assert_called_once()
     assert "job-1" not in job_executor.run_processes
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
-
-
-def test_wait_child_process_reclaims_roots_owned_by_dead_worker_parent():
-    client = MagicMock()
-    client.client_name = "site-1"
-    job_executor = JobExecutor(client=client, startup="startup")
-    job_executor.logger = MagicMock()
-    job_handle = MagicMock()
-    job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
-    fl_ctx = MagicMock()
-    cleanup = TensorDiskOffloadCleanupResult(removed=["/tmp/nvflare_tensor_offload_job-1_owned"])
-
-    with (
-        patch("nvflare.private.fed.client.client_executor.get_return_code", return_value=JobReturnCode.SUCCESS),
-        patch(
-            "nvflare.private.fed.client.client_executor.cleanup_owned_tensor_disk_offload_roots",
-            return_value=cleanup,
-        ) as cleanup_roots,
-    ):
-        job_executor._wait_child_process_finish(
-            client=client,
-            job_id="job-1",
-            allocated_resource=None,
-            token=None,
-            resource_manager=MagicMock(),
-            workspace="/tmp/workspace",
-            fl_ctx=fl_ctx,
-        )
-
-    cleanup_roots.assert_called_once_with(job_id="job-1", owner_parent_pid=os.getpid())
-    assert "removed tensor disk-offload root" in job_executor.logger.info.call_args_list[-1].args[0]
-
-
-def test_wait_child_process_reclaims_roots_when_wait_raises():
-    client = MagicMock()
-    job_executor = JobExecutor(client=client, startup="startup")
-    job_handle = MagicMock()
-    job_handle.wait.side_effect = RuntimeError("wait failed")
-    job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
-
-    with (
-        patch(
-            "nvflare.private.fed.client.client_executor.cleanup_owned_tensor_disk_offload_roots",
-            return_value=TensorDiskOffloadCleanupResult(),
-        ) as cleanup_roots,
-        pytest.raises(RuntimeError, match="wait failed"),
-    ):
-        job_executor._wait_child_process_finish(
-            client=client,
-            job_id="job-1",
-            allocated_resource=None,
-            token=None,
-            resource_manager=MagicMock(),
-            workspace="/tmp/workspace",
-            fl_ctx=MagicMock(),
-        )
-
-    cleanup_roots.assert_called_once_with(job_id="job-1", owner_parent_pid=os.getpid())
