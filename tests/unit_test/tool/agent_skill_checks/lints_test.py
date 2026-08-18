@@ -496,6 +496,10 @@ def test_dependency_install_safety_lint_accepts_reviewed_confirmed_install(tmp_p
             "obtain explicit user approval after the review."
         ),
         (
+            "Do not ask for approval; do not ask whether to install dependencies before reviewing their sources; "
+            "obtain explicit user approval after the review."
+        ),
+        (
             "Do not skip reviewing package sources before installation. "
             "Obtain explicit user confirmation before installing."
         ),

@@ -1716,14 +1716,14 @@ def _has_dependency_policy_bypass(text: str, patterns: Iterable[re.Pattern]) -> 
 
 def _has_dependency_confirmation_bypass(text: str) -> bool:
     """Distinguish a confirmation bypass from an explicit audit-then-confirm sequence."""
-    statements = re.split(r"(?<=[.!?;])\s+", text)
-    if _DEPENDENCY_INSTALL_TERMS_RE.search(text) and any(
-        _BARE_CONFIRMATION_BYPASS_RE.fullmatch(statement.strip()) for statement in statements
-    ):
-        return True
     if _has_dependency_policy_bypass(text, _DEPENDENCY_CONFIRMATION_BYPASS_RES):
         return True
-    if not _DEPENDENCY_CONFIRMATION_REQUEST_SUPPRESSION_RE.search(text):
+    statements = re.split(r"(?<=[.!?;])\s+", text)
+    bare_confirmation_suppression = _DEPENDENCY_INSTALL_TERMS_RE.search(text) and any(
+        _BARE_CONFIRMATION_BYPASS_RE.fullmatch(statement.strip()) for statement in statements
+    )
+    request_suppression = _DEPENDENCY_CONFIRMATION_REQUEST_SUPPRESSION_RE.search(text)
+    if not bare_confirmation_suppression and not request_suppression:
         return False
     audit_then_confirm = _DEPENDENCY_AUDIT_FIRST_RE.search(text) and _has_dependency_policy_bypass(
         text, _DEPENDENCY_POST_AUDIT_CONFIRMATION_RES
