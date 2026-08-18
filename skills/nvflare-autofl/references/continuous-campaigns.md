@@ -24,7 +24,9 @@ between invocations appends `{changed_at, old, new, source, user_approved}` to
 `cap_changes` in `.nvflare/autofl/campaign.json` so budget changes stay
 auditable. Increasing a finite cap or making it uncapped requires specific user
 approval plus `--confirm-user-approved-cap-change`; initial caps and reductions
-do not. External
+do not. Retry of the same already-applied approved cap command is idempotent.
+Never infer an initial cap from inherited environment variables. An approved
+increase refreshes campaign state and reopens a cap-exhausted campaign. External
 judges should treat `cap_changes` as evidence for runner-mediated cap changes
 only: `campaign.json` carries no integrity hash, so direct metadata edits are
 not detectable.

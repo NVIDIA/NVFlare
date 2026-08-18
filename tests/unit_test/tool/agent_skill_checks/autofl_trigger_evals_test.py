@@ -76,10 +76,13 @@ def test_autofl_natural_phrasing_eval_keeps_runner_and_cap_contract():
 
 def test_autofl_skill_defines_training_equivalent_accounting():
     skill_text = AUTOFL_EVALS_PATH.parent.parent.joinpath("SKILL.md").read_text(encoding="utf-8")
+    normalized = " ".join(skill_text.split())
 
-    assert "Every candidate training, parameter update, or metric-based screen/rank must use" in skill_text
-    assert "Only non-training parse, import," in skill_text
-    assert "Every real crash and identical replay counts as a separate candidate attempt" in skill_text
+    assert "Every candidate training, parameter update, or metric-based screen/rank must use" in normalized
+    assert "Only non-training parse, import," in normalized
+    assert "Every real crash and identical replay is a separate attempt" in normalized
+    assert "never infer one from inherited" in normalized
+    assert "reopens a cap-exhausted campaign" in normalized
     assert "--confirm-user-approved-crash-repeat" not in skill_text
     assert "--confirm-user-approved-cap-change" in skill_text
 

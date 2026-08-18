@@ -269,7 +269,7 @@ def env_float(name: str, default: float) -> float:
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     guard = load_campaign_guard()
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument(
         "action",
         choices=["initialize", "prepare", "evaluate", "abandon", "suggest", "record", "status"],
@@ -2936,7 +2936,7 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
         )
     explicit = getattr(args, "_explicit_settings", set())
     changed = False
-    cap_approval_used = False
+    cap_confirmation_valid = False
     for name in CAMPAIGN_SETTING_NAMES:
         if name not in settings:
             continue
@@ -2957,7 +2957,7 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
                                 "--confirm-user-approved-cap-change is only valid for a candidate-cap increase "
                                 "or a finite-to-uncapped change"
                             )
-                        cap_approval_used = approval_required
+                        cap_confirmation_valid = approval_required
                         # Audit trail: mid-campaign budget changes must stay detectable by external judges.
                         metadata.setdefault("cap_changes", []).append(
                             {
@@ -2970,6 +2970,9 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
                         )
                     settings[name] = requested
                     changed = True
+                elif name == "max_candidates" and args.confirm_user_approved_cap_change:
+                    # Retrying an already-applied approved command is an idempotent success.
+                    cap_confirmation_valid = True
                 continue
             if requested != settings[name]:
                 raise ValueError(
@@ -2977,7 +2980,7 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
                     f"configured={settings[name]!r}, requested={requested!r}"
                 )
         setattr(args, name, settings[name])
-    if args.confirm_user_approved_cap_change and not cap_approval_used:
+    if args.confirm_user_approved_cap_change and not cap_confirmation_valid:
         raise ValueError(
             "--confirm-user-approved-cap-change requires an explicit candidate-cap increase or finite-to-uncapped "
             "change"
@@ -3505,14 +3508,29 @@ def matching_crashed_candidate(
     for path in sorted(root.glob("*/candidate_manifest.json")):
         if path.resolve() == current_manifest_path.resolve():
             continue
-        manifest = read_json(path)
-        validate_candidate_manifest_identity(path, manifest)
-        if manifest.get("status") != "crash":
-            continue
-        patch_sha256 = str(manifest.get("patch_sha256") or "")
-        if patch_sha256 and candidate_execution_fingerprint(manifest, patch_sha256) == fingerprint:
-            return path, manifest
+        try:
+            manifest = read_json(path)
+            validate_candidate_manifest_identity(path, manifest)
+            if manifest.get("status") != "crash":
+                continue
+            patch_sha256 = str(manifest.get("patch_sha256") or "")
+            if patch_sha256 and candidate_execution_fingerprint(manifest, patch_sha256) == fingerprint:
+                return path, manifest
+        except (OSError, ValueError) as error:
+            print(f"Warning: ignoring invalid sibling candidate manifest {path}: {error}", file=sys.stderr)
     return None
+
+
+def crash_replay_provenance(workspace: Path, fingerprint: str, current_manifest_path: Path) -> Optional[Dict[str, Any]]:
+    prior_crash = matching_crashed_candidate(workspace, fingerprint, current_manifest_path)
+    if prior_crash is None:
+        return None
+    prior_path, prior_manifest = prior_crash
+    return {
+        "execution_fingerprint": fingerprint,
+        "prior_candidate": prior_manifest.get("candidate_id"),
+        "prior_manifest": str(prior_path.resolve()),
+    }
 
 
 def update_config_for_kept_sources(config: Dict[str, Any], created: Sequence[str]) -> None:
@@ -3552,6 +3570,7 @@ def finalize_candidate_result(
     created: List[str],
     patch: str,
     record: RunRecord,
+    crash_replay: Optional[Dict[str, Any]],
 ) -> Tuple[List[RunRecord], Dict[str, Any]]:
     rollback_files: Dict[Path, Optional[bytes]] = {}
     staged_snapshot = None
@@ -3624,6 +3643,13 @@ def finalize_candidate_result(
                 },
             }
         )
+        manifest.pop("crash_replay", None)
+        if crash_replay:
+            manifest["crash_replay"] = {
+                **crash_replay,
+                "recorded_at": utc_now(),
+                "outcome_status": record.status,
+            }
         write_json(manifest_path, manifest)
         write_json(campaign_metadata_path(job.parent), metadata)
         records.append(record)
@@ -3673,7 +3699,8 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
     atomic_write_text(patch_path, patch)
     patch_sha256 = sha256_bytes(patch.encode("utf-8"))
     execution_fingerprint = candidate_execution_fingerprint(manifest, patch_sha256)
-    prior_crash = matching_crashed_candidate(workspace, execution_fingerprint, manifest_path)
+    crash_replay = crash_replay_provenance(workspace, execution_fingerprint, manifest_path)
+    manifest.pop("crash_replay", None)
     manifest.update(
         {
             "updated_at": utc_now(),
@@ -3684,14 +3711,6 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
             "execution_fingerprint": execution_fingerprint,
         }
     )
-    if prior_crash:
-        prior_path, prior_manifest = prior_crash
-        manifest["crash_replay"] = {
-            "detected_at": utc_now(),
-            "execution_fingerprint": execution_fingerprint,
-            "prior_candidate": prior_manifest.get("candidate_id"),
-            "prior_manifest": str(prior_path.resolve()),
-        }
     write_json(manifest_path, manifest)
     schema = load_mutation_schema(workspace)
     timeout, no_progress_timeout = campaign_timeout(args, schema)
@@ -3825,6 +3844,7 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
         created,
         patch,
         run_record,
+        crash_replay,
     )
     print_campaign_result(paths, records, state, candidate_manifest=str(manifest_path.resolve()))
     return 0
@@ -4041,6 +4061,10 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
         metric_source=evidence.source if evidence else "",
         metric_artifact=evidence.artifact if evidence else "",
     )
+    execution_fingerprint = str(manifest.get("execution_fingerprint") or "")
+    crash_replay = (
+        crash_replay_provenance(workspace, execution_fingerprint, manifest_path) if execution_fingerprint else None
+    )
     records, state = finalize_candidate_result(
         args,
         job,
@@ -4055,6 +4079,7 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
         created,
         patch,
         record,
+        crash_replay,
     )
     updated_manifest = read_json(manifest_path)
     updated_manifest.setdefault("artifacts", {})["job_id"] = args.job_id

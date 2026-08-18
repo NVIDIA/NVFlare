@@ -1990,19 +1990,22 @@ def test_candidate_execution_fingerprint_uses_existing_comparison_provenance():
     assert runner.candidate_execution_fingerprint(manifest, "f" * 64) != fingerprint
 
 
-def test_identical_crashed_candidate_replay_is_counted_without_approval(tmp_path, monkeypatch):
+def test_identical_crashed_candidate_replay_is_counted_and_records_outcome(tmp_path, monkeypatch):
     runner = _load_runner()
     job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)
     assert runner.main(["status", str(job), "--max-candidates", "2"]) == 0
     calls = []
 
-    def crash_run(run_def, **kwargs):
+    outcomes = iter([("crash", None), ("candidate", 0.9)])
+
+    def replay_run(run_def, **kwargs):
         calls.append(run_def.name)
+        status, score = next(outcomes)
         return runner.RunRecord(
-            "crash", run_def.name, None, 1.0, "none", run_def.description, "python job.py", "/tmp/crash"
+            status, run_def.name, score, 1.0, "none", run_def.description, "python job.py", "/tmp/run"
         )
 
-    monkeypatch.setattr(runner, "run_job", crash_run)
+    monkeypatch.setattr(runner, "run_job", replay_run)
     for candidate in ("first_crash", "same_after_crash"):
         assert runner.main(["prepare", str(job), "--name", candidate, "--hypothesis", "same candidate"]) == 0
         source = tmp_path / ".nvflare" / "autofl" / "candidates" / candidate / "source" / "client.py"
@@ -2017,10 +2020,12 @@ def test_identical_crashed_candidate_replay_is_counted_without_approval(tmp_path
     )
     second_manifest = json.loads(second_manifest_path.read_text(encoding="utf-8"))
     replay = second_manifest["crash_replay"]
+    assert second_manifest["status"] == "keep"
     assert second_manifest["execution_fingerprint"] == first_manifest["execution_fingerprint"]
     assert replay["execution_fingerprint"] == first_manifest["execution_fingerprint"]
     assert replay["prior_candidate"] == "first_crash"
-    assert replay["detected_at"]
+    assert replay["outcome_status"] == "keep"
+    assert replay["recorded_at"]
     assert "crash_repeat_approval" not in second_manifest
     assert calls == ["first_crash", "same_after_crash"]
     records = runner.load_results(tmp_path / "results.tsv")
@@ -2031,6 +2036,100 @@ def test_identical_crashed_candidate_replay_is_counted_without_approval(tmp_path
     assert state["remaining_candidates"] == 0
     assert state["final_response_allowed"] is True
     assert state["reason"] == "candidate_cap_exhausted"
+
+
+def test_crash_replay_provenance_is_not_stamped_for_infrastructure_retry_or_changed_rerun(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)
+    assert runner.main(["status", str(job), "--max-candidates", "2"]) == 0
+
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "crash", run_def.name, None, 1.0, "none", run_def.description, "python job.py", "/tmp/crash"
+        ),
+    )
+    assert runner.main(["prepare", str(job), "--name", "first_crash", "--hypothesis", "same candidate"]) == 0
+    tmp_path.joinpath(".nvflare/autofl/candidates/first_crash/source/client.py").write_text(
+        "ALGORITHM = 'crashing_candidate'\n", encoding="utf-8"
+    )
+    assert runner.main(["evaluate", str(job)]) == 0
+
+    assert runner.main(["prepare", str(job), "--name", "retry", "--hypothesis", "same candidate"]) == 0
+    retry_manifest = tmp_path / ".nvflare/autofl/candidates/retry/candidate_manifest.json"
+    retry_source = retry_manifest.parent / "source/client.py"
+    retry_source.write_text("ALGORITHM = 'crashing_candidate'\n", encoding="utf-8")
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            runner.INFRASTRUCTURE_RETRY,
+            run_def.name,
+            None,
+            1.0,
+            "none",
+            run_def.description,
+            "python job.py",
+            "/tmp/infrastructure",
+            failure_reason="socket unavailable",
+        ),
+    )
+    assert runner.main(["evaluate", str(job), "--manifest", str(retry_manifest)]) == 75
+    manifest = json.loads(retry_manifest.read_text(encoding="utf-8"))
+    assert manifest["status"] == "prepared"
+    assert "crash_replay" not in manifest
+
+    retry_source.write_text("ALGORITHM = 'fixed_candidate'\n", encoding="utf-8")
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "candidate", run_def.name, 0.9, 1.0, "none", run_def.description, "python job.py", "/tmp/success"
+        ),
+    )
+    assert runner.main(["evaluate", str(job), "--manifest", str(retry_manifest)]) == 0
+    manifest = json.loads(retry_manifest.read_text(encoding="utf-8"))
+    assert manifest["status"] == "keep"
+    assert "crash_replay" not in manifest
+    assert runner.candidate_attempts(runner.load_results(tmp_path / "results.tsv")) == 2
+
+
+def test_invalid_crashed_sibling_does_not_block_candidate_evaluation(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)
+    assert runner.main(["prepare", str(job), "--name", "valid", "--hypothesis", "valid candidate"]) == 0
+    valid_manifest = tmp_path / ".nvflare/autofl/candidates/valid/candidate_manifest.json"
+    valid_manifest.parent.joinpath("source/client.py").write_text("ALGORITHM = 'valid'\n", encoding="utf-8")
+
+    broken_manifest = tmp_path / ".nvflare/autofl/candidates/broken_crash/candidate_manifest.json"
+    broken_manifest.parent.mkdir(parents=True)
+    broken_manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": runner.CANDIDATE_MANIFEST_SCHEMA_VERSION,
+                "candidate_id": "broken_crash",
+                "workspace_root": str(tmp_path),
+                "status": "crash",
+                "patch_sha256": "a" * 64,
+                "run_args": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "candidate", run_def.name, 0.9, 1.0, "none", run_def.description, "python job.py", "/tmp/success"
+        ),
+    )
+
+    assert runner.main(["evaluate", str(job), "--manifest", str(valid_manifest)]) == 0
+    warning = capsys.readouterr().err
+    assert "ignoring invalid sibling candidate manifest" in warning
+    assert str(broken_manifest) in warning
+    assert json.loads(valid_manifest.read_text(encoding="utf-8"))["status"] == "keep"
 
 
 def test_changed_candidate_after_crash_is_allowed(tmp_path, monkeypatch):
@@ -2929,6 +3028,9 @@ def test_effective_cap_changes_append_audit_records_to_campaign_metadata(tmp_pat
     assert runner.main(["status", str(job), "--max-candidates", "7"]) == 0
     assert runner.main(["status", str(job), "--max-candidates", "7"]) == 0
     assert runner.main(["status", str(job), "--uncapped", "--confirm-user-approved-cap-change"]) == 0
+    after_approval = metadata_path.read_bytes()
+    assert runner.main(["status", str(job), "--uncapped", "--confirm-user-approved-cap-change"]) == 0
+    assert metadata_path.read_bytes() == after_approval
 
     cap_changes = json.loads(metadata_path.read_text(encoding="utf-8"))["cap_changes"]
     assert [(entry["old"], entry["new"], entry["source"], entry["user_approved"]) for entry in cap_changes] == [
@@ -2972,6 +3074,30 @@ def test_cap_expansion_requires_specific_user_approval_and_is_write_free_when_re
         (None, 2, False),
         (2, 3, True),
     ]
+    after_approval = metadata_path.read_bytes()
+    assert (
+        runner.main(
+            [
+                "status",
+                str(job),
+                "--max-candidates",
+                "3",
+                "--confirm-user-approved-cap-change",
+            ]
+        )
+        == 0
+    )
+    assert metadata_path.read_bytes() == after_approval
+
+
+def test_runner_rejects_abbreviated_lifecycle_options(capsys):
+    runner = _load_runner()
+
+    with pytest.raises(SystemExit) as error:
+        runner.parse_args(["status", "job.py", "--max-cand", "5"])
+
+    assert error.value.code == 2
+    assert "unrecognized arguments: --max-cand 5" in capsys.readouterr().err
 
 
 def test_cap_confirmation_is_rejected_when_no_expansion_requires_it(tmp_path, monkeypatch, capsys):
