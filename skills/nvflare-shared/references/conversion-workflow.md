@@ -463,6 +463,12 @@ configured value unchanged. Do not reinterpret it relative to packaged
 Validate relative-path conversions from a fresh caller working directory so the
 source data remains reachable after packaging.
 
+When `per_site_config` supplies `train_args`, each site value is a complete
+replacement for recipe-level `train_args`, not a fragment to merge with it.
+Compose shared options and the site's data path into every override, then follow
+the canonical validation in `pytorch-family-recipe-construction.md` before a
+full simulation.
+
 An absolute path is acceptable only as the runtime-supplied value or default of
 that configurable argument — for example, in single-machine simulation every
 site can resolve to the same default. A hardcoded absolute path baked into the

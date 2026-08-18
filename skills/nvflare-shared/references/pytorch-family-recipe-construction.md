@@ -62,6 +62,28 @@ Do not import or call internal command-splitting helpers to predict argument
 delivery. Validate the exact generated `train_args` end to end through the
 selected recipe path and the generated client's actual parser.
 
+### Per-Site Argument Overrides
+
+Treat `per_site_config[site]["train_args"]` as the site's complete argument
+string. When present, it replaces the recipe-level `train_args`; the recipe does
+not merge shared arguments into the site override. Compose every site value from
+the shared and site-specific arguments before calling `set_per_site_config(...)`:
+
+```python
+shared_train_args = f"--epochs {epochs} --batch-size {batch_size}"
+per_site_config = {
+    site: {"train_args": f"{shared_train_args} --data-dir {data_dir}"}
+    for site, data_dir in site_data_dirs.items()
+}
+set_per_site_config(recipe, per_site_config)
+```
+
+Recipe-level `train_args` is only the fallback for a site without its own
+`train_args` entry. Before a full simulation, export the job and inspect each
+site's client configuration to verify that `task_script_args` contains the full
+expected argument set. A partial site override is a construction failure; do not
+discover it through repeated full simulations.
+
 ## Tensor-Native Transport
 
 Use the workflow-side format keyword exposed by the selected recipe:

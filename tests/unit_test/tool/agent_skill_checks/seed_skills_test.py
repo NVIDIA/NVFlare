@@ -341,6 +341,33 @@ def test_pytorch_family_construction_policy_is_canonical_and_capability_based():
     assert "Do not patch NVFLARE runtime modules" in normalized_validation
 
 
+def test_conversion_skills_treat_per_site_train_args_as_complete_replacements():
+    repo_root = Path(__file__).resolve().parents[4]
+    shared_references = repo_root / "skills" / "nvflare-shared" / "references"
+    construction_text = shared_references.joinpath("pytorch-family-recipe-construction.md").read_text(encoding="utf-8")
+    workflow_text = shared_references.joinpath("conversion-workflow.md").read_text(encoding="utf-8")
+    lightning_text = repo_root.joinpath("skills/nvflare-convert-lightning/SKILL.md").read_text(encoding="utf-8")
+    lightning_evals = json.loads(
+        repo_root.joinpath("skills/nvflare-convert-lightning/evals/evals.json").read_text(encoding="utf-8")
+    )
+
+    normalized_construction = " ".join(construction_text.split())
+    normalized_workflow = " ".join(workflow_text.split())
+    normalized_lightning = " ".join(lightning_text.split())
+    external_data_eval = _eval_by_id(lightning_evals, "lightning-convert-external-data-path")["nvflare"]
+    mandatory_ids = {item["id"] for item in external_data_eval["mandatory_behavior"]}
+
+    assert "### Per-Site Argument Overrides" in construction_text
+    assert "complete argument string" in normalized_construction
+    assert "it replaces the recipe-level `train_args`" in normalized_construction
+    assert "does not merge shared arguments into the site override" in normalized_construction
+    assert "only the fallback for a site without its own `train_args` entry" in normalized_construction
+    assert "`task_script_args` contains the full expected argument set" in normalized_construction
+    assert "complete replacement for recipe-level `train_args`" in normalized_workflow
+    assert "never split shared arguments and a site-specific data path" in normalized_lightning
+    assert "complete-per-site-train-args" in mandatory_ids
+
+
 def test_seed_skill_versions_stay_at_release_version():
     repo_root = Path(__file__).resolve().parents[4]
 

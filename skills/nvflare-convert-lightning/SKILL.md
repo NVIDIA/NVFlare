@@ -97,7 +97,10 @@ distribution; handle conversion later as a separate request.
    `LightningModule`, not its inner network. Add the requested `aggregator=`
    wiring and the metric, tensor-transport, server
    offload, and execution settings derived from the shared PyTorch-family
-   construction profile.
+   construction profile. If sites need distinct `train_args`, make every site
+   override the complete argument string; never split shared arguments and a
+   site-specific data path across recipe-level and per-site values expecting a
+   merge.
 8. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`:
    compile checks, recipe construction, one final full-run path chosen by the
    artifact being validated, and export inspection; then use
