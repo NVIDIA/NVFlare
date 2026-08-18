@@ -1032,6 +1032,11 @@ class TransactionInfo:
         self.objects = [r.obj for r in tx.snapshot_refs()]
 
 
+def _sleep_for_linger(duration: float):
+    """Sleep for a completed transfer's bounded replay window."""
+    time.sleep(duration)
+
+
 class TransferWaiter:
     """The awaitable facade over a transaction's terminal transfer outcome.
 
@@ -1090,7 +1095,7 @@ class TransferWaiter:
             return None
         outcome = self._outcome
         if outcome is not None and linger and outcome.done_status == TransactionDoneStatus.FINISHED:
-            time.sleep(linger)
+            _sleep_for_linger(linger)
         return outcome
 
 
