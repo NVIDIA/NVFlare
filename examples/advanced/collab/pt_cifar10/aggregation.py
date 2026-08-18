@@ -20,6 +20,10 @@ from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedA
 def aggregate_result(client_results, result_key: str, round_number: int):
     """Aggregate one tensor dictionary from each successful client result."""
 
+    # Group calls expose failures separately, so stop before aggregating a partial round.
+    if client_results.failures:
+        raise next(iter(client_results.failures.values()))
+
     helper = WeightedAggregationHelper()
     for site_name, result in dict(client_results).items():
         helper.add(
