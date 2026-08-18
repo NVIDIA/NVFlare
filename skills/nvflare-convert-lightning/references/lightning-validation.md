@@ -8,30 +8,40 @@ covers Lightning-specific validation checks.
 
 ## Validate In Order
 
-1. Install dependencies first through `../../nvflare-shared/references/dependency-install.md`,
-   using `uv pip` when available, before importing the user's Lightning code.
-2. Run local SimEnv validation with `python job.py`; follow
-   `../../nvflare-shared/references/runtime-output-guidance.md` for workspace location.
+1. If an applicable dependency is missing, load
+   `../../nvflare-shared/references/dependency-install.md` and install it before
+   importing the user's Lightning code. Do not load that reference for an
+   already-satisfied environment.
+2. Before a full run, select exactly one final validation target:
+   - For local or first-run simulation without an export claim, run only
+     `python job.py` and follow
+     `../../nvflare-shared/references/runtime-output-guidance.md` for workspace
+     location.
+   - For a requested exported/deployable artifact, run the recipe's public
+     export command, inspect the export per
+     `../../nvflare-shared/references/conversion-workflow.md` ("Export"), and run
+     only the exported folder with the simulator CLI. Do not first run
+     `python job.py` as a local simulation.
    HE is not supported: homomorphic-encryption recipes reject `SimEnv` and
-   require provisioned `PocEnv`/`ProdEnv` outside conversion scope, so an HE
-   request is refused before this step — report it as unsupported and route to
+   require provisioned `PocEnv`/`ProdEnv` outside conversion scope, so refuse an
+   HE request before this step. Report it as unsupported and route to
    provisioning/deployment per the HE-not-supported rule in
    `../../nvflare-shared/references/pytorch-family-recipe-selection.md` and
-   `../../nvflare-shared/references/conversion-workflow.md`, rather than
-   generating an HE job to validate here.
-3. Run the final validation to completion per the shared contract
+   `../../nvflare-shared/references/conversion-workflow.md` rather than
+   generating an HE job.
+3. Run the selected target to completion per the shared contract
    (`../../nvflare-shared/references/conversion-workflow.md` hard-stop and
    `../../nvflare-shared/references/validation-evidence.md` evidence contract).
-   Lightning-specific delta: the patched `Trainer` start, callback setup, and
+   Never run the other target after success. After failure, diagnose, apply a
+   scoped fix, and rerun the same target; change targets only when evidence shows
+   that the original target does not represent the requested artifact.
+4. Account for Lightning startup: the patched `Trainer`, callback setup, and
    logger flush make Lightning runs slower than plain PyTorch, and
    distributed-process jobs launch externally (see
-   `lightning-ddp-and-tracking.md`), so their
-   completion must also be observed before you report success. Allow more
-   wall-clock for the foreground run accordingly; scheduled wakeups or progress
-   logs are not success evidence. If the run times out, report it as blocked or
-   timed out with the current server/client log evidence.
-4. Validate export per `../../nvflare-shared/references/conversion-workflow.md` ("Export") when
-   export is in scope.
+   `lightning-ddp-and-tracking.md`). Observe their completion before reporting
+   success; scheduled wakeups or progress logs are not success evidence. If the
+   run times out, report it as blocked or timed out with current server/client
+   log evidence.
 5. Report the declared primary/global metric scalar when one exists.
 
 ## Lightning-Specific Checks

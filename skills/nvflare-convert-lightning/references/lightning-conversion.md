@@ -17,7 +17,10 @@ Use this path for Lightning conversion:
 3. Generate `client.py` with `flare.patch(trainer)` as the model exchange path.
 4. Generate `job.py` that builds the selected recipe and calls
    `recipe.execute(SimEnv(...))`.
-5. Validate with `python job.py`, inspect terminal evidence, then export.
+5. Select exactly one final target per `lightning-validation.md`: run
+   `python job.py` for local simulation without an export claim, or export and
+   run the exported folder with the simulator CLI for a requested deployable
+   artifact. Never run the local target and then export after it succeeds.
 
 HE is not supported at steps 4–5: follow the HE-not-supported rule in
 `../../nvflare-shared/references/pytorch-family-recipe-selection.md`.

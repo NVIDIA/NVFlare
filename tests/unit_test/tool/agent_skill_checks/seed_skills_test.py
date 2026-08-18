@@ -423,6 +423,8 @@ def test_lightning_conversion_limits_reference_loading_and_full_run_validation()
     repo_root = Path(__file__).resolve().parents[4]
     skill_root = repo_root / "skills" / "nvflare-convert-lightning"
     skill_text = skill_root.joinpath("SKILL.md").read_text(encoding="utf-8")
+    conversion_text = skill_root.joinpath("references/lightning-conversion.md").read_text(encoding="utf-8")
+    validation_text = skill_root.joinpath("references/lightning-validation.md").read_text(encoding="utf-8")
     shared_root = repo_root / "skills" / "nvflare-shared" / "references"
     common_text = shared_root.joinpath("conversion-common.md").read_text(encoding="utf-8")
     workflow_text = shared_root.joinpath("conversion-workflow.md").read_text(encoding="utf-8")
@@ -432,6 +434,8 @@ def test_lightning_conversion_limits_reference_loading_and_full_run_validation()
     mandatory_ids = {item["id"] for item in basic_eval["mandatory_behavior"]}
     prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
     normalized_skill = " ".join(skill_text.split())
+    normalized_conversion = " ".join(conversion_text.split())
+    normalized_lightning_validation = " ".join(validation_text.split())
     normalized_common = " ".join(common_text.split())
     normalized_workflow = " ".join(workflow_text.split())
 
@@ -458,6 +462,14 @@ def test_lightning_conversion_limits_reference_loading_and_full_run_validation()
     assert "Change targets only when evidence shows the original target" in normalized_skill
     assert "Keep cleanup, export, and simulation as separate tool calls" in normalized_skill
     assert "will not reach a download helper or its imports" in normalized_skill
+    for reference_text in (normalized_conversion, normalized_lightning_validation):
+        assert "select exactly one final" in reference_text.lower()
+        assert "`python job.py`" in reference_text
+        assert "exported folder with the simulator CLI" in reference_text
+    assert "Validate with `python job.py`, inspect terminal evidence, then export" not in normalized_conversion
+    assert "Do not first run `python job.py` as a local simulation" in normalized_lightning_validation
+    assert "Never run the other target after success" in normalized_lightning_validation
+    assert "rerun the same target" in normalized_lightning_validation
     assert {"applicable-dependencies-only", "single-final-validation-path"} <= mandatory_ids
     assert {
         "no-duplicate-full-validation",
