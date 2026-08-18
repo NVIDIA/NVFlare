@@ -13,7 +13,7 @@ Claude Code:
 
 .. code-block:: shell
 
-   npx skills add ./skills -a codex -a claude-code
+   npx skills add ./skills --skill '*' -a codex -a claude-code -y
 
 The standard Agent Skills installer places the complete skill set, including
 Auto-FL's deterministic helper scripts, in each selected agent's managed skill

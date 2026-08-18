@@ -1484,7 +1484,7 @@ class Session(SessionSpec):
 
         Args:
             job_id (str): ID of the job (must be RUNNING)
-            config: str (level or LogMode), dict (dictConfig), or file path
+            config: str log level or built-in LogMode
             target (str): "all", "server", or a client site name. Any value
                 other than "all" or "server" is sent through the client-targeted
                 admin command path.
@@ -1577,7 +1577,7 @@ class Session(SessionSpec):
         """Get running environment values for specified clients. The env includes values of client name,
         workspace directory, root url of the FL server, and secure mode or not.
 
-        These values can be used for 3rd-party system configuration (e.g. CellPipe to connect to the FLARE system).
+        These values can be used for third-party system configuration.
 
         Args:
             client_names: clients to get env from. None means all clients.

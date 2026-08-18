@@ -23,16 +23,24 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import (
+    FAILED_NON_RELIABLE_TASK_TTL,
     MAX_COMPLETED_TASK_TTL,
     MAX_PEER_DERIVED_OUT_SEQ_CHUNKS,
     MIN_OUT_SEQ_CHUNKS,
+    ByteReceiver,
     RxStream,
     RxTask,
     required_out_seq_chunks,
 )
 from nvflare.fuel.f3.streaming.byte_streamer import TxTask
-from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_TOPIC, STREAM_CHANNEL, StreamDataType, StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError
+from nvflare.fuel.f3.streaming.stream_const import (
+    STREAM_ACK_TOPIC,
+    STREAM_CHANNEL,
+    STREAM_ERROR_TOPIC,
+    StreamDataType,
+    StreamHeaderKey,
+)
+from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, Stream, StreamError
 
 MB = 1024**2
 
@@ -98,77 +106,6 @@ def _make_chunk(
     return message
 
 
-class _DeadlockDetectingLock:
-    """Lock that raises on same-thread re-acquire to model Lock self-deadlock."""
-
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._owner = None
-
-    def __enter__(self):
-        acquired = self.acquire()
-        if not acquired:
-            raise RuntimeError("failed to acquire lock")
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.release()
-        return False
-
-    def acquire(self, blocking=True, timeout=-1):
-        tid = threading.get_ident()
-        if self._owner == tid:
-            raise RuntimeError("self-deadlock: same thread re-acquiring map_lock")
-        acquired = self._lock.acquire(blocking, timeout)
-        if acquired:
-            self._owner = tid
-        return acquired
-
-    def release(self):
-        self._owner = None
-        self._lock.release()
-
-    def locked(self):
-        return self._lock.locked()
-
-
-def _pre_fix_find_or_create_task(message: Message, cell):
-    """Original buggy logic: calls stop() while map_lock is still held."""
-
-    sid = message.get_header(StreamHeaderKey.STREAM_ID)
-    origin = message.get_header(MessageHeaderKey.ORIGIN)
-    error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
-
-    with RxTask.map_lock:
-        task = RxTask.rx_task_map.get(sid, None)
-        if not task:
-            if error:
-                return None
-            task = RxTask(sid, origin, cell)
-            RxTask.rx_task_map[sid] = task
-        else:
-            if error:
-                task.stop(StreamError(f"{task} Received error from {origin}: {error}"), notify=False)
-                return None
-    return task
-
-
-def test_pre_fix_find_or_create_task_would_deadlock(monkeypatch):
-    monkeypatch.setattr(RxTask, "map_lock", _DeadlockDetectingLock())
-
-    origin = "site-1"
-    sid = 99
-    fake_cell = SimpleNamespace()
-
-    create_message = _make_message(origin=origin, sid=sid)
-    task = _pre_fix_find_or_create_task(create_message, fake_cell)
-    assert task is not None
-
-    error_message = _make_message(origin=origin, sid=sid, error="stream failed")
-    with pytest.raises(RuntimeError, match="self-deadlock"):
-        _pre_fix_find_or_create_task(error_message, fake_cell)
-
-
 def test_find_or_create_task_stops_outside_map_lock(monkeypatch):
     origin = "site-1"
     sid = 123
@@ -194,7 +131,7 @@ def test_find_or_create_task_stops_outside_map_lock(monkeypatch):
     assert stop_invocation["lock_held"] is False
 
 
-def test_stop_ignores_missing_stream_future():
+def test_stop_without_stream_future_retains_non_reliable_failure_tombstone():
     """stop() before the first chunk (stream_future=None) must not raise AttributeError."""
     origin = "site-1"
     sid = 321
@@ -205,11 +142,43 @@ def test_stop_ignores_missing_stream_future():
     with RxTask.map_lock:
         RxTask.rx_task_map[(origin, sid)] = task
 
-    task.stop(StreamError("stream failed"), notify=True)
+    task.stop(BlobSizeError("stream failed"), notify=True)
 
     with RxTask.map_lock:
-        assert (origin, sid) not in RxTask.rx_task_map
-    assert len(fire_and_forget_calls) > 0
+        assert RxTask.rx_task_map[(origin, sid)] is task
+    assert task.cleanup_timer is not None
+    assert task.cleanup_timer.interval == FAILED_NON_RELIABLE_TASK_TTL
+    assert len(fire_and_forget_calls) == 2
+    assert [call[1] for call in fire_and_forget_calls] == [STREAM_ERROR_TOPIC, STREAM_ACK_TOPIC]
+    error_message = fire_and_forget_calls[0][3]
+    assert error_message.get_header(StreamHeaderKey.ERROR_TYPE) == BlobSizeError.__name__
+
+
+def test_reject_reports_error_without_creating_receive_task():
+    cell = MagicMock()
+    cell.fire_and_forget.return_value = {}
+    receiver = ByteReceiver(cell)
+    message = Message(
+        {
+            MessageHeaderKey.ORIGIN: "site-1.job-2",
+            StreamHeaderKey.STREAM_ID: 322,
+            StreamHeaderKey.STREAM_REQ_ID: "request-322",
+            StreamHeaderKey.CHANNEL: "collab",
+            StreamHeaderKey.TOPIC: "call",
+        }
+    )
+
+    receiver.reject(message, StreamError("Collab call rejected"))
+
+    assert ("site-1.job-2", 322) not in RxTask.rx_task_map
+    calls = cell.fire_and_forget.call_args_list
+    assert [call.args[1] for call in calls] == [STREAM_ERROR_TOPIC, STREAM_ACK_TOPIC]
+    for call in calls:
+        assert call.args[2] == "site-1.job-2"
+        error_message = call.args[3]
+        assert error_message.get_header(StreamHeaderKey.STREAM_ID) == 322
+        assert error_message.get_header(StreamHeaderKey.STREAM_REQ_ID) == "request-322"
+        assert error_message.get_header(StreamHeaderKey.ERROR_MSG) == "Collab call rejected"
 
 
 def test_rxstream_close_ignores_missing_stream_future():
@@ -683,7 +652,7 @@ def test_reliable_success_stop_is_idempotent():
     assert task.cleanup_timer is cleanup_timer
 
 
-def test_reliable_late_error_after_completion_keeps_reack_window():
+def test_reliable_consumer_error_after_receive_completion_is_reported():
     cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
     message = _make_chunk("site-1", sid=513, seq=0, data_type=StreamDataType.FINAL, payload=b"", reliable=True)
     task = RxTask.find_or_create_task(message, cell)
@@ -694,14 +663,16 @@ def test_reliable_late_error_after_completion_keeps_reack_window():
     task.stop(StreamError("late failure"), notify=False)
 
     assert task.completed is True
-    assert task.failed is False
+    assert task.failed is True
+    assert isinstance(task.stream_future.error, StreamError)
     assert cell.fire_and_forget.call_count == 1
 
     assert task.process_chunk(message) is False
 
-    assert cell.fire_and_forget.call_count == 2
-    ack = cell.fire_and_forget.call_args.args[3]
-    assert ack.get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.ACK
+    assert cell.fire_and_forget.call_count == 3
+    error_msg = cell.fire_and_forget.call_args.args[3]
+    assert error_msg.get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.ERROR
+    assert "late failure" in error_msg.get_header(StreamHeaderKey.ERROR_MSG)
 
 
 def test_reliable_failed_task_rejects_retried_initial_chunk():
@@ -715,12 +686,12 @@ def test_reliable_failed_task_rejects_retried_initial_chunk():
         assert RxTask.rx_task_map[("site-1", 516)] is task
     assert task.stream_future is None
     assert task.cleanup_timer is not None
-    assert cell.fire_and_forget.call_count == 1
+    assert cell.fire_and_forget.call_count == 2
 
     assert task.process_chunk(message) is False
 
     assert task.stream_future is None
-    assert cell.fire_and_forget.call_count == 2
+    assert cell.fire_and_forget.call_count == 4
     error_msg = cell.fire_and_forget.call_args.args[3]
     assert error_msg.get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.ERROR
     assert "failed before callback" in error_msg.get_header(StreamHeaderKey.ERROR_MSG)
@@ -1145,7 +1116,7 @@ def test_error_renotification_exception_is_debug_only(caplog):
     assert "connection closed" in caplog.text
 
 
-def test_stop_error_after_completion_is_noop_for_non_reliable():
+def test_consumer_error_after_receive_completion_is_reported_for_non_reliable():
     cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
     message = _make_chunk("site-1", sid=542, seq=0, data_type=StreamDataType.FINAL, payload=b"abc", reliable=False)
     task = RxTask.find_or_create_task(message, cell)
@@ -1156,5 +1127,22 @@ def test_stop_error_after_completion_is_noop_for_non_reliable():
 
     task.stop(StreamError("late failure"), notify=True)
 
-    assert task.failed is False
-    assert cell.fire_and_forget.call_count == calls
+    assert task.failed is True
+    assert isinstance(task.stream_future.error, StreamError)
+    assert cell.fire_and_forget.call_count == calls + 2
+
+
+def test_error_after_consumer_future_completion_is_reported():
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
+    message = _make_chunk("site-1", sid=543, seq=0, data_type=StreamDataType.FINAL, payload=b"abc", reliable=False)
+    task = RxTask.find_or_create_task(message, cell)
+
+    assert task.process_chunk(message) is True
+    task.stream_future.set_result("accepted")
+    calls = cell.fire_and_forget.call_count
+
+    task.stop(StreamError("too late"), notify=True)
+
+    assert task.failed is True
+    assert task.stream_future.result() == "accepted"
+    assert cell.fire_and_forget.call_count == calls + 2

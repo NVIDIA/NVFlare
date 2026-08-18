@@ -18,7 +18,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-import re
 import shutil
 import stat
 import threading
@@ -58,8 +57,6 @@ from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
 
 _HEALTHY_MISSES = 5
 _ACCOUNTING_RETRY_INTERVAL = 6.0
-_MIN_SLURM_VERSION = (23, 2)
-_SLURM_VERSION_RE = re.compile(r"^slurm\s+(\d+)\.(\d+)", re.IGNORECASE)
 _JOB_NAME_SITE_LENGTH = 32
 
 
@@ -166,22 +163,11 @@ class SlurmJobManager:
                 except SlurmLauncherError as e:
                     raise UnsafeComponentError(str(e)) from e
                 adapter = _SlurmCliAdapter(executables, os.getuid(), self.logger)
-                self._require_slurm_version(adapter)
                 self.config = replace(self.config, executables=executables)
                 self.adapter = adapter
             self._require_accounting()
             self.jobs_dir = jobs_dir
             self._initialized = True
-
-    def _require_slurm_version(self, adapter=None) -> None:
-        message = "Slurm 23.02 or later is required"
-        result = (adapter or self.adapter).version_probe(timeout=2.0)
-        match = _SLURM_VERSION_RE.match(result.stdout.strip()) if result.available else None
-        if match and tuple(map(int, match.groups())) >= _MIN_SLURM_VERSION:
-            return
-        detail = _command_diagnostic(result) if not result.available else f"unexpected version output={result.stdout!r}"
-        self.logger.error("%s: %s", message, detail)
-        raise UnsafeComponentError(message)
 
     def _require_accounting(self) -> None:
         message = "Slurm accounting (slurmdbd) is required"
@@ -338,6 +324,8 @@ class SlurmJobManager:
             return ProcessExitCode.INFRASTRUCTURE_ERROR
         if record.exit_status in PROCESS_EXIT_REASON:
             return record.exit_status
+        if record.derived_exit_status in PROCESS_EXIT_REASON:
+            return record.derived_exit_status
         if record.exit_status or record.exit_signal:
             return JobReturnCode.EXECUTION_ERROR
         return JobReturnCode.SUCCESS if record.state == "COMPLETED" else JobReturnCode.EXECUTION_ERROR

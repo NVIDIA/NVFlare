@@ -28,6 +28,11 @@ from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.logging import secure_format_exception
+from nvflare.utils.job_launcher_utils import (
+    validate_docker_job_launcher_spec,
+    validate_portable_resource_conflicts,
+    validate_portable_resource_spec,
+)
 
 CONFIG_FOLDER = "/config/"
 CUSTOM_FOLDER = "/custom/"
@@ -49,6 +54,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
         self._validate_min_clients(job_name, meta, clients)
         self._validate_resource(job_name, meta)
         self._validate_launcher_spec(job_name, meta)
+        validate_portable_resource_conflicts(meta)
         self._validate_mandatory_clients(job_name, meta, clients)
         return meta
 
@@ -270,6 +276,12 @@ class JobMetaValidator(JobMetaValidatorSpec):
             for k in resource_spec:
                 if not isinstance(resource_spec[k], dict):
                     raise ValueError(f"value for key {k} in resource spec is expecting a dictionary")
+                docker_spec = resource_spec[k].get("docker")
+                if docker_spec is not None:
+                    JobMetaValidator._validate_docker_launcher_spec(
+                        job_name, f"resource_spec['{k}']['docker']", docker_spec
+                    )
+            validate_portable_resource_spec(resource_spec)
 
     _VALID_LAUNCHER_MODES = {"process", "docker", "k8s", "slurm"}
 
@@ -293,6 +305,14 @@ class JobMetaValidator(JobMetaValidatorSpec):
                     )
                 if not isinstance(mode_val, dict):
                     raise ValueError(f"launcher_spec['{site}']['{mode}'] for job {job_name} must be a dict")
+                if mode == "docker":
+                    JobMetaValidator._validate_docker_launcher_spec(
+                        job_name, f"launcher_spec['{site}']['docker']", mode_val
+                    )
+
+    @staticmethod
+    def _validate_docker_launcher_spec(job_name: str, path: str, docker_spec: dict) -> None:
+        validate_docker_job_launcher_spec(docker_spec, f"{path} for job {job_name}")
 
     @staticmethod
     def _get_all_clients(site_list: Optional[list]) -> Set[str]:

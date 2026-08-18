@@ -44,6 +44,7 @@ Then navigate to the hello-dp directory:
 
 .. code-block:: bash
 
+   cd NVFlare
    git switch <release branch>
    cd examples/hello-world/hello-dp
 

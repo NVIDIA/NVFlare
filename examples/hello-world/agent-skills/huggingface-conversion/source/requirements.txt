@@ -1,0 +1,5 @@
+torch
+transformers
+datasets
+accelerate
+numpy

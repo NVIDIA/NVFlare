@@ -60,10 +60,11 @@ non-zero ranks should read broadcast values, not `input_model`.
 ### DDP validation metrics need an explicit delivery bridge
 
 DDP requires the external-process launch (`launch_external_process=True`), which
-runs the script under `PTClientAPILauncherExecutor`. That executor defaults to
-`train_with_evaluation=False`, and the recipe's `ScriptRunner` does not expose a
-switch to change it. Consequently, `trainer.validate(...)` alone does not attach
-its metrics to the outgoing training result.
+runs the script under `ClientAPIExecutor(execution_mode="external_process")`.
+That executor defaults to `train_with_evaluation=False`, and the recipe's
+`ScriptRunner` does not expose a switch to change it. Consequently,
+`trainer.validate(...)` alone does not attach its metrics to the outgoing
+training result.
 
 When DDP training requires server metrics, use the canonical
 `MetaKey.INITIAL_METRICS` bridge in `lightning-conversion.md`: preserve the

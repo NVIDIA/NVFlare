@@ -186,7 +186,7 @@ function mypy_check() {
 function skill_lint_check() {
     echo "${separator}${blue}agent-skill-lint${noColor}"
     # Deterministic v1 lint over the packaged agent skills and their eval suites
-    # (skills/ + dev_tools/agent/skill_evals/). Fast and dependency-light.
+    # (skills/ + each skill's co-located evals/ suite). Fast and dependency-light.
     python3 -m dev_tools.agent.skills.checks --skills-root skills
     report_status "$?"
     echo "Done with agent skill lint checks"

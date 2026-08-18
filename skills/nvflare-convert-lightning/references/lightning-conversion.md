@@ -200,16 +200,15 @@ remain shared only when that matches the source's validation/test semantics.
 
 Follow the shared model-config and construction-consistency rule in
 `../../nvflare-shared/references/conversion-workflow.md` ("Recipe Model Config"):
-same class and constructor args on server and client, explicit
-`{"class_path": ..., "args": ...}` config (no live instance), and
-derive-or-ask/fail-closed for required values.
+same class and constructor args on server and client, an allowed recipe model
+form, and derive-or-ask/fail-closed for required values.
 
 Lightning-specific delta: the exchanged unit is the whole `LightningModule`
 managed by the patched trainer, so construct the identical `LightningModule` on
-the server (via the recipe `model` config) and on the client in `client.py`, not
-just the inner `torch.nn.Module`. Express shared arguments as a `model_args`
-dict in the recipe model config (prefer `class_path`; `path` is the normalized
-job-config key).
+the server and on the client in `client.py`, not just the inner
+`torch.nn.Module`. For explicit config, express shared arguments as a
+`model_args` dict (prefer `class_path`; `path` is the normalized job-config
+key).
 
 ## Source Layout
 

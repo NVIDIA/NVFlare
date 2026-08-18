@@ -1151,10 +1151,9 @@ class TestHeartbeatAndOperationalLiveness:
         finally:
             backend.finalize(FLContext())
 
-    def test_live_task_payload_transaction_suppresses_heartbeat_expiry(self, env, monkeypatch):
+    def test_completed_task_payload_transaction_does_not_restore_heartbeat_expiry(self, env, monkeypatch):
         monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.01)
-        transfer_settled = threading.Event()
-        waiter = SimpleNamespace(transaction_id="task-payload-tx", done=lambda: transfer_settled.is_set())
+        waiter = SimpleNamespace(transaction_id="task-payload-tx", done=lambda: True)
         get_transfer_waiter = MagicMock(return_value=waiter)
         monkeypatch.setattr(ebp.DownloadService, "get_transfer_waiter", get_transfer_waiter)
         backend, fl_ctx = _initialized_backend(
@@ -1170,17 +1169,14 @@ class TestHeartbeatAndOperationalLiveness:
                 tx_created = env.cell.sent_kwargs[-1]["fobs_ctx_props"][ebp.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY]
                 tx_created(SimpleNamespace(tx_id="task-payload-tx"))
                 time.sleep(0.1)  # longer than the heartbeat timeout
-                transfer_settled.set()
+                assert not env.cell.sent_kwargs[-1]["abort_signal"].triggered
                 payload = request.payload
-                env.cell.deliver(
-                    Topic.RESULT_READY,
-                    target,
-                    {
-                        MsgKey.SESSION_ID: payload[MsgKey.SESSION_ID],
-                        MsgKey.TASK_ID: payload[MsgKey.TASK_ID],
-                        MsgKey.RESULT: _result_shareable(),
-                    },
-                )
+                result_payload = {
+                    MsgKey.SESSION_ID: payload[MsgKey.SESSION_ID],
+                    MsgKey.TASK_ID: payload[MsgKey.TASK_ID],
+                    MsgKey.RESULT: _result_shareable(),
+                }
+                threading.Timer(0.02, env.cell.deliver, args=(Topic.RESULT_READY, target, result_payload)).start()
                 return _task_accepted_reply()
 
             env.cell.on_request = slow_materialization
@@ -1193,32 +1189,30 @@ class TestHeartbeatAndOperationalLiveness:
         finally:
             backend.finalize(FLContext())
 
-    def test_inline_task_ready_pending_is_bounded_by_heartbeat(self, env, monkeypatch):
+    def test_task_ready_late_reply_is_rejected_by_task_wait_timeout(self, env, monkeypatch):
         monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.01)
         backend, fl_ctx = _initialized_backend(
             env,
             heartbeat_interval=0.02,
             heartbeat_timeout=0.05,
-            task_wait_timeout=None,
+            task_wait_timeout=0.1,
             result_wait_timeout=None,
         )
         try:
 
-            def wedged_inline_request(topic, target, request):
+            def delayed_inline_reply(topic, target, request):
                 assert topic == Topic.TASK_READY
-                cancel = env.cell.sent_kwargs[-1]["abort_signal"]
-                while not cancel.triggered:
-                    time.sleep(0.005)
+                time.sleep(0.15)
                 return _task_accepted_reply()
 
-            env.cell.on_request = wedged_inline_request
+            env.cell.on_request = delayed_inline_reply
             start = time.monotonic()
             result = backend.execute("train", Shareable(), fl_ctx, Signal())
             elapsed = time.monotonic() - start
 
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
             assert elapsed < 0.5
-            assert "heartbeat timed out" in backend._abort_reason
+            assert "TASK_READY timed out after 0.1s" in backend._abort_reason
             assert "TASK_READY was pending" in backend._abort_reason
         finally:
             backend.finalize(FLContext())
@@ -1410,12 +1404,12 @@ class TestExecute:
 
         assert _is_stream_channel(CHANNEL) is True
 
-    def test_configured_task_wait_timeout_passes_through(self, env):
+    def test_task_wait_timeout_is_not_a_cell_idle_timeout(self, env):
         backend, fl_ctx = _initialized_backend(env, task_wait_timeout=7.5)
         try:
             _install_auto_result(env)
             assert backend.execute("train", Shareable(), fl_ctx, Signal()).get_return_code() == ReturnCode.OK
-            assert env.cell.sent[0][3] == 7.5
+            assert env.cell.sent[0][3] is None
         finally:
             backend.finalize(FLContext())
 

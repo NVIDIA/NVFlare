@@ -69,14 +69,14 @@ class TestAPIContextSelection:
 
         cell_api_cls.assert_called_once_with(bootstrap_file=config_file)
 
-    def test_bootstrap_env_overrides_untyped_explicit_legacy_config(self, tmp_path, monkeypatch):
-        legacy_file = _write_config(tmp_path / "client_api_config.json", {"TASK_EXCHANGE": {}})
+    def test_bootstrap_env_overrides_untyped_explicit_config(self, tmp_path, monkeypatch):
+        untyped_file = _write_config(tmp_path / "client_api_config.json", {"TASK_EXCHANGE": {}})
         bootstrap_file = _write_config(tmp_path / "launch-bootstrap.json", _typed_bootstrap())
         monkeypatch.setenv(BOOTSTRAP_FILE_ENV_VAR, bootstrap_file)
         monkeypatch.delenv(CLIENT_API_TYPE_KEY, raising=False)
 
         with patch("nvflare.client.cell.api.CellClientAPI") as cell_api_cls:
-            APIContext(rank="0", config_file=legacy_file)
+            APIContext(rank="0", config_file=untyped_file)
 
         cell_api_cls.assert_called_once_with(bootstrap_file=bootstrap_file)
 
@@ -87,16 +87,6 @@ class TestAPIContextSelection:
             APIContext(rank="0")
 
         cell_api_cls.assert_called_once_with()
-
-    def test_legacy_ex_process_config_still_uses_env_selection(self, tmp_path, monkeypatch):
-        config_file = _write_config(tmp_path / "legacy.json", {"TASK_EXCHANGE": {}})
-        monkeypatch.setenv(CLIENT_API_TYPE_KEY, ClientAPIType.EX_PROCESS_API.value)
-
-        with patch("nvflare.client.api_context.ExProcessClientAPI") as ex_process_api_cls:
-            APIContext(rank="0", config_file=config_file)
-
-        ex_process_api_cls.assert_called_once_with(config_file=config_file)
-        ex_process_api_cls.return_value.init.assert_called_once_with(rank="0")
 
     def test_untyped_explicit_config_preserves_default_in_process_selection(self, tmp_path, monkeypatch):
         config_file = _write_config(tmp_path / "legacy.json", {"TASK_EXCHANGE": {}})
@@ -143,9 +133,9 @@ class TestAPIContextSelection:
 
     def test_typed_bootstrap_rejects_conflicting_env_selection(self, tmp_path, monkeypatch):
         config_file = _write_config(tmp_path / "bootstrap.json", _typed_bootstrap())
-        monkeypatch.setenv(CLIENT_API_TYPE_KEY, ClientAPIType.EX_PROCESS_API.value)
+        monkeypatch.setenv(CLIENT_API_TYPE_KEY, ClientAPIType.IN_PROCESS_API.value)
 
-        with pytest.raises(ValueError, match="declares 'CELL_API'.*CLIENT_API_TYPE.*'EX_PROCESS_API'"):
+        with pytest.raises(ValueError, match="declares 'CELL_API'.*CLIENT_API_TYPE.*'IN_PROCESS_API'"):
             APIContext(config_file=config_file)
 
     def test_context_manager_shuts_down_cell_api(self, tmp_path, monkeypatch):

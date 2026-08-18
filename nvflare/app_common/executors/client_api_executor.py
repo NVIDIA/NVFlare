@@ -25,20 +25,20 @@ from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import DXO
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode
+from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.analytix_utils import send_analytic_dxo
+from nvflare.apis.utils.task_utils import contains_lazy_download_ref, get_filters, materialize_lazy_download_refs
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
 from nvflare.app_common.widgets.convert_to_fed_event import FED_EVENT_PREFIX
 from nvflare.client.config import ExchangeFormat, TransferType, normalize_exchange_format
 from nvflare.client.converter_utils import validate_format_pair
-from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs import FOBSContextKey
-from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
+from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 
@@ -114,7 +114,7 @@ class ClientAPIExecutor(Executor):
             launch_timeout (Optional[float]): external_process only. Bound for the launched
                 trainer to complete its HELLO/session setup (this replaces the legacy
                 external_pre_init_timeout). Defaults to 300 seconds for compatibility with
-                ClientAPILauncherExecutor; an explicit None means no timeout.
+                prior releases; an explicit None means no timeout.
             shutdown_timeout (Optional[float]): external_process only. How long to wait for the
                 trainer to exit naturally after an orderly SHUTDOWN before starting forced
                 process-tree termination. None means the backend default.
@@ -129,7 +129,8 @@ class ClientAPIExecutor(Executor):
                 for external_process but is invalid for attach, whose external trainer requires
                 heartbeat liveness as the fallback for a lost terminal SHUTDOWN.
             task_wait_timeout (Optional[float]): Bound for the trainer to accept a delivered
-                task. None means no timeout.
+                task. None means no timeout for external_process; attach applies a 600-second
+                task-delivery budget when unset.
             result_wait_timeout (Optional[float]): Control-side bound for retrieving the task
                 result. Payload transfer completion is governed by the shared transfer layer,
                 not by this value. None means no timeout.
@@ -139,8 +140,9 @@ class ClientAPIExecutor(Executor):
                 Defaults to AppConstants.TASK_VALIDATION.
             submit_model_task_name (str): Task name treated as "submit_model" by
                 flare.is_submit_model(). Defaults to AppConstants.TASK_SUBMIT_MODEL.
-            train_with_evaluation (bool): Whether the trainer also returns evaluation metrics with
-                the trained model.
+            train_with_evaluation (bool): Whether a training result is required to include pre-training
+                evaluation metrics. When False, metrics are optional; metrics supplied by the trainer
+                or a framework integration are still returned.
             params_exchange_format (ExchangeFormat): Framework-native parameter representation
                 exposed by ``flare.receive()`` and accepted by ``flare.send()``. The declaration
                 is transported to the trainer in ``TASK_EXCHANGE``; the executor does not perform
@@ -359,7 +361,7 @@ class ClientAPIExecutor(Executor):
             if materialize_result:
                 result_cell = self._route_result_to_cj(shareable, fl_ctx)
             result = backend.execute(task_name, shareable, fl_ctx, abort_signal)
-            if isinstance(result, Shareable) and materialize_result and self._contains_lazy_download_ref(result):
+            if isinstance(result, Shareable) and materialize_result and contains_lazy_download_ref(result):
                 result = self._materialize_result(result, result_cell, abort_signal)
         except UnsafeJobError:
             # ClientRunner has dedicated handling for UnsafeJobError (client_runner.py maps it
@@ -382,6 +384,13 @@ class ClientAPIExecutor(Executor):
         """Whether the active ClientRunner pipeline consumes the concrete Client API result."""
         if fl_ctx.get_prop(FLContextKey.TASK_NAME) != task_name:
             return False
+
+        runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+        config_filters = getattr(runner, "task_result_filters", None)
+        if isinstance(config_filters, dict) and get_filters(
+            Scope.TASK_RESULT_FILTERS_NAME, fl_ctx, config_filters, task_name, FilterKey.OUT
+        ):
+            return True
 
         engine = fl_ctx.get_engine()
         get_all_components = getattr(engine, "get_all_components", None) if engine is not None else None
@@ -408,35 +417,9 @@ class ClientAPIExecutor(Executor):
         return cell
 
     @staticmethod
-    def _contains_lazy_download_ref(value, visited=None) -> bool:
-        """Return whether a Shareable graph contains a pass-through download reference."""
-        if isinstance(value, LazyDownloadRef):
-            return True
-        if not isinstance(value, (dict, list, tuple, set)):
-            return False
-
-        if visited is None:
-            visited = set()
-        value_id = id(value)
-        if value_id in visited:
-            return False
-        visited.add(value_id)
-
-        if isinstance(value, dict):
-            items = (*value.keys(), *value.values())
-        else:
-            items = value
-        return any(ClientAPIExecutor._contains_lazy_download_ref(item, visited) for item in items)
-
-    @staticmethod
     def _materialize_result(result: Shareable, cell, abort_signal: Signal) -> Shareable:
         """Resolve a pass-through result at the CJ for a declared local consumer."""
-        encode_ctx = cell.get_fobs_context(props={FOBSContextKey.PASS_THROUGH: False})
-        encoded = fobs.dumps(result, fobs_ctx=encode_ctx)
-        decode_ctx = cell.get_fobs_context(
-            props={FOBSContextKey.PASS_THROUGH: False, FOBSContextKey.ABORT_SIGNAL: abort_signal}
-        )
-        materialized = fobs.loads(encoded, fobs_ctx=decode_ctx)
+        materialized = materialize_lazy_download_refs(result, cell, abort_signal)
         if not isinstance(materialized, Shareable):
             raise TypeError(f"materialized Client API result must be Shareable but got {type(materialized)}")
         return materialized

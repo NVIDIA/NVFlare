@@ -725,14 +725,8 @@ def test_pr4955_multiple_independent_jobs_fail_closed(tmp_path):
     }
 
 
-@pytest.mark.parametrize(
-    "source",
-    [
-        "from transformers import Trainer\ndef make():\n    return Trainer()\nt = make()\nt.train()\n",
-        "from transformers import Trainer\nt = Trainer()\ndef run():\n    t.train()\n",
-    ],
-)
-def test_factory_and_cross_scope_owner_attempts_are_unresolved(tmp_path, source):
+def test_cross_scope_owner_attempt_is_unresolved(tmp_path):
+    source = "from transformers import Trainer\nt = Trainer()\ndef run():\n    t.train()\n"
     write_project(tmp_path, {"train.py": source})
 
     result = inspect_source(tmp_path)
@@ -740,6 +734,448 @@ def test_factory_and_cross_scope_owner_attempts_are_unresolved(tmp_path, source)
     assert result["ownership"]["state"] == "unresolved"
     assert result["ownership"]["reason"] == "unsupported_indirection"
     assert result["routing"]["recommended_skill"] == "nvflare-orient"
+
+
+def test_single_top_level_hf_factory_routes_to_converter(tmp_path):
+    write_project(
+        tmp_path,
+        {
+            "train.py": "from transformers import Trainer, TrainerCallback, TrainingArguments\n"
+            "class LifecycleAuditCallback(TrainerCallback):\n"
+            "    def on_train_begin(self, args, state, control, **kwargs):\n"
+            "        self.record('train_begin')\n"
+            "def build_trainer(*, output_dir, max_steps) -> Trainer:\n"
+            "    args = TrainingArguments(output_dir=output_dir, max_steps=max_steps)\n"
+            "    return Trainer(model=model, args=args, train_dataset=dataset, "
+            "callbacks=[LifecycleAuditCallback()])\n"
+            "def main():\n"
+            "    trainer = build_trainer(output_dir='out', max_steps=2)\n"
+            "    evaluation = trainer.evaluate()\n"
+            "    result = trainer.train()\n"
+            "main()\n"
+        },
+    )
+
+    result = inspect_source(tmp_path)
+
+    assert result["ownership"]["state"] == "clear"
+    assert result["ownership"]["framework"] == "huggingface"
+    assert result["routing"] == {"recommended_skill": "nvflare-convert-huggingface", "reason": "clear_owner"}
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from peft import PeftModel\n"
+        "from trl import SFTTrainer\n"
+        "def make():\n"
+        "    trainer = SFTTrainer()\n"
+        "    if not isinstance(trainer.model, PeftModel):\n"
+        "        raise RuntimeError('expected PeftModel')\n"
+        "    trainer.add_callback(callback)\n"
+        "    return trainer\n"
+        "trainer = make()\ntrainer.train()\n",
+        "from transformers import Trainer\n"
+        "def make(world_size):\n"
+        "    if world_size > 1:\n"
+        "        setattr(arguments, 'device', device)\n"
+        "    return Trainer()\n"
+        "trainer = make()\ntrainer.train()\n",
+    ],
+)
+def test_supported_hf_factory_return_forms(tmp_path, source):
+    write_project(tmp_path, {"train.py": source})
+
+    result = inspect_source(tmp_path)
+
+    assert result["ownership"]["framework"] == "huggingface"
+    assert result["routing"]["recommended_skill"] == "nvflare-convert-huggingface"
+
+
+@pytest.mark.parametrize(
+    ("source", "framework", "skill"),
+    [
+        (
+            "import lightning as L\n"
+            "def build_trainer():\n"
+            "    trainer = L.Trainer()\n"
+            "    return trainer\n"
+            "trainer = build_trainer()\ntrainer.fit(model)\n",
+            "lightning",
+            "nvflare-convert-lightning",
+        ),
+        (
+            "import torch\n"
+            "def build_optimizer(params):\n"
+            "    return torch.optim.AdamW(params)\n"
+            "optimizer = build_optimizer(params)\noptimizer.step()\n",
+            "pytorch",
+            "nvflare-convert-pytorch",
+        ),
+        (
+            "from torch.amp import GradScaler\n"
+            "from torch.optim import SGD\n"
+            "def build_scaler():\n"
+            "    scaler = GradScaler()\n"
+            "    return scaler\n"
+            "optimizer = SGD(params)\n"
+            "scaler = build_scaler()\nscaler.step(optimizer)\n",
+            "pytorch",
+            "nvflare-convert-pytorch",
+        ),
+        (
+            "import transformers as hf\n"
+            "def build_trainer():\n"
+            "    return hf.Trainer()\n"
+            "trainer = build_trainer()\ntrainer.train()\n",
+            "huggingface",
+            "nvflare-convert-huggingface",
+        ),
+        (
+            "from transformers import Trainer as HFTrainer\n"
+            "def build_trainer():\n"
+            "    return HFTrainer()\n"
+            "trainer = build_trainer()\ntrainer.train()\n",
+            "huggingface",
+            "nvflare-convert-huggingface",
+        ),
+        (
+            "import trl as trl_api\n"
+            "def build_trainer():\n"
+            "    return trl_api.SFTTrainer()\n"
+            "trainer = build_trainer()\ntrainer.train()\n",
+            "huggingface",
+            "nvflare-convert-huggingface",
+        ),
+        (
+            "from lightning.pytorch import Trainer as PLTrainer\n"
+            "def build_trainer():\n"
+            "    return PLTrainer()\n"
+            "trainer = build_trainer()\ntrainer.fit(model)\n",
+            "lightning",
+            "nvflare-convert-lightning",
+        ),
+        (
+            "import pytorch_lightning as pl\n"
+            "def build_trainer():\n"
+            "    return pl.Trainer()\n"
+            "trainer = build_trainer()\ntrainer.fit(model)\n",
+            "lightning",
+            "nvflare-convert-lightning",
+        ),
+        (
+            "from torch import optim as opt\n"
+            "def build_optimizer(params):\n"
+            "    return opt.AdamW(params)\n"
+            "optimizer = build_optimizer(params)\noptimizer.step()\n",
+            "pytorch",
+            "nvflare-convert-pytorch",
+        ),
+        (
+            "from torch.optim import SGD as Optimizer\n"
+            "def build_optimizer(params):\n"
+            "    return Optimizer(params)\n"
+            "optimizer = build_optimizer(params)\noptimizer.step()\n",
+            "pytorch",
+            "nvflare-convert-pytorch",
+        ),
+    ],
+)
+def test_single_top_level_factory_preserves_framework_routing(tmp_path, source, framework, skill):
+    write_project(tmp_path, {"train.py": source})
+
+    result = inspect_source(tmp_path)
+
+    assert result["ownership"]["state"] == "clear"
+    assert result["ownership"]["framework"] == framework
+    assert result["routing"] == {"recommended_skill": skill, "reason": "clear_owner"}
+
+
+@pytest.mark.parametrize(
+    ("direct_source", "factory_source", "framework", "skill"),
+    [
+        (
+            "from transformers import Trainer\ntrainer = Trainer()\ntrainer.train()\n",
+            "from transformers import Trainer\n"
+            "def make():\n    return Trainer()\n"
+            "trainer = make()\ntrainer.train()\n",
+            "huggingface",
+            "nvflare-convert-huggingface",
+        ),
+        (
+            "import lightning as L\ntrainer = L.Trainer()\ntrainer.fit(model)\n",
+            "import lightning as L\n" "def make():\n    return L.Trainer()\n" "trainer = make()\ntrainer.fit(model)\n",
+            "lightning",
+            "nvflare-convert-lightning",
+        ),
+        (
+            "from torch.optim import Adam\noptimizer = Adam(params)\noptimizer.step()\n",
+            "from torch.optim import Adam\n"
+            "def make(params):\n    return Adam(params)\n"
+            "optimizer = make(params)\noptimizer.step()\n",
+            "pytorch",
+            "nvflare-convert-pytorch",
+        ),
+    ],
+)
+def test_factory_and_direct_constructor_have_same_route(tmp_path, direct_source, factory_source, framework, skill):
+    direct = tmp_path / "direct"
+    factory = tmp_path / "factory"
+    write_project(direct, {"train.py": direct_source})
+    write_project(factory, {"train.py": factory_source})
+
+    direct_result = inspect_source(direct)
+    factory_result = inspect_source(factory)
+
+    expected = {"recommended_skill": skill, "reason": "clear_owner"}
+    assert direct_result["ownership"]["framework"] == factory_result["ownership"]["framework"] == framework
+    assert direct_result["routing"] == factory_result["routing"] == expected
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from transformers import Trainer\n" "def make():\n    return Trainer()\n" "trainer = make()\n",
+        "from transformers import Trainer\n"
+        "import lightning as L\n"
+        "from torch.optim import SGD\n"
+        "def make_hf():\n    return Trainer()\n"
+        "def make_lightning():\n    return L.Trainer()\n"
+        "def make_optimizer():\n    return SGD(params)\n",
+    ],
+)
+def test_recognized_factories_without_lifecycle_do_not_route(tmp_path, source):
+    write_project(tmp_path, {"train.py": source})
+
+    result = inspect_source(tmp_path)
+
+    assert result["ownership"]["state"] == "none"
+    assert result["routing"] == {"recommended_skill": None, "reason": "no_route"}
+
+
+def test_cross_scope_factory_assignment_without_lifecycle_does_not_route(tmp_path):
+    write_project(
+        tmp_path,
+        {
+            "train.py": "from transformers import Trainer\n"
+            "def make():\n    return Trainer()\n"
+            "def setup():\n    global trainer\n    trainer = make()\n"
+        },
+    )
+
+    result = inspect_source(tmp_path)
+
+    assert result["ownership"]["state"] == "none"
+    assert result["routing"] == {"recommended_skill": None, "reason": "no_route"}
+
+
+@pytest.mark.parametrize(
+    "lifecycle_and_rebind",
+    [
+        "make = replacement\ntrainer.train()\n",
+        "trainer.train()\nmake = replacement\n",
+    ],
+)
+def test_factory_symbol_rebind_invalidates_dependent_lifecycle(tmp_path, lifecycle_and_rebind):
+    write_project(
+        tmp_path,
+        {
+            "train.py": "from transformers import Trainer\n"
+            "def make():\n    return Trainer()\n"
+            "trainer = make()\n"
+            f"{lifecycle_and_rebind}"
+        },
+    )
+
+    result = inspect_source(tmp_path)
+
+    assert result["ownership"]["state"] == "none"
+    assert result["routing"] == {"recommended_skill": None, "reason": "no_route"}
+
+
+def test_factory_constructor_rebound_after_definition_invalidates_owner(tmp_path):
+    write_project(
+        tmp_path,
+        {
+            "train.py": "from transformers import Trainer\n"
+            "def make():\n    return Trainer()\n"
+            "Trainer = replacement\n"
+            "trainer = make()\ntrainer.train()\n"
+        },
+    )
+
+    result = inspect_source(tmp_path)
+
+    assert result["ownership"]["state"] == "none"
+    assert result["routing"] == {"recommended_skill": None, "reason": "no_route"}
+
+
+@pytest.mark.parametrize(
+    ("lifecycle_and_rebind", "state", "skill"),
+    [
+        ("trainer = replacement\ntrainer.train()\n", "unresolved", "nvflare-orient"),
+        ("trainer.train()\ntrainer = replacement\n", "clear", "nvflare-convert-huggingface"),
+    ],
+)
+def test_factory_receiver_rebind_respects_lifecycle_order(tmp_path, lifecycle_and_rebind, state, skill):
+    write_project(
+        tmp_path,
+        {
+            "train.py": "from transformers import Trainer\n"
+            "def make():\n    return Trainer()\n"
+            "trainer = make()\n"
+            f"{lifecycle_and_rebind}"
+        },
+    )
+
+    result = inspect_source(tmp_path)
+
+    assert result["ownership"]["state"] == state
+    assert result["routing"]["recommended_skill"] == skill
+
+
+@pytest.mark.parametrize(
+    ("files", "expected_state"),
+    [
+        (
+            {
+                "factory.py": "from transformers import Trainer\ndef make():\n    return Trainer()\n",
+                "train.py": "from factory import make\ntrainer = make()\ntrainer.train()\n",
+            },
+            "none",
+        ),
+        (
+            {
+                "train.py": "from transformers import Trainer\n"
+                "def main():\n"
+                "    def make():\n        return Trainer()\n"
+                "    trainer = make()\n"
+                "    trainer.train()\n"
+            },
+            "unresolved",
+        ),
+        (
+            {
+                "train.py": "from transformers import Trainer\n"
+                "def make():\n    return Trainer()\n"
+                "builder = make\ntrainer = builder()\ntrainer.train()\n"
+            },
+            "unresolved",
+        ),
+        (
+            {
+                "train.py": "from transformers import Trainer\n"
+                "def make():\n    return Trainer()\n"
+                "trainer = make()\nother = trainer\nother.train()\n"
+            },
+            "unresolved",
+        ),
+    ],
+)
+def test_factory_support_stays_top_level_same_file_without_value_aliasing(tmp_path, files, expected_state):
+    write_project(tmp_path, files)
+
+    result = inspect_source(tmp_path)
+
+    assert result["ownership"]["state"] == expected_state
+    assert result["routing"]["recommended_skill"] != "nvflare-convert-huggingface"
+
+
+@pytest.mark.parametrize(
+    ("factory_body", "state", "skill"),
+    [
+        (
+            "    kwargs = {}\n"
+            "    if with_callback:\n        kwargs['callbacks'] = [callback]\n"
+            "    return Trainer(**kwargs)\n",
+            "clear",
+            "nvflare-convert-huggingface",
+        ),
+        (
+            "    if use_first:\n        return Trainer()\n" "    return Trainer()\n",
+            "unresolved",
+            "nvflare-orient",
+        ),
+    ],
+)
+def test_factory_conditional_setup_but_not_conditional_return_is_supported(tmp_path, factory_body, state, skill):
+    write_project(
+        tmp_path,
+        {
+            "train.py": "from transformers import Trainer\n"
+            "def make(with_callback=False, use_first=False):\n"
+            f"{factory_body}"
+            "trainer = make()\ntrainer.train()\n"
+        },
+    )
+
+    result = inspect_source(tmp_path)
+
+    assert result["ownership"]["state"] == state
+    assert result["routing"]["recommended_skill"] == skill
+
+
+def test_conflicting_resolved_factory_receivers_route_to_orient(tmp_path):
+    write_project(
+        tmp_path,
+        {
+            "train.py": "from transformers import Trainer as HFTrainer\n"
+            "from lightning.pytorch import Trainer as PLTrainer\n"
+            "def make_hf():\n    return HFTrainer()\n"
+            "def make_lightning():\n    return PLTrainer()\n"
+            "hf_trainer = make_hf()\n"
+            "lightning_trainer = make_lightning()\n"
+            "hf_trainer.train()\n"
+            "lightning_trainer.fit(model)\n"
+        },
+    )
+
+    result = inspect_source(tmp_path)
+
+    assert result["ownership"]["state"] == "conflicting"
+    assert result["ownership"]["candidate_frameworks"] == ["huggingface", "lightning"]
+    assert result["routing"] == {"recommended_skill": "nvflare-orient", "reason": "conflicting_owner"}
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        "@decorate\ndef make():\n    return Trainer()\n",
+        "def make(flag):\n    if flag:\n        return Trainer()\n    return object()\n",
+        "def inner():\n    return Trainer()\ndef make():\n    return inner()\n",
+        "def inner():\n    return Trainer()\n" "def make(flag):\n    trainer = inner()\n    return trainer\n",
+        "def make(flag):\n    trainer = Trainer()\n    Trainer = replacement\n    return trainer\n",
+        "import transformers as hf\n"
+        "def make(flag):\n    trainer = hf.Trainer()\n    hf = replacement\n    return trainer\n",
+    ],
+)
+def test_ambiguous_hf_factories_remain_unresolved(tmp_path, factory):
+    write_project(
+        tmp_path,
+        {"train.py": f"from transformers import Trainer\n{factory}trainer = make(flag)\ntrainer.train()\n"},
+    )
+
+    result = inspect_source(tmp_path)
+
+    assert result["ownership"]["state"] == "unresolved"
+    assert result["ownership"]["reason"] == "unsupported_indirection"
+    assert result["routing"]["recommended_skill"] == "nvflare-orient"
+
+
+def test_function_local_factory_shadowing_does_not_route_to_converter(tmp_path):
+    write_project(
+        tmp_path,
+        {
+            "train.py": "from transformers import Trainer\n"
+            "def make():\n    return Trainer()\n"
+            "def main():\n"
+            "    trainer = make()\n"
+            "    def make():\n        return object()\n"
+            "    trainer.train()\n"
+        },
+    )
+
+    assert inspect_source(tmp_path)["routing"]["recommended_skill"] != "nvflare-convert-huggingface"
 
 
 def test_incomplete_scan_fails_closed_before_converter(tmp_path):

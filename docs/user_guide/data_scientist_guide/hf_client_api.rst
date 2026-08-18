@@ -124,8 +124,10 @@ receive validation metrics before local training:
         trainer.train()
 
 The HuggingFace Client API reports the metrics returned by the trainer. Configure
-the server-side recipe or selector with a higher-is-better metric key. If you do
-not want the recipe to select a best model, set ``key_metric=""``:
+the server-side recipe or selector with the metric key to monitor; for
+lower-is-better metrics such as ``eval_loss``, also set ``key_metric_mode="min"``
+so the recipe selects the model with the lowest value. If you do not want the
+recipe to select a best model, set ``key_metric=""``:
 
 .. code-block:: python
 
