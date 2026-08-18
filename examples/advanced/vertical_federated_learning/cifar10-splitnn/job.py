@@ -24,7 +24,7 @@ from server import SplitNNServer
 from nvflare.collab import CollabRecipe, simple_logging
 from nvflare.recipe import SimEnv
 
-JOB_NAME = "collab_pt_splitnn"
+JOB_NAME = "cifar10_splitnn"
 DEFAULT_DATASET_ROOT = "/tmp/cifar10"
 DEFAULT_PSI_WORKSPACE = "/tmp/nvflare/cifar10_psi"
 EXAMPLE_DIR = Path(__file__).resolve().parent
@@ -42,7 +42,7 @@ def define_parser() -> argparse.ArgumentParser:
         default=DEFAULT_PSI_WORKSPACE,
         help="Workspace produced by prepare_data.py",
     )
-    parser.add_argument("--workspace-root", default="/tmp/nvflare/collab")
+    parser.add_argument("--workspace-root", default="/tmp/nvflare")
     return parser
 
 

@@ -56,7 +56,7 @@ class SplitNNClient:
 
     ``site-1`` is configured with the image role and ``site-2`` with the label
     role. The methods are deliberately ordinary tensor-in/tensor-out methods;
-    CollabAPI publishes them without application-level message conversion.
+    Collab API publishes them without application-level message conversion.
     """
 
     def __init__(self):
@@ -86,7 +86,7 @@ class SplitNNClient:
 
         _seed_everything(TRAINING_SEED)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        # Build both halves in the original ModerateCNN order so each site's
+        # Build both halves in the ModerateCNN order so each site's
         # selected half has the same seeded initialization as the full model.
         split_models = {"image": BottomModel(), "label": TopModel()}
         self.model = split_models[self.role].to(self.device)

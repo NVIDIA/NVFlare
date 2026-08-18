@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Server-side SplitNN workflow expressed as direct CollabAPI calls."""
+"""Server-side SplitNN workflow expressed as direct Collab API calls."""
 
 
 from nvflare.collab import collab

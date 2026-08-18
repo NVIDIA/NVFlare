@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Role-specific CIFAR-10 views aligned by existing SplitNN PSI artifacts."""
+"""Role-specific CIFAR-10 views aligned by prepared PSI artifacts."""
 
 import numpy as np
 import torch
