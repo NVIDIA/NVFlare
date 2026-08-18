@@ -86,9 +86,8 @@ class TestFedJobConfig:
         job_config.generate_job_config(tmp_path)
         marker = tmp_path / "job" / "notes.txt"
         marker.write_text("keep me", encoding="utf-8")
-        backup_job_dir = tmp_path / ".nvflare_job_backups" / "exports" / "job"
+        backup_job_dir = tmp_path / ".nvflare_job_backups" / "00000000000000000000000000000001"
         backup_job_dir.parent.mkdir(parents=True)
-        job_config._mark_backup_export(backup_job_dir)
         os.replace(tmp_path / "job", backup_job_dir)
         job_config.meta_props = {"name": "other-job"}
 
@@ -101,9 +100,8 @@ class TestFedJobConfig:
     def test_generate_job_config_preserves_backup_when_canonical_folder_is_unowned(self, tmp_path):
         job_config = FedJobConfig(job_name="job", min_clients=1)
         job_config.generate_job_config(tmp_path)
-        backup_job_dir = tmp_path / ".nvflare_job_backups" / "exports" / "job"
+        backup_job_dir = tmp_path / ".nvflare_job_backups" / "00000000000000000000000000000001"
         backup_job_dir.parent.mkdir(parents=True)
-        job_config._mark_backup_export(backup_job_dir)
         os.replace(tmp_path / "job", backup_job_dir)
         job_dir = tmp_path / "job"
         job_dir.mkdir()
@@ -116,18 +114,18 @@ class TestFedJobConfig:
         assert marker.read_text(encoding="utf-8") == "keep me"
         assert (backup_job_dir / "meta.json").is_file()
 
-    def test_generate_job_config_rejects_unmarked_backup_folder(self, tmp_path):
-        backup_job_dir = tmp_path / ".nvflare_job_backups" / "exports" / "job"
+    def test_generate_job_config_ignores_caller_content_in_backup_folder(self, tmp_path):
+        backup_job_dir = tmp_path / ".nvflare_job_backups" / "job"
         backup_job_dir.mkdir(parents=True)
         (backup_job_dir / "meta.json").write_text('{"name": "job"}', encoding="utf-8")
         marker = backup_job_dir / "notes.txt"
         marker.write_text("keep me", encoding="utf-8")
         job_config = FedJobConfig(job_name="job", min_clients=1)
 
-        with pytest.raises(RuntimeError, match="Backup job folder"):
-            job_config.generate_job_config(tmp_path)
+        job_config.generate_job_config(tmp_path)
 
         assert marker.read_text(encoding="utf-8") == "keep me"
+        assert (tmp_path / "job" / "meta.json").is_file()
 
     def test_generate_job_config_does_not_conflict_with_previous_suffixed_job(self, tmp_path):
         job_config = FedJobConfig(job_name="job", min_clients=1)
