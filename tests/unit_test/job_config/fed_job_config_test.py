@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 import os
 import sys
 from unittest.mock import Mock, patch
@@ -81,7 +82,7 @@ class TestFedJobConfig:
 
         assert marker.read_text(encoding="utf-8") == "keep me"
 
-    def test_generate_job_config_preserves_export_stranded_during_directory_swap(self, tmp_path):
+    def test_generate_job_config_preserves_export_stranded_during_directory_swap(self, tmp_path, caplog):
         job_config = FedJobConfig(job_name="job", min_clients=1)
         job_config.generate_job_config(tmp_path)
         marker = tmp_path / "job" / "notes.txt"
@@ -89,11 +90,22 @@ class TestFedJobConfig:
         backup_job_dir = tmp_path / ".nvflare_job_backups" / "00000000000000000000000000000001"
         backup_job_dir.parent.mkdir(parents=True)
         os.replace(tmp_path / "job", backup_job_dir)
-        job_config.generate_job_config(tmp_path)
+        with caplog.at_level(logging.WARNING):
+            job_config.generate_job_config(tmp_path)
 
         assert (backup_job_dir / "notes.txt").read_text(encoding="utf-8") == "keep me"
         assert (tmp_path / "job" / "meta.json").is_file()
         assert backup_job_dir.exists()
+        assert any(str(backup_job_dir.parent) in record.getMessage() for record in caplog.records)
+
+    def test_generate_job_config_does_not_warn_without_stranded_backups(self, tmp_path, caplog):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        with caplog.at_level(logging.WARNING):
+            job_config.generate_job_config(tmp_path)
+            job_config.generate_job_config(tmp_path)
+
+        assert (tmp_path / "job" / "meta.json").is_file()
+        assert not any("backup" in record.getMessage() for record in caplog.records)
 
     def test_generate_job_config_preserves_backup_when_canonical_folder_is_unowned(self, tmp_path):
         job_config = FedJobConfig(job_name="job", min_clients=1)

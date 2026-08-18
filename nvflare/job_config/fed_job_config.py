@@ -172,6 +172,7 @@ class FedJobConfig:
         os.makedirs(job_root, exist_ok=True)
         job_dir = os.path.join(job_root, self.job_name)
         backup_root = os.path.join(job_root, BACKUP_ROOT)
+        self._warn_stranded_backups(backup_root)
         json_dump = self._prepare_meta()
         replace_existing = False
         if os.path.exists(job_dir):
@@ -216,6 +217,23 @@ class FedJobConfig:
         except BaseException:
             shutil.rmtree(temp_job_dir, ignore_errors=True)
             raise
+
+    def _warn_stranded_backups(self, backup_root):
+        """Report backups left behind by a previously interrupted replacement.
+
+        A backup is only consumed by the invocation that created it, so it is
+        surfaced for manual recovery instead of being restored or deleted
+        based on its on-disk contents.
+        """
+        try:
+            stranded = os.listdir(backup_root)
+        except OSError:
+            return
+        if stranded:
+            self.logger.warning(
+                f"{backup_root} contains {len(stranded)} backup(s) preserved from interrupted exports; "
+                f"recover or remove them manually."
+            )
 
     @staticmethod
     def _remove_backup_root_if_empty(backup_root):
