@@ -405,6 +405,18 @@ def test_lightning_training_metrics_use_automatic_pre_fit_delivery():
     normalized_workflow = " ".join(workflow_text.split())
 
     assert "explicit pre-fit validation contract" in normalized_skill
+    # PR #5145: only the pre-fit validate() scores the received global model, so
+    # best-model selection depends on it and no flag may skip it. A train-only
+    # switch would silently drop selection and hard-fail under
+    # train_with_evaluation=True.
+    assert "no flag may skip it" in normalized_skill
+    assert "Best-model selection therefore depends on the pre-fit call" in normalized_conversion
+    assert "no best global model is persisted" in normalized_conversion
+    assert "the round fails outright on the missing required metrics" in normalized_conversion
+    assert "Do not add a flag that skips the pre-fit validation" in normalized_conversion
+    assert "evaluate_before_train" not in client_template
+    assert "server metrics or best-model selection" in normalized_validation
+    assert "Absent metrics are not by themselves a passing result" in normalized_validation
     assert "## Training-result metric delivery" in conversion_text
     assert "`False` makes them optional rather than suppressing metrics" in normalized_conversion
     assert "sanity checks and validation performed inside `trainer.fit(...)`" in normalized_conversion

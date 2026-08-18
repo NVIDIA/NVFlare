@@ -66,13 +66,12 @@ distribution; handle conversion later as a separate request.
 3. Apply the dependency-install ordering rule in
    `../nvflare-shared/references/conversion-common.md` before any Python command
    imports user, Lightning, NVFLARE, or declared dependency modules. Determine
-   applicable dependencies from the selected execution path before probing
-   imports. If required data artifacts already exist and static inspection shows
-   that the selected path will not reach a download helper or its imports, treat
-   its download-only requirements as inapplicable: do not install or
-   import-probe them. Probe only modules the generated conversion and selected
-   validation path will execute, and keep an optional probe separate and
-   exit-zero when unavailable.
+   applicable dependencies from the selected execution path first. If required
+   data artifacts already exist and static inspection shows that the selected
+   path will not reach a download helper or its imports, treat its download-only
+   requirements as inapplicable: do not install or import-probe them. Probe only
+   modules the generated conversion and selected validation path will execute,
+   and keep an optional probe separate and exit-zero when unavailable.
 4. Identify the existing `LightningModule`, `LightningDataModule`, trainer
    construction, callbacks, checkpointing, `validation_step`/`test_step` and
    dataloaders, metrics, logger usage, source partition evidence, distributed
@@ -97,10 +96,11 @@ distribution; handle conversion later as a separate request.
    `Trainer`, call `flare.patch(trainer)`, and let the patched trainer own
    model exchange. Keep evaluation inside Lightning per
    `references/lightning-conversion.md`: validate before fit and use `self.log`.
-   When server metrics are required, follow that reference's explicit pre-fit
-   validation contract and verify the exact logged key in server evidence; do
-   not use `model.__fl_meta__` to replace the patched callback's metrics. Ask or
-   fail closed when validation semantics are missing.
+   Only that pre-fit `trainer.validate(...)` scores the received global model, so
+   server metrics and best-model selection both require that explicit pre-fit
+   validation contract and no flag may skip it; verify the exact logged key in
+   server evidence and do not use `model.__fl_meta__` to replace the patched
+   callback's metrics. Ask or fail closed when validation semantics are missing.
 7. Add or update `job.py` under the shared "Recipe Model Config" policy. A
    direct instance, when allowed by that policy, must be the complete
    `LightningModule`, not its inner network. Add the requested `aggregator=`

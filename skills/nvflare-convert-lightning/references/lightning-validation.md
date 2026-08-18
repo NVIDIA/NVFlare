@@ -58,15 +58,19 @@ covers Lightning-specific validation checks.
 - Confirm validation metrics are exposed as scalars (for example through
   `self.log(...)` in the `LightningModule`) so aggregation recipes can write
   server-side metric artifacts.
-- For training tasks that require server metrics, confirm an explicit
-  standalone `trainer.validate(...)` runs before `trainer.fit(...)`, its exact
-  logged key reaches client `FLModel.metrics`, and no
-  `model.__fl_meta__[MetaKey.INITIAL_METRICS]` override is generated. Local
+- For training tasks that require server metrics or best-model selection,
+  confirm an explicit standalone `trainer.validate(...)` runs before
+  `trainer.fit(...)`, its exact logged key reaches client `FLModel.metrics`, and
+  no `model.__fl_meta__[MetaKey.INITIAL_METRICS]` override is generated. Local
   callback metrics alone are insufficient end-to-end evidence.
 - Confirm Lightning sanity checks and validation performed inside
-  `trainer.fit(...)` are not reported as received-global-model metrics. A
-  fit-only workflow returning no server metrics is expected unless another
-  explicit metric path was selected.
+  `trainer.fit(...)` are not reported as received-global-model metrics.
+- Treat a round that reports no server metrics as evidence that the pre-fit
+  validation is missing, unless the conversion is a genuine train-only source
+  with no evaluation, metrics, or model selection requested. Without the pre-fit
+  call the received global model is unscored, so best-model selection silently
+  produces nothing and `train_with_evaluation=True` fails on the missing
+  required metrics. Absent metrics are not by themselves a passing result.
 - When a custom `ModelAggregator` is used, confirm client models reach it with
   non-empty `FLModel.metrics` and its aggregated result returns non-empty
   `FLModel.metrics`.

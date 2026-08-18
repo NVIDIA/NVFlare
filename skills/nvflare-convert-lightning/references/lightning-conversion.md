@@ -122,11 +122,23 @@ metrics that Lightning supplies.
 Only that explicit pre-fit validation scores the received global model.
 Lightning sanity checks and validation performed inside `trainer.fit(...)` run
 in the fitting lifecycle and are deliberately excluded from the global-model
-score. A fit-only workflow may therefore keep its ordinary local validation
-without publishing those values as received-global-model metrics. When an
-application must run an explicit pre-fit validation but keep its metrics local,
-report the need for an authorized custom task-result filter; do not silently
-change the validation timing.
+score.
+
+Best-model selection therefore depends on the pre-fit call. Omitting it leaves
+the received global model unscored, so `IntimeModelSelector` has nothing to
+select on and no best global model is persisted; with `train_with_evaluation`
+set to `True` the round fails outright on the missing required metrics. Do not
+add a flag that skips the pre-fit validation: a fit-only round is the shape
+that loses best-model selection, not a supported way to opt out of publishing.
+
+A fit-only workflow is valid only when the source defines no validation
+semantics and the user requested no evaluation, metrics, or model selection,
+which `SKILL.md` routes to ask-or-fail-closed rather than to a silent
+conversion. Its ordinary in-fit validation stays local because the fitting
+lifecycle is excluded, not because the workflow opted out. When an application
+must run an explicit pre-fit validation but keep its metrics local, report the
+need for an authorized custom task-result filter; do not silently change the
+validation timing.
 
 Use `../assets/lightning_client.py` as the copyable validate-before-fit loop.
 Its finite-scalar check validates the values returned by `trainer.validate`,
