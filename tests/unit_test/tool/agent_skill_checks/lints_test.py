@@ -593,6 +593,12 @@ def test_run_v1_lints_reference_text_scan_ignores_symlink_loop(tmp_path):
             "Never install dependencies, upgrade packages without approval.",
             "dependency-install-confirmation-bypass",
         ),
+        # A statement can forbid one action and permit another; the permitted
+        # clause is still actionable context for a neighbouring bare bypass.
+        (
+            "Never download unknown packages, but install dependencies. Never ask for confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
         # A read-only verb must be the verb the "without" phrase modifies, not
         # merely appear somewhere ahead of an unrecognized mutating verb.
         (
@@ -709,6 +715,9 @@ def test_dependency_install_safety_lint_accepts_negated_skip_review(tmp_path, sa
         "Packages cannot be installed without reviewing their sources.",
         "Continue without user confirmation; do not install dependencies.",
         "Downloading packages is prohibited. Never ask for approval.",
+        # Read-only prose does not permit a mutation, so it is not actionable
+        # context for an adjacent confirmation suppression.
+        "Inspect package metadata. Never ask for confirmation.",
         "Package usage is prohibited. Never ask for confirmation.",
         # A noun phrase between the negated verb and the dependency noun does
         # not break the negation's hold on the "without" clause.

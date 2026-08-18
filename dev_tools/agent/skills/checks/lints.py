@@ -1848,19 +1848,31 @@ def _clause_bounds_at(statement: str, index: int) -> tuple[int, int]:
     the sentence (a different clause) cannot excuse it, while a negation that
     genuinely governs that same clause still can.
     """
+    for start, end in _iter_clause_spans(statement):
+        if start <= index < end or index < start:
+            return start, end
+    return 0, len(statement)
+
+
+def _iter_clause_spans(statement: str) -> list[tuple[int, int]]:
+    """Return the contrast-or-sequence-delimited clause spans of ``statement``.
+
+    A coordinated dependency-action series is deliberately not split, so
+    "never download, install, or use packages" stays one clause and its leading
+    negation keeps governing every item.
+    """
     separators = [
         separator
         for separator in _WITHOUT_CLAUSE_BOUNDARY_RE.finditer(statement)
         if not _is_dependency_action_series_boundary(statement, separator)
     ]
+    spans = []
     start = 0
     for separator in separators:
-        if separator.start() >= index:
-            break
+        spans.append((start, separator.start()))
         start = separator.end()
-    end_match = next((separator for separator in separators if separator.start() >= index), None)
-    end = end_match.start() if end_match else len(statement)
-    return start, end
+    spans.append((start, len(statement)))
+    return spans
 
 
 def _is_dependency_action_series_boundary(statement: str, separator: re.Match) -> bool:
@@ -2028,13 +2040,29 @@ def _is_bare_confirmation_bypass(text: str) -> bool:
 
 
 def _has_actionable_dependency_context(statements: list[str], excluded_index: int) -> bool:
-    """Return whether another statement permits a dependency-related action."""
+    """Return whether another statement permits a dependency-related action.
+
+    Judged per clause rather than per statement: a statement can both forbid one
+    action and permit another, as in "never download unknown packages, but
+    install dependencies". Discarding the whole statement because it contains a
+    negation would let the permitted install go unnoticed, so a neighbouring bare
+    "never ask for confirmation" would not be recognized as a bypass.
+
+    A purely read-only clause does not permit a mutation, so it is not actionable
+    context either.
+    """
     for index, statement in enumerate(statements):
         if index == excluded_index or not _DEPENDENCY_INSTALL_TERMS_RE.search(statement):
             continue
-        if _NEGATED_DEPENDENCY_ACTION_RE.search(statement) or _PROHIBITED_DEPENDENCY_ACTION_RE.search(statement):
-            continue
-        return True
+        for start, end in _iter_clause_spans(statement):
+            clause = statement[start:end]
+            if not _DEPENDENCY_INSTALL_TERMS_RE.search(clause):
+                continue
+            if _NEGATED_DEPENDENCY_ACTION_RE.search(clause) or _PROHIBITED_DEPENDENCY_ACTION_RE.search(clause):
+                continue
+            if _is_read_only_phrase(clause.strip(" \t,;.!?")):
+                continue
+            return True
     return False
 
 
