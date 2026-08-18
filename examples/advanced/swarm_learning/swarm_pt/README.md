@@ -39,7 +39,7 @@ cd examples/advanced/swarm_learning/swarm_pt
 swarm_pt/
 |
 |-- client.py           # client LoRA fine-tuning script (runs as subprocess)
-|-- model.py            # QwenLoRAModelWrapper — LoRA-adapted model for server persistor
+|-- model.py            # QwenLoRAModelWrapper — LoRA-adapted model for client persistors
 |-- job.py              # job recipe using SwarmLearningRecipe
 |-- download_data.py    # pre-download wikitext-2 dataset and Qwen2.5 model
 |-- prepare_data.py     # split dataset among N clients
@@ -63,7 +63,7 @@ LoraConfig(r=8, lora_alpha=16, target_modules=["q_proj", "v_proj"],
            lora_dropout=0.05, bias="none", task_type="CAUSAL_LM")
 ```
 
-The `QwenLoRAModelWrapper` in `model.py` overrides `state_dict()` / `load_state_dict()` to expose only the LoRA adapter parameters (~2 MB for 0.5B, ~4 MB for 1.5B) to the server persistor and aggregator, instead of the full base model weights (~1 GB / ~3 GB). The base model weights are loaded in `bfloat16` to halve memory usage.
+The `QwenLoRAModelWrapper` in `model.py` overrides `state_dict()` / `load_state_dict()` to expose only the LoRA adapter parameters (~2 MB for 0.5B, ~4 MB for 1.5B) to the client-side persistors and aggregators, instead of the full base model weights (~1 GB / ~3 GB). The base model weights are loaded in `bfloat16` to halve memory usage.
 
 `load_state_dict()` also detects shape mismatches between a saved checkpoint and the current model size. If you switch `--model_size` between runs without clearing the workspace, the incompatible checkpoint is silently discarded and training restarts from a fresh adapter — no manual cleanup required.
 
@@ -75,20 +75,22 @@ The `QwenLoRAModelWrapper` in `model.py` overrides `state_dict()` / `load_state_
 import nvflare.client as flare
 
 flare.init()                          # 1. Initialize NVFlare Client API
-input_model = flare.receive()         # 2. Receive global LoRA adapter from server
+input_model = flare.receive()         # 2. Receive global LoRA adapter from the workflow
 apply_global_adapter(model, input_model.params)  # 3. Apply global adapter weights
 
+val_loss = evaluate_loss(model, validation_dataloader, validation_steps)
 adapter_diff = local_train(model, dataloader, steps)  # local fine-tuning
 
 flare.send(flare.FLModel(             # 4. Send LoRA adapter diff back
     params_type=ParamsType.DIFF,
     params=adapter_diff,
+    metrics={"val_loss": val_loss},
 ))
 ```
 
-Each client fine-tunes for a fixed number of gradient steps per round, then returns the adapter weight **diff** (after − before). The server aggregates these diffs across clients using weighted averaging.
+Each client first evaluates the received global adapter on the validation split, then fine-tunes for a fixed number of gradient steps and returns the adapter weight **diff** (after − before). The selected Swarm aggregation client averages both the pre-training `val_loss` values and the model diffs. Because the metric describes the received global model rather than a locally updated model, it can be used safely for global best-model selection.
 
-## Server-Side Workflow
+## Peer-to-Peer Workflow
 
 This example uses [Swarm Learning](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.ccwf.html), a decentralized federated workflow where clients act as both trainers and aggregators in a peer-to-peer fashion — there is no central aggregation server. The workflow proceeds as follows:
 
@@ -111,6 +113,8 @@ recipe = SwarmLearningRecipe(
     num_rounds=args.num_rounds,
     train_script="client.py",
     min_clients=2,
+    key_metric="val_loss",
+    key_metric_mode="min",
     launch_external_process=True,       # run client.py as a subprocess
     cuda_empty_cache=True,              # free GPU cache between rounds
     train_args={"script_args": script_args},
@@ -139,6 +143,7 @@ recipe = SwarmLearningRecipe(
 - `PTFileModelPersistor` for checkpoint management (stores only LoRA adapter weights)
 - `InTimeAccumulateWeightedAggregator` for peer-to-peer adapter aggregation
 - `SimpleModelShareableGenerator` for model ↔ shareable conversion
+- `IntimeModelSelector` for client-side best-model selection using pre-training `val_loss`
 
 ## Step-by-Step Instructions
 
@@ -237,6 +242,7 @@ This writes a standard NVFlare job folder that can be submitted to a production 
 | `--num_rounds` | 3 | Number of swarm learning rounds |
 | `--model_size` | `0.5B` | Base model size: `0.5B` or `1.5B` |
 | `--local_steps` | 10 | Gradient steps per client per round |
+| `--validation_steps` | 10 | Validation batches used to score the received global model each round |
 | `--batch_size` | 4 | Training batch size per client |
 | `--max_seq_len` | 128 | Maximum tokenized sequence length |
 | `--data_dir` | *(empty)* | Pre-split data root from `prepare_data.py`; in-memory if omitted |
@@ -251,10 +257,11 @@ This writes a standard NVFlare job folder that can be submitted to a production 
 
 #### Each Round
 - **Scatter**: Starting client sends global LoRA adapter to all trainers.
+- **Validate**: Each client scores the received global adapter on the shared validation split before training.
 - **Local training**: Each client fine-tunes for `local_steps` gradient steps on its data shard, reporting loss every 5 steps.
-- **Submit**: Each client sends its LoRA adapter diff to the designated aggregator.
-- **Aggregate**: Aggregator accumulates diffs, produces updated global adapter.
+- **Submit**: Each client sends its pre-training `val_loss` and LoRA adapter diff to the designated aggregator.
+- **Aggregate**: Aggregator accumulates metrics and diffs, produces the updated global adapter, and records a new best model when `val_loss` improves.
 
 #### Completion
-- Final global LoRA adapter persisted to the simulation workspace.
+- Final and best-scoring global LoRA adapters are distributed and persisted to the simulation workspace.
 - Results available at `<workspace>/ccwf_swarm_pt_lora/`.

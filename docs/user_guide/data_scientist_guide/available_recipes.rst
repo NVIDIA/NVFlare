@@ -1040,6 +1040,8 @@ Decentralized federated learning without a central server.
         min_clients=3,
         num_rounds=5,
         train_script="client.py",
+        key_metric="accuracy",
+        key_metric_mode="max",
         initial_ckpt="path/to/pretrained.pt",  # Optional: pre-trained weights
         progress_timeout=7200,
         learn_task_timeout=None,  # No training-task time limit
@@ -1055,6 +1057,12 @@ Decentralized federated learning without a central server.
 For ``initial_ckpt``, a relative path is bundled and distributed to every client.
 An absolute path is not distributed; it must be readable at the same path on every
 client because the Swarm model persistor runs client-side.
+
+The recipe configures client-side best-model selection by default. Training clients
+must report a pre-training validation metric matching ``key_metric``; for dictionary
+metrics, the named entry is selected. Set ``key_metric_mode="min"`` for metrics such
+as loss. The best model is distributed at workflow completion and the default
+PyTorch persistor writes ``best_FL_global_model.pt`` at each result client.
 
 .. note::
    For large models (>2 GB), tune the following parameters:

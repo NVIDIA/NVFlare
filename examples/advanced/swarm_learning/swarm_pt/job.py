@@ -60,6 +60,7 @@ def define_parser():
         help="Root workspace directory for SimEnv (job results written to <workspace>/<job_name>)",
     )
     parser.add_argument("--local_steps", type=int, default=10, help="Gradient steps per client per round")
+    parser.add_argument("--validation_steps", type=int, default=10, help="Validation batches per client per round")
     parser.add_argument("--batch_size", type=int, default=4, help="Training batch size")
     parser.add_argument("--max_seq_len", type=int, default=128, help="Maximum tokenized sequence length")
     parser.add_argument(
@@ -83,7 +84,10 @@ def main():
     script_args = f"--model_path {model_path}"
     if args.data_dir:
         script_args += f" --data_dir {args.data_dir}"
-    script_args += f" --local_steps {args.local_steps} --batch_size {args.batch_size} --max_seq_len {args.max_seq_len}"
+    script_args += (
+        f" --local_steps {args.local_steps} --validation_steps {args.validation_steps}"
+        f" --batch_size {args.batch_size} --max_seq_len {args.max_seq_len}"
+    )
     script_args += f" --n_shards {args.n_clients}"
 
     recipe = SwarmLearningRecipe(
@@ -93,6 +97,8 @@ def main():
         train_script="client.py",
         train_args={"script_args": script_args},
         min_clients=args.n_clients,
+        key_metric="val_loss",
+        key_metric_mode="min",
         launch_external_process=True,
         cuda_empty_cache=True,
         # LoRA adapters are small — exchange full adapter state each round (FedAvg)

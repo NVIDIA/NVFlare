@@ -14,7 +14,7 @@
 
 import os
 import warnings
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Literal, Optional, Union
 
 from pydantic import BaseModel, field_validator
 
@@ -22,6 +22,7 @@ from nvflare.apis.dxo import DataKind
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.ccwf.ccwf_job import CCWFJob, CrossSiteEvalConfig, SwarmClientConfig, SwarmServerConfig
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
+from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.client.config import ExchangeFormat, normalize_exchange_format
 from nvflare.fuel.utils.secret_utils import (
@@ -42,6 +43,8 @@ _RECIPE_MANAGED_CLIENT_CONFIG_KEYS = frozenset(
 
 class _SwarmValidator(BaseModel):
     initial_ckpt: Optional[str] = None
+    key_metric: str = "accuracy"
+    key_metric_mode: Literal["min", "max"] = "max"
 
     @field_validator("initial_ckpt")
     @classmethod
@@ -176,6 +179,11 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             files on aggregation clients and materialize them lazily during aggregation. The
             trainer's source tensors remain in memory. This requires
             ``aggregation_format=ExchangeFormat.PYTORCH`` to take effect. Defaults to False.
+        key_metric: Metric used to determine the best global model. If validation metrics are
+            a dictionary, this selects the metric used by the client-side model selector.
+            Defaults to "accuracy".
+        key_metric_mode: Whether lower ("min") or higher ("max") values of ``key_metric``
+            indicate a better model. Defaults to "max".
 
     Example:
         Using nn.Module instance:
@@ -233,8 +241,14 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         client_config_overrides: Optional[Dict[str, Any]] = None,
         aggregation_format: ExchangeFormat = ExchangeFormat.NUMPY,
         enable_tensor_disk_offload: bool = False,
+        key_metric: str = "accuracy",
+        key_metric_mode: Literal["min", "max"] = "max",
     ):
-        _SwarmValidator(initial_ckpt=initial_ckpt)
+        _SwarmValidator(
+            initial_ckpt=initial_ckpt,
+            key_metric=key_metric,
+            key_metric_mode=key_metric_mode,
+        )
         warn_on_potential_secrets(command, context="recipe parameter 'command'")
         aggregation_format = normalize_exchange_format(aggregation_format, "aggregation_format")
         self.aggregation_format = aggregation_format
@@ -366,6 +380,10 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 allow_numpy_conversion=aggregation_format != ExchangeFormat.PYTORCH,
             ),
             "shareable_generator": SimpleModelShareableGenerator(),
+            "model_selector": IntimeModelSelector(
+                key_metric=key_metric,
+                negate_key_metric=key_metric_mode == "min",
+            ),
             "enable_tensor_disk_offload": enable_tensor_disk_offload,
             "memory_gc_rounds": memory_gc_rounds,
             "cuda_empty_cache": cuda_empty_cache,

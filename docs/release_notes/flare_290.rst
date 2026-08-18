@@ -114,3 +114,9 @@ Compatibility and Migration Notes
   missing client. The accepted envelope may already have exposed references to
   downstream consumers and cannot be safely withdrawn. An explicit job abort
   that wins the terminal-state race remains ``ABORTED``.
+- ``SwarmLearningRecipe`` now configures client-side best-model selection by
+  default. Use ``key_metric`` to select a dictionary-valued validation metric
+  and ``key_metric_mode="min"`` for lower-is-better metrics. Clients must report
+  a pre-training validation metric with the configured name for selection to
+  occur; jobs without that metric continue to persist the last global model but
+  do not create ``best_FL_global_model.pt``.
