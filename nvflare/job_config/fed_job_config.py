@@ -215,7 +215,15 @@ class FedJobConfig:
                 except BaseException:
                     os.replace(backup_job_dir, job_dir)
                     raise
-                self._remove_backup_export(job_root, backup_job_dir)
+                # The replacement is committed at this point, so a backup
+                # disposal failure must not be reported as an export failure.
+                try:
+                    self._remove_backup_export(job_root, backup_job_dir)
+                except OSError:
+                    self.logger.warning(
+                        f"The export was published but the replaced backup could not be removed; "
+                        f"it remains at {backup_job_dir} and can be removed manually."
+                    )
             else:
                 os.replace(temp_job_dir, job_dir)
         except BaseException:

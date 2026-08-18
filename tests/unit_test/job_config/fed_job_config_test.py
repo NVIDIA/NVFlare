@@ -117,6 +117,26 @@ class TestFedJobConfig:
         assert (entry_dir / "exports" / "job" / "meta.json").is_file()
         assert not any((other_dir / "exports").iterdir())
 
+    def test_generate_job_config_succeeds_when_backup_cleanup_fails(self, tmp_path, monkeypatch, caplog):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        job_config.generate_job_config(tmp_path)
+        marker = tmp_path / "job" / "notes.txt"
+        marker.write_text("replace me", encoding="utf-8")
+
+        def fail_cleanup(*args):
+            raise OSError("cleanup failed")
+
+        monkeypatch.setattr(job_config, "_remove_backup_export", fail_cleanup)
+        with caplog.at_level(logging.WARNING):
+            job_config.generate_job_config(tmp_path)
+
+        assert (tmp_path / "job" / "meta.json").is_file()
+        assert not (tmp_path / "job" / "notes.txt").exists()
+        backups = list((tmp_path / ".nvflare_job_backups").iterdir())
+        assert len(backups) == 1
+        assert (backups[0] / "notes.txt").read_text(encoding="utf-8") == "replace me"
+        assert any("backup" in record.getMessage().lower() for record in caplog.records)
+
     def test_generate_job_config_does_not_warn_without_stranded_backups(self, tmp_path, caplog):
         job_config = FedJobConfig(job_name="job", min_clients=1)
         with caplog.at_level(logging.WARNING):
