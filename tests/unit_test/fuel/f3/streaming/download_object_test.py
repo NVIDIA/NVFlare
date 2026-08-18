@@ -540,6 +540,18 @@ class TestDownloadObject:
         assert kwargs["secure"] is True
         assert kwargs["optional"] is True
 
+    def test_notify_source_failure_reports_fqcn_validation_error(self, cell):
+        with pytest.raises(ValueError, match="invalid char"):
+            DownloadService.notify_source_failure(
+                cell=cell,
+                targets=["server.job-1"],
+                source_fqcn="site-2/job-1/trainer",
+                ref_ids=["ref-1"],
+                reason="trainer OOM",
+            )
+
+        cell.send_request.assert_not_called()
+
     @pytest.mark.parametrize("transient_rc", [ReturnCode.TIMEOUT, ReturnCode.PROCESS_EXCEPTION])
     def test_notify_source_failure_retries_one_transient_failure(self, cell, transient_rc):
         cell.send_request.side_effect = [_make_reply(transient_rc), _make_reply(ReturnCode.OK)]

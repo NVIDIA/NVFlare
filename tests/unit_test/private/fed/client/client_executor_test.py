@@ -64,6 +64,60 @@ def test_abort_app_terminates_starting_job_without_worker_command():
     client.cell.fire_and_forget.assert_not_called()
 
 
+@pytest.mark.parametrize("heartbeat_cleanup", [False, True], ids=["admin_abort", "server_cleanup"])
+def test_abort_app_terminates_registered_stopped_job_without_worker_command(heartbeat_cleanup):
+    client = MagicMock()
+    job_executor = JobExecutor(client=client, startup="startup")
+    job_handle = MagicMock()
+    job_executor.run_processes["job-1"] = {
+        RunProcessKey.JOB_HANDLE: job_handle,
+        RunProcessKey.STATUS: ClientStatus.STOPPED,
+    }
+
+    ClientEngine.abort_app(SimpleNamespace(client_executor=job_executor), "job-1", heartbeat_cleanup=heartbeat_cleanup)
+
+    if heartbeat_cleanup:
+        job_handle.terminate.assert_called_once_with(heartbeat_cleanup=True)
+    else:
+        job_handle.terminate.assert_called_once_with()
+    client.cell.fire_and_forget.assert_not_called()
+
+
+def test_abort_app_does_not_terminate_unregistered_stopped_job():
+    job_executor = MagicMock()
+    job_executor.get_status.return_value = ClientStatus.STOPPED
+    job_executor.get_run_processes_keys.return_value = []
+
+    result = ClientEngine.abort_app(SimpleNamespace(client_executor=job_executor), "job-1")
+
+    assert result == "Client app already stopped."
+    job_executor.abort_app.assert_not_called()
+
+
+def test_terminate_job_reclaims_worker_as_soon_as_runner_reports_stopped():
+    job_executor = JobExecutor(client=MagicMock(), startup="startup")
+    job_handle = MagicMock()
+    job_executor.run_processes["job-1"] = {
+        RunProcessKey.JOB_HANDLE: job_handle,
+        RunProcessKey.STATUS: ClientStatus.STOPPED,
+    }
+
+    with patch("nvflare.private.fed.client.client_executor.time.sleep") as sleep:
+        job_executor._terminate_job(job_handle, "job-1", heartbeat_cleanup=True)
+
+    sleep.assert_not_called()
+    job_handle.terminate.assert_called_once_with(heartbeat_cleanup=True)
+
+
+def test_terminate_job_does_not_signal_handle_after_worker_was_reaped():
+    job_executor = JobExecutor(client=MagicMock(), startup="startup")
+    job_handle = MagicMock()
+
+    job_executor._terminate_job(job_handle, "job-1")
+
+    job_handle.terminate.assert_not_called()
+
+
 def test_heartbeat_cleanup_propagates_non_user_abort_intent():
     job_executor = MagicMock()
     job_executor.get_status.return_value = ClientStatus.STARTED

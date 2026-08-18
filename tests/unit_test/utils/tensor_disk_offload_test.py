@@ -132,15 +132,16 @@ def test_cleanup_ignores_unowned_malformed_and_symlink_entries(tmp_path):
 @requires_secure_cleanup
 def test_cleanup_preserves_path_replacement_raced_before_recursive_delete(tmp_path, monkeypatch):
     owned = create_tensor_disk_offload_root("job-a", temp_root=str(tmp_path))
+    owned_name = os.path.basename(owned)
     original = tmp_path / "original-owned-root"
     replacement_sentinel = "do-not-delete"
     real_rename = os.rename
 
     def replace_before_quarantine(src, dst, *args, **kwargs):
-        if src == owned:
-            real_rename(src, original)
-            os.mkdir(src)
-            with open(os.path.join(src, replacement_sentinel), "w", encoding="utf-8") as sentinel:
+        if src == owned_name and kwargs.get("src_dir_fd") is not None:
+            real_rename(owned, original)
+            os.mkdir(owned)
+            with open(os.path.join(owned, replacement_sentinel), "w", encoding="utf-8") as sentinel:
                 sentinel.write("replacement")
         return real_rename(src, dst, *args, **kwargs)
 
@@ -156,6 +157,114 @@ def test_cleanup_preserves_path_replacement_raced_before_recursive_delete(tmp_pa
     assert original.is_dir()
     assert (tmp_path / os.path.basename(owned) / replacement_sentinel).read_text(encoding="utf-8") == "replacement"
     assert list(tmp_path.glob(f"{_CLEANUP_ROOT_PREFIX}*")) == []
+
+
+@requires_secure_cleanup
+def test_cleanup_keeps_raced_replacement_visible_when_original_name_is_reoccupied(tmp_path, monkeypatch):
+    owned = create_tensor_disk_offload_root("job-a", temp_root=str(tmp_path))
+    owned_name = os.path.basename(owned)
+    original = tmp_path / "original-owned-root"
+    second_replacement = "second-replacement"
+    real_rename = os.rename
+
+    def replace_and_reoccupy_before_quarantine(src, dst, *args, **kwargs):
+        if src == owned_name and kwargs.get("src_dir_fd") is not None:
+            real_rename(owned, original)
+            os.mkdir(owned)
+            (tmp_path / owned_name / "first").write_text("first-replacement", encoding="utf-8")
+            result = real_rename(src, dst, *args, **kwargs)
+            os.mkdir(owned)
+            (tmp_path / owned_name / "second").write_text(second_replacement, encoding="utf-8")
+            return result
+        return real_rename(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(tensor_disk_offload.os, "rename", replace_and_reoccupy_before_quarantine)
+
+    cleanup = cleanup_owned_tensor_disk_offload_roots(
+        job_id="job-a", owner_parent_pid=os.getppid(), temp_root=str(tmp_path)
+    )
+
+    assert cleanup.removed == []
+    assert "unrelated entry preserved at" in cleanup.failures[owned]
+    assert (tmp_path / owned_name / "second").read_text(encoding="utf-8") == second_replacement
+    preserved = list(tmp_path.glob(f"{tensor_disk_offload._PRESERVED_REPLACEMENT_PREFIX}*"))
+    assert len(preserved) == 1
+    assert (preserved[0] / "first").read_text(encoding="utf-8") == "first-replacement"
+    assert list(tmp_path.glob(f"{_CLEANUP_ROOT_PREFIX}*")) == []
+
+
+@requires_secure_cleanup
+def test_cleanup_does_not_remove_replaced_quarantine_path(tmp_path, monkeypatch):
+    owned = create_tensor_disk_offload_root("job-a", temp_root=str(tmp_path))
+    moved_quarantine = tmp_path / "moved-quarantine"
+    replacement_sentinel = "unrelated"
+    real_stat = os.stat
+    replaced = False
+
+    def replace_before_final_quarantine_validation(path, *args, **kwargs):
+        nonlocal replaced
+        if (
+            isinstance(path, str)
+            and path.startswith(_CLEANUP_ROOT_PREFIX)
+            and kwargs.get("dir_fd") is not None
+            and not replaced
+        ):
+            cleanup_path = tmp_path / path
+            os.rename(cleanup_path, moved_quarantine)
+            cleanup_path.mkdir()
+            (cleanup_path / replacement_sentinel).write_text("preserve", encoding="utf-8")
+            replaced = True
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(tensor_disk_offload.os, "stat", replace_before_final_quarantine_validation)
+
+    cleanup = cleanup_owned_tensor_disk_offload_roots(
+        job_id="job-a", owner_parent_pid=os.getppid(), temp_root=str(tmp_path)
+    )
+
+    assert cleanup.removed == []
+    assert "quarantine pathname changed before removal" in cleanup.failures[owned]
+    replacement_dirs = list(tmp_path.glob(f"{_CLEANUP_ROOT_PREFIX}*"))
+    assert len(replacement_dirs) == 1
+    assert (replacement_dirs[0] / replacement_sentinel).read_text(encoding="utf-8") == "preserve"
+
+
+@requires_secure_cleanup
+def test_replaced_quarantine_error_does_not_mask_cleanup_error(tmp_path, monkeypatch):
+    owned = create_tensor_disk_offload_root("job-a", temp_root=str(tmp_path))
+    moved_quarantine = tmp_path / "moved-quarantine"
+    real_stat = os.stat
+    replaced = False
+
+    def fail_recursive_cleanup(*_args, **_kwargs):
+        raise OSError("primary cleanup failure")
+
+    def replace_before_final_quarantine_validation(path, *args, **kwargs):
+        nonlocal replaced
+        if (
+            isinstance(path, str)
+            and path.startswith(_CLEANUP_ROOT_PREFIX)
+            and kwargs.get("dir_fd") is not None
+            and not replaced
+        ):
+            cleanup_path = tmp_path / path
+            os.rename(cleanup_path, moved_quarantine)
+            cleanup_path.mkdir()
+            replaced = True
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(tensor_disk_offload, "_remove_tree_at", fail_recursive_cleanup)
+    monkeypatch.setattr(tensor_disk_offload.os, "stat", replace_before_final_quarantine_validation)
+
+    cleanup = cleanup_owned_tensor_disk_offload_roots(
+        job_id="job-a", owner_parent_pid=os.getppid(), temp_root=str(tmp_path)
+    )
+
+    assert cleanup.removed == []
+    assert "primary cleanup failure" in cleanup.failures[owned]
+    assert "failed to remove verified tensor disk-offload quarantine" in cleanup.failures[owned]
+    assert os.path.isdir(owned)
+    assert list(tmp_path.glob(f"{_CLEANUP_ROOT_PREFIX}*"))
 
 
 @requires_secure_cleanup

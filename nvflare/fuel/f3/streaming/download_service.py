@@ -1179,8 +1179,9 @@ class DownloadService:
         secure: bool = False,
     ):
         """Notify exact downstream receivers that an owned download source died."""
-        if FQCN.validate(source_fqcn):
-            raise ValueError(f"invalid source_fqcn {source_fqcn!r}")
+        validation_error = FQCN.validate(source_fqcn)
+        if validation_error:
+            raise ValueError(f"invalid source_fqcn {source_fqcn!r}: {validation_error}")
         targets = tuple(dict.fromkeys(t for t in targets if isinstance(t, str) and not FQCN.validate(t)))
         refs = tuple(dict.fromkeys(r for r in ref_ids if isinstance(r, str) and r))
         if not targets or not refs:

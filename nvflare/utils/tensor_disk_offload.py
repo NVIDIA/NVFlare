@@ -18,6 +18,7 @@ import ctypes
 import errno
 import json
 import os
+import secrets
 import shutil
 import stat
 import sys
@@ -32,6 +33,7 @@ _OWNER_FILE = ".nvflare_tensor_offload_owner.json"
 _OWNER_VERSION = 1
 _MAX_OWNER_RECORD_BYTES = 4096
 _CLEANUP_ROOT_PREFIX = ".nvflare_tensor_offload_cleanup_"
+_PRESERVED_REPLACEMENT_PREFIX = "nvflare_tensor_offload_preserved_"
 _SECURE_CLEANUP_SUPPORTED = (
     all(func in os.supports_dir_fd for func in (os.open, os.stat, os.rename, os.unlink, os.rmdir))
     and os.scandir in os.supports_fd
@@ -153,8 +155,10 @@ def _quarantine_and_remove_root(root_dir: str, expected_stat: os.stat_result, se
     cleanup_stat = os.stat(cleanup_dir, follow_symlinks=False)
     cleanup_fd = -1
     search_fd = -1
+    root_fd = -1
     root_quarantined = False
     expected_identity = (expected_stat.st_dev, expected_stat.st_ino)
+    cleanup_name = os.path.basename(cleanup_dir)
     try:
         cleanup_fd = _open_directory(cleanup_dir)
         search_fd = _open_directory(search_root)
@@ -162,7 +166,11 @@ def _quarantine_and_remove_root(root_dir: str, expected_stat: os.stat_result, se
         if (opened_cleanup_stat.st_dev, opened_cleanup_stat.st_ino) != (cleanup_stat.st_dev, cleanup_stat.st_ino):
             raise RuntimeError("tensor disk-offload quarantine identity changed before use")
         root_name = os.path.basename(root_dir)
-        os.rename(root_dir, root_name, dst_dir_fd=cleanup_fd)
+        root_fd = _open_directory(root_name, dir_fd=search_fd)
+        opened_root_stat = os.fstat(root_fd)
+        if (opened_root_stat.st_dev, opened_root_stat.st_ino) != expected_identity:
+            raise RuntimeError("tensor disk-offload root identity changed before quarantine")
+        os.rename(root_name, root_name, src_dir_fd=search_fd, dst_dir_fd=cleanup_fd)
         root_quarantined = True
 
         quarantined_stat = os.stat(root_name, dir_fd=cleanup_fd, follow_symlinks=False)
@@ -174,8 +182,16 @@ def _quarantine_and_remove_root(root_dir: str, expected_stat: os.stat_result, se
             )
             != expected_identity
         ):
+            preserved_path = _restore_or_preserve_misquarantined_entry(
+                cleanup_fd=cleanup_fd,
+                root_name=root_name,
+                search_fd=search_fd,
+                search_root=search_root,
+            )
+            root_quarantined = False
             raise RuntimeError(
-                f"tensor disk-offload root identity changed while quarantining; preserved under {cleanup_dir}"
+                "tensor disk-offload root identity changed while quarantining; "
+                f"unrelated entry preserved at {preserved_path}"
             )
 
         _remove_tree_at(cleanup_fd, root_name, expected_identity)
@@ -205,15 +221,61 @@ def _quarantine_and_remove_root(root_dir: str, expected_stat: os.stat_result, se
                     ) from cleanup_error
         raise
     finally:
+        active_error = sys.exc_info()[1]
+        final_cleanup_error = None
+        if cleanup_fd >= 0 and search_fd >= 0 and not root_quarantined:
+            try:
+                _remove_empty_directory_entry(
+                    parent_fd=search_fd,
+                    name=cleanup_name,
+                    directory_fd=cleanup_fd,
+                    expected_identity=(cleanup_stat.st_dev, cleanup_stat.st_ino),
+                )
+            except BaseException as e:
+                final_cleanup_error = e
+        if root_fd >= 0:
+            os.close(root_fd)
         if cleanup_fd >= 0:
             os.close(cleanup_fd)
         if search_fd >= 0:
             os.close(search_fd)
-        if not root_quarantined:
-            # This removes only the now-empty quarantine directory. It is never
-            # used for recursive deletion, so a replacement cannot expose an
-            # unrelated tree to cleanup.
-            os.rmdir(cleanup_dir)
+        if final_cleanup_error:
+            if active_error:
+                raise RuntimeError(
+                    f"{active_error}; failed to remove verified tensor disk-offload quarantine: "
+                    f"{final_cleanup_error}"
+                ) from active_error
+            raise final_cleanup_error
+
+
+def _restore_or_preserve_misquarantined_entry(cleanup_fd: int, root_name: str, search_fd: int, search_root: str) -> str:
+    """Return a raced-in entry to the shared namespace without overwriting another entry."""
+    try:
+        _renameat_noreplace(cleanup_fd, root_name, search_fd, root_name)
+        return os.path.join(search_root, root_name)
+    except FileExistsError:
+        # The original name was occupied again before rollback. Keep the entry
+        # visible in the shared namespace rather than stranding unrelated data
+        # inside a hidden quarantine directory.
+        for _ in range(16):
+            preserved_name = f"{_PRESERVED_REPLACEMENT_PREFIX}{secrets.token_hex(8)}_{root_name}"
+            try:
+                _renameat_noreplace(cleanup_fd, root_name, search_fd, preserved_name)
+                return os.path.join(search_root, preserved_name)
+            except FileExistsError:
+                continue
+        raise RuntimeError("could not allocate a collision-free path for a raced-in offload-root replacement")
+
+
+def _remove_empty_directory_entry(parent_fd: int, name: str, directory_fd: int, expected_identity: tuple) -> None:
+    """Remove an empty directory only while its opened and named identities agree."""
+    opened_stat = os.fstat(directory_fd)
+    if (opened_stat.st_dev, opened_stat.st_ino) != expected_identity:
+        raise RuntimeError("tensor disk-offload quarantine opened identity changed before removal")
+    named_stat = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    if not stat.S_ISDIR(named_stat.st_mode) or (named_stat.st_dev, named_stat.st_ino) != expected_identity:
+        raise RuntimeError("tensor disk-offload quarantine pathname changed before removal")
+    os.rmdir(name, dir_fd=parent_fd)
 
 
 def _renameat_noreplace(src_dir_fd: int, src_name: str, dst_dir_fd: int, dst_name: str) -> None:
