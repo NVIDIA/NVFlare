@@ -577,6 +577,49 @@ def test_run_v1_lints_reference_text_scan_ignores_symlink_loop(tmp_path):
             "Do not execute setup hooks and install dependencies without user approval.",
             "dependency-install-confirmation-bypass",
         ),
+        # A read-only verb does not cover an unrecognized mutating verb
+        # coordinated onto it.
+        (
+            "Inspect package metadata and add packages without user confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
+        # A negation does not reach across a coordinator into a second action
+        # whose verb is outside the recognized vocabulary.
+        (
+            "Never install packages, add packages without user confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Never install dependencies, upgrade packages without approval.",
+            "dependency-install-confirmation-bypass",
+        ),
+        # A read-only verb must be the verb the "without" phrase modifies, not
+        # merely appear somewhere ahead of an unrecognized mutating verb.
+        (
+            "Inspect the package index and add dependencies without user confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Read the requirements and fetch packages without user approval.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Audit dependency sources while syncing packages without user consent.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Do not use unknown indexes, add packages without user confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Do not use package mirrors, sync requirements without user consent.",
+            "dependency-install-confirmation-bypass",
+        ),
+        # Nothing may act after the "without" phrase either.
+        (
+            "Inspect package metadata without user confirmation and install packages.",
+            "dependency-install-confirmation-bypass",
+        ),
     ],
 )
 def test_dependency_install_safety_lint_rejects_review_or_confirmation_bypass(tmp_path, unsafe_guidance, expected_code):
@@ -647,6 +690,10 @@ def test_dependency_install_safety_lint_accepts_negated_skip_review(tmp_path, sa
         # not break the negation's hold on the "without" clause.
         "Never install project dependencies without user confirmation.",
         "Do not preemptively install declared dependencies without explicit user approval.",
+        # Each item in a coordinated series may carry its own object; the list
+        # must not split at its final coordinator and drop the leading negation.
+        "Do not download packages, install dependencies, or use packages without user confirmation.",
+        "Never download packages, install dependencies, or execute requirements without reviewing sources.",
     ],
 )
 def test_dependency_install_safety_lint_accepts_negated_without_clause(tmp_path, safe_guidance):
@@ -668,6 +715,11 @@ def test_dependency_install_safety_lint_accepts_negated_without_clause(tmp_path,
         "Inspect dependency metadata without user approval.",
         "Audit dependency sources without user approval.",
         "List declared requirements without user confirmation.",
+        # The read-only verb may follow a fronted "without" phrase.
+        "Without user confirmation, inspect package metadata.",
+        # "review" is read-only for the confirmation check; the separate
+        # "without reviewing sources" matcher is unaffected.
+        "Review package sources without user confirmation.",
     ],
 )
 def test_dependency_install_safety_lint_accepts_read_only_inspection_without_install_consent(tmp_path, safe_guidance):

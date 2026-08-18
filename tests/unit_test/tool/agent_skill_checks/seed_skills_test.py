@@ -512,6 +512,24 @@ def test_data_location_invariants_stay_on_the_always_loaded_path():
         assert "detailed rerun, data-location" not in skill_text, skill_name
         assert "it no longer holds the data-location or partitioning contracts" in skill_text, skill_name
 
+    # Wording alone cannot show the rule is exercised. Every converter needs an
+    # eval that hands it an external absolute data path and asserts the client
+    # receives it through configurable arguments.
+    for skill_name, eval_id in (
+        ("nvflare-convert-pytorch", "pytorch-convert-external-data-path"),
+        ("nvflare-convert-lightning", "lightning-convert-external-data-path"),
+        ("nvflare-convert-huggingface", "huggingface-convert-external-data-path"),
+    ):
+        skill_dir = repo_root / "skills" / skill_name
+        eval_data = json.loads(skill_dir.joinpath("evals/evals.json").read_text(encoding="utf-8"))
+        external_eval = _eval_by_id(eval_data, eval_id)
+        assert "/data/nvflare/" in external_eval["prompt"], eval_id
+        for fixture in external_eval["files"]:
+            assert skill_dir.joinpath("evals", fixture).is_file(), fixture
+        behavior = external_eval["nvflare"]
+        assert "configurable-data-path" in {item["id"] for item in behavior["mandatory_behavior"]}, eval_id
+        assert "no-hardcoded-absolute-data-path" in {item["id"] for item in behavior["prohibited_behavior"]}, eval_id
+
 
 def test_pytorch_recipe_capability_profiles_match_tensor_disk_offload_support():
     from nvflare.tool.recipe.recipe_cli import _load_catalog, _recipe_detail

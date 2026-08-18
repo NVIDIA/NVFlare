@@ -320,6 +320,37 @@
       }
     },
     {
+      "id": "huggingface-convert-external-data-path",
+      "prompt": "Convert this Hugging Face Trainer script to a FLARE FedAvg job over 3 simulated sites for 2 rounds. The source reads its JSONL splits from /data/nvflare/reviews; keep that dataset location configurable for each site.",
+      "expected_output": "A FLARE-compatible Hugging Face Trainer conversion that passes the source JSONL data root through a train_args or per_site_config value, keeps the generated client free of fixed absolute data-path literals except configurable defaults, points at the original external dataset location rather than an nvflare run workspace path, and still follows the standard flare.patch(trainer) conversion, validation, and reporting flow.",
+      "files": [
+        "files/external-data-hf/train.py",
+        "files/external-data-hf/model.py"
+      ],
+      "assertions": [
+        "The agent detects that load_dataset reads JSONL splits from an external absolute path rather than a hub dataset.",
+        "The generated job passes the original data root through configurable train_args or per_site_config values so sites can override it.",
+        "The generated client does not embed the absolute data path as a fixed non-configurable literal.",
+        "The generated configuration points at the original external dataset location and not at data inside the nvflare run workspace.",
+        "The agent preserves the source tokenization, collation, and compute_metrics semantics while adapting the Trainer to flare.patch(trainer)."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-huggingface",
+        "mandatory_behavior": [
+          {
+            "id": "configurable-data-path",
+            "description": "when the source loads data from an external file or directory, passes that data location as a configurable train_args or per_site_config value rather than a path hardcoded in client.py, pointing at the original dataset and not at data inside the nvflare run workspace"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-hardcoded-absolute-data-path",
+            "description": "does not embed an absolute data path as a fixed non-configurable literal in generated client code and does not point at data inside the nvflare run workspace"
+          }
+        ]
+      }
+    },
+    {
       "id": "huggingface-convert-peft-sft",
       "prompt": "Convert this TRL SFTTrainer LoRA script to a two-site NVFLARE FedAvg job. Exchange adapters only, preserve the existing LoRA configuration, and do not add advanced patch options unless they are necessary.",
       "expected_output": "A Hugging Face Client API conversion that keeps the existing SFTTrainer and LoRA configuration, calls flare.patch(trainer) with defaults, creates an adapter-shaped server model with the same PEFT keyspace, uses PyTorch tensor exchange and external execution, and validates exact adapter-key compatibility before simulation.",

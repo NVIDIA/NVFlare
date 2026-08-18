@@ -169,12 +169,26 @@ _DEPENDENCY_INSTALL_TERMS_RE = re.compile(r"\b(?:dependenc\w*|install\w*|package
 _DEPENDENCY_ACTION_PATTERN = r"(?:install\w*|download\w*|us(?:e|es|ed|ing|age)|execut\w*)"
 _DEPENDENCY_ACTION_RE = re.compile(rf"\b{_DEPENDENCY_ACTION_PATTERN}\b", re.IGNORECASE)
 _DEPENDENCY_NOUN_PATTERN = r"(?:dependenc\w*|packages?|requirements?)"
-# Read-only verbs change nothing, so they need no install confirmation. This is a
-# deny-list of safe verbs rather than an allow-list of unsafe ones: an unrecognized
-# verb must stay flagged, because the missed case of a safety lint is the costly one.
-_READ_ONLY_DEPENDENCY_ACTION_RE = re.compile(
-    r"\b(?:inspect\w*|read\w*|list\w*|view\w*|show\w*|examin\w*|audit\w*"
-    r"|quer(?:y|ies|ied|ying)|enumerat\w*|print\w*|display\w*)\b",
+# Read-only verbs change nothing, so they need no install confirmation. Matching a
+# verb is not enough: the exemption is granted only to a whole canonical sentence
+# shape (below), so an unrecognized mutating verb anywhere in the clause withdraws
+# it. Recognizing shapes rather than growing a verb list is what keeps this
+# fail-closed -- the costly error for a safety lint is the miss, not the false
+# positive. ``review`` is safe here because this vocabulary is consulted only by
+# the confirmation check; the separate "without reviewing sources" matcher is
+# unaffected.
+_READ_ONLY_DEPENDENCY_VERB_PATTERN = (
+    r"(?:inspect\w*|read\w*|list\w*|view\w*|show\w*|examin\w*|audit\w*|review\w*"
+    r"|quer(?:y|ies|ied|ying)|enumerat\w*|print\w*|display\w*|check\w*)"
+)
+# An object word may not be a coordinator (which could attach a second action) or
+# any recognized mutating verb, so the phrase cannot silently span two actions.
+_READ_ONLY_OBJECT_WORD_PATTERN = (
+    r"(?!(?:and|or|nor|then|plus|also|while|before|after|but)\b)"
+    rf"(?!{_DEPENDENCY_ACTION_PATTERN}\b)[A-Za-z0-9_.'’-]+"
+)
+_READ_ONLY_ACTION_PHRASE_RE = re.compile(
+    rf"{_READ_ONLY_DEPENDENCY_VERB_PATTERN}\b(?:\s+{_READ_ONLY_OBJECT_WORD_PATTERN})*",
     re.IGNORECASE,
 )
 # A coordinated series shares one negation: in "never download, install, or
@@ -184,6 +198,9 @@ _DEPENDENCY_ACTION_SERIES_GAP_RE = re.compile(
     rf"(?:[\s,;/]|\b(?:and|or|nor|then)\b|\b{_DEPENDENCY_ACTION_PATTERN}\b|\b{_DEPENDENCY_NOUN_PATTERN}\b)*",
     re.IGNORECASE,
 )
+# A coordinator can attach an action whose verb is outside the recognized
+# vocabulary, so its presence withdraws any "nothing else acts here" assumption.
+_CLAUSE_COORDINATOR_RE = re.compile(r"[,;/]|\b(?:and|or|nor|then|plus|also|while|before|after)\b", re.IGNORECASE)
 _DEPENDENCY_CONFIRMATION_BYPASS_RES = (
     re.compile(
         r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,160}"
@@ -1832,11 +1849,18 @@ def _is_dependency_action_series_boundary(statement: str, separator: re.Match) -
     Coordinators normally start a new clause, but the final coordinator in a
     list such as "Do not download, install, or use packages" only joins verbs.
     Keeping that list together lets the leading negation govern every action.
+
+    List items may carry their own objects, as in "do not download packages,
+    install dependencies, or use packages". Test whether the preceding list item
+    *starts* with an action rather than ends with one, or such a list splits at
+    its final coordinator and the leading negation is lost.
     """
     if not separator.group("coordinator"):
         return False
+    preceding = statement[: separator.start()]
+    preceding_item = preceding.rsplit(",", 1)[-1]
     return bool(
-        _DEPENDENCY_ACTION_AT_END_RE.search(statement[: separator.start()])
+        (_DEPENDENCY_ACTION_AT_END_RE.search(preceding) or _DEPENDENCY_ACTION_AT_START_RE.search(preceding_item))
         and _DEPENDENCY_ACTION_AT_START_RE.search(statement[separator.end() :])
     )
 
@@ -1845,28 +1869,47 @@ def _negation_reaches_without_clause(gap: str) -> bool:
     """Return whether a negated verb still governs the action before ``without``.
 
     ``gap`` is the text between the negated verb and the "without X" phrase. The
-    negation still governs when nothing else acts in between -- either the gap
-    holds no dependency action at all ("never install project dependencies
-    without X"), or it is a coordinated series under the same negation ("never
-    download, install, or execute dependencies without X"). A separate
-    affirmative action in the gap means the negation governed something else.
+    negation still governs in exactly two shapes: the gap is the negated verb's
+    own object ("never install project dependencies without X"), or it is a
+    coordinated series under the same negation ("never download, install, or
+    execute dependencies without X").
+
+    Anything else fails closed. A coordinator in the gap can introduce a second
+    action whose verb this module does not recognize -- "never install packages,
+    add packages without X" -- and an unrecognized verb must not be mistaken for
+    more of the negated verb's object.
     """
-    if not _DEPENDENCY_ACTION_RE.search(gap):
+    if _DEPENDENCY_ACTION_SERIES_GAP_RE.fullmatch(gap) is not None:
         return True
-    return _DEPENDENCY_ACTION_SERIES_GAP_RE.fullmatch(gap) is not None
+    return not _CLAUSE_COORDINATOR_RE.search(gap) and not _DEPENDENCY_ACTION_RE.search(gap)
 
 
 def _is_read_only_dependency_action(statement: str, match: re.Match) -> bool:
     """Return whether the "without confirmation" phrase governs a read-only action.
 
     Reading package metadata changes nothing, so it needs no install
-    confirmation. The exemption requires a read-only verb and no mutating
-    dependency action in the same clause: "inspect the index and install
-    packages without confirmation" is still a bypass.
+    confirmation. Finding a read-only verb somewhere is not enough -- it must be
+    the verb the "without" phrase modifies. The exemption is therefore granted
+    only to two whole sentence shapes, each of which must consume its side of the
+    clause entirely:
+
+        <read-only verb> <object> without <confirmation>
+        without <confirmation>, <read-only verb> <object>
+
+    An object word may be neither a coordinator nor a recognized mutating verb,
+    so a second action cannot hide inside the phrase: "inspect the package index
+    and add dependencies without confirmation" fails to match and stays flagged.
     """
-    clause_start, _ = _clause_bounds_at(statement, match.start("without_clause"))
-    governing = statement[clause_start : match.start("without_clause")]
-    return bool(_READ_ONLY_DEPENDENCY_ACTION_RE.search(governing)) and not _DEPENDENCY_ACTION_RE.search(governing)
+    clause_start, clause_end = _clause_bounds_at(statement, match.start("without_clause"))
+    leading = statement[clause_start : match.start("without_clause")].strip(" \t,;")
+    trailing = statement[match.end("without_clause") : clause_end].strip(" \t,;.!?")
+
+    if _READ_ONLY_ACTION_PHRASE_RE.fullmatch(leading):
+        # Nothing may act after the "without" phrase either.
+        return not _CLAUSE_COORDINATOR_RE.search(trailing) and not _DEPENDENCY_ACTION_RE.search(trailing)
+    if not leading:
+        return bool(_READ_ONLY_ACTION_PHRASE_RE.fullmatch(trailing))
+    return False
 
 
 def _is_negated_without_clause(statement: str, match: re.Match) -> bool:
