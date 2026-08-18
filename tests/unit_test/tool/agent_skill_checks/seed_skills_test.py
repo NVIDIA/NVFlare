@@ -345,14 +345,14 @@ def test_conversion_skills_treat_per_site_train_args_as_complete_replacements():
     repo_root = Path(__file__).resolve().parents[4]
     shared_references = repo_root / "skills" / "nvflare-shared" / "references"
     construction_text = shared_references.joinpath("pytorch-family-recipe-construction.md").read_text(encoding="utf-8")
-    workflow_text = shared_references.joinpath("conversion-workflow.md").read_text(encoding="utf-8")
+    site_data_text = shared_references.joinpath("site-data-and-paths.md").read_text(encoding="utf-8")
     lightning_text = repo_root.joinpath("skills/nvflare-convert-lightning/SKILL.md").read_text(encoding="utf-8")
     lightning_evals = json.loads(
         repo_root.joinpath("skills/nvflare-convert-lightning/evals/evals.json").read_text(encoding="utf-8")
     )
 
     normalized_construction = " ".join(construction_text.split())
-    normalized_workflow = " ".join(workflow_text.split())
+    normalized_site_data = " ".join(site_data_text.split())
     normalized_lightning = " ".join(lightning_text.split())
     external_data_eval = _eval_by_id(lightning_evals, "lightning-convert-external-data-path")["nvflare"]
     mandatory_ids = {item["id"] for item in external_data_eval["mandatory_behavior"]}
@@ -363,7 +363,7 @@ def test_conversion_skills_treat_per_site_train_args_as_complete_replacements():
     assert "does not merge shared arguments into the site override" in normalized_construction
     assert "only the fallback for a site without its own `train_args` entry" in normalized_construction
     assert "`task_script_args` contains the full expected argument set" in normalized_construction
-    assert "complete replacement for recipe-level `train_args`" in normalized_workflow
+    assert "completely replaces recipe-level `train_args`" in normalized_site_data
     assert "never split shared arguments and a site-specific data path" in normalized_lightning
     assert "complete-per-site-train-args" in mandatory_ids
 
@@ -417,6 +417,53 @@ def test_lightning_training_metrics_use_automatic_pre_fit_delivery():
     assert "A terminal `Finished` state without that metric is incomplete validation" in normalized_validation
     assert "return them in the aggregated `FLModel.metrics`" in normalized_workflow
     assert "metrics=metrics or None" in aggregator_template
+
+
+def test_lightning_conversion_limits_reference_loading_and_full_run_validation():
+    repo_root = Path(__file__).resolve().parents[4]
+    skill_root = repo_root / "skills" / "nvflare-convert-lightning"
+    skill_text = skill_root.joinpath("SKILL.md").read_text(encoding="utf-8")
+    shared_root = repo_root / "skills" / "nvflare-shared" / "references"
+    common_text = shared_root.joinpath("conversion-common.md").read_text(encoding="utf-8")
+    workflow_text = shared_root.joinpath("conversion-workflow.md").read_text(encoding="utf-8")
+    site_data_text = shared_root.joinpath("site-data-and-paths.md").read_text(encoding="utf-8")
+    eval_data = json.loads(skill_root.joinpath("evals/evals.json").read_text(encoding="utf-8"))
+    basic_eval = _eval_by_id(eval_data, "lightning-convert-basic")["nvflare"]
+    mandatory_ids = {item["id"] for item in basic_eval["mandatory_behavior"]}
+    prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
+    normalized_skill = " ".join(skill_text.split())
+    normalized_common = " ".join(common_text.split())
+    normalized_workflow = " ".join(workflow_text.split())
+
+    phase_markers = [
+        "Inspect before editing",
+        "Apply the dependency-install ordering rule",
+        "Reuse the PyTorch recipe family",
+        "Convert the training entry point",
+        "Only after generated files exist",
+        "Report the recipe",
+    ]
+    phase_positions = [skill_text.index(marker) for marker in phase_markers]
+    assert phase_positions == sorted(phase_positions)
+    assert "Complete each workflow phase before loading the next phase's reference" in normalized_skill
+    assert "Do not enumerate reference directories or preload validation" in normalized_skill
+    assert "do not load the broad `conversion-workflow.md` for these standard concerns" in normalized_common
+    assert "Do not reconstruct that focused contract from this broad workflow reference" in normalized_workflow
+    assert len(site_data_text) < len(workflow_text)
+
+    assert "select and record exactly one final validation target" in normalized_skill
+    assert "do not export or run the exported simulator afterward" in normalized_skill
+    assert "do not first run `python job.py`" in normalized_skill
+    assert "rerun that same target" in normalized_skill
+    assert "Change targets only when evidence shows the original target" in normalized_skill
+    assert "Keep cleanup, export, and simulation as separate tool calls" in normalized_skill
+    assert "will not reach a download helper or its imports" in normalized_skill
+    assert {"applicable-dependencies-only", "single-final-validation-path"} <= mandatory_ids
+    assert {
+        "no-duplicate-full-validation",
+        "no-compound-cleanup-and-execution",
+        "no-unused-download-dependency-probe",
+    } <= prohibited_ids
 
 
 def test_pytorch_recipe_capability_profiles_match_tensor_disk_offload_support():
@@ -682,7 +729,7 @@ def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
     construction_text = repo_root.joinpath(
         "skills/nvflare-shared/references/pytorch-family-recipe-construction.md"
     ).read_text(encoding="utf-8")
-    workflow_text = repo_root.joinpath("skills/nvflare-shared/references/conversion-workflow.md").read_text(
+    site_data_text = repo_root.joinpath("skills/nvflare-shared/references/site-data-and-paths.md").read_text(
         encoding="utf-8"
     )
     client_text = repo_root.joinpath(
@@ -696,7 +743,7 @@ def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
         (repo_root / "skills" / "nvflare-convert-pytorch" / "evals" / "evals.json").read_text(encoding="utf-8")
     )
     normalized_construction = " ".join(construction_text.split())
-    normalized_workflow = " ".join(workflow_text.split())
+    normalized_site_data = " ".join(site_data_text.split())
     normalized_validation = " ".join(validation_text.split())
     basic_eval = _eval_by_id(eval_data, "pytorch-convert-basic")["nvflare"]
     mandatory_ids = {item["id"] for item in basic_eval["mandatory_behavior"]}
@@ -704,17 +751,20 @@ def test_pytorch_conversion_avoids_known_recipe_and_partition_retries():
 
     assert "pass `best_model_filename` only" in normalized_construction
     assert "Do not also pass `save_filename`" in normalized_construction
-    assert "Make every array passed to an in-place shuffle writable" in workflow_text
-    assert "positions = np.flatnonzero(frame[label_column].to_numpy() == label).copy()" in workflow_text
-    assert "do not pass positional indices to `DataFrame.loc`" in normalized_workflow
+    assert "Make every array passed to an in-place shuffle writable" in site_data_text
+    assert "positions = np.flatnonzero(frame[label_column].to_numpy() == label).copy()" in site_data_text
+    assert "do not pass positional indices to `DataFrame.loc`" in normalized_site_data
     assert "shuffle writable **positional** index arrays" not in client_text
-    assert '"Site Data Partitioning"' in lightning_skill
+    assert "site-data-and-paths.md" in lightning_skill
     assert "validate properties rather than guessed site sizes" in normalized_validation
     assert "complete, non-overlapping coverage" in normalized_validation
     assert "Assert exact per-site row counts only when" in validation_text
-    assert "resolve it in `job.py` against the original source-project root" in normalized_workflow
-    assert "the simulator process working directory" in normalized_workflow
-    assert "Validate relative-path conversions from a fresh caller working directory" in workflow_text
+    assert (
+        "Resolve a relative source data path in `job.py` against the original source-project root"
+        in normalized_site_data
+    )
+    assert "the simulator process working directory" in normalized_site_data
+    assert "Validate relative-path conversions from a fresh caller working directory" in normalized_site_data
     assert {"safe-pandas-partitioning", "invariant-based-partition-validation"} <= mandatory_ids
     assert {"no-deprecated-save-filename-alias", "no-hardcoded-guessed-partition-counts"} <= prohibited_ids
 

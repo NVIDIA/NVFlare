@@ -62,7 +62,9 @@ authorization and safety boundaries.
   locations, dependency ordering, SimEnv execution, site partitioning, custom
   aggregation, source-of-truth boundary, and user input/authorization.
 - `references/conversion-workflow.md` — non-standard conversion, rerun,
-  data-location, export, and authorization guidance.
+  export, and authorization guidance.
+- `references/site-data-and-paths.md` — generated site partitions and source
+  data-path resolution, loaded only when those concerns apply.
 - `references/validation-evidence.md` — the local validation ladder.
 - `references/dependency-install.md` — dependency ordering and host-permission
   guidance.

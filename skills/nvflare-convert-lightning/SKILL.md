@@ -54,16 +54,25 @@ distribution; handle conversion later as a separate request.
    whole conversion; this SKILL.md states only the framework-specific deltas.
    Load `../nvflare-shared/references/conversion-workflow.md` only for a non-standard
    case that needs its detailed rerun, data-location, authorization, or
-   missing-semantics guidance.
+   missing-semantics guidance. Standard site partitioning and path resolution
+   use `../nvflare-shared/references/site-data-and-paths.md`, not the broad
+   workflow reference.
 2. Inspect before editing with `nvflare agent inspect source <path> --format json`
    plus direct reading; fact extraction is static. Use
    `references/lightning-detection.md` to confirm Lightning versus plain
    PyTorch and hand off to `nvflare-convert-pytorch` when no Lightning evidence
    exists. If inspection recommends `nvflare-orient` for active Lightning and
    Hugging Face Trainer owners, stop and hand off before editing.
-3. Apply the dependency-install ordering rule in `../nvflare-shared/references/conversion-common.md` before
-   any Python command imports user, Lightning, NVFLARE, or declared dependency
-   modules.
+3. Apply the dependency-install ordering rule in
+   `../nvflare-shared/references/conversion-common.md` before any Python command
+   imports user, Lightning, NVFLARE, or declared dependency modules. Determine
+   applicable dependencies from the selected execution path before probing
+   imports. If required data artifacts already exist and static inspection shows
+   that the selected path will not reach a download helper or its imports, treat
+   its download-only requirements as inapplicable: do not install or
+   import-probe them. Probe only modules the generated conversion and selected
+   validation path will execute, and keep an optional probe separate and
+   exit-zero when unavailable.
 4. Identify the existing `LightningModule`, `LightningDataModule`, trainer
    construction, callbacks, checkpointing, `validation_step`/`test_step` and
    dataloaders, metrics, logger usage, source partition evidence, distributed
@@ -81,7 +90,9 @@ distribution; handle conversion later as a separate request.
    non-FedAvg algorithms, reserving `nvflare recipe list` for those cases. Use
    FedEval for evaluation-only. After every `recipe show`, load
    `../nvflare-shared/references/pytorch-family-recipe-construction.md` and
-   derive the recipe's construction capabilities.
+   derive the recipe's construction capabilities. Do not inspect recipe source,
+   signatures, or docstrings to rediscover parameters already returned by
+   `recipe show`.
 6. Convert the training entry point to the Lightning Client API: build the
    `Trainer`, call `flare.patch(trainer)`, and let the patched trainer own
    model exchange. Keep evaluation inside Lightning per
@@ -89,9 +100,7 @@ distribution; handle conversion later as a separate request.
    When server metrics are required, follow that reference's explicit pre-fit
    validation contract and verify the exact logged key in server evidence; do
    not use `model.__fl_meta__` to replace the patched callback's metrics. Ask or
-   fail closed when validation semantics are missing. Partition site data per
-   the "Site Data Partitioning" rule in
-   `../nvflare-shared/references/conversion-common.md`.
+   fail closed when validation semantics are missing.
 7. Add or update `job.py` under the shared "Recipe Model Config" policy. A
    direct instance, when allowed by that policy, must be the complete
    `LightningModule`, not its inner network. Add the requested `aggregator=`
@@ -101,14 +110,25 @@ distribution; handle conversion later as a separate request.
    override the complete argument string; never split shared arguments and a
    site-specific data path across recipe-level and per-site values expecting a
    merge.
-8. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`:
-   compile checks, recipe construction, one final full-run path chosen by the
-   artifact being validated, and export inspection; then use
-   `references/lightning-validation.md` for Lightning-specific checks before
-   calling the conversion complete. Use the environment and permission
-   mechanisms supplied by the agent host; do not inspect or enforce its security
-   boundary. Report the recipe, changed files, validation status, metrics, and
-   exact artifact paths. Load
+8. Only after generated files exist, load
+   `../nvflare-shared/references/validation-evidence.md`, then
+   `references/lightning-validation.md`. Before executing a full run, select and
+   record exactly one final validation target:
+   - for a requested local or first-run simulation without an export claim, run
+     `python job.py` and do not export or run the exported simulator afterward;
+   - for a requested exported/deployable artifact, export first and run only the
+     exported folder with the simulator CLI; do not first run `python job.py`.
+   If the selected full-run target fails, diagnose it, apply a scoped fix, and
+   rerun that same target. Change targets only when evidence shows the original
+   target does not represent the requested artifact, and record that reason.
+   Export inspection belongs only to the exported path. Keep cleanup, export,
+   and simulation as separate tool calls; never combine recursive cleanup with
+   execution. Stop at the first failed validation rung before diagnosing it;
+   do not add speculative recovery probes. Use
+   the environment and permission mechanisms supplied by the agent host; do not
+   inspect or enforce its security boundary.
+9. Report the recipe, changed files, selected validation target, validation
+   status, metrics, and exact artifact paths. Load
    `../nvflare-shared/references/metrics-and-artifact-reporting.md` only when
    normal metric artifacts are absent or inconsistent.
 
@@ -155,16 +175,26 @@ distribution; handle conversion later as a separate request.
   input/authorization follow `../nvflare-shared/references/conversion-common.md`.
 
 Always read this converter SKILL.md together with
-`../nvflare-shared/references/conversion-common.md`. Load detailed references
-only at their named phase:
-`../nvflare-shared/references/conversion-workflow.md` for non-standard cases;
-`../nvflare-shared/references/pytorch-family-recipe-selection.md` only for ambiguous or non-FedAvg algorithms;
-`../nvflare-shared/references/pytorch-family-recipe-construction.md` after every `recipe show`;
-`../nvflare-shared/references/dependency-install.md` only when an install is needed;
-`../nvflare-shared/references/runtime-output-guidance.md` only for read-only source roots or chosen outputs;
-`../nvflare-shared/references/metrics-and-artifact-reporting.md` only when metrics are absent or inconsistent;
-`../nvflare-shared/references/validation-evidence.md` before validation;
-`../nvflare-shared/references/pytorch-model-exchange.md` for PyTorch-family exchange.
-For Lightning work load `references/lightning-detection.md`, `references/lightning-conversion.md`,
-`references/lightning-validation.md`, or `references/lightning-ddp-and-tracking.md` only as needed.
-Do not depend on NVFLARE repository examples being present.
+`../nvflare-shared/references/conversion-common.md`. Complete each workflow
+phase before loading the next phase's reference. Do not enumerate reference
+directories or preload validation, DDP/tracking, broad workflow, dependency,
+runtime-output, or reporting references. The standard explicit-FedAvg path
+loads, in order: `../nvflare-shared/references/conversion-common.md`,
+`references/lightning-detection.md`,
+`../nvflare-shared/references/site-data-and-paths.md` only when generated splits
+or nontrivial source-path resolution are needed,
+`../nvflare-shared/references/pytorch-family-recipe-construction.md`,
+`references/lightning-conversion.md`,
+`../nvflare-shared/references/pytorch-model-exchange.md`, then only after files
+exist, `../nvflare-shared/references/validation-evidence.md` and
+`references/lightning-validation.md`. Load
+`../nvflare-shared/references/conversion-workflow.md` only for an unresolved
+non-standard case; `../nvflare-shared/references/pytorch-family-recipe-selection.md`
+only for ambiguous or non-FedAvg algorithms;
+`../nvflare-shared/references/dependency-install.md` only when an applicable
+dependency is missing; `../nvflare-shared/references/runtime-output-guidance.md`
+only for a read-only source root or user-chosen output destination;
+`references/lightning-ddp-and-tracking.md` only when inspection found its
+trigger; and `../nvflare-shared/references/metrics-and-artifact-reporting.md`
+only when normal metrics are absent or inconsistent. Do not depend on NVFLARE
+repository examples.

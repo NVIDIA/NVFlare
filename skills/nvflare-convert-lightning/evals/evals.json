@@ -61,13 +61,15 @@
         "Generated source may sit beside the training source; runtime workspace, export, generated models, and logs go to a host-provided runtime directory or one temporary directory, and the agent reports the exact paths.",
         "The agent preserves local-only Lightning callbacks, loggers, and checkpoint behavior; network-connected or custom/unknown loggers remain disabled during validation unless the user explicitly requested them, without a skill-issued approval prompt.",
         "The agent reads and audits applicable requirements, presents a redacted combined install plan, obtains explicit user confirmation before installing missing dependencies into the host-provided environment, and then runs import-level preflight and validation; an explicitly requested unattended run still logs the plan, and the host permission system remains an additional gate.",
+        "The agent determines dependency applicability from the selected run path, does not install or import-probe download-only dependencies when required data already exists and static inspection shows that no download helper or its imports will be reached, and keeps optional probes separate and non-failing.",
         "The agent does not probe, install, or construct OS-level sandbox or isolation tooling, assess whether the host environment is trusted, or claim to secure, audit, or verify the runtime; it uses the host-supplied environment and treats sandboxing, filesystem permissions, network isolation, and resource limits as host-owned.",
         "The agent statically inventories and audits dependency names, sources, indexes, credentials, and installer options, flags suspicious entries, shows and logs the exact redacted command plus complete declared package/source list, and requests confirmation before installation; it does not add a separate prompt merely to run validation the user already requested.",
         "Missing torch, pytorch-lightning, or other imports that the requirements cover are not treated as missing declarations; the agent prepares the reviewed install plan and proceeds only after confirmation.",
         "The agent preserves an unvalidated draft and reports the unresolved reason after declined or unavailable dependency-install confirmation, a suspicious or ambiguous dependency entry, a real host or tool denial, a failed install, an unavailable required resource, or a missing required conversion-semantics decision.",
         "The generated client constructs the model, datamodule/data loaders, and trainer once before the flare round loop rather than inside it; no separate client-side loss object is required when the source defines loss inside LightningModule methods.",
         "The agent preserves the source accelerator/devices selection and does not shortcut GPU training to CPU or add a hard GPU requirement, validating on CPU or a reduced device count only as a reported limitation.",
-        "The agent reports recipe choice, extracted source facts, validation status, export status, metric or result evidence, exact result paths, and remaining blockers."
+        "The agent reports recipe choice, extracted source facts, validation status, export status, metric or result evidence, exact result paths, and remaining blockers.",
+        "For a request that asks for local simulation but not an exported artifact, the agent selects python job.py as the sole final full-run path, does not also run an exported-folder simulation after it succeeds, and keeps cleanup separate from execution."
       ],
       "nvflare": {
         "expected_skill": "nvflare-convert-lightning",
@@ -139,6 +141,14 @@
           {
             "id": "local-validation",
             "description": "reads and audits applicable requirements, presents a redacted combined install plan, obtains explicit user confirmation before installing missing dependencies into the host-provided environment, and only then runs import-level preflight, recipe-construction probes, export, simulation, or python job.py; an explicitly requested unattended run still logs the plan and the host permission system remains an additional gate"
+          },
+          {
+            "id": "applicable-dependencies-only",
+            "description": "derives dependency applicability from the selected execution path and skips installation or import probes for download-only dependencies when required data already exists and static inspection shows that no download helper or its imports will be reached"
+          },
+          {
+            "id": "single-final-validation-path",
+            "description": "selects exactly one final full-run target before execution: python job.py for local simulation without an export claim, or export plus the simulator CLI for an explicitly requested exported artifact"
           },
           {
             "id": "dependency-install-preview-and-confirmation",
@@ -221,6 +231,18 @@
           {
             "id": "no-preemptive-reference-or-examples-dependency",
             "description": "for an explicit FedAvg conversion with a writable source root and normal metric artifacts, does not preemptively load the full conversion-workflow, recipe-catalog, runtime-output, or metric-fallback references; loads only the Lightning transformation, model-exchange, dependency-if-needed, and validation guidance required by the current phase, and does not depend on NVFLARE repository examples"
+          },
+          {
+            "id": "no-duplicate-full-validation",
+            "description": "does not run both python job.py and an exported-folder simulator after the first selected full validation path succeeds"
+          },
+          {
+            "id": "no-compound-cleanup-and-execution",
+            "description": "does not combine recursive cleanup, export, and simulation in one command; each is a separate tool call"
+          },
+          {
+            "id": "no-unused-download-dependency-probe",
+            "description": "does not import-probe or install a download-only dependency when the required data artifacts already exist and static inspection shows that the selected run path will not reach the downloader or its imports"
           },
           {
             "id": "no-nested-replacement-model-for-relevant-source",

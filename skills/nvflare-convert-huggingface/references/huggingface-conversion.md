@@ -161,10 +161,10 @@ import/preflight checks.
 
 ## Data And Model Selection
 
-Follow the "Site Data Partitioning" rule in
-`../../nvflare-shared/references/conversion-common.md`. Pass data roots through
-client arguments or per-site configuration; never copy private site data into
-the job.
+Follow `../../nvflare-shared/references/site-data-and-paths.md` when generated
+site partitions or nontrivial source-path resolution are needed. Pass data roots
+through client arguments or per-site configuration; never copy private site
+data into the job.
 
 Prefer preserving source metric names in the client metrics output. If the
 generated evaluation call emits `accuracy`, configure `key_metric="accuracy"`.

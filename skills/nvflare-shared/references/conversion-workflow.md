@@ -414,68 +414,14 @@ receive/send loops, recipe construction, or generated helper definitions.
 
 ## Site Data Partitioning
 
-When converting single-node training code to multiple simulated or federated
-sites, preserve any existing user-provided site split. If no split exists,
-create deterministic site-local training partitions by default unless the user
-explicitly asks all sites to train on shared data. Prefer a seeded shuffle and
-use a stratified split when classification labels are available. Do not use a
-simple stride or contiguous split as the default because it can create biased
-site partitions from ordered data.
-
-For pandas `DataFrame` inputs, split positional row indices first, then build
-each site frame with `df.iloc[positions]` or equivalent. Do not apply generic
-array chunking directly to the `DataFrame` object; library versions can return
-chunks that no longer behave like data frames and can break concatenation,
-validation, or metric checks.
-
-Make every array passed to an in-place shuffle writable. For label-stratified
-partitioning, derive positional indices from the observed label column and copy
-them before shuffling, for example:
-
-```python
-positions = np.flatnonzero(frame[label_column].to_numpy() == label).copy()
-rng.shuffle(positions)
-site_frame = frame.iloc[positions]
-```
-
-Do not shuffle a possibly read-only array returned by `Index.to_numpy()`, and do
-not pass positional indices to `DataFrame.loc`.
-
-Report the split policy, seed, site count, and any reason stratification was
-not used. Do not copy private site data into generated artifacts unless the user
-explicitly requests it.
+Load `site-data-and-paths.md` for the generated-partition contract. Do not
+reconstruct that focused contract from this broad workflow reference.
 
 ## Data Location
 
-Pass the data location into the generated client as a configurable value — a
-`train_args` argument (or `per_site_config` when sites need different paths) —
-never a path hardcoded inside `client.py`. Keep it site-overridable so the
-conversion ports to real multi-site deployment, where each site's data lives at
-a different location. Point at the original dataset, not at a copy inside the
-NVFLARE run workspace: that workspace path is run-specific and disappears
-between runs.
-
-When the source uses a relative data path, resolve it in `job.py` against the
-original source-project root before recipe construction, then pass that resolved
-value through `train_args` or `per_site_config`; the client must consume the
-configured value unchanged. Do not reinterpret it relative to packaged
-`client.py`, the export directory, or the simulator process working directory.
-Validate relative-path conversions from a fresh caller working directory so the
-source data remains reachable after packaging.
-
-When `per_site_config` supplies `train_args`, each site value is a complete
-replacement for recipe-level `train_args`, not a fragment to merge with it.
-Compose shared options and the site's data path into every override, then follow
-the canonical validation in `pytorch-family-recipe-construction.md` before a
-full simulation.
-
-An absolute path is acceptable only as the runtime-supplied value or default of
-that configurable argument — for example, in single-machine simulation every
-site can resolve to the same default. A hardcoded absolute path baked into the
-generated code, or a path that points into the run workspace, is a
-conversion-quality defect. Preserve the user's data paths, but expose them as
-this configurable argument rather than embedding them, and report that real
-deployment requires each site to set its own data location.
+Load `site-data-and-paths.md` for configurable source-path and per-site argument
+handling. Do not reconstruct that focused contract from this broad workflow
+reference.
 
 ## Execution Environment And Local Validation
 

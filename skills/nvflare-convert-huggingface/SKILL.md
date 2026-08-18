@@ -77,10 +77,11 @@ user's purpose is to understand data distribution; handle conversion later as a 
 5. Convert with `references/huggingface-conversion.md` and adapt
    `assets/client_with_eval.py` rather than drafting a new round loop. Preserve
    model, tokenizer/processor, datasets, collator, Trainer arguments,
-   callbacks, and metrics. Partition site data per the "Site Data Partitioning"
-   rule in `../nvflare-shared/references/conversion-common.md`. Import the Client API as
-   `import nvflare.client.hf as flare`, so `flare.init()`, `flare.patch()`, and
-   `flare.is_running()` resolve to `nvflare.client.hf`. Keep
+   callbacks, and metrics. Load
+   `../nvflare-shared/references/site-data-and-paths.md` only when generated site
+   partitions or nontrivial source-path resolution are needed. Import the Client
+   API as `import nvflare.client.hf as flare`, so `flare.init()`,
+   `flare.patch()`, and `flare.is_running()` resolve to `nvflare.client.hf`. Keep
    `flare.patch(trainer)` simple with inferred `params_scope="auto"` and encode
    one per-round budget in
    Trainer arguments: requested steps use `max_steps`, requested epochs use
@@ -184,6 +185,8 @@ state/DDP, broad workflow, dependency, or reporting references. The standard
 FedAvg path loads, in order:
 `../nvflare-shared/references/conversion-common.md`,
 `references/huggingface-detection.md`,
+`../nvflare-shared/references/site-data-and-paths.md` only when generated
+splits or nontrivial source-path resolution are needed,
 `../nvflare-shared/references/pytorch-family-recipe-construction.md`,
 `references/huggingface-conversion.md`,
 `../nvflare-shared/references/pytorch-model-exchange.md`,

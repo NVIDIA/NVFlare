@@ -44,9 +44,11 @@ distribution; handle conversion later as a separate request.
 
 1. Load `../nvflare-shared/references/conversion-common.md` and apply it for the
    whole conversion; this SKILL.md states only the framework-specific deltas.
-   Load `../nvflare-shared/references/conversion-workflow.md` only for a non-standard
-   case that needs its detailed rerun, data-location, authorization, or
-   missing-semantics guidance.
+   Load `../nvflare-shared/references/conversion-workflow.md` only for a
+   non-standard case that needs its detailed rerun, authorization, or
+   missing-semantics guidance. Standard site partitioning and path resolution
+   use `../nvflare-shared/references/site-data-and-paths.md`, not the broad
+   workflow reference.
 2. Inspect before editing with `nvflare agent inspect source <path> --format json`
    plus direct reading. Fact extraction is static; do not import or execute
    user training modules to discover fields. Extract: training entrypoint,
@@ -79,8 +81,9 @@ distribution; handle conversion later as a separate request.
    send an `FLModel` with updated `params`, `metrics`, and the actual completed
    local optimizer-step count in `NUM_STEPS_CURRENT_ROUND`. Adapt the user's
    evaluation code into the packaged evaluation template; if evaluation is
-   required but missing, ask or fail closed. Partition site data per the "Site
-   Data Partitioning" rule in `../nvflare-shared/references/conversion-common.md`.
+   required but missing, ask or fail closed. Load
+   `../nvflare-shared/references/site-data-and-paths.md` only when generated site
+   partitions or nontrivial source-path resolution are needed.
 6. Add or update `job.py` under the shared "Recipe Model Config" policy,
    requested `aggregator=` wiring, and the metric, tensor-transport, server
    offload, and execution settings derived from the shared PyTorch-family
@@ -142,6 +145,8 @@ their phase needs them. Load other detailed references only for exceptions:
 
 - `../nvflare-shared/references/conversion-workflow.md` for the full conversion
   contract when a case is non-standard;
+- `../nvflare-shared/references/site-data-and-paths.md` only for generated site
+  partitions or nontrivial source-path resolution;
 - `../nvflare-shared/references/pytorch-family-recipe-selection.md` only for
   ambiguous or non-FedAvg algorithms, and `references/recipe-selection.md` only
   for non-FedAvg or execution-mode construction details not supplied by

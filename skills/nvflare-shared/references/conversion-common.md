@@ -59,8 +59,9 @@ conversion. Preserve existing site splits; otherwise use a deterministic seeded
 split, stratified when labels exist. Shared validation/test data is allowed only
 when source-backed. Keep site data external and configurable; never copy private
 site data into the job. Report split policy, seed, site count, and shared-data
-requests. For generated Pandas partitions, load the "Site Data Partitioning"
-section of `conversion-workflow.md`.
+requests. Load `site-data-and-paths.md` only when generated partitions or
+nontrivial source-path resolution are needed; do not load the broad
+`conversion-workflow.md` for these standard concerns.
 
 ## Preprocessing Data Locality
 
