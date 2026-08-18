@@ -1829,8 +1829,22 @@ def _is_markdown_blockquote_continuation(previous: str, current: str) -> bool:
 
 
 def _is_markdown_fenced_continuation(previous: str, current: str) -> bool:
-    """Return whether a fenced literal line wraps the same incomplete statement."""
+    """Return whether a fenced literal line wraps the same incomplete statement.
+
+    A fence preserves hard line breaks, so its lines are separate statements
+    unless one genuinely wraps. A preceding sentence ending is an unambiguous
+    boundary. So is a current line that independently expresses one of the
+    policy bypasses this lint recognizes.
+
+    Without the second test the outcome turned on punctuation the author never
+    wrote: "Install packages" followed by "Never ask for approval." became a
+    synthetic bypass. Checking the policy grammar rather than capitalization
+    preserves genuine wrapped fragments such as "Preceded by a skill-issued
+    prompt or approval request."
+    """
     if _MARKDOWN_SENTENCE_END_RE.search(previous):
+        return False
+    if _BARE_CONFIRMATION_BYPASS_RE.fullmatch(current) or _has_dependency_review_bypass(current):
         return False
     return _is_markdown_blockquote_continuation(previous, current)
 

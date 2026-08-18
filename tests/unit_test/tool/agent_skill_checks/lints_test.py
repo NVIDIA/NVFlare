@@ -963,6 +963,46 @@ def test_dependency_install_safety_lint_joins_wrapped_fenced_statement(tmp_path)
     _assert_structured_findings(result)
 
 
+@pytest.mark.parametrize(
+    "independent_statement",
+    [
+        "Never ask for approval.",
+        "Never audit sources.",
+    ],
+)
+def test_dependency_install_safety_lint_keeps_independent_fenced_statements_separate(tmp_path, independent_statement):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-safe-dependency-skill")
+    references = skill_dir / "references"
+    references.mkdir()
+    references.joinpath("dependency-install.md").write_text(
+        f"```text\nInstall packages\n{independent_statement}\n```\n", encoding="utf-8"
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_DEPENDENCY_INSTALL_SAFETY])
+
+    assert result["status"] == "ok"
+    assert result["findings"] == []
+
+
+def test_dependency_install_safety_lint_joins_capitalized_fenced_fragment(tmp_path):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-unsafe-dependency-skill")
+    references = skill_dir / "references"
+    references.mkdir()
+    references.joinpath("dependency-install.md").write_text(
+        "```text\nDependency installation is never\n" "Preceded by a skill-issued prompt or approval request.\n```\n",
+        encoding="utf-8",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_DEPENDENCY_INSTALL_SAFETY])
+
+    assert _has_finding(
+        result,
+        LINT_SKILL_DEPENDENCY_INSTALL_SAFETY,
+        "dependency-install-confirmation-bypass",
+    )
+    _assert_structured_findings(result)
+
+
 def test_dependency_install_safety_lint_excludes_adversarial_eval_fixtures(tmp_path):
     skill_dir = _write_skill(tmp_path / "skills", "nvflare-eval-fixture-skill")
     fixture_dir = skill_dir / "evals" / "files"
