@@ -68,15 +68,19 @@ class LitNet(LightningModule):
         self.log("train_acc", self.train_acc, on_step=True, on_epoch=False)
         return loss
 
-    def evaluate(self, batch, stage=None):
+    def evaluate(self, batch, evaluation_mode=None):
         x, labels = batch
         outputs = self(x)
         loss = criterion(outputs, labels)
         self.valid_acc(outputs, labels)
 
-        if stage:
-            self.log(f"{stage}_loss", loss)
-            self.log(f"{stage}_acc", self.valid_acc, on_step=True, on_epoch=True)
+        if evaluation_mode:
+            self.log(f"{evaluation_mode}_loss", loss)
+            if evaluation_mode == "val":
+                # Match the recipes' default key_metric for federated model selection.
+                self.log("accuracy", self.valid_acc, on_step=False, on_epoch=True)
+            else:
+                self.log(f"{evaluation_mode}_acc", self.valid_acc, on_step=True, on_epoch=True)
         return outputs
 
     def validation_step(self, batch, batch_idx):
