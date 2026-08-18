@@ -1844,7 +1844,7 @@ def _is_markdown_fenced_continuation(previous: str, current: str) -> bool:
     """
     if _MARKDOWN_SENTENCE_END_RE.search(previous):
         return False
-    if _BARE_CONFIRMATION_BYPASS_RE.fullmatch(current) or _has_dependency_review_bypass(current):
+    if _is_bare_confirmation_bypass(current) or _has_dependency_review_bypass(current):
         return False
     return _is_markdown_blockquote_continuation(previous, current)
 

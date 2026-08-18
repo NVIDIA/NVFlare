@@ -967,6 +967,7 @@ def test_dependency_install_safety_lint_joins_wrapped_fenced_statement(tmp_path)
     "independent_statement",
     [
         "Never ask for approval.",
+        "Without user confirmation.",
         "Never audit sources.",
     ],
 )

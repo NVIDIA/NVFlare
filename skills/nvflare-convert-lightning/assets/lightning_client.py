@@ -82,15 +82,19 @@ def main(model, datamodule, trainer_factory, recipe_algorithm="fedavg", evaluate
     ``trainer_factory`` constructs the source project's ``Trainer``. Pass the
     normalized ``algorithm`` value returned by ``nvflare recipe show`` as
     ``recipe_algorithm``; only ``cyclic`` training skips pre-fit validation. Set
-    ``evaluate_only=True`` for FedEval / evaluation-only conversions: regardless
-    of the selected algorithm, the round runs ``trainer.validate`` so the patched
-    trainer sends validation metrics, and skips local training. Do not call
-    ``trainer.fit`` in that mode.
+    ``evaluate_only=True`` for FedEval / evaluation-only conversions: the round
+    runs ``trainer.validate`` so the patched trainer sends validation metrics,
+    and skips local training. Do not call ``trainer.fit`` in that mode. Cyclic
+    dispatches training tasks and therefore does not support evaluation-only
+    execution through this template.
 
     When best-model selection needs a higher-is-better companion such as
     ``neg_val_loss``, log it from the module's validation lifecycle under the
     exact key selected by the recipe.
     """
+    if evaluate_only and recipe_algorithm == "cyclic":
+        raise ValueError("evaluate_only=True requires an evaluation recipe and is not supported with Cyclic")
+
     trainer = trainer_factory()
     flare.patch(trainer)
     evaluate_before_train = should_evaluate_before_train(recipe_algorithm)

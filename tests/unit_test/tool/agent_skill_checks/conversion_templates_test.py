@@ -983,8 +983,7 @@ def test_lightning_eval_template_validates_metrics_without_metadata_override():
     assert not hasattr(model, "__fl_meta__")
 
 
-@pytest.mark.parametrize("recipe_algorithm", ["fedeval", "cyclic"])
-def test_lightning_template_eval_only_mode_skips_training(recipe_algorithm):
+def test_lightning_template_eval_only_mode_skips_training():
     # FedEval / evaluation-only: main(evaluate_only=True) must validate but never
     # call trainer.fit, so a converted eval-only job does not train.
     module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
@@ -1021,7 +1020,7 @@ def test_lightning_template_eval_only_mode_skips_training(recipe_algorithm):
             model=_FakeModel(),
             datamodule=object(),
             trainer_factory=lambda: fake,
-            recipe_algorithm=recipe_algorithm,
+            recipe_algorithm="fedeval",
             evaluate_only=True,
         )
     finally:
@@ -1029,6 +1028,19 @@ def test_lightning_template_eval_only_mode_skips_training(recipe_algorithm):
 
     assert "validate" in calls
     assert "fit" not in calls
+
+
+def test_lightning_template_rejects_eval_only_cyclic():
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+
+    with pytest.raises(ValueError, match="not supported with Cyclic"):
+        module.main(
+            model=object(),
+            datamodule=object(),
+            trainer_factory=lambda: pytest.fail("trainer must not be created"),
+            recipe_algorithm="cyclic",
+            evaluate_only=True,
+        )
 
 
 @pytest.mark.parametrize(
