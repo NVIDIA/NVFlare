@@ -194,10 +194,11 @@ _READ_ONLY_DEPENDENCY_VERB_PATTERN = (
 # repeated regex group.
 _ACTION_INTRODUCING_PREPOSITIONS = frozenset({"by", "via", "through", "with", "for", "during", "upon", "when"})
 _POLICY_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_'’-]*")
-# Words that end in ``ing`` but are unambiguously nouns in an agent phrase.
-# Keep this allowlist deliberately narrow: an unknown gerund such as "fetching"
-# must remain action-introducing even in "by a fetching script".
-_NON_ACTION_GERUND_NOUNS = frozenset({"engineering"})
+# Words that end in ``ing`` but can be nouns only when followed by a recognized
+# agent noun. Keep this mapping deliberately narrow: an unknown gerund such as
+# "fetching" must remain action-introducing even in "by a fetching script",
+# and "engineering packages" must not inherit the "engineering team" exemption.
+_NON_ACTION_GERUND_AGENT_NOUNS = {"engineering": frozenset({"team"})}
 # An object word may not be a coordinator (which could attach a second action) or
 # a recognized mutating verb, and may not be ``to``, which introduces an
 # infinitive: "inspect package metadata to add packages".
@@ -2012,9 +2013,15 @@ def _is_read_only_passive_phrase(phrase: str) -> bool:
 def _tail_introduces_action_gerund(tail: str) -> bool:
     """Return whether a read-only phrase tail introduces an unknown gerund action."""
     after_preposition = False
+    expected_agent_nouns = None
     for word_match in _POLICY_WORD_RE.finditer(tail):
         word = word_match.group(0)
         normalized = word.lower()
+        if expected_agent_nouns is not None:
+            if normalized not in expected_agent_nouns:
+                return True
+            expected_agent_nouns = None
+            continue
         if normalized in _ACTION_INTRODUCING_PREPOSITIONS:
             after_preposition = True
             continue
@@ -2022,10 +2029,11 @@ def _tail_introduces_action_gerund(tail: str) -> bool:
             continue
         if re.fullmatch(_READ_ONLY_DEPENDENCY_VERB_PATTERN, word, re.IGNORECASE):
             continue
-        if normalized in _NON_ACTION_GERUND_NOUNS:
+        if normalized in _NON_ACTION_GERUND_AGENT_NOUNS:
+            expected_agent_nouns = _NON_ACTION_GERUND_AGENT_NOUNS[normalized]
             continue
         return True
-    return False
+    return expected_agent_nouns is not None
 
 
 def _is_negated_without_clause(statement: str, match: re.Match) -> bool:
