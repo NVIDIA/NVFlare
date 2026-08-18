@@ -640,11 +640,10 @@ def test_run_v1_lints_reference_text_scan_ignores_symlink_loop(tmp_path):
             "dependency-install-confirmation-bypass",
         ),
         # "checkout"/"check out" is dependency acquisition, not a read of
-        # "check", in either the solid, phrasal, or particle-final form.
+        # "check", in the solid, phrasal, and particle-final forms alike.
         ("Checkout packages without user confirmation.", "dependency-install-confirmation-bypass"),
         ("Check out packages without user confirmation.", "dependency-install-confirmation-bypass"),
         ("Checking packages out without user confirmation.", "dependency-install-confirmation-bypass"),
-        ("Check declared requirements without user confirmation.", "dependency-install-confirmation-bypass"),
     ],
 )
 def test_dependency_install_safety_lint_rejects_review_or_confirmation_bypass(tmp_path, unsafe_guidance, expected_code):
@@ -749,6 +748,12 @@ def test_dependency_install_safety_lint_accepts_negated_without_clause(tmp_path,
         # negation directly against the "without" phrase.
         "Install dependencies, but never without user confirmation.",
         "Install packages, but not without reviewing package sources.",
+        # A bare "check" reads; only the "check out" particle acquires. Other
+        # verbs keep their phrasal read-only forms.
+        "Check declared requirements without user confirmation.",
+        "Check out-of-date packages without user confirmation.",
+        "Print out package metadata without user confirmation.",
+        "List out requirements without user confirmation.",
     ],
 )
 def test_dependency_install_safety_lint_accepts_read_only_inspection_without_install_consent(tmp_path, safe_guidance):

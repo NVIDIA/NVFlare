@@ -178,25 +178,28 @@ _DEPENDENCY_NOUN_PATTERN = r"(?:dependenc\w*|packages?|requirements?)"
 # the confirmation check; the separate "without reviewing sources" matcher is
 # unaffected.
 # Inflections are spelled out rather than suffixed with ``\w*``: a greedy stem
-# swallows a different verb whose prefix happens to match, and "checkout packages"
-# is dependency acquisition, not a read of "check". ``check`` is left out of the
-# vocabulary entirely for the same reason -- "check out packages" acquires them,
-# so the verb carries an acquisition sense the other reads do not.
+# swallows a different verb whose prefix happens to match, so "checkout packages"
+# is not read as an inflection of "check".
 _READ_ONLY_DEPENDENCY_VERB_PATTERN = (
     r"(?:inspects?|inspect(?:ed|ing|ion)|reads?|reading|lists?|list(?:ed|ing)"
     r"|views?|view(?:ed|ing)|shows?|show(?:ed|ing)|examine[sd]?|examin(?:ing|ation)"
     r"|audits?|audit(?:ed|ing)|reviews?|review(?:ed|ing)|quer(?:y|ies|ied|ying)"
-    r"|enumerate[sd]?|enumerating|prints?|print(?:ed|ing)|displays?|display(?:ed|ing))"
+    r"|enumerate[sd]?|enumerating|prints?|print(?:ed|ing)|displays?|display(?:ed|ing)"
+    r"|checks?|check(?:ed|ing))"
 )
-# An object word may not be a coordinator (which could attach a second action), a
-# recognized mutating verb, ``to`` (which introduces an infinitive: "inspect
-# package metadata to add packages"), or ``out`` (the particle that turns a read
-# into a phrasal acquisition, in either position: "check out packages",
-# "checking packages out"), so the phrase cannot silently span two actions.
+# An object word may not be a coordinator (which could attach a second action) or
+# a recognized mutating verb, and may not be ``to``, which introduces an
+# infinitive: "inspect package metadata to add packages".
 _READ_ONLY_OBJECT_WORD_PATTERN = (
-    r"(?!(?:and|or|nor|then|plus|also|while|before|after|but|to|out)\b)"
+    r"(?!(?:and|or|nor|then|plus|also|while|before|after|but|to)\b)"
     rf"(?!{_DEPENDENCY_ACTION_PATTERN}\b)[A-Za-z0-9_.'’-]+"
 )
+# "check out" acquires a dependency where the bare "check" only reads one. The
+# particle is disqualifying for ``check`` alone -- "print out" and "list out"
+# stay read-only -- and in either position: "check out packages", "checking
+# packages out". ``out`` must be a standalone token so "check out-of-date
+# packages" remains a read.
+_CHECK_OUT_ACQUISITION_RE = re.compile(r"\s*check(?:s|ed|ing)?\b(?:\s+\S+)*?\s+out(?:\s|$)", re.IGNORECASE)
 _READ_ONLY_ACTION_PHRASE_RE = re.compile(
     rf"{_READ_ONLY_DEPENDENCY_VERB_PATTERN}\b(?:\s+{_READ_ONLY_OBJECT_WORD_PATTERN})*",
     re.IGNORECASE,
@@ -1921,12 +1924,23 @@ def _is_read_only_dependency_action(statement: str, match: re.Match) -> bool:
     leading = statement[clause_start : match.start("without_clause")].strip(" \t,;")
     trailing = statement[match.end("without_clause") : clause_end].strip(" \t,;.!?")
 
-    if _READ_ONLY_ACTION_PHRASE_RE.fullmatch(leading):
+    if _is_read_only_phrase(leading):
         # Nothing may act after the "without" phrase either.
         return not _CLAUSE_COORDINATOR_RE.search(trailing) and not _DEPENDENCY_ACTION_RE.search(trailing)
     if not leading:
-        return bool(_READ_ONLY_ACTION_PHRASE_RE.fullmatch(trailing))
+        return _is_read_only_phrase(trailing)
     return False
+
+
+def _is_read_only_phrase(phrase: str) -> bool:
+    """Return whether ``phrase`` is a whole read-only action phrase.
+
+    "check out packages" is dependency acquisition rather than a read, so the
+    phrasal form is rejected even though its verb is otherwise read-only.
+    """
+    if not _READ_ONLY_ACTION_PHRASE_RE.fullmatch(phrase):
+        return False
+    return _CHECK_OUT_ACQUISITION_RE.match(phrase) is None
 
 
 def _is_negated_without_clause(statement: str, match: re.Match) -> bool:
