@@ -465,11 +465,32 @@ def test_run_v1_lints_reference_text_scan_ignores_symlink_loop(tmp_path):
             "dependency-install-confirmation-bypass",
         ),
         (
+            "Do not ask for approval. Do not ask whether to install dependencies before reviewing their sources, "
+            "and after the review obtain explicit user approval.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
             "Never use PyPI, but install dependencies without user confirmation.",
             "dependency-install-confirmation-bypass",
         ),
         (
             "Do not use PyPI mirrors, but install dependencies without reviewing package sources.",
+            "dependency-install-review-bypass",
+        ),
+        (
+            "Never use PyPI, and install dependencies without user confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Do not use PyPI mirrors, and install dependencies without reviewing package sources.",
+            "dependency-install-review-bypass",
+        ),
+        (
+            "Never use PyPI, or install dependencies without user confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Do not use PyPI mirrors, or install dependencies without reviewing package sources.",
             "dependency-install-review-bypass",
         ),
         (
@@ -580,6 +601,8 @@ def test_dependency_install_safety_lint_accepts_negated_skip_review(tmp_path, sa
         "Without user confirmation, never install dependencies.",
         "Without reviewing package sources, never install dependencies.",
         "Continue without user confirmation; do not install dependencies.",
+        "Downloading packages is prohibited. Never ask for approval.",
+        "Package usage is prohibited. Never ask for confirmation.",
     ],
 )
 def test_dependency_install_safety_lint_accepts_negated_without_clause(tmp_path, safe_guidance):

@@ -166,6 +166,7 @@ _KNOWN_AGENT_FLAGS = {
 }
 
 _DEPENDENCY_INSTALL_TERMS_RE = re.compile(r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b", re.IGNORECASE)
+_DEPENDENCY_ACTION_PATTERN = r"(?:install\w*|download\w*|us(?:e|es|ed|ing|age)|execut\w*)"
 _DEPENDENCY_CONFIRMATION_BYPASS_RES = (
     re.compile(
         r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,160}"
@@ -204,7 +205,8 @@ _WITHOUT_CLAUSE_PROHIBITION_TAIL_RE = re.compile(
     re.IGNORECASE,
 )
 _WITHOUT_CLAUSE_BOUNDARY_RE = re.compile(
-    r",\s*(?:(?:and\s+)?then|but|yet|however|although|though|subsequently|afterwards?|next)\b"
+    r",\s*(?:(?:and\s+)?then|but|yet|however|although|though|subsequently|afterwards?|next|"
+    r"(?P<coordinator>and|or))\b"
     r"|\s+(?:but|however|although|though)\s+",
     re.IGNORECASE,
 )
@@ -282,17 +284,20 @@ _BARE_CONFIRMATION_BYPASS_CLAUSE_RE = re.compile(
 _NEGATED_DEPENDENCY_ACTION_RE = re.compile(
     r"\b(?:never|do\s+not|don't|must\s+not|should\s+not|cannot|can\s+not|won't|will\s+not|shall\s+not)\b"
     r"\s+(?:(?:preemptively|ever|automatically|directly)\s+)?"
-    r"(?:install\w*|download\w*|use)\b[^.!?;]{0,100}"
+    rf"{_DEPENDENCY_ACTION_PATTERN}\b[^.!?;]{{0,100}}"
     r"\b(?:dependenc\w*|packages?|requirements?)\b",
     re.IGNORECASE,
 )
 _PROHIBITED_DEPENDENCY_ACTION_RE = re.compile(
-    r"\b(?:dependenc\w*|packages?|requirements?)[^.!?;]{0,80}\b(?:install\w*|use)\b[^.!?;]{0,80}"
+    rf"\b(?:dependenc\w*|packages?|requirements?)[^.!?;]{{0,80}}\b{_DEPENDENCY_ACTION_PATTERN}\b[^.!?;]{{0,80}}"
     r"\b(?:prohibited|forbidden|disallowed|banned)\b"
-    r"|\b(?:install\w*|use)\b[^.!?;]{0,80}\b(?:dependenc\w*|packages?|requirements?)\b[^.!?;]{0,80}"
+    rf"|\b{_DEPENDENCY_ACTION_PATTERN}\b[^.!?;]{{0,80}}\b(?:dependenc\w*|packages?|requirements?)\b"
+    r"[^.!?;]{0,80}"
     r"\b(?:prohibited|forbidden|disallowed|banned)\b",
     re.IGNORECASE,
 )
+_DEPENDENCY_ACTION_AT_END_RE = re.compile(rf"\b{_DEPENDENCY_ACTION_PATTERN}\s*$", re.IGNORECASE)
+_DEPENDENCY_ACTION_AT_START_RE = re.compile(rf"^\s*{_DEPENDENCY_ACTION_PATTERN}\b", re.IGNORECASE)
 _MARKDOWN_ATX_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}(?:\s+|$)")
 _MARKDOWN_BLOCKQUOTE_RE = re.compile(r"^\s{0,3}(?:>\s*)+")
 _MARKDOWN_BLOCKQUOTE_CONTINUATION_END_RE = re.compile(
@@ -1787,14 +1792,34 @@ def _clause_at(statement: str, index: int) -> str:
     the sentence (a different clause) cannot excuse it, while a negation that
     genuinely governs that same clause still can.
     """
+    separators = [
+        separator
+        for separator in _WITHOUT_CLAUSE_BOUNDARY_RE.finditer(statement)
+        if not _is_dependency_action_series_boundary(statement, separator)
+    ]
     start = 0
-    for separator in _WITHOUT_CLAUSE_BOUNDARY_RE.finditer(statement):
+    for separator in separators:
         if separator.start() >= index:
             break
         start = separator.end()
-    end_match = _WITHOUT_CLAUSE_BOUNDARY_RE.search(statement, pos=index)
+    end_match = next((separator for separator in separators if separator.start() >= index), None)
     end = end_match.start() if end_match else len(statement)
     return statement[start:end]
+
+
+def _is_dependency_action_series_boundary(statement: str, separator: re.Match) -> bool:
+    """Return whether ``, and/or`` joins verbs sharing one negation.
+
+    Coordinators normally start a new clause, but the final coordinator in a
+    list such as "Do not download, install, or use packages" only joins verbs.
+    Keeping that list together lets the leading negation govern every action.
+    """
+    if not separator.group("coordinator"):
+        return False
+    return bool(
+        _DEPENDENCY_ACTION_AT_END_RE.search(statement[: separator.start()])
+        and _DEPENDENCY_ACTION_AT_START_RE.search(statement[separator.end() :])
+    )
 
 
 def _is_negated_without_clause(clause: str) -> bool:
@@ -1863,6 +1888,13 @@ def _has_nearby_audit_then_confirm(statements: list[str], index: int) -> bool:
     confirmation and be exempted by proximity alone, even though it is not actually
     part of that sequence.
     """
+    flagged_statement = statements[index]
+    if not (
+        _DEPENDENCY_AUDIT_FIRST_RE.search(flagged_statement)
+        or _has_dependency_policy_bypass(flagged_statement, _DEPENDENCY_POST_AUDIT_CONFIRMATION_RES)
+    ):
+        return False
+
     candidate_spans = [(index, index)]
     if index > 0:
         candidate_spans.append((index - 1, index))
