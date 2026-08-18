@@ -179,20 +179,22 @@ _DEPENDENCY_NOUN_PATTERN = r"(?:dependenc\w*|packages?|requirements?)"
 # unaffected.
 # Inflections are spelled out rather than suffixed with ``\w*``: a greedy stem
 # swallows a different verb whose prefix happens to match, and "checkout packages"
-# is dependency acquisition, not a read of "check".
+# is dependency acquisition, not a read of "check". ``check`` is left out of the
+# vocabulary entirely for the same reason -- "check out packages" acquires them,
+# so the verb carries an acquisition sense the other reads do not.
 _READ_ONLY_DEPENDENCY_VERB_PATTERN = (
     r"(?:inspects?|inspect(?:ed|ing|ion)|reads?|reading|lists?|list(?:ed|ing)"
     r"|views?|view(?:ed|ing)|shows?|show(?:ed|ing)|examine[sd]?|examin(?:ing|ation)"
     r"|audits?|audit(?:ed|ing)|reviews?|review(?:ed|ing)|quer(?:y|ies|ied|ying)"
-    r"|enumerate[sd]?|enumerating|prints?|print(?:ed|ing)|displays?|display(?:ed|ing)"
-    r"|checks?|check(?:ed|ing))"
+    r"|enumerate[sd]?|enumerating|prints?|print(?:ed|ing)|displays?|display(?:ed|ing))"
 )
-# An object word may not be a coordinator (which could attach a second action),
-# a recognized mutating verb, or ``to`` (which introduces an infinitive: "inspect
-# package metadata to add packages"), so the phrase cannot silently span two
-# actions.
+# An object word may not be a coordinator (which could attach a second action), a
+# recognized mutating verb, ``to`` (which introduces an infinitive: "inspect
+# package metadata to add packages"), or ``out`` (the particle that turns a read
+# into a phrasal acquisition, in either position: "check out packages",
+# "checking packages out"), so the phrase cannot silently span two actions.
 _READ_ONLY_OBJECT_WORD_PATTERN = (
-    r"(?!(?:and|or|nor|then|plus|also|while|before|after|but|to)\b)"
+    r"(?!(?:and|or|nor|then|plus|also|while|before|after|but|to|out)\b)"
     rf"(?!{_DEPENDENCY_ACTION_PATTERN}\b)[A-Za-z0-9_.'’-]+"
 )
 _READ_ONLY_ACTION_PHRASE_RE = re.compile(

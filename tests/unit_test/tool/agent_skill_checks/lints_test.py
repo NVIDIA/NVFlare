@@ -639,8 +639,12 @@ def test_run_v1_lints_reference_text_scan_ignores_symlink_loop(tmp_path):
             "Audit dependency sources to fetch packages without user consent.",
             "dependency-install-confirmation-bypass",
         ),
-        # "checkout" is dependency acquisition, not an inflection of "check".
+        # "checkout"/"check out" is dependency acquisition, not a read of
+        # "check", in either the solid, phrasal, or particle-final form.
         ("Checkout packages without user confirmation.", "dependency-install-confirmation-bypass"),
+        ("Check out packages without user confirmation.", "dependency-install-confirmation-bypass"),
+        ("Checking packages out without user confirmation.", "dependency-install-confirmation-bypass"),
+        ("Check declared requirements without user confirmation.", "dependency-install-confirmation-bypass"),
     ],
 )
 def test_dependency_install_safety_lint_rejects_review_or_confirmation_bypass(tmp_path, unsafe_guidance, expected_code):
@@ -745,8 +749,6 @@ def test_dependency_install_safety_lint_accepts_negated_without_clause(tmp_path,
         # negation directly against the "without" phrase.
         "Install dependencies, but never without user confirmation.",
         "Install packages, but not without reviewing package sources.",
-        # Real inflections of the read-only verbs stay exempt.
-        "Check declared requirements without user confirmation.",
     ],
 )
 def test_dependency_install_safety_lint_accepts_read_only_inspection_without_install_consent(tmp_path, safe_guidance):
