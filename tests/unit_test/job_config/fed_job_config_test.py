@@ -196,7 +196,7 @@ class TestFedJobConfig:
 
         assert (tmp_path / "job" / "meta.json").is_file()
 
-    @pytest.mark.parametrize("job_name", ["", ".", "..", "../job", "nested/job", "/tmp/job"])
+    @pytest.mark.parametrize("job_name", ["", ".", "..", "../job", "nested/job", "/tmp/job", r"..\evil"])
     def test_generate_job_config_rejects_path_bearing_job_name(self, tmp_path, job_name):
         # A meta.json makes the export root look like a replaceable job folder.
         # Before validation, an empty or "." job name caused rmtree(tmp_path).

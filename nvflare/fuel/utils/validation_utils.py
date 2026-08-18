@@ -13,9 +13,16 @@
 # limitations under the License.
 
 import random
+import re
 
 SYMBOL_ALL = "@all"
 SYMBOL_NONE = "@none"
+
+# Canonical job-name grammar, shared with the production submission check in
+# nvflare/apis/utils/format_check.py. Every accepted name is safe for all
+# downstream consumers: a single POSIX directory component, a ZIP archive
+# entry, and simulator command construction.
+JOB_NAME_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
 
 
 class DefaultValuePolicy:
@@ -91,14 +98,16 @@ def check_non_empty_str(name, value):
 
 
 def check_job_name(name, value):
-    """Validate a job name that will be used as one POSIX directory component.
+    """Validate a job name against the canonical job-name grammar.
 
-    NVFlare does not support Windows. Names are therefore evaluated with POSIX
-    path semantics and passed to the filesystem unchanged.
+    fullmatch is required: unlike a ``$``-anchored match, it rejects a
+    trailing newline.
     """
     check_non_empty_str(name, value)
-    if value in (".", "..") or "/" in value:
-        raise ValueError(f"{name} must be a single directory name without path components")
+    if not re.fullmatch(JOB_NAME_PATTERN, value):
+        raise ValueError(
+            f"{name} must start with a letter or digit and may contain only letters, digits, '.', '_', and '-'"
+        )
 
 
 def check_object_type(name, value, obj_type):

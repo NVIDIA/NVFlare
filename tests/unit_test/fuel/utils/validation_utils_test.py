@@ -143,9 +143,7 @@ class TestValidationUtils:
         with pytest.raises(Exception):
             check_non_empty_str(name, num)
 
-    @pytest.mark.parametrize(
-        "value", ["job", "job-name_1", "job name", "job.name", r"nested\job", "C:job", "CON", "job.", "job "]
-    )
+    @pytest.mark.parametrize("value", ["job", "job-name_1", "job.name", "job.previous", "CON", "job.", "0job"])
     def test_check_job_name(self, value):
         check_job_name("name", value)
 
@@ -159,6 +157,18 @@ class TestValidationUtils:
             "../job",
             "nested/job",
             "/tmp/job",
+            r"nested\job",
+            r"..\evil",
+            "job name",
+            "job\tname",
+            " job",
+            "job ",
+            "job\n",
+            "job\x00",
+            "C:job",
+            "-job",
+            ".job",
+            "job$",
         ],
     )
     def test_check_job_name_error(self, value):

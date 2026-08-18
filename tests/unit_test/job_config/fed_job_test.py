@@ -46,6 +46,8 @@ class TestFedJob:
             "../job",
             "nested/job",
             "/tmp/job",
+            r"..\evil",
+            "job name",
         ],
     )
     def test_rejects_invalid_job_name(self, name):

@@ -166,9 +166,9 @@ class FedJobConfig:
         """
         # Revalidate at the filesystem boundary in case this low-level object was
         # constructed directly or job_name was changed after construction.
+        # check_job_name() rejects names starting with ".", so a validated
+        # job name can never collide with BACKUP_ROOT or the staging dirs.
         check_job_name("job_name", self.job_name)
-        if self.job_name == BACKUP_ROOT:
-            raise ValueError(f"job_name must not use the reserved name {BACKUP_ROOT}")
         # Anchor to the entry CWD so a CWD change during the long generation
         # phase cannot redirect the publish/replace operations to a different,
         # unvalidated directory tree.
