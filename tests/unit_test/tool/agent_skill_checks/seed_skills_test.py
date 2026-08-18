@@ -754,6 +754,7 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
     basic_eval = _eval_by_id(eval_data, "huggingface-convert-basic")["nvflare"]
     mandatory_ids = {item["id"] for item in basic_eval["mandatory_behavior"]}
     prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
+    normalized_hf_validation = " ".join(hf_validation.split())
 
     assert "same interpreter selected for installation and validation" in " ".join(dependency_text.split())
     assert "make the inventory command exit zero" in " ".join(dependency_text.split())
@@ -761,11 +762,19 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
     assert "Do not append platform-specific utilities" in " ".join(validation_text.split())
     assert "invoke the selected library's normal cache-aware load or download once" in " ".join(hf_validation.split())
     assert "`snapshot_download(..., local_files_only=True)`" in hf_validation
+    assert "classify checkpoint-loaded versus missing or newly initialized parameters" in normalized_hf_validation
+    assert "proves value determinism only for parameters actually loaded from it" in normalized_hf_validation
+    assert "do not require their independently initialized values to match" in normalized_hf_validation
+    assert "Do not first run an unconditional full-state equality assertion" in normalized_hf_validation
     assert "`<metric-name> = <numeric-value> (<source>)`" in metrics_text
     assert "Naming the metric without its numeric value" in " ".join(metrics_text.split())
     assert "report each observed primary scalar with its metric name, numeric value" in " ".join(hf_skill.split())
     assert {"cache-aware-authorized-model-resolution", "numeric-primary-metric-reporting"} <= mandatory_ids
-    assert {"no-raising-cache-only-model-probe", "no-unguarded-platform-specific-diagnostic"} <= prohibited_ids
+    assert {
+        "no-raising-cache-only-model-probe",
+        "no-unguarded-platform-specific-diagnostic",
+        "no-unconditional-equality-for-newly-initialized-parameters",
+    } <= prohibited_ids
 
 
 def test_huggingface_train_only_model_selection_contract_is_explicit():
@@ -1037,15 +1046,22 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "same importable factory path and with the same local constructor arguments" in normalized_validation
     assert "state-dict key sets, shapes, and dtypes" in normalized_validation
     assert "require exact per-tensor equality or an equivalent stable state hash" in normalized_validation
-    assert "For a genuinely nondeterministic factory" in normalized_validation
-    assert "do not require equality across independent calls" in normalized_validation
+    assert "checkpoint that omits a task head" in normalized_validation
+    assert "missing/newly initialized without a deterministic reset" in normalized_validation
+    assert "Do not first run an unconditional full-state equality assertion" in normalized_validation
     assert "two-process `torchrun` case" in normalized_validation
     assert "generated client's required `rank` argument" in normalized_state
     assert "do not pass it as the FLARE rank" in normalized_state
     basic_mandatory = {item["id"]: item["description"] for item in basic_eval["mandatory_behavior"]}
     ddp_mandatory = {item["id"]: item["description"] for item in ddp_eval["mandatory_behavior"]}
     assert "same importable factory path and arguments" in basic_mandatory["explicit-server-model-config"]
-    assert "exact values or a stable state hash" in basic_mandatory["explicit-server-model-config"]
+    assert (
+        "exact values or a stable state hash for checkpoint-loaded" in basic_mandatory["explicit-server-model-config"]
+    )
+    assert "missing or newly initialized parameters as schema-only" in basic_mandatory["explicit-server-model-config"]
+    assert "no-unconditional-equality-for-newly-initialized-parameters" in {
+        item["id"] for item in basic_eval["prohibited_behavior"]
+    }
     assert "without a rank-zero default" in ddp_mandatory["initialize-distributed-before-patch"]
     assert "observed global and flare.init ranks 0 and 1" in ddp_mandatory["rank-symmetric-trainer-loop"]
     assert "Version-check only fields claimed to belong to a framework" in normalized_validation

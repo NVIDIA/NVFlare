@@ -58,7 +58,7 @@
         "When public checkpoint download is authorized if uncached, the agent uses one normal cache-aware load or download instead of an unguarded cache-only probe that fails on a normal miss.",
         "A generated or preserved HfArgumentParser is constructed with allow_abbrev=False. Intentional typo and abbreviation rejection checks run through assertion wrappers whose top-level commands succeed only when the generated parser rejects them; the wrapper accepts an expected unused-argument ValueError only when its diagnostic names the rejected argument.",
         "Standalone preflight may construct the Trainer but does not call flare.init(), flare.patch(), flare.is_running(), or patched Trainer methods without a launcher-created Client API context; the first bounded simulation validates runtime patch acceptance.",
-        "The generated recipe model is an explicit class_path and args mapping, not a live model instance. Validation reconstructs the source and server models through the same importable factory path and arguments, compares keys, shapes, and dtypes, and also compares exact tensor values or a stable state hash when construction is proven deterministic.",
+        "The generated recipe model is an explicit class_path and args mapping, not a live model instance. Validation reconstructs the source and server models through the same importable factory path and arguments and compares keys, shapes, and dtypes. Before comparing values, it uses source or load-report evidence to distinguish checkpoint-loaded parameters from missing or newly initialized parameters, requires exact values or a stable state hash only for parameters proven deterministic, and does not create a failed top-level command by unconditionally comparing independently initialized keys.",
         "The generated job preserves the maintained PyTorch-family fast path: FedAvgRecipe with class_path, SimEnv, recipe.execute, and explicit server/client model-file packaging.",
         "The generated recipe uses ExchangeFormat.PYTORCH, enables tensor disk offload, encodes train_args for the selected public execution mode without assuming shell parsing, and packages the required model file into the server app with recipe.add_server_file or an equivalent server-targeted API, including a server-only model.py that would otherwise be outside each client app's train_script import closure.",
         "The recipe key_metric preserves the source metric name accuracy when the generated evaluate call emits accuracy; if Trainer emits eval_accuracy, the recipe uses that exact key and reports the source-to-server metric mapping.",
@@ -124,7 +124,7 @@
           },
           {
             "id": "explicit-server-model-config",
-            "description": "uses the same importable factory path and arguments for source and server models, validates matching state-dict keys, shapes, and dtypes, requires exact values or a stable state hash when construction is proven deterministic, and ensures server-only model modules are exported"
+            "description": "uses the same importable factory path and arguments for source and server models, validates matching state-dict keys, shapes, and dtypes, requires exact values or a stable state hash for checkpoint-loaded or otherwise proven deterministic parameters, treats missing or newly initialized parameters as schema-only unless initialization state is explicitly reset, and ensures server-only model modules are exported"
           },
           {
             "id": "preserve-tensor-dtypes",
@@ -203,6 +203,10 @@
           {
             "id": "no-ad-hoc-structure-or-recipe-probes",
             "description": "does not replace the maintained client template or public recipe metadata with improvised AST programs, Recipe-source inspection, or guessed adjacent APIs"
+          },
+          {
+            "id": "no-unconditional-equality-for-newly-initialized-parameters",
+            "description": "does not run a failing full-state equality assertion across independently constructed models when load evidence reports missing or newly initialized parameters; it retains schema checks and exact comparison for parameters proven deterministic"
           }
         ],
         "process_metrics": [
