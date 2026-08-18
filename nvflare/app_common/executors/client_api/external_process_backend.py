@@ -878,7 +878,9 @@ class ExternalProcessBackend(CellBackendBase):
         """
         term_grace = min(max(0.0, self._termination_grace()), _RESULT_REAPER_FORCE_TERM_GRACE)
         natural_cap = max(0.0, _RESULT_REAPER_MAX_TOTAL_TIMEOUT - term_grace)
-        natural_wait = min(max(0.0, self._shutdown_wait_bound()), natural_cap)
+        # An accepted result source needs a nonzero settlement grace even when the
+        # general trainer shutdown timeout is configured as fire-and-forget (zero).
+        natural_wait = min(self._result_source_disconnect_grace(), natural_cap)
         return natural_wait, term_grace
 
     @staticmethod
