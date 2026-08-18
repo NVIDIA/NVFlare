@@ -14,10 +14,13 @@
 
 """Ownership records for job-worker tensor disk-offload roots."""
 
+import ctypes
+import errno
 import json
 import os
 import shutil
 import stat
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
@@ -34,6 +37,8 @@ _SECURE_CLEANUP_SUPPORTED = (
     and os.scandir in os.supports_fd
 )
 _UNSUPPORTED_CLEANUP_ERROR = "tensor disk offload requires secure directory-fd cleanup support"
+_LINUX_RENAME_NOREPLACE = 1
+_DARWIN_RENAME_EXCL = 0x00000004
 
 
 @dataclass
@@ -147,9 +152,12 @@ def _quarantine_and_remove_root(root_dir: str, expected_stat: os.stat_result, se
     cleanup_dir = tempfile.mkdtemp(prefix=_CLEANUP_ROOT_PREFIX, dir=search_root)
     cleanup_stat = os.stat(cleanup_dir, follow_symlinks=False)
     cleanup_fd = -1
+    search_fd = -1
     root_quarantined = False
+    expected_identity = (expected_stat.st_dev, expected_stat.st_ino)
     try:
         cleanup_fd = _open_directory(cleanup_dir)
+        search_fd = _open_directory(search_root)
         opened_cleanup_stat = os.fstat(cleanup_fd)
         if (opened_cleanup_stat.st_dev, opened_cleanup_stat.st_ino) != (cleanup_stat.st_dev, cleanup_stat.st_ino):
             raise RuntimeError("tensor disk-offload quarantine identity changed before use")
@@ -158,7 +166,6 @@ def _quarantine_and_remove_root(root_dir: str, expected_stat: os.stat_result, se
         root_quarantined = True
 
         quarantined_stat = os.stat(root_name, dir_fd=cleanup_fd, follow_symlinks=False)
-        expected_identity = (expected_stat.st_dev, expected_stat.st_ino)
         if (
             not stat.S_ISDIR(quarantined_stat.st_mode)
             or (
@@ -181,7 +188,7 @@ def _quarantine_and_remove_root(root_dir: str, expected_stat: os.stat_result, se
                 # job-scoped path so a later parent cleanup can retry. If another
                 # object has appeared there, preserve the quarantine rather than
                 # overwrite an unrelated path.
-                os.rename(root_name, root_dir, src_dir_fd=cleanup_fd)
+                _renameat_noreplace(cleanup_fd, root_name, search_fd, root_name)
             except BaseException as rollback_error:
                 raise RuntimeError(
                     f"{cleanup_error}; rollback failed and root was preserved under {cleanup_dir}: {rollback_error}"
@@ -200,11 +207,34 @@ def _quarantine_and_remove_root(root_dir: str, expected_stat: os.stat_result, se
     finally:
         if cleanup_fd >= 0:
             os.close(cleanup_fd)
+        if search_fd >= 0:
+            os.close(search_fd)
         if not root_quarantined:
             # This removes only the now-empty quarantine directory. It is never
             # used for recursive deletion, so a replacement cannot expose an
             # unrelated tree to cleanup.
             os.rmdir(cleanup_dir)
+
+
+def _renameat_noreplace(src_dir_fd: int, src_name: str, dst_dir_fd: int, dst_name: str) -> None:
+    """Atomically rename a directory entry without replacing the destination."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    if sys.platform == "darwin":
+        rename_fn = getattr(libc, "renameatx_np", None)
+        flags = _DARWIN_RENAME_EXCL
+    else:
+        rename_fn = getattr(libc, "renameat2", None)
+        flags = _LINUX_RENAME_NOREPLACE
+    if rename_fn is None:
+        raise OSError(errno.ENOTSUP, "atomic no-replace rename is unavailable")
+
+    rename_fn.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    rename_fn.restype = ctypes.c_int
+    ctypes.set_errno(0)
+    result = rename_fn(src_dir_fd, os.fsencode(src_name), dst_dir_fd, os.fsencode(dst_name), flags)
+    if result != 0:
+        error_number = ctypes.get_errno()
+        raise OSError(error_number, os.strerror(error_number), dst_name)
 
 
 def _restore_owner_record_if_missing(root_dir: str, owner: dict) -> None:

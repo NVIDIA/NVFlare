@@ -195,6 +195,42 @@ def test_cleanup_rolls_back_partial_delete_for_a_later_retry(tmp_path, monkeypat
     assert list(tmp_path.glob(f"{_CLEANUP_ROOT_PREFIX}*")) == []
 
 
+@pytest.mark.parametrize("replacement_kind", ["file", "directory"])
+@requires_secure_cleanup
+def test_cleanup_rollback_preserves_competing_path(tmp_path, monkeypatch, replacement_kind):
+    owned = create_tensor_disk_offload_root("job-a", temp_root=str(tmp_path))
+    owned_stat = os.stat(owned, follow_symlinks=False)
+    owned_name = os.path.basename(owned)
+
+    def fail_after_creating_competing_path(*args, **kwargs):
+        if replacement_kind == "file":
+            with open(owned, "w", encoding="utf-8") as replacement:
+                replacement.write("unrelated")
+        else:
+            os.mkdir(owned)
+        raise OSError("injected recursive cleanup failure")
+
+    monkeypatch.setattr(tensor_disk_offload, "_remove_tree_at", fail_after_creating_competing_path)
+
+    cleanup = cleanup_owned_tensor_disk_offload_roots(
+        job_id="job-a", owner_parent_pid=os.getppid(), temp_root=str(tmp_path)
+    )
+
+    assert cleanup.removed == []
+    assert "rollback failed" in cleanup.failures[owned]
+    if replacement_kind == "file":
+        assert (tmp_path / owned_name).read_text(encoding="utf-8") == "unrelated"
+    else:
+        assert (tmp_path / owned_name).is_dir()
+        assert list((tmp_path / owned_name).iterdir()) == []
+
+    quarantine_dirs = list(tmp_path.glob(f"{_CLEANUP_ROOT_PREFIX}*"))
+    assert len(quarantine_dirs) == 1
+    quarantined_root = quarantine_dirs[0] / owned_name
+    quarantined_stat = os.stat(quarantined_root, follow_symlinks=False)
+    assert (quarantined_stat.st_dev, quarantined_stat.st_ino) == (owned_stat.st_dev, owned_stat.st_ino)
+
+
 @requires_secure_cleanup
 def test_cleanup_restores_owner_record_when_final_root_removal_fails(tmp_path, monkeypatch):
     owned = create_tensor_disk_offload_root("job-a", temp_root=str(tmp_path))
