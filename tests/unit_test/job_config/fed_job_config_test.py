@@ -98,6 +98,25 @@ class TestFedJobConfig:
         assert backup_job_dir.exists()
         assert any(str(backup_job_dir.parent) in record.getMessage() for record in caplog.records)
 
+    def test_generate_job_config_with_relative_job_root_is_immune_to_cwd_change(self, tmp_path, monkeypatch):
+        entry_dir = tmp_path / "a"
+        other_dir = tmp_path / "b"
+        entry_dir.mkdir()
+        (other_dir / "exports").mkdir(parents=True)
+        monkeypatch.chdir(entry_dir)
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        original_generate_meta = job_config._generate_meta
+
+        def change_cwd_and_generate(*args):
+            os.chdir(other_dir)
+            return original_generate_meta(*args)
+
+        monkeypatch.setattr(job_config, "_generate_meta", change_cwd_and_generate)
+        job_config.generate_job_config("exports")
+
+        assert (entry_dir / "exports" / "job" / "meta.json").is_file()
+        assert not any((other_dir / "exports").iterdir())
+
     def test_generate_job_config_does_not_warn_without_stranded_backups(self, tmp_path, caplog):
         job_config = FedJobConfig(job_name="job", min_clients=1)
         with caplog.at_level(logging.WARNING):

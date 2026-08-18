@@ -169,6 +169,10 @@ class FedJobConfig:
         check_job_name("job_name", self.job_name)
         if self.job_name == BACKUP_ROOT:
             raise ValueError(f"job_name must not use the reserved name {BACKUP_ROOT}")
+        # Anchor to the entry CWD so a CWD change during the long generation
+        # phase cannot redirect the publish/replace operations to a different,
+        # unvalidated directory tree.
+        job_root = os.path.abspath(job_root)
         os.makedirs(job_root, exist_ok=True)
         job_dir = os.path.join(job_root, self.job_name)
         backup_root = os.path.join(job_root, BACKUP_ROOT)
