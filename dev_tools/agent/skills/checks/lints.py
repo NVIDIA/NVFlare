@@ -189,31 +189,15 @@ _READ_ONLY_DEPENDENCY_VERB_PATTERN = (
 )
 # A preposition followed by modifiers and a gerund can attach a second action to
 # an otherwise read-only phrase: "dependencies must be inspected by only
-# fetching packages". Scan words after simple preposition matches in Python
-# rather than combining overlapping repeated regex groups, which can backtrack
-# exponentially on adversarial input.
-_ACTION_INTRODUCING_PREPOSITION_RE = re.compile(r"\b(?:by|via|through|with|for|during|upon|when)\b", re.IGNORECASE)
+# fetching packages". Scan the tail's words once rather than rescanning the
+# remaining tail for every preposition or using an exponentially backtracking
+# repeated regex group.
+_ACTION_INTRODUCING_PREPOSITIONS = frozenset({"by", "via", "through", "with", "for", "during", "upon", "when"})
 _POLICY_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_'’-]*")
-_NOMINAL_GERUND_DETERMINERS = {
-    "a",
-    "an",
-    "any",
-    "each",
-    "every",
-    "her",
-    "his",
-    "its",
-    "my",
-    "our",
-    "some",
-    "that",
-    "the",
-    "their",
-    "these",
-    "this",
-    "those",
-    "your",
-}
+# Words that end in ``ing`` but are unambiguously nouns in an agent phrase.
+# Keep this allowlist deliberately narrow: an unknown gerund such as "fetching"
+# must remain action-introducing even in "by a fetching script".
+_NON_ACTION_GERUND_NOUNS = frozenset({"engineering"})
 # An object word may not be a coordinator (which could attach a second action) or
 # a recognized mutating verb, and may not be ``to``, which introduces an
 # infinitive: "inspect package metadata to add packages".
@@ -2027,20 +2011,20 @@ def _is_read_only_passive_phrase(phrase: str) -> bool:
 
 def _tail_introduces_action_gerund(tail: str) -> bool:
     """Return whether a read-only phrase tail introduces an unknown gerund action."""
-    for preposition in _ACTION_INTRODUCING_PREPOSITION_RE.finditer(tail):
-        phrase = tail[preposition.end() :]
-        words = list(_POLICY_WORD_RE.finditer(phrase))
-        for index, word_match in enumerate(words):
-            word = word_match.group(0)
-            if not word.lower().endswith("ing"):
-                continue
-            if re.fullmatch(_READ_ONLY_DEPENDENCY_VERB_PATTERN, word, re.IGNORECASE):
-                continue
-            previous = words[index - 1].group(0).lower() if index else ""
-            suffix = phrase[word_match.end() :]
-            if previous in _NOMINAL_GERUND_DETERMINERS and not _DEPENDENCY_INSTALL_TERMS_RE.search(suffix):
-                continue
-            return True
+    after_preposition = False
+    for word_match in _POLICY_WORD_RE.finditer(tail):
+        word = word_match.group(0)
+        normalized = word.lower()
+        if normalized in _ACTION_INTRODUCING_PREPOSITIONS:
+            after_preposition = True
+            continue
+        if not after_preposition or not normalized.endswith("ing"):
+            continue
+        if re.fullmatch(_READ_ONLY_DEPENDENCY_VERB_PATTERN, word, re.IGNORECASE):
+            continue
+        if normalized in _NON_ACTION_GERUND_NOUNS:
+            continue
+        return True
     return False
 
 
