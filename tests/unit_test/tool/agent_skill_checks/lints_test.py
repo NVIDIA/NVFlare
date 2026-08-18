@@ -620,6 +620,11 @@ def test_run_v1_lints_reference_text_scan_ignores_symlink_loop(tmp_path):
             "Inspect package metadata without user confirmation and install packages.",
             "dependency-install-confirmation-bypass",
         ),
+        # Verb ellipsis exempts only a clause holding nothing but the negation.
+        (
+            "Install dependencies, but log nothing without user confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
     ],
 )
 def test_dependency_install_safety_lint_rejects_review_or_confirmation_bypass(tmp_path, unsafe_guidance, expected_code):
@@ -720,6 +725,10 @@ def test_dependency_install_safety_lint_accepts_negated_without_clause(tmp_path,
         # "review" is read-only for the confirmation check; the separate
         # "without reviewing sources" matcher is unaffected.
         "Review package sources without user confirmation.",
+        # Verb ellipsis: the repeated action verb is dropped, leaving the
+        # negation directly against the "without" phrase.
+        "Install dependencies, but never without user confirmation.",
+        "Install packages, but not without reviewing package sources.",
     ],
 )
 def test_dependency_install_safety_lint_accepts_read_only_inspection_without_install_consent(tmp_path, safe_guidance):

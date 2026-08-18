@@ -201,6 +201,13 @@ _DEPENDENCY_ACTION_SERIES_GAP_RE = re.compile(
 # A coordinator can attach an action whose verb is outside the recognized
 # vocabulary, so its presence withdraws any "nothing else acts here" assumption.
 _CLAUSE_COORDINATOR_RE = re.compile(r"[,;/]|\b(?:and|or|nor|then|plus|also|while|before|after)\b", re.IGNORECASE)
+# A clause holding nothing but a negation before "without X" is verb ellipsis:
+# the repeated action verb is dropped, as in "but never without user approval".
+_ELLIPTICAL_NEGATION_RE = re.compile(
+    r"\s*(?:never|not|do\s+not|don't|must\s+not|should\s+not|cannot|can\s+not|won't|will\s+not|shall\s+not)"
+    r"(?:\s+(?:ever|preemptively|automatically|directly))?\s*",
+    re.IGNORECASE,
+)
 _DEPENDENCY_CONFIRMATION_BYPASS_RES = (
     re.compile(
         r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,160}"
@@ -1932,6 +1939,12 @@ def _is_negated_without_clause(statement: str, match: re.Match) -> bool:
     # matched "without X" construction. Merely mentioning a prohibited index or
     # source elsewhere in the clause must not excuse an affirmative install.
     if _WITHOUT_CLAUSE_PROHIBITION_TAIL_RE.match(clause[relative_end:]):
+        return True
+
+    # Verb ellipsis: "install dependencies, but never without user confirmation"
+    # drops the repeated verb, leaving the negation directly against the "without"
+    # phrase. Nothing else stands in the clause, so the negation governs it.
+    if _ELLIPTICAL_NEGATION_RE.fullmatch(clause[:relative_start]):
         return True
 
     for pattern in (_NEGATED_DEPENDENCY_ACTION_RE, _PASSIVE_NEGATED_DEPENDENCY_ACTION_RE):
