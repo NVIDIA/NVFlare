@@ -187,6 +187,14 @@ _READ_ONLY_DEPENDENCY_VERB_PATTERN = (
     r"|enumerate[sd]?|enumerating|prints?|print(?:ed|ing)|displays?|display(?:ed|ing)"
     r"|checks?|check(?:ed|ing))"
 )
+# A preposition followed by a gerund can attach a second action to an otherwise
+# read-only phrase: "dependencies must be inspected by fetching packages". The
+# gerund is intentionally open-ended because an unknown action must fail closed;
+# recognized dependency actions are already excluded separately below.
+_ACTION_INTRODUCING_GERUND_RE = re.compile(
+    r"\b(?:by|via|through|with|for|during|upon|when)\s+[A-Za-z][A-Za-z0-9_'’-]*ing\b",
+    re.IGNORECASE,
+)
 # An object word may not be a coordinator (which could attach a second action) or
 # a recognized mutating verb, and may not be ``to``, which introduces an
 # infinitive: "inspect package metadata to add packages".
@@ -201,7 +209,7 @@ _READ_ONLY_OBJECT_WORD_PATTERN = (
 # packages" remains a read.
 _CHECK_OUT_ACQUISITION_RE = re.compile(r"\s*check(?:s|ed|ing)?\b(?:\s+\S+)*?\s+out(?:\s|$)", re.IGNORECASE)
 _READ_ONLY_ACTION_PHRASE_RE = re.compile(
-    rf"{_READ_ONLY_DEPENDENCY_VERB_PATTERN}\b(?:\s+{_READ_ONLY_OBJECT_WORD_PATTERN})*",
+    rf"(?P<verb>{_READ_ONLY_DEPENDENCY_VERB_PATTERN})\b(?:\s+{_READ_ONLY_OBJECT_WORD_PATTERN})*",
     re.IGNORECASE,
 )
 # The same read done in the passive voice: "package metadata must be inspected".
@@ -211,7 +219,7 @@ _READ_ONLY_ACTION_PHRASE_RE = re.compile(
 _READ_ONLY_PASSIVE_PHRASE_RE = re.compile(
     rf"(?:{_READ_ONLY_OBJECT_WORD_PATTERN}\s+)+"
     r"(?:must|should|shall|can|could|may|might|is|are|was|were|will|would|to)\s+(?:(?:be|been)\s+)?"
-    r"(?:inspected|read|listed|viewed|shown|examined|audited|reviewed|queried"
+    r"(?P<verb>inspected|read|listed|viewed|shown|examined|audited|reviewed|queried"
     r"|enumerated|printed|displayed|checked)\b"
     rf"(?:\s+{_READ_ONLY_OBJECT_WORD_PATTERN})*",
     re.IGNORECASE,
@@ -1994,16 +2002,20 @@ def _is_read_only_phrase(phrase: str) -> bool:
     "check out packages" is dependency acquisition rather than a read, so the
     phrasal form is rejected even though its verb is otherwise read-only.
     """
-    if not _READ_ONLY_ACTION_PHRASE_RE.fullmatch(phrase):
+    match = _READ_ONLY_ACTION_PHRASE_RE.fullmatch(phrase)
+    if not match:
         return False
-    return _CHECK_OUT_ACQUISITION_RE.match(phrase) is None
+    tail = phrase[match.end("verb") :]
+    return _CHECK_OUT_ACQUISITION_RE.match(phrase) is None and not _ACTION_INTRODUCING_GERUND_RE.search(tail)
 
 
 def _is_read_only_passive_phrase(phrase: str) -> bool:
     """Return whether ``phrase`` is a whole passive read-only action phrase."""
-    if not _READ_ONLY_PASSIVE_PHRASE_RE.fullmatch(phrase):
+    match = _READ_ONLY_PASSIVE_PHRASE_RE.fullmatch(phrase)
+    if not match:
         return False
-    return _CHECK_OUT_ACQUISITION_RE.search(phrase) is None
+    tail = phrase[match.end("verb") :]
+    return _CHECK_OUT_ACQUISITION_RE.search(phrase) is None and not _ACTION_INTRODUCING_GERUND_RE.search(tail)
 
 
 def _is_negated_without_clause(statement: str, match: re.Match) -> bool:
