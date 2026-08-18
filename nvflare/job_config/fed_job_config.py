@@ -13,6 +13,7 @@
 # limitations under the License.
 import ast
 import builtins
+import hashlib
 import inspect
 import json
 import os
@@ -39,6 +40,8 @@ FED_SERVER_JSON = "config_fed_server.json"
 FED_CLIENT_JSON = "config_fed_client.json"
 META_JSON = "meta.json"
 BACKUP_ROOT = ".nvflare_job_backups"
+BACKUP_EXPORTS = "exports"
+BACKUP_MARKERS = "markers"
 
 
 class FedJobConfig:
@@ -171,7 +174,7 @@ class FedJobConfig:
         os.makedirs(job_root, exist_ok=True)
         job_dir = os.path.join(job_root, self.job_name)
         backup_root = os.path.join(job_root, BACKUP_ROOT)
-        backup_job_dir = os.path.join(backup_root, self.job_name)
+        backup_job_dir = os.path.join(backup_root, BACKUP_EXPORTS, self.job_name)
         self._recover_previous_export(job_dir, backup_job_dir)
         json_dump = self._prepare_meta()
         replace_existing = False
@@ -203,8 +206,13 @@ class FedJobConfig:
                     self._get_client_app(config_dir, custom_dir, fed_app)
 
             if replace_existing:
-                os.makedirs(backup_root, exist_ok=True)
-                os.replace(job_dir, backup_job_dir)
+                os.makedirs(os.path.dirname(backup_job_dir), exist_ok=True)
+                self._mark_backup_export(backup_job_dir)
+                try:
+                    os.replace(job_dir, backup_job_dir)
+                except BaseException:
+                    self._remove_backup_marker(backup_job_dir)
+                    raise
                 try:
                     os.replace(temp_job_dir, job_dir)
                 except BaseException:
@@ -222,21 +230,51 @@ class FedJobConfig:
         if not os.path.exists(backup_job_dir):
             return
 
-        if not self._is_valid_job_folder(backup_job_dir, self.job_name):
+        if not self._is_backup_export(backup_job_dir):
             raise RuntimeError(f"Backup job folder {backup_job_dir} does not belong to job {self.job_name}.")
 
         if os.path.exists(job_dir):
+            if not self._is_valid_job_folder(job_dir, self.job_name):
+                raise RuntimeError(f"Job folder {job_dir} already exists and does not belong to job {self.job_name}.")
             self._remove_backup_export(backup_job_dir)
         else:
             os.replace(backup_job_dir, job_dir)
+            self._remove_backup_marker(backup_job_dir)
 
-    @staticmethod
-    def _remove_backup_export(backup_job_dir):
-        shutil.rmtree(backup_job_dir, ignore_errors=True)
+    def _is_backup_export(self, backup_job_dir):
+        marker_file = self._backup_marker_file(backup_job_dir)
         try:
-            os.rmdir(os.path.dirname(backup_job_dir))
+            with open(marker_file) as f:
+                return f.read() == self.job_name and self._is_valid_job_folder(backup_job_dir, self.job_name)
         except OSError:
+            return False
+
+    def _mark_backup_export(self, backup_job_dir):
+        marker_file = self._backup_marker_file(backup_job_dir)
+        os.makedirs(os.path.dirname(marker_file), exist_ok=True)
+        with open(marker_file, "w") as f:
+            f.write(self.job_name)
+
+    def _backup_marker_file(self, backup_job_dir):
+        backup_root = os.path.dirname(os.path.dirname(backup_job_dir))
+        digest = hashlib.sha256(self.job_name.encode()).hexdigest()
+        return os.path.join(backup_root, BACKUP_MARKERS, digest)
+
+    def _remove_backup_marker(self, backup_job_dir):
+        try:
+            os.remove(self._backup_marker_file(backup_job_dir))
+        except FileNotFoundError:
             pass
+
+    def _remove_backup_export(self, backup_job_dir):
+        shutil.rmtree(backup_job_dir, ignore_errors=True)
+        self._remove_backup_marker(backup_job_dir)
+        backup_root = os.path.dirname(os.path.dirname(backup_job_dir))
+        for directory in (os.path.dirname(backup_job_dir), os.path.join(backup_root, BACKUP_MARKERS), backup_root):
+            try:
+                os.rmdir(directory)
+            except OSError:
+                pass
 
     def simulator_run(self, workspace, clients=None, n_clients=None, threads=None, gpu=None, log_config=None):
         with TemporaryDirectory() as job_root:
