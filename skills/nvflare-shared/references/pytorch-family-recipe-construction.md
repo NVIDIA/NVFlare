@@ -79,10 +79,14 @@ set_per_site_config(recipe, per_site_config)
 ```
 
 Recipe-level `train_args` is only the fallback for a site without its own
-`train_args` entry. Before a full simulation, export the job and inspect each
-site's client configuration to verify that `task_script_args` contains the full
-expected argument set. A partial site override is a construction failure; do not
-discover it through repeated full simulations.
+`train_args` entry. Before a full simulation, inspect each composed site value
+and verify that it contains the full expected argument set. For an exported-job
+validation target, also inspect each site's exported client configuration and
+verify that `task_script_args` contains the full expected argument set. For a
+local-only `python job.py` target, let that selected run validate argument
+delivery end to end; do not create an export only for this inspection. A partial
+site override is a construction failure; do not discover it through repeated
+full simulations.
 
 ## Tensor-Native Transport
 

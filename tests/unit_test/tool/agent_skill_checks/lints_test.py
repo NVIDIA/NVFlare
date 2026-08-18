@@ -539,6 +539,22 @@ def test_run_v1_lints_reference_text_scan_ignores_symlink_loop(tmp_path):
             "and after the review obtain explicit user approval.",
             "dependency-install-confirmation-bypass",
         ),
+        (
+            "Do not log secrets while installing dependencies without user confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Avoid prohibited indexes before installing dependencies without user confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Do not download packages while installing dependencies without user confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Do not expose credentials while installing packages without reviewing their sources.",
+            "dependency-install-review-bypass",
+        ),
     ],
 )
 def test_dependency_install_safety_lint_rejects_review_or_confirmation_bypass(tmp_path, unsafe_guidance, expected_code):
@@ -600,12 +616,33 @@ def test_dependency_install_safety_lint_accepts_negated_skip_review(tmp_path, sa
         "Never download, install, or execute dependencies without reviewing package sources.",
         "Without user confirmation, never install dependencies.",
         "Without reviewing package sources, never install dependencies.",
+        "Dependencies must not be installed without user confirmation.",
+        "Packages cannot be installed without reviewing their sources.",
         "Continue without user confirmation; do not install dependencies.",
         "Downloading packages is prohibited. Never ask for approval.",
         "Package usage is prohibited. Never ask for confirmation.",
     ],
 )
 def test_dependency_install_safety_lint_accepts_negated_without_clause(tmp_path, safe_guidance):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-safe-dependency-skill")
+    references = skill_dir / "references"
+    references.mkdir()
+    references.joinpath("dependency-install.md").write_text(safe_guidance + "\n", encoding="utf-8")
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_DEPENDENCY_INSTALL_SAFETY])
+
+    assert result["status"] == "ok"
+    assert result["findings"] == []
+
+
+@pytest.mark.parametrize(
+    "safe_guidance",
+    [
+        "Inspect package metadata without user confirmation.",
+        "Inspect dependency metadata without user approval.",
+    ],
+)
+def test_dependency_install_safety_lint_accepts_read_only_inspection_without_install_consent(tmp_path, safe_guidance):
     skill_dir = _write_skill(tmp_path / "skills", "nvflare-safe-dependency-skill")
     references = skill_dir / "references"
     references.mkdir()

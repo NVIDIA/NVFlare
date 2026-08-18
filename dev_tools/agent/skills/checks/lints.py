@@ -167,6 +167,7 @@ _KNOWN_AGENT_FLAGS = {
 
 _DEPENDENCY_INSTALL_TERMS_RE = re.compile(r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b", re.IGNORECASE)
 _DEPENDENCY_ACTION_PATTERN = r"(?:install\w*|download\w*|us(?:e|es|ed|ing|age)|execut\w*)"
+_DEPENDENCY_ACTION_RE = re.compile(rf"\b{_DEPENDENCY_ACTION_PATTERN}\b", re.IGNORECASE)
 _DEPENDENCY_CONFIRMATION_BYPASS_RES = (
     re.compile(
         r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,160}"
@@ -194,14 +195,10 @@ _DEPENDENCY_CONFIRMATION_WITHOUT_RE = re.compile(
     r"(?P<without_clause>\bwithout\s+(?:explicit\s+)?(?:user\s+)?(?:approval|confirmation|consent)\b)",
     re.IGNORECASE,
 )
-_WITHOUT_CLAUSE_NEGATION_RE = re.compile(
-    r"\b(?:never|do\s+not|don't|must\s+not|should\s+not|cannot|can\s+not|won't|will\s+not|shall\s+not)\b",
-    re.IGNORECASE,
-)
 _WITHOUT_CLAUSE_PROHIBITION_TAIL_RE = re.compile(
-    r"\b(?:is\s+)?(?:strictly\s+)?(?:prohibited|forbidden|disallowed|banned)\b"
-    r"|\bis\s+not\s+(?:allowed|permitted)\b"
-    r"|\b(?:is\s+)?never\s+(?:allowed|permitted)\b",
+    r"\s*(?:(?:is\s+)?(?:strictly\s+)?(?:prohibited|forbidden|disallowed|banned)"
+    r"|is\s+not\s+(?:allowed|permitted)"
+    r"|(?:is\s+)?never\s+(?:allowed|permitted))\b",
     re.IGNORECASE,
 )
 _WITHOUT_CLAUSE_BOUNDARY_RE = re.compile(
@@ -284,8 +281,14 @@ _BARE_CONFIRMATION_BYPASS_CLAUSE_RE = re.compile(
 _NEGATED_DEPENDENCY_ACTION_RE = re.compile(
     r"\b(?:never|do\s+not|don't|must\s+not|should\s+not|cannot|can\s+not|won't|will\s+not|shall\s+not)\b"
     r"\s+(?:(?:preemptively|ever|automatically|directly)\s+)?"
-    rf"{_DEPENDENCY_ACTION_PATTERN}\b[^.!?;]{{0,100}}"
+    rf"{_DEPENDENCY_ACTION_PATTERN}\b[^.!?;]{{0,100}}?"
     r"\b(?:dependenc\w*|packages?|requirements?)\b",
+    re.IGNORECASE,
+)
+_PASSIVE_NEGATED_DEPENDENCY_ACTION_RE = re.compile(
+    r"\b(?:dependenc\w*|packages?|requirements?)\b[^.!?;]{0,80}"
+    r"\b(?:must\s+not|should\s+not|shall\s+not|cannot|can\s+not|won't|will\s+not)\s+"
+    rf"(?:be\s+)?{_DEPENDENCY_ACTION_PATTERN}\b",
     re.IGNORECASE,
 )
 _PROHIBITED_DEPENDENCY_ACTION_RE = re.compile(
@@ -1784,8 +1787,8 @@ def _has_dependency_policy_bypass(text: str, patterns: Iterable[re.Pattern]) -> 
     return any(pattern.search(text) for pattern in patterns)
 
 
-def _clause_at(statement: str, index: int) -> str:
-    """Return the contrast-or-sequence-delimited clause containing ``index``.
+def _clause_bounds_at(statement: str, index: int) -> tuple[int, int]:
+    """Return bounds of the contrast-or-sequence-delimited clause containing ``index``.
 
     Used to scope a negation/prohibition check to the specific clause that
     contains a matched "without X" phrase, so an unrelated negation elsewhere in
@@ -1804,7 +1807,7 @@ def _clause_at(statement: str, index: int) -> str:
         start = separator.end()
     end_match = next((separator for separator in separators if separator.start() >= index), None)
     end = end_match.start() if end_match else len(statement)
-    return statement[start:end]
+    return start, end
 
 
 def _is_dependency_action_series_boundary(statement: str, separator: re.Match) -> bool:
@@ -1822,31 +1825,66 @@ def _is_dependency_action_series_boundary(statement: str, separator: re.Match) -
     )
 
 
-def _is_negated_without_clause(clause: str) -> bool:
-    """Return whether a "without X" clause is itself negated into a safe mandate.
+def _is_negated_without_clause(statement: str, match: re.Match) -> bool:
+    """Return whether the matched "without X" action is negated into a safe mandate.
 
     "Install packages without confirmation" is a bypass, but "Never install
     packages without confirmation" and "Installing packages without confirmation
-    is prohibited" both require confirmation -- the surrounding negation or
-    trailing prohibition flips "without" from permission to skip a step into a
-    requirement for it.
+    is prohibited" both require confirmation. A negation elsewhere in the same
+    grammatical clause does not make the install safe: in "Do not log secrets
+    while installing without confirmation", it governs logging, not installing.
     """
-    return bool(_WITHOUT_CLAUSE_NEGATION_RE.search(clause) or _WITHOUT_CLAUSE_PROHIBITION_TAIL_RE.search(clause))
+    without_start = match.start("without_clause")
+    without_end = match.end("without_clause")
+    clause_start, clause_end = _clause_bounds_at(statement, without_start)
+    clause = statement[clause_start:clause_end]
+    relative_start = without_start - clause_start
+    relative_end = without_end - clause_start
+
+    # A trailing prohibition is safe only when it directly predicates the
+    # matched "without X" construction. Merely mentioning a prohibited index or
+    # source elsewhere in the clause must not excuse an affirmative install.
+    if _WITHOUT_CLAUSE_PROHIBITION_TAIL_RE.match(clause[relative_end:]):
+        return True
+
+    for pattern in (_NEGATED_DEPENDENCY_ACTION_RE, _PASSIVE_NEGATED_DEPENDENCY_ACTION_RE):
+        for negated_action in pattern.finditer(clause):
+            if negated_action.end() <= relative_start:
+                # The negated action must be the action associated with the
+                # without-clause. A later affirmative dependency action means
+                # that the earlier negation governed something else.
+                if not _DEPENDENCY_ACTION_RE.search(clause[negated_action.end() : relative_start]):
+                    return True
+            elif negated_action.start() >= relative_end:
+                # Supports "Without confirmation, never install packages" but
+                # not "Install without confirmation while never using ...".
+                if not _DEPENDENCY_ACTION_RE.search(clause[:relative_start]):
+                    return True
+            else:
+                return True
+    return False
 
 
-def _iter_dependency_without_matches(statement: str, pattern: re.Pattern) -> Iterable[re.Match]:
-    """Yield every ``without`` occurrence linked to nearby dependency context."""
+def _iter_dependency_without_matches(
+    statement: str, pattern: re.Pattern, *, require_dependency_action: bool
+) -> Iterable[re.Match]:
+    """Yield every ``without`` occurrence linked to relevant dependency context."""
     for match in pattern.finditer(statement):
         context_start = max(0, match.start("without_clause") - 160)
         context_end = min(len(statement), match.end("without_clause") + 160)
-        if _DEPENDENCY_INSTALL_TERMS_RE.search(statement[context_start:context_end]):
+        context = statement[context_start:context_end]
+        if _DEPENDENCY_INSTALL_TERMS_RE.search(context) and (
+            not require_dependency_action or _DEPENDENCY_ACTION_RE.search(context)
+        ):
             yield match
 
 
 def _has_dependency_confirmation_without_bypass(statements: list[str]) -> bool:
     for statement in statements:
-        for match in _iter_dependency_without_matches(statement, _DEPENDENCY_CONFIRMATION_WITHOUT_RE):
-            if not _is_negated_without_clause(_clause_at(statement, match.start("without_clause"))):
+        for match in _iter_dependency_without_matches(
+            statement, _DEPENDENCY_CONFIRMATION_WITHOUT_RE, require_dependency_action=True
+        ):
+            if not _is_negated_without_clause(statement, match):
                 return True
     return False
 
@@ -1857,8 +1895,10 @@ def _has_dependency_review_bypass(text: str) -> bool:
         return True
     statements = [statement.strip() for statement in re.split(r"(?<=[.!?;])\s+", text) if statement.strip()]
     for statement in statements:
-        for match in _iter_dependency_without_matches(statement, _DEPENDENCY_REVIEW_WITHOUT_RE):
-            if not _is_negated_without_clause(_clause_at(statement, match.start("without_clause"))):
+        for match in _iter_dependency_without_matches(
+            statement, _DEPENDENCY_REVIEW_WITHOUT_RE, require_dependency_action=False
+        ):
+            if not _is_negated_without_clause(statement, match):
                 return True
     return False
 
