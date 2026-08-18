@@ -233,7 +233,10 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     assert 'key_metric="neg_val_loss"' in lightning_conversion_text
     assert "never a reason to fail closed" in normalized_lightning_conversion
     assert "make_higher_is_better" not in lightning_asset_text
-    assert "def main(model, datamodule, trainer_factory, evaluate_only=False)" in lightning_asset_text
+    assert (
+        'def main(model, datamodule, trainer_factory, recipe_algorithm="fedavg", evaluate_only=False)'
+        in lightning_asset_text
+    )
 
     for consumer_text in (skill_text, recipe_text, client_text, validation_text, hf_skill_text, hf_conversion_text):
         assert "pytorch-family-recipe-construction.md" in consumer_text
@@ -404,19 +407,17 @@ def test_lightning_training_metrics_use_automatic_pre_fit_delivery():
     normalized_validation = " ".join(validation_text.split())
     normalized_workflow = " ".join(workflow_text.split())
 
-    assert "explicit pre-fit validation contract" in normalized_skill
-    # PR #5145: only the pre-fit validate() scores the received global model, so
-    # best-model selection depends on it and no flag may skip it. A train-only
-    # switch would silently drop selection and hard-fail under
-    # train_with_evaluation=True.
-    assert "no flag may skip it" in normalized_skill
+    assert "Except for Cyclic, must run an explicit standalone" in normalized_skill
+    # PR #5145: only the pre-fit validate() scores the received global model.
+    # Every supported Lightning algorithm except Cyclic requires that call;
+    # Cyclic intentionally persists only its final sequential model.
+    assert '`evaluate_before_train = recipe_algorithm != "cyclic"`' in normalized_skill
     assert "Best-model selection therefore depends on the pre-fit call" in normalized_conversion
     assert "no best global model is persisted" in normalized_conversion
-    assert "the round fails outright on the missing required metrics" in normalized_conversion
-    assert "Do not add a flag that skips the pre-fit validation" in normalized_conversion
-    assert "evaluate_before_train" not in client_template
-    assert "server metrics or best-model selection" in normalized_validation
-    assert "Absent metrics are not by themselves a passing result" in normalized_validation
+    assert "Do not expose an independent skip flag" in normalized_conversion
+    assert 'return recipe_algorithm != "cyclic"' in client_template
+    assert "For every non-Cyclic training task" in validation_text
+    assert "no best-model artifact is claimed or expected" in normalized_validation
     assert "## Training-result metric delivery" in conversion_text
     assert "`False` makes them optional rather than suppressing metrics" in normalized_conversion
     assert "sanity checks and validation performed inside `trainer.fit(...)`" in normalized_conversion

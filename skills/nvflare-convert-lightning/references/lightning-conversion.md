@@ -110,35 +110,37 @@ Keep evaluation inside Lightning; do not reuse the raw PyTorch
 
 ### Training-result metric delivery
 
-For a training task, call an explicit standalone `trainer.validate(...)` after
-`flare.patch(trainer)` and before `trainer.fit(...)`. The patched callback
-captures finite scalar callback metrics from that validation and attaches them
-to the outgoing training result, regardless of whether the executor's
-`train_with_evaluation` setting is `False` or unavailable through the selected
-recipe. That setting controls whether missing pre-training metrics are an
-error: `True` requires them; `False` makes them optional rather than suppressing
-metrics that Lightning supplies.
+For a training task, derive
+`evaluate_before_train = recipe_algorithm != "cyclic"` from the normalized
+`algorithm` returned by `nvflare recipe show`. When it is true, call an explicit
+standalone `trainer.validate(...)` after `flare.patch(trainer)` and before
+`trainer.fit(...)`. The patched callback captures finite scalar callback metrics
+from that validation and attaches them to the outgoing training result,
+regardless of whether the executor's `train_with_evaluation` setting is `False`
+or unavailable through the selected recipe. That setting controls whether
+missing pre-training metrics are an error: `True` requires them; `False` makes
+them optional rather than suppressing metrics that Lightning supplies.
 
 Only that explicit pre-fit validation scores the received global model.
 Lightning sanity checks and validation performed inside `trainer.fit(...)` run
 in the fitting lifecycle and are deliberately excluded from the global-model
 score.
 
-Best-model selection therefore depends on the pre-fit call. Omitting it leaves
-the received global model unscored, so `IntimeModelSelector` has nothing to
-select on and no best global model is persisted; with `train_with_evaluation`
-set to `True` the round fails outright on the missing required metrics. Do not
-add a flag that skips the pre-fit validation: a fit-only round is the shape
-that loses best-model selection, not a supported way to opt out of publishing.
+Best-model selection therefore depends on the pre-fit call. Omitting it from a
+non-Cyclic recipe leaves the received global model unscored, so the selector has
+nothing to compare and no best global model is persisted; with
+`train_with_evaluation=True` the round fails on the missing required metrics.
+Do not expose an independent skip flag: derive the value from the recipe
+algorithm so selection and evaluation cannot silently diverge.
 
-A fit-only workflow is valid only when the source defines no validation
-semantics and the user requested no evaluation, metrics, or model selection,
-which `SKILL.md` routes to ask-or-fail-closed rather than to a silent
-conversion. Its ordinary in-fit validation stays local because the fitting
-lifecycle is excluded, not because the workflow opted out. When an application
-must run an explicit pre-fit validation but keep its metrics local, report the
-need for an authorized custom task-result filter; do not silently change the
-validation timing.
+Cyclic is the intentional exception. Its clients update the model sequentially,
+so their pre-fit validations would score different intermediate models rather
+than one round-global candidate. Skip the standalone pre-fit call, preserve any
+ordinary in-fit validation as local behavior, and report the persisted final
+model without claiming a best-model artifact. For a non-Cyclic source without
+validation semantics, ask or fail closed rather than silently disabling its
+selector. When an application must keep explicit pre-fit metrics local, report
+the need for an authorized custom task-result filter.
 
 Use `../assets/lightning_client.py` as the copyable validate-before-fit loop.
 Its finite-scalar check validates the values returned by `trainer.validate`,

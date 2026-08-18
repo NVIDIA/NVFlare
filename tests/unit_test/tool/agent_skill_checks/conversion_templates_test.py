@@ -1016,12 +1016,71 @@ def test_lightning_template_eval_only_mode_skips_training():
     module.flare = fake_flare  # patch the module-level flare handle
 
     try:
-        module.main(model=_FakeModel(), datamodule=object(), trainer_factory=lambda: fake, evaluate_only=True)
+        module.main(
+            model=_FakeModel(),
+            datamodule=object(),
+            trainer_factory=lambda: fake,
+            recipe_algorithm="fedeval",
+            evaluate_only=True,
+        )
     finally:
         pass
 
     assert "validate" in calls
     assert "fit" not in calls
+
+
+@pytest.mark.parametrize(
+    "recipe_algorithm, expected",
+    [
+        ("fedavg", True),
+        ("fedce", True),
+        ("fedeval", True),
+        ("fedopt", True),
+        ("fedprox", True),
+        ("scaffold", True),
+        ("swarm", True),
+        ("cyclic", False),
+    ],
+)
+def test_lightning_template_derives_pre_fit_evaluation_from_recipe_algorithm(recipe_algorithm, expected):
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+
+    assert module.should_evaluate_before_train(recipe_algorithm) is expected
+
+
+@pytest.mark.parametrize(
+    "recipe_algorithm, expected_calls",
+    [("fedavg", ["validate", "fit"]), ("cyclic", ["fit"])],
+)
+def test_lightning_template_skips_pre_fit_validation_only_for_cyclic(recipe_algorithm, expected_calls):
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+    calls = []
+
+    class _FakeTrainer:
+        def validate(self, *args, **kwargs):
+            calls.append("validate")
+            return [{"accuracy": 0.5}]
+
+        def fit(self, *args, **kwargs):
+            calls.append("fit")
+
+    fake_flare = types.SimpleNamespace(
+        patch=lambda trainer: None,
+        receive=lambda: None,
+        _running=[True, False],
+        is_running=lambda: fake_flare._running.pop(0) if fake_flare._running else False,
+    )
+    module.flare = fake_flare
+
+    module.main(
+        model=object(),
+        datamodule=object(),
+        trainer_factory=_FakeTrainer,
+        recipe_algorithm=recipe_algorithm,
+    )
+
+    assert calls == expected_calls
 
 
 class _DummyModel:

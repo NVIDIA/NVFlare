@@ -11,9 +11,9 @@ stays inside Lightning (``validation_step`` / ``self.log`` /
 
 ``validate_global_model`` is factored out so a generated conversion can be
 validated against a toy ``LightningModule`` and dataloader without a running
-FLARE server. The patched callback captures metrics from this explicit pre-fit
-validation and attaches them to the outgoing training result. Do not duplicate
-them under ``model.__fl_meta__[MetaKey.INITIAL_METRICS]``.
+FLARE server. Except for Cyclic, the patched callback captures metrics from this
+explicit pre-fit validation and attaches them to the outgoing training result.
+Do not duplicate them under ``model.__fl_meta__[MetaKey.INITIAL_METRICS]``.
 """
 
 import math
@@ -66,10 +66,22 @@ def validate_global_model(trainer, model, datamodule=None, dataloaders=None):
     return _scalar_validation_metrics(validation_results)
 
 
-def main(model, datamodule, trainer_factory, evaluate_only=False):
+def should_evaluate_before_train(recipe_algorithm):
+    """Return whether the selected recipe evaluates the received model before training.
+
+    Cyclic intentionally persists its final sequential model and has no
+    best-model selection. Every other supported Lightning recipe evaluates the
+    received model for its server metric contract.
+    """
+    return recipe_algorithm != "cyclic"
+
+
+def main(model, datamodule, trainer_factory, recipe_algorithm="fedavg", evaluate_only=False):
     """Lightning Client API round loop with validate-before-fit.
 
-    ``trainer_factory`` constructs the source project's ``Trainer``. Set
+    ``trainer_factory`` constructs the source project's ``Trainer``. Pass the
+    normalized ``algorithm`` value returned by ``nvflare recipe show`` as
+    ``recipe_algorithm``; only ``cyclic`` skips pre-fit validation. Set
     ``evaluate_only=True`` for FedEval / evaluation-only conversions: the round
     runs ``trainer.validate`` so the patched trainer sends validation metrics,
     and skips local training. Do not call ``trainer.fit`` in that mode.
@@ -80,12 +92,14 @@ def main(model, datamodule, trainer_factory, evaluate_only=False):
     """
     trainer = trainer_factory()
     flare.patch(trainer)
+    evaluate_before_train = should_evaluate_before_train(recipe_algorithm)
 
     while flare.is_running():
         # receive() is optional metadata/task-progression access only; the
         # patched trainer loads the global model internally.
         flare.receive()
-        validate_global_model(trainer, model, datamodule=datamodule)
+        if evaluate_before_train:
+            validate_global_model(trainer, model, datamodule=datamodule)
         if evaluate_only:
             continue
         trainer.fit(model, datamodule=datamodule)
