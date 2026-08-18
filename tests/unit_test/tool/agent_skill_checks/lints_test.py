@@ -540,6 +540,7 @@ def test_dependency_install_safety_lint_accepts_audit_before_confirmation(tmp_pa
             "> Never ask the user to modify a selected recipe\n"
             "> Install packages only after displaying the plan and receiving confirmation\n"
         ),
+        ("> Review dependency sources before use\n" "> Never ask for confirmation before changing a selected recipe\n"),
         ("> Never audit generated training reports\n" "> Install packages only after reviewing dependency sources\n"),
     ],
 )

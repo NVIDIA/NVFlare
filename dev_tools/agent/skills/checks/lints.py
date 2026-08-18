@@ -250,8 +250,15 @@ _DEPENDENCY_REVIEW_BYPASS_RES = (
 )
 _MARKDOWN_ATX_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}(?:\s+|$)")
 _MARKDOWN_BLOCKQUOTE_RE = re.compile(r"^\s{0,3}>")
+_MARKDOWN_BLOCKQUOTE_CONTINUATION_END_RE = re.compile(
+    r"\b(?:a|an|and|are|as|at|be|been|being|before|by|can|could|did|do|does|for|from|if|in|into|is|may|might|"
+    r"must|never|not|of|on|or|preceded|shall|should|that|the|to|was|were|will|with|without|would)"
+    r"(?:[:,])?(?:[`*_]+)?\s*$",
+    re.IGNORECASE,
+)
 _MARKDOWN_FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 _MARKDOWN_LIST_ITEM_RE = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s+")
+_MARKDOWN_SENTENCE_END_RE = re.compile(r"[.!?;](?:[`*_]+)?\s*$")
 _MARKDOWN_STRUCTURAL_SEPARATOR_RE = re.compile(r"^\s{0,3}(?:=+|-{3,})\s*$")
 _MARKDOWN_TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
 
@@ -1512,11 +1519,11 @@ def _iter_skill_text_files(skill_dir: Path, *, include_scripts: bool = False) ->
 def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
     """Yield policy text without combining separate Markdown blocks.
 
-    Wrapped prose, blockquote paragraphs, and list-item continuations remain
-    searchable as one unit, while headings, separate blockquotes, list items,
-    table rows, separators, and fenced blocks keep their Markdown boundaries.
-    Fenced content is still scanned because skill instructions can be conveyed
-    through examples and command snippets.
+    Wrapped prose, blockquote continuations, and list-item continuations remain
+    searchable as one unit, while headings, separate blockquote statements,
+    list items, table rows, separators, and fenced blocks keep their Markdown
+    boundaries. Fenced content is still scanned because skill instructions can
+    be conveyed through examples and command snippets.
     """
     block_lines = []
     block_start = 1
@@ -1565,7 +1572,7 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
                     block_lines = []
                     block_is_blockquote = False
                 continue
-            if block_is_blockquote:
+            if block_is_blockquote and _is_markdown_blockquote_continuation(block_lines[-1], content):
                 block_lines.append(content)
                 continue
             if block_lines:
@@ -1607,6 +1614,16 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
         yield fenced_start, " ".join(fenced_lines)
     if block_lines:
         yield block_start, " ".join(block_lines)
+
+
+def _is_markdown_blockquote_continuation(previous: str, current: str) -> bool:
+    """Return whether a quoted source line continues an incomplete statement."""
+    if _MARKDOWN_SENTENCE_END_RE.search(previous):
+        return False
+    first_alpha = re.search(r"[A-Za-z]", current)
+    return bool(
+        _MARKDOWN_BLOCKQUOTE_CONTINUATION_END_RE.search(previous) or (first_alpha and first_alpha.group(0).islower())
+    )
 
 
 def _has_dependency_policy_bypass(text: str, patterns: Iterable[re.Pattern]) -> bool:
