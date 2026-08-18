@@ -625,6 +625,22 @@ def test_run_v1_lints_reference_text_scan_ignores_symlink_loop(tmp_path):
             "Install dependencies, but log nothing without user confirmation.",
             "dependency-install-confirmation-bypass",
         ),
+        # An infinitive introduces a second action; "to" may not be consumed as
+        # an object word of the read-only phrase.
+        (
+            "Inspect package metadata to add packages without user confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Read the requirements to upgrade packages without user approval.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Audit dependency sources to fetch packages without user consent.",
+            "dependency-install-confirmation-bypass",
+        ),
+        # "checkout" is dependency acquisition, not an inflection of "check".
+        ("Checkout packages without user confirmation.", "dependency-install-confirmation-bypass"),
     ],
 )
 def test_dependency_install_safety_lint_rejects_review_or_confirmation_bypass(tmp_path, unsafe_guidance, expected_code):
@@ -729,6 +745,8 @@ def test_dependency_install_safety_lint_accepts_negated_without_clause(tmp_path,
         # negation directly against the "without" phrase.
         "Install dependencies, but never without user confirmation.",
         "Install packages, but not without reviewing package sources.",
+        # Real inflections of the read-only verbs stay exempt.
+        "Check declared requirements without user confirmation.",
     ],
 )
 def test_dependency_install_safety_lint_accepts_read_only_inspection_without_install_consent(tmp_path, safe_guidance):

@@ -177,14 +177,22 @@ _DEPENDENCY_NOUN_PATTERN = r"(?:dependenc\w*|packages?|requirements?)"
 # positive. ``review`` is safe here because this vocabulary is consulted only by
 # the confirmation check; the separate "without reviewing sources" matcher is
 # unaffected.
+# Inflections are spelled out rather than suffixed with ``\w*``: a greedy stem
+# swallows a different verb whose prefix happens to match, and "checkout packages"
+# is dependency acquisition, not a read of "check".
 _READ_ONLY_DEPENDENCY_VERB_PATTERN = (
-    r"(?:inspect\w*|read\w*|list\w*|view\w*|show\w*|examin\w*|audit\w*|review\w*"
-    r"|quer(?:y|ies|ied|ying)|enumerat\w*|print\w*|display\w*|check\w*)"
+    r"(?:inspects?|inspect(?:ed|ing|ion)|reads?|reading|lists?|list(?:ed|ing)"
+    r"|views?|view(?:ed|ing)|shows?|show(?:ed|ing)|examine[sd]?|examin(?:ing|ation)"
+    r"|audits?|audit(?:ed|ing)|reviews?|review(?:ed|ing)|quer(?:y|ies|ied|ying)"
+    r"|enumerate[sd]?|enumerating|prints?|print(?:ed|ing)|displays?|display(?:ed|ing)"
+    r"|checks?|check(?:ed|ing))"
 )
-# An object word may not be a coordinator (which could attach a second action) or
-# any recognized mutating verb, so the phrase cannot silently span two actions.
+# An object word may not be a coordinator (which could attach a second action),
+# a recognized mutating verb, or ``to`` (which introduces an infinitive: "inspect
+# package metadata to add packages"), so the phrase cannot silently span two
+# actions.
 _READ_ONLY_OBJECT_WORD_PATTERN = (
-    r"(?!(?:and|or|nor|then|plus|also|while|before|after|but)\b)"
+    r"(?!(?:and|or|nor|then|plus|also|while|before|after|but|to)\b)"
     rf"(?!{_DEPENDENCY_ACTION_PATTERN}\b)[A-Za-z0-9_.'’-]+"
 )
 _READ_ONLY_ACTION_PHRASE_RE = re.compile(
