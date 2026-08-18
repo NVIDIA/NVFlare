@@ -985,6 +985,28 @@ def test_dependency_install_safety_lint_keeps_independent_fenced_statements_sepa
     assert result["findings"] == []
 
 
+@pytest.mark.parametrize(
+    "independent_statement",
+    [
+        "Never ask for approval",
+        "Without user confirmation",
+        "Never audit sources",
+    ],
+)
+def test_dependency_install_safety_lint_keeps_reverse_fenced_statements_separate(tmp_path, independent_statement):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-safe-dependency-skill")
+    references = skill_dir / "references"
+    references.mkdir()
+    references.joinpath("dependency-install.md").write_text(
+        f"```text\n{independent_statement}\nInstall packages\n```\n", encoding="utf-8"
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_DEPENDENCY_INSTALL_SAFETY])
+
+    assert result["status"] == "ok"
+    assert result["findings"] == []
+
+
 def test_dependency_install_safety_lint_joins_capitalized_fenced_fragment(tmp_path):
     skill_dir = _write_skill(tmp_path / "skills", "nvflare-unsafe-dependency-skill")
     references = skill_dir / "references"

@@ -1834,7 +1834,8 @@ def _is_markdown_fenced_continuation(previous: str, current: str) -> bool:
     A fence preserves hard line breaks, so its lines are separate statements
     unless one genuinely wraps. A preceding sentence ending is an unambiguous
     boundary. So is a current line that independently expresses one of the
-    policy bypasses this lint recognizes.
+    policy bypasses this lint recognizes, or a new dependency action following
+    such a bypass line.
 
     Without the second test the outcome turned on punctuation the author never
     wrote: "Install packages" followed by "Never ask for approval." became a
@@ -1845,6 +1846,10 @@ def _is_markdown_fenced_continuation(previous: str, current: str) -> bool:
     if _MARKDOWN_SENTENCE_END_RE.search(previous):
         return False
     if _is_bare_confirmation_bypass(current) or _has_dependency_review_bypass(current):
+        return False
+    if _DEPENDENCY_ACTION_AT_START_RE.search(current) and (
+        _is_bare_confirmation_bypass(previous) or _has_dependency_review_bypass(previous)
+    ):
         return False
     return _is_markdown_blockquote_continuation(previous, current)
 
