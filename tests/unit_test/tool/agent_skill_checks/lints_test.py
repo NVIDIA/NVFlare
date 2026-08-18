@@ -454,6 +454,11 @@ def test_run_v1_lints_reference_text_scan_ignores_symlink_loop(tmp_path):
             "After the audit, install dependencies without user confirmation.",
             "dependency-install-confirmation-bypass",
         ),
+        (
+            "Do not ask for approval; do not ask whether to install dependencies before "
+            "reviewing their sources; obtain explicit user approval after the review.",
+            "dependency-install-confirmation-bypass",
+        ),
     ],
 )
 def test_dependency_install_safety_lint_rejects_review_or_confirmation_bypass(tmp_path, unsafe_guidance, expected_code):
@@ -487,16 +492,32 @@ def test_dependency_install_safety_lint_accepts_reviewed_confirmed_install(tmp_p
 @pytest.mark.parametrize(
     "safe_guidance",
     [
+        "You must not skip the audit of dependencies before installing packages.",
+        "You should not skip reviewing package sources before installation.",
+        "The skill cannot skip auditing dependency sources before installing packages.",
+    ],
+)
+def test_dependency_install_safety_lint_accepts_negated_skip_review(tmp_path, safe_guidance):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-safe-dependency-skill")
+    references = skill_dir / "references"
+    references.mkdir()
+    references.joinpath("dependency-install.md").write_text(safe_guidance + "\n", encoding="utf-8")
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_DEPENDENCY_INSTALL_SAFETY])
+
+    assert result["status"] == "ok"
+    assert result["findings"] == []
+
+
+@pytest.mark.parametrize(
+    "safe_guidance",
+    [
         (
             "Do not ask whether to install packages before auditing their sources. "
             "After the audit, show the plan and obtain explicit user confirmation."
         ),
         (
             "Do not ask for approval before reviewing dependency sources; "
-            "obtain explicit user approval after the review."
-        ),
-        (
-            "Do not ask for approval; do not ask whether to install dependencies before reviewing their sources; "
             "obtain explicit user approval after the review."
         ),
         (

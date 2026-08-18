@@ -46,6 +46,7 @@ import json
 import os
 import re
 import shlex
+import stat
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from functools import cached_property
@@ -242,7 +243,8 @@ _DEPENDENCY_REVIEW_BYPASS_RES = (
         re.IGNORECASE,
     ),
     re.compile(
-        r"(?<!do not )(?<!don't )(?<!never )\b(?:skip|bypass|omit)\w*\b[^.!?;]{0,80}"
+        r"(?<!do not )(?<!don't )(?<!never )(?<!must not )(?<!should not )(?<!cannot )(?<!can not )"
+        r"(?<!won't )(?<!will not )\b(?:skip|bypass|omit)\w*\b[^.!?;]{0,80}"
         r"\b(?:audit\w*|review\w*|vet\w*|classif\w*|flag\w*)\b[^.!?;]{0,120}"
         r"\b(?:dependenc\w*|install\w*|package\w*|requirements?|sources?)\b",
         re.IGNORECASE,
@@ -1104,7 +1106,8 @@ def _lint_dependency_install_safety(context: LintContext) -> None:
                             FINDING_ERROR,
                             file_path,
                             "dependency-install guidance suppresses user confirmation",
-                            "Show a redacted install plan and require confirmation unless the user explicitly requested unattended installation.",
+                            "Show a redacted install plan and require confirmation unless the user "
+                            "explicitly requested unattended installation.",
                             code="dependency-install-confirmation-bypass",
                             skill=record.name,
                             line=line_number,
@@ -1117,7 +1120,8 @@ def _lint_dependency_install_safety(context: LintContext) -> None:
                             FINDING_ERROR,
                             file_path,
                             "dependency-install guidance suppresses package or source review",
-                            "Require static review and flag suspicious package names, sources, credentials, indexes, and installer options.",
+                            "Require static review and flag suspicious package names, sources, "
+                            "credentials, indexes, and installer options.",
                             code="dependency-install-review-bypass",
                             skill=record.name,
                             line=line_number,
@@ -1715,25 +1719,39 @@ def _is_bare_confirmation_bypass(text: str) -> bool:
     return bool(_BARE_CONFIRMATION_BYPASS_RE.fullmatch(text) or _BARE_CONFIRMATION_DENIAL_RE.fullmatch(text))
 
 
+def _has_nearby_audit_then_confirm(statements: list[str], index: int) -> bool:
+    """Return whether the audit-first/post-audit-confirmation sequence sits next to ``index``.
+
+    The exemption must be tied to the statement it excuses, not to any audit-first or
+    post-audit-confirmation language elsewhere in the same policy block, otherwise an
+    unrelated audit-then-confirm sequence can mask a standalone confirmation bypass.
+    """
+    window_text = " ".join(statements[max(0, index - 1) : index + 2])
+    return bool(
+        _DEPENDENCY_AUDIT_FIRST_RE.search(window_text)
+        and _has_dependency_policy_bypass(window_text, _DEPENDENCY_POST_AUDIT_CONFIRMATION_RES)
+    )
+
+
 def _has_dependency_confirmation_bypass(text: str) -> bool:
     """Distinguish a confirmation bypass from an explicit audit-then-confirm sequence."""
     if _has_dependency_policy_bypass(text, _DEPENDENCY_CONFIRMATION_BYPASS_RES):
         return True
-    statements = re.split(r"(?<=[.!?;])\s+", text)
+    statements = [statement.strip() for statement in re.split(r"(?<=[.!?;])\s+", text) if statement.strip()]
     if _DEPENDENCY_INSTALL_TERMS_RE.search(text) and any(
-        _BARE_CONFIRMATION_DENIAL_RE.fullmatch(statement.strip()) for statement in statements
+        _BARE_CONFIRMATION_DENIAL_RE.fullmatch(statement) for statement in statements
     ):
         return True
-    bare_confirmation_suppression = _DEPENDENCY_INSTALL_TERMS_RE.search(text) and any(
-        _BARE_CONFIRMATION_BYPASS_RE.fullmatch(statement.strip()) for statement in statements
-    )
-    request_suppression = _DEPENDENCY_CONFIRMATION_REQUEST_SUPPRESSION_RE.search(text)
-    if not bare_confirmation_suppression and not request_suppression:
-        return False
-    audit_then_confirm = _DEPENDENCY_AUDIT_FIRST_RE.search(text) and _has_dependency_policy_bypass(
-        text, _DEPENDENCY_POST_AUDIT_CONFIRMATION_RES
-    )
-    return not audit_then_confirm
+    for index, statement in enumerate(statements):
+        bare_confirmation_suppression = _DEPENDENCY_INSTALL_TERMS_RE.search(
+            text
+        ) and _BARE_CONFIRMATION_BYPASS_RE.fullmatch(statement)
+        request_suppression = _DEPENDENCY_CONFIRMATION_REQUEST_SUPPRESSION_RE.search(statement)
+        if not bare_confirmation_suppression and not request_suppression:
+            continue
+        if not _has_nearby_audit_then_confirm(statements, index):
+            return True
+    return False
 
 
 def _eval_mentions_file_editing(item: dict[str, Any]) -> bool:
@@ -1792,17 +1810,48 @@ def _has_fixture_notes(evals_dir: Path) -> bool:
 
 
 def _read_bounded_text(path: Path) -> Optional[str]:
-    # Never follow a symlink: its target may live outside the skill tree.
-    if path.is_symlink():
-        return None
-    if not path.is_file():
-        return None
-    if _is_oversized_text_file(path):
-        return None
+    # Never follow a symlink: its target may live outside the skill tree. Checking
+    # is_symlink() before opening is not enough on its own -- the path could be
+    # swapped for a symlink between the check and the open -- so also open with
+    # O_NOFOLLOW and re-verify the descriptor's identity below.
     try:
-        return path.read_text(encoding="utf-8", errors="replace")
+        before = path.lstat()
     except OSError:
         return None
+    if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+        return None
+    if before.st_size > MAX_SKILL_TEXT_FILE_BYTES:
+        return None
+
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        return None
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            return None
+        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
+            return None
+        if opened.st_size > MAX_SKILL_TEXT_FILE_BYTES:
+            return None
+        chunks: list[bytes] = []
+        bytes_read = 0
+        while bytes_read <= MAX_SKILL_TEXT_FILE_BYTES:
+            chunk = os.read(descriptor, min(64 * 1024, MAX_SKILL_TEXT_FILE_BYTES + 1 - bytes_read))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            bytes_read += len(chunk)
+        data = b"".join(chunks)
+        if len(data) > MAX_SKILL_TEXT_FILE_BYTES:
+            return None
+        return data.decode("utf-8", errors="replace")
+    except OSError:
+        return None
+    finally:
+        os.close(descriptor)
 
 
 def _is_oversized_text_file(path: Path) -> bool:
