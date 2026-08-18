@@ -249,6 +249,11 @@ _DEPENDENCY_REVIEW_BYPASS_RES = (
     ),
 )
 _MARKDOWN_ATX_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}(?:\s+|$)")
+_MARKDOWN_BLOCKQUOTE_BARE_CONFIRMATION_BYPASS_RE = re.compile(
+    r"^(?:do\s+not|don't|never)\s+(?:preemptively\s+)?(?:ask|prompt)\b[^.!?;]{0,80}"
+    r"\b(?:approval|confirmation|consent)\b[.!?;]?$",
+    re.IGNORECASE,
+)
 _MARKDOWN_BLOCKQUOTE_RE = re.compile(r"^\s{0,3}>")
 _MARKDOWN_BLOCKQUOTE_CONTINUATION_END_RE = re.compile(
     r"\b(?:a|an|and|are|as|at|be|been|being|before|by|can|could|did|do|does|for|from|if|in|into|is|may|might|"
@@ -1671,6 +1676,14 @@ def _markdown_table_row_numbers(lines: list[str]) -> set[int]:
 
 def _is_markdown_blockquote_continuation(previous: str, current: str) -> bool:
     """Return whether a quoted source line continues an incomplete statement."""
+    dependency_then_bare_bypass = _DEPENDENCY_INSTALL_TERMS_RE.search(
+        previous
+    ) and _MARKDOWN_BLOCKQUOTE_BARE_CONFIRMATION_BYPASS_RE.fullmatch(current)
+    bare_bypass_then_dependency = _MARKDOWN_BLOCKQUOTE_BARE_CONFIRMATION_BYPASS_RE.fullmatch(
+        previous
+    ) and _DEPENDENCY_INSTALL_TERMS_RE.search(current)
+    if dependency_then_bare_bypass or bare_bypass_then_dependency:
+        return True
     if _MARKDOWN_SENTENCE_END_RE.search(previous):
         return False
     first_alpha = re.search(r"[A-Za-z]", current)
