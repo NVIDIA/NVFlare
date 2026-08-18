@@ -204,6 +204,24 @@ _READ_ONLY_ACTION_PHRASE_RE = re.compile(
     rf"{_READ_ONLY_DEPENDENCY_VERB_PATTERN}\b(?:\s+{_READ_ONLY_OBJECT_WORD_PATTERN})*",
     re.IGNORECASE,
 )
+# The same read done in the passive voice: "package metadata must be inspected".
+# The active phrase pattern is anchored to a leading verb and cannot see these.
+_READ_ONLY_PASSIVE_RE = re.compile(
+    r"\b(?:must|should|shall|can|could|may|might|is|are|was|were|will|would|to)\s+(?:(?:be|been)\s+)?"
+    r"(?:inspected|read|listed|viewed|shown|examined|audited|reviewed|queried"
+    r"|enumerated|printed|displayed|checked)\b",
+    re.IGNORECASE,
+)
+# A series item may open with the coordinator that attached it and with the
+# negation governing the whole series, as in "never download packages, and
+# install dependencies, or use packages". Strip both before asking whether the
+# item itself opens with an action.
+_LEADING_SERIES_PREFIX_RE = re.compile(
+    r"^\s*(?:(?:and|or|nor|then)\s+)?"
+    r"(?:(?:never|not|do\s+not|don't|must\s+not|should\s+not|cannot|can\s+not|won't|will\s+not|shall\s+not)\s+"
+    r"(?:(?:preemptively|ever|automatically|directly)\s+)?)?",
+    re.IGNORECASE,
+)
 # A coordinated series shares one negation: in "never download, install, or
 # execute dependencies", the later verbs are still governed by "never". Only
 # connectives, dependency nouns, and further actions may appear between them.
@@ -1909,7 +1927,10 @@ def _is_dependency_action_series_boundary(statement: str, separator: re.Match) -
     if not separator.group("coordinator"):
         return False
     preceding = statement[: separator.start()]
-    preceding_item = preceding.rsplit(",", 1)[-1]
+    # A series item can open with the coordinator that attached it and with the
+    # negation governing the series, as in "never download packages, and install
+    # dependencies"; strip both before asking whether it opens with an action.
+    preceding_item = _LEADING_SERIES_PREFIX_RE.sub("", preceding.rsplit(",", 1)[-1].lstrip())
     return bool(
         (_DEPENDENCY_ACTION_AT_END_RE.search(preceding) or _DEPENDENCY_ACTION_AT_START_RE.search(preceding_item))
         and _DEPENDENCY_ACTION_AT_START_RE.search(statement[separator.end() :])
@@ -2068,7 +2089,7 @@ def _has_actionable_dependency_context(statements: list[str], excluded_index: in
     "never ask for confirmation" would not be recognized as a bypass.
 
     A purely read-only clause does not permit a mutation, so it is not actionable
-    context either.
+    context either -- in the passive voice as much as the active.
     """
     for index, statement in enumerate(statements):
         if index == excluded_index or not _DEPENDENCY_INSTALL_TERMS_RE.search(statement):
@@ -2077,12 +2098,32 @@ def _has_actionable_dependency_context(statements: list[str], excluded_index: in
             clause = statement[start:end]
             if not _DEPENDENCY_INSTALL_TERMS_RE.search(clause):
                 continue
-            if _NEGATED_DEPENDENCY_ACTION_RE.search(clause) or _PROHIBITED_DEPENDENCY_ACTION_RE.search(clause):
+            if (
+                _NEGATED_DEPENDENCY_ACTION_RE.search(clause)
+                or _PASSIVE_NEGATED_DEPENDENCY_ACTION_RE.search(clause)
+                or _PROHIBITED_DEPENDENCY_ACTION_RE.search(clause)
+            ):
                 continue
-            if _is_read_only_phrase(clause.strip(" \t,;.!?")):
+            if _is_read_only_clause(clause):
                 continue
             return True
     return False
+
+
+def _is_read_only_clause(clause: str) -> bool:
+    """Return whether a clause only reads dependency state.
+
+    Covers the active phrase ("inspect package metadata") and its passive
+    equivalent ("package metadata must be inspected"). A recognized mutating
+    verb disqualifies the passive form, so "packages must be installed" stays
+    actionable.
+    """
+    text = clause.strip(" \t,;.!?")
+    if _is_read_only_phrase(text):
+        return True
+    if _DEPENDENCY_ACTION_RE.search(text):
+        return False
+    return bool(_READ_ONLY_PASSIVE_RE.search(text))
 
 
 def _has_nearby_audit_then_confirm(statements: list[str], index: int) -> bool:
