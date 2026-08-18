@@ -173,3 +173,63 @@ class TestSwarmAggregatorGCLogging:
 
         all_msgs = " ".join(str(c) for c in ctrl.log_info.call_args_list)
         assert "1" in all_msgs, "GC log message must include the round count (1 after first GC call)"
+
+
+def _make_learn_cleanup_controller(memory_gc_rounds=1, cuda_empty_cache=False):
+    """Minimal controller for exercising _cleanup_learn_task_memory."""
+    ctrl = SwarmClientController.__new__(SwarmClientController)
+    ctrl.memory_gc_rounds = memory_gc_rounds
+    ctrl.cuda_empty_cache = cuda_empty_cache
+    ctrl._learn_task_count = 0
+    ctrl.logger = Mock()
+    return ctrl
+
+
+class TestSwarmLearnTaskMemoryCleanup:
+    """Every client — aggregator or not — must run allocator-aware cleanup
+    after each learn task, gated by memory_gc_rounds. A non-aggregation client
+    job never runs _end_gather(), so this hook is its only trim point."""
+
+    def test_cleanup_fires_after_every_task_when_rounds_one(self):
+        ctrl = _make_learn_cleanup_controller(memory_gc_rounds=1)
+
+        with patch("nvflare.fuel.utils.memory_utils.cleanup_memory") as mock_cleanup:
+            for _ in range(3):
+                ctrl._cleanup_learn_task_memory()
+            assert mock_cleanup.call_count == 3
+
+    def test_cleanup_respects_cadence(self):
+        ctrl = _make_learn_cleanup_controller(memory_gc_rounds=2)
+
+        with patch("nvflare.fuel.utils.memory_utils.cleanup_memory") as mock_cleanup:
+            for _ in range(4):
+                ctrl._cleanup_learn_task_memory()
+            # tasks 2 and 4 fire; tasks 1 and 3 do not
+            assert mock_cleanup.call_count == 2
+
+    def test_cleanup_disabled_falls_back_to_gc_collect(self):
+        ctrl = _make_learn_cleanup_controller(memory_gc_rounds=0)
+
+        with (
+            patch("nvflare.fuel.utils.memory_utils.cleanup_memory") as mock_cleanup,
+            patch("nvflare.app_common.ccwf.client_ctl.gc.collect") as mock_collect,
+        ):
+            ctrl._cleanup_learn_task_memory()
+            mock_cleanup.assert_not_called()
+            mock_collect.assert_called_once()
+
+    def test_cuda_flag_is_forwarded(self):
+        ctrl = _make_learn_cleanup_controller(memory_gc_rounds=1, cuda_empty_cache=True)
+
+        with patch("nvflare.fuel.utils.memory_utils.cleanup_memory") as mock_cleanup:
+            ctrl._cleanup_learn_task_memory()
+            mock_cleanup.assert_called_once_with(cuda_empty_cache=True)
+
+    def test_cleanup_logs_when_it_fires(self):
+        ctrl = _make_learn_cleanup_controller(memory_gc_rounds=1)
+
+        with patch("nvflare.fuel.utils.memory_utils.cleanup_memory"):
+            ctrl._cleanup_learn_task_memory()
+
+        msgs = " ".join(str(c) for c in ctrl.logger.info.call_args_list)
+        assert "cleanup" in msgs.lower()
