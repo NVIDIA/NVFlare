@@ -75,8 +75,9 @@ When BYOC is disabled, NVFLARE runs a built-in component path authorization chec
 configuration. Sites get this protection without installing an authorizer component in ``resources.json``. The policy
 allows only class paths that match ``class_allow_list`` in the site's top-level ``resources.json`` or
 ``resources.json.default``. Standard provisioning installs a curated list of built-in components. If
-``class_allow_list`` is not configured, NVFLARE uses the curated built-in default shown below and records an audit
-event for the implicit policy decision. An explicitly configured list replaces that default.
+``class_allow_list`` is not configured, NVFLARE uses the curated built-in default defined in
+``nvflare/app_common/default_component_policy.py`` and records an audit event for the implicit policy decision. An
+explicitly configured list replaces that default.
 
 ``SimEnv`` also installs this curated list in new simulation workspaces without changing POC or production authorization.
 
@@ -116,9 +117,11 @@ checks without repeating the wildcard warning. Simulator runs use warning logs b
 
 Provisioned ``resources.json.default`` Results
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-When provisioning generates startup kits, the server and client ``resources.json.default`` files include the following
-top-level ``class_allow_list``. It is also the built-in fallback when the setting is omitted. Operators can replace it in
-``resources.json`` or ``resources.json.default`` to match the classes their non-BYOC jobs are allowed to load.
+When provisioning generates startup kits, the server and client ``resources.json.default`` files include a top-level
+``class_allow_list``. It is also the built-in fallback when the setting is omitted. Operators can replace it in
+``resources.json`` or ``resources.json.default`` to match the classes their non-BYOC jobs are allowed to load. The JSON
+below is an intentionally partial example of the generated configuration, not the complete default. The
+``DEFAULT_CLASS_ALLOW_LIST`` in ``nvflare/app_common/default_component_policy.py`` is the source of truth.
 
 Every class in ``DEFAULT_CLASS_ALLOW_LIST`` must remain safe to import and construct with untrusted, job-controlled
 arguments. Future additions to the default list require review under this security bar, including constructor side effects
