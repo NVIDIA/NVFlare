@@ -399,6 +399,22 @@ class TestDefaultJobScheduler:
             )
         assert job is None
 
+    def test_duplicate_required_sites_are_treated_as_one(self, setup_and_teardown):
+        servers, scheduler, num_sites, job_manager = setup_and_teardown
+        candidate = create_job(
+            job_id="job",
+            resource_spec={},
+            deploy_map={"app5": ["server", "site0"]},
+            min_sites=1,
+            required_sites=["site0", "site0"],
+        )
+        with servers[0].new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(
+                job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx
+            )
+        assert job is candidate
+        assert set(dispatch_info) == {"server", "site0"}
+
     def test_require_sites_not_enough_resource(self, setup_and_teardown):
         servers, scheduler, num_sites, job_manager = setup_and_teardown
         candidate = create_job(
