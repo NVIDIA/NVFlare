@@ -73,6 +73,7 @@ Example ``docker.yaml``:
    parent:
      docker_image: registry.example.com/nvflare-site:2.8
      network: nvflare-network
+     internal_connection_security: mtls
 
    job_launcher:
      default_python_path: /usr/local/bin/python
@@ -93,6 +94,11 @@ Top-level keys:
 - ``docker_image``: required parent image used by ``startup/start_docker.sh``.
 - ``network``: Docker network for parent and job containers. Defaults to
   ``nvflare-network``.
+- ``internal_connection_security``: security mode for internal parent/job TCP
+  links (SP/SJ and CP/CJ). Accepts ``mtls`` or ``clear`` and defaults to
+  ``mtls``. Use ``clear`` only as an explicit insecure opt-out because it
+  removes certificate authentication while the parent port remains reachable
+  from containers attached to the Docker network.
 
 ``job_launcher`` keys:
 
@@ -121,6 +127,10 @@ The command writes:
 - patched ``local/resources.json.default`` with ``DockerJobLauncher``
 - patched ``local/comm_config.json``
 - ``local/study_runtime.yaml`` template when missing (skipped for legacy kits that already have ``study_data.yaml``)
+
+The Docker launcher preserves ``stcp://`` while replacing the parent hostname
+with its Docker DNS name. It rejects URL and connection-security mismatches
+instead of silently downgrading an mTLS parent connection to clear TCP.
 
 **********
 K8s Config
