@@ -248,13 +248,13 @@ _DEPENDENCY_REVIEW_BYPASS_RES = (
         re.IGNORECASE,
     ),
 )
-_MARKDOWN_ATX_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}(?:\s+|$)")
-_MARKDOWN_BLOCKQUOTE_BARE_CONFIRMATION_BYPASS_RE = re.compile(
+_BARE_CONFIRMATION_BYPASS_RE = re.compile(
     r"^(?:do\s+not|don't|never)\s+(?:preemptively\s+)?(?:ask|prompt)\b[^.!?;]{0,80}"
     r"\b(?:approval|confirmation|consent)\b[.!?;]?$",
     re.IGNORECASE,
 )
-_MARKDOWN_BLOCKQUOTE_RE = re.compile(r"^\s{0,3}>")
+_MARKDOWN_ATX_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}(?:\s+|$)")
+_MARKDOWN_BLOCKQUOTE_RE = re.compile(r"^\s{0,3}(?:>\s*)+")
 _MARKDOWN_BLOCKQUOTE_CONTINUATION_END_RE = re.compile(
     r"\b(?:a|an|and|are|as|at|be|been|being|before|by|can|could|did|do|does|for|from|if|in|into|is|may|might|"
     r"must|never|not|of|on|or|preceded|shall|should|that|the|to|was|were|will|with|without|would)"
@@ -267,6 +267,7 @@ _MARKDOWN_SENTENCE_END_RE = re.compile(r"[.!?;](?:[`*_]+)?\s*$")
 _MARKDOWN_STRUCTURAL_SEPARATOR_RE = re.compile(r"^\s{0,3}(?:=+|-{3,})\s*$")
 _MARKDOWN_TABLE_DELIMITER_CELL_RE = re.compile(r"^:?-{3,}:?$")
 _MARKDOWN_TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
+_MARKDOWN_TAB_STOP = 4
 
 
 @dataclass(frozen=True)
@@ -1577,7 +1578,7 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
             continue
 
         if list_blank_pending:
-            indentation = len(line) - len(line.lstrip(" \t"))
+            indentation = _markdown_leading_indent(line)
             if indentation >= list_content_indent:
                 block_lines.append(stripped)
                 list_blank_pending = False
@@ -1613,7 +1614,7 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
             block_lines = [stripped]
             block_start = line_number
             block_kind = "list"
-            list_content_indent = list_item_match.end()
+            list_content_indent = _markdown_column_width(line[: list_item_match.end()])
             continue
 
         if (
@@ -1637,7 +1638,7 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
             block_lines = []
             block_kind = ""
         elif block_kind == "list":
-            indentation = len(line) - len(line.lstrip(" \t"))
+            indentation = _markdown_leading_indent(line)
             if indentation >= list_content_indent:
                 block_lines.append(stripped)
                 continue
@@ -1674,12 +1675,28 @@ def _markdown_table_row_numbers(lines: list[str]) -> set[int]:
     return row_numbers
 
 
+def _markdown_column_width(text: str) -> int:
+    """Return the visual width of Markdown source using four-column tab stops."""
+    column = 0
+    for character in text:
+        if character == "\t":
+            column += _MARKDOWN_TAB_STOP - (column % _MARKDOWN_TAB_STOP)
+        else:
+            column += 1
+    return column
+
+
+def _markdown_leading_indent(line: str) -> int:
+    leading_whitespace = line[: len(line) - len(line.lstrip(" \t"))]
+    return _markdown_column_width(leading_whitespace)
+
+
 def _is_markdown_blockquote_continuation(previous: str, current: str) -> bool:
     """Return whether a quoted source line continues an incomplete statement."""
     dependency_then_bare_bypass = _DEPENDENCY_INSTALL_TERMS_RE.search(
         previous
-    ) and _MARKDOWN_BLOCKQUOTE_BARE_CONFIRMATION_BYPASS_RE.fullmatch(current)
-    bare_bypass_then_dependency = _MARKDOWN_BLOCKQUOTE_BARE_CONFIRMATION_BYPASS_RE.fullmatch(
+    ) and _BARE_CONFIRMATION_BYPASS_RE.fullmatch(current)
+    bare_bypass_then_dependency = _BARE_CONFIRMATION_BYPASS_RE.fullmatch(
         previous
     ) and _DEPENDENCY_INSTALL_TERMS_RE.search(current)
     if dependency_then_bare_bypass or bare_bypass_then_dependency:
@@ -1699,6 +1716,11 @@ def _has_dependency_policy_bypass(text: str, patterns: Iterable[re.Pattern]) -> 
 
 def _has_dependency_confirmation_bypass(text: str) -> bool:
     """Distinguish a confirmation bypass from an explicit audit-then-confirm sequence."""
+    statements = re.split(r"(?<=[.!?;])\s+", text)
+    if _DEPENDENCY_INSTALL_TERMS_RE.search(text) and any(
+        _BARE_CONFIRMATION_BYPASS_RE.fullmatch(statement.strip()) for statement in statements
+    ):
+        return True
     if _has_dependency_policy_bypass(text, _DEPENDENCY_CONFIRMATION_BYPASS_RES):
         return True
     if not _DEPENDENCY_CONFIRMATION_REQUEST_SUPPRESSION_RE.search(text):
