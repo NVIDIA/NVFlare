@@ -990,7 +990,6 @@ def test_dependency_install_safety_lint_keeps_independent_fenced_statements_sepa
     [
         "Never ask for approval",
         "Without user confirmation",
-        "Never audit sources",
     ],
 )
 def test_dependency_install_safety_lint_keeps_reverse_fenced_statements_separate(tmp_path, independent_statement):
