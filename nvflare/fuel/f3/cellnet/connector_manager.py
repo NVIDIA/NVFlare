@@ -172,7 +172,15 @@ class ConnectorManager:
         return conn_config
 
     def _get_connector(
-        self, url: str, active: bool, internal: bool, adhoc: bool, secure: bool, conn_resources=None
+        self,
+        url: str,
+        active: bool,
+        internal: bool,
+        adhoc: bool,
+        secure: bool,
+        conn_resources=None,
+        listener_scheme=None,
+        listener_resources=None,
     ) -> Union[None, ConnectorData]:
         if active and not url:
             raise RuntimeError("url is required by not provided for active connector!")
@@ -189,8 +197,8 @@ class ConnectorManager:
                 ssl_required = secure
             else:
                 # internal
-                scheme = self.int_scheme
-                resources = self.int_resources
+                scheme = listener_scheme or self.int_scheme
+                resources = self.int_resources if listener_resources is None else listener_resources
         else:
             # ad-hoc - must be external
             if internal:
@@ -254,11 +262,19 @@ class ConnectorManager:
         """
         return self._get_connector(url=url, active=True, internal=False, adhoc=adhoc, secure=self.secure)
 
-    def get_internal_listener(self) -> Union[None, ConnectorData]:
+    def get_internal_listener(self, scheme=None, resources=None) -> Union[None, ConnectorData]:
         """
         Try to get an internal listener.
         """
-        return self._get_connector(url="", active=False, internal=True, adhoc=False, secure=False)
+        return self._get_connector(
+            url="",
+            active=False,
+            internal=True,
+            adhoc=False,
+            secure=False,
+            listener_scheme=scheme,
+            listener_resources=resources,
+        )
 
     def get_internal_connector(self, url: str, conn_resources=None) -> Union[None, ConnectorData]:
         """

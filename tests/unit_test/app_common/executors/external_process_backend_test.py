@@ -25,8 +25,15 @@ from unittest.mock import MagicMock, Mock
 import pytest
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.apis.dxo import DXO, DataKind
-from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReservedKey, ReturnCode, ServerCommandNames
+from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.fl_constant import (
+    ConnectionSecurity,
+    FLContextKey,
+    FLMetaKey,
+    ReservedKey,
+    ReturnCode,
+    ServerCommandNames,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable
@@ -51,6 +58,7 @@ from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
 CJ_FQCN = "site-1.job-1"
@@ -113,6 +121,8 @@ class FakeCell:
         self.decode_pass_through_channels = set()
         self.decode_pass_through_topics = set()
         self.listener_url = "tcp://127.0.0.1:56789"
+        self.configured_listener_url = None
+        self.listener_args = None
         self.internal_listener_made = False
         self.cbs = {}
         self.sent = []  # (topic, target, payload, timeout)
@@ -129,8 +139,13 @@ class FakeCell:
     def is_cell_connected(self, target_fqcn):
         return target_fqcn not in self.disconnected
 
-    def make_internal_listener(self):
+    def make_internal_listener(self, scheme=None, resources=None):
         self.internal_listener_made = True
+        self.listener_args = (scheme, resources)
+        if self.configured_listener_url and scheme is None and resources is None:
+            self.listener_url = self.configured_listener_url
+        elif scheme == "tcp" and resources:
+            self.listener_url = "tcp://localhost:56789"
 
     def get_internal_listener_url(self):
         return self.listener_url
@@ -441,6 +456,50 @@ class TestInitializeAndFinalize:
             assert exchange[ConfigKey.SUBMIT_MODEL_TASK_NAME] == "my_submit"
         finally:
             backend.finalize(FLContext())
+
+    @pytest.mark.parametrize(
+        "parent_scheme,parent_security",
+        [
+            ("tcp", ConnectionSecurity.CLEAR),
+            ("stcp", ConnectionSecurity.MTLS),
+        ],
+    )
+    def test_trainer_listener_is_independent_from_fixed_parent_listener(self, env, parent_scheme, parent_security):
+        fixed_parent_url = f"{parent_scheme}://localhost:8102"
+        env.cell.parent_url = fixed_parent_url
+        env.cell.parent_resources = {DriverParams.CONNECTION_SECURITY.value: parent_security}
+        env.cell.configured_listener_url = fixed_parent_url
+        original_parent_resources = dict(env.cell.parent_resources)
+
+        backend, fl_ctx = _initialized_backend(env)
+        try:
+            trainer = backend._active_launch
+            assert trainer is not None and trainer.ready.is_set() and trainer.session_id
+            assert env.cell.listener_args == (
+                "tcp",
+                {
+                    DriverParams.HOST.value: "localhost",
+                    DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.CLEAR,
+                },
+            )
+            assert env.cell.listener_url == "tcp://localhost:56789"
+            assert env.cell.listener_url != fixed_parent_url
+
+            bootstrap_path = env.harness.processes[0].kwargs["env"][BOOTSTRAP_FILE_ENV_VAR]
+            bootstrap = read_bootstrap_config(bootstrap_path)
+            assert bootstrap[BootstrapKey.CONNECT_URL] == env.cell.listener_url
+            for field in ("connection_security", "ca_cert", "client_cert", "client_key"):
+                assert field not in bootstrap
+
+            seen = _install_auto_result(env)
+            result = backend.execute("train", _result_shareable(), fl_ctx, Signal())
+            assert from_shareable(result).data == {"w": [1.0]}
+            assert seen.task_payloads
+        finally:
+            backend.finalize(FLContext())
+
+        assert env.cell.parent_url == fixed_parent_url
+        assert env.cell.parent_resources == original_parent_resources
 
     def test_initialize_unwinds_when_hello_never_arrives(self, env):
         env.harness.auto_hello = False

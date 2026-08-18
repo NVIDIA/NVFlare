@@ -29,7 +29,7 @@ import time
 import uuid
 from typing import Any, Optional, Sequence, Tuple, Union
 
-from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReturnCode, ServerCommandNames
+from nvflare.apis.fl_constant import ConnectionSecurity, FLContextKey, FLMetaKey, ReturnCode, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable, make_reply
@@ -52,6 +52,7 @@ from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils.fobs import FOBSContextKey
@@ -190,7 +191,13 @@ class ExternalProcessBackend(CellBackendBase):
             self._app_dir = workspace.get_app_dir(self._job_id)
             self._custom_dir = workspace.get_app_custom_dir(self._job_id)
 
-            cell.make_internal_listener()
+            cell.make_internal_listener(
+                scheme="tcp",
+                resources={
+                    DriverParams.HOST.value: "localhost",
+                    DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.CLEAR,
+                },
+            )
             connect_url = cell.get_internal_listener_url()
             if not connect_url:
                 raise RuntimeError("CJ cell has no internal listener url for the trainer to connect to")
