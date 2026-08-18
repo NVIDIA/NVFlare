@@ -21,7 +21,7 @@ import shutil
 import subprocess
 import sys
 from enum import Enum
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, mkdtemp
 from typing import Dict, List
 
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
@@ -126,12 +126,8 @@ class FedJobConfig:
 
         self.resource_specs[site_name] = resource_spec
 
-    def _generate_meta(self, job_dir):
-        """generate the job meta.json
-
-        Returns:
-
-        """
+    def _prepare_meta(self):
+        """Validate and serialize job metadata before replacing an existing export."""
         self._validate_meta_props(self.meta_props)
         meta_json = {
             "name": self.job_name,
@@ -145,9 +141,10 @@ class FedJobConfig:
         if self.meta_props:
             meta_json.update(self.meta_props)
 
-        # Serialize before creating the ownership marker so failures cannot
-        # leave a truncated meta.json behind.
-        json_dump = json.dumps(meta_json, indent=4)
+        return json.dumps(meta_json, indent=4)
+
+    def _generate_meta(self, job_dir, json_dump):
+        """Atomically write the pre-validated job metadata."""
         meta_file = os.path.join(job_dir, META_JSON)
         temp_file = f"{meta_file}.tmp"
         try:
@@ -168,6 +165,8 @@ class FedJobConfig:
         # Revalidate at the filesystem boundary in case this low-level object was
         # constructed directly or job_name was changed after construction.
         check_job_name("job_name", self.job_name)
+        json_dump = self._prepare_meta()
+        os.makedirs(job_root, exist_ok=True)
         job_dir = os.path.join(job_root, self.job_name)
         if os.path.exists(job_dir):
             if self._is_valid_job_folder(job_dir, self.job_name):
@@ -175,28 +174,31 @@ class FedJobConfig:
             else:
                 raise RuntimeError(f"Job folder {job_dir} already exists and does not belong to job {self.job_name}.")
 
-        # Write the ownership marker before generating app files. If a later
-        # export step fails, a retry can safely identify and replace this folder.
-        os.makedirs(job_dir, exist_ok=True)
+        # Build in a sibling directory and publish only after the ownership
+        # marker and all app files are complete. An interrupted export therefore
+        # cannot leave an unowned job directory that blocks a retry.
+        temp_job_dir = mkdtemp(prefix=f".{self.job_name}.", dir=job_root)
         try:
-            self._generate_meta(job_dir)
-        except Exception:
-            shutil.rmtree(job_dir, ignore_errors=True)
+            self._generate_meta(temp_job_dir, json_dump)
+
+            for app_name, fed_app in self.fed_apps.items():
+                self.custom_modules = []
+                self._copied_source_by_dest = {}
+                config_dir = os.path.join(temp_job_dir, app_name, CONFIG)
+                custom_dir = os.path.join(temp_job_dir, app_name, CUSTOM)
+                os.makedirs(config_dir, exist_ok=True)
+                # custom_dir will be created on-demand if custom code is added.
+
+                if fed_app.server_app:
+                    self._get_server_app(config_dir, custom_dir, fed_app)
+
+                if fed_app.client_app:
+                    self._get_client_app(config_dir, custom_dir, fed_app)
+
+            os.replace(temp_job_dir, job_dir)
+        except BaseException:
+            shutil.rmtree(temp_job_dir, ignore_errors=True)
             raise
-
-        for app_name, fed_app in self.fed_apps.items():
-            self.custom_modules = []
-            self._copied_source_by_dest = {}
-            config_dir = os.path.join(job_dir, app_name, CONFIG)
-            custom_dir = os.path.join(job_dir, app_name, CUSTOM)
-            os.makedirs(config_dir, exist_ok=True)
-            # custom_dir will be created on-demand if custom code is added.
-
-            if fed_app.server_app:
-                self._get_server_app(config_dir, custom_dir, fed_app)
-
-            if fed_app.client_app:
-                self._get_client_app(config_dir, custom_dir, fed_app)
 
     def simulator_run(self, workspace, clients=None, n_clients=None, threads=None, gpu=None, log_config=None):
         with TemporaryDirectory() as job_root:

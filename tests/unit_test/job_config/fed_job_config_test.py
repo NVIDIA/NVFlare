@@ -34,6 +34,36 @@ class TestFedJobConfig:
 
         assert not (tmp_path / "job").exists()
 
+    def test_generate_job_config_preserves_existing_export_when_metadata_is_rejected(self, tmp_path):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        job_config.generate_job_config(tmp_path)
+        marker = tmp_path / "job" / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+        job_config.meta_props = {"name": "other-job"}
+
+        with pytest.raises(ValueError, match="reserved 'name'"):
+            job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+
+    def test_generate_job_config_can_retry_after_interrupted_export(self, tmp_path, monkeypatch):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        original_generate_meta = job_config._generate_meta
+
+        def interrupt_export(*args):
+            raise KeyboardInterrupt()
+
+        monkeypatch.setattr(job_config, "_generate_meta", interrupt_export)
+        with pytest.raises(KeyboardInterrupt):
+            job_config.generate_job_config(tmp_path)
+
+        assert not (tmp_path / "job").exists()
+
+        monkeypatch.setattr(job_config, "_generate_meta", original_generate_meta)
+        job_config.generate_job_config(tmp_path)
+
+        assert (tmp_path / "job" / "meta.json").is_file()
+
     def test_generate_job_config_can_be_repeated_with_meta_props(self, tmp_path):
         job_config = FedJobConfig(job_name="job", min_clients=1, meta_props={"description": "test job"})
 
