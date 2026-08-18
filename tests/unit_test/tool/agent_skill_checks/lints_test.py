@@ -547,6 +547,12 @@ def test_dependency_install_safety_lint_accepts_audit_before_confirmation(tmp_pa
             "```\n"
         ),
         (
+            "```text\n"
+            "Review dependency sources before use\n"
+            "Never ask for confirmation before changing a selected recipe\n"
+            "```\n"
+        ),
+        (
             "> Never ask the user to modify a selected recipe\n"
             "> Install packages only after displaying the plan and receiving confirmation\n"
         ),
@@ -600,6 +606,7 @@ def test_dependency_install_safety_lint_joins_wrapped_list_item(tmp_path, unsafe
         ("> Install packages from requirements\n" "> Never ask for approval.\n"),
         ("> Never ask for approval\n" "> Install packages from requirements.\n"),
         ("> > Never ask for approval.\n" "> > Install packages from requirements.\n"),
+        ("> Install packages from requirements\n" "> Without user confirmation.\n"),
     ],
 )
 def test_dependency_install_safety_lint_joins_wrapped_blockquote_statement(tmp_path, unsafe_guidance):

@@ -253,6 +253,12 @@ _BARE_CONFIRMATION_BYPASS_RE = re.compile(
     r"\b(?:approval|confirmation|consent)\b[.!?;]?$",
     re.IGNORECASE,
 )
+_BARE_CONFIRMATION_DENIAL_RE = re.compile(
+    r"^(?:without\s+(?:explicit\s+)?(?:user\s+)?(?:approval|confirmation|consent)|"
+    r"(?:requires?|needs?)\s+no\s+(?:user\s+)?(?:approval|confirmation|consent)|"
+    r"no\s+(?:user\s+)?(?:approval|confirmation|consent)\s+(?:is\s+)?(?:required|needed))[.!?;]?$",
+    re.IGNORECASE,
+)
 _MARKDOWN_ATX_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}(?:\s+|$)")
 _MARKDOWN_BLOCKQUOTE_RE = re.compile(r"^\s{0,3}(?:>\s*)+")
 _MARKDOWN_BLOCKQUOTE_CONTINUATION_END_RE = re.compile(
@@ -1529,8 +1535,9 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
     Wrapped prose, blockquote continuations, and list-item continuations remain
     searchable as one unit, while headings, separate blockquote statements,
     list items, table rows, separators, and fenced blocks keep their Markdown
-    boundaries. Fenced content is still scanned because skill instructions can
-    be conveyed through examples and command snippets.
+    boundaries. Fenced content is scanned line by line because its line breaks
+    are literal and instructions can be conveyed through examples and command
+    snippets.
     """
     lines = text.splitlines()
     table_row_numbers = _markdown_table_row_numbers(lines)
@@ -1539,22 +1546,15 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
     block_kind = ""
     list_content_indent = 0
     list_blank_pending = False
-    fenced_lines = []
-    fenced_start = 1
     fence_marker = ""
     for line_number, line in enumerate(lines, start=1):
         stripped = line.strip()
 
         if fence_marker:
             if len(stripped) >= len(fence_marker) and set(stripped) == {fence_marker[0]}:
-                if fenced_lines:
-                    yield fenced_start, " ".join(fenced_lines)
-                fenced_lines = []
                 fence_marker = ""
             elif stripped:
-                if not fenced_lines:
-                    fenced_start = line_number
-                fenced_lines.append(stripped)
+                yield line_number, stripped
             continue
 
         fence_match = _MARKDOWN_FENCE_RE.match(line)
@@ -1565,7 +1565,6 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
                 block_kind = ""
                 list_blank_pending = False
             fence_marker = fence_match.group(1)
-            fenced_start = line_number + 1
             continue
 
         if not stripped:
@@ -1650,8 +1649,6 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
             block_kind = "paragraph"
         block_lines.append(stripped)
 
-    if fence_marker and fenced_lines:
-        yield fenced_start, " ".join(fenced_lines)
     if block_lines:
         yield block_start, " ".join(block_lines)
 
@@ -1693,12 +1690,12 @@ def _markdown_leading_indent(line: str) -> int:
 
 def _is_markdown_blockquote_continuation(previous: str, current: str) -> bool:
     """Return whether a quoted source line continues an incomplete statement."""
-    dependency_then_bare_bypass = _DEPENDENCY_INSTALL_TERMS_RE.search(
-        previous
-    ) and _BARE_CONFIRMATION_BYPASS_RE.fullmatch(current)
-    bare_bypass_then_dependency = _BARE_CONFIRMATION_BYPASS_RE.fullmatch(
-        previous
-    ) and _DEPENDENCY_INSTALL_TERMS_RE.search(current)
+    dependency_then_bare_bypass = _DEPENDENCY_INSTALL_TERMS_RE.search(previous) and _is_bare_confirmation_bypass(
+        current
+    )
+    bare_bypass_then_dependency = _is_bare_confirmation_bypass(previous) and _DEPENDENCY_INSTALL_TERMS_RE.search(
+        current
+    )
     if dependency_then_bare_bypass or bare_bypass_then_dependency:
         return True
     if _MARKDOWN_SENTENCE_END_RE.search(previous):
@@ -1714,11 +1711,19 @@ def _has_dependency_policy_bypass(text: str, patterns: Iterable[re.Pattern]) -> 
     return any(pattern.search(text) for pattern in patterns)
 
 
+def _is_bare_confirmation_bypass(text: str) -> bool:
+    return bool(_BARE_CONFIRMATION_BYPASS_RE.fullmatch(text) or _BARE_CONFIRMATION_DENIAL_RE.fullmatch(text))
+
+
 def _has_dependency_confirmation_bypass(text: str) -> bool:
     """Distinguish a confirmation bypass from an explicit audit-then-confirm sequence."""
     if _has_dependency_policy_bypass(text, _DEPENDENCY_CONFIRMATION_BYPASS_RES):
         return True
     statements = re.split(r"(?<=[.!?;])\s+", text)
+    if _DEPENDENCY_INSTALL_TERMS_RE.search(text) and any(
+        _BARE_CONFIRMATION_DENIAL_RE.fullmatch(statement.strip()) for statement in statements
+    ):
+        return True
     bare_confirmation_suppression = _DEPENDENCY_INSTALL_TERMS_RE.search(text) and any(
         _BARE_CONFIRMATION_BYPASS_RE.fullmatch(statement.strip()) for statement in statements
     )
