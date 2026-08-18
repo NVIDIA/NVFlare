@@ -95,6 +95,7 @@ def test_abort_app_does_not_terminate_unregistered_stopped_job():
 
 def test_terminate_job_gives_stopped_worker_bounded_cleanup_grace():
     job_executor = JobExecutor(client=MagicMock(), startup="startup")
+    job_executor.logger = MagicMock()
     job_handle = MagicMock()
     job_executor.run_processes["job-1"] = {
         RunProcessKey.JOB_HANDLE: job_handle,
