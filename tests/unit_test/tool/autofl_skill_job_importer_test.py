@@ -813,7 +813,7 @@ def test_import_classifies_hello_world_release_gate_examples(example, expected_s
 
 @pytest.mark.parametrize(
     ("algorithm", "expected_recipe"),
-    [("fedprox", "FedProxRecipe"), ("scaffold", "ScaffoldRecipe")],
+    [("fedavg", "FedAvgRecipe"), ("fedprox", "FedProxRecipe"), ("scaffold", "ScaffoldRecipe")],
 )
 def test_import_selects_hello_lightning_algorithm_mode(algorithm, expected_recipe):
     repo_root = Path(__file__).parents[3]
@@ -822,7 +822,6 @@ def test_import_selects_hello_lightning_algorithm_mode(algorithm, expected_recip
     config = import_job_to_autofl_config(
         str(example_root / "job.py"),
         workspace_root=str(example_root),
-        metric="accuracy",
         max_candidates=12,
         job_args=["--algorithm", algorithm],
     )
@@ -830,6 +829,7 @@ def test_import_selects_hello_lightning_algorithm_mode(algorithm, expected_recip
     assert config["import"]["support"]["status"] == "supported"
     assert config["job"]["recipe"] == expected_recipe
     assert config["job"]["train_script"] == "client.py"
+    assert config["objective"] == _objective("accuracy", source="default")
 
 
 def test_import_selects_hello_numpy_cross_val_training_mode():
