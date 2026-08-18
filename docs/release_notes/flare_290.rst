@@ -55,6 +55,17 @@ Compatibility and Migration Notes
   multi-optimizer FedAvg client reports their combined step count unless it
   supplies ``NUM_STEPS_CURRENT_ROUND`` explicitly; explicit client metadata is
   still preserved.
+- Patched PyTorch Lightning clients now transmit validation metrics captured by
+  an explicit ``trainer.validate()`` call before ``trainer.fit()``, regardless
+  of ``train_with_evaluation``. Sanity-check and in-fit validation metrics are
+  not transmitted as global-model scores. Setting
+  ``train_with_evaluation=True`` continues to require validation metrics;
+  otherwise metrics remain optional, but ``False`` no longer suppresses metrics
+  from an explicit pre-fit validation. This enables ``IntimeModelSelector`` and
+  best-global-model persistence for recipe-based Lightning jobs. Applications
+  that must keep such metrics local should omit the explicit pre-fit validation;
+  if they still require it locally, a custom task-result filter must remove
+  ``MetaKey.INITIAL_METRICS`` before the result reaches the server.
 - Recipe discovery now exposes the concrete PyTorch ``FedProxRecipe`` as
   ``fedprox-pt`` and no longer advertises the ``fedprox-tf`` manual pattern as
   a concrete recipe. TensorFlow clients can continue to combine a FedAvg

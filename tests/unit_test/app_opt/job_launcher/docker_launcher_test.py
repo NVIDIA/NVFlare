@@ -509,7 +509,8 @@ class TestDockerJobLauncherInit:
 def _make_fl_ctx(
     job_id="job-1",
     exe_module="nvflare.private.fed.app.client.worker_process",
-    parent_url="localhost:8002",
+    parent_url="tcp://localhost:8002",
+    parent_conn_sec=None,
     identity_name="site-1",
     workspace_path="/ws",
     set_list=None,
@@ -525,6 +526,8 @@ def _make_fl_ctx(
         JobProcessArgs.WORKSPACE: ("-w", workspace_path),
         JobProcessArgs.STARTUP_DIR: ("-s", workspace_path + "/startup"),
     }
+    if parent_conn_sec is not None:
+        job_args[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", parent_conn_sec)
     fl_ctx.get_prop.side_effect = lambda key, *a, **kw: {
         FLContextKey.JOB_PROCESS_ARGS: job_args,
         FLContextKey.WORKSPACE_OBJECT: None,
@@ -627,6 +630,40 @@ class TestDockerJobLauncherLaunchJob:
         # Must replace localhost with container name (site name)
         assert "localhost" not in command_str
         assert "tcp://site-1:8004" in command_str
+
+    def test_launch_preserves_secure_parent_url(self):
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+
+        fl_ctx, _ = _make_fl_ctx(
+            identity_name="site-1",
+            parent_url="stcp://localhost:8004/path?option=value",
+            parent_conn_sec="mtls",
+        )
+        launcher.launch_job(_make_job_meta(), fl_ctx)
+
+        command = dc.containers.run.call_args.kwargs["command"]
+        assert "stcp://site-1:8004/path?option=value" in command
+        assert command[command.index("--parent_conn_sec") + 1] == "mtls"
+
+    @pytest.mark.parametrize(
+        ("parent_url", "parent_conn_sec", "message"),
+        [
+            ("stcp://localhost:8004", "clear", "does not match"),
+            ("tcp://localhost:8004", "mtls", "does not match"),
+            ("tcp://localhost:8004", "tls", "requires clear or mTLS"),
+            ("http://localhost:8004", "clear", "must use shared-file, tcp, or stcp"),
+        ],
+    )
+    def test_launch_rejects_invalid_parent_security(self, parent_url, parent_conn_sec, message):
+        launcher = _make_launcher()
+        fl_ctx, _ = _make_fl_ctx(parent_url=parent_url, parent_conn_sec=parent_conn_sec)
+
+        with pytest.raises(ValueError, match=message):
+            launcher.launch_job(_make_job_meta(), fl_ctx)
 
     def test_launch_raises_on_missing_job_id(self):
         launcher = _make_launcher()
