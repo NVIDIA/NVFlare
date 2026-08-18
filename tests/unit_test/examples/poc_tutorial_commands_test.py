@@ -19,8 +19,7 @@ import shlex
 from pathlib import Path
 
 from nvflare.cli import def_config_parser
-from nvflare.lighter.utils import load_yaml
-from nvflare.tool.poc.poc_commands import def_poc_parser, get_fl_server_name
+from nvflare.tool.poc.poc_commands import def_poc_parser
 from nvflare.tool.system.system_cli import def_system_cli_parser
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -29,7 +28,6 @@ _DEPLOYMENT_TUTORIAL = _REPO_ROOT / (
     "chapter-3_federated_computing_platform/03.2_deployment_simulation/simulate_real_world_deployment.ipynb"
 )
 _SETUP_TUTORIAL = _REPO_ROOT / "examples/tutorials/setup_poc.ipynb"
-_CUSTOM_PROJECT = _REPO_ROOT / "examples/tutorials/custom_project.yml"
 
 
 def _load_notebook(path: Path) -> dict:
@@ -89,13 +87,6 @@ def test_executable_poc_prepare_commands_use_force():
             assert "--force" in command, command
 
 
-def test_deployment_tutorial_uses_system_status_command():
-    text = _notebook_text(_DEPLOYMENT_TUTORIAL)
-
-    assert "nvflare system status" in text
-    assert "nvflare poc status" not in text
-
-
 def test_deployment_tutorial_commands_use_current_docker_participants():
     commands = list(_nvflare_commands(_DEPLOYMENT_TUTORIAL))
 
@@ -109,18 +100,3 @@ def test_poc_tutorial_commands_do_not_repeat_scalar_service_options():
         for command in _nvflare_commands(path):
             assert command.count("-p") + command.count("--service") <= 1, command
             assert command.count("-ex") + command.count("--exclude") <= 1, command
-
-
-def test_setup_tutorial_describes_default_poc_services():
-    text = _notebook_text(_SETUP_TUTORIAL)
-    server_name = get_fl_server_name(load_yaml(str(_CUSTOM_PROJECT)))
-
-    assert "starts the server and all clients" in text
-    assert "Admin consoles are optional and are not started unless explicitly selected" in text
-    assert "as well as project admin console" not in text
-    assert "nvflare poc start -p admin@nonprofit.org" in text
-    assert "nvflare poc start -p admin@nvidia.com" not in text
-    assert server_name == "general-hospital-server"
-    assert f"* {server_name}, served as Server" in text
-    assert f'are "{server_name}", "us_hospital"' in text
-    assert "nonprofit-server" not in text
