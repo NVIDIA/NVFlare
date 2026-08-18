@@ -99,8 +99,9 @@ def main():
 
         # Handle each Client API task according to its type:
         # - "train" (flare.is_train()): train and optionally evaluate the received model, then send the updated
-        #   model plus any supplied evaluation metrics. Setting "train_with_evaluation" to True in config_fed_client
-        #   makes evaluation metrics required; it does not enable their transmission.
+        #   model plus any supplied evaluation metrics. When "train_with_evaluation" is True, framework integrations
+        #   such as Lightning and Hugging Face require evaluation metrics; the raw Client API does not enforce them.
+        #   The flag does not control whether supplied metrics are transmitted.
         # - "evaluate" (flare.is_evaluate()): evaluate the received model and return the metrics.
         # - "submit_model" (flare.is_submit_model()): return the requested local model.
         # (5) performing train task on received model
