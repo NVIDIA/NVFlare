@@ -167,6 +167,9 @@ python trainer.py --config attach_profile_shared_file.json
 For network Attach, replace the placeholders in
 `attach_profile_network.json` with the CP route and trainer credential paths,
 then run the same command with that profile.
+For this local process-mode POC, use the CP's advertised `tcp://` URL and set
+`connection_security` to `"clear"`. Keep `secure_mode` enabled so the
+provisioned credentials continue to authenticate and protect Cell messages.
 
 Successful output ends with `Status: FINISHED:COMPLETED`. For this three-round
 example, the final model is:
