@@ -79,7 +79,8 @@ def test_autofl_skill_defines_training_equivalent_accounting():
 
     assert "Every candidate training, parameter update, or metric-based screen/rank must use" in skill_text
     assert "Only non-training parse, import," in skill_text
-    assert "--confirm-user-approved-crash-repeat" in skill_text
+    assert "Every real crash and identical replay counts as a separate candidate attempt" in skill_text
+    assert "--confirm-user-approved-crash-repeat" not in skill_text
     assert "--confirm-user-approved-cap-change" in skill_text
 
 

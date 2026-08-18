@@ -170,9 +170,9 @@ If the user provides an `N`-candidate budget, pass it only through `--max-candid
 (keep/discard/crash) after baseline. Every candidate training, parameter update, or metric-based screen/rank must use
 the runner and counts, even when called a smoke, dry, replica, screen, or sweep. Only non-training parse, import,
 compile, schema, and interface checks are free; baseline and runner-classified infrastructure retries do not count.
-After a real crash, change the source or run arguments; repeat the identical execution only after specific user
-approval with `--confirm-user-approved-crash-repeat`. Increase a finite cap or make it uncapped only after user
-approval with `--confirm-user-approved-cap-change`. State reports the cap, remaining attempts, baseline, improvement,
+Every real crash and identical replay counts as a separate candidate attempt; prefer changing source or run arguments
+unless the replay is intentional. Increase a finite cap or make it uncapped only after user approval with
+`--confirm-user-approved-cap-change`. State reports the cap, remaining attempts, baseline, improvement,
 abandoned candidates, and accounting instruction; approved cap changes stay in campaign metadata.
 
 Treat plateau as a decision checkpoint, not an automatic stop: summarize it in the running report, refresh

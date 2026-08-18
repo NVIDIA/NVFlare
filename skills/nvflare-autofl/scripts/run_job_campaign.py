@@ -111,8 +111,7 @@ INFRASTRUCTURE_RETRY = "infrastructure_retry"
 SIMULATION_APPROVAL_ACTION = "await_simulation_runner_approval"
 ACCOUNTING_INSTRUCTION = (
     "Run every candidate training, parameter update, or metric-based screening through this runner. "
-    "Real candidate crashes count; repeating an identical crash or expanding the candidate cap requires explicit "
-    "user approval."
+    "Real candidate crashes and crash replays count; expanding the candidate cap requires explicit user approval."
 )
 SIMULATOR_STALL_EXIT_CODE = 125
 SIMULATOR_STALL_PATTERNS = (
@@ -364,11 +363,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--failure-reason", default="", help="external execution failure")
     parser.add_argument("--baseline", action="store_true", help="record an externally executed baseline")
     parser.add_argument("--literature", action="store_true", help="record a literature-review checkpoint")
-    parser.add_argument(
-        "--confirm-user-approved-crash-repeat",
-        action="store_true",
-        help="confirm that the user explicitly approved repeating this exact candidate after its prior crash",
-    )
     parser.add_argument(
         "--confirm-user-approved-cap-change",
         action="store_true",
@@ -3680,18 +3674,6 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
     patch_sha256 = sha256_bytes(patch.encode("utf-8"))
     execution_fingerprint = candidate_execution_fingerprint(manifest, patch_sha256)
     prior_crash = matching_crashed_candidate(workspace, execution_fingerprint, manifest_path)
-    if prior_crash and not args.confirm_user_approved_crash_repeat:
-        prior_path, prior_manifest = prior_crash
-        raise ValueError(
-            f"candidate execution fingerprint {execution_fingerprint} already crashed as "
-            f"{prior_manifest.get('candidate_id')!r} ({prior_path}); change the candidate or obtain explicit user "
-            "approval and retry with --confirm-user-approved-crash-repeat"
-        )
-    if args.confirm_user_approved_crash_repeat and not prior_crash:
-        raise ValueError(
-            "--confirm-user-approved-crash-repeat is only valid when this exact execution fingerprint previously "
-            "crashed"
-        )
     manifest.update(
         {
             "updated_at": utc_now(),
@@ -3704,8 +3686,8 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
     )
     if prior_crash:
         prior_path, prior_manifest = prior_crash
-        manifest["crash_repeat_approval"] = {
-            "confirmed_at": utc_now(),
+        manifest["crash_replay"] = {
+            "detected_at": utc_now(),
             "execution_fingerprint": execution_fingerprint,
             "prior_candidate": prior_manifest.get("candidate_id"),
             "prior_manifest": str(prior_path.resolve()),
@@ -4103,8 +4085,6 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--exploration-batch-size must be non-negative")
     if args.family_repeat_limit < 0:
         raise ValueError("--family-repeat-limit must be non-negative")
-    if args.confirm_user_approved_crash_repeat and args.action != "evaluate":
-        raise ValueError("--confirm-user-approved-crash-repeat is only valid for evaluate")
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

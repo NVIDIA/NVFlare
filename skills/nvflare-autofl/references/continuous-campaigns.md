@@ -33,10 +33,10 @@ Every candidate training, parameter update, or metric-based screening or
 ranking execution must use the campaign runner and counts toward the cap,
 regardless of whether it is called a smoke test, dry run, replica, screen, or
 sweep. Only static parse, import, compile, schema, and interface validation is
-free. After a real crash, change the candidate source or run arguments; repeat
-the identical execution only after the user specifically approves that replay
-and pass `--confirm-user-approved-crash-repeat` so the approval is recorded in
-the candidate manifest.
+free. Every real crash and identical replay is a separate counted candidate
+attempt. Prefer changing candidate source or run arguments after a crash unless
+an identical replay is intentional; the manifest records matching crash
+provenance for auditability.
 
 Only one lifecycle action may own a job workspace at a time. A concurrent
 command exits with code 2 and an in-use message; wait for the active action to

@@ -1990,9 +1990,10 @@ def test_candidate_execution_fingerprint_uses_existing_comparison_provenance():
     assert runner.candidate_execution_fingerprint(manifest, "f" * 64) != fingerprint
 
 
-def test_identical_crashed_candidate_requires_specific_user_approval(tmp_path, monkeypatch, capsys):
+def test_identical_crashed_candidate_replay_is_counted_without_approval(tmp_path, monkeypatch):
     runner = _load_runner()
     job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)
+    assert runner.main(["status", str(job), "--max-candidates", "2"]) == 0
     calls = []
 
     def crash_run(run_def, **kwargs):
@@ -2010,40 +2011,29 @@ def test_identical_crashed_candidate_requires_specific_user_approval(tmp_path, m
             assert runner.main(["evaluate", str(job)]) == 0
 
     second_manifest_path = tmp_path / ".nvflare/autofl/candidates/same_after_crash/candidate_manifest.json"
-    assert runner.main(["evaluate", str(job), "--manifest", str(second_manifest_path)]) == 2
-    assert "already crashed" in capsys.readouterr().err
-    assert calls == ["first_crash"]
-    assert json.loads(second_manifest_path.read_text(encoding="utf-8"))["status"] == "prepared"
-
-    assert (
-        runner.main(
-            [
-                "evaluate",
-                str(job),
-                "--manifest",
-                str(second_manifest_path),
-                "--confirm-user-approved-crash-repeat",
-            ]
-        )
-        == 0
-    )
+    assert runner.main(["evaluate", str(job), "--manifest", str(second_manifest_path)]) == 0
     first_manifest = json.loads(
         tmp_path.joinpath(".nvflare/autofl/candidates/first_crash/candidate_manifest.json").read_text(encoding="utf-8")
     )
     second_manifest = json.loads(second_manifest_path.read_text(encoding="utf-8"))
-    approval = second_manifest["crash_repeat_approval"]
+    replay = second_manifest["crash_replay"]
     assert second_manifest["execution_fingerprint"] == first_manifest["execution_fingerprint"]
-    assert approval["execution_fingerprint"] == first_manifest["execution_fingerprint"]
-    assert approval["prior_candidate"] == "first_crash"
-    assert approval["confirmed_at"]
+    assert replay["execution_fingerprint"] == first_manifest["execution_fingerprint"]
+    assert replay["prior_candidate"] == "first_crash"
+    assert replay["detected_at"]
+    assert "crash_repeat_approval" not in second_manifest
     assert calls == ["first_crash", "same_after_crash"]
     records = runner.load_results(tmp_path / "results.tsv")
     assert runner.candidate_attempts(records) == 2
     state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
     assert state["accounting_instruction"] == runner.ACCOUNTING_INSTRUCTION
+    assert state["candidate_cap"] == 2
+    assert state["remaining_candidates"] == 0
+    assert state["final_response_allowed"] is True
+    assert state["reason"] == "candidate_cap_exhausted"
 
 
-def test_changed_candidate_after_crash_does_not_require_approval(tmp_path, monkeypatch):
+def test_changed_candidate_after_crash_is_allowed(tmp_path, monkeypatch):
     runner = _load_runner()
     job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)
 
