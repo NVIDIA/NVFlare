@@ -140,8 +140,9 @@ class ClientAPIExecutor(Executor):
                 Defaults to AppConstants.TASK_VALIDATION.
             submit_model_task_name (str): Task name treated as "submit_model" by
                 flare.is_submit_model(). Defaults to AppConstants.TASK_SUBMIT_MODEL.
-            train_with_evaluation (bool): Whether the trainer also returns evaluation metrics with
-                the trained model.
+            train_with_evaluation (bool): Whether a training result is required to include pre-training
+                evaluation metrics. When False, metrics are optional; metrics supplied by the trainer
+                or a framework integration are still returned.
             params_exchange_format (ExchangeFormat): Framework-native parameter representation
                 exposed by ``flare.receive()`` and accepted by ``flare.send()``. The declaration
                 is transported to the trainer in ``TASK_EXCHANGE``; the executor does not perform
