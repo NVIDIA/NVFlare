@@ -136,13 +136,20 @@ def test_contains_lazy_download_ref_after_nested_fobs_recompose():
 
     from nvflare.apis.dxo import DXO, DataKind
     from nvflare.apis.shareable import Shareable
+    from nvflare.apis.utils.decomposers.flare_decomposers import DXODecomposer
     from nvflare.app_common.abstract.fl_model import FLModel
-    from nvflare.app_common.decomposers import common_decomposers, numpy_decomposers
+    from nvflare.app_common.decomposers.common_decomposers import FLModelDecomposer
+    from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
     from nvflare.fuel.utils import fobs
+    from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
     from nvflare.fuel.utils.fobs.decomposers.via_downloader import ViaDownloaderDecomposer
 
-    common_decomposers.register()
-    numpy_decomposers.register()
+    # Register the exact dependencies instead of using the guarded module-level
+    # helpers. Other tests can call fobs.reset() without resetting those guards.
+    fobs.register(DictDecomposer(Shareable))
+    fobs.register(FLModelDecomposer)
+    fobs.register(DXODecomposer)
+    fobs.register(NumpyArrayDecomposer)
     payload = Shareable(
         {
             "model": FLModel(
