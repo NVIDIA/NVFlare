@@ -94,6 +94,7 @@ Create a Docker runtime config for ``nvflare deploy prepare``:
   parent:
     docker_image: nvflare-site:latest
     network: nvflare-network
+    internal_connection_security: mtls
 
   job_launcher:
     default_python_path: /usr/local/bin/python
@@ -129,6 +130,12 @@ Start prepared parent processes with:
 Run the same command from each prepared client kit. The generated script creates
 the configured Docker network if needed and mounts the prepared kit into the
 parent container.
+
+Parent/job TCP links (SP/SJ and CP/CJ) use mTLS by default. The parent listener
+remains reachable on the Docker network so job containers can connect, while
+both peers authenticate with the provisioned participant credentials. Set
+``parent.internal_connection_security: clear`` only as an explicit insecure
+opt-out on a trusted, isolated Docker network.
 
 Jobs submitted to Docker-mode sites must specify their job image in
 ``launcher_spec``:

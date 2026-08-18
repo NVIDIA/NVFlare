@@ -94,6 +94,19 @@ In `nvflare/app_common/workflows/fedavg.py`:
 
 The built-in weighted path remains lazy-friendly and memory-efficient.
 
+### Filter Compatibility
+
+Tensor disk offload produces per-tensor lazy values with a `materialize()` method. These values are
+different from the transport-level `LazyDownloadRef` objects resolved at the Client API site-filter
+boundary. Conventional content filters, including model quantizers and dequantizers, expect concrete
+NumPy arrays or PyTorch tensors and are not compatible with tensor disk-offload lazy values.
+
+Do not combine `enable_tensor_disk_offload=True` with conventional content filters on the same
+receiving path. Disable tensor disk offload for that path, move the transformation to an explicit
+send/receive endpoint, or use a consumer such as the built-in weighted aggregator that explicitly
+materializes each tensor. Supporting filters while retaining bounded-memory disk offload requires a
+separate lazy-ref-aware or streaming/per-tensor filter contract.
+
 ### Swarm/CCWF
 
 `ClientAPIExecutor` preserves the Cell/FOBS large-payload references between an

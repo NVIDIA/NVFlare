@@ -319,6 +319,7 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
 
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"]["resources"]["host"] == "0.0.0.0"
+    assert comm_config["internal"]["resources"]["connection_security"] == "mtls"
     study_runtime_path = output / "local" / "study_runtime.yaml"
     study_runtime_text = study_runtime_path.read_text()
     assert "@@NVFLARE_" not in study_runtime_text
@@ -859,8 +860,51 @@ def test_prepare_docker_creates_comm_config_when_missing(tmp_path, capsys):
     assert comm_config["internal"]["scheme"] == "tcp"
     assert comm_config["internal"]["resources"] == {
         "host": "0.0.0.0",
-        "connection_security": "clear",
+        "connection_security": "mtls",
     }
+
+
+def test_prepare_docker_accepts_clear_internal_connection_security(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {
+                "docker_image": "repo/nvflare:dev",
+                "internal_connection_security": "clear",
+            },
+        },
+    )
+    capsys.readouterr()
+
+    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
+    assert comm_config["internal"]["resources"]["connection_security"] == "clear"
+
+
+@pytest.mark.parametrize("connection_security", ["tls", "MTLS", "", None, 7, True])
+def test_prepare_docker_rejects_invalid_internal_connection_security(tmp_path, capsys, connection_security):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "docker",
+                "parent": {
+                    "docker_image": "repo/nvflare:dev",
+                    "internal_connection_security": connection_security,
+                },
+            },
+        )
+
+    assert "parent.internal_connection_security" in capsys.readouterr().err
+    assert not output.exists()
 
 
 @pytest.mark.parametrize(

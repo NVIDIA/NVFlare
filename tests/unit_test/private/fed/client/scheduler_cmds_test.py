@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
-from nvflare.apis.fl_constant import ReturnCode, SystemComponents
+from nvflare.apis.fl_constant import SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.private.admin_defs import Message
@@ -24,22 +24,25 @@ from nvflare.private.fed.client.scheduler_cmds import CheckResourceProcessor
 from nvflare.private.scheduler_constants import ShareableHeader
 
 
-def test_check_resource_processor_returns_resource_manager_error():
+def test_check_resource_processor_keeps_resource_manager_error_local():
     resource_manager = MagicMock(spec=ResourceManagerSpec)
     resource_manager.check_resources.side_effect = ValueError("resource_requirement is missing num_gpu_key num_of_gpus")
     engine = MagicMock(spec=ClientEngineInternalSpec)
     engine.get_component.return_value = resource_manager
     engine.new_context.return_value.__enter__.return_value = FLContext()
-    engine.logger = MagicMock()
-
     request = Message(topic=TrainingTopic.CHECK_RESOURCE, body={"license": 2})
     request.set_header(RequestHeader.JOB_ID, "job-1")
 
-    reply = CheckResourceProcessor().process(request, engine)
+    with (
+        patch("nvflare.private.fed.client.scheduler_cmds.logger") as logger,
+        patch("nvflare.private.fed.client.scheduler_cmds.secure_format_exception", return_value="sensitive detail"),
+    ):
+        reply = CheckResourceProcessor().process(request, engine)
 
-    reason = "resource check failed: ValueError: resource_requirement is missing num_gpu_key num_of_gpus"
-    assert reply.body.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
     assert not reply.body.get_header(ShareableHeader.IS_RESOURCE_ENOUGH)
-    assert reply.body.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN) == reason
+    assert (
+        reply.body.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
+        == "resource manager raised an exception; see site log"
+    )
     engine.get_component.assert_called_once_with(SystemComponents.RESOURCE_MANAGER)
-    engine.logger.error.assert_called_once_with(f"Job job-1: {reason}")
+    logger.error.assert_called_once_with("Job job-1: resource check failed: sensitive detail")
