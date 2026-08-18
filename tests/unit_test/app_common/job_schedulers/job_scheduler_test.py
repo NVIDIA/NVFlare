@@ -413,6 +413,11 @@ class TestDefaultJobScheduler:
                 job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx
             )
         assert job is None
+        assert candidate.meta[JobMetaKey.SCHEDULE_COUNT.value] == 1
+        assert (
+            "required sites: ['site2'] don't have enough resources"
+            in candidate.meta[JobMetaKey.SCHEDULE_HISTORY.value][0]
+        )
 
     def test_not_enough_sites_has_enough_resource(self, setup_and_teardown):
         servers, scheduler, num_sites, job_manager = setup_and_teardown
