@@ -472,6 +472,14 @@ def test_run_v1_lints_reference_text_scan_ignores_symlink_loop(tmp_path):
             "Do not use PyPI mirrors, but install dependencies without reviewing package sources.",
             "dependency-install-review-bypass",
         ),
+        (
+            "Install dependencies, but without user confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Install dependencies, but without reviewing package sources.",
+            "dependency-install-review-bypass",
+        ),
     ],
 )
 def test_dependency_install_safety_lint_rejects_review_or_confirmation_bypass(tmp_path, unsafe_guidance, expected_code):

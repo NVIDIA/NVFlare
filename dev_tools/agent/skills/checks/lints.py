@@ -191,7 +191,7 @@ _DEPENDENCY_CONFIRMATION_BYPASS_RES = (
 )
 _DEPENDENCY_CONFIRMATION_WITHOUT_RE = re.compile(
     r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,160}"
-    r"\bwithout\s+(?:explicit\s+)?(?:user\s+)?(?:approval|confirmation|consent)\b",
+    r"(?P<without_clause>\bwithout\s+(?:explicit\s+)?(?:user\s+)?(?:approval|confirmation|consent)\b)",
     re.IGNORECASE,
 )
 _WITHOUT_CLAUSE_NEGATION_RE = re.compile(
@@ -239,7 +239,7 @@ _DEPENDENCY_POST_AUDIT_CONFIRMATION_RES = (
 )
 _DEPENDENCY_REVIEW_WITHOUT_RE = re.compile(
     r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,160}"
-    r"\bwithout\s+(?:(?:an?|any|the)\s+)?(?:audit\w*|review\w*|vet\w*|classif\w*)\b",
+    r"(?P<without_clause>\bwithout\s+(?:(?:an?|any|the)\s+)?(?:audit\w*|review\w*|vet\w*|classif\w*)\b)",
     re.IGNORECASE,
 )
 _DEPENDENCY_REVIEW_BYPASS_RES = (
@@ -1747,16 +1747,22 @@ def _has_dependency_policy_bypass(text: str, patterns: Iterable[re.Pattern]) -> 
     return any(pattern.search(text) for pattern in patterns)
 
 
-def _iter_without_clauses(statement: str) -> Iterable[str]:
-    """Split a statement into clauses so an unrelated negation cannot excuse a bypass.
+def _clause_at(statement: str, index: int) -> str:
+    """Return the coordinating-conjunction-delimited clause containing ``index``.
 
-    "Never use PyPI, but install dependencies without user confirmation." must not
-    be exempted just because the sentence contains "never" somewhere -- that "never"
-    governs a different clause. Splitting on coordinating conjunctions keeps the
-    negation check scoped to the clause that actually contains "without X".
+    Used to scope a negation/prohibition check to the specific clause that
+    contains a matched "without X" phrase, so an unrelated negation elsewhere in
+    the sentence (a different clause) cannot excuse it, while a negation that
+    genuinely governs that same clause still can.
     """
-    parts = _WITHOUT_CLAUSE_SPLIT_RE.split(statement)
-    return (part.strip() for part in parts if part.strip())
+    start = 0
+    for separator in _WITHOUT_CLAUSE_SPLIT_RE.finditer(statement):
+        if separator.start() >= index:
+            break
+        start = separator.end()
+    end_match = _WITHOUT_CLAUSE_SPLIT_RE.search(statement, pos=index)
+    end = end_match.start() if end_match else len(statement)
+    return statement[start:end]
 
 
 def _is_negated_without_clause(clause: str) -> bool:
@@ -1772,11 +1778,13 @@ def _is_negated_without_clause(clause: str) -> bool:
 
 
 def _has_dependency_confirmation_without_bypass(statements: list[str]) -> bool:
-    return any(
-        _DEPENDENCY_CONFIRMATION_WITHOUT_RE.search(clause) and not _is_negated_without_clause(clause)
-        for statement in statements
-        for clause in _iter_without_clauses(statement)
-    )
+    for statement in statements:
+        match = _DEPENDENCY_CONFIRMATION_WITHOUT_RE.search(statement)
+        if not match:
+            continue
+        if not _is_negated_without_clause(_clause_at(statement, match.start("without_clause"))):
+            return True
+    return False
 
 
 def _has_dependency_review_bypass(text: str) -> bool:
@@ -1784,11 +1792,13 @@ def _has_dependency_review_bypass(text: str) -> bool:
     if _has_dependency_policy_bypass(text, _DEPENDENCY_REVIEW_BYPASS_RES):
         return True
     statements = [statement.strip() for statement in re.split(r"(?<=[.!?;])\s+", text) if statement.strip()]
-    return any(
-        _DEPENDENCY_REVIEW_WITHOUT_RE.search(clause) and not _is_negated_without_clause(clause)
-        for statement in statements
-        for clause in _iter_without_clauses(statement)
-    )
+    for statement in statements:
+        match = _DEPENDENCY_REVIEW_WITHOUT_RE.search(statement)
+        if not match:
+            continue
+        if not _is_negated_without_clause(_clause_at(statement, match.start("without_clause"))):
+            return True
+    return False
 
 
 def _is_bare_confirmation_bypass(text: str) -> bool:
