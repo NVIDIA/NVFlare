@@ -190,7 +190,6 @@ _DEPENDENCY_CONFIRMATION_BYPASS_RES = (
     ),
 )
 _DEPENDENCY_CONFIRMATION_WITHOUT_RE = re.compile(
-    r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,160}"
     r"(?P<without_clause>\bwithout\s+(?:explicit\s+)?(?:user\s+)?(?:approval|confirmation|consent)\b)",
     re.IGNORECASE,
 )
@@ -204,8 +203,9 @@ _WITHOUT_CLAUSE_PROHIBITION_TAIL_RE = re.compile(
     r"|\b(?:is\s+)?never\s+(?:allowed|permitted)\b",
     re.IGNORECASE,
 )
-_WITHOUT_CLAUSE_SPLIT_RE = re.compile(
-    r",\s*(?:but|and|yet|or)\s+|\s+(?:but|however|although|though)\s+",
+_WITHOUT_CLAUSE_BOUNDARY_RE = re.compile(
+    r",\s*(?:(?:and\s+)?then|but|yet|however|although|though|subsequently|afterwards?|next)\b"
+    r"|\s+(?:but|however|although|though)\s+",
     re.IGNORECASE,
 )
 _DEPENDENCY_CONFIRMATION_REQUEST_SUPPRESSION_RE = re.compile(
@@ -238,7 +238,6 @@ _DEPENDENCY_POST_AUDIT_CONFIRMATION_RES = (
     ),
 )
 _DEPENDENCY_REVIEW_WITHOUT_RE = re.compile(
-    r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,160}"
     r"(?P<without_clause>\bwithout\s+(?:(?:an?|any|the)\s+)?(?:audit\w*|review\w*|vet\w*|classif\w*)\b)",
     re.IGNORECASE,
 )
@@ -275,6 +274,25 @@ _BARE_CONFIRMATION_DENIAL_RE = re.compile(
     r"no\s+(?:user\s+)?(?:approval|confirmation|consent)\s+(?:is\s+)?(?:required|needed))[.!?;]?$",
     re.IGNORECASE,
 )
+_BARE_CONFIRMATION_BYPASS_CLAUSE_RE = re.compile(
+    r"(?:^|,\s*)(?:do\s+not|don't|never)\s+(?:preemptively\s+)?(?:ask|prompt)\b[^.!?;,]{0,80}"
+    r"\b(?:approval|confirmation|consent)\b\s*(?=,|$)",
+    re.IGNORECASE,
+)
+_NEGATED_DEPENDENCY_ACTION_RE = re.compile(
+    r"\b(?:never|do\s+not|don't|must\s+not|should\s+not|cannot|can\s+not|won't|will\s+not|shall\s+not)\b"
+    r"\s+(?:(?:preemptively|ever|automatically|directly)\s+)?"
+    r"(?:install\w*|download\w*|use)\b[^.!?;]{0,100}"
+    r"\b(?:dependenc\w*|packages?|requirements?)\b",
+    re.IGNORECASE,
+)
+_PROHIBITED_DEPENDENCY_ACTION_RE = re.compile(
+    r"\b(?:dependenc\w*|packages?|requirements?)[^.!?;]{0,80}\b(?:install\w*|use)\b[^.!?;]{0,80}"
+    r"\b(?:prohibited|forbidden|disallowed|banned)\b"
+    r"|\b(?:install\w*|use)\b[^.!?;]{0,80}\b(?:dependenc\w*|packages?|requirements?)\b[^.!?;]{0,80}"
+    r"\b(?:prohibited|forbidden|disallowed|banned)\b",
+    re.IGNORECASE,
+)
 _MARKDOWN_ATX_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}(?:\s+|$)")
 _MARKDOWN_BLOCKQUOTE_RE = re.compile(r"^\s{0,3}(?:>\s*)+")
 _MARKDOWN_BLOCKQUOTE_CONTINUATION_END_RE = re.compile(
@@ -286,7 +304,7 @@ _MARKDOWN_BLOCKQUOTE_CONTINUATION_END_RE = re.compile(
 _MARKDOWN_FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 _MARKDOWN_LIST_ITEM_RE = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s+")
 _MARKDOWN_SENTENCE_END_RE = re.compile(r"[.!?;](?:[`*_]+)?\s*$")
-_MARKDOWN_STRUCTURAL_SEPARATOR_RE = re.compile(r"^\s{0,3}(?:=+|-{3,})\s*$")
+_MARKDOWN_STRUCTURAL_SEPARATOR_RE = re.compile(r"^\s{0,3}(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,}|=+)\s*$")
 _MARKDOWN_TABLE_DELIMITER_CELL_RE = re.compile(r"^:?-{3,}:?$")
 _MARKDOWN_TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
 _MARKDOWN_TAB_STOP = 4
@@ -1578,7 +1596,7 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
                     fenced_lines = []
                 fence_marker = ""
             elif stripped:
-                if fenced_lines and _is_markdown_blockquote_continuation(fenced_lines[-1], stripped):
+                if fenced_lines and _is_markdown_fenced_continuation(fenced_lines[-1], stripped):
                     fenced_lines.append(stripped)
                 else:
                     if fenced_lines:
@@ -1621,6 +1639,14 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
             block_kind = ""
             list_blank_pending = False
 
+        if _MARKDOWN_STRUCTURAL_SEPARATOR_RE.match(line):
+            if block_lines:
+                yield block_start, " ".join(block_lines)
+                block_lines = []
+                block_kind = ""
+            yield line_number, stripped
+            continue
+
         blockquote_match = _MARKDOWN_BLOCKQUOTE_RE.match(line)
         if blockquote_match:
             content = line[blockquote_match.end() :].lstrip()
@@ -1652,7 +1678,6 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
 
         if (
             _MARKDOWN_ATX_HEADING_RE.match(line)
-            or _MARKDOWN_STRUCTURAL_SEPARATOR_RE.match(line)
             or _MARKDOWN_TABLE_ROW_RE.match(line)
             or line_number in table_row_numbers
         ):
@@ -1742,13 +1767,20 @@ def _is_markdown_blockquote_continuation(previous: str, current: str) -> bool:
     )
 
 
+def _is_markdown_fenced_continuation(previous: str, current: str) -> bool:
+    """Return whether a fenced literal line wraps the same incomplete statement."""
+    if _MARKDOWN_SENTENCE_END_RE.search(previous):
+        return False
+    return _is_markdown_blockquote_continuation(previous, current)
+
+
 def _has_dependency_policy_bypass(text: str, patterns: Iterable[re.Pattern]) -> bool:
     """Return whether dependency guidance contains a semantically linked bypass."""
     return any(pattern.search(text) for pattern in patterns)
 
 
 def _clause_at(statement: str, index: int) -> str:
-    """Return the coordinating-conjunction-delimited clause containing ``index``.
+    """Return the contrast-or-sequence-delimited clause containing ``index``.
 
     Used to scope a negation/prohibition check to the specific clause that
     contains a matched "without X" phrase, so an unrelated negation elsewhere in
@@ -1756,11 +1788,11 @@ def _clause_at(statement: str, index: int) -> str:
     genuinely governs that same clause still can.
     """
     start = 0
-    for separator in _WITHOUT_CLAUSE_SPLIT_RE.finditer(statement):
+    for separator in _WITHOUT_CLAUSE_BOUNDARY_RE.finditer(statement):
         if separator.start() >= index:
             break
         start = separator.end()
-    end_match = _WITHOUT_CLAUSE_SPLIT_RE.search(statement, pos=index)
+    end_match = _WITHOUT_CLAUSE_BOUNDARY_RE.search(statement, pos=index)
     end = end_match.start() if end_match else len(statement)
     return statement[start:end]
 
@@ -1777,13 +1809,20 @@ def _is_negated_without_clause(clause: str) -> bool:
     return bool(_WITHOUT_CLAUSE_NEGATION_RE.search(clause) or _WITHOUT_CLAUSE_PROHIBITION_TAIL_RE.search(clause))
 
 
+def _iter_dependency_without_matches(statement: str, pattern: re.Pattern) -> Iterable[re.Match]:
+    """Yield every ``without`` occurrence linked to nearby dependency context."""
+    for match in pattern.finditer(statement):
+        context_start = max(0, match.start("without_clause") - 160)
+        context_end = min(len(statement), match.end("without_clause") + 160)
+        if _DEPENDENCY_INSTALL_TERMS_RE.search(statement[context_start:context_end]):
+            yield match
+
+
 def _has_dependency_confirmation_without_bypass(statements: list[str]) -> bool:
     for statement in statements:
-        match = _DEPENDENCY_CONFIRMATION_WITHOUT_RE.search(statement)
-        if not match:
-            continue
-        if not _is_negated_without_clause(_clause_at(statement, match.start("without_clause"))):
-            return True
+        for match in _iter_dependency_without_matches(statement, _DEPENDENCY_CONFIRMATION_WITHOUT_RE):
+            if not _is_negated_without_clause(_clause_at(statement, match.start("without_clause"))):
+                return True
     return False
 
 
@@ -1793,16 +1832,25 @@ def _has_dependency_review_bypass(text: str) -> bool:
         return True
     statements = [statement.strip() for statement in re.split(r"(?<=[.!?;])\s+", text) if statement.strip()]
     for statement in statements:
-        match = _DEPENDENCY_REVIEW_WITHOUT_RE.search(statement)
-        if not match:
-            continue
-        if not _is_negated_without_clause(_clause_at(statement, match.start("without_clause"))):
-            return True
+        for match in _iter_dependency_without_matches(statement, _DEPENDENCY_REVIEW_WITHOUT_RE):
+            if not _is_negated_without_clause(_clause_at(statement, match.start("without_clause"))):
+                return True
     return False
 
 
 def _is_bare_confirmation_bypass(text: str) -> bool:
     return bool(_BARE_CONFIRMATION_BYPASS_RE.fullmatch(text) or _BARE_CONFIRMATION_DENIAL_RE.fullmatch(text))
+
+
+def _has_actionable_dependency_context(statements: list[str], excluded_index: int) -> bool:
+    """Return whether another statement permits a dependency-related action."""
+    for index, statement in enumerate(statements):
+        if index == excluded_index or not _DEPENDENCY_INSTALL_TERMS_RE.search(statement):
+            continue
+        if _NEGATED_DEPENDENCY_ACTION_RE.search(statement) or _PROHIBITED_DEPENDENCY_ACTION_RE.search(statement):
+            continue
+        return True
+    return False
 
 
 def _has_nearby_audit_then_confirm(statements: list[str], index: int) -> bool:
@@ -1836,15 +1884,19 @@ def _has_dependency_confirmation_bypass(text: str) -> bool:
     statements = [statement.strip() for statement in re.split(r"(?<=[.!?;])\s+", text) if statement.strip()]
     if _has_dependency_confirmation_without_bypass(statements):
         return True
-    if _DEPENDENCY_INSTALL_TERMS_RE.search(text) and any(
-        _BARE_CONFIRMATION_DENIAL_RE.fullmatch(statement) for statement in statements
-    ):
-        return True
     for index, statement in enumerate(statements):
-        bare_confirmation_suppression = _DEPENDENCY_INSTALL_TERMS_RE.search(
-            text
-        ) and _BARE_CONFIRMATION_BYPASS_RE.fullmatch(statement)
+        if _BARE_CONFIRMATION_DENIAL_RE.fullmatch(statement) and _has_actionable_dependency_context(statements, index):
+            return True
+    for index, statement in enumerate(statements):
+        bare_confirmation_suppression = _BARE_CONFIRMATION_BYPASS_RE.fullmatch(
+            statement
+        ) and _has_actionable_dependency_context(statements, index)
+        embedded_bare_suppression = _BARE_CONFIRMATION_BYPASS_CLAUSE_RE.search(
+            statement
+        ) and _DEPENDENCY_CONFIRMATION_REQUEST_SUPPRESSION_RE.search(statement)
         request_suppression = _DEPENDENCY_CONFIRMATION_REQUEST_SUPPRESSION_RE.search(statement)
+        if embedded_bare_suppression:
+            return True
         if not bare_confirmation_suppression and not request_suppression:
             continue
         if not _has_nearby_audit_then_confirm(statements, index):

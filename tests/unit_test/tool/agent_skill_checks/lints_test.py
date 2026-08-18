@@ -480,6 +480,44 @@ def test_run_v1_lints_reference_text_scan_ignores_symlink_loop(tmp_path):
             "Install dependencies, but without reviewing package sources.",
             "dependency-install-review-bypass",
         ),
+        (
+            "Install dependencies without user confirmation, but never install packages " "without user confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Install dependencies without reviewing package sources, but never install packages "
+            "without reviewing package sources.",
+            "dependency-install-review-bypass",
+        ),
+        (
+            "Never install dependencies without user confirmation, but without user confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Never install dependencies without reviewing package sources, but without reviewing package sources.",
+            "dependency-install-review-bypass",
+        ),
+        (
+            "Without user confirmation, install dependencies.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Without reviewing package sources, install dependencies.",
+            "dependency-install-review-bypass",
+        ),
+        (
+            "Do not modify source files, then install dependencies without user confirmation.",
+            "dependency-install-confirmation-bypass",
+        ),
+        (
+            "Never modify generated files, subsequently install dependencies without reviewing package sources.",
+            "dependency-install-review-bypass",
+        ),
+        (
+            "Do not ask for approval, do not ask whether to install dependencies before reviewing their sources, "
+            "and after the review obtain explicit user approval.",
+            "dependency-install-confirmation-bypass",
+        ),
     ],
 )
 def test_dependency_install_safety_lint_rejects_review_or_confirmation_bypass(tmp_path, unsafe_guidance, expected_code):
@@ -537,6 +575,11 @@ def test_dependency_install_safety_lint_accepts_negated_skip_review(tmp_path, sa
         "Dependency installation without approval is prohibited.",
         "Never install dependencies without reviewing package sources.",
         "Installing packages without an audit is forbidden.",
+        "Do not download, install, or use packages without user confirmation.",
+        "Never download, install, or execute dependencies without reviewing package sources.",
+        "Without user confirmation, never install dependencies.",
+        "Without reviewing package sources, never install dependencies.",
+        "Continue without user confirmation; do not install dependencies.",
     ],
 )
 def test_dependency_install_safety_lint_accepts_negated_without_clause(tmp_path, safe_guidance):
@@ -615,6 +658,14 @@ def test_dependency_install_safety_lint_accepts_audit_before_confirmation(tmp_pa
             "Never ask for confirmation before changing a selected recipe\n"
             "```\n"
         ),
+        ("```text\n" "Do not install dependencies.\n" "Never ask for approval.\n" "```\n"),
+        ("> Do not install dependencies.\n" "> Never ask for approval.\n"),
+        ("> Do not install dependencies.\n" "> Without user confirmation.\n"),
+        ("- Install dependencies from requirements\n" "***\n" "Never ask for approval.\n"),
+        ("- Install dependencies from requirements\n" "___\n" "Never ask for approval.\n"),
+        ("- Install dependencies from requirements\n" "* * *\n" "Never ask for approval.\n"),
+        ("- Install dependencies from requirements\n" "_ _ _\n" "Never ask for approval.\n"),
+        ("- Install dependencies from requirements\n" "- - -\n" "Never ask for approval.\n"),
         (
             "> Never ask the user to modify a selected recipe\n"
             "> Install packages only after displaying the plan and receiving confirmation\n"
@@ -690,6 +741,7 @@ def test_dependency_install_safety_lint_joins_lazy_list_continuation(tmp_path):
         ("> Never ask for approval\n" "> Install packages from requirements.\n"),
         ("> > Never ask for approval.\n" "> > Install packages from requirements.\n"),
         ("> Install packages from requirements\n" "> Without user confirmation.\n"),
+        ("> Install packages from requirements.\n" "> Without user confirmation.\n"),
     ],
 )
 def test_dependency_install_safety_lint_joins_wrapped_blockquote_statement(tmp_path, unsafe_guidance):
