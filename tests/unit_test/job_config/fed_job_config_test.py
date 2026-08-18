@@ -81,7 +81,7 @@ class TestFedJobConfig:
 
         assert marker.read_text(encoding="utf-8") == "keep me"
 
-    def test_generate_job_config_recovers_export_stranded_during_directory_swap(self, tmp_path):
+    def test_generate_job_config_preserves_export_stranded_during_directory_swap(self, tmp_path):
         job_config = FedJobConfig(job_name="job", min_clients=1)
         job_config.generate_job_config(tmp_path)
         marker = tmp_path / "job" / "notes.txt"
@@ -89,13 +89,11 @@ class TestFedJobConfig:
         backup_job_dir = tmp_path / ".nvflare_job_backups" / "00000000000000000000000000000001"
         backup_job_dir.parent.mkdir(parents=True)
         os.replace(tmp_path / "job", backup_job_dir)
-        job_config.meta_props = {"name": "other-job"}
+        job_config.generate_job_config(tmp_path)
 
-        with pytest.raises(ValueError, match="reserved 'name'"):
-            job_config.generate_job_config(tmp_path)
-
-        assert marker.read_text(encoding="utf-8") == "keep me"
-        assert not backup_job_dir.exists()
+        assert (backup_job_dir / "notes.txt").read_text(encoding="utf-8") == "keep me"
+        assert (tmp_path / "job" / "meta.json").is_file()
+        assert backup_job_dir.exists()
 
     def test_generate_job_config_preserves_backup_when_canonical_folder_is_unowned(self, tmp_path):
         job_config = FedJobConfig(job_name="job", min_clients=1)
@@ -115,7 +113,7 @@ class TestFedJobConfig:
         assert (backup_job_dir / "meta.json").is_file()
 
     def test_generate_job_config_ignores_caller_content_in_backup_folder(self, tmp_path):
-        backup_job_dir = tmp_path / ".nvflare_job_backups" / "job"
+        backup_job_dir = tmp_path / ".nvflare_job_backups" / "00000000000000000000000000000001"
         backup_job_dir.mkdir(parents=True)
         (backup_job_dir / "meta.json").write_text('{"name": "job"}', encoding="utf-8")
         marker = backup_job_dir / "notes.txt"

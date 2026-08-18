@@ -172,7 +172,6 @@ class FedJobConfig:
         os.makedirs(job_root, exist_ok=True)
         job_dir = os.path.join(job_root, self.job_name)
         backup_root = os.path.join(job_root, BACKUP_ROOT)
-        self._recover_previous_export(job_dir, backup_root)
         json_dump = self._prepare_meta()
         replace_existing = False
         if os.path.exists(job_dir):
@@ -217,38 +216,6 @@ class FedJobConfig:
         except BaseException:
             shutil.rmtree(temp_job_dir, ignore_errors=True)
             raise
-
-    def _recover_previous_export(self, job_dir, backup_root):
-        """Restore an owned export stranded by an interrupted directory swap."""
-        if not os.path.exists(backup_root):
-            return
-
-        backups = [
-            os.path.join(backup_root, entry)
-            for entry in os.listdir(backup_root)
-            if self._is_backup_export(os.path.join(backup_root, entry))
-        ]
-        if not backups:
-            return
-        if len(backups) > 1:
-            raise RuntimeError(f"Multiple interrupted export backups found for job {self.job_name}.")
-
-        backup_job_dir = backups[0]
-
-        if os.path.exists(job_dir):
-            if not self._is_valid_job_folder(job_dir, self.job_name):
-                raise RuntimeError(f"Job folder {job_dir} already exists and does not belong to job {self.job_name}.")
-            self._remove_backup_export(os.path.dirname(backup_root), backup_job_dir)
-        else:
-            os.replace(backup_job_dir, job_dir)
-            self._remove_backup_root_if_empty(backup_root)
-
-    def _is_backup_export(self, backup_job_dir):
-        try:
-            uuid.UUID(os.path.basename(backup_job_dir))
-            return self._is_valid_job_folder(backup_job_dir, self.job_name)
-        except (OSError, ValueError):
-            return False
 
     @staticmethod
     def _remove_backup_root_if_empty(backup_root):
