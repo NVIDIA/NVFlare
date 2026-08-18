@@ -201,7 +201,7 @@ def evaluate_loss(model, dataloader: DataLoader, steps: int) -> float:
             losses.append(loss.item())
 
     if not losses:
-        raise RuntimeError("validation dataloader produced no complete batches")
+        raise ValueError("validation dataloader produced no complete batches")
     return sum(losses) / len(losses)
 
 
