@@ -344,14 +344,15 @@
     {
       "id": "lightning-convert-with-eval",
       "prompt": "Convert this Lightning training code to a FLARE FedAvg job over 2 simulated sites for 2 rounds. I want validation metrics for the global model each round.",
-      "expected_output": "A FLARE Lightning Client API conversion that keeps evaluation inside Lightning: preserves validation_step and the validation dataloader, captures trainer.validate(model, ...) on the received global model before trainer.fit inside the round loop, preserves finite scalar results under model.__fl_meta__[MetaKey.INITIAL_METRICS] so the patched training result delivers them to the server, verifies the expected metric in server artifacts, and does not generate a raw PyTorch model.eval()/torch.no_grad() loop.",
+      "expected_output": "A FLARE Lightning Client API conversion that keeps evaluation inside Lightning: preserves validation_step and the validation dataloader, calls an explicit standalone trainer.validate(model, ...) on the received global model before trainer.fit inside the round loop, lets the patched callback attach finite scalar metrics under their exact logged names, verifies the expected metric in server artifacts, and does not generate a raw PyTorch model.eval()/torch.no_grad() loop or a model.__fl_meta__[MetaKey.INITIAL_METRICS] override.",
       "files": [
         "files/hello-lightning/train.py",
         "files/hello-lightning/model.py"
       ],
       "assertions": [
         "The agent preserves the source validation_step and validation dataloader.",
-        "The generated round loop captures trainer.validate before trainer.fit and preserves its finite scalar results under model.__fl_meta__[MetaKey.INITIAL_METRICS] so each round's patched training result delivers global-model validation metrics.",
+        "The generated round loop calls an explicit standalone trainer.validate before trainer.fit so the patched callback delivers each round's finite scalar global-model validation metrics under their exact self.log keys, even when train_with_evaluation is false.",
+        "The agent does not treat Lightning sanity checks or validation performed inside trainer.fit as received-global-model scores.",
         "Validation metrics stay logged through self.log in the LightningModule.",
         "The agent verifies the expected metric in server metric artifacts or bounded server logs and does not treat a terminal Finished state without that metric as complete metric validation.",
         "The agent does not generate a raw PyTorch model.eval()/torch.no_grad() evaluation loop for this Lightning conversion.",
@@ -371,7 +372,7 @@
           },
           {
             "id": "preserve-training-result-metrics",
-            "description": "captures finite scalar trainer.validate results under model.__fl_meta__[MetaKey.INITIAL_METRICS] before trainer.fit so the patched training result delivers them to the server even when train_with_evaluation is disabled"
+            "description": "uses an explicit standalone trainer.validate before trainer.fit and lets the patched callback deliver finite scalar metrics under their exact self.log keys even when train_with_evaluation is false"
           },
           {
             "id": "verify-server-metric-evidence",
@@ -390,6 +391,14 @@
           {
             "id": "no-invented-test-semantics",
             "description": "does not add trainer.test reporting when the source has no test semantics and the user did not request it"
+          },
+          {
+            "id": "no-initial-metrics-metadata-override",
+            "description": "does not copy validation results into model.__fl_meta__[MetaKey.INITIAL_METRICS] or otherwise replace the patched callback's captured metrics"
+          },
+          {
+            "id": "no-fit-validation-as-global-score",
+            "description": "does not treat sanity-check or in-fit validation metrics as scores for the received global model"
           }
         ]
       }
@@ -397,13 +406,13 @@
     {
       "id": "lightning-loss-only-selection-metric",
       "prompt": "Convert this Lightning training code to a FLARE FedAvg job over 2 sites for 2 rounds. The module only logs val_loss, and lower val_loss is better. Keep best-model selection.",
-      "expected_output": "A Lightning conversion that preserves val_loss and delivers an explicitly negated neg_val_loss companion under MetaKey.INITIAL_METRICS, selects key_metric=\"neg_val_loss\", and neither fails closed nor disables best-model selection because the only source metric is a loss.",
+      "expected_output": "A Lightning conversion that preserves val_loss, logs an explicitly negated epoch-level neg_val_loss companion during Lightning validation, lets the patched callback deliver both exact keys, selects key_metric=\"neg_val_loss\", and neither fails closed nor disables best-model selection because the only source metric is a loss.",
       "files": [
         "files/hello-lightning/train.py",
         "files/hello-lightning/model.py"
       ],
       "assertions": [
-        "The generated client preserves val_loss and adds a higher-is-better neg_val_loss as -val_loss in the same MetaKey.INITIAL_METRICS dict, for example via validate_global_model(..., make_higher_is_better=(\"val_loss\",)).",
+        "The generated client preserves the epoch-level val_loss log and adds a higher-is-better epoch-level self.log(\"neg_val_loss\", -loss, ...) companion with the same reduction semantics so the patched callback captures it.",
         "The recipe selects key_metric=\"neg_val_loss\".",
         "The agent does not select raw val_loss as higher-is-better.",
         "The agent does not pass key_metric=\"\" or otherwise disable best-model selection because only a loss is available."
@@ -427,13 +436,13 @@
     {
       "id": "lightning-custom-aggregation-with-server-metrics",
       "prompt": "Convert this Lightning training code to a 3-site FedAvg job with a custom step-weighted ModelAggregator. Report val_loss for the received global model each round and produce the normal server metrics artifact.",
-      "expected_output": "A FLARE Lightning conversion that captures finite scalar pre-fit validation results under model.__fl_meta__[MetaKey.INITIAL_METRICS], keeps flare.patch(trainer) as the only model-exchange path, and implements the custom ModelAggregator so it step-weights both parameters and supported client metrics and returns the aggregated values in FLModel.metrics. Validation requires val_loss in server metric artifacts or bounded server logs, not just a terminal Finished state.",
+      "expected_output": "A FLARE Lightning conversion that uses explicit standalone pre-fit validation and the patched callback's automatic metric delivery, keeps flare.patch(trainer) as the only model-exchange path, and implements the custom ModelAggregator so it step-weights both parameters and supported client metrics and returns the aggregated values in FLModel.metrics. Validation requires val_loss in server metric artifacts or bounded server logs, not just a terminal Finished state.",
       "files": [
         "files/hello-lightning/train.py",
         "files/hello-lightning/model.py"
       ],
       "assertions": [
-        "The generated Lightning client calls trainer.validate before trainer.fit and preserves finite scalar val_loss under model.__fl_meta__[MetaKey.INITIAL_METRICS].",
+        "The generated Lightning client calls an explicit standalone trainer.validate before trainer.fit and lets the patched callback attach finite scalar val_loss without an INITIAL_METRICS metadata override.",
         "The custom ModelAggregator consumes client FLModel.metrics, aggregates supported scalar metrics with the intended step weights, and returns them in the aggregated FLModel.metrics instead of returning parameters alone.",
         "The conversion keeps flare.patch(trainer) as the model exchange and does not add a manual flare.send path.",
         "The agent requires val_loss in the server metric artifact or bounded server logs; terminal Finished evidence without the requested metric is incomplete."
@@ -443,7 +452,7 @@
         "mandatory_behavior": [
           {
             "id": "preserve-training-result-metrics",
-            "description": "captures finite scalar pre-fit validation results under model.__fl_meta__[MetaKey.INITIAL_METRICS] before trainer.fit"
+            "description": "uses explicit standalone pre-fit validation and the patched callback to attach finite scalar client metrics without a metadata override"
           },
           {
             "id": "custom-aggregator-preserves-metrics",
@@ -462,6 +471,10 @@
           {
             "id": "no-second-manual-flare-send",
             "description": "does not add a manual flare.send path to work around Lightning metric delivery"
+          },
+          {
+            "id": "no-initial-metrics-metadata-override",
+            "description": "does not copy validation results into model.__fl_meta__[MetaKey.INITIAL_METRICS] or otherwise replace the patched callback's captured metrics"
           }
         ]
       }
@@ -513,7 +526,7 @@
     {
       "id": "lightning-ddp-multigpu",
       "prompt": "My Lightning Trainer uses DDP across multiple GPUs. Federate it with FedAvg and keep multi-GPU training on each site.",
-      "expected_output": "The agent treats the DDP evidence as a high-impact runtime decision: it confirms the selected recipe documents an external-process launch parameter with nvflare recipe show before using it, applies the rank-synchronized round loop when the documented external-process path is used, keeps the patched trainer in charge of exchange, preserves reduced finite scalar pre-fit metrics through model.__fl_meta__[MetaKey.INITIAL_METRICS], and configures key_metric only after the exact metric is proven to reach server FLModel.metrics.",
+      "expected_output": "The agent treats the DDP evidence as a high-impact runtime decision: it confirms the selected recipe documents an external-process launch parameter with nvflare recipe show before using it, applies the rank-synchronized round loop when the documented external-process path is used, keeps the patched trainer in charge of exchange, uses explicit standalone pre-fit validation with source-backed distributed reduction so the patched callback delivers finite scalar metrics, and configures key_metric only after the exact metric is proven to reach server FLModel.metrics.",
       "files": [
         "files/hello-lightning/train.py",
         "files/hello-lightning/model.py"
@@ -524,7 +537,7 @@
         "When the documented external-process path is used, the agent applies the rank-synchronized while loop that broadcasts flare.is_running() from rank 0 before receive/validate/fit.",
         "If the recipe did not document a launch parameter for DDP, the agent would ask in interactive mode or fail closed in unattended mode, reporting the DDP evidence and the missing product surface.",
         "The agent keeps flare.patch(trainer) in charge of model exchange and does not pass input_model into the Trainer.",
-        "For DDP training that requires server metrics, the agent preserves reduced finite scalar pre-fit validation results under model.__fl_meta__[MetaKey.INITIAL_METRICS] and does not infer delivery from trainer.validate/self.log alone.",
+        "For DDP training that requires server metrics, the agent uses an explicit standalone pre-fit trainer.validate with source-backed distributed reduction, lets the patched callback attach the reduced finite scalar metrics, and does not generate an INITIAL_METRICS metadata override.",
         "The agent configures a source-derived key_metric or claims server-side model selection only after the exact metric is proven to reach client and aggregated FLModel.metrics.",
         "The agent keeps the user's accelerator/devices intent and reports any GPU/CPU validation limitation."
       ],
@@ -541,7 +554,7 @@
           },
           {
             "id": "ddp-key-metric-requires-server-delivery",
-            "description": "uses the supported model.__fl_meta__[MetaKey.INITIAL_METRICS] bridge for reduced finite scalar pre-fit DDP validation results and configures key_metric only after the exact metric is proven in client and aggregated FLModel.metrics"
+            "description": "uses explicit standalone pre-fit DDP validation with source-backed distributed reduction, relies on patched callback delivery, and configures key_metric only after the exact metric is proven in client and aggregated FLModel.metrics"
           }
         ],
         "prohibited_behavior": [
@@ -560,6 +573,10 @@
           {
             "id": "no-local-validate-metric-delivery-inference",
             "description": "does not infer server-side metric delivery or configure key_metric from a local trainer.validate/self.log call or from executor internals"
+          },
+          {
+            "id": "no-initial-metrics-metadata-override",
+            "description": "does not copy DDP validation results into model.__fl_meta__[MetaKey.INITIAL_METRICS] or replace the patched callback's captured metrics"
           }
         ]
       }

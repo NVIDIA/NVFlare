@@ -947,7 +947,7 @@ def test_custom_aggregator_template_resets_between_rounds():
         aggregator.aggregate_model()
 
 
-def test_lightning_eval_template_delivers_validation_metric_to_server():
+def test_lightning_eval_template_validates_metrics_without_metadata_override():
     torch = pytest.importorskip("torch")
     pl = pytest.importorskip("pytorch_lightning")
     from torch.utils.data import DataLoader, TensorDataset
@@ -965,7 +965,8 @@ def test_lightning_eval_template_delivers_validation_metric_to_server():
         def validation_step(self, batch, batch_idx):
             features, labels = batch
             loss = torch.nn.functional.cross_entropy(self(features), labels)
-            self.log("val_loss", loss)
+            self.log("val_loss", loss, on_step=False, on_epoch=True)
+            self.log("neg_val_loss", -loss, on_step=False, on_epoch=True)
             return loss
 
         def configure_optimizers(self):
@@ -975,22 +976,11 @@ def test_lightning_eval_template_delivers_validation_metric_to_server():
     trainer = pl.Trainer(logger=False, enable_checkpointing=False, enable_progress_bar=False, devices=1)
 
     model = ToyLightning()
-    metrics = module.validate_global_model(
-        trainer,
-        model,
-        dataloaders=loader,
-        make_higher_is_better=("val_loss",),
-    )
+    metrics = module.validate_global_model(trainer, model, dataloaders=loader)
 
     assert "val_loss" in metrics
     assert metrics["neg_val_loss"] == pytest.approx(-metrics["val_loss"])
-    from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
-    from nvflare.app_common.utils.fl_model_utils import FLModelUtils
-
-    assert model.__fl_meta__[MetaKey.INITIAL_METRICS] == metrics
-    outgoing_model = FLModel(params=model.state_dict(), meta=model.__fl_meta__)
-    server_model = FLModelUtils.from_shareable(FLModelUtils.to_shareable(outgoing_model))
-    assert server_model.metrics == metrics
+    assert not hasattr(model, "__fl_meta__")
 
 
 def test_lightning_template_eval_only_mode_skips_training():
@@ -1049,28 +1039,15 @@ class _DummyModel:
         raise AssertionError("model should not be called when the loader is empty")
 
 
-def test_lightning_negated_metric_helper_does_not_mutate_and_is_threaded_through_main():
-    """The negation helper must be copy-safe, and main() must actually pass the keys.
-
-    ``main`` is the round loop a generated ``client.py`` copies verbatim. If it does
-    not forward ``make_higher_is_better`` to ``validate_global_model``, a lower-is-better
-    conversion silently never delivers the negated key the recipe selects on.
-    """
+def test_lightning_template_does_not_rewrite_metrics_after_validation():
+    """The patched callback owns pre-fit metric capture and delivery."""
     import inspect as _inspect
 
     module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+    module_source = _inspect.getsource(module)
 
-    source = {"val_loss": 0.25, "val_acc": 0.9}
-    negated = module.add_higher_is_better_metrics(source, ("val_loss",))
-
-    assert negated == {"val_loss": 0.25, "val_acc": 0.9, "neg_val_loss": -0.25}
-    assert source == {"val_loss": 0.25, "val_acc": 0.9}, "helper must not mutate its input"
-
-    with pytest.raises(RuntimeError, match="not in the validation results"):
-        module.add_higher_is_better_metrics({"val_acc": 1.0}, ("val_loss",))
-    with pytest.raises(RuntimeError, match="already exists"):
-        module.add_higher_is_better_metrics({"val_loss": 1.0, "neg_val_loss": 0.0}, ("val_loss",))
-
-    assert "make_higher_is_better" in _inspect.signature(module.main).parameters
+    assert "make_higher_is_better" not in _inspect.signature(module.main).parameters
+    assert "from nvflare.app_common.abstract.fl_model import MetaKey" not in module_source
+    assert "model.__fl_meta__ =" not in module_source
     main_source = _inspect.getsource(module.main)
-    assert "make_higher_is_better=make_higher_is_better" in main_source
+    assert main_source.rindex("validate_global_model(") < main_source.rindex("trainer.fit(")

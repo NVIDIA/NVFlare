@@ -187,7 +187,8 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     assert 'metrics={"neg_loss": -loss}' in construction_text
     assert 'key_metric="neg_loss"' in construction_text
     assert "ask or fail closed when the metric direction is unclear" in normalized_construction
-    assert "`MetaKey.INITIAL_METRICS` bridge" in normalized_lightning_ddp
+    assert "DDP validation metrics use the patched callback" in lightning_ddp_text
+    assert "The setting makes metrics optional" in normalized_lightning_ddp
     assert "Only pass a source-derived `key_metric`" in normalized_lightning_ddp
     assert "unprotected recipe or adding only a disclaimer" in skill_text
     assert "key_metric=metric_name" not in recipe_text
@@ -228,18 +229,11 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     assert "applies unchanged" in normalized_hf_conversion
     assert 'metrics["eval_neg_loss"] = -metrics["eval_loss"]' in hf_conversion_text
     assert 'key_metric="eval_neg_loss"' in hf_conversion_text
-    assert "make_higher_is_better" in lightning_asset_text
-    assert "def add_higher_is_better_metrics" in lightning_asset_text
-    assert 'make_higher_is_better=("val_loss",)' in normalized_lightning_conversion
+    assert 'self.log("neg_val_loss", -loss, on_step=False, on_epoch=True)' in lightning_conversion_text
     assert 'key_metric="neg_val_loss"' in lightning_conversion_text
     assert "never a reason to fail closed" in normalized_lightning_conversion
-    # main() is the loop agents copy verbatim; if it does not thread
-    # make_higher_is_better into validate_global_model, the negated key never
-    # reaches the server no matter what the reference says.
-    assert "def main(model, datamodule, trainer_factory, evaluate_only=False, make_higher_is_better=())" in (
-        lightning_asset_text
-    )
-    assert "make_higher_is_better=make_higher_is_better" in lightning_asset_text
+    assert "make_higher_is_better" not in lightning_asset_text
+    assert "def main(model, datamodule, trainer_factory, evaluate_only=False)" in lightning_asset_text
 
     for consumer_text in (skill_text, recipe_text, client_text, validation_text, hf_skill_text, hf_conversion_text):
         assert "pytorch-family-recipe-construction.md" in consumer_text
@@ -355,7 +349,7 @@ def test_seed_skill_versions_stay_at_release_version():
         assert 'version: "0.1.0"' in skill_text, skill_path
 
 
-def test_lightning_training_metrics_have_one_canonical_delivery_bridge():
+def test_lightning_training_metrics_use_automatic_pre_fit_delivery():
     repo_root = Path(__file__).resolve().parents[4]
     skill_root = repo_root / "skills" / "nvflare-convert-lightning"
     skill_text = skill_root.joinpath("SKILL.md").read_text(encoding="utf-8")
@@ -371,11 +365,13 @@ def test_lightning_training_metrics_have_one_canonical_delivery_bridge():
     normalized_validation = " ".join(validation_text.split())
     normalized_workflow = " ".join(workflow_text.split())
 
-    assert "calling `trainer.validate(...)` alone does not prove" in normalized_skill
+    assert "explicit pre-fit validation contract" in normalized_skill
     assert "## Training-result metric delivery" in conversion_text
-    assert "`train_with_evaluation` setting is disabled or not exposed" in normalized_conversion
-    assert "model.__fl_meta__" in conversion_text
-    assert "MetaKey.INITIAL_METRICS" in client_template
+    assert "`False` makes them optional rather than suppressing metrics" in normalized_conversion
+    assert "sanity checks and validation performed inside `trainer.fit(...)`" in normalized_conversion
+    assert "Do not copy validation metrics into `model.__fl_meta__[MetaKey.INITIAL_METRICS]`" in normalized_conversion
+    assert "from nvflare.app_common.abstract.fl_model import MetaKey" not in client_template
+    assert "model.__fl_meta__ =" not in client_template
     assert "trainer.validate" in client_template
     assert "trainer.fit" in client_template
     assert client_template.index("trainer.validate") < client_template.index("trainer.fit")
@@ -788,10 +784,9 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "third-party class paths stay runtime dependencies" in normalized_lightning
     assert "FL-only Client API entry point" in normalized_pytorch
     assert "FL-only Client API entry point" in normalized_lightning
-    assert (
-        "establish Lightning-local metrics but do not by themselves establish server delivery" in normalized_lightning
-    )
-    assert "`MetaKey.INITIAL_METRICS` before `trainer.fit(...)`" in normalized_lightning
+    assert "the patched callback owns delivery" in normalized_lightning
+    assert "`False` makes them optional rather than suppressing metrics" in normalized_lightning
+    assert "Do not copy validation metrics into `model.__fl_meta__[MetaKey.INITIAL_METRICS]`" in normalized_lightning
     phase_markers = [
         "Inspect before editing",
         "Apply the dependency-install ordering rule",
