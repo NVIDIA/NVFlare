@@ -53,6 +53,7 @@ from nvflare.fuel.f3.cellnet.identity import get_cert_common_name_from_pem
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.f3.streaming.download_service import OBJ_DOWNLOADER_CHANNEL, OBJ_DOWNLOADER_TOPIC, DownloadService
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.utils import fobs
@@ -427,6 +428,8 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, monkeypatc
 @pytest.mark.timeout(60)
 @pytest.mark.parametrize("parent_connection_security", ["clear", "mtls"])
 def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeypatch, parent_connection_security):
+    # Each parameter creates the same root Cell, whose process-wide stats pools outlive Cell.stop().
+    monkeypatch.setattr(StatsPoolManager, "pools", {})
     flare_decomposers.register()
     common_decomposers.register()
     suffix = uuid.uuid4().hex[:8]
