@@ -187,19 +187,33 @@ _READ_ONLY_DEPENDENCY_VERB_PATTERN = (
     r"|enumerate[sd]?|enumerating|prints?|print(?:ed|ing)|displays?|display(?:ed|ing)"
     r"|checks?|check(?:ed|ing))"
 )
-# A preposition followed by optional modifiers and a gerund can attach a second
-# action to an otherwise read-only phrase: "dependencies must be inspected by
-# only fetching packages". Do not enumerate adverbs: any non-determiner tokens
-# may modify the gerund. Determiner-led noun phrases such as "by the engineering
-# team" do not introduce an action. Unknown gerunds fail closed; recognized
-# read-only gerunds remain safe when they describe another inspection.
-_ACTION_INTRODUCING_GERUND_RE = re.compile(
-    r"\b(?:by|via|through|with|for|during|upon|when)\s+"
-    r"(?:(?!(?:a|an|the|this|that|these|those|my|our|your|his|her|its|their|each|every|some|any)\b)"
-    r"[A-Za-z][A-Za-z0-9_'’-]*\s+)*?"
-    r"(?P<gerund>[A-Za-z][A-Za-z0-9_'’-]*ing)\b",
-    re.IGNORECASE,
-)
+# A preposition followed by modifiers and a gerund can attach a second action to
+# an otherwise read-only phrase: "dependencies must be inspected by only
+# fetching packages". Scan words after simple preposition matches in Python
+# rather than combining overlapping repeated regex groups, which can backtrack
+# exponentially on adversarial input.
+_ACTION_INTRODUCING_PREPOSITION_RE = re.compile(r"\b(?:by|via|through|with|for|during|upon|when)\b", re.IGNORECASE)
+_POLICY_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_'’-]*")
+_NOMINAL_GERUND_DETERMINERS = {
+    "a",
+    "an",
+    "any",
+    "each",
+    "every",
+    "her",
+    "his",
+    "its",
+    "my",
+    "our",
+    "some",
+    "that",
+    "the",
+    "their",
+    "these",
+    "this",
+    "those",
+    "your",
+}
 # An object word may not be a coordinator (which could attach a second action) or
 # a recognized mutating verb, and may not be ``to``, which introduces an
 # infinitive: "inspect package metadata to add packages".
@@ -2013,8 +2027,19 @@ def _is_read_only_passive_phrase(phrase: str) -> bool:
 
 def _tail_introduces_action_gerund(tail: str) -> bool:
     """Return whether a read-only phrase tail introduces an unknown gerund action."""
-    for match in _ACTION_INTRODUCING_GERUND_RE.finditer(tail):
-        if not re.fullmatch(_READ_ONLY_DEPENDENCY_VERB_PATTERN, match.group("gerund"), re.IGNORECASE):
+    for preposition in _ACTION_INTRODUCING_PREPOSITION_RE.finditer(tail):
+        phrase = tail[preposition.end() :]
+        words = list(_POLICY_WORD_RE.finditer(phrase))
+        for index, word_match in enumerate(words):
+            word = word_match.group(0)
+            if not word.lower().endswith("ing"):
+                continue
+            if re.fullmatch(_READ_ONLY_DEPENDENCY_VERB_PATTERN, word, re.IGNORECASE):
+                continue
+            previous = words[index - 1].group(0).lower() if index else ""
+            suffix = phrase[word_match.end() :]
+            if previous in _NOMINAL_GERUND_DETERMINERS and not _DEPENDENCY_INSTALL_TERMS_RE.search(suffix):
+                continue
             return True
     return False
 
