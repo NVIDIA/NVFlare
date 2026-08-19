@@ -74,14 +74,10 @@ selected recipe path and the generated client's actual parser.
 
 ### Per-Site Argument Overrides
 
-Use one topology owner. The standard local path leaves `per_site_config` unset
-and runs `SimEnv(num_clients=N, ...)`; generate site partitions from
-`flare.get_site_name()` after `flare.init()` rather than creating one recipe
-target per partition. Use `per_site_config` only for genuinely different site
-paths or arguments. Once `set_per_site_config(recipe, per_site_config)` creates
-named recipe targets, run them with
-`SimEnv(clients=list(per_site_config), num_threads=len(per_site_config), ...)`.
-Never also pass `num_clients`, and never use `num_clients=None` as a workaround.
+Follow the single-topology-owner rule in `conversion-common.md`. For generated
+partitions, derive the site index from `flare.get_site_name()` after
+`flare.init()` rather than creating one recipe target per partition. Use
+`per_site_config` only for genuinely different site paths or arguments.
 
 Treat `per_site_config[site]["train_args"]` as the site's complete argument
 string. When present, it replaces the recipe-level `train_args`; the recipe does

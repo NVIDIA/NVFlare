@@ -181,19 +181,13 @@ def build_sim_env(
     if per_site_config is None:
         return SimEnv(
             num_clients=num_clients,
-            num_threads=num_clients,
             workspace_root=str(workspace_root),
         )
 
     clients = list(per_site_config)
-    if len(clients) != num_clients:
-        raise ValueError(
-            f"per_site_config defines {len(clients)} site(s), but num_clients={num_clients}; "
-            "the named topology must match the requested client count"
-        )
     return SimEnv(
+        num_clients=num_clients,
         clients=clients,
-        num_threads=len(clients),
         workspace_root=str(workspace_root),
     )
 

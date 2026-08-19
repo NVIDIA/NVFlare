@@ -120,7 +120,7 @@
           },
           {
             "id": "single-simulator-topology-owner",
-            "description": "uses SimEnv(num_clients=N) with shared arguments and site-name-derived partitions, or SimEnv(clients=list(per_site_config)) for genuinely different named-site arguments, but never both topology forms"
+            "description": "uses SimEnv(num_clients=N) with shared arguments and site-name-derived partitions, or makes clients=list(per_site_config) the topology owner for genuinely different named-site arguments; any accompanying num_clients is matching consistency evidence only"
           },
           {
             "id": "standard-generated-layout",
@@ -278,7 +278,7 @@
           },
           {
             "id": "no-mixed-named-and-generated-client-topology",
-            "description": "does not combine set_per_site_config named targets with SimEnv(num_clients=...), and does not recover from that conflict with num_clients=None"
+            "description": "does not generate unnamed SimEnv clients after set_per_site_config creates named targets, pass an inconsistent num_clients with clients, or recover from a mismatch with num_clients=None"
           }
         ],
         "optional_behavior": [

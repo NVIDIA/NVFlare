@@ -54,33 +54,44 @@ reaches the applicable phase, and stop at the first failure.
   ```bash
   python <skill-dir>/scripts/resolve_model_snapshot.py --source local --source-root <absolute-source-root> <configured-path>
   python <skill-dir>/scripts/resolve_model_snapshot.py --source hub <org/model>
+  python <skill-dir>/scripts/resolve_model_snapshot.py --source hub --repo-type dataset <org/dataset>
   ```
 
   A relative local identifier requires the absolute original source-project
   root so resolution never depends on the validation command's working
   directory. An absolute local identifier must omit `--source-root`; the option
   resolves relative identifiers and is not a sandbox boundary.
-- Only when the user authorizes downloading a public checkpoint if uncached,
-  rerun the Hub resolver once with the complete canonical invocation:
+- Only when the user authorizes downloading the specific public Hub artifact if
+  uncached, rerun its resolver once with the matching canonical invocation:
 
   ```bash
   python <skill-dir>/scripts/resolve_model_snapshot.py --source hub --allow-download <org/model>
+  python <skill-dir>/scripts/resolve_model_snapshot.py --source hub --repo-type dataset --allow-download <org/dataset>
   ```
 
-  In that authorized invocation, the resolver uses the public
-  `HfApi().model_info(...).sha` result, validates the full immutable
+  In that authorized invocation, the resolver uses the matching public
+  `HfApi().model_info(...).sha` or
+  `HfApi().dataset_info(...).sha` result, validates the full immutable
   40-character commit SHA, and passes it to `snapshot_download`. An already
-  audited full SHA may instead be supplied with `--revision`. Use the returned
-  immutable `revision` and `resolved_path` for the server and every client. Do
-  not run a preceding `snapshot_download(..., local_files_only=True)` probe,
-  copy resolver logic into generated `job.py`, or download without
-  authorization. Resolve datasets through their source-prescribed local path or
-  cache with the same policy.
+  audited full SHA may instead be supplied with `--revision`. For a model
+  repository, use the returned immutable `revision` and `resolved_path` for the
+  server and every client. For a dataset repository, pass `resolved_path` only
+  to a source-compatible local dataset loader; if the source cannot load that
+  snapshot layout, ask or fail closed rather than inventing a loader. Do not run
+  a preceding `snapshot_download(..., local_files_only=True)` probe, copy
+  resolver logic into generated `job.py`, or download without authorization.
+  For a configured Hub dataset ID, use the same resolver with
+  `--repo-type dataset`; for a source-prescribed local dataset path, use the
+  existing local path without a Hub lookup.
 - Never recover from an offline/cache-only miss by removing
   `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`, dropping `local_files_only=True`, or
   rerunning online unless the user explicitly requested the download. Do not
   substitute another local checkpoint. Keep the job as a draft and report
   full-model validation blocked when the required artifact is unavailable.
+  A cache-only Hugging Face error can mention `huggingface.co` while reporting
+  a local cache miss; that URL alone is not evidence that a network request was
+  attempted. Judge the configured offline flags, `local_files_only` setting,
+  and exception/result type instead.
 - Pass the same resolved local model path and cache configuration from the
   resolver to the server model and every client. Do not validate with a cached
   Hub identifier and export a job that depends on an unverified online lookup.

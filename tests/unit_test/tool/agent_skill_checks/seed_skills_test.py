@@ -463,12 +463,13 @@ def test_lightning_conversion_limits_reference_loading_and_full_run_validation()
         "Apply the dependency-install ordering rule",
         "Reuse the PyTorch recipe family",
         "Convert the training entry point",
-        "Only after generated files exist",
+        "Immediately after generated files exist",
         "Report the recipe",
     ]
     phase_positions = [skill_text.index(marker) for marker in phase_markers]
     assert phase_positions == sorted(phase_positions)
     assert "Complete each workflow phase before loading the next phase's reference" in normalized_skill
+    assert "before any preflight, smoke test, cleanup, validation, or execution command" in normalized_skill
     assert "Do not enumerate reference directories or preload validation" in normalized_skill
     assert "do not load the broad `conversion-workflow.md` for these standard concerns" in normalized_common
     assert "Do not reconstruct that focused contract from this broad workflow reference" in normalized_workflow
@@ -720,14 +721,26 @@ def test_shared_conversion_uses_one_simulator_topology_owner():
         references.joinpath("pytorch-family-recipe-construction.md").read_text(encoding="utf-8").split()
     )
     workflow_text = " ".join(references.joinpath("conversion-workflow.md").read_text(encoding="utf-8").split())
+    hf_conversion_text = " ".join(
+        repo_root.joinpath("skills/nvflare-convert-huggingface/references/huggingface-conversion.md")
+        .read_text(encoding="utf-8")
+        .split()
+    )
 
     assert "Use exactly one owner for the simulated client topology" in common_text
     assert "Do not call `set_per_site_config()` merely to assign partition indices" in common_text
-    assert "`SimEnv(clients=list(config), ...)`, never `SimEnv(num_clients=...)`" in common_text
-    assert "not a condition to recover from by setting `num_clients=None`" in common_text
-    assert "generate site partitions from `flare.get_site_name()` after `flare.init()`" in construction_text
-    assert "`SimEnv(clients=list(per_site_config), num_threads=len(per_site_config), ...)`" in construction_text
-    assert "This unified-app form is valid only while the recipe has no explicit named client targets" in workflow_text
+    assert "`clients` remains the topology owner" in common_text
+    assert "`SimEnv` rejects an inconsistent count" in common_text
+    assert "do not recover from a mismatch by setting `num_clients=None`" in common_text
+    assert "derive the site index from `flare.get_site_name()` after `flare.init()`" in construction_text
+    assert "single-topology-owner rule in `conversion-common.md`" in construction_text
+    assert "canonical single-topology-owner rule in the always-loaded common conversion reference" in workflow_text
+    assert (
+        "single-topology-owner rule from `../../nvflare-shared/references/conversion-common.md`" in hf_conversion_text
+    )
+    assert "clients=list(" not in construction_text
+    assert "clients=list(" not in workflow_text
+    assert "clients=list(" not in hf_conversion_text
 
     for framework in ("pytorch", "lightning", "huggingface"):
         eval_data = json.loads(
@@ -845,6 +858,7 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
         (repo_root / "skills" / "nvflare-convert-huggingface" / "evals" / "evals.json").read_text(encoding="utf-8")
     )
     basic_eval = _eval_by_id(eval_data, "huggingface-convert-basic")["nvflare"]
+    offline_eval = _eval_by_id(eval_data, "huggingface-offline-model-cache-miss")
     mandatory_ids = {item["id"] for item in basic_eval["mandatory_behavior"]}
     prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
     normalized_hf_validation = " ".join(hf_validation.split())
@@ -853,16 +867,24 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
     assert "make the inventory command exit zero" in " ".join(dependency_text.split())
     assert "optional capability or host-diagnostic utility as evidence" in " ".join(validation_text.split())
     assert "Do not append platform-specific utilities" in " ".join(validation_text.split())
-    assert "rerun the Hub resolver once with the complete canonical invocation" in normalized_hf_validation
+    assert "rerun its resolver once with the matching canonical invocation" in normalized_hf_validation
     assert "`../scripts/resolve_model_snapshot.py`" in hf_validation
     assert "`--source local`" in hf_validation
     assert "`--source hub`" in hf_validation
     assert "<skill-dir>/scripts/resolve_model_snapshot.py --source local --source-root" in hf_validation
     assert "<skill-dir>/scripts/resolve_model_snapshot.py --source hub <org/model>" in hf_validation
+    assert "--source hub --repo-type dataset <org/dataset>" in hf_validation
     assert "--source hub --allow-download <org/model>" in hf_validation
+    assert "--source hub --repo-type dataset --allow-download <org/dataset>" in hf_validation
+    assert "specific public Hub artifact" in normalized_hf_validation
+    assert "pass `resolved_path` only to a source-compatible local dataset loader" in normalized_hf_validation
+    assert "ask or fail closed rather than inventing a loader" in normalized_hf_validation
     assert "do not invent a `--model` option" in normalized_hf_validation
     assert "full immutable 40-character commit SHA" in normalized_hf_validation
     assert "`HfApi().model_info(...).sha`" in normalized_hf_validation
+    assert "`HfApi().dataset_info(...).sha`" in normalized_hf_validation
+    assert "that URL alone is not evidence that a network request was attempted" in normalized_hf_validation
+    assert any("mentioning huggingface.co can mean a local cache miss" in item for item in offline_eval["assertions"])
     assert "emits a structured `missing` result" in normalized_hf_validation
     assert "copy resolver logic into generated `job.py`" in normalized_hf_validation
     assert "snapshot_download" not in hf_job_asset
@@ -893,11 +915,15 @@ def test_orientation_routes_only_unresolved_explicit_conversions():
         (repo_root / "skills" / "nvflare-convert-huggingface" / "evals" / "evals.json").read_text(encoding="utf-8")
     )
     generic_conversion = _eval_by_id(hf_eval_data, "huggingface-convert-basic")
+    pytorch_frontmatter = repo_root.joinpath("skills/nvflare-convert-pytorch/SKILL.md").read_text(encoding="utf-8")
+    lightning_frontmatter = repo_root.joinpath("skills/nvflare-convert-lightning/SKILL.md").read_text(encoding="utf-8")
 
     assert "Do not load orientation to perform the preliminary inspection" in normalized_orient
     assert "run `nvflare agent inspect source <path> --format json` first" in normalized_orient
     assert "route directly to the one detected converter" in normalized_orient
     assert "ownership conflict or unresolved Trainer factory" in normalized_orient
+    assert "preliminary source inspection identifies one plain-PyTorch owner" in pytorch_frontmatter
+    assert "preliminary source inspection identifies one Lightning owner" in lightning_frontmatter
     assert "Hugging Face" not in generic_conversion["prompt"]
     assert generic_conversion["nvflare"]["expected_skill"] == "nvflare-convert-huggingface"
     prohibited_ids = {item["id"] for item in generic_conversion["nvflare"]["prohibited_behavior"]}

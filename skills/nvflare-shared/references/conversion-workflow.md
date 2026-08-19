@@ -422,20 +422,10 @@ reconstruct either contract from this broad workflow reference.
 
 ## Execution Environment And Local Validation
 
-Conversion validation uses `SimEnv` from `nvflare.recipe`. Build the recipe and
-call `recipe.execute(env)` from `job.py`:
-
-```python
-env = SimEnv(num_clients=num_clients, num_threads=num_clients, workspace_root=workspace_root)
-recipe.execute(env)
-```
-
-This unified-app form is valid only while the recipe has no explicit named
-client targets. If `set_per_site_config(recipe, config)` is required for truly
-different site arguments, use `SimEnv(clients=list(config),
-num_threads=len(config), ...)` instead. The always-loaded common conversion
-reference owns the canonical single-topology-owner rule and partition guidance;
-do not configure both forms or recover with `num_clients=None`.
+Conversion validation uses `SimEnv` from `nvflare.recipe`; build the environment
+under the canonical single-topology-owner rule in the always-loaded common
+conversion reference, then call `recipe.execute(env)` from `job.py`. Do not
+reconstruct that topology policy from this broad workflow reference.
 
 For normal first-user simulation, `python job.py` is the intended local
 experience because no exported job folder may exist yet. The exported job folder

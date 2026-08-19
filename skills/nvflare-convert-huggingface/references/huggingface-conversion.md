@@ -130,10 +130,11 @@ Every site uses the same packaged `client.py`; do not include `train_script` in
 the per-site mapping. The asset rejects both relative and absolute site-specific
 script overrides because it cannot package them while preserving one portable
 app-local runtime path.
-Pass that same mapping to the asset's `build_sim_env(...)`: it selects
-`SimEnv(clients=list(per_site_config), ...)` for named targets instead of also
-setting `num_clients`. Leave the mapping unset for ordinary generated
-partitions, and derive their indices from the initialized `site-N` name.
+Pass that same mapping to the asset's `build_sim_env(...)`, which implements the
+single-topology-owner rule from
+`../../nvflare-shared/references/conversion-common.md`. Leave the mapping unset
+for ordinary generated partitions, and derive their indices from the initialized
+`site-N` name.
 Follow the shared construction reference's client-argument transport rule.
 `train_args` is not necessarily shell parsed: use unquoted whitespace-free
 tokens for the default in-process executor, and use shell quoting only for a

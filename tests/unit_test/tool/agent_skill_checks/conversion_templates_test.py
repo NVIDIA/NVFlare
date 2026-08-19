@@ -187,6 +187,7 @@ def test_huggingface_model_resolver_does_not_treat_existing_hub_id_as_local(monk
         }
     ]
     assert result["resolved_path"] == str(hub_snapshot.resolve())
+    assert result["repo_type"] == "model"
     assert result["source"] == "hub_cache"
 
 
@@ -218,6 +219,7 @@ def test_huggingface_model_resolver_reports_cache_miss_without_failing(monkeypat
         "download_authorized": False,
         "identifier": "org/model",
         "reason": "not_cached",
+        "repo_type": "model",
         "resolved_path": None,
         "revision": None,
         "source": "hub_cache",
@@ -261,6 +263,7 @@ def test_huggingface_model_resolver_downloads_once_only_when_authorized(monkeypa
         "download_authorized": True,
         "identifier": "org/model",
         "resolved_path": str(snapshot_dir.resolve()),
+        "repo_type": "model",
         "revision": revision,
         "source": "hub_download_or_cache",
         "status": "available",
@@ -281,7 +284,7 @@ def test_huggingface_model_resolver_resolves_revision_for_authorized_download(mo
         calls.append(kwargs)
         return str(snapshot_dir)
 
-    monkeypatch.setattr(module, "_resolve_hub_revision", lambda identifier: revision)
+    monkeypatch.setattr(module, "_resolve_hub_revision", lambda identifier, repo_type: revision)
     monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
 
     result = module.resolve_model_snapshot("org/model", source="hub", allow_download=True)
@@ -311,7 +314,96 @@ def test_huggingface_model_resolver_uses_public_api_for_revision_lookup(monkeypa
     hub_module.HfApi = _HfApi
     monkeypatch.setitem(sys.modules, "huggingface_hub", hub_module)
 
-    assert module._resolve_hub_revision("org/model") == revision
+    assert module._resolve_hub_revision("org/model", "model") == revision
+
+
+def test_huggingface_model_resolver_uses_dataset_repo_type_for_cache_only_lookup(monkeypatch, tmp_path, capsys):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    dataset_snapshot = tmp_path / "datasets--org--data" / "snapshots" / ("d" * 40)
+    dataset_snapshot.mkdir(parents=True)
+    calls = []
+
+    class _CacheMiss(Exception):
+        pass
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        return str(dataset_snapshot)
+
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    assert module.main(["--source", "hub", "--repo-type", "dataset", "org/data"]) == 0
+    result = json.loads(capsys.readouterr().out)
+
+    assert calls == [
+        {
+            "cache_dir": None,
+            "local_files_only": True,
+            "repo_id": "org/data",
+            "repo_type": "dataset",
+            "revision": None,
+        }
+    ]
+    assert result["repo_type"] == "dataset"
+    assert result["resolved_path"] == str(dataset_snapshot.resolve())
+
+
+def test_huggingface_model_resolver_uses_dataset_api_for_revision_lookup(monkeypatch):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    revision = "e" * 40
+    hub_module = types.ModuleType("huggingface_hub")
+
+    class _HfApi:
+        def dataset_info(self, *, repo_id):
+            assert repo_id == "org/data"
+            return types.SimpleNamespace(sha=revision)
+
+    hub_module.HfApi = _HfApi
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub_module)
+
+    assert module._resolve_hub_revision("org/data", "dataset") == revision
+
+
+def test_huggingface_model_resolver_downloads_pinned_dataset_only_when_authorized(monkeypatch, tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    revision = "f" * 40
+    dataset_snapshot = tmp_path / "datasets--org--data" / "snapshots" / revision
+    dataset_snapshot.mkdir(parents=True)
+    calls = []
+
+    class _CacheMiss(Exception):
+        pass
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        return str(dataset_snapshot)
+
+    def resolve_revision(identifier, repo_type):
+        assert (identifier, repo_type) == ("org/data", "dataset")
+        return revision
+
+    monkeypatch.setattr(module, "_resolve_hub_revision", resolve_revision)
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    result = module.resolve_model_snapshot(
+        "org/data",
+        source="hub",
+        repo_type="dataset",
+        allow_download=True,
+    )
+
+    assert calls == [
+        {
+            "cache_dir": None,
+            "local_files_only": False,
+            "repo_id": "org/data",
+            "repo_type": "dataset",
+            "revision": revision,
+        }
+    ]
+    assert result["download_authorized"] is True
+    assert result["repo_type"] == "dataset"
+    assert result["revision"] == revision
 
 
 @pytest.mark.parametrize("revision", ["main", "abc123", "g" * 40])
@@ -926,7 +1018,7 @@ def test_huggingface_job_template_uses_one_simulator_topology_owner(tmp_path):
     assert named_env.num_clients == 2
     assert named_env.num_threads == 2
 
-    with pytest.raises(ValueError, match="named topology must match the requested client count"):
+    with pytest.raises(ValueError, match="Inconsistent number of clients"):
         module.build_sim_env(3, tmp_path / "mismatch", per_site_config=per_site_config)
 
 

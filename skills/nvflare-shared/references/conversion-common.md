@@ -73,9 +73,11 @@ arguments once and derive a generated partition index from the initialized site
 name. Do not call `set_per_site_config()` merely to assign partition indices.
 When genuinely different site paths or arguments require
 `set_per_site_config(recipe, config)`, that mapping owns the named targets: use
-`SimEnv(clients=list(config), ...)`, never `SimEnv(num_clients=...)`. Passing
-both named recipe targets and a generated client count is a construction error,
-not a condition to recover from by setting `num_clients=None`.
+`SimEnv(clients=list(config), ...)` rather than a generated topology. A matching
+`num_clients=N` may also be supplied to `SimEnv` only as a consistency assertion;
+`clients` remains the topology owner, and `SimEnv` rejects an inconsistent
+count. Do not pass `num_clients` without `clients` after creating named recipe
+targets, and do not recover from a mismatch by setting `num_clients=None`.
 
 ## Model Constructor Serialization
 

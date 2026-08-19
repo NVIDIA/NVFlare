@@ -1,6 +1,6 @@
 ---
 name: nvflare-convert-lightning
-description: "Convert existing PyTorch Lightning training code into an NVFLARE federated job using the Lightning Client API patch, local validation, and job export; do not use for plain PyTorch, other frameworks, deployment, POC/production lifecycle, or experiment workflows."
+description: "Convert existing PyTorch Lightning training code into an NVFLARE federated job using the Lightning Client API patch, local validation, and job export; use when the user names PyTorch Lightning or preliminary source inspection identifies one Lightning owner, and not for plain PyTorch, other frameworks, deployment, POC/production lifecycle, or experiment workflows."
 license: Apache-2.0
 version: "0.1.0"
 metadata:
@@ -110,7 +110,7 @@ distribution; handle conversion later as a separate request.
    override the complete argument string; never split shared arguments and a
    site-specific data path across recipe-level and per-site values expecting a
    merge.
-8. Only after generated files exist, load
+8. Immediately after generated files exist and before any preflight, smoke test, cleanup, validation, or execution command, load
    `../nvflare-shared/references/validation-evidence.md`, then
    `references/lightning-validation.md`. Before executing a full run, select and
    record exactly one final validation target:
