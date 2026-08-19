@@ -83,7 +83,7 @@ def should_evaluate_before_train(recipe_algorithm):
     return recipe_algorithm != "cyclic"
 
 
-def main(model, datamodule, trainer_factory, evaluate_only=False, *, recipe_algorithm="fedavg"):
+def main(model, datamodule, trainer_factory, recipe_algorithm="fedavg", evaluate_only=False):
     """Lightning Client API round loop with validate-before-fit.
 
     ``trainer_factory`` constructs the source project's ``Trainer``. Pass the
@@ -94,9 +94,9 @@ def main(model, datamodule, trainer_factory, evaluate_only=False, *, recipe_algo
     metrics, and skips local training. Leave the default ``False`` for every
     training recipe so its training task completes through ``trainer.fit``.
 
-    Keep ``recipe_algorithm`` keyword-only so the legacy fourth positional
-    argument remains ``evaluate_only``. The value must be a supported,
-    normalized lowercase recipe algorithm; unknown values fail closed.
+    Preserve the established positional order: ``recipe_algorithm`` is fourth
+    and ``evaluate_only`` is fifth. The algorithm must be a supported,
+    normalized lowercase value; unknown values fail closed.
     """
     evaluate_before_train = should_evaluate_before_train(recipe_algorithm)
     if evaluate_only and recipe_algorithm != "fedeval":

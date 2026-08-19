@@ -1020,6 +1020,7 @@ def test_lightning_template_eval_only_mode_skips_training():
             model=_FakeModel(),
             datamodule=object(),
             trainer_factory=lambda: fake,
+            # Preserve the established fourth-positional algorithm contract.
             recipe_algorithm="fedeval",
             evaluate_only=True,
         )
@@ -1056,10 +1057,60 @@ def test_lightning_template_requires_eval_only_for_fedeval():
         )
 
 
-def test_lightning_template_preserves_legacy_fourth_positional_evaluate_only():
+def test_lightning_template_preserves_fourth_positional_cyclic_algorithm():
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+    calls = []
+
+    class _FakeTrainer:
+        def validate(self, *args, **kwargs):
+            calls.append("validate")
+            return [{"accuracy": 0.5}]
+
+        def fit(self, *args, **kwargs):
+            calls.append("fit")
+
+    fake_flare = types.SimpleNamespace(
+        patch=lambda trainer: None,
+        receive=lambda: None,
+        _running=[True, False],
+        is_running=lambda: fake_flare._running.pop(0) if fake_flare._running else False,
+    )
+    module.flare = fake_flare
+
+    module.main(object(), object(), _FakeTrainer, "cyclic")
+
+    assert calls == ["fit"]
+
+
+def test_lightning_template_preserves_fourth_positional_fedeval_algorithm():
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+    calls = []
+
+    class _FakeTrainer:
+        def validate(self, *args, **kwargs):
+            calls.append("validate")
+            return [{"accuracy": 0.5}]
+
+        def fit(self, *args, **kwargs):
+            calls.append("fit")
+
+    fake_flare = types.SimpleNamespace(
+        patch=lambda trainer: None,
+        receive=lambda: None,
+        _running=[True, False],
+        is_running=lambda: fake_flare._running.pop(0) if fake_flare._running else False,
+    )
+    module.flare = fake_flare
+
+    module.main(object(), object(), _FakeTrainer, "fedeval", True)
+
+    assert calls == ["validate"]
+
+
+def test_lightning_template_rejects_boolean_fourth_positional_algorithm():
     module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
 
-    with pytest.raises(ValueError, match="only with FedEval"):
+    with pytest.raises(ValueError, match="recipe_algorithm must be one of"):
         module.main(object(), object(), lambda: pytest.fail("trainer must not be created"), True)
 
 

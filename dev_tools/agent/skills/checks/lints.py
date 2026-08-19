@@ -1764,10 +1764,9 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
     fenced_block_start = 1
     for line_number, line in enumerate(lines, start=1):
         stripped = line.strip()
-        fence_match = _markdown_fence_match(line)
-
         if fence_marker:
-            if fence_match and fence_match[0] == fence_marker[0] and len(fence_match) >= len(fence_marker):
+            closing_fence = _markdown_fence_match(line, closing=True)
+            if closing_fence and closing_fence[0] == fence_marker[0] and len(closing_fence) >= len(fence_marker):
                 if fenced_lines:
                     yield fenced_block_start, " ".join(fenced_lines)
                     fenced_lines = []
@@ -1787,6 +1786,7 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
                     fenced_lines = []
             continue
 
+        fence_match = _markdown_fence_match(line)
         if fence_match:
             if block_lines:
                 yield block_start, " ".join(block_lines)
@@ -1889,14 +1889,20 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
         yield fenced_block_start, " ".join(fenced_lines)
 
 
-def _markdown_fence_match(line: str) -> str:
-    """Return a fence marker after stripping quote/list containers."""
+def _markdown_fence_match(line: str, *, closing: bool = False) -> str:
+    """Return an opening or closing fence after stripping containers."""
     candidate = _strip_markdown_quote_container(line)
     list_match = _MARKDOWN_LIST_ITEM_RE.match(candidate)
     if list_match:
         candidate = candidate[list_match.end() :]
-    match = re.match(r"^\s*(`{3,}|~{3,})(?:[^`~]*)$", candidate)
-    return match.group(1) if match else ""
+    pattern = r"^\s*(`{3,}|~{3,})\s*$" if closing else r"^\s*(`{3,}|~{3,})(.*)$"
+    match = re.match(pattern, candidate)
+    if not match:
+        return ""
+    marker = match.group(1)
+    if not closing and marker[0] == "`" and "`" in match.group(2):
+        return ""
+    return marker
 
 
 def _strip_markdown_quote_container(line: str) -> str:
@@ -1909,7 +1915,7 @@ def _markdown_fenced_line_numbers(text: str) -> set[int]:
     result = set()
     marker = ""
     for line_number, line in enumerate(text.splitlines(), start=1):
-        candidate = _markdown_fence_match(line)
+        candidate = _markdown_fence_match(line, closing=bool(marker))
         if candidate and (not marker or candidate[0] == marker[0] and len(candidate) >= len(marker)):
             marker = "" if marker else candidate
         elif marker:
@@ -2427,6 +2433,11 @@ def _has_nonnegated_post_audit_confirmation(text: str) -> bool:
     for pattern in _DEPENDENCY_POST_AUDIT_CONFIRMATION_RES:
         for match in pattern.finditer(text):
             matched = match.group(0)
+            confirmation_action = re.search(
+                r"\b(?:obtain|request|receive|require|wait\s+for)\b", matched, re.IGNORECASE
+            )
+            if confirmation_action and _policy_action_is_negated(matched, confirmation_action.start()):
+                continue
             if not re.search(
                 r"\b(?:obtain|request|receive|require|wait\s+for)\b[^.!?;]{0,80}"
                 r"\b(?:no|not|never)\b[^.!?;]{0,40}\b(?:approval|confirmation|consent|permission)\b",

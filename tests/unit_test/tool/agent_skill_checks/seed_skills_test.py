@@ -234,7 +234,7 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     assert "never a reason to fail closed" in normalized_lightning_conversion
     assert "make_higher_is_better" not in lightning_asset_text
     assert (
-        'def main(model, datamodule, trainer_factory, evaluate_only=False, *, recipe_algorithm="fedavg")'
+        'def main(model, datamodule, trainer_factory, recipe_algorithm="fedavg", evaluate_only=False)'
         in lightning_asset_text
     )
 
