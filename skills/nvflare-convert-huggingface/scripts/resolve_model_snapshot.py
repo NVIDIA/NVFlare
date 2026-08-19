@@ -109,13 +109,13 @@ def resolve_model_snapshot(
     try:
         download_args: Dict[str, Any] = {
             "repo_id": identifier,
-            "revision": revision,
             "cache_dir": cache_dir,
             "local_files_only": not allow_download,
         }
         if repo_type != "model":
             download_args["repo_type"] = repo_type
         resolved_path = snapshot_download(
+            revision=revision,
             **download_args,
         )
     except local_entry_not_found:

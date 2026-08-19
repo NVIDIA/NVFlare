@@ -854,6 +854,7 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
     hf_skill = hf_root.joinpath("SKILL.md").read_text(encoding="utf-8")
     hf_validation = hf_root.joinpath("references/huggingface-validation.md").read_text(encoding="utf-8")
     hf_job_asset = hf_root.joinpath("assets/job.py").read_text(encoding="utf-8")
+    hf_snapshot_resolver = hf_root.joinpath("scripts/resolve_model_snapshot.py").read_text(encoding="utf-8")
     eval_data = json.loads(
         (repo_root / "skills" / "nvflare-convert-huggingface" / "evals" / "evals.json").read_text(encoding="utf-8")
     )
@@ -888,6 +889,7 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
     assert "emits a structured `missing` result" in normalized_hf_validation
     assert "copy resolver logic into generated `job.py`" in normalized_hf_validation
     assert "snapshot_download" not in hf_job_asset
+    assert "revision=revision" in hf_snapshot_resolver
     assert "classify checkpoint-loaded versus missing or newly initialized parameters" in normalized_hf_validation
     assert "proves value determinism only for parameters actually loaded from it" in normalized_hf_validation
     assert "do not require their independently initialized values to match" in normalized_hf_validation
