@@ -20,6 +20,7 @@ Client Job (CJ) Cell. Task and result Shareables use Cell/F3 directly, including
 ``nvflare/client/cell/api.py``.
 """
 
+import ipaddress
 import os
 import secrets
 import signal
@@ -53,6 +54,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.drivers.net_utils import parse_url
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils.fobs import FOBSContextKey
@@ -124,8 +126,8 @@ class _TrainerSession(CellSession):
     def __init__(self, token: str, trainer_fqcn: str):
         super().__init__(trainer_fqcn)
         self.token = token
-        # latched when the HELLO of THIS launch's own process is rejected, so the launch
-        # wait fails fast instead of waiting out launch_timeout
+        # Latched when a token-authenticated HELLO is rejected so the launch wait fails
+        # fast instead of waiting out launch_timeout.
         self.reject_reason: Optional[str] = None
         self.bootstrap_path: Optional[str] = None
         self.process: Optional[subprocess.Popen] = None
@@ -195,13 +197,33 @@ class ExternalProcessBackend(CellBackendBase):
                 scheme="tcp",
                 resources={
                     DriverParams.HOST.value: "localhost",
-                    DriverParams.LISTEN_HOST.value: "localhost",
+                    DriverParams.LISTEN_HOST.value: "127.0.0.1",
                     DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.CLEAR,
                 },
             )
             connect_url = cell.get_internal_listener_url()
             if not connect_url:
                 raise RuntimeError("CJ cell has no internal listener url for the trainer to connect to")
+            listener_params = cell.get_internal_listener_params() or {}
+            connect_scheme = parse_url(connect_url).get(DriverParams.SCHEME.value)
+            listener_scheme = listener_params.get(DriverParams.SCHEME.value)
+            bind_host = listener_params.get(DriverParams.HOST.value)
+            connection_security = listener_params.get(DriverParams.CONNECTION_SECURITY.value)
+            try:
+                loopback_bound = ipaddress.ip_address(bind_host).is_loopback
+            except (TypeError, ValueError):
+                loopback_bound = False
+            if (
+                connect_scheme != "tcp"
+                or listener_scheme != "tcp"
+                or connection_security != ConnectionSecurity.CLEAR
+                or not loopback_bound
+            ):
+                raise RuntimeError(
+                    "external_process trainer requires a clear TCP listener bound to loopback, but the CJ internal "
+                    f"listener is incompatible: connect_scheme={connect_scheme!r}, listener_scheme={listener_scheme!r}, "
+                    f"bind_host={bind_host!r}, connection_security={connection_security!r}"
+                )
             self._connect_url = connect_url
 
             cell.register_request_cb(channel=CHANNEL, topic=Topic.HELLO, cb=self._handle_hello)
@@ -981,7 +1003,8 @@ class ExternalProcessBackend(CellBackendBase):
             or not trainer.token
             or not secrets.compare_digest(proof.encode("utf-8"), trainer.token.encode("utf-8"))
         ):
-            return self._hello_reject(trainer, origin, "launch token mismatch", latch=True)
+            # Clear loopback transport cannot prove that an invalid-token sender is the launched trainer.
+            return self._hello_reject(trainer, origin, "launch token mismatch", latch=False)
 
         if payload.get(MsgKey.PROTOCOL_VERSION) != PROTOCOL_VERSION:
             return self._hello_reject(

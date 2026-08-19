@@ -121,6 +121,11 @@ class FakeCell:
         self.decode_pass_through_channels = set()
         self.decode_pass_through_topics = set()
         self.listener_url = "tcp://127.0.0.1:56789"
+        self.listener_params = {
+            DriverParams.SCHEME.value: "tcp",
+            DriverParams.HOST.value: "127.0.0.1",
+            DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.CLEAR,
+        }
         self.configured_listener_url = None
         self.listener_args = None
         self.internal_listener_made = False
@@ -146,9 +151,17 @@ class FakeCell:
             self.listener_url = self.configured_listener_url
         elif scheme == "tcp" and resources:
             self.listener_url = "tcp://localhost:56789"
+            self.listener_params = {
+                DriverParams.SCHEME.value: "tcp",
+                DriverParams.HOST.value: resources[DriverParams.LISTEN_HOST.value],
+                DriverParams.CONNECTION_SECURITY.value: resources[DriverParams.CONNECTION_SECURITY.value],
+            }
 
     def get_internal_listener_url(self):
         return self.listener_url
+
+    def get_internal_listener_params(self):
+        return self.listener_params
 
     def register_request_cb(self, channel, topic, cb):
         assert channel == CHANNEL
@@ -479,7 +492,7 @@ class TestInitializeAndFinalize:
                 "tcp",
                 {
                     DriverParams.HOST.value: "localhost",
-                    DriverParams.LISTEN_HOST.value: "localhost",
+                    DriverParams.LISTEN_HOST.value: "127.0.0.1",
                     DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.CLEAR,
                 },
             )
@@ -501,6 +514,24 @@ class TestInitializeAndFinalize:
 
         assert env.cell.parent_url == fixed_parent_url
         assert env.cell.parent_resources == original_parent_resources
+
+    def test_initialize_rejects_preexisting_mtls_listener_before_launch(self, env):
+        env.cell.listener_url = "stcp://localhost:8102"
+        env.cell.listener_params = {
+            DriverParams.SCHEME.value: "stcp",
+            DriverParams.HOST.value: "127.0.0.1",
+            DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.MTLS,
+        }
+        # CoreCell retains an internal listener that another component created first.
+        env.cell.make_internal_listener = MagicMock()
+        backend = ExternalProcessBackend()
+        fl_ctx = _make_fl_ctx(_make_engine(env.cell), env.app_dir)
+
+        with pytest.raises(RuntimeError, match="listener_scheme='stcp'.*connection_security='mtls'"):
+            backend.initialize(_make_context(), fl_ctx)
+
+        env.cell.make_internal_listener.assert_called_once()
+        assert not env.harness.processes
 
     def test_initialize_unwinds_when_hello_never_arrives(self, env):
         env.harness.auto_hello = False
@@ -530,17 +561,42 @@ class TestInitializeAndFinalize:
             backend.initialize(_make_context(launch_timeout=30.0), fl_ctx)
         assert time.monotonic() - start < 5.0
 
-    def test_initialize_fails_fast_when_hello_is_rejected(self, env):
+    def test_invalid_token_hello_does_not_reject_legitimate_trainer(self, env):
         def bad_token(payload):
             payload[MsgKey.PROOF] = "wrong-token"
 
         env.harness.hello_mutator = bad_token
-        backend = ExternalProcessBackend()
-        fl_ctx = _make_fl_ctx(_make_engine(env.cell), env.app_dir)
+        original_popen = env.harness.popen
+        legitimate_replies = []
 
-        with pytest.raises(RuntimeError, match="rejected.*launch token mismatch"):
-            backend.initialize(_make_context(launch_timeout=30.0), fl_ctx)
-        assert env.harness.processes[0].returncode is not None
+        def popen_with_attacker_hello(args, **kwargs):
+            process = original_popen(args, **kwargs)
+            config = env.harness.bootstrap_configs[-1]
+            legitimate_replies.append(
+                env.cell.deliver(
+                    Topic.HELLO,
+                    config[BootstrapKey.TRAINER_FQCN],
+                    {
+                        MsgKey.TRAINER_FQCN: config[BootstrapKey.TRAINER_FQCN],
+                        MsgKey.PROOF: config[BootstrapKey.LAUNCH_TOKEN],
+                        MsgKey.PROTOCOL_VERSION: PROTOCOL_VERSION,
+                        MsgKey.JOB_ID: "job-1",
+                        MsgKey.SITE_NAME: "site-1",
+                        MsgKey.RANK: 0,
+                    },
+                )
+            )
+            return process
+
+        env.harness.popen = popen_with_attacker_hello
+        backend, _ = _initialized_backend(env)
+        try:
+            assert env.harness.hello_replies[0].payload[MsgKey.REPLY_TOPIC] == Topic.HELLO_REJECTED
+            assert legitimate_replies[0].payload[MsgKey.REPLY_TOPIC] == Topic.HELLO_ACCEPTED
+            assert backend._active_launch.ready.is_set()
+            assert backend._active_launch.reject_reason is None
+        finally:
+            backend.finalize(FLContext())
 
     def test_finalize_idempotent_and_stops_process_tree(self, env):
         backend, _ = _initialized_backend(env)
