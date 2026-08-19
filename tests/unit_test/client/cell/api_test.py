@@ -2222,7 +2222,10 @@ class TestHeartbeat:
             api.shutdown()
         assert not thread.is_alive()
 
-    def test_hard_cj_loss_aborts_blocked_receive(self, bootstrap_path, env):
+    def test_hard_cj_loss_aborts_blocked_receive(self, bootstrap_path, env, monkeypatch):
+        terminated = threading.Event()
+        monkeypatch.setattr(cell_api, "_CJ_TIMEOUT_ABORT_GRACE", 0.01)
+
         def no_heartbeat_reply(topic, target, request):
             if topic == Topic.HELLO:
                 return _hello_accepted_reply(heartbeat_interval=0.01, heartbeat_timeout=0.05)
@@ -2232,13 +2235,35 @@ class TestHeartbeat:
 
         env.on_request = no_heartbeat_reply
         api = _init_api(bootstrap_path, env)
+        api._terminate_orphaned_process_group = terminated.set
         try:
             assert _wait_until(lambda: api._abort)
+            assert terminated.wait(1.0)
             assert "CJ heartbeat timed out" in api._abort_reason
             with pytest.raises(TrainerSessionError, match="CJ heartbeat timed out"):
                 api.receive(timeout=0.1)
         finally:
             api.shutdown()
+
+    def test_hard_cj_loss_allows_cooperative_shutdown_before_group_termination(self, bootstrap_path, monkeypatch):
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        terminated = MagicMock()
+        monkeypatch.setattr(cell_api, "_CJ_TIMEOUT_ABORT_GRACE", 0.01)
+        monkeypatch.setattr(api, "_terminate_orphaned_process_group", terminated)
+        api._owner_watchdog_stop.set()
+
+        api._terminate_after_cj_timeout()
+
+        terminated.assert_not_called()
+
+    def test_attach_cj_loss_never_terminates_external_process_group(self, attach_bootstrap_path, monkeypatch):
+        api = CellClientAPI(bootstrap_file=attach_bootstrap_path)
+        terminated = MagicMock()
+        monkeypatch.setattr(api, "_terminate_orphaned_process_group", terminated)
+
+        api._terminate_after_cj_timeout()
+
+        terminated.assert_not_called()
 
     def test_pending_inline_result_request_does_not_suppress_owner_loss(self, bootstrap_path, env):
         request_pending = threading.Event()

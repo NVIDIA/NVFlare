@@ -72,6 +72,7 @@ _HELLO_RETRY_INTERVAL = 1.0
 _RECEIVE_POLL_INTERVAL = 0.5
 _HEARTBEAT_JOIN_TIMEOUT = 1.0
 _OWNER_WATCHDOG_INTERVAL = 0.5
+_CJ_TIMEOUT_ABORT_GRACE = 1.0
 _OWNER_TERM_GRACE = 5.0
 _RESULT_SOURCE_SETTLED_TIMEOUT = 1.0
 _RESULT_SOURCE_SETTLED_ATTEMPTS = 3
@@ -1048,6 +1049,7 @@ class CellClientAPI(APISpec):
                 self.logger.debug(f"heartbeat to CJ failed: {e}")
 
             if self._abort_if_cj_timed_out():
+                self._terminate_after_cj_timeout()
                 return
 
     def _heartbeat_reply_valid(self, reply) -> bool:
@@ -1105,6 +1107,15 @@ class CellClientAPI(APISpec):
         self._heartbeat_stop.set()
         self.logger.error(reason)
         return True
+
+    def _terminate_after_cj_timeout(self) -> None:
+        """Escalate a lost launched session after cooperative abort has had a chance to finish."""
+        if self._is_attach:
+            return
+        if self._owner_watchdog_stop.wait(_CJ_TIMEOUT_ABORT_GRACE):
+            return
+        self.logger.error("CJ heartbeat timeout did not stop the trainer; terminating its process group")
+        self._terminate_orphaned_process_group()
 
     def _stop_heartbeat(self) -> None:
         self._heartbeat_stop.set()
