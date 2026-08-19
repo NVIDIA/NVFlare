@@ -68,6 +68,30 @@ def test_huggingface_model_resolver_returns_existing_local_path(tmp_path):
     }
 
 
+def test_huggingface_model_resolver_loads_exception_from_legacy_public_utils(monkeypatch):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    hub_module = types.ModuleType("huggingface_hub")
+    hub_module.__path__ = []
+    utils_module = types.ModuleType("huggingface_hub.utils")
+
+    class _LegacyLocalEntryNotFoundError(Exception):
+        pass
+
+    def snapshot_download(**_kwargs):
+        return "/cached/snapshot"
+
+    hub_module.snapshot_download = snapshot_download
+    utils_module.LocalEntryNotFoundError = _LegacyLocalEntryNotFoundError
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub_module)
+    monkeypatch.setitem(sys.modules, "huggingface_hub.utils", utils_module)
+    monkeypatch.delitem(sys.modules, "huggingface_hub.errors", raising=False)
+
+    loaded_download, loaded_error = module._load_huggingface_hub()
+
+    assert loaded_download is snapshot_download
+    assert loaded_error is _LegacyLocalEntryNotFoundError
+
+
 def test_huggingface_model_resolver_does_not_treat_missing_bare_local_path_as_hub(monkeypatch, tmp_path):
     module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
 
@@ -122,6 +146,16 @@ def test_huggingface_model_resolver_rejects_relative_local_path_without_absolute
         module.resolve_model_snapshot("models/checkpoint", source="local")
     with pytest.raises(ValueError, match="source_root must be an absolute path"):
         module.resolve_model_snapshot("models/checkpoint", source="local", source_root="source")
+
+
+def test_huggingface_model_resolver_rejects_source_root_with_absolute_local_path(tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    source_root = tmp_path / "source"
+    model_dir = source_root / "models" / "checkpoint"
+    model_dir.mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="source_root can only be used with a relative local identifier"):
+        module.resolve_model_snapshot(str(model_dir), source="local", source_root=str(source_root))
 
 
 def test_huggingface_model_resolver_does_not_treat_existing_hub_id_as_local(monkeypatch, tmp_path):
@@ -303,8 +337,9 @@ def test_cyclic_parameterized_model_config_exports_normalized_path(tmp_path):
     server_config = json.loads(
         (export_root / recipe.name / "app" / "config" / "config_fed_server.json").read_text(encoding="utf-8")
     )
-    persistor = next(component for component in server_config["components"] if component["id"] == "persistor")
+    persistor = next((component for component in server_config["components"] if component["id"] == "persistor"), None)
 
+    assert persistor is not None, f"persistor missing from server components: {server_config['components']!r}"
     assert persistor["args"]["model"] == {
         "path": "torch.nn.Linear",
         "args": {"in_features": 2, "out_features": 1},

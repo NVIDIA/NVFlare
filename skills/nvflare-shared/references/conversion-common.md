@@ -65,7 +65,7 @@ the Recipe API before parsing its own options and must not declare, parse, or
 branch on those arguments or invent aliases such as `--export_only`. A local
 parser uses `argparse.ArgumentParser(allow_abbrev=False)` with strict
 `parse_args()`; it does not use `parse_known_args()` to accommodate system
-arguments.
+arguments. Unknown and abbreviated local options must fail.
 
 Use exactly one owner for the simulated client topology. With a unified recipe,
 let `SimEnv(num_clients=N)` create `site-1` through `site-N`; pass shared data

@@ -28,7 +28,7 @@ _COMMIT_SHA_RE = re.compile(r"[0-9a-fA-F]{40}")
 
 def _load_huggingface_hub():
     from huggingface_hub import snapshot_download
-    from huggingface_hub.errors import LocalEntryNotFoundError
+    from huggingface_hub.utils import LocalEntryNotFoundError
 
     return snapshot_download, LocalEntryNotFoundError
 
@@ -50,7 +50,10 @@ def resolve_model_snapshot(
         if allow_download or revision is not None or cache_dir is not None:
             raise ValueError("Hub download, revision, and cache options cannot be used with source='local'")
         candidate = Path(identifier).expanduser()
-        if not candidate.is_absolute():
+        if candidate.is_absolute():
+            if source_root is not None:
+                raise ValueError("source_root can only be used with a relative local identifier")
+        else:
             if source_root is None:
                 raise ValueError("relative local identifiers require an absolute source_root")
             root = Path(source_root).expanduser()

@@ -1276,6 +1276,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "must import the Recipe API before parsing its own options" in normalized_common
     assert "`argparse.ArgumentParser(allow_abbrev=False)`" in normalized_common
     assert "does not use `parse_known_args()`" in normalized_common
+    assert "Unknown and abbreviated local options must fail" in normalized_common
     assert "`ArgumentParser(allow_abbrev=False)`" in normalized_skill
     assert "strict `parse_args()`; do not use `parse_known_args()`" in normalized_skill
     assert "`recipe show` validates only the selected recipe's module, class" in normalized_recipe

@@ -58,7 +58,8 @@ reaches the applicable phase, and stop at the first failure.
 
   A relative local identifier requires the absolute original source-project
   root so resolution never depends on the validation command's working
-  directory. An absolute local identifier does not require `--source-root`.
+  directory. An absolute local identifier must omit `--source-root`; the option
+  resolves relative identifiers and is not a sandbox boundary.
 - Only when the user authorizes downloading a public checkpoint if uncached,
   rerun the Hub resolver once with the complete canonical invocation:
 
