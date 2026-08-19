@@ -1273,8 +1273,8 @@ activates the first Project Admin kit. The JSON success payload includes:
 
 | Argument | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `-p`, `--service` | str | No | `"all"` | Participant to start |
-| `-ex`, `--exclude` | str | No | `""` | Exclude service directory |
+| `-p`, `--service` | str... | No | `None` | Participant to start; repeat to select multiple participants. By default, starts the server and clients |
+| `-ex`, `--exclude` | str... | No | `None` | Participant to exclude; repeat to exclude multiple participants |
 | `-gpu`, `--gpu` | int... | No | `None` | GPU device IDs |
 | `--no-wait` | flag | No | — | Return after process start without readiness wait |
 | `--timeout` | int | No | `POC_START_READY_TIMEOUT` | Seconds to wait for readiness |
@@ -1308,8 +1308,8 @@ configured endpoint.
 
 | Argument | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `-p`, `--service` | str | No | `"all"` | Participant to stop |
-| `-ex`, `--exclude` | str | No | `""` | Exclude service directory |
+| `-p`, `--service` | str... | No | `None` | Participant to stop; repeat to select multiple participants. By default, stops the running system |
+| `-ex`, `--exclude` | str... | No | `None` | Participant to exclude; repeat to exclude multiple participants |
 | `--no-wait` | flag | No | — | Request shutdown and return without waiting for completion |
 | `-debug`, `--debug` | flag | No | — | Debug mode |
 | `--schema` | flag | No | — | Print command schema and exit |
@@ -1317,6 +1317,7 @@ configured endpoint.
 When stopping the server path, `poc stop` uses coordinated system shutdown logic. By
 default it waits until shutdown completes and returns `status: stopped`; with
 `--no-wait`, it returns after requesting shutdown with `status: shutdown_initiated`.
+Selecting a subset or excluding a server/client participant uses the local stop-script path.
 
 #### `nvflare poc clean`
 

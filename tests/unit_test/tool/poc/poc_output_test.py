@@ -1218,6 +1218,99 @@ class TestPocOutput:
         args = root.parse_args(["poc", "stop", "--no-wait"])
         assert args.no_wait is True
 
+    @pytest.mark.parametrize("subcommand", ["start", "stop"])
+    def test_poc_parser_preserves_repeated_participant_options(self, subcommand):
+        import argparse
+
+        from nvflare.tool.poc.poc_commands import def_poc_parser, get_excluded, get_service_list
+
+        root = argparse.ArgumentParser()
+        subs = root.add_subparsers()
+        def_poc_parser(subs)
+
+        args = root.parse_args(
+            [
+                "poc",
+                subcommand,
+                "-p",
+                "site-1",
+                "--service",
+                "site-2",
+                "-ex",
+                "site-3",
+                "--exclude",
+                "site-4",
+            ]
+        )
+        assert get_service_list(args) == ["site-1", "site-2"]
+        assert get_excluded(args) == ["site-3", "site-4"]
+
+        default_args = root.parse_args(["poc", subcommand])
+        assert get_service_list(default_args) == []
+        assert get_excluded(default_args) == []
+
+        all_args = root.parse_args(["poc", subcommand, "-p", "all"])
+        assert get_service_list(all_args) == []
+
+    @pytest.mark.parametrize(
+        "excluded, services_list, coordinated",
+        [
+            (["site-1", "site-2"], [], False),
+            (["site-1", "site-2"], ["server", "site-1"], False),
+            (["admin@nvidia.com"], [], True),
+        ],
+    )
+    def test_stop_poc_honors_service_exclusions(self, excluded, services_list, coordinated):
+        from nvflare.tool.poc.poc_commands import _stop_poc
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        project_config = {
+            "name": "example_project",
+            "participants": [
+                {"name": "server"},
+                {"name": "site-1"},
+                {"name": "site-2"},
+                {"name": "admin@nvidia.com"},
+            ],
+        }
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_CLIENTS: ["site-1", "site-2"],
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_OTHER_ADMINS: [],
+        }
+        original_excluded = list(excluded)
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.validate_poc_workspace"),
+            patch("nvflare.tool.poc.poc_commands.shutdown_system", return_value={}) as shutdown_system,
+            patch("nvflare.tool.poc.poc_commands._run_poc") as run_poc,
+            patch("nvflare.tool.cli_output.print_human"),
+        ):
+            _stop_poc(
+                "/tmp/poc",
+                excluded=excluded,
+                services_list=services_list,
+                project_config=project_config,
+                service_config=service_config,
+            )
+
+        assert excluded == original_excluded
+        if coordinated:
+            shutdown_system.assert_called_once()
+            run_poc.assert_not_called()
+        else:
+            shutdown_system.assert_not_called()
+            run_poc.assert_called_once_with(
+                SC.CMD_STOP,
+                "/tmp/poc",
+                [],
+                service_config,
+                project_config,
+                excluded=["site-1", "site-2", "admin@nvidia.com"],
+                services_list=services_list,
+            )
+
     def test_stop_poc_invalid_service_name_exits_4(self, capsys, tmp_path):
         """stop_poc with an unknown -p/--service name exits 4 (structured error), not 1."""
         from nvflare.tool.poc.poc_commands import stop_poc

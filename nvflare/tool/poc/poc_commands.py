@@ -1611,7 +1611,7 @@ def start_poc(cmd_args):
     handle_schema_flag(
         _poc_sub_cmd_parsers.get(CMD_START_POC),
         "nvflare poc start",
-        ["nvflare poc start", "nvflare poc start -p server"],
+        ["nvflare poc start", "nvflare poc start -p server -p site-1"],
         sys.argv[1:],
         output_modes=["json"],
         streaming=False,
@@ -1827,18 +1827,23 @@ def get_gpis(cmd_args):
 
 
 def get_excluded(cmd_args):
-    excluded = None
-    if cmd_args.exclude != "":
-        excluded = [cmd_args.exclude]
-    return excluded
+    excluded = getattr(cmd_args, "exclude", None)
+    if excluded is None:
+        return []
+    if isinstance(excluded, str):
+        return [] if excluded == "" else [excluded]
+    return [participant for participant in excluded if participant != ""]
 
 
 def get_service_list(cmd_args):
-    if cmd_args.service != "all":
-        services_list = [cmd_args.service]
-    else:
-        services_list = []
-    return services_list
+    services = getattr(cmd_args, "service", None)
+    if services is None:
+        return []
+    if isinstance(services, str):
+        return [] if services == "all" else [services]
+    if services == ["all"]:
+        return []
+    return list(services)
 
 
 def _get_server_url(project_config, service_config) -> str:
@@ -1929,7 +1934,7 @@ def stop_poc(cmd_args):
     handle_schema_flag(
         _poc_sub_cmd_parsers.get(CMD_STOP_POC),
         "nvflare poc stop",
-        ["nvflare poc stop", "nvflare poc stop -p server"],
+        ["nvflare poc stop", "nvflare poc stop -p site-1 -p site-2"],
         sys.argv[1:],
     )
     poc_workspace = get_poc_workspace()
@@ -1994,10 +1999,11 @@ def _stop_poc(
 
     if services_list is None:
         services_list = []
-    if excluded is None:
-        excluded = [service_config[SC.FLARE_PROJ_ADMIN]]
-    else:
-        excluded.append(service_config[SC.FLARE_PROJ_ADMIN])
+    user_excluded = list(excluded or [])
+    excluded = list(user_excluded)
+    project_admin = service_config[SC.FLARE_PROJ_ADMIN]
+    if project_admin not in excluded:
+        excluded.append(project_admin)
 
     validate_services(project_config, services_list, excluded)
 
@@ -2006,8 +2012,9 @@ def _stop_poc(
     project_name = project_config.get("name")
     prod_dir = get_prod_dir(poc_workspace, project_name)
 
-    p_size = len(services_list)
-    if p_size == 0 or service_config[SC.FLARE_SERVER] in services_list:
+    admin_services = {project_admin, *service_config.get(SC.FLARE_OTHER_ADMINS, [])}
+    has_service_exclusions = any(service not in admin_services for service in user_excluded)
+    if not has_service_exclusions and (not services_list or service_config[SC.FLARE_SERVER] in services_list):
         from nvflare.tool.cli_output import print_human
 
         with _quiet_cli_streams(True):
@@ -2492,18 +2499,23 @@ def define_start_parser(poc_parser):
         "-p",
         "--service",
         type=str,
+        action="append",
         nargs="?",
-        default="all",
-        help="participant to start. Default starts server and client services only; admin consoles are excluded unless explicitly selected",
+        default=None,
+        help=(
+            "participant to start; repeat for multiple participants. Default starts server and client services only; "
+            "admin consoles are excluded unless explicitly selected"
+        ),
     )
 
     start_parser.add_argument(
         "-ex",
         "--exclude",
         type=str,
+        action="append",
         nargs="?",
-        default="",
-        help="exclude service directory during 'start', default to " ", i.e. nothing to exclude",
+        default=None,
+        help="participant to exclude from 'start'; repeat for multiple participants",
     )
     start_parser.add_argument(
         "-gpu",
@@ -2543,17 +2555,22 @@ def define_stop_parser(poc_parser):
         "-p",
         "--service",
         type=str,
+        action="append",
         nargs="?",
-        default="all",
-        help="participant to stop. Default stops the running POC system; project admin console is not a default managed service",
+        default=None,
+        help=(
+            "participant to stop; repeat for multiple participants. Default stops the running POC system; project "
+            "admin console is not a default managed service"
+        ),
     )
     stop_parser.add_argument(
         "-ex",
         "--exclude",
         type=str,
+        action="append",
         nargs="?",
-        default="",
-        help="exclude service directory during 'stop', default to " ", i.e. nothing to exclude",
+        default=None,
+        help="participant to exclude from 'stop'; repeat for multiple participants",
     )
     stop_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     stop_parser.add_argument(

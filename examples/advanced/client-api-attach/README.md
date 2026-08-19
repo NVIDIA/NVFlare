@@ -145,7 +145,7 @@ nvflare.app_common.executors.client_api_executor.ClientAPIExecutor
 Start the POC and install the example dependency:
 
 ```bash
-nvflare poc start -ex admin@nvidia.com
+nvflare poc start
 python -m pip install -r examples/advanced/client-api-attach/requirements.txt
 ```
 

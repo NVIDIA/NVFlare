@@ -163,15 +163,17 @@ Use ``nvflare poc start`` to launch services in the prepared POC workspace:
 
 .. code-block:: none
 
-   nvflare poc start [-h] [-p [SERVICE]] [-ex [EXCLUDE]] [-gpu [GPU ...]]
+   nvflare poc start [-h] [-p [SERVICE]]... [-ex [EXCLUDE]]... [-gpu [GPU ...]]
                      [--study STUDY] [--no-wait] [--timeout SECONDS]
                      [-debug] [--schema]
 
 Options:
 
-- ``-p, --service``: participant to start. By default, starts the server and
-  clients; admin consoles are excluded unless explicitly requested.
-- ``-ex, --exclude``: participant to exclude from startup.
+- ``-p, --service``: participant to start. Repeat the option to select multiple
+  participants. By default, starts the server and clients; admin consoles are
+  excluded unless explicitly requested.
+- ``-ex, --exclude``: participant to exclude from startup. Repeat the option to
+  exclude multiple participants.
 - ``-gpu, --gpu``: GPU device IDs to use as ``CUDA_VISIBLE_DEVICES``.
 - ``--study``: study for admin console launches only. Ignored for server and
   client services.
@@ -187,6 +189,7 @@ Behavior changes:
 - Admin console participants are **not started by default**.
 - Running ``nvflare poc start`` with no explicit service starts the server and
   clients only.
+- Repeating ``-p`` or ``-ex`` preserves every named participant.
 - By default, the command waits until the admin server accepts connections and
   selected clients are registered before returning ``status: running``.
 - Use ``--timeout`` to control this readiness wait.
@@ -210,9 +213,10 @@ Examples:
    nvflare poc start
    nvflare poc start --timeout 60
    nvflare poc start -p server
+   nvflare poc start -p server -p site-1
    nvflare poc start -p admin@nvidia.com
    nvflare poc start -p admin@nvidia.com --study cancer_research
-   nvflare poc start -ex admin@nvidia.com
+   nvflare poc start -ex site-2
 
 To start an admin console, specify it explicitly with ``-p``.
 
@@ -232,14 +236,16 @@ Use ``nvflare poc stop`` to stop running POC services:
 
 .. code-block:: none
 
-   nvflare poc stop [-h] [-p [SERVICE]] [-ex [EXCLUDE]] [--no-wait]
+   nvflare poc stop [-h] [-p [SERVICE]]... [-ex [EXCLUDE]]... [--no-wait]
                     [-debug] [--schema]
 
 Options:
 
-- ``-p, --service``: participant to stop. By default, stops all running
-  services, including admin consoles.
-- ``-ex, --exclude``: participant to exclude from stop handling.
+- ``-p, --service``: participant to stop. Repeat the option to select multiple
+  participants. By default, stops the server and clients; the project admin
+  console is managed separately.
+- ``-ex, --exclude``: participant to exclude from stop handling. Repeat the
+  option to exclude multiple participants.
 - ``--no-wait``: return after requesting shutdown without waiting for completion.
 - ``-debug, --debug``: debug mode.
 - ``--schema``: print command schema as JSON and exit.
@@ -251,12 +257,15 @@ Examples:
    nvflare poc stop
    nvflare poc stop -p server
    nvflare poc stop -p site-1
+   nvflare poc stop -p site-1 -p site-2
+   nvflare poc stop -ex site-2
    nvflare poc stop --no-wait
 
 Stopping the server path uses coordinated system shutdown logic. Stopping a
-subset of services uses the local stop script flow. By default, the server path
-waits for shutdown completion before returning ``status: stopped``. With
-``--no-wait``, it returns immediately with ``status: shutdown_initiated``.
+subset of services or excluding a server/client participant uses the local stop
+script flow. By default, the server path waits for shutdown completion before
+returning ``status: stopped``. With ``--no-wait``, it returns immediately with
+``status: shutdown_initiated``.
 
 ****************
 Clean Workspace
