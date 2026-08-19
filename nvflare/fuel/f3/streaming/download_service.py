@@ -24,6 +24,7 @@ from nvflare.apis.fl_constant import SystemConfigs
 from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.stream_utils import callback_thread_pool, download_request_thread_pool
@@ -45,6 +46,22 @@ from nvflare.security.logging import secure_format_exception
 
 OBJ_DOWNLOADER_CHANNEL = "download_service__"
 OBJ_DOWNLOADER_TOPIC = "download_service__download"
+SOURCE_FAILURE_TOPIC = "download_service__source_failure"
+
+_SOURCE_FAILURE_TTL = 1800.0
+_MAX_SOURCE_FAILURE_REFS = 256
+_MAX_SOURCE_FAILURE_TOMBSTONES = 4096
+_SOURCE_FAILURE_NOTIFY_TIMEOUT = 3.0
+_SOURCE_FAILURE_NOTIFY_TOTAL_TIMEOUT = 10.0
+_SOURCE_FAILURE_NOTIFY_ATTEMPTS = 4
+_SOURCE_FAILURE_NOTIFY_BACKOFF = 0.25
+
+
+class _SourceFailureKey:
+    SOURCE_FQCN = "source_fqcn"
+    REF_IDS = "ref_ids"
+    REASON = "reason"
+
 
 """
 This package provides a framework for building object downloading capability (file download, tensor download, etc.).
@@ -106,6 +123,7 @@ Per-receiver lifecycle on the producer side::
 
     unseen --first pull--> acquired --terminal serve--> final           (legacy receiver)
     unseen --first pull--> acquired --terminal serve--> provisional --confirm--> final
+    acquired/provisional --receiver cancel--> final(FAILED)
     unseen --acquire budget--> final(FAILED)
     acquired/provisional --idle budget or transaction TTL--> final(FAILED)
 
@@ -196,6 +214,11 @@ class _PropKey:
     CONFIRM_NONCE = "confirm_nonce"  # both ways: per-serve nonce binding a confirmation to ITS serve
     CONFIRM_CAPABLE = "confirm_capable"  # receiver -> producer, per request: will confirm if asked
     CONFIRM_EXPECTED = "confirm_expected"  # producer -> receiver, per reply: confirmations consumed
+    # Mid-stream receiver cancellation. Capability negotiation keeps mixed-version
+    # peers on the existing timeout/budget fallback instead of sending an old producer
+    # what it would interpret as an ordinary initial chunk request.
+    CANCEL = "cancel"  # receiver -> producer: this acquired receiver abandoned the ref
+    CANCEL_CAPABLE = "cancel_capable"  # producer -> receiver: CANCEL is understood
 
 
 # Per-process kill-switch for receiver-confirmed completion (read once at first use; set the
@@ -397,6 +420,13 @@ class _Ref:
                 ),
                 force=True,
             )
+        return accepted
+
+    def obj_cancelled(self, to_receiver: str) -> bool:
+        """Records terminal failure when an acquired receiver abandons this ref."""
+        accepted = self._finalize_receiver(to_receiver, DownloadStatus.FAILED)
+        if accepted:
+            self.emit_progress(receiver_id=to_receiver, state=TransferProgressState.FAILED, force=True)
         return accepted
 
     def snapshot_receiver_statuses(self) -> dict:
@@ -1002,6 +1032,11 @@ class TransactionInfo:
         self.objects = [r.obj for r in tx.snapshot_refs()]
 
 
+def _sleep_for_linger(duration: float):
+    """Sleep for a completed transfer's bounded replay window."""
+    time.sleep(duration)
+
+
 class TransferWaiter:
     """The awaitable facade over a transaction's terminal transfer outcome.
 
@@ -1060,7 +1095,7 @@ class TransferWaiter:
             return None
         outcome = self._outcome
         if outcome is not None and linger and outcome.done_status == TransactionDoneStatus.FINISHED:
-            time.sleep(linger)
+            _sleep_for_linger(linger)
         return outcome
 
 
@@ -1099,6 +1134,14 @@ class DownloadService:
     _tx_monitor = None
     _tx_lock = threading.Lock()
     _initialized_cells = weakref.WeakKeyDictionary()
+    _source_failure_lock = threading.Lock()
+    _source_failures = {}
+    _active_source_downloads = {}
+
+    @classmethod
+    def initialize(cls, cell: Cell):
+        """Register producer and source-failure handlers for a Cell before transfers begin."""
+        cls._initialize(cell)
 
     @classmethod
     def _initialize(cls, cell: Cell):
@@ -1118,7 +1161,150 @@ class DownloadService:
                     topic=OBJ_DOWNLOADER_TOPIC,
                     cb=cls._handle_download,
                 )
+                cell.register_request_cb(
+                    channel=OBJ_DOWNLOADER_CHANNEL,
+                    topic=SOURCE_FAILURE_TOPIC,
+                    cb=cls._handle_source_failure,
+                )
                 cls._initialized_cells[cell] = True
+
+    @classmethod
+    def notify_source_failure(
+        cls,
+        cell: Cell,
+        targets,
+        source_fqcn: str,
+        ref_ids,
+        reason: str,
+        secure: bool = False,
+    ):
+        """Notify exact downstream receivers that an owned download source died."""
+        validation_error = FQCN.validate(source_fqcn)
+        if validation_error:
+            raise ValueError(f"invalid source_fqcn {source_fqcn!r}: {validation_error}")
+        targets = tuple(dict.fromkeys(t for t in targets if isinstance(t, str) and not FQCN.validate(t)))
+        refs = tuple(dict.fromkeys(r for r in ref_ids if isinstance(r, str) and r))
+        if not targets or not refs:
+            return {}
+        if len(refs) > _MAX_SOURCE_FAILURE_REFS:
+            raise ValueError(f"too many failed source refs: {len(refs)}")
+        payload = {
+            _SourceFailureKey.SOURCE_FQCN: source_fqcn,
+            _SourceFailureKey.REF_IDS: refs,
+            _SourceFailureKey.REASON: str(reason),
+        }
+        errors = {}
+        deadline = time.monotonic() + _SOURCE_FAILURE_NOTIFY_TOTAL_TIMEOUT
+        for target in targets:
+            error = None
+            for attempt in range(_SOURCE_FAILURE_NOTIFY_ATTEMPTS):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    error = "source failure notification deadline exceeded"
+                    break
+                retriable = True
+                try:
+                    reply = cell.send_request(
+                        channel=OBJ_DOWNLOADER_CHANNEL,
+                        topic=SOURCE_FAILURE_TOPIC,
+                        target=target,
+                        request=new_cell_message(headers={}, payload=payload),
+                        timeout=min(_SOURCE_FAILURE_NOTIFY_TIMEOUT, remaining),
+                        secure=secure,
+                        optional=True,
+                    )
+                except Exception as ex:
+                    error = f"source failure notification raised {secure_format_exception(ex)}"
+                else:
+                    rc = reply.get_header(MessageHeaderKey.RETURN_CODE) if isinstance(reply, Message) else None
+                    if rc == ReturnCode.OK:
+                        error = None
+                        break
+                    error = f"source failure notification returned {rc}"
+                    retriable = rc in (ReturnCode.TIMEOUT, ReturnCode.COMM_ERROR, ReturnCode.PROCESS_EXCEPTION)
+                if not retriable or attempt + 1 >= _SOURCE_FAILURE_NOTIFY_ATTEMPTS:
+                    break
+                backoff = min(_SOURCE_FAILURE_NOTIFY_BACKOFF * (2**attempt), 1.0, deadline - time.monotonic())
+                if backoff <= 0:
+                    error = "source failure notification deadline exceeded"
+                    break
+                time.sleep(backoff)
+            errors[target] = error
+        return errors
+
+    @classmethod
+    def _handle_source_failure(cls, request: Message) -> Message:
+        payload = request.payload
+        if not isinstance(payload, dict):
+            return make_reply(ReturnCode.INVALID_REQUEST, error="source failure payload must be a dict")
+
+        origin = request.get_header(MessageHeaderKey.ORIGIN) or ""
+        source_fqcn = payload.get(_SourceFailureKey.SOURCE_FQCN)
+        ref_ids = payload.get(_SourceFailureKey.REF_IDS)
+        reason = payload.get(_SourceFailureKey.REASON)
+        if FQCN.validate(origin) or FQCN.validate(source_fqcn) or FQCN.get_parent(source_fqcn) != origin:
+            return make_reply(ReturnCode.INVALID_REQUEST, error="source failure origin does not own source_fqcn")
+        if (
+            not isinstance(ref_ids, (list, tuple))
+            or not ref_ids
+            or len(ref_ids) > _MAX_SOURCE_FAILURE_REFS
+            or any(not isinstance(ref_id, str) or not ref_id for ref_id in ref_ids)
+        ):
+            return make_reply(ReturnCode.INVALID_REQUEST, error="source failure ref_ids are invalid")
+        if not isinstance(reason, str) or not reason:
+            return make_reply(ReturnCode.INVALID_REQUEST, error="source failure reason is invalid")
+
+        now = time.monotonic()
+        failure_reason = reason[:1024]
+        unique_ref_ids = set(ref_ids)
+        signals = []
+        with cls._source_failure_lock:
+            cls._purge_source_failures_locked(now)
+            for ref_id in unique_ref_ids:
+                key = (source_fqcn, ref_id)
+                cls._source_failures.pop(key, None)
+                cls._source_failures[key] = (failure_reason, now + _SOURCE_FAILURE_TTL)
+                signals.extend(cls._active_source_downloads.get(key, ()))
+            while len(cls._source_failures) > _MAX_SOURCE_FAILURE_TOMBSTONES:
+                cls._source_failures.pop(next(iter(cls._source_failures)))
+        if cls._logger:
+            cls._logger.warning(
+                f"received owned source failure from {origin} for {source_fqcn} "
+                f"({len(unique_ref_ids)} ref(s)): {failure_reason}"
+            )
+        for signal in signals:
+            signal.trigger(failure_reason)
+        return make_reply(ReturnCode.OK)
+
+    @classmethod
+    def _register_source_download(cls, cell: Cell, source_fqcn: str, ref_id: str, abort_signal=None) -> Signal:
+        cls._initialize(cell)
+        signal = Signal(parent=abort_signal)
+        key = (source_fqcn, ref_id)
+        now = time.monotonic()
+        with cls._source_failure_lock:
+            cls._purge_source_failures_locked(now)
+            cls._active_source_downloads.setdefault(key, set()).add(signal)
+            failure = cls._source_failures.get(key)
+        if failure:
+            signal.trigger(failure[0])
+        return signal
+
+    @classmethod
+    def _unregister_source_download(cls, source_fqcn: str, ref_id: str, signal: Signal) -> None:
+        key = (source_fqcn, ref_id)
+        with cls._source_failure_lock:
+            signals = cls._active_source_downloads.get(key)
+            if signals is not None:
+                signals.discard(signal)
+                if not signals:
+                    cls._active_source_downloads.pop(key, None)
+
+    @classmethod
+    def _purge_source_failures_locked(cls, now: float) -> None:
+        expired = [key for key, (_, expires_at) in cls._source_failures.items() if expires_at <= now]
+        for key in expired:
+            cls._source_failures.pop(key, None)
 
     @classmethod
     def new_transaction(
@@ -1298,6 +1484,13 @@ class DownloadService:
             # Shutdown resets callback-registration state even when a cell is still
             # strongly held, so a later isolated service setup registers callbacks again.
             cls._initialized_cells.clear()
+
+        with cls._source_failure_lock:
+            for signals in cls._active_source_downloads.values():
+                for signal in signals:
+                    signal.trigger("download service shut down")
+            cls._active_source_downloads.clear()
+            cls._source_failures.clear()
 
         for tx in tx_list:
             tx.transaction_done(TransactionDoneStatus.DELETED)
@@ -1481,6 +1674,9 @@ class DownloadService:
         if confirm_status is not None:
             return cls._handle_confirm(rid, requester, confirm_status, payload.get(_PropKey.CONFIRM_NONCE))
 
+        if payload.get(_PropKey.CANCEL) is True:
+            return cls._handle_cancel(rid, requester)
+
         current_state = payload.get(_PropKey.STATE)
         with cls._tx_lock:
             ref = cls._ref_table.get(rid)
@@ -1575,6 +1771,7 @@ class DownloadService:
                         _PropKey.STATUS: rc,
                         _PropKey.STATE: new_state,
                         _PropKey.DATA: data,
+                        _PropKey.CANCEL_CAPABLE: True,
                     },
                 )
 
@@ -1609,6 +1806,40 @@ class DownloadService:
         # activity gate: transaction_done() closes and drains that gate. The atomic live
         # identity check in the helper makes this safe against monitor/delete/shutdown and
         # against another final confirmation racing this one.
+        if accepted:
+            cls._finish_transaction_if_complete(ref.tx)
+        return make_reply(ReturnCode.OK)
+
+    @classmethod
+    def _handle_cancel(cls, rid: str, requester: str) -> Message:
+        """Finalize a previously acquired receiver as FAILED across its transaction."""
+        with cls._tx_lock:
+            ref = cls._ref_table.get(rid)
+            if ref is not None and not ref.tx.begin_op():
+                ref = None
+        if ref is None:
+            cls._logger.debug(f"late cancellation for unknown ref {rid} from {requester} dropped")
+            return make_reply(ReturnCode.OK)
+
+        assert isinstance(ref, _Ref)
+        accepted = False
+        try:
+            tx = ref.tx
+            with tx._stats_lock:
+                acquired = requester in tx._acquired_receivers
+            if not acquired:
+                # In count-only transactions, accepting an unsolicited identity could
+                # satisfy the receiver count and retire source data it never acquired.
+                cls._logger.warning(f"ignoring cancellation from unacquired receiver {requester} for ref {rid}")
+                return make_reply(ReturnCode.OK)
+            # An abort while resolving one ref means this receiver will not proceed
+            # to later refs in the same FOBS payload. Finalize its truth across the
+            # whole transaction so untouched sibling refs cannot retain the source.
+            for tx_ref in tx.snapshot_refs():
+                accepted = tx_ref.obj_cancelled(requester) or accepted
+        finally:
+            ref.tx.end_op()
+
         if accepted:
             cls._finish_transaction_if_complete(ref.tx)
         return make_reply(ReturnCode.OK)
@@ -1769,6 +2000,42 @@ def download_object(
     progress_cb: Optional[Callable] = None,
     progress_interval: float = 30.0,
 ):
+    """Download an object and interrupt it promptly if its owned source dies."""
+    source_signal = DownloadService._register_source_download(cell, from_fqcn, ref_id, abort_signal)
+    try:
+        if source_signal.triggered and source_signal.value:
+            consumer.download_failed(ref_id, str(source_signal.value))
+            return
+        return _download_object(
+            from_fqcn=from_fqcn,
+            ref_id=ref_id,
+            per_request_timeout=per_request_timeout,
+            cell=cell,
+            consumer=consumer,
+            secure=secure,
+            optional=optional,
+            abort_signal=source_signal,
+            max_retries=max_retries,
+            progress_cb=progress_cb,
+            progress_interval=progress_interval,
+        )
+    finally:
+        DownloadService._unregister_source_download(from_fqcn, ref_id, source_signal)
+
+
+def _download_object(
+    from_fqcn: str,
+    ref_id: str,
+    per_request_timeout: float,
+    cell: Cell,
+    consumer: Consumer,
+    secure=False,
+    optional=False,
+    abort_signal: Signal = None,
+    max_retries: int = 3,
+    progress_cb: Optional[Callable] = None,
+    progress_interval: float = 30.0,
+):
     """Download a large object from the object owner.
 
     Args:
@@ -1808,6 +2075,7 @@ def download_object(
     confirm_enabled = _receiver_confirm_enabled()
     producer_expects_confirm = False
     confirm_nonce = None
+    producer_accepts_cancel = False
 
     def _send_confirm(receiver_truth: str):
         # wire contract: a confirmation is sent ONLY after a producer-served terminal reply
@@ -1835,6 +2103,40 @@ def download_object(
             )
         except Exception as ex:
             logger.warning(f"failed to send download confirmation for ref={ref_id}: {secure_format_exception(ex)}")
+
+    def _send_cancel():
+        if not producer_accepts_cancel:
+            return
+        try:
+            cell.fire_and_forget(
+                channel=OBJ_DOWNLOADER_CHANNEL,
+                topic=OBJ_DOWNLOADER_TOPIC,
+                targets=from_fqcn,
+                message=new_cell_message(headers={}, payload={_PropKey.REF_ID: ref_id, _PropKey.CANCEL: True}),
+                secure=secure,
+                optional=optional,
+            )
+        except Exception as ex:
+            logger.warning(f"failed to cancel download for ref={ref_id}: {secure_format_exception(ex)}")
+
+    def _abort_download(reason: str):
+        _send_cancel()
+        consumer.download_failed(ref_id, reason)
+        _emit_progress("aborted", force=True)
+
+    def _abort_reason(default: str) -> str:
+        value = abort_signal.value if abort_signal is not None else None
+        return str(value) if value else default
+
+    def _interruptible_backoff(duration: float) -> bool:
+        remaining = duration
+        while remaining > 0:
+            if abort_signal and abort_signal.triggered:
+                return False
+            interval = min(0.1, remaining)
+            time.sleep(interval)
+            remaining -= interval
+        return not (abort_signal and abort_signal.triggered)
 
     def _emit_progress(state: str, force: bool = False):
         nonlocal progress_sequence, last_progress_emit_time
@@ -1907,9 +2209,11 @@ def download_object(
             reply = _do_request(current_state)
         duration = time.time() - start_time
 
+        if isinstance(reply, Message) and isinstance(reply.payload, dict):
+            producer_accepts_cancel = producer_accepts_cancel or bool(reply.payload.get(_PropKey.CANCEL_CAPABLE))
+
         if abort_signal and abort_signal.triggered:
-            consumer.download_failed(ref_id, f"download aborted after {duration} secs")
-            _emit_progress("aborted", force=True)
+            _abort_download(_abort_reason(f"download aborted after {duration} secs"))
             return
 
         assert isinstance(reply, Message)
@@ -1929,13 +2233,10 @@ def download_object(
                     )
                     # Check abort signal before sleeping to minimise delay
                     if abort_signal and abort_signal.triggered:
-                        consumer.download_failed(ref_id, f"download aborted after {duration} secs")
-                        _emit_progress("aborted", force=True)
+                        _abort_download(_abort_reason(f"download aborted after {duration} secs"))
                         return
-                    time.sleep(backoff)
-                    if abort_signal and abort_signal.triggered:
-                        consumer.download_failed(ref_id, f"download aborted after {duration} secs")
-                        _emit_progress("aborted", force=True)
+                    if not _interruptible_backoff(backoff):
+                        _abort_download(_abort_reason(f"download aborted after {duration} secs"))
                         return
                     continue
                 else:
@@ -1943,6 +2244,7 @@ def download_object(
                         f"[DOWNLOAD_FAILED] Max retries ({max_retries}) exhausted for {from_fqcn}, "
                         f"ref={ref_id}. Giving up."
                     )
+            _send_cancel()
             consumer.download_failed(ref_id, f"error requesting data from {from_fqcn} after {duration} secs: {rc}")
             _emit_progress("failed", force=True)
             return
@@ -2009,6 +2311,7 @@ def download_object(
         except Exception as ex:
             if pending_future:
                 pending_future.cancel()
+            _send_cancel()
             consumer.download_failed(ref_id, f"exception when consuming data: {secure_format_exception(ex)}")
             _emit_progress("failed", force=True)
             return
@@ -2016,6 +2319,7 @@ def download_object(
         if not isinstance(new_state, dict):
             if pending_future:
                 pending_future.cancel()
+            _send_cancel()
             consumer.download_failed(ref_id, f"consumer error: new_state should be dict but got {type(new_state)}")
             _emit_progress("failed", force=True)
             return
@@ -2023,8 +2327,7 @@ def download_object(
         if abort_signal and abort_signal.triggered:
             if pending_future:
                 pending_future.cancel()
-            consumer.download_failed(ref_id, "download aborted")
-            _emit_progress("aborted", force=True)
+            _abort_download(_abort_reason("download aborted"))
             return
 
         if pipeline_enabled:
@@ -2034,6 +2337,7 @@ def download_object(
                 # one, which would duplicate producer work.
                 if pending_future:
                     pending_future.cancel()
+                _send_cancel()
                 consumer.download_failed(ref_id, "consumer changed state despite enabling download pipelining")
                 _emit_progress("failed", force=True)
                 return

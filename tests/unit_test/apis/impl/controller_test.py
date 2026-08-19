@@ -1407,11 +1407,15 @@ class TestBasic(TestController):
                 self.chunk = chunk
                 self.root_dir = root_dir
                 self.call_count = 0
+                self.request_cbs = {}
                 self.second_call_started = threading.Event()
                 self.release_second_call = threading.Event()
 
             def get_fobs_context(self):
                 return {_TENSOR_DISK_OFFLOAD_ROOT_DIR: self.root_dir}
+
+            def register_request_cb(self, channel, topic, cb):
+                self.request_cbs[(channel, topic)] = cb
 
             def send_request(self, **kwargs):
                 self.call_count += 1

@@ -551,7 +551,7 @@ class AttachBackend(CellBackendBase):
         with self._session_lock:
             return self._session
 
-    def _get_protocol_session(self) -> Optional[_AttachedTrainerSession]:
+    def _get_protocol_session(self, origin: Optional[str] = None) -> Optional[_AttachedTrainerSession]:
         return self._get_session()
 
     def _session_matches(self, session_id: str) -> bool:
