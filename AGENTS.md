@@ -7,6 +7,12 @@
 - Before pushing or opening a PR, run the project style check (`./runtest.sh -s`, or the closest scoped equivalent when justified). If it cannot be run, state that clearly before pushing.
 - Read `CLAUDE.md` for shared repo guidance such as project overview, architecture notes, commands, package layout, and style/testing conventions. Keep `AGENTS.md` limited to agent-specific addenda.
 
+## Public Pull Requests
+
+- When creating a PR that should be included in the 2.9 release, assign the `2.9` milestone.
+- Keep public GitHub PRs, issues, and comments self-contained. Do not include private Jira URLs or ticket identifiers; summarize the relevant requirements and context instead.
+- For internal traceability, link from the Jira ticket to the public GitHub artifact, not from the public artifact to Jira.
+
 ## Main Branch Versioning
 
 - Treat `main` as the development branch for the next NVFlare release.
