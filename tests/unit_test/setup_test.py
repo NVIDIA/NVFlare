@@ -51,14 +51,12 @@ def _run_setup_version(tmp_path: Path, base_version: str = None) -> subprocess.C
     )
 
 
-def test_versioneer_failure_uses_tracked_base_version(tmp_path):
-    before = datetime.date.today()
+def test_versioneer_failure_without_base_version_fails_clearly(tmp_path):
     result = _run_setup_version(tmp_path)
-    after = datetime.date.today()
 
-    assert result.returncode == 0, result.stderr
-    expected_versions = {f"2.9.0.dev{date:%y%m%d}" for date in (before, after)}
-    assert result.stdout.strip() in expected_versions
+    assert result.returncode != 0
+    assert "Versioneer could not determine the NVFlare package version" in result.stderr
+    assert "set NVFL_BASE_VERSION explicitly" in result.stderr
 
 
 def test_versioneer_failure_uses_configured_base_version_override(tmp_path):
