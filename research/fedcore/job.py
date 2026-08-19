@@ -44,7 +44,7 @@ def define_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-    from nvflare.recipe import SimEnv
+    from nvflare.recipe import SimEnv, set_per_site_config
 
     args = define_parser().parse_args()
     cache_dir = Path(args.cache_dir).expanduser().resolve()
@@ -81,11 +81,11 @@ def main() -> None:
             min_clients=len(sites),
             num_rounds=args.num_rounds,
             train_script="client.py",
-            per_site_config=per_site_config,
             launch_external_process=True,
             server_expected_format="pytorch",
             key_metric="",
         )
+        set_per_site_config(recipe, per_site_config)
     finally:
         os.chdir(previous_cwd)
     recipe.add_client_file(str(PROJECT_DIR / "client.py"), clients=sites)
