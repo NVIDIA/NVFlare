@@ -137,6 +137,9 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
 
         required_sites = []
         for site_name in job.required_sites or []:
+            if not isinstance(site_name, str):
+                self.log_error(fl_ctx, f"Job {job.job_id} has invalid required site '{site_name}'")
+                return SCHEDULE_RESULT_BLOCK, None, f"invalid required site '{site_name}'"
             if site_name not in required_sites:
                 required_sites.append(site_name)
         if enrolled_sites is not None:

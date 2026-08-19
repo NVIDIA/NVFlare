@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from typing import Optional
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 import pytest
 
@@ -415,8 +415,15 @@ class TestDefaultJobScheduler:
         assert job is candidate
         assert set(dispatch_info) == {"server", "site0"}
 
-    def test_require_sites_unhashable_entry_does_not_interrupt_scheduling(self, setup_and_teardown):
+    def test_require_sites_unhashable_entry_does_not_interrupt_scheduling(self, monkeypatch, setup_and_teardown):
         servers, scheduler, num_sites, job_manager = setup_and_teardown
+        monkeypatch.setattr(job_scheduler_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
+        monkeypatch.setattr(
+            _FakeStudyRegistryService,
+            "registry",
+            _FakeStudyRegistry(sites={"cancer-research": {"site0"}}),
+            raising=False,
+        )
         malformed_candidate = create_job(
             job_id="malformed_job",
             resource_spec={},
@@ -430,6 +437,8 @@ class TestDefaultJobScheduler:
             deploy_map={"app5": ["server", "site0"]},
             min_sites=1,
         )
+        malformed_candidate.meta[JobMetaKey.STUDY.value] = "cancer-research"
+        valid_candidate.meta[JobMetaKey.STUDY.value] = "cancer-research"
         with servers[0].new_context() as fl_ctx:
             job, dispatch_info = scheduler.schedule_job(
                 job_manager=job_manager,
@@ -438,6 +447,9 @@ class TestDefaultJobScheduler:
             )
         assert job is valid_candidate
         assert set(dispatch_info) == {"server", "site0"}
+        job_manager.set_status.assert_called_once_with(
+            malformed_candidate.job_id, RunStatus.FINISHED_CANT_SCHEDULE, ANY
+        )
 
     def test_require_sites_not_enough_resource(self, setup_and_teardown):
         servers, scheduler, num_sites, job_manager = setup_and_teardown
