@@ -731,9 +731,9 @@ def test_all_conversion_skills_preserve_required_model_constructor_args():
     assert "recipe construction alone does not prove serialization" in validation_text
 
     converter_expectations = {
-        "nvflare-convert-pytorch": "a direct `torch.nn.Module` is allowed only when unchanged zero-argument defaults",
-        "nvflare-convert-lightning": "a direct `LightningModule` is allowed only when unchanged zero-argument defaults",
-        "nvflare-convert-huggingface": "Use explicit `class_path`/`args` for required or overridden constructor values",
+        "nvflare-convert-pytorch": "selected recipe's documented `class_path` or `path` key plus complete `args`",
+        "nvflare-convert-lightning": "recipe-documented `class_path` or `path` key plus complete `args`",
+        "nvflare-convert-huggingface": "recipe's documented `class_path` or `path` key plus complete `args`",
     }
     for converter, expectation in converter_expectations.items():
         skill_text = " ".join(repo_root.joinpath(f"skills/{converter}/SKILL.md").read_text(encoding="utf-8").split())

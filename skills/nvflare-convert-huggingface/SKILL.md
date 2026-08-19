@@ -95,12 +95,12 @@ user's purpose is to understand data distribution; handle conversion later as a 
    packaged project-local modules in the same writable source directory. Never
    use `..` in `train_script`, `add_server_file()`, or `add_client_file()`; use
    an existing resolved absolute path when co-location is impossible. Keep the
-   server and Trainer model factory and exchange keyspace identical. Use explicit
-   `class_path`/`args` for required or overridden constructor values; a direct
-   zero-argument instance must not use `from_pretrained()`, downloads, or
+   server and Trainer model factory and exchange keyspace identical. Use the
+   recipe's documented `class_path` or `path` key plus complete `args` for
+   required or overridden values; a direct zero-argument instance must not use
+   `from_pretrained()`, downloads, or
    checkpoint loading during job construction. Apply only options confirmed by
-   the construction reference.
-   Preserve the job asset's recipe-before-parser
+   the construction reference. Preserve the job asset's recipe-before-parser
    ordering, `ArgumentParser(allow_abbrev=False)`, and strict `parse_args()`; do
    not use `parse_known_args()`.
 7. Only after generated files exist, load

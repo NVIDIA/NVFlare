@@ -249,6 +249,32 @@ def test_non_fedavg_tensor_profile_omits_unsupported_disk_offload(tmp_path):
     assert recipe.server_expected_format == ExchangeFormat.PYTORCH
 
 
+def test_cyclic_parameterized_model_config_exports_normalized_path(tmp_path):
+    pytest.importorskip("torch")
+    from nvflare.app_opt.pt.recipes.cyclic import CyclicRecipe
+
+    train_script = tmp_path / "client.py"
+    train_script.write_text("pass\n", encoding="utf-8")
+    recipe = CyclicRecipe(
+        name="skill-cyclic-model-config-test",
+        model={"class_path": "torch.nn.Linear", "args": {"in_features": 2, "out_features": 1}},
+        train_script=str(train_script),
+        min_clients=2,
+    )
+
+    export_root = tmp_path / "export"
+    recipe.export(str(export_root))
+    server_config = json.loads(
+        (export_root / recipe.name / "app" / "config" / "config_fed_server.json").read_text(encoding="utf-8")
+    )
+    persistor = next(component for component in server_config["components"] if component["id"] == "persistor")
+
+    assert persistor["args"]["model"] == {
+        "path": "torch.nn.Linear",
+        "args": {"in_features": 2, "out_features": 1},
+    }
+
+
 def test_pytorch_eval_template_computes_metric_against_toy_model():
     torch = pytest.importorskip("torch")
     module = _load_module(PT_TEMPLATES / "client_with_eval.py")

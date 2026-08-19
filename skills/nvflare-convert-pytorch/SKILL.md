@@ -84,10 +84,10 @@ distribution; handle conversion later as a separate request.
    required but missing, ask or fail closed. Apply the step-1 data-location
    rules to the generated client's data argument.
 6. Add or update `job.py` under the shared constructor-serialization rule:
-   use explicit `class_path`/`args` whenever reconstruction needs constructor
-   values. Add requested `aggregator=` wiring and the metric, tensor-transport,
-   server offload, and execution settings derived from the shared PyTorch-family
-   construction profile.
+   use explicit `class_path` (or documented `path` alias) plus complete `args`
+   whenever reconstruction needs values. Add requested `aggregator=` wiring,
+   metric, tensor-transport, server offload, and execution settings derived
+   from the shared PyTorch-family construction profile.
 7. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`:
    compile checks, recipe construction, one final full-run path chosen by the
    artifact being validated, and export inspection; use
@@ -105,8 +105,9 @@ distribution; handle conversion later as a separate request.
 - Must audit model constructor arguments before writing `job.py` by reading the
   model module's `__init__` and the selected recipe's `model` parameter from
   `nvflare recipe show <recipe-name> --format json`, not by reading NVFLARE
-  library source. Emit explicit `class_path`/`args` for every required or
-  overridden constructor value; a direct `torch.nn.Module` is allowed only when
+  library source. Emit the selected recipe's documented `class_path` or `path`
+  key plus complete `args` for every required or overridden constructor value;
+  a direct `torch.nn.Module` is allowed only when
   unchanged zero-argument defaults reconstruct it. Values must be statically
   clear from literal source, configuration, or supplied metadata. Otherwise ask
   one semantic question when an answer channel exists or fail closed.
