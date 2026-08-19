@@ -15,9 +15,11 @@
 import json
 import time
 
+import pytest
+
 from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.fuel.hci.base64_utils import b64str_to_str, str_to_b64str
-from nvflare.fuel.hci.server.sess import Session
+from nvflare.fuel.hci.server.sess import Session, SessionManager
 
 
 class _FakeIdAsserter:
@@ -27,6 +29,24 @@ class _FakeIdAsserter:
     def sign(data, return_str=True):
         assert return_str
         return "signature"
+
+
+class _FakeTokenVerifier:
+    def __init__(self, _cert):
+        pass
+
+    @staticmethod
+    def verify(_nonce, _data, signature):
+        return signature == "signature"
+
+
+class _FakeCell:
+    pass
+
+
+@pytest.fixture(autouse=True)
+def _patch_token_verifier(monkeypatch):
+    monkeypatch.setattr("nvflare.fuel.hci.server.sess.TokenVerifier", _FakeTokenVerifier)
 
 
 def test_session_token_round_trip_preserves_study():
@@ -40,7 +60,7 @@ def test_session_token_round_trip_preserves_study():
     )
 
     token = session.make_token(_FakeIdAsserter())
-    restored = Session.decode_token(token)
+    restored = Session.decode_token(token, _FakeIdAsserter())
 
     assert restored.active_study == "cancer-research"
     assert restored.user_name == "admin@nvidia.com"
@@ -77,7 +97,7 @@ def test_session_token_round_trip_preserves_cert_expiry():
         cert_exp=cert_exp,
     )
 
-    restored = Session.decode_token(session.make_token(_FakeIdAsserter()))
+    restored = Session.decode_token(session.make_token(_FakeIdAsserter()), _FakeIdAsserter())
 
     assert restored.cert_exp == cert_exp
     assert not restored.is_cert_expired(now=cert_exp - 1)
@@ -88,7 +108,7 @@ def test_decode_token_defaults_legacy_session_study():
     legacy_payload = json.dumps({"n": "admin@nvidia.com", "r": "lead", "o": "nvidia", "s": "session-id"})
     token = f"{str_to_b64str(legacy_payload)}:signature"
 
-    restored = Session.decode_token(token)
+    restored = Session.decode_token(token, _FakeIdAsserter())
 
     assert restored.active_study == DEFAULT_STUDY
 
@@ -99,6 +119,34 @@ def test_decode_token_accepts_legacy_t_study_field():
     )
     token = f"{str_to_b64str(legacy_payload)}:signature"
 
-    restored = Session.decode_token(token)
+    restored = Session.decode_token(token, _FakeIdAsserter())
 
     assert restored.active_study == "legacy-study"
+
+
+def test_decode_token_rejects_missing_identity_asserter():
+    payload = json.dumps({"n": "attacker", "r": "project_admin", "o": "attacker-org", "s": "forged-id"})
+    token = f"{str_to_b64str(payload)}:attacker-signature"
+
+    with pytest.raises(ValueError, match="identity asserter"):
+        Session.decode_token(token, None)
+
+
+def test_decode_token_rejects_invalid_signature():
+    payload = json.dumps({"n": "attacker", "r": "project_admin", "o": "attacker-org", "s": "forged-id"})
+    token = f"{str_to_b64str(payload)}:attacker-signature"
+
+    assert Session.decode_token(token, _FakeIdAsserter()) is None
+
+
+def test_recreate_session_rejects_token_without_identity_asserter():
+    payload = json.dumps({"n": "attacker", "r": "project_admin", "o": "attacker-org", "s": "forged-id"})
+    token = f"{str_to_b64str(payload)}:attacker-signature"
+    session_mgr = SessionManager(_FakeCell(), idle_timeout=3600, monitor_interval=3600)
+
+    try:
+        with pytest.raises(ValueError, match="identity asserter"):
+            session_mgr.recreate_session(token, "attacker", None)
+        assert session_mgr.sessions == {}
+    finally:
+        session_mgr.shutdown()

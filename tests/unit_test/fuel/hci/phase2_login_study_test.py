@@ -70,6 +70,16 @@ class _FakeHciServer:
         return _FakeIdAsserter()
 
 
+class _CertlessHciServer:
+    @staticmethod
+    def get_id_verifier():
+        return None
+
+    @staticmethod
+    def get_id_asserter():
+        return None
+
+
 class _FakeSession:
     def __init__(self):
         self.created_args = None
@@ -132,6 +142,24 @@ def _make_conn(study=None):
 def _patch_cert_login(monkeypatch):
     monkeypatch.setattr("nvflare.fuel.hci.server.login.load_crt_chain_bytes", lambda _data: [_FakeCert()])
     monkeypatch.setattr("nvflare.fuel.hci.server.login.validate_admin_leaf_cert", lambda _cert: None)
+
+
+def test_handle_cert_login_rejects_missing_server_identity():
+    session_mgr = SessionManager(_FakeCell(), idle_timeout=3600, monitor_interval=3600)
+    login = LoginModule(session_mgr)
+    conn = _make_conn()
+    conn.set_prop(ConnProps.HCI_SERVER, _CertlessHciServer())
+
+    try:
+        login.handle_cert_login(conn, ["CERT_LOGIN", "admin@nvidia.com"])
+
+        assert conn.strings == [
+            ("REJECT: AUTH_SERVER_IDENTITY_UNAVAILABLE: server signing identity is not configured", None)
+        ]
+        assert conn.tokens == []
+        assert session_mgr.sessions == {}
+    finally:
+        session_mgr.shutdown()
 
 
 def test_handle_cert_login_rejects_unknown_study_when_registry_exists(monkeypatch):

@@ -92,6 +92,10 @@ class LoginModule(CommandModule, CommandFilter):
         hci = conn.get_prop(ConnProps.HCI_SERVER)
         identity_verifier = hci.get_id_verifier()
         id_asserter = hci.get_id_asserter()
+        if not identity_verifier or not id_asserter:
+            self.logger.error("rejecting admin login because the server signing identity is not configured")
+            _reject("server signing identity is not configured", code="AUTH_SERVER_IDENTITY_UNAVAILABLE")
+            return
 
         cert_chain = load_crt_chain_bytes(cert_data)
         cert = cert_chain[0]
@@ -172,7 +176,9 @@ class LoginModule(CommandModule, CommandFilter):
         if self.session_mgr:
             token = conn.get_prop(ConnProps.TOKEN)
             if token:
-                self.session_mgr.end_session_by_token(token)
+                hci = conn.get_prop(ConnProps.HCI_SERVER)
+                id_asserter = hci.get_id_asserter() if hci else None
+                self.session_mgr.end_session_by_token(token, id_asserter)
         conn.append_string("OK")
 
     def pre_command(self, conn: Connection, args: List[str]):

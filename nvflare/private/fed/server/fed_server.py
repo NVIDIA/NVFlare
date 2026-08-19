@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ipaddress
 import json
 import os
 import threading
@@ -80,6 +81,23 @@ from .run_manager import RunManager
 from .server_engine import ServerEngine
 from .server_state import ABORT_RUN, ACTION, MESSAGE, NIS, HotState, ServerState
 from .server_status import ServerStatus
+
+
+def _normalize_loopback_host(host: str) -> str:
+    """Return the IPv4 loopback address for localhost and loopback IP literals."""
+    if not host:
+        return host
+    if host.rstrip(".").lower() == "localhost":
+        return "127.0.0.1"
+    try:
+        address = ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        return host
+    return "127.0.0.1" if address.is_loopback else host
+
+
+def _is_loopback_host(host: str) -> bool:
+    return _normalize_loopback_host(host) == "127.0.0.1"
 
 
 class BaseServer(ABC):
@@ -172,14 +190,22 @@ class BaseServer(ABC):
         if len(parts) != 2:
             raise RuntimeError(f"bad service target: {target}")
 
-        listening_host = "127.0.0.1" if parts[0].rstrip(".").lower() == "localhost" else None
+        service_host = parts[0]
+        listening_host = _normalize_loopback_host(service_host) if _is_loopback_host(service_host) else None
         fl_port = int(parts[1])
 
         url_host = listening_host or "0"
         root_url = [f"{scheme}://{url_host}:{fl_port}"]
         if enable_admin_listener:
             admin_port = int(grpc_args.get("admin_port", fl_port))
-            admin_url = f"{scheme}://{url_host}:{admin_port}?{ADMIN_LISTENER_KEY}=true"
+            configured_admin_host = grpc_args.get("admin_host") or grpc_args.get("admin_server")
+            admin_host = _normalize_loopback_host(configured_admin_host) if configured_admin_host else url_host
+            if not secure_train and not _is_loopback_host(admin_host):
+                self.logger.warning(
+                    f"insecure admin listener is exposed on non-loopback host '{admin_host}'; "
+                    "set secure_train=true or configure admin_server/admin_host as a loopback address"
+                )
+            admin_url = f"{scheme}://{admin_host}:{admin_port}?{ADMIN_LISTENER_KEY}=true"
             if admin_port == fl_port:
                 root_url = [admin_url]
             else:

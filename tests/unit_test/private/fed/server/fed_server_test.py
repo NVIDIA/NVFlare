@@ -43,18 +43,23 @@ class _TestServer(BaseServer):
 
 
 @pytest.mark.parametrize(
-    "enable_admin_listener, admin_port, expected_root_urls",
+    "enable_admin_listener, admin_port, admin_host, expected_root_urls",
     [
-        (True, 8003, ["tcp://127.0.0.1:8002", f"tcp://127.0.0.1:8003?{ADMIN_LISTENER_KEY}=true"]),
-        (True, None, [f"tcp://127.0.0.1:8002?{ADMIN_LISTENER_KEY}=true"]),
-        (False, 8003, ["tcp://127.0.0.1:8002"]),
+        (True, 8003, None, ["tcp://127.0.0.1:8002", f"tcp://127.0.0.1:8003?{ADMIN_LISTENER_KEY}=true"]),
+        (True, 8003, "127.0.0.2", ["tcp://127.0.0.1:8002", f"tcp://127.0.0.1:8003?{ADMIN_LISTENER_KEY}=true"]),
+        (True, 8003, "::1", ["tcp://127.0.0.1:8002", f"tcp://127.0.0.1:8003?{ADMIN_LISTENER_KEY}=true"]),
+        (True, 8003, "admin.example", ["tcp://127.0.0.1:8002", f"tcp://admin.example:8003?{ADMIN_LISTENER_KEY}=true"]),
+        (True, None, None, [f"tcp://127.0.0.1:8002?{ADMIN_LISTENER_KEY}=true"]),
+        (False, 8003, "admin.example", ["tcp://127.0.0.1:8002"]),
     ],
 )
-def test_base_server_deploy_admin_listener(enable_admin_listener, admin_port, expected_root_urls):
+def test_base_server_deploy_admin_listener(enable_admin_listener, admin_port, admin_host, expected_root_urls):
     server = _TestServer()
     server_config = {"service": {"target": "localhost:8002", "scheme": "tcp"}}
     if admin_port is not None:
         server_config["admin_port"] = admin_port
+    if admin_host is not None:
+        server_config["admin_server"] = admin_host
 
     with (
         patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
@@ -72,9 +77,57 @@ def test_base_server_deploy_admin_listener(enable_admin_listener, admin_port, ex
     assert cell_args["internal_listener_host"] == "127.0.0.1"
 
 
+def test_insecure_non_loopback_admin_listener_emits_warning():
+    server = _TestServer()
+
+    with (
+        patch("nvflare.private.fed.server.fed_server.Cell"),
+        patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+        patch("nvflare.private.fed.server.fed_server.threading.Thread"),
+        patch.object(server.logger, "warning") as warning,
+    ):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args={
+                "service": {"target": "server.example:8002", "scheme": "tcp"},
+                "admin_server": "admin.example",
+                "admin_port": 8003,
+            },
+            secure_train=False,
+        )
+
+    warning.assert_called_once()
+
+
+def test_configured_admin_host_takes_precedence_over_advertised_admin_server():
+    server = _TestServer()
+
+    with (
+        patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+        patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+        patch("nvflare.private.fed.server.fed_server.threading.Thread"),
+    ):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args={
+                "service": {"target": "server.example:8002", "scheme": "tcp"},
+                "admin_host": "127.0.0.1",
+                "admin_server": "admin.example",
+                "admin_port": 8003,
+            },
+            secure_train=False,
+        )
+
+    assert cell_cls.call_args.kwargs["root_url"] == [
+        "tcp://0:8002",
+        f"tcp://127.0.0.1:8003?{ADMIN_LISTENER_KEY}=true",
+    ]
+
+
 class TestFederatedServer:
     def test_production_listener_bindings_remain_wildcard_by_default(self):
         server = object.__new__(FederatedServer)
+        server.logger = MagicMock()
 
         with (
             patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
