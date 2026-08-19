@@ -203,7 +203,7 @@
           },
           {
             "id": "no-recipe-lifecycle-probes",
-            "description": "after successful recipe show for a local simulation, does not import Recipe from nvflare.recipe, inspect or call nvflare.recipe.run, or probe export, run, or lifecycle APIs; uses recipe.execute(SimEnv(...))"
+            "description": "after successful recipe show and loading the construction reference, uses that documented path and does not run exploratory NVFLARE imports, inspect, hasattr, constant discovery, source/docstring reads, or lifecycle probes; reports a skill gap or fails closed instead of guessing when required construction details are absent, and uses recipe.execute(SimEnv(...))"
           },
           {
             "id": "no-orient-for-explicit-conversion",

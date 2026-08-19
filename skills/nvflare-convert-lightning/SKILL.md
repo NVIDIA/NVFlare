@@ -88,10 +88,10 @@ distribution; handle conversion later as a separate request.
    non-FedAvg algorithms, reserving `nvflare recipe list` for those cases. Use
    FedEval for evaluation-only. After every `recipe show`, load
    `../nvflare-shared/references/pytorch-family-recipe-construction.md` and
-   derive its construction capabilities. Do not inspect recipe source,
-   signatures, or docstrings. After success, do not import `Recipe` from
-   `nvflare.recipe`, inspect or call `nvflare.recipe.run`, or probe `export`,
-   `run`, or lifecycle APIs. Call `recipe.execute(SimEnv(...))`.
+   derive its construction capabilities. After `recipe show` succeeds, use that documented
+   path: do not run exploratory NVFLARE imports or use `inspect`, `hasattr`, constant
+   discovery, SDK source/docstring reads, or lifecycle probes. If a required detail is absent,
+   report a skill gap or fail closed instead of guessing. Call `recipe.execute(SimEnv(...))`.
 6. Convert the training entry point to the Lightning Client API: build the
    `Trainer`, call `flare.patch(trainer)`, and let the patched trainer own
    model exchange. Keep evaluation inside Lightning per

@@ -476,9 +476,9 @@ def test_lightning_conversion_limits_reference_loading_and_full_run_validation()
     assert len(site_data_text) < len(workflow_text)
 
     assert "select and record exactly one final validation target" in normalized_skill
-    assert "do not import `Recipe` from `nvflare.recipe`" in normalized_skill
-    assert "inspect or call `nvflare.recipe.run`" in normalized_skill
-    assert "or probe `export`, `run`, or lifecycle APIs" in normalized_skill
+    assert "do not run exploratory NVFLARE imports" in normalized_skill
+    assert "`inspect`, `hasattr`, constant discovery" in normalized_skill
+    assert "report a skill gap or fail closed instead of guessing" in normalized_skill
     assert "Call `recipe.execute(SimEnv(...))`" in normalized_skill
     assert "do not export or run the exported simulator afterward" in normalized_skill
     assert "do not first run `python job.py`" in normalized_skill
