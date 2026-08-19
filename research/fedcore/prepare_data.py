@@ -1,0 +1,58 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Generate the deterministic FedCoRe synthetic task."""
+
+import argparse
+from pathlib import Path
+
+from src.data import SyntheticDataConfig, generate_synthetic_data
+
+
+def define_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Generate synthetic image-plus-context data for FedCoRe.")
+    parser.add_argument("--output-dir", default="data/recoverable")
+    parser.add_argument("--train-samples-per-site", type=int, default=48)
+    parser.add_argument("--val-samples-per-site", type=int, default=16)
+    parser.add_argument("--test-samples-per-site", type=int, default=16)
+    parser.add_argument("--proxy-strength", type=float, default=0.9)
+    parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--image-size", type=int, default=224)
+    return parser
+
+
+def main() -> None:
+    args = define_parser().parse_args()
+    summary = generate_synthetic_data(
+        SyntheticDataConfig(
+            output_dir=Path(args.output_dir),
+            train_samples_per_site=args.train_samples_per_site,
+            val_samples_per_site=args.val_samples_per_site,
+            test_samples_per_site=args.test_samples_per_site,
+            proxy_strength=args.proxy_strength,
+            seed=args.seed,
+            image_size=args.image_size,
+        )
+    )
+    print(f"Generated {summary['total_examples']} examples under {Path(args.output_dir).resolve()}")
+    for site, site_summary in summary["sites"].items():
+        train = site_summary["splits"]["train"]
+        print(
+            f"  {site}: train={train['examples']} image_available={train['image_available']} "
+            f"image_missing={train['image_missing']}"
+        )
+
+
+if __name__ == "__main__":
+    main()

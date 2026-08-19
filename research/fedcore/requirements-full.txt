@@ -1,0 +1,1 @@
+-r ../../examples/advanced/qwen3-vl/requirements.txt
