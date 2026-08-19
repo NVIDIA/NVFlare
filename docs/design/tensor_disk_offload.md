@@ -171,13 +171,31 @@ Custom aggregators are responsible for:
 - FedAvg-style workflows restore the prior FOBS context and remove their
   job-scoped root when the workflow exits.
 - Swarm keeps its job-scoped root and tensor-forwarding route through workflow
-  finalization. At job `END_RUN`, it gives the controller-owned learning and
-  aggregation threads a bounded drain window, then removes the root and its
-  remaining contents.
+  finalization. Explicit terminal downloads inherit the run abort signal. At job
+  `END_RUN`, Swarm cancels active disk consumers under its root, gives the
+  controller-owned learning and aggregation threads a bounded drain window, then
+  removes the root and its remaining contents. A receiver that abandons an active
+  download also sends a capability-negotiated cancellation to the producer. The
+  producer records that receiver as failed across every ref in the transaction and
+  can release an accepted external-process result source without waiting for its
+  normal transfer timeout. Older producers keep the existing bounded timeout path.
+- These workflow-local cleanup paths require the server/client job process to reach
+  normal teardown. Reclaiming scratch after an abrupt server/client job process
+  death requires launcher-owned storage whose cleanup capability survives process
+  and container boundaries; that lifecycle is outside this workflow-level feature.
 
 ## Failure Behavior
 
 - Download failures trigger `DiskTensorConsumer.download_failed(...)`, which removes the temp dir.
+- If an owned external trainer dies after its lazy result envelope is accepted, its CJ sends a
+  bounded acknowledged failure notice for the exact source FQCN/reference IDs to the declared
+  terminal receiver. Matching active downloads are interrupted immediately; a bounded tombstone
+  also covers failure notices that arrive just before download startup. FedAvg and Swarm then use
+  their existing materialization/task-error paths instead of retrying the dead source for the
+  normal 600-second streaming timeout.
+- Mid-transfer receiver cancellation is best effort. If the producer advertised support, it
+  promptly settles the abandoned receiver as failed; otherwise the transaction's existing
+  receiver/transaction timeout remains the cleanup backstop.
 - Invalid safetensors payload/header parsing fails fast and bubbles up as a download-consume error.
 - Existing in-memory download path remains unchanged when offload is disabled.
 
