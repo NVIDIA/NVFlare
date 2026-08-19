@@ -380,7 +380,10 @@ class Cell(StreamCell):
 
         return result
 
-    def _get_result(self, req_id):
+    def _get_result(self, req_id, send_future=None):
+        """Release a request waiter only after its unfinished transmit is terminal."""
+        if send_future is not None and not send_future.done():
+            send_future.cancel()
         waiter = self.requests_dict.pop(req_id)
         return waiter.result
 
@@ -521,6 +524,8 @@ class Cell(StreamCell):
 
         waiter = SimpleWaiter(req_id=req_id, target=target, result=make_reply(ReturnCode.TIMEOUT))
         self.requests_dict[req_id] = waiter
+        future = None
+        sending_complete = False
 
         try:
             future = self.send_blob(
@@ -548,7 +553,7 @@ class Cell(StreamCell):
                     self.logger.debug(f"{req_id=}: receiver rejected stream: {stream_error}")
                 else:
                     self.logger.debug(f"{req_id=}: sending timeout {timeout=}")
-                return self._get_result(req_id)
+                return self._get_result(req_id, future)
 
             self.logger.debug(f"{req_id=}: sending complete")
 
@@ -629,6 +634,8 @@ class Cell(StreamCell):
             return self._get_result(req_id)
         except Exception as ex:
             self.logger.error(f"exception sending request: {secure_format_exception(ex)}")
+            if future is not None and not sending_complete and not future.done():
+                future.cancel()
             self.requests_dict.pop(req_id, None)
             raise ex
 
