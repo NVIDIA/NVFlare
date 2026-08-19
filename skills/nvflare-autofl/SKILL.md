@@ -2,14 +2,14 @@
 name: nvflare-autofl
 description: "Use for agent-assisted Auto-FL optimization of an existing NVFLARE job in simulation, POC, or production. Do not use for code conversion, diagnosis-only work, or deployment setup."
 license: Apache-2.0
+version: "0.1.0"
 compatibility: "Requires NVFLARE 2.9.0+, Python, and permission to run NVFLARE jobs in the selected environment."
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
   tags: "nvflare, federated-learning, optimization"
-  min_flare_version: "2.9.0"
-  blast_radius: submits_production
+  min-flare-version: "2.9.0"
+  blast-radius: submits_production
   category: Optimization
-  version: "0.1.0"
 ---
 
 # NVFLARE Auto-FL
@@ -120,7 +120,7 @@ audit evidence and report scores as incomparable. After human approval, repair t
 containing no Auto-FL artifacts. Never run `initialize` in the scored workspace; it resumes old evidence.
 - If the environment provides `PYTHON`, `VIRTUAL_ENV`, or a venv on `PATH`, treat that prepared runtime as authoritative:
 verify it, then use it for import, validation, execution, metric extraction, plotting, and reporting. Do not search for
-alternate interpreters or install dependencies unless the user explicitly asks you to prepare the environment.
+alternate interpreters unless the user explicitly asks you to prepare the environment; if that requires installation, load `../nvflare-shared/references/dependency-install.md` first.
 - Treat generated `autofl.yaml`, task-local `mutation_schema.yaml`, and
 existing NVFLARE job/runtime configuration as authoritative; the default simulation flow needs no prose profiles,
 branch setup, or harness initialization before invoking the runner.
