@@ -2,12 +2,12 @@
 name: nvflare-convert-pytorch
 description: "Convert existing PyTorch training code into an NVFLARE federated job using Client API model exchange, local validation, and job export; do not use for other frameworks, deployment, POC/production lifecycle, or experiment workflows."
 license: Apache-2.0
+version: "0.1.0"
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-  min_flare_version: "2.9.0"
-  blast_radius: runs_simulator
+  min-flare-version: "2.9.0"
+  blast-radius: runs_simulator
   category: Conversion
-  version: "0.1.0"
   tags: "nvflare, federated-learning, pytorch, conversion"
   languages: "python"
   frameworks: "pytorch, nvflare"
@@ -45,8 +45,10 @@ distribution; handle conversion later as a separate request.
 1. Load `../nvflare-shared/references/conversion-common.md` and apply it for the
    whole conversion; this SKILL.md states only the framework-specific deltas.
    Load `../nvflare-shared/references/conversion-workflow.md` only for a non-standard
-   case that needs its detailed rerun, data-location, authorization, or
-   missing-semantics guidance.
+   rerun, authorization, or missing-semantics case; it no longer holds the
+   data-location or partitioning contracts, whose invariants `conversion-common.md`
+   owns. Load `../nvflare-shared/references/site-data-and-paths.md` for generated
+   partitions, relative paths, or per-site data locations.
 2. Inspect before editing with `nvflare agent inspect source <path> --format json`
    plus direct reading. Fact extraction is static; do not import or execute
    user training modules to discover fields. Extract: training entrypoint,
@@ -79,8 +81,8 @@ distribution; handle conversion later as a separate request.
    send an `FLModel` with updated `params`, `metrics`, and the actual completed
    local optimizer-step count in `NUM_STEPS_CURRENT_ROUND`. Adapt the user's
    evaluation code into the packaged evaluation template; if evaluation is
-   required but missing, ask or fail closed. Partition site data per the "Site
-   Data Partitioning" rule in `../nvflare-shared/references/conversion-common.md`.
+   required but missing, ask or fail closed. Apply the step-1 data-location
+   rules to the generated client's data argument.
 6. Add or update `job.py` under the shared "Recipe Model Config" policy,
    requested `aggregator=` wiring, and the metric, tensor-transport, server
    offload, and execution settings derived from the shared PyTorch-family
@@ -142,6 +144,8 @@ their phase needs them. Load other detailed references only for exceptions:
 
 - `../nvflare-shared/references/conversion-workflow.md` for the full conversion
   contract when a case is non-standard;
+- `../nvflare-shared/references/site-data-and-paths.md` only for generated site
+  partitions, relative-path resolution, or per-site data locations;
 - `../nvflare-shared/references/pytorch-family-recipe-selection.md` only for
   ambiguous or non-FedAvg algorithms, and `references/recipe-selection.md` only
   for non-FedAvg or execution-mode construction details not supplied by

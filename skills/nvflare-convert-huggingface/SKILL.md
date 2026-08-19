@@ -2,12 +2,12 @@
 name: nvflare-convert-huggingface
 description: "Convert existing Hugging Face Transformers Trainer or TRL SFTTrainer training code into an NVFLARE federated job using flare.patch(trainer), local validation, and job export; do not use for manual PyTorch loops, Lightning, inference-only pipelines, deployment, or experiment workflows."
 license: Apache-2.0
+version: "0.1.0"
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-  min_flare_version: "2.9.0"
-  blast_radius: runs_simulator
+  min-flare-version: "2.9.0"
+  blast-radius: runs_simulator
   category: Conversion
-  version: "0.1.0"
   tags: "nvflare, federated-learning, huggingface, transformers, trl, peft, conversion"
   languages: "python"
   frameworks: "huggingface, transformers, trl, pytorch, nvflare"
@@ -48,8 +48,10 @@ user's purpose is to understand data distribution; handle conversion later as a 
 1. Load `../nvflare-shared/references/conversion-common.md` and apply it for the
    whole conversion; this SKILL.md states only the framework-specific deltas.
    Load `../nvflare-shared/references/conversion-workflow.md` only for a non-standard
-   case that needs its detailed rerun, data-location, authorization, or
-   missing-semantics guidance.
+   rerun, authorization, or missing-semantics case; it no longer holds the
+   data-location or partitioning contracts, whose invariants `conversion-common.md`
+   owns. Load `../nvflare-shared/references/site-data-and-paths.md` for generated
+   partitions, relative paths, or per-site data locations.
 2. Inspect before editing with `nvflare agent inspect source <path> --format json`
    plus direct source reading. Load `references/huggingface-detection.md` during
    this phase. If inspect recommends `nvflare-orient` for unresolved Trainer
@@ -77,10 +79,10 @@ user's purpose is to understand data distribution; handle conversion later as a 
 5. Convert with `references/huggingface-conversion.md` and adapt
    `assets/client_with_eval.py` rather than drafting a new round loop. Preserve
    model, tokenizer/processor, datasets, collator, Trainer arguments,
-   callbacks, and metrics. Partition site data per the "Site Data Partitioning"
-   rule in `../nvflare-shared/references/conversion-common.md`. Import the Client API as
-   `import nvflare.client.hf as flare`, so `flare.init()`, `flare.patch()`, and
-   `flare.is_running()` resolve to `nvflare.client.hf`. Keep
+   callbacks, and metrics. Apply the step-1 data-location rules to the client's
+   data argument. Import the Client API as `import nvflare.client.hf as flare`,
+   so `flare.init()`,
+   `flare.patch()`, and `flare.is_running()` resolve to `nvflare.client.hf`. Keep
    `flare.patch(trainer)` simple with inferred `params_scope="auto"` and encode
    one per-round budget in
    Trainer arguments: requested steps use `max_steps`, requested epochs use
@@ -184,6 +186,8 @@ state/DDP, broad workflow, dependency, or reporting references. The standard
 FedAvg path loads, in order:
 `../nvflare-shared/references/conversion-common.md`,
 `references/huggingface-detection.md`,
+`../nvflare-shared/references/site-data-and-paths.md` only when generated
+splits, relative-path resolution, or per-site data locations are involved,
 `../nvflare-shared/references/pytorch-family-recipe-construction.md`,
 `references/huggingface-conversion.md`,
 `../nvflare-shared/references/pytorch-model-exchange.md`,
