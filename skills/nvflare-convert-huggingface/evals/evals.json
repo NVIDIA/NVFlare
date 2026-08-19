@@ -56,7 +56,7 @@
         "The generated job imports FedAvgRecipe from nvflare.app_opt.pt.recipes.fedavg after recipe show confirms it.",
         "The agent treats recipe show as recipe metadata only, uses SimEnv with recipe.execute for local validation and standard export flags, and does not guess a separate export environment, private class-loader helper, internal command splitter, or another recipe-adjacent API.",
         "The agent establishes host-provided NVFLARE availability separately through nvflare agent inspect source, nvflare --version, or a public capability check before generic package inventory; it never includes nvflare in a batch of importlib.metadata lookups, handles missing non-product metadata as an inventory result rather than a failed command, and skips installation when all applicable requirements are already compatible.",
-        "When public checkpoint download is authorized if uncached, the agent uses one normal cache-aware load or download instead of an unguarded cache-only probe that fails on a normal miss.",
+        "The agent tells the maintained resolver whether each model identifier is a local path or Hub repository ID instead of inferring from slash syntax. When public checkpoint download is authorized if uncached, it uses one normal cache-aware load pinned to a full immutable commit SHA instead of an unguarded cache-only probe that fails on a normal miss.",
         "A generated or preserved HfArgumentParser is constructed with allow_abbrev=False. Intentional typo and abbreviation rejection checks run through assertion wrappers whose top-level commands succeed only when the generated parser rejects them; the wrapper accepts an expected unused-argument ValueError only when its diagnostic names the rejected argument.",
         "Standalone preflight may construct the Trainer but does not call flare.init(), flare.patch(), flare.is_running(), or patched Trainer methods without a launcher-created Client API context; the first bounded simulation validates runtime patch acceptance.",
         "The generated recipe model is an explicit class_path and args mapping, not a live model instance. Validation reconstructs the source and server models through the same importable factory path and arguments and compares keys, shapes, and dtypes. Before comparing values, it uses source or load-report evidence to distinguish checkpoint-loaded parameters from missing or newly initialized parameters, requires exact values or a stable state hash only for parameters proven deterministic, and does not create a failed top-level command by unconditionally comparing independently initialized keys.",
@@ -121,11 +121,11 @@
           },
           {
             "id": "cache-aware-authorized-model-resolution",
-            "description": "uses one normal cache-aware model load or download when an uncached public checkpoint download is authorized"
+            "description": "selects local path or Hub repository source explicitly and uses one normal cache-aware model load pinned to a full commit SHA when an uncached public checkpoint download is authorized"
           },
           {
             "id": "explicit-server-model-config",
-            "description": "uses the same importable factory path and arguments for source and server models, validates matching state-dict keys, shapes, and dtypes, requires exact values or a stable state hash for checkpoint-loaded or otherwise proven deterministic parameters, treats missing or newly initialized parameters as schema-only unless initialization state is explicitly reset, and ensures server-only model modules are exported"
+            "description": "uses explicit class_path plus complete args so source and server models have the same importable factory path and arguments, verifies the exported server config retains them, validates matching state-dict keys, shapes, and dtypes, requires exact values or a stable state hash for checkpoint-loaded or otherwise proven deterministic parameters, treats missing or newly initialized parameters as schema-only unless initialization state is explicitly reset, and ensures server-only model modules are exported"
           },
           {
             "id": "preserve-tensor-dtypes",
@@ -192,6 +192,14 @@
           {
             "id": "no-raising-cache-only-model-probe",
             "description": "does not run an unguarded local-files-only checkpoint lookup before an authorized cache-aware download"
+          },
+          {
+            "id": "no-ambiguous-model-source",
+            "description": "does not infer whether a missing slash-containing identifier is a local path or Hub repository ID"
+          },
+          {
+            "id": "no-unpinned-hub-download",
+            "description": "does not authorize a Hub download without a full immutable commit-SHA revision"
           },
           {
             "id": "no-unguarded-platform-specific-diagnostic",

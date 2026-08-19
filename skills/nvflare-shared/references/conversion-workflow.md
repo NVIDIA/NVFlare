@@ -265,10 +265,9 @@ the framework references show the concrete placement.
 
 ## Recipe Model Config
 
-When a recipe needs a model, use a model form accepted by the selected recipe.
-The two supported forms are explicit model config and a directly constructed
-model instance. Prefer explicit config when it makes a reusable or
-parameterized definition clearer:
+Apply the mandatory framework-neutral "Model Constructor Serialization" rule.
+Whenever identical reconstruction needs any constructor value, use explicit
+model config:
 
 ```python
 recipe = FedAvgRecipe(
@@ -280,16 +279,14 @@ recipe = FedAvgRecipe(
 )
 ```
 
-```python
-recipe = FedAvgRecipe(model=MyModel(num_classes=10), ...)
-```
-
-A direct instance is allowed only when the selected recipe accepts it and its
-construction is local, deterministic, and free of material side effects. Do
-not construct it through downloads, checkpoint loading, private or
-runtime-dependent data, external services, environment lookups, or unavailable
-runtime configuration. Prefer the `class_path` key over `path` for explicit
-config; `path` is the normalized job-config key.
+A direct instance is allowed only when the selected recipe accepts it,
+zero-argument construction with unchanged defaults reproduces the required
+architecture, and construction is local, deterministic, and free of material
+side effects. Never use a live instance to carry required or overridden
+constructor values. Do not construct it through downloads, checkpoint loading,
+private or runtime-dependent data, external services, environment lookups, or
+unavailable runtime configuration. Prefer the `class_path` key over `path` for
+explicit config; `path` is the normalized job-config key.
 
 Treat model constructor args as statically clear only when the class path is an
 importable class or direct local class definition and the constructor values

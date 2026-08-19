@@ -57,7 +57,7 @@ def test_huggingface_model_resolver_returns_existing_local_path(tmp_path):
     model_dir = tmp_path / "model"
     model_dir.mkdir()
 
-    result = module.resolve_model_snapshot(str(model_dir))
+    result = module.resolve_model_snapshot(str(model_dir), source="local")
 
     assert result == {
         "download_authorized": False,
@@ -65,6 +65,26 @@ def test_huggingface_model_resolver_returns_existing_local_path(tmp_path):
         "resolved_path": str(model_dir.resolve()),
         "source": "local",
         "status": "available",
+    }
+
+
+def test_huggingface_model_resolver_does_not_treat_missing_bare_local_path_as_hub(monkeypatch):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+
+    def unexpected_hub_load():
+        raise AssertionError("an explicit local path must not load huggingface_hub")
+
+    monkeypatch.setattr(module, "_load_huggingface_hub", unexpected_hub_load)
+
+    result = module.resolve_model_snapshot("models/checkpoint", source="local")
+
+    assert result == {
+        "download_authorized": False,
+        "identifier": "models/checkpoint",
+        "reason": "local_path_not_found",
+        "resolved_path": None,
+        "source": "local",
+        "status": "missing",
     }
 
 
@@ -81,15 +101,23 @@ def test_huggingface_model_resolver_reports_cache_miss_without_failing(monkeypat
 
     monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
 
-    assert module.main(["org/model"]) == 0
+    assert module.main(["--source", "hub", "org/model"]) == 0
     result = json.loads(capsys.readouterr().out)
 
-    assert calls == [{"local_files_only": True, "repo_id": "org/model"}]
+    assert calls == [
+        {
+            "cache_dir": None,
+            "local_files_only": True,
+            "repo_id": "org/model",
+            "revision": None,
+        }
+    ]
     assert result == {
         "download_authorized": False,
         "identifier": "org/model",
         "reason": "not_cached",
         "resolved_path": None,
+        "revision": None,
         "source": "hub_cache",
         "status": "missing",
     }
@@ -97,7 +125,8 @@ def test_huggingface_model_resolver_reports_cache_miss_without_failing(monkeypat
 
 def test_huggingface_model_resolver_downloads_once_only_when_authorized(monkeypatch, tmp_path):
     module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
-    snapshot_dir = tmp_path / "models--org--model" / "snapshots" / "abc123"
+    revision = "a" * 40
+    snapshot_dir = tmp_path / "models--org--model" / "snapshots" / revision
     snapshot_dir.mkdir(parents=True)
     calls = []
 
@@ -112,8 +141,9 @@ def test_huggingface_model_resolver_downloads_once_only_when_authorized(monkeypa
 
     result = module.resolve_model_snapshot(
         "org/model",
+        source="hub",
         allow_download=True,
-        revision="abc123",
+        revision=revision,
         cache_dir=str(tmp_path),
     )
 
@@ -122,16 +152,30 @@ def test_huggingface_model_resolver_downloads_once_only_when_authorized(monkeypa
             "cache_dir": str(tmp_path),
             "local_files_only": False,
             "repo_id": "org/model",
-            "revision": "abc123",
+            "revision": revision,
         }
     ]
     assert result == {
         "download_authorized": True,
         "identifier": "org/model",
         "resolved_path": str(snapshot_dir.resolve()),
+        "revision": revision,
         "source": "hub_download_or_cache",
         "status": "available",
     }
+
+
+@pytest.mark.parametrize("revision", [None, "main", "abc123", "g" * 40])
+def test_huggingface_model_resolver_requires_immutable_revision_for_download(monkeypatch, revision):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+
+    def unexpected_hub_load():
+        raise AssertionError("an invalid revision must fail before loading huggingface_hub")
+
+    monkeypatch.setattr(module, "_load_huggingface_hub", unexpected_hub_load)
+
+    with pytest.raises(ValueError, match="40-character commit SHA"):
+        module.resolve_model_snapshot("org/model", source="hub", allow_download=True, revision=revision)
 
 
 def test_huggingface_model_resolver_does_not_hide_authorized_download_failure(monkeypatch):
@@ -146,7 +190,7 @@ def test_huggingface_model_resolver_does_not_hide_authorized_download_failure(mo
     monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
 
     with pytest.raises(_CacheMiss, match="authorized resolution failed"):
-        module.resolve_model_snapshot("org/model", allow_download=True)
+        module.resolve_model_snapshot("org/model", source="hub", allow_download=True, revision="a" * 40)
 
 
 def test_non_fedavg_tensor_profile_omits_unsupported_disk_offload(tmp_path):

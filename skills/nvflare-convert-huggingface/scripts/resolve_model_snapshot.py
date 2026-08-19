@@ -19,8 +19,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
+
+_COMMIT_SHA_RE = re.compile(r"[0-9a-fA-F]{40}")
 
 
 def _load_huggingface_hub():
@@ -30,30 +33,32 @@ def _load_huggingface_hub():
     return snapshot_download, LocalEntryNotFoundError
 
 
-def _looks_like_local_path(identifier: str) -> bool:
-    return Path(identifier).is_absolute() or identifier.startswith(("./", "../", "~"))
-
-
 def resolve_model_snapshot(
     identifier: str,
     *,
+    source: str,
     allow_download: bool = False,
     revision: Optional[str] = None,
     cache_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Return structured resolution evidence; an expected cache miss is not an error."""
-    candidate = Path(identifier).expanduser()
-    if candidate.exists():
+    if source not in {"hub", "local"}:
+        raise ValueError("source must be 'local' or 'hub'")
+
+    if source == "local":
+        if allow_download or revision is not None or cache_dir is not None:
+            raise ValueError("Hub download, revision, and cache options cannot be used with source='local'")
+        candidate = Path(identifier).expanduser()
+        if candidate.exists():
+            return {
+                "download_authorized": False,
+                "identifier": identifier,
+                "resolved_path": str(candidate.resolve()),
+                "source": "local",
+                "status": "available",
+            }
         return {
-            "download_authorized": allow_download,
-            "identifier": identifier,
-            "resolved_path": str(candidate.resolve()),
-            "source": "local",
-            "status": "available",
-        }
-    if _looks_like_local_path(identifier):
-        return {
-            "download_authorized": allow_download,
+            "download_authorized": False,
             "identifier": identifier,
             "reason": "local_path_not_found",
             "resolved_path": None,
@@ -61,18 +66,17 @@ def resolve_model_snapshot(
             "status": "missing",
         }
 
-    snapshot_download, local_entry_not_found = _load_huggingface_hub()
-    kwargs: Dict[str, Any] = {
-        "local_files_only": not allow_download,
-        "repo_id": identifier,
-    }
-    if revision is not None:
-        kwargs["revision"] = revision
-    if cache_dir is not None:
-        kwargs["cache_dir"] = cache_dir
+    if allow_download and not _COMMIT_SHA_RE.fullmatch(revision or ""):
+        raise ValueError("authorized Hub downloads require a 40-character commit SHA revision")
 
+    snapshot_download, local_entry_not_found = _load_huggingface_hub()
     try:
-        resolved_path = snapshot_download(**kwargs)
+        resolved_path = snapshot_download(
+            repo_id=identifier,
+            revision=revision,
+            cache_dir=cache_dir,
+            local_files_only=not allow_download,
+        )
     except local_entry_not_found:
         if allow_download:
             raise
@@ -81,6 +85,7 @@ def resolve_model_snapshot(
             "identifier": identifier,
             "reason": "not_cached",
             "resolved_path": None,
+            "revision": revision,
             "source": "hub_cache",
             "status": "missing",
         }
@@ -89,6 +94,7 @@ def resolve_model_snapshot(
         "download_authorized": allow_download,
         "identifier": identifier,
         "resolved_path": str(Path(resolved_path).resolve()),
+        "revision": revision,
         "source": "hub_download_or_cache" if allow_download else "hub_cache",
         "status": "available",
     }
@@ -96,9 +102,10 @@ def resolve_model_snapshot(
 
 def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("identifier", help="Local model path or Hugging Face model repository ID")
+    parser.add_argument("identifier", help="Local model path or Hugging Face Hub repository ID")
+    parser.add_argument("--source", choices=("local", "hub"), required=True, help="Identifier source type")
     parser.add_argument("--allow-download", action="store_true", help="Permit one normal cache-aware Hub download")
-    parser.add_argument("--revision", help="Optional Hub revision")
+    parser.add_argument("--revision", help="Hub revision; a full commit SHA is required for downloads")
     parser.add_argument("--cache-dir", help="Optional Hugging Face cache directory")
     return parser.parse_args(argv)
 
@@ -107,6 +114,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parse_args(argv)
     result = resolve_model_snapshot(
         args.identifier,
+        source=args.source,
         allow_download=args.allow_download,
         revision=args.revision,
         cache_dir=args.cache_dir,

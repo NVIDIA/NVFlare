@@ -113,7 +113,7 @@
           },
           {
             "id": "explicit-model-config-with-args",
-            "description": "generates explicit recipe model config with class_path plus args instead of a live model instance, asking or failing closed when constructor args are not statically clear"
+            "description": "generates explicit recipe model config with class_path plus complete args instead of using a live model instance to carry constructor values, verifies the exported server config retains them, and asks or fails closed when they are not statically clear"
           },
           {
             "id": "use-client-api-for-training-exchange",

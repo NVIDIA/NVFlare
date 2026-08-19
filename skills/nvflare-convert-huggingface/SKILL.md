@@ -95,10 +95,11 @@ user's purpose is to understand data distribution; handle conversion later as a 
    packaged project-local modules in the same writable source directory. Never
    use `..` in `train_script`, `add_server_file()`, or `add_client_file()`; use
    an existing resolved absolute path when co-location is impossible. Keep the
-   server and Trainer model factory and exchange keyspace identical. Follow the
-   shared "Recipe Model Config" policy; a direct instance must not use
-   `from_pretrained()`, downloads, or checkpoint loading during job
-   construction. Apply only options confirmed by the construction reference.
+   server and Trainer model factory and exchange keyspace identical. Use explicit
+   `class_path`/`args` for required or overridden constructor values; a direct
+   zero-argument instance must not use `from_pretrained()`, downloads, or
+   checkpoint loading during job construction. Apply only options confirmed by
+   the construction reference.
    Preserve the job asset's recipe-before-parser
    ordering, `ArgumentParser(allow_abbrev=False)`, and strict `parse_args()`; do
    not use `parse_known_args()`.
@@ -171,8 +172,9 @@ user's purpose is to understand data distribution; handle conversion later as a 
 - Must initialize `torch.distributed` before patching when rank environment
   variables declare multiple ranks. All ranks must call patched Trainer methods
   in identical order.
-- Must use the maintained HF validation resolver. Must not copy it into
-  generated job code, set `trust_remote_code=True`, download model/data
+- Must use the maintained HF validation resolver with an explicit local/Hub
+  source and a full commit-SHA revision for authorized downloads. Must not copy
+  it into generated job code, set `trust_remote_code=True`, download model/data
   artifacts unless requested, or recover from a cache-only miss by going
   online. Cache misses, remote identifiers, and validation requests do not
   authorize online retries. This narrows

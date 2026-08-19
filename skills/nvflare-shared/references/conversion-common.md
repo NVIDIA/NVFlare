@@ -52,6 +52,21 @@ write ``with SimEnv(...):``. Instantiate it, then pass it to the recipe:
 ``recipe.execute(env=env)``). Do not infer cleanup or lifecycle APIs that the
 public Recipe surface does not provide.
 
+## Model Constructor Serialization
+
+For every framework, use explicit `class_path` (or `path`) plus complete `args`
+whenever identical server/client reconstruction depends on any constructor
+value, including a required parameter or an overridden default. Never use a
+live model instance to carry those values: job serialization may retain its
+class while dropping its constructor arguments. A direct instance is allowed
+only when the selected recipe accepts it and zero-argument construction with
+unchanged defaults reproduces the required architecture.
+
+Before the full run, materialize or export the generated server configuration
+without running a second validation target. Verify that its model component
+retains the audited class path and every constructor argument; constructing the
+recipe object alone is insufficient evidence.
+
 ## Site Data Partitioning
 
 Train each site on its local partition for multi-site single-node-source

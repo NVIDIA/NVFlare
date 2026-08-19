@@ -88,8 +88,8 @@ For generated Pandas partition code, follow
 
 Follow the shared model-config and construction-consistency rule in
 `../../nvflare-shared/references/conversion-workflow.md` ("Recipe Model Config"):
-same class and constructor args on server and client, an allowed recipe model
-form, and derive-or-ask/fail-closed for required values.
+same class and constructor args on server and client, explicit config whenever
+reconstruction needs a constructor value, and derive-or-ask/fail-closed for it.
 
 PyTorch-specific delta: the client loads `input_model.params` into the model
 with `load_state_dict`, so the server-initial model and the client model must

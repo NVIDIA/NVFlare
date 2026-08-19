@@ -104,7 +104,7 @@
           },
           {
             "id": "explicit-model-config-with-args",
-            "description": "generates explicit recipe model config with class_path plus args instead of a live LightningModule instance, asking or failing closed when constructor args are not statically clear"
+            "description": "generates explicit recipe model config with class_path plus complete args instead of using a live LightningModule to carry constructor values, verifies the exported server config retains them, and asks or fails closed when they are not statically clear"
           },
           {
             "id": "tensor-offload-decomposer-profile",
@@ -531,7 +531,7 @@
           },
           {
             "id": "explicit-model-config-with-args",
-            "description": "uses explicit recipe model config with class_path plus args for required constructor arguments"
+            "description": "uses explicit recipe model config with class_path plus complete args for required constructor values and verifies the exported server config retains them"
           },
           {
             "id": "use-lightning-patched-trainer",

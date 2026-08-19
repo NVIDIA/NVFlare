@@ -42,15 +42,20 @@ reaches the applicable phase, and stop at the first failure.
 ## Hugging Face Artifacts And Compatibility
 
 - Before constructing a model or tokenizer/processor, run the maintained
-  `../scripts/resolve_model_snapshot.py` for its configured local path or Hub
-  identifier. Its cache-only default catches `LocalEntryNotFoundError`, emits a
-  structured `missing` result, and exits zero; report that result as a blocker.
+  `../scripts/resolve_model_snapshot.py` with `--source local` for a configured
+  path or `--source hub` for a Hub repository ID. Never infer the source type
+  from slash syntax: `models/checkpoint` and `org/model` are intentionally
+  distinguished by that required option. The cache-only Hub path catches
+  `LocalEntryNotFoundError`, emits a structured `missing` result, and exits zero;
+  report that result as a blocker.
 - Only when the user authorizes downloading a public checkpoint if uncached,
-  rerun the resolver once with `--allow-download`. Use its immutable
-  `resolved_path` for the server and every client. Do not run a preceding
-  `snapshot_download(..., local_files_only=True)` probe, copy resolver logic
-  into generated `job.py`, or download without authorization. Resolve datasets
-  through their source-prescribed local path or cache with the same policy.
+  rerun the Hub resolver once with `--allow-download --revision <commit-sha>`,
+  where the revision is the full immutable 40-character commit SHA. Use its
+  immutable `resolved_path` for the server and every client. Do not run a
+  preceding `snapshot_download(..., local_files_only=True)` probe, copy resolver
+  logic into generated `job.py`, or download without authorization. Resolve
+  datasets through their source-prescribed local path or cache with the same
+  policy.
 - Never recover from an offline/cache-only miss by removing
   `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`, dropping `local_files_only=True`, or
   rerunning online unless the user explicitly requested the download. Do not

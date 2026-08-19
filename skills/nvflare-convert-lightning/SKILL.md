@@ -101,10 +101,10 @@ distribution; handle conversion later as a separate request.
    "cyclic"`: Cyclic persists only its final sequential model; every other
    algorithm uses explicit validation for server metrics and, for training,
    best-model selection. Verify the key in server evidence or fail closed.
-7. Add or update `job.py` under the shared "Recipe Model Config" policy. A
-   direct instance, when allowed by that policy, must be the complete
-   `LightningModule`, not its inner network. Add the requested `aggregator=`
-   wiring and the metric, tensor-transport, server
+7. Add or update `job.py` under the shared constructor-serialization rule. Use
+   explicit `class_path`/`args` whenever reconstruction needs constructor values;
+   a permitted zero-argument instance is the complete `LightningModule`. Add
+   requested `aggregator=` wiring and the metric, tensor-transport, server
    offload, and execution settings derived from the shared PyTorch-family
    construction profile. If sites need distinct `train_args`, make every site
    override the complete argument string; never split shared arguments and a
@@ -152,11 +152,11 @@ distribution; handle conversion later as a separate request.
 - Must audit model constructor arguments before writing `job.py` by reading the
   `LightningModule.__init__` signature and the selected recipe's `model`
   parameter from `nvflare recipe show <recipe-name> --format json`, not by
-  reading NVFLARE library source. The shared "Recipe Model Config" policy
-  governs whether to emit `class_path`/`args` config or a direct
-  `LightningModule`; required values must be statically clear from literal
-  source, configuration, or supplied metadata. Otherwise ask one semantic
-  question when an answer channel exists or fail closed on that missing value.
+  reading NVFLARE library source. Emit explicit `class_path`/`args` for every
+  required or overridden constructor value; a direct `LightningModule` is
+  allowed only when unchanged zero-argument defaults reconstruct it. Values
+  must be clear from source, configuration, or supplied metadata. Otherwise ask
+  one semantic question when an answer channel exists or fail closed.
 - Must use the PyTorch recipe family; must not invent a Lightning-only recipe.
 - Must apply
   `../nvflare-shared/references/pytorch-family-recipe-construction.md` after

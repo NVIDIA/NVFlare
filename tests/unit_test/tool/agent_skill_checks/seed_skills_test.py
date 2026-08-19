@@ -712,6 +712,46 @@ def test_shared_conversion_policies_have_single_canonical_owners():
     assert "## Source Trust Boundary" not in workflow_text
 
 
+def test_all_conversion_skills_preserve_required_model_constructor_args():
+    repo_root = Path(__file__).resolve().parents[4]
+    references = repo_root / "skills" / "nvflare-shared" / "references"
+    common_text = " ".join(references.joinpath("conversion-common.md").read_text(encoding="utf-8").split())
+    workflow_text = " ".join(references.joinpath("conversion-workflow.md").read_text(encoding="utf-8").split())
+    validation_text = " ".join(references.joinpath("validation-evidence.md").read_text(encoding="utf-8").split())
+
+    assert "## Model Constructor Serialization" in references.joinpath("conversion-common.md").read_text(
+        encoding="utf-8"
+    )
+    assert "including a required parameter or an overridden default" in common_text
+    assert "Never use a live model instance to carry those values" in common_text
+    assert "zero-argument construction with unchanged defaults" in common_text
+    assert "retains the audited class path and every constructor argument" in common_text
+    assert "Never use a live instance to carry required or overridden constructor values" in workflow_text
+    assert "model=MyModel(num_classes=10)" not in workflow_text
+    assert "recipe construction alone does not prove serialization" in validation_text
+
+    converter_expectations = {
+        "nvflare-convert-pytorch": "a direct `torch.nn.Module` is allowed only when unchanged zero-argument defaults",
+        "nvflare-convert-lightning": "a direct `LightningModule` is allowed only when unchanged zero-argument defaults",
+        "nvflare-convert-huggingface": "Use explicit `class_path`/`args` for required or overridden constructor values",
+    }
+    for converter, expectation in converter_expectations.items():
+        skill_text = " ".join(repo_root.joinpath(f"skills/{converter}/SKILL.md").read_text(encoding="utf-8").split())
+        assert expectation in skill_text
+
+    eval_expectations = {
+        "nvflare-convert-pytorch": ("pytorch-convert-basic", "explicit-model-config-with-args"),
+        "nvflare-convert-lightning": ("lightning-convert-basic", "explicit-model-config-with-args"),
+        "nvflare-convert-huggingface": ("huggingface-convert-basic", "explicit-server-model-config"),
+    }
+    for converter, (eval_id, behavior_id) in eval_expectations.items():
+        eval_data = json.loads(repo_root.joinpath(f"skills/{converter}/evals/evals.json").read_text(encoding="utf-8"))
+        mandatory = {
+            item["id"]: item["description"] for item in _eval_by_id(eval_data, eval_id)["nvflare"]["mandatory_behavior"]
+        }
+        assert "exported server config retains" in mandatory[behavior_id]
+
+
 def test_skills_readme_frontmatter_example_includes_required_author():
     readme = (Path(__file__).resolve().parents[4] / "skills" / "README.md").read_text(encoding="utf-8")
     normalized = " ".join(readme.split())
@@ -771,8 +811,11 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
     assert "make the inventory command exit zero" in " ".join(dependency_text.split())
     assert "optional capability or host-diagnostic utility as evidence" in " ".join(validation_text.split())
     assert "Do not append platform-specific utilities" in " ".join(validation_text.split())
-    assert "rerun the resolver once with `--allow-download`" in normalized_hf_validation
+    assert "rerun the Hub resolver once with `--allow-download --revision <commit-sha>`" in normalized_hf_validation
     assert "`../scripts/resolve_model_snapshot.py`" in hf_validation
+    assert "`--source local`" in hf_validation
+    assert "`--source hub`" in hf_validation
+    assert "full immutable 40-character commit SHA" in normalized_hf_validation
     assert "emits a structured `missing` result" in normalized_hf_validation
     assert "copy resolver logic into generated `job.py`" in normalized_hf_validation
     assert "snapshot_download" not in hf_job_asset
@@ -786,6 +829,8 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
     assert {"cache-aware-authorized-model-resolution", "numeric-primary-metric-reporting"} <= mandatory_ids
     assert {
         "no-raising-cache-only-model-probe",
+        "no-ambiguous-model-source",
+        "no-unpinned-hub-download",
         "no-unguarded-platform-specific-diagnostic",
         "no-unconditional-equality-for-newly-initialized-parameters",
         "no-orient-for-single-owner-conversion",

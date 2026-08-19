@@ -228,8 +228,8 @@ remain shared only when that matches the source's validation/test semantics.
 
 Follow the shared model-config and construction-consistency rule in
 `../../nvflare-shared/references/conversion-workflow.md` ("Recipe Model Config"):
-same class and constructor args on server and client, an allowed recipe model
-form, and derive-or-ask/fail-closed for required values.
+same class and constructor args on server and client, explicit config whenever
+reconstruction needs a constructor value, and derive-or-ask/fail-closed for it.
 
 Lightning-specific delta: the exchanged unit is the whole `LightningModule`
 managed by the patched trainer, so construct the identical `LightningModule` on
