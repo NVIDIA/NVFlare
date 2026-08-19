@@ -735,9 +735,39 @@ class ByteStreamer:
     def __init__(self, cell: CoreCell):
         self.cell = cell
         self.error_callbacks = []
+        self.cell.add_error_handler(STREAM_CHANNEL, STREAM_DATA_TOPIC, self._forward_error_handler)
         self.cell.register_request_cb(channel=STREAM_CHANNEL, topic=STREAM_ACK_TOPIC, cb=self._ack_handler)
         self.cell.register_request_cb(channel=STREAM_CHANNEL, topic=STREAM_ERROR_TOPIC, cb=self._error_handler)
         self.chunk_size = CommConfigurator().get_streaming_chunk_size(STREAM_CHUNK_SIZE)
+
+    def _forward_error_handler(self, message: Message, error: str):
+        """Report a downstream routing failure to the original stream sender."""
+        sender = message.get_header(MessageHeaderKey.ORIGIN)
+        receiver = message.get_header(MessageHeaderKey.DESTINATION)
+        if not sender or not receiver:
+            return
+
+        error_class = StreamTargetUnreachable if error == ReturnCode.TARGET_UNREACHABLE else StreamError
+        headers = {
+            StreamHeaderKey.STREAM_ID: message.get_header(StreamHeaderKey.STREAM_ID),
+            StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
+            StreamHeaderKey.ERROR_MSG: f"stream forwarding to {receiver} failed: {error}",
+            StreamHeaderKey.ERROR_TYPE: error_class.__name__,
+            StreamHeaderKey.ERROR_RECEIVER: receiver,
+            StreamHeaderKey.CHANNEL: message.get_header(StreamHeaderKey.CHANNEL),
+            StreamHeaderKey.TOPIC: message.get_header(StreamHeaderKey.TOPIC),
+        }
+        req_id = message.get_header(StreamHeaderKey.STREAM_REQ_ID)
+        if req_id:
+            headers[StreamHeaderKey.STREAM_REQ_ID] = req_id
+
+        errors = self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ERROR_TOPIC, sender, Message(headers), optional=True)
+        send_error = (errors or {}).get(sender)
+        if send_error:
+            log.debug(
+                f"failed to report stream routing error: stream_id={headers[StreamHeaderKey.STREAM_ID]} "
+                f"sender={sender} receiver={receiver}: {send_error}"
+            )
 
     def register_error_callback(self, callback: Callable):
         if not callable(callback):
@@ -774,8 +804,14 @@ class ByteStreamer:
 
     @staticmethod
     def _matches_error_context(message: Message, context: _TxTaskContext) -> bool:
+        origin = message.get_header(MessageHeaderKey.ORIGIN)
+        receiver = message.get_header(StreamHeaderKey.ERROR_RECEIVER, origin)
         return (
-            message.get_header(MessageHeaderKey.ORIGIN) == context.target
+            receiver == context.target
+            and (
+                origin == context.target
+                or message.get_header(StreamHeaderKey.ERROR_TYPE) == StreamTargetUnreachable.__name__
+            )
             and message.get_header(StreamHeaderKey.CHANNEL) == context.channel
             and message.get_header(StreamHeaderKey.TOPIC) == context.topic
             and message.get_header(StreamHeaderKey.STREAM_REQ_ID) == context.req_id
@@ -853,8 +889,13 @@ class ByteStreamer:
         topic = message.get_header(StreamHeaderKey.TOPIC)
         error = message.get_header(StreamHeaderKey.ERROR_MSG, "stream rejected by receiver")
         error_type = message.get_header(StreamHeaderKey.ERROR_TYPE)
-        error_class = BlobSizeError if error_type == BlobSizeError.__name__ else StreamError
+        error_classes = {
+            BlobSizeError.__name__: BlobSizeError,
+            StreamTargetUnreachable.__name__: StreamTargetUnreachable,
+        }
+        error_class = error_classes.get(error_type, StreamError)
         sender = self.cell.my_info.fqcn
+        receiver = message.get_header(StreamHeaderKey.ERROR_RECEIVER, origin)
 
         with ByteStreamer.map_lock:
             tx_task = ByteStreamer.tx_task_map.get(sid)
@@ -869,13 +910,13 @@ class ByteStreamer:
             if not context or not self._matches_error_context(message, context):
                 log.warning(
                     f"Ignored uncorrelated stream error: stream_id={sid} channel={channel} topic={topic} "
-                    f"sender={sender} receiver={origin}: {error}"
+                    f"sender={sender} receiver={receiver}: {error}"
                 )
                 return
 
             log.warning(
                 f"Late stream error: stream_id={sid} channel={channel} topic={topic} "
-                f"sender={sender} receiver={origin}: {error}"
+                f"sender={sender} receiver={receiver}: {error}"
             )
             self._notify_error_callbacks(message)
             return
@@ -891,7 +932,7 @@ class ByteStreamer:
         if not self._matches_error_context(message, active_context):
             log.warning(
                 f"Ignored stream error with unexpected context: stream_id={sid} channel={channel} topic={topic} "
-                f"sender={sender} expected_receiver={tx_task.target} receiver={origin}"
+                f"sender={sender} expected_receiver={tx_task.target} receiver={receiver}"
             )
             return
 
@@ -899,7 +940,7 @@ class ByteStreamer:
         tx_task.stop(
             error_class(
                 f"Stream rejected: stream_id={sid} channel={tx_task.channel} topic={tx_task.topic} "
-                f"sender={sender} receiver={origin}: {error}"
+                f"sender={sender} receiver={receiver}: {error}"
             ),
             notify=False,
         )
