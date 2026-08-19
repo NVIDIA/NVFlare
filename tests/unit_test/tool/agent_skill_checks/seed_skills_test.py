@@ -758,6 +758,7 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
     hf_root = repo_root / "skills" / "nvflare-convert-huggingface"
     hf_skill = hf_root.joinpath("SKILL.md").read_text(encoding="utf-8")
     hf_validation = hf_root.joinpath("references/huggingface-validation.md").read_text(encoding="utf-8")
+    hf_job_asset = hf_root.joinpath("assets/job.py").read_text(encoding="utf-8")
     eval_data = json.loads(
         (repo_root / "skills" / "nvflare-convert-huggingface" / "evals" / "evals.json").read_text(encoding="utf-8")
     )
@@ -770,8 +771,11 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
     assert "make the inventory command exit zero" in " ".join(dependency_text.split())
     assert "optional capability or host-diagnostic utility as evidence" in " ".join(validation_text.split())
     assert "Do not append platform-specific utilities" in " ".join(validation_text.split())
-    assert "invoke the selected library's normal cache-aware load or download once" in " ".join(hf_validation.split())
-    assert "`snapshot_download(..., local_files_only=True)`" in hf_validation
+    assert "rerun the resolver once with `--allow-download`" in normalized_hf_validation
+    assert "`../scripts/resolve_model_snapshot.py`" in hf_validation
+    assert "emits a structured `missing` result" in normalized_hf_validation
+    assert "copy resolver logic into generated `job.py`" in normalized_hf_validation
+    assert "snapshot_download" not in hf_job_asset
     assert "classify checkpoint-loaded versus missing or newly initialized parameters" in normalized_hf_validation
     assert "proves value determinism only for parameters actually loaded from it" in normalized_hf_validation
     assert "do not require their independently initialized values to match" in normalized_hf_validation
@@ -784,7 +788,26 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
         "no-raising-cache-only-model-probe",
         "no-unguarded-platform-specific-diagnostic",
         "no-unconditional-equality-for-newly-initialized-parameters",
+        "no-orient-for-single-owner-conversion",
     } <= prohibited_ids
+
+
+def test_orientation_routes_only_unresolved_explicit_conversions():
+    repo_root = Path(__file__).resolve().parents[4]
+    orient_text = repo_root.joinpath("skills/nvflare-orient/SKILL.md").read_text(encoding="utf-8")
+    normalized_orient = " ".join(orient_text.split())
+    hf_eval_data = json.loads(
+        (repo_root / "skills" / "nvflare-convert-huggingface" / "evals" / "evals.json").read_text(encoding="utf-8")
+    )
+    generic_conversion = _eval_by_id(hf_eval_data, "huggingface-convert-basic")
+
+    assert "Do not use orientation merely because an explicit conversion omits its framework" in normalized_orient
+    assert "preliminary inspection identifies one training owner" in normalized_orient
+    assert "ownership conflict or unresolved Trainer factory" in normalized_orient
+    assert "Hugging Face" not in generic_conversion["prompt"]
+    assert generic_conversion["nvflare"]["expected_skill"] == "nvflare-convert-huggingface"
+    prohibited_ids = {item["id"] for item in generic_conversion["nvflare"]["prohibited_behavior"]}
+    assert "no-orient-for-single-owner-conversion" in prohibited_ids
 
 
 def test_huggingface_train_only_model_selection_contract_is_explicit():

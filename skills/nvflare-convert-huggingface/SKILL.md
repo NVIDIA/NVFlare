@@ -171,10 +171,11 @@ user's purpose is to understand data distribution; handle conversion later as a 
 - Must initialize `torch.distributed` before patching when rank environment
   variables declare multiple ranks. All ranks must call patched Trainer methods
   in identical order.
-- Must not set `trust_remote_code=True`, download model/data artifacts unless
-  requested, or recover from an offline/cache-only miss by going online. Cache
-  misses, offline errors, remote identifiers, and validation requests do not
-  authorize online retries. This narrows the authorization rules in
+- Must use the maintained HF validation resolver. Must not copy it into
+  generated job code, set `trust_remote_code=True`, download model/data
+  artifacts unless requested, or recover from a cache-only miss by going
+  online. Cache misses, remote identifiers, and validation requests do not
+  authorize online retries. This narrows
   `../nvflare-shared/references/conversion-common.md`.
 - Site partitioning, custom aggregation, the Source Of Truth Boundary, and user
   input/authorization follow `../nvflare-shared/references/conversion-common.md`.

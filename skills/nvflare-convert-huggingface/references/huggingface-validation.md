@@ -41,28 +41,24 @@ reaches the applicable phase, and stop at the first failure.
 
 ## Hugging Face Artifacts And Compatibility
 
-- Before constructing a model, tokenizer/processor, or dataset, resolve its
-  configured identifier to an existing local path or verify that every required
-  file is present in the intended cache. Without download authorization, probe
-  remote-style identifiers with `local_files_only=True` or the existing offline
-  environment. An error that mentions `https://huggingface.co` during an offline
-  probe can mean only that the local cache entry is missing; it is not evidence
-  of a network request.
-- When the user authorizes downloading a public checkpoint if it is not cached,
-  invoke the selected library's normal cache-aware load or download once. Do
-  not first run an unguarded
-  `snapshot_download(..., local_files_only=True)` probe: a normal cache miss
-  raises and creates false recovery evidence. When validation must remain
-  cache-only, catch `LocalEntryNotFoundError` inside an exit-zero wrapper,
-  report the miss as a blocker, and do not download without authorization.
+- Before constructing a model or tokenizer/processor, run the maintained
+  `../scripts/resolve_model_snapshot.py` for its configured local path or Hub
+  identifier. Its cache-only default catches `LocalEntryNotFoundError`, emits a
+  structured `missing` result, and exits zero; report that result as a blocker.
+- Only when the user authorizes downloading a public checkpoint if uncached,
+  rerun the resolver once with `--allow-download`. Use its immutable
+  `resolved_path` for the server and every client. Do not run a preceding
+  `snapshot_download(..., local_files_only=True)` probe, copy resolver logic
+  into generated `job.py`, or download without authorization. Resolve datasets
+  through their source-prescribed local path or cache with the same policy.
 - Never recover from an offline/cache-only miss by removing
   `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`, dropping `local_files_only=True`, or
   rerunning online unless the user explicitly requested the download. Do not
   substitute another local checkpoint. Keep the job as a draft and report
   full-model validation blocked when the required artifact is unavailable.
-- Pass the same resolved local model path and cache configuration to the server
-  model and every client. Do not validate with a cached Hub identifier and
-  export a job that depends on an unverified online lookup.
+- Pass the same resolved local model path and cache configuration from the
+  resolver to the server model and every client. Do not validate with a cached
+  Hub identifier and export a job that depends on an unverified online lookup.
 - Do not call `flare.init()`, `flare.patch()`, `flare.is_running()`, or patched
   Trainer methods in a standalone preflight; they require the Client API context
   created by the recipe or simulator launcher. Construct the Trainer without

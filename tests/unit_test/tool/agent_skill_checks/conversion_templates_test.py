@@ -36,6 +36,7 @@ SKILLS_ROOT = REPO_ROOT / "skills"
 PT_TEMPLATES = SKILLS_ROOT / "nvflare-convert-pytorch" / "assets"
 LIGHTNING_TEMPLATES = SKILLS_ROOT / "nvflare-convert-lightning" / "assets"
 HF_TEMPLATES = SKILLS_ROOT / "nvflare-convert-huggingface" / "assets"
+HF_SCRIPTS = SKILLS_ROOT / "nvflare-convert-huggingface" / "scripts"
 SHARED_TEMPLATES = SKILLS_ROOT / "nvflare-shared" / "assets"
 
 
@@ -49,6 +50,103 @@ def _load_module(path: Path):
 class _FloatOverflow:
     def __float__(self):
         raise OverflowError("step count too large")
+
+
+def test_huggingface_model_resolver_returns_existing_local_path(tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+
+    result = module.resolve_model_snapshot(str(model_dir))
+
+    assert result == {
+        "download_authorized": False,
+        "identifier": str(model_dir),
+        "resolved_path": str(model_dir.resolve()),
+        "source": "local",
+        "status": "available",
+    }
+
+
+def test_huggingface_model_resolver_reports_cache_miss_without_failing(monkeypatch, capsys):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    calls = []
+
+    class _CacheMiss(Exception):
+        pass
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        raise _CacheMiss("not cached")
+
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    assert module.main(["org/model"]) == 0
+    result = json.loads(capsys.readouterr().out)
+
+    assert calls == [{"local_files_only": True, "repo_id": "org/model"}]
+    assert result == {
+        "download_authorized": False,
+        "identifier": "org/model",
+        "reason": "not_cached",
+        "resolved_path": None,
+        "source": "hub_cache",
+        "status": "missing",
+    }
+
+
+def test_huggingface_model_resolver_downloads_once_only_when_authorized(monkeypatch, tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    snapshot_dir = tmp_path / "models--org--model" / "snapshots" / "abc123"
+    snapshot_dir.mkdir(parents=True)
+    calls = []
+
+    class _CacheMiss(Exception):
+        pass
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        return str(snapshot_dir)
+
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    result = module.resolve_model_snapshot(
+        "org/model",
+        allow_download=True,
+        revision="abc123",
+        cache_dir=str(tmp_path),
+    )
+
+    assert calls == [
+        {
+            "cache_dir": str(tmp_path),
+            "local_files_only": False,
+            "repo_id": "org/model",
+            "revision": "abc123",
+        }
+    ]
+    assert result == {
+        "download_authorized": True,
+        "identifier": "org/model",
+        "resolved_path": str(snapshot_dir.resolve()),
+        "source": "hub_download_or_cache",
+        "status": "available",
+    }
+
+
+def test_huggingface_model_resolver_does_not_hide_authorized_download_failure(monkeypatch):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+
+    class _CacheMiss(Exception):
+        pass
+
+    def snapshot_download(**_kwargs):
+        raise _CacheMiss("authorized resolution failed")
+
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    with pytest.raises(_CacheMiss, match="authorized resolution failed"):
+        module.resolve_model_snapshot("org/model", allow_download=True)
 
 
 def test_non_fedavg_tensor_profile_omits_unsupported_disk_offload(tmp_path):

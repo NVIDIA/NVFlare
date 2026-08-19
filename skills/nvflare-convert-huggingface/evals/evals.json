@@ -35,7 +35,7 @@
     },
     {
       "id": "huggingface-convert-basic",
-      "prompt": "Convert this Hugging Face Trainer sequence-classification script into an NVFLARE FedAvg job for 2 simulated sites and 2 rounds. Preserve evaluation accuracy and run a bounded local validation.",
+      "prompt": "Convert the training code in the current directory into an NVFLARE FedAvg job for 2 simulated sites and 2 rounds. Preserve evaluation accuracy and run a bounded local validation.",
       "expected_output": "A standard client.py/model.py/job.py conversion that statically inspects the source, uses the PyTorch FedAvg recipe, preserves the Trainer/model/datasets/compute_metrics setup, applies nvflare.client.hf.patch(trainer) once, evaluates the received global model before local training, uses site-local training partitions, preserves PyTorch tensor exchange, validates locally, preserves existing non-generated source, and reports exact artifact paths.",
       "files": [
         "files/trainer-basic/train.py",
@@ -43,6 +43,7 @@
       ],
       "assertions": [
         "The agent runs nvflare agent inspect source on the target before editing and confirms active Hugging Face Trainer ownership.",
+        "The agent routes directly to nvflare-convert-huggingface after preliminary inspection finds one Hugging Face Trainer owner; it does not load nvflare-orient merely because the prompt omitted the framework.",
         "The agent preserves existing non-generated source unless the user explicitly requested a specific overwrite.",
         "The generated client uses nvflare.client.hf and exactly one flare.patch(trainer) call.",
         "The agent completes inspect, dependency handling, recipe show and capability construction, conversion, job construction, and validation in order without preloading advanced or validation references.",
@@ -207,6 +208,10 @@
           {
             "id": "no-unconditional-equality-for-newly-initialized-parameters",
             "description": "does not run a failing full-state equality assertion across independently constructed models when load evidence reports missing or newly initialized parameters; it retains schema checks and exact comparison for parameters proven deterministic"
+          },
+          {
+            "id": "no-orient-for-single-owner-conversion",
+            "description": "does not route an explicit conversion through nvflare-orient merely because its prompt omits the framework when inspection finds one Hugging Face Trainer owner"
           }
         ],
         "process_metrics": [
