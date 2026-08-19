@@ -267,7 +267,54 @@ def test_huggingface_model_resolver_downloads_once_only_when_authorized(monkeypa
     }
 
 
-@pytest.mark.parametrize("revision", [None, "main", "abc123", "g" * 40])
+def test_huggingface_model_resolver_resolves_revision_for_authorized_download(monkeypatch, tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    revision = "b" * 40
+    snapshot_dir = tmp_path / "models--org--model" / "snapshots" / revision
+    snapshot_dir.mkdir(parents=True)
+    calls = []
+
+    class _CacheMiss(Exception):
+        pass
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        return str(snapshot_dir)
+
+    monkeypatch.setattr(module, "_resolve_hub_revision", lambda identifier: revision)
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    result = module.resolve_model_snapshot("org/model", source="hub", allow_download=True)
+
+    assert calls == [
+        {
+            "cache_dir": None,
+            "local_files_only": False,
+            "repo_id": "org/model",
+            "revision": revision,
+        }
+    ]
+    assert result["revision"] == revision
+    assert result["resolved_path"] == str(snapshot_dir.resolve())
+
+
+def test_huggingface_model_resolver_uses_public_api_for_revision_lookup(monkeypatch):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    revision = "c" * 40
+    hub_module = types.ModuleType("huggingface_hub")
+
+    class _HfApi:
+        def model_info(self, *, repo_id):
+            assert repo_id == "org/model"
+            return types.SimpleNamespace(sha=revision)
+
+    hub_module.HfApi = _HfApi
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub_module)
+
+    assert module._resolve_hub_revision("org/model") == revision
+
+
+@pytest.mark.parametrize("revision", ["main", "abc123", "g" * 40])
 def test_huggingface_model_resolver_requires_immutable_revision_for_download(monkeypatch, revision):
     module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
 

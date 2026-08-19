@@ -33,6 +33,15 @@ def _load_huggingface_hub():
     return snapshot_download, LocalEntryNotFoundError
 
 
+def _resolve_hub_revision(identifier: str) -> str:
+    from huggingface_hub import HfApi
+
+    revision = HfApi().model_info(repo_id=identifier).sha
+    if not _COMMIT_SHA_RE.fullmatch(revision or ""):
+        raise ValueError("Hub revision lookup did not return a 40-character commit SHA")
+    return revision
+
+
 def resolve_model_snapshot(
     identifier: str,
     *,
@@ -79,8 +88,11 @@ def resolve_model_snapshot(
 
     if source_root is not None:
         raise ValueError("source_root can only be used with source='local'")
-    if allow_download and not _COMMIT_SHA_RE.fullmatch(revision or ""):
-        raise ValueError("authorized Hub downloads require a 40-character commit SHA revision")
+    if allow_download:
+        if revision is None:
+            revision = _resolve_hub_revision(identifier)
+        elif not _COMMIT_SHA_RE.fullmatch(revision):
+            raise ValueError("authorized Hub downloads require a 40-character commit SHA revision")
 
     snapshot_download, local_entry_not_found = _load_huggingface_hub()
     try:
@@ -122,7 +134,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Absolute original source-project root used to resolve a relative local identifier",
     )
     parser.add_argument("--allow-download", action="store_true", help="Permit one normal cache-aware Hub download")
-    parser.add_argument("--revision", help="Hub revision; a full commit SHA is required for downloads")
+    parser.add_argument("--revision", help="Optional full Hub commit SHA; authorized downloads resolve it when omitted")
     parser.add_argument("--cache-dir", help="Optional Hugging Face cache directory")
     return parser.parse_args(argv)
 

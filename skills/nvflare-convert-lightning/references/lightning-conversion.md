@@ -214,6 +214,18 @@ unless the user explicitly requests one global training policy. Do not move
 those values into recipe `model` args just because architecture args must be
 shared.
 
+If such a local value is a persistent model parameter or buffer, recomputing it
+before the round loop does not keep it local: the patched trainer's received
+model state can overwrite it. Exclude the named state key with the selected
+recipe's supported `exclude_vars` setting and pair that exclusion with
+`flare.patch(trainer, load_state_dict_strict=False)`, because the received state
+intentionally omits the key. Use non-strict loading only for those explicitly
+excluded local keys, verify that no other state keys are missing or mismatched,
+and confirm the excluded value remains the site-computed value. Do not claim a
+persistent value is site-local merely because it was initially computed from a
+site partition. If `recipe show` does not expose a supported exclusion setting,
+ask or fail closed instead of silently exchanging the value.
+
 Report the split policy, seed, and where local training-policy values are
 computed.
 

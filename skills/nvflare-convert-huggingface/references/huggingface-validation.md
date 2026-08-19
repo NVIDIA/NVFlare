@@ -64,15 +64,18 @@ reaches the applicable phase, and stop at the first failure.
   rerun the Hub resolver once with the complete canonical invocation:
 
   ```bash
-  python <skill-dir>/scripts/resolve_model_snapshot.py --source hub --allow-download --revision <commit-sha> <org/model>
+  python <skill-dir>/scripts/resolve_model_snapshot.py --source hub --allow-download <org/model>
   ```
 
-  The revision is the full immutable 40-character commit SHA. Use its
-  immutable `resolved_path` for the server and every client. Do not run a
-  preceding `snapshot_download(..., local_files_only=True)` probe, copy resolver
-  logic into generated `job.py`, or download without authorization. Resolve
-  datasets through their source-prescribed local path or cache with the same
-  policy.
+  In that authorized invocation, the resolver uses the public
+  `HfApi().model_info(...).sha` result, validates the full immutable
+  40-character commit SHA, and passes it to `snapshot_download`. An already
+  audited full SHA may instead be supplied with `--revision`. Use the returned
+  immutable `revision` and `resolved_path` for the server and every client. Do
+  not run a preceding `snapshot_download(..., local_files_only=True)` probe,
+  copy resolver logic into generated `job.py`, or download without
+  authorization. Resolve datasets through their source-prescribed local path or
+  cache with the same policy.
 - Never recover from an offline/cache-only miss by removing
   `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`, dropping `local_files_only=True`, or
   rerunning online unless the user explicitly requested the download. Do not

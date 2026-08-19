@@ -15,7 +15,10 @@ Use this path for plain PyTorch conversion:
    `FLModel(params=...)` as the model exchange path.
 4. Generate `job.py` that builds the selected recipe and calls
    `recipe.execute(SimEnv(...))`.
-5. Validate with `python job.py`, inspect terminal evidence, then export.
+5. Select exactly one final target: run `python job.py` and inspect its
+   materialized simulation workspace for local validation, or, only when the
+   user requests an exported/deployable artifact, export and run that folder
+   with the simulator CLI. Do not run both targets after one succeeds.
 
 HE is not supported at steps 4–5: follow the HE-not-supported rule in
 `../../nvflare-shared/references/pytorch-family-recipe-selection.md`.

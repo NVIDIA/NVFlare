@@ -859,9 +859,10 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
     assert "`--source hub`" in hf_validation
     assert "<skill-dir>/scripts/resolve_model_snapshot.py --source local --source-root" in hf_validation
     assert "<skill-dir>/scripts/resolve_model_snapshot.py --source hub <org/model>" in hf_validation
-    assert "--source hub --allow-download --revision <commit-sha> <org/model>" in hf_validation
+    assert "--source hub --allow-download <org/model>" in hf_validation
     assert "do not invent a `--model` option" in normalized_hf_validation
     assert "full immutable 40-character commit SHA" in normalized_hf_validation
+    assert "`HfApi().model_info(...).sha`" in normalized_hf_validation
     assert "emits a structured `missing` result" in normalized_hf_validation
     assert "copy resolver logic into generated `job.py`" in normalized_hf_validation
     assert "snapshot_download" not in hf_job_asset
@@ -1042,6 +1043,16 @@ def test_pytorch_family_validation_avoids_recovered_probe_failures():
     construction_text = " ".join(
         shared_root.joinpath("pytorch-family-recipe-construction.md").read_text(encoding="utf-8").split()
     )
+    pytorch_conversion = " ".join(
+        repo_root.joinpath("skills/nvflare-convert-pytorch/references/pytorch-client-api-conversion.md")
+        .read_text(encoding="utf-8")
+        .split()
+    )
+    hf_conversion = " ".join(
+        repo_root.joinpath("skills/nvflare-convert-huggingface/references/huggingface-conversion.md")
+        .read_text(encoding="utf-8")
+        .split()
+    )
 
     assert "when the selected final target is an exported/deployable artifact" in validation_text
     assert "do not create a separate throwaway export" in validation_text
@@ -1058,6 +1069,13 @@ def test_pytorch_family_validation_avoids_recovered_probe_failures():
     assert "must not declare, parse, or branch on those arguments" in common_text
     assert "does not use `parse_known_args()` to accommodate system arguments" in common_text
     assert "Do not create an export only for this check" in common_text
+
+    assert "run `python job.py` and inspect its materialized simulation workspace" in pytorch_conversion
+    assert "only when the user requests an exported/deployable artifact" in pytorch_conversion
+    assert "Do not run both targets after one succeeds" in pytorch_conversion
+    assert "For a local `python job.py` target, do not export" in hf_conversion
+    assert "inspect the materialized simulation workspace" in hf_conversion
+    assert "For an exported-artifact target, exported app layout is owned by" in hf_conversion
 
     assert "do not import or introspect a `Run` class" in construction_text
     assert "probe its module location, signature, or docstring" in construction_text
@@ -1150,6 +1168,10 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "the patched callback owns delivery" in normalized_lightning
     assert "`False` makes them optional rather than suppressing metrics" in normalized_lightning
     assert "Do not copy validation metrics into `model.__fl_meta__[MetaKey.INITIAL_METRICS]`" in normalized_lightning
+    assert "recomputing it before the round loop does not keep it local" in normalized_lightning
+    assert "`flare.patch(trainer, load_state_dict_strict=False)`" in normalized_lightning
+    assert "verify that no other state keys are missing or mismatched" in normalized_lightning
+    assert "ask or fail closed instead of silently exchanging the value" in normalized_lightning
     phase_markers = [
         "Inspect before editing",
         "Apply the dependency-install ordering rule",
@@ -1180,7 +1202,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "client import is not enough when an export separates server and client apps" in normalized_conversion
     # Exported app layout is authored once in conversion-workflow.md; the HF reference
     # points at it and states only which files the job asset must package.
-    assert "Exported app layout is owned by" in normalized_conversion
+    assert "For an exported-artifact target, exported app layout is owned by" in normalized_conversion
     assert "inspect the exported job root and enumerate the app directories" in normalized_conversion
     assert "`app/custom` for a unified export" in normalized_conversion
     assert "`app_server/custom` and each `app_<site>/custom`" in normalized_conversion
@@ -1287,6 +1309,11 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "Run intentional rejection checks" in normalized_shared_validation
     assert "through an assertion wrapper" in normalized_shared_validation
     assert "expected child failure as a failed top-level validation command" in normalized_shared_validation
+    assert 'Do not append `; echo "EXIT_CODE=$?"`' in normalized_shared_validation
+    assert '`rc=$?; echo "EXIT_CODE=$rc"; exit "$rc"`' in normalized_shared_validation
+    assert "Keep custom checks atomic" in normalized_shared_validation
+    assert "do not combine partition, model-compatibility, metric, and artifact checks" in normalized_shared_validation
+    assert "After the selected final run succeeds" in normalized_shared_validation
     assert "shared assertion-wrapper rule" in normalized_validation
     assert "typo and abbreviation rejection cases" in normalized_validation
     assert "explicit non-client entry parameter" in normalized_validation

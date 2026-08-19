@@ -78,7 +78,10 @@ are not completion evidence and are not valid final answers.
 Do not pipe the final validation command through `tail`, `grep`, or another
 command that can hide the simulator or `python job.py` exit status. Redirect the
 full log to a runtime log file and print a bounded tail only after the command
-has finished and its exit code has been recorded.
+has finished and its exit code has been recorded. Do not append `; echo
+"EXIT_CODE=$?"`, because the successful `echo` masks a failed simulation from
+the calling tool. When a status line is required, preserve the status with
+`rc=$?; echo "EXIT_CODE=$rc"; exit "$rc"`.
 
 After a full simulation succeeds, do not rerun it solely to make already-wired
 custom-aggregator log lines more visible. Use the first run's terminal evidence
@@ -120,7 +123,12 @@ context. Validate their generated source shape and public signatures
 statically; validate runtime acceptance only through the recipe or simulator
 that launches the client context.
 
-Before spending time on full simulation, run cheap checks when applicable:
+Before spending time on full simulation, run cheap checks when applicable.
+Keep custom checks atomic: reuse inspected project/generated helpers with their
+exact annotated argument types, and do not combine partition,
+model-compatibility, metric, and artifact checks in one hand-written inline
+Python program. Each custom probe should test one contract and produce one
+actionable failure.
 
 - compile generated Python files;
 - construct or instantiate the selected recipe;
@@ -128,16 +136,7 @@ Before spending time on full simulation, run cheap checks when applicable:
   export once, inspect its server/client app folders and expected config files,
   and run that same export; do not create a separate throwaway export;
 - when the selected final target is a local `python job.py` simulation, do not
-  export during preflight. After the run, inspect the materialized server/client
-  configs and packaging evidence in its simulation workspace;
-- in the artifact produced by the selected target, verify the server model
-  retains its audited class path and complete constructor args; recipe
-  construction alone does not prove serialization;
-- compare the resolved model-selection state with the produced server config:
-  disabled means no active model selector, while metric or deliberately
-  accepted recipe-default selection means a selector with the resolved key;
-- verify generated files required by server and client code are packaged in the
-  artifact produced by the selected target;
+  export during preflight;
 - run local partition sanity checks when generated site splits or data
   partitions are introduced;
 - run the framework-specific model compatibility check defined by the framework
@@ -152,6 +151,16 @@ counts inferred by hand from one dataset.
 
 Use preflight results to fix packaging, config, or model-state issues before
 running a full simulation.
+
+After the selected final run succeeds, inspect its materialized artifact to:
+
+- verify the server model retains its audited class path and complete
+  constructor args; recipe construction alone does not prove serialization;
+- compare the resolved model-selection state with the produced server config:
+  disabled means no active model selector, while metric or deliberately
+  accepted recipe-default selection means a selector with the resolved key;
+- verify generated files required by server and client code are packaged in the
+  server/client app folders.
 
 ## Verification And Audit Snippets
 

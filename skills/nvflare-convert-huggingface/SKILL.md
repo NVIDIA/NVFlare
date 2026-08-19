@@ -173,12 +173,12 @@ user's purpose is to understand data distribution; handle conversion later as a 
   variables declare multiple ranks. All ranks must call patched Trainer methods
   in identical order.
 - Must use the maintained HF validation resolver with an explicit local/Hub
-  source and a full commit-SHA revision for authorized downloads. Must not copy
-  it into generated job code, set `trust_remote_code=True`, download model/data
+  source. For authorized downloads it obtains or validates a full commit-SHA
+  revision before downloading. Must not copy it into
+  generated job code, set `trust_remote_code=True`, download model/data
   artifacts unless requested, or recover from a cache-only miss by going
   online. Cache misses, remote identifiers, and validation requests do not
-  authorize online retries. This narrows
-  `../nvflare-shared/references/conversion-common.md`.
+  authorize online retries; see `../nvflare-shared/references/conversion-common.md`.
 - Site partitioning, custom aggregation, the Source Of Truth Boundary, and user
   input/authorization follow `../nvflare-shared/references/conversion-common.md`.
 
