@@ -1168,10 +1168,14 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "the patched callback owns delivery" in normalized_lightning
     assert "`False` makes them optional rather than suppressing metrics" in normalized_lightning
     assert "Do not copy validation metrics into `model.__fl_meta__[MetaKey.INITIAL_METRICS]`" in normalized_lightning
-    assert "recomputing it before the round loop does not keep it local" in normalized_lightning
+    assert "`exclude_vars` argument is only an aggregation rule" in normalized_lightning
+    assert 'recipe.add_server_output_filter(ExcludeVars([local_key]), tasks=["train"])' in normalized_lightning
+    assert 'recipe.add_client_output_filter(ExcludeVars([local_key]), tasks=["train"])' in normalized_lightning
     assert "`flare.patch(trainer, load_state_dict_strict=False)`" in normalized_lightning
-    assert "verify that no other state keys are missing or mismatched" in normalized_lightning
-    assert "ask or fail closed instead of silently exchanging the value" in normalized_lightning
+    assert "Non-strict loading does not suppress outbound state by itself" in normalized_lightning
+    assert "including the initial and later server-to-client payloads" in normalized_lightning
+    assert "not overwritten in the first or later rounds" in normalized_lightning
+    assert "ask or fail closed" in normalized_lightning
     phase_markers = [
         "Inspect before editing",
         "Apply the dependency-install ordering rule",

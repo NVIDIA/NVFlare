@@ -1018,6 +1018,45 @@ def test_huggingface_job_template_uses_public_recipe_execution_without_internal_
     assert "persistor" not in source.lower()
 
 
+def test_lightning_local_persistent_state_filters_both_directions_across_rounds():
+    torch = pytest.importorskip("torch")
+
+    from nvflare.apis.dxo import DXO, DataKind, from_shareable
+    from nvflare.apis.fl_context import FLContext
+    from nvflare.app_common.filters import ExcludeVars
+
+    class _Model(torch.nn.Module):
+        def __init__(self, shared_value, local_value):
+            super().__init__()
+            self.shared = torch.nn.Parameter(torch.tensor([shared_value]))
+            self.register_buffer("site_local", torch.tensor([local_value]))
+
+    def filter_payload(state):
+        shareable = DXO(data_kind=DataKind.WEIGHTS, data=dict(state)).to_shareable()
+        filtered = ExcludeVars(["site_local"]).process(shareable, FLContext())
+        return from_shareable(filtered).data
+
+    server = _Model(shared_value=1.0, local_value=-1.0)
+    client = _Model(shared_value=0.0, local_value=41.0)
+
+    for expected_shared in (1.0, 2.0):
+        server_to_client = filter_payload(server.state_dict())
+        assert "site_local" not in server_to_client
+
+        incompatible = client.load_state_dict(server_to_client, strict=False)
+        assert incompatible.missing_keys == ["site_local"]
+        assert client.site_local.item() == pytest.approx(41.0)
+
+        with torch.no_grad():
+            client.shared.add_(1.0)
+        client_to_server = filter_payload(client.state_dict())
+        assert "site_local" not in client_to_server
+
+        server.load_state_dict(client_to_server, strict=False)
+        assert server.shared.item() == pytest.approx(expected_shared + 1.0)
+        assert client.site_local.item() == pytest.approx(41.0)
+
+
 def test_custom_aggregator_template_step_weighted_average():
     import numpy as np
 
