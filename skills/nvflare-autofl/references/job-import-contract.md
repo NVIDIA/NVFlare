@@ -21,7 +21,11 @@ records that provenance in `autofl.yaml`. Declare raw loss-like metrics with
 `key_metric`, `mutation_schema.yaml` must name the requested and optimization
 metrics and may declare their mode; otherwise the bridged metric uses NVFLARE's
 default `max` independently of the job key metric's direction.
-A schema cannot override the direction of the job's own key metric.
+A schema cannot override the direction of the job's own key metric. The
+importer preserves that native direction separately as `job_key_metric_mode`
+so candidate validation can detect changes hidden by an alternate metric
+bridge. A custom `model_selector` makes direction unresolved because it
+supersedes `key_metric_mode` and its behavior cannot be imported statically.
 
 For a new campaign, import and admission complete in memory before the runner
 creates campaign files or acquires the workspace lock. An obvious

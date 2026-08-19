@@ -412,6 +412,20 @@ class DeterministicJobImporter:
         if not job_call:
             return "max", "unresolved", _unresolved("objective.mode", "job metric direction is unknown")
 
+        model_selector = job_call.keywords.get("model_selector")
+        if model_selector is not None:
+            resolved_selector = _resolve_value(model_selector, job_call.assignments, parser_args, source_text)
+            if resolved_selector.unresolved or resolved_selector.value:
+                return (
+                    "max",
+                    "unresolved",
+                    _unresolved(
+                        "objective.mode",
+                        "custom model_selector controls checkpoint selection, so key_metric_mode is not effective "
+                        "and selector direction cannot be imported deterministically",
+                    ),
+                )
+
         explicit_mode = job_call.keywords.get("key_metric_mode")
         if explicit_mode is not None:
             resolved = _resolve_value(explicit_mode, job_call.assignments, parser_args, source_text)
@@ -1198,7 +1212,7 @@ def likely_lower_is_better_metric(metric: str) -> bool:
 
     name = metric.lower()
     tokens = [token for token in re.split(r"[^a-z0-9]+", name) if token]
-    if not tokens or "neg" in tokens or "negative" in tokens:
+    if not tokens or "neg" in tokens:
         return False
     # Keep this standalone skill heuristic aligned with
     # nvflare.app_common.widgets.intime_model_selector._looks_lower_is_better.
@@ -1366,6 +1380,8 @@ def _objective_contract(
         "mode_contract_source": mode_source,
         "job_key_metric": job_metric,
         "job_key_metric_source": job_metric_source,
+        "job_key_metric_mode": mode,
+        "job_key_metric_mode_source": mode_source,
         "metric_contract_source": source,
         "metric_invariants": list(METRIC_INVARIANTS),
         "metric_change_policy": METRIC_CHANGE_POLICY,

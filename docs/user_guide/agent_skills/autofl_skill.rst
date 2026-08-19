@@ -199,7 +199,10 @@ The product campaign and report contracts preserve the ``min`` or ``max``
 direction imported from the job's NVFlare metric contract. Raw loss metrics
 should declare ``key_metric_mode="min"``; explicitly negated metrics remain
 valid ``max`` objectives. Ledger values stay raw, while improvement is positive
-when the declared objective improves. The report also surfaces
+when the declared objective improves. A job that supplies a custom
+``model_selector`` is not admitted automatically because that selector
+supersedes ``key_metric_mode`` and arbitrary component behavior cannot be
+imported deterministically. The report also surfaces
 abandoned-candidate state and warns if the state's ledger pointer,
 candidate-attempt, baseline, or improvement accounting disagrees with the
 ledger.

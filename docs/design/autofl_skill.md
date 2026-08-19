@@ -362,6 +362,10 @@ metric using only the implicit default fails closed, while unknown custom
 metrics retain the framework default. The report preserves the imported
 direction, rejects legacy minimization evidence without provenance, and makes
 improvement positive in either direction while keeping raw ledger scores. It
+preserves the job's native `job_key_metric_mode` separately from any alternate
+metric bridge so candidate edits cannot change checkpoint-selection direction
+undetected. Jobs with a custom `model_selector` leave direction unresolved
+because that component supersedes `key_metric_mode`. The report
 derives candidate attempts, baseline, and improvement from the ledger,
 cross-checks those values against authoritative campaign state, verifies the
 state's authoritative ledger pointer, and preserves the state-derived

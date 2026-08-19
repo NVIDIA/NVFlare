@@ -57,6 +57,8 @@ def _objective(
         "mode_contract_source": mode_source,
         "job_key_metric": job_metric,
         "job_key_metric_source": job_metric_source,
+        "job_key_metric_mode": mode,
+        "job_key_metric_mode_source": mode_source,
         "metric_contract_source": source,
         "metric_invariants": [
             "definition",
@@ -245,6 +247,68 @@ def test_import_marks_conflicting_metric_direction_declarations_unresolved(tmp_p
 
     assert config["objective"]["mode"] == "max"
     assert any("conflicts" in item["reason"] for item in config["unresolved"] if item["field"] == "objective.mode")
+
+
+def test_import_marks_custom_model_selector_direction_unresolved(tmp_path):
+    (tmp_path / "train.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_common.executors.script_runner import ScriptRunner
+from nvflare.job_config.base_fed_job import BaseFedJob
+from nvflare.widgets.widget import Widget
+
+
+class CustomSelector(Widget):
+    pass
+
+
+job = BaseFedJob(
+    name="custom-selector",
+    min_clients=2,
+    key_metric="loss",
+    key_metric_mode="min",
+    model_selector=CustomSelector(),
+)
+runner = ScriptRunner(script="train.py")
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["objective"]["mode"] == "max"
+    assert config["objective"]["mode_contract_source"] == "unresolved"
+    assert any(
+        item["field"] == "objective.mode" and "custom model_selector" in item["reason"] for item in config["unresolved"]
+    )
+
+
+def test_import_allows_explicitly_absent_model_selector(tmp_path):
+    (tmp_path / "train.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_common.executors.script_runner import ScriptRunner
+from nvflare.job_config.base_fed_job import BaseFedJob
+
+
+job = BaseFedJob(
+    name="default-selector",
+    min_clients=2,
+    key_metric="loss",
+    key_metric_mode="min",
+    model_selector=None,
+)
+runner = ScriptRunner(script="train.py")
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["objective"]["mode"] == "min"
+    assert config["objective"]["mode_contract_source"] == "job:key_metric_mode"
 
 
 def test_import_marks_malformed_stop_condition_unresolved(tmp_path):
@@ -1031,6 +1095,7 @@ def main():
         ("trainingloss", True),
         ("val_mseloss", True),
         ("neg_loss", False),
+        ("negative_class_loss", True),
         ("dice", False),
     ],
 )

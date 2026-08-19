@@ -3713,6 +3713,7 @@ def candidate_campaign_config(
         "metric_source",
         "mode",
         "job_key_metric",
+        "job_key_metric_mode",
     )
     recorded_objective = current_config.get("objective", {})
     if not isinstance(recorded_objective, dict):
@@ -3720,7 +3721,7 @@ def candidate_campaign_config(
     drift = [
         field
         for field in invariant_fields
-        if (field != "job_key_metric" or field in recorded_objective)
+        if (field not in {"job_key_metric", "job_key_metric_mode"} or field in recorded_objective)
         and candidate_objective.get(field) != current_objective.get(field)
     ]
     if drift:

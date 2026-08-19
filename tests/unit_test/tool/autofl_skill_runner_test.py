@@ -47,6 +47,8 @@ def _campaign_config():
             "mode": "max",
             "mode_contract_source": "core_default",
             "job_key_metric": "accuracy",
+            "job_key_metric_mode": "max",
+            "job_key_metric_mode_source": "core_default",
         },
         "budget": {"fixed_training_budget": {"num_clients": 2, "num_rounds": 1}},
         "environment": {"requested": "sim"},
@@ -438,6 +440,8 @@ def test_schema_bridged_metric_does_not_inherit_job_direction():
             "mode": "min",
             "mode_contract_source": "job:key_metric_mode",
             "job_key_metric": "val_loss",
+            "job_key_metric_mode": "min",
+            "job_key_metric_mode_source": "job:key_metric_mode",
         }
     }
     schema = {"objective": {"requested_metric": "accuracy", "optimization_metric": "accuracy"}}
@@ -446,6 +450,8 @@ def test_schema_bridged_metric_does_not_inherit_job_direction():
 
     assert updated["objective"]["mode"] == "max"
     assert updated["objective"]["mode_contract_source"] == "core_default"
+    assert updated["objective"]["job_key_metric_mode"] == "min"
+    assert updated["objective"]["job_key_metric_mode_source"] == "job:key_metric_mode"
 
 
 def test_schema_cannot_override_direction_for_job_key_metric():
@@ -3783,6 +3789,43 @@ def test_candidate_metric_direction_drift_is_rejected():
         runner.candidate_campaign_config(candidate, current, SimpleNamespace(metric="accuracy"), {})
 
 
+def test_candidate_job_metric_direction_drift_is_rejected_for_bridged_metric():
+    runner = _load_runner()
+    schema = {
+        "objective": {
+            "requested_metric": "val_loss",
+            "optimization_metric": "val_loss",
+            "mode": "min",
+        }
+    }
+    current = _campaign_config()
+    current["objective"].update(
+        {
+            "metric": "val_loss",
+            "requested_metric": "val_loss",
+            "optimization_metric": "val_loss",
+            "metric_extraction_order": ["val_loss"],
+            "mode": "min",
+            "mode_contract_source": "mutation_schema",
+            "job_key_metric": "accuracy",
+            "job_key_metric_mode": "max",
+            "job_key_metric_mode_source": "core_default",
+        }
+    )
+    candidate = deepcopy(current)
+    candidate["objective"].update(
+        {
+            "mode": "min",
+            "mode_contract_source": "job:key_metric_mode",
+            "job_key_metric_mode": "min",
+            "job_key_metric_mode_source": "job:key_metric_mode",
+        }
+    )
+
+    with pytest.raises(ValueError, match="objective metric invariants: job_key_metric_mode"):
+        runner.candidate_campaign_config(candidate, current, SimpleNamespace(metric="val_loss"), schema)
+
+
 def test_candidate_import_tolerates_job_metric_absent_from_legacy_campaign_contract():
     runner = _load_runner()
     current = _campaign_config()
@@ -3792,6 +3835,18 @@ def test_candidate_import_tolerates_job_metric_absent_from_legacy_campaign_contr
     updated = runner.candidate_campaign_config(candidate, current, SimpleNamespace(metric="accuracy"), {})
 
     assert "job_key_metric" not in updated["objective"]
+
+
+def test_candidate_import_tolerates_job_metric_mode_absent_from_legacy_campaign_contract():
+    runner = _load_runner()
+    current = _campaign_config()
+    current["objective"].pop("job_key_metric_mode")
+    current["objective"].pop("job_key_metric_mode_source")
+    candidate = _campaign_config()
+
+    updated = runner.candidate_campaign_config(candidate, current, SimpleNamespace(metric="accuracy"), {})
+
+    assert "job_key_metric_mode" not in updated["objective"]
 
 
 def test_legacy_campaign_without_mode_still_rejects_candidate_direction_change():
