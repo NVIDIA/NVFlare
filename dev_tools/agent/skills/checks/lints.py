@@ -2449,7 +2449,7 @@ def _has_nonnegated_post_audit_confirmation(text: str) -> bool:
             confirmation_action = re.search(
                 r"\b(?:obtain|request|receive|require|wait\s+for)\b", matched, re.IGNORECASE
             )
-            if confirmation_action and _policy_action_is_negated(matched, confirmation_action.start()):
+            if confirmation_action and _policy_action_is_negated(text, match.start() + confirmation_action.start()):
                 continue
             if not re.search(
                 r"\b(?:obtain|request|receive|require|wait\s+for)\b[^.!?;]{0,80}"
