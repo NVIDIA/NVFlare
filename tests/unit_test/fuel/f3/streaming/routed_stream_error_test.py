@@ -23,7 +23,7 @@ from nvflare.fuel.f3.cellnet.cell import Adapter
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
-from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
+from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamTargetUnreachable
 from nvflare.fuel.utils.network_utils import get_open_ports
 
@@ -153,6 +153,80 @@ def _run_sender(root_url, result_queue):
             cell.stop()
 
 
+def _run_recovery_server(root_url, status_queue, stop_event):
+    cell = None
+    try:
+        cell = CoreCell("server", root_url, secure=False, credentials={})
+        stream_cell = StreamCell(cell)
+        original_handler = stream_cell.byte_streamer._forward_error_handler
+
+        def report_route_failure(message, error):
+            status_queue.put({"route_error": error})
+            original_handler(message, error)
+
+        cell.add_error_handler(STREAM_CHANNEL, STREAM_DATA_TOPIC, report_route_failure)
+        cell.start()
+        status_queue.put({"ready": True})
+        stop_event.wait(30)
+    except Exception:
+        status_queue.put({"error": traceback.format_exc()})
+        raise
+    finally:
+        if cell:
+            cell.stop()
+
+
+def _run_recovering_sender(root_url, result_queue):
+    cell = None
+    try:
+        import nvflare.fuel.f3.streaming.byte_streamer as byte_streamer_module
+
+        byte_streamer_module.STREAM_RETRY_WAIT = 0.2
+        byte_streamer_module.STREAM_RETRY_TIMEOUT = 3.0
+        cell = CoreCell("site-1", root_url, secure=False, credentials={})
+        stream_cell = StreamCell(cell)
+        cell.start()
+        _wait_for_connection(cell, "server")
+        payload = b"recover after transient route failure"
+        future = stream_cell.send_blob(
+            _CHANNEL,
+            _TOPIC,
+            _MISSING_RECEIVER,
+            Message(payload=payload),
+            optional=False,
+            reliable=True,
+        )
+        result_queue.put({"bytes_sent": future.result(timeout=10), "payload": payload})
+    except Exception:
+        result_queue.put({"error": traceback.format_exc()})
+        raise
+    finally:
+        if cell:
+            cell.stop()
+
+
+def _run_recovery_receiver(root_url, status_queue, result_queue, stop_event):
+    cell = None
+    try:
+        cell = CoreCell(_MISSING_RECEIVER, root_url, secure=False, credentials={})
+        stream_cell = StreamCell(cell)
+
+        def receive_blob(future):
+            result_queue.put({"payload": bytes(future.result())})
+
+        stream_cell.register_blob_cb(_CHANNEL, _TOPIC, receive_blob)
+        cell.start()
+        _wait_for_connection(cell, "server")
+        status_queue.put({"ready": True})
+        stop_event.wait(30)
+    except Exception:
+        status_queue.put({"error": traceback.format_exc()})
+        raise
+    finally:
+        if cell:
+            cell.stop()
+
+
 def _queue_result(queue):
     result = queue.get(timeout=30)
     assert "error" not in result, result.get("error")
@@ -209,3 +283,52 @@ def test_routed_optional_stream_reports_downstream_route_removal_without_error_l
     }
     assert result["errors"] == []
     assert server_result["errors"] == []
+
+
+@pytest.mark.timeout(60)
+def test_non_optional_reliable_stream_recovers_after_transient_downstream_route_failure():
+    context = multiprocessing.get_context("spawn")
+    root_url = f"tcp://localhost:{get_open_ports(1)[0]}"
+    server_status = context.Queue()
+    receiver_status = context.Queue()
+    sender_result = context.Queue()
+    receiver_result = context.Queue()
+    server_stop = context.Event()
+    receiver_stop = context.Event()
+    server = context.Process(target=_run_recovery_server, args=(root_url, server_status, server_stop))
+    sender = context.Process(target=_run_recovering_sender, args=(root_url, sender_result))
+    receiver = context.Process(
+        target=_run_recovery_receiver,
+        args=(root_url, receiver_status, receiver_result, receiver_stop),
+    )
+
+    try:
+        server.start()
+        _queue_result(server_status)
+        sender.start()
+        route_failure = _queue_result(server_status)
+        assert route_failure["route_error"]
+
+        # Heal the downstream route while the non-optional sender is still within
+        # retry_timeout. The next reliable retry must reach the new receiver.
+        receiver.start()
+        _queue_result(receiver_status)
+        send_result = _queue_result(sender_result)
+        receive_result = _queue_result(receiver_result)
+        sender.join(timeout=15)
+    finally:
+        receiver_stop.set()
+        server_stop.set()
+        receiver.join(timeout=10)
+        sender.join(timeout=10)
+        server.join(timeout=10)
+        for process in (receiver, sender, server):
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=5)
+
+    assert sender.exitcode == 0
+    assert receiver.exitcode == 0
+    assert server.exitcode == 0
+    assert send_result["bytes_sent"] == len(send_result["payload"])
+    assert receive_result["payload"] == send_result["payload"]

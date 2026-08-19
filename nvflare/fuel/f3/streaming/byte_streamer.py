@@ -745,6 +745,11 @@ class ByteStreamer:
 
     def _forward_error_handler(self, message: Message, error: str):
         """Report a downstream routing failure to the original stream sender."""
+        if not message.get_header(MessageHeaderKey.OPTIONAL, False):
+            # Required reliable streams own their retry policy. A transient downstream
+            # routing failure must not bypass retry_timeout by settling the sender early.
+            return
+
         sender = message.get_header(MessageHeaderKey.ORIGIN)
         receiver = message.get_header(MessageHeaderKey.DESTINATION)
         if not sender or not receiver:

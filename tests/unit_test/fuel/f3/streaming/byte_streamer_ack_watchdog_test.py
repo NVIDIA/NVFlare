@@ -178,6 +178,26 @@ class TestByteStreamerAckWatchdog:
         assert "sender=sender receiver=receiver" in str(error)
         error_callback.assert_called_once_with(message)
 
+    def test_non_optional_forward_error_does_not_bypass_reliable_retry(self):
+        cell = MagicMock()
+        cell.my_info.fqcn = "relay"
+        streamer = ByteStreamer(cell)
+        message = Message(
+            {
+                MessageHeaderKey.ORIGIN: "sender",
+                MessageHeaderKey.DESTINATION: "receiver",
+                MessageHeaderKey.OPTIONAL: False,
+                StreamHeaderKey.STREAM_ID: 42,
+                StreamHeaderKey.CHANNEL: "ch",
+                StreamHeaderKey.TOPIC: "tp",
+                StreamHeaderKey.RELIABLE: True,
+            }
+        )
+
+        streamer._forward_error_handler(message, ReturnCode.COMM_ERROR)
+
+        cell.fire_and_forget.assert_not_called()
+
     def test_uncorrelated_receiver_error_is_ignored(self, caplog):
         cell = MagicMock()
         cell.my_info.fqcn = "sender"
