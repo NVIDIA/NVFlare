@@ -59,7 +59,7 @@ def test_base_server_deploy_admin_listener(enable_admin_listener, admin_port, ad
     if admin_port is not None:
         server_config["admin_port"] = admin_port
     if admin_host is not None:
-        server_config["admin_server"] = admin_host
+        server_config["admin_host"] = admin_host
 
     with (
         patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
@@ -90,7 +90,7 @@ def test_insecure_non_loopback_admin_listener_emits_warning():
             args=MagicMock(),
             grpc_args={
                 "service": {"target": "server.example:8002", "scheme": "tcp"},
-                "admin_server": "admin.example",
+                "admin_host": "admin.example",
                 "admin_port": 8003,
             },
             secure_train=False,
@@ -99,7 +99,7 @@ def test_insecure_non_loopback_admin_listener_emits_warning():
     warning.assert_called_once()
 
 
-def test_configured_admin_host_takes_precedence_over_advertised_admin_server():
+def test_advertised_admin_server_is_not_used_as_bind_host():
     server = _TestServer()
 
     with (
@@ -111,7 +111,6 @@ def test_configured_admin_host_takes_precedence_over_advertised_admin_server():
             args=MagicMock(),
             grpc_args={
                 "service": {"target": "server.example:8002", "scheme": "tcp"},
-                "admin_host": "127.0.0.1",
                 "admin_server": "admin.example",
                 "admin_port": 8003,
             },
@@ -120,7 +119,7 @@ def test_configured_admin_host_takes_precedence_over_advertised_admin_server():
 
     assert cell_cls.call_args.kwargs["root_url"] == [
         "tcp://0:8002",
-        f"tcp://127.0.0.1:8003?{ADMIN_LISTENER_KEY}=true",
+        f"tcp://0:8003?{ADMIN_LISTENER_KEY}=true",
     ]
 
 
