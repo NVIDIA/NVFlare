@@ -16,7 +16,7 @@ import threading
 from unittest.mock import MagicMock
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -108,6 +108,47 @@ def test_do_learn_records_failure_when_abort_races_exception_logging():
     assert not learn_thread.is_alive()
     assert ctl.learn_task is None
     assert ctl.current_status.error == ReturnCode.EXECUTION_EXCEPTION
+
+
+def test_about_to_end_run_aborts_active_background_learn_before_readiness_checks():
+    ctl = _FailingClientSideController()
+    ctl.learn_task = _LearnTask("train", Shareable(), FLContext())
+    ctl.fire_event = MagicMock()
+    ctl.finalize = MagicMock()
+    fl_ctx = FLContext()
+
+    ctl.handle_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
+
+    assert ctl.asked_to_stop is True
+    assert ctl.learn_task.abort_signal.triggered
+    ctl.fire_event.assert_called_once_with(EventType.ABORT_TASK, fl_ctx)
+    ctl.finalize.assert_called_once_with(fl_ctx)
+
+
+def test_abort_current_task_never_clears_latched_run_abort():
+    ctl = _FailingClientSideController()
+    ctl.learn_task = _LearnTask("train", Shareable(), FLContext())
+    ctl.fire_event = MagicMock()
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(FLContextKey.RUN_ABORT_REQUESTED, True, private=True, sticky=False)
+
+    ctl._abort_current_task(fl_ctx)
+
+    assert fl_ctx.get_prop(FLContextKey.RUN_ABORT_REQUESTED) is True
+    assert ctl.learn_task.abort_signal.triggered
+    ctl.fire_event.assert_called_once_with(EventType.ABORT_TASK, fl_ctx)
+
+
+def test_about_to_end_run_preserves_completed_workflow():
+    ctl = _FailingClientSideController()
+    ctl.workflow_done = True
+    ctl._abort_current_task = MagicMock()
+    ctl.finalize = MagicMock()
+
+    ctl.handle_event(EventType.ABOUT_TO_END_RUN, FLContext())
+
+    ctl._abort_current_task.assert_not_called()
+    ctl.finalize.assert_not_called()
 
 
 def test_no_report_after_workflow_done():

@@ -57,22 +57,23 @@ In DDP, rank-0 communication with the FL server is either handled by the patched
 callback path or by explicit rank-0 guarded metadata code like the snippet above;
 non-zero ranks should read broadcast values, not `input_model`.
 
-### DDP validation metrics need an explicit delivery bridge
+### DDP validation metrics use the patched callback
 
 DDP requires the external-process launch (`launch_external_process=True`), which
 runs the script under `ClientAPIExecutor(execution_mode="external_process")`.
 That executor defaults to `train_with_evaluation=False`, and the recipe's
-`ScriptRunner` does not expose a switch to change it. Consequently,
-`trainer.validate(...)` alone does not attach its metrics to the outgoing
-training result.
+`ScriptRunner` does not expose a switch to change it. The setting makes metrics
+optional; it does not suppress finite scalar metrics captured from an explicit
+standalone `trainer.validate(...)` before `trainer.fit(...)`.
 
-When DDP training requires server metrics, use the canonical
-`MetaKey.INITIAL_METRICS` bridge in `lightning-conversion.md`: preserve the
-finite scalar pre-fit validation result on the patched module's `__fl_meta__`
-before `trainer.fit(...)`. Ensure Lightning reduces distributed validation
-metrics consistently (for example, preserve source `sync_dist` behavior) and
-that the sending rank receives the scalar result. This remains part of the
-patched exchange; do not add a second manual `flare.send(...)`.
+When DDP training requires server metrics, use the canonical pre-fit validation
+path in `lightning-conversion.md` and let the patched callback attach those
+metrics to the outgoing training result. Ensure Lightning reduces distributed
+validation metrics consistently (for example, preserve source `sync_dist`
+behavior) and that the sending rank receives the scalar result. Do not populate
+`model.__fl_meta__[MetaKey.INITIAL_METRICS]` and do not add a second manual
+`flare.send(...)`. Sanity checks and in-fit validation remain local fitting
+lifecycle metrics, not received-global-model scores.
 
 Only pass a source-derived `key_metric` or claim server-side round metrics after
 the generated execution path and validation evidence confirm that the exact

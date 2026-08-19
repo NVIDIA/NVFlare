@@ -159,6 +159,7 @@ class TestResolveRef(unittest.TestCase):
 
         mock_fl_ctx = MagicMock()
         mock_fl_ctx.get_engine.return_value.get_cell.return_value = mock_cell
+        abort_signal = mock_fl_ctx.get_run_abort_signal.return_value
 
         with (
             patch("nvflare.fuel.utils.fobs.dumps", return_value=b"encoded") as mock_dumps,
@@ -180,6 +181,11 @@ class TestResolveRef(unittest.TestCase):
         self.assertTrue(
             props.get(FOBSContextKey.TENSOR_DISK_OFFLOAD, False),
             "local aggregation result resolution must opt in to tensor disk offload",
+        )
+        self.assertIs(
+            props.get(FOBSContextKey.ABORT_SIGNAL),
+            abort_signal,
+            "explicit lazy-ref resolution must remain cancellable during job abort",
         )
         self.assertEqual(
             props.get(_TENSOR_DISK_OFFLOAD_ROOT_DIR),
