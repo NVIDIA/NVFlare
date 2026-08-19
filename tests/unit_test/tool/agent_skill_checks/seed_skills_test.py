@@ -476,6 +476,10 @@ def test_lightning_conversion_limits_reference_loading_and_full_run_validation()
     assert len(site_data_text) < len(workflow_text)
 
     assert "select and record exactly one final validation target" in normalized_skill
+    assert "do not import `Recipe` from `nvflare.recipe`" in normalized_skill
+    assert "inspect or call `nvflare.recipe.run`" in normalized_skill
+    assert "or probe `export`, `run`, or lifecycle APIs" in normalized_skill
+    assert "Call `recipe.execute(SimEnv(...))`" in normalized_skill
     assert "do not export or run the exported simulator afterward" in normalized_skill
     assert "do not first run `python job.py`" in normalized_skill
     assert "rerun that same target" in normalized_skill
@@ -495,6 +499,7 @@ def test_lightning_conversion_limits_reference_loading_and_full_run_validation()
         "no-duplicate-full-validation",
         "no-compound-cleanup-and-execution",
         "no-unused-download-dependency-probe",
+        "no-recipe-lifecycle-probes",
     } <= prohibited_ids
 
 

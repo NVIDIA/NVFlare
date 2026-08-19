@@ -50,6 +50,7 @@
         "If generated Lightning client code calls flare.get_site_name(), flare.get_config(), or flare.receive() before patched-trainer execution, it calls flare.init() before the first such Client API context access.",
         "Because Lightning and FedAvg are explicit, the agent runs nvflare recipe show fedavg-pt --format json directly and does not run recipe list before constructing it.",
         "The generated job.py imports the selected recipe class from the module returned by recipe show, using nvflare.app_opt.pt.recipes.fedavg.FedAvgRecipe for fedavg-pt and not nvflare.recipe.FedAvgRecipe.",
+        "After recipe show succeeds for this local simulation, the agent does not import Recipe from nvflare.recipe, inspect or call nvflare.recipe.run, or probe export, run, or lifecycle APIs; it calls recipe.execute(SimEnv(...)).",
         "The agent selects the PyTorch FedAvg recipe for standard horizontal training instead of inventing a Lightning-only recipe.",
         "The agent generates explicit recipe model config with class_path plus args instead of passing a live LightningModule instance, asking or failing closed when constructor args are not statically clear.",
         "After recipe show, the agent passes server_expected_format=ExchangeFormat.PYTORCH and enable_tensor_disk_offload=True only when each parameter is exposed, registers nvflare.app_opt.pt.decomposers.TensorDecomposer when tensor-native exchange is selected, and chooses external execution only from process-spawning or distributed-launch evidence; Lightning dp stays in-process.",
@@ -199,6 +200,10 @@
           {
             "id": "no-source-discovered-strategy-override",
             "description": "follows the source-of-truth boundary: public checks can stop the skill path but cannot license a source-discovered replacement, and does not replace the public contract with ad hoc SDK-internal APIs based on local source or docstring inspection"
+          },
+          {
+            "id": "no-recipe-lifecycle-probes",
+            "description": "after successful recipe show for a local simulation, does not import Recipe from nvflare.recipe, inspect or call nvflare.recipe.run, or probe export, run, or lifecycle APIs; uses recipe.execute(SimEnv(...))"
           },
           {
             "id": "no-orient-for-explicit-conversion",

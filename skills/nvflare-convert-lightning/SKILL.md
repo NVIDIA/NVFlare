@@ -80,8 +80,7 @@ distribution; handle conversion later as a separate request.
 5. Reuse the PyTorch recipe family; Lightning is not a separate recipe family.
    For the standard case — the user explicitly requests FedAvg and inspection
    identifies Lightning — run `nvflare recipe show fedavg-pt --format json`
-   directly and construct it. Use the returned module, class, and parameters;
-   for `fedavg-pt`, import `FedAvgRecipe` from
+   directly and construct it. For `fedavg-pt`, import `FedAvgRecipe` only from
    `nvflare.app_opt.pt.recipes.fedavg`, never from `nvflare.recipe`. Load
    `../nvflare-shared/references/pytorch-family-recipe-selection.md` (discovery,
    algorithm guide, catalog-based selection, HE-not-supported rule; FedAvg,
@@ -89,9 +88,10 @@ distribution; handle conversion later as a separate request.
    non-FedAvg algorithms, reserving `nvflare recipe list` for those cases. Use
    FedEval for evaluation-only. After every `recipe show`, load
    `../nvflare-shared/references/pytorch-family-recipe-construction.md` and
-   derive the recipe's construction capabilities. Do not inspect recipe source,
-   signatures, or docstrings to rediscover parameters already returned by
-   `recipe show`.
+   derive its construction capabilities. Do not inspect recipe source,
+   signatures, or docstrings. After success, do not import `Recipe` from
+   `nvflare.recipe`, inspect or call `nvflare.recipe.run`, or probe `export`,
+   `run`, or lifecycle APIs. Call `recipe.execute(SimEnv(...))`.
 6. Convert the training entry point to the Lightning Client API: build the
    `Trainer`, call `flare.patch(trainer)`, and let the patched trainer own
    model exchange. Keep evaluation inside Lightning per
