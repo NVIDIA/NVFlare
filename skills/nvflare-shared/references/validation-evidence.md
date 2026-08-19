@@ -117,14 +117,20 @@ Before spending time on full simulation, run cheap checks when applicable:
 
 - compile generated Python files;
 - construct or instantiate the selected recipe;
-- export to a temporary directory;
-- inspect exported server/client app folders and expected config files;
-- verify the exported server model retains its audited class path and complete
-  constructor args; recipe construction alone does not prove serialization;
-- compare the resolved model-selection state with the exported server config:
-  disabled means no active model selector, while metric or deliberately accepted
-  recipe-default selection means a selector with the resolved key;
-- verify generated files required by server and client code are packaged;
+- when the selected final target is an exported/deployable artifact, create that
+  export once, inspect its server/client app folders and expected config files,
+  and run that same export; do not create a separate throwaway export;
+- when the selected final target is a local `python job.py` simulation, do not
+  export during preflight. After the run, inspect the materialized server/client
+  configs and packaging evidence in its simulation workspace;
+- in the artifact produced by the selected target, verify the server model
+  retains its audited class path and complete constructor args; recipe
+  construction alone does not prove serialization;
+- compare the resolved model-selection state with the produced server config:
+  disabled means no active model selector, while metric or deliberately
+  accepted recipe-default selection means a selector with the resolved key;
+- verify generated files required by server and client code are packaged in the
+  artifact produced by the selected target;
 - run local partition sanity checks when generated site splits or data
   partitions are introduced;
 - run the framework-specific model compatibility check defined by the framework
@@ -149,6 +155,11 @@ fields, or model-state keys, inspect the actual object (`df.columns`, JSON keys,
 from that evidence. Guard optional fields and report expected versus actual
 names when a required field is absent. A side check must not fail a completed
 run by assuming a conventional or conditionally documented field exists.
+Build validation calls from inspected callable signatures and type annotations,
+and preserve their required argument types. When retrying a failed check, change
+only the failing assumption; preserve prior guards, fallbacks, and already-correct
+arguments. Never replace an optional-field guard with a hard-coded conventional
+name merely to make the retry different.
 For generated Python structure, validate semantic AST nodes rather than textual
 occurrences. Scope traversal to the field being checked; for example, inspect a
 loop's condition and body separately. Filter traversal results by node type

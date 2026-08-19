@@ -1034,6 +1034,42 @@ def test_fedstats_reuses_named_sites_for_recipe_and_simulation():
         assert "SimEnv(clients=sites" in example_text
 
 
+def test_pytorch_family_validation_avoids_recovered_probe_failures():
+    repo_root = Path(__file__).resolve().parents[4]
+    shared_root = repo_root / "skills" / "nvflare-shared" / "references"
+    validation_text = " ".join(shared_root.joinpath("validation-evidence.md").read_text(encoding="utf-8").split())
+    construction_text = " ".join(
+        shared_root.joinpath("pytorch-family-recipe-construction.md").read_text(encoding="utf-8").split()
+    )
+
+    assert "when the selected final target is an exported/deployable artifact" in validation_text
+    assert "do not create a separate throwaway export" in validation_text
+    assert "when the selected final target is a local `python job.py` simulation, do not export during preflight" in (
+        validation_text
+    )
+    assert "Build validation calls from inspected callable signatures and type annotations" in validation_text
+    assert "change only the failing assumption" in validation_text
+    assert "preserve prior guards, fallbacks, and already-correct arguments" in validation_text
+    assert "Never replace an optional-field guard with a hard-coded conventional name" in validation_text
+
+    assert "do not import or introspect a `Run` class" in construction_text
+    assert "probe its module location, signature, or docstring" in construction_text
+    assert "selected maintained asset or the public recipe documentation" in construction_text
+
+    pytorch_skill = " ".join(
+        repo_root.joinpath("skills/nvflare-convert-pytorch/SKILL.md").read_text(encoding="utf-8").split()
+    )
+    lightning_skill = " ".join(
+        repo_root.joinpath("skills/nvflare-convert-lightning/SKILL.md").read_text(encoding="utf-8").split()
+    )
+    hf_skill = " ".join(
+        repo_root.joinpath("skills/nvflare-convert-huggingface/SKILL.md").read_text(encoding="utf-8").split()
+    )
+    assert "export and package inspection only for the selected exported-artifact path" in pytorch_skill
+    assert "Export inspection belongs only to the exported path" in lightning_skill
+    assert "Inspect export/package evidence only for an exported final target" in hf_skill
+
+
 def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys():
     repo_root = Path(__file__).resolve().parents[4]
     skill_root = repo_root / "skills" / "nvflare-convert-huggingface"

@@ -103,12 +103,12 @@ user's purpose is to understand data distribution; handle conversion later as a 
    the construction reference. Preserve the job asset's recipe-before-parser
    ordering, `ArgumentParser(allow_abbrev=False)`, and strict `parse_args()`; do
    not use `parse_known_args()`.
-7. Only after generated files exist, load
-   `../nvflare-shared/references/validation-evidence.md`, then
-   `references/huggingface-validation.md`. Follow the shared compile,
-   construction, export, package-inspection, simulation, and terminal-evidence
-   ladder; apply only the standard Trainer checks from the HF reference. Stop
-   at the first failed rung. Review and exercise the maintained assets directly;
+7. Only after generated files exist, load `../nvflare-shared/references/validation-evidence.md`
+   and `references/huggingface-validation.md`. Follow the shared compile,
+   construction, simulation, and terminal-evidence ladder. Inspect export/package
+   evidence only for an exported final target; inspect a local target's
+   materialized evidence after its run. Apply only the standard HF Trainer checks
+   and stop at the first failed rung. Review and exercise the maintained assets directly;
    do not inspect NVFLARE implementation source, improvise Recipe API probes, or
    write one-off AST programs to re-prove them. Use
    `references/huggingface-state-and-distributed.md`

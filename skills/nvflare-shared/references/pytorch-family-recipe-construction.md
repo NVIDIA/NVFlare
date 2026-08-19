@@ -39,6 +39,12 @@ non-failing module attribute check such as `hasattr`; if it is absent, report a
 version or skill-contract gap. Do not replace a failed local public check with
 web search or SDK-source discovery.
 
+For ordinary PyTorch-family `SimEnv` execution, do not import or introspect a
+`Run` class, probe its module location, signature, or docstring, or add lifecycle
+calls by guess. `recipe.execute(env)` is sufficient unless a selected maintained
+asset or the public recipe documentation already defines use of its returned
+handle. In that case, preserve the known pattern instead of rediscovering it.
+
 Validate a recipe model's `class_path` through the public recipe construction,
 export inspection, and bounded execution path. Do not import internal class
 loader helpers, guess helper names, or inspect implementation source to build a

@@ -90,7 +90,9 @@ distribution; handle conversion later as a separate request.
    from the shared PyTorch-family construction profile.
 7. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`:
    compile checks, recipe construction, one final full-run path chosen by the
-   artifact being validated, and export inspection; use
+   artifact being validated, with export and package inspection only for the
+   selected exported-artifact path. For a local target, inspect the materialized
+   configs and packaging evidence after that run. Use
    `references/job-validation.md` for PyTorch-specific failures. Stop at the
    first failed rung and report the product error. Use the environment and
    permission mechanisms supplied by the agent host; do not inspect or enforce
