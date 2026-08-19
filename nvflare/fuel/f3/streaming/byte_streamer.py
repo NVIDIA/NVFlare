@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.mpm import MainProcessMonitor
@@ -36,7 +36,14 @@ from nvflare.fuel.f3.streaming.stream_const import (
     StreamDataType,
     StreamHeaderKey,
 )
-from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, Stream, StreamError, StreamFuture, StreamTaskSpec
+from nvflare.fuel.f3.streaming.stream_types import (
+    BlobSizeError,
+    Stream,
+    StreamError,
+    StreamFuture,
+    StreamTargetUnreachable,
+    StreamTaskSpec,
+)
 from nvflare.fuel.f3.streaming.stream_utils import (
     ONE_MB,
     CheckedExecutor,
@@ -274,16 +281,33 @@ class TxTask(StreamTaskSpec):
 
         if self.reliable:
             self.pending_messages = {}
+            self.pending_send_errors = {}
             self.pending_message_bytes = 0
             self.retry_lock = threading.RLock()
             reliable_retry_scheduler.register(self)
         else:
             self.pending_messages = None
+            self.pending_send_errors = None
             self.pending_message_bytes = 0
             self.retry_lock = None
 
     def __str__(self):
         return f"Tx[SID:{self.sid} to {self.target} for {self.channel}/{self.topic}]"
+
+    @staticmethod
+    def _new_send_error(msg: str, send_error=None) -> StreamError:
+        if send_error == ReturnCode.TARGET_UNREACHABLE:
+            return StreamTargetUnreachable(msg)
+        return StreamError(msg)
+
+    def _new_pending_error(self, msg: str, seq=None) -> StreamError:
+        if seq is not None:
+            return self._new_send_error(msg, self.pending_send_errors.get(seq))
+        if self.pending_send_errors and all(
+            error == ReturnCode.TARGET_UNREACHABLE for error in self.pending_send_errors.values()
+        ):
+            return StreamTargetUnreachable(msg)
+        return StreamError(msg)
 
     def send_loop(self):
         """Read/send loop to transmit the whole stream with flow control"""
@@ -317,12 +341,16 @@ class TxTask(StreamTaskSpec):
 
                     now = time.monotonic()
                     if now - self.last_ack_progress_ts >= self.ack_progress_timeout:
-                        self.stop(StreamError(f"{self} ACK made no progress for {self.ack_progress_timeout} seconds"))
+                        self.stop(
+                            self._new_pending_error(
+                                f"{self} ACK made no progress for {self.ack_progress_timeout} seconds"
+                            )
+                        )
                         return
 
                     elapsed = now - wait_start
                     if elapsed >= self.ack_wait:
-                        self.stop(StreamError(f"{self} ACK timeouts after {self.ack_wait} seconds"))
+                        self.stop(self._new_pending_error(f"{self} ACK timeouts after {self.ack_wait} seconds"))
                         return
 
                     self.ack_waiter.clear()
@@ -401,9 +429,11 @@ class TxTask(StreamTaskSpec):
 
                     pending_message_size = _payload_size(message.payload)
                     self.pending_messages[self.seq] = None, curr_time, message
+                    self.pending_send_errors[self.seq] = None
                     self.pending_message_bytes += pending_message_size
                     if self.retry_max_pending_bytes > 0 and self.pending_message_bytes > self.retry_max_pending_bytes:
                         self.pending_messages.pop(self.seq, None)
+                        self.pending_send_errors.pop(self.seq, None)
                         self.pending_message_bytes -= pending_message_size
                         msg = (
                             f"{self} has too many retry messages "
@@ -432,12 +462,17 @@ class TxTask(StreamTaskSpec):
             )
         errors = errors or {}
         error = errors.get(self.target)
+        if self.reliable:
+            with self.retry_lock:
+                if self.seq in self.pending_messages:
+                    self.pending_send_errors[self.seq] = error
         if error:
             msg = f"{self} Message sending error to target {self.target}: {error}"
             if self.reliable:
-                log.error(f"{msg}, will retry in {self.retry_wait} seconds")
+                log_fn = log.debug if self.optional and error == ReturnCode.TARGET_UNREACHABLE else log.error
+                log_fn(f"{msg}, will retry in {self.retry_wait} seconds")
             else:
-                self.stop(StreamError(msg))
+                self.stop(self._new_send_error(msg, error))
                 return False
 
         # Update state
@@ -520,6 +555,7 @@ class TxTask(StreamTaskSpec):
             self.stopping = False
             if error:
                 self.pending_messages.clear()
+                self.pending_send_errors.clear()
                 self.pending_message_bytes = 0
             return True
 
@@ -559,6 +595,7 @@ class TxTask(StreamTaskSpec):
                     for seq in list(self.pending_messages):
                         if seq <= ack_seq:
                             _retry_start_time, _last_retry, message = self.pending_messages.pop(seq)
+                            self.pending_send_errors.pop(seq, None)
                             self.pending_message_bytes -= _payload_size(message.payload)
 
                 should_stop = self.stopping and not self.pending_messages
@@ -611,8 +648,13 @@ class TxTask(StreamTaskSpec):
                         retry_time = curr_time - retry_start_time
                         if retry_time > self.retry_timeout:
                             msg = f"{self} seq {seq} retry failed after {retry_time:.2f} seconds from first retry"
-                            log.error(msg)
-                            retry_error = StreamError(msg)
+                            retry_error = self._new_pending_error(msg, seq)
+                            log_fn = (
+                                log.debug
+                                if self.optional and isinstance(retry_error, StreamTargetUnreachable)
+                                else log.error
+                            )
+                            log_fn(msg)
                             break
                         remaining_retry_timeout = self.retry_timeout - retry_time
                         wait_time = min(wait_time, remaining_retry_timeout)
@@ -655,8 +697,12 @@ class TxTask(StreamTaskSpec):
                     )
                     errors = errors or {}
                     error = errors.get(self.target)
+                    with self.retry_lock:
+                        if seq in self.pending_messages:
+                            self.pending_send_errors[seq] = error
                     if error:
-                        log.error(
+                        log_fn = log.debug if self.optional and error == ReturnCode.TARGET_UNREACHABLE else log.error
+                        log_fn(
                             f"{self} message retry error for target {self.target} seq {seq}: "
                             f"{error}, will retry again in {self.retry_wait} seconds"
                         )

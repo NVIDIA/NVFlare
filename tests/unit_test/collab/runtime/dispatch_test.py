@@ -43,7 +43,7 @@ from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCo
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import StreamError
+from nvflare.fuel.f3.streaming.stream_types import StreamError, StreamTargetUnreachable
 
 
 class _FailingClient:
@@ -340,12 +340,24 @@ def test_stream_adapter_logs_undeliverable_late_response_at_debug():
     adapter = Adapter(MagicMock(), MagicMock(fqcn="site-1.job"), MagicMock())
     adapter.logger = MagicMock()
     reply_future = Future()
-    reply_future.set_exception(StreamError("requester is gone"))
+    reply_future.set_exception(StreamTargetUnreachable("requester is gone"))
 
     adapter._handle_reply_stream_done(reply_future)
 
     adapter.logger.debug.assert_called_once()
     adapter.logger.error.assert_not_called()
+
+
+def test_stream_adapter_logs_active_stream_failure_at_error():
+    adapter = Adapter(MagicMock(), MagicMock(fqcn="site-1.job"), MagicMock())
+    adapter.logger = MagicMock()
+    reply_future = Future()
+    reply_future.set_exception(StreamError("ACK timed out"))
+
+    adapter._handle_reply_stream_done(reply_future)
+
+    adapter.logger.error.assert_called_once()
+    adapter.logger.debug.assert_not_called()
 
 
 @pytest.mark.parametrize("secure", [False, True])

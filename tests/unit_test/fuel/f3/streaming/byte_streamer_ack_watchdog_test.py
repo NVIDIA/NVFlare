@@ -19,12 +19,12 @@ from unittest.mock import MagicMock
 import pytest
 
 import nvflare.fuel.f3.streaming.byte_streamer as byte_streamer_module
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer, TxTask
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamDataType, StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, Stream, StreamError
+from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, Stream, StreamError, StreamTargetUnreachable
 
 
 class DummyStream(Stream):
@@ -809,6 +809,24 @@ class TestReliableByteStreamer:
         err = task.stream_future.exception(timeout=0.1)
         assert err is not None
         assert "retry failed" in str(err)
+
+    def test_optional_retry_timeout_preserves_target_unreachable_reason(self, monkeypatch, retry_scheduler):
+        task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
+        task.optional = True
+        cell.fire_and_forget.return_value = {"peer": ReturnCode.TARGET_UNREACHABLE}
+        task.buffer[0:1] = b"x"
+        task.buffer_size = 1
+        task.send_pending_buffer()
+        _retry_start, _last_retry, message = task.pending_messages[0]
+        task.pending_messages[0] = (0.0, 0.0, message)
+        task.retry_timeout = 0.5
+
+        monkeypatch.setattr(byte_streamer_module.time, "monotonic", lambda: 1.0)
+
+        task.retry_task()
+
+        assert task.pending_send_errors == {}
+        assert isinstance(task.stream_future.exception(timeout=0.1), StreamTargetUnreachable)
 
     def test_retry_task_failure_fails_stream_future(self, monkeypatch, retry_scheduler):
         task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)

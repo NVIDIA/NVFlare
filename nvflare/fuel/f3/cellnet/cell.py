@@ -28,7 +28,7 @@ from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, make_r
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, StreamFuture
+from nvflare.fuel.f3.streaming.stream_types import BlobSizeError, StreamFuture, StreamTargetUnreachable
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.waiter_utils import WaiterRC, conditional_wait
@@ -160,10 +160,16 @@ class Adapter:
             )
             os._exit(1)
 
-        # A response can finish after the requester has timed out and removed its waiter or job cell. The
-        # requester already owns the request outcome, so an undeliverable late response is diagnostic only.
-        self.logger.debug(
-            f"streamed response from {self.my_info.fqcn} was not delivered: {secure_format_exception(error)}"
+        if isinstance(error, StreamTargetUnreachable):
+            # A response can finish after the requester has timed out and removed its waiter or job cell. The
+            # requester already owns the request outcome, so an unreachable target is diagnostic only.
+            self.logger.debug(
+                f"streamed response from {self.my_info.fqcn} was not delivered: {secure_format_exception(error)}"
+            )
+            return
+
+        self.logger.error(
+            f"streamed response from {self.my_info.fqcn} failed asynchronously: {secure_format_exception(error)}"
         )
 
     def _send_response(self, response, stream_req_id, req_id, channel, topic, origin, secure, optional):
