@@ -9,7 +9,7 @@
 
 ## Public Pull Requests
 
-- When creating a PR that should be included in the 2.9 release, assign the `2.9` milestone.
+- When creating a PR intended for a specific release, assign the corresponding release milestone.
 - Keep public GitHub PRs, issues, and comments self-contained. Do not include private Jira URLs or ticket identifiers; summarize the relevant requirements and context instead.
 - For internal traceability, link from the Jira ticket to the public GitHub artifact, not from the public artifact to Jira.
 
