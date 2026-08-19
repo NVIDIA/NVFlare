@@ -18,12 +18,20 @@ from types import SimpleNamespace
 
 import pytest
 from cryptography import x509
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from nvflare.apis.fl_constant import ConnectionSecurity
-from nvflare.fuel.f3.cellnet.cell_cipher import InvalidCertChain, SimpleCellCipher
+from nvflare.fuel.f3.cellnet.cell_cipher import (
+    KEY_ENC_LENGTH,
+    NONCE_LENGTH,
+    SIMPLE_HEADER_LENGTH,
+    VERSION_LENGTH,
+    InvalidCertChain,
+    SimpleCellCipher,
+)
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.credential_manager import CERT_CONTENT, CredentialManager
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
@@ -106,6 +114,34 @@ def _make_chained_cell_cipher_cert():
         subject_pub_key=leaf_pub_key,
     )
     return root_cert, leaf_key, leaf_cert, intermediate_cert
+
+
+def _make_cell_cipher_pair():
+    root_key, root_pub_key = generate_keys()
+    root_identity = Identity("root")
+    root_cert = generate_cert(
+        subject=root_identity,
+        issuer=root_identity,
+        signing_pri_key=root_key,
+        subject_pub_key=root_pub_key,
+        ca=True,
+    )
+
+    def _make_leaf(name):
+        leaf_key, leaf_pub_key = generate_keys()
+        leaf_cert = generate_cert(
+            subject=Identity(name),
+            issuer=root_identity,
+            signing_pri_key=root_key,
+            subject_pub_key=leaf_pub_key,
+        )
+        return leaf_key, leaf_cert
+
+    sender_key, sender_cert = _make_leaf("sender")
+    receiver_key, receiver_cert = _make_leaf("receiver")
+    sender = SimpleCellCipher(root_cert, sender_key, sender_cert)
+    receiver = SimpleCellCipher(root_cert, receiver_key, receiver_cert)
+    return sender, sender_cert, receiver, receiver_cert
 
 
 def _conn_manager(local_fqcn="server", identity_map=None):
@@ -392,6 +428,73 @@ def test_cell_cipher_accepts_leaf_certificate_with_intermediate_chain():
     encrypted = cipher.encrypt(b"hello", [leaf_cert, intermediate_cert])
 
     assert cipher.decrypt(encrypted, [leaf_cert, intermediate_cert]) == b"hello"
+
+
+def test_cell_cipher_authenticates_claimed_sender():
+    sender, sender_cert, receiver, receiver_cert = _make_cell_cipher_pair()
+    encrypted = sender.encrypt(b"hello", receiver_cert)
+
+    assert receiver.decrypt(encrypted, sender_cert) == b"hello"
+
+    with pytest.raises(InvalidSignature):
+        receiver.decrypt(encrypted, receiver_cert)
+
+
+@pytest.mark.parametrize("message", [b"", b"hello", bytes(range(256))])
+def test_cell_cipher_authenticates_each_message(message):
+    root_cert, leaf_key, leaf_cert, intermediate_cert = _make_chained_cell_cipher_cert()
+    cipher = SimpleCellCipher(root_cert, leaf_key, [leaf_cert, intermediate_cert])
+
+    first = cipher.encrypt(message, [leaf_cert, intermediate_cert])
+    second = cipher.encrypt(message, [leaf_cert, intermediate_cert])
+
+    assert first != second
+    assert cipher.decrypt(first, [leaf_cert, intermediate_cert]) == message
+    assert cipher.decrypt(second, [leaf_cert, intermediate_cert]) == message
+
+
+@pytest.mark.parametrize(
+    "offset",
+    [
+        VERSION_LENGTH,
+        VERSION_LENGTH + NONCE_LENGTH,
+        VERSION_LENGTH + NONCE_LENGTH + KEY_ENC_LENGTH,
+        SIMPLE_HEADER_LENGTH,
+        -1,
+    ],
+    ids=["nonce", "wrapped_key", "signature", "ciphertext", "authentication_tag"],
+)
+def test_cell_cipher_rejects_tampered_envelope(offset):
+    root_cert, leaf_key, leaf_cert, intermediate_cert = _make_chained_cell_cipher_cert()
+    cipher = SimpleCellCipher(root_cert, leaf_key, [leaf_cert, intermediate_cert])
+    encrypted = bytearray(cipher.encrypt(b"authenticated message", [leaf_cert, intermediate_cert]))
+    encrypted[offset] ^= 1
+
+    with pytest.raises(InvalidSignature):
+        cipher.decrypt(bytes(encrypted), [leaf_cert, intermediate_cert])
+
+
+def test_cell_cipher_rejects_tampering_after_key_is_cached():
+    root_cert, leaf_key, leaf_cert, intermediate_cert = _make_chained_cell_cipher_cert()
+    cipher = SimpleCellCipher(root_cert, leaf_key, [leaf_cert, intermediate_cert])
+    first = cipher.encrypt(b"first", [leaf_cert, intermediate_cert])
+    second = bytearray(cipher.encrypt(b"second", [leaf_cert, intermediate_cert]))
+
+    assert cipher.decrypt(first, [leaf_cert, intermediate_cert]) == b"first"
+    second[SIMPLE_HEADER_LENGTH] ^= 1
+
+    with pytest.raises(InvalidSignature):
+        cipher.decrypt(bytes(second), [leaf_cert, intermediate_cert])
+
+
+def test_cell_cipher_rejects_unsupported_version():
+    root_cert, leaf_key, leaf_cert, intermediate_cert = _make_chained_cell_cipher_cert()
+    cipher = SimpleCellCipher(root_cert, leaf_key, [leaf_cert, intermediate_cert])
+    encrypted = bytearray(cipher.encrypt(b"hello", [leaf_cert, intermediate_cert]))
+    encrypted[0] ^= 1
+
+    with pytest.raises(ValueError, match="unsupported cell cipher version"):
+        cipher.decrypt(bytes(encrypted), [leaf_cert, intermediate_cert])
 
 
 def test_cell_cipher_encrypt_rejects_empty_peer_cert_chain():
