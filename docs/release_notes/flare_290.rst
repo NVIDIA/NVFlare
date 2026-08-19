@@ -99,3 +99,16 @@ Compatibility and Migration Notes
   ``aggregation_format=ExchangeFormat.PYTORCH`` and
   ``enable_tensor_disk_offload=True`` on ``SwarmLearningRecipe``. The same
   offload flag is available on ``SwarmClientConfig`` for Job API users.
+- Auto-FL campaigns now honor the job's native metric direction
+  (``key_metric_mode`` or a matching same-metric ``stop_cond``) instead of
+  assuming maximization, so raw lower-is-better objectives no longer need to be
+  negated. Campaign admission fails closed in two new cases: an obvious
+  lower-is-better metric such as ``val_loss`` that relies only on NVFlare's
+  implicit ``max`` default is rejected until the job declares
+  ``key_metric_mode="min"``, and jobs passing a custom ``model_selector`` are
+  rejected because that component supersedes ``key_metric_mode``, so its
+  selection direction cannot be imported deterministically. Remove the custom
+  selector and expose its criterion as a declared ``key_metric`` with
+  ``key_metric_mode`` before initializing a campaign. Experimental legacy
+  minimization campaigns without direction provenance must be re-initialized in
+  a fresh workspace.
