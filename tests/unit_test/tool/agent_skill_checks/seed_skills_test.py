@@ -780,14 +780,18 @@ def test_all_conversion_skills_preserve_required_model_constructor_args():
         assert "exported server config retains" in mandatory[behavior_id]
 
 
-def test_huggingface_hello_world_prompt_authorizes_required_public_artifact_downloads():
+def test_conversion_hello_world_prompts_authorize_required_public_model_artifacts():
     repo_root = Path(__file__).resolve().parents[4]
-    readme = repo_root / "examples" / "hello-world" / "agent-skills" / "huggingface-conversion" / "README.md"
-    normalized = " ".join(readme.read_text(encoding="utf-8").split())
+    examples_root = repo_root / "examples" / "hello-world" / "agent-skills"
 
-    assert "You may download any required public model, tokenizer, and configuration artifacts" in normalized
-    assert "if they are not already cached" in normalized
-    assert "Proceed without asking for additional confirmation" in normalized
+    for example_name in ("pytorch-conversion", "lightning-conversion", "huggingface-conversion"):
+        readme = examples_root / example_name / "README.md"
+        normalized = " ".join(readme.read_text(encoding="utf-8").split())
+
+        assert "You may download any required public model artifacts" in normalized
+        assert "including tokenizer and configuration files" in normalized
+        assert "if they are not already cached" in normalized
+        assert "Proceed without asking for additional confirmation" in normalized
 
 
 def test_skills_readme_frontmatter_example_includes_required_author():
