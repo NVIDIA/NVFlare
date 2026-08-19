@@ -240,7 +240,23 @@ Result direction for `external_process`:
    waiter does not depend on the periodic expiration monitor noticing it. A receiver that does
    not provide terminal confirmation has no acknowledgement after its terminal serve, so that
    path remains monitor-settled: this preserves a post-reply interval before a one-shot producer
-   can observe completion and tear down its Cell.
+   can observe completion and tear down its Cell. If a receiver abandons a transfer after learning
+   that the producer supports cancellation, it reports terminal failure back to the producer.
+   That failure is applied to every ref for the same receiver in the transaction, allowing an
+   accepted result source to settle promptly even if its enclosing CJ task has already returned.
+   Before a one-task trainer closes its Cell, it sends a task-correlated source-settled
+   acknowledgement to the CJ. This clears the conservative accepted-source latch without a stale
+   message from an earlier task being able to clear a newer source.
+6. The CJ monitors the owned trainer even after accepting a lazy result envelope. If that
+   process group dies before source settlement (including SIGKILL or OOM exit), the CJ sends
+   an acknowledged, task-scoped failure notice to the declared downstream receiver for the
+   trainer-owned reference IDs. The receiver interrupts matching active downloads and retains
+   a bounded tombstone for a notice that races download startup. Unrelated sources and refs keep
+   their normal timeout/retry behavior. FedAvg targets its server job cell; Swarm uses the
+   aggregation-client job cell stamped on the task. Once the envelope is accepted, source loss
+   is run-fatal even when a controller's `min_responses` threshold could otherwise tolerate one
+   missing client: downstream consumers may already hold references to that committed source,
+   so the result cannot be safely withdrawn and reclassified as an ordinary missing response.
 
 Pass-through always preserves the trainer's original FQCN and reference ID. The CJ may still be a
 physical Cell routing hop for the result envelope and subsequent download messages, depending on
@@ -276,31 +292,46 @@ lifecycle bit is included in the bootstrap config. After the CJ accepts a per-ta
 the trainer remains alive until its complete result-publication barrier settles: the
 `RESULT_ACCEPTED` reply reaches `send()` and every actual receiver download, when present, reaches a
 terminal outcome. It then closes its Cell synchronously, and the CJ reaps that natural process exit
-asynchronously. An orderly job SHUTDOWN cancels an incoming task materialization but not an already
-accepted result publication. If teardown finds such a publication still active, it asks the trainer
-to stop, starts the natural-exit reaper, and holds END_RUN until that truthful terminal exit. This
-also covers inline results, whose acceptance reply can race END_RUN even though they create no
-download transaction. Teardown cannot safely return with a daemon reaper because ClientRunner
-tears down streaming and the CJ Cell immediately after END_RUN. The lower `DownloadService`
-idle/receiver policy normally bounds a stalled transfer. END_RUN also applies a final total wait
-backstop just beyond the default streaming-idle budget; if a still-connected trainer remains wedged
-past that bound, the backend force-stops its owned process group rather than hanging job teardown.
-Other failure/teardown paths use the bounded SHUTDOWN/TERM/KILL sequence immediately.
+asynchronously. A retired per-task session remains addressable by its launch-scoped FQCN/session ID
+until that reaper finishes, so its heartbeat and `RESULT_SOURCE_SETTLED` acknowledgement remain
+valid after the next task installs a new active launch. Normal job SHUTDOWN cancels an incoming task materialization but not an already
+accepted result publication. If normal teardown finds such a publication still active, it asks the
+trainer to stop and starts the natural-exit reaper. This also covers inline results, whose acceptance
+reply can race END_RUN even though they create no download transaction. Teardown cannot safely
+return with a daemon reaper because ClientRunner tears down streaming and the CJ Cell immediately
+after END_RUN. A result transfer retains its own `DownloadService` idle/receiver policy, but that
+longer data-transfer budget does not govern CJ process ownership. END_RUN gives a still-live result
+source one acknowledged SHUTDOWN interval, then force-stops every remaining owned process group.
+A source already known to be settled instead receives its configured natural-exit budget and a
+small configured TERM grace, both inside a 30-second cleanup cap, so normal post-send checkpoint
+work is not cut off at the live-source acknowledgement deadline. A run-abort-marked `ABORT_TASK`
+latches aborted teardown even when `execute()` already returned the lazy result, sends ABORT
+immediately, and bypasses the normal result-source drain interval. Task/workflow-only cancellation
+sends ABORT without poisoning later tasks, and normal END_RUN carries no run-abort marker. Other
+failure/teardown paths use the bounded SHUTDOWN/TERM/KILL sequence immediately. The result
+download's receiver-cancellation handshake is independent of that task latch: it covers the case
+where the nested workflow task was already cleared before graceful job teardown began. Normal
+completion sends no cancellation and retains the accepted-result drain behavior.
+For a per-task trainer whose accepted result already has a registered natural-exit reaper,
+`END_RUN` joins that owner instead of racing it with another synchronous SHUTDOWN request.
 
 Startup waits at most `launch_timeout` for the trainer to complete its HELLO handshake. The
 default is 300 seconds; callers may explicitly use `None` when an unbounded wait is required. For
 ordinary shutdown, a `shutdown_timeout` of zero is kept as zero and starts process-group termination
 immediately after the orderly SHUTDOWN notification. An accepted result whose publication is
-different: its truthful terminal barrier takes precedence over ordinary process-shutdown timing,
-so historical `ScriptRunner` defaults cannot erase the source-lifetime contract.
+still live receives the short acknowledgement interval described above before process cleanup.
 
 The backend starts the command in an owned process group on POSIX, monitors process-group exit and
 the authenticated heartbeat lease, and rejects messages from stale sessions or unexpected Cell
-origins. With a positive orderly-shutdown bound, shutdown sends a bounded Cell request and charges
-its acknowledgement time against that bound; a zero bound keeps the immediate fire-and-forget
-notification for ordinary teardown. A live accepted-result publication always uses a short,
-acknowledged SHUTDOWN request because the trainer cannot be force-stopped before its send barrier
-settles; the source reaper retries transient control-path failures. Its acknowledgement also
+origins. Its owner-only bootstrap also records the launching CJ process ID. After HELLO, an external
+trainer watches that owner and terminates its isolated process group if the CJ disappears before
+normal finalization can reap it. Attach mode never receives or watches a CJ process ID because the
+attached process is externally owned. With a positive orderly-shutdown bound, shutdown sends a
+bounded Cell request and charges its acknowledgement time against that bound; a zero bound keeps the
+immediate fire-and-forget notification for ordinary teardown. A live accepted-result publication
+always uses a short, acknowledged SHUTDOWN request because the trainer cannot be force-stopped
+before its send barrier settles; the source reaper retries transient control-path failures. Its
+acknowledgement also
 reports whether `send()` still owns that barrier. This state transition is serialized with
 SHUTDOWN: either `send()` sees the stop and closes after terminal settlement, or the backend learns
 that settlement already happened and can stop the persistent process. A standard trainer loop also releases its Cell
@@ -308,11 +339,37 @@ synchronously when `receive()` or `is_running()` observes the shutdown (or abort
 scripts do not need an explicit `flare.shutdown()` at loop exit. The backend then terminates any
 surviving owned POSIX process group with a bounded soft/hard stop sequence. Because a directly launched trainer does not run under
 `MainProcessMonitor`, its Cell Client API shutdown also retires process-global DownloadService
-state, the reliable retry scheduler, and the shared streaming executors; otherwise their non-daemon
+state, cancels active outgoing byte streams, drains the reliable retry scheduler and shared streaming
+executors, and only then stops Cell transport; otherwise their non-daemon
 pools can keep a completed one-shot or distributed worker process alive. That irreversible runtime
 shutdown is specific to the dedicated Cell trainer process. In-process Client API contexts do not
 retire those process-global services; a stopped context is evicted so a later job/session in the
 same process can initialize a fresh one.
+
+Process death after `RESULT_ACCEPTED` is also a terminal source event, not a healthy streaming
+timeout. The CJ reports it over the download-service control route with bounded acknowledged
+delivery. Every client job registers that receiver route before `START_RUN`, so a notice that
+precedes its first lazy download is retained as a tombstone regardless of the learner backend.
+A receiver validates that the reporting CJ is the direct parent of the failed trainer
+FQCN, then aborts only the matching `(source FQCN, ref ID)` downloads. This converts downstream
+materialization into the workflow's ordinary controlled task/error path instead of allowing each
+request to spend the 600-second data timeout retrying an unreachable trainer. Once that failure
+notification has settled, the CJ records the reportable external-process exception code and fails
+the run through normal teardown. The trainer retries its task-correlated settlement acknowledgement
+before a one-shot Cell closes; until the CJ receives that explicit acknowledgement, any process-group
+exit remains fatal, including a launcher reporting rc=0 after a wrapped worker died. The CJ parent
+sends the authenticated terminal outcome before client logout, so the server finishes the job as
+`EXECUTION_EXCEPTION`. Explicit job abort and source failure use one serialized terminal
+decision: an abort that wins first remains `ABORTED`, while an already-claimed source failure cannot
+be reclassified by a later teardown signal.
+
+SJ and CJ process teardown closes command admission, publishes workspace-transfer results while the
+process-global F3 pools and Cell are still available, and then drains DownloadService, active byte
+streams, the reliable-retry scheduler, and F3 callback executors. It next stops the Cell, gives
+admitted command callbacks a bounded drain so blocked communication wakes, and only then closes
+security services. This prevents queued streamed callbacks from entering a completed workflow or
+writing a closed audit file without making job-end workspace archival depend on already-stopped
+streaming pools.
 
 `flare.init()` also binds its returned context to the calling thread. Client API calls without an
 explicit `ctx` prefer that binding; an old stopped binding is retained as a tombstone rather than

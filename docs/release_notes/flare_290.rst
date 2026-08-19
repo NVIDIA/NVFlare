@@ -108,3 +108,9 @@ Compatibility and Migration Notes
   ``aggregation_format=ExchangeFormat.PYTORCH`` and
   ``enable_tensor_disk_offload=True`` on ``SwarmLearningRecipe``. The same
   offload flag is available on ``SwarmClientConfig`` for Job API users.
+- In external-process Client API mode, losing a trainer after its lazy result
+  envelope has been accepted now fails the run as ``EXECUTION_EXCEPTION`` even
+  if a controller's ``min_responses`` threshold could otherwise tolerate a
+  missing client. The accepted envelope may already have exposed references to
+  downstream consumers and cannot be safely withdrawn. An explicit job abort
+  that wins the terminal-state race remains ``ABORTED``.
