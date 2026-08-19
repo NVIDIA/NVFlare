@@ -1754,6 +1754,30 @@ def test_refresh_plot_reloads_plotter_without_leaking_module(tmp_path):
         assert module_name not in sys.modules
 
 
+def test_refresh_plot_tolerates_legacy_plotter_only_for_max_mode(tmp_path):
+    reporter = _load_reporter()
+    results_path = tmp_path / "results.tsv"
+    results_path.write_text("status\tname\n", encoding="utf-8")
+    output_path = tmp_path / "progress.png"
+    plotter_path = tmp_path / "legacy_plotter.py"
+    plotter_path.write_text(
+        "from pathlib import Path\n"
+        "def load_results(path):\n"
+        "    return []\n"
+        "def plot_progress(records, output, metric_label):\n"
+        "    Path(output).write_text(f'refreshed:{metric_label}', encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+
+    assert reporter.refresh_plot(results_path, output_path, "accuracy", plotter_path, mode="max") is None
+    assert output_path.read_text(encoding="utf-8") == "refreshed:accuracy"
+
+    output_path.write_text("existing", encoding="utf-8")
+    warning = reporter.refresh_plot(results_path, output_path, "loss", plotter_path, mode="min")
+    assert "cannot represent mode='min'" in warning
+    assert output_path.read_text(encoding="utf-8") == "existing"
+
+
 def test_refresh_plot_uses_merged_product_plotter_contract(tmp_path):
     pytest.importorskip("matplotlib")
     reporter = _load_reporter()

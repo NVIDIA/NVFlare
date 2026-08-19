@@ -44,13 +44,11 @@ METRIC_INVARIANTS = [
 ]
 METRIC_CHANGE_POLICY = "restart_campaign_with_repaired_baseline"
 SUPPORTED_OBJECTIVE_MODES = {"min", "max"}
+LOWER_IS_BETTER_METRIC_SUBSTRINGS = ("loss", "err")
 LOWER_IS_BETTER_METRIC_TOKENS = {
     "bce",
     "ce",
     "cer",
-    "error",
-    "err",
-    "loss",
     "mae",
     "mse",
     "nll",
@@ -227,6 +225,11 @@ class DeterministicJobImporter:
             job_metric_source,
         )
         if metric_issue:
+            mode_uses_job_metric = mode_source == "job:stop_cond" or (
+                job_call is not None and "stop_cond" in job_call.keywords and "key_metric_mode" not in job_call.keywords
+            )
+            if metric and not mode_issue and not mode_uses_job_metric:
+                metric_issue = {**metric_issue, "field": "objective.job_key_metric"}
             unresolved.append(metric_issue)
         if mode_issue:
             unresolved.append(mode_issue)
@@ -1193,9 +1196,14 @@ def _resolve_stop_condition_mode(
 def likely_lower_is_better_metric(metric: str) -> bool:
     """Return whether a metric name is an obvious lower-is-better objective."""
 
-    tokens = [token for token in re.split(r"[^a-z0-9]+", metric.lower()) if token]
+    name = metric.lower()
+    tokens = [token for token in re.split(r"[^a-z0-9]+", name) if token]
     if not tokens or "neg" in tokens or "negative" in tokens:
         return False
+    # Keep this standalone skill heuristic aligned with
+    # nvflare.app_common.widgets.intime_model_selector._looks_lower_is_better.
+    if any(hint in name for hint in LOWER_IS_BETTER_METRIC_SUBSTRINGS):
+        return True
     return any(token in LOWER_IS_BETTER_METRIC_TOKENS for token in tokens)
 
 

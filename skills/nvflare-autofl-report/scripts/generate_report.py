@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import csv
 import importlib.util
+import inspect
 import json
 import math
 import os
@@ -1330,7 +1331,19 @@ def refresh_plot(results: Path, output: Path, metric: str, plotter_path: Path, m
     sys.modules[spec.name] = module
     try:
         spec.loader.exec_module(module)
-        module.plot_progress(module.load_results(results), output, metric_label=metric, mode=mode)
+        parameters = inspect.signature(module.plot_progress).parameters
+        accepts_mode = "mode" in parameters or any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
+        )
+        if mode == "min" and not accepts_mode:
+            return (
+                f"Progress plotter at {plotter_path} cannot represent mode='min'; existing plot was preserved. "
+                "Use the current nvflare-autofl plotter to refresh this campaign."
+            )
+        kwargs = {"metric_label": metric}
+        if accepts_mode:
+            kwargs["mode"] = mode
+        module.plot_progress(module.load_results(results), output, **kwargs)
     except Exception as exc:  # plotting should not destroy an otherwise useful stopped-campaign report
         return f"Could not refresh progress plot ({type(exc).__name__}: {exc}); existing plot was preserved."
     finally:

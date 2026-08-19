@@ -428,6 +428,26 @@ def test_schema_metric_contract_accepts_minimization_objective():
     assert updated["objective"]["mode_contract_source"] == "mutation_schema"
 
 
+def test_schema_bridged_metric_does_not_inherit_job_direction():
+    runner = _load_runner()
+    config = {
+        "objective": {
+            "metric": "accuracy",
+            "requested_metric": "accuracy",
+            "optimization_metric": "accuracy",
+            "mode": "min",
+            "mode_contract_source": "job:key_metric_mode",
+            "job_key_metric": "val_loss",
+        }
+    }
+    schema = {"objective": {"requested_metric": "accuracy", "optimization_metric": "accuracy"}}
+
+    updated = runner.apply_metric_contract(config, "accuracy", schema)
+
+    assert updated["objective"]["mode"] == "max"
+    assert updated["objective"]["mode_contract_source"] == "core_default"
+
+
 def test_schema_cannot_override_direction_for_job_key_metric():
     runner = _load_runner()
     config = {
@@ -444,6 +464,23 @@ def test_schema_cannot_override_direction_for_job_key_metric():
 
     with pytest.raises(ValueError, match="job.py is authoritative"):
         runner.apply_metric_contract(config, "loss", schema)
+
+
+def test_schema_mode_conflict_with_implicit_job_default_has_actionable_error():
+    runner = _load_runner()
+    config = {
+        "objective": {
+            "metric": "loss",
+            "requested_metric": "loss",
+            "optimization_metric": "loss",
+            "mode": "max",
+            "mode_contract_source": "core_default",
+            "job_key_metric": "loss",
+        }
+    }
+
+    with pytest.raises(ValueError, match="implicit 'max'.*set key_metric_mode='min' in job.py"):
+        runner.apply_metric_contract(config, "loss", {"objective": {"metric": "loss", "mode": "min"}})
 
 
 def test_comparison_budget_suppresses_duplicate_imported_fixed_budget_args():
@@ -3423,6 +3460,15 @@ def test_native_minimization_campaign_resumes_and_reports_direction(tmp_path, mo
     assert state["improvement"] == pytest.approx(0.1)
     assert [record.status for record in records] == ["baseline", "keep", "discard"]
     assert tmp_path.joinpath("client.py").read_text(encoding="utf-8") == "ALGORITHM = 'lower-loss'\n"
+    raw_status_args = runner.parse_args(["status", str(job)])
+    assert raw_status_args.mode == "max"
+    _, refreshed = runner.refresh_campaign_state(
+        raw_status_args,
+        job,
+        runner.load_campaign_metadata(tmp_path, job),
+        runner.campaign_paths(raw_status_args, job),
+    )
+    assert refreshed["mode"] == "min"
 
 
 def test_initialize_revalidates_source_after_in_memory_admission(tmp_path, monkeypatch):
@@ -3618,6 +3664,52 @@ def test_initialize_rejects_implicit_max_loss_without_writing_campaign_files(tmp
     assert not tmp_path.joinpath("autofl_runs").exists()
 
 
+@pytest.mark.parametrize(("explicit_metric", "expected_code"), [(False, 2), (True, 0)])
+def test_initialize_handles_dynamic_job_metric_when_user_metric_is_explicit(
+    tmp_path, monkeypatch, explicit_metric, expected_code
+):
+    runner = _load_runner()
+    workspace = tmp_path / ("explicit" if explicit_metric else "implicit")
+    workspace.mkdir()
+    job = workspace / "job.py"
+    workspace.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job.write_text(
+        """
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+def compute_metric():
+    return "accuracy"
+
+
+recipe = FedAvgRecipe(
+    name="dynamic_metric", min_clients=2, num_rounds=1, train_script="client.py", key_metric=compute_metric()
+)
+recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(runner, "write_progress", lambda path, *args: path.write_bytes(b"progress"))
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "baseline", run_def.name, 0.5, 1.0, "none", "baseline", "python job.py", "/tmp/baseline"
+        ),
+    )
+    argv = ["initialize", str(job)]
+    if explicit_metric:
+        argv.extend(["--metric", "accuracy"])
+
+    assert runner.main(argv) == expected_code
+    if explicit_metric:
+        config = runner.read_yaml(workspace / "autofl.yaml")
+        assert any(item["field"] == "objective.job_key_metric" for item in config["unresolved"])
+    else:
+        assert not workspace.joinpath(".nvflare").exists()
+
+
 def test_campaign_admission_allows_unknown_metric_with_core_default_max():
     runner = _load_runner()
     config = _campaign_config()
@@ -3664,8 +3756,8 @@ def test_lower_is_better_metric_bridge_requires_explicit_schema_mode():
             "requested_metric": "val_loss",
             "optimization_metric": "val_loss",
             "metric_extraction_order": ["val_loss"],
-            "mode": "max",
-            "mode_contract_source": "core_default",
+            "mode": "min",
+            "mode_contract_source": "job:key_metric_mode",
             "job_key_metric": "accuracy",
         }
     )
@@ -3674,6 +3766,8 @@ def test_lower_is_better_metric_bridge_requires_explicit_schema_mode():
     updated = runner.apply_metric_contract(config, "val_loss", schema)
     errors = runner.campaign_admission_errors(updated, schema)
 
+    assert updated["objective"]["mode"] == "max"
+    assert updated["objective"]["mode_contract_source"] == "core_default"
     assert any("AUTOFL_METRIC_DIRECTION_CONFLICT" in error for error in errors)
     assert any("mutation_schema.yaml metric bridge" in error for error in errors)
 
@@ -3687,6 +3781,55 @@ def test_candidate_metric_direction_drift_is_rejected():
 
     with pytest.raises(ValueError, match="objective metric invariants: mode"):
         runner.candidate_campaign_config(candidate, current, SimpleNamespace(metric="accuracy"), {})
+
+
+def test_candidate_import_tolerates_job_metric_absent_from_legacy_campaign_contract():
+    runner = _load_runner()
+    current = _campaign_config()
+    current["objective"].pop("job_key_metric")
+    candidate = _campaign_config()
+
+    updated = runner.candidate_campaign_config(candidate, current, SimpleNamespace(metric="accuracy"), {})
+
+    assert "job_key_metric" not in updated["objective"]
+
+
+def test_legacy_campaign_without_mode_still_rejects_candidate_direction_change():
+    runner = _load_runner()
+    current = _campaign_config()
+    current["objective"].pop("mode")
+    candidate = _campaign_config()
+    candidate["objective"].update({"mode": "min", "mode_contract_source": "job:key_metric_mode"})
+
+    with pytest.raises(ValueError, match="objective metric invariants: mode"):
+        runner.candidate_campaign_config(candidate, current, SimpleNamespace(metric="accuracy"), {})
+
+
+def test_evaluate_resumes_legacy_max_campaign_without_job_key_metric(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    config_path = tmp_path / "autofl.yaml"
+    config = runner.read_yaml(config_path)
+    config["objective"].pop("job_key_metric")
+    runner.write_yaml(config_path, config)
+
+    assert runner.main(["prepare", str(job), "--name", "legacy", "--hypothesis", "legacy candidate"]) == 0
+    draft = tmp_path / ".nvflare/autofl/candidates/legacy/source/client.py"
+    draft.write_text("ALGORITHM = 'legacy-candidate'\n", encoding="utf-8")
+
+    assert runner.main(["evaluate", str(job)]) == 0
+
+
+def test_status_rejects_campaign_direction_artifact_disagreement(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    metadata_path = tmp_path / ".nvflare/autofl/campaign.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["settings"]["mode"] = "min"
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    assert runner.main(["status", str(job)]) == 2
+    assert "campaign metric direction disagrees" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(

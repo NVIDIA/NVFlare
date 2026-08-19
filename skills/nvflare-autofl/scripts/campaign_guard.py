@@ -509,7 +509,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--hard-crash-threshold", type=int, default=DEFAULT_HARD_CRASH_THRESHOLD)
     parser.add_argument("--exploration-batch-size", type=int, default=DEFAULT_EXPLORATION_BATCH_SIZE)
     parser.add_argument("--family-repeat-limit", type=int, default=DEFAULT_FAMILY_REPEAT_LIMIT)
-    parser.add_argument("--mode", choices=["max", "min"], default="max")
+    parser.add_argument("--mode", choices=["max", "min"])
     parser.add_argument("--format", choices=["text", "json"], default="text")
     args = parser.parse_args(argv)
 
@@ -525,6 +525,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         raise ValueError("--family-repeat-limit must be non-negative")
 
     results_path = Path(args.results).resolve()
+    mode = args.mode
+    if mode is None:
+        state_path = results_path.parent / ".nvflare/autofl/campaign_state.json"
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            state = {}
+        state_mode = state.get("mode") if isinstance(state, dict) else None
+        mode = state_mode if state_mode in {"max", "min"} else "max"
     stop_files = args.stop_file if args.stop_file is not None else list(DEFAULT_STOP_FILES)
     resolved_stop_files = [
         str(path if path.is_absolute() else results_path.parent / path) for path in map(Path, stop_files)
@@ -536,7 +545,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         plateau_threshold=args.plateau_threshold,
         min_delta=args.min_delta,
         hard_crash_threshold=args.hard_crash_threshold,
-        mode=args.mode,
+        mode=mode,
         exploration_batch_size=args.exploration_batch_size,
         family_repeat_limit=args.family_repeat_limit,
     )

@@ -1279,6 +1279,16 @@ def load_campaign_metadata(workspace: Path, job: Path) -> Dict[str, Any]:
         raise ValueError("unsupported Auto-FL campaign metadata schema")
     if Path(str(metadata.get("job") or "")).resolve() != job.resolve():
         raise ValueError("campaign metadata belongs to a different job.py")
+    settings = metadata.get("settings")
+    if isinstance(settings, dict):
+        persisted_mode = settings.get("mode", "max")
+        legacy_min = (
+            persisted_mode == "min"
+            and metadata.get("metric_direction_contract_version") != METRIC_DIRECTION_CONTRACT_VERSION
+        )
+        if not legacy_min:
+            config_path = resolve_output_path(workspace, str(settings.get("autofl_yaml") or "autofl.yaml"))
+            campaign_contract_mode(metadata, read_yaml(config_path), settings.get("metric"))
     return metadata
 
 
@@ -1509,11 +1519,16 @@ def apply_metric_contract(
     config: Dict[str, Any], requested_metric: Optional[str], schema: Optional[Dict[str, Any]]
 ) -> Dict[str, Any]:
     objective = objective_contract(config, requested_metric)
+    job_metric = str(objective.get("job_key_metric") or objective["metric"])
+    requested_differs = objective["requested_metric"] != job_metric
+    if requested_differs:
+        # Direction belongs to the requested metric. A different job key metric
+        # cannot supply it, so begin with NVFlare's default until the bridge says otherwise.
+        objective["mode"] = "max"
+        objective["mode_contract_source"] = "core_default"
     schema_objective = (schema or {}).get("objective", {})
     if isinstance(schema_objective, dict):
         schema_requested = schema_objective.get("requested_metric") or schema_objective.get("metric")
-        job_metric = str(objective.get("job_key_metric") or objective["metric"])
-        requested_differs = objective["requested_metric"] != job_metric
         schema_applies = schema_requested == objective["requested_metric"] or (
             not schema_requested and not requested_differs
         )
@@ -1526,6 +1541,11 @@ def apply_metric_contract(
                         f"mutation_schema.yaml objective.mode must be 'min' or 'max', but got {schema_mode!r}"
                     )
                 if not requested_differs and schema_mode != objective["mode"]:
+                    if objective.get("mode_contract_source") == "core_default":
+                        raise ValueError(
+                            "mutation_schema.yaml objective.mode conflicts with NVFlare's implicit 'max' default for "
+                            f"the job key metric; set key_metric_mode={schema_mode!r} in job.py and initialize again"
+                        )
                     raise ValueError(
                         "mutation_schema.yaml objective.mode conflicts with job.py key_metric_mode; "
                         "job.py is authoritative for its key metric"
@@ -1550,6 +1570,25 @@ def optimization_metric(config: Dict[str, Any], requested_metric: Optional[str])
 
 def objective_mode(config: Dict[str, Any], requested_metric: Optional[str] = None) -> str:
     return str(objective_contract(config, requested_metric)["mode"])
+
+
+def campaign_contract_mode(
+    metadata: Dict[str, Any], config: Dict[str, Any], requested_metric: Optional[str] = None
+) -> str:
+    settings = metadata.get("settings")
+    if not isinstance(settings, dict):
+        raise ValueError("campaign metadata is missing settings")
+    persisted_mode = settings.get("mode", "max")
+    if persisted_mode not in {"min", "max"}:
+        raise ValueError(f"campaign metadata has invalid objective mode {persisted_mode!r}")
+    config_mode = objective_mode(config, requested_metric)
+    if persisted_mode != config_mode:
+        raise ValueError(
+            "campaign metric direction disagrees between campaign.json settings.mode "
+            f"({persisted_mode!r}) and autofl.yaml objective.mode ({config_mode!r}); "
+            "restore the admitted campaign artifacts before continuing"
+        )
+    return config_mode
 
 
 def metric_source(config: Dict[str, Any]) -> str:
@@ -3440,12 +3479,13 @@ def refresh_campaign_state(
     """Recompute and persist campaign_state.json under the current effective settings without running a job."""
     records = load_results(paths["results"])
     pending = pending_candidate_manifests(job.parent)
+    mode = campaign_contract_mode(metadata, read_yaml(paths["autofl_yaml"]), args.metric)
     state = write_state(
         paths["state"],
         paths["results"],
         records,
         args.max_candidates,
-        mode=args.mode,
+        mode=mode,
         stop_files=resolve_stop_files(job.parent, args.stop_file),
         plateau_threshold=args.plateau_threshold,
         plateau_min_delta=args.plateau_min_delta,
@@ -3674,7 +3714,15 @@ def candidate_campaign_config(
         "mode",
         "job_key_metric",
     )
-    drift = [field for field in invariant_fields if candidate_objective.get(field) != current_objective.get(field)]
+    recorded_objective = current_config.get("objective", {})
+    if not isinstance(recorded_objective, dict):
+        recorded_objective = {}
+    drift = [
+        field
+        for field in invariant_fields
+        if (field != "job_key_metric" or field in recorded_objective)
+        and candidate_objective.get(field) != current_objective.get(field)
+    ]
     if drift:
         raise ValueError(f"candidate changes objective metric invariants: {', '.join(drift)}")
     candidate_config["objective"] = dict(current_config.get("objective", {}))

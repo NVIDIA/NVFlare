@@ -26,7 +26,7 @@ Do not use for converting non-FL training code into NVFLARE, diagnosing failed j
 | Script | Purpose | Arguments |
 | --- | --- | --- |
 | `scripts/run_job_campaign.py` | Authoritative campaign lifecycle runner | `ACTION JOB` plus action-specific flags |
-| `scripts/campaign_guard.py` | Read-only ledger diagnostics | `[RESULTS]` and diagnostic thresholds |
+| `scripts/campaign_guard.py` | Read-only ledger diagnostics | `[RESULTS]`, `--mode`, and diagnostic thresholds |
 | `scripts/plot_progress.py` | Render campaign progress | `[RESULTS]`, `--output`, `--metric`, `--mode` |
 | `scripts/job_importer.py` | Import library used by the campaign runner | Not a standalone CLI |
 
@@ -178,7 +178,7 @@ approved cap changes stay in campaign metadata.
 Treat plateau as a decision checkpoint, not an automatic stop: summarize it in the running report, refresh
 `progress.png`, run the runner's `status` action to refresh `.nvflare/autofl/campaign_state.json`, choose the returned
 next mode, and continue unless the state reports `final_response_allowed=true`. Use `campaign_guard.py` only for
-read-only ledger diagnostics; it never updates authoritative campaign state. After a source-backed review, record it
+read-only diagnostics; it never writes state. It derives direction from sibling state; otherwise pass `--mode min` for min campaigns. After a source-backed review, record it
 with `record --literature --hypothesis "<sources and decision>"`. Each review gets a persistent
 `literature_event_id` and requires an exploration batch before normal flow resumes: `exploration_batch_size` (default
 3) scored source-backed candidates linked via `prepare --literature-event <id>` — a faithful implementation, a tuned

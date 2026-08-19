@@ -19,7 +19,8 @@ The importer resolves the optimization direction from an explicit
 records that provenance in `autofl.yaml`. Declare raw loss-like metrics with
 `key_metric_mode="min"`. If a requested metric differs from the job's
 `key_metric`, `mutation_schema.yaml` must name the requested and optimization
-metrics and may declare their mode; otherwise the imported job mode is retained.
+metrics and may declare their mode; otherwise the bridged metric uses NVFLARE's
+default `max` independently of the job key metric's direction.
 A schema cannot override the direction of the job's own key metric.
 
 For a new campaign, import and admission complete in memory before the runner

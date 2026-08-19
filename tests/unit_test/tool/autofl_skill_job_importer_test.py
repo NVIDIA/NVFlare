@@ -1014,12 +1014,28 @@ def main():
     explicit = import_job_to_autofl_config(
         str(job_path), workspace_root=str(tmp_path), job_args=["--key_metric", "val_auc"]
     )
+    requested = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path), metric="accuracy")
 
     assert fallback["objective"]["metric"] == "accuracy"
     assert fallback["objective"]["metric_contract_source"] == "default"
     assert any(item["field"] == "objective.metric" for item in fallback["unresolved"])
     assert explicit["objective"]["metric"] == "val_auc"
     assert explicit["objective"]["metric_contract_source"] == "arg:key_metric"
+    assert any(item["field"] == "objective.job_key_metric" for item in requested["unresolved"])
+    assert not any(item["field"] == "objective.metric" for item in requested["unresolved"])
+
+
+@pytest.mark.parametrize(
+    ("metric", "expected"),
+    [
+        ("trainingloss", True),
+        ("val_mseloss", True),
+        ("neg_loss", False),
+        ("dice", False),
+    ],
+)
+def test_lower_is_better_metric_heuristic_matches_nvflare_core(metric, expected):
+    assert job_importer.likely_lower_is_better_metric(metric) is expected
 
 
 def test_train_script_outside_workspace_is_not_admitted_to_trust_contract(tmp_path):

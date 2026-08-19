@@ -178,6 +178,21 @@ def test_guard_cli_supports_min_mode(tmp_path, capsys):
     assert state["improvement"] == pytest.approx(0.25)
 
 
+def test_guard_cli_derives_mode_from_sibling_campaign_state(tmp_path, capsys):
+    guard = _load_guard()
+    results = tmp_path / "results.tsv"
+    _write_results(results, [_row("baseline", "baseline", "0.85"), _row("keep", "lower_loss", "0.6")])
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state_path.parent.mkdir(parents=True)
+    state_path.write_text(json.dumps({"mode": "min"}), encoding="utf-8")
+
+    assert guard.main([str(results), "--format", "json"]) == 0
+    state = json.loads(capsys.readouterr().out)
+
+    assert state["mode"] == "min"
+    assert state["best_score"] == pytest.approx(0.6)
+
+
 def test_min_mode_plateau_resets_on_lower_score():
     guard = _load_guard()
     rows = [
