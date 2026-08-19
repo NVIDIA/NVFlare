@@ -53,6 +53,7 @@ from nvflare.fuel.f3.cellnet.identity import get_cert_common_name_from_pem
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.f3.streaming.download_service import OBJ_DOWNLOADER_CHANNEL, OBJ_DOWNLOADER_TOPIC, DownloadService
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.utils import fobs
@@ -425,7 +426,10 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, monkeypatc
 
 
 @pytest.mark.timeout(60)
-def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeypatch):
+@pytest.mark.parametrize("parent_connection_security", ["clear", "mtls"])
+def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeypatch, parent_connection_security):
+    # Each parameter creates the same root Cell, whose process-wide stats pools outlive Cell.stop().
+    monkeypatch.setattr(StatsPoolManager, "pools", {})
     flare_decomposers.register()
     common_decomposers.register()
     suffix = uuid.uuid4().hex[:8]
@@ -461,7 +465,7 @@ def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeyp
                 "scheme": "tcp",
                 "resources": {
                     "host": "127.0.0.1",
-                    DriverParams.CONNECTION_SECURITY.value: "clear",
+                    DriverParams.CONNECTION_SECURITY.value: parent_connection_security,
                 },
             }
         },
@@ -482,12 +486,15 @@ def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeyp
             site_name,
             server_url,
             secure=False,
-            credentials={},
+            credentials=site_credentials if parent_connection_security == "mtls" else {},
             create_internal_listener=True,
+            auth_identity_map={site_name: site_name} if parent_connection_security == "mtls" else None,
         )
         site.start()
         cells.append(site)
         site_listener = _wait_for_listener(site)
+        expected_scheme = "stcp" if parent_connection_security == "mtls" else "tcp"
+        assert site_listener.startswith(f"{expected_scheme}://")
         site.register_request_cb(
             channel="secure_attach_e2e",
             topic="result",
@@ -500,7 +507,7 @@ def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeyp
             secure=True,
             credentials=site_credentials,
             parent_url=site_listener,
-            parent_resources={DriverParams.CONNECTION_SECURITY.value: "clear"},
+            parent_resources={DriverParams.CONNECTION_SECURITY.value: parent_connection_security},
             create_internal_listener=False,
             auth_identity_map={site_name: site_name},
         )
@@ -535,8 +542,8 @@ def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeyp
 
             return _record
 
-        # Record at the clear CP hop, after the sender encrypted the stream and
-        # before CP forwards it, so both directions prove wire protection.
+        # Record at the CP hop, after the sender encrypted the stream and before
+        # CP forwards it, so both directions prove end-to-end protection.
         site.core_cell.add_incoming_filter(
             channel=STREAM_CHANNEL,
             topic=STREAM_DATA_TOPIC,
@@ -552,7 +559,7 @@ def test_secure_network_attach_uses_site_cell_identity_over_cp(tmp_path, monkeyp
                     "attach_id": attach_id,
                     "site_name": site_name,
                     "connect_url": site_listener,
-                    "connection_security": "clear",
+                    "connection_security": parent_connection_security,
                     "secure_mode": True,
                     "ca_cert": site_credentials[DriverParams.CA_CERT.value],
                     "job_wait_timeout": 20.0,
