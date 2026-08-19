@@ -301,12 +301,15 @@ class TxTask(StreamTaskSpec):
         return StreamError(msg)
 
     def _new_pending_error(self, msg: str, seq=None) -> StreamError:
-        if seq is not None:
-            return self._new_send_error(msg, self.pending_send_errors.get(seq))
-        if self.pending_send_errors and all(
-            error == ReturnCode.TARGET_UNREACHABLE for error in self.pending_send_errors.values()
-        ):
-            return StreamTargetUnreachable(msg)
+        if not self.reliable:
+            return StreamError(msg)
+        with self.retry_lock:
+            if seq is not None:
+                return self._new_send_error(msg, self.pending_send_errors.get(seq))
+            if self.pending_send_errors and all(
+                error == ReturnCode.TARGET_UNREACHABLE for error in self.pending_send_errors.values()
+            ):
+                return StreamTargetUnreachable(msg)
         return StreamError(msg)
 
     def send_loop(self):
@@ -808,10 +811,7 @@ class ByteStreamer:
         receiver = message.get_header(StreamHeaderKey.ERROR_RECEIVER, origin)
         return (
             receiver == context.target
-            and (
-                origin == context.target
-                or message.get_header(StreamHeaderKey.ERROR_TYPE) == StreamTargetUnreachable.__name__
-            )
+            and (origin == context.target or message.get_header(StreamHeaderKey.ERROR_RECEIVER) == context.target)
             and message.get_header(StreamHeaderKey.CHANNEL) == context.channel
             and message.get_header(StreamHeaderKey.TOPIC) == context.topic
             and message.get_header(StreamHeaderKey.STREAM_REQ_ID) == context.req_id

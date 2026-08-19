@@ -139,6 +139,45 @@ class TestByteStreamerAckWatchdog:
         assert "sender=sender receiver=receiver" in str(task.stream_future.exception(timeout=0.1))
         error_callback.assert_called_once_with(message)
 
+    def test_forwarded_comm_error_fails_correlated_active_stream(self):
+        cell = MagicMock()
+        cell.my_info.fqcn = "sender"
+        streamer = ByteStreamer(cell)
+        error_callback = MagicMock()
+        streamer.register_error_callback(error_callback)
+        task = TxTask(
+            cell=cell,
+            chunk_size=1,
+            channel="ch",
+            topic="tp",
+            target="receiver",
+            headers={},
+            stream=DummyStream([b"x"]),
+            reliable=False,
+            secure=False,
+            optional=False,
+        )
+        with ByteStreamer.map_lock:
+            ByteStreamer.tx_task_map[task.sid] = task
+        message = Message(
+            {
+                MessageHeaderKey.ORIGIN: "relay",
+                StreamHeaderKey.STREAM_ID: task.sid,
+                StreamHeaderKey.CHANNEL: "ch",
+                StreamHeaderKey.TOPIC: "tp",
+                StreamHeaderKey.ERROR_MSG: "downstream connection failed",
+                StreamHeaderKey.ERROR_TYPE: StreamError.__name__,
+                StreamHeaderKey.ERROR_RECEIVER: "receiver",
+            }
+        )
+
+        streamer._error_handler(message)
+
+        error = task.stream_future.exception(timeout=0.1)
+        assert type(error) is StreamError
+        assert "sender=sender receiver=receiver" in str(error)
+        error_callback.assert_called_once_with(message)
+
     def test_uncorrelated_receiver_error_is_ignored(self, caplog):
         cell = MagicMock()
         cell.my_info.fqcn = "sender"
@@ -827,6 +866,23 @@ class TestReliableByteStreamer:
 
         assert task.pending_send_errors == {}
         assert isinstance(task.stream_future.exception(timeout=0.1), StreamTargetUnreachable)
+
+    def test_pending_error_inspection_holds_retry_lock(self, monkeypatch, retry_scheduler):
+        task, _cell = self._make_reliable_task(monkeypatch, retry_scheduler)
+
+        class LockCheckedErrors(dict):
+            def get(self, key, default=None):
+                assert task.retry_lock._is_owned()
+                return super().get(key, default)
+
+            def values(self):
+                assert task.retry_lock._is_owned()
+                return super().values()
+
+        task.pending_send_errors = LockCheckedErrors({0: ReturnCode.TARGET_UNREACHABLE})
+
+        assert isinstance(task._new_pending_error("one", seq=0), StreamTargetUnreachable)
+        assert isinstance(task._new_pending_error("all"), StreamTargetUnreachable)
 
     def test_retry_task_failure_fails_stream_future(self, monkeypatch, retry_scheduler):
         task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)

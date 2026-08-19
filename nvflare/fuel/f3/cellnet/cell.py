@@ -636,11 +636,8 @@ class Cell(StreamCell):
             if waiter:
                 origin = message.get_header(MessageHeaderKey.ORIGIN)
                 receiver = message.get_header(StreamHeaderKey.ERROR_RECEIVER, origin)
-                forwarded_unreachable = (
-                    message.get_header(StreamHeaderKey.ERROR_TYPE) == StreamTargetUnreachable.__name__
-                    and receiver == waiter.target
-                )
-                if origin != waiter.target and not forwarded_unreachable:
+                forwarded_error = message.get_header(StreamHeaderKey.ERROR_RECEIVER) == waiter.target
+                if origin != waiter.target and not forwarded_error:
                     self.logger.warning(
                         f"ignored stream error for {req_id=} from unexpected receiver {receiver}; "
                         f"expected {waiter.target}"
