@@ -86,7 +86,6 @@ class CheckResourceProcessor(RequestProcessor):
             except Exception as e:
                 logger.error(f"Job {job_id}: resource check failed: {secure_format_exception(e)}")
                 token = "resource manager raised an exception; see site log"
-                result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
 
         result.set_header(ShareableHeader.IS_RESOURCE_ENOUGH, is_resource_enough)
         result.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)

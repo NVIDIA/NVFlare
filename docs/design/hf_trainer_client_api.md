@@ -236,8 +236,8 @@ for plain training; the full contract is:
 - train task, `train_with_evaluation=False`: `trainer.train()` alone is enough.
 - train task, `train_with_evaluation=True`: the user must call
   `trainer.evaluate()` before `trainer.train()` — otherwise `on_train_end` fails
-  with the same actionable error as Lightning ("missing training metrics, please
-  remember to call evaluate").
+  with an actionable error ("train with evaluation requires evaluation metrics;
+  call evaluate before train").
 - `evaluate` task: the loop must call `trainer.evaluate()`; a loop that only
   calls `train()` hits the fail-fast pending-task error (see Failure semantics).
 
@@ -450,11 +450,11 @@ per-round-bump fallback.
    on the wrapped/DDP model or on the trainer itself are not consulted (PEFT/DDP
    wrapping makes "on the model" ambiguous unless pinned).
 5. Metrics: only what the **wrapped pre-train `evaluate()`** captured this round
-   (e.g. `eval_loss` of the global model) rides on the outgoing `FLModel` when
-   `train_with_evaluation` is configured — same contract and same "call evaluate()
-   or fail with an actionable error" rule as Lightning. Mid-training evaluations
-   triggered by `eval_strategy` never populate `FLModel.metrics` (see the
-   `on_evaluate` hook rule).
+   (e.g. `eval_loss` of the global model) rides on the outgoing `FLModel`.
+   `train_with_evaluation=True` makes these metrics required; when it is `False`,
+   captured metrics remain optional and are still returned. Mid-training
+   evaluations triggered by `eval_strategy` never populate `FLModel.metrics`
+   (see the `on_evaluate` hook rule).
 
 ## Task Types and Task Dispatch
 

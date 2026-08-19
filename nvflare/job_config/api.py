@@ -22,7 +22,7 @@ from nvflare.apis.fl_constant import ConfigVarName
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
-from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int, check_str
+from nvflare.fuel.utils.validation_utils import check_job_name, check_object_type, check_positive_int
 from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
 from nvflare.job_config.fed_job_config import FedJobConfig
 
@@ -209,7 +209,7 @@ class FedJob:
                 When False (the default), the existing dead-client grace period behaviour applies.
 
         """
-        check_str("name", name)
+        check_job_name("name", name)
         check_positive_int("min_clients", min_clients)
         if mandatory_clients:
             check_object_type("mandatory_clients", mandatory_clients, list)

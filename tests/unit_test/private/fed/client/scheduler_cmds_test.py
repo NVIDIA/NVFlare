@@ -14,7 +14,7 @@
 
 from unittest.mock import MagicMock, patch
 
-from nvflare.apis.fl_constant import ReturnCode, SystemComponents
+from nvflare.apis.fl_constant import SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.private.admin_defs import Message
@@ -39,7 +39,6 @@ def test_check_resource_processor_keeps_resource_manager_error_local():
     ):
         reply = CheckResourceProcessor().process(request, engine)
 
-    assert reply.body.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
     assert not reply.body.get_header(ShareableHeader.IS_RESOURCE_ENOUGH)
     assert (
         reply.body.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
