@@ -88,6 +88,38 @@ def test_huggingface_model_resolver_does_not_treat_missing_bare_local_path_as_hu
     }
 
 
+def test_huggingface_model_resolver_does_not_treat_existing_hub_id_as_local(monkeypatch, tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    local_collision = tmp_path / "org" / "model"
+    local_collision.mkdir(parents=True)
+    hub_snapshot = tmp_path / "hub-snapshot"
+    hub_snapshot.mkdir()
+    calls = []
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        return str(hub_snapshot)
+
+    class _CacheMiss(Exception):
+        pass
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    result = module.resolve_model_snapshot("org/model", source="hub")
+
+    assert calls == [
+        {
+            "cache_dir": None,
+            "local_files_only": True,
+            "repo_id": "org/model",
+            "revision": None,
+        }
+    ]
+    assert result["resolved_path"] == str(hub_snapshot.resolve())
+    assert result["source"] == "hub_cache"
+
+
 def test_huggingface_model_resolver_reports_cache_miss_without_failing(monkeypatch, capsys):
     module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
     calls = []
