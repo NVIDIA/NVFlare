@@ -32,7 +32,7 @@ YAML_ANCHOR_OR_ALIAS_RE = re.compile(r"(^|[:\s\[{,])([&*])[A-Za-z0-9_-]+(?=\s|$|
 REQUIRED_FRONTMATTER_FIELDS = ("name", "description")
 # `author` (name plus NVIDIA email inside the spec `metadata` map) is required
 # by the company skills guideline (NVCARPS).
-REQUIRED_METADATA_FIELDS = ("author", "min_flare_version", "blast_radius")
+REQUIRED_METADATA_FIELDS = ("author", "min-flare-version", "blast-radius")
 # The NVIDIA skills catalog uses a team identity, never an individual: once
 # `npx skills add` copies the frontmatter out of the repo, `author` acts as the
 # support contact, and a personal inbox goes stale when people change teams.
@@ -89,10 +89,51 @@ class SkillFrontmatterError(ValueError):
     """Raised when SKILL.md frontmatter cannot be parsed."""
 
 
+class RegularFileTooLargeError(ValueError):
+    """Raised when a regular file exceeds its caller-supplied read limit."""
+
+
+def read_regular_text_file(path: Path, *, max_bytes: int, errors: str = "strict") -> str:
+    """Read a bounded regular UTF-8 file without following symlinks."""
+    before = path.lstat()
+    if stat.S_ISLNK(before.st_mode):
+        raise ValueError(f"{path.name} must not be a symlink")
+    if not stat.S_ISREG(before.st_mode):
+        raise ValueError(f"{path.name} must be a regular file")
+    if before.st_size > max_bytes:
+        raise RegularFileTooLargeError(f"{path.name} exceeds {max_bytes} byte limit")
+
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            raise ValueError(f"{path.name} must be a regular file")
+        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
+            raise ValueError(f"{path.name} changed while it was being opened")
+        if opened.st_size > max_bytes:
+            raise RegularFileTooLargeError(f"{path.name} exceeds {max_bytes} byte limit")
+
+        chunks: list[bytes] = []
+        bytes_read = 0
+        while bytes_read <= max_bytes:
+            chunk = os.read(descriptor, min(64 * 1024, max_bytes + 1 - bytes_read))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            bytes_read += len(chunk)
+        data = b"".join(chunks)
+        if len(data) > max_bytes:
+            raise RegularFileTooLargeError(f"{path.name} exceeds {max_bytes} byte limit")
+        return data.decode("utf-8-sig", errors=errors)
+    finally:
+        os.close(descriptor)
+
+
 def skill_metadata(metadata: Mapping[str, Any]) -> dict:
     """Return the spec ``metadata`` sub-map where NVFLARE custom fields live.
 
-    Custom keys (min_flare_version, blast_radius, category, status, ...) are
+    Custom keys (min-flare-version, blast-radius, category, status, ...) are
     nested under the agentskills.io ``metadata`` map rather than at the top
     level. Returns an empty dict when absent or malformed.
     """
@@ -166,7 +207,7 @@ def validate_skill_dir(skill_dir: Path | str) -> SkillValidationResult:
         _validate_required_fields(sub, skill_file, issues, fields=REQUIRED_PUBLIC_METADATA_FIELDS, container="metadata")
     _validate_name_matches_directory(metadata.get("name"), path, skill_file, issues)
     _validate_author(sub.get("author"), skill_file, issues)
-    _validate_blast_radius(sub.get("blast_radius"), skill_file, issues)
+    _validate_blast_radius(sub.get("blast-radius"), skill_file, issues)
     _validate_spec_constraints(metadata, skill_file, issues)
     _validate_skill_md_length(skill_file, issues)
 
@@ -231,7 +272,8 @@ def _validate_supported_top_level_fields(
                 _issue(
                     "skill-frontmatter-field-unsupported",
                     f"unsupported top-level frontmatter field '{key}'; nest custom fields under 'metadata:' "
-                    f"(agentskills.io allows only {', '.join(sorted(SPEC_TOP_LEVEL_FIELDS))} at the top level)",
+                    f"(the NVIDIA skill profile allows only "
+                    f"{', '.join(sorted(SPEC_TOP_LEVEL_FIELDS))} at the top level)",
                     skill_file,
                 )
             )
@@ -286,7 +328,7 @@ def _validate_blast_radius(radius: Any, skill_file: Path, issues: list[SkillVali
         issues.append(
             _issue(
                 "skill-blast-radius-invalid",
-                f"blast_radius must be one of: {', '.join(sorted(VALID_BLAST_RADIUS))}",
+                f"blast-radius must be one of: {', '.join(sorted(VALID_BLAST_RADIUS))}",
                 skill_file,
             )
         )
@@ -373,51 +415,18 @@ def _validate_no_symlinks(skill_dir: Path, issues: list[SkillValidationIssue]) -
 
 def _read_regular_skill_file(path: Path) -> str:
     """Read SKILL.md through one bounded, nonblocking, no-follow descriptor."""
-
     try:
-        before = path.lstat()
-    except OSError:
-        raise
-    if stat.S_ISLNK(before.st_mode):
-        raise SkillFrontmatterError("SKILL.md must not be a symlink")
-    if not stat.S_ISREG(before.st_mode):
-        raise SkillFrontmatterError("SKILL.md must be a regular file")
-    if before.st_size > MAX_SKILL_MD_BYTES:
-        raise SkillFrontmatterError(f"SKILL.md exceeds {MAX_SKILL_MD_BYTES} byte limit")
-
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
-    try:
-        descriptor = os.open(path, flags)
+        return read_regular_text_file(path, max_bytes=MAX_SKILL_MD_BYTES)
+    except RegularFileTooLargeError as e:
+        raise SkillFrontmatterError(f"SKILL.md exceeds {MAX_SKILL_MD_BYTES} byte limit") from e
+    except UnicodeDecodeError as e:
+        raise SkillFrontmatterError(f"SKILL.md is not valid UTF-8: {e}") from e
+    except ValueError as e:
+        raise SkillFrontmatterError(str(e).replace(path.name, "SKILL.md", 1)) from e
     except OSError as e:
         if e.errno in {errno.ELOOP, getattr(errno, "EMLINK", errno.ELOOP)}:
             raise SkillFrontmatterError("SKILL.md must not be a symlink") from e
         raise
-    try:
-        opened = os.fstat(descriptor)
-        if not stat.S_ISREG(opened.st_mode):
-            raise SkillFrontmatterError("SKILL.md must be a regular file")
-        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
-            raise SkillFrontmatterError("SKILL.md changed while it was being opened")
-        if opened.st_size > MAX_SKILL_MD_BYTES:
-            raise SkillFrontmatterError(f"SKILL.md exceeds {MAX_SKILL_MD_BYTES} byte limit")
-
-        chunks: list[bytes] = []
-        bytes_read = 0
-        while bytes_read <= MAX_SKILL_MD_BYTES:
-            chunk = os.read(descriptor, min(64 * 1024, MAX_SKILL_MD_BYTES + 1 - bytes_read))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            bytes_read += len(chunk)
-        data = b"".join(chunks)
-        if len(data) > MAX_SKILL_MD_BYTES:
-            raise SkillFrontmatterError(f"SKILL.md exceeds {MAX_SKILL_MD_BYTES} byte limit")
-        try:
-            return data.decode("utf-8-sig")
-        except UnicodeDecodeError as e:
-            raise SkillFrontmatterError(f"SKILL.md is not valid UTF-8: {e}") from e
-    finally:
-        os.close(descriptor)
 
 
 def _issue(code: str, message: str, path: Path) -> SkillValidationIssue:

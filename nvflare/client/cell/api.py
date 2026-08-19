@@ -22,6 +22,7 @@ passive and rely on their training framework's collectives.
 import copy
 import math
 import os
+import signal as process_signal
 import threading
 import time
 from queue import Empty, Queue
@@ -53,9 +54,8 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
-from nvflare.fuel.f3.streaming.byte_streamer import reliable_retry_scheduler
 from nvflare.fuel.f3.streaming.download_service import DownloadService
-from nvflare.fuel.f3.streaming.stream_utils import stream_shutdown
+from nvflare.fuel.f3.streaming.shutdown import shutdown_f3_streaming
 from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT, TransferProgressState
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
 from nvflare.fuel.utils.fobs import FOBSContextKey
@@ -71,28 +71,17 @@ _HELLO_RETRY_INTERVAL = 1.0
 # Queue polling bounds abort/stop detection latency.
 _RECEIVE_POLL_INTERVAL = 0.5
 _HEARTBEAT_JOIN_TIMEOUT = 1.0
+_OWNER_WATCHDOG_INTERVAL = 0.5
+_CJ_TIMEOUT_ABORT_GRACE = 1.0
+_OWNER_TERM_GRACE = 5.0
+_RESULT_SOURCE_SETTLED_TIMEOUT = 1.0
+_RESULT_SOURCE_SETTLED_ATTEMPTS = 3
+_RESULT_SOURCE_SETTLED_RETRY_BACKOFF = 0.1
 
 
 def _shutdown_f3_streaming() -> None:
-    """Stop process-global F3 services owned by the standalone trainer.
-
-    External trainers do not run under MainProcessMonitor. Keep this order aligned with
-    F3 cleanup: stop transaction ownership and retry dispatch before their executors.
-    Each operation is idempotent and every stage is attempted.
-    """
-    errors = []
-    for name, shutdown in (
-        ("download service", DownloadService.shutdown),
-        ("reliable retry scheduler", reliable_retry_scheduler.shutdown),
-        ("stream executors", stream_shutdown),
-    ):
-        try:
-            shutdown()
-        except Exception as e:
-            errors.append((name, e))
-    if errors:
-        names = ", ".join(name for name, _ in errors)
-        raise RuntimeError(f"failed to stop F3 streaming services: {names}") from errors[0][1]
+    """Stop process-global F3 services owned by the standalone trainer."""
+    shutdown_f3_streaming()
 
 
 def _to_python_scalar(v: Any) -> Any:
@@ -134,6 +123,7 @@ class CellClientAPI(APISpec):
         self._cell: Optional[Cell] = None
         self._session_id: Optional[str] = None
         self._cj_fqcn: Optional[str] = self._config.get(BootstrapKey.CJ_FQCN)
+        self._cj_pid: Optional[int] = self._config.get(BootstrapKey.CJ_PID)
         self._site_name: str = self._config[BootstrapKey.SITE_NAME]
         self._attach = AttachTrainerSession(self) if self._is_attach else None
         self._trainer_fqcn = self._attach.trainer_fqcn if self._attach else self._config[BootstrapKey.TRAINER_FQCN]
@@ -173,6 +163,8 @@ class CellClientAPI(APISpec):
         self._last_cj_activity: Optional[float] = None
         self._heartbeat_stop = threading.Event()
         self._heartbeat_thread: Optional[threading.Thread] = None
+        self._owner_watchdog_stop = threading.Event()
+        self._owner_watchdog_thread: Optional[threading.Thread] = None
         self._initialized = False
         # An external-process trainer owns its standalone F3 runtime. Attach owns
         # only this Cell session and must not tear down process-global services.
@@ -257,8 +249,10 @@ class CellClientAPI(APISpec):
                     self._attach.wait_for_open()
                 else:
                     self._hello()
+                self._start_owner_watchdog()
                 self._start_heartbeat()
             except Exception:
+                self._stop_owner_watchdog()
                 self._stop_heartbeat()
                 self._stop_cell()
                 raise
@@ -546,14 +540,48 @@ class CellClientAPI(APISpec):
                 self._clear_result_transfer_waiters()
                 self._maybe_cleanup_memory()
             finally:
-                # Clear ownership under the lock read by SHUTDOWN. If SHUTDOWN won, this
-                # thread closes after settlement; otherwise SHUTDOWN observes no live source.
+                # Keep send ownership while publishing settlement. A concurrent SHUTDOWN
+                # must defer Cell teardown until the CJ has observed that this source is done.
+                if result_accepted:
+                    self._notify_result_source_settled(task.get(MsgKey.TASK_ID))
                 with self._lock:
                     self._result_send_active = False
                     should_shutdown = self._stopped or (result_accepted and not self._launch_once)
                 # One-shot sessions close only after acceptance and downstream settlement.
                 if should_shutdown:
                     self.shutdown()
+
+    def _notify_result_source_settled(self, task_id: str) -> None:
+        """Publish the send-barrier transition before a one-shot trainer closes its Cell."""
+        request = new_cell_message({}, {MsgKey.SESSION_ID: self._session_id, MsgKey.TASK_ID: task_id})
+        for attempt in range(_RESULT_SOURCE_SETTLED_ATTEMPTS):
+            try:
+                reply = self._cell.send_request(
+                    channel=CHANNEL,
+                    topic=Topic.RESULT_SOURCE_SETTLED,
+                    target=self._cj_fqcn,
+                    request=request,
+                    timeout=_RESULT_SOURCE_SETTLED_TIMEOUT,
+                    optional=True,
+                    secure=self._protocol_secure,
+                )
+                body = reply.payload if reply is not None else None
+                if (
+                    reply is not None
+                    and reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.OK
+                    and isinstance(body, dict)
+                    and body.get(MsgKey.REPLY_TOPIC) == Topic.RESULT_SOURCE_SETTLED
+                    and body.get(MsgKey.TASK_ID) == task_id
+                ):
+                    return
+            except Exception as e:
+                # The CJ keeps the source live until it receives this explicit
+                # acknowledgement. A process exit without it is treated as source
+                # loss, even when a launcher masks a wrapped worker failure with rc=0.
+                self.logger.debug(f"result-source settlement notification failed: {e}")
+            if attempt + 1 < _RESULT_SOURCE_SETTLED_ATTEMPTS:
+                time.sleep(_RESULT_SOURCE_SETTLED_RETRY_BACKOFF)
+        self.logger.debug("result-source settlement was not acknowledged")
 
     def _wait_for_result_transfers(self, result_waiters) -> None:
         """Wait for strict terminal success of every result DownloadService transaction."""
@@ -734,14 +762,19 @@ class CellClientAPI(APISpec):
             if close_resources:
                 self._abort_signal.trigger("client api shutdown")
                 self._result_abort_signal.trigger("client api shutdown")
+                self._stop_owner_watchdog()
                 self._stop_heartbeat()
-                self._stop_cell()
             if self._owns_f3_runtime:
                 try:
+                    # Keep the Cell alive until DownloadService and all retry/stream
+                    # work have drained. An admitted reliable retry can otherwise
+                    # enter Cell after its transport executors are shut down.
                     # Retry partial process-global cleanup; each operation is idempotent.
                     _shutdown_f3_streaming()
                 except Exception as e:
                     self.logger.warning(f"failed to stop trainer streaming services: {e}")
+            if close_resources:
+                self._stop_cell()
 
     # ------------------------------------------------------------------ control handlers
 
@@ -920,6 +953,72 @@ class CellClientAPI(APISpec):
         self._heartbeat_thread = thread
         thread.start()
 
+    def _start_owner_watchdog(self) -> None:
+        """Terminate a launched trainer group if its owning CJ process disappears."""
+        if self._is_attach or self._cj_pid is None:
+            return
+        if not self._owner_process_alive():
+            # A containerized trainer can connect to its CJ while the host CJ PID is
+            # outside the trainer's PID namespace. Since HELLO already succeeded,
+            # absence on this initial probe means PID liveness is not authoritative;
+            # retain the Cell heartbeat/session timeout as the owner-death backstop.
+            self.logger.warning(
+                f"owning CJ process {self._cj_pid} is not visible from the trainer at session start; "
+                "disabling PID-based owner monitoring"
+            )
+            return
+        self._owner_watchdog_stop.clear()
+        thread = threading.Thread(
+            target=self._owner_watchdog_loop,
+            name="client_api_owner_watchdog",
+            daemon=True,
+        )
+        self._owner_watchdog_thread = thread
+        thread.start()
+
+    def _owner_watchdog_loop(self) -> None:
+        while not self._owner_watchdog_stop.wait(_OWNER_WATCHDOG_INTERVAL):
+            if self._owner_process_alive():
+                continue
+            self.logger.error(f"owning CJ process {self._cj_pid} exited; terminating external trainer process group")
+            self._terminate_orphaned_process_group()
+            return
+
+    def _owner_process_alive(self) -> bool:
+        try:
+            os.kill(self._cj_pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            # The process still exists even if a platform denies the probe.
+            return True
+
+    def _terminate_orphaned_process_group(self) -> None:
+        """Terminate this owned process group; hard-stop it if SIGTERM is ignored."""
+        if os.name != "posix":
+            os._exit(1)
+        pgid = os.getpgrp()
+        try:
+            os.killpg(pgid, process_signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except Exception as e:
+            self.logger.error(f"failed to terminate orphaned trainer process group {pgid}: {e}")
+            os._exit(1)
+        time.sleep(_OWNER_TERM_GRACE)
+        try:
+            os.killpg(pgid, process_signal.SIGKILL)
+        except ProcessLookupError:
+            return
+        os._exit(1)
+
+    def _stop_owner_watchdog(self) -> None:
+        self._owner_watchdog_stop.set()
+        thread = self._owner_watchdog_thread
+        if thread is not None and thread is not threading.current_thread() and thread.is_alive():
+            thread.join(timeout=_HEARTBEAT_JOIN_TIMEOUT)
+
     def _heartbeat_loop(self) -> None:
         while not self._heartbeat_stop.wait(self._heartbeat_interval):
             with self._lock:
@@ -950,6 +1049,7 @@ class CellClientAPI(APISpec):
                 self.logger.debug(f"heartbeat to CJ failed: {e}")
 
             if self._abort_if_cj_timed_out():
+                self._terminate_after_cj_timeout()
                 return
 
     def _heartbeat_reply_valid(self, reply) -> bool:
@@ -1007,6 +1107,15 @@ class CellClientAPI(APISpec):
         self._heartbeat_stop.set()
         self.logger.error(reason)
         return True
+
+    def _terminate_after_cj_timeout(self) -> None:
+        """Escalate a lost launched session after cooperative abort has had a chance to finish."""
+        if self._is_attach:
+            return
+        if self._owner_watchdog_stop.wait(_CJ_TIMEOUT_ABORT_GRACE):
+            return
+        self.logger.error("CJ heartbeat timeout did not stop the trainer; terminating its process group")
+        self._terminate_orphaned_process_group()
 
     def _stop_heartbeat(self) -> None:
         self._heartbeat_stop.set()
