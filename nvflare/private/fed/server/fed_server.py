@@ -100,6 +100,18 @@ def _is_loopback_host(host: str) -> bool:
     return _normalize_loopback_host(host) == "127.0.0.1"
 
 
+def _normalize_admin_host(host: str) -> str:
+    """Normalize a configured admin bind host and reject unsupported IPv6 listeners."""
+    normalized_host = _normalize_loopback_host(host)
+    try:
+        address = ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        return normalized_host
+    if isinstance(address, ipaddress.IPv6Address) and not address.is_loopback:
+        raise ValueError(f"IPv6 admin_host is not supported: {host}")
+    return normalized_host
+
+
 class BaseServer(ABC):
     def __init__(
         self,
@@ -199,7 +211,7 @@ class BaseServer(ABC):
         if enable_admin_listener:
             admin_port = int(grpc_args.get("admin_port", fl_port))
             configured_admin_host = grpc_args.get("admin_host")
-            admin_host = _normalize_loopback_host(configured_admin_host) if configured_admin_host else url_host
+            admin_host = _normalize_admin_host(configured_admin_host) if configured_admin_host else url_host
             if not secure_train and not _is_loopback_host(admin_host):
                 self.logger.warning(
                     f"insecure admin listener is exposed on non-loopback host '{admin_host}'; "
