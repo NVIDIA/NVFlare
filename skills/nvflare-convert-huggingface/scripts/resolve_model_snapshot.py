@@ -37,6 +37,7 @@ def resolve_model_snapshot(
     identifier: str,
     *,
     source: str,
+    source_root: Optional[str] = None,
     allow_download: bool = False,
     revision: Optional[str] = None,
     cache_dir: Optional[str] = None,
@@ -49,6 +50,13 @@ def resolve_model_snapshot(
         if allow_download or revision is not None or cache_dir is not None:
             raise ValueError("Hub download, revision, and cache options cannot be used with source='local'")
         candidate = Path(identifier).expanduser()
+        if not candidate.is_absolute():
+            if source_root is None:
+                raise ValueError("relative local identifiers require an absolute source_root")
+            root = Path(source_root).expanduser()
+            if not root.is_absolute():
+                raise ValueError("source_root must be an absolute path")
+            candidate = root / candidate
         if candidate.exists():
             return {
                 "download_authorized": False,
@@ -66,6 +74,8 @@ def resolve_model_snapshot(
             "status": "missing",
         }
 
+    if source_root is not None:
+        raise ValueError("source_root can only be used with source='local'")
     if allow_download and not _COMMIT_SHA_RE.fullmatch(revision or ""):
         raise ValueError("authorized Hub downloads require a 40-character commit SHA revision")
 
@@ -104,6 +114,10 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("identifier", help="Local model path or Hugging Face Hub repository ID")
     parser.add_argument("--source", choices=("local", "hub"), required=True, help="Identifier source type")
+    parser.add_argument(
+        "--source-root",
+        help="Absolute original source-project root used to resolve a relative local identifier",
+    )
     parser.add_argument("--allow-download", action="store_true", help="Permit one normal cache-aware Hub download")
     parser.add_argument("--revision", help="Hub revision; a full commit SHA is required for downloads")
     parser.add_argument("--cache-dir", help="Optional Hugging Face cache directory")
@@ -115,6 +129,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     result = resolve_model_snapshot(
         args.identifier,
         source=args.source,
+        source_root=args.source_root,
         allow_download=args.allow_download,
         revision=args.revision,
         cache_dir=args.cache_dir,

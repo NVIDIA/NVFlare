@@ -68,7 +68,7 @@ def test_huggingface_model_resolver_returns_existing_local_path(tmp_path):
     }
 
 
-def test_huggingface_model_resolver_does_not_treat_missing_bare_local_path_as_hub(monkeypatch):
+def test_huggingface_model_resolver_does_not_treat_missing_bare_local_path_as_hub(monkeypatch, tmp_path):
     module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
 
     def unexpected_hub_load():
@@ -76,7 +76,7 @@ def test_huggingface_model_resolver_does_not_treat_missing_bare_local_path_as_hu
 
     monkeypatch.setattr(module, "_load_huggingface_hub", unexpected_hub_load)
 
-    result = module.resolve_model_snapshot("models/checkpoint", source="local")
+    result = module.resolve_model_snapshot("models/checkpoint", source="local", source_root=str(tmp_path))
 
     assert result == {
         "download_authorized": False,
@@ -86,6 +86,42 @@ def test_huggingface_model_resolver_does_not_treat_missing_bare_local_path_as_hu
         "source": "local",
         "status": "missing",
     }
+
+
+def test_huggingface_model_resolver_resolves_relative_local_path_from_source_root(monkeypatch, tmp_path, capsys):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    source_root = tmp_path / "source"
+    model_dir = source_root / "models" / "checkpoint"
+    model_dir.mkdir(parents=True)
+    caller_dir = tmp_path / "caller"
+    caller_dir.mkdir()
+    monkeypatch.chdir(caller_dir)
+
+    assert (
+        module.main(
+            [
+                "--source",
+                "local",
+                "--source-root",
+                str(source_root),
+                "models/checkpoint",
+            ]
+        )
+        == 0
+    )
+    result = json.loads(capsys.readouterr().out)
+
+    assert result["resolved_path"] == str(model_dir.resolve())
+    assert result["source"] == "local"
+
+
+def test_huggingface_model_resolver_rejects_relative_local_path_without_absolute_source_root(tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+
+    with pytest.raises(ValueError, match="relative local identifiers require an absolute source_root"):
+        module.resolve_model_snapshot("models/checkpoint", source="local")
+    with pytest.raises(ValueError, match="source_root must be an absolute path"):
+        module.resolve_model_snapshot("models/checkpoint", source="local", source_root="source")
 
 
 def test_huggingface_model_resolver_does_not_treat_existing_hub_id_as_local(monkeypatch, tmp_path):
@@ -792,6 +828,24 @@ def test_huggingface_job_template_exports_per_site_files_from_another_working_di
         executor_args = client_config["executors"][0]["executor"]["args"]
         assert executor_args["task_script_path"] == "client.py"
         assert executor_args["task_script_args"] == expected["train_args"]
+
+
+def test_huggingface_job_template_uses_one_simulator_topology_owner(tmp_path):
+    module = _load_module(HF_TEMPLATES / "job.py")
+    per_site_config = {"site-a": {"train_args": "--data_root /data/a"}, "site-b": {"train_args": "--data_root /data/b"}}
+
+    unified_env = module.build_sim_env(2, tmp_path / "unified")
+    assert unified_env.clients is None
+    assert unified_env.num_clients == 2
+    assert unified_env.num_threads == 2
+
+    named_env = module.build_sim_env(2, tmp_path / "named", per_site_config=per_site_config)
+    assert named_env.clients == ["site-a", "site-b"]
+    assert named_env.num_clients == 2
+    assert named_env.num_threads == 2
+
+    with pytest.raises(ValueError, match="named topology must match the requested client count"):
+        module.build_sim_env(3, tmp_path / "mismatch", per_site_config=per_site_config)
 
 
 def test_huggingface_job_template_rejects_deprecated_per_site_constructor_option():

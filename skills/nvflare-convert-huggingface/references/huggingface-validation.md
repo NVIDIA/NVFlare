@@ -48,9 +48,25 @@ reaches the applicable phase, and stop at the first failure.
   distinguished by that required option. The cache-only Hub path catches
   `LocalEntryNotFoundError`, emits a structured `missing` result, and exits zero;
   report that result as a blocker.
+- Use the identifier as the positional argument; do not invent a `--model`
+  option. These are the canonical invocations:
+
+  ```bash
+  python <skill-dir>/scripts/resolve_model_snapshot.py --source local --source-root <absolute-source-root> <configured-path>
+  python <skill-dir>/scripts/resolve_model_snapshot.py --source hub <org/model>
+  ```
+
+  A relative local identifier requires the absolute original source-project
+  root so resolution never depends on the validation command's working
+  directory. An absolute local identifier does not require `--source-root`.
 - Only when the user authorizes downloading a public checkpoint if uncached,
-  rerun the Hub resolver once with `--allow-download --revision <commit-sha>`,
-  where the revision is the full immutable 40-character commit SHA. Use its
+  rerun the Hub resolver once with the complete canonical invocation:
+
+  ```bash
+  python <skill-dir>/scripts/resolve_model_snapshot.py --source hub --allow-download --revision <commit-sha> <org/model>
+  ```
+
+  The revision is the full immutable 40-character commit SHA. Use its
   immutable `resolved_path` for the server and every client. Do not run a
   preceding `snapshot_download(..., local_files_only=True)` probe, copy resolver
   logic into generated `job.py`, or download without authorization. Resolve

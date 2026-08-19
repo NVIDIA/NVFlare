@@ -121,7 +121,7 @@
           },
           {
             "id": "cache-aware-authorized-model-resolution",
-            "description": "selects local path or Hub repository source explicitly and uses one normal cache-aware model load pinned to a full commit SHA when an uncached public checkpoint download is authorized"
+            "description": "selects local path or Hub repository source explicitly, resolves relative local paths against an absolute original source root, uses the resolver's positional identifier, and uses one normal cache-aware model load pinned to a full commit SHA when an uncached public checkpoint download is authorized"
           },
           {
             "id": "explicit-server-model-config",
@@ -134,6 +134,10 @@
           {
             "id": "site-local-training-data",
             "description": "preserves site data or creates deterministic seeded site-local partitions, stratified when labels exist, and reports the split decision"
+          },
+          {
+            "id": "single-simulator-topology-owner",
+            "description": "uses SimEnv(num_clients=N) with shared arguments and site-name-derived partitions, or SimEnv(clients=list(per_site_config)) for genuinely different named-site arguments, but never both topology forms"
           },
           {
             "id": "guard-optional-host-diagnostics",
@@ -198,6 +202,10 @@
             "description": "does not infer whether a missing slash-containing identifier is a local path or Hub repository ID"
           },
           {
+            "id": "no-invented-resolver-model-option",
+            "description": "does not invent a --model option for the maintained resolver, whose model identifier is positional"
+          },
+          {
             "id": "no-unpinned-hub-download",
             "description": "does not authorize a Hub download without a full immutable commit-SHA revision"
           },
@@ -220,6 +228,10 @@
           {
             "id": "no-orient-for-single-owner-conversion",
             "description": "does not route an explicit conversion through nvflare-orient merely because its prompt omits the framework when inspection finds one Hugging Face Trainer owner"
+          },
+          {
+            "id": "no-mixed-named-and-generated-client-topology",
+            "description": "does not combine set_per_site_config named targets with SimEnv(num_clients=...), and does not recover from that conflict with num_clients=None"
           }
         ],
         "process_metrics": [

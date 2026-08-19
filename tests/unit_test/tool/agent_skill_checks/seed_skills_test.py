@@ -712,6 +712,34 @@ def test_shared_conversion_policies_have_single_canonical_owners():
     assert "## Source Trust Boundary" not in workflow_text
 
 
+def test_shared_conversion_uses_one_simulator_topology_owner():
+    repo_root = Path(__file__).resolve().parents[4]
+    references = repo_root / "skills" / "nvflare-shared" / "references"
+    common_text = " ".join(references.joinpath("conversion-common.md").read_text(encoding="utf-8").split())
+    construction_text = " ".join(
+        references.joinpath("pytorch-family-recipe-construction.md").read_text(encoding="utf-8").split()
+    )
+    workflow_text = " ".join(references.joinpath("conversion-workflow.md").read_text(encoding="utf-8").split())
+
+    assert "Use exactly one owner for the simulated client topology" in common_text
+    assert "Do not call `set_per_site_config()` merely to assign partition indices" in common_text
+    assert "`SimEnv(clients=list(config), ...)`, never `SimEnv(num_clients=...)`" in common_text
+    assert "not a condition to recover from by setting `num_clients=None`" in common_text
+    assert "generate site partitions from `flare.get_site_name()` after `flare.init()`" in construction_text
+    assert "`SimEnv(clients=list(per_site_config), num_threads=len(per_site_config), ...)`" in construction_text
+    assert "This unified-app form is valid only while the recipe has no explicit named client targets" in workflow_text
+
+    for framework in ("pytorch", "lightning", "huggingface"):
+        eval_data = json.loads(
+            repo_root.joinpath(f"skills/nvflare-convert-{framework}/evals/evals.json").read_text(encoding="utf-8")
+        )
+        basic_eval = _eval_by_id(eval_data, f"{framework}-convert-basic")["nvflare"]
+        mandatory_ids = {item["id"] for item in basic_eval["mandatory_behavior"]}
+        prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
+        assert "single-simulator-topology-owner" in mandatory_ids
+        assert "no-mixed-named-and-generated-client-topology" in prohibited_ids
+
+
 def test_all_conversion_skills_preserve_required_model_constructor_args():
     repo_root = Path(__file__).resolve().parents[4]
     references = repo_root / "skills" / "nvflare-shared" / "references"
@@ -821,10 +849,14 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
     assert "make the inventory command exit zero" in " ".join(dependency_text.split())
     assert "optional capability or host-diagnostic utility as evidence" in " ".join(validation_text.split())
     assert "Do not append platform-specific utilities" in " ".join(validation_text.split())
-    assert "rerun the Hub resolver once with `--allow-download --revision <commit-sha>`" in normalized_hf_validation
+    assert "rerun the Hub resolver once with the complete canonical invocation" in normalized_hf_validation
     assert "`../scripts/resolve_model_snapshot.py`" in hf_validation
     assert "`--source local`" in hf_validation
     assert "`--source hub`" in hf_validation
+    assert "<skill-dir>/scripts/resolve_model_snapshot.py --source local --source-root" in hf_validation
+    assert "<skill-dir>/scripts/resolve_model_snapshot.py --source hub <org/model>" in hf_validation
+    assert "--source hub --allow-download --revision <commit-sha> <org/model>" in hf_validation
+    assert "do not invent a `--model` option" in normalized_hf_validation
     assert "full immutable 40-character commit SHA" in normalized_hf_validation
     assert "emits a structured `missing` result" in normalized_hf_validation
     assert "copy resolver logic into generated `job.py`" in normalized_hf_validation
@@ -840,6 +872,7 @@ def test_huggingface_preflights_and_metric_reporting_do_not_create_false_recover
     assert {
         "no-raising-cache-only-model-probe",
         "no-ambiguous-model-source",
+        "no-invented-resolver-model-option",
         "no-unpinned-hub-download",
         "no-unguarded-platform-specific-diagnostic",
         "no-unconditional-equality-for-newly-initialized-parameters",
@@ -856,8 +889,9 @@ def test_orientation_routes_only_unresolved_explicit_conversions():
     )
     generic_conversion = _eval_by_id(hf_eval_data, "huggingface-convert-basic")
 
-    assert "Do not use orientation merely because an explicit conversion omits its framework" in normalized_orient
-    assert "preliminary inspection identifies one training owner" in normalized_orient
+    assert "Do not load orientation to perform the preliminary inspection" in normalized_orient
+    assert "run `nvflare agent inspect source <path> --format json` first" in normalized_orient
+    assert "route directly to the one detected converter" in normalized_orient
     assert "ownership conflict or unresolved Trainer factory" in normalized_orient
     assert "Hugging Face" not in generic_conversion["prompt"]
     assert generic_conversion["nvflare"]["expected_skill"] == "nvflare-convert-huggingface"

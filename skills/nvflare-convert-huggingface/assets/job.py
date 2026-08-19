@@ -171,6 +171,33 @@ def build_recipe(
     return recipe
 
 
+def build_sim_env(
+    num_clients: int,
+    workspace_root: Path,
+    *,
+    per_site_config: dict[str, dict] | None = None,
+) -> SimEnv:
+    """Build a simulator environment with exactly one client-topology owner."""
+    if per_site_config is None:
+        return SimEnv(
+            num_clients=num_clients,
+            num_threads=num_clients,
+            workspace_root=str(workspace_root),
+        )
+
+    clients = list(per_site_config)
+    if len(clients) != num_clients:
+        raise ValueError(
+            f"per_site_config defines {len(clients)} site(s), but num_clients={num_clients}; "
+            "the named topology must match the requested client count"
+        )
+    return SimEnv(
+        clients=clients,
+        num_threads=len(clients),
+        workspace_root=str(workspace_root),
+    )
+
+
 def main():
     # Importing the Recipe API before parsing lets it consume --export and
     # --export-dir; this parser owns only the generated job's local options.
@@ -209,13 +236,7 @@ def main():
         key_metric=args.key_metric,
     )
     workspace_root = _simulation_workspace(args.workspace_root)
-    run = recipe.execute(
-        SimEnv(
-            num_clients=args.num_clients,
-            num_threads=args.num_clients,
-            workspace_root=str(workspace_root),
-        )
-    )
+    run = recipe.execute(build_sim_env(args.num_clients, workspace_root))
     print("Job Status is:", run.get_status())
     print("Result can be found in:", run.get_result())
 

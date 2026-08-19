@@ -64,6 +64,15 @@ selected recipe path and the generated client's actual parser.
 
 ### Per-Site Argument Overrides
 
+Use one topology owner. The standard local path leaves `per_site_config` unset
+and runs `SimEnv(num_clients=N, ...)`; generate site partitions from
+`flare.get_site_name()` after `flare.init()` rather than creating one recipe
+target per partition. Use `per_site_config` only for genuinely different site
+paths or arguments. Once `set_per_site_config(recipe, per_site_config)` creates
+named recipe targets, run them with
+`SimEnv(clients=list(per_site_config), num_threads=len(per_site_config), ...)`.
+Never also pass `num_clients`, and never use `num_clients=None` as a workaround.
+
 Treat `per_site_config[site]["train_args"]` as the site's complete argument
 string. When present, it replaces the recipe-level `train_args`; the recipe does
 not merge shared arguments into the site override. Compose every site value from
@@ -79,7 +88,9 @@ set_per_site_config(recipe, per_site_config)
 ```
 
 Recipe-level `train_args` is only the fallback for a site without its own
-`train_args` entry. Before a full simulation, inspect each composed site value
+`train_args` entry. Use the same mapping for Recipe and `SimEnv` construction so
+both use the same target names. Before a full simulation, inspect each composed
+site value
 and verify that it contains the full expected argument set. For an exported-job
 validation target, also inspect each site's exported client configuration and
 verify that `task_script_args` contains the full expected argument set. For a

@@ -52,6 +52,16 @@ write ``with SimEnv(...):``. Instantiate it, then pass it to the recipe:
 ``recipe.execute(env=env)``). Do not infer cleanup or lifecycle APIs that the
 public Recipe surface does not provide.
 
+Use exactly one owner for the simulated client topology. With a unified recipe,
+let `SimEnv(num_clients=N)` create `site-1` through `site-N`; pass shared data
+arguments once and derive a generated partition index from the initialized site
+name. Do not call `set_per_site_config()` merely to assign partition indices.
+When genuinely different site paths or arguments require
+`set_per_site_config(recipe, config)`, that mapping owns the named targets: use
+`SimEnv(clients=list(config), ...)`, never `SimEnv(num_clients=...)`. Passing
+both named recipe targets and a generated client count is a construction error,
+not a condition to recover from by setting `num_clients=None`.
+
 ## Model Constructor Serialization
 
 For every framework, use explicit `class_path` (or `path`) plus complete `args`

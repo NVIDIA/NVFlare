@@ -1,6 +1,6 @@
 ---
 name: nvflare-orient
-description: "Route open-ended or ambiguous NVFLARE requests by inspecting the local project and recommending one specific workflow skill without editing files; do not use merely because an explicit conversion omits its framework when preliminary inspection finds one owner, but do use when ownership remains unresolved or conflicts."
+description: "Route open-ended NVFLARE advice and only conversion requests whose preliminary source inspection reports unresolved or conflicting ownership; never load this skill merely to inspect a concrete conversion request before selecting its detected framework converter."
 license: Apache-2.0
 version: "0.1.0"
 metadata:
@@ -19,21 +19,22 @@ metadata:
 ## Use When
 
 Use when the user asks where to start with NVFLARE, how a local project maps to
-FLARE workflows, or which FLARE skill should handle an ambiguous request. Also
-use when inspection explicitly reports unresolved Hugging Face Trainer
-ownership or active Lightning and Hugging Face Trainer owners that require a
-user choice.
+FLARE workflows, or which FLARE skill should handle an ambiguous request. For a
+concrete conversion request, use only after preliminary source inspection
+explicitly reports unresolved ownership or conflicting active training owners
+that require a user choice.
 
 ## Do Not Use When
 
 Do not use when the user already names a specific workflow such as PyTorch
 conversion, federated statistics, job submission, production deployment,
 Kubernetes setup, log diagnosis, or optimization of an existing FLARE job.
-Route to the narrower skill instead. Do not use orientation merely because an
-explicit conversion omits its framework when preliminary inspection identifies
-one training owner; route directly to that owner's converter. Continue to use
-orientation for an inspector-reported ownership conflict or unresolved Trainer
-factory, which requires the read-only choice described above.
+Route to the narrower skill instead. Do not load orientation to perform the
+preliminary inspection for a concrete conversion request: run `nvflare agent
+inspect source <path> --format json` first, then route directly to the one
+detected converter. Continue to use orientation for an inspector-reported
+ownership conflict or unresolved Trainer factory, which requires the read-only
+choice described above.
 
 ## Workflow
 

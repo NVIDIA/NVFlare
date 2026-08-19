@@ -104,6 +104,10 @@
             "description": "for multiple simulated/federated sites, trains each site on a deterministic local training partition by default and does not make every site train on the full source training set unless the user explicitly requested shared training data"
           },
           {
+            "id": "single-simulator-topology-owner",
+            "description": "uses SimEnv(num_clients=N) with shared arguments and site-name-derived partitions, or SimEnv(clients=list(per_site_config)) for genuinely different named-site arguments, but never both topology forms"
+          },
+          {
             "id": "safe-pandas-partitioning",
             "description": "when generating a Pandas partition, shuffles a writable copy of positional row indices and selects rows with iloc rather than shuffling a potentially read-only Index array or using loc with positions"
           },
@@ -252,6 +256,10 @@
           {
             "id": "no-unneeded-per-site-recipe-config",
             "description": "does not add per-site recipe configuration unless sites actually differ in scripts, arguments, data splits, or launch behavior"
+          },
+          {
+            "id": "no-mixed-named-and-generated-client-topology",
+            "description": "does not combine set_per_site_config named targets with SimEnv(num_clients=...), and does not recover from that conflict with num_clients=None"
           },
           {
             "id": "no-numpy-outbound-model-weights",

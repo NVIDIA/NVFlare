@@ -430,6 +430,13 @@ env = SimEnv(num_clients=num_clients, num_threads=num_clients, workspace_root=wo
 recipe.execute(env)
 ```
 
+This unified-app form is valid only while the recipe has no explicit named
+client targets. If `set_per_site_config(recipe, config)` is required for truly
+different site arguments, use `SimEnv(clients=list(config),
+num_threads=len(config), ...)` instead. The always-loaded common conversion
+reference owns the canonical single-topology-owner rule and partition guidance;
+do not configure both forms or recover with `num_clients=None`.
+
 For normal first-user simulation, `python job.py` is the intended local
 experience because no exported job folder may exist yet. The exported job folder
 is still the deployable artifact: POC or production submission uses the job

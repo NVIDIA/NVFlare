@@ -119,6 +119,10 @@
             "description": "for multiple simulated/federated sites, trains each site on a deterministic local training partition by default and does not make every site train on the full source training set unless the user explicitly requested shared training data"
           },
           {
+            "id": "single-simulator-topology-owner",
+            "description": "uses SimEnv(num_clients=N) with shared arguments and site-name-derived partitions, or SimEnv(clients=list(per_site_config)) for genuinely different named-site arguments, but never both topology forms"
+          },
+          {
             "id": "standard-generated-layout",
             "description": "uses standard generated file names such as client.py, job.py, and model.py"
           },
@@ -263,6 +267,10 @@
           {
             "id": "no-second-manual-flare-send",
             "description": "does not add a second manual flare.send with FLModel for normal Lightning training because the patched trainer owns model exchange"
+          },
+          {
+            "id": "no-mixed-named-and-generated-client-topology",
+            "description": "does not combine set_per_site_config named targets with SimEnv(num_clients=...), and does not recover from that conflict with num_clients=None"
           }
         ],
         "optional_behavior": [
