@@ -27,6 +27,8 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     ENV_WORKSPACE_OWNER_FQCN,
     ENV_WORKSPACE_TRANSFER_TOKEN,
     WorkspaceTransferManager,
+    _bootstrap_auth_identity_map,
+    _create_bootstrap_cell,
     _hash_file,
     _wait_for_bootstrap_ready,
     _zip_workspace_to_file,
@@ -35,6 +37,7 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     upload_results,
     upload_results_on_shutdown,
 )
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 
@@ -757,3 +760,91 @@ class TestWorkspaceBootstrapHelpers:
                 upload_results_on_shutdown(args, secure_mode=False, log=log)
 
         log.error.assert_called_once()
+
+
+class TestBootstrapAuthIdentityMap:
+    def test_maps_logical_root_to_fed_client_server_identity(self, tmp_path):
+        startup = tmp_path / "startup"
+        startup.mkdir()
+        (startup / "fed_client.json").write_text(
+            json.dumps(
+                {
+                    "servers": [{"name": "project", "identity": "gcp-server"}],
+                    "client": {"auth_identity_map": {"relay-a": "relay-a-cn"}},
+                }
+            )
+        )
+
+        identity_map = _bootstrap_auth_identity_map(str(startup))
+
+        assert identity_map[FQCN.ROOT_SERVER] == "gcp-server"
+        assert identity_map["relay-a"] == "relay-a-cn"
+
+    def test_prefers_auth_identity_over_identity(self, tmp_path):
+        startup = tmp_path / "startup"
+        startup.mkdir()
+        (startup / "fed_client.json").write_text(
+            json.dumps(
+                {
+                    "servers": [
+                        {
+                            "name": "project",
+                            "identity": "server",
+                            "auth_identity": "gcp-server",
+                        }
+                    ]
+                }
+            )
+        )
+
+        identity_map = _bootstrap_auth_identity_map(str(startup))
+
+        assert identity_map == {FQCN.ROOT_SERVER: "gcp-server"}
+
+    def test_returns_none_when_startup_has_no_server_identity(self, tmp_path):
+        startup = tmp_path / "startup"
+        startup.mkdir()
+
+        assert _bootstrap_auth_identity_map(str(startup)) is None
+
+    def test_create_bootstrap_cell_passes_identity_map(self, monkeypatch, tmp_path):
+        startup = tmp_path / "startup"
+        startup.mkdir()
+        (startup / "rootCA.pem").write_text("ca")
+        (startup / "client.crt").write_text("cert")
+        (startup / "client.key").write_text("key")
+        (startup / "fed_client.json").write_text(
+            json.dumps({"servers": [{"name": "project", "identity": "gcp-server"}]})
+        )
+
+        captured = {}
+
+        class _FakeCell:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            def start(self):
+                pass
+
+        monkeypatch.setattr("nvflare.app_opt.job_launcher.workspace_cell_transfer.Cell", _FakeCell)
+        monkeypatch.setattr("nvflare.app_opt.job_launcher.workspace_cell_transfer.NetAgent", lambda cell: MagicMock())
+        monkeypatch.setattr(
+            "nvflare.app_opt.job_launcher.workspace_cell_transfer.set_add_auth_headers_filters",
+            lambda *args, **kwargs: None,
+        )
+
+        args = SimpleNamespace(
+            workspace=str(tmp_path),
+            job_id=JOB_ID,
+            parent_url="tcp://parent",
+            root_url="tcp://root",
+            client_name="site-1",
+            token="token",
+            token_signature="sig",
+            ssid="ssid",
+        )
+
+        _create_bootstrap_cell(args, "site-1", True)
+
+        assert captured["auth_identity_map"] == {FQCN.ROOT_SERVER: "gcp-server"}
+        assert captured["secure"] is True
