@@ -46,6 +46,7 @@ class Topic:
     RESULT_ACCEPTED = "client_api.result_accepted"
     RESULT_REJECTED = "client_api.result_rejected"
     RESULT_STATUS = "client_api.result_status"
+    RESULT_SOURCE_SETTLED = "client_api.result_source_settled"
 
     # Throughout the session
     LOG = "client_api.log"

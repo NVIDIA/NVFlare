@@ -18,6 +18,8 @@ Drives the trainer's half of the external_process protocol against a fake CJ cel
 HELLO handshake, direct Cell Shareable tasks/results, result transaction progress, the
 batch-loop is_running() semantics, and ABORT/SHUTDOWN session ends."""
 
+import os
+import signal as process_signal
 import threading
 import time
 import uuid
@@ -50,6 +52,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.streaming import shutdown as streaming_shutdown
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
 from nvflare.fuel.utils.fobs import FOBSContextKey
@@ -130,7 +133,23 @@ class FakeCell:
         self.request_messages.append(request)
         self.request_kwargs.append(kwargs)
         if self.on_request is not None:
-            return self.on_request(topic, target, request)
+            reply = self.on_request(topic, target, request)
+            # Most test hooks predate the correlated settlement reply and return a
+            # generic OK for topics they do not customize. Model the current CJ
+            # handler for that default while preserving explicit ERROR replies.
+            if (
+                topic == Topic.RESULT_SOURCE_SETTLED
+                and reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.OK
+                and not isinstance(reply.payload, dict)
+            ):
+                return make_cell_reply(
+                    CellReturnCode.OK,
+                    body={
+                        MsgKey.REPLY_TOPIC: Topic.RESULT_SOURCE_SETTLED,
+                        MsgKey.TASK_ID: request.payload[MsgKey.TASK_ID],
+                    },
+                )
+            return reply
         if topic == Topic.HELLO:
             return _hello_accepted_reply(self.heartbeat_interval, self.heartbeat_timeout, self.secure_mode)
         if topic == Topic.HEARTBEAT:
@@ -140,6 +159,11 @@ class FakeCell:
             )
         if topic == Topic.RESULT_READY:
             return _result_accepted_reply()
+        if topic == Topic.RESULT_SOURCE_SETTLED:
+            return make_cell_reply(
+                CellReturnCode.OK,
+                body={MsgKey.REPLY_TOPIC: Topic.RESULT_SOURCE_SETTLED, MsgKey.TASK_ID: request.payload[MsgKey.TASK_ID]},
+            )
         return make_cell_reply(CellReturnCode.OK)
 
     def fire_and_forget(self, channel, topic, targets, message, **kwargs):
@@ -1038,14 +1062,15 @@ class TestAttachMode:
 
 def test_shutdown_f3_streaming_is_ordered_and_safe_to_repeat(monkeypatch):
     calls = []
-    monkeypatch.setattr(cell_api.DownloadService, "shutdown", lambda: calls.append("download"))
-    monkeypatch.setattr(cell_api.reliable_retry_scheduler, "shutdown", lambda: calls.append("retry"))
-    monkeypatch.setattr(cell_api, "stream_shutdown", lambda: calls.append("stream"))
+    monkeypatch.setattr(streaming_shutdown.DownloadService, "shutdown", lambda: calls.append("download"))
+    monkeypatch.setattr(streaming_shutdown.ByteStreamer, "shutdown", lambda: calls.append("byte"))
+    monkeypatch.setattr(streaming_shutdown.reliable_retry_scheduler, "shutdown", lambda: calls.append("retry"))
+    monkeypatch.setattr(streaming_shutdown, "stream_shutdown", lambda: calls.append("stream"))
 
     cell_api._shutdown_f3_streaming()
     cell_api._shutdown_f3_streaming()
 
-    assert calls == ["download", "retry", "stream", "download", "retry", "stream"]
+    assert calls == ["download", "byte", "retry", "stream", "download", "byte", "retry", "stream"]
 
 
 def test_shutdown_f3_streaming_attempts_every_stage_and_can_retry(monkeypatch):
@@ -1059,16 +1084,17 @@ def test_shutdown_f3_streaming_attempts_every_stage_and_can_retry(monkeypatch):
             fail_download_once = False
             raise RuntimeError("download failed")
 
-    monkeypatch.setattr(cell_api.DownloadService, "shutdown", shutdown_download)
-    monkeypatch.setattr(cell_api.reliable_retry_scheduler, "shutdown", lambda: calls.append("retry"))
-    monkeypatch.setattr(cell_api, "stream_shutdown", lambda: calls.append("stream"))
+    monkeypatch.setattr(streaming_shutdown.DownloadService, "shutdown", shutdown_download)
+    monkeypatch.setattr(streaming_shutdown.ByteStreamer, "shutdown", lambda: calls.append("byte"))
+    monkeypatch.setattr(streaming_shutdown.reliable_retry_scheduler, "shutdown", lambda: calls.append("retry"))
+    monkeypatch.setattr(streaming_shutdown, "stream_shutdown", lambda: calls.append("stream"))
 
     with pytest.raises(RuntimeError, match="download service"):
         cell_api._shutdown_f3_streaming()
-    assert calls == ["download", "retry", "stream"]
+    assert calls == ["download", "byte", "retry", "stream"]
 
     cell_api._shutdown_f3_streaming()
-    assert calls == ["download", "retry", "stream", "download", "retry", "stream"]
+    assert calls == ["download", "byte", "retry", "stream", "download", "byte", "retry", "stream"]
 
 
 def test_trainer_session_error_is_runtime_error():
@@ -1076,6 +1102,54 @@ def test_trainer_session_error_is_runtime_error():
 
 
 class TestInit:
+    def test_external_owner_watchdog_terminates_group_when_cj_disappears(self, bootstrap_path, monkeypatch):
+        config = read_bootstrap_config(bootstrap_path)
+        config[BootstrapKey.CJ_PID] = 424242
+        write_bootstrap_config(bootstrap_path, config)
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        terminated = threading.Event()
+        owner_checks = iter([True, False])
+        monkeypatch.setattr(cell_api, "_OWNER_WATCHDOG_INTERVAL", 0.001)
+        monkeypatch.setattr(api, "_owner_process_alive", lambda: next(owner_checks))
+        monkeypatch.setattr(api, "_terminate_orphaned_process_group", terminated.set)
+
+        api._start_owner_watchdog()
+
+        assert terminated.wait(1.0)
+        api._stop_owner_watchdog()
+
+    def test_external_owner_watchdog_disables_when_cj_pid_is_not_initially_visible(
+        self, bootstrap_path, monkeypatch, caplog
+    ):
+        config = read_bootstrap_config(bootstrap_path)
+        config[BootstrapKey.CJ_PID] = 424242
+        write_bootstrap_config(bootstrap_path, config)
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        terminated = threading.Event()
+        monkeypatch.setattr(api, "_owner_process_alive", lambda: False)
+        monkeypatch.setattr(api, "_terminate_orphaned_process_group", terminated.set)
+
+        api._start_owner_watchdog()
+
+        assert api._owner_watchdog_thread is None
+        assert not terminated.is_set()
+        assert "not visible from the trainer at session start" in caplog.text
+
+    @pytest.mark.skipif(os.name != "posix", reason="process-group signals are POSIX")
+    def test_orphan_termination_escalates_ignored_sigterm(self, bootstrap_path, monkeypatch):
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        signals = []
+        exits = []
+        monkeypatch.setattr(cell_api.os, "getpgrp", lambda: 1234)
+        monkeypatch.setattr(cell_api.os, "killpg", lambda pgid, sig: signals.append((pgid, sig)))
+        monkeypatch.setattr(cell_api.time, "sleep", lambda _timeout: None)
+        monkeypatch.setattr(cell_api.os, "_exit", exits.append)
+
+        api._terminate_orphaned_process_group()
+
+        assert signals == [(1234, process_signal.SIGTERM), (1234, process_signal.SIGKILL)]
+        assert exits == [1]
+
     def test_init_does_hello_handshake(self, bootstrap_path, env):
         api = _init_api(bootstrap_path, env)
         try:
@@ -1805,7 +1879,7 @@ class TestReceiveSend:
         env.on_request = on_request
         api = _init_api(bootstrap_path, env)
         try:
-            _deliver_task(
+            task_id, _ = _deliver_task(
                 env,
                 model=FLModel(params={"w": [1.0]}, optimizer_params={"momentum": [0.5]}, params_type=ParamsType.FULL),
                 result_receiver_ids=("server.job",),
@@ -1828,8 +1902,80 @@ class TestReceiveSend:
             assert api._receive_called is False
             assert api._current_task is None
             assert api._result_receiver_ids is None
+            settled = [payload for topic, _, payload in env.requests if topic == Topic.RESULT_SOURCE_SETTLED]
+            assert settled == [{MsgKey.SESSION_ID: SESSION_ID, MsgKey.TASK_ID: task_id}]
             with pytest.raises(RuntimeError, match='"receive" needs to be called'):
                 api.send(sent_model)
+        finally:
+            api.shutdown()
+
+    def test_one_shot_send_reports_source_settled_before_cell_stop(self, bootstrap_path, env):
+        _set_launch_once(bootstrap_path, False)
+        events = []
+        real_stop = env.stop
+
+        def on_request(topic, target, request):
+            events.append(topic)
+            if topic == Topic.HELLO:
+                return _hello_accepted_reply()
+            if topic == Topic.RESULT_READY:
+                return _result_accepted_reply()
+            return make_cell_reply(CellReturnCode.OK)
+
+        def stop():
+            events.append("cell.stop")
+            real_stop()
+
+        env.on_request = on_request
+        env.stop = stop
+        api = _init_api(bootstrap_path, env)
+        try:
+            _deliver_task(env)
+            api.receive()
+            events.clear()
+
+            api.send(FLModel(params={"w": [2.0]}))
+
+            assert events == [Topic.RESULT_READY, Topic.RESULT_SOURCE_SETTLED, "cell.stop"]
+            assert env.stopped is True
+        finally:
+            api.shutdown()
+
+    def test_result_source_settled_retries_until_task_correlated_ack(self, bootstrap_path, env, monkeypatch):
+        monkeypatch.setattr(cell_api, "_RESULT_SOURCE_SETTLED_RETRY_BACKOFF", 0.0)
+        attempts = 0
+
+        def on_request(topic, target, request):
+            nonlocal attempts
+            if topic == Topic.HELLO:
+                return _hello_accepted_reply()
+            if topic == Topic.RESULT_READY:
+                return _result_accepted_reply()
+            if topic == Topic.RESULT_SOURCE_SETTLED:
+                attempts += 1
+                if attempts == 1:
+                    return make_cell_reply(
+                        CellReturnCode.OK,
+                        body={MsgKey.REPLY_TOPIC: Topic.ERROR, MsgKey.REASON: "temporarily unavailable"},
+                    )
+                return make_cell_reply(
+                    CellReturnCode.OK,
+                    body={
+                        MsgKey.REPLY_TOPIC: Topic.RESULT_SOURCE_SETTLED,
+                        MsgKey.TASK_ID: request.payload[MsgKey.TASK_ID],
+                    },
+                )
+            return make_cell_reply(CellReturnCode.OK)
+
+        env.on_request = on_request
+        api = _init_api(bootstrap_path, env)
+        try:
+            _deliver_task(env)
+            api.receive()
+
+            api.send(FLModel(params={"w": [2.0]}))
+
+            assert attempts == 2
         finally:
             api.shutdown()
 
@@ -1985,6 +2131,16 @@ class TestReceiveSend:
 
 
 class TestSessionEnd:
+    def test_external_shutdown_drains_f3_before_stopping_cell(self, bootstrap_path, env, monkeypatch):
+        calls = []
+        env.stop = lambda: calls.append("cell")
+        monkeypatch.setattr(cell_api, "_shutdown_f3_streaming", lambda: calls.append("f3"))
+        api = _init_api(bootstrap_path, env)
+
+        api.shutdown()
+
+        assert calls == ["f3", "cell"]
+
     def test_shutdown_ends_the_loop_cleanly(self, bootstrap_path, env):
         api = _init_api(bootstrap_path, env)
         try:
@@ -2066,7 +2222,10 @@ class TestHeartbeat:
             api.shutdown()
         assert not thread.is_alive()
 
-    def test_hard_cj_loss_aborts_blocked_receive(self, bootstrap_path, env):
+    def test_hard_cj_loss_aborts_blocked_receive(self, bootstrap_path, env, monkeypatch):
+        terminated = threading.Event()
+        monkeypatch.setattr(cell_api, "_CJ_TIMEOUT_ABORT_GRACE", 0.01)
+
         def no_heartbeat_reply(topic, target, request):
             if topic == Topic.HELLO:
                 return _hello_accepted_reply(heartbeat_interval=0.01, heartbeat_timeout=0.05)
@@ -2076,13 +2235,35 @@ class TestHeartbeat:
 
         env.on_request = no_heartbeat_reply
         api = _init_api(bootstrap_path, env)
+        api._terminate_orphaned_process_group = terminated.set
         try:
             assert _wait_until(lambda: api._abort)
+            assert terminated.wait(1.0)
             assert "CJ heartbeat timed out" in api._abort_reason
             with pytest.raises(TrainerSessionError, match="CJ heartbeat timed out"):
                 api.receive(timeout=0.1)
         finally:
             api.shutdown()
+
+    def test_hard_cj_loss_allows_cooperative_shutdown_before_group_termination(self, bootstrap_path, monkeypatch):
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        terminated = MagicMock()
+        monkeypatch.setattr(cell_api, "_CJ_TIMEOUT_ABORT_GRACE", 0.01)
+        monkeypatch.setattr(api, "_terminate_orphaned_process_group", terminated)
+        api._owner_watchdog_stop.set()
+
+        api._terminate_after_cj_timeout()
+
+        terminated.assert_not_called()
+
+    def test_attach_cj_loss_never_terminates_external_process_group(self, attach_bootstrap_path, monkeypatch):
+        api = CellClientAPI(bootstrap_file=attach_bootstrap_path)
+        terminated = MagicMock()
+        monkeypatch.setattr(api, "_terminate_orphaned_process_group", terminated)
+
+        api._terminate_after_cj_timeout()
+
+        terminated.assert_not_called()
 
     def test_pending_inline_result_request_does_not_suppress_owner_loss(self, bootstrap_path, env):
         request_pending = threading.Event()
