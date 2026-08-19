@@ -131,13 +131,13 @@ The mock backend validates orchestration and FL behavior only. It is not a Qwen 
 
 Exact Qwen metrics depend on the model and runtime.
 
-The default seed-7 commands were validated with `Qwen/Qwen3-VL-2B-Instruct` on one NVIDIA H100 NVL. These are
-tutorial checks, not benchmark claims:
+The default seed-7 commands were validated with `Qwen/Qwen3-VL-2B-Instruct` on one NVIDIA H100 NVL against an
+editable NVFlare source checkout rebased on upstream `main`. These are tutorial checks, not benchmark claims:
 
 | Scenario | Missing AUROC before | Missing AUROC after | Aggregate AUROC before | Aggregate AUROC after | Selected `alpha` |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `recoverable` | 0.1806 | 0.8611 | 0.7951 | 0.9653 | 0.50 |
-| `uninformative` | 0.5625 | 0.5833 | 0.8906 | 0.8958 | 0.75 |
+| `recoverable` | 0.1806 | 0.8681 | 0.7951 | 0.9670 | 0.75 |
+| `uninformative` | 0.5625 | 0.5972 | 0.8906 | 0.8993 | 0.75 |
 
 The low-correlation control's small rank change is not evidence of cross-modal recovery. Its nonzero scale primarily
 reduces the frozen model's biased answer-token loss while satisfying the aggregate no-harm constraint. Depending on
