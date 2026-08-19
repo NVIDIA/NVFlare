@@ -338,10 +338,10 @@ class SwarmClientController(ClientSideController):
                 Since submission req is a tiny message, this timeout value should be small.
             request_to_submit_result_interval: interval between requests to submit result.
             max_concurrent_submissions: max number of concurrent submissions allowed on the aggregation client.
-            memory_gc_rounds: run allocator-aware memory cleanup (gc.collect() + malloc_trim) every
-                N FL rounds — after each completed learn task on every client, and additionally after
-                each aggregation on the aggregation client. Defaults to 1 (every round). Set to 0 to
-                disable (a plain gc.collect() still runs after each learn task).
+            memory_gc_rounds: run allocator-aware memory cleanup (gc.collect() + malloc_trim) after every
+                N completed learn tasks in each client job, and independently after every N aggregations
+                in the aggregation client job. Defaults to 1. Set to 0 to disable allocator-aware cleanup.
+                A plain gc.collect() still runs after every learn task regardless of this value.
             cuda_empty_cache: also call torch.cuda.empty_cache() during memory cleanup.
                 In swarm learning the aggregator runs on the same client as the trainer, so GPU
                 memory may be relevant. Defaults to False.
@@ -716,11 +716,12 @@ class SwarmClientController(ClientSideController):
                 self.log_info(fl_ctx, f"Swarm aggregator memory cleanup at round {self._aggr_round_count}")
 
     def _cleanup_learn_task_memory(self):
-        """Allocator-aware cleanup after each learn task, gated by memory_gc_rounds.
+        """Run allocator-aware cleanup on the configured learn-task cadence.
 
         A non-aggregation client never runs _end_gather(), so this is the only
         point where its client job returns the freed learn-task payload from
-        the allocator to the OS.
+        the allocator to the OS. Between cadence points, and when allocator-aware
+        cleanup is disabled, the base hook still runs gc.collect().
         """
         if self.memory_gc_rounds > 0:
             self._learn_task_count += 1

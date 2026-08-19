@@ -122,10 +122,11 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             Defaults to False (in-process execution).
         command: Shell command used to launch the script when launch_external_process=True.
             Defaults to "python3 -u".
-        memory_gc_rounds: Run gc.collect() + malloc_trim every N FL rounds in the trainer
-            process and in every client job (after each learn task, and additionally after
-            each aggregation on the aggregation client). Defaults to 1 (every round).
-            Set to 0 to disable.
+        memory_gc_rounds: Run allocator-aware cleanup (gc.collect() + malloc_trim) on three
+            independent cadences: every N training rounds in the trainer, every N completed
+            learn tasks in each client job, and every N aggregations in the aggregation client
+            job. Defaults to 1. Set to 0 to disable allocator-aware cleanup. A plain gc.collect()
+            still runs after every client-job learn task regardless of this value.
         cuda_empty_cache: Call torch.cuda.empty_cache() during cleanup. Defaults to False.
         expected_data_kind: The data kind the aggregator expects from clients. Defaults to
             DataKind.WEIGHTS for full-weight FedAvg. Clients returning differences must label
