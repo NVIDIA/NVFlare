@@ -66,6 +66,15 @@ Compatibility and Migration Notes
   that must keep such metrics local should omit the explicit pre-fit validation;
   if they still require it locally, a custom task-result filter must remove
   ``MetaKey.INITIAL_METRICS`` before the result reaches the server.
+- ``SimpleIntimeModelSelector`` (CCWF) now selects a scalar ``key_metric``
+  (default ``val_accuracy``) from dict-valued ``INITIAL_METRICS`` payloads
+  instead of failing with a logged ``TypeError`` that silently disabled
+  best-model selection. Swarm jobs whose metric dicts contain the configured
+  key change from selection-inert to active best-global-model tracking without
+  a config change; dict payloads lacking the key, and non-numeric values, are
+  skipped with a warning, so configure ``key_metric`` to match the reported
+  metric name. A new ``negate_key_metric`` argument supports lower-is-better
+  metrics such as losses.
 - Recipe discovery now exposes the concrete PyTorch ``FedProxRecipe`` as
   ``fedprox-pt`` and no longer advertises the ``fedprox-tf`` manual pattern as
   a concrete recipe. TensorFlow clients can continue to combine a FedAvg
