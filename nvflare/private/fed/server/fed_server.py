@@ -90,7 +90,7 @@ def _normalize_loopback_host(host: str) -> str:
     if host.rstrip(".").lower() == "localhost":
         return "127.0.0.1"
     try:
-        address = ipaddress.ip_address(host.strip("[]"))
+        address = ipaddress.ip_address(host.strip().strip("[]"))
     except ValueError:
         return host
     return "127.0.0.1" if address.is_loopback else host
@@ -104,7 +104,7 @@ def _normalize_admin_host(host: str) -> str:
     """Normalize a configured admin bind host and reject unsupported IPv6 listeners."""
     normalized_host = _normalize_loopback_host(host)
     try:
-        address = ipaddress.ip_address(host.strip("[]"))
+        address = ipaddress.ip_address(host.strip().strip("[]"))
     except ValueError:
         return normalized_host
     if isinstance(address, ipaddress.IPv6Address) and not address.is_loopback:
