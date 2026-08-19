@@ -479,6 +479,7 @@ class TestInitializeAndFinalize:
                 "tcp",
                 {
                     DriverParams.HOST.value: "localhost",
+                    DriverParams.LISTEN_HOST.value: "localhost",
                     DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.CLEAR,
                 },
             )
