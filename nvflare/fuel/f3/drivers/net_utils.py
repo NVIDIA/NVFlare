@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import ipaddress
 import logging
 import os
 import random
@@ -292,7 +293,15 @@ def get_tcp_urls(scheme: str, resources: dict) -> (str, str):
 
     listening_host = resources.get(DriverParams.LISTEN_HOST.value) if resources else None
     if not listening_host:
-        listening_host = "0"
+        if host.rstrip(".").lower() == "localhost":
+            listening_host = "127.0.0.1"
+        else:
+            try:
+                address = ipaddress.ip_address(host)
+            except ValueError:
+                address = None
+            # F3 URL parsing and the TCP driver do not yet support IPv6 end to end.
+            listening_host = host if isinstance(address, ipaddress.IPv4Address) and address.is_loopback else "0"
 
     port = get_open_tcp_port(resources)
     if not port:
