@@ -387,6 +387,11 @@ _BARE_CONFIRMATION_DENIAL_RE = re.compile(
     r"no\s+(?:user\s+)?(?:approval|confirmation|consent|permission)\s+(?:is\s+)?(?:required|needed))[.!?;]?$",
     re.IGNORECASE,
 )
+_BARE_REVIEW_DENIAL_RE = re.compile(
+    r"^without\s+(?:(?:an?|any|the)\s+)?(?:audit(?:ing)?|review(?:ing)?|vetting|classifying|flagging|checking)"
+    r"(?:\s+(?:their|the|dependency|package|sources?|names?))*[.!?;]?$",
+    re.IGNORECASE,
+)
 _BARE_CONFIRMATION_BYPASS_CLAUSE_RE = re.compile(
     r"(?:^|,\s*)(?:do\s+not|don't|never)\s+(?:preemptively\s+)?(?:ask|prompt)\b[^.!?;,]{0,80}"
     r"\b(?:approval|confirmation|consent)\b\s*(?=,|$)",
@@ -1965,12 +1970,12 @@ def _markdown_leading_indent(line: str) -> int:
 
 def _is_markdown_blockquote_continuation(previous: str, current: str) -> bool:
     """Return whether a quoted source line continues an incomplete statement."""
-    dependency_then_bare_bypass = _DEPENDENCY_INSTALL_TERMS_RE.search(previous) and _is_bare_confirmation_bypass(
-        current
+    dependency_then_bare_bypass = _DEPENDENCY_INSTALL_TERMS_RE.search(previous) and (
+        _is_bare_confirmation_bypass(current) or _is_bare_review_bypass(current)
     )
-    bare_bypass_then_dependency = _is_bare_confirmation_bypass(previous) and _DEPENDENCY_INSTALL_TERMS_RE.search(
-        current
-    )
+    bare_bypass_then_dependency = (
+        _is_bare_confirmation_bypass(previous) or _is_bare_review_bypass(previous)
+    ) and _DEPENDENCY_INSTALL_TERMS_RE.search(current)
     if dependency_then_bare_bypass or bare_bypass_then_dependency:
         return True
     if _MARKDOWN_SENTENCE_END_RE.search(previous):
@@ -1998,6 +2003,10 @@ def _is_markdown_fenced_continuation(previous: str, current: str) -> bool:
     """
     if _MARKDOWN_SENTENCE_END_RE.search(previous):
         return False
+    if _DEPENDENCY_INSTALL_TERMS_RE.search(previous) and (
+        _BARE_CONFIRMATION_DENIAL_RE.fullmatch(current) or _is_bare_review_bypass(current)
+    ):
+        return True
     if _is_bare_confirmation_bypass(current) or _has_dependency_review_bypass(current):
         return False
     if _DEPENDENCY_ACTION_AT_START_RE.search(current) and (
@@ -2257,6 +2266,10 @@ def _has_dependency_review_bypass(text: str) -> bool:
 
 def _is_bare_confirmation_bypass(text: str) -> bool:
     return bool(_BARE_CONFIRMATION_BYPASS_RE.fullmatch(text) or _BARE_CONFIRMATION_DENIAL_RE.fullmatch(text))
+
+
+def _is_bare_review_bypass(text: str) -> bool:
+    return bool(_BARE_REVIEW_DENIAL_RE.fullmatch(text))
 
 
 def _has_actionable_dependency_context(statements: list[str], excluded_index: int) -> bool:

@@ -1059,6 +1059,26 @@ def test_dependency_install_safety_lint_joins_wrapped_fenced_statement(tmp_path)
 
 
 @pytest.mark.parametrize(
+    ("wrapped_fragment", "expected_code"),
+    [
+        ("without user confirmation.", "dependency-install-confirmation-bypass"),
+        ("Without reviewing sources.", "dependency-install-review-bypass"),
+    ],
+)
+def test_dependency_install_safety_lint_joins_fenced_without_fragment(tmp_path, wrapped_fragment, expected_code):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-unsafe-dependency-skill")
+    references = skill_dir / "references"
+    references.mkdir()
+    references.joinpath("dependency-install.md").write_text(
+        f"```text\nInstall packages\n{wrapped_fragment}\n```\n", encoding="utf-8"
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_DEPENDENCY_INSTALL_SAFETY])
+
+    assert _has_finding(result, LINT_SKILL_DEPENDENCY_INSTALL_SAFETY, expected_code)
+
+
+@pytest.mark.parametrize(
     "independent_statement",
     [
         "Never ask for approval.",
@@ -1071,7 +1091,7 @@ def test_dependency_install_safety_lint_keeps_independent_fenced_statements_sepa
     references = skill_dir / "references"
     references.mkdir()
     references.joinpath("dependency-install.md").write_text(
-        f"```text\nInstall packages\n{independent_statement}\n```\n", encoding="utf-8"
+        f"```text\nInstall packages.\n{independent_statement}\n```\n", encoding="utf-8"
     )
 
     result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_DEPENDENCY_INSTALL_SAFETY])
