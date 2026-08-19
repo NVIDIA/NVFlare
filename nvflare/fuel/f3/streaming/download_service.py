@@ -1984,6 +1984,9 @@ def request_download_chunk(
         secure=secure,
         optional=optional,
         abort_signal=abort_signal,
+        # Keep the TxTask alive until the producer accepts or rejects this request,
+        # so an incoming-filter error ACK cannot race sender cleanup.
+        reliable=True,
     )
 
 
@@ -2179,6 +2182,9 @@ def _download_object(
             secure=secure,
             optional=optional,
             abort_signal=abort_signal,
+            # Download requests cross trust boundaries and must observe an
+            # incoming-filter rejection before the send future can succeed.
+            reliable=True,
         )
 
     # Pipelined download loop.

@@ -137,6 +137,7 @@ def test_single_frame_receiver_rejection_reports_generic_error_after_receive_com
     byte_streamer = ByteStreamer(sender_cell)
     completed_send = SimpleNamespace(
         sid=101,
+        stream_token="stream-token",
         cell=sender_cell,
         target="client",
         channel=CellChannel.RETURN_ONLY,
@@ -172,7 +173,8 @@ def test_single_frame_receiver_rejection_reports_generic_error_after_receive_com
     incoming = Message(
         {
             MessageHeaderKey.ORIGIN: "server.job-id",
-            StreamHeaderKey.STREAM_ID: 101,
+            StreamHeaderKey.STREAM_ID: completed_send.sid,
+            StreamHeaderKey.STREAM_TOKEN: completed_send.stream_token,
             StreamHeaderKey.CHANNEL: CellChannel.RETURN_ONLY,
             StreamHeaderKey.TOPIC: "channel:topic",
             StreamHeaderKey.STREAM_REQ_ID: "request-id",

@@ -33,6 +33,13 @@ from nvflare.fuel.f3.cellnet.registry import Registry
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.streaming.stream_const import (
+    STREAM_ACK_TOPIC,
+    STREAM_CHANNEL,
+    STREAM_DATA_TOPIC,
+    StreamDataType,
+    StreamHeaderKey,
+)
 
 
 def _cell(fqcn="site-1"):
@@ -406,3 +413,93 @@ def test_encrypt_rejects_unsupported_payload(payload):
 
     with pytest.raises(RuntimeError, match="Payload type"):
         cell.encrypt_payload(message)
+
+
+def test_stream_filter_rejection_sends_error_ack_to_stream_sender():
+    cell = _cell("server")
+    cell.fire_and_forget = MagicMock(return_value={})
+    request = Message(
+        headers={
+            MessageHeaderKey.CHANNEL: STREAM_CHANNEL,
+            MessageHeaderKey.TOPIC: STREAM_DATA_TOPIC,
+            MessageHeaderKey.ORIGIN: "site-1.job.trainer",
+            StreamHeaderKey.STREAM_ID: 42,
+            StreamHeaderKey.STREAM_TOKEN: "attacker-unpredictable-token",
+        }
+    )
+    rejection = Message(
+        headers={
+            MessageHeaderKey.RETURN_CODE: ReturnCode.UNAUTHENTICATED,
+            MessageHeaderKey.ERROR: "missing client name",
+        }
+    )
+
+    cell._send_stream_filter_rejection(request, rejection)
+
+    kwargs = cell.fire_and_forget.call_args.kwargs
+    assert kwargs["channel"] == STREAM_CHANNEL
+    assert kwargs["topic"] == STREAM_ACK_TOPIC
+    assert kwargs["targets"] == "site-1.job.trainer"
+    assert kwargs["message"].get_header(StreamHeaderKey.STREAM_ID) == 42
+    assert kwargs["message"].get_header(StreamHeaderKey.STREAM_TOKEN) == "attacker-unpredictable-token"
+    assert kwargs["message"].get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.ERROR
+    assert "missing client name" in kwargs["message"].get_header(StreamHeaderKey.ERROR_MSG)
+
+
+def test_non_stream_filter_rejection_does_not_send_stream_error():
+    cell = _cell("server")
+    cell.fire_and_forget = MagicMock(return_value={})
+
+    cell._send_stream_filter_rejection(
+        Message(
+            headers={
+                MessageHeaderKey.CHANNEL: "app",
+                MessageHeaderKey.TOPIC: "task",
+                MessageHeaderKey.ORIGIN: "site-1",
+            }
+        ),
+        Message(headers={MessageHeaderKey.RETURN_CODE: ReturnCode.UNAUTHENTICATED}),
+    )
+
+    cell.fire_and_forget.assert_not_called()
+
+
+def test_stream_filter_rejection_without_token_does_not_send_stream_error():
+    cell = _cell("server")
+    cell.fire_and_forget = MagicMock(return_value={})
+
+    cell._send_stream_filter_rejection(
+        Message(
+            headers={
+                MessageHeaderKey.CHANNEL: STREAM_CHANNEL,
+                MessageHeaderKey.TOPIC: STREAM_DATA_TOPIC,
+                MessageHeaderKey.ORIGIN: "site-1.job.trainer",
+                StreamHeaderKey.STREAM_ID: 42,
+            }
+        ),
+        Message(headers={MessageHeaderKey.RETURN_CODE: ReturnCode.UNAUTHENTICATED}),
+    )
+
+    cell.fire_and_forget.assert_not_called()
+
+
+def test_stream_filter_rejection_with_ok_reply_uses_filter_error_detail():
+    cell = _cell("server")
+    cell.fire_and_forget = MagicMock(return_value={})
+
+    cell._send_stream_filter_rejection(
+        Message(
+            headers={
+                MessageHeaderKey.CHANNEL: STREAM_CHANNEL,
+                MessageHeaderKey.TOPIC: STREAM_DATA_TOPIC,
+                MessageHeaderKey.ORIGIN: "site-1.job.trainer",
+                StreamHeaderKey.STREAM_ID: 42,
+                StreamHeaderKey.STREAM_TOKEN: "stream-token",
+            }
+        ),
+        Message(headers={MessageHeaderKey.RETURN_CODE: ReturnCode.OK}),
+    )
+
+    error = cell.fire_and_forget.call_args.kwargs["message"].get_header(StreamHeaderKey.ERROR_MSG)
+    assert ReturnCode.FILTER_ERROR in error
+    assert "rejected" in error

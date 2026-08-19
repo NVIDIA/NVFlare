@@ -128,6 +128,7 @@ class TestByteStreamerAckWatchdog:
             {
                 MessageHeaderKey.ORIGIN: "receiver",
                 StreamHeaderKey.STREAM_ID: task.sid,
+                StreamHeaderKey.STREAM_TOKEN: task.stream_token,
                 StreamHeaderKey.CHANNEL: "ch",
                 StreamHeaderKey.TOPIC: "tp",
                 StreamHeaderKey.ERROR_MSG: "rejected",
@@ -244,6 +245,7 @@ class TestByteStreamerAckWatchdog:
             {
                 MessageHeaderKey.ORIGIN: "receiver",
                 StreamHeaderKey.STREAM_ID: 100,
+                StreamHeaderKey.STREAM_TOKEN: task.stream_token,
                 StreamHeaderKey.STREAM_REQ_ID: "request-100",
                 StreamHeaderKey.CHANNEL: "ch",
                 StreamHeaderKey.TOPIC: "tp",
@@ -267,6 +269,7 @@ class TestByteStreamerAckWatchdog:
             (StreamHeaderKey.CHANNEL, "other-channel"),
             (StreamHeaderKey.TOPIC, "other-topic"),
             (StreamHeaderKey.STREAM_REQ_ID, "other-request"),
+            (StreamHeaderKey.STREAM_TOKEN, "other-token"),
         ],
     )
     def test_late_error_with_mismatched_context_is_ignored(self, changed_header, changed_value):
@@ -292,6 +295,7 @@ class TestByteStreamerAckWatchdog:
         headers = {
             MessageHeaderKey.ORIGIN: "receiver",
             StreamHeaderKey.STREAM_ID: 101,
+            StreamHeaderKey.STREAM_TOKEN: task.stream_token,
             StreamHeaderKey.STREAM_REQ_ID: "request-101",
             StreamHeaderKey.CHANNEL: "ch",
             StreamHeaderKey.TOPIC: "tp",
@@ -315,6 +319,7 @@ class TestByteStreamerAckWatchdog:
         message = Message(
             {
                 MessageHeaderKey.ORIGIN: "peer",
+                StreamHeaderKey.STREAM_TOKEN: task.stream_token,
                 StreamHeaderKey.ERROR_MSG: "blob too large",
                 StreamHeaderKey.ERROR_TYPE: BlobSizeError.__name__,
             }
@@ -350,6 +355,7 @@ class TestByteStreamerAckWatchdog:
         msg = Message(
             {
                 MessageHeaderKey.ORIGIN: "peer",
+                StreamHeaderKey.STREAM_TOKEN: task.stream_token,
                 StreamHeaderKey.OFFSET: 128,
             },
             None,
@@ -408,6 +414,7 @@ class TestByteStreamerAckWatchdog:
         assert [len(message.payload) for message in messages] == [8, 8, 8, 1]
         assert all(message.get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.CHUNK for message in messages[:-1])
         assert messages[-1].get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.FINAL
+        assert {message.get_header(StreamHeaderKey.STREAM_TOKEN) for message in messages} == {task.stream_token}
 
     def test_stream_cannot_return_more_than_requested(self, monkeypatch):
         task, _ = self._make_task(
@@ -710,6 +717,7 @@ class TestReliableByteStreamer:
         ack = Message(
             {
                 MessageHeaderKey.ORIGIN: "peer",
+                StreamHeaderKey.STREAM_TOKEN: task.stream_token,
                 StreamHeaderKey.OFFSET: 1,
                 StreamHeaderKey.SEQUENCE: 0,
             },
@@ -721,6 +729,136 @@ class TestReliableByteStreamer:
         assert task.pending_messages == {}
         assert task.pending_message_bytes == 0
         assert task.stream_future.result(timeout=0.1) == 1
+
+    def test_reliable_task_stays_registered_for_delayed_filter_error(self, monkeypatch, retry_scheduler):
+        task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
+        frame_sent = threading.Event()
+
+        def send_frame(*_args, **_kwargs):
+            frame_sent.set()
+            return {}
+
+        cell.fire_and_forget.side_effect = send_frame
+        with ByteStreamer.map_lock:
+            ByteStreamer.tx_task_map[task.sid] = task
+        send_thread = threading.Thread(target=task.send_loop)
+        send_thread.start()
+        try:
+            assert frame_sent.wait(timeout=0.5)
+            send_thread.join(timeout=0.5)
+            assert not send_thread.is_alive()
+            assert task.stream_future.running()
+            with ByteStreamer.map_lock:
+                assert ByteStreamer.tx_task_map.get(task.sid) is task
+
+            ByteStreamer._ack_handler(
+                Message(
+                    {
+                        MessageHeaderKey.ORIGIN: "peer",
+                        StreamHeaderKey.STREAM_ID: task.sid,
+                        StreamHeaderKey.STREAM_TOKEN: task.stream_token,
+                        StreamHeaderKey.ERROR_MSG: "stream rejected by incoming filter",
+                    }
+                )
+            )
+
+            with pytest.raises(StreamError, match="stream rejected by incoming filter"):
+                task.stream_future.result(timeout=0.5)
+            with ByteStreamer.map_lock:
+                assert task.sid not in ByteStreamer.tx_task_map
+        finally:
+            task.cancel()
+            send_thread.join(timeout=0.5)
+            with ByteStreamer.map_lock:
+                ByteStreamer.tx_task_map.pop(task.sid, None)
+
+    def test_ack_handler_ignores_spoofed_stream_rejection(self, monkeypatch, retry_scheduler):
+        task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)
+        with ByteStreamer.map_lock:
+            ByteStreamer.tx_task_map[task.sid] = task
+
+        try:
+            ByteStreamer._ack_handler(
+                Message(
+                    {
+                        MessageHeaderKey.ORIGIN: "routing-hop",
+                        StreamHeaderKey.STREAM_ID: task.sid,
+                        StreamHeaderKey.STREAM_TOKEN: "forged-token",
+                        StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
+                        StreamHeaderKey.ERROR_MSG: "forged transit rejection",
+                    }
+                )
+            )
+            assert not task.stream_future.done()
+
+            ByteStreamer._ack_handler(
+                Message(
+                    {
+                        MessageHeaderKey.ORIGIN: "peer",
+                        StreamHeaderKey.STREAM_ID: task.sid,
+                        StreamHeaderKey.STREAM_TOKEN: "spoofed-token",
+                        StreamHeaderKey.ERROR_MSG: "forged filter rejection",
+                    }
+                )
+            )
+            assert not task.stream_future.done()
+
+            ByteStreamer._ack_handler(
+                Message(
+                    {
+                        MessageHeaderKey.ORIGIN: "attacker",
+                        StreamHeaderKey.STREAM_ID: task.sid,
+                        StreamHeaderKey.STREAM_TOKEN: task.stream_token,
+                        StreamHeaderKey.DATA_TYPE: StreamDataType.ACK,
+                        StreamHeaderKey.OFFSET: 1,
+                        StreamHeaderKey.SEQUENCE: 0,
+                    }
+                )
+            )
+            assert not task.stream_future.done()
+
+            ByteStreamer._ack_handler(
+                Message(
+                    {
+                        MessageHeaderKey.ORIGIN: "peer",
+                        StreamHeaderKey.STREAM_ID: task.sid,
+                        StreamHeaderKey.STREAM_TOKEN: task.stream_token,
+                        StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
+                        StreamHeaderKey.ERROR_MSG: "valid filter rejection",
+                    }
+                )
+            )
+            with pytest.raises(StreamError, match="valid filter rejection"):
+                task.stream_future.result(timeout=0.1)
+        finally:
+            task.cancel()
+            with ByteStreamer.map_lock:
+                ByteStreamer.tx_task_map.pop(task.sid, None)
+
+    def test_ack_handler_accepts_correlated_filter_rejection_from_routing_hop(self, monkeypatch, retry_scheduler):
+        task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)
+        with ByteStreamer.map_lock:
+            ByteStreamer.tx_task_map[task.sid] = task
+
+        try:
+            ByteStreamer._ack_handler(
+                Message(
+                    {
+                        MessageHeaderKey.ORIGIN: "routing-hop",
+                        StreamHeaderKey.STREAM_ID: task.sid,
+                        StreamHeaderKey.STREAM_TOKEN: task.stream_token,
+                        StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
+                        StreamHeaderKey.ERROR_MSG: "transit stream rejected by incoming filter",
+                    }
+                )
+            )
+
+            with pytest.raises(StreamError, match="transit stream rejected by incoming filter"):
+                task.stream_future.result(timeout=0.1)
+        finally:
+            task.cancel()
+            with ByteStreamer.map_lock:
+                ByteStreamer.tx_task_map.pop(task.sid, None)
 
     def test_reliable_stream_snapshots_retry_payload(self, monkeypatch, retry_scheduler):
         task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)
@@ -785,7 +923,14 @@ class TestReliableByteStreamer:
         task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)
         task.pending_messages[0] = (time.monotonic(), time.monotonic(), Message(None, b"x"))
 
-        ack = Message({MessageHeaderKey.ORIGIN: "peer", StreamHeaderKey.OFFSET: 1}, None)
+        ack = Message(
+            {
+                MessageHeaderKey.ORIGIN: "peer",
+                StreamHeaderKey.STREAM_TOKEN: task.stream_token,
+                StreamHeaderKey.OFFSET: 1,
+            },
+            None,
+        )
         task.handle_ack(ack)
 
         err = task.stream_future.exception(timeout=0.1)
@@ -828,6 +973,7 @@ class TestReliableByteStreamer:
         ack = Message(
             {
                 MessageHeaderKey.ORIGIN: "peer",
+                StreamHeaderKey.STREAM_TOKEN: task.stream_token,
                 StreamHeaderKey.OFFSET: 0,
                 StreamHeaderKey.SEQUENCE: 1,
             },

@@ -105,10 +105,13 @@ class RxTask:
     rx_task_map: Dict[Tuple[str, int], "RxTask"] = {}
     map_lock = threading.Lock()
 
-    def __init__(self, sid: int, origin: str, cell: CoreCell, reliable: bool = False):
+    def __init__(
+        self, sid: int, origin: str, cell: CoreCell, reliable: bool = False, stream_token: Optional[str] = None
+    ):
         self.sid = sid
         self.origin = origin
         self.reliable = reliable
+        self.stream_token = stream_token
         self.cell = cell
 
         self.channel = None
@@ -164,6 +167,7 @@ class RxTask:
 
         sid = message.get_header(StreamHeaderKey.STREAM_ID)
         origin = message.get_header(MessageHeaderKey.ORIGIN)
+        stream_token = message.get_header(StreamHeaderKey.STREAM_TOKEN)
         reliable = message.get_header(StreamHeaderKey.RELIABLE, False)
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
         task_to_stop = None
@@ -175,7 +179,7 @@ class RxTask:
                     log.warning(f"Received error for non-existing stream: SID {sid} from {origin}")
                     return None
 
-                task = RxTask(sid, origin, cell, reliable)
+                task = RxTask(sid, origin, cell, reliable, stream_token)
                 # Routing and correlation headers are repeated on every frame.
                 # Preserve them immediately so errors raised before sequence 0
                 # can still be correlated by the sender.
@@ -184,6 +188,9 @@ class RxTask:
                 task.headers = message.headers
                 cls.rx_task_map[(origin, sid)] = task
             else:
+                if task.stream_token != stream_token:
+                    log.warning(f"{task} ignored frame with an invalid stream token")
+                    return None
                 if error:
                     task_to_stop = task
 
@@ -521,6 +528,8 @@ class RxTask:
             StreamHeaderKey.CHANNEL: self.channel,
             StreamHeaderKey.TOPIC: self.topic,
         }
+        if self.stream_token is not None:
+            headers[StreamHeaderKey.STREAM_TOKEN] = self.stream_token
         if error_type:
             headers[StreamHeaderKey.ERROR_TYPE] = error_type
         req_id = (self.headers or {}).get(StreamHeaderKey.STREAM_REQ_ID)
@@ -666,14 +675,15 @@ class RxTask:
         optional = self.completed and (already_acked or not self.reliable)
         log_func = log.debug if optional else log.error
         message = Message()
-        message.add_headers(
-            {
-                StreamHeaderKey.STREAM_ID: self.sid,
-                StreamHeaderKey.DATA_TYPE: StreamDataType.ACK,
-                StreamHeaderKey.OFFSET: offset,
-                StreamHeaderKey.SEQUENCE: seq,
-            }
-        )
+        headers = {
+            StreamHeaderKey.STREAM_ID: self.sid,
+            StreamHeaderKey.DATA_TYPE: StreamDataType.ACK,
+            StreamHeaderKey.OFFSET: offset,
+            StreamHeaderKey.SEQUENCE: seq,
+        }
+        if self.stream_token is not None:
+            headers[StreamHeaderKey.STREAM_TOKEN] = self.stream_token
+        message.add_headers(headers)
         try:
             errors = self.cell.fire_and_forget(
                 STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message, optional=optional
@@ -750,6 +760,9 @@ class ByteReceiver:
         req_id = message.get_header(StreamHeaderKey.STREAM_REQ_ID)
         if req_id:
             headers[StreamHeaderKey.STREAM_REQ_ID] = req_id
+        stream_token = message.get_header(StreamHeaderKey.STREAM_TOKEN)
+        if stream_token is not None:
+            headers[StreamHeaderKey.STREAM_TOKEN] = stream_token
 
         for topic in (STREAM_ERROR_TOPIC, STREAM_ACK_TOPIC):
             try:

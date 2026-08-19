@@ -295,6 +295,7 @@ class CellClientAPI(APISpec):
                     },
                 ),
                 timeout=min(_HELLO_RETRY_INTERVAL, remaining),
+                reliable=True,
             )
             rc = None if reply is None else reply.get_header(MessageHeaderKey.RETURN_CODE)
             if rc == CellReturnCode.OK:
@@ -320,17 +321,45 @@ class CellClientAPI(APISpec):
                 f"timeout {heartbeat_timeout}"
             )
         self._install_site_auth_headers(
-            # SECURE_MODE was added without changing protocol v1. Preserve
-            # compatibility with an earlier non-secure CJ that omitted it;
-            # a secure bootstrap still rejects False as a mismatch.
-            secure_mode=body.get(MsgKey.SECURE_MODE, False),
+            secure_mode=body.get(MsgKey.SECURE_MODE),
             auth_token=body.get(MsgKey.AUTH_TOKEN),
             token_signature=body.get(MsgKey.AUTH_TOKEN_SIGNATURE),
         )
         self._session_id = session_id
         self._heartbeat_interval = heartbeat_interval
         self._heartbeat_timeout = heartbeat_timeout
+        self._confirm_session_ready(deadline)
         self._note_cj_activity()
+
+    def _confirm_session_ready(self, deadline: float) -> None:
+        """Tell the CJ that HELLO_ACCEPTED processing and auth-filter setup are complete."""
+        attempt = 0
+        while True:
+            attempt += 1
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TrainerSessionError(f"no SESSION_READY confirmation from the CJ after {_HELLO_TIMEOUT}s")
+            reply = self._cell.send_request(
+                channel=CHANNEL,
+                topic=Topic.SESSION_READY,
+                target=self._cj_fqcn,
+                request=new_cell_message({}, {MsgKey.SESSION_ID: self._session_id}),
+                timeout=min(_HELLO_RETRY_INTERVAL, remaining),
+                reliable=True,
+            )
+            rc = None if reply is None else reply.get_header(MessageHeaderKey.RETURN_CODE)
+            body = None if reply is None else reply.payload
+            if (
+                rc == CellReturnCode.OK
+                and isinstance(body, dict)
+                and body.get(MsgKey.REPLY_TOPIC) == Topic.SESSION_READY
+                and body.get(MsgKey.SESSION_ID) == self._session_id
+            ):
+                return
+            if rc == CellReturnCode.OK and isinstance(body, dict) and body.get(MsgKey.REPLY_TOPIC) == Topic.ERROR:
+                raise TrainerSessionError(f"SESSION_READY rejected: {body.get(MsgKey.REASON)}")
+            self.logger.debug(f"SESSION_READY attempt {attempt} not confirmed (rc={rc}); retrying")
+            time.sleep(min(_HELLO_RETRY_INTERVAL, max(0.0, deadline - time.monotonic())))
 
     def _install_site_auth_headers(self, secure_mode, auth_token=None, token_signature=None) -> None:
         if type(secure_mode) is not bool:
@@ -502,6 +531,7 @@ class CellClientAPI(APISpec):
                     num_receivers=len(source_receiver_ids) if source_receiver_ids else 1,
                     receiver_ids=source_receiver_ids,
                     fobs_ctx_props=fobs_ctx_props,
+                    reliable=True,
                 )
                 self._check_result_accepted(reply)
             result_accepted = True
@@ -1042,6 +1072,7 @@ class CellClientAPI(APISpec):
                     timeout=min(self._heartbeat_interval, self._heartbeat_timeout),
                     abort_signal=self._heartbeat_cancel,
                     secure=self._protocol_secure,
+                    reliable=True,
                 )
                 if self._heartbeat_reply_valid(reply):
                     self._note_cj_activity()

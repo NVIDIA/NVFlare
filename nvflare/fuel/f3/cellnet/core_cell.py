@@ -58,6 +58,13 @@ from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.f3.streaming.stream_const import (
+    STREAM_ACK_TOPIC,
+    STREAM_CHANNEL,
+    STREAM_DATA_TOPIC,
+    StreamDataType,
+    StreamHeaderKey,
+)
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
@@ -1079,6 +1086,12 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             raise RuntimeError(f"Payload size changed after decryption {len(message.payload)} <> {payload_len}")
 
     def add_incoming_filter(self, channel: str, topic: str, cb, *args, **kwargs):
+        """Register a pre-dispatch filter for incoming messages.
+
+        The callback may mutate the message in place and return a falsy value to
+        allow processing to continue.  A truthy return value stops processing and
+        is treated as the filter's rejection response.
+        """
         if not callable(cb):
             raise ValueError(f"specified incoming_filter {type(cb)} is not callable")
         self.in_filter_reg.append(channel, topic, Callback(cb, args, kwargs))
@@ -2087,9 +2100,13 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             assert isinstance(in_filters, list)
             for f in in_filters:
                 assert isinstance(f, Callback)
-                reply = self._try_cb(message, f.cb, *f.args, **f.kwargs)
-                if reply:
-                    return reply
+                filter_rejection = self._try_cb(message, f.cb, *f.args, **f.kwargs)
+                if filter_rejection:
+                    # A truthy incoming-filter result is the established signal
+                    # to stop processing. Stream data is fire-and-forget, so it
+                    # needs an explicit rejection notification to unblock its sender.
+                    self._send_stream_filter_rejection(message, filter_rejection)
+                    return filter_rejection
 
         if msg_type == MessageType.REQ and self.message_interceptor is not None:
             reply = self._try_cb(
@@ -2221,6 +2238,57 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         else:
             # the message is either a reply or a return for a previous request: handle replies
             self._process_reply(origin, message, msg_type)
+
+    def _send_stream_filter_rejection(self, request: Message, filter_rejection: object) -> None:
+        """Fail a ByteStreamer sender immediately when an incoming filter rejects a data frame.
+
+        Stream data frames are fire-and-forget Cell requests, so the ordinary filter
+        reply has no waiter and would otherwise be dropped. ByteStreamer already has
+        an error-ACK path; use it to terminate the sender's stream future.
+        """
+        if (
+            request.get_header(MessageHeaderKey.CHANNEL) != STREAM_CHANNEL
+            or request.get_header(MessageHeaderKey.TOPIC) != STREAM_DATA_TOPIC
+        ):
+            return
+        stream_id = request.get_header(StreamHeaderKey.STREAM_ID)
+        stream_token = request.get_header(StreamHeaderKey.STREAM_TOKEN)
+        origin = request.get_header(MessageHeaderKey.ORIGIN)
+        if stream_id is None or not stream_token or not origin:
+            return
+
+        if isinstance(filter_rejection, Message):
+            rc = filter_rejection.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.FILTER_ERROR)
+            detail = filter_rejection.get_header(MessageHeaderKey.ERROR)
+            if not detail and rc != ReturnCode.OK:
+                detail = rc
+            if not detail:
+                detail = ReturnCode.FILTER_ERROR
+        else:
+            detail = ReturnCode.FILTER_ERROR
+        error = f"stream rejected by incoming filter: {detail}"
+        message = Message(
+            headers={
+                StreamHeaderKey.STREAM_ID: stream_id,
+                StreamHeaderKey.STREAM_TOKEN: stream_token,
+                StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
+                StreamHeaderKey.ERROR_MSG: error,
+            }
+        )
+        try:
+            errors = self.fire_and_forget(
+                channel=STREAM_CHANNEL,
+                topic=STREAM_ACK_TOPIC,
+                targets=origin,
+                message=message,
+                optional=request.get_header(MessageHeaderKey.OPTIONAL, False),
+            )
+        except Exception as ex:
+            self.log_error(f"failed to report rejected stream {stream_id} to {origin}: {ex}", request)
+            return
+        error = (errors or {}).get(origin)
+        if error:
+            self.log_error(f"failed to report rejected stream {stream_id} to {origin}: {error}", request)
 
     def _send_reply(self, reply: Message, endpoint: Endpoint) -> str:
         reply = self._filter_outgoing_reply(reply)

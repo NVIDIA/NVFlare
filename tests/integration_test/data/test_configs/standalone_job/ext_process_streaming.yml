@@ -1,12 +1,9 @@
-# Regression tests for external-process Client API streaming (NVBug 6371056).
-# np_loop_external_process is the small-payload launch-once control, while
-# pt_large_model_pass_through exercises DownloadService-backed tensors. Both
-# jobs use the ClientAPIExecutor external-process backend. This file is the only
-# home of these two test cases; test_configs.yml includes it in the client_api
-# group so the streaming path runs in the standard Client API integration stage.
-# The project is provisioned secure. The large-model case therefore also gates
-# post-HELLO site credential delegation to the descendant trainer Cell: a trainer
-# missing those auth headers fails the existing "unauthenticated msg" validator.
+# Regression tests for secure external-process Client API streaming (NVBug 6371056).
+# The large-model trainer delays post-HELLO credential installation by two seconds
+# and forces task and result tensors through DownloadService streaming. A successful
+# run proves that TASK_READY is held until SESSION_READY confirms authentication
+# filter installation. test_configs.yml includes this file in the standard Client
+# API integration stage.
 project_yaml: ./data/projects/client_api.yml
 jobs_root_dir: ./data/jobs
 cleanup: True
@@ -48,8 +45,11 @@ tests:
       - path: tests.integration_test.src.validators.LogPatternValidator
         args:
           required_patterns:
+            - "NVFLARE_TEST_AUTH_FILTER_INSTALL_BEGIN"
+            - "NVFLARE_TEST_AUTH_FILTER_INSTALL_END"
             - "round 1 training loss:"
           forbidden_patterns:
             - "Traceback (most recent call last)"
             - "EXECUTION_EXCEPTION"
             - "unauthenticated msg"
+            - "missing client name"

@@ -84,11 +84,13 @@ def _make_chunk(
     retry_wait: float = None,
     retry_timeout: float = None,
     streaming_parameters: dict = None,
+    stream_token: str = "stream-token",
 ):
     message = Message(None, payload)
     headers = {
         MessageHeaderKey.ORIGIN: origin,
         StreamHeaderKey.STREAM_ID: sid,
+        StreamHeaderKey.STREAM_TOKEN: stream_token,
         StreamHeaderKey.SEQUENCE: seq,
         StreamHeaderKey.DATA_TYPE: data_type,
         StreamHeaderKey.CHANNEL: "ch",
@@ -162,6 +164,7 @@ def test_reject_reports_error_without_creating_receive_task():
         {
             MessageHeaderKey.ORIGIN: "site-1.job-2",
             StreamHeaderKey.STREAM_ID: 322,
+            StreamHeaderKey.STREAM_TOKEN: "stream-token-322",
             StreamHeaderKey.STREAM_REQ_ID: "request-322",
             StreamHeaderKey.CHANNEL: "collab",
             StreamHeaderKey.TOPIC: "call",
@@ -177,6 +180,7 @@ def test_reject_reports_error_without_creating_receive_task():
         assert call.args[2] == "site-1.job-2"
         error_message = call.args[3]
         assert error_message.get_header(StreamHeaderKey.STREAM_ID) == 322
+        assert error_message.get_header(StreamHeaderKey.STREAM_TOKEN) == "stream-token-322"
         assert error_message.get_header(StreamHeaderKey.STREAM_REQ_ID) == "request-322"
         assert error_message.get_header(StreamHeaderKey.ERROR_MSG) == "Collab call rejected"
 
@@ -197,6 +201,20 @@ def test_find_or_create_task_records_reliable_header():
     task = RxTask.find_or_create_task(message, cell)
 
     assert task.reliable is True
+
+
+def test_find_or_create_task_ignores_frame_with_wrong_stream_token(caplog):
+    cell = SimpleNamespace()
+    first = _make_chunk("site-1", sid=502, seq=0, data_type=StreamDataType.CHUNK, stream_token="token-a")
+    task = RxTask.find_or_create_task(first, cell)
+    spoofed = _make_chunk("site-1", sid=502, seq=1, data_type=StreamDataType.CHUNK, stream_token="token-b")
+
+    with caplog.at_level(logging.WARNING):
+        result = RxTask.find_or_create_task(spoofed, cell)
+
+    assert result is None
+    assert RxTask.rx_task_map[("site-1", 502)] is task
+    assert "invalid stream token" in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -543,6 +561,7 @@ def test_reliable_duplicate_initial_chunk_sends_sequence_ack():
     ack = cell.fire_and_forget.call_args.args[3]
     assert ack.get_header(StreamHeaderKey.SEQUENCE) == 0
     assert ack.get_header(StreamHeaderKey.OFFSET) == 0
+    assert ack.get_header(StreamHeaderKey.STREAM_TOKEN) == "stream-token"
 
 
 def test_reliable_duplicate_chunk_sends_latest_sequence_ack():

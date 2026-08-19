@@ -27,6 +27,7 @@ import pytest
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_constant import (
+    CellMessageAuthHeaderKey,
     ConnectionSecurity,
     FLContextKey,
     FLMetaKey,
@@ -66,7 +67,14 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
 CJ_FQCN = "site-1.job-1"
 
-PROTOCOL_TOPICS = (Topic.HELLO, Topic.RESULT_READY, Topic.RESULT_SOURCE_SETTLED, Topic.LOG, Topic.HEARTBEAT)
+PROTOCOL_TOPICS = (
+    Topic.HELLO,
+    Topic.SESSION_READY,
+    Topic.RESULT_READY,
+    Topic.RESULT_SOURCE_SETTLED,
+    Topic.LOG,
+    Topic.HEARTBEAT,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -193,9 +201,11 @@ class FakeCell:
         if self.on_fire is not None:
             self.on_fire(topic, targets, message)
 
-    def deliver(self, topic, origin, payload):
+    def deliver(self, topic, origin, payload, headers=None):
         cb = self.cbs[topic]
-        return cb(new_cell_message({MessageHeaderKey.ORIGIN: origin}, payload))
+        message_headers = {MessageHeaderKey.ORIGIN: origin}
+        message_headers.update(headers or {})
+        return cb(new_cell_message(message_headers, payload))
 
 
 class FakeTrainerHarness:
@@ -206,8 +216,10 @@ class FakeTrainerHarness:
         self.processes = []
         self.bootstrap_configs = []
         self.hello_replies = []
+        self.session_ready_replies = []
         self.killpg_calls = []
         self.auto_hello = True
+        self.auto_session_ready = True
         self.hello_mutator = None  # fn(payload) mutating the HELLO payload
         self.origin_override = None
         self.exit_at_launch_rc = None  # simulate a command that dies before HELLO
@@ -233,7 +245,24 @@ class FakeTrainerHarness:
             if self.hello_mutator is not None:
                 self.hello_mutator(payload)
             origin = self.origin_override or config[BootstrapKey.TRAINER_FQCN]
-            self.hello_replies.append(self.cell.deliver(Topic.HELLO, origin, payload))
+            hello_reply = self.cell.deliver(Topic.HELLO, origin, payload)
+            self.hello_replies.append(hello_reply)
+            if self.auto_session_ready and hello_reply.payload.get(MsgKey.REPLY_TOPIC) == Topic.HELLO_ACCEPTED:
+                auth_headers = {}
+                if hello_reply.payload.get(MsgKey.SECURE_MODE):
+                    auth_headers = {
+                        CellMessageAuthHeaderKey.CLIENT_NAME: config[BootstrapKey.SITE_NAME],
+                        CellMessageAuthHeaderKey.TOKEN: hello_reply.payload[MsgKey.AUTH_TOKEN],
+                        CellMessageAuthHeaderKey.TOKEN_SIGNATURE: hello_reply.payload[MsgKey.AUTH_TOKEN_SIGNATURE],
+                    }
+                self.session_ready_replies.append(
+                    self.cell.deliver(
+                        Topic.SESSION_READY,
+                        origin,
+                        {MsgKey.SESSION_ID: hello_reply.payload[MsgKey.SESSION_ID]},
+                        headers=auth_headers,
+                    )
+                )
         return proc
 
     def killpg(self, pgid, sig):
@@ -587,18 +616,25 @@ class TestInitializeAndFinalize:
         def popen_with_attacker_hello(args, **kwargs):
             process = original_popen(args, **kwargs)
             config = env.harness.bootstrap_configs[-1]
-            legitimate_replies.append(
+            origin = config[BootstrapKey.TRAINER_FQCN]
+            hello_reply = env.cell.deliver(
+                Topic.HELLO,
+                origin,
+                {
+                    MsgKey.TRAINER_FQCN: origin,
+                    MsgKey.PROOF: config[BootstrapKey.LAUNCH_TOKEN],
+                    MsgKey.PROTOCOL_VERSION: PROTOCOL_VERSION,
+                    MsgKey.JOB_ID: "job-1",
+                    MsgKey.SITE_NAME: "site-1",
+                    MsgKey.RANK: 0,
+                },
+            )
+            legitimate_replies.append(hello_reply)
+            env.harness.session_ready_replies.append(
                 env.cell.deliver(
-                    Topic.HELLO,
-                    config[BootstrapKey.TRAINER_FQCN],
-                    {
-                        MsgKey.TRAINER_FQCN: config[BootstrapKey.TRAINER_FQCN],
-                        MsgKey.PROOF: config[BootstrapKey.LAUNCH_TOKEN],
-                        MsgKey.PROTOCOL_VERSION: PROTOCOL_VERSION,
-                        MsgKey.JOB_ID: "job-1",
-                        MsgKey.SITE_NAME: "site-1",
-                        MsgKey.RANK: 0,
-                    },
+                    Topic.SESSION_READY,
+                    origin,
+                    {MsgKey.SESSION_ID: hello_reply.payload[MsgKey.SESSION_ID]},
                 )
             )
             return process
@@ -1182,6 +1218,55 @@ class TestInitializeAndFinalize:
 
 
 class TestHello:
+    def test_hello_acceptance_does_not_release_task_until_session_ready(self, env):
+        env.harness.auto_session_ready = False
+        backend = ExternalProcessBackend()
+        fl_ctx = _make_fl_ctx(_make_engine(env.cell), env.app_dir)
+        init_errors = []
+
+        def initialize():
+            try:
+                backend.initialize(_make_context(launch_timeout=5.0), fl_ctx)
+            except BaseException as e:
+                init_errors.append(e)
+
+        init_thread = threading.Thread(target=initialize)
+        init_thread.start()
+        try:
+            deadline = time.monotonic() + 1.0
+            while not env.harness.hello_replies and time.monotonic() < deadline:
+                time.sleep(0.005)
+            assert env.harness.hello_replies
+            trainer = backend._active_launch
+            assert trainer.session_id
+            assert not trainer.ready.is_set()
+            assert init_thread.is_alive()
+
+            rejected = env.cell.deliver(
+                Topic.SESSION_READY,
+                "foreign.cell",
+                {MsgKey.SESSION_ID: trainer.session_id},
+            )
+            assert rejected.payload[MsgKey.REPLY_TOPIC] == Topic.ERROR
+            assert not trainer.ready.is_set()
+
+            accepted = env.cell.deliver(
+                Topic.SESSION_READY,
+                trainer.trainer_fqcn,
+                {MsgKey.SESSION_ID: trainer.session_id},
+            )
+            init_thread.join(timeout=1.0)
+            assert accepted.payload == {
+                MsgKey.REPLY_TOPIC: Topic.SESSION_READY,
+                MsgKey.SESSION_ID: trainer.session_id,
+            }
+            assert trainer.ready.is_set()
+            assert not init_thread.is_alive()
+            assert init_errors == []
+        finally:
+            backend.finalize(FLContext())
+            init_thread.join(timeout=1.0)
+
     def test_stale_process_hello_is_rejected_without_failing_session(self, env):
         backend, _ = _initialized_backend(env)
         try:
@@ -1231,12 +1316,13 @@ class TestHello:
     @pytest.mark.parametrize(
         "mutation,expect_reason",
         [
+            ({MsgKey.PROTOCOL_VERSION: PROTOCOL_VERSION - 1}, "protocol version"),
             ({MsgKey.PROTOCOL_VERSION: 99}, "protocol version"),
             ({MsgKey.JOB_ID: "job-2"}, "job id mismatch"),
             ({MsgKey.SITE_NAME: "site-2"}, "site name mismatch"),
             ({MsgKey.RANK: 1}, "rank"),
         ],
-        ids=["bad_version", "bad_job_id", "bad_site_name", "nonzero_rank"],
+        ids=["old_version", "future_version", "bad_job_id", "bad_site_name", "nonzero_rank"],
     )
     def test_invalid_hello_fields_rejected(self, env, mutation, expect_reason):
         env.harness.hello_mutator = lambda payload: payload.update(mutation)
@@ -1266,7 +1352,14 @@ class TestHello:
                 MsgKey.SITE_NAME: "site-1",
                 MsgKey.RANK: next(ranks),
             }
-            env.cell.deliver(Topic.HELLO, config[BootstrapKey.TRAINER_FQCN], payload)  # rank 0 -> accepted
+            hello_reply = env.cell.deliver(
+                Topic.HELLO, config[BootstrapKey.TRAINER_FQCN], payload
+            )  # rank 0 -> accepted
+            env.cell.deliver(
+                Topic.SESSION_READY,
+                config[BootstrapKey.TRAINER_FQCN],
+                {MsgKey.SESSION_ID: hello_reply.payload[MsgKey.SESSION_ID]},
+            )
             return process
 
         env.harness.popen = popen_with_two_hellos
@@ -1562,6 +1655,7 @@ class TestExecute:
             # the direct task Shareable; there is no second payload-attempt envelope.
             assert env.cell.sent_kwargs[0]["receiver_ids"] == (trainer.trainer_fqcn,)
             assert "fobs_ctx_props" in env.cell.sent_kwargs[0]
+            assert env.cell.sent_kwargs[0]["reliable"] is True
             assert task.get_header(FLMetaKey.JOB_ID) == "job-1"
             assert task.get_header(FLMetaKey.SITE_NAME) == "site-1"
             # RESULT_READY carried a direct Shareable and was control-acked.

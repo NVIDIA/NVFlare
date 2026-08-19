@@ -17,7 +17,7 @@ import copy
 import os
 import threading
 import uuid
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 from nvflare.apis.fl_constant import ServerCommandNames
 from nvflare.apis.signal import Signal
@@ -459,6 +459,7 @@ class Cell(StreamCell):
         num_receivers=1,
         receiver_ids=None,
         fobs_ctx_props: dict = None,
+        reliable: Optional[bool] = None,
     ):
         """Stream one request to the target
 
@@ -473,6 +474,8 @@ class Cell(StreamCell):
             abort_signal: signal to abort the message
             fobs_ctx_props: optional call-scoped FOBS context properties used only
                 while serializing this request
+            reliable: whether the request stream requires receiver acknowledgements
+                and retry. If not specified, use the streaming configuration.
 
         Returns: reply data
 
@@ -485,7 +488,16 @@ class Cell(StreamCell):
             fobs_ctx_props=fobs_ctx_props,
         )
         return self._send_one_request(
-            channel, target, topic, request, timeout, secure, optional, abort_signal, progress_wait_cb
+            channel,
+            target,
+            topic,
+            request,
+            timeout,
+            secure,
+            optional,
+            abort_signal,
+            progress_wait_cb,
+            reliable=reliable,
         )
 
     def _send_one_request(
@@ -499,6 +511,7 @@ class Cell(StreamCell):
         optional=False,
         abort_signal=None,
         progress_wait_cb=None,
+        reliable: Optional[bool] = None,
     ):
         req_id = str(uuid.uuid4())
         request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
@@ -511,7 +524,13 @@ class Cell(StreamCell):
 
         try:
             future = self.send_blob(
-                channel=channel, topic=topic, target=target, message=request, secure=secure, optional=optional
+                channel=channel,
+                topic=topic,
+                target=target,
+                message=request,
+                secure=secure,
+                optional=optional,
+                reliable=reliable,
             )
 
             self.logger.debug(f"{req_id=}: Waiting starts")

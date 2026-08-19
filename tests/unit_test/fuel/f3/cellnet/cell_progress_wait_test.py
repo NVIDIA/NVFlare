@@ -200,10 +200,12 @@ def test_remote_processing_wait_handles_many_progress_timeouts_without_resend(mo
         timeout=1.0,
         abort_signal=Signal(),
         progress_wait_cb=progress_wait_cb,
+        reliable=True,
     )
 
     assert isinstance(result, Message)
     assert cell.send_blob.call_count == 1
+    assert cell.send_blob.call_args.kwargs["reliable"] is True
     assert progress_wait_cb.call_count == 16
     assert len(waits) == 17
 
