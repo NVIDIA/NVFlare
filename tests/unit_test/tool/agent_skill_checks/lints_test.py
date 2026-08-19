@@ -1069,6 +1069,7 @@ def test_dependency_install_safety_lint_joins_wrapped_fenced_statement(tmp_path)
     [
         ("without user confirmation.", "dependency-install-confirmation-bypass"),
         ("Without reviewing sources.", "dependency-install-review-bypass"),
+        ("Without checking package names.", "dependency-install-review-bypass"),
     ],
 )
 def test_dependency_install_safety_lint_joins_fenced_without_fragment(tmp_path, wrapped_fragment, expected_code):

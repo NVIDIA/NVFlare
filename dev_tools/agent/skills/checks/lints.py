@@ -347,7 +347,8 @@ _DEPENDENCY_POST_AUDIT_CONFIRMATION_RES = (
 )
 _DEPENDENCY_REVIEW_WITHOUT_RE = re.compile(
     r"(?P<without_clause>\bwithout\s+(?:(?:an?|any|the)\s+)?(?:audit\w*|review\w*|"
-    r"vet(?:s|ted|ting)?|classif\w*|flag\w*|check(?:ing|ed|s)?(?:\s+(?:their|the|package))?\s+sources?)\b)",
+    r"vet(?:s|ted|ting)?|classif\w*|flag\w*|check(?:ing|ed|s)?(?:\s+(?:their|the))?"
+    r"(?:\s+(?:package|dependency))?\s+(?:sources?|names?))\b)",
     re.IGNORECASE,
 )
 _DEPENDENCY_REVIEW_BYPASS_RES = (
