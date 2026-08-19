@@ -79,14 +79,24 @@ reaches the applicable phase, and stop at the first failure.
   constructor arguments. Always compare state-dict key sets, shapes, and dtypes
   without training. Do not inspect NVFLARE persistors or class loaders; the
   exported job and final simulation validate product-side construction.
-- When source evidence proves deterministic construction, also require exact
-  per-tensor equality or an equivalent stable state hash between independently
-  constructed source and server models. Deterministic evidence includes loading
-  the same fixed checkpoint or a factory that explicitly resets all
-  initialization seeds/state on every call. A single coincidentally equal run
-  is not proof. For a genuinely nondeterministic factory, record that fact and
-  do not require equality across independent calls; retain the factory-path,
-  argument, key, shape, and dtype checks.
+- Before comparing values, classify checkpoint-loaded versus missing or newly
+  initialized parameters from source evidence and the available model load
+  report/loading information. Loading the same fixed checkpoint proves value
+  determinism only for parameters actually loaded from it; a checkpoint that
+  omits a task head or other exchanged parameters does not prove deterministic
+  construction of the complete model.
+- For checkpoint-loaded parameters, or when the factory explicitly resets all
+  initialization seeds/state on every call, require exact per-tensor equality
+  or an equivalent stable state hash between independently constructed source
+  and server models. A single coincidentally equal run is not proof. For keys
+  reported as missing/newly initialized without a deterministic reset, require
+  matching keys, shapes, and dtypes, record their names and provenance, and do
+  not require their independently initialized values to match. If per-key
+  provenance is unavailable, treat the factory as nondeterministic rather than
+  assuming the entire fixed-checkpoint construction is deterministic.
+- Determine this comparison policy before asserting values. Do not first run an
+  unconditional full-state equality assertion and then recover by excluding
+  newly initialized keys after it fails.
 - Require exact full-model key agreement after any documented prefix
   transformation. For PEFT or auxiliary trainable models, load
   `huggingface-state-and-distributed.md` and run its adapter/ownership checks.
