@@ -28,7 +28,7 @@ class LogitCompletionModel(nn.Module):
         self.hidden_dim = int(hidden_dim)
         self.dropout = float(dropout)
         self.seed = int(seed)
-        with torch.random.fork_rng():
+        with torch.random.fork_rng(devices=[]):
             torch.manual_seed(self.seed)
             self.network = nn.Sequential(
                 nn.LayerNorm(self.input_dim),

@@ -16,6 +16,7 @@
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -28,7 +29,10 @@ REPO_ROOT = PROJECT_DIR.parents[1]
 
 def _run(command: list[str], cwd: Path = PROJECT_DIR) -> None:
     print("\n$ " + " ".join(command), flush=True)
-    subprocess.run(command, cwd=cwd, check=True)
+    env = os.environ.copy()
+    python_bin = str(Path(sys.executable).resolve().parent)
+    env["PATH"] = os.pathsep.join([python_bin, env.get("PATH", "")])
+    subprocess.run(command, cwd=cwd, check=True, env=env)
 
 
 def _first_gpu(gpu: str) -> str:

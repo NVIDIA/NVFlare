@@ -129,8 +129,19 @@ The mock backend validates orchestration and FL behavior only. It is not a Qwen 
 - `uninformative`: validation should select `alpha=0` or otherwise satisfy the aggregate no-harm constraint.
 - `site-3`: every round should report `sent_empty_update=true` because the client has no paired image supervision.
 
-Exact Qwen metrics depend on the model/runtime. Representative metrics will be added only after the public Qwen
-quickstart configuration has been validated on GPU.
+Exact Qwen metrics depend on the model and runtime.
+
+The default seed-7 commands were validated with `Qwen/Qwen3-VL-2B-Instruct` on one NVIDIA H100 NVL. These are
+tutorial checks, not benchmark claims:
+
+| Scenario | Missing AUROC before | Missing AUROC after | Aggregate AUROC before | Aggregate AUROC after | Selected `alpha` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `recoverable` | 0.1806 | 0.8611 | 0.7951 | 0.9653 | 0.50 |
+| `uninformative` | 0.5625 | 0.5833 | 0.8906 | 0.8958 | 0.75 |
+
+The low-correlation control's small rank change is not evidence of cross-modal recovery. Its nonzero scale primarily
+reduces the frozen model's biased answer-token loss while satisfying the aggregate no-harm constraint. Depending on
+the model version and validation sample, this control may instead retain `alpha=0`.
 
 ## Optional federated Qwen LoRA mode
 
@@ -145,6 +156,9 @@ python run_demo.py --mode full --scenario recoverable --gpu "[0],[1],[2]"
 
 Use `--predictor-rounds` and `--predictor-max-steps` to change the optional predictor budget. Full mode reuses the
 upstream Qwen3-VL implementation and attribution rather than maintaining a second copy here.
+
+The full path was smoke-tested with three clients, one LoRA FedAvg round, and one local training step. The resulting
+global adapter was reloaded for Qwen cache generation before the valid-supervision completion job ran end to end.
 
 ## Outputs
 
