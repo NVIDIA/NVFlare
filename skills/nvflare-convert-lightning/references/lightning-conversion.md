@@ -62,8 +62,9 @@ For evaluation-only / FedEval conversions, run `trainer.validate(...)` (the
 patched trainer sends the validation metrics) and **do not call
 `trainer.fit(...)`** — training was not requested, and fitting after the metrics
 are sent can train an unwanted round or block the task. The packaged
-`../assets/lightning_client.py` `main(..., evaluate_only=True)` skips `fit`.
-Pass `evaluate_only=True` only when the resolved recipe algorithm is FedEval.
+`../assets/lightning_client.py`
+`main(..., evaluate_only=True, recipe_algorithm="fedeval")` skips `fit`.
+Pass that complete pair only when the resolved recipe algorithm is FedEval.
 For every workflow that also trains, omit the argument so its default remains
 `False` and the received training task completes through `trainer.fit(...)`.
 
@@ -159,28 +160,20 @@ key in client and aggregated `FLModel.metrics` or server artifacts before
 claiming server-side model selection; local callback metrics alone remain
 insufficient end-to-end validation evidence.
 
-`key_metric` selects on higher-is-better values only, so what the client
-delivers and the recipe selects must itself be a higher-is-better value. A
-source metric with the opposite direction — including a module that logs nothing
-but `val_loss` — must first be flipped into an explicitly negated companion.
-This is the Lightning implementation of the framework-neutral rule in
-`../../nvflare-shared/references/pytorch-family-recipe-construction.md`.
-
-Log those metrics during the Lightning validation lifecycle. For example, when
-the source establishes that lower `val_loss` is better, preserve its existing
-epoch-level log and add a companion with the same reduction semantics:
+Metric names are selected with an explicit direction. When the source
+establishes that lower `val_loss` is better, preserve its existing epoch-level
+log:
 
 ```python
 self.log("val_loss", loss, on_step=False, on_epoch=True)
-self.log("neg_val_loss", -loss, on_step=False, on_epoch=True)
 ```
 
-The recipe then selects `key_metric="neg_val_loss"`. Select the companion,
-never the original — `key_metric="val_loss"` would pick the worst global model.
-For DDP, preserve the source-backed distributed reduction behavior on both logs.
-Only add keys whose direction the source establishes; do not invent a direction.
-A `val_loss`-only module is never a reason to fail closed or to skip requested
-best-model selection.
+The recipe then selects `key_metric="val_loss", key_metric_mode="min"`.
+For DDP, preserve the source-backed distributed reduction behavior on the log.
+Only choose a direction the source establishes; do not invent one. Use a
+negated companion only when the resolved recipe lacks `key_metric_mode`; name
+and document that compatibility metric explicitly. A `val_loss`-only module is
+never a reason to fail closed or to skip requested best-model selection.
 
 If a custom `ModelAggregator` is selected, it must also aggregate supported
 client `FLModel.metrics` values and return them in the aggregated

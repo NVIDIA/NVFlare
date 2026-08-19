@@ -433,15 +433,15 @@
     {
       "id": "lightning-loss-only-selection-metric",
       "prompt": "Convert this Lightning training code to a FLARE FedAvg job over 2 sites for 2 rounds. The module only logs val_loss, and lower val_loss is better. Keep best-model selection.",
-      "expected_output": "A Lightning conversion that preserves val_loss, logs an explicitly negated epoch-level neg_val_loss companion during Lightning validation, lets the patched callback deliver both exact keys, selects key_metric=\"neg_val_loss\", and neither fails closed nor disables best-model selection because the only source metric is a loss.",
+      "expected_output": "A Lightning conversion that preserves the epoch-level val_loss metric, lets the patched callback deliver that exact key, selects key_metric=\"val_loss\" with key_metric_mode=\"min\", and neither fails closed nor disables best-model selection because the only source metric is a loss.",
       "files": [
         "files/hello-lightning/train.py",
         "files/hello-lightning/model.py"
       ],
       "assertions": [
-        "The generated client preserves the epoch-level val_loss log and adds a higher-is-better epoch-level self.log(\"neg_val_loss\", -loss, ...) companion with the same reduction semantics so the patched callback captures it.",
-        "The recipe selects key_metric=\"neg_val_loss\".",
-        "The agent does not select raw val_loss as higher-is-better.",
+        "The generated client preserves the epoch-level val_loss log so the patched callback captures its exact key.",
+        "The recipe selects key_metric=\"val_loss\" with key_metric_mode=\"min\".",
+        "The agent does not select raw val_loss with max direction.",
         "The agent does not pass key_metric=\"\" or otherwise disable best-model selection because only a loss is available."
       ],
       "nvflare": {
@@ -449,7 +449,7 @@
         "mandatory_behavior": [
           {
             "id": "negated-loss-selection-metric",
-            "description": "delivers a negated companion for the source lower-is-better val_loss and selects that key, applying the shared framework-neutral rule"
+            "description": "delivers the source lower-is-better val_loss and selects that key with min direction"
           }
         ],
         "prohibited_behavior": [

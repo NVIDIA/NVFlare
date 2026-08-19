@@ -184,8 +184,8 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
         "do not pass a source-derived `key_metric` or claim server-side best-model selection" in normalized_construction
     )
     assert "Its name must exactly match one key delivered by the client" in normalized_construction
-    assert 'metrics={"neg_loss": -loss}' in construction_text
-    assert 'key_metric="neg_loss"' in construction_text
+    assert 'key_metric="val_loss"' in construction_text
+    assert 'key_metric_mode="min"' in construction_text
     assert "ask or fail closed when the metric direction is unclear" in normalized_construction
     assert "DDP validation metrics use the patched callback" in lightning_ddp_text
     assert "The setting makes metrics optional" in normalized_lightning_ddp
@@ -194,9 +194,9 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     assert "key_metric=metric_name" not in recipe_text
     assert "when the selected execution path delivers that metric to the server" in recipe_text
 
-    # The negate-the-loss rule is framework-neutral when best-model selection is
-    # requested. No converter may carve itself out of it.
-    assert "This applies to loss in every framework" in normalized_construction
+    # Direction is explicit when best-model selection is requested; recipes
+    # lacking a mode parameter may use a documented negated compatibility key.
+    assert "Only when a resolved recipe lacks a direction parameter" in normalized_construction
     assert "do not fail closed merely because loss is the only available metric" in normalized_construction
     assert "Resolve model selection to exactly one state" in normalized_construction
     assert 'pass `key_metric=""`' in normalized_construction
@@ -223,18 +223,18 @@ def test_pytorch_family_construction_owns_best_model_metric_policy():
     normalized_hf_conversion = " ".join(hf_conversion_text.split())
     normalized_lightning_conversion = " ".join(lightning_conversion_text.split())
 
-    # Every PyTorch-family converter needs a concrete way to satisfy the shared
-    # negate-the-loss rule, not just a restatement of it.
+    # Frameworks use the recipe's direction parameter when it is exposed; a
+    # negated compatibility key remains valid for integrations that lack it.
     assert "the shared rule in" in normalized_hf_conversion
     assert "applies unchanged" in normalized_hf_conversion
     assert 'metrics["eval_neg_loss"] = -metrics["eval_loss"]' in hf_conversion_text
     assert 'key_metric="eval_neg_loss"' in hf_conversion_text
-    assert 'self.log("neg_val_loss", -loss, on_step=False, on_epoch=True)' in lightning_conversion_text
-    assert 'key_metric="neg_val_loss"' in lightning_conversion_text
+    assert 'self.log("val_loss", loss, on_step=False, on_epoch=True)' in lightning_conversion_text
+    assert 'key_metric="val_loss", key_metric_mode="min"' in lightning_conversion_text
     assert "never a reason to fail closed" in normalized_lightning_conversion
     assert "make_higher_is_better" not in lightning_asset_text
     assert (
-        'def main(model, datamodule, trainer_factory, recipe_algorithm="fedavg", evaluate_only=False)'
+        'def main(model, datamodule, trainer_factory, evaluate_only=False, *, recipe_algorithm="fedavg")'
         in lightning_asset_text
     )
 
@@ -420,6 +420,8 @@ def test_lightning_training_metrics_use_automatic_pre_fit_delivery():
     assert 'return recipe_algorithm != "cyclic"' in client_template
     assert 'if evaluate_only and recipe_algorithm != "fedeval"' in client_template
     assert 'if recipe_algorithm == "fedeval" and not evaluate_only' in client_template
+    assert 'main(..., evaluate_only=True, recipe_algorithm="fedeval")' in conversion_text
+    assert "recipe_algorithm must be one of" in client_template
     assert "For every non-Cyclic training task" in validation_text
     assert "no best-model artifact is claimed or expected" in normalized_validation
     assert "## Training-result metric delivery" in conversion_text
@@ -708,6 +710,14 @@ def test_shared_conversion_policies_have_single_canonical_owners():
     assert "## Dependencies And Execution" not in workflow_text
     assert "## Authorization Boundary" not in workflow_text
     assert "## Source Trust Boundary" not in workflow_text
+
+
+def test_skills_readme_frontmatter_example_includes_required_author():
+    readme = (Path(__file__).resolve().parents[4] / "skills" / "README.md").read_text(encoding="utf-8")
+    normalized = " ".join(readme.split())
+
+    assert 'author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"' in readme
+    assert "NVFLARE's required fields (`author`, `min-flare-version`, `blast-radius`" in normalized
 
 
 def test_shared_skill_metadata_and_progressive_disclosure_structure():

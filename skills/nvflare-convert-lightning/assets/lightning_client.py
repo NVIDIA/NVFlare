@@ -20,6 +20,10 @@ import math
 
 import nvflare.client.lightning as flare
 
+SUPPORTED_RECIPE_ALGORITHMS = frozenset(
+    {"cyclic", "fedavg", "fedce", "fedeval", "fedopt", "fedprox", "scaffold", "swarm"}
+)
+
 
 def _scalar_validation_metrics(validation_results):
     if not validation_results:
@@ -54,9 +58,9 @@ def validate_global_model(trainer, model, datamodule=None, dataloaders=None):
     Call this before ``trainer.fit`` inside the round loop. Metrics come from
     the ``LightningModule``'s ``self.log(...)`` calls. The patched callback
     sends them with the training result even when the selected executor leaves
-    ``train_with_evaluation`` disabled. Log any higher-is-better companion such
-    as ``neg_val_loss`` inside the module's validation lifecycle so the callback
-    captures it under the exact key selected by the recipe.
+    ``train_with_evaluation`` disabled. Log the source metric under the exact
+    key selected by the recipe; set ``key_metric_mode`` on recipes that support
+    lower-is-better metrics.
     """
     if datamodule is not None:
         validation_results = trainer.validate(model, datamodule=datamodule)
@@ -73,10 +77,13 @@ def should_evaluate_before_train(recipe_algorithm):
     best-model selection. Every other supported Lightning recipe evaluates the
     received model for its server metric contract.
     """
+    if not isinstance(recipe_algorithm, str) or recipe_algorithm not in SUPPORTED_RECIPE_ALGORITHMS:
+        supported = ", ".join(sorted(SUPPORTED_RECIPE_ALGORITHMS))
+        raise ValueError(f"recipe_algorithm must be one of: {supported}")
     return recipe_algorithm != "cyclic"
 
 
-def main(model, datamodule, trainer_factory, recipe_algorithm="fedavg", evaluate_only=False):
+def main(model, datamodule, trainer_factory, evaluate_only=False, *, recipe_algorithm="fedavg"):
     """Lightning Client API round loop with validate-before-fit.
 
     ``trainer_factory`` constructs the source project's ``Trainer``. Pass the
@@ -87,10 +94,11 @@ def main(model, datamodule, trainer_factory, recipe_algorithm="fedavg", evaluate
     metrics, and skips local training. Leave the default ``False`` for every
     training recipe so its training task completes through ``trainer.fit``.
 
-    When best-model selection needs a higher-is-better companion such as
-    ``neg_val_loss``, log it from the module's validation lifecycle under the
-    exact key selected by the recipe.
+    Keep ``recipe_algorithm`` keyword-only so the legacy fourth positional
+    argument remains ``evaluate_only``. The value must be a supported,
+    normalized lowercase recipe algorithm; unknown values fail closed.
     """
+    evaluate_before_train = should_evaluate_before_train(recipe_algorithm)
     if evaluate_only and recipe_algorithm != "fedeval":
         raise ValueError("evaluate_only=True is supported only with FedEval; leave it False for training recipes")
     if recipe_algorithm == "fedeval" and not evaluate_only:
@@ -98,7 +106,6 @@ def main(model, datamodule, trainer_factory, recipe_algorithm="fedavg", evaluate
 
     trainer = trainer_factory()
     flare.patch(trainer)
-    evaluate_before_train = should_evaluate_before_train(recipe_algorithm)
 
     while flare.is_running():
         # receive() is optional metadata/task-progression access only; the

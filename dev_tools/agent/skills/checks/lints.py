@@ -46,7 +46,6 @@ import json
 import os
 import re
 import shlex
-import stat
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from functools import cached_property
@@ -58,8 +57,10 @@ try:
         PUBLIC_EXEMPT_STATUS,
         SKILL_FILE_NAME,
         SKILL_NAME_RE,
+        RegularFileTooLargeError,
         SkillValidationResult,
         parse_skill_frontmatter,
+        read_regular_text_file,
         should_skip_skill_dir,
         skill_metadata,
         validate_skill_dir,
@@ -75,8 +76,10 @@ except ImportError as e:
         PUBLIC_EXEMPT_STATUS,
         SKILL_FILE_NAME,
         SKILL_NAME_RE,
+        RegularFileTooLargeError,
         SkillValidationResult,
         parse_skill_frontmatter,
+        read_regular_text_file,
         should_skip_skill_dir,
         skill_metadata,
         validate_skill_dir,
@@ -165,8 +168,13 @@ _KNOWN_AGENT_FLAGS = {
     "agent inspect source": {"--format", "--max-file-bytes", "--max-files", "--redact", "--schema"},
 }
 
-_DEPENDENCY_INSTALL_TERMS_RE = re.compile(r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b", re.IGNORECASE)
-_DEPENDENCY_ACTION_PATTERN = r"(?:install\w*|download\w*|us(?:e|es|ed|ing|age)|execut\w*)"
+_DEPENDENCY_INSTALL_TERMS_RE = re.compile(
+    r"\b(?:dependenc\w*|install\w*|package\w*|requirements?|(?:pip|uv|poetry|pipenv)\s+add)\b", re.IGNORECASE
+)
+_DEPENDENCY_ACTION_PATTERN = (
+    r"(?:install\w*|download\w*|us(?:e|es|ed|ing)|execut\w*|fetch\w*|sync\w*|add(?:s|ed|ing)?|"
+    r"upgrad\w*|resolv\w*|appl(?:y|ies|ied|ying))"
+)
 _DEPENDENCY_ACTION_RE = re.compile(rf"\b{_DEPENDENCY_ACTION_PATTERN}\b", re.IGNORECASE)
 _DEPENDENCY_NOUN_PATTERN = r"(?:dependenc\w*|packages?|requirements?)"
 # Read-only verbs change nothing, so they need no install confirmation. Matching a
@@ -242,14 +250,16 @@ _CLAUSE_COORDINATOR_RE = re.compile(r"[,;/]|\b(?:and|or|nor|then|plus|also|while
 # A clause holding nothing but a negation before "without X" is verb ellipsis:
 # the repeated action verb is dropped, as in "but never without user approval".
 _ELLIPTICAL_NEGATION_RE = re.compile(
-    r"\s*(?:never|not|do\s+not|don't|must\s+not|should\s+not|cannot|can\s+not|won't|will\s+not|shall\s+not)"
+    r"\s*(?:never|not|do(?:es)?\s+not|do(?:es)?n['’]t|must\s+not|should\s+not|shall\s+not|may\s+not|"
+    r"cannot|can\s+not|won['’]t|will\s+not)"
     r"(?:\s+(?:ever|preemptively|automatically|directly))?\s*",
     re.IGNORECASE,
 )
 _DEPENDENCY_CONFIRMATION_BYPASS_RES = (
     re.compile(
         r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,160}"
-        r"\bnever\s+(?:be\s+)?preceded\s+by\b[^.!?;]{0,120}\b(?:prompt|approval|confirmation)\b",
+        r"\bnever\s+(?:be\s+)?(?:preceded|followed)\s+by\b[^.!?;]{0,120}"
+        r"\b(?:prompt|approval|confirmation)\b",
         re.IGNORECASE,
     ),
     re.compile(
@@ -268,9 +278,29 @@ _DEPENDENCY_CONFIRMATION_BYPASS_RES = (
         r"[^.!?;]{0,120}\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b",
         re.IGNORECASE,
     ),
+    re.compile(
+        r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,180}"
+        r"\bnever\s+emit\b[^.!?;]{0,80}\b(?:approval|confirmation)\s+prompts?\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:skip\s+(?:the\s+)?(?:confirmation|approval)\s+prompt|silently\s+install)\b"
+        r"[^.!?;]{0,140}\b(?:dependenc\w*|package\w*|requirements?)\b|"
+        r"\b(?:dependenc\w*|package\w*|requirements?)\b[^.!?;]{0,140}"
+        r"\b(?:skip\s+(?:the\s+)?(?:confirmation|approval)\s+prompt|silently\s+install)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bno\s+need\s+to\s+(?:ask|prompt)\b[^.!?;]{0,120}"
+        r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b|"
+        r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b[^.!?;]{0,120}"
+        r"\bno\s+need\s+to\s+(?:ask|prompt)\b",
+        re.IGNORECASE,
+    ),
 )
 _DEPENDENCY_CONFIRMATION_WITHOUT_RE = re.compile(
-    r"(?P<without_clause>\bwithout\s+(?:explicit\s+)?(?:user\s+)?(?:approval|confirmation|consent)\b)",
+    r"(?P<without_clause>\bwithout\s+(?:(?:asking|prompting)\s+(?:the\s+)?user\s+(?:for\s+)?|"
+    r"(?:explicit|prior)\s+|(?:the\s+)?user['’]s\s+|user\s+)?(?:approval|confirmation|consent|permission)\b)",
     re.IGNORECASE,
 )
 _WITHOUT_CLAUSE_PROHIBITION_TAIL_RE = re.compile(
@@ -282,14 +312,15 @@ _WITHOUT_CLAUSE_PROHIBITION_TAIL_RE = re.compile(
 _WITHOUT_CLAUSE_BOUNDARY_RE = re.compile(
     r",\s*(?:(?:and\s+)?then|but|yet|however|although|though|subsequently|afterwards?|next|"
     r"(?P<coordinator>and|or))\b"
-    r"|\s+(?:but|however|although|though)\s+",
+    r"|\s+(?:but|however|although|though)\s+|\|",
     re.IGNORECASE,
 )
 _DEPENDENCY_CONFIRMATION_REQUEST_SUPPRESSION_RE = re.compile(
-    r"\b(?:do\s+not|don't|never)\s+(?:preemptively\s+)?(?:ask|prompt)\b[^.!?;]{0,120}"
-    r"\b(?:whether\s+to|before|prior\s+to|for\s+(?:an?\s+)?(?:approval|confirmation)"
+    r"\b(?:do(?:es)?\s+not|do(?:es)?n['’]t|must\s+not|shall\s+not|should\s+never|never)\s+"
+    r"(?:preemptively\s+)?(?:ask|prompt)\b[^.!?;]{0,120}"
+    r"\b(?:whether\s+to|before|prior\s+to|for\s+(?:an?\s+)?(?:approval|confirmation|permission)"
     r"(?:\s+(?:before|prior\s+to|when))?)\b[^.!?;]{0,100}"
-    r"\b(?:dependenc\w*|install\w*|package\w*|requirements?)\b",
+    r"\b(?:dependenc\w*|install\w*|package\w*|requirements?|(?:pip|uv|poetry|pipenv)\s+add)\b",
     re.IGNORECASE,
 )
 _DEPENDENCY_AUDIT_FIRST_RE = re.compile(
@@ -315,7 +346,8 @@ _DEPENDENCY_POST_AUDIT_CONFIRMATION_RES = (
     ),
 )
 _DEPENDENCY_REVIEW_WITHOUT_RE = re.compile(
-    r"(?P<without_clause>\bwithout\s+(?:(?:an?|any|the)\s+)?(?:audit\w*|review\w*|vet\w*|classif\w*)\b)",
+    r"(?P<without_clause>\bwithout\s+(?:(?:an?|any|the)\s+)?(?:audit\w*|review\w*|"
+    r"vet(?:s|ted|ting)?|classif\w*|flag\w*|check(?:ing|ed|s)?(?:\s+(?:their|the|package))?\s+sources?)\b)",
     re.IGNORECASE,
 )
 _DEPENDENCY_REVIEW_BYPASS_RES = (
@@ -329,26 +361,30 @@ _DEPENDENCY_REVIEW_BYPASS_RES = (
         r"(?:audit\w*|review\w*|vet\w*|classif\w*|flag\w*)"
         r"(?:\s*,\s*(?:audit\w*|review\w*|vet\w*|classif\w*|flag\w*))*"
         r"(?:\s*,?\s*(?:or|and)\s+(?:audit\w*|review\w*|vet\w*|classif\w*|flag\w*))?"
-        r"\s+(?:(?:the|any)\s+)?(?:dependenc\w*|package\w*|requirements?|sources?)\b",
+        r"\s+(?:(?:the|any)\s+)?(?:dependenc\w*|install\w*|package\w*|requirements?|sources?)\b",
         re.IGNORECASE,
     ),
     re.compile(
-        r"(?<!do not )(?<!don't )(?<!never )(?<!must not )(?<!should not )(?<!cannot )(?<!can not )"
-        r"(?<!won't )(?<!will not )\b(?:skip|bypass|omit)\w*\b[^.!?;]{0,80}"
-        r"\b(?:audit\w*|review\w*|vet\w*|classif\w*|flag\w*)\b[^.!?;]{0,120}"
+        r"\b(?:skip|bypass|omit)\w*\b[^.!?;]{0,80}"
+        r"\b(?:audit\w*|review\w*|vet(?:s|ted|ting)?|classif\w*|flag\w*)\b[^.!?;]{0,120}"
         r"\b(?:dependenc\w*|install\w*|package\w*|requirements?|sources?)\b",
         re.IGNORECASE,
     ),
 )
 _BARE_CONFIRMATION_BYPASS_RE = re.compile(
-    r"^(?:do\s+not|don't|never)\s+(?:preemptively\s+)?(?:ask|prompt)\b[^.!?;]{0,80}"
-    r"\b(?:approval|confirmation|consent)\b[.!?;]?$",
+    r"^(?:(?:do(?:es)?\s+not|do(?:es)?n['’]t|must\s+not|shall\s+not|should\s+never|never)\s+"
+    r"(?:preemptively\s+)?(?:ask|prompt)\b"
+    r"[^.!?;]{0,80}\b(?:approval|confirmation|consent|permission)\b|"
+    r"(?:skip\s+(?:the\s+)?(?:confirmation|approval)\s+prompt|silently\s+install|"
+    r"there\s+is\s+no\s+need\s+to\s+(?:ask|prompt)|never\s+emit[^.!?;]{0,60}"
+    r"(?:approval|confirmation)\s+prompts?)[^.!?;]*)[.!?;]?$",
     re.IGNORECASE,
 )
 _BARE_CONFIRMATION_DENIAL_RE = re.compile(
-    r"^(?:without\s+(?:explicit\s+)?(?:user\s+)?(?:approval|confirmation|consent)|"
-    r"(?:requires?|needs?)\s+no\s+(?:user\s+)?(?:approval|confirmation|consent)|"
-    r"no\s+(?:user\s+)?(?:approval|confirmation|consent)\s+(?:is\s+)?(?:required|needed))[.!?;]?$",
+    r"^(?:without\s+(?:(?:explicit|prior)\s+|(?:the\s+)?user['’]s\s+|user\s+)?"
+    r"(?:approval|confirmation|consent|permission)|"
+    r"(?:requires?|needs?)\s+no\s+(?:further\s+)?(?:user\s+)?(?:approval|confirmation|consent|permission)|"
+    r"no\s+(?:user\s+)?(?:approval|confirmation|consent|permission)\s+(?:is\s+)?(?:required|needed))[.!?;]?$",
     re.IGNORECASE,
 )
 _BARE_CONFIRMATION_BYPASS_CLAUSE_RE = re.compile(
@@ -357,7 +393,8 @@ _BARE_CONFIRMATION_BYPASS_CLAUSE_RE = re.compile(
     re.IGNORECASE,
 )
 _NEGATED_DEPENDENCY_ACTION_RE = re.compile(
-    r"\b(?:never|do\s+not|don't|must\s+not|should\s+not|cannot|can\s+not|won't|will\s+not|shall\s+not)\b"
+    r"\b(?:never|do(?:es)?\s+not|do(?:es)?n['’]t|must\s+not|should\s+not|shall\s+not|may\s+not|"
+    r"cannot|can\s+not|won['’]t|will\s+not)\b"
     r"\s+(?:(?:preemptively|ever|automatically|directly)\s+)?"
     rf"(?P<action>{_DEPENDENCY_ACTION_PATTERN})\b[^.!?;]{{0,100}}?"
     rf"\b{_DEPENDENCY_NOUN_PATTERN}\b",
@@ -365,8 +402,10 @@ _NEGATED_DEPENDENCY_ACTION_RE = re.compile(
 )
 _PASSIVE_NEGATED_DEPENDENCY_ACTION_RE = re.compile(
     rf"\b{_DEPENDENCY_NOUN_PATTERN}\b[^.!?;]{{0,80}}"
-    r"\b(?:must\s+not|should\s+not|shall\s+not|cannot|can\s+not|won't|will\s+not)\s+"
-    rf"(?:be\s+)?(?P<action>{_DEPENDENCY_ACTION_PATTERN})\b",
+    r"\b(?:(?:must|should|shall|may|can|could|will|would)\s+not\s+(?:be\s+)?|"
+    r"(?:cannot|can['’]t)\s+(?:be\s+)?|"
+    r"(?:is|are|was|were|has|have|had)\s+not\s+(?:been\s+|being\s+)?)"
+    rf"(?P<action>{_DEPENDENCY_ACTION_PATTERN})\b",
     re.IGNORECASE,
 )
 _PROHIBITED_DEPENDENCY_ACTION_RE = re.compile(
@@ -377,13 +416,18 @@ _PROHIBITED_DEPENDENCY_ACTION_RE = re.compile(
     r"\b(?:prohibited|forbidden|disallowed|banned)\b",
     re.IGNORECASE,
 )
+_PROHIBITED_DEPENDENCY_CONTEXT_RE = re.compile(
+    rf"\b{_DEPENDENCY_NOUN_PATTERN}\b[^.!?;]{{0,100}}\b(?:is|are|was|were)\s+"
+    r"(?:strictly\s+)?(?:prohibited|forbidden|disallowed|banned)\b",
+    re.IGNORECASE,
+)
 _DEPENDENCY_ACTION_AT_END_RE = re.compile(rf"\b{_DEPENDENCY_ACTION_PATTERN}\s*$", re.IGNORECASE)
 _DEPENDENCY_ACTION_AT_START_RE = re.compile(rf"^\s*{_DEPENDENCY_ACTION_PATTERN}\b", re.IGNORECASE)
 _MARKDOWN_ATX_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}(?:\s+|$)")
 _MARKDOWN_BLOCKQUOTE_RE = re.compile(r"^\s{0,3}(?:>\s*)+")
 _MARKDOWN_BLOCKQUOTE_CONTINUATION_END_RE = re.compile(
     r"\b(?:a|an|and|are|as|at|be|been|being|before|by|can|could|did|do|does|for|from|if|in|into|is|may|might|"
-    r"must|never|not|of|on|or|preceded|shall|should|that|the|to|was|were|will|with|without|would)"
+    r"must|never|not|of|on|or|preceded|followed|shall|should|that|the|to|was|were|will|with|without|would)"
     r"(?:[:,])?(?:[`*_]+)?\s*$",
     re.IGNORECASE,
 )
@@ -1213,38 +1257,77 @@ def _lint_dependency_install_safety(context: LintContext) -> None:
     prompts and fixtures that intentionally contain adversarial instructions.
     """
     for record in context.records:
-        for file_path, text in _iter_skill_text_files(record.skill_dir):
-            for line_number, paragraph in _iter_markdown_policy_blocks(text):
+        for file_path in _iter_packaged_runtime_text_paths(record.skill_dir):
+            try:
+                text = read_regular_text_file(file_path, max_bytes=MAX_SKILL_TEXT_FILE_BYTES, errors="replace")
+            except RegularFileTooLargeError:
+                context.findings.append(
+                    _finding(
+                        LINT_SKILL_DEPENDENCY_INSTALL_SAFETY,
+                        FINDING_ERROR,
+                        file_path,
+                        "packaged runtime guidance exceeds the dependency-policy scan limit",
+                        "Split the guidance into bounded files so every dependency instruction is scanned.",
+                        code="dependency-install-guidance-too-large",
+                        skill=record.name,
+                    )
+                )
+                continue
+            except (OSError, UnicodeError, ValueError):
+                continue
+            blocks = list(_iter_markdown_policy_blocks(text))
+            fenced_line_numbers = _markdown_fenced_line_numbers(text)
+            # Markdown may put the action and a bare bypass in adjacent list
+            # items, headings, or quoted blocks. Pair only that semantic shape;
+            # arbitrary neighboring statements remain independent.
+            scan_blocks = list(blocks)
+            for left, right in zip(blocks, blocks[1:]):
+                if left[0] in fenced_line_numbers or right[0] in fenced_line_numbers:
+                    continue
+                left_text = left[1]
+                right_text = right[1]
+                if (_DEPENDENCY_INSTALL_TERMS_RE.search(left_text) and _is_bare_confirmation_bypass(right_text)) or (
+                    _is_bare_confirmation_bypass(left_text) and _DEPENDENCY_INSTALL_TERMS_RE.search(right_text)
+                ):
+                    scan_blocks.append((left[0], f"{left_text} {right_text}"))
+            seen_findings = set()
+            for line_number, paragraph in scan_blocks:
                 if not _DEPENDENCY_INSTALL_TERMS_RE.search(paragraph):
                     continue
                 if _has_dependency_confirmation_bypass(paragraph):
-                    context.findings.append(
-                        _finding(
-                            LINT_SKILL_DEPENDENCY_INSTALL_SAFETY,
-                            FINDING_ERROR,
-                            file_path,
-                            "dependency-install guidance suppresses user confirmation",
-                            "Show a redacted install plan and require confirmation unless the user "
-                            "explicitly requested unattended installation.",
-                            code="dependency-install-confirmation-bypass",
-                            skill=record.name,
-                            line=line_number,
+                    finding_key = (file_path, line_number, "dependency-install-confirmation-bypass")
+                    if finding_key not in seen_findings:
+                        seen_findings.add(finding_key)
+                        context.findings.append(
+                            _finding(
+                                LINT_SKILL_DEPENDENCY_INSTALL_SAFETY,
+                                FINDING_ERROR,
+                                file_path,
+                                "dependency-install guidance suppresses user confirmation",
+                                "Show a redacted install plan and require confirmation unless the user "
+                                "explicitly requested unattended installation.",
+                                code="dependency-install-confirmation-bypass",
+                                skill=record.name,
+                                line=line_number,
+                            )
                         )
-                    )
                 if _has_dependency_review_bypass(paragraph):
-                    context.findings.append(
-                        _finding(
-                            LINT_SKILL_DEPENDENCY_INSTALL_SAFETY,
-                            FINDING_ERROR,
-                            file_path,
-                            "dependency-install guidance suppresses package or source review",
-                            "Require static review and flag suspicious package names, sources, "
-                            "credentials, indexes, and installer options.",
-                            code="dependency-install-review-bypass",
-                            skill=record.name,
-                            line=line_number,
+                    finding_key = (file_path, line_number, "dependency-install-review-bypass")
+                    if finding_key not in seen_findings:
+                        seen_findings.add(finding_key)
+                        context.findings.append(
+                            _finding(
+                                LINT_SKILL_DEPENDENCY_INSTALL_SAFETY,
+                                FINDING_ERROR,
+                                file_path,
+                                "dependency-install guidance suppresses package or source review",
+                                "Require static review and flag suspicious package names, sources, "
+                                "credentials, indexes, and installer options.",
+                                code="dependency-install-review-bypass",
+                                skill=record.name,
+                                line=line_number,
+                            )
                         )
-                    )
 
 
 # Canonical lint registry: single source of truth for lint IDs, their run
@@ -1287,12 +1370,19 @@ def _iter_misplaced_eval_dirs(skill_dir: Path) -> Iterable[Path]:
 
 def _iter_packaged_runtime_files(skill_dir: Path) -> Iterable[tuple[Path, str]]:
     """Yield decoded text files a skill ships as runtime content."""
-    if not skill_dir.is_dir():
-        return
-    for path in _iter_files_no_follow(skill_dir, excluded_dir_names=_RUNTIME_BOUNDARY_EXCLUDED_DIRS):
+    for path in _iter_packaged_runtime_text_paths(skill_dir):
         content = _read_runtime_text_file(path)
         if content is not None:
             yield path, content
+
+
+def _iter_packaged_runtime_text_paths(skill_dir: Path) -> Iterable[Path]:
+    """Yield every text-like packaged runtime path, excluding evaluation data."""
+    if not skill_dir.is_dir():
+        return
+    for path in _iter_files_no_follow(skill_dir, excluded_dir_names=_RUNTIME_BOUNDARY_EXCLUDED_DIRS):
+        if path.suffix.lower() in _RUNTIME_TEXT_SUFFIXES:
+            yield path
 
 
 def _read_runtime_text_file(path: Path) -> Optional[str]:
@@ -1674,20 +1764,22 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
     fenced_block_start = 1
     for line_number, line in enumerate(lines, start=1):
         stripped = line.strip()
+        fence_match = _markdown_fence_match(line)
 
         if fence_marker:
-            if len(stripped) >= len(fence_marker) and set(stripped) == {fence_marker[0]}:
+            if fence_match and fence_match[0] == fence_marker[0] and len(fence_match) >= len(fence_marker):
                 if fenced_lines:
                     yield fenced_block_start, " ".join(fenced_lines)
                     fenced_lines = []
                 fence_marker = ""
             elif stripped:
-                if fenced_lines and _is_markdown_fenced_continuation(fenced_lines[-1], stripped):
-                    fenced_lines.append(stripped)
+                content = _normalize_policy_text(_strip_markdown_quote_container(line).strip())
+                if fenced_lines and _is_markdown_fenced_continuation(fenced_lines[-1], content):
+                    fenced_lines.append(content)
                 else:
                     if fenced_lines:
                         yield fenced_block_start, " ".join(fenced_lines)
-                    fenced_lines = [stripped]
+                    fenced_lines = [content]
                     fenced_block_start = line_number
             else:
                 if fenced_lines:
@@ -1695,14 +1787,13 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
                     fenced_lines = []
             continue
 
-        fence_match = _MARKDOWN_FENCE_RE.match(line)
         if fence_match:
             if block_lines:
                 yield block_start, " ".join(block_lines)
                 block_lines = []
                 block_kind = ""
                 list_blank_pending = False
-            fence_marker = fence_match.group(1)
+            fence_marker = fence_match
             continue
 
         if not stripped:
@@ -1717,7 +1808,7 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
         if list_blank_pending:
             indentation = _markdown_leading_indent(line)
             if indentation >= list_content_indent:
-                block_lines.append(stripped)
+                block_lines.append(_normalize_policy_text(stripped))
                 list_blank_pending = False
                 continue
             yield block_start, " ".join(block_lines)
@@ -1730,12 +1821,12 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
                 yield block_start, " ".join(block_lines)
                 block_lines = []
                 block_kind = ""
-            yield line_number, stripped
+            yield line_number, _normalize_policy_text(stripped)
             continue
 
         blockquote_match = _MARKDOWN_BLOCKQUOTE_RE.match(line)
         if blockquote_match:
-            content = line[blockquote_match.end() :].lstrip()
+            content = _normalize_policy_text(line[blockquote_match.end() :].lstrip())
             if not content:
                 if block_lines:
                     yield block_start, " ".join(block_lines)
@@ -1756,27 +1847,25 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
         if list_item_match:
             if block_lines:
                 yield block_start, " ".join(block_lines)
-            block_lines = [stripped]
+            block_lines = [_normalize_policy_text(line[list_item_match.end() :].strip())]
             block_start = line_number
             block_kind = "list"
             list_content_indent = _markdown_column_width(line[: list_item_match.end()])
             continue
 
-        if (
-            _MARKDOWN_ATX_HEADING_RE.match(line)
-            or _MARKDOWN_TABLE_ROW_RE.match(line)
-            or line_number in table_row_numbers
-        ):
+        heading_match = _MARKDOWN_ATX_HEADING_RE.match(line)
+        if heading_match or _MARKDOWN_TABLE_ROW_RE.match(line) or line_number in table_row_numbers:
             if block_lines:
                 yield block_start, " ".join(block_lines)
                 block_lines = []
                 block_kind = ""
-            yield line_number, stripped
+            content = line[heading_match.end() :] if heading_match else stripped
+            yield line_number, _normalize_policy_text(content)
             continue
 
         if block_kind == "blockquote":
             if _is_markdown_blockquote_continuation(block_lines[-1], stripped):
-                block_lines.append(stripped)
+                block_lines.append(_normalize_policy_text(stripped))
                 continue
             yield block_start, " ".join(block_lines)
             block_lines = []
@@ -1787,17 +1876,50 @@ def _iter_markdown_policy_blocks(text: str) -> Iterable[tuple[int, str]]:
             # regardless of indentation -- it has already been checked above and is
             # not itself a new block (list item, blockquote, heading, separator, or
             # table row), so it keeps searching alongside the item's text.
-            block_lines.append(stripped)
+            block_lines.append(_normalize_policy_text(stripped))
             continue
         if not block_lines:
             block_start = line_number
             block_kind = "paragraph"
-        block_lines.append(stripped)
+        block_lines.append(_normalize_policy_text(stripped))
 
     if block_lines:
         yield block_start, " ".join(block_lines)
     if fenced_lines:
         yield fenced_block_start, " ".join(fenced_lines)
+
+
+def _markdown_fence_match(line: str) -> str:
+    """Return a fence marker after stripping quote/list containers."""
+    candidate = _strip_markdown_quote_container(line)
+    list_match = _MARKDOWN_LIST_ITEM_RE.match(candidate)
+    if list_match:
+        candidate = candidate[list_match.end() :]
+    match = re.match(r"^\s*(`{3,}|~{3,})(?:[^`~]*)$", candidate)
+    return match.group(1) if match else ""
+
+
+def _strip_markdown_quote_container(line: str) -> str:
+    match = _MARKDOWN_BLOCKQUOTE_RE.match(line)
+    return line[match.end() :] if match else line
+
+
+def _markdown_fenced_line_numbers(text: str) -> set[int]:
+    """Return content-line numbers inside normalized Markdown fences."""
+    result = set()
+    marker = ""
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        candidate = _markdown_fence_match(line)
+        if candidate and (not marker or candidate[0] == marker[0] and len(candidate) >= len(marker)):
+            marker = "" if marker else candidate
+        elif marker:
+            result.add(line_number)
+    return result
+
+
+def _normalize_policy_text(text: str) -> str:
+    """Remove inline Markdown wrappers that are not part of policy meaning."""
+    return re.sub(r"(?<!\w)(?:\*\*|__|`+)|(?:\*\*|__|`+)(?!\w)", "", text).strip()
 
 
 def _markdown_table_row_numbers(lines: list[str]) -> set[int]:
@@ -1955,7 +2077,10 @@ def _negation_reaches_without_clause(gap: str) -> bool:
     add packages without X" -- and an unrecognized verb must not be mistaken for
     more of the negated verb's object.
     """
-    if _DEPENDENCY_ACTION_SERIES_GAP_RE.fullmatch(gap) is not None:
+    independent_final_action = re.search(
+        rf",\s*{_DEPENDENCY_ACTION_PATTERN}\b[^,]*\b{_DEPENDENCY_NOUN_PATTERN}\b\s*$", gap, re.IGNORECASE
+    ) and not re.search(r",\s*(?:and|or)\b", gap, re.IGNORECASE)
+    if _DEPENDENCY_ACTION_SERIES_GAP_RE.fullmatch(gap) is not None and not independent_final_action:
         return True
     return not _CLAUSE_COORDINATOR_RE.search(gap) and not _DEPENDENCY_ACTION_RE.search(gap)
 
@@ -1984,7 +2109,7 @@ def _is_read_only_dependency_action(statement: str, match: re.Match) -> bool:
         # Nothing may act after the "without" phrase either.
         return not _CLAUSE_COORDINATOR_RE.search(trailing) and not _DEPENDENCY_ACTION_RE.search(trailing)
     if not leading:
-        return _is_read_only_phrase(trailing)
+        return _is_read_only_phrase(trailing) and not _DEPENDENCY_ACTION_RE.search(statement[clause_end:])
     return False
 
 
@@ -2106,9 +2231,17 @@ def _has_dependency_confirmation_without_bypass(statements: list[str]) -> bool:
 
 def _has_dependency_review_bypass(text: str) -> bool:
     """Distinguish a review bypass from a negated "without audit" mandate."""
-    if _has_dependency_policy_bypass(text, _DEPENDENCY_REVIEW_BYPASS_RES):
-        return True
-    statements = [statement.strip() for statement in re.split(r"(?<=[.!?;])\s+", text) if statement.strip()]
+    for index, pattern in enumerate(_DEPENDENCY_REVIEW_BYPASS_RES):
+        for match in pattern.finditer(text):
+            if index == 1 and re.search(
+                r"\b(?:so|therefore)\b[^.!?;]{0,40}\b(?:audit|review|vet|classify|flag)\w*\b",
+                text[match.end() :],
+                re.IGNORECASE,
+            ):
+                continue
+            if index < 2 or not _policy_action_is_negated(text, match.start()):
+                return True
+    statements = _split_policy_statements(text)
     for statement in statements:
         for match in _iter_dependency_without_matches(statement, _DEPENDENCY_REVIEW_WITHOUT_RE):
             if not _is_negated_without_clause(statement, match):
@@ -2142,6 +2275,8 @@ def _has_actionable_dependency_context(statements: list[str], excluded_index: in
             if _is_read_only_clause(clause):
                 continue
             actions = list(_DEPENDENCY_ACTION_RE.finditer(clause))
+            if not actions and _PROHIBITED_DEPENDENCY_CONTEXT_RE.search(clause):
+                continue
             if not actions or _has_uncovered_dependency_action(clause, actions):
                 return True
     return False
@@ -2204,7 +2339,7 @@ def _has_nearby_audit_then_confirm(statements: list[str], index: int) -> bool:
     flagged_statement = statements[index]
     if not (
         _DEPENDENCY_AUDIT_FIRST_RE.search(flagged_statement)
-        or _has_dependency_policy_bypass(flagged_statement, _DEPENDENCY_POST_AUDIT_CONFIRMATION_RES)
+        or _has_nonnegated_post_audit_confirmation(flagged_statement)
     ):
         return False
 
@@ -2215,18 +2350,31 @@ def _has_nearby_audit_then_confirm(statements: list[str], index: int) -> bool:
         candidate_spans.append((index, index + 1))
     for start, end in candidate_spans:
         window_text = " ".join(statements[start : end + 1])
-        if _DEPENDENCY_AUDIT_FIRST_RE.search(window_text) and _has_dependency_policy_bypass(
-            window_text, _DEPENDENCY_POST_AUDIT_CONFIRMATION_RES
-        ):
+        if _DEPENDENCY_AUDIT_FIRST_RE.search(window_text) and _has_nonnegated_post_audit_confirmation(window_text):
             return True
     return False
 
 
 def _has_dependency_confirmation_bypass(text: str) -> bool:
     """Distinguish a confirmation bypass from an explicit audit-then-confirm sequence."""
-    if _has_dependency_policy_bypass(text, _DEPENDENCY_CONFIRMATION_BYPASS_RES):
-        return True
-    statements = [statement.strip() for statement in re.split(r"(?<=[.!?;])\s+", text) if statement.strip()]
+    if re.fullmatch(
+        r"no\s+(?:user\s+)?(?:approval|confirmation|consent|permission)\s+(?:is\s+)?(?:required|needed)"
+        r"\s+for\s+packages?\s+(?:that\s+)?(?:the\s+)?user\s+(?:already|previously)\s+"
+        r"(?:approved|confirmed|authorized)(?:\s+in\s+the\s+install\s+plan)?[.!?;]?",
+        text.strip(),
+        re.IGNORECASE,
+    ):
+        return False
+    statements = _split_policy_statements(text)
+    for pattern_index, pattern in enumerate(_DEPENDENCY_CONFIRMATION_BYPASS_RES):
+        for match in pattern.finditer(text):
+            if pattern_index == 1:
+                statement_index = next(
+                    (index for index, statement in enumerate(statements) if match.group(0) in statement), None
+                )
+                if statement_index is not None and _has_nearby_audit_then_confirm(statements, statement_index):
+                    continue
+            return True
     if _has_dependency_confirmation_without_bypass(statements):
         return True
     for index, statement in enumerate(statements):
@@ -2246,6 +2394,46 @@ def _has_dependency_confirmation_bypass(text: str) -> bool:
             continue
         if not _has_nearby_audit_then_confirm(statements, index):
             return True
+    return False
+
+
+def _split_policy_statements(text: str) -> list[str]:
+    """Split policy prose without treating common abbreviation dots as stops."""
+    protected = re.sub(
+        r"\b(?:e\.g\.|i\.e\.)", lambda match: match.group(0).replace(".", "\u2024"), text, flags=re.IGNORECASE
+    )
+    statements = [statement.strip() for statement in re.split(r"(?<=[.!?;])\s+", protected) if statement.strip()]
+    return [statement.replace("\u2024", ".") for statement in statements]
+
+
+def _policy_action_is_negated(text: str, action_start: int) -> bool:
+    """Return whether clause-local syntax negates a matched policy action."""
+    clause_start, _ = _clause_bounds_at(text, action_start)
+    prefix = text[clause_start:action_start]
+    return bool(
+        re.search(
+            r"(?:\bunder\s+no\s+circumstances\b|\bnever(?:\s*,?\s*ever)?\b|\bavoid(?:s|ed|ing)?\b|"
+            r"\b(?:do|does|did|must|should|shall|may|can|could|will|would)\s+not\b|\bcannot\b|"
+            r"\b(?:don|doesn|didn|mustn|shouldn|shan|mayn|can|couldn|won|wouldn)['’]t\b)"
+            r"[^.!?;|]{0,48}$",
+            prefix,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _has_nonnegated_post_audit_confirmation(text: str) -> bool:
+    """Return whether text positively requires confirmation after the audit."""
+    for pattern in _DEPENDENCY_POST_AUDIT_CONFIRMATION_RES:
+        for match in pattern.finditer(text):
+            matched = match.group(0)
+            if not re.search(
+                r"\b(?:obtain|request|receive|require|wait\s+for)\b[^.!?;]{0,80}"
+                r"\b(?:no|not|never)\b[^.!?;]{0,40}\b(?:approval|confirmation|consent|permission)\b",
+                matched,
+                re.IGNORECASE,
+            ):
+                return True
     return False
 
 
@@ -2305,48 +2493,10 @@ def _has_fixture_notes(evals_dir: Path) -> bool:
 
 
 def _read_bounded_text(path: Path) -> Optional[str]:
-    # Never follow a symlink: its target may live outside the skill tree. Checking
-    # is_symlink() before opening is not enough on its own -- the path could be
-    # swapped for a symlink between the check and the open -- so also open with
-    # O_NOFOLLOW and re-verify the descriptor's identity below.
     try:
-        before = path.lstat()
-    except OSError:
+        return read_regular_text_file(path, max_bytes=MAX_SKILL_TEXT_FILE_BYTES, errors="replace")
+    except (OSError, UnicodeError, ValueError):
         return None
-    if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
-        return None
-    if before.st_size > MAX_SKILL_TEXT_FILE_BYTES:
-        return None
-
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
-    try:
-        descriptor = os.open(path, flags)
-    except OSError:
-        return None
-    try:
-        opened = os.fstat(descriptor)
-        if not stat.S_ISREG(opened.st_mode):
-            return None
-        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
-            return None
-        if opened.st_size > MAX_SKILL_TEXT_FILE_BYTES:
-            return None
-        chunks: list[bytes] = []
-        bytes_read = 0
-        while bytes_read <= MAX_SKILL_TEXT_FILE_BYTES:
-            chunk = os.read(descriptor, min(64 * 1024, MAX_SKILL_TEXT_FILE_BYTES + 1 - bytes_read))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            bytes_read += len(chunk)
-        data = b"".join(chunks)
-        if len(data) > MAX_SKILL_TEXT_FILE_BYTES:
-            return None
-        return data.decode("utf-8", errors="replace")
-    except OSError:
-        return None
-    finally:
-        os.close(descriptor)
 
 
 def _is_oversized_text_file(path: Path) -> bool:

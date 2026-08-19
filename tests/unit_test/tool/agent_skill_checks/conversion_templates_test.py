@@ -1056,6 +1056,21 @@ def test_lightning_template_requires_eval_only_for_fedeval():
         )
 
 
+def test_lightning_template_preserves_legacy_fourth_positional_evaluate_only():
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+
+    with pytest.raises(ValueError, match="only with FedEval"):
+        module.main(object(), object(), lambda: pytest.fail("trainer must not be created"), True)
+
+
+@pytest.mark.parametrize("recipe_algorithm", ["Cyclic", "cyclic-pt", "FedEval", True, None])
+def test_lightning_template_rejects_unknown_or_non_normalized_recipe_algorithm(recipe_algorithm):
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+
+    with pytest.raises(ValueError, match="recipe_algorithm must be one of"):
+        module.should_evaluate_before_train(recipe_algorithm)
+
+
 @pytest.mark.parametrize(
     "recipe_algorithm, expected",
     [

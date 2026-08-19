@@ -27,8 +27,8 @@ with `status: internal`, plus `references/` and `assets/`).
 
 `SKILL.md` frontmatter uses the portable fields from the
 [agentskills.io spec](https://agentskills.io/specification) plus the NVIDIA
-catalog extensions documented below. NVFLARE's required fields
-(`min-flare-version`, `blast-radius`, and public-skill `category`) are nested
+catalog extensions documented below. NVFLARE's required fields (`author`,
+`min-flare-version`, `blast-radius`, and public-skill `category`) are nested
 under the `metadata:` map:
 
 ```yaml
@@ -37,6 +37,7 @@ name: nvflare-your-skill
 description: Short trigger-oriented description.
 version: "0.1.0"
 metadata:
+  author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
   min-flare-version: "2.9.0"
   blast-radius: read_only
   category: Orientation
@@ -48,9 +49,10 @@ published skill names. Other than the NVIDIA catalog fields accepted by the
 validator, do not place NVFLARE custom fields at the top level; nest them under
 `metadata:`.
 
-Public skills must include `category` under `metadata:` as product-facing
-runtime metadata. Draft, internal, and private skills (`metadata.status`) may
-omit it while they are not publishable.
+Every skill must include a team `author` identity under `metadata:` in the
+`Name <group@nvidia.com>` form. Public skills must also include `category` as
+product-facing runtime metadata. Draft, internal, and private skills
+(`metadata.status`) may omit `category` while they are not publishable.
 
 Bundled skills declare catalog `version` at the top level, following the
 NVIDIA skills catalog convention.
