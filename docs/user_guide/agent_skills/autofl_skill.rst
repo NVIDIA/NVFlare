@@ -195,10 +195,14 @@ literature event, plus grouped crashes. Missing family metadata stays
 The trajectory keeps the first and final running best and the largest measured
 objective improvements rather than evenly sampling the campaign.
 
-The product campaign and report contracts support metric maximization only.
-The report also surfaces abandoned-candidate state and warns if the state's
-ledger pointer, candidate-attempt, baseline, or improvement accounting
-disagrees with the ledger.
+The product campaign and report contracts preserve the ``min`` or ``max``
+direction imported from the job's NVFlare metric contract. Raw loss metrics
+should declare ``key_metric_mode="min"``; explicitly negated metrics remain
+valid ``max`` objectives. Ledger values stay raw, while improvement is positive
+when the declared objective improves. The report also surfaces
+abandoned-candidate state and warns if the state's ledger pointer,
+candidate-attempt, baseline, or improvement accounting disagrees with the
+ledger.
 
 As with active Auto-FL, users invoke the skill through their coding agent and
 do not run scripts from the installed skill directory themselves.

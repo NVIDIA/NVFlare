@@ -44,6 +44,9 @@ def _campaign_config():
             "requested_metric": "accuracy",
             "optimization_metric": "accuracy",
             "metric_extraction_order": ["accuracy"],
+            "mode": "max",
+            "mode_contract_source": "core_default",
+            "job_key_metric": "accuracy",
         },
         "budget": {"fixed_training_budget": {"num_clients": 2, "num_rounds": 1}},
         "environment": {"requested": "sim"},
@@ -399,15 +402,48 @@ def test_runner_applies_schema_metric_contract():
     assert updated["objective"]["metric_change_policy"] == "restart_campaign_with_repaired_baseline"
 
 
-def test_schema_metric_contract_rejects_minimization_objective():
+def test_schema_metric_contract_accepts_minimization_objective():
     runner = _load_runner()
-    config = {"objective": {"metric": "val_loss"}}
-    schema = {"objective": {"metric": "val_loss", "mode": "min"}}
+    config = {
+        "objective": {
+            "metric": "val_loss",
+            "requested_metric": "val_loss",
+            "optimization_metric": "val_loss",
+            "mode": "max",
+            "mode_contract_source": "core_default",
+            "job_key_metric": "accuracy",
+        }
+    }
+    schema = {
+        "objective": {
+            "requested_metric": "val_loss",
+            "optimization_metric": "val_loss",
+            "mode": "min",
+        }
+    }
 
-    with pytest.raises(ValueError, match="minimization is not supported") as excinfo:
-        runner.apply_metric_contract(config, "val_loss", schema)
+    updated = runner.apply_metric_contract(config, "val_loss", schema)
 
-    assert "neg_val_loss" in str(excinfo.value)
+    assert updated["objective"]["mode"] == "min"
+    assert updated["objective"]["mode_contract_source"] == "mutation_schema"
+
+
+def test_schema_cannot_override_direction_for_job_key_metric():
+    runner = _load_runner()
+    config = {
+        "objective": {
+            "metric": "loss",
+            "requested_metric": "loss",
+            "optimization_metric": "loss",
+            "mode": "min",
+            "mode_contract_source": "job:key_metric_mode",
+            "job_key_metric": "loss",
+        }
+    }
+    schema = {"objective": {"metric": "loss", "mode": "max"}}
+
+    with pytest.raises(ValueError, match="job.py is authoritative"):
+        runner.apply_metric_contract(config, "loss", schema)
 
 
 def test_comparison_budget_suppresses_duplicate_imported_fixed_budget_args():
@@ -3251,7 +3287,7 @@ def test_runner_state_reports_budget_and_baseline_accounting(tmp_path, monkeypat
     assert runner.main(["status", str(job), "--max-candidates", "3"]) == 0
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["remaining_candidates"] == 2
-    # improvement is best minus baseline; campaigns always maximize the metric.
+    # This campaign uses the default max direction, so improvement is best minus baseline.
     assert state["improvement"] == pytest.approx(0.3)
 
 
@@ -3291,7 +3327,7 @@ def test_initialize_has_no_mode_flag(tmp_path, capsys):
     job = tmp_path / "job.py"
     job.write_text("print('job')\n", encoding="utf-8")
 
-    # Campaigns always maximize; the direction flag is gone rather than vestigial.
+    # Direction comes from the imported job contract, not a runner override.
     with pytest.raises(SystemExit) as excinfo:
         runner.main(["initialize", str(job), "--mode", "min"])
 
@@ -3300,13 +3336,14 @@ def test_initialize_has_no_mode_flag(tmp_path, capsys):
     assert not tmp_path.joinpath(".nvflare").exists()
 
 
-def test_resuming_legacy_minimization_campaign_is_rejected_with_guidance(tmp_path, monkeypatch, capsys):
+def test_resuming_legacy_minimization_campaign_requires_fresh_initialization(tmp_path, monkeypatch, capsys):
     runner = _load_runner()
     job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
     metadata_path = tmp_path / ".nvflare/autofl/campaign.json"
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     assert metadata["settings"]["mode"] == "max"
     metadata["settings"]["mode"] = "min"
+    metadata.pop("metric_direction_contract_version")
     metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
     state_before = tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_bytes()
     capsys.readouterr()
@@ -3316,19 +3353,90 @@ def test_resuming_legacy_minimization_campaign_is_rejected_with_guidance(tmp_pat
         assert runner.main([action, str(job)]) == 2
         stderr = capsys.readouterr().err
         assert "mode='min'" in stderr
-        assert "minimization is not supported" in stderr
-        assert "neg_val_loss" in stderr
+        assert "native metric-direction provenance" in stderr
 
     # The recommended recovery must not be circular: initialize on the legacy campaign
     # is rejected too, but its message names the concrete escape hatch.
     assert runner.main(["initialize", str(job)]) == 2
     stderr = capsys.readouterr().err
-    assert "minimization is not supported" in stderr
+    assert "native metric-direction provenance" in stderr
     assert ".nvflare/autofl" in stderr
     assert "fresh workspace" in stderr
 
     # The campaign never silently flips to maximization: no state was rewritten.
     assert tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_bytes() == state_before
+
+
+def test_native_minimization_campaign_resumes_and_reports_direction(tmp_path, monkeypatch):
+    runner = _load_runner()
+    config = _campaign_config()
+    config["objective"].update(
+        {
+            "metric": "val_loss",
+            "requested_metric": "val_loss",
+            "optimization_metric": "val_loss",
+            "metric_extraction_order": ["val_loss"],
+            "mode": "min",
+            "mode_contract_source": "job:key_metric_mode",
+            "job_key_metric": "val_loss",
+        }
+    )
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    tmp_path.joinpath("client.py").write_text("ALGORITHM = 'baseline'\n", encoding="utf-8")
+    monkeypatch.setattr(runner, "import_job_config", lambda *args, **kwargs: deepcopy(config))
+    monkeypatch.setattr(runner, "job_help", lambda *args, **kwargs: "")
+    monkeypatch.setattr(runner, "write_progress", lambda path, *args: path.write_bytes(b"progress"))
+    scores = {"baseline": 0.5, "lower_loss": 0.4, "higher_loss": 0.45}
+
+    def run_job(run_def, **kwargs):
+        return runner.RunRecord(
+            run_def.status,
+            run_def.name,
+            scores[run_def.name],
+            1.0,
+            "none",
+            run_def.description,
+            "python job.py",
+            f"/tmp/{run_def.name}",
+        )
+
+    monkeypatch.setattr(runner, "run_job", run_job)
+
+    assert runner.main(["initialize", str(job)]) == 0
+    assert runner.main(["prepare", str(job), "--name", "lower_loss", "--hypothesis", "reduce loss"]) == 0
+    lower_draft = tmp_path / ".nvflare/autofl/candidates/lower_loss/source/client.py"
+    lower_draft.write_text("ALGORITHM = 'lower-loss'\n", encoding="utf-8")
+    assert runner.main(["evaluate", str(job)]) == 0
+    assert runner.main(["prepare", str(job), "--name", "higher_loss", "--hypothesis", "test regression"]) == 0
+    higher_draft = tmp_path / ".nvflare/autofl/candidates/higher_loss/source/client.py"
+    higher_draft.write_text("ALGORITHM = 'higher-loss'\n", encoding="utf-8")
+    assert runner.main(["evaluate", str(job)]) == 0
+    assert runner.main(["status", str(job)]) == 0
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    records = runner.load_results(tmp_path / "results.tsv")
+    assert metadata["settings"]["mode"] == "min"
+    assert metadata["metric_direction_contract_version"] == runner.METRIC_DIRECTION_CONTRACT_VERSION
+    assert state["mode"] == "min"
+    assert state["best_score"] == pytest.approx(0.4)
+    assert state["improvement"] == pytest.approx(0.1)
+    assert [record.status for record in records] == ["baseline", "keep", "discard"]
+    assert tmp_path.joinpath("client.py").read_text(encoding="utf-8") == "ALGORITHM = 'lower-loss'\n"
+
+
+def test_initialize_revalidates_source_after_in_memory_admission(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    monkeypatch.setattr(runner, "import_job_config", lambda *args, **kwargs: deepcopy(_campaign_config()))
+    args = runner.parse_args(["initialize", str(job)])
+
+    runner.prepare_initial_campaign(args, job)
+    job.write_text("print('changed')\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="changed after metric-contract admission"):
+        runner.admitted_initial_campaign(args, job)
 
 
 def test_explicit_immutable_campaign_setting_change_is_rejected(tmp_path, monkeypatch):
@@ -3485,7 +3593,110 @@ def test_campaign_admission_rejects_unresolved_safety_contract(config, expected)
     assert expected in "; ".join(runner.campaign_admission_errors(config))
 
 
-def test_cli_lifecycle_runs_agent_code_candidate_end_to_end(tmp_path):
+def test_initialize_rejects_implicit_max_loss_without_writing_campaign_files(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    config = _campaign_config()
+    config["objective"].update(
+        {
+            "metric": "val_loss",
+            "requested_metric": "val_loss",
+            "optimization_metric": "val_loss",
+            "metric_extraction_order": ["val_loss"],
+            "mode": "max",
+            "mode_contract_source": "core_default",
+            "job_key_metric": "val_loss",
+        }
+    )
+    monkeypatch.setattr(runner, "import_job_config", lambda *args, **kwargs: deepcopy(config))
+
+    assert runner.main(["initialize", str(job)]) == 2
+    assert "AUTOFL_METRIC_DIRECTION_CONFLICT" in capsys.readouterr().err
+    assert not tmp_path.joinpath(".nvflare").exists()
+    assert not tmp_path.joinpath("autofl.yaml").exists()
+    assert not tmp_path.joinpath("autofl_runs").exists()
+
+
+def test_campaign_admission_allows_unknown_metric_with_core_default_max():
+    runner = _load_runner()
+    config = _campaign_config()
+    config["objective"].update(
+        {
+            "metric": "custom_quality",
+            "requested_metric": "custom_quality",
+            "optimization_metric": "custom_quality",
+            "mode": "max",
+            "mode_contract_source": "core_default",
+            "job_key_metric": "custom_quality",
+        }
+    )
+
+    assert runner.campaign_admission_errors(config) == []
+
+
+def test_campaign_admission_requires_schema_for_metric_bridge():
+    runner = _load_runner()
+    config = _campaign_config()
+    config["objective"].update(
+        {
+            "metric": "accuracy",
+            "requested_metric": "accuracy",
+            "optimization_metric": "accuracy",
+            "job_key_metric": "val_accuracy",
+        }
+    )
+
+    errors = runner.campaign_admission_errors(config)
+    assert any("AUTOFL_METRIC_NOT_DECLARED" in error for error in errors)
+
+    schema = {"objective": {"requested_metric": "accuracy", "optimization_metric": "test_accuracy"}}
+    config = runner.apply_metric_contract(config, "accuracy", schema)
+    assert runner.campaign_admission_errors(config, schema) == []
+
+
+def test_lower_is_better_metric_bridge_requires_explicit_schema_mode():
+    runner = _load_runner()
+    config = _campaign_config()
+    config["objective"].update(
+        {
+            "metric": "val_loss",
+            "requested_metric": "val_loss",
+            "optimization_metric": "val_loss",
+            "metric_extraction_order": ["val_loss"],
+            "mode": "max",
+            "mode_contract_source": "core_default",
+            "job_key_metric": "accuracy",
+        }
+    )
+    schema = {"objective": {"requested_metric": "val_loss", "optimization_metric": "val_loss"}}
+
+    updated = runner.apply_metric_contract(config, "val_loss", schema)
+    errors = runner.campaign_admission_errors(updated, schema)
+
+    assert any("AUTOFL_METRIC_DIRECTION_CONFLICT" in error for error in errors)
+    assert any("mutation_schema.yaml metric bridge" in error for error in errors)
+
+
+def test_candidate_metric_direction_drift_is_rejected():
+    runner = _load_runner()
+    current = _campaign_config()
+    candidate = deepcopy(current)
+    candidate["objective"]["mode"] = "min"
+    candidate["objective"]["mode_contract_source"] = "job:key_metric_mode"
+
+    with pytest.raises(ValueError, match="objective metric invariants: mode"):
+        runner.candidate_campaign_config(candidate, current, SimpleNamespace(metric="accuracy"), {})
+
+
+@pytest.mark.parametrize(
+    ("metric", "mode", "baseline_score", "candidate_score"),
+    [
+        pytest.param("accuracy", "max", 0.5, 0.8, id="accuracy-max"),
+        pytest.param("loss", "min", 0.5, 0.2, id="loss-min"),
+    ],
+)
+def test_cli_lifecycle_runs_agent_code_candidate_end_to_end(tmp_path, metric, mode, baseline_score, candidate_score):
     repo_root = Path(__file__).parents[3]
     runner_path = repo_root / "skills" / "nvflare-autofl" / "scripts" / "run_job_campaign.py"
     job = tmp_path / "job.py"
@@ -3499,7 +3710,7 @@ from pathlib import Path
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe as ImportedFedAvgRecipe
 from nvflare.recipe import SimEnv as ImportedSimEnv
 
-SCORE = 0.5
+SCORE = {baseline_score}
 
 class FakeFedAvgRecipe:
     def __init__(self, **kwargs):
@@ -3518,11 +3729,17 @@ def main():
     parser.add_argument("--num_rounds", type=int, default=1)
     parser.add_argument("--n_clients", type=int, default=2)
     args = parser.parse_args()
-    ImportedFedAvgRecipe(model=object(), num_rounds=args.num_rounds, min_clients=args.n_clients)
+    ImportedFedAvgRecipe(
+        model=object(),
+        num_rounds=args.num_rounds,
+        min_clients=args.n_clients,
+        key_metric={metric!r},
+        key_metric_mode={mode!r},
+    )
     ImportedSimEnv(num_clients=args.n_clients, workspace_root={str(simulation_root)!r})
     result = Path(os.environ["NVFLARE_SIMULATOR_WORKSPACE_ROOT"]) / args.name
     result.mkdir(parents=True, exist_ok=True)
-    result.joinpath("metrics_summary.json").write_text(json.dumps({{"accuracy": SCORE}}))
+    result.joinpath("metrics_summary.json").write_text(json.dumps({{{metric!r}: SCORE}}))
     print(f"Result can be found in : {{result.resolve()}}")
 
 if __name__ == "__main__":
@@ -3539,8 +3756,6 @@ if __name__ == "__main__":
             str(runner_path),
             "initialize",
             str(job),
-            "--metric",
-            "accuracy",
         ],
         cwd=tmp_path,
         env=env,
@@ -3566,7 +3781,10 @@ if __name__ == "__main__":
         text=True,
     )
     draft_job = tmp_path / ".nvflare" / "autofl" / "candidates" / "code_candidate" / "source" / "job.py"
-    draft_job.write_text(draft_job.read_text(encoding="utf-8").replace("SCORE = 0.5", "SCORE = 0.8"), encoding="utf-8")
+    draft_job.write_text(
+        draft_job.read_text(encoding="utf-8").replace(f"SCORE = {baseline_score}", f"SCORE = {candidate_score}"),
+        encoding="utf-8",
+    )
     subprocess.run(
         [sys.executable, str(runner_path), "evaluate", str(job)],
         cwd=tmp_path,
@@ -3578,8 +3796,16 @@ if __name__ == "__main__":
 
     runner = _load_runner()
     records = runner.load_results(tmp_path / "results.tsv")
-    assert [(record.status, record.score) for record in records] == [("baseline", 0.5), ("keep", 0.8)]
-    assert "SCORE = 0.8" in job.read_text(encoding="utf-8")
+    config = runner.read_yaml(tmp_path / "autofl.yaml")
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    assert [(record.status, record.score) for record in records] == [
+        ("baseline", baseline_score),
+        ("keep", candidate_score),
+    ]
+    assert f"SCORE = {candidate_score}" in job.read_text(encoding="utf-8")
+    assert config["objective"]["mode"] == mode
+    assert state["mode"] == mode
+    assert state["improvement"] == pytest.approx(abs(candidate_score - baseline_score))
     manifest = json.loads(
         tmp_path.joinpath(".nvflare/autofl/candidates/code_candidate/candidate_manifest.json").read_text(
             encoding="utf-8"

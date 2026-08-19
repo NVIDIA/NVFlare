@@ -1456,25 +1456,67 @@ def test_report_records_agent_context_without_git(tmp_path, monkeypatch):
     }
 
 
-@pytest.mark.parametrize(
-    "config_text,state_update",
-    [
-        ("objective:\n  metric: loss\n  mode: min\n", {}),
-        ("objective:\n  metric: loss\n  direction: minimize\n", {}),
-        ("objective:\n  metric: accuracy\n", {"mode": "min"}),
-    ],
-)
-def test_report_rejects_minimization_contracts(tmp_path, monkeypatch, config_text, state_update):
+def test_report_supports_native_minimization_contract(tmp_path, monkeypatch):
     reporter = _load_reporter()
     _write_campaign(tmp_path)
-    tmp_path.joinpath("autofl.yaml").write_text(config_text, encoding="utf-8")
+    _write_rows(
+        tmp_path,
+        [
+            _row("baseline", "baseline", "1.0"),
+            _row("keep", "lower_loss", "0.6", base_candidate="baseline"),
+            _row("discard", "higher_loss", "0.8", base_candidate="lower_loss"),
+        ],
+    )
+    tmp_path.joinpath("autofl.yaml").write_text(
+        "objective:\n"
+        "  metric: val_loss\n"
+        "  requested_metric: val_loss\n"
+        "  optimization_metric: val_loss\n"
+        "  mode: min\n"
+        "  mode_contract_source: job:key_metric_mode\n",
+        encoding="utf-8",
+    )
     state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
     state = json.loads(state_path.read_text(encoding="utf-8"))
-    state.update(state_update)
+    state.update({"mode": "min", "baseline_score": 1.0, "best_score": 0.6, "improvement": 0.4})
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+    report = tmp_path.joinpath("autofl_final_report.md").read_text(encoding="utf-8")
+
+    assert summary["objective"]["mode"] == "min"
+    assert summary["objective"]["mode_contract_source"] == "job:key_metric_mode"
+    assert summary["best"]["name"] == "lower_loss"
+    assert summary["selection"]["improvement_from_baseline"] == pytest.approx(0.4)
+    assert summary["state_accounting"]["consistent"] is True
+    assert "`min` direction" in report
+    assert "objective improvement `+0.400000`" in report
+
+
+def test_report_rejects_legacy_minimization_without_provenance(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    tmp_path.joinpath("autofl.yaml").write_text("objective:\n  metric: loss\n  mode: min\n", encoding="utf-8")
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["mode"] = "min"
     state_path.write_text(json.dumps(state), encoding="utf-8")
     monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: pytest.fail("plot must not run"))
 
-    with pytest.raises(ValueError, match="campaigns maximize their metric"):
+    with pytest.raises(ValueError, match="lacks native metric-direction provenance"):
+        reporter.generate(reporter.parse_args([str(tmp_path)]))
+
+
+def test_report_rejects_conflicting_metric_directions(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    tmp_path.joinpath("autofl.yaml").write_text(
+        "objective:\n  metric: loss\n  mode: min\n  mode_contract_source: job:key_metric_mode\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: pytest.fail("plot must not run"))
+
+    with pytest.raises(ValueError, match="metric direction disagrees"):
         reporter.generate(reporter.parse_args([str(tmp_path)]))
 
 
@@ -1675,14 +1717,16 @@ def test_relative_plotter_path_resolves_from_campaign_directory(tmp_path, monkey
     plotter_path.write_text("# test plotter\n", encoding="utf-8")
     captured = {}
 
-    def _capture_plotter(*args):
-        captured["path"] = args[-1]
+    def _capture_plotter(results, output, metric, plotter, mode):
+        captured["path"] = plotter
+        captured["mode"] = mode
 
     monkeypatch.setattr(reporter, "refresh_plot", _capture_plotter)
 
     reporter.generate(reporter.parse_args([str(tmp_path), "--plotter", "tools/plot_progress.py"]))
 
     assert captured["path"] == plotter_path.resolve()
+    assert captured["mode"] == "max"
 
 
 def test_refresh_plot_reloads_plotter_without_leaking_module(tmp_path):
@@ -1698,8 +1742,9 @@ def test_refresh_plot_reloads_plotter_without_leaking_module(tmp_path):
             "from pathlib import Path\n"
             "def load_results(path):\n"
             "    return []\n"
-            "def plot_progress(records, output, metric_label, max_labels=6):\n"
+            "def plot_progress(records, output, metric_label, mode='max', max_labels=6):\n"
             "    assert metric_label == 'accuracy'\n"
+            "    assert mode == 'max'\n"
             f"    Path(output).write_text('{marker}', encoding='utf-8')\n",
             encoding="utf-8",
         )

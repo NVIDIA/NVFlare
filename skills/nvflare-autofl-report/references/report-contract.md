@@ -125,9 +125,11 @@ The objective contract records two distinct provenance fields. `metric_source`
 describes where measurements came from and defaults to `NVFlare metric
 artifacts`. `metric_contract_source` records how the importer selected the
 metric, for example `user_request`, `arg:key_metric`, or `default`.
-Product Auto-FL campaigns maximize their objective. A report refuses a legacy
-or malformed minimization contract instead of interpreting it differently from
-the campaign runner.
+Product Auto-FL campaigns preserve the imported `objective.mode` (`min` or
+`max`) and its provenance. Reported improvement is direction-adjusted and
+therefore positive when the objective improves, while ledger scores remain raw.
+A report refuses legacy minimization evidence without direction provenance or
+a malformed/conflicting direction contract.
 
 ## Comparability
 

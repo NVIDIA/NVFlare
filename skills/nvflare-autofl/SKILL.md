@@ -27,7 +27,7 @@ Do not use for converting non-FL training code into NVFLARE, diagnosing failed j
 | --- | --- | --- |
 | `scripts/run_job_campaign.py` | Authoritative campaign lifecycle runner | `ACTION JOB` plus action-specific flags |
 | `scripts/campaign_guard.py` | Read-only ledger diagnostics | `[RESULTS]` and diagnostic thresholds |
-| `scripts/plot_progress.py` | Render campaign progress | `[RESULTS]`, `--output`, `--metric` |
+| `scripts/plot_progress.py` | Render campaign progress | `[RESULTS]`, `--output`, `--metric`, `--mode` |
 | `scripts/job_importer.py` | Import library used by the campaign runner | Not a standalone CLI |
 
 ## Workflow
@@ -43,8 +43,8 @@ Resolve [run_job_campaign.py](scripts/run_job_campaign.py) relative to this `SKI
 python "$RUNNER" initialize ./job.py [--metric <metric>] --env <sim|poc|prod> [--max-candidates <n>]
 ```
 
-Campaigns always maximize the optimization metric — matching NVFLARE best-model selection — so loss-like objectives
-must be reported by the job as negated metrics (for example `neg_val_loss`) where higher is better. For conditional
+Campaign direction comes from `job.py` `key_metric_mode` or a same-metric `stop_cond`; NVFLARE defaults to `max`.
+Declare raw loss metrics with `key_metric_mode="min"`; explicitly negated metrics remain ordinary `max` metrics. For conditional
 recipes, safe refusals, and unnamed simulator roots, read the [job import contract](references/job-import-contract.md).
 
 Read `autofl.yaml` and the JSON response, then prepare an agent-authored candidate with a short hypothesis and

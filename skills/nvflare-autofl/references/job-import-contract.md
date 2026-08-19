@@ -14,6 +14,21 @@ baseline and candidate. Evaluation-only, statistics-only, and unsupported
 nested-application recipes stop during import with an actionable
 `import.support.reason`; they must not start a baseline.
 
+The importer resolves the optimization direction from an explicit
+`key_metric_mode`, a same-metric `stop_cond`, or NVFLARE's default `max`, and
+records that provenance in `autofl.yaml`. Declare raw loss-like metrics with
+`key_metric_mode="min"`. If a requested metric differs from the job's
+`key_metric`, `mutation_schema.yaml` must name the requested and optimization
+metrics and may declare their mode; otherwise the imported job mode is retained.
+A schema cannot override the direction of the job's own key metric.
+
+For a new campaign, import and admission complete in memory before the runner
+creates campaign files or acquires the workspace lock. An obvious
+lower-is-better metric that relies only on the implicit `max` default is
+rejected with `AUTOFL_METRIC_DIRECTION_CONFLICT`; set the job's
+`key_metric_mode="min"` and initialize again. Unknown custom metrics retain
+NVFLARE's `max` default.
+
 Every simulator trial receives an isolated temporary workspace. For recipes
 without a literal name, the runner accepts a standard printed result path or
 the sole changed direct child of that trial workspace, validates that the root

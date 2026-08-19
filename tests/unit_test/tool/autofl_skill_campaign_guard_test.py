@@ -165,18 +165,32 @@ def test_guard_improvement_is_best_minus_baseline():
     assert guard.guard_state_for_rows(regressed)["improvement"] == pytest.approx(0.0)
 
 
-def test_guard_cli_has_no_mode_flag(tmp_path, capsys):
+def test_guard_cli_supports_min_mode(tmp_path, capsys):
     guard = _load_guard()
     results = tmp_path / "results.tsv"
-    _write_results(results, [_row("baseline", "baseline", "0.85")])
+    _write_results(results, [_row("baseline", "baseline", "0.85"), _row("keep", "lower_loss", "0.6")])
 
-    with pytest.raises(SystemExit) as excinfo:
-        guard.main([str(results), "--mode", "min"])
+    assert guard.main([str(results), "--mode", "min", "--format", "json"]) == 0
+    state = json.loads(capsys.readouterr().out)
 
-    assert excinfo.value.code == 2
-    assert "unrecognized arguments: --mode" in capsys.readouterr().err
+    assert state["mode"] == "min"
+    assert state["best_score"] == pytest.approx(0.6)
+    assert state["improvement"] == pytest.approx(0.25)
 
-    assert guard.main([str(results)]) == 0
+
+def test_min_mode_plateau_resets_on_lower_score():
+    guard = _load_guard()
+    rows = [
+        _row("baseline", "baseline", "1.0"),
+        _row("keep", "small_improvement", "0.9998"),
+        _row("discard", "regression", "1.1"),
+    ]
+
+    state = guard.guard_state_for_rows(rows, mode="min", plateau_threshold=1, min_delta=0.0005)
+
+    assert state["best_score"] == pytest.approx(0.9998)
+    assert state["improvement"] == pytest.approx(0.0002)
+    assert state["plateau"]["recommendation"] == "literature"
 
 
 def test_guard_finalization_instruction_enumerates_report_artifacts():

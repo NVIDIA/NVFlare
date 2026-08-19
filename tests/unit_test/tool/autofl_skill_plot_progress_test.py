@@ -70,6 +70,20 @@ def test_milestone_selection_tracks_the_running_maximum():
     assert milestones[-1][1].score == 0.8
 
 
+def test_milestone_selection_tracks_the_running_minimum():
+    plotter = _load_plotter()
+    scores = [1.0, 0.8, 0.9, 0.6, 0.7, 0.5]
+    records = [
+        _record(plotter, index, score, status="baseline" if index == 0 else "keep")
+        for index, score in enumerate(scores)
+    ]
+
+    milestones = plotter.select_observed_milestones(records, max_labels=3, mode="min")
+
+    assert len(milestones) <= 3
+    assert milestones[-1][1].score == 0.5
+
+
 def test_load_results_uses_productized_ledger_fields(tmp_path):
     plotter = _load_plotter()
     ledger = tmp_path / "results.tsv"
@@ -235,13 +249,11 @@ def test_progress_plot_distinguishes_candidate_kinds(tmp_path):
     assert output.stat().st_size > 20_000
 
 
-def test_plot_cli_has_no_mode_flag(tmp_path, capsys):
+def test_plot_cli_supports_min_mode(tmp_path, capsys):
     plotter = _load_plotter()
     ledger = tmp_path / "results.tsv"
     ledger.write_text("status\tname\tscore\nbaseline\tbaseline\t0.5\n", encoding="utf-8")
 
-    with pytest.raises(SystemExit) as excinfo:
-        plotter.main([str(ledger), "--output", str(tmp_path / "progress.png"), "--mode", "min"])
+    assert plotter.main([str(ledger), "--output", str(tmp_path / "progress.png"), "--mode", "min"]) == 0
 
-    assert excinfo.value.code == 2
-    assert "unrecognized arguments: --mode" in capsys.readouterr().err
+    assert "improvement=+0.000000" in capsys.readouterr().out
