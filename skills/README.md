@@ -25,32 +25,39 @@ templates shared by the other skills and is installed alongside them, but it is
 not user-selectable. It still follows the skill structure (a valid `SKILL.md`
 with `status: internal`, plus `references/` and `assets/`).
 
-`SKILL.md` frontmatter follows the [agentskills.io spec](https://agentskills.io/specification):
-only `name`, `description`, `license`, `compatibility`, `metadata`, and
-`allowed-tools` are allowed at the top level. NVFLARE's required fields
-(`min_flare_version`, `blast_radius`, and public-skill `category`) are nested
+`SKILL.md` frontmatter uses the portable fields from the
+[agentskills.io spec](https://agentskills.io/specification) plus the NVIDIA
+catalog extensions documented below. NVFLARE's required fields (`author`,
+`min-flare-version`, `blast-radius`, and public-skill `category`) are nested
 under the `metadata:` map:
 
 ```yaml
 ---
 name: nvflare-your-skill
 description: Short trigger-oriented description.
+version: "0.1.0"
 metadata:
-  min_flare_version: "2.9.0"
-  blast_radius: read_only
+  author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
+  min-flare-version: "2.9.0"
+  blast-radius: read_only
   category: Orientation
 ---
 ```
 
 The skill name above is illustrative; actual skill directories use their
-published skill names. Do not place NVFLARE custom fields at the top level;
-the skill validator rejects them unless they are nested under `metadata:`.
+published skill names. Other than the NVIDIA catalog fields accepted by the
+validator, do not place NVFLARE custom fields at the top level; nest them under
+`metadata:`.
 
-Public skills must include `category` under `metadata:` as product-facing
-runtime metadata. Draft, internal, and private skills (`metadata.status`) may
-omit it while they are not publishable.
+Every skill must include a team `author` identity under `metadata:` in the
+`Name <group@nvidia.com>` form. Public skills must also include `category` as
+product-facing runtime metadata. Draft, internal, and private skills
+(`metadata.status`) may omit `category` while they are not publishable.
 
-`blast_radius` must be one of:
+Bundled skills declare catalog `version` at the top level, following the
+NVIDIA skills catalog convention.
+
+`blast-radius` must be one of:
 
 - `read_only`
 - `edits_files`

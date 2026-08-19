@@ -81,8 +81,8 @@ let every simulated site train on the full source training set unless the user
 explicitly asks for shared training data or the source already provides
 site-specific data that resolves to that behavior. Validation/test loaders may
 remain shared only when that matches the source's validation/test semantics.
-For generated Pandas partition code, follow "Site Data Partitioning" in
-`../../nvflare-shared/references/conversion-workflow.md`.
+For generated Pandas partition code, follow
+`../../nvflare-shared/references/site-data-and-paths.md`.
 
 ## Model Construction Consistency
 
