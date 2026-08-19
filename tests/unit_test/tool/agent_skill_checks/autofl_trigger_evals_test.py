@@ -64,12 +64,27 @@ def test_autofl_natural_phrasing_eval_keeps_runner_and_cap_contract():
 
     assert "natural-phrasing-trigger" in mandatory_ids
     assert "campaign-runner-only" in mandatory_ids
+    assert "training-equivalent-accounting" in mandatory_ids
     assert "candidate-cap-respected" in mandatory_ids
     assert "no-direct-project-optimization" in prohibited_ids
+    assert "no-off-runner-screening" in prohibited_ids
 
     # Trigger evals ship no fixtures, so the eval text must not describe file editing.
     assert case["files"] == []
     assert not _eval_mentions_file_editing(case)
+
+
+def test_autofl_skill_defines_training_equivalent_accounting():
+    skill_text = AUTOFL_EVALS_PATH.parent.parent.joinpath("SKILL.md").read_text(encoding="utf-8")
+    normalized = " ".join(skill_text.split())
+
+    assert "Every candidate training, parameter update, or metric-based screen/rank must use" in normalized
+    assert "Only non-training parse, import," in normalized
+    assert "Every real crash and identical replay is a separate attempt" in normalized
+    assert "never infer one from inherited" in normalized
+    assert "reopens a cap-exhausted campaign" in normalized
+    assert "--confirm-user-approved-crash-repeat" not in skill_text
+    assert "--confirm-user-approved-cap-change" in skill_text
 
 
 def test_autofl_evals_keep_explicit_positive_and_negative_coverage():
