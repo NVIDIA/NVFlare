@@ -156,6 +156,10 @@
             "description": "reads and audits applicable requirements, presents a redacted combined install plan, obtains explicit user confirmation before installing missing dependencies into the host-provided environment, and only then runs import-level preflight, recipe-construction probes, export, simulation, or python job.py; an explicitly requested unattended run still logs the plan and the host permission system remains an additional gate"
           },
           {
+            "id": "single-final-validation-path",
+            "description": "selects python job.py as the one final target for this local-simulation prompt and obtains config evidence from its completed simulation workspace without an explicit export"
+          },
+          {
             "id": "dependency-install-failure-is-terminal",
             "description": "builds one combined canonical dependency-install command containing every applicable requirements/constraints file plus NVFLARE when missing and not otherwise supplied; on a nonzero exit stops dependency installation and validation for that conversion run, preserves generated source as an unvalidated draft, and reports a redacted failed command and product error"
           },
@@ -240,6 +244,14 @@
           {
             "id": "no-background-final-validation",
             "description": "does not choose background execution for the final validation run and does not describe a timed-out or still-running simulation as done or successful"
+          },
+          {
+            "id": "no-unrequested-explicit-export",
+            "description": "does not invoke an explicit export or exported-folder simulator for this local-simulation prompt"
+          },
+          {
+            "id": "no-generated-export-system-arguments",
+            "description": "does not declare, parse, or branch on NVFLARE's reserved --export or --export-dir system arguments or a private alias in generated job code"
           },
           {
             "id": "no-topology-collapse-or-catalog-guess",

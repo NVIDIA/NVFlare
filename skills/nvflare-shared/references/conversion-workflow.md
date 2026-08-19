@@ -505,20 +505,11 @@ draft with that real failure as the blocker rather than looping on it.
 
 ## Export
 
-- Use `python job.py --export --export-dir <dir>` to export a generated job.
-  These are NVFLARE job system arguments across recipes, algorithms, and
-  frameworks. Do not declare them as generated job-local arguments, and do not
-  invent alternate export flags such as `--export_only`.
-- If a generated `job.py` defines local command-line options, import the
-  NVFLARE recipe API before local argument parsing. The recipe import removes
-  `--export` and `--export-dir` from `sys.argv`, so `parse_known_args()` is not
-  needed for NVFLARE flags and must not be used. Construct the local parser with
-  `argparse.ArgumentParser(allow_abbrev=False)` and call strict `parse_args()` so
-  unknown and abbreviated options fail. Do not add local `--export` or
-  `--export-dir` arguments or consume them in generated code. Treat this as a
-  generation-time requirement; validation should confirm a standard export
-  invocation plus rejection of both a misspelled option and a unique-prefix
-  abbreviation.
+- The common conversion rules own the canonical Recipe system arguments,
+  generated-parser boundary, and local-versus-exported target selection.
+- When an exported artifact was explicitly requested, validation should confirm
+  the standard export invocation plus rejection of both a misspelled local
+  option and a unique-prefix abbreviation.
 - Default `<dir>` according to `runtime-output-guidance.md` unless the user
   provides an export directory.
 - If writing explicit Job API code without a recipe execution helper, call

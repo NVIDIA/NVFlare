@@ -30,8 +30,11 @@ module/class attribute checks for capability discovery.
 `recipe show` validates only the selected recipe's module, class, and listed
 constructor parameters. It does not advertise other symbols from
 `nvflare.recipe` or define a separate export environment. For supported local
-conversion validation, use `SimEnv` with `recipe.execute(...)`; export through
-`python job.py --export --export-dir <dir>`.
+conversion validation, use `SimEnv` with `recipe.execute(...)`; it materializes
+the simulator job configuration without a separate export step. Export through
+`python job.py --export --export-dir <dir>` only when the user requests an
+exported/deployable job folder. System-argument ownership and parser rules are
+defined in `conversion-common.md`.
 
 Do not guess or directly import additional recipe-adjacent symbols. When the
 selected public workflow genuinely requires another symbol, first use a
@@ -45,10 +48,11 @@ calls by guess. `recipe.execute(env)` is sufficient unless a selected maintained
 asset or the public recipe documentation already defines use of its returned
 handle. In that case, preserve the known pattern instead of rediscovering it.
 
-Validate a recipe model's `class_path` through the public recipe construction,
-export inspection, and bounded execution path. Do not import internal class
-loader helpers, guess helper names, or inspect implementation source to build a
-parallel validation path.
+Validate a recipe model's `class_path` through public recipe construction and
+the artifact produced by the selected bounded validation path: the exported
+configuration for an export target, or the materialized simulation
+configuration for a local target. Do not import internal class loader helpers,
+guess helper names, or inspect implementation source to build a parallel path.
 
 ## Client Argument Transport
 
@@ -245,7 +249,8 @@ Resolve model selection to exactly one state before constructing the recipe:
   client delivers that exact key. Omit `key_metric` and report the resolved
   default; never use this state as a fallback for an unavailable metric.
 
-After export, inspect the server configuration. The disabled state must contain
-no active model-selector component. The metric and recipe-default states must
-contain a selector with the resolved key. Treat a mismatch, or missing-metric
-warnings from a supposedly disabled job, as validation failure.
+Inspect the server configuration produced by the selected validation target.
+The disabled state must contain no active model-selector component. The metric
+and recipe-default states must contain a selector with the resolved key. Treat a
+mismatch, or missing-metric warnings from a supposedly disabled job, as
+validation failure.

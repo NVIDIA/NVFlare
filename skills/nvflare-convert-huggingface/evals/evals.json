@@ -148,6 +148,10 @@
             "description": "runs the validation ladder and reports commands, status, metrics, and exact artifact paths"
           },
           {
+            "id": "single-final-validation-path",
+            "description": "selects python job.py as the one final target for this local-simulation prompt and obtains config evidence from its completed simulation workspace without an explicit export"
+          },
+          {
             "id": "validate-patch-in-client-context",
             "description": "validates runtime flare.patch acceptance through the launched recipe or simulator client rather than a standalone Python preflight without Client API context"
           },
@@ -220,6 +224,14 @@
           {
             "id": "no-ad-hoc-structure-or-recipe-probes",
             "description": "does not replace the maintained client template or public recipe metadata with improvised AST programs, Recipe-source inspection, or guessed adjacent APIs"
+          },
+          {
+            "id": "no-unrequested-explicit-export",
+            "description": "does not invoke an explicit export or exported-folder simulator for this local-simulation prompt"
+          },
+          {
+            "id": "no-generated-export-system-arguments",
+            "description": "does not declare, parse, or branch on NVFLARE's reserved --export or --export-dir system arguments or a private alias in generated job code"
           },
           {
             "id": "no-unconditional-equality-for-newly-initialized-parameters",

@@ -1037,6 +1037,7 @@ def test_fedstats_reuses_named_sites_for_recipe_and_simulation():
 def test_pytorch_family_validation_avoids_recovered_probe_failures():
     repo_root = Path(__file__).resolve().parents[4]
     shared_root = repo_root / "skills" / "nvflare-shared" / "references"
+    common_text = " ".join(shared_root.joinpath("conversion-common.md").read_text(encoding="utf-8").split())
     validation_text = " ".join(shared_root.joinpath("validation-evidence.md").read_text(encoding="utf-8").split())
     construction_text = " ".join(
         shared_root.joinpath("pytorch-family-recipe-construction.md").read_text(encoding="utf-8").split()
@@ -1051,6 +1052,12 @@ def test_pytorch_family_validation_avoids_recovered_probe_failures():
     assert "change only the failing assumption" in validation_text
     assert "preserve prior guards, fallbacks, and already-correct arguments" in validation_text
     assert "Never replace an optional-field guard with a hard-coded conventional name" in validation_text
+
+    assert "Recipe API materializes the job configuration needed by `SimEnv` behind the scenes" in common_text
+    assert "Only when the user requests an exported/deployable job folder" in common_text
+    assert "must not declare, parse, or branch on those arguments" in common_text
+    assert "does not use `parse_known_args()` to accommodate system arguments" in common_text
+    assert "Do not create an export only for this check" in common_text
 
     assert "do not import or introspect a `Run` class" in construction_text
     assert "probe its module location, signature, or docstring" in construction_text
@@ -1069,6 +1076,16 @@ def test_pytorch_family_validation_avoids_recovered_probe_failures():
     assert "Export inspection belongs only to the exported path" in lightning_skill
     assert "Inspect export/package evidence only for an exported final target" in hf_skill
 
+    for framework in ("pytorch", "lightning", "huggingface"):
+        eval_data = json.loads(
+            repo_root.joinpath(f"skills/nvflare-convert-{framework}/evals/evals.json").read_text(encoding="utf-8")
+        )
+        basic_eval = _eval_by_id(eval_data, f"{framework}-convert-basic")["nvflare"]
+        mandatory_ids = {item["id"] for item in basic_eval["mandatory_behavior"]}
+        prohibited_ids = {item["id"] for item in basic_eval["prohibited_behavior"]}
+        assert "single-final-validation-path" in mandatory_ids
+        assert {"no-unrequested-explicit-export", "no-generated-export-system-arguments"} <= prohibited_ids
+
 
 def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys():
     repo_root = Path(__file__).resolve().parents[4]
@@ -1078,6 +1095,9 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     validation_text = skill_root.joinpath("references/huggingface-validation.md").read_text(encoding="utf-8")
     state_text = skill_root.joinpath("references/huggingface-state-and-distributed.md").read_text(encoding="utf-8")
     shared_validation = repo_root.joinpath("skills/nvflare-shared/references/validation-evidence.md").read_text(
+        encoding="utf-8"
+    )
+    shared_common = repo_root.joinpath("skills/nvflare-shared/references/conversion-common.md").read_text(
         encoding="utf-8"
     )
     shared_workflow = repo_root.joinpath("skills/nvflare-shared/references/conversion-workflow.md").read_text(
@@ -1105,6 +1125,7 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     normalized_validation = " ".join(validation_text.split())
     normalized_state = " ".join(state_text.split())
     normalized_shared_validation = " ".join(shared_validation.split())
+    normalized_common = " ".join(shared_common.split())
     normalized_shared = " ".join(shared_workflow.split())
     normalized_pytorch = " ".join(pytorch_conversion.split())
     normalized_lightning = " ".join(lightning_conversion.split())
@@ -1245,17 +1266,16 @@ def test_pytorch_family_conversion_documents_fl_entry_packaging_and_metric_keys(
     assert "make at most one expensive real-model retry" in normalized_validation
     assert "do not write one-off AST, class-loader, persistor, Recipe-source" in normalized_validation
     assert "`python job.py --export --export-dir <runtime-dir>/job_config`" in normalized_shared_validation
-    assert "Do not accept a generated job-local export alias such as `--export_only`" in normalized_shared_validation
+    assert "Do not accept generated job-local `--export` or `--export-dir` arguments" in normalized_shared_validation
     assert "report it as a generated-code violation" in normalized_shared_validation
     assert "not automatically as a POSIX shell command" in normalized_recipe
     assert "default in-process Client API executor" in normalized_recipe
     assert "Do not import or call internal command-splitting helpers" in normalized_recipe
     assert "Do not import internal class loader helpers" in normalized_recipe
-    assert "invent alternate export flags such as `--export_only`" in normalized_shared
-    assert "import the NVFLARE recipe API before local argument parsing" in normalized_shared
-    assert "`argparse.ArgumentParser(allow_abbrev=False)`" in normalized_shared
-    assert "`parse_known_args()` is not needed" in normalized_shared
-    assert "unknown and abbreviated options fail" in normalized_shared
+    assert "must not declare, parse, or branch on those arguments" in normalized_common
+    assert "must import the Recipe API before parsing its own options" in normalized_common
+    assert "`argparse.ArgumentParser(allow_abbrev=False)`" in normalized_common
+    assert "does not use `parse_known_args()`" in normalized_common
     assert "`ArgumentParser(allow_abbrev=False)`" in normalized_skill
     assert "strict `parse_args()`; do not use `parse_known_args()`" in normalized_skill
     assert "`recipe show` validates only the selected recipe's module, class" in normalized_recipe

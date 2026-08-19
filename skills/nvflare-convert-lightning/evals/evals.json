@@ -241,6 +241,14 @@
             "description": "does not run both python job.py and an exported-folder simulator after the first selected full validation path succeeds"
           },
           {
+            "id": "no-unrequested-explicit-export",
+            "description": "does not invoke an explicit export or exported-folder simulator for this local-simulation prompt"
+          },
+          {
+            "id": "no-generated-export-system-arguments",
+            "description": "does not declare, parse, or branch on NVFLARE's reserved --export or --export-dir system arguments or a private alias in generated job code"
+          },
+          {
             "id": "no-compound-cleanup-and-execution",
             "description": "does not combine recursive cleanup, export, and simulation in one command; each is a separate tool call"
           },
