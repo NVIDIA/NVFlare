@@ -1088,6 +1088,11 @@ def test_pytorch_family_validation_avoids_recovered_probe_failures():
         validation_text
     )
     assert "Build validation calls from inspected callable signatures and type annotations" in validation_text
+    assert "When a helper parameter is annotated as `Path`, instantiate and pass `Path(...)`" in validation_text
+    assert "normalize generated columns to the source schema before using `DataFrame.equals()`" in validation_text
+    assert "a dtype-only difference is not a coverage failure" in validation_text
+    assert "copy the complete local import closure" in validation_text
+    assert "do not copy only selected entry-point scripts" in validation_text
     assert "change only the failing assumption" in validation_text
     assert "preserve prior guards, fallbacks, and already-correct arguments" in validation_text
     assert "Never replace an optional-field guard with a hard-coded conventional name" in validation_text

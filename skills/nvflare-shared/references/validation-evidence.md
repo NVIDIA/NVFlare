@@ -128,7 +128,8 @@ Keep custom checks atomic: reuse inspected project/generated helpers with their
 exact annotated argument types, and do not combine partition,
 model-compatibility, metric, and artifact checks in one hand-written inline
 Python program. Each custom probe should test one contract and produce one
-actionable failure.
+actionable failure. When a helper parameter is annotated as `Path`, instantiate
+and pass `Path(...)`; do not substitute a string literal.
 
 - compile generated Python files;
 - construct or instantiate the selected recipe;
@@ -147,7 +148,14 @@ track source positions and verify complete, non-overlapping coverage,
 determinism for the same seed, and any stratification or balance guarantee the
 generated algorithm actually makes. Assert exact per-site row counts only when
 the user, source, or a programmatic calculation specifies them; do not hard-code
-counts inferred by hand from one dataset.
+counts inferred by hand from one dataset. When comparing a source `DataFrame`
+with partitions reloaded from CSV, inspect their dtypes and normalize generated
+columns to the source schema before using `DataFrame.equals()`; a dtype-only
+difference is not a coverage failure.
+
+Run a determinism check from the generated project directory. If an isolated
+scratch copy is necessary, copy the complete local import closure; do not copy
+only selected entry-point scripts.
 
 Use preflight results to fix packaging, config, or model-state issues before
 running a full simulation.
