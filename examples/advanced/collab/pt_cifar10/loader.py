@@ -20,8 +20,8 @@ import numpy as np
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 
-DATA_ROOT = "/tmp/cifar10"
-SPLIT_ROOT = "/tmp/cifar10_splits/pt_cifar10_2sites_alpha0.50_seed0"
+from .data.cifar10_data_utils import CIFAR10_ROOT, SPLIT_ROOT
+
 _TRANSFORM = transforms.Compose(
     [
         transforms.ToTensor(),
@@ -33,7 +33,7 @@ _TRANSFORM = transforms.Compose(
 def make_data_loader(train: bool, batch_size: int, site_name: str | None = None) -> DataLoader:
     """Load the shared test set or one prepared client training split."""
 
-    dataset = datasets.CIFAR10(root=DATA_ROOT, train=train, download=False, transform=_TRANSFORM)
+    dataset = datasets.CIFAR10(root=CIFAR10_ROOT, train=train, download=False, transform=_TRANSFORM)
     if train:
         if not site_name:
             raise ValueError("site_name is required for a client training loader")

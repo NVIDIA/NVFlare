@@ -4,6 +4,12 @@ This example demonstrates how to use NVIDIA FLARE's Collab API with PyTorch to
 train a CIFAR-10 image classifier. It includes FedAvg, FedProx, and SCAFFOLD
 workflows that use direct Python calls between the server and clients.
 
+FedAvg, FedProx, and SCAFFOLD are also available as built-in recipes, which
+remain the recommended way to run these algorithms in production. This example
+re-implements them with the Collab API as a reference for building custom
+algorithms that have no built-in recipe, using the standard recipes as a
+correctness and accuracy baseline.
+
 It is recommended to create a virtual environment before running the example.
 
 ## NVIDIA FLARE Installation
@@ -35,9 +41,7 @@ The example follows the client/server/job organization used by
 collab/pt_cifar10/
 ├── aggregation.py             # Reuses NVFlare weighted aggregation
 ├── prepare_data.py            # Standard CIFAR-10 Dirichlet splitter
-├── data/                      # Splitter dependencies from cifar10/pt
-│   ├── cifar10_data_utils.py
-│   └── cifar10_dataset.py
+├── data/cifar10_data_utils.py # CIFAR-10 labels and split paths
 ├── loader.py                  # Loads each site's prepared split
 ├── model.py                   # PyTorch model definition
 ├── requirements.txt           # Example dependencies
@@ -60,23 +64,23 @@ behavior that differs.
 ## Data
 
 This example uses the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html)
-dataset. The preparation script and its supporting modules are copied from the
-existing [`cifar10/pt`](../../cifar10/pt/README.md) example. It downloads the
-dataset and creates disjoint client partitions with Dirichlet sampling.
+dataset. The preparation script uses Dirichlet partitioning adapted from the existing
+[`cifar10/pt`](../../cifar10/pt/README.md) example. It downloads the dataset
+and creates disjoint client partitions.
 
 From `examples/advanced`, prepare the two client splits used by the jobs:
 
 ```bash
 python collab/pt_cifar10/prepare_data.py \
-    --split_dir_prefix /tmp/cifar10_splits/pt_cifar10 \
     --num_sites 2 \
     --alpha 0.5
 ```
 
-This writes the split to
-`/tmp/cifar10_splits/pt_cifar10_2sites_alpha0.50_seed0`. The `--num_sites`
-value must match `NUM_CLIENTS` in the job files. Lower `--alpha` values create
-more heterogeneous client data.
+This writes the split to `/tmp/cifar10_splits/pt_cifar10`. The `--num_sites`
+value must match `NUM_CLIENTS` in the job files. Re-running preparation replaces
+the site files at that stable path, so changes to `--num_sites`, `--alpha`, or
+`--seed` are used by the clients. Lower `--alpha` values create more
+heterogeneous client data.
 
 ## Model
 
@@ -122,12 +126,15 @@ with the Collab API:
 @collab.main
 def run(self):
     ...
-    # This calls every client's published train method and returns results by site.
-    client_results = collab.clients.train(global_weights)
+    # The group call returns successful results plus failures for every client.
+    client_results = materialize_results(
+        collab.clients(timeout=TRAIN_TIMEOUT).train(global_weights)
+    )
 ```
 
 The SCAFFOLD server follows the same round loop and also exchanges global and
-local control variates.
+local control variates. Model weights are weighted by local steps, while control
+deltas are averaged uniformly across clients.
 
 ## Job Recipe Code
 
