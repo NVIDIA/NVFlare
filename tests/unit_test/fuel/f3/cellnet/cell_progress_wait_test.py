@@ -65,6 +65,23 @@ def test_unknown_reply_warning_does_not_log_headers(caplog):
     assert "other-secret-sentinel" not in caplog.text
 
 
+def test_request_wait_budget_is_sent_for_response_lifecycle_tracking():
+    cell = _make_cell()
+    cell._future_wait.return_value = False
+    cell.send_blob.return_value = MagicMock(error=None)
+    request = Message(headers={}, payload=None)
+
+    cell._send_one_request(
+        channel="task",
+        target="site-1",
+        topic="train",
+        request=request,
+        timeout=7.0,
+    )
+
+    assert request.get_header(cell_module.StreamHeaderKey.REQUEST_TIMEOUT) == 7.0
+
+
 def test_encode_message_can_stamp_receiver_ids_for_multi_receiver_download_refs(monkeypatch):
     cell = _make_cell()
     captured = {}

@@ -16,6 +16,7 @@ import concurrent.futures
 import copy
 import os
 import threading
+import time
 import uuid
 from typing import Dict, List, Union
 
@@ -127,18 +128,23 @@ class Adapter:
 
         req_id = request.get_header(MessageHeaderKey.REQ_ID, "")
         secure = request.get_header(MessageHeaderKey.SECURE, False)
-        optional = request.get_header(MessageHeaderKey.OPTIONAL, False)
+        request_timeout = request.get_header(StreamHeaderKey.REQUEST_TIMEOUT)
+        response_deadline = (
+            time.monotonic() + request_timeout
+            if isinstance(request_timeout, (int, float)) and request_timeout > 0
+            else None
+        )
         self.logger.debug(f"{stream_req_id=}: on {channel=}, {topic=}")
         response = self.cb(request, *args, **kwargs)
         if isinstance(response, concurrent.futures.Future):
             response.add_done_callback(
                 lambda done: self._send_async_response(
-                    done, stream_req_id, req_id, channel, topic, origin, secure, optional
+                    done, stream_req_id, req_id, channel, topic, origin, secure, response_deadline
                 )
             )
             return
 
-        self._send_response(response, stream_req_id, req_id, channel, topic, origin, secure, optional)
+        self._send_response(response, stream_req_id, req_id, channel, topic, origin, secure, response_deadline)
 
     def _send_async_response(self, response_future, *reply_args):
         try:
@@ -148,7 +154,7 @@ class Adapter:
             response = make_reply(ReturnCode.PROCESS_EXCEPTION)
         self._send_response(response, *reply_args)
 
-    def _handle_reply_stream_done(self, reply_future, optional=False):
+    def _handle_reply_stream_done(self, reply_future, response_was_late=False):
         error = reply_future.exception()
         if not error:
             return
@@ -160,9 +166,9 @@ class Adapter:
             )
             os._exit(1)
 
-        if optional and isinstance(error, StreamTargetUnreachable):
-            # An optional response can finish after its requester has removed the waiter or job cell. The requester
-            # already owns the request outcome, so an unreachable optional target is diagnostic only.
+        if response_was_late and isinstance(error, StreamTargetUnreachable):
+            # A response produced after the request's wait budget can outlive its requester or job cell. The
+            # requester already owns the timeout outcome, so an unreachable late target is diagnostic only.
             self.logger.debug(
                 f"streamed response from {self.my_info.fqcn} was not delivered: {secure_format_exception(error)}"
             )
@@ -172,7 +178,7 @@ class Adapter:
             f"streamed response from {self.my_info.fqcn} failed asynchronously: {secure_format_exception(error)}"
         )
 
-    def _send_response(self, response, stream_req_id, req_id, channel, topic, origin, secure, optional):
+    def _send_response(self, response, stream_req_id, req_id, channel, topic, origin, secure, response_deadline):
         self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
         if not stream_req_id:
             # no need to reply!
@@ -214,7 +220,8 @@ class Adapter:
                 )
                 os._exit(1)
             raise
-        reply_future.add_done_callback(self._handle_reply_stream_done, reply_future, optional)
+        response_was_late = response_deadline is not None and time.monotonic() >= response_deadline
+        reply_future.add_done_callback(self._handle_reply_stream_done, reply_future, response_was_late)
         self.logger.debug(f"Done sending: {stream_req_id=}: {reply_future=}")
 
 
@@ -502,7 +509,10 @@ class Cell(StreamCell):
         progress_wait_cb=None,
     ):
         req_id = str(uuid.uuid4())
-        request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
+        request_headers = {StreamHeaderKey.STREAM_REQ_ID: req_id}
+        if progress_wait_cb is None and isinstance(timeout, (int, float)) and timeout > 0:
+            request_headers[StreamHeaderKey.REQUEST_TIMEOUT] = timeout
+        request.add_headers(request_headers)
 
         # this future can be used to check sending progress, but not for checking return blob
         self.logger.debug(f"{req_id=}, {channel=}, {topic=}, {target=}, {timeout=}: send_request about to send_blob")
