@@ -56,6 +56,36 @@ _RECIPE_DETAIL_ATTR_NAMES = (
     "recipe_template_references",
     "template_references",
 )
+_CATALOG_SUMMARY_REQUIRED_FIELDS = {
+    "name": str,
+    "description": str,
+    "framework": str,
+    "module": str,
+    "class": str,
+    "algorithm": (str, type(None)),
+    "aggregation": (str, type(None)),
+    "state_exchange": (str, type(None)),
+    "privacy": list,
+}
+_CATALOG_DETAIL_REQUIRED_FIELDS = {
+    **_CATALOG_SUMMARY_REQUIRED_FIELDS,
+    "client_requirements": dict,
+    "framework_support": list,
+    "heterogeneity_support": list,
+    "privacy_compatible": list,
+    "notes": list,
+    "parameters": list,
+    "optional_dependencies": list,
+    "template_references": list,
+}
+_CATALOG_DETAIL_STRING_LIST_FIELDS = (
+    "framework_support",
+    "heterogeneity_support",
+    "privacy_compatible",
+    "notes",
+    "optional_dependencies",
+    "template_references",
+)
 _CORE_FRAMEWORK_SUPPORT = {
     "cyclic": ["pytorch", "tensorflow", "numpy", "raw"],
     "fedavg": ["pytorch", "tensorflow", "sklearn", "numpy", "raw"],
@@ -302,7 +332,9 @@ def _as_string_list(value) -> list:
         return []
     if isinstance(value, str):
         return [_normalize_filter_value(value)] if value.strip() else []
-    if isinstance(value, (list, tuple, set)):
+    if isinstance(value, set):
+        return sorted(_normalize_filter_value(v) for v in value if str(v).strip())
+    if isinstance(value, (list, tuple)):
         return [_normalize_filter_value(v) for v in value if str(v).strip()]
     return [_normalize_filter_value(value)]
 
@@ -312,7 +344,9 @@ def _as_preserved_string_list(value) -> list:
         return []
     if isinstance(value, str):
         return [value] if value.strip() else []
-    if isinstance(value, (list, tuple, set)):
+    if isinstance(value, set):
+        return sorted(str(v) for v in value if str(v).strip())
+    if isinstance(value, (list, tuple)):
         return [str(v) for v in value if str(v).strip()]
     return [str(value)]
 
@@ -405,7 +439,7 @@ def _static_recipe_attrs(class_node: ast.ClassDef) -> dict:
     for name in _RECIPE_DETAIL_ATTR_NAMES:
         value = _static_class_attr(class_node, name)
         if value is not None:
-            attrs[name] = value
+            attrs[name] = _json_safe_value(value)
     return attrs
 
 
@@ -622,7 +656,10 @@ def _json_safe_value(value):
         return value.value
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
-    if isinstance(value, (list, tuple, set)):
+    if isinstance(value, set):
+        values = [_json_safe_value(v) for v in value]
+        return sorted(values, key=lambda v: json.dumps(v, sort_keys=True))
+    if isinstance(value, (list, tuple)):
         return [_json_safe_value(v) for v in value]
     if isinstance(value, dict):
         return {str(k): _json_safe_value(v) for k, v in value.items()}
@@ -952,6 +989,34 @@ def _generate_recipe_catalog() -> dict:
     }
 
 
+def _has_required_field_types(value: dict, required_fields: dict) -> bool:
+    return isinstance(value, dict) and all(
+        name in value and isinstance(value[name], expected_type) for name, expected_type in required_fields.items()
+    )
+
+
+def _is_string_list(value) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _is_valid_catalog_entry(entry) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    summary = entry.get("summary")
+    detail = entry.get("detail")
+    if not _has_required_field_types(summary, _CATALOG_SUMMARY_REQUIRED_FIELDS) or not _has_required_field_types(
+        detail, _CATALOG_DETAIL_REQUIRED_FIELDS
+    ):
+        return False
+    if not _is_string_list(summary["privacy"]) or not _is_string_list(detail["privacy"]):
+        return False
+    if any(not _is_string_list(detail[name]) for name in _CATALOG_DETAIL_STRING_LIST_FIELDS):
+        return False
+    if any(not isinstance(parameter, dict) for parameter in detail["parameters"]):
+        return False
+    return summary["name"] == detail["name"] and summary["framework"] == detail["framework"]
+
+
 def _read_recipe_catalog() -> list:
     try:
         payload = json.loads(_RECIPE_CATALOG_PATH.read_text(encoding="utf-8"))
@@ -963,12 +1028,7 @@ def _read_recipe_catalog() -> list:
     if (
         payload.get("schema_version") != _RECIPE_CATALOG_SCHEMA_VERSION
         or not isinstance(recipes, list)
-        or any(
-            not isinstance(entry, dict)
-            or not isinstance(entry.get("summary"), dict)
-            or not isinstance(entry.get("detail"), dict)
-            for entry in recipes
-        )
+        or any(not _is_valid_catalog_entry(entry) for entry in recipes)
     ):
         raise RuntimeError(f"invalid generated recipe catalog at {_RECIPE_CATALOG_PATH}")
     return recipes

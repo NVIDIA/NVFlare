@@ -443,6 +443,7 @@ def test_recipe_list_reports_missing_generated_catalog(monkeypatch, capsys, tmp_
         [],
         {"schema_version": 999, "recipes": []},
         {"schema_version": 1, "recipes": [{}]},
+        {"schema_version": 1, "recipes": [{"summary": {}, "detail": {}}]},
     ],
 )
 def test_recipe_show_reports_invalid_generated_catalog(payload, monkeypatch, capsys, tmp_path):
@@ -464,6 +465,31 @@ def test_recipe_show_reports_invalid_generated_catalog(payload, monkeypatch, cap
     assert payload["error_code"] == "INTERNAL_ERROR"
     assert payload["exit_code"] == 5
     assert "invalid generated recipe catalog" in payload["message"]
+
+
+def test_recipe_catalog_entry_validation_requires_fields_and_types():
+    from nvflare.tool.recipe import recipe_cli
+
+    catalog = json.loads(recipe_cli._RECIPE_CATALOG_PATH.read_text(encoding="utf-8"))
+    valid_entry = catalog["recipes"][0]
+    assert recipe_cli._is_valid_catalog_entry(valid_entry)
+
+    for section in ("summary", "detail"):
+        invalid_entry = json.loads(json.dumps(valid_entry))
+        invalid_entry[section] = {}
+        assert not recipe_cli._is_valid_catalog_entry(invalid_entry)
+
+    invalid_entry = json.loads(json.dumps(valid_entry))
+    invalid_entry["summary"]["framework"] = []
+    assert not recipe_cli._is_valid_catalog_entry(invalid_entry)
+
+    invalid_entry = json.loads(json.dumps(valid_entry))
+    invalid_entry["detail"]["framework_support"] = "pytorch"
+    assert not recipe_cli._is_valid_catalog_entry(invalid_entry)
+
+    invalid_entry = json.loads(json.dumps(valid_entry))
+    invalid_entry["detail"]["parameters"] = [None]
+    assert not recipe_cli._is_valid_catalog_entry(invalid_entry)
 
 
 def test_recipe_show_schema_succeeds_without_name(capsys):
@@ -764,8 +790,9 @@ def test_recipe_catalog_generation_preserves_static_recipe_attributes(tmp_path, 
         """class MetadataRecipe(Recipe):
     \"\"\"Recipe with explicit metadata.\"\"\"
 
-    recipe_framework_support = [\"pytorch\", \"numpy\"]
-    recipe_optional_dependencies = [\"pip install demo-framework\"]
+    recipe_framework_support = {\"pytorch\", \"numpy\"}
+    recipe_optional_dependencies = {\"pip install z-framework\", \"pip install a-framework\"}
+    recipe_privacy = {\"z_privacy\", \"a_privacy\"}
     recipe_heterogeneity_support = [\"non_iid\"]
     recipe_privacy_compatible = [\"differential_privacy\"]
     recipe_notes = [\"Custom recipe note.\"]
@@ -784,13 +811,19 @@ def test_recipe_catalog_generation_preserves_static_recipe_attributes(tmp_path, 
     )
     monkeypatch.setattr(recipe_cli, "_DOCUMENTED_RECIPE_SPECS", {})
 
-    generated = recipe_cli._generate_recipe_catalog()["recipes"][0]
+    from nvflare.tool.recipe.generate_recipe_catalog import _render_catalog
+
+    generated = json.loads(_render_catalog())["recipes"][0]
 
     assert "_recipe_attrs" not in generated["summary"]
-    assert generated["detail"]["framework_support"] == ["pytorch", "numpy"]
-    assert generated["detail"]["optional_dependencies"] == ["pip install demo-framework"]
+    assert generated["summary"]["privacy"] == ["a_privacy", "z_privacy"]
+    assert generated["detail"]["framework_support"] == ["numpy", "pytorch"]
+    assert generated["detail"]["optional_dependencies"] == [
+        "pip install a-framework",
+        "pip install z-framework",
+    ]
     assert generated["detail"]["heterogeneity_support"] == ["non_iid"]
-    assert generated["detail"]["privacy_compatible"] == ["differential_privacy"]
+    assert generated["detail"]["privacy_compatible"] == ["a_privacy", "differential_privacy", "z_privacy"]
     assert generated["detail"]["notes"] == ["Custom recipe note."]
     assert generated["detail"]["template_references"] == ["nvflare/example/template"]
 
