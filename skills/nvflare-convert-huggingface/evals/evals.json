@@ -35,7 +35,7 @@
     },
     {
       "id": "huggingface-convert-basic",
-      "prompt": "Convert this Hugging Face Trainer sequence-classification script into an NVFLARE FedAvg job for 2 simulated sites and 2 rounds. Preserve evaluation accuracy and run a bounded local validation.",
+      "prompt": "Convert the training code in the current directory into an NVFLARE FedAvg job for 2 simulated sites and 2 rounds. Preserve evaluation accuracy and run a bounded local validation.",
       "expected_output": "A standard client.py/model.py/job.py conversion that statically inspects the source, uses the PyTorch FedAvg recipe, preserves the Trainer/model/datasets/compute_metrics setup, applies nvflare.client.hf.patch(trainer) once, evaluates the received global model before local training, uses site-local training partitions, preserves PyTorch tensor exchange, validates locally, preserves existing non-generated source, and reports exact artifact paths.",
       "files": [
         "files/trainer-basic/train.py",
@@ -43,6 +43,7 @@
       ],
       "assertions": [
         "The agent runs nvflare agent inspect source on the target before editing and confirms active Hugging Face Trainer ownership.",
+        "The agent routes directly to nvflare-convert-huggingface after preliminary inspection finds one Hugging Face Trainer owner; it does not load nvflare-orient merely because the prompt omitted the framework.",
         "The agent preserves existing non-generated source unless the user explicitly requested a specific overwrite.",
         "The generated client uses nvflare.client.hf and exactly one flare.patch(trainer) call.",
         "The agent completes inspect, dependency handling, recipe show and capability construction, conversion, job construction, and validation in order without preloading advanced or validation references.",
@@ -55,7 +56,7 @@
         "The generated job imports FedAvgRecipe from nvflare.app_opt.pt.recipes.fedavg after recipe show confirms it.",
         "The agent treats recipe show as recipe metadata only, uses SimEnv with recipe.execute for local validation and standard export flags, and does not guess a separate export environment, private class-loader helper, internal command splitter, or another recipe-adjacent API.",
         "The agent establishes host-provided NVFLARE availability separately through nvflare agent inspect source, nvflare --version, or a public capability check before generic package inventory; it never includes nvflare in a batch of importlib.metadata lookups, handles missing non-product metadata as an inventory result rather than a failed command, and skips installation when all applicable requirements are already compatible.",
-        "When public checkpoint download is authorized if uncached, the agent uses one normal cache-aware load or download instead of an unguarded cache-only probe that fails on a normal miss.",
+        "The agent tells the maintained resolver whether each model identifier is a local path or Hub repository ID instead of inferring from slash syntax. When public checkpoint download is authorized if uncached, it uses one normal cache-aware load pinned to a full immutable commit SHA instead of an unguarded cache-only probe that fails on a normal miss.",
         "A generated or preserved HfArgumentParser is constructed with allow_abbrev=False. Intentional typo and abbreviation rejection checks run through assertion wrappers whose top-level commands succeed only when the generated parser rejects them; the wrapper accepts an expected unused-argument ValueError only when its diagnostic names the rejected argument.",
         "Standalone preflight may construct the Trainer but does not call flare.init(), flare.patch(), flare.is_running(), or patched Trainer methods without a launcher-created Client API context; the first bounded simulation validates runtime patch acceptance.",
         "The generated recipe model is an explicit class_path and args mapping, not a live model instance. Validation reconstructs the source and server models through the same importable factory path and arguments and compares keys, shapes, and dtypes. Before comparing values, it uses source or load-report evidence to distinguish checkpoint-loaded parameters from missing or newly initialized parameters, requires exact values or a stable state hash only for parameters proven deterministic, and does not create a failed top-level command by unconditionally comparing independently initialized keys.",
@@ -120,11 +121,11 @@
           },
           {
             "id": "cache-aware-authorized-model-resolution",
-            "description": "uses one normal cache-aware model load or download when an uncached public checkpoint download is authorized"
+            "description": "selects local path or Hub repository source explicitly, resolves relative local paths against an absolute original source root, uses the resolver's positional identifier, and uses one normal cache-aware model load pinned to a full commit SHA when an uncached public checkpoint download is authorized"
           },
           {
             "id": "explicit-server-model-config",
-            "description": "uses the same importable factory path and arguments for source and server models, validates matching state-dict keys, shapes, and dtypes, requires exact values or a stable state hash for checkpoint-loaded or otherwise proven deterministic parameters, treats missing or newly initialized parameters as schema-only unless initialization state is explicitly reset, and ensures server-only model modules are exported"
+            "description": "uses explicit class_path plus complete args so source and server models have the same importable factory path and arguments, verifies the exported server config retains them, validates matching state-dict keys, shapes, and dtypes, requires exact values or a stable state hash for checkpoint-loaded or otherwise proven deterministic parameters, treats missing or newly initialized parameters as schema-only unless initialization state is explicitly reset, and ensures server-only model modules are exported"
           },
           {
             "id": "preserve-tensor-dtypes",
@@ -135,12 +136,20 @@
             "description": "preserves site data or creates deterministic seeded site-local partitions, stratified when labels exist, and reports the split decision"
           },
           {
+            "id": "single-simulator-topology-owner",
+            "description": "uses SimEnv(num_clients=N) with shared arguments and site-name-derived partitions, or makes clients=list(per_site_config) the topology owner for genuinely different named-site arguments; any accompanying num_clients is matching consistency evidence only"
+          },
+          {
             "id": "guard-optional-host-diagnostics",
             "description": "capability-checks optional host diagnostics and isolates them from correctness checks so a missing utility is reported as unavailable evidence rather than a failed validation"
           },
           {
             "id": "validate-and-report-evidence",
             "description": "runs the validation ladder and reports commands, status, metrics, and exact artifact paths"
+          },
+          {
+            "id": "single-final-validation-path",
+            "description": "selects python job.py as the one final target for this local-simulation prompt and obtains config evidence from its completed simulation workspace without an explicit export"
           },
           {
             "id": "validate-patch-in-client-context",
@@ -193,6 +202,18 @@
             "description": "does not run an unguarded local-files-only checkpoint lookup before an authorized cache-aware download"
           },
           {
+            "id": "no-ambiguous-model-source",
+            "description": "does not infer whether a missing slash-containing identifier is a local path or Hub repository ID"
+          },
+          {
+            "id": "no-invented-resolver-model-option",
+            "description": "does not invent a --model option for the maintained resolver, whose model identifier is positional"
+          },
+          {
+            "id": "no-unpinned-hub-download",
+            "description": "does not authorize a Hub download without a full immutable commit-SHA revision"
+          },
+          {
             "id": "no-unguarded-platform-specific-diagnostic",
             "description": "does not append an unavailable optional host utility to a required validation command"
           },
@@ -205,8 +226,24 @@
             "description": "does not replace the maintained client template or public recipe metadata with improvised AST programs, Recipe-source inspection, or guessed adjacent APIs"
           },
           {
+            "id": "no-unrequested-explicit-export",
+            "description": "does not invoke an explicit export or exported-folder simulator for this local-simulation prompt"
+          },
+          {
+            "id": "no-generated-export-system-arguments",
+            "description": "does not declare, parse, or branch on NVFLARE's reserved --export or --export-dir system arguments or a private alias in generated job code"
+          },
+          {
             "id": "no-unconditional-equality-for-newly-initialized-parameters",
             "description": "does not run a failing full-state equality assertion across independently constructed models when load evidence reports missing or newly initialized parameters; it retains schema checks and exact comparison for parameters proven deterministic"
+          },
+          {
+            "id": "no-orient-for-single-owner-conversion",
+            "description": "does not route an explicit conversion through nvflare-orient merely because its prompt omits the framework when inspection finds one Hugging Face Trainer owner"
+          },
+          {
+            "id": "no-mixed-named-and-generated-client-topology",
+            "description": "does not generate unnamed SimEnv clients after set_per_site_config creates named targets, pass an inconsistent num_clients with clients, or recover from a mismatch with num_clients=None"
           }
         ],
         "process_metrics": [
