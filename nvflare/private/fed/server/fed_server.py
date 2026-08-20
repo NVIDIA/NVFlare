@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ipaddress
 import json
 import os
+import socket
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -42,6 +44,7 @@ from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import Message
@@ -80,6 +83,58 @@ from .run_manager import RunManager
 from .server_engine import ServerEngine
 from .server_state import ABORT_RUN, ACTION, MESSAGE, NIS, HotState, ServerState
 from .server_status import ServerStatus
+
+
+def _parse_ip_address(host: str):
+    value = host.strip().strip("[]")
+    try:
+        return ipaddress.ip_address(value)
+    except ValueError:
+        try:
+            return ipaddress.IPv4Address(socket.inet_aton(value))
+        except OSError:
+            return None
+
+
+def _normalize_loopback_host(host: str) -> str:
+    """Return a loopback bind address, preserving an empty host as wildcard shorthand."""
+    if host == "":
+        return host
+    if host.rstrip(".").lower() == "localhost":
+        return "127.0.0.1"
+    address = _parse_ip_address(host)
+    if address is None:
+        return host
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+        address = address.ipv4_mapped
+    if isinstance(address, ipaddress.IPv4Address) and address.is_loopback:
+        return str(address)
+    # F3 URL parsing and TCP drivers do not yet support IPv6 end to end.
+    return "127.0.0.1" if address.is_loopback else host
+
+
+def _is_loopback_host(host: str) -> bool:
+    normalized_host = _normalize_loopback_host(host)
+    try:
+        return ipaddress.ip_address(normalized_host).is_loopback
+    except ValueError:
+        return False
+
+
+def _normalize_admin_host(host: str) -> str:
+    """Normalize a configured admin bind host and reject unsupported IPv6 listeners."""
+    if not isinstance(host, str):
+        raise ConfigError(f"admin_host must be a string but got {type(host)}")
+    host = host.strip()
+    if not host:
+        raise ConfigError("admin_host must not be empty")
+    normalized_host = _normalize_loopback_host(host)
+    address = _parse_ip_address(host)
+    if address is None:
+        return normalized_host
+    if isinstance(address, ipaddress.IPv6Address) and normalized_host == host:
+        raise ConfigError(f"IPv6 admin_host is not supported: {host}")
+    return normalized_host
 
 
 class BaseServer(ABC):
@@ -172,14 +227,36 @@ class BaseServer(ABC):
         if len(parts) != 2:
             raise RuntimeError(f"bad service target: {target}")
 
-        listening_host = "127.0.0.1" if parts[0].rstrip(".").lower() == "localhost" else None
+        service_host = parts[0]
+        listening_host = _normalize_loopback_host(service_host) if _is_loopback_host(service_host) else None
         fl_port = int(parts[1])
 
         url_host = listening_host or "0"
         root_url = [f"{scheme}://{url_host}:{fl_port}"]
         if enable_admin_listener:
             admin_port = int(grpc_args.get("admin_port", fl_port))
-            admin_url = f"{scheme}://{url_host}:{admin_port}?{ADMIN_LISTENER_KEY}=true"
+            configured_admin_host = grpc_args.get("admin_host")
+            admin_host = url_host if configured_admin_host is None else _normalize_admin_host(configured_admin_host)
+            if configured_admin_host is not None:
+                configured_address = _parse_ip_address(configured_admin_host)
+                if (
+                    isinstance(configured_address, ipaddress.IPv6Address)
+                    and admin_host != configured_admin_host.strip()
+                ):
+                    self.logger.warning(
+                        f"IPv6 loopback admin_host '{configured_admin_host.strip()}' is bound as '{admin_host}' "
+                        "because F3 listeners do not yet support IPv6 end to end"
+                    )
+            if admin_port == fl_port and admin_host != url_host:
+                raise ConfigError(
+                    "admin_port must differ from the FL service port when admin_host uses a different bind host"
+                )
+            if configured_admin_host is not None and not secure_train and not _is_loopback_host(admin_host):
+                self.logger.warning(
+                    f"insecure admin listener is exposed on non-loopback host '{admin_host}'; "
+                    "set secure_train=true or configure admin_host as a loopback address with a distinct admin_port"
+                )
+            admin_url = f"{scheme}://{admin_host}:{admin_port}?{ADMIN_LISTENER_KEY}=true"
             if admin_port == fl_port:
                 root_url = [admin_url]
             else:

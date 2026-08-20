@@ -66,6 +66,15 @@ Compatibility and Migration Notes
   that must keep such metrics local should omit the explicit pre-fit validation;
   if they still require it locally, a custom task-result filter must remove
   ``MetaKey.INITIAL_METRICS`` before the result reaches the server.
+- ``SimpleIntimeModelSelector`` (CCWF) now selects a scalar ``key_metric``
+  (default ``val_accuracy``) from dict-valued ``INITIAL_METRICS`` payloads
+  instead of failing with a logged ``TypeError`` that silently disabled
+  best-model selection. Swarm jobs whose metric dicts contain the configured
+  key change from selection-inert to active best-global-model tracking without
+  a config change; dict payloads lacking the key, and non-numeric values, are
+  skipped with a warning, so configure ``key_metric`` to match the reported
+  metric name. A new ``negate_key_metric`` argument supports lower-is-better
+  metrics such as losses.
 - Recipe discovery now exposes the concrete PyTorch ``FedProxRecipe`` as
   ``fedprox-pt`` and no longer advertises the ``fedprox-tf`` manual pattern as
   a concrete recipe. TensorFlow clients can continue to combine a FedAvg
@@ -105,3 +114,17 @@ Compatibility and Migration Notes
   missing client. The accepted envelope may already have exposed references to
   downstream consumers and cannot be safely withdrawn. An explicit job abort
   that wins the terminal-state race remains ``ABORTED``.
+- ``SwarmLearningRecipe`` now configures client-side best-model selection by
+  default. Use ``key_metric`` to select a dictionary-valued validation metric
+  and ``key_metric_mode="min"`` for lower-is-better metrics. Clients must report
+  a pre-training validation metric with the configured name for selection to
+  occur; jobs without that metric continue to persist the last global model but
+  do not create ``best_FL_global_model.pt``. Set ``key_metric=None`` to opt out
+  and preserve the pre-2.9 last-model-only behavior. Selection skips round 0,
+  so a one-round job does not create a best-model checkpoint. With
+  ``key_metric_mode="min"``, Swarm best-metric logs and records expose the
+  negated comparison value (for example, a loss of 2.31 is shown as -2.31).
+  ``client_config_overrides`` can no longer replace ``model_selector``: migrate
+  the former ``{"model_selector": None}`` opt-out to ``key_metric=None``, and
+  use ``BaseSwarmLearningRecipe`` with an explicit ``SwarmClientConfig`` for a
+  custom selector.

@@ -411,11 +411,17 @@ The swarm learning workflow is implemented with :class:`nvflare.app_common.ccwf.
 
 Best Model Selection
 ====================
-Optionally, a model selection widget can be used to determine the best global model, just as in the server-controlled
-fed-average workflow (SAG). The widget listens to the BEFORE and AFTER events of ``accept`` and ``aggregate`` calls of the
+``SwarmLearningRecipe`` configures a client-side model selection widget by default. Job API configurations can add one
+explicitly, as in the server-controlled fed-average workflow (SAG). The widget listens to the BEFORE and AFTER events of
+``accept`` and ``aggregate`` calls of the
 aggregator to dynamically compute the aggregated validation metrics reported from the training clients. When a better
 metric is achieved, it fires the ``AppEventType.GLOBAL_BEST_MODEL_AVAILABLE`` event with the best metric value. If the
 persistor listens to this event, it can persist the current global model (the current best).
+
+The metric must score the received global model before local training. For example,
+a patched Lightning client calls ``trainer.validate()`` before ``trainer.fit()``,
+and a manual Client API script sends that pre-training value in ``FLModel.metrics``.
+The metric dictionary key must match the recipe's ``key_metric``.
 
 However, unlike the server-controlled SAG where the aggregation is always done on the server and hence only a single
 global model is present at any time, many clients could do aggregation during the course of swarm learning. Each aggregation
@@ -522,6 +528,8 @@ Use ``SwarmLearningRecipe`` for a streamlined swarm learning setup:
         num_rounds=10,
         train_script="train.py",
         train_args={"batch_size": 32, "epochs": 5},
+        key_metric="accuracy",
+        key_metric_mode="max",
         progress_timeout=7200,
         learn_task_timeout=None,       # No per-task time limit
         learn_task_ack_timeout=3600,   # P2P task-transfer ACK budget
@@ -544,14 +552,16 @@ Use ``SwarmLearningRecipe`` for a streamlined swarm learning setup:
 The named parameters are the preferred API. For less common
 ``SwarmServerConfig`` or ``SwarmClientConfig`` fields, pass
 ``server_config_overrides`` or ``client_config_overrides``. The dictionaries are
-shallow-merged last, so an overlapping dictionary value intentionally wins over
-the named parameter. ``round_timeout`` remains available as a compatibility
-shortcut for setting both acknowledgment timeouts when their explicit parameters
-are omitted. ``client_config_overrides`` cannot replace the recipe-managed
-executor, aggregator, persistor, shareable generator, or
-``min_responses_required``; use ``BaseSwarmLearningRecipe`` for custom components
-or quorum settings. Set ``min_clients`` only through the named parameter so the
-scheduler, server controller, and client aggregation quorums remain aligned.
+shallow-merged last, so an overlapping dictionary value for a non-recipe-managed
+field intentionally wins over the named parameter. ``round_timeout`` remains
+available as a compatibility shortcut for setting both acknowledgment timeouts
+when their explicit parameters are omitted. ``client_config_overrides`` cannot
+replace the recipe-managed executor, aggregator, persistor, shareable generator,
+model selector, or ``min_responses_required``. Use ``key_metric=None`` to disable
+selection; for a custom selector or other custom components, use
+``BaseSwarmLearningRecipe`` with an explicit ``SwarmClientConfig`` as shown below.
+Set ``min_clients`` only through the named parameter so the scheduler, server
+controller, and client aggregation quorums remain aligned.
 For large PyTorch models, use
 ``aggregation_format=ExchangeFormat.PYTORCH`` together with
 ``enable_tensor_disk_offload=True``. The first keeps CCWF payloads on the
@@ -566,6 +576,7 @@ For advanced customization, use ``BaseSwarmLearningRecipe`` with explicit server
 
     from nvflare.app_common.ccwf.recipes.swarm import BaseSwarmLearningRecipe
     from nvflare.app_common.ccwf.ccwf_job import SwarmServerConfig, SwarmClientConfig
+    from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 
     server_config = SwarmServerConfig(
         num_rounds=10,
@@ -578,6 +589,7 @@ For advanced customization, use ``BaseSwarmLearningRecipe`` with explicit server
         aggregator=my_aggregator,
         persistor=my_persistor,
         shareable_generator=my_generator,
+        model_selector=IntimeModelSelector(key_metric="accuracy"),
     )
 
     recipe = BaseSwarmLearningRecipe(
@@ -701,7 +713,9 @@ For users who need fine-grained control, here is the equivalent JSON configurati
         {
           "id": "model_selector",
           "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
-          "args": {}
+          "args": {
+            "key_metric": "accuracy"
+          }
         }
       ]
     }
@@ -1090,6 +1104,8 @@ Use ``SwarmLearningRecipe`` for swarm learning with optional cross-site evaluati
         min_clients=3,
         num_rounds=3,
         train_script="train.py",
+        key_metric="accuracy",
+        key_metric_mode="max",
         do_cross_site_eval=True,
         cross_site_eval_timeout=300,
         round_timeout=3600,   # P2P model-transfer ACK budget; increase for large models (7B+)
@@ -1223,7 +1239,9 @@ Cross Site Evaluation: config_fed_client.json
         {
           "id": "model_selector",
           "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
-          "args": {}
+          "args": {
+            "key_metric": "accuracy"
+          }
         }
       ]
     }

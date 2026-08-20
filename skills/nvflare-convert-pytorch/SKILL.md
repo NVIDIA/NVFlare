@@ -1,6 +1,6 @@
 ---
 name: nvflare-convert-pytorch
-description: "Convert existing PyTorch training code into an NVFLARE federated job using Client API model exchange, local validation, and job export; do not use for other frameworks, deployment, POC/production lifecycle, or experiment workflows."
+description: "Convert existing plain or manual PyTorch training code into an NVFLARE federated job using Client API model exchange, local validation, and job export; use when the user names plain PyTorch or preliminary source inspection identifies one plain-PyTorch owner, and not for Lightning, other frameworks, deployment, POC/production lifecycle, or experiment workflows."
 license: Apache-2.0
 version: "0.1.0"
 metadata:
@@ -83,13 +83,16 @@ distribution; handle conversion later as a separate request.
    evaluation code into the packaged evaluation template; if evaluation is
    required but missing, ask or fail closed. Apply the step-1 data-location
    rules to the generated client's data argument.
-6. Add or update `job.py` under the shared "Recipe Model Config" policy,
-   requested `aggregator=` wiring, and the metric, tensor-transport, server
-   offload, and execution settings derived from the shared PyTorch-family
-   construction profile.
+6. Add or update `job.py` under the shared constructor-serialization rule:
+   use explicit `class_path` (or documented `path` alias) plus complete `args`
+   whenever reconstruction needs values. Add requested `aggregator=` wiring,
+   metric, tensor-transport, server offload, and execution settings derived
+   from the shared PyTorch-family construction profile.
 7. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`:
    compile checks, recipe construction, one final full-run path chosen by the
-   artifact being validated, and export inspection; use
+   artifact being validated, with export and package inspection only for the
+   selected exported-artifact path. For a local target, inspect the materialized
+   configs and packaging evidence after that run. Use
    `references/job-validation.md` for PyTorch-specific failures. Stop at the
    first failed rung and report the product error. Use the environment and
    permission mechanisms supplied by the agent host; do not inspect or enforce
@@ -104,11 +107,12 @@ distribution; handle conversion later as a separate request.
 - Must audit model constructor arguments before writing `job.py` by reading the
   model module's `__init__` and the selected recipe's `model` parameter from
   `nvflare recipe show <recipe-name> --format json`, not by reading NVFLARE
-  library source. The shared "Recipe Model Config" policy governs whether to
-  emit `class_path`/`args` config or a direct `torch.nn.Module`; required
-  values must be statically clear from literal source, configuration, or
-  supplied metadata. Otherwise ask one semantic question when an answer channel
-  exists or fail closed on that missing value.
+  library source. Emit the selected recipe's documented `class_path` or `path`
+  key plus complete `args` for every required or overridden constructor value;
+  a direct `torch.nn.Module` is allowed only when
+  unchanged zero-argument defaults reconstruct it. Values must be statically
+  clear from literal source, configuration, or supplied metadata. Otherwise ask
+  one semantic question when an answer channel exists or fail closed.
 - Must follow `../nvflare-shared/references/pytorch-model-exchange.md` and
   `references/pytorch-client-api-conversion.md` for the canonical plain-PyTorch
   payload and round-loop pattern.

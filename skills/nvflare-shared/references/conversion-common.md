@@ -52,6 +52,51 @@ write ``with SimEnv(...):``. Instantiate it, then pass it to the recipe:
 ``recipe.execute(env=env)``). Do not infer cleanup or lifecycle APIs that the
 public Recipe surface does not provide.
 
+For a requested local or first-user simulation, run `python job.py`; the Recipe
+API materializes the job configuration needed by `SimEnv` behind the scenes. Do
+not explicitly export first. Only when the user requests an exported/deployable
+job folder, run `python job.py --export --export-dir <dir>` and validate that
+exported artifact. Creating it does not authorize POC or production submission,
+which remains outside conversion scope.
+
+`--export` and `--export-dir` are NVFLARE system arguments consumed by the
+Recipe API across algorithms and frameworks. Generated `job.py` code must import
+the Recipe API before parsing its own options and must not declare, parse, or
+branch on those arguments or invent aliases such as `--export_only`. A local
+parser uses `argparse.ArgumentParser(allow_abbrev=False)` with strict
+`parse_args()`; it does not use `parse_known_args()` to accommodate system
+arguments. Unknown and abbreviated local options must fail.
+
+Use exactly one owner for the simulated client topology. With a unified recipe,
+let `SimEnv(num_clients=N)` create `site-1` through `site-N`; pass shared data
+arguments once and derive a generated partition index from the initialized site
+name. Do not call `set_per_site_config()` merely to assign partition indices.
+When genuinely different site paths or arguments require
+`set_per_site_config(recipe, config)`, that mapping owns the named targets: use
+`SimEnv(clients=list(config), ...)` rather than a generated topology. A matching
+`num_clients=N` may also be supplied to `SimEnv` only as a consistency assertion;
+`clients` remains the topology owner, and `SimEnv` rejects an inconsistent
+count. Do not pass `num_clients` without `clients` after creating named recipe
+targets, and do not recover from a mismatch by setting `num_clients=None`.
+
+## Model Constructor Serialization
+
+For every framework, use explicit `class_path` (or `path`) plus complete `args`
+whenever identical server/client reconstruction depends on any constructor
+value, including a required parameter or an overridden default. Never use a
+live model instance to carry those values: job serialization may retain its
+class while dropping its constructor arguments. A direct instance is allowed
+only when the selected recipe accepts it and zero-argument construction with
+unchanged defaults reproduces the required architecture.
+
+For an exported-artifact target, verify its server model configuration after
+creating the folder and before simulating it. For a local target, let
+`python job.py` materialize the configuration and inspect it in the completed
+simulation workspace. Do not create an export only for this check. In either
+artifact, verify that the model component retains the audited class path and
+every constructor argument; constructing the recipe object alone is
+insufficient evidence.
+
 ## Site Data Partitioning
 
 Train each site on its local partition for multi-site single-node-source
