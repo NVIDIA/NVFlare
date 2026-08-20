@@ -28,6 +28,7 @@ Tests verify:
 """
 
 import json
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -41,6 +42,7 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     _CtxKey,
     _LazyBatchInfo,
     _RefKey,
+    contains_lazy_download_ref,
 )
 
 # ---------------------------------------------------------------------------
@@ -51,6 +53,7 @@ _SERVER_FQCN = "server/app_server"
 _REF_ID = "deadbeef-0000-1111-2222-333333333333"
 _ITEM_ID_0 = "T0"
 _ITEM_ID_1 = "T1"
+_CJ_FQCN = "site-1/job-1"
 
 
 def _make_decomposer():
@@ -64,6 +67,11 @@ def _make_manager(fobs_ctx: dict = None) -> DatumManager:
     """Return a DatumManager with an optional pre-populated fobs_ctx."""
     ctx = fobs_ctx if fobs_ctx is not None else {}
     return DatumManager(threshold=1024, fobs_ctx=ctx)
+
+
+class _FakeCell:
+    def get_fqcn(self):
+        return _CJ_FQCN
 
 
 def _ref_datum(fqcn: str = _SERVER_FQCN, ref_id: str = _REF_ID) -> Datum:
@@ -99,6 +107,88 @@ class TestLazyDownloadRef:
         # fqcn and ref_id are shared (same batch)
         assert a.fqcn == b.fqcn
         assert a.ref_id == b.ref_id
+
+
+def test_contains_lazy_download_ref_scans_dict_keys_and_values():
+    lazy = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0)
+    assert contains_lazy_download_ref({lazy: "value"})
+    assert contains_lazy_download_ref({"key": lazy})
+
+
+def test_contains_lazy_download_ref_scans_object_attributes_and_slots():
+    class ObjectWrapper:
+        def __init__(self, value):
+            self.value = value
+
+    class SlottedWrapper:
+        __slots__ = ("value",)
+
+        def __init__(self, value):
+            self.value = value
+
+    lazy = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0)
+
+    assert contains_lazy_download_ref(ObjectWrapper(lazy))
+    assert contains_lazy_download_ref(SlottedWrapper(lazy))
+
+
+def test_contains_lazy_download_ref_skips_excluded_dictionary_values():
+    lazy = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0)
+
+    assert not contains_lazy_download_ref(
+        {"payload": "value", "framework_context": lazy},
+        excluded_dict_keys={"framework_context"},
+    )
+
+
+def test_contains_lazy_download_ref_treats_logging_objects_as_leaves():
+    logger = logging.getLogger(__name__ + ".graph_leaf")
+    lazy = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0)
+    logger.graph_test_value = lazy
+    try:
+        assert not contains_lazy_download_ref(logger)
+    finally:
+        del logger.graph_test_value
+
+
+def test_contains_lazy_download_ref_after_nested_fobs_recompose():
+    import numpy as np
+
+    from nvflare.apis.dxo import DXO, DataKind
+    from nvflare.apis.shareable import Shareable
+    from nvflare.apis.utils.decomposers.flare_decomposers import DXODecomposer
+    from nvflare.app_common.abstract.fl_model import FLModel
+    from nvflare.app_common.decomposers.common_decomposers import FLModelDecomposer
+    from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
+    from nvflare.fuel.utils import fobs
+    from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
+    from nvflare.fuel.utils.fobs.decomposers.via_downloader import ViaDownloaderDecomposer
+
+    # Register the exact dependencies instead of using the guarded module-level
+    # helpers. Other tests can call fobs.reset() without resetting those guards.
+    fobs.register(DictDecomposer(Shareable))
+    fobs.register(FLModelDecomposer)
+    fobs.register(DXODecomposer)
+    fobs.register(NumpyArrayDecomposer)
+    payload = Shareable(
+        {
+            "model": FLModel(
+                params={
+                    "wrapped": DXO(
+                        data_kind=DataKind.WEIGHTS,
+                        data={"weight": np.arange(512, dtype=np.float32)},
+                    )
+                }
+            )
+        }
+    )
+
+    with patch.object(ViaDownloaderDecomposer, "_finalize_download_tx", lambda _self, _manager: None):
+        encoded = fobs.dumps(payload, fobs_ctx={FOBSContextKey.CELL: _FakeCell()}, max_value_size=1024)
+    decoded = fobs.loads(encoded, fobs_ctx={FOBSContextKey.PASS_THROUGH: True})
+
+    assert isinstance(decoded["model"].params["wrapped"].data["weight"], LazyDownloadRef)
+    assert contains_lazy_download_ref(decoded)
 
 
 # ---------------------------------------------------------------------------

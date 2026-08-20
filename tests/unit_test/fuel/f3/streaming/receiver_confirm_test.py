@@ -25,16 +25,26 @@ only toward producers that advertised they consume them, and the receiver truth 
 Consumer.download_completed() (finalization), not by the served EOF.
 """
 
+import threading
 import time
 from unittest.mock import Mock, patch
 
 import pytest
 
+from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.streaming import download_service as ds_module
-from nvflare.fuel.f3.streaming.download_service import Consumer, DownloadStatus, ProduceRC, _PropKey, download_object
+from nvflare.fuel.f3.streaming.download_service import (
+    Consumer,
+    DownloadStatus,
+    ProduceRC,
+    TransactionDoneStatus,
+    _PropKey,
+    download_object,
+)
 from tests.unit_test.fuel.f3.streaming.download_test_utils import MockDownloadable
+from tests.unit_test.fuel.f3.streaming.download_test_utils import cancel_request as _cancel_request
 from tests.unit_test.fuel.f3.streaming.download_test_utils import confirm_request as _confirm_request
 from tests.unit_test.fuel.f3.streaming.download_test_utils import make_service_no_monitor as _make_service
 from tests.unit_test.fuel.f3.streaming.download_test_utils import pull_request as _pull_request
@@ -53,18 +63,39 @@ def _ref(service, rid):
     return service._ref_table[rid]
 
 
+def _await_outcome(waiter, timeout=5.0):
+    outcome = waiter.wait(timeout=timeout)
+    assert outcome is not None
+    return outcome
+
+
 class TestProducerSide:
     def test_legacy_receiver_finalizes_at_serve(self):
         service = _make_service()
-        tx_id, rid, _ = _new_tx(service)
+        tx_id, rid, obj = _new_tx(service)
+        ref = _ref(service, rid)
+        waiter = service.get_transfer_waiter(tx_id)
 
         reply = _pull_to_terminal(service, rid, "r1", confirm_capable=False)
 
         assert _PropKey.CONFIRM_EXPECTED not in reply.payload
-        ref = _ref(service, rid)
         assert ref.snapshot_receiver_statuses() == {"r1": DownloadStatus.SUCCESS}
         assert ref.snapshot_pending_confirms() == {}
-        assert service._tx_table[tx_id].is_finished()
+        # Legacy completion cannot publish its producer outcome from the terminal
+        # request callback: doing so could let a one-shot producer stop its Cell before
+        # this EOF reply leaves the request path. The monitor is its post-reply backstop.
+        assert not waiter.done()
+        assert tx_id in service._tx_table
+        assert rid in service._ref_table
+        assert not obj.released
+
+        run_monitor_once(service, now=time.time())
+        outcome = _await_outcome(waiter)
+        assert waiter.done()
+        assert outcome.completed
+        assert tx_id not in service._tx_table
+        assert rid not in service._ref_table
+        assert obj.released
 
     def test_confirm_capable_receiver_is_provisional_at_serve(self):
         service = _make_service()
@@ -81,32 +112,198 @@ class TestProducerSide:
 
     def test_confirmation_finalizes_and_finishes(self):
         service = _make_service()
-        tx_id, rid, _ = _new_tx(service)
+        tx_id, rid, obj = _new_tx(service)
+        ref = _ref(service, rid)
+        waiter = service.get_transfer_waiter(tx_id)
         terminal = _pull_to_terminal(service, rid, "r1", confirm_capable=True)
 
         reply = service._handle_download(_confirm_request(rid, "r1", DownloadStatus.SUCCESS, serve_nonce(terminal)))
 
         assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
-        ref = _ref(service, rid)
         assert ref.snapshot_receiver_statuses() == {"r1": DownloadStatus.SUCCESS}
         assert ref.snapshot_pending_confirms() == {}
-        assert service._tx_table[tx_id].is_finished()
+        # Settlement is eager but asynchronous: no 5-second monitor pass is required,
+        # and waiting on the receipt also deterministically waits for callbacks/release.
+        outcome = _await_outcome(waiter)
+        assert waiter.done()
+        assert outcome.completed
+        assert service.get_transaction_outcome(tx_id).completed
+        assert tx_id not in service._tx_table
+        assert rid not in service._ref_table
+        assert rid in service._finished_refs
+        assert obj.released
+
+    def test_acquired_receiver_cancellation_fails_and_finishes_source(self):
+        service = _make_service()
+        tx_id, rid, obj = _new_tx(service, chunks=2)
+        waiter = service.get_transfer_waiter(tx_id)
+
+        first_reply = service._handle_download(_pull_request(rid, "r1"))
+        cancel_reply = service._handle_download(_cancel_request(rid, "r1"))
+        duplicate_reply = service._handle_download(_cancel_request(rid, "r1"))
+
+        assert first_reply.payload.get(_PropKey.CANCEL_CAPABLE) is True
+        assert cancel_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        assert duplicate_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        outcome = _await_outcome(waiter)
+        assert not outcome.completed
+        assert obj.downloaded_to_one_calls == [("r1", DownloadStatus.FAILED)]
+        assert obj.released
+        assert tx_id not in service._tx_table
+        assert rid not in service._ref_table
+
+    def test_receiver_cancellation_finalizes_untouched_sibling_refs(self):
+        service = _make_service()
+        tx_id = service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=1)
+        first = MockDownloadable([b"first"] * 2)
+        second = MockDownloadable([b"second"] * 2)
+        first_rid = service.add_object(tx_id, first)
+        second_rid = service.add_object(tx_id, second)
+        waiter = service.get_transfer_waiter(tx_id)
+
+        service._handle_download(_pull_request(first_rid, "r1"))
+        service._handle_download(_cancel_request(first_rid, "r1"))
+
+        outcome = _await_outcome(waiter)
+        assert not outcome.completed
+        assert first.downloaded_to_one_calls == [("r1", DownloadStatus.FAILED)]
+        assert second.downloaded_to_one_calls == [("r1", DownloadStatus.FAILED)]
+        assert first.released and second.released
+        assert first_rid not in service._ref_table
+        assert second_rid not in service._ref_table
+
+    def test_unacquired_receiver_cancellation_cannot_finish_count_only_source(self):
+        service = _make_service()
+        tx_id, rid, obj = _new_tx(service)
+
+        reply = service._handle_download(_cancel_request(rid, "stranger"))
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        assert _ref(service, rid).snapshot_receiver_statuses() == {}
+        assert tx_id in service._tx_table
+        assert obj.downloaded_to_one_calls == []
+        service.delete_transaction(tx_id)
+
+    def test_one_receiver_cancellation_does_not_finish_multi_receiver_source(self):
+        service = _make_service()
+        tx_id, rid, obj = _new_tx(service, num_receivers=2, chunks=2)
+        waiter = service.get_transfer_waiter(tx_id)
+
+        service._handle_download(_pull_request(rid, "r1"))
+        service._handle_download(_cancel_request(rid, "r1"))
+
+        assert not waiter.done()
+        assert tx_id in service._tx_table
+        assert not obj.released
+
+        _pull_to_terminal(service, rid, "r2", confirm_capable=False)
+        run_monitor_once(service, now=time.time())
+
+        outcome = _await_outcome(waiter)
+        assert not outcome.completed
+        assert obj.downloaded_to_one_calls == [
+            ("r1", DownloadStatus.FAILED),
+            ("r2", DownloadStatus.SUCCESS),
+        ]
+        assert obj.released
+
+    def test_cancellation_racing_an_inflight_serve_drains_before_source_release(self):
+        service = _make_service()
+        produce_started = threading.Event()
+        release_produce = threading.Event()
+
+        class BlockingDownloadable(MockDownloadable):
+            def produce(self, state, requester):
+                produce_started.set()
+                assert release_produce.wait(2.0)
+                return super().produce(state, requester)
+
+        tx_id = service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=1)
+        obj = BlockingDownloadable([b"chunk"] * 2)
+        rid = service.add_object(tx_id, obj)
+        waiter = service.get_transfer_waiter(tx_id)
+        pull_replies = []
+
+        pull_thread = threading.Thread(
+            target=lambda: pull_replies.append(service._handle_download(_pull_request(rid, "r1")))
+        )
+        pull_thread.start()
+        assert produce_started.wait(2.0)
+
+        service._handle_download(_cancel_request(rid, "r1"))
+
+        assert not obj.released
+        release_produce.set()
+        pull_thread.join(timeout=2.0)
+        assert not pull_thread.is_alive()
+        assert pull_replies[0].payload.get(_PropKey.STATUS) == ProduceRC.OK
+        outcome = _await_outcome(waiter)
+        assert not outcome.completed
+        assert obj.downloaded_to_one_calls == [("r1", DownloadStatus.FAILED)]
+        assert obj.released
+
+    def test_confirmation_retires_inline_but_settles_off_request_thread(self):
+        service = _make_service()
+        callback_started = threading.Event()
+        release_callback = threading.Event()
+
+        def transaction_done(_tx_id, _status, _objects):
+            callback_started.set()
+            assert release_callback.wait(5.0)
+
+        tx_id = service.new_transaction(
+            cell=Mock(),
+            timeout=10.0,
+            num_receivers=1,
+            transaction_done_cb=transaction_done,
+        )
+        obj = MockDownloadable([b"chunk"])
+        rid = service.add_object(tx_id, obj)
+        terminal = _pull_to_terminal(service, rid, "r1", confirm_capable=True)
+        waiter = service.get_transfer_waiter(tx_id)
+        replies = []
+
+        handler = threading.Thread(
+            target=lambda: replies.append(
+                service._handle_download(_confirm_request(rid, "r1", DownloadStatus.SUCCESS, serve_nonce(terminal)))
+            )
+        )
+        handler.start()
+        try:
+            assert callback_started.wait(1.0)
+            handler.join(timeout=1.0)
+
+            # Retirement/tombstoning is synchronous, but user callbacks and release are
+            # isolated from the Cell handler on the bounded streaming callback pool.
+            assert not handler.is_alive()
+            assert replies[0].get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+            assert tx_id not in service._tx_table
+            assert rid not in service._ref_table
+            assert rid in service._finished_refs
+            assert not waiter.done()
+            assert not obj.released
+        finally:
+            release_callback.set()
+            handler.join(timeout=1.0)
+
+        assert _await_outcome(waiter).completed
+        assert obj.released
 
     def test_receiver_truth_wins_failed_confirm_after_served_eof(self):
         # the motivating case: producer served EOF, but the receiver's finalization failed
         service = _make_service()
         tx_id, rid, _ = _new_tx(service)
+        ref = _ref(service, rid)
+        waiter = service.get_transfer_waiter(tx_id)
         terminal = _pull_to_terminal(service, rid, "r1", confirm_capable=True)
 
         service._handle_download(_confirm_request(rid, "r1", DownloadStatus.FAILED, serve_nonce(terminal)))
 
-        ref = _ref(service, rid)
         assert ref.snapshot_receiver_statuses() == {"r1": DownloadStatus.FAILED}
         # the transaction reaches its receiver count, but the aggregate outcome must fail
-        assert service._tx_table[tx_id].is_finished()
-        run_monitor_once(service, now=time.time())
-        outcome = service.get_transaction_outcome(tx_id)
+        outcome = _await_outcome(waiter)
         assert not outcome.completed
+        assert tx_id not in service._tx_table
 
     def test_retry_overwrites_provisional_and_confirm_wins(self):
         # retry-aware accounting: a served ERROR is provisional; a healed retry (EOF) plus a
@@ -114,6 +311,7 @@ class TestProducerSide:
         service = _make_service()
         tx_id, rid, obj = _new_tx(service)
         ref = _ref(service, rid)
+        waiter = service.get_transfer_waiter(tx_id)
 
         # simulate a produce-time failure serve, provisionally recorded
         ref.obj_served("r1", DownloadStatus.FAILED, expect_confirm=True)
@@ -125,30 +323,34 @@ class TestProducerSide:
 
         service._handle_download(_confirm_request(rid, "r1", DownloadStatus.SUCCESS, serve_nonce(terminal)))
         assert ref.snapshot_receiver_statuses() == {"r1": DownloadStatus.SUCCESS}
-        run_monitor_once(service, now=time.time())
-        assert service.get_transaction_outcome(tx_id).completed
+        assert _await_outcome(waiter).completed
 
     def test_first_confirm_is_final(self):
         service = _make_service()
         tx_id, rid, _ = _new_tx(service)
+        ref = _ref(service, rid)
+        waiter = service.get_transfer_waiter(tx_id)
         terminal = _pull_to_terminal(service, rid, "r1", confirm_capable=True)
 
         service._handle_download(_confirm_request(rid, "r1", DownloadStatus.SUCCESS, serve_nonce(terminal)))
         service._handle_download(_confirm_request(rid, "r1", DownloadStatus.FAILED, serve_nonce(terminal)))
 
-        assert _ref(service, rid).snapshot_receiver_statuses() == {"r1": DownloadStatus.SUCCESS}
+        assert ref.snapshot_receiver_statuses() == {"r1": DownloadStatus.SUCCESS}
+        assert _await_outcome(waiter).completed
 
     def test_late_duplicate_serve_cannot_resurrect_provisional(self):
         service = _make_service()
         tx_id, rid, _ = _new_tx(service)
+        ref = _ref(service, rid)
+        waiter = service.get_transfer_waiter(tx_id)
         terminal = _pull_to_terminal(service, rid, "r1", confirm_capable=True)
         service._handle_download(_confirm_request(rid, "r1", DownloadStatus.SUCCESS, serve_nonce(terminal)))
 
-        ref = _ref(service, rid)
         ref.obj_served("r1", DownloadStatus.FAILED, expect_confirm=True)
 
         assert ref.snapshot_pending_confirms() == {}
         assert ref.snapshot_receiver_statuses() == {"r1": DownloadStatus.SUCCESS}
+        assert _await_outcome(waiter).completed
 
     def test_invalid_confirm_status_is_ignored(self):
         service = _make_service()
@@ -188,8 +390,8 @@ class TestProducerSide:
         service = _make_service()
         tx_id, rid, _ = _new_tx(service)
         terminal = _pull_to_terminal(service, rid, "r1", confirm_capable=True)
+        waiter = service.get_transfer_waiter(tx_id)
         service._handle_download(_confirm_request(rid, "r1", DownloadStatus.SUCCESS, serve_nonce(terminal)))
-        run_monitor_once(service, now=time.time())  # FINISHED -> tombstoned
         assert rid not in service._ref_table
 
         replay = service._handle_download(_pull_request(rid, "r1", confirm_capable=True))
@@ -198,7 +400,7 @@ class TestProducerSide:
 
         reply = service._handle_download(_confirm_request(rid, "r1", DownloadStatus.FAILED))
         assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
-        assert service.get_transaction_outcome(tx_id).completed  # unchanged
+        assert _await_outcome(waiter).completed  # unchanged
 
     def test_kill_switch_reads_application_conf(self):
         # the switch resolves through the standard application-config source (env var
@@ -220,13 +422,15 @@ class TestProducerSide:
         _pull_to_terminal(service, rid, "x")  # unexpected, also succeeds
 
         tx = service._tx_table[tx_id]
+        waiter = service.get_transfer_waiter(tx_id)
         assert not tx.is_finished(), "count-based completion would wrongly finish here"
         assert not obj.released, "downloaded_to_all/release must not fire without 'b'"
 
         _pull_to_terminal(service, rid, "b")  # the missing expected receiver arrives
         assert tx.is_finished()
+        assert not waiter.done()
         run_monitor_once(service, now=time.time())
-        outcome = service.get_transaction_outcome(tx_id)
+        outcome = _await_outcome(waiter)
         assert outcome.completed
         assert outcome.receiver_ids == ("a", "b")
 
@@ -265,6 +469,7 @@ class TestProducerSide:
         service.delete_transaction(tx1)
         tx2 = service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=1, tx_id="TX-LIFE-2")
         rid2 = service.add_object(tx2, MockDownloadable([b"chunk"]), ref_id="R-LIFE")
+        waiter = service.get_transfer_waiter(tx2)
         assert rid2 == rid
         new_terminal = _pull_to_terminal(service, rid, "r1", confirm_capable=True)  # new pending serve exists
 
@@ -277,6 +482,7 @@ class TestProducerSide:
         # the NEW life's confirmation (correct nonce) finalizes
         service._handle_download(_confirm_request(rid, "r1", DownloadStatus.SUCCESS, serve_nonce(new_terminal)))
         assert ref.snapshot_receiver_statuses() == {"r1": DownloadStatus.SUCCESS}
+        assert _await_outcome(waiter).completed
 
     def test_confirm_message_dispatches_to_confirm_handling_not_pull(self):
         # review-requested pin: a message carrying the CONFIRM key must route to
@@ -321,21 +527,34 @@ class TestProducerSide:
     def test_kill_switch_off_restores_legacy_semantics(self):
         service = _make_service()
         with patch.object(ds_module, "_receiver_confirm_cached", False):
-            tx_id, rid, _ = _new_tx(service)
+            tx_id, rid, obj = _new_tx(service)
+            ref = _ref(service, rid)
+            waiter = service.get_transfer_waiter(tx_id)
             reply = _pull_to_terminal(service, rid, "r1", confirm_capable=True)
 
             # producer ignores the advertised capability entirely
             assert _PropKey.CONFIRM_EXPECTED not in reply.payload
-            ref = _ref(service, rid)
             assert ref.snapshot_receiver_statuses() == {"r1": DownloadStatus.SUCCESS}
             assert ref.snapshot_pending_confirms() == {}
-            assert service._tx_table[tx_id].is_finished()
+            assert not waiter.done()
+            assert tx_id in service._tx_table
+            assert rid in service._ref_table
+            assert not obj.released
+
+            run_monitor_once(service, now=time.time())
+            outcome = _await_outcome(waiter)
+            assert waiter.done()
+            assert outcome.completed
+            assert tx_id not in service._tx_table
+            assert rid not in service._ref_table
+            assert obj.released
 
     def test_mixed_fleet_finishes_on_mixed_semantics(self):
         # one legacy receiver (final at serve) + one confirm-capable receiver (final at confirm)
         service = _make_service()
         tx_id, rid, _ = _new_tx(service, num_receivers=2)
         tx = service._tx_table[tx_id]
+        waiter = service.get_transfer_waiter(tx_id)
 
         _pull_to_terminal(service, rid, "legacy", confirm_capable=False)
         terminal = _pull_to_terminal(service, rid, "modern", confirm_capable=True)
@@ -343,8 +562,113 @@ class TestProducerSide:
 
         service._handle_download(_confirm_request(rid, "modern", DownloadStatus.SUCCESS, serve_nonce(terminal)))
         assert tx.is_finished()
-        run_monitor_once(service, now=time.time())
-        assert service.get_transaction_outcome(tx_id).completed
+        assert _await_outcome(waiter).completed
+
+    def test_last_receiver_confirmation_settles_failed_multi_receiver_outcome(self):
+        service = _make_service()
+        tx_id, rid, _ = _new_tx(service, num_receivers=2)
+        ref = _ref(service, rid)
+        waiter = service.get_transfer_waiter(tx_id)
+        terminal1 = _pull_to_terminal(service, rid, "r1", confirm_capable=True)
+        terminal2 = _pull_to_terminal(service, rid, "r2", confirm_capable=True)
+
+        service._handle_download(_confirm_request(rid, "r1", DownloadStatus.FAILED, serve_nonce(terminal1)))
+
+        assert not waiter.done()
+        assert tx_id in service._tx_table
+        assert ref.snapshot_receiver_statuses() == {"r1": DownloadStatus.FAILED}
+
+        service._handle_download(_confirm_request(rid, "r2", DownloadStatus.SUCCESS, serve_nonce(terminal2)))
+
+        outcome = _await_outcome(waiter)
+        assert waiter.done()
+        assert outcome is not None
+        assert not outcome.completed
+        assert tx_id not in service._tx_table
+
+    def test_racing_final_confirmations_settle_once(self):
+        service = _make_service()
+        tx_id, rid, obj = _new_tx(service, num_receivers=2)
+        terminal1 = _pull_to_terminal(service, rid, "r1", confirm_capable=True)
+        terminal2 = _pull_to_terminal(service, rid, "r2", confirm_capable=True)
+        waiter = service.get_transfer_waiter(tx_id)
+        barrier = threading.Barrier(3)
+        replies = []
+        errors = []
+
+        def confirm(receiver, terminal):
+            try:
+                barrier.wait()
+                replies.append(
+                    service._handle_download(
+                        _confirm_request(rid, receiver, DownloadStatus.SUCCESS, serve_nonce(terminal))
+                    )
+                )
+            except BaseException as e:
+                errors.append(e)
+
+        threads = [
+            threading.Thread(target=confirm, args=("r1", terminal1)),
+            threading.Thread(target=confirm, args=("r2", terminal2)),
+        ]
+        for thread in threads:
+            thread.start()
+        barrier.wait()
+        for thread in threads:
+            thread.join(timeout=5.0)
+
+        assert not errors
+        assert all(not thread.is_alive() for thread in threads)
+        assert len(replies) == 2
+        assert all(reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK for reply in replies)
+        assert _await_outcome(waiter).completed
+        assert tx_id not in service._tx_table
+        assert rid not in service._ref_table
+        assert obj.released
+
+    def test_delete_wins_before_confirmation_and_late_confirm_does_not_replace_outcome(self):
+        service = _make_service()
+        tx_id, rid, obj = _new_tx(service)
+        terminal = _pull_to_terminal(service, rid, "r1", confirm_capable=True)
+        waiter = service.get_transfer_waiter(tx_id)
+
+        service.delete_transaction(tx_id)
+        deleted_outcome = waiter.wait(timeout=0)
+        reply = service._handle_download(_confirm_request(rid, "r1", DownloadStatus.SUCCESS, serve_nonce(terminal)))
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        assert deleted_outcome is not None
+        assert deleted_outcome.done_status == TransactionDoneStatus.DELETED
+        assert not deleted_outcome.completed
+        assert service.get_transaction_outcome(tx_id) == deleted_outcome
+        assert obj.released
+
+    def test_last_ref_confirmation_settles_multi_ref_transaction_immediately(self):
+        service = _make_service()
+        tx_id = service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=1)
+        obj1 = MockDownloadable([b"one"])
+        obj2 = MockDownloadable([b"two"])
+        rid1 = service.add_object(tx_id, obj1)
+        rid2 = service.add_object(tx_id, obj2)
+        terminal1 = _pull_to_terminal(service, rid1, "r1", confirm_capable=True)
+        terminal2 = _pull_to_terminal(service, rid2, "r1", confirm_capable=True)
+        waiter = service.get_transfer_waiter(tx_id)
+
+        service._handle_download(_confirm_request(rid1, "r1", DownloadStatus.SUCCESS, serve_nonce(terminal1)))
+
+        assert not waiter.done()
+        assert tx_id in service._tx_table
+        assert not obj1.released
+        assert not obj2.released
+
+        service._handle_download(_confirm_request(rid2, "r1", DownloadStatus.SUCCESS, serve_nonce(terminal2)))
+
+        outcome = _await_outcome(waiter)
+        assert waiter.done()
+        assert outcome.completed
+        assert tx_id not in service._tx_table
+        assert obj1.released
+        assert obj2.released
 
 
 class _ScriptedCell:
@@ -355,6 +679,10 @@ class _ScriptedCell:
         self.requests = []
         self.confirms = []
         self.confirm_kwargs = []
+        self.callbacks = {}
+
+    def register_request_cb(self, channel, topic, cb):
+        self.callbacks[(channel, topic)] = cb
 
     def send_request(self, channel, target, topic, request, timeout, secure, optional, abort_signal):
         self.requests.append(request.payload)
@@ -392,10 +720,12 @@ def _ok_reply(body):
     return make_reply(ReturnCode.OK, body=body)
 
 
-def _chunk_reply(confirm_expected=True):
+def _chunk_reply(confirm_expected=True, cancel_capable=False):
     body = {_PropKey.STATUS: ProduceRC.OK, _PropKey.STATE: {"seq": 1}, _PropKey.DATA: b"chunk"}
     if confirm_expected:
         body[_PropKey.CONFIRM_EXPECTED] = True
+    if cancel_capable:
+        body[_PropKey.CANCEL_CAPABLE] = True
     return _ok_reply(body)
 
 
@@ -447,6 +777,192 @@ class TestReceiverSide:
         # the producer never advertised CONFIRM_EXPECTED: a new receiver must send nothing extra
         cell = _ScriptedCell(
             [_chunk_reply(confirm_expected=False), _terminal_reply(ProduceRC.EOF, confirm_expected=False)]
+        )
+        consumer = _RecordingConsumer()
+
+        download_object(from_fqcn="site-1", ref_id="R1", per_request_timeout=5.0, cell=cell, consumer=consumer)
+
+        assert consumer.completed
+        assert cell.confirms == []
+
+    def test_abort_notifies_cancel_capable_producer(self):
+        abort_signal = Signal()
+        cell = _ScriptedCell([_chunk_reply(cancel_capable=True)])
+
+        class AbortAfterChunk(_RecordingConsumer):
+            def consume(self, ref_id, state, data):
+                new_state = super().consume(ref_id, state, data)
+                abort_signal.trigger("job aborted")
+                return new_state
+
+        consumer = AbortAfterChunk()
+
+        download_object(
+            from_fqcn="site-1",
+            ref_id="R1",
+            per_request_timeout=5.0,
+            cell=cell,
+            consumer=consumer,
+            abort_signal=abort_signal,
+            secure=True,
+        )
+
+        assert consumer.failed_reason == "download aborted"
+        assert cell.confirms == [{_PropKey.REF_ID: "R1", _PropKey.CANCEL: True}]
+        assert cell.confirm_kwargs == [{"secure": True, "optional": False}]
+
+    def test_abort_observed_as_first_reply_returns_still_notifies_producer(self):
+        abort_signal = Signal()
+
+        class AbortWithReplyCell(_ScriptedCell):
+            def send_request(self, *args, **kwargs):
+                reply = super().send_request(*args, **kwargs)
+                abort_signal.trigger("job aborted")
+                return reply
+
+        cell = AbortWithReplyCell([_chunk_reply(cancel_capable=True)])
+        consumer = _RecordingConsumer()
+
+        download_object(
+            from_fqcn="site-1",
+            ref_id="R1",
+            per_request_timeout=5.0,
+            cell=cell,
+            consumer=consumer,
+            abort_signal=abort_signal,
+        )
+
+        assert consumer.consumed == []
+        assert consumer.failed_reason.startswith("download aborted after")
+        assert cell.confirms == [{_PropKey.REF_ID: "R1", _PropKey.CANCEL: True}]
+
+    def test_abort_does_not_send_cancel_to_legacy_producer(self):
+        abort_signal = Signal()
+        cell = _ScriptedCell([_chunk_reply(cancel_capable=False)])
+
+        class AbortAfterChunk(_RecordingConsumer):
+            def consume(self, ref_id, state, data):
+                new_state = super().consume(ref_id, state, data)
+                abort_signal.trigger("job aborted")
+                return new_state
+
+        consumer = AbortAfterChunk()
+
+        download_object(
+            from_fqcn="site-1",
+            ref_id="R1",
+            per_request_timeout=5.0,
+            cell=cell,
+            consumer=consumer,
+            abort_signal=abort_signal,
+        )
+
+        assert consumer.failed_reason == "download aborted"
+        assert cell.confirms == []
+
+    def test_pipelined_abort_cancels_pending_request_and_notifies_producer(self):
+        abort_signal = Signal()
+        cell = _ScriptedCell([_chunk_reply(cancel_capable=True)])
+
+        class PendingRequest:
+            def __init__(self):
+                self.cancelled = False
+
+            def cancel(self):
+                self.cancelled = True
+
+        class RecordingExecutor:
+            def __init__(self):
+                self.pending = PendingRequest()
+                self.submissions = []
+
+            def submit(self, fn, *args):
+                self.submissions.append((fn, args))
+                return self.pending
+
+        class PipelinedAbortAfterChunk(_RecordingConsumer):
+            supports_pipelining = True
+
+            def consume(self, ref_id, state, data):
+                new_state = super().consume(ref_id, state, data)
+                abort_signal.trigger("job aborted")
+                return new_state
+
+        executor = RecordingExecutor()
+        consumer = PipelinedAbortAfterChunk()
+
+        with patch.object(ds_module, "download_request_thread_pool", executor):
+            download_object(
+                from_fqcn="site-1",
+                ref_id="R1",
+                per_request_timeout=5.0,
+                cell=cell,
+                consumer=consumer,
+                abort_signal=abort_signal,
+            )
+
+        assert len(executor.submissions) == 1
+        assert executor.pending.cancelled
+        assert consumer.failed_reason == "download aborted"
+        assert cell.confirms == [{_PropKey.REF_ID: "R1", _PropKey.CANCEL: True}]
+
+    def test_source_connection_failure_after_data_notifies_producer_and_fails_consumer(self):
+        cell = _ScriptedCell([_chunk_reply(cancel_capable=True), make_reply(ReturnCode.COMM_ERROR)])
+        consumer = _RecordingConsumer()
+
+        download_object(from_fqcn="site-1", ref_id="R1", per_request_timeout=5.0, cell=cell, consumer=consumer)
+
+        assert consumer.consumed == [b"chunk"]
+        assert "error requesting data" in consumer.failed_reason
+        assert cell.confirms == [{_PropKey.REF_ID: "R1", _PropKey.CANCEL: True}]
+
+    def test_consumer_io_failure_notifies_producer(self):
+        cell = _ScriptedCell([_chunk_reply(cancel_capable=True)])
+
+        class FailingConsumer(_RecordingConsumer):
+            def consume(self, ref_id, state, data):
+                raise OSError("ENOSPC")
+
+        consumer = FailingConsumer()
+
+        download_object(from_fqcn="site-1", ref_id="R1", per_request_timeout=5.0, cell=cell, consumer=consumer)
+
+        assert "ENOSPC" in consumer.failed_reason
+        assert cell.confirms == [{_PropKey.REF_ID: "R1", _PropKey.CANCEL: True}]
+
+    def test_cancel_delivery_failure_does_not_mask_receiver_cleanup(self):
+        abort_signal = Signal()
+
+        class FailingCancelCell(_ScriptedCell):
+            def fire_and_forget(self, *args, **kwargs):
+                raise RuntimeError("source disappeared")
+
+        class AbortAfterChunk(_RecordingConsumer):
+            def consume(self, ref_id, state, data):
+                new_state = super().consume(ref_id, state, data)
+                abort_signal.trigger("job aborted")
+                return new_state
+
+        cell = FailingCancelCell([_chunk_reply(cancel_capable=True)])
+        consumer = AbortAfterChunk()
+
+        download_object(
+            from_fqcn="site-1",
+            ref_id="R1",
+            per_request_timeout=5.0,
+            cell=cell,
+            consumer=consumer,
+            abort_signal=abort_signal,
+        )
+
+        assert consumer.failed_reason == "download aborted"
+
+    def test_normal_completion_never_sends_cancellation(self):
+        cell = _ScriptedCell(
+            [
+                _chunk_reply(confirm_expected=False, cancel_capable=True),
+                _terminal_reply(ProduceRC.EOF, confirm_expected=False),
+            ]
         )
         consumer = _RecordingConsumer()
 

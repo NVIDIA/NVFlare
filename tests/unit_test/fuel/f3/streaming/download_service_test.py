@@ -725,9 +725,9 @@ class TestDownloadService:
         """Simulate a saturated large-model fanout where EOF replies are delayed.
 
         The real failure happens with many clients downloading many large tensor refs:
-        the transaction finishes, the monitor removes the refs, and delayed parent
-        resends make receivers ask for the same refs again. Those retries must see
-        EOF from the finished-ref tombstone, not INVALID_REQUEST / "no ref found".
+        the transaction finishes, monitor settlement removes the refs, and delayed parent
+        resends make receivers ask for the same refs again. Those retries must see EOF
+        from the finished-ref tombstone, not INVALID_REQUEST / "no ref found".
         """
         from nvflare.fuel.f3.streaming.download_service import _Transaction
 
@@ -775,11 +775,17 @@ class TestDownloadService:
         assert all(len(ref.obj.downloaded_to_one_calls) == num_receivers for ref in refs)
         assert all(ref.obj.downloaded_to_all_call_count == 1 for ref in refs)
 
-        _run_monitor_once(service, fake_start_time + 1.0)
+        # Legacy terminal serves remain live until a post-reply monitor pass; settling
+        # from the serving callback could let a one-shot producer exit before its final
+        # EOF reply is emitted.
+        assert tx.tid in service._tx_table
+        _run_monitor_once(service, time.time())
 
         assert tx.tid not in service._tx_table
         assert all(ref.rid not in service._ref_table for ref in refs)
         assert all(ref.rid in service._finished_refs for ref in refs)
+
+        assert tx._settlement_complete
 
         service._logger.error.reset_mock()
         for ref in refs:

@@ -168,6 +168,61 @@ class TestStaticFileBuilder:
             resources = json.loads(resources_file.read_text())
             assert resources["class_allow_list"] == list(DEFAULT_CLASS_ALLOW_LIST)
 
+    @pytest.mark.parametrize("require_signed_jobs", [None, True, False])
+    def test_build_configures_require_signed_jobs_for_server_and_client(self, tmp_path, require_signed_jobs):
+        server = Participant(type="server", name="server", org="org")
+        client = Participant(type="client", name="site-1", org="org")
+        project = Project(
+            name="proj",
+            description="desc",
+            participants=[server, client],
+            props={"api_version": 4},
+        )
+        ctx = ProvisionContext(str(tmp_path), project)
+        ctx.load_templates("master_template.yml")
+        for participant in (server, client):
+            Path(ctx.get_kit_dir(participant)).mkdir(parents=True)
+            Path(ctx.get_local_dir(participant)).mkdir(parents=True)
+
+        StaticFileBuilder(require_signed_jobs=require_signed_jobs).build(project, ctx)
+
+        for participant, config_name in ((server, "fed_server.json"), (client, "fed_client.json")):
+            config_path = Path(ctx.get_kit_dir(participant)) / config_name
+            config = json.loads(config_path.read_text())
+            if require_signed_jobs is None:
+                assert "require_signed_jobs" not in config
+            else:
+                assert config["require_signed_jobs"] is require_signed_jobs
+
+    def test_require_signed_jobs_builder_arg_must_be_boolean(self):
+        with pytest.raises(ValueError, match="require_signed_jobs must be a boolean"):
+            StaticFileBuilder(require_signed_jobs="false")
+
+    @pytest.mark.parametrize(
+        ("template_section", "config_name"),
+        [("fed_server", "fed_server.json"), ("fed_client", "fed_client.json")],
+    )
+    def test_explicit_policy_rejects_legacy_custom_template(self, tmp_path, template_section, config_name):
+        server = Participant(type="server", name="server", org="org")
+        client = Participant(type="client", name="site-1", org="org")
+        project = Project(
+            name="proj",
+            description="desc",
+            participants=[server, client],
+            props={"api_version": 4},
+        )
+        ctx = ProvisionContext(str(tmp_path), project)
+        ctx.load_templates("master_template.yml")
+        ctx[CtxKey.TEMPLATE][template_section] = ctx[CtxKey.TEMPLATE][template_section].replace(
+            "{~~require_signed_jobs_config~~}", ""
+        )
+        for participant in (server, client):
+            Path(ctx.get_kit_dir(participant)).mkdir(parents=True)
+            Path(ctx.get_local_dir(participant)).mkdir(parents=True)
+
+        with pytest.raises(ValueError, match=rf"{config_name} did not render require_signed_jobs=False"):
+            StaticFileBuilder(require_signed_jobs=False).build(project, ctx)
+
     def test_auth_identity_config_omits_default_identity_fields(self):
         builder = StaticFileBuilder()
 
@@ -326,11 +381,16 @@ class TestStaticFileBuilder:
         template = _load_master_template()
 
         forbidden_paths = [
+            # ClientAPIExecutor launches a job-controlled command or imports and runs a
+            # job-controlled Python script.
+            "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
             # tf.keras.models.load_model executes code embedded in .keras/.h5/SavedModel files
             # (Lambda layers / custom objects); there is no safe-load flag.
             "nvflare.app_opt.tf.model_persistor.TFModelPersistor",
             # torch.load is pickle-based and runs arbitrary code when load_weights_only=False.
             "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+            # joblib.load uses pickle and can execute code from a job-controlled model file.
+            "nvflare.app_opt.sklearn.joblib_model_param_persistor.JoblibModelParamPersistor",
             # ConfigParser importlib-imports a class path read from a config file (plus
             # sys.path.append) -> arbitrary code import.
             "nvflare.edge.simulation.config.ConfigParser",

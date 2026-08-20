@@ -19,6 +19,7 @@ _comm_config_files = ["comm_config.json", "comm_config.json.default"]
 
 
 DEFAULT_MAX_MSG_SIZE = MAX_PAYLOAD_SIZE
+DEFAULT_STREAMING_MAX_BLOB_SIZE = 4 * 1024 * 1024 * 1024
 
 
 class VarName:
@@ -50,6 +51,7 @@ class VarName:
     SFM_SEND_STALL_TIMEOUT = "sfm_send_stall_timeout"
     SFM_CLOSE_STALLED_CONNECTION = "sfm_close_stalled_connection"
     SFM_SEND_STALL_CONSECUTIVE_CHECKS = "sfm_send_stall_consecutive_checks"
+    TCP_NO_DELAY = "tcp_no_delay"
 
 
 class CommConfigurator:
@@ -111,7 +113,9 @@ class CommConfigurator:
         return ConfigService.get_int_var(VarName.STREAMING_CHUNK_SIZE, self.config, default=default)
 
     def get_streaming_max_blob_size(self):
-        return ConfigService.get_int_var(VarName.STREAMING_MAX_BLOB_SIZE, self.config, default=DEFAULT_MAX_MSG_SIZE)
+        return ConfigService.get_int_var(
+            VarName.STREAMING_MAX_BLOB_SIZE, self.config, default=DEFAULT_STREAMING_MAX_BLOB_SIZE
+        )
 
     def get_streaming_ack_wait(self, default):
         return ConfigService.get_int_var(VarName.STREAMING_ACK_WAIT, self.config, default=default)
@@ -157,6 +161,9 @@ class CommConfigurator:
 
     def get_sfm_send_stall_consecutive_checks(self, default=3):
         return ConfigService.get_int_var(VarName.SFM_SEND_STALL_CONSECUTIVE_CHECKS, self.config, default=default)
+
+    def get_tcp_no_delay(self, default=True):
+        return ConfigService.get_bool_var(VarName.TCP_NO_DELAY, self.config, default=default)
 
     def get_int_var(self, name: str, default=None):
         return ConfigService.get_int_var(name, self.config, default=default)

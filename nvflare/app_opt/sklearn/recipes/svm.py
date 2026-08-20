@@ -82,8 +82,11 @@ class SVMFedAvgRecipe(FedAvgRecipe):
             ``set_per_site_config(recipe, config)`` immediately after construction. Nested values become
             part of the generated job definition and must not contain secrets.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are
-            a dict, key_metric selects the metric used for global model selection. Defaults to "AUC"
+            a dict, key_metric selects the metric used for global model selection. Higher values must
+            indicate a better model. Defaults to "AUC"
             (which corresponds to the ROC AUC score sent by the SVM client in round 1).
+        key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better
+            and "max" when higher values are better. Defaults to "max".
 
     Example:
         Basic usage with same config for all clients:
@@ -145,6 +148,7 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         command: str = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "AUC",  # Matches client's metric key
+        key_metric_mode: Literal["min", "max"] = "max",
     ):
         v = _SVMValidator(kernel=kernel, model_path=model_path)
         self.kernel = v.kernel
@@ -180,6 +184,7 @@ class SVMFedAvgRecipe(FedAvgRecipe):
             model_persistor=persistor,
             per_site_config=per_site_config,
             key_metric=key_metric,
+            key_metric_mode=key_metric_mode,
         )
 
         # Add the SVMAssembler as a component to the job

@@ -15,6 +15,7 @@ Clone the repository and navigate to this directory:
 
 ```bash
 git clone https://github.com/NVIDIA/NVFlare.git
+cd NVFlare
 cd examples/hello-world/hello-log-streaming
 pip install -r requirements.txt
 ```
@@ -33,6 +34,12 @@ hello-log-streaming
 
 ```bash
 python job.py
+```
+
+To export the Recipe job without running it:
+
+```bash
+python job.py --export --export-dir /tmp/nvflare/jobs/job_config
 ```
 
 ## How to Add Log Streaming to Any Job

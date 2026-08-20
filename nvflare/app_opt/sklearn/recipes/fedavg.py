@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import Literal, Optional
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -61,8 +61,12 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             part of the generated job definition and must not contain secrets.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are
             a dict, key_metric selects the metric used for global model selection. Defaults to "accuracy".
+        key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better,
+            such as for loss, and "max" when higher values are better. Defaults to "max".
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
+        launch_timeout: Seconds to wait for an external process to launch and establish its
+            Client API session. ``None`` disables this timeout. Defaults to 300.0.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.
 
@@ -140,7 +144,9 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         command: str = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "accuracy",
+        key_metric_mode: Literal["min", "max"] = "max",
         launch_once: bool = True,
+        launch_timeout: Optional[float] = 300.0,
         shutdown_timeout: float = 0.0,
     ):
         validate_model_path(model_path)
@@ -168,6 +174,8 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             model_persistor=persistor,  # Pass sklearn-specific persistor
             per_site_config=per_site_config,
             key_metric=key_metric,
+            key_metric_mode=key_metric_mode,
             launch_once=launch_once,
+            launch_timeout=launch_timeout,
             shutdown_timeout=shutdown_timeout,
         )

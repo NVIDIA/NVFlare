@@ -43,7 +43,17 @@ class _FakeDecomposer(ViaDownloaderDecomposer):
     def to_downloadable(self, items, max_chunk_size, fobs_ctx):
         return MagicMock()
 
-    def download(self, from_fqcn, ref_id, per_request_timeout, cell, secure=False, optional=False, abort_signal=None):
+    def download(
+        self,
+        from_fqcn,
+        ref_id,
+        per_request_timeout,
+        cell,
+        secure=False,
+        optional=False,
+        abort_signal=None,
+        fobs_ctx=None,
+    ):
         return None, {}
 
     def get_download_dot(self):

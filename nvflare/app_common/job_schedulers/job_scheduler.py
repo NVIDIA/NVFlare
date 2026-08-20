@@ -27,7 +27,7 @@ from nvflare.apis.job_scheduler_spec import DispatchInfo, JobSchedulerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.study_registry import StudyRegistryService
-from nvflare.utils.job_launcher_utils import get_site_launcher_spec
+from nvflare.utils.job_launcher_utils import get_resource_manager_spec
 
 SCHEDULE_RESULT_OK = 0  # the job is scheduled
 SCHEDULE_RESULT_NO_RESOURCE = 1  # job is not scheduled due to lack of resources
@@ -160,12 +160,10 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             )
 
         # we are assuming server resource is sufficient
-        resource_reqs = {}
-        for site_name in applicable_sites:
-            if site_name in job.resource_spec:
-                resource_reqs[site_name] = get_site_launcher_spec(job.resource_spec[site_name], "process")
-            else:
-                resource_reqs[site_name] = {}
+        resource_meta = {**job.meta, JobMetaKey.RESOURCE_SPEC.value: job.resource_spec}
+        resource_reqs = {
+            site_name: get_resource_manager_spec(resource_meta, site_name) for site_name in applicable_sites
+        }
 
         job_participants = [fl_ctx.get_identity_name(default=SERVER_SITE_NAME)]
         job_participants.extend(applicable_sites)
@@ -194,6 +192,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         num_sites_ok = 0
         sites_dispatch_info = {}
         no_resource_message = ""
+        resource_failure_details = []
         for site_name, check_result in resource_check_results.items():
             is_resource_enough, token = check_result
             if is_resource_enough:
@@ -207,18 +206,19 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                     required_sites_not_enough_resource.remove(site_name)
             else:
                 if site_name in required_sites:
-                    no_resource_message += site_name + ":" + token + ";"
+                    no_resource_message += site_name + ":" + (token or "") + ";"
+                if token:
+                    resource_failure_details.append(f"{site_name}: {token}")
 
         if num_sites_ok < job.min_sites:
             self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: not enough sites have enough resources.")
             self._cancel_resources(
-                resource_reqs=job.resource_spec, resource_check_results=resource_check_results, fl_ctx=fl_ctx
+                resource_reqs=resource_reqs, resource_check_results=resource_check_results, fl_ctx=fl_ctx
             )
-            return (
-                SCHEDULE_RESULT_NO_RESOURCE,
-                None,
-                f"not enough sites have enough resources (ok sites {num_sites_ok} < min sites {job.min_sites})",
-            )
+            reason = f"not enough sites have enough resources (ok sites {num_sites_ok} < min sites {job.min_sites})"
+            if resource_failure_details:
+                reason += f". Details: {'; '.join(resource_failure_details)}"
+            return SCHEDULE_RESULT_NO_RESOURCE, None, reason
 
         if required_sites_not_enough_resource:
             self.log_debug(
@@ -227,7 +227,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                 f" don't have enough resources.",
             )
             self._cancel_resources(
-                resource_reqs=job.resource_spec, resource_check_results=resource_check_results, fl_ctx=fl_ctx
+                resource_reqs=resource_reqs, resource_check_results=resource_check_results, fl_ctx=fl_ctx
             )
 
             return (

@@ -214,7 +214,6 @@ def create_recipe(args):
     recipe.add_client_file(_client_script_resource("automodel_sft_dataset.py"), clients=client_names)
     recipe.add_client_file(_client_script_resource("automodel_full_model_loader.py"), clients=client_names)
     recipe.add_client_file(_client_script_resource("model_checkpoint.py"), clients=client_names)
-    recipe.add_client_config({"max_resends": 3}, clients=client_names)
     _configure_timeouts(recipe, client_names)
     return recipe
 

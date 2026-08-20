@@ -36,7 +36,8 @@ and can easily be used to convert centralized code with minimal code changes.
 The Client API uses the :class:`FLModel<nvflare.app_common.abstract.fl_model.FLModel>`
 object for data transfer and supports common tasks such as train, validate, and submit_model.
 Option for using PyTorch Lightning is also available.
-For Client API executors, the in-process and external-process executors are provided for different use cases.
+Client API provides ``in_process``, ``external_process``, and ``attach``
+execution modes for different trainer-process ownership models.
 
 We recommend users start with the Client API, and to consider the other types
 for more specific cases as required.
@@ -74,18 +75,18 @@ abstract these concepts away for easier user adaptation.
 Overall, writing an Executor is most useful when implementing tasks and logic
 that do not fit within the structure of higher-level APIs or other predefined Executors.
 
-3rd-Party System Integration
-----------------------------
+Independently Managed Trainer
+-----------------------------
 
-There are cases where users have a pre-existing ML/DL training system
-infrastructure that cannot be easily adapted to the FLARE client.
+When a trainer process is started and owned independently of NVFLARE, use
+:ref:`client_api_attach`. The trainer initiates an Attach connection
+to the Client Job and uses the ordinary Client API to receive tasks and submit
+results. NVFLARE owns the listener and protocol session, but never manages the
+trainer process lifecycle.
 
-The :ref:`3rd_party_integration` pattern allows for a seamless integration
-between the FLARE system and a third-party external training system.
-
-With the use of the :mod:`FlareAgent <nvflare.client.flare_agent>` and
-:mod:`TaskExchanger <nvflare.app_common.executors.task_exchanger>`,
-users can easily enable any 3rd-party system to receive tasks and submit results back to the server.
+Library-specific integrations whose processes are launched or orchestrated by
+NVFLARE, such as Flower, continue to use their dedicated executors and
+controllers rather than Attach.
 
 Please use the following chart to decide which abstraction to use:
 
@@ -96,7 +97,7 @@ For more details about each type, refer to each page below.
 .. toctree::
    :maxdepth: 1
 
-   execution_api_type/3rd_party_integration
+   execution_api_type/client_api_attach
    execution_api_type/client_api
    execution_api_type/model_learner
    execution_api_type/executor

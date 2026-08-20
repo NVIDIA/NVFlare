@@ -222,9 +222,10 @@ def main(args):
             token_verifier=token_verifier,
             logger=logger,
             local_cell_fqcn=my_fqcn,
+            core_cell=cell.core_cell,
         )
 
-    logger.info(f"Successfully authenticated to {server_identity}: {token=} {ssid=}")
+    logger.info(f"Successfully authenticated to {server_identity}: {ssid=}")
 
     # wait until stopped
     logger.info(f"Started relay {my_identity=} {my_fqcn=} {root_url=} {parent_url=} {parent_fqcn=}")
@@ -233,15 +234,21 @@ def main(args):
     logger.info(f"Relay {my_fqcn} stopped.")
 
 
-def _validate_auth_headers(message: CellMessage, token_verifier: TokenVerifier, logger, local_cell_fqcn=None):
+def _validate_auth_headers(
+    message: CellMessage, token_verifier: TokenVerifier, logger, local_cell_fqcn=None, core_cell=None
+):
     """Validate auth headers from messages that go through the relay.
     Args:
         message: the message to validate
         token_verifier: verifier for the token and signature
         logger: logger
         local_cell_fqcn: FQCN of this relay's cell, used to scope the cellnet bye auth bypass
+        core_cell: relay CoreCell used to verify a post-server message's actual upstream endpoint
     Returns:
     """
+    if core_cell and core_cell.is_server_transit_return(message):
+        logger.debug("accepting sanitized server-transit message from configured upstream parent")
+        return None
     return validate_auth_headers(message, token_verifier, logger, local_cell_fqcn=local_cell_fqcn)
 
 

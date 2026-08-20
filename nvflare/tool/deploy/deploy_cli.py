@@ -31,6 +31,7 @@ _DEPLOY_PREPARE_EXAMPLES = [
     "nvflare deploy prepare ./site-1",
     "nvflare deploy prepare ./site-1 --output ./site-1-docker --config docker.yaml",
     "nvflare deploy prepare ./site-1 --output ./site-1-k8s --config k8s.yaml",
+    "nvflare deploy prepare ./site-1 --output ./site-1-slurm --config slurm.yaml",
 ]
 
 _DEPLOY_K8_STAGE_EXAMPLES = [
@@ -58,8 +59,8 @@ def def_deploy_cli_parser(sub_cmd) -> dict:
 
     prepare_parser = deploy_subparser.add_parser(
         "prepare",
-        description="Prepare an existing server/client startup kit for Docker or Kubernetes.",
-        help="prepare a startup kit for Docker or Kubernetes",
+        description="Prepare an existing server/client startup kit for Docker, Kubernetes, or Slurm.",
+        help="prepare a startup kit for Docker, Kubernetes, or Slurm",
     )
     prepare_parser.add_argument("kit", nargs="?", help="Existing input startup kit directory.")
     prepare_parser.add_argument("--kit", dest="kit_flag", help="Existing input startup kit directory.")
@@ -69,7 +70,10 @@ def def_deploy_cli_parser(sub_cmd) -> dict:
     )
     prepare_parser.add_argument(
         "--config",
-        help="YAML runtime config file with top-level runtime: docker or runtime: k8s. Defaults to <kit>/config.yaml.",
+        help=(
+            "YAML runtime config file with top-level runtime: docker, runtime: k8s, or runtime: slurm. "
+            "Defaults to <kit>/config.yaml."
+        ),
     )
     prepare_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _deploy_prepare_parser = prepare_parser

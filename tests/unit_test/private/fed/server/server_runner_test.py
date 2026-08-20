@@ -12,10 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+from nvflare.apis.shareable import Shareable
 from nvflare.private.fed.server.server_engine import ServerEngine
+from nvflare.private.fed.server.server_runner import ServerRunner
 
 
 def _make_engine():
@@ -54,3 +57,46 @@ class TestServerEngineGetCell:
         engine.run_manager = None
 
         assert engine.get_cell() is None
+
+
+def _make_server_runner_for_submission(status="started"):
+    runner = ServerRunner.__new__(ServerRunner)
+    runner.wf_lock = threading.RLock()
+    runner.status = status
+    runner.current_wf = MagicMock()
+    runner.log_info = MagicMock()
+    runner._report_client_active = MagicMock()
+    return runner
+
+
+class TestLateSubmissionAdmission:
+    def test_submission_after_terminal_state_does_not_touch_run_state(self):
+        runner = _make_server_runner_for_submission(status="done")
+        fl_ctx = MagicMock()
+
+        with patch.object(runner, "_process_submission") as process_submission:
+            runner.process_submission(MagicMock(name="client"), "train", "task-1", Shareable(), fl_ctx)
+
+        process_submission.assert_not_called()
+        runner._report_client_active.assert_not_called()
+        fl_ctx.set_prop.assert_not_called()
+
+    def test_submission_queued_behind_teardown_is_dropped(self):
+        runner = _make_server_runner_for_submission()
+        fl_ctx = MagicMock()
+        finished = threading.Event()
+
+        def submit():
+            runner.process_submission(MagicMock(name="client"), "train", "task-1", Shareable(), fl_ctx)
+            finished.set()
+
+        with runner.wf_lock:
+            thread = threading.Thread(target=submit)
+            thread.start()
+            runner.status = "done"
+            runner.current_wf = None
+
+        assert finished.wait(timeout=1.0)
+        thread.join(timeout=1.0)
+        runner._report_client_active.assert_not_called()
+        fl_ctx.set_prop.assert_not_called()

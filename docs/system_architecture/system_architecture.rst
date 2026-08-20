@@ -1,4 +1,4 @@
-.. _flare_system_architecture:
+.. _detailed_system_architecture:
 
 ####################
 FLARE Architecture
@@ -87,8 +87,8 @@ Primary System Modules
      - Cell, CoreCell, StreamCell, Pipe
      - Secure inter-party communication with streaming support
    * - Client Integration
-     - ClientAPI (flare.receive(), flare.send()), LauncherExecutor
-     - ML framework integration and external process management
+     - Client API (``flare.receive()``, ``flare.send()``), ``ClientAPIExecutor``
+     - In-process, NVFLARE-managed external-process, and Attach execution modes
    * - Administration
      - Dashboard, Admin Console
      - Programmatic and GUI-based system management
@@ -169,28 +169,66 @@ Process Responsibilities
 
 - Runs ``ClientRunner`` for task execution
 - Pulls tasks from server via Cell network
-- Launches training processes using ``LauncherExecutor``
-- Routes task data to/from training process via Pipe
+- Delegates Client API tasks through ``ClientAPIExecutor``
+- Runs training in the CJ, launches an owned trainer process, or accepts an
+  independently managed trainer through Attach mode
 
 **Training Process**
 
 - User's ML training script
 - Uses Client API: ``flare.init()``, ``flare.receive()``, ``flare.send()``
-- Communicates with CJ via FilePipe (file-based) or CellPipe (network-based)
+- Is either owned by NVFLARE (in-process or external-process mode) or by an
+  external system (Attach mode)
 
 
-Process Lifecycle and Spawning
-------------------------------
+.. _basic_job_execution_workflow:
 
-Job processes are spawned dynamically when jobs are scheduled:
+Basic Job Execution Workflow
+----------------------------
 
-1. **Job Submission**: Admin submits job via ``nvflare job submit``
-2. **Scheduling**: ``JobRunner`` selects job based on policy and resource availability
-3. **Server Job Spawn**: SP spawns SJ process with job configuration
-4. **Client Notification**: SP notifies registered clients to start job
-5. **Client Job Spawn**: Each CP spawns CJ process for the job
-6. **Execution**: SJ and CJ processes execute workflow
-7. **Completion**: Processes terminate and report status to parents
+A job moves through control-plane stages managed by the Server Parent (SP) and Client Parents (CPs), followed by
+workflow execution in isolated Server Job (SJ) and Client Job (CJ) processes. The following is the common lifecycle
+for a server-controlled workflow. For detailed job metadata and resource configuration, see :ref:`multi_job` and
+:ref:`resource_manager_and_consumer`.
+
+**Server-side orchestration**
+
+1. **Submit and validate the job**: A user submits a job with ``nvflare job submit``. The server validates its
+   ``meta.json`` and application configuration, stores it in the job store, and marks it ``SUBMITTED``.
+2. **Schedule the job**: ``JobRunner`` periodically retrieves candidate jobs. The Job Scheduler uses ``deploy_map``,
+   ``min_clients``, ``mandatory_clients``, and ``resource_spec`` from the job metadata to identify eligible online
+   clients. It asks each applicable client whether its resource requirements can be satisfied. The default scheduler
+   assumes that server resources are sufficient. If the requirements cannot be met, temporary client reservations are
+   canceled and the job is retried according to the scheduling policy.
+3. **Deploy the applications**: If enough clients are available and all mandatory clients can participate,
+   ``JobRunner`` deploys the server application and the applications for the selected clients. The job is then marked
+   ``DISPATCHED``.
+4. **Start the job processes**: ``JobRunner`` starts the SJ and then asks each selected CP to allocate the required
+   resources and start a CJ. Once startup succeeds, the job is marked ``RUNNING``.
+5. **Run the workflow**: ``ServerRunner`` initializes the workflow :ref:`Controller <controllers>`. The Controller
+   schedules :ref:`tasks <tasks>`, client runners pull assigned tasks, :ref:`Executors <executor>` perform the work,
+   and results are returned to the Controller for processing. See :ref:`task_pull_pattern` for the request and result
+   sequence.
+6. **Finish the job**: After the Controller finishes, ``ServerRunner`` finalizes the workflow and tells the participating
+   clients to end the run. The SJ and CJs perform their end-run events and terminate. The server archives the job
+   workspace and records the terminal job status.
+
+**Client-side execution**
+
+1. **Check resources**: The CP receives a resource-check request. Its ``ResourceManager`` checks the job's local
+   requirements and may reserve resources for the prospective run.
+2. **Deploy the application**: If the job is scheduled, the CP receives and installs its assigned application in the
+   local job workspace.
+3. **Start the Client Job**: When the start request arrives, the ``ResourceManager`` allocates the required resources
+   using any reservation token, the ``ResourceConsumer`` applies them, and the CP starts the CJ.
+4. **Execute tasks**: ``ClientRunner`` repeatedly pulls tasks from the server and routes each task to the appropriate
+   Executor. It returns each Executor result to the server.
+5. **End and clean up**: When the server signals the end of the run, ``ClientRunner`` completes the end-run sequence and
+   the CJ terminates. The CP then frees the resources allocated to the job.
+
+The Executor handles individual tasks; the CJ and ``ClientRunner`` own the client-side job lifecycle. Client-controlled
+workflows and Client API execution modes may add components or processes, but they use the same overall scheduling,
+deployment, startup, and completion lifecycle.
 
 
 K8s-native Architecture: Control and Execution Planes Separation
@@ -233,6 +271,8 @@ and supports multiple protocols (gRPC, TCP, HTTP).
 For detailed information on CellNet internals, channels, streaming components, and communication patterns,
 see :ref:`cellnet_architecture`.
 
+
+.. _task_pull_pattern:
 
 Message Flow: Task Pull Pattern
 -------------------------------
@@ -499,8 +539,8 @@ FLARE uses JSON configuration files to assemble components:
        }
      ],
      "components": [
-       {"id": "persistor", "path": "..."},
-       {"id": "aggregator", "path": "..."}
+       {"id": "persistor", "path": "<persistor-component-path>"},
+       {"id": "aggregator", "path": "<aggregator-component-path>"}
      ]
    }
 
@@ -513,7 +553,7 @@ FLARE uses JSON configuration files to assemble components:
      "executors": [
        {
          "tasks": ["train", "validate"],
-         "executor": {"path": "...", "args": {...}}
+         "executor": {"path": "<executor-component-path>", "args": {}}
        }
      ]
    }

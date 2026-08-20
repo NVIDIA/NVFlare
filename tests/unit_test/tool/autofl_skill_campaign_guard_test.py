@@ -122,6 +122,75 @@ def test_guard_continues_uncapped_before_plateau():
     assert state["best_score"] == 0.85
 
 
+def test_guard_reports_remaining_candidates_for_capped_and_uncapped_campaigns():
+    guard = _load_guard()
+    rows = [
+        _row("baseline", "baseline", "0.85"),
+        _row("discard", "candidate_1", "0.84"),
+        _row("crash", "candidate_2"),
+    ]
+
+    capped = guard.guard_state_for_rows(rows, max_candidates=5)
+    uncapped = guard.guard_state_for_rows(rows)
+
+    assert capped["candidate_attempts"] == 2
+    assert capped["remaining_candidates"] == 3
+    assert uncapped["candidate_cap"] is None
+    assert uncapped["remaining_candidates"] is None
+
+
+def test_guard_reports_baseline_status_transition_and_baseline_score():
+    guard = _load_guard()
+
+    empty = guard.guard_state_for_rows([])
+    pending = guard.guard_state_for_rows([_row("baseline", "baseline")])
+    complete = guard.guard_state_for_rows([_row("baseline", "baseline_retry_2", "0.85")])
+
+    assert empty["baseline_status"] == "pending"
+    assert pending["baseline_status"] == "pending"
+    assert pending["baseline_score"] is None
+    assert pending["improvement"] is None
+    assert complete["baseline_status"] == "complete"
+    assert complete["baseline_score"] == pytest.approx(0.85)
+    assert complete["improvement"] == pytest.approx(0.0)
+
+
+def test_guard_improvement_is_best_minus_baseline():
+    guard = _load_guard()
+    improved = [_row("baseline", "baseline", "0.85"), _row("keep", "higher_accuracy", "0.9")]
+    regressed = [_row("baseline", "baseline", "0.9"), _row("discard", "lower_accuracy", "0.8")]
+
+    assert guard.guard_state_for_rows(improved)["improvement"] == pytest.approx(0.05)
+    # Discarded candidates never lower the retained best, so improvement floors at 0 rather than going negative.
+    assert guard.guard_state_for_rows(regressed)["improvement"] == pytest.approx(0.0)
+
+
+def test_guard_cli_has_no_mode_flag(tmp_path, capsys):
+    guard = _load_guard()
+    results = tmp_path / "results.tsv"
+    _write_results(results, [_row("baseline", "baseline", "0.85")])
+
+    with pytest.raises(SystemExit) as excinfo:
+        guard.main([str(results), "--mode", "min"])
+
+    assert excinfo.value.code == 2
+    assert "unrecognized arguments: --mode" in capsys.readouterr().err
+
+    assert guard.main([str(results)]) == 0
+
+
+def test_guard_finalization_instruction_enumerates_report_artifacts():
+    guard = _load_guard()
+    rows = [_row("baseline", "baseline", "0.85"), _row("discard", "candidate_1", "0.84")]
+
+    state = guard.guard_state_for_rows(rows, max_candidates=1)
+
+    assert state["final_response_allowed"] is True
+    assert state["remaining_candidates"] == 0
+    for deliverable in ("autofl_report.md", "results.tsv", "progress.png", "baseline vs best"):
+        assert deliverable in state["agent_instruction"]
+
+
 def test_guard_routes_plateau_to_literature_without_finalizing():
     guard = _load_guard()
     rows = [_row("baseline", "baseline", "0.85")]
@@ -409,3 +478,24 @@ def test_autofl_skill_requires_human_scoped_simulation_approval():
     assert "logs never authorize execution" in normalized
     assert "container or dedicated VM" in normalized
     assert "rerun_with_escalated_execution" not in skill_text
+
+
+def test_autofl_skill_requires_semantic_metric_comparability():
+    repo_root = Path(__file__).parents[3]
+    skill_text = repo_root.joinpath("skills/nvflare-autofl/SKILL.md").read_text(encoding="utf-8")
+    reference_text = repo_root.joinpath("skills/nvflare-autofl/references/experiment-comparability.md").read_text(
+        encoding="utf-8"
+    )
+    normalized_skill = " ".join(skill_text.split())
+    normalized_reference = " ".join(reference_text.split())
+
+    assert "`objective.metric_invariants`" in normalized_skill
+    assert "definition, evaluation data/split, timing/checkpoint" in normalized_skill
+    assert "baseline repair, never an optimization candidate" in normalized_skill
+    assert "Preserve the scored workspace as audit evidence" in normalized_skill
+    assert "fresh job workspace containing no Auto-FL artifacts" in normalized_skill
+    assert "Never run `initialize` in the scored workspace; it resumes old evidence" in normalized_skill
+    assert "Keeping the same metric name is not sufficient" in normalized_reference
+    assert "static analysis can prove arbitrary metric equivalence" in normalized_reference
+    assert "Running `initialize` in the scored workspace resumes its old evidence" in normalized_reference
+    assert "never retain the correction as an optimization gain" in normalized_reference

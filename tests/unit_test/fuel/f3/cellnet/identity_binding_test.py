@@ -18,12 +18,20 @@ from types import SimpleNamespace
 
 import pytest
 from cryptography import x509
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from nvflare.apis.fl_constant import ConnectionSecurity
-from nvflare.fuel.f3.cellnet.cell_cipher import InvalidCertChain, SimpleCellCipher
+from nvflare.fuel.f3.cellnet.cell_cipher import (
+    KEY_ENC_LENGTH,
+    NONCE_LENGTH,
+    SIMPLE_HEADER_LENGTH,
+    VERSION_LENGTH,
+    InvalidCertChain,
+    SimpleCellCipher,
+)
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.credential_manager import CERT_CONTENT, CredentialManager
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
@@ -108,6 +116,34 @@ def _make_chained_cell_cipher_cert():
     return root_cert, leaf_key, leaf_cert, intermediate_cert
 
 
+def _make_cell_cipher_pair():
+    root_key, root_pub_key = generate_keys()
+    root_identity = Identity("root")
+    root_cert = generate_cert(
+        subject=root_identity,
+        issuer=root_identity,
+        signing_pri_key=root_key,
+        subject_pub_key=root_pub_key,
+        ca=True,
+    )
+
+    def _make_leaf(name):
+        leaf_key, leaf_pub_key = generate_keys()
+        leaf_cert = generate_cert(
+            subject=Identity(name),
+            issuer=root_identity,
+            signing_pri_key=root_key,
+            subject_pub_key=leaf_pub_key,
+        )
+        return leaf_key, leaf_cert
+
+    sender_key, sender_cert = _make_leaf("sender")
+    receiver_key, receiver_cert = _make_leaf("receiver")
+    sender = SimpleCellCipher(root_cert, sender_key, sender_cert)
+    receiver = SimpleCellCipher(root_cert, receiver_key, receiver_cert)
+    return sender, sender_cert, receiver, receiver_cert
+
+
 def _conn_manager(local_fqcn="server", identity_map=None):
     resolver = CellIdentityResolver(local_fqcn=local_fqcn, prefix_identity_map=identity_map)
     return ConnManager(Endpoint(local_fqcn), identity_resolver=resolver)
@@ -147,6 +183,21 @@ def test_identity_resolver_maps_job_cell_to_configured_parent_identity():
     resolver = CellIdentityResolver(local_fqcn="site-1", prefix_identity_map={"site-1": "site-1"})
 
     assert resolver.resolve("site-1.job-123") == "site-1"
+
+
+def test_identity_resolver_maps_attach_child_to_cp_identity():
+    resolver = CellIdentityResolver(local_fqcn="site-1", exact_identity_map={"site-1": "site-cert-cn"})
+
+    assert resolver.resolve("site-1.-client_api_trainer_a") == "site-cert-cn"
+
+
+def test_identity_resolver_maps_relayed_attach_child_to_site_identity():
+    resolver = CellIdentityResolver(
+        local_fqcn="relay-1.site-1",
+        exact_identity_map={"relay-1.site-1": "custom-site-cn"},
+    )
+
+    assert resolver.resolve("relay-1.site-1.-client_api_trainer_a") == "custom-site-cn"
 
 
 def test_identity_resolver_maps_relay_child_to_child_identity_without_configured_prefix():
@@ -199,129 +250,6 @@ def test_identity_resolver_rejects_admin_like_endpoint_without_authenticated_ide
         resolver.require_match("_admin_not-a-uuid", "admin@nvidia.com", "connection admin")
 
 
-def test_identity_resolver_maps_topology_cell_pipe_cell_to_owner_identity():
-    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
-
-    assert resolver.resolve("site-1.cellpipe~plain~8cb50f16-8158-46f6-a8d7-ec85b1f06c53~active") == "site-1"
-    assert resolver.resolve("site-1.cellpipe~plain~8cb50f16-8158-46f6-a8d7-ec85b1f06c53~passive") == "site-1"
-
-
-def test_identity_resolver_maps_underscore_token_pipe_cell_to_site_identity():
-    # A root-connected pipe cell may carry "_" in its user-chosen token (e.g.
-    # FlareAgentWithCellPipe agent_id="ext_trainer"). The cellpipe~plain~ leaf
-    # is never alias-parsed: with a sparse identity map (provisioning omits
-    # identities equal to the name), the cell must resolve to its site, not to
-    # a fabricated alias owner such as "ext".
-    resolver = CellIdentityResolver(local_fqcn="server")
-
-    assert resolver.resolve("site-1.cellpipe~plain~ext_trainer~active") == "site-1"
-    assert resolver.resolve("site-1.cellpipe~plain~simulate_job~passive") == "site-1"
-
-
-def test_identity_resolver_cp_resolves_own_underscore_token_child_to_site_identity():
-    # The explicit leaf prefixes remove the old ambiguity: a CP resolving its
-    # own pipe child with an underscore token sees a plain (non-alias) leaf
-    # and resolves it to the site's identity, never to a fabricated alias
-    # owner such as "simulate".
-    resolver = CellIdentityResolver(local_fqcn="site-1")
-
-    assert resolver.resolve("site-1.cellpipe~plain~simulate_job~active") == "site-1"
-
-
-def test_identity_resolver_maps_relay_cell_pipe_cell_to_owner_identity():
-    resolver = CellIdentityResolver(local_fqcn="relay-1", exact_identity_map={"relay-1": "relay-1"})
-
-    assert resolver.resolve("relay-1.cellpipe~alias~site-1~job-123~active") == "site-1"
-    assert resolver.resolve("relay-1.site-1.cellpipe~plain~job-123~active") == "site-1"
-
-
-def test_identity_resolver_maps_relay_cell_pipe_alias_from_a_distant_cell():
-    # The explicit alias marker is authoritative at any depth, so a cell that
-    # is not the connected relay (e.g. the server during cert exchange) also
-    # resolves the alias to the owning site.
-    resolver = CellIdentityResolver(local_fqcn="server")
-
-    assert resolver.resolve("relay-1.cellpipe~alias~site-1~job-123~active") == "site-1"
-
-
-def test_identity_resolver_maps_nested_relay_alias_before_parent_identity():
-    # The server carries identity mappings for both a nested relay and its
-    # client. The explicit alias belongs to the client and must not inherit the
-    # first matching ancestor relay identity.
-    resolver = CellIdentityResolver(
-        local_fqcn="server",
-        prefix_identity_map={
-            "relay-1.relay-2": "relay-2",
-            "relay-1.relay-2.site-1": "site-1",
-        },
-    )
-
-    assert resolver.resolve("relay-1.relay-2.cellpipe~alias~site-1~job-123~active") == "site-1"
-
-
-def test_identity_resolver_maps_relay_alias_to_configured_owner_identity():
-    resolver = CellIdentityResolver(
-        local_fqcn="relay-1",
-        prefix_identity_map={"relay-1.site-1": "custom-site-cn"},
-        exact_identity_map={"relay-1": "relay-1"},
-    )
-
-    fqcn = "relay-1.cellpipe~alias~site-1~job-123~active"
-    assert resolver.resolve(fqcn) == "custom-site-cn"
-    resolver.require_match(fqcn, "custom-site-cn", "connection site-1 pipe")
-
-
-def test_identity_resolver_rejects_malformed_marked_alias():
-    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"relay-1": "relay-1"})
-    fqcn = "relay-1.cellpipe~alias~malformed"
-
-    assert resolver.resolve(fqcn) is None
-    with pytest.raises(ValueError, match="does not resolve"):
-        resolver.require_match(fqcn, "relay-1", "connection malformed pipe")
-
-
-def test_identity_resolver_maps_legacy_cell_pipe_alias_to_owner_identity():
-    # CellPipe cells from older NVFlare versions use underscore alias names
-    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
-
-    assert resolver.resolve("site-1_8cb50f16-8158-46f6-a8d7-ec85b1f06c53_active") == "site-1"
-    assert resolver.resolve("site-1_8cb50f16-8158-46f6-a8d7-ec85b1f06c53_passive") == "site-1"
-
-
-def test_identity_resolver_does_not_map_nested_legacy_alias_to_owner_identity():
-    resolver = CellIdentityResolver(local_fqcn="server")
-
-    assert resolver.resolve("relay-1.site-1_job-123_active") == "relay-1"
-
-
-def test_identity_resolver_maps_cell_pipe_alias_to_configured_owner_identity():
-    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "custom-site-cn"})
-
-    assert resolver.resolve("site-1_job-123_active") == "custom-site-cn"
-
-
-def test_identity_resolver_maps_cell_pipe_alias_owner_with_underscores_from_the_right():
-    resolver = CellIdentityResolver(local_fqcn="server")
-
-    # The runtime id cannot contain "_", so the only valid owner is "site-a_x"
-    assert resolver.resolve("site-a_x_job-123_active") == "site-a_x"
-
-
-def test_identity_resolver_maps_dotted_cell_pipe_alias_to_owner_identity():
-    resolver = CellIdentityResolver(local_fqcn="site-1")
-
-    assert resolver.resolve("site-1.cellpipe~alias~site-1~job-123~passive") == "site-1"
-
-
-def test_identity_resolver_does_not_treat_unconstrained_names_as_cell_pipe_aliases():
-    resolver = CellIdentityResolver(local_fqcn="server")
-
-    # Too few segments, empty runtime id, or an unknown mode are not aliases
-    assert resolver.resolve("site-1_active") == "site-1_active"
-    assert resolver.resolve("site-1__active") == "site-1__active"
-    assert resolver.resolve("site-1_job-123_idle") == "site-1_job-123_idle"
-
-
 def test_mtls_handshake_accepts_job_cell_with_parent_cert_identity():
     manager = _conn_manager(identity_map={"site-1": "site-1"})
     conn = _FakeConnection(peer_cn="site-1")
@@ -354,49 +282,6 @@ def test_mtls_handshake_rejects_spoofed_endpoint_identity():
 
     assert ex.value.code == CommError.BAD_DATA
     assert "site-1.job-123" not in manager.sfm_endpoints
-    assert conn.closed
-
-
-def test_mtls_handshake_accepts_topology_cell_pipe_cell_with_site_cert_identity():
-    manager = _conn_manager(identity_map={"site-1": "site-1"})
-    conn = _FakeConnection(peer_cn="site-1")
-    sfm_conn = SfmConnection(conn, Endpoint("server"))
-
-    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1.cellpipe~plain~job-123~active"})
-
-    assert "site-1.cellpipe~plain~job-123~active" in manager.sfm_endpoints
-    assert not conn.closed
-
-
-def test_mtls_handshake_accepts_legacy_cell_pipe_alias_with_site_cert_identity():
-    manager = _conn_manager(identity_map={"site-1": "site-1"})
-    conn = _FakeConnection(peer_cn="site-1")
-    sfm_conn = SfmConnection(conn, Endpoint("server"))
-
-    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1_job-123_active"})
-
-    assert "site-1_job-123_active" in manager.sfm_endpoints
-    assert not conn.closed
-
-
-def test_mtls_handshake_rejects_spoofed_cell_pipe_alias_identity():
-    manager = _conn_manager(identity_map={"site-1": "site-1", "site-a": "site-a"})
-    conn = _FakeConnection(peer_cn="attacker")
-    sfm_conn = SfmConnection(conn, Endpoint("server"))
-
-    with pytest.raises(CommError) as ex:
-        manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1_job-123_active"})
-
-    assert ex.value.code == CommError.BAD_DATA
-    assert conn.closed
-
-    # An ambiguous alias resolves only to its right-anchored owner, never a shorter site
-    conn = _FakeConnection(peer_cn="site-a")
-    sfm_conn = SfmConnection(conn, Endpoint("server"))
-    with pytest.raises(CommError) as ex:
-        manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-a_x_job-123_active"})
-
-    assert ex.value.code == CommError.BAD_DATA
     assert conn.closed
 
 
@@ -543,6 +428,73 @@ def test_cell_cipher_accepts_leaf_certificate_with_intermediate_chain():
     encrypted = cipher.encrypt(b"hello", [leaf_cert, intermediate_cert])
 
     assert cipher.decrypt(encrypted, [leaf_cert, intermediate_cert]) == b"hello"
+
+
+def test_cell_cipher_authenticates_claimed_sender():
+    sender, sender_cert, receiver, receiver_cert = _make_cell_cipher_pair()
+    encrypted = sender.encrypt(b"hello", receiver_cert)
+
+    assert receiver.decrypt(encrypted, sender_cert) == b"hello"
+
+    with pytest.raises(InvalidSignature):
+        receiver.decrypt(encrypted, receiver_cert)
+
+
+@pytest.mark.parametrize("message", [b"", b"hello", bytes(range(256))])
+def test_cell_cipher_authenticates_each_message(message):
+    root_cert, leaf_key, leaf_cert, intermediate_cert = _make_chained_cell_cipher_cert()
+    cipher = SimpleCellCipher(root_cert, leaf_key, [leaf_cert, intermediate_cert])
+
+    first = cipher.encrypt(message, [leaf_cert, intermediate_cert])
+    second = cipher.encrypt(message, [leaf_cert, intermediate_cert])
+
+    assert first != second
+    assert cipher.decrypt(first, [leaf_cert, intermediate_cert]) == message
+    assert cipher.decrypt(second, [leaf_cert, intermediate_cert]) == message
+
+
+@pytest.mark.parametrize(
+    "offset",
+    [
+        VERSION_LENGTH,
+        VERSION_LENGTH + NONCE_LENGTH,
+        VERSION_LENGTH + NONCE_LENGTH + KEY_ENC_LENGTH,
+        SIMPLE_HEADER_LENGTH,
+        -1,
+    ],
+    ids=["nonce", "wrapped_key", "signature", "ciphertext", "authentication_tag"],
+)
+def test_cell_cipher_rejects_tampered_envelope(offset):
+    root_cert, leaf_key, leaf_cert, intermediate_cert = _make_chained_cell_cipher_cert()
+    cipher = SimpleCellCipher(root_cert, leaf_key, [leaf_cert, intermediate_cert])
+    encrypted = bytearray(cipher.encrypt(b"authenticated message", [leaf_cert, intermediate_cert]))
+    encrypted[offset] ^= 1
+
+    with pytest.raises(InvalidSignature):
+        cipher.decrypt(bytes(encrypted), [leaf_cert, intermediate_cert])
+
+
+def test_cell_cipher_rejects_tampering_after_key_is_cached():
+    root_cert, leaf_key, leaf_cert, intermediate_cert = _make_chained_cell_cipher_cert()
+    cipher = SimpleCellCipher(root_cert, leaf_key, [leaf_cert, intermediate_cert])
+    first = cipher.encrypt(b"first", [leaf_cert, intermediate_cert])
+    second = bytearray(cipher.encrypt(b"second", [leaf_cert, intermediate_cert]))
+
+    assert cipher.decrypt(first, [leaf_cert, intermediate_cert]) == b"first"
+    second[SIMPLE_HEADER_LENGTH] ^= 1
+
+    with pytest.raises(InvalidSignature):
+        cipher.decrypt(bytes(second), [leaf_cert, intermediate_cert])
+
+
+def test_cell_cipher_rejects_unsupported_version():
+    root_cert, leaf_key, leaf_cert, intermediate_cert = _make_chained_cell_cipher_cert()
+    cipher = SimpleCellCipher(root_cert, leaf_key, [leaf_cert, intermediate_cert])
+    encrypted = bytearray(cipher.encrypt(b"hello", [leaf_cert, intermediate_cert]))
+    encrypted[0] ^= 1
+
+    with pytest.raises(ValueError, match="unsupported cell cipher version"):
+        cipher.decrypt(bytes(encrypted), [leaf_cert, intermediate_cert])
 
 
 def test_cell_cipher_encrypt_rejects_empty_peer_cert_chain():

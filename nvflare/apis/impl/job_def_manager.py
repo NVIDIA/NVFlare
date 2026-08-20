@@ -460,19 +460,24 @@ class SimpleJobDefManager(JobDefManagerSpec):
         meta = {JobMetaKey.STATUS.value: status.value}
         store = self._get_job_store(fl_ctx)
         if status == RunStatus.RUNNING.value:
-            meta[JobMetaKey.START_TIME.value] = str(datetime.datetime.now())
+            meta[JobMetaKey.START_TIME.value] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         elif status in [
             RunStatus.FINISHED_ABORTED.value,
+            RunStatus.FINISHED_ABNORMAL.value,
             RunStatus.FINISHED_COMPLETED.value,
             RunStatus.FINISHED_EXECUTION_EXCEPTION.value,
             RunStatus.FINISHED_CANT_SCHEDULE.value,
         ]:
             job_meta = store.get_meta(self.job_uri(jid))
-            if job_meta[JobMetaKey.START_TIME.value]:
-                start_time = datetime.datetime.strptime(
-                    job_meta.get(JobMetaKey.START_TIME.value), "%Y-%m-%d %H:%M:%S.%f"
-                )
-                meta[JobMetaKey.DURATION.value] = str(datetime.datetime.now() - start_time)
+            start_time_value = job_meta.get(JobMetaKey.START_TIME.value)
+            if start_time_value:
+                start_time = datetime.datetime.fromisoformat(start_time_value)
+                if start_time.tzinfo is not None:
+                    meta[JobMetaKey.DURATION.value] = str(
+                        datetime.datetime.now(datetime.timezone.utc) - start_time.astimezone(datetime.timezone.utc)
+                    )
+                else:
+                    meta[JobMetaKey.DURATION.value] = str(datetime.datetime.now() - start_time)
         store.update_meta(uri=self.job_uri(jid), meta=meta, replace=False)
 
     def update_meta(self, jid: str, meta, fl_ctx: FLContext):

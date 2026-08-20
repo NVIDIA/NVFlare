@@ -31,9 +31,9 @@ def _infer_type(action: argparse.Action) -> str:
 
     if isinstance(action, (argparse._StoreTrueAction, argparse._StoreFalseAction, argparse._StoreConstAction)):
         return "boolean"
-    if action.type is int:
+    if isinstance(action.type, type) and issubclass(action.type, int):
         return "integer"
-    if action.type is float:
+    if isinstance(action.type, type) and issubclass(action.type, float):
         return "number"
     name_lower = name.lower()
     if any(kw in name_lower for kw in _PATH_KEYWORDS):

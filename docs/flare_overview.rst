@@ -73,7 +73,7 @@ Extensible Architecture
 
 - Modular, event-based, and pluggable design
 - Customizable components at every layer
-- Easy integration with third-party systems via FLARE Agent
+- Client API Attach mode for independently managed trainer processes
 
 End-to-End Lifecycle
 --------------------
@@ -242,4 +242,4 @@ For more detailed information, see:
 - :ref:`job_recipe` - Programmatic job definition
 - :ref:`provisioning` - Secure deployment and provisioning
 - :ref:`federated_statistics` - Federated analytics implementation
-- :ref:`hello_pt` - Getting started with PyTorch examples
+- :ref:`hello_pt_job_api` - Getting started with PyTorch examples

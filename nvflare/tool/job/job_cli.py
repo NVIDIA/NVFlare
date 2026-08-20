@@ -1439,10 +1439,12 @@ def _format_job_meta_timestamp(value, include_zone=False):
             if text.endswith("Z"):
                 text = text[:-1] + "+00:00"
             dt = datetime.datetime.fromisoformat(text)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone()
         formatted = dt.strftime("%Y-%m-%d %H:%M:%S")
         if include_zone and dt.tzinfo:
             offset = dt.strftime("%z")
-            zone = {"-0700": "PDT", "-0800": "PST"}.get(offset, dt.tzname() or offset)
+            zone = dt.tzname() or offset
             if zone:
                 formatted = f"{formatted} {zone}"
         return formatted
@@ -2458,19 +2460,21 @@ def _summarize_monitor_meta(meta: dict, job_meta_key_cls) -> dict:
 def _parse_monitor_start_ts(meta: dict, start_time_key: str, submit_time_iso_key: str) -> float:
     if not meta:
         return None
-    start_time = meta.get(start_time_key)
-    if start_time:
-        try:
-            return datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S.%f").timestamp()
-        except Exception:
-            pass
-    submit_time_iso = meta.get(submit_time_iso_key)
-    if submit_time_iso:
-        try:
-            return datetime.datetime.fromisoformat(submit_time_iso).timestamp()
-        except Exception:
-            pass
+    for key in (start_time_key, submit_time_iso_key):
+        value = meta.get(key)
+        if value:
+            try:
+                if isinstance(value, (int, float)):
+                    return float(value)
+                return datetime.datetime.fromisoformat(value).timestamp()
+            except (TypeError, ValueError):
+                pass
     return None
+
+
+def _calculate_monitor_elapsed(now: float, monitor_start: float, job_start: Optional[float]) -> float:
+    elapsed_base = job_start if job_start is not None else monitor_start
+    return round(max(0, now - elapsed_base), 1)
 
 
 def _parse_monitor_duration_seconds(value) -> float:
@@ -2575,8 +2579,7 @@ def _emit_monitor_progress(job_id: str, job_meta: dict, state: dict, now: float,
     status = job_meta.get("status", "UNKNOWN") if job_meta else "UNKNOWN"
     summary = _summarize_monitor_meta(job_meta, JobMetaKey)
     name = summary.get("job_name")
-    elapsed_base = start_ts if start_ts is not None else start
-    elapsed = round(now - elapsed_base, 1)
+    elapsed = _calculate_monitor_elapsed(now, start, start_ts)
     message_parts = []
     if state["last_status"] is None:
         message_parts.append(f"job_id: {job_id}")
@@ -2614,14 +2617,13 @@ def _build_monitor_progress_event(job_id: str, job_meta: dict, state: dict, now:
     from nvflare.apis.job_def import JobMetaKey
 
     raw_status = job_meta.get("status", "UNKNOWN") if job_meta else "UNKNOWN"
-    elapsed_base = start_ts if start_ts is not None else start
     event = {
         "event": "progress",
         "job_id": job_id,
         "status": _normalize_monitor_event_status(raw_status),
         "job_status": raw_status,
         "terminal": False,
-        "elapsed_s": round(now - elapsed_base, 1),
+        "elapsed_s": _calculate_monitor_elapsed(now, start, start_ts),
         "job_meta": _summarize_monitor_meta(job_meta, JobMetaKey),
     }
     metrics = state.get("last_stats") or {}
@@ -2660,14 +2662,13 @@ def _build_monitor_terminal_event(data: dict, event: str = "terminal", error_cod
 def _build_monitor_timeout_event(job_id: str, timeout: int, start: float, start_ts, cb_state: dict) -> dict:
     from nvflare.apis.job_def import JobMetaKey
 
-    elapsed_base = start_ts if start_ts is not None else start
     event = {
         "event": "terminal",
         "job_id": job_id,
         "status": "TIMEOUT",
         "terminal": True,
         "timeout_seconds": timeout,
-        "elapsed_s": round(time.time() - elapsed_base, 1),
+        "elapsed_s": _calculate_monitor_elapsed(time.time(), start, start_ts),
     }
     last_meta = cb_state.get("last_meta")
     if last_meta:
@@ -2724,10 +2725,8 @@ def _build_monitor_output_data(
     meta_duration_s = _parse_monitor_duration_seconds(meta.get("duration") if meta else None)
     if meta_duration_s is not None:
         duration = round(meta_duration_s, 1)
-    elif start_ts is not None:
-        duration = round(time.time() - start_ts, 1)
     else:
-        duration = round(time.time() - start, 1)
+        duration = _calculate_monitor_elapsed(time.time(), start, start_ts)
 
     data = {
         "job_id": job_id,

@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 import tensorflow as tf
 
@@ -29,6 +29,7 @@ class FedAvgJob(BaseFedJob):
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
         key_metric: str = "accuracy",
+        key_metric_mode: Literal["min", "max"] = "max",
     ):
         """TensorFlow FedAvg Job.
 
@@ -46,11 +47,20 @@ class FedAvgJob(BaseFedJob):
             key_metric (str, optional): Metric used to determine if the model is globally best.
                 if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
                 Defaults to "accuracy".
+            key_metric_mode (str, optional): One of "min" or "max". Use "min" when lower key_metric values
+                are better, such as for loss, and "max" when higher values are better. Defaults to "max".
         """
         if not isinstance(initial_model, tf.keras.Model):
             raise ValueError(f"Expected initial model to be tf.keras.Model, but got type {type(initial_model)}.")
 
-        super().__init__(initial_model, name, min_clients, mandatory_clients, key_metric)
+        super().__init__(
+            initial_model,
+            name=name,
+            min_clients=min_clients,
+            mandatory_clients=mandatory_clients,
+            key_metric=key_metric,
+            key_metric_mode=key_metric_mode,
+        )
 
         controller = FedAvg(
             num_clients=n_clients,

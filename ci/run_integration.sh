@@ -101,7 +101,7 @@ run_pytest() {
 prepare_cifar10_data() {
     local test_mode=$1
     case $test_mode in
-        client_api|client_api_qa|model_controller_api|pytorch|cifar)
+        client_api|client_api_qa|pytorch|cifar)
             "${PYTHON_BIN[@]}" tools/prepare_cifar10.py
             ;;
     esac
@@ -179,7 +179,7 @@ run_pytest_mode() {
         tensorflow)
             run_tensorflow_test
             ;;
-        numpy|pytorch|auth|cifar|stats|xgboost|client_api|client_api_qa|model_controller_api)
+        numpy|pytorch|auth|cifar|stats|xgboost|client_api|client_api_qa)
             run_system_test "$test_mode"
             ;;
         *)

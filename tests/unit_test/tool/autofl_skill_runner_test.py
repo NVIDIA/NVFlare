@@ -56,7 +56,7 @@ def _campaign_config():
     }
 
 
-def _initialize_fake_campaign(runner, tmp_path, monkeypatch, *, target_env="sim", baseline_score=0.5, mode=None):
+def _initialize_fake_campaign(runner, tmp_path, monkeypatch, *, target_env="sim", baseline_score=0.5):
     job = tmp_path / "job.py"
     client = tmp_path / "client.py"
     job.write_text("print('job')\n", encoding="utf-8")
@@ -80,9 +80,7 @@ def _initialize_fake_campaign(runner, tmp_path, monkeypatch, *, target_env="sim"
         )
 
     monkeypatch.setattr(runner, "run_job", fake_run)
-    argv = ["initialize", str(job), "--env", target_env, "--no-prefer-synthetic"]
-    if mode is not None:
-        argv.extend(["--mode", mode])
+    argv = ["initialize", str(job), "--env", target_env]
     assert runner.main(argv) == 0
     return job, client, config
 
@@ -195,7 +193,7 @@ def test_initialize_merges_existing_mutation_schema_preferred_targets_into_autof
         ),
     )
 
-    assert runner.main(["initialize", str(job), "--no-prefer-synthetic"]) == 0
+    assert runner.main(["initialize", str(job)]) == 0
 
     config = runner.read_yaml(tmp_path / "autofl.yaml")
     assert "custom_aggregators.py" in config["trust_contract"]["allowed_edit_paths"]
@@ -292,8 +290,8 @@ def test_metric_paths_reject_non_finite_values(tmp_path, value):
 
     assert runner.find_metric_value({"accuracy": value}, ["accuracy"]) is None
     assert runner.find_metric_value({"metrics": [{"name": "accuracy", "value": value}]}, ["accuracy"]) is None
-    assert runner.better(value, 0.5, "max") is False
-    assert runner.better(0.6, value, "max") is True
+    assert runner.better(value, 0.5) is False
+    assert runner.better(0.6, value) is True
     with pytest.raises(ValueError, match="non-finite score"):
         runner.write_results(
             tmp_path / "results.tsv",
@@ -377,6 +375,8 @@ def test_runner_applies_schema_metric_contract():
             "requested_metric": "accuracy",
             "optimization_metric": "accuracy",
             "metric_extraction_order": ["accuracy"],
+            "metric_invariants": ["definition", "evaluation_timing_and_checkpoint"],
+            "metric_change_policy": "restart_campaign_with_repaired_baseline",
         }
     }
     schema = {
@@ -395,6 +395,19 @@ def test_runner_applies_schema_metric_contract():
     assert updated["objective"]["optimization_metric"] == "test_accuracy"
     assert updated["objective"]["metric_extraction_order"] == ["test_accuracy", "accuracy"]
     assert updated["objective"]["metric_source"] == "held-out CIFAR-10 test set"
+    assert updated["objective"]["metric_invariants"] == ["definition", "evaluation_timing_and_checkpoint"]
+    assert updated["objective"]["metric_change_policy"] == "restart_campaign_with_repaired_baseline"
+
+
+def test_schema_metric_contract_rejects_minimization_objective():
+    runner = _load_runner()
+    config = {"objective": {"metric": "val_loss"}}
+    schema = {"objective": {"metric": "val_loss", "mode": "min"}}
+
+    with pytest.raises(ValueError, match="minimization is not supported") as excinfo:
+        runner.apply_metric_contract(config, "val_loss", schema)
+
+    assert "neg_val_loss" in str(excinfo.value)
 
 
 def test_comparison_budget_suppresses_duplicate_imported_fixed_budget_args():
@@ -412,8 +425,58 @@ def test_comparison_budget_suppresses_duplicate_imported_fixed_budget_args():
 
     assert runner.build_fixed_args(config, help_text, schema) == []
 
-    args = SimpleNamespace(base_args="", prefer_synthetic=False, synthetic_train_size=1, synthetic_test_size=1)
+    args = SimpleNamespace(base_args="")
     assert runner.build_base_args(args, help_text, schema) == ["--n_clients", "8", "--num_rounds", "20"]
+
+
+def test_build_base_args_never_injects_dataset_flags_for_synthetic_capable_jobs():
+    runner = _load_runner()
+    help_text = "usage: job.py [--synthetic_data] [--train_size TRAIN_SIZE] [--test_size TEST_SIZE]"
+
+    assert runner.build_base_args(SimpleNamespace(base_args=""), help_text, {}) == []
+
+    schema = {"comparison_budget_args": {"default_candidate_budget": {"num_rounds": 5}}}
+    help_text_with_budget = f"{help_text} [--num_rounds NUM_ROUNDS]"
+    assert runner.build_base_args(SimpleNamespace(base_args=""), help_text_with_budget, schema) == [
+        "--num_rounds",
+        "5",
+    ]
+
+
+def test_explicit_base_args_pass_through_verbatim():
+    runner = _load_runner()
+    help_text = "usage: job.py [--synthetic_data] [--train_size TRAIN_SIZE] [--test_size TEST_SIZE]"
+
+    args = SimpleNamespace(base_args="--synthetic_data --train_size 64")
+    assert runner.build_base_args(args, help_text, {}) == ["--synthetic_data", "--train_size", "64"]
+
+
+def test_restore_campaign_settings_ignores_legacy_synthetic_settings(tmp_path, capsys):
+    runner = _load_runner()
+    args = runner.parse_args(["status", "job.py"])
+    settings = runner.campaign_settings(args)
+    settings.update({"prefer_synthetic": True, "synthetic_train_size": 2048, "synthetic_test_size": 256})
+    metadata = {"settings": settings, "workspace_root": str(tmp_path)}
+
+    assert runner.restore_campaign_settings(args, metadata) is False
+
+    assert not hasattr(args, "prefer_synthetic")
+    help_text = "usage: job.py [--synthetic_data] [--train_size TRAIN_SIZE] [--test_size TEST_SIZE]"
+    assert runner.build_base_args(args, help_text, {}) == []
+    # The prior baseline/candidates were scored on injected synthetic data; new runs use
+    # real data, so the ledger crosses a data regime — warn instead of staying silent.
+    stderr = capsys.readouterr().err
+    assert "computed on synthetic data" in stderr
+    assert "re-initializing" in stderr
+
+
+def test_restore_campaign_settings_does_not_warn_without_legacy_synthetic_setting(tmp_path, capsys):
+    runner = _load_runner()
+    args = runner.parse_args(["status", "job.py"])
+    metadata = {"settings": runner.campaign_settings(args), "workspace_root": str(tmp_path)}
+
+    assert runner.restore_campaign_settings(args, metadata) is False
+    assert "synthetic" not in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -519,6 +582,138 @@ def test_run_terminates_inherited_stdout_descendant_after_leader_exits(tmp_path)
         runner.time.sleep(0.05)
     else:
         pytest.fail(f"descendant process {child_pid} survived process-group cleanup")
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="escaped-process cleanup uses Linux /proc ownership")
+@pytest.mark.parametrize("ignore_sigterm", [False, True], ids=["sigterm_honored", "sigterm_ignored"])
+def test_run_terminates_detached_descendant_that_escapes_process_group(tmp_path, ignore_sigterm):
+    runner = _load_runner()
+    child_pid_path = tmp_path / "detached.pid"
+    signal_setup = "signal.signal(signal.SIGTERM, signal.SIG_IGN); " if ignore_sigterm else ""
+    child_code = (
+        "import os, pathlib, signal, time; "
+        f"{signal_setup}"
+        f"pathlib.Path({str(child_pid_path)!r}).write_text(str(os.getpid())); "
+        "print('detached descendant started', flush=True); time.sleep(90)"
+    )
+    parent_code = (
+        "import subprocess, sys; "
+        f"subprocess.Popen([sys.executable, '-c', {child_code!r}], start_new_session=True); "
+        "print('leader exits', flush=True)"
+    )
+
+    rc, output, runtime = runner.run(
+        [sys.executable, "-c", parent_code],
+        tmp_path,
+        timeout=2 if ignore_sigterm else 1,
+        log_path=tmp_path / "run.log",
+    )
+
+    assert rc == 124
+    assert runtime < (25 if ignore_sigterm else 5)
+    assert "leader exits" in output
+    child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+    deadline = runner.time.monotonic() + 5
+    while runner.time.monotonic() < deadline:
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            break
+        proc_stat = Path(f"/proc/{child_pid}/stat")
+        if proc_stat.is_file() and proc_stat.read_text(encoding="utf-8").split()[2] == "Z":
+            break
+        runner.time.sleep(0.05)
+    else:
+        pytest.fail(f"detached descendant process {child_pid} survived trial-token cleanup")
+
+
+def test_signal_trial_processes_uses_pidfds_and_revalidates_identity(monkeypatch):
+    runner = _load_runner()
+    identities = {10: [123, 123], 11: [456, -1]}
+    sent = []
+    closed = []
+
+    monkeypatch.setattr(runner, "trial_process_ids", lambda _token: [123, 456])
+    monkeypatch.setattr(runner, "process_has_trial_token", lambda _process_id, _marker: True)
+    monkeypatch.setattr(runner, "pidfd_process_id", lambda pidfd: identities[pidfd].pop(0))
+    monkeypatch.setattr(
+        runner.os, "pidfd_open", lambda process_id, _flags: {123: 10, 456: 11}[process_id], raising=False
+    )
+    monkeypatch.setattr(runner.os, "close", closed.append)
+    monkeypatch.setattr(runner.signal, "pidfd_send_signal", lambda pidfd, sig: sent.append((pidfd, sig)), raising=False)
+
+    runner.signal_trial_processes("trial-token", runner.signal.SIGTERM)
+
+    assert sent == [(10, runner.signal.SIGTERM)]
+    assert closed == [10, 11]
+
+
+def test_signal_trial_processes_reports_pidfd_open_failure(monkeypatch):
+    runner = _load_runner()
+
+    monkeypatch.setattr(runner, "trial_process_ids", lambda _token: [123])
+    monkeypatch.setattr(
+        runner.os,
+        "pidfd_open",
+        lambda _process_id, _flags: (_ for _ in ()).throw(PermissionError("pidfd denied")),
+        raising=False,
+    )
+    monkeypatch.setattr(runner.signal, "pidfd_send_signal", lambda _pidfd, _sig: None, raising=False)
+
+    with pytest.raises(runner.TrialProcessCleanupError, match="cannot open pidfd for trial process 123"):
+        runner.signal_trial_processes("trial-token", runner.signal.SIGTERM)
+
+
+def test_terminate_process_retries_pidfd_failure_with_sigkill(monkeypatch):
+    runner = _load_runner()
+    signals = []
+    waits = iter([False, True])
+
+    class ExitedProcess:
+        @staticmethod
+        def poll():
+            return 0
+
+    def signal_trial_processes(_trial_token, sig):
+        signals.append(sig)
+        if sig == runner.signal.SIGTERM:
+            raise runner.TrialProcessCleanupError("temporary pidfd failure")
+
+    monkeypatch.setattr(runner, "signal_trial_processes", signal_trial_processes)
+    monkeypatch.setattr(runner, "wait_for_process_tree", lambda *_args, **_kwargs: next(waits))
+    monkeypatch.setattr(runner, "trial_process_ids", lambda _trial_token: [])
+
+    runner.terminate_process(ExitedProcess(), trial_token="trial-token")
+
+    assert signals == [runner.signal.SIGTERM, runner.signal.SIGKILL]
+
+
+def test_run_requires_pidfds_before_starting_linux_process(tmp_path, monkeypatch):
+    runner = _load_runner()
+    started = False
+
+    def fail_start(*_args, **_kwargs):
+        nonlocal started
+        started = True
+        raise AssertionError("process must not start without race-safe cleanup support")
+
+    monkeypatch.setattr(runner.sys, "platform", "linux")
+    monkeypatch.setattr(
+        runner,
+        "ensure_trial_process_pidfd_support",
+        lambda: (_ for _ in ()).throw(runner.TrialProcessCleanupError("pidfds unavailable")),
+    )
+    monkeypatch.setattr(runner.subprocess, "Popen", fail_start)
+
+    with pytest.raises(runner.TrialProcessCleanupError, match="pidfds unavailable"):
+        runner.run(
+            [sys.executable, "-c", "print('must not run')"],
+            tmp_path,
+            timeout=10,
+            log_path=tmp_path / "run.log",
+        )
+
+    assert not started
 
 
 @pytest.mark.skipif(os.name == "nt", reason="process-group cleanup uses POSIX process groups")
@@ -749,6 +944,11 @@ def test_run_without_deterministic_result_root_records_actionable_failure(tmp_pa
     job.write_text("print('done')\n", encoding="utf-8")
     monkeypatch.setattr(runner, "run", lambda *args, **kwargs: (0, "done\n", 0.1))
 
+    def probe_must_not_run(*args, **kwargs):
+        raise AssertionError("probe must not run when no SimEnv environment was discovered")
+
+    monkeypatch.setattr(runner, "probe_simulator_workspace_override_support", probe_must_not_run)
+
     record = runner.run_job(
         runner.JobRun("candidate", [], "candidate"),
         python=sys.executable,
@@ -766,6 +966,249 @@ def test_run_without_deterministic_result_root_records_actionable_failure(tmp_pa
 
     assert record.status == "crash"
     assert "print the direct simulator result directory" in record.failure_reason
+
+
+def test_run_without_result_root_blames_nvflare_without_workspace_override(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('done')\n", encoding="utf-8")
+    monkeypatch.setattr(runner, "run", lambda *args, **kwargs: (0, "done\n", 0.1))
+    monkeypatch.setattr(
+        runner,
+        "probe_simulator_workspace_override_support",
+        lambda *args, **kwargs: {"version": "2.8.0", "supported": False},
+    )
+
+    record = runner.run_job(
+        runner.JobRun("candidate", [], "candidate"),
+        python=sys.executable,
+        job=job,
+        cwd=tmp_path,
+        help_text="",
+        fixed_args=[],
+        base_args=[],
+        output_root=tmp_path / "runs",
+        timeout=10,
+        simulator_no_progress_timeout=0,
+        metrics=["accuracy"],
+        config={"job": {}, "environment": {"discovered": {"name": "SimEnv", "args": {}}}},
+    )
+
+    assert record.status == "crash"
+    assert "installed nvflare (2.8.0) does not honor NVFLARE_SIMULATOR_WORKSPACE_ROOT" in record.failure_reason
+    assert f"nvflare>={runner.SIMULATOR_WORKSPACE_OVERRIDE_MIN_NVFLARE_VERSION}" in record.failure_reason
+    assert "print the direct simulator result directory" not in record.failure_reason
+
+
+def test_run_without_result_root_keeps_generic_diagnosis_for_fed_job(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('done')\n", encoding="utf-8")
+    monkeypatch.setattr(runner, "run", lambda *args, **kwargs: (0, "done\n", 0.1))
+
+    def probe_must_not_run(*args, **kwargs):
+        raise AssertionError("probe must not run when the job does not use SimEnv")
+
+    monkeypatch.setattr(runner, "probe_simulator_workspace_override_support", probe_must_not_run)
+
+    record = runner.run_job(
+        runner.JobRun("candidate", [], "candidate"),
+        python=sys.executable,
+        job=job,
+        cwd=tmp_path,
+        help_text="",
+        fixed_args=[],
+        base_args=[],
+        output_root=tmp_path / "runs",
+        timeout=10,
+        simulator_no_progress_timeout=0,
+        metrics=["accuracy"],
+        config={"job": {"fed_job_args": {"name": {"value": "candidate_job", "confidence": "high"}}}},
+    )
+
+    assert record.status == "crash"
+    assert "no deterministic NVFlare result directory" in record.failure_reason
+    assert "upgrade to nvflare" not in record.failure_reason
+
+
+def test_unresolved_result_dir_failure_reason_uses_version_when_probe_is_inconclusive(tmp_path, monkeypatch):
+    runner = _load_runner()
+    probes = {}
+    sim_env_config = {"environment": {"discovered": {"name": "SimEnv", "args": {}}}}
+
+    def fake_probe(*args, **kwargs):
+        return probes["result"]
+
+    monkeypatch.setattr(runner, "probe_simulator_workspace_override_support", fake_probe)
+
+    probes["result"] = {"version": "2.6.2", "supported": None}
+    reason = runner.unresolved_result_dir_failure_reason(sys.executable, tmp_path, sim_env_config)
+    assert "installed nvflare (2.6.2) does not honor" in reason
+    assert f"nvflare>={runner.SIMULATOR_WORKSPACE_OVERRIDE_MIN_NVFLARE_VERSION}" in reason
+
+    probes["result"] = {"version": "", "supported": None}
+    assert "print the direct simulator result directory" in runner.unresolved_result_dir_failure_reason(
+        sys.executable, tmp_path, sim_env_config
+    )
+
+    probes["result"] = {"version": "2.8.0", "supported": True}
+    assert "print the direct simulator result directory" in runner.unresolved_result_dir_failure_reason(
+        sys.executable, tmp_path, sim_env_config
+    )
+
+
+def test_unresolved_result_dir_failure_reason_stays_generic_without_sim_env(tmp_path, monkeypatch):
+    runner = _load_runner()
+
+    def probe_must_not_run(*args, **kwargs):
+        raise AssertionError("probe must not run when the discovered environment is not SimEnv")
+
+    monkeypatch.setattr(runner, "probe_simulator_workspace_override_support", probe_must_not_run)
+
+    for config in (
+        {"job": {}},
+        {"job": {"fed_job_args": {"name": {"value": "fraud_job", "confidence": "high"}}}},
+        {"environment": {"discovered": {"name": "PocEnv", "args": {}}}},
+        {"environment": {}},
+        {"environment": None},
+    ):
+        reason = runner.unresolved_result_dir_failure_reason(sys.executable, tmp_path, config)
+        assert "print the direct simulator result directory" in reason
+        assert "upgrade to nvflare" not in reason
+
+
+def test_probe_simulator_workspace_override_support_inspects_installed_sim_env(tmp_path):
+    runner = _load_runner()
+    sim_env = tmp_path / "nvflare" / "recipe" / "sim_env.py"
+    sim_env.parent.mkdir(parents=True)
+    tmp_path.joinpath("nvflare", "__init__.py").write_text("__version__ = '2.7.0'\n", encoding="utf-8")
+    sim_env.parent.joinpath("__init__.py").write_text("", encoding="utf-8")
+
+    sim_env.write_text("WORKSPACE_ROOT = '/tmp/nvflare/simulation'\n", encoding="utf-8")
+    probe = runner.probe_simulator_workspace_override_support(sys.executable, tmp_path)
+    assert probe["supported"] is False
+    # version must describe the imported (shadowing) package, not any installed distribution's metadata
+    assert probe["version"] == "2.7.0"
+
+    sim_env.write_text(
+        "SIMULATOR_WORKSPACE_ROOT_ENV_VAR = 'NVFLARE_SIMULATOR_WORKSPACE_ROOT'\n",
+        encoding="utf-8",
+    )
+    probe = runner.probe_simulator_workspace_override_support(sys.executable, tmp_path)
+    assert probe["supported"] is True
+
+    probe = runner.probe_simulator_workspace_override_support(str(tmp_path / "missing-python"), tmp_path)
+    assert probe == {"version": "", "supported": None}
+
+
+def test_probe_simulator_workspace_override_support_uses_sanitized_env(tmp_path, monkeypatch):
+    runner = _load_runner()
+    captured = {}
+
+    monkeypatch.setenv("PATH", "/safe/bin")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path / "pythonpath"))
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.setenv("AUTOFL_TEST_TOKEN", "secret")
+
+    def fake_run(*args, **kwargs):
+        captured["env"] = kwargs["env"]
+        return 0, 'native warning\n{"version": "2.9.0", "supported": true}\nlate stderr warning\n', 0.1
+
+    monkeypatch.setattr(runner, "run", fake_run)
+
+    probe = runner.probe_simulator_workspace_override_support(sys.executable, tmp_path)
+
+    assert probe == {"version": "2.9.0", "supported": True}
+    assert captured["env"]["PATH"] == "/safe/bin"
+    assert captured["env"]["PYTHONPATH"] == str(tmp_path / "pythonpath")
+    assert runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR in captured["env"]
+    assert set(captured["env"]) <= set(runner.SIMULATOR_ENV_ALLOWLIST) | {runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR}
+    assert "AWS_SECRET_ACCESS_KEY" not in captured["env"]
+    assert "AUTOFL_TEST_TOKEN" not in captured["env"]
+
+
+def test_nvflare_version_predates_workspace_override():
+    runner = _load_runner()
+
+    assert runner.nvflare_version_predates_workspace_override("2.8.0")
+    assert runner.nvflare_version_predates_workspace_override("2.7.1+160.g67022752b")
+    assert not runner.nvflare_version_predates_workspace_override("2.9.0")
+    assert not runner.nvflare_version_predates_workspace_override("2.10.0rc1")
+    assert not runner.nvflare_version_predates_workspace_override("3.0.0")
+    assert not runner.nvflare_version_predates_workspace_override("")
+    assert not runner.nvflare_version_predates_workspace_override("unknown")
+
+
+def test_simulator_child_env_uses_allowlisted_runtime_context(tmp_path, monkeypatch):
+    runner = _load_runner()
+    simulator_base = tmp_path / "simulation"
+    venv = tmp_path / "venv"
+    pythonpath = tmp_path / "pythonpath"
+
+    monkeypatch.setenv("PATH", "/safe/bin")
+    monkeypatch.setenv("PYTHONPATH", str(pythonpath))
+    monkeypatch.setenv("VIRTUAL_ENV", str(venv))
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example")
+    monkeypatch.setenv("no_proxy", "localhost")
+    monkeypatch.setenv("REQUESTS_CA_BUNDLE", str(tmp_path / "ca.pem"))
+    monkeypatch.setenv("SSL_CERT_FILE", str(tmp_path / "cert.pem"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "Users" / "tester"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.setenv("AUTOFL_TEST_TOKEN", "secret")
+
+    env = runner.simulator_child_env(simulator_base)
+
+    assert env["PATH"] == "/safe/bin"
+    assert env["PYTHONPATH"] == str(pythonpath)
+    assert env["VIRTUAL_ENV"] == str(venv)
+    assert env["HTTPS_PROXY"] == "http://proxy.example"
+    assert env["no_proxy"] == "localhost"
+    assert env["REQUESTS_CA_BUNDLE"] == str(tmp_path / "ca.pem")
+    assert env["SSL_CERT_FILE"] == str(tmp_path / "cert.pem")
+    assert env["USERPROFILE"] == str(tmp_path / "Users" / "tester")
+    assert env["APPDATA"] == str(tmp_path / "AppData" / "Roaming")
+    assert env["LOCALAPPDATA"] == str(tmp_path / "AppData" / "Local")
+    assert env[runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR] == str(simulator_base)
+    assert set(env) <= set(runner.SIMULATOR_ENV_ALLOWLIST) | {runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR}
+    assert "AWS_SECRET_ACCESS_KEY" not in env
+    assert "AUTOFL_TEST_TOKEN" not in env
+
+
+def test_simulator_child_env_uses_configured_passthrough(tmp_path, monkeypatch):
+    runner = _load_runner()
+    simulator_base = tmp_path / "simulation"
+    custom_path = tmp_path / "dataset"
+    config = {"environment": {runner.SIMULATOR_ENV_PASSTHROUGH_CONFIG_KEY: ["DATASET_DIR", "OMP_NUM_THREADS"]}}
+
+    monkeypatch.setenv("DATASET_DIR", str(custom_path))
+    monkeypatch.setenv("OMP_NUM_THREADS", "4")
+
+    extra_names = runner.simulator_env_passthrough_names(config)
+    env = runner.simulator_child_env(simulator_base, extra_names)
+
+    assert extra_names == ["DATASET_DIR", "OMP_NUM_THREADS"]
+    assert env["DATASET_DIR"] == str(custom_path)
+    assert env["OMP_NUM_THREADS"] == "4"
+    assert set(env) <= set(runner.SIMULATOR_ENV_ALLOWLIST) | set(extra_names) | {
+        runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR
+    }
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        "DATASET_DIR",
+        ["BAD-NAME"],
+        [3],
+    ],
+)
+def test_simulator_env_passthrough_names_rejects_invalid_values(values):
+    runner = _load_runner()
+
+    with pytest.raises(ValueError, match="simulator_env_passthrough"):
+        runner.simulator_env_passthrough_names({"environment": {runner.SIMULATOR_ENV_PASSTHROUGH_CONFIG_KEY: values}})
 
 
 def test_run_discovers_and_persists_printed_unnamed_simulator_root(tmp_path, monkeypatch):
@@ -1244,7 +1687,7 @@ def test_small_retained_improvement_does_not_reset_plateau_clock(tmp_path):
         plateau_min_delta=0.0005,
     )
 
-    assert runner.best_retained_record(records, "max").name == "candidate_1"
+    assert runner.best_retained_record(records).name == "candidate_1"
     assert state["best_score"] == pytest.approx(0.8503)
     assert state["plateau"]["best_score"] == pytest.approx(0.85)
     assert state["reason"] == "plateau_literature"
@@ -1268,6 +1711,10 @@ def test_runner_state_finalizes_after_explicit_candidate_cap(tmp_path):
     assert state["next_action"] == "final_report"
     assert state["final_response_allowed"] is True
     assert state["candidate_cap_source"] == "explicit"
+    assert state["remaining_candidates"] == 0
+    assert state["abandoned_candidates"] == 0
+    for deliverable in ("autofl_report.md", "results.tsv", "progress.png", "baseline vs best"):
+        assert deliverable in state["agent_instruction"]
 
 
 def test_runner_state_ignores_ambient_candidate_cap(tmp_path, monkeypatch):
@@ -1318,6 +1765,80 @@ def test_runner_state_marks_infrastructure_retry_non_final(tmp_path):
     assert "log output" in state["agent_instruction"]
 
 
+def test_runner_state_infrastructure_retry_keeps_capped_budget_consistent_with_guard(tmp_path):
+    runner = _load_runner()
+    records = [
+        runner.RunRecord("baseline", "baseline", 0.5, 1.0, "none", "baseline", "run", "/tmp/baseline"),
+        runner.RunRecord("keep", "candidate_1", 0.6, 1.0, "none", "candidate", "run", "/tmp/c1"),
+        runner.RunRecord("discard", "candidate_2", 0.4, 1.0, "none", "candidate", "run", "/tmp/c2"),
+        runner.RunRecord("crash", "candidate_3", None, 1.0, "none", "candidate", "run", "/tmp/c3"),
+        runner.RunRecord(
+            runner.INFRASTRUCTURE_RETRY,
+            "candidate_4",
+            None,
+            1.0,
+            "none",
+            "candidate",
+            "python job.py",
+            "/tmp/c4",
+        ),
+    ]
+    results_path = tmp_path / "results.tsv"
+    state_path = tmp_path / "state.json"
+    runner.write_results(results_path, records)
+
+    state = runner.write_state(state_path, results_path, records, 5)
+    guard_state = runner.load_campaign_guard().guard_state(results_path, max_candidates=5)
+
+    assert state["decision"] == "retry_infrastructure"
+    assert state["final_response_allowed"] is False
+    assert state["candidate_cap"] == 5
+    assert state["candidate_attempts"] == 3
+    assert state["remaining_candidates"] == 2
+    assert state["remaining_candidates"] == state["candidate_cap"] - state["candidate_attempts"]
+    assert state["candidate_attempts"] == guard_state["candidate_attempts"]
+    assert state["remaining_candidates"] == guard_state["remaining_candidates"]
+    persisted = json.loads(state_path.read_text(encoding="utf-8"))
+    assert persisted["candidate_attempts"] == 3
+    assert persisted["remaining_candidates"] == 2
+
+
+def test_remaining_candidates_clamped_to_zero_when_cap_lowered_below_attempts(tmp_path):
+    runner = _load_runner()
+    records = [
+        runner.RunRecord("baseline", "baseline", 0.5, 1.0, "none", "baseline", "run", "/tmp/baseline"),
+        runner.RunRecord("keep", "candidate_1", 0.6, 1.0, "none", "candidate", "run", "/tmp/c1"),
+        runner.RunRecord("discard", "candidate_2", 0.4, 1.0, "none", "candidate", "run", "/tmp/c2"),
+        runner.RunRecord("crash", "candidate_3", None, 1.0, "none", "candidate", "run", "/tmp/c3"),
+        runner.RunRecord(
+            runner.INFRASTRUCTURE_RETRY,
+            "candidate_4",
+            None,
+            1.0,
+            "none",
+            "candidate",
+            "python job.py",
+            "/tmp/c4",
+        ),
+    ]
+    results_path = tmp_path / "results.tsv"
+    state_path = tmp_path / "state.json"
+    runner.write_results(results_path, records)
+
+    # A cap lowered below the recorded attempts must not report budget debt:
+    # remaining_candidates means "candidates still available", never negative.
+    state = runner.write_state(state_path, results_path, records, 2)
+    guard_state = runner.load_campaign_guard().guard_state(results_path, max_candidates=2)
+
+    assert state["candidate_attempts"] == 3
+    assert state["remaining_candidates"] == 0
+    assert guard_state["candidate_attempts"] == 3
+    assert guard_state["remaining_candidates"] == 0
+    assert state["remaining_candidates"] == guard_state["remaining_candidates"]
+    persisted = json.loads(state_path.read_text(encoding="utf-8"))
+    assert persisted["remaining_candidates"] == 0
+
+
 def test_initialize_socket_failure_returns_75_without_counting_candidate(tmp_path, monkeypatch):
     runner = _load_runner()
     job = tmp_path / "job.py"
@@ -1342,7 +1863,7 @@ def test_initialize_socket_failure_returns_75_without_counting_candidate(tmp_pat
         ),
     )
 
-    assert runner.main(["initialize", str(job), "--env", "sim", "--no-prefer-synthetic"]) == 75
+    assert runner.main(["initialize", str(job), "--env", "sim"]) == 75
 
     records = runner.load_results(tmp_path / "results.tsv")
     state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
@@ -1445,6 +1966,207 @@ def test_baseline_crash_is_not_counted_as_candidate_attempt():
     assert runner.candidate_attempts(records) == 0
     assert runner.is_sandbox_socket_failure(
         "PermissionError: [Errno 1] Operation not permitted in get_open_ports while calling s.bind(('', 0))"
+    )
+
+
+def test_candidate_execution_fingerprint_uses_existing_comparison_provenance():
+    runner = _load_runner()
+    manifest = {
+        "base_source_sha256": "a" * 64,
+        "fixed_budget_sha256": "b" * 64,
+        "run_args": ["--lr", "0.1"],
+    }
+    fingerprint = runner.candidate_execution_fingerprint(manifest, "c" * 64)
+
+    assert runner.candidate_execution_fingerprint(deepcopy(manifest), "c" * 64) == fingerprint
+    for field, value in (
+        ("base_source_sha256", "d" * 64),
+        ("fixed_budget_sha256", "e" * 64),
+        ("run_args", ["--lr", "0.2"]),
+    ):
+        changed = deepcopy(manifest)
+        changed[field] = value
+        assert runner.candidate_execution_fingerprint(changed, "c" * 64) != fingerprint
+    assert runner.candidate_execution_fingerprint(manifest, "f" * 64) != fingerprint
+
+
+def test_identical_crashed_candidate_replay_is_counted_and_records_outcome(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)
+    assert runner.main(["status", str(job), "--max-candidates", "2"]) == 0
+    calls = []
+
+    outcomes = iter([("crash", None), ("candidate", 0.9)])
+
+    def replay_run(run_def, **kwargs):
+        calls.append(run_def.name)
+        status, score = next(outcomes)
+        return runner.RunRecord(
+            status, run_def.name, score, 1.0, "none", run_def.description, "python job.py", "/tmp/run"
+        )
+
+    monkeypatch.setattr(runner, "run_job", replay_run)
+    for candidate in ("first_crash", "same_after_crash"):
+        assert runner.main(["prepare", str(job), "--name", candidate, "--hypothesis", "same candidate"]) == 0
+        source = tmp_path / ".nvflare" / "autofl" / "candidates" / candidate / "source" / "client.py"
+        source.write_text("ALGORITHM = 'crashing_candidate'\n", encoding="utf-8")
+        if candidate == "first_crash":
+            assert runner.main(["evaluate", str(job)]) == 0
+
+    second_manifest_path = tmp_path / ".nvflare/autofl/candidates/same_after_crash/candidate_manifest.json"
+    assert runner.main(["evaluate", str(job), "--manifest", str(second_manifest_path)]) == 0
+    first_manifest = json.loads(
+        tmp_path.joinpath(".nvflare/autofl/candidates/first_crash/candidate_manifest.json").read_text(encoding="utf-8")
+    )
+    second_manifest = json.loads(second_manifest_path.read_text(encoding="utf-8"))
+    replay = second_manifest["crash_replay"]
+    assert second_manifest["status"] == "keep"
+    assert second_manifest["execution_fingerprint"] == first_manifest["execution_fingerprint"]
+    assert replay["execution_fingerprint"] == first_manifest["execution_fingerprint"]
+    assert replay["prior_candidate"] == "first_crash"
+    assert replay["outcome_status"] == "keep"
+    assert replay["recorded_at"]
+    assert "crash_repeat_approval" not in second_manifest
+    assert calls == ["first_crash", "same_after_crash"]
+    records = runner.load_results(tmp_path / "results.tsv")
+    assert runner.candidate_attempts(records) == 2
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    assert state["accounting_instruction"] == runner.ACCOUNTING_INSTRUCTION
+    assert state["candidate_cap"] == 2
+    assert state["remaining_candidates"] == 0
+    assert state["final_response_allowed"] is True
+    assert state["reason"] == "candidate_cap_exhausted"
+
+
+def test_crash_replay_provenance_is_not_stamped_for_infrastructure_retry_or_changed_rerun(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)
+    assert runner.main(["status", str(job), "--max-candidates", "2"]) == 0
+
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "crash", run_def.name, None, 1.0, "none", run_def.description, "python job.py", "/tmp/crash"
+        ),
+    )
+    assert runner.main(["prepare", str(job), "--name", "first_crash", "--hypothesis", "same candidate"]) == 0
+    tmp_path.joinpath(".nvflare/autofl/candidates/first_crash/source/client.py").write_text(
+        "ALGORITHM = 'crashing_candidate'\n", encoding="utf-8"
+    )
+    assert runner.main(["evaluate", str(job)]) == 0
+
+    assert runner.main(["prepare", str(job), "--name", "retry", "--hypothesis", "same candidate"]) == 0
+    retry_manifest = tmp_path / ".nvflare/autofl/candidates/retry/candidate_manifest.json"
+    retry_source = retry_manifest.parent / "source/client.py"
+    retry_source.write_text("ALGORITHM = 'crashing_candidate'\n", encoding="utf-8")
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            runner.INFRASTRUCTURE_RETRY,
+            run_def.name,
+            None,
+            1.0,
+            "none",
+            run_def.description,
+            "python job.py",
+            "/tmp/infrastructure",
+            failure_reason="socket unavailable",
+        ),
+    )
+    assert runner.main(["evaluate", str(job), "--manifest", str(retry_manifest)]) == 75
+    manifest = json.loads(retry_manifest.read_text(encoding="utf-8"))
+    assert manifest["status"] == "prepared"
+    assert "crash_replay" not in manifest
+
+    retry_source.write_text("ALGORITHM = 'fixed_candidate'\n", encoding="utf-8")
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "candidate", run_def.name, 0.9, 1.0, "none", run_def.description, "python job.py", "/tmp/success"
+        ),
+    )
+    assert runner.main(["evaluate", str(job), "--manifest", str(retry_manifest)]) == 0
+    manifest = json.loads(retry_manifest.read_text(encoding="utf-8"))
+    assert manifest["status"] == "keep"
+    assert "crash_replay" not in manifest
+    assert runner.candidate_attempts(runner.load_results(tmp_path / "results.tsv")) == 2
+
+
+def test_invalid_crashed_sibling_does_not_block_candidate_evaluation(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)
+    assert runner.main(["prepare", str(job), "--name", "valid", "--hypothesis", "valid candidate"]) == 0
+    valid_manifest = tmp_path / ".nvflare/autofl/candidates/valid/candidate_manifest.json"
+    valid_manifest.parent.joinpath("source/client.py").write_text("ALGORITHM = 'valid'\n", encoding="utf-8")
+
+    broken_manifest = tmp_path / ".nvflare/autofl/candidates/broken_crash/candidate_manifest.json"
+    broken_manifest.parent.mkdir(parents=True)
+    broken_manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": runner.CANDIDATE_MANIFEST_SCHEMA_VERSION,
+                "candidate_id": "broken_crash",
+                "workspace_root": str(tmp_path),
+                "status": "crash",
+                "patch_sha256": "a" * 64,
+                "run_args": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "candidate", run_def.name, 0.9, 1.0, "none", run_def.description, "python job.py", "/tmp/success"
+        ),
+    )
+
+    assert runner.main(["evaluate", str(job), "--manifest", str(valid_manifest)]) == 0
+    warning = capsys.readouterr().err
+    assert "ignoring invalid sibling candidate manifest" in warning
+    assert str(broken_manifest) in warning
+    assert json.loads(valid_manifest.read_text(encoding="utf-8"))["status"] == "keep"
+
+
+def test_changed_candidate_after_crash_is_allowed(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)
+
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "crash", run_def.name, None, 1.0, "none", run_def.description, "python job.py", "/tmp/crash"
+        ),
+    )
+    assert runner.main(["prepare", str(job), "--name", "crash", "--hypothesis", "first candidate"]) == 0
+    tmp_path.joinpath(".nvflare/autofl/candidates/crash/source/client.py").write_text(
+        "ALGORITHM = 'first'\n", encoding="utf-8"
+    )
+    assert runner.main(["evaluate", str(job)]) == 0
+
+    assert runner.main(["prepare", str(job), "--name", "changed", "--hypothesis", "changed candidate"]) == 0
+    tmp_path.joinpath(".nvflare/autofl/candidates/changed/source/client.py").write_text(
+        "ALGORITHM = 'second'\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "candidate", run_def.name, 0.9, 1.0, "none", run_def.description, "python job.py", "/tmp/success"
+        ),
+    )
+
+    assert runner.main(["evaluate", str(job)]) == 0
+    assert (
+        json.loads(
+            tmp_path.joinpath(".nvflare/autofl/candidates/changed/candidate_manifest.json").read_text(encoding="utf-8")
+        )["status"]
+        == "keep"
     )
 
 
@@ -1948,6 +2670,24 @@ def test_abandon_candidate_clears_pending_draft_without_touching_best(tmp_path, 
     assert state["pending_candidate_manifest"] is None
 
 
+def test_abandoned_candidate_counts_in_state_but_never_as_attempt(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "abandoned", "--hypothesis", "temporary idea"]) == 0
+    draft = tmp_path / ".nvflare/autofl/candidates/abandoned/source/client.py"
+    draft.write_text("ALGORITHM = 'temporary'\n", encoding="utf-8")
+    capsys.readouterr()
+
+    assert runner.main(["abandon", str(job)]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    assert state["abandoned_candidates"] == 1
+    assert state["candidate_attempts"] == 0
+    assert payload["abandoned_candidates"] == 1
+    assert payload["candidate_attempts"] == 0
+
+
 def test_abandon_rejects_agent_modified_manifest_paths(tmp_path, monkeypatch):
     runner = _load_runner()
     job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
@@ -2077,7 +2817,7 @@ def test_initialize_retries_an_unscored_baseline(tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr(runner, "run_job", fake_run)
-    command = ["initialize", str(job), "--no-prefer-synthetic"]
+    command = ["initialize", str(job)]
     assert runner.main(command) == 1
     assert runner.main(command) == 0
     records = runner.load_results(tmp_path / "results.tsv")
@@ -2257,7 +2997,7 @@ def test_omitted_metric_uses_imported_job_metric(tmp_path, monkeypatch):
 
     monkeypatch.setattr(runner, "run_job", fake_run)
 
-    assert runner.main(["initialize", str(job), "--no-prefer-synthetic"]) == 0
+    assert runner.main(["initialize", str(job)]) == 0
     metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
     assert metadata["settings"]["metric"] == "auc"
 
@@ -2272,9 +3012,247 @@ def test_explicit_mutable_campaign_settings_persist_and_uncapped_removes_cap(tmp
     assert metadata["settings"]["max_candidates"] == 7
     assert metadata["settings"]["timeout"] == 123
 
-    assert runner.main(["status", str(job), "--uncapped"]) == 0
+    assert runner.main(["status", str(job), "--uncapped", "--confirm-user-approved-cap-change"]) == 0
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     assert metadata["settings"]["max_candidates"] is None
+
+
+def test_effective_cap_changes_append_audit_records_to_campaign_metadata(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    metadata_path = tmp_path / ".nvflare/autofl/campaign.json"
+
+    assert runner.main(["status", str(job), "--timeout", "123"]) == 0
+    assert "cap_changes" not in json.loads(metadata_path.read_text(encoding="utf-8"))
+
+    assert runner.main(["status", str(job), "--max-candidates", "7"]) == 0
+    assert runner.main(["status", str(job), "--max-candidates", "7"]) == 0
+    assert runner.main(["status", str(job), "--uncapped", "--confirm-user-approved-cap-change"]) == 0
+    after_approval = metadata_path.read_bytes()
+    assert runner.main(["status", str(job), "--uncapped", "--confirm-user-approved-cap-change"]) == 0
+    assert metadata_path.read_bytes() == after_approval
+
+    cap_changes = json.loads(metadata_path.read_text(encoding="utf-8"))["cap_changes"]
+    assert [(entry["old"], entry["new"], entry["source"], entry["user_approved"]) for entry in cap_changes] == [
+        (None, 7, "explicit", False),
+        (7, None, "uncapped", True),
+    ]
+    assert all(entry["changed_at"] for entry in cap_changes)
+
+
+def test_cap_expansion_requires_specific_user_approval_and_is_write_free_when_rejected(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    metadata_path = tmp_path / ".nvflare/autofl/campaign.json"
+
+    assert runner.main(["status", str(job), "--max-candidates", "2"]) == 0
+    before = metadata_path.read_bytes()
+
+    assert runner.main(["status", str(job), "--max-candidates", "3"]) == 2
+    assert "requires explicit user approval" in capsys.readouterr().err
+    assert metadata_path.read_bytes() == before
+
+    assert runner.main(["status", str(job), "--uncapped"]) == 2
+    assert "requires explicit user approval" in capsys.readouterr().err
+    assert metadata_path.read_bytes() == before
+
+    assert (
+        runner.main(
+            [
+                "status",
+                str(job),
+                "--max-candidates",
+                "3",
+                "--confirm-user-approved-cap-change",
+            ]
+        )
+        == 0
+    )
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["settings"]["max_candidates"] == 3
+    assert [(entry["old"], entry["new"], entry["user_approved"]) for entry in metadata["cap_changes"]] == [
+        (None, 2, False),
+        (2, 3, True),
+    ]
+    after_approval = metadata_path.read_bytes()
+    assert (
+        runner.main(
+            [
+                "status",
+                str(job),
+                "--max-candidates",
+                "3",
+                "--confirm-user-approved-cap-change",
+            ]
+        )
+        == 0
+    )
+    assert metadata_path.read_bytes() == after_approval
+
+
+def test_runner_rejects_abbreviated_lifecycle_options(capsys):
+    runner = _load_runner()
+
+    with pytest.raises(SystemExit) as error:
+        runner.parse_args(["status", "job.py", "--max-cand", "5"])
+
+    assert error.value.code == 2
+    assert "unrecognized arguments: --max-cand 5" in capsys.readouterr().err
+
+
+def test_cap_confirmation_is_rejected_when_no_expansion_requires_it(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+
+    assert runner.main(["status", str(job), "--max-candidates", "3"]) == 0
+    assert (
+        runner.main(
+            [
+                "status",
+                str(job),
+                "--max-candidates",
+                "2",
+                "--confirm-user-approved-cap-change",
+            ]
+        )
+        == 2
+    )
+    assert "only valid for a candidate-cap increase" in capsys.readouterr().err
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    assert metadata["settings"]["max_candidates"] == 3
+
+
+def test_raising_cap_reopens_exhausted_campaign_with_consistent_state(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    results_path = tmp_path / "results.tsv"
+    records = runner.load_results(results_path)
+    records.append(runner.RunRecord("discard", "candidate_1", 0.4, 1.0, "none", "candidate", "python job.py", ""))
+    runner.write_results(results_path, records)
+    assert runner.main(["status", str(job), "--max-candidates", "1"]) == 0
+
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["candidate_cap"] == 1
+    assert state["final_response_allowed"] is True
+    assert state["reason"] == "candidate_cap_exhausted"
+
+    assert (
+        runner.main(
+            [
+                "prepare",
+                str(job),
+                "--name",
+                "reopened",
+                "--hypothesis",
+                "resume search",
+                "--max-candidates",
+                "2",
+                "--confirm-user-approved-cap-change",
+            ]
+        )
+        == 0
+    )
+
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    assert metadata["settings"]["max_candidates"] == 2
+    assert [(entry["old"], entry["new"]) for entry in metadata["cap_changes"]] == [(None, 1), (1, 2)]
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["candidate_cap"] == 2
+    assert state["final_response_allowed"] is False
+    assert state["remaining_candidates"] == 1
+    assert tmp_path.joinpath(".nvflare/autofl/candidates/reopened/candidate_manifest.json").exists()
+
+
+def test_cap_change_with_unrelated_preflight_rejection_keeps_files_consistent(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "draft", "--hypothesis", "draft candidate"]) == 0
+
+    rc = runner.main(
+        ["prepare", str(job), "--name", "second", "--hypothesis", "second candidate", "--max-candidates", "5"]
+    )
+
+    assert rc == 2
+    assert "pending candidate" in capsys.readouterr().err
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    assert metadata["settings"]["max_candidates"] == 5
+    assert [(entry["old"], entry["new"]) for entry in metadata["cap_changes"]] == [(None, 5)]
+    assert state["candidate_cap"] == 5
+    assert state["final_response_allowed"] is False
+    assert not tmp_path.joinpath(".nvflare/autofl/candidates/second").exists()
+
+
+def test_preflight_rejection_without_settings_change_is_write_free(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "draft", "--hypothesis", "draft candidate"]) == 0
+    watched = [
+        tmp_path / ".nvflare/autofl/campaign.json",
+        tmp_path / ".nvflare/autofl/campaign_state.json",
+        tmp_path / "results.tsv",
+    ]
+    before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in watched}
+
+    rc = runner.main(["prepare", str(job), "--name", "second", "--hypothesis", "second candidate"])
+
+    assert rc == 2
+    assert "pending candidate" in capsys.readouterr().err
+    for path in watched:
+        assert (path.read_bytes(), path.stat().st_mtime_ns) == before[path]
+
+
+def test_lowering_cap_below_attempts_clamps_remaining_and_keeps_state_consistent(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    results_path = tmp_path / "results.tsv"
+    records = runner.load_results(results_path)
+    records.append(runner.RunRecord("discard", "candidate_1", 0.4, 1.0, "none", "candidate", "python job.py", ""))
+    records.append(runner.RunRecord("discard", "candidate_2", 0.3, 1.0, "none", "candidate", "python job.py", ""))
+    runner.write_results(results_path, records)
+    assert runner.main(["status", str(job), "--max-candidates", "3"]) == 0
+
+    rc = runner.main(["prepare", str(job), "--name", "late", "--hypothesis", "late candidate", "--max-candidates", "1"])
+
+    assert rc == 2
+    assert "campaign is already final: candidate_cap_exhausted" in capsys.readouterr().err
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    assert metadata["settings"]["max_candidates"] == 1
+    assert [(entry["old"], entry["new"]) for entry in metadata["cap_changes"]] == [(None, 3), (3, 1)]
+    assert state["candidate_cap"] == 1
+    assert state["candidate_attempts"] == 2
+    assert state["remaining_candidates"] == 0
+    assert state["final_response_allowed"] is True
+    assert state["reason"] == "candidate_cap_exhausted"
+    assert not tmp_path.joinpath(".nvflare/autofl/candidates/late").exists()
+
+
+def test_runner_state_reports_budget_and_baseline_accounting(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.5)
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["remaining_candidates"] is None
+    assert state["baseline_status"] == "complete"
+    assert state["baseline_score"] == pytest.approx(0.5)
+    assert state["improvement"] == pytest.approx(0.0)
+    assert state["abandoned_candidates"] == 0
+
+    results_path = tmp_path / "results.tsv"
+    records = runner.load_results(results_path)
+    records.append(
+        runner.RunRecord("keep", "higher_accuracy", 0.8, 1.0, "none", "higher accuracy", "python job.py", "")
+    )
+    runner.write_results(results_path, records)
+
+    assert runner.main(["status", str(job), "--max-candidates", "3"]) == 0
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["remaining_candidates"] == 2
+    # improvement is best minus baseline; campaigns always maximize the metric.
+    assert state["improvement"] == pytest.approx(0.3)
 
 
 def test_status_reuses_persisted_guard_settings(tmp_path, monkeypatch):
@@ -2308,21 +3286,49 @@ def test_status_reuses_persisted_guard_settings(tmp_path, monkeypatch):
     assert observed["family_repeat_limit"] == 9
 
 
-def test_status_restores_persisted_minimization_mode(tmp_path, monkeypatch):
+def test_initialize_has_no_mode_flag(tmp_path, capsys):
     runner = _load_runner()
-    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=1.0, mode="min")
-    results_path = tmp_path / "results.tsv"
-    records = runner.load_results(results_path)
-    records.append(runner.RunRecord("keep", "lower_loss", 0.8, 1.0, "none", "lower loss", "python job.py", ""))
-    runner.write_results(results_path, records)
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
 
-    assert runner.main(["status", str(job)]) == 0
+    # Campaigns always maximize; the direction flag is gone rather than vestigial.
+    with pytest.raises(SystemExit) as excinfo:
+        runner.main(["initialize", str(job), "--mode", "min"])
 
-    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
-    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
-    assert metadata["settings"]["mode"] == "min"
-    assert state["best_score"] == pytest.approx(0.8)
-    assert runner.main(["status", str(job), "--mode", "max"]) == 2
+    assert excinfo.value.code == 2
+    assert "unrecognized arguments: --mode" in capsys.readouterr().err
+    assert not tmp_path.joinpath(".nvflare").exists()
+
+
+def test_resuming_legacy_minimization_campaign_is_rejected_with_guidance(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    metadata_path = tmp_path / ".nvflare/autofl/campaign.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["settings"]["mode"] == "max"
+    metadata["settings"]["mode"] = "min"
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    state_before = tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_bytes()
+    capsys.readouterr()
+
+    # Every lifecycle action routes through the same restore_campaign_settings gate.
+    for action in ("status", "prepare", "evaluate", "abandon", "record", "suggest"):
+        assert runner.main([action, str(job)]) == 2
+        stderr = capsys.readouterr().err
+        assert "mode='min'" in stderr
+        assert "minimization is not supported" in stderr
+        assert "neg_val_loss" in stderr
+
+    # The recommended recovery must not be circular: initialize on the legacy campaign
+    # is rejected too, but its message names the concrete escape hatch.
+    assert runner.main(["initialize", str(job)]) == 2
+    stderr = capsys.readouterr().err
+    assert "minimization is not supported" in stderr
+    assert ".nvflare/autofl" in stderr
+    assert "fresh workspace" in stderr
+
+    # The campaign never silently flips to maximization: no state was rewritten.
+    assert tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_bytes() == state_before
 
 
 def test_explicit_immutable_campaign_setting_change_is_rejected(tmp_path, monkeypatch):
@@ -2413,7 +3419,7 @@ def test_suggest_returns_fallbacks_without_executing_them(tmp_path, monkeypatch,
     assert all(item["run_args"] for item in payload["suggestions"])
 
 
-def test_import_job_config_forwards_minimization_mode(tmp_path, monkeypatch):
+def test_import_job_config_forwards_job_args_without_direction_plumbing(tmp_path, monkeypatch):
     runner = _load_runner()
     job = tmp_path / "job.py"
     job.write_text("print('job')\n", encoding="utf-8")
@@ -2433,10 +3439,11 @@ def test_import_job_config_forwards_minimization_mode(tmp_path, monkeypatch):
             return runner.yaml.safe_dump(config)
 
     monkeypatch.setattr(runner, "load_job_importer", lambda: FakeImporter)
-    args = runner.parse_args(["initialize", str(job), "--mode", "min", "--base-args", "--mode training"])
+    # A job-owned "--mode" flag in --base-args is unrelated to the removed objective direction.
+    args = runner.parse_args(["initialize", str(job), "--base-args", "--mode training"])
     runner.import_job_config(args, job, output, tmp_path / "import.log", 10)
 
-    assert captured["mode"] == "min"
+    assert "mode" not in captured
     assert captured["job_args"] == ["--mode", "training"]
 
 
@@ -2534,7 +3541,6 @@ if __name__ == "__main__":
             str(job),
             "--metric",
             "accuracy",
-            "--no-prefer-synthetic",
         ],
         cwd=tmp_path,
         env=env,
@@ -2581,3 +3587,182 @@ if __name__ == "__main__":
     )
     assert manifest["status"] == "keep"
     assert manifest["changed_files"] == ["job.py"]
+
+
+def test_cross_val_extraction_averages_server_final_global_model_entries(tmp_path):
+    runner = _load_runner()
+    result_path = tmp_path / "cross_val_results.json"
+    result_path.write_text(
+        json.dumps(
+            {
+                "site-1": {
+                    "site-1": {"accuracy": 0.99},
+                    "SRV_FL_global_model.pt": {"accuracy": 0.71},
+                },
+                "site-2": {
+                    "site-2": {"accuracy": 0.95},
+                    "SRV_FL_global_model.pt": {"accuracy": 0.74},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    evidence = runner.extract_metric_evidence(tmp_path, ["accuracy"])
+
+    # Unweighted mean over the global model's per-site scores; site-local entries never count.
+    assert evidence.score == pytest.approx((0.71 + 0.74) / 2)
+    assert evidence.metric_name == "accuracy"
+    assert evidence.source == "structured:cross_val_results.json#server_final"
+    assert evidence.artifact == str(result_path.resolve())
+
+
+def test_cross_val_extraction_resolves_modern_unprefixed_global_model_entries(tmp_path):
+    runner = _load_runner()
+    tmp_path.joinpath("cross_val_results.json").write_text(
+        json.dumps(
+            {
+                "site-1": {
+                    "site-1": {"accuracy": 0.99},
+                    "FL_global_model.pt": {"accuracy": 0.71},
+                },
+                "site-2": {
+                    "site-2": {"accuracy": 0.95},
+                    "FL_global_model.pt": {"accuracy": 0.74},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    evidence = runner.extract_metric_evidence(tmp_path, ["accuracy"])
+
+    assert evidence.score == pytest.approx((0.71 + 0.74) / 2)
+    assert evidence.source == "structured:cross_val_results.json#server_final"
+
+
+def test_cross_val_extraction_mean_penalizes_easiest_site_bias(tmp_path):
+    # Reviewer counterexample: a max reduction would score [0.90, 0.50] as 0.90 and rank it above
+    # a uniformly better [0.80, 0.80]; the unweighted mean ranks the uniform candidate higher.
+    runner = _load_runner()
+    skewed = tmp_path / "skewed"
+    uniform = tmp_path / "uniform"
+    skewed.mkdir()
+    uniform.mkdir()
+    skewed.joinpath("cross_val_results.json").write_text(
+        json.dumps(
+            {
+                "site-1": {"SRV_FL_global_model.pt": {"accuracy": 0.90}},
+                "site-2": {"SRV_FL_global_model.pt": {"accuracy": 0.50}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    uniform.joinpath("cross_val_results.json").write_text(
+        json.dumps(
+            {
+                "site-1": {"SRV_FL_global_model.pt": {"accuracy": 0.80}},
+                "site-2": {"SRV_FL_global_model.pt": {"accuracy": 0.80}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    skewed_score = runner.extract_score(skewed, ["accuracy"])
+    uniform_score = runner.extract_score(uniform, ["accuracy"])
+
+    assert skewed_score == pytest.approx(0.70)
+    assert uniform_score == pytest.approx(0.80)
+    assert runner.better(uniform_score, skewed_score)
+
+
+def test_cross_val_extraction_prefers_final_checkpoint_entries_over_best(tmp_path):
+    runner = _load_runner()
+    tmp_path.joinpath("cross_val_results.json").write_text(
+        json.dumps(
+            {
+                "site-1": {
+                    "SRV_FL_global_model.pt": {"accuracy": 0.60},
+                    "SRV_best_FL_global_model.pt": {"accuracy": 0.90},
+                },
+                "site-2": {
+                    "SRV_FL_global_model.pt": {"accuracy": 0.80},
+                    "SRV_best_FL_global_model.pt": {"accuracy": 0.95},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    evidence = runner.extract_metric_evidence(tmp_path, ["accuracy"])
+
+    # Only the final-checkpoint class is averaged; best_-checkpoint entries are excluded.
+    assert evidence.score == pytest.approx((0.60 + 0.80) / 2)
+    assert evidence.source == "structured:cross_val_results.json#server_final"
+
+
+def test_cross_val_extraction_resolves_srv_best_only_global_model_entries(tmp_path):
+    runner = _load_runner()
+    tmp_path.joinpath("cross_val_results.json").write_text(
+        json.dumps(
+            {
+                "site-1": {
+                    "site-1": {"accuracy": 0.99},
+                    "SRV_best_FL_global_model.pt": {"accuracy": 0.66},
+                },
+                "site-2": {"SRV_best_FL_global_model.pt": {"accuracy": 0.70}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    evidence = runner.extract_metric_evidence(tmp_path, ["accuracy"])
+
+    # Without any final-checkpoint entries the best_-checkpoint class is averaged instead.
+    assert evidence.score == pytest.approx((0.66 + 0.70) / 2)
+    assert evidence.source == "structured:cross_val_results.json#server_final"
+
+
+def test_cross_val_extraction_single_site_mean_is_the_value_itself(tmp_path):
+    runner = _load_runner()
+    tmp_path.joinpath("cross_val_results.json").write_text(
+        json.dumps(
+            {
+                "site-1": {
+                    "site-1": {"loss": 0.10},
+                    "SRV_FL_global_model.pt": {"loss": 0.42},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert runner.extract_score(tmp_path, ["loss"]) == pytest.approx(0.42)
+
+
+def test_cross_val_extraction_falls_back_to_first_match_without_server_final_entries(tmp_path):
+    runner = _load_runner()
+    tmp_path.joinpath("cross_val_results.json").write_text(
+        json.dumps({"site-1": {"site-1": {"accuracy": 0.9}, "site-2": {"accuracy": 0.6}}}),
+        encoding="utf-8",
+    )
+
+    evidence = runner.extract_metric_evidence(tmp_path, ["accuracy"])
+    assert evidence.score == pytest.approx(0.9)
+    assert evidence.source == "structured:cross_val_results.json"
+
+    tmp_path.joinpath("cross_val_results.json").write_text(
+        json.dumps(
+            {
+                "site-1": {
+                    "site-1": {"accuracy": 0.9},
+                    "SRV_FL_global_model.pt": {"loss": 0.4},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    evidence = runner.extract_metric_evidence(tmp_path, ["accuracy"])
+    assert evidence.score == pytest.approx(0.9)
+    assert evidence.source == "structured:cross_val_results.json"

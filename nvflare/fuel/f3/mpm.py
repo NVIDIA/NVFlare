@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-import signal
 import threading
 import time
 
@@ -179,17 +178,24 @@ class MainProcessMonitor:
                 num_active_threads += 1
         logger.info(f"{cls.name}: Good Bye!")
         if num_active_threads > 0:
+            # main_func may return None when it completes without an explicit return
+            # statement; coerce any non-int value to 0 so the parent's int() parse of
+            # _process_rc.txt doesn't fail with ValueError and mislog a successful job
+            # as RC=1.
+            rc_to_write = rc if isinstance(rc, int) else 0
             try:
-                # main_func may return None when it completes without an explicit return
-                # statement; coerce any non-int value to 0 so the parent's int() parse of
-                # _process_rc.txt doesn't fail with ValueError and mislog a successful job
-                # as RC=1.
-                rc_to_write = rc if isinstance(rc, int) else 0
-                with open(rc_file, "w") as outfile:
+                # A component may have already recorded an authoritative in-run
+                # failure before main_func returned (for example, a panic raised by
+                # an accepted external result source dying). Never replace that
+                # result with main_func's later implicit success value.
+                flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                fd = os.open(rc_file, flags, 0o600)
+                with os.fdopen(fd, "w") as outfile:
                     outfile.write(f"{rc_to_write}")
-
-                os.kill(os.getpid(), signal.SIGKILL)
+            except FileExistsError:
+                logger.debug(f"Preserving process return code already recorded in {rc_file}")
             except Exception as ex:
-                logger.debug(f"Failed to kill process {os.getpid()}: {secure_format_exception(ex)}")
+                logger.debug(f"Failed to write process return code to {rc_file}: {secure_format_exception(ex)}")
+            os._exit(rc_to_write)
 
         return rc

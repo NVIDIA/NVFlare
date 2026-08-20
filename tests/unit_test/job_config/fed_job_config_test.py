@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 import os
 import sys
 from unittest.mock import Mock, patch
@@ -21,6 +22,248 @@ from nvflare.job_config.fed_job_config import FedJobConfig
 
 
 class TestFedJobConfig:
+    def test_meta_props_cannot_override_job_name(self):
+        with pytest.raises(ValueError, match="reserved 'name'"):
+            FedJobConfig(job_name="job", min_clients=1, meta_props={"name": "other-job"})
+
+    def test_generate_job_config_rejects_post_construction_job_name_override(self, tmp_path):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        job_config.meta_props = {"name": "other-job"}
+
+        with pytest.raises(ValueError, match="reserved 'name'"):
+            job_config.generate_job_config(tmp_path)
+
+        assert not (tmp_path / "job").exists()
+
+    def test_generate_job_config_preserves_existing_export_when_metadata_is_rejected(self, tmp_path):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        job_config.generate_job_config(tmp_path)
+        marker = tmp_path / "job" / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+        job_config.meta_props = {"name": "other-job"}
+
+        with pytest.raises(ValueError, match="reserved 'name'"):
+            job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+
+    def test_generate_job_config_can_retry_after_interrupted_export(self, tmp_path, monkeypatch):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        original_generate_meta = job_config._generate_meta
+
+        def interrupt_export(*args):
+            raise KeyboardInterrupt()
+
+        monkeypatch.setattr(job_config, "_generate_meta", interrupt_export)
+        with pytest.raises(KeyboardInterrupt):
+            job_config.generate_job_config(tmp_path)
+
+        assert not (tmp_path / "job").exists()
+
+        monkeypatch.setattr(job_config, "_generate_meta", original_generate_meta)
+        job_config.generate_job_config(tmp_path)
+
+        assert (tmp_path / "job" / "meta.json").is_file()
+
+    def test_generate_job_config_preserves_existing_export_when_replacement_generation_fails(
+        self, tmp_path, monkeypatch
+    ):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        job_config.generate_job_config(tmp_path)
+        marker = tmp_path / "job" / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+
+        def fail_generation(*args):
+            raise RuntimeError("generation failed")
+
+        monkeypatch.setattr(job_config, "_generate_meta", fail_generation)
+        with pytest.raises(RuntimeError, match="generation failed"):
+            job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+
+    def test_generate_job_config_preserves_export_stranded_during_directory_swap(self, tmp_path, caplog):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        job_config.generate_job_config(tmp_path)
+        marker = tmp_path / "job" / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+        backup_job_dir = tmp_path / ".nvflare_job_backups" / "00000000000000000000000000000001"
+        backup_job_dir.parent.mkdir(parents=True)
+        os.replace(tmp_path / "job", backup_job_dir)
+        with caplog.at_level(logging.WARNING):
+            job_config.generate_job_config(tmp_path)
+
+        assert (backup_job_dir / "notes.txt").read_text(encoding="utf-8") == "keep me"
+        assert (tmp_path / "job" / "meta.json").is_file()
+        assert backup_job_dir.exists()
+        assert any(str(backup_job_dir.parent) in record.getMessage() for record in caplog.records)
+
+    def test_generate_job_config_with_relative_job_root_is_immune_to_cwd_change(self, tmp_path, monkeypatch):
+        entry_dir = tmp_path / "a"
+        other_dir = tmp_path / "b"
+        entry_dir.mkdir()
+        (other_dir / "exports").mkdir(parents=True)
+        monkeypatch.chdir(entry_dir)
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        original_generate_meta = job_config._generate_meta
+
+        def change_cwd_and_generate(*args):
+            os.chdir(other_dir)
+            return original_generate_meta(*args)
+
+        monkeypatch.setattr(job_config, "_generate_meta", change_cwd_and_generate)
+        job_config.generate_job_config("exports")
+
+        assert (entry_dir / "exports" / "job" / "meta.json").is_file()
+        assert not any((other_dir / "exports").iterdir())
+
+    def test_generate_job_config_succeeds_when_backup_cleanup_fails(self, tmp_path, monkeypatch, caplog):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        job_config.generate_job_config(tmp_path)
+        marker = tmp_path / "job" / "notes.txt"
+        marker.write_text("replace me", encoding="utf-8")
+
+        def fail_cleanup(*args):
+            raise OSError("cleanup failed")
+
+        monkeypatch.setattr(job_config, "_remove_backup_export", fail_cleanup)
+        with caplog.at_level(logging.WARNING):
+            job_config.generate_job_config(tmp_path)
+
+        assert (tmp_path / "job" / "meta.json").is_file()
+        assert not (tmp_path / "job" / "notes.txt").exists()
+        backups = list((tmp_path / ".nvflare_job_backups").iterdir())
+        assert len(backups) == 1
+        assert (backups[0] / "notes.txt").read_text(encoding="utf-8") == "replace me"
+        assert any("backup" in record.getMessage().lower() for record in caplog.records)
+
+    def test_generate_job_config_does_not_warn_without_stranded_backups(self, tmp_path, caplog):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        with caplog.at_level(logging.WARNING):
+            job_config.generate_job_config(tmp_path)
+            job_config.generate_job_config(tmp_path)
+
+        assert (tmp_path / "job" / "meta.json").is_file()
+        assert not any("backup" in record.getMessage() for record in caplog.records)
+
+    def test_generate_job_config_preserves_backup_when_canonical_folder_is_unowned(self, tmp_path):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        job_config.generate_job_config(tmp_path)
+        backup_job_dir = tmp_path / ".nvflare_job_backups" / "00000000000000000000000000000001"
+        backup_job_dir.parent.mkdir(parents=True)
+        os.replace(tmp_path / "job", backup_job_dir)
+        job_dir = tmp_path / "job"
+        job_dir.mkdir()
+        marker = job_dir / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+
+        with pytest.raises(RuntimeError, match="does not belong"):
+            job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+        assert (backup_job_dir / "meta.json").is_file()
+
+    def test_generate_job_config_ignores_caller_content_in_backup_folder(self, tmp_path):
+        backup_job_dir = tmp_path / ".nvflare_job_backups" / "00000000000000000000000000000001"
+        backup_job_dir.mkdir(parents=True)
+        (backup_job_dir / "meta.json").write_text('{"name": "job"}', encoding="utf-8")
+        marker = backup_job_dir / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+
+        job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+        assert (tmp_path / "job" / "meta.json").is_file()
+
+    def test_generate_job_config_does_not_conflict_with_previous_suffixed_job(self, tmp_path):
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+        previous_job_config = FedJobConfig(job_name="job.previous", min_clients=1)
+        previous_job_config.generate_job_config(tmp_path)
+        marker = tmp_path / "job.previous" / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+
+        job_config.generate_job_config(tmp_path)
+        job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+
+    def test_generate_job_config_can_be_repeated_with_meta_props(self, tmp_path):
+        job_config = FedJobConfig(job_name="job", min_clients=1, meta_props={"description": "test job"})
+
+        job_config.generate_job_config(tmp_path)
+        job_config.generate_job_config(tmp_path)
+
+        assert (tmp_path / "job" / "meta.json").is_file()
+
+    @pytest.mark.parametrize("job_name", ["", ".", "..", "../job", "nested/job", "/tmp/job", r"..\evil"])
+    def test_generate_job_config_rejects_path_bearing_job_name(self, tmp_path, job_name):
+        # A meta.json makes the export root look like a replaceable job folder.
+        # Before validation, an empty or "." job name caused rmtree(tmp_path).
+        meta_file = tmp_path / "meta.json"
+        meta_file.write_text("{}", encoding="utf-8")
+        marker = tmp_path / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+        job_config = FedJobConfig(job_name=job_name, min_clients=1)
+
+        with pytest.raises(ValueError):
+            job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+        assert meta_file.exists()
+
+    def test_generate_job_config_preserves_job_folder_with_different_name(self, tmp_path):
+        job_dir = tmp_path / "job"
+        job_dir.mkdir()
+        (job_dir / "meta.json").write_text('{"name": "other-job"}', encoding="utf-8")
+        marker = job_dir / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+
+        with pytest.raises(RuntimeError, match="does not belong"):
+            job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+
+    @pytest.mark.parametrize("metadata", ["[]", "null"])
+    def test_generate_job_config_preserves_non_object_metadata(self, tmp_path, metadata):
+        job_dir = tmp_path / "job"
+        job_dir.mkdir()
+        (job_dir / "meta.json").write_text(metadata, encoding="utf-8")
+        marker = job_dir / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+
+        with pytest.raises(RuntimeError, match="does not belong"):
+            job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+
+    def test_generate_job_config_preserves_unowned_partial_export_folder(self, tmp_path):
+        job_dir = tmp_path / "job"
+        job_dir.mkdir()
+        marker = job_dir / "notes.txt"
+        marker.write_text("keep me", encoding="utf-8")
+        job_config = FedJobConfig(job_name="job", min_clients=1)
+
+        with pytest.raises(RuntimeError, match="does not belong"):
+            job_config.generate_job_config(tmp_path)
+
+        assert marker.read_text(encoding="utf-8") == "keep me"
+
+    def test_generate_job_config_can_retry_after_meta_serialization_failure(self, tmp_path):
+        job_config = FedJobConfig(job_name="job", min_clients=1, meta_props={"invalid": object()})
+
+        with pytest.raises(TypeError):
+            job_config.generate_job_config(tmp_path)
+
+        assert not (tmp_path / "job").exists()
+
+        job_config.meta_props = None
+        job_config.generate_job_config(tmp_path)
+
+        assert (tmp_path / "job" / "meta.json").is_file()
+
     def test_locate_imports(self):
         job_config = FedJobConfig(job_name="job_name", min_clients=1)
         cwd = os.path.dirname(__file__)
@@ -63,6 +306,36 @@ class TestFedJobConfig:
 
         assert (custom_dir / "helper.py").is_file()
 
+    def test_copy_ext_script_finds_top_level_import_from_package_directory(self, tmp_path, monkeypatch):
+        package_dir = tmp_path / "pkg"
+        package_dir.mkdir()
+        (package_dir / "__init__.py").write_text("", encoding="utf-8")
+        (package_dir / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (package_dir / "client.py").write_text("import helper\n", encoding="utf-8")
+        monkeypatch.chdir(package_dir)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["client.py"])
+
+        assert (custom_dir / "client.py").is_file()
+        assert (custom_dir / "helper.py").is_file()
+
+    def test_copy_ext_script_finds_unqualified_sibling_import_in_subdirectory(self, tmp_path, monkeypatch):
+        script_dir = tmp_path / "src"
+        script_dir.mkdir()
+        (script_dir / "net.py").write_text("class Net:\n    pass\n", encoding="utf-8")
+        (script_dir / "client.py").write_text("from net import Net\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["src/client.py"])
+
+        assert (custom_dir / "src" / "client.py").is_file()
+        assert (custom_dir / "net.py").is_file()
+        assert not (custom_dir / "src" / "net.py").exists()
+
     def test_copy_ext_scripts_reject_distinct_absolute_sources_with_same_destination(self, tmp_path, monkeypatch):
         first_dir = tmp_path / "first"
         second_dir = tmp_path / "second"
@@ -102,6 +375,7 @@ class TestFedJobConfig:
     def test_absolute_import_does_not_resolve_to_package_sibling(self, tmp_path, monkeypatch):
         package_dir = tmp_path / "pkg"
         package_dir.mkdir()
+        (package_dir / "__init__.py").write_text("", encoding="utf-8")
         (package_dir / "traceback.py").write_text("from ._compatibility import helper\n", encoding="utf-8")
         (package_dir / "client.py").write_text("import traceback\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
@@ -110,7 +384,24 @@ class TestFedJobConfig:
         job_config = FedJobConfig(job_name="job_name", min_clients=1)
         job_config._copy_ext_scripts(str(custom_dir), ["pkg/client.py"])
 
+        assert (custom_dir / "pkg" / "client.py").is_file()
         assert not (custom_dir / "traceback.py").exists()
+
+    def test_copy_ext_script_resolves_qualified_package_sibling(self, tmp_path, monkeypatch):
+        package_dir = tmp_path / "pkg"
+        package_dir.mkdir()
+        (package_dir / "__init__.py").write_text("", encoding="utf-8")
+        (package_dir / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (package_dir / "client.py").write_text("import pkg.helper\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["pkg/client.py"])
+
+        assert (custom_dir / "pkg" / "client.py").is_file()
+        assert (custom_dir / "pkg" / "helper.py").is_file()
+        assert not (custom_dir / "helper.py").exists()
 
     def test_copy_ext_script_resolves_valid_multi_level_relative_import(self, tmp_path, monkeypatch):
         package_dir = tmp_path / "pkg"

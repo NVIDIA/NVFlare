@@ -159,13 +159,12 @@ class TestConfiger:
         assert result == expected
 
     def test_add_and_remove_config_keys(self):
-        # remove config executors[0].executor.args.training = true
-        # add config executors[0].executor.args.evaluation = true
+        # Remove one existing executor arg and add another.
         config_file = [
             [
                 "config_fed_client.conf",
-                "executors[0].executor.args.training-",
-                "executors[0].executor.args.train_with_evaluation=true",
+                "executors[0].executor.args.train_with_evaluation-",
+                "executors[0].executor.args.cuda_empty_cache=true",
             ]
         ]
         args = _create_test_args(
@@ -177,11 +176,11 @@ class TestConfiger:
         file, merged = list(file_merged.items())[0]
         config, excluded_key_list, key_indices = merged
 
-        assert config.get("executors")[0].get("executor.args.training", None) is None
-        assert key_indices.get("training", None) is None
+        assert config.get("executors")[0].get("executor.args.train_with_evaluation", None) is None
+        assert key_indices.get("train_with_evaluation", None) is None
 
-        assert config.get("executors")[0].get("executor.args.train_with_evaluation", None) == "true"
-        assert key_indices.get("train_with_evaluation", None) is not None
+        assert config.get("executors")[0].get("executor.args.cuda_empty_cache", None) == "true"
+        assert key_indices.get("cuda_empty_cache", None) is not None
 
     def test_split_key(self):
         assert split_array_key("components[1].args.model.path") == ("components", 1, "args.model.path")

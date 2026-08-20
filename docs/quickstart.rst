@@ -87,15 +87,17 @@ The following hello-world examples demonstrate different federated learning algo
 
 5. **Hello JAX** - `Federated averaging using JAX, Flax, and Optax on MNIST. <hello-world/hello-jax/index.html>`_
 
-6. **Hello Logistic Regression** - `Federated logistic regression example using scikit-learn. <hello-world/hello-lr/index.html>`_
+6. **Hello HuggingFace** - `Federated Qwen SFT/PEFT using HuggingFace Trainer and TRL. <hello-world/hello-huggingface/index.html>`_
 
-7. **Hello Cyclic** - `Cyclic federated learning workflow example. <hello-world/hello-cyclic/index.html>`_
+7. **Hello Logistic Regression** - `Federated logistic regression example using scikit-learn. <hello-world/hello-lr/index.html>`_
 
-8. **Hello Tabular Statistics** - `Federated statistics computation example. <hello-world/hello-tabular-stats/index.html>`_
+8. **Hello Cyclic** - `Cyclic federated learning workflow example. <hello-world/hello-cyclic/index.html>`_
 
-9. **Hello Flower** - `Running Flower apps in FLARE. <hello-world/hello-flower/index.html>`_
+9. **Hello Tabular Statistics** - `Federated statistics computation example. <hello-world/hello-tabular-stats/index.html>`_
 
-10. **Hello XGBoost** - `Federated XGBoost example demonstrating gradient boosting for tabular data in a federated setting. <hello-world/hello-xgboost/index.html>`_
+10. **Hello Flower** - `Running Flower apps in FLARE. <hello-world/hello-flower/index.html>`_
+
+11. **Hello XGBoost** - `Federated XGBoost example demonstrating gradient boosting for tabular data in a federated setting. <hello-world/hello-xgboost/index.html>`_
 
 Let's start with Hello PyTorch: :doc:`hello-world/hello-pt/index`
 
@@ -106,6 +108,7 @@ Let's start with Hello PyTorch: :doc:`hello-world/hello-pt/index`
    hello-world/hello-pt/index
    hello-world/hello-tf/index
    hello-world/hello-jax/index
+   hello-world/hello-huggingface/index
    hello-world/hello-lightning/index
    hello-world/hello-xgboost/index
    hello-world/hello-dp/index

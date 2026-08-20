@@ -17,9 +17,12 @@ from types import SimpleNamespace
 import pytest
 
 from nvflare.apis.fl_constant import ConfigVarName
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.streaming.download_service import Downloadable, ProduceRC
 from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT, STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposers import via_downloader as via_downloader_module
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     RESULT_UPLOAD_PROGRESS_CTX_KEY,
@@ -27,10 +30,10 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY,
     EncKey,
     EncType,
+    LazyDownloadRef,
     ResultUploadProgressContextKey,
     ViaDownloaderDecomposer,
-    clear_download_initiated,
-    get_download_transactions,
+    materialize_lazy_download_refs,
 )
 
 
@@ -54,6 +57,7 @@ class _DummyViaDownloader(ViaDownloaderDecomposer):
         optional=False,
         abort_signal=None,
         progress_cb=None,
+        fobs_ctx: dict = None,
     ) -> tuple[str, dict]:
         raise NotImplementedError
 
@@ -65,6 +69,36 @@ class _DummyViaDownloader(ViaDownloaderDecomposer):
 
     def native_recompose(self, data: bytes, manager=None):
         return data
+
+
+class _LegacyViaDownloader(_DummyViaDownloader):
+    """Downloader implementing the public signature from before FOBS context support."""
+
+    def __init__(self):
+        super().__init__()
+        self.download_call = None
+
+    def download(
+        self,
+        from_fqcn: str,
+        ref_id: str,
+        per_request_timeout: float,
+        cell,
+        secure=False,
+        optional=False,
+        abort_signal=None,
+        progress_cb=None,
+    ) -> tuple[str, dict]:
+        self.download_call = {
+            "from_fqcn": from_fqcn,
+            "ref_id": ref_id,
+            "per_request_timeout": per_request_timeout,
+            "cell": cell,
+            "secure": secure,
+            "abort_signal": abort_signal,
+            "progress_cb": progress_cb,
+        }
+        return None, {"T0": "downloaded"}
 
 
 class _ItemsWithNonCallableLazyRef:
@@ -263,7 +297,6 @@ class TestViaDownloaderTimeoutPolicy:
 
 class TestResultUploadProgressWiring:
     def setup_method(self):
-        clear_download_initiated()
         _FakeObjectDownloader.instances = []
 
     def _finalize(self, monkeypatch, fobs_ctx):
@@ -274,6 +307,7 @@ class TestResultUploadProgressWiring:
 
     def test_single_receiver_progress_installs_download_service_callback_and_captures_expected_pair(self, monkeypatch):
         events = []
+        created = []
         obj = _FakeDownloadable([])
 
         def fake_get_positive_float_var(var_name, default):
@@ -286,13 +320,14 @@ class TestResultUploadProgressWiring:
             fobs.FOBSContextKey.CELL: object(),
             fobs.FOBSContextKey.NUM_RECEIVERS: 1,
             fobs.FOBSContextKey.STREAM_PROGRESS_CB: lambda **kwargs: events.append(kwargs),
+            RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: lambda info: created.append(info),
             RESULT_UPLOAD_PROGRESS_CTX_KEY: {ResultUploadProgressContextKey.STREAMING_IDLE_TIMEOUT: 7.0},
             via_downloader_module._CtxKey.MSG_ROOT_TTL: 1800.0,
             via_downloader_module._CtxKey.OBJECTS: [("ref-1", obj)],
         }
 
         downloader = self._finalize(monkeypatch, fobs_ctx)
-        transactions = get_download_transactions()
+        transactions = created
 
         assert len(transactions) == 1
         assert transactions[0].tx_id == "tx-1"
@@ -344,7 +379,6 @@ class TestResultUploadProgressWiring:
 
         downloader = self._finalize(monkeypatch, fobs_ctx)
 
-        assert get_download_transactions()[0].expected_pairs == (("ref-1", "server"), ("ref-1", "peer"))
         assert created[0].tx_id == "tx-1"
         assert created[0].expected_pairs == (("ref-1", "server"), ("ref-1", "peer"))
         assert downloader.added == [("ref-1", obj)]
@@ -363,10 +397,12 @@ class TestResultUploadProgressWiring:
     def test_duplicate_receiver_ids_dedupe_expected_pairs_and_download_receiver_count(self, monkeypatch):
         obj = _FakeDownloadable([(ProduceRC.OK, b"abc", {})])
         events = []
+        created = []
         fobs_ctx = {
             fobs.FOBSContextKey.CELL: object(),
             fobs.FOBSContextKey.NUM_RECEIVERS: 2,
             fobs.FOBSContextKey.STREAM_PROGRESS_CB: lambda **kwargs: events.append(kwargs),
+            RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: lambda info: created.append(info),
             RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY: ["server", "server"],
             via_downloader_module._CtxKey.MSG_ROOT_TTL: 1800.0,
             via_downloader_module._CtxKey.OBJECTS: [("ref-1", obj)],
@@ -374,17 +410,19 @@ class TestResultUploadProgressWiring:
 
         downloader = self._finalize(monkeypatch, fobs_ctx)
 
-        assert get_download_transactions()[0].expected_pairs == (("ref-1", "server"),)
+        assert created[0].expected_pairs == (("ref-1", "server"),)
         assert downloader.kwargs["num_receivers"] == 1
         assert downloader.kwargs["progress_cb"] is not None
         assert downloader.added == [("ref-1", obj)]
 
     def test_unknown_multi_receiver_transaction_is_not_marked_progress_trackable(self, monkeypatch):
         obj = _FakeDownloadable([(ProduceRC.OK, b"abc", {})])
+        created = []
         fobs_ctx = {
             fobs.FOBSContextKey.CELL: object(),
             fobs.FOBSContextKey.NUM_RECEIVERS: 2,
             fobs.FOBSContextKey.STREAM_PROGRESS_CB: lambda **kwargs: None,
+            RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: lambda info: created.append(info),
             RESULT_UPLOAD_PROGRESS_CTX_KEY: {ResultUploadProgressContextKey.STREAMING_IDLE_TIMEOUT: 7.0},
             via_downloader_module._CtxKey.MSG_ROOT_TTL: 1800.0,
             via_downloader_module._CtxKey.OBJECTS: [("ref-1", obj)],
@@ -392,21 +430,22 @@ class TestResultUploadProgressWiring:
 
         downloader = self._finalize(monkeypatch, fobs_ctx)
 
-        assert get_download_transactions() == ()
+        assert created == []
         assert downloader.added[0][1] is obj
         assert downloader.kwargs["timeout"] == 1800.0
 
     def test_finalize_download_tx_without_cell_returns_without_dereferencing_downloader(self):
         obj = _FakeDownloadable([(ProduceRC.OK, b"abc", {})])
+        created = []
         fobs_ctx = {
+            RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: lambda info: created.append(info),
             via_downloader_module._CtxKey.OBJECTS: [("ref-1", obj)],
         }
 
         decomposer = _DummyViaDownloader()
         decomposer._finalize_download_tx(SimpleNamespace(fobs_ctx=fobs_ctx))
 
-        assert get_download_transactions() == ()
-        assert not getattr(via_downloader_module._tls, "download_initiated", False)
+        assert created == []
 
 
 class TestForwardProgressCallback:
@@ -426,6 +465,72 @@ class TestForwardProgressCallback:
 
 
 class TestConcreteViaDownloaderProgressCallback:
+    def test_remote_download_preserves_legacy_subclass_signature(self):
+        decomposer = _LegacyViaDownloader()
+        cell = object()
+        fobs_ctx = {
+            fobs.FOBSContextKey.CELL: cell,
+            fobs.FOBSContextKey.DOWNLOAD_REQ_TIMEOUT: 1.0,
+        }
+
+        result = decomposer._download_from_remote_cell(
+            fobs_ctx=fobs_ctx,
+            ref={"fqcn": "source", "ref_id": "ref-1"},
+        )
+
+        assert result == {"T0": "downloaded"}
+        assert decomposer.download_call == {
+            "from_fqcn": "source",
+            "ref_id": "ref-1",
+            "per_request_timeout": 1.0,
+            "cell": cell,
+            "secure": False,
+            "abort_signal": None,
+            "progress_cb": None,
+        }
+
+    def test_remote_download_inherits_secure_context_from_direct_source(self):
+        decomposer = _LegacyViaDownloader()
+        message = new_cell_message(
+            {
+                MessageHeaderKey.ORIGIN: "source",
+                MessageHeaderKey.SECURE: True,
+            },
+            None,
+        )
+
+        decomposer._download_from_remote_cell(
+            fobs_ctx={
+                fobs.FOBSContextKey.CELL: object(),
+                fobs.FOBSContextKey.DOWNLOAD_REQ_TIMEOUT: 1.0,
+                fobs.FOBSContextKey.MESSAGE: message,
+            },
+            ref={"fqcn": "source", "ref_id": "ref-1"},
+        )
+
+        assert decomposer.download_call["secure"] is True
+
+    def test_remote_download_does_not_inherit_secure_context_from_forwarder(self):
+        decomposer = _LegacyViaDownloader()
+        message = new_cell_message(
+            {
+                MessageHeaderKey.ORIGIN: "forwarder",
+                MessageHeaderKey.SECURE: True,
+            },
+            None,
+        )
+
+        decomposer._download_from_remote_cell(
+            fobs_ctx={
+                fobs.FOBSContextKey.CELL: object(),
+                fobs.FOBSContextKey.DOWNLOAD_REQ_TIMEOUT: 1.0,
+                fobs.FOBSContextKey.MESSAGE: message,
+            },
+            ref={"fqcn": "source", "ref_id": "ref-1"},
+        )
+
+        assert decomposer.download_call["secure"] is False
+
     def test_numpy_decomposer_passes_progress_callback_to_download_object(self, monkeypatch):
         from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
         from nvflare.app_common.np import np_downloader
@@ -515,3 +620,127 @@ class TestConcreteViaDownloaderProgressCallback:
         assert result is not None
         assert observed["progress_cb"] is progress_cb
         result.cleanup()
+
+    def test_tensor_decomposer_honors_call_scoped_disk_offload(self, monkeypatch, tmp_path):
+        pytest.importorskip("torch")
+        from nvflare.app_opt.pt import tensor_downloader
+        from nvflare.app_opt.pt.decomposers import TensorDecomposer
+
+        class FakeCell:
+            def get_fobs_context(self):
+                return {
+                    fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: False,
+                }
+
+        def fake_download_object(**kwargs):
+            kwargs["consumer"].result = {}
+            kwargs["consumer"].download_completed(kwargs["ref_id"])
+
+        monkeypatch.setattr(tensor_downloader, "download_object", fake_download_object)
+
+        result = TensorDecomposer()._download_from_remote_cell(
+            fobs_ctx={
+                fobs.FOBSContextKey.CELL: FakeCell(),
+                fobs.FOBSContextKey.DOWNLOAD_REQ_TIMEOUT: 1.0,
+                fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: True,
+                tensor_downloader._TENSOR_DISK_OFFLOAD_ROOT_DIR: str(tmp_path),
+            },
+            ref={"fqcn": "trainer", "ref_id": "result-ref"},
+        )
+
+        assert result is not None
+        result.cleanup()
+
+
+def test_repeated_first_item_registers_post_callback_once():
+    decomposer = _DummyViaDownloader()
+    manager = DatumManager(fobs_ctx={fobs.FOBSContextKey.CELL: object()})
+    shared_item = object()
+
+    for _ in range(28):
+        decomposer.decompose(shared_item, manager)
+
+    assert len(manager.post_cbs) == 1
+
+
+def test_materialize_lazy_torch_ref_preserves_concrete_tensor(monkeypatch):
+    torch = pytest.importorskip("torch")
+    from nvflare.app_opt.pt import decomposers as pt_decomposers
+    from nvflare.app_opt.pt.decomposers import TensorDecomposer
+
+    fobs.register(TensorDecomposer)
+
+    class FakeCell:
+        def __init__(self):
+            self.context_props = []
+
+        def get_fobs_context(self, props=None):
+            self.context_props.append(props)
+            return {fobs.FOBSContextKey.CELL: self, **(props or {})}
+
+    cell = FakeCell()
+    expected = torch.tensor([1.0, 2.0, 3.0])
+    concrete = torch.tensor([9.0, 9.0, 9.0])
+    value = {
+        "lazy_weight": LazyDownloadRef(
+            fqcn="trainer",
+            ref_id="ref-1",
+            item_id="T0",
+            dot=TensorDecomposer().get_download_dot(),
+        ),
+        "concrete_metric": concrete,
+    }
+    monkeypatch.setattr(pt_decomposers, "download_tensors", lambda **_kwargs: (None, {"T0": expected}))
+
+    result = materialize_lazy_download_refs(value, cell)
+
+    assert result["lazy_weight"] is expected
+    assert result["concrete_metric"] is concrete
+    assert result["lazy_weight"] is not result["concrete_metric"]
+    assert cell.context_props[0][fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD] is False
+
+
+def test_materialize_lazy_ref_does_not_rewrite_unchanged_dictionary(monkeypatch):
+    from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
+
+    class TrackingDict(dict):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.clear_calls = 0
+            self.update_calls = 0
+
+        def clear(self):
+            self.clear_calls += 1
+            return super().clear()
+
+        def update(self, *args, **kwargs):
+            self.update_calls += 1
+            return super().update(*args, **kwargs)
+
+    class FakeCell:
+        def get_fobs_context(self, props=None):
+            return {fobs.FOBSContextKey.CELL: self, **(props or {})}
+
+    fobs.register(NumpyArrayDecomposer)
+    expected = object()
+    unchanged = TrackingDict({"metric": object()})
+    value = {
+        "lazy_weight": LazyDownloadRef(
+            fqcn="trainer",
+            ref_id="ref-1",
+            item_id="T0",
+            dot=NumpyArrayDecomposer().get_download_dot(),
+        ),
+        "unchanged": unchanged,
+    }
+    monkeypatch.setattr(
+        "nvflare.app_common.decomposers.numpy_decomposers.download_arrays",
+        lambda **_kwargs: (None, {"T0": expected}),
+    )
+
+    result = materialize_lazy_download_refs(value, FakeCell())
+
+    assert result["lazy_weight"] is expected
+    assert result["unchanged"] is unchanged
+    assert unchanged.clear_calls == 0
+    assert unchanged.update_calls == 0

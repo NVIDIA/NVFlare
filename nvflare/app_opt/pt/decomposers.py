@@ -12,13 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 
 import torch
 from safetensors.torch import load, save
 
 import nvflare.fuel.utils.fobs.dots as dots
+from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
 from nvflare.fuel.f3.streaming.download_service import Downloadable
+from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import ViaDownloaderDecomposer
 
@@ -47,6 +49,9 @@ class TensorDecomposer(ViaDownloaderDecomposer):
     def to_downloadable(self, items: dict, max_chunk_size: int, fobs_ctx: dict) -> Downloadable:
         return TensorDownloadable(items, max_chunk_size)
 
+    def _get_download_kwargs(self, fobs_ctx: dict) -> dict:
+        return {"fobs_ctx": fobs_ctx}
+
     def download(
         self,
         from_fqcn: str,
@@ -57,14 +62,47 @@ class TensorDecomposer(ViaDownloaderDecomposer):
         optional=False,
         abort_signal=None,
         progress_cb=None,
+        fobs_ctx: dict = None,
     ) -> Tuple[str, Union[dict, LazyTensorDict]]:
-        use_disk = cell.get_fobs_context().get("enable_tensor_disk_offload", False)
+        cell_ctx = cell.get_fobs_context()
+        default_use_disk = cell_ctx.get(FOBSContextKey.TENSOR_DISK_OFFLOAD, False)
+        fobs_ctx = fobs_ctx or {}
+        return self._download(
+            from_fqcn=from_fqcn,
+            ref_id=ref_id,
+            per_request_timeout=per_request_timeout,
+            cell=cell,
+            use_disk=fobs_ctx.get(FOBSContextKey.TENSOR_DISK_OFFLOAD, default_use_disk),
+            root_dir=fobs_ctx.get(
+                _TENSOR_DISK_OFFLOAD_ROOT_DIR,
+                cell_ctx.get(_TENSOR_DISK_OFFLOAD_ROOT_DIR),
+            ),
+            secure=secure,
+            optional=optional,
+            abort_signal=abort_signal,
+            progress_cb=progress_cb,
+        )
+
+    @staticmethod
+    def _download(
+        from_fqcn: str,
+        ref_id: str,
+        per_request_timeout: float,
+        cell: Cell,
+        use_disk: bool,
+        root_dir: Optional[str] = None,
+        secure=False,
+        optional=False,
+        abort_signal=None,
+        progress_cb=None,
+    ) -> Tuple[str, Union[dict, LazyTensorDict]]:
         if use_disk:
             return download_tensors_to_disk(
                 from_fqcn=from_fqcn,
                 ref_id=ref_id,
                 per_request_timeout=per_request_timeout,
                 cell=cell,
+                root_dir=root_dir,
                 secure=secure,
                 optional=optional,
                 abort_signal=abort_signal,

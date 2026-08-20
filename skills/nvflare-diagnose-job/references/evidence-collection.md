@@ -43,7 +43,7 @@ Use local evidence only:
   `round_metrics.jsonl` for per-round and per-site evidence;
 - local dependency, dataset, and path evidence supplied by the user.
 
-Use `nvflare agent inspect <path> --format json` when the user provides a
+Use `nvflare agent inspect source <path> --format json` when the user provides a
 project, job, or exported-job path. Do not use `nvflare job` or
 `nvflare system` commands for a pure simulation failure unless the user also
 provides a POC/production job ID or startup-kit context.

@@ -115,7 +115,7 @@ function dry_run() {
 }
 
 function check_license() {
-    folders_to_check_license=("nvflare" "examples" "tests" "integration" "research")
+    folders_to_check_license=("nvflare" "examples" "tests" "integration" "research" "skills")
     echo "checking license header in folder: ${folders_to_check_license[*]}"
     status=0
     python3 ci/check_license_header.py "${folders_to_check_license[@]}" || status="$?"
@@ -186,7 +186,7 @@ function mypy_check() {
 function skill_lint_check() {
     echo "${separator}${blue}agent-skill-lint${noColor}"
     # Deterministic v1 lint over the packaged agent skills and their eval suites
-    # (skills/ + dev_tools/agent/skill_evals/). Fast and dependency-light.
+    # (skills/ + each skill's co-located evals/ suite). Fast and dependency-light.
     python3 -m dev_tools.agent.skills.checks --skills-root skills
     report_status "$?"
     echo "Done with agent skill lint checks"

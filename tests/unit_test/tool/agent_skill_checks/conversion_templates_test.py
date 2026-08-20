@@ -14,14 +14,19 @@
 
 """Deterministic tests for the packaged conversion templates.
 
-These run the shipped PyTorch evaluation template, the custom
-``ModelAggregator`` template, and the Lightning evaluation template against
-toy models so template rot is caught here rather than only in expensive,
-nondeterministic LLM evals.
+These run the shipped PyTorch, Lightning, and Hugging Face client templates
+plus the custom ``ModelAggregator`` template against toy models so template rot
+is caught here rather than only in expensive, nondeterministic LLM evals.
 """
 
 import ast
 import importlib.util
+import inspect
+import json
+import shutil
+import sys
+import types
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -30,6 +35,8 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 SKILLS_ROOT = REPO_ROOT / "skills"
 PT_TEMPLATES = SKILLS_ROOT / "nvflare-convert-pytorch" / "assets"
 LIGHTNING_TEMPLATES = SKILLS_ROOT / "nvflare-convert-lightning" / "assets"
+HF_TEMPLATES = SKILLS_ROOT / "nvflare-convert-huggingface" / "assets"
+HF_SCRIPTS = SKILLS_ROOT / "nvflare-convert-huggingface" / "scripts"
 SHARED_TEMPLATES = SKILLS_ROOT / "nvflare-shared" / "assets"
 
 
@@ -43,6 +50,439 @@ def _load_module(path: Path):
 class _FloatOverflow:
     def __float__(self):
         raise OverflowError("step count too large")
+
+
+def test_huggingface_model_resolver_returns_existing_local_path(tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+
+    result = module.resolve_model_snapshot(str(model_dir), source="local")
+
+    assert result == {
+        "download_authorized": False,
+        "identifier": str(model_dir),
+        "resolved_path": str(model_dir.resolve()),
+        "source": "local",
+        "status": "available",
+    }
+
+
+def test_huggingface_model_resolver_loads_exception_from_legacy_public_utils(monkeypatch):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    hub_module = types.ModuleType("huggingface_hub")
+    hub_module.__path__ = []
+    utils_module = types.ModuleType("huggingface_hub.utils")
+
+    class _LegacyLocalEntryNotFoundError(Exception):
+        pass
+
+    def snapshot_download(**_kwargs):
+        return "/cached/snapshot"
+
+    hub_module.snapshot_download = snapshot_download
+    utils_module.LocalEntryNotFoundError = _LegacyLocalEntryNotFoundError
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub_module)
+    monkeypatch.setitem(sys.modules, "huggingface_hub.utils", utils_module)
+    monkeypatch.delitem(sys.modules, "huggingface_hub.errors", raising=False)
+
+    loaded_download, loaded_error = module._load_huggingface_hub()
+
+    assert loaded_download is snapshot_download
+    assert loaded_error is _LegacyLocalEntryNotFoundError
+
+
+def test_huggingface_model_resolver_does_not_treat_missing_bare_local_path_as_hub(monkeypatch, tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+
+    def unexpected_hub_load():
+        raise AssertionError("an explicit local path must not load huggingface_hub")
+
+    monkeypatch.setattr(module, "_load_huggingface_hub", unexpected_hub_load)
+
+    result = module.resolve_model_snapshot("models/checkpoint", source="local", source_root=str(tmp_path))
+
+    assert result == {
+        "download_authorized": False,
+        "identifier": "models/checkpoint",
+        "reason": "local_path_not_found",
+        "resolved_path": None,
+        "source": "local",
+        "status": "missing",
+    }
+
+
+def test_huggingface_model_resolver_resolves_relative_local_path_from_source_root(monkeypatch, tmp_path, capsys):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    source_root = tmp_path / "source"
+    model_dir = source_root / "models" / "checkpoint"
+    model_dir.mkdir(parents=True)
+    caller_dir = tmp_path / "caller"
+    caller_dir.mkdir()
+    monkeypatch.chdir(caller_dir)
+
+    assert (
+        module.main(
+            [
+                "--source",
+                "local",
+                "--source-root",
+                str(source_root),
+                "models/checkpoint",
+            ]
+        )
+        == 0
+    )
+    result = json.loads(capsys.readouterr().out)
+
+    assert result["resolved_path"] == str(model_dir.resolve())
+    assert result["source"] == "local"
+
+
+def test_huggingface_model_resolver_rejects_relative_local_path_without_absolute_source_root(tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+
+    with pytest.raises(ValueError, match="relative local identifiers require an absolute source_root"):
+        module.resolve_model_snapshot("models/checkpoint", source="local")
+    with pytest.raises(ValueError, match="source_root must be an absolute path"):
+        module.resolve_model_snapshot("models/checkpoint", source="local", source_root="source")
+
+
+def test_huggingface_model_resolver_rejects_source_root_with_absolute_local_path(tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    source_root = tmp_path / "source"
+    model_dir = source_root / "models" / "checkpoint"
+    model_dir.mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="source_root can only be used with a relative local identifier"):
+        module.resolve_model_snapshot(str(model_dir), source="local", source_root=str(source_root))
+
+
+def test_huggingface_model_resolver_does_not_treat_existing_hub_id_as_local(monkeypatch, tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    local_collision = tmp_path / "org" / "model"
+    local_collision.mkdir(parents=True)
+    hub_snapshot = tmp_path / "hub-snapshot"
+    hub_snapshot.mkdir()
+    calls = []
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        return str(hub_snapshot)
+
+    class _CacheMiss(Exception):
+        pass
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    result = module.resolve_model_snapshot("org/model", source="hub")
+
+    assert calls == [
+        {
+            "cache_dir": None,
+            "local_files_only": True,
+            "repo_id": "org/model",
+            "revision": None,
+        }
+    ]
+    assert result["resolved_path"] == str(hub_snapshot.resolve())
+    assert result["repo_type"] == "model"
+    assert result["source"] == "hub_cache"
+
+
+def test_huggingface_model_resolver_reports_cache_miss_without_failing(monkeypatch, capsys):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    calls = []
+
+    class _CacheMiss(Exception):
+        pass
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        raise _CacheMiss("not cached")
+
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    assert module.main(["--source", "hub", "org/model"]) == 0
+    result = json.loads(capsys.readouterr().out)
+
+    assert calls == [
+        {
+            "cache_dir": None,
+            "local_files_only": True,
+            "repo_id": "org/model",
+            "revision": None,
+        }
+    ]
+    assert result == {
+        "download_authorized": False,
+        "identifier": "org/model",
+        "reason": "not_cached",
+        "repo_type": "model",
+        "resolved_path": None,
+        "revision": None,
+        "source": "hub_cache",
+        "status": "missing",
+    }
+
+
+def test_huggingface_model_resolver_downloads_once_only_when_authorized(monkeypatch, tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    revision = "a" * 40
+    snapshot_dir = tmp_path / "models--org--model" / "snapshots" / revision
+    snapshot_dir.mkdir(parents=True)
+    calls = []
+
+    class _CacheMiss(Exception):
+        pass
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        return str(snapshot_dir)
+
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    result = module.resolve_model_snapshot(
+        "org/model",
+        source="hub",
+        allow_download=True,
+        revision=revision,
+        cache_dir=str(tmp_path),
+    )
+
+    assert calls == [
+        {
+            "cache_dir": str(tmp_path),
+            "local_files_only": False,
+            "repo_id": "org/model",
+            "revision": revision,
+        }
+    ]
+    assert result == {
+        "download_authorized": True,
+        "identifier": "org/model",
+        "resolved_path": str(snapshot_dir.resolve()),
+        "repo_type": "model",
+        "revision": revision,
+        "source": "hub_download_or_cache",
+        "status": "available",
+    }
+
+
+def test_huggingface_model_resolver_resolves_revision_for_authorized_download(monkeypatch, tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    revision = "b" * 40
+    snapshot_dir = tmp_path / "models--org--model" / "snapshots" / revision
+    snapshot_dir.mkdir(parents=True)
+    calls = []
+
+    class _CacheMiss(Exception):
+        pass
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        return str(snapshot_dir)
+
+    monkeypatch.setattr(module, "_resolve_hub_revision", lambda identifier, repo_type: revision)
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    result = module.resolve_model_snapshot("org/model", source="hub", allow_download=True)
+
+    assert calls == [
+        {
+            "cache_dir": None,
+            "local_files_only": False,
+            "repo_id": "org/model",
+            "revision": revision,
+        }
+    ]
+    assert result["revision"] == revision
+    assert result["resolved_path"] == str(snapshot_dir.resolve())
+
+
+def test_huggingface_model_resolver_uses_public_api_for_revision_lookup(monkeypatch):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    revision = "c" * 40
+    hub_module = types.ModuleType("huggingface_hub")
+
+    class _HfApi:
+        def model_info(self, *, repo_id):
+            assert repo_id == "org/model"
+            return types.SimpleNamespace(sha=revision)
+
+    hub_module.HfApi = _HfApi
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub_module)
+
+    assert module._resolve_hub_revision("org/model", "model") == revision
+
+
+def test_huggingface_model_resolver_uses_dataset_repo_type_for_cache_only_lookup(monkeypatch, tmp_path, capsys):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    dataset_snapshot = tmp_path / "datasets--org--data" / "snapshots" / ("d" * 40)
+    dataset_snapshot.mkdir(parents=True)
+    calls = []
+
+    class _CacheMiss(Exception):
+        pass
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        return str(dataset_snapshot)
+
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    assert module.main(["--source", "hub", "--repo-type", "dataset", "org/data"]) == 0
+    result = json.loads(capsys.readouterr().out)
+
+    assert calls == [
+        {
+            "cache_dir": None,
+            "local_files_only": True,
+            "repo_id": "org/data",
+            "repo_type": "dataset",
+            "revision": None,
+        }
+    ]
+    assert result["repo_type"] == "dataset"
+    assert result["resolved_path"] == str(dataset_snapshot.resolve())
+
+
+def test_huggingface_model_resolver_uses_dataset_api_for_revision_lookup(monkeypatch):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    revision = "e" * 40
+    hub_module = types.ModuleType("huggingface_hub")
+
+    class _HfApi:
+        def dataset_info(self, *, repo_id):
+            assert repo_id == "org/data"
+            return types.SimpleNamespace(sha=revision)
+
+    hub_module.HfApi = _HfApi
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub_module)
+
+    assert module._resolve_hub_revision("org/data", "dataset") == revision
+
+
+def test_huggingface_model_resolver_downloads_pinned_dataset_only_when_authorized(monkeypatch, tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    revision = "f" * 40
+    dataset_snapshot = tmp_path / "datasets--org--data" / "snapshots" / revision
+    dataset_snapshot.mkdir(parents=True)
+    calls = []
+
+    class _CacheMiss(Exception):
+        pass
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        return str(dataset_snapshot)
+
+    def resolve_revision(identifier, repo_type):
+        assert (identifier, repo_type) == ("org/data", "dataset")
+        return revision
+
+    monkeypatch.setattr(module, "_resolve_hub_revision", resolve_revision)
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    result = module.resolve_model_snapshot(
+        "org/data",
+        source="hub",
+        repo_type="dataset",
+        allow_download=True,
+    )
+
+    assert calls == [
+        {
+            "cache_dir": None,
+            "local_files_only": False,
+            "repo_id": "org/data",
+            "repo_type": "dataset",
+            "revision": revision,
+        }
+    ]
+    assert result["download_authorized"] is True
+    assert result["repo_type"] == "dataset"
+    assert result["revision"] == revision
+
+
+@pytest.mark.parametrize("revision", ["main", "abc123", "g" * 40])
+def test_huggingface_model_resolver_requires_immutable_revision_for_download(monkeypatch, revision):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+
+    def unexpected_hub_load():
+        raise AssertionError("an invalid revision must fail before loading huggingface_hub")
+
+    monkeypatch.setattr(module, "_load_huggingface_hub", unexpected_hub_load)
+
+    with pytest.raises(ValueError, match="40-character commit SHA"):
+        module.resolve_model_snapshot("org/model", source="hub", allow_download=True, revision=revision)
+
+
+def test_huggingface_model_resolver_does_not_hide_authorized_download_failure(monkeypatch):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+
+    class _CacheMiss(Exception):
+        pass
+
+    def snapshot_download(**_kwargs):
+        raise _CacheMiss("authorized resolution failed")
+
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    with pytest.raises(_CacheMiss, match="authorized resolution failed"):
+        module.resolve_model_snapshot("org/model", source="hub", allow_download=True, revision="a" * 40)
+
+
+def test_non_fedavg_tensor_profile_omits_unsupported_disk_offload(tmp_path):
+    pytest.importorskip("torch")
+    from nvflare.app_opt.pt.recipes.cyclic import CyclicRecipe
+    from nvflare.client.config import ExchangeFormat
+
+    train_script = tmp_path / "client.py"
+    train_script.write_text("pass\n", encoding="utf-8")
+    parameters = inspect.signature(CyclicRecipe).parameters
+
+    assert "server_expected_format" in parameters
+    assert "enable_tensor_disk_offload" not in parameters
+
+    recipe = CyclicRecipe(
+        name="skill-capability-test",
+        model={"class_path": "torch.nn.Linear", "args": {"in_features": 2, "out_features": 1}},
+        train_script=str(train_script),
+        min_clients=2,
+        server_expected_format=ExchangeFormat.PYTORCH,
+    )
+    recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])
+
+    assert recipe.server_expected_format == ExchangeFormat.PYTORCH
+
+
+def test_cyclic_parameterized_model_config_exports_normalized_path(tmp_path):
+    pytest.importorskip("torch")
+    from nvflare.app_opt.pt.recipes.cyclic import CyclicRecipe
+
+    train_script = tmp_path / "client.py"
+    train_script.write_text("pass\n", encoding="utf-8")
+    recipe = CyclicRecipe(
+        name="skill-cyclic-model-config-test",
+        model={"class_path": "torch.nn.Linear", "args": {"in_features": 2, "out_features": 1}},
+        train_script=str(train_script),
+        min_clients=2,
+    )
+
+    export_root = tmp_path / "export"
+    recipe.export(str(export_root))
+    server_config = json.loads(
+        (export_root / recipe.name / "app" / "config" / "config_fed_server.json").read_text(encoding="utf-8")
+    )
+    persistor = next((component for component in server_config["components"] if component["id"] == "persistor"), None)
+
+    assert persistor is not None, f"persistor missing from server components: {server_config['components']!r}"
+    assert persistor["args"]["model"] == {
+        "path": "torch.nn.Linear",
+        "args": {"in_features": 2, "out_features": 1},
+    }
 
 
 def test_pytorch_eval_template_computes_metric_against_toy_model():
@@ -113,6 +553,602 @@ def test_pytorch_eval_template_initializes_flare_before_training_setup():
     assert init_line < setup_line < loop_line
 
 
+def test_pytorch_eval_template_sends_completed_round_steps_for_fedavg(monkeypatch):
+    module = _load_module(PT_TEMPLATES / "client_with_eval.py")
+    sent_models = []
+
+    class _Tensor:
+        def detach(self):
+            return self
+
+        def cpu(self):
+            return self
+
+    class _Model:
+        def to(self, device):
+            return self
+
+        def load_state_dict(self, params):
+            assert params == {"weight": "global"}
+
+        def state_dict(self):
+            return {"weight": _Tensor()}
+
+    running = iter((True, False))
+    monkeypatch.setattr(module.flare, "init", lambda: None)
+    monkeypatch.setattr(module.flare, "is_running", lambda: next(running))
+    monkeypatch.setattr(module.flare, "receive", lambda: types.SimpleNamespace(params={"weight": "global"}))
+    monkeypatch.setattr(module.flare, "is_evaluate", lambda: False)
+    monkeypatch.setattr(module.flare, "send", sent_models.append)
+    monkeypatch.setattr(module, "evaluate", lambda *args, **kwargs: 0.75)
+
+    module.main(
+        model_factory=_Model,
+        train_setup_factory=lambda model, device: object(),
+        train_one_round=lambda model, train_state: 7,
+        val_loader=(),
+    )
+
+    assert len(sent_models) == 1
+    assert sent_models[0].meta[module.MetaKey.NUM_STEPS_CURRENT_ROUND] == 7
+
+
+@pytest.mark.parametrize("invalid_steps", [None, 0, -1, 1.5, float("inf"), True, "not-a-number"])
+def test_pytorch_eval_template_rejects_missing_or_invalid_round_steps(monkeypatch, invalid_steps):
+    module = _load_module(PT_TEMPLATES / "client_with_eval.py")
+
+    class _Model:
+        def to(self, device):
+            return self
+
+        def load_state_dict(self, params):
+            pass
+
+    monkeypatch.setattr(module.flare, "init", lambda: None)
+    monkeypatch.setattr(module.flare, "is_running", lambda: True)
+    monkeypatch.setattr(module.flare, "receive", lambda: types.SimpleNamespace(params={}))
+    monkeypatch.setattr(module.flare, "is_evaluate", lambda: False)
+    monkeypatch.setattr(module, "evaluate", lambda *args, **kwargs: 0.75)
+
+    with pytest.raises(RuntimeError, match="completed optimizer steps"):
+        module.main(
+            model_factory=_Model,
+            train_setup_factory=lambda model, device: object(),
+            train_one_round=lambda model, train_state: invalid_steps,
+            val_loader=(),
+        )
+
+
+@pytest.mark.parametrize(
+    "evaluate_before_train, expected_events",
+    [
+        (True, ["init:3", "factory", "patch", "is_running", "evaluate", "train", "is_running"]),
+        (False, ["init:3", "factory", "patch", "is_running", "train", "is_running"]),
+    ],
+)
+def test_huggingface_client_template_preserves_trainer_sequence(monkeypatch, evaluate_before_train, expected_events):
+    module = _load_module(HF_TEMPLATES / "client_with_eval.py")
+    events = []
+
+    class _Trainer:
+        def evaluate(self):
+            events.append("evaluate")
+
+        def train(self):
+            events.append("train")
+
+    def trainer_factory():
+        events.append("factory")
+        return _Trainer()
+
+    running = iter((True, False))
+    monkeypatch.setattr(module.flare, "init", lambda rank: events.append(f"init:{rank}"))
+    monkeypatch.setattr(module.flare, "patch", lambda trainer: events.append("patch"))
+    monkeypatch.setattr(
+        module.flare,
+        "is_running",
+        lambda: events.append("is_running") or next(running),
+    )
+
+    module.main(trainer_factory, rank=3, evaluate_before_train=evaluate_before_train)
+
+    assert events == expected_events
+
+
+def test_huggingface_client_template_requires_and_forwards_global_rank(monkeypatch):
+    module = _load_module(HF_TEMPLATES / "client_with_eval.py")
+    rank_parameter = inspect.signature(module.main).parameters["rank"]
+    observed = []
+
+    monkeypatch.setattr(module.flare, "init", lambda rank: observed.append(rank))
+    monkeypatch.setattr(module.flare, "patch", lambda trainer: None)
+    monkeypatch.setattr(module.flare, "is_running", lambda: False)
+
+    assert rank_parameter.default is inspect.Parameter.empty
+    assert rank_parameter.kind is inspect.Parameter.KEYWORD_ONLY
+    for rank in (0, 1):
+        module.main(lambda: object(), rank=rank)
+    assert observed == [0, 1]
+
+
+def test_huggingface_job_template_uses_private_persistent_implicit_simulation_workspace(tmp_path):
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    implicit_workspace = module._simulation_workspace(None)
+    assert implicit_workspace.is_dir()
+
+    # The template prints a result path under this directory after the simulation
+    # finishes, so the default workspace must survive long enough to inspect it.
+    assert implicit_workspace.exists()
+    shutil.rmtree(implicit_workspace)
+
+    explicit_workspace = tmp_path / "workspace"
+    explicit_workspace.mkdir()
+    assert module._simulation_workspace(explicit_workspace) == explicit_workspace
+
+    assert explicit_workspace.is_dir()
+
+
+def test_huggingface_job_template_advertises_simulation_workspace(monkeypatch, tmp_path, capsys):
+    module = _load_module(HF_TEMPLATES / "job.py")
+    executed_workspaces = []
+    status_workspaces = []
+    result_workspaces = []
+
+    class _Run:
+        def __init__(self, workspace_root):
+            self.workspace_root = workspace_root
+
+        def get_status(self):
+            status_workspaces.append(self.workspace_root)
+            return "FINISHED"
+
+        def get_result(self):
+            result_workspaces.append(self.workspace_root)
+            return str(self.workspace_root / "result")
+
+    class _Recipe:
+        def execute(self, sim_env):
+            workspace_root = Path(sim_env.workspace_root)
+            assert workspace_root.is_dir()
+            executed_workspaces.append(workspace_root)
+            return _Run(workspace_root)
+
+    monkeypatch.setattr(module, "build_recipe", lambda **kwargs: _Recipe())
+    monkeypatch.setattr(module, "SimEnv", lambda **kwargs: types.SimpleNamespace(**kwargs))
+
+    required_args = ["job.py", "--model_name_or_path", "model", "--data_root", "data"]
+    monkeypatch.setattr(sys, "argv", required_args)
+    module.main()
+    implicit_output = capsys.readouterr().out
+
+    assert "Job Status is: FINISHED" in implicit_output
+    assert f"Result can be found in: {executed_workspaces[-1] / 'result'}" in implicit_output
+    assert status_workspaces == [executed_workspaces[-1]]
+    assert result_workspaces == [executed_workspaces[-1]]
+    assert executed_workspaces[-1].exists()
+    shutil.rmtree(executed_workspaces[-1])
+
+    explicit_workspace = tmp_path / "workspace"
+    explicit_workspace.mkdir()
+    monkeypatch.setattr(sys, "argv", [*required_args, "--workspace_root", str(explicit_workspace)])
+    module.main()
+    explicit_output = capsys.readouterr().out
+
+    assert "Job Status is: FINISHED" in explicit_output
+    assert f"Result can be found in: {explicit_workspace / 'result'}" in explicit_output
+    assert status_workspaces == [executed_workspaces[0], explicit_workspace]
+    assert result_workspaces == [executed_workspaces[0], explicit_workspace]
+    assert explicit_workspace.is_dir()
+
+
+def test_huggingface_client_template_has_one_patch_and_no_manual_exchange():
+    source = (HF_TEMPLATES / "client_with_eval.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "flare"
+    ]
+
+    assert [node.func.attr for node in calls].count("patch") == 1
+    assert not {node.func.attr for node in calls} & {"receive", "send"}
+
+
+def test_huggingface_server_model_template_preserves_deterministic_source_state(monkeypatch):
+    torch = pytest.importorskip("torch")
+    calls = []
+
+    def load_model(model_name_or_path, **kwargs):
+        calls.append((model_name_or_path, dict(kwargs)))
+        torch.manual_seed(kwargs["seed"])
+        return torch.nn.Linear(kwargs["in_features"], kwargs["out_features"])
+
+    source_model_module = types.ModuleType("model")
+    source_model_module.load_model = load_model
+    monkeypatch.setitem(sys.modules, "model", source_model_module)
+
+    module = _load_module(HF_TEMPLATES / "server_model.py")
+    constructor_args = {"in_features": 4, "out_features": 2, "seed": 17}
+    source_model = load_model("local-model", **constructor_args)
+    server_model = module.ServerModel("local-model", **constructor_args)
+    source_state = source_model.state_dict()
+    server_state = server_model.state_dict()
+
+    assert calls == [("local-model", constructor_args), ("local-model", constructor_args)]
+    assert source_state.keys() == server_state.keys()
+    assert all(source_state[key].shape == server_state[key].shape for key in source_state)
+    assert all(source_state[key].dtype == server_state[key].dtype for key in source_state)
+    assert all(torch.equal(source_state[key], server_state[key]) for key in source_state)
+
+
+def test_huggingface_job_template_uses_pytorch_fast_path_and_packages_model_files(monkeypatch):
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    class _Recipe:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.server_files = []
+            self.client_files = []
+
+        def add_server_file(self, path):
+            self.server_files.append(path)
+
+        def add_client_file(self, path):
+            self.client_files.append(path)
+
+    monkeypatch.setattr(module, "FedAvgRecipe", _Recipe)
+    recipe = module.build_recipe(
+        name="hf-test",
+        model_name_or_path="local-model",
+        data_root="/tmp/data",
+        num_clients=2,
+        num_rounds=3,
+        key_metric="eval_accuracy",
+    )
+
+    assert recipe.kwargs["model"] == {
+        "class_path": "server_model.ServerModel",
+        "args": {"model_name_or_path": "local-model"},
+    }
+    assert recipe.kwargs["train_script"] == "client.py"
+    assert recipe.kwargs["min_clients"] == 2
+    assert recipe.kwargs["num_rounds"] == 3
+    assert recipe.kwargs["key_metric"] == "eval_accuracy"
+    assert [Path(path).name for path in recipe.server_files] == ["server_model.py", "model.py"]
+    assert [Path(path).name for path in recipe.client_files] == ["client.py", "model.py"]
+    assert "--max_steps 10" in recipe.kwargs["train_args"]
+    assert "--num_train_epochs" not in recipe.kwargs["train_args"]
+
+
+def test_huggingface_train_only_job_disables_model_selection_by_default(tmp_path, monkeypatch):
+    generated_dir = tmp_path / "generated"
+    generated_dir.mkdir()
+    job_path = generated_dir / "job.py"
+    job_path.write_text((HF_TEMPLATES / "job.py").read_text(encoding="utf-8"), encoding="utf-8")
+    (generated_dir / "client.py").write_text("import model\n", encoding="utf-8")
+    (generated_dir / "model.py").write_text("class Model:\n    pass\n", encoding="utf-8")
+    (generated_dir / "server_model.py").write_text("from model import Model\n", encoding="utf-8")
+
+    caller_dir = tmp_path / "caller"
+    caller_dir.mkdir()
+    monkeypatch.chdir(caller_dir)
+    module = _load_module(job_path)
+    recipe = module.build_recipe(
+        name="hf-train-only",
+        model_name_or_path="local-model",
+        data_root="/tmp/data",
+        num_clients=2,
+        num_rounds=1,
+    )
+
+    assert recipe.key_metric == ""
+    export_root = tmp_path / "export"
+    recipe.export(str(export_root))
+    server_config = export_root / recipe.name / "app" / "config" / "config_fed_server.json"
+    assert "IntimeModelSelector" not in server_config.read_text(encoding="utf-8")
+
+
+def test_huggingface_job_template_supports_one_resolved_budget_mode():
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    requested_steps = module.build_train_args("local-model", "/tmp/data", 2, max_steps=7)
+    requested_epochs = module.build_train_args("local-model", "/tmp/data", 2, num_train_epochs=3.0)
+    preserved_source = module.build_train_args("local-model", "/tmp/data", 2, preserve_source_budget=True)
+
+    assert "--max_steps 7" in requested_steps
+    assert "--num_train_epochs" not in requested_steps
+    assert "--num_train_epochs 3.0" in requested_epochs
+    assert "--max_steps" not in requested_epochs
+    assert "--max_steps" not in preserved_source
+    assert "--num_train_epochs" not in preserved_source
+
+    with pytest.raises(ValueError, match="only one"):
+        module.build_train_args("local-model", "/tmp/data", 2, max_steps=7, num_train_epochs=3.0)
+
+
+@pytest.mark.parametrize("max_steps", [True, 0, -1, 1.5])
+def test_huggingface_job_template_rejects_invalid_programmatic_step_budgets(max_steps):
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    with pytest.raises(ValueError, match="positive integer"):
+        module.build_train_args("local-model", "/tmp/data", 2, max_steps=max_steps)
+
+
+@pytest.mark.parametrize("num_train_epochs", [True, 0, -1, float("nan"), float("inf")])
+def test_huggingface_job_template_rejects_invalid_programmatic_epoch_budgets(num_train_epochs):
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    with pytest.raises(ValueError, match="finite positive number"):
+        module.build_train_args("local-model", "/tmp/data", 2, num_train_epochs=num_train_epochs)
+
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("--max_steps", "0"),
+        ("--max_steps", "-1"),
+        ("--max_steps", "1.5"),
+        ("--num_train_epochs", "0"),
+        ("--num_train_epochs", "-1"),
+        ("--num_train_epochs", "nan"),
+        ("--num_train_epochs", "inf"),
+    ],
+)
+def test_huggingface_job_template_cli_rejects_invalid_budgets(monkeypatch, option, value):
+    module = _load_module(HF_TEMPLATES / "job.py")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "job.py",
+            "--model_name_or_path",
+            "local-model",
+            "--data_root",
+            "/tmp/data",
+            "--key_metric",
+            "eval_accuracy",
+            option,
+            value,
+        ],
+    )
+
+    with pytest.raises(SystemExit, match="2"):
+        module.main()
+
+
+def test_huggingface_job_template_rejects_unrepresentable_in_process_arguments():
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    with pytest.raises(ValueError, match="whitespace-free"):
+        module.build_train_args("model with spaces", "/tmp/data", 2)
+
+
+def test_huggingface_job_template_exports_colocated_files_from_another_working_directory(tmp_path, monkeypatch):
+    generated_dir = tmp_path / "generated"
+    generated_dir.mkdir()
+    job_path = generated_dir / "job.py"
+    job_path.write_text((HF_TEMPLATES / "job.py").read_text(encoding="utf-8"), encoding="utf-8")
+    (generated_dir / "client.py").write_text("import model\n", encoding="utf-8")
+    (generated_dir / "model.py").write_text("class Model:\n    pass\n", encoding="utf-8")
+    (generated_dir / "server_model.py").write_text("from model import Model\n", encoding="utf-8")
+
+    caller_dir = tmp_path / "caller"
+    caller_dir.mkdir()
+    monkeypatch.chdir(caller_dir)
+    module = _load_module(job_path)
+    recipe = module.build_recipe(
+        name="hf-cwd-independent",
+        model_name_or_path="local-model",
+        data_root="/tmp/data",
+        num_clients=2,
+        num_rounds=1,
+        key_metric="eval_accuracy",
+    )
+    assert Path.cwd() == caller_dir
+    export_root = tmp_path / "export"
+    recipe.export(str(export_root))
+
+    app_dir = export_root / recipe.name / "app"
+    assert (app_dir / "custom" / "client.py").is_file()
+    assert (app_dir / "custom" / "server_model.py").is_file()
+    assert (app_dir / "custom" / "model.py").is_file()
+    client_config = json.loads((app_dir / "config" / "config_fed_client.json").read_text(encoding="utf-8"))
+    executor_args = client_config["executors"][0]["executor"]["args"]
+    assert executor_args["task_script_path"] == "client.py"
+
+
+def test_huggingface_job_template_exports_per_site_files_from_another_working_directory(tmp_path, monkeypatch):
+    generated_dir = tmp_path / "generated"
+    generated_dir.mkdir()
+    job_path = generated_dir / "job.py"
+    job_path.write_text((HF_TEMPLATES / "job.py").read_text(encoding="utf-8"), encoding="utf-8")
+    (generated_dir / "client.py").write_text("import model\n", encoding="utf-8")
+    (generated_dir / "model.py").write_text("class Model:\n    pass\n", encoding="utf-8")
+    (generated_dir / "server_model.py").write_text("from model import Model\n", encoding="utf-8")
+
+    caller_dir = tmp_path / "caller"
+    caller_dir.mkdir()
+    monkeypatch.chdir(caller_dir)
+    module = _load_module(job_path)
+    site_args = {
+        "site-1": {"train_args": module.build_train_args("local-model", "/data/site-1", 2, max_steps=2)},
+        "site-2": {"train_args": module.build_train_args("local-model", "/data/site-2", 2, max_steps=3)},
+    }
+    recipe = module.build_recipe(
+        name="hf-per-site-cwd-independent",
+        model_name_or_path="local-model",
+        data_root="/tmp/data",
+        num_clients=2,
+        num_rounds=1,
+        key_metric="eval_accuracy",
+        per_site_config=site_args,
+    )
+    assert Path.cwd() == caller_dir
+    export_root = tmp_path / "export"
+    recipe.export(str(export_root))
+
+    job_root = export_root / recipe.name
+    assert (job_root / "app_server" / "custom" / "server_model.py").is_file()
+    assert (job_root / "app_server" / "custom" / "model.py").is_file()
+    for site_name, expected in site_args.items():
+        app_dir = job_root / f"app_{site_name}"
+        assert (app_dir / "custom" / "client.py").is_file()
+        assert (app_dir / "custom" / "model.py").is_file()
+        client_config = json.loads((app_dir / "config" / "config_fed_client.json").read_text(encoding="utf-8"))
+        executor_args = client_config["executors"][0]["executor"]["args"]
+        assert executor_args["task_script_path"] == "client.py"
+        assert executor_args["task_script_args"] == expected["train_args"]
+
+
+def test_huggingface_job_template_uses_one_simulator_topology_owner(tmp_path):
+    module = _load_module(HF_TEMPLATES / "job.py")
+    per_site_config = {"site-a": {"train_args": "--data_root /data/a"}, "site-b": {"train_args": "--data_root /data/b"}}
+
+    unified_env = module.build_sim_env(2, tmp_path / "unified")
+    assert unified_env.clients is None
+    assert unified_env.num_clients == 2
+    assert unified_env.num_threads == 2
+
+    named_env = module.build_sim_env(2, tmp_path / "named", per_site_config=per_site_config)
+    assert named_env.clients == ["site-a", "site-b"]
+    assert named_env.num_clients == 2
+    assert named_env.num_threads == 2
+
+    with pytest.raises(ValueError, match="Inconsistent number of clients"):
+        module.build_sim_env(3, tmp_path / "mismatch", per_site_config=per_site_config)
+
+
+def test_huggingface_job_template_rejects_deprecated_per_site_constructor_option():
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    with pytest.raises(ValueError, match="pass per_site_config to build_recipe"):
+        module.build_recipe(
+            name="hf-deprecated-per-site",
+            model_name_or_path="local-model",
+            data_root="/tmp/data",
+            num_clients=2,
+            num_rounds=1,
+            key_metric="eval_accuracy",
+            recipe_options={"per_site_config": {"site-1": {}, "site-2": {}}},
+        )
+
+
+@pytest.mark.parametrize(
+    "train_script",
+    ["client_site_2.py", str(HF_TEMPLATES / "client_with_eval.py")],
+)
+def test_huggingface_job_template_rejects_per_site_train_script_overrides(tmp_path, monkeypatch, train_script):
+    caller_dir = tmp_path / "caller"
+    caller_dir.mkdir()
+    monkeypatch.chdir(caller_dir)
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    with pytest.raises(ValueError, match="must use the shared train_script='client.py'"):
+        module.build_recipe(
+            name="hf-per-site-script",
+            model_name_or_path="local-model",
+            data_root="/tmp/data",
+            num_clients=2,
+            num_rounds=1,
+            key_metric="eval_accuracy",
+            per_site_config={"site-1": {}, "site-2": {"train_script": train_script}},
+        )
+
+    assert Path.cwd() == caller_dir
+
+
+def test_huggingface_job_template_restores_cwd_when_per_site_config_is_invalid(tmp_path, monkeypatch):
+    caller_dir = tmp_path / "caller"
+    caller_dir.mkdir()
+    monkeypatch.chdir(caller_dir)
+    module = _load_module(HF_TEMPLATES / "job.py")
+
+    with pytest.raises(ValueError, match="min_clients=2"):
+        module.build_recipe(
+            name="hf-invalid-per-site",
+            model_name_or_path="local-model",
+            data_root="/tmp/data",
+            num_clients=2,
+            num_rounds=1,
+            key_metric="eval_accuracy",
+            per_site_config={"site-1": {}},
+        )
+
+    assert Path.cwd() == caller_dir
+
+
+def test_huggingface_client_template_rejects_abbreviated_hf_arguments():
+    transformers = pytest.importorskip("transformers")
+
+    @dataclass
+    class ProjectArguments:
+        max_train_samples: int | None = None
+
+    module = _load_module(HF_TEMPLATES / "client_with_eval.py")
+    parser = module.make_hf_argument_parser((ProjectArguments, transformers.TrainingArguments))
+
+    parsed, _ = parser.parse_args_into_dataclasses(args=["--output_dir", "/tmp/output", "--max_train_samples", "7"])
+    assert parsed.max_train_samples == 7
+
+    with pytest.raises(ValueError, match="max_train_samp"):
+        parser.parse_args_into_dataclasses(args=["--output_dir", "/tmp/output", "--max_train_samp", "7"])
+
+
+def test_huggingface_job_template_uses_public_recipe_execution_without_internal_probes():
+    source = (HF_TEMPLATES / "job.py").read_text(encoding="utf-8")
+
+    assert "FedAvgRecipe(" in source
+    assert "SimEnv(" in source
+    assert "recipe.execute(" in source
+    assert "from nvflare.recipe import SimEnv" in source
+    assert "inspect." not in source
+    assert "PTModel" not in source
+    assert "persistor" not in source.lower()
+
+
+def test_lightning_local_persistent_state_filters_both_directions_across_rounds():
+    torch = pytest.importorskip("torch")
+
+    from nvflare.apis.dxo import DXO, DataKind, from_shareable
+    from nvflare.apis.fl_context import FLContext
+    from nvflare.app_common.filters import ExcludeVars
+
+    class _Model(torch.nn.Module):
+        def __init__(self, shared_value, local_value):
+            super().__init__()
+            self.shared = torch.nn.Parameter(torch.tensor([shared_value]))
+            self.register_buffer("site_local", torch.tensor([local_value]))
+
+    def filter_payload(state):
+        shareable = DXO(data_kind=DataKind.WEIGHTS, data=dict(state)).to_shareable()
+        filtered = ExcludeVars(["site_local"]).process(shareable, FLContext())
+        return from_shareable(filtered).data
+
+    server = _Model(shared_value=1.0, local_value=-1.0)
+    client = _Model(shared_value=0.0, local_value=41.0)
+
+    for expected_shared in (1.0, 2.0):
+        server_to_client = filter_payload(server.state_dict())
+        assert "site_local" not in server_to_client
+
+        incompatible = client.load_state_dict(server_to_client, strict=False)
+        assert incompatible.missing_keys == ["site_local"]
+        assert client.site_local.item() == pytest.approx(41.0)
+
+        with torch.no_grad():
+            client.shared.add_(1.0)
+        client_to_server = filter_payload(client.state_dict())
+        assert "site_local" not in client_to_server
+
+        server.load_state_dict(client_to_server, strict=False)
+        assert server.shared.item() == pytest.approx(expected_shared + 1.0)
+        assert client.site_local.item() == pytest.approx(41.0)
+
+
 def test_custom_aggregator_template_step_weighted_average():
     import numpy as np
 
@@ -123,11 +1159,152 @@ def test_custom_aggregator_template_step_weighted_average():
     aggregator = module.WeightedAggregator()
 
     aggregator.accept_model(FLModel(params={"w": np.array([2.0])}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1}))
-    aggregator.accept_model(FLModel(params={"w": np.array([4.0])}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 3}))
+    aggregator.accept_model(FLModel(params={"w": np.array([4.0])}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: "3"}))
     result = aggregator.aggregate_model()
 
     # (2*1 + 4*3) / (1 + 3) = 14 / 4 = 3.5
     assert result.params["w"][0] == pytest.approx(3.5)
+
+
+def test_custom_aggregator_template_carries_weighted_metrics():
+    import numpy as np
+
+    from nvflare.apis.dxo import MetaKey
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+
+    aggregator.accept_model(
+        FLModel(
+            params={"w": np.array([2.0])},
+            metrics={
+                "accuracy": 0.5,
+                "loss": 2.0,
+                "nan_metric": float("nan"),
+                "flag": True,
+                "numeric_string": "0.95",
+            },
+            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+    )
+    aggregator.accept_model(
+        FLModel(
+            params={"w": np.array([4.0])},
+            metrics={"accuracy": 0.75, "loss": 1.0},
+            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 3},
+        )
+    )
+    result = aggregator.aggregate_model()
+
+    assert result.metrics["accuracy"] == pytest.approx((0.5 * 1 + 0.75 * 3) / 4)
+    assert result.metrics["loss"] == pytest.approx((2.0 * 1 + 1.0 * 3) / 4)
+    assert result.metrics["flag"] == pytest.approx(1.0)
+    assert "nan_metric" not in result.metrics
+    assert "numeric_string" not in result.metrics
+
+
+def test_custom_aggregator_template_disables_metrics_when_any_client_omits_them():
+    import numpy as np
+
+    from nvflare.apis.dxo import MetaKey
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+
+    aggregator.accept_model(
+        FLModel(
+            params={"w": np.array([2.0])},
+            metrics={"accuracy": 0.5},
+            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+    )
+    aggregator.accept_model(
+        FLModel(params={"w": np.array([4.0])}, metrics=None, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 3})
+    )
+    result = aggregator.aggregate_model()
+
+    assert result.params["w"][0] == pytest.approx(3.5)
+    assert result.metrics is None
+
+
+def test_custom_aggregator_template_uses_per_key_metric_denominators():
+    import numpy as np
+
+    from nvflare.apis.dxo import MetaKey
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+
+    aggregator.accept_model(
+        FLModel(
+            params={"w": np.array([2.0])},
+            metrics={"accuracy": 0.5, "loss": 2.0},
+            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+    )
+    aggregator.accept_model(
+        FLModel(
+            params={"w": np.array([4.0])},
+            metrics={"accuracy": 0.75},
+            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 3},
+        )
+    )
+    result = aggregator.aggregate_model()
+
+    assert result.metrics["accuracy"] == pytest.approx((0.5 * 1 + 0.75 * 3) / 4)
+    assert result.metrics["loss"] == pytest.approx(2.0)
+
+
+def test_custom_aggregator_template_keeps_extreme_weighted_metrics_finite():
+    import math
+
+    import numpy as np
+
+    from nvflare.apis.dxo import MetaKey
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+
+    for score in (1e308, -1e308):
+        aggregator.accept_model(
+            FLModel(
+                params={"w": np.array([0.0])},
+                metrics={"score": score},
+                meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1e308},
+            )
+        )
+    result = aggregator.aggregate_model()
+
+    assert math.isfinite(result.metrics["score"])
+    assert result.metrics["score"] == pytest.approx(0.0)
+
+
+def test_custom_aggregator_template_keeps_extreme_weighted_params_finite():
+    import math
+
+    import numpy as np
+
+    from nvflare.apis.dxo import MetaKey
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+
+    for value in (0.5, 0.9):
+        aggregator.accept_model(
+            FLModel(
+                params={"w": np.array([value])},
+                meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1e308},
+            )
+        )
+    result = aggregator.aggregate_model()
+
+    assert math.isfinite(result.params["w"][0])
+    assert result.params["w"][0] == pytest.approx(0.7)
 
 
 def test_custom_aggregator_template_materializes_lazy_disk_offload_refs():
@@ -237,7 +1414,7 @@ def test_custom_aggregator_template_resets_between_rounds():
         aggregator.aggregate_model()
 
 
-def test_lightning_eval_template_reports_validation_metric():
+def test_lightning_eval_template_validates_metrics_without_metadata_override():
     torch = pytest.importorskip("torch")
     pl = pytest.importorskip("pytorch_lightning")
     from torch.utils.data import DataLoader, TensorDataset
@@ -255,7 +1432,8 @@ def test_lightning_eval_template_reports_validation_metric():
         def validation_step(self, batch, batch_idx):
             features, labels = batch
             loss = torch.nn.functional.cross_entropy(self(features), labels)
-            self.log("val_loss", loss)
+            self.log("val_loss", loss, on_step=False, on_epoch=True)
+            self.log("neg_val_loss", -loss, on_step=False, on_epoch=True)
             return loss
 
         def configure_optimizers(self):
@@ -264,9 +1442,12 @@ def test_lightning_eval_template_reports_validation_metric():
     loader = DataLoader(TensorDataset(torch.randn(6, 4), torch.randint(0, 2, (6,))), batch_size=3)
     trainer = pl.Trainer(logger=False, enable_checkpointing=False, enable_progress_bar=False, devices=1)
 
-    metrics = module.validate_global_model(trainer, ToyLightning(), dataloaders=loader)
+    model = ToyLightning()
+    metrics = module.validate_global_model(trainer, model, dataloaders=loader)
 
     assert "val_loss" in metrics
+    assert metrics["neg_val_loss"] == pytest.approx(-metrics["val_loss"])
+    assert not hasattr(model, "__fl_meta__")
 
 
 def test_lightning_template_eval_only_mode_skips_training():
@@ -281,11 +1462,16 @@ def test_lightning_template_eval_only_mode_skips_training():
 
         def validate(self, *a, **k):
             calls.append("validate")
+            return [{"val_loss": 0.1}]
 
         def fit(self, *a, **k):
             calls.append("fit")
 
     fake = _FakeTrainer()
+
+    class _FakeModel:
+        pass
+
     import types
 
     fake_flare = types.SimpleNamespace(
@@ -297,12 +1483,163 @@ def test_lightning_template_eval_only_mode_skips_training():
     module.flare = fake_flare  # patch the module-level flare handle
 
     try:
-        module.main(model=object(), datamodule=object(), trainer_factory=lambda: fake, evaluate_only=True)
+        module.main(
+            model=_FakeModel(),
+            datamodule=object(),
+            trainer_factory=lambda: fake,
+            # Preserve the established fourth-positional algorithm contract.
+            recipe_algorithm="fedeval",
+            evaluate_only=True,
+        )
     finally:
         pass
 
     assert "validate" in calls
     assert "fit" not in calls
+
+
+@pytest.mark.parametrize("recipe_algorithm", ["fedavg", "fedce", "fedopt", "fedprox", "scaffold", "swarm", "cyclic"])
+def test_lightning_template_rejects_eval_only_training_recipe(recipe_algorithm):
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+
+    with pytest.raises(ValueError, match="only with FedEval"):
+        module.main(
+            model=object(),
+            datamodule=object(),
+            trainer_factory=lambda: pytest.fail("trainer must not be created"),
+            recipe_algorithm=recipe_algorithm,
+            evaluate_only=True,
+        )
+
+
+def test_lightning_template_requires_eval_only_for_fedeval():
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+
+    with pytest.raises(ValueError, match="FedEval requires evaluate_only=True"):
+        module.main(
+            model=object(),
+            datamodule=object(),
+            trainer_factory=lambda: pytest.fail("trainer must not be created"),
+            recipe_algorithm="fedeval",
+        )
+
+
+def test_lightning_template_preserves_fourth_positional_cyclic_algorithm():
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+    calls = []
+
+    class _FakeTrainer:
+        def validate(self, *args, **kwargs):
+            calls.append("validate")
+            return [{"accuracy": 0.5}]
+
+        def fit(self, *args, **kwargs):
+            calls.append("fit")
+
+    fake_flare = types.SimpleNamespace(
+        patch=lambda trainer: None,
+        receive=lambda: None,
+        _running=[True, False],
+        is_running=lambda: fake_flare._running.pop(0) if fake_flare._running else False,
+    )
+    module.flare = fake_flare
+
+    module.main(object(), object(), _FakeTrainer, "cyclic")
+
+    assert calls == ["fit"]
+
+
+def test_lightning_template_preserves_fourth_positional_fedeval_algorithm():
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+    calls = []
+
+    class _FakeTrainer:
+        def validate(self, *args, **kwargs):
+            calls.append("validate")
+            return [{"accuracy": 0.5}]
+
+        def fit(self, *args, **kwargs):
+            calls.append("fit")
+
+    fake_flare = types.SimpleNamespace(
+        patch=lambda trainer: None,
+        receive=lambda: None,
+        _running=[True, False],
+        is_running=lambda: fake_flare._running.pop(0) if fake_flare._running else False,
+    )
+    module.flare = fake_flare
+
+    module.main(object(), object(), _FakeTrainer, "fedeval", True)
+
+    assert calls == ["validate"]
+
+
+def test_lightning_template_rejects_boolean_fourth_positional_algorithm():
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+
+    with pytest.raises(ValueError, match="recipe_algorithm must be one of"):
+        module.main(object(), object(), lambda: pytest.fail("trainer must not be created"), True)
+
+
+@pytest.mark.parametrize("recipe_algorithm", ["Cyclic", "cyclic-pt", "FedEval", True, None])
+def test_lightning_template_rejects_unknown_or_non_normalized_recipe_algorithm(recipe_algorithm):
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+
+    with pytest.raises(ValueError, match="recipe_algorithm must be one of"):
+        module.should_evaluate_before_train(recipe_algorithm)
+
+
+@pytest.mark.parametrize(
+    "recipe_algorithm, expected",
+    [
+        ("fedavg", True),
+        ("fedce", True),
+        ("fedeval", True),
+        ("fedopt", True),
+        ("fedprox", True),
+        ("scaffold", True),
+        ("swarm", True),
+        ("cyclic", False),
+    ],
+)
+def test_lightning_template_derives_pre_fit_evaluation_from_recipe_algorithm(recipe_algorithm, expected):
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+
+    assert module.should_evaluate_before_train(recipe_algorithm) is expected
+
+
+@pytest.mark.parametrize(
+    "recipe_algorithm, expected_calls",
+    [("fedavg", ["validate", "fit"]), ("cyclic", ["fit"])],
+)
+def test_lightning_template_skips_pre_fit_validation_only_for_cyclic(recipe_algorithm, expected_calls):
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+    calls = []
+
+    class _FakeTrainer:
+        def validate(self, *args, **kwargs):
+            calls.append("validate")
+            return [{"accuracy": 0.5}]
+
+        def fit(self, *args, **kwargs):
+            calls.append("fit")
+
+    fake_flare = types.SimpleNamespace(
+        patch=lambda trainer: None,
+        receive=lambda: None,
+        _running=[True, False],
+        is_running=lambda: fake_flare._running.pop(0) if fake_flare._running else False,
+    )
+    module.flare = fake_flare
+
+    module.main(
+        model=object(),
+        datamodule=object(),
+        trainer_factory=_FakeTrainer,
+        recipe_algorithm=recipe_algorithm,
+    )
+
+    assert calls == expected_calls
 
 
 class _DummyModel:
@@ -318,3 +1655,17 @@ class _DummyModel:
 
     def __call__(self, *_args, **_kwargs):  # pragma: no cover - never reached on empty loader
         raise AssertionError("model should not be called when the loader is empty")
+
+
+def test_lightning_template_does_not_rewrite_metrics_after_validation():
+    """The patched callback owns pre-fit metric capture and delivery."""
+    import inspect as _inspect
+
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+    module_source = _inspect.getsource(module)
+
+    assert "make_higher_is_better" not in _inspect.signature(module.main).parameters
+    assert "from nvflare.app_common.abstract.fl_model import MetaKey" not in module_source
+    assert "model.__fl_meta__ =" not in module_source
+    main_source = _inspect.getsource(module.main)
+    assert main_source.rindex("validate_global_model(") < main_source.rindex("trainer.fit(")

@@ -154,6 +154,7 @@ class ValidateType(object):
 
 
 class AlgorithmConstants(object):
+    FEDPROX_MU = "fedprox_mu"
     SCAFFOLD_CTRL_DIFF = "scaffold_c_diff"
     SCAFFOLD_CTRL_GLOBAL = "scaffold_c_global"
     SCAFFOLD_CTRL_AGGREGATOR_ID = "scaffold_ctrl_aggregator"
@@ -194,14 +195,13 @@ class StatisticsConstants(AppConstants):
         # statistics can only require one/two-round of calculations
         STATS_1st_STATISTICS: [
             STATS_COUNT,
-            STATS_FAILURE_COUNT,
             STATS_SUM,
             STATS_MEAN,
             STATS_MIN,
             STATS_MAX,
             STATS_QUANTILE,
         ],
-        STATS_2nd_STATISTICS: [STATS_HISTOGRAM, STATS_VAR, STATS_STDDEV],
+        STATS_2nd_STATISTICS: [STATS_FAILURE_COUNT, STATS_HISTOGRAM, STATS_VAR, STATS_STDDEV],
     }
 
     PRE_RUN_RESULT = "fed_stats_pre_run_result"
