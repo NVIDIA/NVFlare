@@ -163,6 +163,7 @@ class IntimeModelSelector(Widget):
                 )
                 return False
 
+        validation_metric = float(validation_metric)
         raw_validation_metric = validation_metric
         if self.negate_key_metric:
             validation_metric = -1.0 * validation_metric
