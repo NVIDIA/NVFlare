@@ -135,12 +135,21 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                     sites_to_app[SERVER_SITE_NAME] = app_name
         self.log_debug(fl_ctx, f"Job {job.job_id} is checking against applicable sites: {applicable_sites}")
 
+        raw_required_sites = job.required_sites
+        if raw_required_sites is None:
+            raw_required_sites = []
+        elif not isinstance(raw_required_sites, list):
+            self.log_error(fl_ctx, f"Job {job.job_id} has invalid required sites '{raw_required_sites}'")
+            return SCHEDULE_RESULT_BLOCK, None, "required sites must be a list"
+
         required_sites = []
-        for site_name in job.required_sites or []:
+        seen = set()
+        for site_name in raw_required_sites:
             if not isinstance(site_name, str):
                 self.log_error(fl_ctx, f"Job {job.job_id} has invalid required site '{site_name}'")
                 return SCHEDULE_RESULT_BLOCK, None, f"invalid required site '{site_name}'"
-            if site_name not in required_sites:
+            if site_name not in seen:
+                seen.add(site_name)
                 required_sites.append(site_name)
         if enrolled_sites is not None:
             for site_name in required_sites:

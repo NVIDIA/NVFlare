@@ -415,7 +415,16 @@ class TestDefaultJobScheduler:
         assert job is candidate
         assert set(dispatch_info) == {"server", "site0"}
 
-    def test_require_sites_unhashable_entry_does_not_interrupt_scheduling(self, monkeypatch, setup_and_teardown):
+    @pytest.mark.parametrize(
+        "required_sites",
+        [
+            pytest.param(1, id="invalid-container"),
+            pytest.param([["site0"]], id="invalid-entry"),
+        ],
+    )
+    def test_require_sites_invalid_metadata_does_not_interrupt_scheduling(
+        self, monkeypatch, setup_and_teardown, required_sites
+    ):
         servers, scheduler, num_sites, job_manager = setup_and_teardown
         monkeypatch.setattr(job_scheduler_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
         monkeypatch.setattr(
@@ -429,7 +438,7 @@ class TestDefaultJobScheduler:
             resource_spec={},
             deploy_map={"app5": [ALL_SITES]},
             min_sites=1,
-            required_sites=[["site0"]],
+            required_sites=required_sites,
         )
         valid_candidate = create_job(
             job_id="valid_job",
