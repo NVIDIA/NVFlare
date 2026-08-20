@@ -1,13 +1,13 @@
 nvflare~=2.7.2rc
-torch==2.13.0
-torchvision==0.23.0
+torch==2.12.1
+torchvision==0.27.1
 psutil  # required at build time by flash_attn
 transformers==5.0.0
 deepspeed==0.17.1
 flash_attn
-triton==3.4.0
+triton==3.7.1
 accelerate==1.7.0
-torchcodec==0.2
+torchcodec==0.16
 peft==0.18.0
 wandb==0.24.2
 datasets>=2.18.0
