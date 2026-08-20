@@ -856,6 +856,45 @@ class ConcreteWorkflow(Parent):
     } == {"num_rounds"}
 
 
+def test_static_recipe_metadata_follows_mro_and_explicit_none(tmp_path, monkeypatch):
+    from nvflare.tool.recipe import recipe_cli
+
+    package_root = tmp_path / "nvflare" / "fake" / "recipes"
+    package_root.mkdir(parents=True)
+    (package_root / "multiple.py").write_text(
+        """from nvflare.recipe.spec import Recipe
+
+class Left(Recipe):
+    recipe_notes = [\"left\"]
+
+class Right(Recipe):
+    recipe_notes = [\"right\"]
+
+class Child(Left, Right):
+    pass
+
+class Cleared(Left, Right):
+    recipe_notes = None
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(recipe_cli, "_NVFLARE_PACKAGE_ROOT", tmp_path / "nvflare")
+    module_name = "nvflare.fake.recipes.multiple"
+
+    assert [class_name for _, class_name in recipe_cli._static_class_mro(module_name, "Child")] == [
+        "Child",
+        "Left",
+        "Right",
+        "Recipe",
+    ]
+    assert recipe_cli._static_recipe_attrs(module_name, "Child")["recipe_notes"] == ["left"]
+
+    cleared_attrs = recipe_cli._static_recipe_attrs(module_name, "Cleared")
+    assert "recipe_notes" in cleared_attrs
+    assert cleared_attrs["recipe_notes"] is None
+    assert recipe_cli._recipe_metadata_attr(cleared_attrs, "notes") is None
+
+
 def test_recipe_catalog_generation_prefers_explicit_literal_metadata_after_dynamic_alias(tmp_path, monkeypatch):
     from nvflare.tool.recipe import recipe_cli
 

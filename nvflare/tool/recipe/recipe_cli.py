@@ -97,6 +97,7 @@ _CORE_FRAMEWORK_SUPPORT = {
 }
 _NVFLARE_PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 _RECIPE_BASE_CLASS = ("nvflare.recipe.spec", "Recipe")
+_STATIC_ATTR_MISSING = object()
 _DOCUMENTED_RECIPE_SPECS = {
     "fedavg-pt": {
         "module": "nvflare.app_opt.pt.recipes.fedavg",
@@ -452,38 +453,52 @@ def _static_class_node(module_name: str, class_name: str, visiting=None):
     return module_name, tree, None
 
 
-def _static_class_is_recipe(module_name: str, class_name: str, visiting=None) -> bool:
+def _merge_static_mros(sequences: list):
+    sequences = [list(sequence) for sequence in sequences if sequence]
+    merged = []
+    while sequences:
+        candidate = next(
+            (sequence[0] for sequence in sequences if not any(sequence[0] in other[1:] for other in sequences)),
+            None,
+        )
+        if candidate is None:
+            return None
+        merged.append(candidate)
+        sequences = [
+            [item for item in sequence if item != candidate]
+            for sequence in sequences
+            if any(item != candidate for item in sequence)
+        ]
+    return merged
+
+
+def _static_class_mro(module_name: str, class_name: str, visiting=None) -> list:
     reference = (module_name, class_name)
-    if reference == _RECIPE_BASE_CLASS:
-        return True
     visiting = set(visiting or ())
     if reference in visiting:
-        return False
+        return []
     visiting.add(reference)
 
     resolved_module, tree, class_node = _static_class_node(module_name, class_name)
     if tree is None or class_node is None:
-        return False
-    return any(
-        _static_class_is_recipe(*base, visiting) for base in _static_base_references(resolved_module, tree, class_node)
-    )
+        return [reference]
+    resolved_reference = (resolved_module, class_node.name)
+    bases = _static_base_references(resolved_module, tree, class_node)
+    base_mros = [_static_class_mro(*base, visiting) for base in bases]
+    merged_bases = _merge_static_mros([*base_mros, bases])
+    return [resolved_reference, *(merged_bases or [])]
 
 
-def _static_class_doc(module_name: str, class_name: str, visiting=None) -> str:
-    reference = (module_name, class_name)
-    visiting = set(visiting or ())
-    if reference in visiting:
-        return ""
-    visiting.add(reference)
+def _static_class_is_recipe(module_name: str, class_name: str) -> bool:
+    return _RECIPE_BASE_CLASS in _static_class_mro(module_name, class_name)
 
-    resolved_module, tree, class_node = _static_class_node(module_name, class_name)
-    if tree is None or class_node is None:
-        return ""
-    doc = ast.get_docstring(class_node)
-    if doc:
-        return doc
-    for base in _static_base_references(resolved_module, tree, class_node):
-        doc = _static_class_doc(*base, visiting)
+
+def _static_class_doc(module_name: str, class_name: str) -> str:
+    for mro_module, mro_class in _static_class_mro(module_name, class_name):
+        _, _, class_node = _static_class_node(mro_module, mro_class)
+        if class_node is None:
+            continue
+        doc = ast.get_docstring(class_node)
         if doc:
             return doc
     return ""
@@ -530,35 +545,33 @@ def _static_class_attr(class_node: ast.ClassDef, *names):
             if target_name in names:
                 assignments[target_name] = value_node
 
+    unresolved = False
     for name in names:
-        value_node = assignments.get(name)
-        if value_node is None:
+        if name not in assignments:
             continue
+        value_node = assignments[name]
         try:
-            return ast.literal_eval(value_node)
-        except (ValueError, TypeError):
-            continue
-    return None
-
-
-def _static_recipe_attrs(module_name: str, class_name: str, visiting=None) -> dict:
-    reference = (module_name, class_name)
-    visiting = set(visiting or ())
-    if reference in visiting:
-        return {}
-    visiting.add(reference)
-
-    resolved_module, tree, class_node = _static_class_node(module_name, class_name)
-    if tree is None or class_node is None:
-        return {}
-    attrs = {}
-    for base in _static_base_references(resolved_module, tree, class_node):
-        attrs.update(_static_recipe_attrs(*base, visiting))
-    for aliases in _RECIPE_DETAIL_ATTR_ALIASES.values():
-        for name in aliases:
-            value = _static_class_attr(class_node, name)
+            value = ast.literal_eval(value_node)
             if value is not None:
-                attrs[name] = _json_safe_value(value)
+                return value
+            unresolved = True
+        except (ValueError, TypeError):
+            unresolved = True
+            continue
+    return None if unresolved else _STATIC_ATTR_MISSING
+
+
+def _static_recipe_attrs(module_name: str, class_name: str) -> dict:
+    attrs = {}
+    for mro_module, mro_class in reversed(_static_class_mro(module_name, class_name)):
+        _, _, class_node = _static_class_node(mro_module, mro_class)
+        if class_node is None:
+            continue
+        for aliases in _RECIPE_DETAIL_ATTR_ALIASES.values():
+            for name in aliases:
+                value = _static_class_attr(class_node, name)
+                if value is not _STATIC_ATTR_MISSING:
+                    attrs[name] = _json_safe_value(value)
     return attrs
 
 
@@ -628,16 +641,19 @@ def _infer_privacy(cli_name: str, class_name: str, module_name: str) -> list:
 
 
 def _static_recipe_metadata(cli_name: str, module_name: str, class_node: ast.ClassDef) -> dict:
-    algorithm = _static_class_attr(class_node, "recipe_algorithm", "algorithm") or _infer_algorithm(
-        cli_name, class_node.name, module_name
-    )
-    aggregation = _static_class_attr(class_node, "recipe_aggregation", "aggregation") or _infer_aggregation(algorithm)
-    state_exchange = _static_class_attr(class_node, "recipe_state_exchange", "state_exchange") or _infer_state_exchange(
-        algorithm
-    )
-    privacy = _as_string_list(_static_class_attr(class_node, "recipe_privacy", "privacy")) or _infer_privacy(
-        cli_name, class_node.name, module_name
-    )
+    algorithm = _static_class_attr(class_node, "recipe_algorithm", "algorithm")
+    if algorithm is _STATIC_ATTR_MISSING or not algorithm:
+        algorithm = _infer_algorithm(cli_name, class_node.name, module_name)
+    aggregation = _static_class_attr(class_node, "recipe_aggregation", "aggregation")
+    if aggregation is _STATIC_ATTR_MISSING or not aggregation:
+        aggregation = _infer_aggregation(algorithm)
+    state_exchange = _static_class_attr(class_node, "recipe_state_exchange", "state_exchange")
+    if state_exchange is _STATIC_ATTR_MISSING or not state_exchange:
+        state_exchange = _infer_state_exchange(algorithm)
+    privacy = _static_class_attr(class_node, "recipe_privacy", "privacy")
+    if privacy is _STATIC_ATTR_MISSING:
+        privacy = None
+    privacy = _as_string_list(privacy) or _infer_privacy(cli_name, class_node.name, module_name)
     return {
         "algorithm": _normalize_filter_value(algorithm) if algorithm else None,
         "aggregation": _normalize_filter_value(aggregation) if aggregation else None,
@@ -703,30 +719,21 @@ def _ast_parameter(name: str, annotation, default_node, kind: str, required: boo
     }
 
 
-def _static_class_function(module_name: str, class_name: str, function_name: str, visiting=None):
-    reference = (module_name, class_name)
-    visiting = set(visiting or ())
-    if reference in visiting:
-        return None, None
-    visiting.add(reference)
-
-    resolved_module, tree, class_node = _static_class_node(module_name, class_name)
-    if tree is None or class_node is None:
-        return None, None
-    function_node = next(
-        (
-            node
-            for node in class_node.body
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name
-        ),
-        None,
-    )
-    if function_node is not None:
-        return resolved_module, function_node
-    for base in _static_base_references(resolved_module, tree, class_node):
-        function_module, function_node = _static_class_function(*base, function_name, visiting)
+def _static_class_function(module_name: str, class_name: str, function_name: str):
+    for mro_module, mro_class in _static_class_mro(module_name, class_name):
+        resolved_module, _, class_node = _static_class_node(mro_module, mro_class)
+        if class_node is None:
+            continue
+        function_node = next(
+            (
+                node
+                for node in class_node.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name
+            ),
+            None,
+        )
         if function_node is not None:
-            return function_module, function_node
+            return resolved_module, function_node
     return None, None
 
 
