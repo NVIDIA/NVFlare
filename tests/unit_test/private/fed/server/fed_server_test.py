@@ -174,6 +174,21 @@ def test_admin_host_requires_distinct_port_when_fl_listener_is_external():
         )
 
 
+def test_whitespace_only_admin_host_is_rejected():
+    server = _TestServer()
+
+    with pytest.raises(ValueError, match="admin_host must not be empty"):
+        server.deploy(
+            args=MagicMock(),
+            grpc_args={
+                "service": {"target": "localhost:8002", "scheme": "tcp"},
+                "admin_host": "   ",
+                "admin_port": 8003,
+            },
+            secure_train=False,
+        )
+
+
 class TestFederatedServer:
     def test_production_listener_bindings_remain_wildcard_by_default(self):
         server = object.__new__(FederatedServer)

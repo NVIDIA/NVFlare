@@ -103,6 +103,8 @@ def _is_loopback_host(host: str) -> bool:
 def _normalize_admin_host(host: str) -> str:
     """Normalize a configured admin bind host and reject unsupported IPv6 listeners."""
     host = host.strip()
+    if not host:
+        raise ValueError("admin_host must not be empty")
     normalized_host = _normalize_loopback_host(host)
     try:
         address = ipaddress.ip_address(host.strip("[]"))
