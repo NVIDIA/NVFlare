@@ -421,7 +421,10 @@ persistor listens to this event, it can persist the current global model (the cu
 The metric must score the received global model before local training. For example,
 a patched Lightning client calls ``trainer.validate()`` before ``trainer.fit()``,
 and a manual Client API script sends that pre-training value in ``FLModel.metrics``.
-The metric dictionary key must match the recipe's ``key_metric``.
+When metrics are reported as a dictionary, the metric key must match the recipe's ``key_metric``. A scalar metric value
+is used as-is, regardless of ``key_metric``. Legacy ``Learner``-based executors report a scalar and substitute ``0`` when
+validation does not provide ``INITIAL_METRICS``; do not rely on omitting the metric to disable best-model selection on
+that path.
 
 However, unlike the server-controlled SAG where the aggregation is always done on the server and hence only a single
 global model is present at any time, many clients could do aggregation during the course of swarm learning. Each aggregation
