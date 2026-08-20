@@ -86,6 +86,12 @@ _CATALOG_DETAIL_STRING_LIST_FIELDS = (
     "optional_dependencies",
     "template_references",
 )
+_CATALOG_PARAMETER_REQUIRED_FIELDS = {
+    "name": str,
+    "type": (str, type(None)),
+    "required": bool,
+    "kind": str,
+}
 _CORE_FRAMEWORK_SUPPORT = {
     "cyclic": ["pytorch", "tensorflow", "numpy", "raw"],
     "fedavg": ["pytorch", "tensorflow", "sklearn", "numpy", "raw"],
@@ -999,6 +1005,10 @@ def _is_string_list(value) -> bool:
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
+def _is_valid_catalog_parameter(parameter) -> bool:
+    return _has_required_field_types(parameter, _CATALOG_PARAMETER_REQUIRED_FIELDS) and "default" in parameter
+
+
 def _is_valid_catalog_entry(entry) -> bool:
     if not isinstance(entry, dict):
         return False
@@ -1012,7 +1022,7 @@ def _is_valid_catalog_entry(entry) -> bool:
         return False
     if any(not _is_string_list(detail[name]) for name in _CATALOG_DETAIL_STRING_LIST_FIELDS):
         return False
-    if any(not isinstance(parameter, dict) for parameter in detail["parameters"]):
+    if any(not _is_valid_catalog_parameter(parameter) for parameter in detail["parameters"]):
         return False
     return summary["name"] == detail["name"] and summary["framework"] == detail["framework"]
 

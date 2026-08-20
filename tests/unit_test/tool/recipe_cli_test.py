@@ -467,12 +467,32 @@ def test_recipe_show_reports_invalid_generated_catalog(payload, monkeypatch, cap
     assert "invalid generated recipe catalog" in payload["message"]
 
 
+def test_recipe_show_reports_invalid_parameter_metadata(monkeypatch, capsys, tmp_path):
+    from nvflare.tool import cli_output
+    from nvflare.tool.recipe import recipe_cli
+
+    catalog = json.loads(recipe_cli._RECIPE_CATALOG_PATH.read_text(encoding="utf-8"))
+    catalog["recipes"][0]["detail"]["parameters"] = [{}]
+    invalid_catalog = tmp_path / "invalid-parameter.json"
+    invalid_catalog.write_text(json.dumps(catalog), encoding="utf-8")
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+    monkeypatch.setattr(recipe_cli, "_RECIPE_CATALOG_PATH", invalid_catalog)
+
+    with pytest.raises(SystemExit) as exc_info:
+        recipe_cli.cmd_recipe_show(Namespace(name=catalog["recipes"][0]["detail"]["name"]))
+
+    assert exc_info.value.code == 5
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["error_code"] == "INTERNAL_ERROR"
+    assert "invalid generated recipe catalog" in payload["message"]
+
+
 def test_recipe_catalog_entry_validation_requires_fields_and_types():
     from nvflare.tool.recipe import recipe_cli
 
     catalog = json.loads(recipe_cli._RECIPE_CATALOG_PATH.read_text(encoding="utf-8"))
+    assert all(recipe_cli._is_valid_catalog_entry(entry) for entry in catalog["recipes"])
     valid_entry = catalog["recipes"][0]
-    assert recipe_cli._is_valid_catalog_entry(valid_entry)
 
     for section in ("summary", "detail"):
         invalid_entry = json.loads(json.dumps(valid_entry))
@@ -487,8 +507,23 @@ def test_recipe_catalog_entry_validation_requires_fields_and_types():
     invalid_entry["detail"]["framework_support"] = "pytorch"
     assert not recipe_cli._is_valid_catalog_entry(invalid_entry)
 
+    parameter = valid_entry["detail"]["parameters"][0]
+    for field, invalid_value in (
+        ("name", None),
+        ("type", []),
+        ("required", 1),
+        ("kind", None),
+    ):
+        invalid_entry = json.loads(json.dumps(valid_entry))
+        invalid_parameter = dict(parameter)
+        invalid_parameter[field] = invalid_value
+        invalid_entry["detail"]["parameters"] = [invalid_parameter]
+        assert not recipe_cli._is_valid_catalog_entry(invalid_entry)
+
     invalid_entry = json.loads(json.dumps(valid_entry))
-    invalid_entry["detail"]["parameters"] = [None]
+    invalid_parameter = dict(parameter)
+    invalid_parameter.pop("default")
+    invalid_entry["detail"]["parameters"] = [invalid_parameter]
     assert not recipe_cli._is_valid_catalog_entry(invalid_entry)
 
 
