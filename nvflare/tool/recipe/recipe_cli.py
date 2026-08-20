@@ -34,6 +34,12 @@ _LIST_METADATA_KEYS = {"privacy"}
 _CATALOG_RECIPE_ATTRS_KEY = "_recipe_attrs"
 _RECIPE_CATALOG_PATH = Path(__file__).with_name("recipe_catalog.json")
 _RECIPE_CATALOG_SCHEMA_VERSION = 1
+_RECIPE_CORE_ATTR_ALIASES = {
+    "algorithm": ("recipe_algorithm", "algorithm"),
+    "aggregation": ("recipe_aggregation", "aggregation"),
+    "state_exchange": ("recipe_state_exchange", "state_exchange"),
+    "privacy": ("recipe_privacy", "privacy"),
+}
 _RECIPE_DETAIL_ATTR_ALIASES = {
     "framework_support": (
         "recipe_framework_support",
@@ -321,10 +327,12 @@ def _normalize_recipe_name(value: str) -> str:
 
 
 def _recipe_metadata_attr(metadata: dict, name: str, default=None):
+    metadata = metadata or {}
+    if name in metadata:
+        return metadata[name]
     for alias in _RECIPE_DETAIL_ATTR_ALIASES[name]:
-        value = (metadata or {}).get(alias)
-        if value is not None:
-            return value
+        if alias in metadata:
+            return metadata[alias]
     return default
 
 
@@ -561,18 +569,20 @@ def _static_class_attr(class_node: ast.ClassDef, *names):
     return None if unresolved else _STATIC_ATTR_MISSING
 
 
-def _static_recipe_attrs(module_name: str, class_name: str) -> dict:
+def _static_recipe_attrs(module_name: str, class_name: str, attr_aliases: dict = None) -> dict:
+    attr_aliases = _RECIPE_DETAIL_ATTR_ALIASES if attr_aliases is None else attr_aliases
     attrs = {}
-    for mro_module, mro_class in reversed(_static_class_mro(module_name, class_name)):
+    for mro_module, mro_class in _static_class_mro(module_name, class_name):
         _, _, class_node = _static_class_node(mro_module, mro_class)
         if class_node is None:
             continue
-        for aliases in _RECIPE_DETAIL_ATTR_ALIASES.values():
-            for name in aliases:
-                value = _static_class_attr(class_node, name)
-                if value is not _STATIC_ATTR_MISSING:
-                    attrs[name] = _json_safe_value(value)
-    return attrs
+        for name, aliases in attr_aliases.items():
+            if name in attrs:
+                continue
+            value = _static_class_attr(class_node, *aliases)
+            if value is not _STATIC_ATTR_MISSING:
+                attrs[name] = _json_safe_value(value)
+    return {name: attrs[name] for name in attr_aliases if name in attrs}
 
 
 def _infer_algorithm(cli_name: str, class_name: str, module_name: str) -> str:
@@ -641,19 +651,23 @@ def _infer_privacy(cli_name: str, class_name: str, module_name: str) -> list:
 
 
 def _static_recipe_metadata(cli_name: str, module_name: str, class_node: ast.ClassDef) -> dict:
-    algorithm = _static_class_attr(class_node, "recipe_algorithm", "algorithm")
-    if algorithm is _STATIC_ATTR_MISSING or not algorithm:
+    metadata = _static_recipe_attrs(module_name, class_node.name, _RECIPE_CORE_ATTR_ALIASES)
+    if "algorithm" in metadata:
+        algorithm = metadata["algorithm"]
+    else:
         algorithm = _infer_algorithm(cli_name, class_node.name, module_name)
-    aggregation = _static_class_attr(class_node, "recipe_aggregation", "aggregation")
-    if aggregation is _STATIC_ATTR_MISSING or not aggregation:
+    if "aggregation" in metadata:
+        aggregation = metadata["aggregation"]
+    else:
         aggregation = _infer_aggregation(algorithm)
-    state_exchange = _static_class_attr(class_node, "recipe_state_exchange", "state_exchange")
-    if state_exchange is _STATIC_ATTR_MISSING or not state_exchange:
+    if "state_exchange" in metadata:
+        state_exchange = metadata["state_exchange"]
+    else:
         state_exchange = _infer_state_exchange(algorithm)
-    privacy = _static_class_attr(class_node, "recipe_privacy", "privacy")
-    if privacy is _STATIC_ATTR_MISSING:
-        privacy = None
-    privacy = _as_string_list(privacy) or _infer_privacy(cli_name, class_node.name, module_name)
+    if "privacy" in metadata:
+        privacy = _as_string_list(metadata["privacy"])
+    else:
+        privacy = _infer_privacy(cli_name, class_node.name, module_name)
     return {
         "algorithm": _normalize_filter_value(algorithm) if algorithm else None,
         "aggregation": _normalize_filter_value(aggregation) if aggregation else None,

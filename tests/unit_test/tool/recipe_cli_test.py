@@ -848,7 +848,7 @@ class ConcreteWorkflow(Parent):
     assert description == "Inherited recipe description."
     assert recipe_cli._static_recipe_class("nvflare.fake.recipes.unrelated") is None
     assert recipe_cli._static_recipe_attrs("nvflare.fake.recipes.child", "ConcreteWorkflow") == {
-        "recipe_notes": ["Inherited note."]
+        "notes": ["Inherited note."]
     }
     assert {
         parameter["name"]
@@ -865,10 +865,18 @@ def test_static_recipe_metadata_follows_mro_and_explicit_none(tmp_path, monkeypa
         """from nvflare.recipe.spec import Recipe
 
 class Left(Recipe):
-    recipe_notes = [\"left\"]
+    recipe_algorithm = \"fedavg\"
+    recipe_aggregation = \"weighted_average\"
+    recipe_state_exchange = \"full_model\"
+    recipe_privacy = {\"left_privacy\"}
+    notes = [\"left\"]
 
 class Right(Recipe):
-    recipe_notes = [\"right\"]
+    recipe_algorithm = \"fedopt\"
+    recipe_aggregation = \"server_optimizer\"
+    recipe_state_exchange = \"weight_diff\"
+    recipe_privacy = {\"right_privacy\"}
+    notes = [\"right\"]
 
 class Child(Left, Right):
     pass
@@ -887,11 +895,18 @@ class Cleared(Left, Right):
         "Right",
         "Recipe",
     ]
-    assert recipe_cli._static_recipe_attrs(module_name, "Child")["recipe_notes"] == ["left"]
+    child_class = recipe_cli._static_class_node(module_name, "Child")[2]
+    assert recipe_cli._static_recipe_metadata("custom-pt", module_name, child_class) == {
+        "algorithm": "fedavg",
+        "aggregation": "weighted_average",
+        "state_exchange": "full_model",
+        "privacy": ["left_privacy"],
+    }
+    assert recipe_cli._static_recipe_attrs(module_name, "Child")["notes"] == ["left"]
 
     cleared_attrs = recipe_cli._static_recipe_attrs(module_name, "Cleared")
-    assert "recipe_notes" in cleared_attrs
-    assert cleared_attrs["recipe_notes"] is None
+    assert "notes" in cleared_attrs
+    assert cleared_attrs["notes"] is None
     assert recipe_cli._recipe_metadata_attr(cleared_attrs, "notes") is None
 
 
