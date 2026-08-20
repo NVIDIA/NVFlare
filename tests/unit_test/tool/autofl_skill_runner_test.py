@@ -3849,6 +3849,41 @@ def test_candidate_import_tolerates_job_metric_mode_absent_from_legacy_campaign_
     assert "job_key_metric_mode" not in updated["objective"]
 
 
+def test_candidate_import_backfills_missing_job_metric_mode_from_native_min_contract():
+    runner = _load_runner()
+    current = _campaign_config()
+    current["objective"].update(
+        {
+            "mode": "min",
+            "mode_contract_source": "job:key_metric_mode",
+            "job_key_metric": "accuracy",
+        }
+    )
+    current["objective"].pop("job_key_metric_mode")
+    current["objective"].pop("job_key_metric_mode_source")
+    unchanged_candidate = deepcopy(current)
+    unchanged_candidate["objective"].update(
+        {
+            "job_key_metric_mode": "min",
+            "job_key_metric_mode_source": "job:key_metric_mode",
+        }
+    )
+
+    updated = runner.candidate_campaign_config(unchanged_candidate, current, SimpleNamespace(metric="accuracy"), {})
+
+    assert "job_key_metric_mode" not in updated["objective"]
+
+    changed_candidate = deepcopy(unchanged_candidate)
+    changed_candidate["objective"].update(
+        {
+            "mode": "max",
+            "job_key_metric_mode": "max",
+        }
+    )
+    with pytest.raises(ValueError, match="objective metric invariants: mode, job_key_metric_mode"):
+        runner.candidate_campaign_config(changed_candidate, current, SimpleNamespace(metric="accuracy"), {})
+
+
 def test_candidate_import_rejects_job_metric_mode_drift_from_legacy_max_campaign():
     runner = _load_runner()
     schema = {
@@ -3892,8 +3927,10 @@ def test_legacy_campaign_without_mode_still_rejects_candidate_direction_change()
     candidate = _campaign_config()
     candidate["objective"].update({"mode": "min", "mode_contract_source": "job:key_metric_mode"})
 
-    with pytest.raises(ValueError, match="objective metric invariants: mode"):
+    with pytest.raises(ValueError, match="objective metric invariants: mode") as exc:
         runner.candidate_campaign_config(candidate, current, SimpleNamespace(metric="accuracy"), {})
+
+    assert "delete the campaign's .nvflare/autofl directory" in str(exc.value)
 
 
 def test_evaluate_resumes_legacy_max_campaign_without_job_key_metric(tmp_path, monkeypatch):

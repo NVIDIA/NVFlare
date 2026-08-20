@@ -1068,6 +1068,42 @@ def main():
     assert not any(item["field"] == "budget.fixed_training_budget.num_rounds" for item in explicit["unresolved"])
 
 
+@pytest.mark.parametrize(
+    ("argument", "job_args"),
+    [
+        ('parser.add_argument("--x", dest=["y"], default=1)', []),
+        ('parser.add_argument("--flagx", action=["store_true"])', ["--flagx"]),
+    ],
+)
+def test_import_ignores_malformed_argparse_dest_and_action_literals(tmp_path, argument, job_args):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        f"""
+import argparse
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+def define_parser():
+    parser = argparse.ArgumentParser()
+    {argument}
+    return parser.parse_args()
+
+
+def main():
+    define_parser()
+    recipe = FedAvgRecipe(name="demo", min_clients=2, num_rounds=1, train_script="client.py")
+    recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path), job_args=job_args)
+
+    assert config["import"]["support"]["status"] == "supported"
+
+
 def test_dynamic_key_metric_uses_documented_fallback_until_explicitly_overridden(tmp_path):
     tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
     job_path = tmp_path / "job.py"

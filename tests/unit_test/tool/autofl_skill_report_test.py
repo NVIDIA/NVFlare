@@ -1997,6 +1997,15 @@ def test_report_training_budget_vocabulary_falls_back_when_runner_import_fails(t
     assert reporter.load_training_budget_args() == reporter.FALLBACK_TRAINING_BUDGET_ARGS
 
 
+def test_report_campaign_guard_contract_falls_back_on_system_exit(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    guard_path = tmp_path / "campaign_guard.py"
+    guard_path.write_text("raise SystemExit(2)\n", encoding="utf-8")
+    monkeypatch.setattr(reporter, "product_autofl_script_path", lambda _name: guard_path)
+
+    assert reporter.load_campaign_guard_contract() is None
+
+
 @pytest.mark.parametrize("seconds", [0.0, 45.0, 3599.0, 3600.0])
 def test_report_runtime_format_matches_progress_plotter(seconds):
     reporter = _load_reporter()

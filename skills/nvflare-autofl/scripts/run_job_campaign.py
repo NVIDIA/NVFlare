@@ -3724,12 +3724,24 @@ def candidate_campaign_config(
             continue
         current_value = current_objective.get(invariant_field)
         if invariant_field == "job_key_metric_mode" and invariant_field not in recorded_objective:
-            # Campaigns created before native direction support always used max for NVFlare job-key selection.
-            current_value = "max"
+            recorded_requested_metric = recorded_objective.get("requested_metric") or recorded_objective.get("metric")
+            recorded_job_metric = recorded_objective.get("job_key_metric") or recorded_objective.get("metric")
+            directly_imported_mode = str(recorded_objective.get("mode_contract_source") or "").startswith("job:")
+            current_value = (
+                current_objective["mode"]
+                if directly_imported_mode and recorded_requested_metric == recorded_job_metric
+                else "max"
+            )
         if candidate_objective.get(invariant_field) != current_value:
             drift.append(invariant_field)
     if drift:
-        raise ValueError(f"candidate changes objective metric invariants: {', '.join(drift)}")
+        message = f"candidate changes objective metric invariants: {', '.join(drift)}"
+        if {"mode", "job_key_metric_mode"} & set(drift):
+            message += (
+                "; the direction contract changed, so delete the campaign's .nvflare/autofl directory "
+                "(or start in a fresh workspace) and initialize again"
+            )
+        raise ValueError(message)
     candidate_config["objective"] = dict(current_config.get("objective", {}))
     current_paths = current_config.get("trust_contract", {}).get("allowed_edit_paths", []) or []
     trust_paths = candidate_config.setdefault("trust_contract", {}).setdefault("allowed_edit_paths", [])

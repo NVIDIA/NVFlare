@@ -111,16 +111,19 @@ Compatibility and Migration Notes
 - Auto-FL campaigns now honor the job's native metric direction
   (``key_metric_mode`` or a matching same-metric ``stop_cond``) instead of
   assuming maximization, so raw lower-is-better objectives no longer need to be
-  negated. Campaign admission fails closed in two new cases: an obvious
+  negated. Campaign admission fails closed in three new cases: an obvious
   lower-is-better metric such as ``val_loss`` that relies only on NVFlare's
   implicit ``max`` default is rejected until the job declares
   ``key_metric_mode="min"``, and jobs passing a custom ``model_selector`` are
   rejected because that component supersedes ``key_metric_mode``, so its
-  selection direction cannot be imported deterministically. Remove the custom
-  selector and expose its criterion as a declared ``key_metric`` with
-  ``key_metric_mode`` before initializing a campaign. Experimental legacy
-  minimization campaigns without direction provenance must be re-initialized in
-  a fresh workspace.
+  selection direction cannot be imported deterministically. A requested metric
+  that differs from the job's key metric is also rejected unless
+  ``mutation_schema.yaml`` declares the requested and optimization metric
+  bridge. Remove the custom selector and expose its criterion as a declared
+  ``key_metric`` with ``key_metric_mode``, or declare the alternate metric
+  bridge, before initializing a campaign. Experimental legacy minimization
+  campaigns without direction provenance must be re-initialized in a fresh
+  workspace.
 - In external-process Client API mode, losing a trainer after its lazy result
   envelope has been accepted now fails the run as ``EXECUTION_EXCEPTION`` even
   if a controller's ``min_responses`` threshold could otherwise tolerate a

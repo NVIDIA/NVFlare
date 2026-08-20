@@ -124,7 +124,9 @@ retained selection.
 The objective contract records two distinct provenance fields. `metric_source`
 describes where measurements came from and defaults to `NVFlare metric
 artifacts`. `metric_contract_source` records how the importer selected the
-metric, for example `user_request`, `arg:key_metric`, or `default`.
+metric, for example `user_request`, `arg:key_metric`, `core_default` when the
+job uses NVFlare's resolved default key metric, or `default` when the importer
+uses an unresolved metric fallback.
 Product Auto-FL campaigns preserve the imported `objective.mode` (`min` or
 `max`) and its provenance. Reported improvement is direction-adjusted and
 therefore positive when the objective improves, while ledger scores remain raw.

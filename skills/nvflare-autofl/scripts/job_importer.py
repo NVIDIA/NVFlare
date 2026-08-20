@@ -1059,11 +1059,22 @@ def _arg_spec_from_call(node: ast.Call, function_name: Optional[str]) -> Optiona
         return None
 
     keywords = {keyword.arg: keyword.value for keyword in node.keywords if keyword.arg}
-    name = _literal_keyword_value(keywords.get("dest")) or (_name_from_flags(flags) if flags else positional_names[0])
+    if "dest" in keywords:
+        dest_is_literal, name = _literal_value(keywords["dest"])
+        if not dest_is_literal or not isinstance(name, str):
+            return None
+    else:
+        name = _name_from_flags(flags) if flags else positional_names[0]
     if not name:
         return None
 
-    action = _literal_keyword_value(keywords.get("action"))
+    action = None
+    if "action" in keywords:
+        action_is_literal, action_value = _literal_value(keywords["action"])
+        if action_is_literal:
+            if not isinstance(action_value, str):
+                return None
+            action = action_value
     default, default_source, default_unresolved = _arg_default_from_keywords(keywords)
     if not flags and "default" not in keywords:
         default_source = "required_positional"

@@ -147,7 +147,7 @@ def load_campaign_guard_contract():
         ):
             return None
         return module
-    except Exception:
+    except (Exception, SystemExit):
         return None
     finally:
         if previous_module is None:
