@@ -491,19 +491,30 @@ class JobExecutor(ClientExecutor):
         # Use retry to avoid print out the error stack trace.
         retry = 1
         while retry >= 0:
-            process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
-            if process_status in (ClientStatus.STARTING, ClientStatus.STARTED):
+            with self.lock:
+                process = self.run_processes.get(job_id)
+                process_status = (
+                    process.get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED) if process else ClientStatus.NOT_STARTED
+                )
+                job_handle = process.get(RunProcessKey.JOB_HANDLE) if process else None
+            if process_status in (ClientStatus.STARTING, ClientStatus.STARTED, ClientStatus.STOPPED):
                 try:
-                    with self.lock:
-                        job_handle = self.run_processes[job_id][RunProcessKey.JOB_HANDLE]
                     if process_status == ClientStatus.STARTING:
                         if heartbeat_cleanup:
                             job_handle.terminate(heartbeat_cleanup=True)
                         else:
                             job_handle.terminate()
                         break
-                    data = {}
-                    request = new_cell_message({}, data)
+                    if process_status == ClientStatus.STOPPED:
+                        # STOPPED means the runner returned, not that the OS
+                        # process exited. Give archival and process-local teardown
+                        # the normal bounded grace period before reclaiming the
+                        # still-registered owned process.
+                        t = threading.Thread(target=self._terminate_job, args=[job_handle, job_id, heartbeat_cleanup])
+                        t.start()
+                        t.join()
+                        break
+                    request = new_cell_message({}, {})
                     self.client.cell.fire_and_forget(
                         targets=self._job_fqcn(job_id),
                         channel=CellChannel.CLIENT_COMMAND,
@@ -564,14 +575,13 @@ class JobExecutor(ClientExecutor):
 
     def _terminate_job(self, job_handle, job_id, heartbeat_cleanup=False):
         max_wait = 10.0
-        done = False
         start = time.time()
         while True:
-            process = self.run_processes.get(job_id)
+            with self.lock:
+                process = self.run_processes.get(job_id)
             if not process:
                 # already finished gracefully
-                done = True
-                break
+                return
 
             if time.time() - start > max_wait:
                 # waited enough
@@ -630,7 +640,7 @@ class JobExecutor(ClientExecutor):
                         JobFailureMsgKey.REASON: failure_reason,
                     },
                 )
-                reply = self.client.cell.send_request(
+                reply = self.client.send_request_before_shutdown(
                     target=FQCN.ROOT_SERVER,
                     channel=CellChannel.SERVER_MAIN,
                     topic=CellChannelTopic.REPORT_JOB_FAILURE,
@@ -638,7 +648,13 @@ class JobExecutor(ClientExecutor):
                     timeout=self.job_query_timeout,
                     optional=True,
                 )
-                if reply.get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK:
+                if reply is None:
+                    # Shutdown invalidates the site token. The server's client-quit/dead-client
+                    # path resolves any outcome still pending after communication stops.
+                    self.logger.info(
+                        f"not reporting terminal outcome of job {job_id}: client communication has stopped"
+                    )
+                elif reply.get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK:
                     self.logger.error(f"could not report terminal outcome of job {job_id}")
             except Exception as e:
                 self.logger.error(f"could not report terminal outcome of job {job_id}: {secure_format_exception(e)}")

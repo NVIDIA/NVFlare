@@ -796,6 +796,33 @@ def test_fail_run_logs_info_when_job_not_running():
     runner._stop_run.assert_called_once_with("job-1", fl_ctx)
 
 
+def test_fail_run_releases_client_outcome_barrier():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_info = MagicMock()
+    runner._stop_run = MagicMock()
+    runner._pending_client_outcomes = {"job-1": {"site-1", "site-2"}}
+    runner._client_outcome_deadlines = {"job-1": 123.0}
+
+    engine = MagicMock()
+    engine.lock = MagicMock()
+    engine.run_processes = {
+        "job-1": {
+            RunProcessKey.PARTICIPANTS: {},
+        }
+    }
+    engine.exception_run_processes = {}
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = engine
+    job = MagicMock(job_id="job-1")
+    runner.running_jobs = {"job-1": job}
+
+    assert runner.fail_run("job-1", ProcessExitCode.EXCEPTION, fl_ctx) == ""
+
+    assert "job-1" not in runner._pending_client_outcomes
+    assert "job-1" not in runner._client_outcome_deadlines
+    runner._stop_run.assert_called_once_with("job-1", fl_ctx)
+
+
 def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code():
     runner = JobRunner(workspace_root="/tmp")
     runner.fire_event = MagicMock()

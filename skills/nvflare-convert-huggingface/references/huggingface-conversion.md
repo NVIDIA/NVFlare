@@ -130,6 +130,11 @@ Every site uses the same packaged `client.py`; do not include `train_script` in
 the per-site mapping. The asset rejects both relative and absolute site-specific
 script overrides because it cannot package them while preserving one portable
 app-local runtime path.
+Pass that same mapping to the asset's `build_sim_env(...)`, which implements the
+single-topology-owner rule from
+`../../nvflare-shared/references/conversion-common.md`. Leave the mapping unset
+for ordinary generated partitions, and derive their indices from the initialized
+`site-N` name.
 Follow the shared construction reference's client-argument transport rule.
 `train_args` is not necessarily shell parsed: use unquoted whitespace-free
 tokens for the default in-process executor, and use shell quoting only for a
@@ -140,11 +145,14 @@ internal command-splitting helpers.
 `train_script` names the primary client entry point in the runtime config; it
 does not provide a separate source root for caller-cwd-independent packaging.
 Use its portable app-local name in the constructor and add the resolved source
-once with `recipe.add_client_file(...)`. Export and inspect the job before
-simulation. Reject absolute `task_script_path` values in generated configs
-because exported apps must launch their packaged client script portably.
+once with `recipe.add_client_file(...)`. For an exported-artifact target, export
+and inspect that job before running it with the simulator CLI. For a local
+`python job.py` target, do not export; after the run, inspect the materialized
+simulation workspace for the same config and packaging evidence. Reject
+absolute `task_script_path` values in generated configs because runtime apps
+must launch their packaged client script portably.
 
-Exported app layout is owned by
+For an exported-artifact target, exported app layout is owned by
 `../../nvflare-shared/references/conversion-workflow.md`: inspect the exported
 job root and enumerate the app directories it actually contains before asserting
 any path.

@@ -801,6 +801,13 @@ class JobRunner(FLComponent):
             ):
                 run_process[RunProcessKey.PROCESS_RETURN_CODE] = process_return_code
             engine.exception_run_processes[job_id] = run_process
+        # fail_run establishes an authoritative terminal failure. Remaining
+        # client reports cannot change that status and must not hold terminal
+        # publication behind the normal outcome grace period (900 seconds by
+        # default); _stop_run below drives their cleanup independently.
+        with self.lock:
+            self._pending_client_outcomes.pop(job_id, None)
+            self._client_outcome_deadlines.pop(job_id, None)
         self._stop_run(job_id, fl_ctx)
 
         job = self.running_jobs.get(job_id)
