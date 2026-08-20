@@ -280,24 +280,29 @@ def main():
         f"({len(train_dataloader)} training batches, {len(validation_dataloader)} validation batches)"
     )
 
-    round_num = 0
+    fallback_round = 0
     while flare.is_running():
         input_model = flare.receive()
         if input_model is None:
             break
 
-        print(f"[{site_name}] Round {round_num}: applying global LoRA adapter")
+        workflow_round = getattr(input_model, "current_round", None)
+        if workflow_round is None:
+            workflow_round = fallback_round
+            print(f"[{site_name}] Received model without current_round; using fallback round {workflow_round}")
+
+        print(f"[{site_name}] Round {workflow_round}: applying global LoRA adapter")
         apply_global_adapter(model, input_model.params)
 
         metrics = {}
-        if round_num == 0:
+        if workflow_round == 0:
             print(f"[{site_name}] Round 0: skipping validation because no aggregated global adapter exists yet")
         else:
             val_loss = evaluate_loss(model, validation_dataloader, args.validation_steps)
             metrics = {"val_loss": val_loss}
-            print(f"[{site_name}] Round {round_num}: received global adapter val_loss={val_loss:.4f}")
+            print(f"[{site_name}] Round {workflow_round}: received global adapter val_loss={val_loss:.4f}")
 
-        print(f"[{site_name}] Round {round_num}: local training for {args.local_steps} steps")
+        print(f"[{site_name}] Round {workflow_round}: local training for {args.local_steps} steps")
         diff = local_train(model, train_dataloader, args.local_steps)
 
         flare.send(
@@ -308,8 +313,8 @@ def main():
                 meta={"NUM_STEPS_CURRENT_ROUND": args.local_steps},
             )
         )
-        print(f"[{site_name}] Round {round_num}: submitted LoRA adapter diff")
-        round_num += 1
+        print(f"[{site_name}] Round {workflow_round}: submitted LoRA adapter diff")
+        fallback_round = workflow_round + 1
 
 
 if __name__ == "__main__":

@@ -84,7 +84,7 @@ input_model = flare.receive()         # 2. Receive global LoRA adapter from the 
 apply_global_adapter(model, input_model.params)  # 3. Apply global adapter weights
 
 metrics = {}
-if round_num > 0:
+if input_model.current_round != 0:
     val_loss = evaluate_loss(model, validation_dataloader, validation_steps)
     metrics = {"val_loss": val_loss}
 adapter_diff = local_train(model, train_dataloader, local_steps)  # local fine-tuning
