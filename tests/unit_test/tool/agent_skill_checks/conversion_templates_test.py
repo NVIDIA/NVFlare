@@ -36,6 +36,7 @@ SKILLS_ROOT = REPO_ROOT / "skills"
 PT_TEMPLATES = SKILLS_ROOT / "nvflare-convert-pytorch" / "assets"
 LIGHTNING_TEMPLATES = SKILLS_ROOT / "nvflare-convert-lightning" / "assets"
 HF_TEMPLATES = SKILLS_ROOT / "nvflare-convert-huggingface" / "assets"
+HF_SCRIPTS = SKILLS_ROOT / "nvflare-convert-huggingface" / "scripts"
 SHARED_TEMPLATES = SKILLS_ROOT / "nvflare-shared" / "assets"
 
 
@@ -49,6 +50,388 @@ def _load_module(path: Path):
 class _FloatOverflow:
     def __float__(self):
         raise OverflowError("step count too large")
+
+
+def test_huggingface_model_resolver_returns_existing_local_path(tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+
+    result = module.resolve_model_snapshot(str(model_dir), source="local")
+
+    assert result == {
+        "download_authorized": False,
+        "identifier": str(model_dir),
+        "resolved_path": str(model_dir.resolve()),
+        "source": "local",
+        "status": "available",
+    }
+
+
+def test_huggingface_model_resolver_loads_exception_from_legacy_public_utils(monkeypatch):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    hub_module = types.ModuleType("huggingface_hub")
+    hub_module.__path__ = []
+    utils_module = types.ModuleType("huggingface_hub.utils")
+
+    class _LegacyLocalEntryNotFoundError(Exception):
+        pass
+
+    def snapshot_download(**_kwargs):
+        return "/cached/snapshot"
+
+    hub_module.snapshot_download = snapshot_download
+    utils_module.LocalEntryNotFoundError = _LegacyLocalEntryNotFoundError
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub_module)
+    monkeypatch.setitem(sys.modules, "huggingface_hub.utils", utils_module)
+    monkeypatch.delitem(sys.modules, "huggingface_hub.errors", raising=False)
+
+    loaded_download, loaded_error = module._load_huggingface_hub()
+
+    assert loaded_download is snapshot_download
+    assert loaded_error is _LegacyLocalEntryNotFoundError
+
+
+def test_huggingface_model_resolver_does_not_treat_missing_bare_local_path_as_hub(monkeypatch, tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+
+    def unexpected_hub_load():
+        raise AssertionError("an explicit local path must not load huggingface_hub")
+
+    monkeypatch.setattr(module, "_load_huggingface_hub", unexpected_hub_load)
+
+    result = module.resolve_model_snapshot("models/checkpoint", source="local", source_root=str(tmp_path))
+
+    assert result == {
+        "download_authorized": False,
+        "identifier": "models/checkpoint",
+        "reason": "local_path_not_found",
+        "resolved_path": None,
+        "source": "local",
+        "status": "missing",
+    }
+
+
+def test_huggingface_model_resolver_resolves_relative_local_path_from_source_root(monkeypatch, tmp_path, capsys):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    source_root = tmp_path / "source"
+    model_dir = source_root / "models" / "checkpoint"
+    model_dir.mkdir(parents=True)
+    caller_dir = tmp_path / "caller"
+    caller_dir.mkdir()
+    monkeypatch.chdir(caller_dir)
+
+    assert (
+        module.main(
+            [
+                "--source",
+                "local",
+                "--source-root",
+                str(source_root),
+                "models/checkpoint",
+            ]
+        )
+        == 0
+    )
+    result = json.loads(capsys.readouterr().out)
+
+    assert result["resolved_path"] == str(model_dir.resolve())
+    assert result["source"] == "local"
+
+
+def test_huggingface_model_resolver_rejects_relative_local_path_without_absolute_source_root(tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+
+    with pytest.raises(ValueError, match="relative local identifiers require an absolute source_root"):
+        module.resolve_model_snapshot("models/checkpoint", source="local")
+    with pytest.raises(ValueError, match="source_root must be an absolute path"):
+        module.resolve_model_snapshot("models/checkpoint", source="local", source_root="source")
+
+
+def test_huggingface_model_resolver_rejects_source_root_with_absolute_local_path(tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    source_root = tmp_path / "source"
+    model_dir = source_root / "models" / "checkpoint"
+    model_dir.mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="source_root can only be used with a relative local identifier"):
+        module.resolve_model_snapshot(str(model_dir), source="local", source_root=str(source_root))
+
+
+def test_huggingface_model_resolver_does_not_treat_existing_hub_id_as_local(monkeypatch, tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    local_collision = tmp_path / "org" / "model"
+    local_collision.mkdir(parents=True)
+    hub_snapshot = tmp_path / "hub-snapshot"
+    hub_snapshot.mkdir()
+    calls = []
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        return str(hub_snapshot)
+
+    class _CacheMiss(Exception):
+        pass
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    result = module.resolve_model_snapshot("org/model", source="hub")
+
+    assert calls == [
+        {
+            "cache_dir": None,
+            "local_files_only": True,
+            "repo_id": "org/model",
+            "revision": None,
+        }
+    ]
+    assert result["resolved_path"] == str(hub_snapshot.resolve())
+    assert result["repo_type"] == "model"
+    assert result["source"] == "hub_cache"
+
+
+def test_huggingface_model_resolver_reports_cache_miss_without_failing(monkeypatch, capsys):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    calls = []
+
+    class _CacheMiss(Exception):
+        pass
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        raise _CacheMiss("not cached")
+
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    assert module.main(["--source", "hub", "org/model"]) == 0
+    result = json.loads(capsys.readouterr().out)
+
+    assert calls == [
+        {
+            "cache_dir": None,
+            "local_files_only": True,
+            "repo_id": "org/model",
+            "revision": None,
+        }
+    ]
+    assert result == {
+        "download_authorized": False,
+        "identifier": "org/model",
+        "reason": "not_cached",
+        "repo_type": "model",
+        "resolved_path": None,
+        "revision": None,
+        "source": "hub_cache",
+        "status": "missing",
+    }
+
+
+def test_huggingface_model_resolver_downloads_once_only_when_authorized(monkeypatch, tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    revision = "a" * 40
+    snapshot_dir = tmp_path / "models--org--model" / "snapshots" / revision
+    snapshot_dir.mkdir(parents=True)
+    calls = []
+
+    class _CacheMiss(Exception):
+        pass
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        return str(snapshot_dir)
+
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    result = module.resolve_model_snapshot(
+        "org/model",
+        source="hub",
+        allow_download=True,
+        revision=revision,
+        cache_dir=str(tmp_path),
+    )
+
+    assert calls == [
+        {
+            "cache_dir": str(tmp_path),
+            "local_files_only": False,
+            "repo_id": "org/model",
+            "revision": revision,
+        }
+    ]
+    assert result == {
+        "download_authorized": True,
+        "identifier": "org/model",
+        "resolved_path": str(snapshot_dir.resolve()),
+        "repo_type": "model",
+        "revision": revision,
+        "source": "hub_download_or_cache",
+        "status": "available",
+    }
+
+
+def test_huggingface_model_resolver_resolves_revision_for_authorized_download(monkeypatch, tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    revision = "b" * 40
+    snapshot_dir = tmp_path / "models--org--model" / "snapshots" / revision
+    snapshot_dir.mkdir(parents=True)
+    calls = []
+
+    class _CacheMiss(Exception):
+        pass
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        return str(snapshot_dir)
+
+    monkeypatch.setattr(module, "_resolve_hub_revision", lambda identifier, repo_type: revision)
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    result = module.resolve_model_snapshot("org/model", source="hub", allow_download=True)
+
+    assert calls == [
+        {
+            "cache_dir": None,
+            "local_files_only": False,
+            "repo_id": "org/model",
+            "revision": revision,
+        }
+    ]
+    assert result["revision"] == revision
+    assert result["resolved_path"] == str(snapshot_dir.resolve())
+
+
+def test_huggingface_model_resolver_uses_public_api_for_revision_lookup(monkeypatch):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    revision = "c" * 40
+    hub_module = types.ModuleType("huggingface_hub")
+
+    class _HfApi:
+        def model_info(self, *, repo_id):
+            assert repo_id == "org/model"
+            return types.SimpleNamespace(sha=revision)
+
+    hub_module.HfApi = _HfApi
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub_module)
+
+    assert module._resolve_hub_revision("org/model", "model") == revision
+
+
+def test_huggingface_model_resolver_uses_dataset_repo_type_for_cache_only_lookup(monkeypatch, tmp_path, capsys):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    dataset_snapshot = tmp_path / "datasets--org--data" / "snapshots" / ("d" * 40)
+    dataset_snapshot.mkdir(parents=True)
+    calls = []
+
+    class _CacheMiss(Exception):
+        pass
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        return str(dataset_snapshot)
+
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    assert module.main(["--source", "hub", "--repo-type", "dataset", "org/data"]) == 0
+    result = json.loads(capsys.readouterr().out)
+
+    assert calls == [
+        {
+            "cache_dir": None,
+            "local_files_only": True,
+            "repo_id": "org/data",
+            "repo_type": "dataset",
+            "revision": None,
+        }
+    ]
+    assert result["repo_type"] == "dataset"
+    assert result["resolved_path"] == str(dataset_snapshot.resolve())
+
+
+def test_huggingface_model_resolver_uses_dataset_api_for_revision_lookup(monkeypatch):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    revision = "e" * 40
+    hub_module = types.ModuleType("huggingface_hub")
+
+    class _HfApi:
+        def dataset_info(self, *, repo_id):
+            assert repo_id == "org/data"
+            return types.SimpleNamespace(sha=revision)
+
+    hub_module.HfApi = _HfApi
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub_module)
+
+    assert module._resolve_hub_revision("org/data", "dataset") == revision
+
+
+def test_huggingface_model_resolver_downloads_pinned_dataset_only_when_authorized(monkeypatch, tmp_path):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+    revision = "f" * 40
+    dataset_snapshot = tmp_path / "datasets--org--data" / "snapshots" / revision
+    dataset_snapshot.mkdir(parents=True)
+    calls = []
+
+    class _CacheMiss(Exception):
+        pass
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        return str(dataset_snapshot)
+
+    def resolve_revision(identifier, repo_type):
+        assert (identifier, repo_type) == ("org/data", "dataset")
+        return revision
+
+    monkeypatch.setattr(module, "_resolve_hub_revision", resolve_revision)
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    result = module.resolve_model_snapshot(
+        "org/data",
+        source="hub",
+        repo_type="dataset",
+        allow_download=True,
+    )
+
+    assert calls == [
+        {
+            "cache_dir": None,
+            "local_files_only": False,
+            "repo_id": "org/data",
+            "repo_type": "dataset",
+            "revision": revision,
+        }
+    ]
+    assert result["download_authorized"] is True
+    assert result["repo_type"] == "dataset"
+    assert result["revision"] == revision
+
+
+@pytest.mark.parametrize("revision", ["main", "abc123", "g" * 40])
+def test_huggingface_model_resolver_requires_immutable_revision_for_download(monkeypatch, revision):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+
+    def unexpected_hub_load():
+        raise AssertionError("an invalid revision must fail before loading huggingface_hub")
+
+    monkeypatch.setattr(module, "_load_huggingface_hub", unexpected_hub_load)
+
+    with pytest.raises(ValueError, match="40-character commit SHA"):
+        module.resolve_model_snapshot("org/model", source="hub", allow_download=True, revision=revision)
+
+
+def test_huggingface_model_resolver_does_not_hide_authorized_download_failure(monkeypatch):
+    module = _load_module(HF_SCRIPTS / "resolve_model_snapshot.py")
+
+    class _CacheMiss(Exception):
+        pass
+
+    def snapshot_download(**_kwargs):
+        raise _CacheMiss("authorized resolution failed")
+
+    monkeypatch.setattr(module, "_load_huggingface_hub", lambda: (snapshot_download, _CacheMiss))
+
+    with pytest.raises(_CacheMiss, match="authorized resolution failed"):
+        module.resolve_model_snapshot("org/model", source="hub", allow_download=True, revision="a" * 40)
 
 
 def test_non_fedavg_tensor_profile_omits_unsupported_disk_offload(tmp_path):
@@ -73,6 +456,33 @@ def test_non_fedavg_tensor_profile_omits_unsupported_disk_offload(tmp_path):
     recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])
 
     assert recipe.server_expected_format == ExchangeFormat.PYTORCH
+
+
+def test_cyclic_parameterized_model_config_exports_normalized_path(tmp_path):
+    pytest.importorskip("torch")
+    from nvflare.app_opt.pt.recipes.cyclic import CyclicRecipe
+
+    train_script = tmp_path / "client.py"
+    train_script.write_text("pass\n", encoding="utf-8")
+    recipe = CyclicRecipe(
+        name="skill-cyclic-model-config-test",
+        model={"class_path": "torch.nn.Linear", "args": {"in_features": 2, "out_features": 1}},
+        train_script=str(train_script),
+        min_clients=2,
+    )
+
+    export_root = tmp_path / "export"
+    recipe.export(str(export_root))
+    server_config = json.loads(
+        (export_root / recipe.name / "app" / "config" / "config_fed_server.json").read_text(encoding="utf-8")
+    )
+    persistor = next((component for component in server_config["components"] if component["id"] == "persistor"), None)
+
+    assert persistor is not None, f"persistor missing from server components: {server_config['components']!r}"
+    assert persistor["args"]["model"] == {
+        "path": "torch.nn.Linear",
+        "args": {"in_features": 2, "out_features": 1},
+    }
 
 
 def test_pytorch_eval_template_computes_metric_against_toy_model():
@@ -594,6 +1004,24 @@ def test_huggingface_job_template_exports_per_site_files_from_another_working_di
         assert executor_args["task_script_args"] == expected["train_args"]
 
 
+def test_huggingface_job_template_uses_one_simulator_topology_owner(tmp_path):
+    module = _load_module(HF_TEMPLATES / "job.py")
+    per_site_config = {"site-a": {"train_args": "--data_root /data/a"}, "site-b": {"train_args": "--data_root /data/b"}}
+
+    unified_env = module.build_sim_env(2, tmp_path / "unified")
+    assert unified_env.clients is None
+    assert unified_env.num_clients == 2
+    assert unified_env.num_threads == 2
+
+    named_env = module.build_sim_env(2, tmp_path / "named", per_site_config=per_site_config)
+    assert named_env.clients == ["site-a", "site-b"]
+    assert named_env.num_clients == 2
+    assert named_env.num_threads == 2
+
+    with pytest.raises(ValueError, match="Inconsistent number of clients"):
+        module.build_sim_env(3, tmp_path / "mismatch", per_site_config=per_site_config)
+
+
 def test_huggingface_job_template_rejects_deprecated_per_site_constructor_option():
     module = _load_module(HF_TEMPLATES / "job.py")
 
@@ -680,6 +1108,45 @@ def test_huggingface_job_template_uses_public_recipe_execution_without_internal_
     assert "inspect." not in source
     assert "PTModel" not in source
     assert "persistor" not in source.lower()
+
+
+def test_lightning_local_persistent_state_filters_both_directions_across_rounds():
+    torch = pytest.importorskip("torch")
+
+    from nvflare.apis.dxo import DXO, DataKind, from_shareable
+    from nvflare.apis.fl_context import FLContext
+    from nvflare.app_common.filters import ExcludeVars
+
+    class _Model(torch.nn.Module):
+        def __init__(self, shared_value, local_value):
+            super().__init__()
+            self.shared = torch.nn.Parameter(torch.tensor([shared_value]))
+            self.register_buffer("site_local", torch.tensor([local_value]))
+
+    def filter_payload(state):
+        shareable = DXO(data_kind=DataKind.WEIGHTS, data=dict(state)).to_shareable()
+        filtered = ExcludeVars(["site_local"]).process(shareable, FLContext())
+        return from_shareable(filtered).data
+
+    server = _Model(shared_value=1.0, local_value=-1.0)
+    client = _Model(shared_value=0.0, local_value=41.0)
+
+    for expected_shared in (1.0, 2.0):
+        server_to_client = filter_payload(server.state_dict())
+        assert "site_local" not in server_to_client
+
+        incompatible = client.load_state_dict(server_to_client, strict=False)
+        assert incompatible.missing_keys == ["site_local"]
+        assert client.site_local.item() == pytest.approx(41.0)
+
+        with torch.no_grad():
+            client.shared.add_(1.0)
+        client_to_server = filter_payload(client.state_dict())
+        assert "site_local" not in client_to_server
+
+        server.load_state_dict(client_to_server, strict=False)
+        assert server.shared.item() == pytest.approx(expected_shared + 1.0)
+        assert client.site_local.item() == pytest.approx(41.0)
 
 
 def test_custom_aggregator_template_step_weighted_average():
@@ -947,7 +1414,7 @@ def test_custom_aggregator_template_resets_between_rounds():
         aggregator.aggregate_model()
 
 
-def test_lightning_eval_template_delivers_validation_metric_to_server():
+def test_lightning_eval_template_validates_metrics_without_metadata_override():
     torch = pytest.importorskip("torch")
     pl = pytest.importorskip("pytorch_lightning")
     from torch.utils.data import DataLoader, TensorDataset
@@ -965,7 +1432,8 @@ def test_lightning_eval_template_delivers_validation_metric_to_server():
         def validation_step(self, batch, batch_idx):
             features, labels = batch
             loss = torch.nn.functional.cross_entropy(self(features), labels)
-            self.log("val_loss", loss)
+            self.log("val_loss", loss, on_step=False, on_epoch=True)
+            self.log("neg_val_loss", -loss, on_step=False, on_epoch=True)
             return loss
 
         def configure_optimizers(self):
@@ -975,22 +1443,11 @@ def test_lightning_eval_template_delivers_validation_metric_to_server():
     trainer = pl.Trainer(logger=False, enable_checkpointing=False, enable_progress_bar=False, devices=1)
 
     model = ToyLightning()
-    metrics = module.validate_global_model(
-        trainer,
-        model,
-        dataloaders=loader,
-        make_higher_is_better=("val_loss",),
-    )
+    metrics = module.validate_global_model(trainer, model, dataloaders=loader)
 
     assert "val_loss" in metrics
     assert metrics["neg_val_loss"] == pytest.approx(-metrics["val_loss"])
-    from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
-    from nvflare.app_common.utils.fl_model_utils import FLModelUtils
-
-    assert model.__fl_meta__[MetaKey.INITIAL_METRICS] == metrics
-    outgoing_model = FLModel(params=model.state_dict(), meta=model.__fl_meta__)
-    server_model = FLModelUtils.from_shareable(FLModelUtils.to_shareable(outgoing_model))
-    assert server_model.metrics == metrics
+    assert not hasattr(model, "__fl_meta__")
 
 
 def test_lightning_template_eval_only_mode_skips_training():
@@ -1026,12 +1483,163 @@ def test_lightning_template_eval_only_mode_skips_training():
     module.flare = fake_flare  # patch the module-level flare handle
 
     try:
-        module.main(model=_FakeModel(), datamodule=object(), trainer_factory=lambda: fake, evaluate_only=True)
+        module.main(
+            model=_FakeModel(),
+            datamodule=object(),
+            trainer_factory=lambda: fake,
+            # Preserve the established fourth-positional algorithm contract.
+            recipe_algorithm="fedeval",
+            evaluate_only=True,
+        )
     finally:
         pass
 
     assert "validate" in calls
     assert "fit" not in calls
+
+
+@pytest.mark.parametrize("recipe_algorithm", ["fedavg", "fedce", "fedopt", "fedprox", "scaffold", "swarm", "cyclic"])
+def test_lightning_template_rejects_eval_only_training_recipe(recipe_algorithm):
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+
+    with pytest.raises(ValueError, match="only with FedEval"):
+        module.main(
+            model=object(),
+            datamodule=object(),
+            trainer_factory=lambda: pytest.fail("trainer must not be created"),
+            recipe_algorithm=recipe_algorithm,
+            evaluate_only=True,
+        )
+
+
+def test_lightning_template_requires_eval_only_for_fedeval():
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+
+    with pytest.raises(ValueError, match="FedEval requires evaluate_only=True"):
+        module.main(
+            model=object(),
+            datamodule=object(),
+            trainer_factory=lambda: pytest.fail("trainer must not be created"),
+            recipe_algorithm="fedeval",
+        )
+
+
+def test_lightning_template_preserves_fourth_positional_cyclic_algorithm():
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+    calls = []
+
+    class _FakeTrainer:
+        def validate(self, *args, **kwargs):
+            calls.append("validate")
+            return [{"accuracy": 0.5}]
+
+        def fit(self, *args, **kwargs):
+            calls.append("fit")
+
+    fake_flare = types.SimpleNamespace(
+        patch=lambda trainer: None,
+        receive=lambda: None,
+        _running=[True, False],
+        is_running=lambda: fake_flare._running.pop(0) if fake_flare._running else False,
+    )
+    module.flare = fake_flare
+
+    module.main(object(), object(), _FakeTrainer, "cyclic")
+
+    assert calls == ["fit"]
+
+
+def test_lightning_template_preserves_fourth_positional_fedeval_algorithm():
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+    calls = []
+
+    class _FakeTrainer:
+        def validate(self, *args, **kwargs):
+            calls.append("validate")
+            return [{"accuracy": 0.5}]
+
+        def fit(self, *args, **kwargs):
+            calls.append("fit")
+
+    fake_flare = types.SimpleNamespace(
+        patch=lambda trainer: None,
+        receive=lambda: None,
+        _running=[True, False],
+        is_running=lambda: fake_flare._running.pop(0) if fake_flare._running else False,
+    )
+    module.flare = fake_flare
+
+    module.main(object(), object(), _FakeTrainer, "fedeval", True)
+
+    assert calls == ["validate"]
+
+
+def test_lightning_template_rejects_boolean_fourth_positional_algorithm():
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+
+    with pytest.raises(ValueError, match="recipe_algorithm must be one of"):
+        module.main(object(), object(), lambda: pytest.fail("trainer must not be created"), True)
+
+
+@pytest.mark.parametrize("recipe_algorithm", ["Cyclic", "cyclic-pt", "FedEval", True, None])
+def test_lightning_template_rejects_unknown_or_non_normalized_recipe_algorithm(recipe_algorithm):
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+
+    with pytest.raises(ValueError, match="recipe_algorithm must be one of"):
+        module.should_evaluate_before_train(recipe_algorithm)
+
+
+@pytest.mark.parametrize(
+    "recipe_algorithm, expected",
+    [
+        ("fedavg", True),
+        ("fedce", True),
+        ("fedeval", True),
+        ("fedopt", True),
+        ("fedprox", True),
+        ("scaffold", True),
+        ("swarm", True),
+        ("cyclic", False),
+    ],
+)
+def test_lightning_template_derives_pre_fit_evaluation_from_recipe_algorithm(recipe_algorithm, expected):
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+
+    assert module.should_evaluate_before_train(recipe_algorithm) is expected
+
+
+@pytest.mark.parametrize(
+    "recipe_algorithm, expected_calls",
+    [("fedavg", ["validate", "fit"]), ("cyclic", ["fit"])],
+)
+def test_lightning_template_skips_pre_fit_validation_only_for_cyclic(recipe_algorithm, expected_calls):
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+    calls = []
+
+    class _FakeTrainer:
+        def validate(self, *args, **kwargs):
+            calls.append("validate")
+            return [{"accuracy": 0.5}]
+
+        def fit(self, *args, **kwargs):
+            calls.append("fit")
+
+    fake_flare = types.SimpleNamespace(
+        patch=lambda trainer: None,
+        receive=lambda: None,
+        _running=[True, False],
+        is_running=lambda: fake_flare._running.pop(0) if fake_flare._running else False,
+    )
+    module.flare = fake_flare
+
+    module.main(
+        model=object(),
+        datamodule=object(),
+        trainer_factory=_FakeTrainer,
+        recipe_algorithm=recipe_algorithm,
+    )
+
+    assert calls == expected_calls
 
 
 class _DummyModel:
@@ -1049,28 +1657,15 @@ class _DummyModel:
         raise AssertionError("model should not be called when the loader is empty")
 
 
-def test_lightning_negated_metric_helper_does_not_mutate_and_is_threaded_through_main():
-    """The negation helper must be copy-safe, and main() must actually pass the keys.
-
-    ``main`` is the round loop a generated ``client.py`` copies verbatim. If it does
-    not forward ``make_higher_is_better`` to ``validate_global_model``, a lower-is-better
-    conversion silently never delivers the negated key the recipe selects on.
-    """
+def test_lightning_template_does_not_rewrite_metrics_after_validation():
+    """The patched callback owns pre-fit metric capture and delivery."""
     import inspect as _inspect
 
     module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+    module_source = _inspect.getsource(module)
 
-    source = {"val_loss": 0.25, "val_acc": 0.9}
-    negated = module.add_higher_is_better_metrics(source, ("val_loss",))
-
-    assert negated == {"val_loss": 0.25, "val_acc": 0.9, "neg_val_loss": -0.25}
-    assert source == {"val_loss": 0.25, "val_acc": 0.9}, "helper must not mutate its input"
-
-    with pytest.raises(RuntimeError, match="not in the validation results"):
-        module.add_higher_is_better_metrics({"val_acc": 1.0}, ("val_loss",))
-    with pytest.raises(RuntimeError, match="already exists"):
-        module.add_higher_is_better_metrics({"val_loss": 1.0, "neg_val_loss": 0.0}, ("val_loss",))
-
-    assert "make_higher_is_better" in _inspect.signature(module.main).parameters
+    assert "make_higher_is_better" not in _inspect.signature(module.main).parameters
+    assert "from nvflare.app_common.abstract.fl_model import MetaKey" not in module_source
+    assert "model.__fl_meta__ =" not in module_source
     main_source = _inspect.getsource(module.main)
-    assert "make_higher_is_better=make_higher_is_better" in main_source
+    assert main_source.rindex("validate_global_model(") < main_source.rindex("trainer.fit(")

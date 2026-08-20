@@ -381,11 +381,16 @@ class TestStaticFileBuilder:
         template = _load_master_template()
 
         forbidden_paths = [
+            # ClientAPIExecutor launches a job-controlled command or imports and runs a
+            # job-controlled Python script.
+            "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
             # tf.keras.models.load_model executes code embedded in .keras/.h5/SavedModel files
             # (Lambda layers / custom objects); there is no safe-load flag.
             "nvflare.app_opt.tf.model_persistor.TFModelPersistor",
             # torch.load is pickle-based and runs arbitrary code when load_weights_only=False.
             "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+            # joblib.load uses pickle and can execute code from a job-controlled model file.
+            "nvflare.app_opt.sklearn.joblib_model_param_persistor.JoblibModelParamPersistor",
             # ConfigParser importlib-imports a class path read from a config file (plus
             # sys.path.append) -> arbitrary code import.
             "nvflare.edge.simulation.config.ConfigParser",

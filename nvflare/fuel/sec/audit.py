@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import threading
 import uuid
 from datetime import datetime
 
@@ -37,88 +38,105 @@ class Auditor(object):
 
         # create/open the file
         self.audit_file = open(audit_file_name, "a")
+        self._lock = threading.Lock()
 
     def add_event(self, user: str, action: str, ref: str = "", msg: str = "") -> str:
 
         if action in EXCLUDED_ACTIONS:
             return ""
 
-        # server might already shut down, the audit_file could be None
-        if self.audit_file is None:
-            return ""
+        with self._lock:
+            # A late Cell callback can arrive while the process is shutting down.
+            if self.audit_file is None:
+                return ""
 
-        event_id = uuid.uuid4()
-        parts = [
-            f"[E:{event_id}]",
-            f"[R:{ref}]" if ref else "",
-            f"[T:{datetime.now()}]",
-            f"[U:{user}]",
-            f"[A:{action}]",
-            msg if msg else "",
-        ]
+            event_id = uuid.uuid4()
+            parts = [
+                f"[E:{event_id}]",
+                f"[R:{ref}]" if ref else "",
+                f"[T:{datetime.now()}]",
+                f"[U:{user}]",
+                f"[A:{action}]",
+                msg if msg else "",
+            ]
 
-        line = "".join(parts)
-        self.audit_file.write(line + "\n")
-        self.audit_file.flush()
-        return str(event_id)
+            line = "".join(parts)
+            self.audit_file.write(line + "\n")
+            self.audit_file.flush()
+            return str(event_id)
 
     def add_job_event(
         self, job_id: str, scope_name: str = "", task_name: str = "", task_id: str = "", ref: str = "", msg: str = ""
     ) -> str:
-        event_id = uuid.uuid4()
-        parts = [
-            f"[E:{event_id}]",
-            f"[R:{ref}]" if ref else "",
-            f"[T:{datetime.now()}]",
-            f"[S:{scope_name}]" if scope_name else "",
-            f"[J:{job_id}]",
-            f"[A:{task_name}#{task_id}]" if task_name else "",
-            msg if msg else "",
-        ]
+        with self._lock:
+            if self.audit_file is None:
+                return ""
 
-        line = "".join(parts)
-        self.audit_file.write(line + "\n")
-        self.audit_file.flush()
-        return str(event_id)
+            event_id = uuid.uuid4()
+            parts = [
+                f"[E:{event_id}]",
+                f"[R:{ref}]" if ref else "",
+                f"[T:{datetime.now()}]",
+                f"[S:{scope_name}]" if scope_name else "",
+                f"[J:{job_id}]",
+                f"[A:{task_name}#{task_id}]" if task_name else "",
+                msg if msg else "",
+            ]
+
+            line = "".join(parts)
+            self.audit_file.write(line + "\n")
+            self.audit_file.flush()
+            return str(event_id)
 
     def close(self):
-        if self.audit_file is not None:
-            self.audit_file.close()
-            self.audit_file = None
+        with self._lock:
+            if self.audit_file is not None:
+                self.audit_file.close()
+                self.audit_file = None
 
 
 class AuditService(object):
     """Service for interacting with Auditor to add events to log."""
 
     the_auditor = None
+    _lock = threading.Lock()
 
     @staticmethod
     def initialize(audit_file_name: str):
-        if not AuditService.the_auditor:
-            AuditService.the_auditor = Auditor(audit_file_name)
-        return AuditService.the_auditor
+        with AuditService._lock:
+            if not AuditService.the_auditor:
+                AuditService.the_auditor = Auditor(audit_file_name)
+            return AuditService.the_auditor
 
     @staticmethod
     def get_auditor():
-        return AuditService.the_auditor
+        with AuditService._lock:
+            return AuditService.the_auditor
 
     @staticmethod
     def add_event(user: str, action: str, ref: str = "", msg: str = "") -> str:
-        if not AuditService.the_auditor:
+        with AuditService._lock:
+            auditor = AuditService.the_auditor
+        if not auditor:
             return ""
-        return AuditService.the_auditor.add_event(user, action, ref, msg)
+        return auditor.add_event(user, action, ref, msg)
 
     @staticmethod
     def add_job_event(
         job_id: str, scope_name: str = "", task_name: str = "", task_id: str = "", ref: str = "", msg: str = ""
     ) -> str:
-        if not AuditService.the_auditor:
+        with AuditService._lock:
+            auditor = AuditService.the_auditor
+        if not auditor:
             return ""
-        return AuditService.the_auditor.add_job_event(
+        return auditor.add_job_event(
             scope_name=scope_name, job_id=job_id, task_name=task_name, task_id=task_id, ref=ref, msg=msg
         )
 
     @staticmethod
     def close():
-        if AuditService.the_auditor:
-            AuditService.the_auditor.close()
+        with AuditService._lock:
+            auditor = AuditService.the_auditor
+            AuditService.the_auditor = None
+        if auditor:
+            auditor.close()

@@ -16,6 +16,7 @@ import pytest
 
 from nvflare.fuel.utils.validation_utils import (
     DefaultValuePolicy,
+    check_job_name,
     check_non_empty_str,
     check_number_range,
     check_positive_int,
@@ -141,6 +142,42 @@ class TestValidationUtils:
     def test_check_non_empty_str_error(self, name, num):
         with pytest.raises(Exception):
             check_non_empty_str(name, num)
+
+    @pytest.mark.parametrize("value", ["job", "job-name_1", "job.name", "job.previous", "CON", "job.", "0job"])
+    def test_check_job_name(self, value):
+        check_job_name("name", value)
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "",
+            " ",
+            ".",
+            "..",
+            "../job",
+            "nested/job",
+            "/tmp/job",
+            r"nested\job",
+            r"..\evil",
+            "job name",
+            "job\tname",
+            " job",
+            "job ",
+            "job\n",
+            "job\x00",
+            "C:job",
+            "-job",
+            ".job",
+            "job$",
+        ],
+    )
+    def test_check_job_name_error(self, value):
+        with pytest.raises(ValueError):
+            check_job_name("name", value)
+
+    def test_check_job_name_type_error(self):
+        with pytest.raises(TypeError):
+            check_job_name("name", None)
 
     @pytest.mark.parametrize(
         "var_name, candidate, base, default_policy, allow_none, output",
