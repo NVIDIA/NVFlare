@@ -54,7 +54,7 @@ import pytest
 
 from nvflare.apis.fl_constant import ServerCommandNames
 from nvflare.fuel.f3.cellnet.cell import Adapter, Cell
-from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.message import Message as F3Message
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.utils.fobs import FOBSContextKey
@@ -349,7 +349,7 @@ class TestAdapterPassThroughHeader:
         cb.assert_not_called()
         cell.send_blob.assert_not_called()
 
-    def test_submit_update_decode_failure_on_parent_server_cell_returns_process_exception(self):
+    def test_submit_update_decode_failure_on_parent_server_cell_is_raised(self):
         captured = {}
         cell = _make_mock_cell(captured)
         cb = MagicMock()
@@ -360,13 +360,11 @@ class TestAdapterPassThroughHeader:
 
         with patch("nvflare.fuel.f3.cellnet.cell.decode_payload", side_effect=OSError("No space left on device")):
             with patch("nvflare.fuel.f3.cellnet.cell.os._exit") as mock_exit:
-                adapter.call(future)
+                with pytest.raises(OSError, match="No space left on device"):
+                    adapter.call(future)
 
         mock_exit.assert_not_called()
         cb.assert_not_called()
-        reply = cell.send_blob.call_args.args[3]
-        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.PROCESS_EXCEPTION
-        assert reply.get_header(MessageHeaderKey.ERROR) == "failed to decode streamed request payload"
 
     @pytest.mark.parametrize(
         "channel, topic",
@@ -375,7 +373,7 @@ class TestAdapterPassThroughHeader:
             (CellChannel.AUX_COMMUNICATION, ServerCommandNames.SUBMIT_UPDATE),
         ],
     )
-    def test_decode_failure_on_other_streamed_requests_returns_process_exception(self, channel, topic):
+    def test_decode_failure_on_other_server_job_streams_is_raised(self, channel, topic):
         captured = {}
         cell = _make_mock_cell(captured)
         cb = MagicMock()
@@ -386,32 +384,11 @@ class TestAdapterPassThroughHeader:
 
         with patch("nvflare.fuel.f3.cellnet.cell.decode_payload", side_effect=OSError("No space left on device")):
             with patch("nvflare.fuel.f3.cellnet.cell.os._exit") as mock_exit:
-                adapter.call(future)
+                with pytest.raises(OSError, match="No space left on device"):
+                    adapter.call(future)
 
         mock_exit.assert_not_called()
         cb.assert_not_called()
-        send_args = cell.send_blob.call_args.args
-        assert send_args[0] == CellChannel.RETURN_ONLY
-        assert send_args[1] == f"{channel}:{topic}"
-        assert send_args[2] == "client1"
-        reply = send_args[3]
-        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.PROCESS_EXCEPTION
-        assert reply.get_header(MessageHeaderKey.ERROR) == "failed to decode streamed request payload"
-
-    def test_decode_failure_without_request_id_is_raised(self):
-        captured = {}
-        cell = _make_mock_cell(captured)
-        cb = MagicMock()
-        adapter = Adapter(cb=cb, my_info=SimpleNamespace(fqcn="site-1.job-1"), cell=cell)
-        headers = _stream_headers(_TEST_CHANNEL, "fire_and_forget")
-        headers[StreamHeaderKey.STREAM_REQ_ID] = ""
-
-        with patch("nvflare.fuel.f3.cellnet.cell.decode_payload", side_effect=OSError("decode failed")):
-            with pytest.raises(OSError, match="decode failed"):
-                adapter.call(_make_future(headers, payload=b"encoded-result"))
-
-        cb.assert_not_called()
-        cell.send_blob.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

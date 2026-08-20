@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
-import secrets
 import threading
 import time
 from concurrent.futures import TimeoutError, as_completed
@@ -78,7 +77,6 @@ class _TxTaskContext:
     channel: str
     topic: str
     req_id: object
-    stream_token: str
     expires_at: float
 
 
@@ -239,7 +237,6 @@ class TxTask(StreamTaskSpec):
         self.cell = cell
         self.chunk_size = chunk_size
         self.sid = gen_stream_id()
-        self.stream_token = secrets.token_hex(16)
         self.buffer = wrap_view(bytearray(chunk_size))
         # Optimization to send the original buffer without copying
         self.direct_buf: Optional[bytes] = None
@@ -409,7 +406,6 @@ class TxTask(StreamTaskSpec):
             StreamHeaderKey.TOPIC: self.topic,
             StreamHeaderKey.SIZE: self.stream.get_size(),
             StreamHeaderKey.STREAM_ID: self.sid,
-            StreamHeaderKey.STREAM_TOKEN: self.stream_token,
             StreamHeaderKey.DATA_TYPE: StreamDataType.FINAL if final else StreamDataType.CHUNK,
             StreamHeaderKey.SEQUENCE: self.seq,
             StreamHeaderKey.OFFSET: self.offset,
@@ -537,7 +533,6 @@ class TxTask(StreamTaskSpec):
             message.add_headers(
                 {
                     StreamHeaderKey.STREAM_ID: self.sid,
-                    StreamHeaderKey.STREAM_TOKEN: self.stream_token,
                     StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
                     StreamHeaderKey.OFFSET: self.offset,
                     StreamHeaderKey.ERROR_MSG: str(error),
@@ -573,25 +568,9 @@ class TxTask(StreamTaskSpec):
     def handle_ack(self, message: Message):
 
         origin = message.get_header(MessageHeaderKey.ORIGIN)
-        stream_token = message.get_header(StreamHeaderKey.STREAM_TOKEN)
-        if not isinstance(stream_token, str) or not secrets.compare_digest(stream_token, self.stream_token):
-            log.warning(f"{self} ignored ACK with an invalid stream token from {origin}")
-            return
-        if not origin:
-            log.warning(f"{self} ignored ACK without an origin")
-            return
-
-        data_type = message.get_header(StreamHeaderKey.DATA_TYPE)
         ack_seq = message.get_header(StreamHeaderKey.SEQUENCE, None)
         offset = message.get_header(StreamHeaderKey.OFFSET, None)
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
-        # A routing cell that rejects a transit frame knows its unpredictable
-        # stream token but is not the final target. Let that cell terminate the
-        # stream, while keeping progress ACKs restricted to the receiver.
-        routed_error = data_type == StreamDataType.ERROR and bool(error)
-        if origin != self.target and not routed_error:
-            log.warning(f"{self} ignored ACK from unexpected origin {origin}")
-            return
 
         if error:
             error_type = message.get_header(StreamHeaderKey.ERROR_TYPE)
@@ -823,7 +802,6 @@ class ByteStreamer:
             channel=task.channel,
             topic=task.topic,
             req_id=(task.headers or {}).get(StreamHeaderKey.STREAM_REQ_ID),
-            stream_token=task.stream_token,
             expires_at=now + STREAM_ERROR_CONTEXT_TTL,
         )
         while len(cls.error_context_map) > MAX_STREAM_ERROR_CONTEXTS:
@@ -839,15 +817,12 @@ class ByteStreamer:
     def _matches_error_context(message: Message, context: _TxTaskContext) -> bool:
         origin = message.get_header(MessageHeaderKey.ORIGIN)
         failed_destination = message.get_header(StreamHeaderKey.FAILED_DESTINATION, origin)
-        stream_token = message.get_header(StreamHeaderKey.STREAM_TOKEN)
         return (
             failed_destination == context.target
             and (origin == context.target or message.get_header(StreamHeaderKey.FAILED_DESTINATION) == context.target)
             and message.get_header(StreamHeaderKey.CHANNEL) == context.channel
             and message.get_header(StreamHeaderKey.TOPIC) == context.topic
             and message.get_header(StreamHeaderKey.STREAM_REQ_ID) == context.req_id
-            and isinstance(stream_token, str)
-            and secrets.compare_digest(stream_token, context.stream_token)
         )
 
     def get_chunk_size(self):
@@ -968,7 +943,6 @@ class ByteStreamer:
             channel=tx_task.channel,
             topic=tx_task.topic,
             req_id=(tx_task.headers or {}).get(StreamHeaderKey.STREAM_REQ_ID),
-            stream_token=tx_task.stream_token,
             expires_at=0,
         )
         if not self._matches_error_context(message, active_context):

@@ -2252,9 +2252,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         ):
             return
         stream_id = request.get_header(StreamHeaderKey.STREAM_ID)
-        stream_token = request.get_header(StreamHeaderKey.STREAM_TOKEN)
         origin = request.get_header(MessageHeaderKey.ORIGIN)
-        if stream_id is None or not stream_token or not origin:
+        if stream_id is None or not origin:
             return
 
         if isinstance(filter_rejection, Message):
@@ -2270,7 +2269,6 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         message = Message(
             headers={
                 StreamHeaderKey.STREAM_ID: stream_id,
-                StreamHeaderKey.STREAM_TOKEN: stream_token,
                 StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
                 StreamHeaderKey.ERROR_MSG: error,
             }

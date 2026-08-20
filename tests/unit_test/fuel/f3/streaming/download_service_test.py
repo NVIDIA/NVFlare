@@ -29,7 +29,9 @@ from nvflare.fuel.f3.streaming.download_service import (
     ProduceRC,
     TransactionDoneStatus,
 )
-from nvflare.fuel.f3.streaming.transfer_outcome import compute_transfer_outcome
+from nvflare.fuel.f3.streaming.stream_types import StreamError
+from nvflare.fuel.f3.streaming.transfer_outcome import TransferOutcomeReason, compute_transfer_outcome
+from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
 from nvflare.fuel.utils.network_utils import get_open_ports
 from tests.unit_test.fuel.f3.streaming.download_test_utils import (
     MockDownloadable,
@@ -135,6 +137,28 @@ class TestDownloadService:
 
         # Clean up
         DownloadService.delete_transaction(tx_id)
+
+    def test_rejected_response_stream_fails_source_transaction(self, cell):
+        requester = "receiver1"
+        tx_id = DownloadService.new_transaction(
+            cell=cell,
+            timeout=10.0,
+            num_receivers=1,
+            receiver_ids=(requester,),
+        )
+        ref_id = DownloadService.add_object(tx_id, MockDownloadable([b"chunk1"]))
+        waiter = DownloadService.get_transfer_waiter(tx_id)
+        request = _make_download_request(ref_id, requester)
+
+        reply = DownloadService._handle_download(request)
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+
+        DownloadService._handle_download_response_stream_error(request, StreamError("incoming filter rejected"))
+
+        outcome = waiter.wait(timeout=1.0)
+        assert outcome is not None
+        assert outcome.status == TransferProgressState.FAILED
+        assert outcome.reason == TransferOutcomeReason.RECEIVER_FAILED
 
     def test_downloaded_to_one_callback(self, cell):
         """Test that downloaded_to_one is called with correct parameters."""

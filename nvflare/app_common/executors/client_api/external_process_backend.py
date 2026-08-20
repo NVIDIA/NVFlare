@@ -600,7 +600,6 @@ class ExternalProcessBackend(CellBackendBase):
                         request=request,
                         timeout=wait_timeout,
                         optional=True,
-                        reliable=True,
                     )
                     if reply is None or reply.get_header(MessageHeaderKey.RETURN_CODE) != CellReturnCode.OK:
                         rc = None if reply is None else reply.get_header(MessageHeaderKey.RETURN_CODE)

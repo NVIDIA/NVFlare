@@ -1177,9 +1177,8 @@ class TestInit:
             session_ready = [r for r in env.requests if r[0] == Topic.SESSION_READY][0]
             assert session_ready[1] == CJ_FQCN
             assert session_ready[2] == {MsgKey.SESSION_ID: SESSION_ID}
-            for index, (topic, _, _) in enumerate(env.requests):
-                if topic in (Topic.HELLO, Topic.SESSION_READY):
-                    assert env.request_kwargs[index]["reliable"] is True
+            session_ready_index = next(i for i, request in enumerate(env.requests) if request[0] == Topic.SESSION_READY)
+            assert env.request_kwargs[session_ready_index]["reliable"] is True
             assert api._session_id == SESSION_ID
             assert api._memory_gc_rounds == 3
             assert api._cuda_empty_cache is True
@@ -1243,18 +1242,20 @@ class TestInit:
 
         assert env.stopped
 
-    def test_non_secure_init_rejects_protocol_v1_reply_without_secure_mode(self, bootstrap_path, env):
+    def test_non_secure_init_accepts_protocol_v1_reply_without_secure_mode(self, bootstrap_path, env):
         reply = _hello_accepted_reply(secure_mode=False)
         reply.payload.pop(MsgKey.SECURE_MODE)
         env.on_request = lambda _topic, _target, _request: reply
         api = CellClientAPI(bootstrap_file=bootstrap_path)
 
-        with pytest.raises(TrainerSessionError, match="secure_mode must be a bool"):
+        try:
             api.init(rank="0")
 
-        assert api._session_id is None
-        assert env.stopped
-        env.auth_filter.assert_not_called()
+            assert api._session_id == SESSION_ID
+            assert api._secure_mode is False
+            env.auth_filter.assert_not_called()
+        finally:
+            api.shutdown()
 
     def test_secure_init_rejects_protocol_v1_reply_without_secure_mode(self, bootstrap_path, env):
         _set_secure_mode(bootstrap_path, True)
@@ -1263,7 +1264,7 @@ class TestInit:
         env.on_request = lambda _topic, _target, _request: reply
         api = CellClientAPI(bootstrap_file=bootstrap_path)
 
-        with pytest.raises(TrainerSessionError, match="secure_mode must be a bool"):
+        with pytest.raises(TrainerSessionError, match="secure_mode disagrees"):
             api.init(rank="0")
 
         assert api._session_id is None

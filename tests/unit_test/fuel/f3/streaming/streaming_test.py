@@ -16,23 +16,31 @@ import multiprocessing
 import threading
 import time
 import traceback
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-import nvflare.fuel.f3.cellnet.cell as cell_module
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell, make_reply
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import CellChannel, ReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
+from nvflare.fuel.f3.streaming.download_service import (
+    OBJ_DOWNLOADER_CHANNEL,
+    OBJ_DOWNLOADER_TOPIC,
+    DownloadService,
+    request_download_chunk,
+)
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamError, StreamFuture
 from nvflare.fuel.f3.streaming.tools.utils import TEST_CHANNEL, TEST_TOPIC, make_buffer
+from nvflare.fuel.f3.streaming.transfer_outcome import TransferOutcomeReason
+from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
+from nvflare.fuel.utils.network_utils import get_open_ports
+from tests.unit_test.fuel.f3.streaming.download_test_utils import MockDownloadable
 
 _STREAM_RX_CELL = "stream_test_server"
 _STREAM_TX_CELL = "stream_test_sender"
-from nvflare.fuel.utils.network_utils import get_open_ports
 
 WAIT_SEC = 10
 
@@ -132,7 +140,13 @@ def test_incoming_filter_rejection_fails_stream_sender_immediately():
     server.start()
     sender.start()
     try:
-        future = sender_stream.send_blob(TEST_CHANNEL, TEST_TOPIC, server_name, Message(None, b"payload"))
+        future = sender_stream.send_blob(
+            TEST_CHANNEL,
+            TEST_TOPIC,
+            server_name,
+            Message(None, b"payload"),
+            reliable=True,
+        )
 
         with pytest.raises(StreamError, match="missing client name"):
             future.result(timeout=2.0)
@@ -141,48 +155,68 @@ def test_incoming_filter_rejection_fails_stream_sender_immediately():
         server.stop()
 
 
-def test_streamed_request_decode_failure_returns_process_exception(monkeypatch):
+def test_rejected_download_response_fails_source_transaction():
     port = get_open_ports(1)[0]
-    server_name = "stream_decode_failure_server"
-    sender_name = "stream_decode_failure_sender"
+    source_name = "download_response_source"
+    requester_name = "download_response_requester"
     root_url = f"tcp://localhost:{port}"
-    server = Cell(server_name, root_url, secure=False, credentials={})
-    sender = Cell(sender_name, root_url, secure=False, credentials={})
-    topic = "decode_failure"
-    callback = MagicMock(return_value=make_reply(ReturnCode.OK))
-    server.register_request_cb(channel=TEST_CHANNEL, topic=topic, cb=callback)
-    original_decode_payload = cell_module.decode_payload
+    source = Cell(source_name, root_url, secure=False, credentials={})
+    requester = Cell(requester_name, root_url, secure=False, credentials={})
+    expected_reply_topic = f"{OBJ_DOWNLOADER_CHANNEL}:{OBJ_DOWNLOADER_TOPIC}"
 
-    def fail_request_decode(message, encoding_key, fobs_ctx):
+    def reject_download_response(message):
         if (
-            message.get_header(StreamHeaderKey.CHANNEL) == TEST_CHANNEL
-            and message.get_header(StreamHeaderKey.TOPIC) == topic
+            message.get_header(StreamHeaderKey.CHANNEL) == CellChannel.RETURN_ONLY
+            and message.get_header(StreamHeaderKey.TOPIC) == expected_reply_topic
         ):
-            raise RuntimeError("nested DownloadService request failed")
-        return original_decode_payload(message, encoding_key, fobs_ctx)
+            return make_reply(ReturnCode.UNAUTHENTICATED, error="missing client name")
+        return None
 
-    monkeypatch.setattr(cell_module, "decode_payload", fail_request_decode)
-    server.start()
-    sender.start()
+    requester.add_incoming_filter(STREAM_CHANNEL, STREAM_DATA_TOPIC, reject_download_response)
+    source.start()
+    requester.start()
+    tx_id = None
+    request_result = {}
     try:
-        _wait_for_connection(sender, server_name)
-        started = time.monotonic()
-        reply = sender.send_request(
-            channel=TEST_CHANNEL,
-            topic=topic,
-            target=server_name,
-            request=Message({}, {"task": "payload"}),
-            timeout=2.0,
-            reliable=True,
+        _wait_for_connection(requester, source_name)
+        tx_id = DownloadService.new_transaction(
+            cell=source,
+            timeout=30.0,
+            num_receivers=1,
+            receiver_ids=(requester_name,),
         )
+        ref_id = DownloadService.add_object(tx_id, MockDownloadable([b"chunk1"]))
+        waiter = DownloadService.get_transfer_waiter(tx_id)
+
+        def request_chunk():
+            try:
+                request_result["reply"] = request_download_chunk(
+                    from_fqcn=source_name,
+                    ref_id=ref_id,
+                    state=None,
+                    per_request_timeout=1.0,
+                    cell=requester,
+                )
+            except BaseException as ex:
+                request_result["error"] = ex
+
+        request_thread = threading.Thread(target=request_chunk)
+        started = time.monotonic()
+        request_thread.start()
+        outcome = waiter.wait(timeout=2.0)
 
         assert time.monotonic() - started < 2.0
-        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.PROCESS_EXCEPTION
-        assert reply.get_header(MessageHeaderKey.ERROR) == "failed to decode streamed request payload"
-        callback.assert_not_called()
+        assert outcome is not None
+        assert outcome.status == TransferProgressState.FAILED
+        assert outcome.reason == TransferOutcomeReason.RECEIVER_FAILED
+        request_thread.join(timeout=3.0)
+        assert not request_thread.is_alive()
+        assert "error" not in request_result
     finally:
-        sender.stop()
-        server.stop()
+        if tx_id:
+            DownloadService.delete_transaction(tx_id)
+        requester.stop()
+        source.stop()
 
 
 def _wait_for_connection(cell, peer_fqcn):

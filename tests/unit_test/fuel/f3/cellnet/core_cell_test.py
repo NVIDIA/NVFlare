@@ -424,7 +424,6 @@ def test_stream_filter_rejection_sends_error_ack_to_stream_sender():
             MessageHeaderKey.TOPIC: STREAM_DATA_TOPIC,
             MessageHeaderKey.ORIGIN: "site-1.job.trainer",
             StreamHeaderKey.STREAM_ID: 42,
-            StreamHeaderKey.STREAM_TOKEN: "attacker-unpredictable-token",
         }
     )
     rejection = Message(
@@ -441,7 +440,6 @@ def test_stream_filter_rejection_sends_error_ack_to_stream_sender():
     assert kwargs["topic"] == STREAM_ACK_TOPIC
     assert kwargs["targets"] == "site-1.job.trainer"
     assert kwargs["message"].get_header(StreamHeaderKey.STREAM_ID) == 42
-    assert kwargs["message"].get_header(StreamHeaderKey.STREAM_TOKEN) == "attacker-unpredictable-token"
     assert kwargs["message"].get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.ERROR
     assert "missing client name" in kwargs["message"].get_header(StreamHeaderKey.ERROR_MSG)
 
@@ -464,7 +462,7 @@ def test_non_stream_filter_rejection_does_not_send_stream_error():
     cell.fire_and_forget.assert_not_called()
 
 
-def test_stream_filter_rejection_without_token_does_not_send_stream_error():
+def test_stream_filter_rejection_without_stream_id_does_not_send_stream_error():
     cell = _cell("server")
     cell.fire_and_forget = MagicMock(return_value={})
 
@@ -474,7 +472,6 @@ def test_stream_filter_rejection_without_token_does_not_send_stream_error():
                 MessageHeaderKey.CHANNEL: STREAM_CHANNEL,
                 MessageHeaderKey.TOPIC: STREAM_DATA_TOPIC,
                 MessageHeaderKey.ORIGIN: "site-1.job.trainer",
-                StreamHeaderKey.STREAM_ID: 42,
             }
         ),
         Message(headers={MessageHeaderKey.RETURN_CODE: ReturnCode.UNAUTHENTICATED}),
@@ -494,7 +491,6 @@ def test_stream_filter_rejection_with_ok_reply_uses_filter_error_detail():
                 MessageHeaderKey.TOPIC: STREAM_DATA_TOPIC,
                 MessageHeaderKey.ORIGIN: "site-1.job.trainer",
                 StreamHeaderKey.STREAM_ID: 42,
-                StreamHeaderKey.STREAM_TOKEN: "stream-token",
             }
         ),
         Message(headers={MessageHeaderKey.RETURN_CODE: ReturnCode.OK}),

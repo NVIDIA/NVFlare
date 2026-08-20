@@ -48,7 +48,6 @@ class StreamHeaderKey:
 
     # Try to keep the key small to reduce the overhead
     STREAM_ID = STREAM_PREFIX + "id"
-    STREAM_TOKEN = STREAM_PREFIX + "tk"
     DATA_TYPE = STREAM_PREFIX + "dt"
     SIZE = STREAM_PREFIX + "sz"
     SEQUENCE = STREAM_PREFIX + "sq"

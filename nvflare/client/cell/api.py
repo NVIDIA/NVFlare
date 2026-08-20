@@ -295,7 +295,6 @@ class CellClientAPI(APISpec):
                     },
                 ),
                 timeout=min(_HELLO_RETRY_INTERVAL, remaining),
-                reliable=True,
             )
             rc = None if reply is None else reply.get_header(MessageHeaderKey.RETURN_CODE)
             if rc == CellReturnCode.OK:
@@ -321,7 +320,10 @@ class CellClientAPI(APISpec):
                 f"timeout {heartbeat_timeout}"
             )
         self._install_site_auth_headers(
-            secure_mode=body.get(MsgKey.SECURE_MODE),
+            # SECURE_MODE was added without changing protocol v1. Preserve
+            # compatibility with an earlier non-secure CJ that omitted it;
+            # a secure bootstrap still rejects False as a mismatch.
+            secure_mode=body.get(MsgKey.SECURE_MODE, False),
             auth_token=body.get(MsgKey.AUTH_TOKEN),
             token_signature=body.get(MsgKey.AUTH_TOKEN_SIGNATURE),
         )
@@ -1072,7 +1074,6 @@ class CellClientAPI(APISpec):
                     timeout=min(self._heartbeat_interval, self._heartbeat_timeout),
                     abort_signal=self._heartbeat_cancel,
                     secure=self._protocol_secure,
-                    reliable=True,
                 )
                 if self._heartbeat_reply_valid(reply):
                     self._note_cj_activity()

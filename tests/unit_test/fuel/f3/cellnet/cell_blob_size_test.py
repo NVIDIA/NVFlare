@@ -90,6 +90,32 @@ def test_async_stream_error_does_not_exit_non_server_job(monkeypatch):
     assert exit_calls == []
 
 
+def test_async_stream_error_notifies_response_owner(monkeypatch):
+    reply_future = StreamFuture(stream_id=3)
+    response_error_cb = MagicMock()
+    cell = _async_response_cell(reply_future)
+    cell.handle_streamed_response_error = response_error_cb
+    adapter = Adapter(None, SimpleNamespace(fqcn="site-1.job-id"), cell)
+    request = Message({MessageHeaderKey.ORIGIN: "peer"}, {"ref_id": "ref-1"})
+    monkeypatch.setattr(cell_module, "encode_payload", lambda *args, **kwargs: None)
+
+    adapter._send_response(
+        Message(payload=b"payload"),
+        "stream-id",
+        "request-id",
+        "download",
+        "chunk",
+        "peer",
+        False,
+        False,
+        request,
+    )
+    error = StreamError("receiver stopped stream")
+    reply_future.set_exception(error)
+
+    response_error_cb.assert_called_once_with("download", "chunk", request, error)
+
+
 def test_uncorrelated_blob_size_stream_error_does_not_exit_server_job(monkeypatch):
     sender_cell = MagicMock()
     sender_cell.my_info.fqcn = "server.job-id"
@@ -137,7 +163,6 @@ def test_single_frame_receiver_rejection_reports_generic_error_after_receive_com
     byte_streamer = ByteStreamer(sender_cell)
     completed_send = SimpleNamespace(
         sid=101,
-        stream_token="stream-token",
         cell=sender_cell,
         target="client",
         channel=CellChannel.RETURN_ONLY,
@@ -173,8 +198,7 @@ def test_single_frame_receiver_rejection_reports_generic_error_after_receive_com
     incoming = Message(
         {
             MessageHeaderKey.ORIGIN: "server.job-id",
-            StreamHeaderKey.STREAM_ID: completed_send.sid,
-            StreamHeaderKey.STREAM_TOKEN: completed_send.stream_token,
+            StreamHeaderKey.STREAM_ID: 101,
             StreamHeaderKey.CHANNEL: CellChannel.RETURN_ONLY,
             StreamHeaderKey.TOPIC: "channel:topic",
             StreamHeaderKey.STREAM_REQ_ID: "request-id",
