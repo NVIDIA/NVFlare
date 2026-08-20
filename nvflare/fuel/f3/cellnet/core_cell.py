@@ -748,14 +748,18 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: removing agent {a}")
                 self.agents.pop(a, None)
 
-    def make_internal_listener(self):
+    def make_internal_listener(self, scheme=None, resources=None):
         """
         Create the internal listener for child cells of this cell to connect to.
+
+        Args:
+            scheme: optional transport scheme for this listener
+            resources: optional resources for this listener
 
         Returns:
 
         """
-        self._create_internal_listener()
+        self._create_internal_listener(scheme, resources)
 
     def get_internal_listener_url(self) -> Union[None, str]:
         """Get the cell's internal listener url.
@@ -800,10 +804,10 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 self.logger.info(f"{self.my_info.fqcn}: cannot create adhoc connector to {url} on {to_cell}")
             return connector
 
-    def _create_internal_listener(self):
+    def _create_internal_listener(self, scheme=None, resources=None):
         # internal listener is always backbone
         if not self.int_listener:
-            self.int_listener = self.connector_manager.get_internal_listener()
+            self.int_listener = self.connector_manager.get_internal_listener(scheme, resources)
             if self.int_listener:
                 self.logger.info(
                     f"{self.my_info.fqcn}: created backbone internal listener "

@@ -200,6 +200,24 @@ def test_listener_accessors_and_callbacks():
             setter(None)
 
 
+def test_make_internal_listener_forwards_listener_override():
+    cell = _cell("site-1.job-1")
+    cell.int_listener = None
+    cell.connector_manager = MagicMock()
+    cell.connector_manager.get_internal_listener.return_value = SimpleNamespace(
+        get_connection_url=lambda: "tcp://localhost:49152"
+    )
+    resources = {
+        DriverParams.HOST.value: "localhost",
+        DriverParams.CONNECTION_SECURITY.value: "clear",
+    }
+
+    cell.make_internal_listener("tcp", resources)
+
+    cell.connector_manager.get_internal_listener.assert_called_once_with("tcp", resources)
+    assert cell.get_internal_listener_url() == "tcp://localhost:49152"
+
+
 def test_internal_listener_host_overrides_default_resources():
     comm_configurator = MagicMock()
     comm_configurator.get_config.return_value = None
@@ -213,6 +231,41 @@ def test_internal_listener_host_overrides_default_resources():
 
     assert manager.int_resources[DriverParams.HOST.value] == "127.0.0.1"
     assert manager.int_resources[DriverParams.LISTEN_HOST.value] == "127.0.0.1"
+
+
+def test_internal_listener_override_does_not_mutate_configured_resources():
+    configured_resources = {
+        DriverParams.HOST.value: "localhost",
+        DriverParams.LISTEN_HOST.value: "localhost",
+        DriverParams.PORTS.value: "8102-8102",
+        DriverParams.CONNECTION_SECURITY.value: "mtls",
+    }
+    comm_configurator = MagicMock()
+    comm_configurator.get_internal_connection_scheme.return_value = "stcp"
+    comm_configurator.get_config.return_value = {
+        "internal": {
+            "scheme": "stcp",
+            "resources": configured_resources,
+        }
+    }
+    communicator = MagicMock()
+    communicator.start_listener.return_value = ("handle", "tcp://localhost:49152", {})
+    manager = ConnectorManager(
+        communicator=communicator,
+        secure=True,
+        comm_configurator=comm_configurator,
+    )
+    listener_resources = {
+        DriverParams.HOST.value: "localhost",
+        DriverParams.CONNECTION_SECURITY.value: "clear",
+    }
+
+    listener = manager.get_internal_listener("tcp", listener_resources)
+
+    assert listener.get_connection_url() == "tcp://localhost:49152"
+    communicator.start_listener.assert_called_once_with("tcp", {"secure": False, **listener_resources})
+    assert manager.int_scheme == "stcp"
+    assert manager.int_resources == configured_resources
 
 
 def test_public_send_reply_applies_filters_before_server_transit_routing():

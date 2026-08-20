@@ -53,6 +53,9 @@ class BootstrapKey:
     CONNECT_URL = "connect_url"
     CP_FQCN = "cp_fqcn"
     CJ_FQCN = "cj_fqcn"
+    # External trainers use this only to detect that their owning CJ process died.
+    # Attach trainers are externally owned and never receive it.
+    CJ_PID = "cj_pid"
     TRAINER_FQCN = "trainer_fqcn"
 
     LAUNCH_TOKEN = "launch_token"
@@ -132,10 +135,21 @@ def get_bootstrap_client_api_type(config: dict, path: str = "<bootstrap config>"
         raise ValueError(
             f"invalid Client API bootstrap config {path}: field {BootstrapKey.SECURE_MODE!r} must be a bool"
         )
+    if BootstrapKey.CJ_PID in config:
+        value = config[BootstrapKey.CJ_PID]
+        if type(value) is not int or value <= 0:
+            raise ValueError(
+                f"invalid Client API bootstrap config {path}: field {BootstrapKey.CJ_PID!r} " "must be a positive int"
+            )
     if execution_mode == ATTACH_EXECUTION_MODE:
         from nvflare.apis.fl_constant import ConnectionSecurity
         from nvflare.client.cell.attach import validate_attach_id, validate_attach_profile
 
+        if BootstrapKey.CJ_PID in config:
+            raise ValueError(
+                f"invalid Client API bootstrap config {path}: attach must not configure "
+                f"field {BootstrapKey.CJ_PID!r}"
+            )
         validate_attach_id(config[BootstrapKey.ATTACH_ID])
         connect_url = config.get(BootstrapKey.CONNECT_URL)
         rendezvous_dir = config.get(BootstrapKey.RENDEZVOUS_DIR)
