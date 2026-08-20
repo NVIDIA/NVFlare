@@ -49,6 +49,13 @@ class _TestServer(BaseServer):
         (True, 8003, "127.0.0.2", ["tcp://127.0.0.1:8002", f"tcp://127.0.0.1:8003?{ADMIN_LISTENER_KEY}=true"]),
         (True, 8003, "::1", ["tcp://127.0.0.1:8002", f"tcp://127.0.0.1:8003?{ADMIN_LISTENER_KEY}=true"]),
         (True, 8003, "admin.example", ["tcp://127.0.0.1:8002", f"tcp://admin.example:8003?{ADMIN_LISTENER_KEY}=true"]),
+        (True, 8003, " 192.0.2.1 ", ["tcp://127.0.0.1:8002", f"tcp://192.0.2.1:8003?{ADMIN_LISTENER_KEY}=true"]),
+        (
+            True,
+            8003,
+            " admin.example ",
+            ["tcp://127.0.0.1:8002", f"tcp://admin.example:8003?{ADMIN_LISTENER_KEY}=true"],
+        ),
         (True, None, None, [f"tcp://127.0.0.1:8002?{ADMIN_LISTENER_KEY}=true"]),
         (False, 8003, "admin.example", ["tcp://127.0.0.1:8002"]),
     ],
